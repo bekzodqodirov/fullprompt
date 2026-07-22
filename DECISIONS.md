@@ -1,0 +1,101 @@
+# DECISIONS.md
+
+> Running log of ambiguity resolutions, per SPEC.md §0: "If a requirement is ambiguous, choose the simplest interpretation that satisfies the acceptance tests, note the decision in DECISIONS.md, and continue." Newest entries are appended at the bottom.
+
+## Pre-implementation decisions (planning stage)
+
+Each item: the ambiguity → **DECISION** (simplest interpretation) → why it satisfies the acceptance tests (Section 20) and edge cases (Section 14).
+
+1. **Monorepo vs single app packaging.** Spec says "single monorepo, modular folder structure" but also "Next.js — single full-stack app."
+   **DECISION:** One pnpm workspace containing one deployable Next.js app; "modules" are internal source folders/packages (`modules/platform`, `modules/wms`) with enforced import boundaries (ESLint rule), not separate services or separate deployments.
+   **Why:** No acceptance test requires independent deployment; single app keeps Docker Compose simple and meets the 3G performance budget; boundaries still make CRM/Finance cheap to add later.
+
+2. **Primary keys: UUID vs serial.** Spec never says.
+   **DECISION:** UUIDv7 for all PKs; business codes (`GS777`, `YW26-000123`, `YW-001`) are separate unique columns, never PKs. Sequence counters (letters, box seq, batch seq) live in dedicated counter columns/tables updated under row locks.
+   **Why:** Edge case 16 requires "codes are labels, FKs are ids"; offline sync already mandates client-generated UUIDs (test 18), so UUIDs unify online/offline creation; UUIDv7 keeps index locality at the 200k-box scale.
+
+3. **`planned` reservation when plan lines are lot-level but boxes are the unit.** Which 50 of 100 boxes get reserved?
+   **DECISION:** Reservation is a *count per lot per approved plan* (`available = box_count − Σ reserved counts`). For visibility, the N lowest `seq_in_lot` boxes in `in_stock` are stamped `planned`, but boxes of a lot are **interchangeable at scan time**: scanning any in-stock sibling box counts against the line (reservation swaps to the scanned box). Over-scanning beyond the planned count triggers the `added_on_spot` path.
+   **Why:** Test 10 only requires that 50 depart and 50 remain `in_stock`, and that double-planning is prevented — a count-level guard does both. Pinning specific physical boxes would cause false "not on plan" alerts, contradicting test 11's intent and warehouse reality (identical boxes).
+
+4. **Crated boxes' statuses vs crate status.** Do member boxes keep their own status while `crated`?
+   **DECISION:** Boxes keep `crate_id` and continue through the normal status machine; `crated` is a location attribute, not a terminal state. A crate scan fans out to all member boxes (one scan_event per box, `method=crate`), and the crate's status/location is derived from its members (they always move together while the crate exists). Crate codes get their own per-WH-per-year sequence (`CR-{WH}{YY}-{00000}`).
+   **Why:** Test 19 ("scanning crate at load counts all 18") and 5.5 ("scanning the crate QR = scanning all boxes") work naturally; per-box landed cost (test 16) requires per-box batch membership, which fan-out preserves.
+
+5. **Receipt edit after boxes already loaded/in transit.** 4.4 allows manager edits "after that" with no downstream guard.
+   **DECISION:** Structural fields (box_count, dims mode, per-box dims/weight) are locked once any box of the lot has left `in_stock` at the origin WH; only text/photo/attachment fields stay editable (audited). Fixing structural errors after departure goes through the void/deviation paths, not receipt edit.
+   **Why:** Prevents retroactive corruption of manifests and cost denominators that tests 13 and 16 depend on; label reconciliation (4.4) only makes sense while boxes are still at origin.
+
+6. **Per-box weight when the lot is `mixed` (boxes have no individual weight) but allocation basis is weight.**
+   **DECISION:** A box's kg (and m³) = lot total ÷ box_count — the uniform average — used for allocation, manifests, and capacity gauges. If the optional per-box list was entered, real per-box values win. Chargeable weight of a box derives from these same values.
+   **Why:** Test 16's worked example uses per-box kg; averaging makes every box well-defined with zero extra operator input (edge case 8: "can't measure each"), and sums remain exactly the lot totals, so batch denominators stay correct.
+
+7. **`direct_to_client` allocation basis semantics.**
+   **DECISION:** The cost entry carries a required `client_id`; the amount is distributed only over that client's boxes within the entry's scope (receipt or batch), proportionally by weight. If the client has no boxes in scope, the entry is rejected at save time.
+   **Why:** Keeps the invariant "box landed cost = Σ shares" (6.9) — Finance later needs everything at box level; weight is the spec's stated default basis, so no new concept is introduced.
+
+8. **Letter preview race.** Wizard shows "≈ D, E, F" but another operator may confirm first.
+   **DECISION:** Preview is a non-binding estimate (already marked "≈"); no letters are reserved at draft time; actual assignment happens only inside the confirm transaction with the warehouse row locked. If assigned letters differ from the preview, the confirm result screen simply shows the real ones.
+   **Why:** Test 4 (concurrent confirms get disjoint letters) is satisfied by the transactional assignment alone; reserving at draft time would leak/park letters and violate 5.3's immutability rule.
+
+9. **Batch code for quick batches (AND→TAS, TAS1→TAS2).**
+   **DECISION:** Same per-origin-WH sequence and format as any batch (e.g., `AND-003`, `TAS1-007`). A quick batch auto-creates a load plan with a single auto-`approved` version (no agent loop), so loading mode, manifest, deviations, and costing reuse the same code path.
+   **Why:** 6.8 says internal moves are "normal transfer batches"; one uniform pipeline means tests 10–14 and the allocation engine (16) apply unchanged to UZ-side moves.
+
+10. **Timezone for the "same warehouse-day" edit rule.**
+    **DECISION:** The creator's free-edit window ends at midnight in the *receipt's warehouse* timezone, comparing the warehouse-local calendar date of `created_at` to the warehouse-local date of "now." (Not the editor's locale, not UTC, not a rolling 24 h.)
+    **Why:** Section 3 already mandates WH-local display/print time; this matches the operator's shift reality and is deterministic for the audit trail (test 17).
+
+11. **Session storage.**
+    **DECISION:** Opaque session IDs in a Postgres `sessions` table (user, device label, UA, IP, created/last-seen, revoked), referenced by the httpOnly cookie. No Redis, no JWT for normal auth.
+    **Why:** 4.1 requires a device list and "logout other devices," which needs server-side session state; spec explicitly avoids Redis; JWT stays reserved for the print helper only.
+
+12. **What `received` vs `in_stock` mean practically.**
+    **DECISION:** `received` is not a stored box status — the `boxes` status set starts at `in_stock`: receipt confirmation creates boxes directly as `in_stock`, and the single confirm movement row in `box_movements` represents spec 5.5's `received → in_stock` arrow. Operationally, a confirmed box is immediately available for planning/crating. (Aligned with the schema in ARCHITECTURE.md — one source of truth.)
+    **Why:** No test or workflow ever acts on a lingering `received` state; keeping the arrow in the movement history honors 5.5 without inventing an extra manual step for the operator (3-minute budget, 6.1).
+
+13. **Label reprint for unclaimed → assigned cargo.**
+    **DECISION:** Box short codes (QR payloads) never change on assignment. The assign-to-client flow ends with a "Reprint N labels" button generating labels with the new client code + existing letters; old `#UNKNOWN` labels are flagged "to be replaced/destroyed" in the same reconciliation UI as 4.4; physically re-stickering is the operator's manual act. Unclaimed lots receive letters normally at confirm (label shows `#UNKNOWN` + receipt number in the client-code slot).
+    **Why:** Test 9 requires "labels reprintable with new code" with both actors audited; stable QR payloads mean already-applied stickers still scan correctly even if not replaced.
+
+14. **FX rate selection "on the cost date."**
+    **DECISION:** Use the latest rate whose date ≤ the cost entry's date for the (currency → USD) pair; if none exists, saving the entry prompts the user to enter today's rate first (no silent fallback). Rate edits trigger the idempotent recompute job.
+    **Why:** Test 16 needs "each entry's dated rate" to be deterministic; edge cases 17–18 (late costs, corrected rates) are covered by the recompute path.
+
+15. **Cost allocation denominator and membership changes.**
+    **DECISION:** A batch entry's denominator = Σ (basis metric) of boxes *actually on the batch* per the reconciled manifest (including `added_on_spot`, excluding `short_loaded`). Any later membership change (late scan, missing-in-transit resolved, undocumented transfer) re-triggers the recompute job for affected batches.
+    **Why:** This is the only reading under which test 16's arithmetic (10,000 CNY / 10,000 kg actually loaded) and test 13/14 resolutions stay mutually consistent.
+
+16. **`ready_for_pickup` at AND when cargo continues to Tashkent.** Section 1 says pickup happens "after customs clearance"; 6.8 says boxes become `ready_for_pickup` right after unload at any customs/distribution WH.
+    **DECISION:** Follow 6.8 literally: unload at a `customs`/`distribution` WH sets `ready_for_pickup` for all clients' boxes. Planning boxes into an onward quick batch transitions them `ready_for_pickup → planned/loading` (allowed extra arrow). Customs clearance itself is not modeled in Phase 1.
+    **Why:** 6.8 is the operative workflow section; test 20 (partial pickup) and the notification rules (Section 11) key off `ready_for_pickup` at unload; modeling clearance would add a state no test exercises.
+
+17. **Density badge boundaries.** "🟠 300–400, 🟢 200–300" leaves ties ambiguous.
+    **DECISION:** Lower-bound inclusive intervals: blue < 200, green [200, 300), orange [300, 400), red ≥ 400.
+    **Why:** Test 5 fixes the only tested tie: density exactly 200 → 🟢.
+
+18. **Receipt-number and box-code sequence scopes.**
+    **DECISION:** Receipt seq resets per WH per warehouse-local day (matching the date in the number). Box short-code sequence is per WH per year (`YY` in the code), rolling over at WH-local Jan 1; batch seq per origin WH, never resets. All counters use `SELECT … FOR UPDATE` like the letter sequencer.
+    **Why:** Mirrors the formats in 5.2 exactly; the concurrency guarantee of test 4 is reused for every counter for free.
+
+19. **Loading a crate whose member lots are only partially on the plan.**
+    **DECISION:** Crate scan evaluates each member box against the plan individually: members whose lot line still has remaining planned count are counted; members beyond plan go through one aggregated `added_on_spot` confirmation (single reason for the whole crate).
+    **Why:** Keeps test 11 and test 19 simultaneously true without forcing the logist to pre-model crates in plans.
+
+20. **Offline receipt-draft identity.**
+    **DECISION:** Drafts and scan events both carry client-generated UUIDs used as idempotency keys on sync; a draft syncs as `draft` status and is only ever *confirmed* online (letter assignment requires the DB transaction). Offline confirm is not supported — the wizard queues the draft and prompts to confirm when back online.
+    **Why:** Test 18 requires dedupe; 5.3 makes letter assignment inherently online-transactional, and 6.1 only requires drafts to survive connection loss, not offline confirmation.
+
+
+
+## Completeness-review addendum (pre-implementation)
+
+A cross-check of the draft plan against every spec section surfaced these additional resolutions:
+
+21. **Seed timing vs spec §18 ("must ship with M1").** The batch seed (`YW-001` departed, `KA-001` in approval loop) and cost/FX seed require M3/M6 schema. **DECISION:** the seed script grows with each milestone — warehouses/users/clients at M0, the canonical receipts at M1, batches + presets at M3, cost entries + FX at M6 — so each §18 item ships with the first milestone whose schema supports it.
+
+22. **Batch status set.** Spec §6.5 uses `unloaded`/`closed`, the kanban (§10) uses Arrived/Closed. **DECISION:** statuses are `forming, loading, in_transit, arrived, unloaded, closed, cancelled`; `arrived` = truck at destination, `unloaded` = finish-unload reconciliation done; the kanban "Arrived" column shows both `arrived` and `unloaded`.
+
+23. **Currencies are a table, not a hardcoded list.** `currencies` (`CNY`,`USD`,`UZS` seeded, admin-extensible per §4.6); cost-entry UI defaults to CNY at `country='CN'` warehouses (§6.1).
+
+24. **Offline scanning scope.** The IndexedDB outbox built in M3 for Loading mode is a shared primitive reused verbatim by Unload (M4) and Issue (M5) modes — §15's "all scan modes fully functional offline" is satisfied by reuse, not per-mode reimplementation.
