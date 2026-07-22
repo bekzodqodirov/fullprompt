@@ -23,6 +23,9 @@ importers:
       browser-image-compression:
         specifier: ^2.0.2
         version: 2.0.2
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/react@19.2.17)(pg@8.22.0)(postgres@3.4.9)(react@19.2.8)
@@ -95,7 +98,7 @@ importers:
         version: 3.9.6
       serwist:
         specifier: ^9.0.11
-        version: 9.5.12(browserslist@4.28.7)(typescript@5.9.3)
+        version: 9.5.12(browserslist@4.28.6)(typescript@5.9.3)
       tailwindcss:
         specifier: ^3.4.17
         version: 3.4.19(tsx@4.23.1)
@@ -2153,6 +2156,10 @@ packages:
   doctrine@2.1.0:
     resolution: {integrity: sha512-35mSku4ZXK0vfCuHEDAwt55dg2jNajHZ1odvF+8SSr82EsZY4QmXfuWso8oEd8zRhVObSN18aM0CjSdoBX7zIw==}
     engines: {node: '>=0.10.0'}
+
+  dotenv@17.4.2:
+    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
+    engines: {node: '>=12'}
 
   drizzle-kit@0.30.6:
     resolution: {integrity: sha512-U4wWit0fyZuGuP7iNmRleQyK2V8wCuv57vf5l3MnG4z4fzNTjY/U13M8owyQ5RavqvqxBifWORaR3wIUzlN64g==}
@@ -4851,10 +4858,6 @@ snapshots:
     optionalDependencies:
       browserslist: 4.28.6
 
-  '@serwist/utils@9.5.12(browserslist@4.28.7)':
-    optionalDependencies:
-      browserslist: 4.28.7
-
   '@serwist/webpack-plugin@9.5.12(browserslist@4.28.6)(typescript@5.9.3)':
     dependencies:
       '@serwist/build': 9.5.12(browserslist@4.28.6)(typescript@5.9.3)
@@ -5452,6 +5455,8 @@ snapshots:
   doctrine@2.1.0:
     dependencies:
       esutils: 2.0.3
+
+  dotenv@17.4.2: {}
 
   drizzle-kit@0.30.6:
     dependencies:
@@ -6794,15 +6799,6 @@ snapshots:
   serwist@9.5.12(browserslist@4.28.6)(typescript@5.9.3):
     dependencies:
       '@serwist/utils': 9.5.12(browserslist@4.28.6)
-      idb: 8.0.3
-    optionalDependencies:
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - browserslist
-
-  serwist@9.5.12(browserslist@4.28.7)(typescript@5.9.3):
-    dependencies:
-      '@serwist/utils': 9.5.12(browserslist@4.28.7)
       idb: 8.0.3
     optionalDependencies:
       typescript: 5.9.3

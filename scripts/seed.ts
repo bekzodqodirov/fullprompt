@@ -2,6 +2,7 @@
  * Seed script — M0 slice of spec §18. Idempotent: upserts by natural keys,
  * safe to re-run. Grows with each milestone (DECISIONS.md #21).
  */
+import 'dotenv/config';
 import { eq, sql } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
 import {

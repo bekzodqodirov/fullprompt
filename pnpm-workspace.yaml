@@ -1,2 +1,9 @@
 packages:
   - "."
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - "@node-rs/argon2"
+  - unrs-resolver
+  - "@parcel/watcher"
