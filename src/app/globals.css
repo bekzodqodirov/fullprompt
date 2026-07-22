@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* High-contrast palette for bright warehouse light (spec §15). System font
+   stack — zero webfont downloads, China-safe (spec §3). */
+:root {
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}
+
+/* Big touch targets (spec §10: ≥ 48px). */
+.btn {
+  @apply inline-flex min-h-12 items-center justify-center rounded-lg px-4 font-semibold transition-colors;
+}
+.btn-primary {
+  @apply btn bg-blue-700 text-white hover:bg-blue-800 active:bg-blue-900;
+}
+.btn-secondary {
+  @apply btn border border-gray-300 bg-white text-gray-900 hover:bg-gray-100;
+}
+.btn-danger {
+  @apply btn bg-red-700 text-white hover:bg-red-800;
+}
+.input {
+  @apply min-h-12 w-full rounded-lg border border-gray-300 bg-white px-3 text-base focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200;
+}
+.label {
+  @apply mb-1 block text-sm font-semibold text-gray-700;
+}
+.card {
+  @apply rounded-xl border border-gray-200 bg-white p-4 shadow-sm;
+}

@@ -1,0 +1,60 @@
+# Production deployment topology (spec §3). Dev in this repo runs against a
+# local Postgres directly; this file is for the VPS.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
+      S3_ENDPOINT: http://minio:9000
+      STORAGE_DRIVER: s3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gsr
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: gsr
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gsr']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    entrypoint: ['/bin/sh', '-c', 'while true; do /backup.sh; sleep 86400; done']
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./ops/backup.sh:/backup.sh:ro
+      - backups:/backups
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
+  miniodata:
+  backups:

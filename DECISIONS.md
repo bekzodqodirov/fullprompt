@@ -99,3 +99,14 @@ A cross-check of the draft plan against every spec section surfaced these additi
 23. **Currencies are a table, not a hardcoded list.** `currencies` (`CNY`,`USD`,`UZS` seeded, admin-extensible per §4.6); cost-entry UI defaults to CNY at `country='CN'` warehouses (§6.1).
 
 24. **Offline scanning scope.** The IndexedDB outbox built in M3 for Loading mode is a shared primitive reused verbatim by Unload (M4) and Issue (M5) modes — §15's "all scan modes fully functional offline" is satisfied by reuse, not per-mode reimplementation.
+
+## M0 implementation decisions
+
+25. **Translation provider (owner's answer, 2026-07-22).** Owner chose a free/open translation API for now, to be swapped for a paid provider later. **DECISION:** `translation_provider` defaults to `libretranslate` (self-hostable/open); the provider interface stays pluggable per spec §8, so switching to Yandex/DeepL is a settings + API-key change. Wired up in M1 with the product dictionary.
+26. **Telegram bot token** provided by the owner; stored only in `.env` (gitignored) as `TELEGRAM_BOT_TOKEN`, never committed. Bot integration itself lands in M1 per the plan.
+27. **UI fonts = system font stack** (no webfont files at all): zero font bytes on 3G, inherently China-safe, and CJK renders via the OS. Label PDFs will embed a self-hosted CJK font separately in M1 (pdf-lib needs a real font file).
+28. **Local-disk storage driver for dev** behind the same `StorageDriver` interface as S3/MinIO, with HMAC-signed serve URLs so the signed-URL access model (spec 4.8) holds in dev too. `STORAGE_DRIVER=s3` in production compose.
+29. **Audit immutability enforced twice**: `REVOKE UPDATE/DELETE` (covers the non-superuser app role in production) **plus** a `BEFORE UPDATE OR DELETE` trigger raising an exception — the trigger also protects dev databases where the app connects as a superuser.
+30. **pg-boss runs in-process** with the Next.js server, started from the `instrumentation` hook — matches the single-app Docker topology (spec §3); a separate worker container can be split out later without code changes.
+31. **Password hashing via `@node-rs/argon2`** (prebuilt native binding) with OWASP Argon2id parameters — the `argon2` npm package needs node-gyp toolchains that complicate CI/Docker.
+32. **`settings` audit rows** use the fixed entity id `00000000-0000-0000-0000-000000000001` (audit_log.entity_id is `uuid NOT NULL`; settings keys are strings — the key lives in the diff payload).
