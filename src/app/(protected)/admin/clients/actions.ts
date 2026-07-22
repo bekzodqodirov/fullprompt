@@ -10,6 +10,7 @@ import { authorize } from '@/modules/platform/rbac/authorize';
 import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { getSetting } from '@/modules/platform/settings/service';
+import { nextClientCode } from '@/modules/platform/clients/code';
 
 export interface ClientFormState {
   error?: 'validation' | 'code_exists' | 'code_format';
@@ -19,7 +20,6 @@ const clientSchema = z.object({
   clientCode: z
     .string()
     .trim()
-    .min(3)
     .max(20)
     .transform((v) => v.toUpperCase()),
   name: z.string().trim().min(1).max(200),
@@ -70,15 +70,27 @@ export async function createClientAction(
   const actor = await authorize('clients.manage');
   const parsed = parseForm(formData);
   if (!parsed.success) return { error: 'validation' };
-  if (!(await validateCodeFormat(parsed.data.clientCode))) return { error: 'code_format' };
 
-  const existing = await db.query.clients.findFirst({
-    where: sql`upper(${clients.clientCode}) = ${parsed.data.clientCode}`,
-  });
-  if (existing) return { error: 'code_exists' };
+  // Owner's rule: empty code ⇒ the system assigns the next sequential code;
+  // a manually entered code must be well-formed and free.
+  const manual = parsed.data.clientCode.length > 0;
+  if (manual) {
+    if (!(await validateCodeFormat(parsed.data.clientCode))) return { error: 'code_format' };
+    const existing = await db.query.clients.findFirst({
+      where: sql`upper(${clients.clientCode}) = ${parsed.data.clientCode}`,
+    });
+    if (existing) return { error: 'code_exists' };
+  }
 
   const values = toValues(parsed.data);
-  const [row] = await db.insert(clients).values(values).returning();
+  const row = await db.transaction(async (tx) => {
+    if (!manual) {
+      const prefix = await getSetting('client_code_prefix');
+      values.clientCode = await nextClientCode(tx, prefix);
+    }
+    const [inserted] = await tx.insert(clients).values(values).returning();
+    return inserted;
+  });
   if (!row) return { error: 'validation' };
 
   const meta = await requestMeta();

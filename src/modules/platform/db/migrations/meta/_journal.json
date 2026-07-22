@@ -15,6 +15,20 @@
       "when": 1784750849932,
       "tag": "0001_audit_immutability_and_trgm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784756447418,
+      "tag": "0002_shiny_the_hand",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784756448669,
+      "tag": "0003_wms_trgm_indexes",
+      "breakpoints": true
     }
   ]
 }

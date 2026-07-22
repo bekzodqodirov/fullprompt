@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getSessionUser, listSessions } from '@/modules/platform/auth/session';
 import { logoutOtherDevicesAction } from '@/modules/platform/auth/actions';
+import { createTelegramLinkAction, telegramLinkStatus } from '@/modules/platform/telegram/actions';
 
 export default async function ProfilePage() {
   const user = await getSessionUser();
@@ -9,6 +10,7 @@ export default async function ProfilePage() {
   const t = await getTranslations('profile');
   const format = await getFormatter();
   const devices = await listSessions(user.id);
+  const telegramLink = await telegramLinkStatus(user.id);
 
   return (
     <div className="space-y-6">
@@ -45,7 +47,18 @@ export default async function ProfilePage() {
 
       <section>
         <h2 className="mb-2 text-lg font-bold">{t('telegram')}</h2>
-        <p className="text-sm text-gray-500">{t('telegramSoon')}</p>
+        {telegramLink?.status === 'linked' ? (
+          <p className="font-semibold text-green-700">{t('telegramLinked')}</p>
+        ) : (
+          <form action={createTelegramLinkAction}>
+            <button type="submit" className="btn-primary">
+              ✈️ {t('telegramConnect')}
+            </button>
+            {telegramLink?.status === 'pending' && (
+              <p className="mt-1 text-sm text-gray-500">{t('telegramPending')}</p>
+            )}
+          </form>
+        )}
       </section>
     </div>
   );

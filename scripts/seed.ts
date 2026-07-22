@@ -157,6 +157,9 @@ async function main() {
       .onConflictDoNothing();
   }
 
+  // --- M1: cost types, product dictionary, canonical GS777 receipt (§18) ---
+  await seedM1(whIds);
+
   // --- Single audit marker for the seed run ---
   await db.insert(auditLog).values({
     actorId: null,
@@ -174,6 +177,145 @@ async function main() {
       (select count(*) from role_permissions) as grants
   `);
   console.log('seed complete:', counts[0]);
+}
+
+async function seedM1(whIds: Map<string, string>) {
+  const { costTypes, productDictionary, attachments, receipts } = await import(
+    '../src/modules/platform/db/schema'
+  );
+  const { confirmReceipt } = await import('../src/modules/wms/receipts/service');
+  const { getStorage } = await import('../src/modules/platform/files/storage');
+  const sharp = (await import('sharp')).default;
+
+  for (const type of [
+    { code: 'crating', name: 'Ящик / Yashik' },
+    { code: 'unload', name: 'Разгрузка / Tushirish' },
+    { code: 'other', name: 'Прочее / Boshqa' },
+  ]) {
+    await db.insert(costTypes).values(type).onConflictDoNothing();
+  }
+
+  for (const entry of [
+    { zh: '化妆品', ru: 'Косметика', verified: true },
+    { zh: '键盘', ru: 'Клавиатура', verified: true },
+    { zh: '鼠标', ru: 'Мышь', verified: true },
+  ]) {
+    await db.insert(productDictionary).values(entry).onConflictDoNothing();
+  }
+
+  // Canonical example (spec §18): fixed ids ⇒ idempotent re-runs.
+  const RECEIPT_GS777 = '018f0000-0000-7000-8000-000000000001';
+  const RECEIPT_GS102 = '018f0000-0000-7000-8000-000000000002';
+  const LOTS_GS777 = [
+    '018f0000-0000-7000-8000-000000000101',
+    '018f0000-0000-7000-8000-000000000102',
+    '018f0000-0000-7000-8000-000000000103',
+  ];
+  const LOT_GS102 = '018f0000-0000-7000-8000-000000000201';
+
+  const existing = await db.query.receipts.findFirst({ where: eq(receipts.id, RECEIPT_GS777) });
+  if (existing) return;
+
+  const operator = await db.query.users.findFirst({ where: eq(users.phone, '+998900000006') });
+  const gs777 = await db.query.clients.findFirst({ where: eq(clients.clientCode, 'GS777') });
+  const gs102 = await db.query.clients.findFirst({ where: eq(clients.clientCode, 'GS102') });
+  const ywId = whIds.get('YW');
+  if (!operator || !gs777 || !gs102 || !ywId) return;
+
+  // Placeholder photo per lot (min-1-photo rule holds even for seed data).
+  const storage = getStorage();
+  for (const lotId of [...LOTS_GS777, LOT_GS102]) {
+    const png = await sharp({
+      create: { width: 640, height: 480, channels: 3, background: { r: 210, g: 220, b: 240 } },
+    })
+      .jpeg({ quality: 70 })
+      .toBuffer();
+    const storageKey = `receipt_lot/${lotId}/seed-photo`;
+    await storage.put(storageKey, png, 'image/jpeg');
+    await db
+      .insert(attachments)
+      .values({
+        entityType: 'receipt_lot',
+        entityId: lotId,
+        kind: 'photo',
+        storageKey,
+        fileName: 'seed-photo.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: png.length,
+        uploadedBy: operator.id,
+      })
+      .onConflictDoNothing({ target: attachments.storageKey });
+  }
+
+  const ctx = { actorId: operator.id };
+  await confirmReceipt(
+    {
+      receiptId: RECEIPT_GS777,
+      warehouseId: ywId,
+      clientId: gs777.id,
+      sourceNote: 'Seed: canonical example',
+      lots: [
+        {
+          id: LOTS_GS777[0]!,
+          productNameZh: '化妆品',
+          productNameRu: 'Косметика',
+          boxCount: 10,
+          dimsMode: 'uniform',
+          boxLengthCm: 50,
+          boxWidthCm: 50,
+          boxHeightCm: 50,
+          boxWeightKg: 25,
+        },
+        {
+          id: LOTS_GS777[1]!,
+          productNameZh: '键盘',
+          productNameRu: 'Клавиатура',
+          boxCount: 50,
+          dimsMode: 'uniform',
+          boxLengthCm: 35,
+          boxWidthCm: 35,
+          boxHeightCm: 35,
+          boxWeightKg: 30,
+        },
+        {
+          id: LOTS_GS777[2]!,
+          productNameZh: '鼠标',
+          productNameRu: 'Мышь',
+          boxCount: 40,
+          dimsMode: 'mixed',
+          totalWeightKg: 320,
+          totalVolumeM3: 1.9,
+        },
+      ],
+      extraCosts: [],
+    },
+    ctx,
+  );
+
+  await confirmReceipt(
+    {
+      receiptId: RECEIPT_GS102,
+      warehouseId: ywId,
+      clientId: gs102.id,
+      sourceNote: 'Seed: next receipt starts at D',
+      lots: [
+        {
+          id: LOT_GS102,
+          productNameZh: '玩具',
+          productNameRu: 'Игрушки',
+          boxCount: 5,
+          dimsMode: 'uniform',
+          boxLengthCm: 60,
+          boxWidthCm: 40,
+          boxHeightCm: 40,
+          boxWeightKg: 12,
+        },
+      ],
+      extraCosts: [],
+    },
+    ctx,
+  );
+  console.log('M1 canonical receipts seeded (GS777 → A,B,C; GS102 → D)');
 }
 
 main()

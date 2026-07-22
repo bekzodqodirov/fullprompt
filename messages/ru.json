@@ -82,7 +82,9 @@
     "notes": "Заметки",
     "codeExists": "Клиент с таким кодом уже существует",
     "codeFormat": "Код должен быть в формате {prefix} + цифры, например {example}",
-    "noManager": "Не назначен"
+    "noManager": "Не назначен",
+    "codeAutoPlaceholder": "{prefix}… (авто)",
+    "codeAutoHint": "Оставьте пустым — система сама присвоит следующий код"
   },
   "users": {
     "title": "Сотрудники",
@@ -166,6 +168,93 @@
     "language": "Язык интерфейса",
     "telegram": "Telegram",
     "telegramSoon": "Подключение Telegram появится в следующем этапе",
-    "lastSeen": "Активность"
+    "lastSeen": "Активность",
+    "telegramConnect": "Подключить Telegram",
+    "telegramLinked": "Подключён ✅",
+    "telegramPending": "Ожидает подключения"
+  },
+  "receive": {
+    "title": "Приёмка",
+    "stepClient": "Клиент",
+    "stepLots": "Товары",
+    "stepCosts": "Расходы",
+    "stepReview": "Проверка",
+    "warehouse": "Склад",
+    "clientCode": "Код клиента",
+    "acceptUnclaimed": "Код не найден — принять как неопознанный груз",
+    "sourceNote": "Кто доставил (примечание)",
+    "letterPreview": "Буквы",
+    "productZh": "Товар (кит.)",
+    "productRu": "Перевод (рус.)",
+    "boxCount": "Кол-во коробок",
+    "uniform": "Одинаковые",
+    "mixed": "Разные (итогами)",
+    "totalKg": "Итого кг",
+    "totalM3": "Итого м³",
+    "chargeable": "Объёмный вес",
+    "photos": "Фото",
+    "addPhoto": "Фото",
+    "photoRequired": "Нужно минимум 1 фото",
+    "photoUploadFailed": "Фото не загрузилось — проверьте связь",
+    "addLot": "Добавить товар",
+    "costType": "Тип расхода",
+    "amount": "Сумма",
+    "note": "Примечание",
+    "addCost": "Добавить расход",
+    "costsOptional": "Расходы необязательны — можно пропустить",
+    "unclaimedBadge": "Неопознанный груз",
+    "next": "Далее",
+    "confirm": "Подтвердить",
+    "printLabels": "Печать этикеток",
+    "openReceipt": "Открыть приёмку",
+    "newReceipt": "Новая приёмка"
+  },
+  "receipts": {
+    "title": "Приёмки",
+    "unclaimedTitle": "Неопознанные грузы",
+    "number": "Номер",
+    "client": "Клиент",
+    "date": "Дата",
+    "lots": "Товары",
+    "boxesTotal": "Коробок",
+    "statuses": {
+      "draft": "Черновик",
+      "confirmed": "Подтверждена",
+      "voided": "Аннулирована"
+    },
+    "voidBtn": "Аннулировать",
+    "voidReason": "Причина аннулирования",
+    "reprint": "Печать этикеток",
+    "letter": "Буква",
+    "unclaimed": "НЕОПОЗНАН",
+    "empty": "Пока нет приёмок",
+    "attachments": "Файлы",
+    "costs": "Расходы"
+  },
+  "stock": {
+    "title": "Склад (остатки)",
+    "boxes": "коробок",
+    "box": "Коробка",
+    "timeline": "История коробки",
+    "inLot": "в партии",
+    "statuses": {
+      "in_stock": "На складе",
+      "planned": "В плане",
+      "loading": "Погрузка",
+      "in_transit": "В пути",
+      "ready_for_pickup": "К выдаче",
+      "issued": "Выдано",
+      "lost": "Утеряно",
+      "void": "Аннулировано"
+    }
+  },
+  "search": {
+    "placeholder": "Поиск: GS777, GS777-A, YW26-000123, товар…",
+    "nothing": "Ничего не найдено",
+    "clients": "Клиенты",
+    "receipts": "Приёмки",
+    "boxesGroup": "Коробки",
+    "lotsGroup": "Партии",
+    "title": "Поиск"
   }
 }

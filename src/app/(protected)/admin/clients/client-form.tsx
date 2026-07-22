@@ -39,9 +39,10 @@ export function ClientForm({
           name="clientCode"
           className="input font-mono uppercase"
           defaultValue={initial?.clientCode}
-          placeholder={`${codePrefix}777`}
-          required
+          placeholder={initial ? `${codePrefix}777` : t('codeAutoPlaceholder', { prefix: codePrefix })}
+          required={Boolean(initial)}
         />
+        {!initial && <p className="mt-1 text-xs text-gray-500">{t('codeAutoHint')}</p>}
       </div>
       <div>
         <label className="label" htmlFor="name">

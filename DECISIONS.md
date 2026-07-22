@@ -110,3 +110,12 @@ A cross-check of the draft plan against every spec section surfaced these additi
 30. **pg-boss runs in-process** with the Next.js server, started from the `instrumentation` hook — matches the single-app Docker topology (spec §3); a separate worker container can be split out later without code changes.
 31. **Password hashing via `@node-rs/argon2`** (prebuilt native binding) with OWASP Argon2id parameters — the `argon2` npm package needs node-gyp toolchains that complicate CI/Docker.
 32. **`settings` audit rows** use the fixed entity id `00000000-0000-0000-0000-000000000001` (audit_log.entity_id is `uuid NOT NULL`; settings keys are strings — the key lives in the diff payload).
+
+## M1 implementation decisions
+
+33. **Client-generated receipt/lot UUIDs.** The wizard mints receipt and lot ids client-side: photos upload against the lot id *before* confirm (no orphan-attachment repointing), and the receipt id doubles as the idempotency key — a double-tap or offline retry returns the already-confirmed receipt instead of duplicating it.
+34. **Draft autosave = localStorage (M1).** Wizard text state persists to localStorage after every change and survives app kill; photos upload immediately when online. The full IndexedDB outbox (photos offline, scan events) arrives with the M3 scanner per the plan — recorded as the M1 slice of spec §15 offline.
+35. **Letter preview is non-binding** (spec DECISIONS #8 confirmed in code): shown as "≈ D, E, F"; real assignment only inside the confirm transaction.
+36. **Seed letters mirror the owner's canonical example**: fixed UUIDv7-format ids make the M1 seed idempotent; GS777 → A/B/C and GS102 → D are created through the real `confirmReceipt` service, so seed data exercises the production code path.
+37. **Label CJK font**: Noto Sans SC subset-embedded via pdf-lib+fontkit (~50 KB per PDF). Verified with pdf.js (the Chrome/Android renderer family); poppler warns on the CFF subset but that does not affect RawBT/browser printing. Latin text uses built-in Helvetica (codes stay crisp at 203 dpi).
+38. **Telegram delivery model**: notification rows are per-(user, channel); the in-app bell row is written immediately, the Telegram row is sent by a pg-boss worker with retry/backoff — delivery failures stay visible on the row (admin view arrives in M6 polish).

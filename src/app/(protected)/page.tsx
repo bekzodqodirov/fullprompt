@@ -7,31 +7,68 @@ export default async function HomePage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('home');
+  const tr = await getTranslations('receipts');
+  const ts = await getTranslations('stock');
+  const tSearch = await getTranslations('search');
 
   const isAdmin = actor.permissions.has('admin.warehouses.manage');
-  const ops: { label: string; permission: string }[] = [
-    { label: t('receiving'), permission: 'receipts.create' },
+  const canReceive = actor.permissions.has('receipts.create');
+
+  const comingSoon: { label: string; permission: string }[] = [
     { label: t('loading'), permission: 'scan.load' },
     { label: t('unloading'), permission: 'scan.unload' },
     { label: t('handover'), permission: 'scan.issue' },
   ];
-  const visibleOps = ops.filter((op) => actor.permissions.has(op.permission));
 
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">{t('welcome', { name: actor.fullName })}</h1>
       <div className="grid grid-cols-2 gap-3">
-        {visibleOps.map((op) => (
-          <button
-            key={op.label}
-            disabled
-            title={t('comingSoon')}
-            className="card flex min-h-28 flex-col items-center justify-center text-lg font-bold opacity-60"
+        {canReceive && (
+          <Link
+            href="/receive"
+            className="card flex min-h-28 items-center justify-center bg-blue-700 text-lg font-bold text-white hover:bg-blue-800"
           >
-            {op.label}
-            <span className="mt-1 text-xs font-normal text-gray-500">{t('comingSoon')}</span>
-          </button>
-        ))}
+            {t('receiving')}
+          </Link>
+        )}
+        {comingSoon
+          .filter((op) => actor.permissions.has(op.permission))
+          .map((op) => (
+            <button
+              key={op.label}
+              disabled
+              title={t('comingSoon')}
+              className="card flex min-h-28 flex-col items-center justify-center text-lg font-bold opacity-60"
+            >
+              {op.label}
+              <span className="mt-1 text-xs font-normal text-gray-500">{t('comingSoon')}</span>
+            </button>
+          ))}
+        <Link
+          href="/receipts"
+          className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+        >
+          📄 {tr('title')}
+        </Link>
+        <Link
+          href="/stock"
+          className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+        >
+          📦 {ts('title')}
+        </Link>
+        <Link
+          href="/unclaimed"
+          className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+        >
+          ❓ {tr('unclaimedTitle')}
+        </Link>
+        <Link
+          href="/search"
+          className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+        >
+          🔍 {tSearch('title')}
+        </Link>
         {isAdmin && (
           <Link
             href="/admin/warehouses"

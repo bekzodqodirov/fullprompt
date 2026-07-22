@@ -2,6 +2,8 @@ import PgBoss from 'pg-boss';
 import { logger } from '../logger';
 
 export const JOB_THUMBNAILS = 'files.thumbnails';
+export const JOB_PROCESS_EVENTS = 'events.process';
+export const JOB_SEND_TELEGRAM = 'notify.telegram';
 
 const globalForBoss = globalThis as unknown as { boss?: PgBoss; bossStarted?: boolean };
 
@@ -23,6 +25,8 @@ export async function startBoss(): Promise<PgBoss> {
     // Worker registration lives next to each job's implementation.
     const { registerThumbnailWorker } = await import('./thumbnails');
     await registerThumbnailWorker(boss);
+    const { registerNotificationWorkers } = await import('./notifications');
+    await registerNotificationWorkers(boss);
     logger.info('pg-boss started');
   }
   return boss;

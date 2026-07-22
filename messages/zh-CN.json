@@ -82,7 +82,9 @@
     "notes": "备注",
     "codeExists": "该代码的客户已存在",
     "codeFormat": "代码格式必须为 {prefix} + 数字，例如 {example}",
-    "noManager": "未分配"
+    "noManager": "未分配",
+    "codeAutoPlaceholder": "{prefix}…（自动）",
+    "codeAutoHint": "留空则系统自动分配下一个代码"
   },
   "users": {
     "title": "员工",
@@ -166,6 +168,93 @@
     "language": "界面语言",
     "telegram": "Telegram",
     "telegramSoon": "Telegram绑定将在下一阶段推出",
-    "lastSeen": "活动时间"
+    "lastSeen": "活动时间",
+    "telegramConnect": "绑定 Telegram",
+    "telegramLinked": "已绑定 ✅",
+    "telegramPending": "等待绑定"
+  },
+  "receive": {
+    "title": "收货",
+    "stepClient": "客户",
+    "stepLots": "货物",
+    "stepCosts": "费用",
+    "stepReview": "确认",
+    "warehouse": "仓库",
+    "clientCode": "客户代码",
+    "acceptUnclaimed": "未找到代码 — 按无主货物收货",
+    "sourceNote": "送货人（备注）",
+    "letterPreview": "字母",
+    "productZh": "货物（中文）",
+    "productRu": "翻译（俄语）",
+    "boxCount": "箱数",
+    "uniform": "同规格",
+    "mixed": "不同规格（按总量）",
+    "totalKg": "总重 kg",
+    "totalM3": "总体积 m³",
+    "chargeable": "体积重",
+    "photos": "照片",
+    "addPhoto": "拍照",
+    "photoRequired": "至少需要1张照片",
+    "photoUploadFailed": "照片上传失败 — 请检查网络",
+    "addLot": "添加货物",
+    "costType": "费用类型",
+    "amount": "金额",
+    "note": "备注",
+    "addCost": "添加费用",
+    "costsOptional": "费用为可选项 — 可以跳过",
+    "unclaimedBadge": "无主货物",
+    "next": "下一步",
+    "confirm": "确认",
+    "printLabels": "打印标签",
+    "openReceipt": "打开收货单",
+    "newReceipt": "新收货"
+  },
+  "receipts": {
+    "title": "收货单",
+    "unclaimedTitle": "无主货物",
+    "number": "编号",
+    "client": "客户",
+    "date": "日期",
+    "lots": "货物",
+    "boxesTotal": "箱数",
+    "statuses": {
+      "draft": "草稿",
+      "confirmed": "已确认",
+      "voided": "已作废"
+    },
+    "voidBtn": "作废",
+    "voidReason": "作废原因",
+    "reprint": "打印标签",
+    "letter": "字母",
+    "unclaimed": "无主",
+    "empty": "暂无收货单",
+    "attachments": "文件",
+    "costs": "费用"
+  },
+  "stock": {
+    "title": "库存",
+    "boxes": "箱",
+    "box": "箱子",
+    "timeline": "箱子历史",
+    "inLot": "批内",
+    "statuses": {
+      "in_stock": "在库",
+      "planned": "已计划",
+      "loading": "装车中",
+      "in_transit": "在途",
+      "ready_for_pickup": "待提货",
+      "issued": "已交付",
+      "lost": "丢失",
+      "void": "作废"
+    }
+  },
+  "search": {
+    "placeholder": "搜索：GS777、GS777-A、YW26-000123、货物…",
+    "nothing": "未找到",
+    "clients": "客户",
+    "receipts": "收货单",
+    "boxesGroup": "箱子",
+    "lotsGroup": "批次",
+    "title": "搜索"
   }
 }

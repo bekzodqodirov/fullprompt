@@ -6,5 +6,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { startBoss } = await import('./modules/platform/jobs/boss');
     await startBoss();
+    const { startTelegramBot } = await import('./modules/platform/telegram/bot');
+    startTelegramBot();
   }
 }

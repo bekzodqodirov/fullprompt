@@ -82,7 +82,9 @@
     "notes": "Izohlar",
     "codeExists": "Bunday kodli mijoz allaqachon mavjud",
     "codeFormat": "Kod {prefix} + raqamlar formatida bo'lishi kerak, masalan {example}",
-    "noManager": "Biriktirilmagan"
+    "noManager": "Biriktirilmagan",
+    "codeAutoPlaceholder": "{prefix}… (avto)",
+    "codeAutoHint": "Bo'sh qoldirsangiz — tizim o'zi navbatdagi kodni beradi"
   },
   "users": {
     "title": "Xodimlar",
@@ -166,6 +168,93 @@
     "language": "Interfeys tili",
     "telegram": "Telegram",
     "telegramSoon": "Telegram ulash keyingi bosqichda qo'shiladi",
-    "lastSeen": "Faollik"
+    "lastSeen": "Faollik",
+    "telegramConnect": "Telegram ulash",
+    "telegramLinked": "Ulangan ✅",
+    "telegramPending": "Ulanish kutilmoqda"
+  },
+  "receive": {
+    "title": "Qabul",
+    "stepClient": "Mijoz",
+    "stepLots": "Tovarlar",
+    "stepCosts": "Xarajatlar",
+    "stepReview": "Tekshirish",
+    "warehouse": "Sklad",
+    "clientCode": "Mijoz kodi",
+    "acceptUnclaimed": "Kod topilmadi — aniqlanmagan yuk sifatida qabul qilish",
+    "sourceNote": "Kim keltirdi (izoh)",
+    "letterPreview": "Harflar",
+    "productZh": "Tovar (xitoycha)",
+    "productRu": "Tarjima (ruscha)",
+    "boxCount": "Karobkalar soni",
+    "uniform": "Bir xil",
+    "mixed": "Har xil (jami bilan)",
+    "totalKg": "Jami kg",
+    "totalM3": "Jami m³",
+    "chargeable": "Hajmiy og'irlik",
+    "photos": "Rasmlar",
+    "addPhoto": "Rasm",
+    "photoRequired": "Kamida 1 ta rasm kerak",
+    "photoUploadFailed": "Rasm yuklanmadi — aloqani tekshiring",
+    "addLot": "Tovar qo'shish",
+    "costType": "Xarajat turi",
+    "amount": "Summa",
+    "note": "Izoh",
+    "addCost": "Xarajat qo'shish",
+    "costsOptional": "Xarajatlar ixtiyoriy — o'tkazib yuborsa bo'ladi",
+    "unclaimedBadge": "Aniqlanmagan yuk",
+    "next": "Keyingi",
+    "confirm": "Tasdiqlash",
+    "printLabels": "Stiker chiqarish",
+    "openReceipt": "Qabulni ochish",
+    "newReceipt": "Yangi qabul"
+  },
+  "receipts": {
+    "title": "Qabullar",
+    "unclaimedTitle": "Aniqlanmagan yuklar",
+    "number": "Raqam",
+    "client": "Mijoz",
+    "date": "Sana",
+    "lots": "Tovarlar",
+    "boxesTotal": "Karobkalar",
+    "statuses": {
+      "draft": "Qoralama",
+      "confirmed": "Tasdiqlangan",
+      "voided": "Bekor qilingan"
+    },
+    "voidBtn": "Bekor qilish",
+    "voidReason": "Bekor qilish sababi",
+    "reprint": "Stiker chiqarish",
+    "letter": "Harf",
+    "unclaimed": "ANIQLANMAGAN",
+    "empty": "Hozircha qabullar yo‘q",
+    "attachments": "Fayllar",
+    "costs": "Xarajatlar"
+  },
+  "stock": {
+    "title": "Sklad (qoldiqlar)",
+    "boxes": "karobka",
+    "box": "Karobka",
+    "timeline": "Karobka tarixi",
+    "inLot": "partiyada",
+    "statuses": {
+      "in_stock": "Skladda",
+      "planned": "Rejada",
+      "loading": "Yuklanmoqda",
+      "in_transit": "Yo'lda",
+      "ready_for_pickup": "Topshirishga tayyor",
+      "issued": "Topshirilgan",
+      "lost": "Yo'qolgan",
+      "void": "Bekor qilingan"
+    }
+  },
+  "search": {
+    "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",
+    "nothing": "Hech narsa topilmadi",
+    "clients": "Mijozlar",
+    "receipts": "Qabullar",
+    "boxesGroup": "Karobkalar",
+    "lotsGroup": "Partiyalar",
+    "title": "Qidiruv"
   }
 }
