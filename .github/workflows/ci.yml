@@ -37,8 +37,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm test
+      # Integration tests hit the database — migrate first.
       - run: pnpm db:migrate
+      - run: pnpm test
       - run: pnpm db:seed
       - run: pnpm build
       - name: Install Playwright chromium
