@@ -31,7 +31,7 @@ export function AttachmentsPanel({
   onAdd?: (item: AttachmentItem) => void;
 }) {
   const t = useTranslations('receipts');
-  const [items, setItems] = useState(initial);
+  const [items, setItems] = useState(initial ?? []);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(false);
 

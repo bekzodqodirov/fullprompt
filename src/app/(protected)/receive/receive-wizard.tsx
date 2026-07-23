@@ -162,10 +162,18 @@ export function ReceiveWizard({
     const saved = localStorage.getItem(DRAFT_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved) as Draft;
+        const parsed = JSON.parse(saved) as Partial<Draft>;
         if (parsed.receiptId && Array.isArray(parsed.lots)) {
+          // Backfill fields added after this draft was saved (schema grows
+          // over time; a stale localStorage draft must never crash the page).
+          const backfilled: Draft = {
+            ...parsed,
+            costs: parsed.costs ?? [],
+            files: parsed.files ?? [],
+            lots: parsed.lots.map((lot) => ({ ...newLot(), ...lot })),
+          } as Draft;
           // eslint-disable-next-line react-hooks/set-state-in-effect
-          setDraft(parsed);
+          setDraft(backfilled);
           return;
         }
       } catch {
