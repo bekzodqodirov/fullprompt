@@ -62,6 +62,8 @@ export const receipts = pgTable(
     status: text('status').notNull().default('draft'),
     receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
     sourceNote: text('source_note'),
+    /** Marking written on unknown-code boxes (owner's rule: keep it, resolve later). */
+    unclaimedMarking: text('unclaimed_marking'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -109,6 +111,9 @@ export const receiptLots = pgTable(
     boxHeightCm: integer('box_height_cm'),
     boxWeightKg: numeric('box_weight_kg', { precision: 12, scale: 3 }),
     totalWeightKg: numeric('total_weight_kg', { precision: 12, scale: 3 }).notNull(),
+    /** Units inside the boxes (their Excel tracks this, e.g. 9600 pcs). */
+    piecesCount: integer('pieces_count'),
+    packagingType: text('packaging_type'),
     totalVolumeM3: numeric('total_volume_m3', { precision: 12, scale: 4 }).notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

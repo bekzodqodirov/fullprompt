@@ -207,7 +207,11 @@
     "confirm": "Подтвердить",
     "printLabels": "Печать этикеток",
     "openReceipt": "Открыть приёмку",
-    "newReceipt": "Новая приёмка"
+    "newReceipt": "Новая приёмка",
+    "unclaimedMarking": "Маркировка на коробках",
+    "unclaimedMarkingHint": "Код, написанный на грузе — потом прикрепим к клиенту",
+    "boxCountShort": "Кор.",
+    "pieces": "шт"
   },
   "receipts": {
     "title": "Приёмки",
@@ -229,7 +233,14 @@
     "unclaimed": "НЕОПОЗНАН",
     "empty": "Пока нет приёмок",
     "attachments": "Файлы",
-    "costs": "Расходы"
+    "costs": "Расходы",
+    "assignClient": "Прикрепить к клиенту",
+    "changeClient": "Сменить клиента",
+    "assignConfirm": "Прикрепить",
+    "labelsToPrint": "напечатать {n} нов. этикеток",
+    "labelsToDestroy": "уничтожить этикетки: {codes}",
+    "editWindowClosed": "Редактирование доступно только в день приёмки (дальше — заведующий/логист)",
+    "structuralLocked": "Коробки уже в движении — размеры/количество менять нельзя"
   },
   "stock": {
     "title": "Склад (остатки)",
@@ -246,7 +257,14 @@
       "issued": "Выдано",
       "lost": "Утеряно",
       "void": "Аннулировано"
-    }
+    },
+    "allWh": "Все склады",
+    "filterPlaceholder": "Код, маркировка, товар…",
+    "colCode": "Код",
+    "colProduct": "Товар",
+    "colPieces": "шт",
+    "colWh": "Склад",
+    "colDate": "Дата"
   },
   "search": {
     "placeholder": "Поиск: GS777, GS777-A, YW26-000123, товар…",

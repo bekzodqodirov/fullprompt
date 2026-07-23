@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test';
 import sharp from 'sharp';
 
 /**
- * M1 e2e: the W1 receiving flow on a phone viewport — operator enters a
- * receipt for GS777, uploads a photo, confirms, gets the next letter, and
- * the label PDF endpoint responds.
+ * M1 e2e (single-window layout): operator enters a receipt for GS777 on one
+ * screen, uploads a photo, confirms, gets a letter, and the label PDF
+ * endpoint responds.
  */
 
 const OPERATOR_PHONE = '+998900000006'; // YW operator (seeded)
@@ -21,21 +21,19 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('gsr-receipt-draft'));
   await page.reload();
 
-  // Step 0: client autocomplete gs777 → GS777
+  // Client autocomplete gs777 → GS777
   await page.locator('#clientQuery').fill('gs777');
   await page.getByRole('button', { name: /GS777/ }).click();
   await expect(page.getByText('GS777 —')).toBeVisible();
-  await page.getByRole('button', { name: /→/ }).click();
 
-  // Step 1: one uniform lot
-  await page.locator('input[placeholder="化妆品"]').fill('灯具');
-  const numberInputs = page.locator('input[inputmode="numeric"], input[inputmode="decimal"]');
-  await numberInputs.nth(0).fill('4'); // box count
-  await numberInputs.nth(1).fill('40'); // L
-  await numberInputs.nth(2).fill('30'); // W
-  await numberInputs.nth(3).fill('20'); // H
-  await numberInputs.nth(4).fill('8'); // kg
-  await expect(page.getByText('32 kg').first()).toBeVisible(); // live math 4×8
+  // One uniform product line
+  await page.getByTestId('lot-zh').fill('灯具');
+  await page.getByTestId('lot-count').fill('4');
+  await page.getByTestId('lot-L').fill('40');
+  await page.getByTestId('lot-W').fill('30');
+  await page.getByTestId('lot-H').fill('20');
+  await page.getByTestId('lot-kg').fill('8');
+  await expect(page.getByText('32kg').first()).toBeVisible(); // live math 4×8
 
   // Photo upload (min-1-photo rule)
   const photo = await sharp({
@@ -45,18 +43,15 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
     .toBuffer();
   await page
     .locator('input[type="file"]')
+    .first()
     .setInputFiles({ name: 'box.jpg', mimeType: 'image/jpeg', buffer: photo });
   await expect(page.locator('img[src*="/api/attachments/"]')).toBeVisible({ timeout: 10_000 });
 
-  await page.getByRole('button', { name: /→/ }).click(); // to costs
-  await page.getByRole('button', { name: /→/ }).click(); // to review
+  // Sticky footer totals + confirm
   await expect(page.getByText('Σ 4 📦')).toBeVisible();
+  await page.getByTestId('confirm-receipt').click();
 
-  await page.getByRole('button', { name: /✅/ }).click();
-
-  // Success screen: a letter was assigned (sequence position depends on
-  // earlier runs — exact-letter continuation is covered by unit/integration
-  // tests; here we assert the flow produced one).
+  // Success screen: a letter was assigned
   await expect(page.getByText(/YW-IN-\d{6}-\d{3}/)).toBeVisible({ timeout: 15_000 });
   await expect(
     page.locator('li', { hasText: '灯具' }).locator('span.font-mono').first(),
@@ -69,7 +64,46 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   expect(res.headers()['content-type']).toContain('application/pdf');
   expect((await res.body()).subarray(0, 4).toString()).toBe('%PDF');
 
-  // Receipt visible in the list; box searchable via combined form
+  // Combined client+letter search still resolves
   await page.goto('/search?q=gs777-a');
   await expect(page.getByText('化妆品')).toBeVisible();
+});
+
+test('unclaimed intake captures the box marking', async ({ page }) => {
+  await page.goto('/login');
+  await page.locator('input[name="identifier"]').fill(OPERATOR_PHONE);
+  await page.locator('input[name="password"]').fill(PASSWORD);
+  await page.locator('main form button[type="submit"]').first().click();
+  await expect(page).toHaveURL('/');
+
+  await page.goto('/receive');
+  await page.evaluate(() => localStorage.removeItem('gsr-receipt-draft'));
+  await page.reload();
+
+  // Unknown code → unclaimed with marking prefilled from the query
+  await page.locator('#clientQuery').fill('QQ9');
+  await page.waitForTimeout(600); // debounce; no hits expected
+  await page.locator('button', { hasText: '❓' }).click();
+  await expect(page.locator('#marking')).toHaveValue('QQ9');
+
+  await page.getByTestId('lot-zh').fill('杂货');
+  await page.getByTestId('lot-count').fill('2');
+  await page.getByTestId('lot-L').fill('30');
+  await page.getByTestId('lot-W').fill('30');
+  await page.getByTestId('lot-H').fill('30');
+  await page.getByTestId('lot-kg').fill('5');
+
+  const photo = await sharp({
+    create: { width: 200, height: 200, channels: 3, background: { r: 120, g: 120, b: 220 } },
+  })
+    .jpeg()
+    .toBuffer();
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({ name: 'u.jpg', mimeType: 'image/jpeg', buffer: photo });
+  await expect(page.locator('img[src*="/api/attachments/"]')).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId('confirm-receipt').click();
+  await expect(page.getByText(/YW-IN-\d{6}-\d{3}/)).toBeVisible({ timeout: 15_000 });
 });

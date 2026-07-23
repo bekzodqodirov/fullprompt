@@ -32,6 +32,8 @@ export const lotInputSchema = z
     boxWeightKg: z.number().min(0.001).max(10_000).optional(),
     totalWeightKg: z.number().min(0.001).max(1_000_000).optional(),
     totalVolumeM3: z.number().min(0.0001).max(10_000).optional(),
+    piecesCount: z.number().int().min(1).max(100_000_000).optional(),
+    packagingType: z.string().trim().max(100).optional().or(z.literal('')),
   })
   .refine(
     (lot) =>
@@ -53,6 +55,8 @@ export const confirmReceiptSchema = z.object({
   warehouseId: z.string().uuid(),
   clientId: z.string().uuid().nullable(), // null ⇒ unclaimed intake
   sourceNote: z.string().trim().max(500).optional().or(z.literal('')),
+  /** Marking written on unknown-code boxes; required path when clientId is null. */
+  unclaimedMarking: z.string().trim().max(50).optional().or(z.literal('')),
   lots: z.array(lotInputSchema).min(1).max(50),
   extraCosts: z.array(extraCostSchema).max(20).default([]),
 });
@@ -138,6 +142,7 @@ export async function confirmReceipt(
         clientId: input.clientId,
         status: 'confirmed',
         sourceNote: input.sourceNote || null,
+        unclaimedMarking: input.clientId ? null : input.unclaimedMarking || null,
         createdBy: ctx.actorId!,
         confirmedAt: new Date(),
         confirmedBy: ctx.actorId,
@@ -187,6 +192,8 @@ export async function confirmReceipt(
           boxWeightKg: lotInput.boxWeightKg?.toString() ?? null,
           totalWeightKg: totals.totalWeightKg.toString(),
           totalVolumeM3: totals.totalVolumeM3.toString(),
+          piecesCount: lotInput.piecesCount ?? null,
+          packagingType: lotInput.packagingType || null,
         })
         .returning();
 
@@ -275,6 +282,7 @@ export async function confirmReceipt(
         warehouseId: warehouse.id,
         warehouseCode: warehouse.code,
         clientId: input.clientId,
+        unclaimedMarking: input.clientId ? null : input.unclaimedMarking || null,
         lots: summaries,
       },
       entityType: 'receipt',

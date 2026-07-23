@@ -40,11 +40,13 @@ function parseForm(formData: FormData) {
   });
 }
 
-/** Client code must be `{prefix}{digits}` against the configured prefix (spec 5.2, §17). */
+/**
+ * Real-world markings are arbitrary short codes (444, GS277, A55 — owner's
+ * Kashgar stock file), so manual codes accept any 2–10 alphanumerics.
+ * Auto-generated codes still use the configured prefix.
+ */
 async function validateCodeFormat(code: string): Promise<boolean> {
-  const prefix = await getSetting('client_code_prefix');
-  const pattern = new RegExp(`^${prefix}\\d+$`);
-  return pattern.test(code);
+  return /^[A-Z0-9]{2,10}$/.test(code);
 }
 
 function toValues(data: z.infer<typeof clientSchema>) {

@@ -119,3 +119,11 @@ A cross-check of the draft plan against every spec section surfaced these additi
 36. **Seed letters mirror the owner's canonical example**: fixed UUIDv7-format ids make the M1 seed idempotent; GS777 → A/B/C and GS102 → D are created through the real `confirmReceipt` service, so seed data exercises the production code path.
 37. **Label CJK font**: Noto Sans SC subset-embedded via pdf-lib+fontkit (~50 KB per PDF). Verified with pdf.js (the Chrome/Android renderer family); poppler warns on the CFF subset but that does not affect RawBT/browser printing. Latin text uses built-in Helvetica (codes stay crisp at 203 dpi).
 38. **Telegram delivery model**: notification rows are per-(user, channel); the in-app bell row is written immediately, the Telegram row is sent by a pg-boss worker with retry/backoff — delivery failures stay visible on the row (admin view arrives in M6 polish).
+
+## M1.5 decisions (owner feedback round, 2026-07-23)
+
+39. **Client code format**: any 2–10 uppercase alphanumerics — the owner's real Kashgar stock file uses 444, 555, 111, GS277. `client_code_prefix` now only drives auto-generation. (Owner asked; answered from their own data.)
+40. **Multiple codes per person**: interim decision — each code remains its own client card (letters, stock, notifications per code); a person-level grouping arrives with CRM (Phase 2). Owner to confirm.
+41. **Unclaimed marking**: unknown-code cargo stores the marking written on the boxes (`receipts.unclaimed_marking`); labels print `MARKING-letter`; assignment to a client clears it and re-notifies the sales manager. This also enables "create the client from the marking later".
+42. **Single-window receiving** replaces the stepper (owner's request) — same data, same validation, one screen; draft autosave unchanged.
+43. **Edit-after-confirm proxy rule**: "manager-level" = holders of `receipts.void` (managers/logists/admins per §16); operators hold `receipts.edit` but are restricted to the same warehouse-local day as creator.

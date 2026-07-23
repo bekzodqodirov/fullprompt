@@ -51,9 +51,9 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
   await expect(page).toHaveURL('/admin/clients');
   await expect(page.getByText(`Test Client ${runId}`)).toBeVisible();
 
-  // Client code prefix validation rejects a malformed code
+  // Client code format validation rejects a malformed code (too short)
   await page.goto('/admin/clients/new');
-  await page.locator('input[name="clientCode"]').fill('XX123');
+  await page.locator('input[name="clientCode"]').fill('X');
   await page.locator('input[name="name"]').fill('Bad Code');
   await page.locator('main form button[type="submit"]').first().click();
   await expect(page.getByRole('alert')).toBeVisible();

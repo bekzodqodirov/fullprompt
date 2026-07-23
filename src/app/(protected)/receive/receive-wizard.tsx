@@ -1,10 +1,17 @@
 'use client';
 
 import imageCompression from 'browser-image-compression';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { v4 as uuidv4 } from 'uuid';
 import { computeLotTotals, densityBand } from '@/modules/wms/receipts/math';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
+
+/**
+ * Single-window receiving (owner's request): client on top, product LINES in
+ * the middle (Excel-style rows), costs collapsed, sticky totals + one
+ * Confirm button. Draft autosaves to localStorage after every change.
+ */
 
 interface WarehouseOption {
   id: string;
@@ -28,7 +35,6 @@ interface LotDraft {
   id: string;
   zh: string;
   ru: string;
-  ruSource: string;
   boxCount: string;
   dimsMode: 'uniform' | 'mixed';
   lengthCm: string;
@@ -37,6 +43,7 @@ interface LotDraft {
   boxWeightKg: string;
   totalWeightKg: string;
   totalVolumeM3: string;
+  piecesCount: string;
   photoIds: string[];
 }
 
@@ -53,10 +60,10 @@ interface Draft {
   clientId: string | null;
   clientLabel: string;
   unclaimed: boolean;
+  unclaimedMarking: string;
   sourceNote: string;
   lots: LotDraft[];
   costs: CostDraft[];
-  step: number;
 }
 
 const DENSITY_COLORS: Record<string, string> = {
@@ -70,10 +77,9 @@ const DRAFT_KEY = 'gsr-receipt-draft';
 
 function newLot(): LotDraft {
   return {
-    id: crypto.randomUUID(),
+    id: uuidv4(),
     zh: '',
     ru: '',
-    ruSource: '',
     boxCount: '',
     dimsMode: 'uniform',
     lengthCm: '',
@@ -82,21 +88,22 @@ function newLot(): LotDraft {
     boxWeightKg: '',
     totalWeightKg: '',
     totalVolumeM3: '',
+    piecesCount: '',
     photoIds: [],
   };
 }
 
 function newDraft(warehouseId: string): Draft {
   return {
-    receiptId: crypto.randomUUID(),
+    receiptId: uuidv4(),
     warehouseId,
     clientId: null,
     clientLabel: '',
     unclaimed: false,
+    unclaimedMarking: '',
     sourceNote: '',
     lots: [newLot()],
     costs: [],
-    step: 0,
   };
 }
 
@@ -143,18 +150,19 @@ export function ReceiveWizard({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmitReceiptResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const uploadBusy = useRef(0);
+  const [uploading, setUploading] = useState(false);
 
-  // --- Draft autosave: survives app kill / connection loss (spec 6.1).
-  // localStorage is only readable on the client, hence the mount effect;
-  // the single hydrating setState here is intentional.
+  // Draft restore — localStorage is client-only, hence the mount effect.
   useEffect(() => {
     const saved = localStorage.getItem(DRAFT_KEY);
     if (saved) {
       try {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setDraft(JSON.parse(saved) as Draft);
-        return;
+        const parsed = JSON.parse(saved) as Draft;
+        if (parsed.receiptId && Array.isArray(parsed.lots)) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setDraft(parsed);
+          return;
+        }
       } catch {
         /* corrupt draft — start fresh */
       }
@@ -177,7 +185,7 @@ export function ReceiveWizard({
     );
   }, []);
 
-  // --- Client autocomplete ---
+  // Client autocomplete
   useEffect(() => {
     if (!clientQuery.trim()) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -191,7 +199,7 @@ export function ReceiveWizard({
     return () => clearTimeout(timer);
   }, [clientQuery]);
 
-  // --- Letter preview ---
+  // Letter preview
   useEffect(() => {
     if (!draft?.warehouseId || draft.lots.length === 0) return;
     const timer = setTimeout(async () => {
@@ -212,14 +220,15 @@ export function ReceiveWizard({
     if (!lot.zh.trim() || lot.ru) return;
     const res = await fetch(`/api/translate?zh=${encodeURIComponent(lot.zh)}`);
     if (res.ok) {
-      const hit = (await res.json()) as { ru: string | null; source: string };
-      if (hit.ru) updateLot(lot.id, { ru: hit.ru, ruSource: hit.source });
+      const hit = (await res.json()) as { ru: string | null };
+      if (hit.ru) updateLot(lot.id, { ru: hit.ru });
     }
   }
 
   async function addPhotos(lot: LotDraft, files: FileList | null) {
     if (!files?.length) return;
-    uploadBusy.current += 1;
+    setUploading(true);
+    setError(null);
     try {
       for (const file of Array.from(files)) {
         const compressed = await imageCompression(file, {
@@ -228,7 +237,12 @@ export function ReceiveWizard({
           useWebWorker: true,
         });
         const formData = new FormData();
-        formData.set('file', new File([compressed], file.name, { type: compressed.type }));
+        formData.set(
+          'file',
+          new File([compressed], file.name || 'photo.jpg', {
+            type: compressed.type || 'image/jpeg',
+          }),
+        );
         formData.set('entityType', 'receipt_lot');
         formData.set('entityId', lot.id);
         const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
@@ -248,18 +262,20 @@ export function ReceiveWizard({
           setError(t('photoUploadFailed'));
         }
       }
+    } catch {
+      setError(t('photoUploadFailed'));
     } finally {
-      uploadBusy.current -= 1;
+      setUploading(false);
     }
   }
 
   function lotsValid(): boolean {
-    return draft!.lots.every((lot) => {
-      if (!lot.zh.trim() || !Number(lot.boxCount)) return false;
-      if (lot.photoIds.length === 0) return false;
-      return lotTotals(lot) !== null;
-    });
+    return draft!.lots.every(
+      (lot) => lot.zh.trim() && Number(lot.boxCount) && lot.photoIds.length > 0 && lotTotals(lot),
+    );
   }
+
+  const clientChosen = draft.clientId !== null || (draft.unclaimed && draft.unclaimedMarking.trim());
 
   async function confirm() {
     setSubmitting(true);
@@ -270,12 +286,14 @@ export function ReceiveWizard({
         warehouseId: draft!.warehouseId,
         clientId: draft!.unclaimed ? null : draft!.clientId,
         sourceNote: draft!.sourceNote,
+        unclaimedMarking: draft!.unclaimedMarking,
         lots: draft!.lots.map((lot) => ({
           id: lot.id,
           productNameZh: lot.zh.trim(),
           productNameRu: lot.ru.trim(),
           boxCount: Number(lot.boxCount),
           dimsMode: lot.dimsMode,
+          ...(lot.piecesCount ? { piecesCount: Number(lot.piecesCount) } : {}),
           ...(lot.dimsMode === 'uniform'
             ? {
                 boxLengthCm: Number(lot.lengthCm),
@@ -309,7 +327,6 @@ export function ReceiveWizard({
     }
   }
 
-  // --- Success screen: letters + print ---
   if (result) {
     return (
       <div className="card space-y-4 text-center">
@@ -348,313 +365,307 @@ export function ReceiveWizard({
     );
   }
 
-  const steps = [t('stepClient'), t('stepLots'), t('stepCosts'), t('stepReview')];
+  const allTotals = draft.lots.map(lotTotals);
+  const sumBoxes = draft.lots.reduce((acc, lot) => acc + (Number(lot.boxCount) || 0), 0);
+  const sumKg = allTotals.reduce((acc, totals) => acc + (totals?.totalWeightKg ?? 0), 0);
+  const sumM3 = allTotals.reduce((acc, totals) => acc + (totals?.totalVolumeM3 ?? 0), 0);
 
   return (
-    <div className="space-y-4 pb-24">
-      {/* Step indicator */}
-      <ol className="flex gap-1 text-xs font-semibold">
-        {steps.map((label, i) => (
-          <li
-            key={label}
-            className={`flex-1 rounded-md px-1 py-1.5 text-center ${
-              i === draft.step
-                ? 'bg-blue-700 text-white'
-                : i < draft.step
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'bg-gray-100 text-gray-500'
-            }`}
+    <div className="space-y-3 pb-28">
+      {/* --- Client --- */}
+      <div className="card space-y-3 !p-3">
+        <div className="flex gap-2">
+          <select
+            aria-label={t('warehouse')}
+            className="input !w-28"
+            value={draft.warehouseId}
+            onChange={(e) => update({ warehouseId: e.target.value })}
           >
-            {label}
-          </li>
-        ))}
-      </ol>
-
-      {/* STEP 0 — Warehouse + client */}
-      {draft.step === 0 && (
-        <div className="card space-y-4">
-          <div>
-            <label className="label" htmlFor="warehouse">
-              {t('warehouse')}
-            </label>
-            <select
-              id="warehouse"
-              className="input"
-              value={draft.warehouseId}
-              onChange={(e) => update({ warehouseId: e.target.value })}
-            >
-              {warehouses.map((wh) => (
-                <option key={wh.id} value={wh.id}>
-                  {wh.code} — {wh.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label" htmlFor="clientQuery">
-              {t('clientCode')}
-            </label>
+            {warehouses.map((wh) => (
+              <option key={wh.id} value={wh.id}>
+                {wh.code}
+              </option>
+            ))}
+          </select>
+          <div className="flex-1">
             {draft.clientId ? (
-              <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3">
-                <span className="font-mono text-lg font-extrabold text-green-800">
-                  {draft.clientLabel}
-                </span>
+              <div className="flex min-h-12 items-center gap-2 rounded-lg bg-green-50 px-3">
+                <span className="font-mono font-extrabold text-green-800">{draft.clientLabel}</span>
                 <button
                   type="button"
-                  className="btn-secondary !min-h-9 ml-auto px-2 text-sm"
+                  aria-label={tc('cancel')}
+                  className="ml-auto text-lg"
                   onClick={() => update({ clientId: null, clientLabel: '' })}
                 >
                   ✕
                 </button>
               </div>
             ) : (
-              <>
-                <input
-                  id="clientQuery"
-                  className="input font-mono uppercase"
-                  value={clientQuery}
-                  onChange={(e) => {
-                    setClientQuery(e.target.value);
-                    update({ unclaimed: false });
-                  }}
-                  placeholder="GS777"
-                  autoComplete="off"
-                />
-                {clientHits.length > 0 && (
-                  <ul className="mt-1 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
-                    {clientHits.map((hit) => (
-                      <li key={hit.id}>
-                        <button
-                          type="button"
-                          className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-gray-50"
-                          onClick={() => {
-                            update({
-                              clientId: hit.id,
-                              clientLabel: `${hit.clientCode} — ${hit.name}`,
-                              unclaimed: false,
-                            });
-                            setClientHits([]);
-                            setClientQuery('');
-                          }}
-                        >
-                          <span className="font-mono font-extrabold text-blue-800">
-                            {hit.clientCode}
-                          </span>
-                          <span>{hit.name}</span>
-                          {hit.managerName && (
-                            <span className="ml-auto text-xs text-gray-500">{hit.managerName}</span>
-                          )}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {clientQuery.trim() && clientHits.length === 0 && (
-                  <button
-                    type="button"
-                    className={`mt-2 w-full rounded-lg border-2 border-dashed p-3 text-sm font-semibold ${
-                      draft.unclaimed
-                        ? 'border-orange-500 bg-orange-50 text-orange-800'
-                        : 'border-gray-300 text-gray-600'
-                    }`}
-                    onClick={() => update({ unclaimed: !draft.unclaimed })}
-                  >
-                    ❓ {t('acceptUnclaimed')}
-                  </button>
-                )}
-              </>
+              <input
+                id="clientQuery"
+                className="input font-mono uppercase"
+                value={clientQuery}
+                onChange={(e) => {
+                  setClientQuery(e.target.value);
+                  if (draft.unclaimed) update({ unclaimed: false });
+                }}
+                placeholder={t('clientCode')}
+                autoComplete="off"
+              />
             )}
-          </div>
-          <div>
-            <label className="label" htmlFor="sourceNote">
-              {t('sourceNote')}
-            </label>
-            <input
-              id="sourceNote"
-              className="input"
-              value={draft.sourceNote}
-              onChange={(e) => update({ sourceNote: e.target.value })}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* STEP 1 — Lots */}
-      {draft.step === 1 && (
-        <div className="space-y-3">
-          {letterPreview.length > 0 && (
-            <p className="text-sm text-gray-600">
-              {t('letterPreview')}: ≈{' '}
-              <span className="font-mono font-bold">{letterPreview.join(', ')}</span>
-            </p>
-          )}
-          {draft.lots.map((lot, i) => {
-            const totals = lotTotals(lot);
-            const band = totals ? densityBand(totals.densityKgM3, THRESHOLDS) : null;
-            return (
-              <div key={lot.id} className="card space-y-3">
-                <div className="flex items-center">
-                  <span className="font-mono text-lg font-extrabold text-blue-800">
-                    {letterPreview[i] ? `≈ ${letterPreview[i]}` : `#${i + 1}`}
-                  </span>
-                  {draft.lots.length > 1 && (
+            {clientHits.length > 0 && !draft.clientId && (
+              <ul className="mt-1 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+                {clientHits.map((hit) => (
+                  <li key={hit.id}>
                     <button
                       type="button"
-                      className="btn-secondary !min-h-9 ml-auto px-2 text-sm"
-                      onClick={() =>
-                        update({ lots: draft.lots.filter((l) => l.id !== lot.id) })
-                      }
+                      className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-gray-50"
+                      onClick={() => {
+                        update({
+                          clientId: hit.id,
+                          clientLabel: `${hit.clientCode} — ${hit.name}`,
+                          unclaimed: false,
+                        });
+                        setClientHits([]);
+                        setClientQuery('');
+                      }}
                     >
-                      🗑
+                      <span className="font-mono font-extrabold text-blue-800">{hit.clientCode}</span>
+                      <span className="truncate">{hit.name}</span>
+                      {hit.managerName && (
+                        <span className="ml-auto whitespace-nowrap text-xs text-gray-500">
+                          {hit.managerName}
+                        </span>
+                      )}
                     </button>
-                  )}
-                </div>
-                <div>
-                  <label className="label">{t('productZh')}</label>
-                  <input
-                    className="input"
-                    value={lot.zh}
-                    onChange={(e) => updateLot(lot.id, { zh: e.target.value, ru: '', ruSource: '' })}
-                    onBlur={() => translateLot(lot)}
-                    placeholder="化妆品"
-                  />
-                  <input
-                    className="input mt-1"
-                    value={lot.ru}
-                    onChange={(e) => updateLot(lot.id, { ru: e.target.value, ruSource: 'manual' })}
-                    placeholder={t('productRu')}
-                  />
-                </div>
-                <div>
-                  <label className="label">{t('boxCount')}</label>
-                  <input
-                    className="input"
-                    inputMode="numeric"
-                    value={lot.boxCount}
-                    onChange={(e) => updateLot(lot.id, { boxCount: e.target.value })}
-                  />
-                </div>
-                <div className="flex gap-2 text-sm font-semibold">
-                  <button
-                    type="button"
-                    className={`flex-1 rounded-lg p-2 ${lot.dimsMode === 'uniform' ? 'bg-blue-700 text-white' : 'bg-gray-100'}`}
-                    onClick={() => updateLot(lot.id, { dimsMode: 'uniform' })}
-                  >
-                    {t('uniform')}
-                  </button>
-                  <button
-                    type="button"
-                    className={`flex-1 rounded-lg p-2 ${lot.dimsMode === 'mixed' ? 'bg-blue-700 text-white' : 'bg-gray-100'}`}
-                    onClick={() => updateLot(lot.id, { dimsMode: 'mixed' })}
-                  >
-                    {t('mixed')}
-                  </button>
-                </div>
-                {lot.dimsMode === 'uniform' ? (
-                  <div className="grid grid-cols-4 gap-2">
-                    {(
-                      [
-                        ['lengthCm', 'L'],
-                        ['widthCm', 'W'],
-                        ['heightCm', 'H'],
-                        ['boxWeightKg', 'kg'],
-                      ] as const
-                    ).map(([field, label]) => (
-                      <div key={field}>
-                        <label className="label text-xs">{label}</label>
-                        <input
-                          className="input !px-2"
-                          inputMode="decimal"
-                          value={lot[field]}
-                          onChange={(e) => updateLot(lot.id, { [field]: e.target.value })}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="label text-xs">{t('totalKg')}</label>
-                      <input
-                        className="input"
-                        inputMode="decimal"
-                        value={lot.totalWeightKg}
-                        onChange={(e) => updateLot(lot.id, { totalWeightKg: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="label text-xs">{t('totalM3')}</label>
-                      <input
-                        className="input"
-                        inputMode="decimal"
-                        value={lot.totalVolumeM3}
-                        onChange={(e) => updateLot(lot.id, { totalVolumeM3: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                )}
-                {totals && (
-                  <p className="flex flex-wrap items-center gap-2 text-sm">
-                    <span>{totals.totalWeightKg} kg</span>
-                    <span>{totals.totalVolumeM3} m³</span>
-                    {band && totals.densityKgM3 !== null && (
-                      <span className={`rounded px-2 py-0.5 font-semibold ${DENSITY_COLORS[band]}`}>
-                        {Math.round(totals.densityKgM3)} kg/m³
-                      </span>
-                    )}
-                    <span className="text-gray-500">
-                      {t('chargeable')}: {totals.chargeableKg} kg
-                    </span>
-                  </p>
-                )}
-                <div>
-                  <label className="label">
-                    {t('photos')} ({lot.photoIds.length})
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <label className="btn-secondary cursor-pointer">
-                      📷 {t('addPhoto')}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        multiple
-                        className="hidden"
-                        onChange={(e) => addPhotos(lot, e.target.files)}
-                      />
-                    </label>
-                    {lot.photoIds.map((photoId) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={photoId}
-                        src={`/api/attachments/${photoId}?variant=thumb200`}
-                        alt=""
-                        className="h-12 w-12 rounded object-cover"
-                      />
-                    ))}
-                  </div>
-                  {lot.photoIds.length === 0 && (
-                    <p className="mt-1 text-xs font-semibold text-orange-600">{t('photoRequired')}</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        {!draft.clientId && clientQuery.trim() && clientHits.length === 0 && (
           <button
             type="button"
-            className="btn-secondary w-full"
-            onClick={() => update({ lots: [...draft.lots, newLot()] })}
+            className={`w-full rounded-lg border-2 border-dashed p-3 text-sm font-semibold ${
+              draft.unclaimed
+                ? 'border-orange-500 bg-orange-50 text-orange-800'
+                : 'border-gray-300 text-gray-600'
+            }`}
+            onClick={() =>
+              update({ unclaimed: !draft.unclaimed, unclaimedMarking: clientQuery.toUpperCase() })
+            }
           >
-            ＋ {t('addLot')}
+            ❓ {t('acceptUnclaimed')}
           </button>
-        </div>
-      )}
+        )}
+        {draft.unclaimed && (
+          <div>
+            <label className="label" htmlFor="marking">
+              {t('unclaimedMarking')}
+            </label>
+            <input
+              id="marking"
+              className="input font-mono uppercase"
+              value={draft.unclaimedMarking}
+              onChange={(e) => update({ unclaimedMarking: e.target.value.toUpperCase() })}
+              placeholder="444"
+            />
+            <p className="mt-1 text-xs text-gray-500">{t('unclaimedMarkingHint')}</p>
+          </div>
+        )}
+        <input
+          aria-label={t('sourceNote')}
+          className="input"
+          value={draft.sourceNote}
+          onChange={(e) => update({ sourceNote: e.target.value })}
+          placeholder={t('sourceNote')}
+        />
+      </div>
 
-      {/* STEP 2 — Extra costs */}
-      {draft.step === 2 && (
-        <div className="space-y-3">
+      {/* --- Product lines (Excel-style) --- */}
+      {draft.lots.map((lot, i) => {
+        const totals = lotTotals(lot);
+        const band = totals ? densityBand(totals.densityKgM3, THRESHOLDS) : null;
+        return (
+          <div key={lot.id} className="card space-y-2 !p-3">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-lg font-extrabold text-blue-800">
+                {letterPreview[i] ? `≈${letterPreview[i]}` : `#${i + 1}`}
+              </span>
+              <input
+                aria-label={t('productZh')}
+                data-testid="lot-zh"
+                className="input flex-1"
+                value={lot.zh}
+                onChange={(e) => updateLot(lot.id, { zh: e.target.value, ru: '' })}
+                onBlur={() => translateLot(lot)}
+                placeholder={t('productZh')}
+              />
+              {draft.lots.length > 1 && (
+                <button
+                  type="button"
+                  aria-label={tc('delete')}
+                  className="text-lg"
+                  onClick={() => update({ lots: draft.lots.filter((l) => l.id !== lot.id) })}
+                >
+                  🗑
+                </button>
+              )}
+            </div>
+            <input
+              aria-label={t('productRu')}
+              className="input"
+              value={lot.ru}
+              onChange={(e) => updateLot(lot.id, { ru: e.target.value })}
+              placeholder={t('productRu')}
+            />
+
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-14 font-semibold">{t('boxCountShort')}</span>
+              <input
+                aria-label={t('boxCount')}
+                data-testid="lot-count"
+                className="input !min-h-10 flex-1 !px-2"
+                inputMode="numeric"
+                value={lot.boxCount}
+                onChange={(e) => updateLot(lot.id, { boxCount: e.target.value })}
+              />
+              <span className="w-12 font-semibold">{t('pieces')}</span>
+              <input
+                aria-label={t('pieces')}
+                className="input !min-h-10 flex-1 !px-2"
+                inputMode="numeric"
+                value={lot.piecesCount}
+                onChange={(e) => updateLot(lot.id, { piecesCount: e.target.value })}
+              />
+              <button
+                type="button"
+                className="rounded-lg bg-gray-100 px-2 py-1.5 text-xs font-semibold"
+                onClick={() =>
+                  updateLot(lot.id, { dimsMode: lot.dimsMode === 'uniform' ? 'mixed' : 'uniform' })
+                }
+              >
+                {lot.dimsMode === 'uniform' ? t('uniform') : t('mixed')} ⇄
+              </button>
+            </div>
+
+            {lot.dimsMode === 'uniform' ? (
+              <div className="flex items-center gap-1.5">
+                {(
+                  [
+                    ['lengthCm', 'L'],
+                    ['widthCm', 'W'],
+                    ['heightCm', 'H'],
+                  ] as const
+                ).map(([field, label]) => (
+                  <input
+                    key={field}
+                    data-testid={'lot-' + label}
+                    aria-label={label}
+                    className="input !min-h-10 w-0 flex-1 !px-2 text-center"
+                    inputMode="decimal"
+                    value={lot[field]}
+                    onChange={(e) => updateLot(lot.id, { [field]: e.target.value })}
+                    placeholder={label}
+                  />
+                ))}
+                <span className="text-xs text-gray-500">cm</span>
+                <input
+                  aria-label="kg"
+                  data-testid="lot-kg"
+                  className="input !min-h-10 w-0 flex-1 !px-2 text-center"
+                  inputMode="decimal"
+                  value={lot.boxWeightKg}
+                  onChange={(e) => updateLot(lot.id, { boxWeightKg: e.target.value })}
+                  placeholder="kg"
+                />
+                <span className="text-xs text-gray-500">kg/📦</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <input
+                  aria-label={t('totalKg')}
+                  className="input !min-h-10 w-0 flex-1 !px-2 text-center"
+                  inputMode="decimal"
+                  value={lot.totalWeightKg}
+                  onChange={(e) => updateLot(lot.id, { totalWeightKg: e.target.value })}
+                  placeholder={t('totalKg')}
+                />
+                <input
+                  aria-label={t('totalM3')}
+                  className="input !min-h-10 w-0 flex-1 !px-2 text-center"
+                  inputMode="decimal"
+                  value={lot.totalVolumeM3}
+                  onChange={(e) => updateLot(lot.id, { totalVolumeM3: e.target.value })}
+                  placeholder={t('totalM3')}
+                />
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <label className="btn-secondary !min-h-10 cursor-pointer px-3 text-sm">
+                📷
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => addPhotos(lot, e.target.files)}
+                />
+              </label>
+              {lot.photoIds.map((photoId) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={photoId}
+                  src={`/api/attachments/${photoId}?variant=thumb200`}
+                  alt=""
+                  className="h-10 w-10 rounded object-cover"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    if (!img.dataset.retried) {
+                      img.dataset.retried = '1';
+                      img.src = `/api/attachments/${photoId}?variant=original`;
+                    }
+                  }}
+                />
+              ))}
+              {lot.photoIds.length === 0 && (
+                <span className="text-xs font-semibold text-orange-600">{t('photoRequired')}</span>
+              )}
+              {totals && (
+                <span className="ml-auto flex items-center gap-1.5 whitespace-nowrap text-xs">
+                  <b>{totals.totalWeightKg}kg</b>
+                  <b>{totals.totalVolumeM3}m³</b>
+                  {band && totals.densityKgM3 !== null && (
+                    <span className={`rounded px-1.5 py-0.5 font-semibold ${DENSITY_COLORS[band]}`}>
+                      {Math.round(totals.densityKgM3)}
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      <button
+        type="button"
+        className="btn-secondary w-full"
+        onClick={() => update({ lots: [...draft.lots, newLot()] })}
+      >
+        ＋ {t('addLot')}
+      </button>
+
+      {/* --- Costs (collapsed) --- */}
+      <details className="card !p-3">
+        <summary className="cursor-pointer font-semibold">
+          💰 {t('stepCosts')} {draft.costs.length > 0 && `(${draft.costs.length})`}
+        </summary>
+        <div className="mt-3 space-y-3">
           {draft.costs.map((cost, i) => (
-            <div key={i} className="card grid grid-cols-2 gap-2">
+            <div key={i} className="grid grid-cols-2 gap-2">
               <select
                 aria-label={t('costType')}
                 className="input col-span-2"
@@ -725,49 +736,8 @@ export function ReceiveWizard({
           >
             ＋ {t('addCost')}
           </button>
-          {draft.costs.length === 0 && (
-            <p className="text-center text-sm text-gray-500">{t('costsOptional')}</p>
-          )}
         </div>
-      )}
-
-      {/* STEP 3 — Review */}
-      {draft.step === 3 && (
-        <div className="card space-y-3">
-          <p className="font-semibold">
-            {warehouse?.code} →{' '}
-            {draft.unclaimed ? `❓ ${t('unclaimedBadge')}` : draft.clientLabel || '—'}
-          </p>
-          {draft.lots.map((lot, i) => {
-            const totals = lotTotals(lot);
-            return (
-              <div key={lot.id} className="border-t border-gray-100 pt-2 text-sm">
-                <span className="font-mono font-bold text-blue-800">
-                  {letterPreview[i] ? `≈${letterPreview[i]}` : `#${i + 1}`}
-                </span>{' '}
-                {lot.zh} {lot.ru && `(${lot.ru})`} — {lot.boxCount} 📦
-                {totals && `, ${totals.totalWeightKg} kg, ${totals.totalVolumeM3} m³`}
-                {lot.photoIds.length === 0 && (
-                  <span className="ml-2 font-semibold text-red-600">⚠ {t('photoRequired')}</span>
-                )}
-              </div>
-            );
-          })}
-          {(() => {
-            const all = draft.lots.map(lotTotals);
-            if (all.some((totals) => !totals)) return null;
-            const sumKg = all.reduce((acc, totals) => acc + totals!.totalWeightKg, 0);
-            const sumM3 = all.reduce((acc, totals) => acc + totals!.totalVolumeM3, 0);
-            const sumBoxes = draft.lots.reduce((acc, lot) => acc + Number(lot.boxCount), 0);
-            return (
-              <p className="border-t border-gray-200 pt-2 font-bold">
-                Σ {sumBoxes} 📦 · {Math.round(sumKg * 1000) / 1000} kg ·{' '}
-                {Math.round(sumM3 * 10000) / 10000} m³
-              </p>
-            );
-          })()}
-        </div>
-      )}
+      </details>
 
       {error && (
         <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
@@ -775,39 +745,26 @@ export function ReceiveWizard({
         </p>
       )}
 
-      {/* Sticky nav buttons */}
-      <div className="fixed inset-x-0 bottom-0 mx-auto flex max-w-lg gap-2 border-t border-gray-200 bg-white p-3">
-        {draft.step > 0 && (
+      {/* --- Sticky totals + confirm --- */}
+      <div className="fixed inset-x-0 bottom-0 border-t border-gray-200 bg-white">
+        <div className="mx-auto flex max-w-lg items-center gap-3 p-3">
+          <div className="text-sm font-bold leading-tight">
+            Σ {sumBoxes} 📦
+            <br />
+            <span className="font-normal text-gray-600">
+              {Math.round(sumKg * 1000) / 1000} kg · {Math.round(sumM3 * 10000) / 10000} m³
+            </span>
+          </div>
           <button
             type="button"
-            className="btn-secondary flex-1"
-            onClick={() => update({ step: draft.step - 1 })}
-          >
-            ← {tc('back')}
-          </button>
-        )}
-        {draft.step < 3 ? (
-          <button
-            type="button"
+            data-testid="confirm-receipt"
             className="btn-primary flex-1 disabled:opacity-50"
-            disabled={
-              (draft.step === 0 && !draft.clientId && !draft.unclaimed) ||
-              (draft.step === 1 && !lotsValid())
-            }
-            onClick={() => update({ step: draft.step + 1 })}
-          >
-            {t('next')} →
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn-primary flex-1 disabled:opacity-50"
-            disabled={submitting || !lotsValid()}
+            disabled={submitting || uploading || !clientChosen || !lotsValid()}
             onClick={confirm}
           >
             {submitting ? tc('loading') : `✅ ${t('confirm')}`}
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

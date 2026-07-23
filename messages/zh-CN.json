@@ -207,7 +207,11 @@
     "confirm": "确认",
     "printLabels": "打印标签",
     "openReceipt": "打开收货单",
-    "newReceipt": "新收货"
+    "newReceipt": "新收货",
+    "unclaimedMarking": "箱上标记",
+    "unclaimedMarkingHint": "货物上写的代码——之后绑定客户",
+    "boxCountShort": "箱",
+    "pieces": "件"
   },
   "receipts": {
     "title": "收货单",
@@ -229,7 +233,14 @@
     "unclaimed": "无主",
     "empty": "暂无收货单",
     "attachments": "文件",
-    "costs": "费用"
+    "costs": "费用",
+    "assignClient": "绑定客户",
+    "changeClient": "更换客户",
+    "assignConfirm": "绑定",
+    "labelsToPrint": "需打印{n}张新标签",
+    "labelsToDestroy": "需销毁标签：{codes}",
+    "editWindowClosed": "仅收货当天可编辑（之后由主管/物流经理）",
+    "structuralLocked": "箱子已在流转中——尺寸/数量不可更改"
   },
   "stock": {
     "title": "库存",
@@ -246,7 +257,14 @@
       "issued": "已交付",
       "lost": "丢失",
       "void": "作废"
-    }
+    },
+    "allWh": "全部仓库",
+    "filterPlaceholder": "代码、标记、货物…",
+    "colCode": "代码",
+    "colProduct": "货物",
+    "colPieces": "件数",
+    "colWh": "仓库",
+    "colDate": "日期"
   },
   "search": {
     "placeholder": "搜索：GS777、GS777-A、YW26-000123、货物…",

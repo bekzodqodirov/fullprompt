@@ -207,7 +207,11 @@
     "confirm": "Tasdiqlash",
     "printLabels": "Stiker chiqarish",
     "openReceipt": "Qabulni ochish",
-    "newReceipt": "Yangi qabul"
+    "newReceipt": "Yangi qabul",
+    "unclaimedMarking": "Karobkadagi markirovka",
+    "unclaimedMarkingHint": "Yuk ustida yozilgan kod — keyin mijozga biriktiramiz",
+    "boxCountShort": "Kar.",
+    "pieces": "dona"
   },
   "receipts": {
     "title": "Qabullar",
@@ -229,7 +233,14 @@
     "unclaimed": "ANIQLANMAGAN",
     "empty": "Hozircha qabullar yo‘q",
     "attachments": "Fayllar",
-    "costs": "Xarajatlar"
+    "costs": "Xarajatlar",
+    "assignClient": "Mijozga biriktirish",
+    "changeClient": "Mijozni o'zgartirish",
+    "assignConfirm": "Biriktirish",
+    "labelsToPrint": "{n} ta yangi stiker chiqaring",
+    "labelsToDestroy": "stikerlarni yo'q qiling: {codes}",
+    "editWindowClosed": "Tahrirlash faqat qabul kunida (keyin — mudir/logist)",
+    "structuralLocked": "Karobkalar harakatda — o'lcham/sonini o'zgartirib bo'lmaydi"
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -246,7 +257,14 @@
       "issued": "Topshirilgan",
       "lost": "Yo'qolgan",
       "void": "Bekor qilingan"
-    }
+    },
+    "allWh": "Barcha skladlar",
+    "filterPlaceholder": "Kod, markirovka, tovar…",
+    "colCode": "Kod",
+    "colProduct": "Tovar",
+    "colPieces": "dona",
+    "colWh": "Sklad",
+    "colDate": "Sana"
   },
   "search": {
     "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",

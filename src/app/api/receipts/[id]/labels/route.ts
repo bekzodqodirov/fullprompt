@@ -88,7 +88,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       warehouseCode: warehouse.code,
       dateLocal,
       receiptNumber: receipt.number ?? '',
-      clientCodeWithLetter: client ? `${client.clientCode}-${lot.letter}` : `#UNKNOWN`,
+      clientCodeWithLetter: client
+        ? `${client.clientCode}-${lot.letter}`
+        : receipt.unclaimedMarking
+          ? `${receipt.unclaimedMarking}-${lot.letter}`
+          : '#UNKNOWN',
       unclaimed: !client,
       productZh: lot.productNameZh,
       productRu: lot.productNameRu,

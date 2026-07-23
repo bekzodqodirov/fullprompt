@@ -92,6 +92,7 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
     case 'UnknownCargoReceived':
       return (
         `❓ Неопознанный груз ${payload.number}\n` +
+        (payload.unclaimedMarking ? `Маркировка: ${payload.unclaimedMarking}\n` : '') +
         `Склад: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
     default:

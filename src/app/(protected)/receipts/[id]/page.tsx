@@ -15,6 +15,8 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { HistoryTab } from '@/components/history-tab';
 import { PhotoGallery } from '@/components/photo-gallery';
 import { voidReceiptAction } from './actions';
+import { AssignClient } from './assign-client';
+import { LotEditForm } from './lot-edit-form';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -60,6 +62,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
   const canVoid = actor.permissions.has('receipts.void') && receipt.status === 'confirmed';
   const canPrint = actor.permissions.has('receipts.create');
+  const canEdit = actor.permissions.has('receipts.edit') && receipt.status === 'confirmed';
+  const canAssign = actor.permissions.has('receipts.unclaimed.resolve') && receipt.status === 'confirmed';
 
   return (
     <div className="space-y-6">
@@ -93,7 +97,14 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               {client.clientCode} — {client.name}
             </span>
           ) : (
-            <span className="font-bold text-orange-600">❓ {t('unclaimed')}</span>
+            <span className="font-bold text-orange-600">
+              ❓ {t('unclaimed')}
+              {receipt.unclaimedMarking && (
+                <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 font-mono">
+                  {receipt.unclaimedMarking}
+                </span>
+              )}
+            </span>
           )}
         </p>
         <p>
@@ -134,13 +145,36 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               {lot.boxCount} 📦 · {lot.totalWeightKg} kg · {lot.totalVolumeM3} m³
               {lot.dimsMode === 'uniform' &&
                 ` · ${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm} cm`}
+              {lot.piecesCount && ` · ${lot.piecesCount} pcs`}
             </p>
             <div className="mt-2">
               <PhotoGallery photos={photosByLot.get(lot.id) ?? []} />
             </div>
+            {canEdit && (
+              <div className="mt-2">
+                <LotEditForm
+                  lot={{
+                    lotId: lot.id,
+                    dimsMode: lot.dimsMode,
+                    productNameZh: lot.productNameZh,
+                    productNameRu: lot.productNameRu ?? '',
+                    boxCount: lot.boxCount,
+                    boxLengthCm: lot.boxLengthCm,
+                    boxWidthCm: lot.boxWidthCm,
+                    boxHeightCm: lot.boxHeightCm,
+                    boxWeightKg: lot.boxWeightKg,
+                    totalWeightKg: lot.totalWeightKg,
+                    totalVolumeM3: lot.totalVolumeM3,
+                    piecesCount: lot.piecesCount,
+                  }}
+                />
+              </div>
+            )}
           </div>
         ))}
       </section>
+
+      {canAssign && <AssignClient receiptId={id} current={client?.clientCode ?? null} />}
 
       {costs.length > 0 && (
         <section>
