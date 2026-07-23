@@ -1,6 +1,5 @@
 import { eq } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
-import sharp from 'sharp';
 import { db } from '../db/client';
 import { attachments } from '../db/schema';
 import { getStorage } from '../files/storage';
@@ -20,6 +19,10 @@ export async function generateThumbnails(attachmentId: string): Promise<void> {
     where: eq(attachments.id, attachmentId),
   });
   if (!attachment || attachment.kind !== 'photo') return;
+
+  // Lazy import: sharp is a native module and must never be traced into the
+  // instrumentation bundle (dev webpack chokes on its child_process usage).
+  const sharp = (await import('sharp')).default;
 
   const storage = getStorage();
   const original = await storage.get(attachment.storageKey);
