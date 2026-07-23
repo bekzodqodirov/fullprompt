@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## M6 part 3 — Dashboard + first reports — 2026-07-23
+
+- **📊 /dashboard** (role-aware, §13): warehouse fill bars (moved here from the home screen per the owner), stock per warehouse (boxes/kg/m³), in-transit batches, last-24h receipts, and an "attention" card — unclaimed, stale stock (> `stale_stock_days`), missing-in-transit and undocumented-transfer counts. Admin/logist/VED/accountant see all warehouses; warehouse staff their own; sales managers land on the pipeline.
+- **📑 /reports hub** + the owner's top-3 reports, each with an audited XLSX export:
+  1. **Landed cost by client** (`reports.all_warehouses` only): Σ USD per client, drill into per-lot breakdown with $/box.
+  2. **Stock & aging**: every lot in stock with boxes/kg/m³/density and days-in-warehouse, oldest first (>14 d orange, >30 d red).
+  3. **Batch register**: route, status, departed date, loaded/short-loaded/added-on-spot deviations, kg/m³, costs USD and $/kg (costs hidden from warehouse-scoped staff).
+- Home screen: fill card removed, 📊 Dashboard tile added.
+- Shared report read-model module (`wms/reports/queries`) reused by pages, XLSX and the dashboard.
+
 ## M6 part 2 — Real invoice, capacity, backups (+ owner answers) — 2026-07-23
 
 - **INVOICE & PACKING LIST now mirrors the owner's real ka23 file**: combined sheet with Invoice №/date/container, Sender/Seller/Consignee, transport/delivery-terms/customs-post — all six requisites are editable settings (`ved_*`) with defaults taken from the uploaded document; ТНВЭД column present (VED fills codes+prices), live amount/total formulas (DECISIONS #89).
