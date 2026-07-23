@@ -20,7 +20,14 @@
     "saved": "Saqlandi",
     "history": "Tarix",
     "notFound": "Topilmadi",
-    "forbidden": "Ruxsat yetarli emas"
+    "forbidden": "Ruxsat yetarli emas",
+    "errorTitle": "Xatolik yuz berdi",
+    "errorBody": "Kutilmagan xatolik. Qayta urinib ko‘ring — takrorlansa, quyidagi kodni adminga yuboring.",
+    "retry": "Qayta urinish",
+    "goHome": "Bosh sahifa",
+    "notFoundTitle": "Sahifa topilmadi",
+    "notFoundBody": "Bunday sahifa yo‘q yoki o‘chirilgan.",
+    "empty": "Hozircha bo‘sh"
   },
   "login": {
     "title": "Tizimga kirish",
@@ -49,7 +56,10 @@
     "handover": "🤝 Topshirish",
     "comingSoon": "Keyingi bosqichda qo'shiladi",
     "adminPanel": "⚙️ Boshqaruv",
-    "welcome": "Assalomu alaykum, {name}!"
+    "welcome": "Assalomu alaykum, {name}!",
+    "sectionOperations": "Ish jarayonlari",
+    "sectionInfo": "Ma’lumot",
+    "sectionManagement": "Boshqaruv"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -250,7 +260,9 @@
     },
     "field": "Maydon",
     "before": "Oldin",
-    "after": "Keyin"
+    "after": "Keyin",
+    "filterEntityPlaceholder": "masalan: warehouse, client, receipt",
+    "noRows": "Filtr bo‘yicha yozuv topilmadi"
   },
   "profile": {
     "title": "Profil",
@@ -372,7 +384,8 @@
     "markLost": "Yo‘qolgan",
     "markVoid": "Bekor qilish",
     "markFound": "Topildi (skladga qaytarish)",
-    "reasonRequired": "Sabab (majburiy)"
+    "reasonRequired": "Sabab (majburiy)",
+    "empty": "Filtr bo‘yicha yuk topilmadi"
   },
   "search": {
     "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",

@@ -18,11 +18,20 @@ export default async function AuditBrowserPage({
   const format = await getFormatter();
   const params = await searchParams;
 
+  // Malformed ?from/?to must not crash the page — ignore invalid dates.
+  const parseDate = (value: string | undefined, suffix = '') => {
+    if (!value) return null;
+    const date = new Date(`${value}${suffix}`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+  const from = parseDate(params.from);
+  const to = parseDate(params.to, 'T23:59:59');
+
   const conditions: SQL[] = [];
   if (params.user) conditions.push(eq(auditLog.actorId, params.user));
   if (params.entity) conditions.push(eq(auditLog.entityType, params.entity));
-  if (params.from) conditions.push(gte(auditLog.createdAt, new Date(params.from)));
-  if (params.to) conditions.push(lte(auditLog.createdAt, new Date(`${params.to}T23:59:59`)));
+  if (from) conditions.push(gte(auditLog.createdAt, from));
+  if (to) conditions.push(lte(auditLog.createdAt, to));
 
   const rows = await db
     .select({ entry: auditLog, actorName: users.fullName, warehouseCode: warehouses.code })
@@ -65,7 +74,7 @@ export default async function AuditBrowserPage({
             name="entity"
             className="input"
             defaultValue={params.entity ?? ''}
-            placeholder="warehouse, client…"
+            placeholder={t('filterEntityPlaceholder')}
           />
         </div>
         <div>
@@ -126,6 +135,7 @@ export default async function AuditBrowserPage({
             ))}
           </tbody>
         </table>
+        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noRows')}</p>}
       </div>
     </div>
   );

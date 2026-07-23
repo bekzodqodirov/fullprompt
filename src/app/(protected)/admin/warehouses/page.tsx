@@ -37,6 +37,7 @@ export default async function WarehousesPage() {
           </Link>
         ))}
       </div>
+      {rows.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
     </div>
   );
 }

@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## M6 part 6 — Whole-app UI/UX sweep — 2026-07-23
+
+Full-project audit (every page + shared component) against the owner's "find and fix the UX shortcomings" request:
+
+- **Home screen regrouped**: big tiles for daily operations (receive / batches / plans / issue / crates / inventory), small tiles for info (stock, receipts, unclaimed, search, dashboard, reports, pipeline) and management (FX, trucks, admin) — section headers in all three languages.
+- **No more dead ends**: friendly error page (😵 + retry + home instead of the raw Next.js digest screen) and 404 page; every detail page (receipt, batch, box, crate, plan) and all 8 report pages got a "← back to list" link.
+- **Destructive-action safety**: deleting a receiving lot that already has data asks for confirmation; photo/attachment delete errors now surface instead of failing silently (receive wizard, return-to-sender, cost panel void).
+- **Touch targets**: tiny ✕/🗑 icons enlarged to ≥28 px hit areas (lightbox, gallery, attachments, clear-client); small box-pick buttons in crate builder and issue screen brought up to comfortable tap size.
+- **Scanner ergonomics**: manual code inputs autofocus + uppercase on load/unload/inventory screens; inventory scans now vibrate + flash like the other scan modes.
+- **Feedback everywhere**: pending states on assign-client and photo uploads ('…' + disabled), stale-fetch guards (AbortController) in crate builder and issue screen so slow responses can't overwrite fresh lists.
+- **Consistency**: bare "—" placeholders replaced with a proper localized empty state on plans/crates/transit/unclaimed/pipeline/stock and admin lists; audit page no longer crashes on a malformed date filter; stock page uses locale-aware number formatting.
+- **Fixed en route**: a route-transition skeleton (`loading.tsx`) added early in this sweep silently broke every server-action redirect/refresh (crate dissolve, box lost/found) — root-caused and removed (DECISIONS #98). Full suite back to green: 68 unit/integration + 12 e2e.
+
 ## M6 part 5 — All nine reports + sorting — 2026-07-23
 
 - **§13 report set complete** (all with audited XLSX): + receipts journal (7/30/90-day filter, operator column), unclaimed cargo (7/14-day colors), client cargo history (search by code → per-lot journey: batches ridden, in stock / in transit / ready / issued), staff activity (receipts/edits/prints/scans per user per day, last 14 days), label print log; in-transit XLSX added to the existing view.

@@ -12,6 +12,7 @@ export default async function CratesPage() {
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crates.manage')) redirect('/');
   const t = await getTranslations('crates');
+  const tc = await getTranslations('common');
   const format = await getFormatter();
 
   const rows = await db
@@ -43,7 +44,7 @@ export default async function CratesPage() {
           ＋ {t('create')}
         </Link>
       </div>
-      {rows.length === 0 && <p className="text-gray-500">—</p>}
+      {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ crate, clientCode, whCode, boxCount }) => (
           <Link

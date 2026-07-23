@@ -17,7 +17,7 @@
 | **M6 Costing, reports, polish** | **🔄 in progress** | see per-task marks below |
 
 **M6 progress:** done — FX rates (manual, per owner) ✅, allocation engine + recompute (§6.9 test green) ✅, cost capture on batch/receipt + batch cost sheet ✅, box landed cost ✅, warehouse capacity indicator (60%/80%, lives on /dashboard per owner) ✅, nightly local backups + `pnpm backup` ✅, **role-aware /dashboard** (fill, stock, in-transit, 24h receipts, unclaimed, aging, discrepancy flags) ✅, **/reports hub + top-3 reports with XLSX** (landed cost by client with per-lot drill-down, stock/aging, batch register with deviations + unit costs) ✅.
-**M6 remaining:** digest polish (per-user mute, delivery-failure view), performance/3G pass, weekly restore-test script, audit browser filters, README/ops runbook, full regression. *(Shipped 2026-07-23: inventory mode #12 — DECISIONS #93; ALL nine §13 reports + XLSX; sortable columns #13 — DECISIONS #96; cost-hygiene warning — DECISIONS #97.)*
+**M6 remaining:** digest polish (per-user mute, delivery-failure view), performance/3G pass, weekly restore-test script, README/ops runbook, full regression. *(Shipped 2026-07-23: inventory mode #12 — DECISIONS #93; ALL nine §13 reports + XLSX; sortable columns #13 — DECISIONS #96; cost-hygiene warning — DECISIONS #97; whole-app UI/UX sweep — grouped home, error/404 pages, back links, empty states, touch targets, pending states, scan feedback, audit-filter crash fix — DECISIONS #98–99.)*
 
 ---
 

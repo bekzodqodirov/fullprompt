@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { labelPrintLog } from '@/modules/wms/reports/queries';
+import { BackLink } from '@/components/back-link';
 
 /** Report §13.9: every label print/reprint with who and when. */
 export default async function LabelPrintsPage() {
@@ -16,6 +17,7 @@ export default async function LabelPrintsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
+      <BackLink href="/reports" label={t('title')} />
       <div className="flex flex-wrap items-baseline gap-2">
         <h1 className="text-xl font-bold">🖨 {t('labelPrints')}</h1>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- API download */}
@@ -24,7 +26,8 @@ export default async function LabelPrintsPage() {
         </a>
       </div>
       <div className="card !p-0">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] text-sm">
           <thead>
             <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
               <th className="p-2">{t('when')}</th>
@@ -50,6 +53,7 @@ export default async function LabelPrintsPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noData')}</p>}
       </div>
     </div>

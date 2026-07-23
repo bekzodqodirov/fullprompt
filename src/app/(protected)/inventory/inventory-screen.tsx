@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Scanner } from '@/components/scan/scanner';
 import { reconcileInventoryAction, type ReconcileResult } from './actions';
@@ -47,6 +47,19 @@ export function InventoryScreen({
   const [lostTicks, setLostTicks] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ReconcileResult | null>(null);
+  const [flash, setFlash] = useState<'ok' | 'dup' | 'bad' | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Same haptic + color feedback as the loading screen — without it the
+  // operator can't tell a scan registered (UX audit).
+  function feedback(kind: 'ok' | 'dup' | 'bad') {
+    setFlash(kind);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 450);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(kind === 'ok' ? 60 : [70, 60, 70]);
+    }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -66,6 +79,13 @@ export function InventoryScreen({
     if (!code) return;
     const crate = snapshot.crates.find((c) => c.code === code);
     const codes = crate ? crate.boxShortCodes : [code];
+    if (codes.every((c) => scanned.has(c))) {
+      feedback('dup');
+    } else if (codes.some((c) => !expectedByCode.has(c)) && !crate) {
+      feedback('bad'); // recorded elsewhere / unknown — draws a second look
+    } else {
+      feedback('ok');
+    }
     setScanned((prev) => {
       const next = new Set(prev);
       for (const c of codes) next.add(c);
@@ -125,7 +145,11 @@ export function InventoryScreen({
   }
 
   return (
-    <div className="space-y-3 pb-8">
+    <div
+      className={`space-y-3 pb-8 transition-colors ${
+        flash === 'ok' ? 'bg-green-100' : flash ? 'bg-red-100' : ''
+      }`}
+    >
       {!finishing && (
         <>
           <Scanner active onCode={onCode} />
@@ -133,6 +157,7 @@ export function InventoryScreen({
             <input
               className="input flex-1 font-mono uppercase"
               placeholder="YW26-000123"
+              autoCapitalize="characters"
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value.toUpperCase())}
               onKeyDown={(e) => {

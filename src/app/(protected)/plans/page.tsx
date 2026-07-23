@@ -20,6 +20,7 @@ export default async function PlansPage() {
   if (!actor) redirect('/login');
   if (!actor.permissions.has('plans.manage')) redirect('/');
   const t = await getTranslations('plans');
+  const tc = await getTranslations('common');
   const format = await getFormatter();
 
   const dest = aliasedTable(warehouses, 'dest');
@@ -50,7 +51,7 @@ export default async function PlansPage() {
           ＋ {t('newTitle')}
         </Link>
       </div>
-      {rows.length === 0 && <p className="text-gray-500">—</p>}
+      {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ plan, originCode, destCode, batchCode }) => (
           <Link key={plan.id} href={`/plans/${plan.id}`} className="card block !p-3 hover:bg-gray-50">

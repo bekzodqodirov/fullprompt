@@ -247,6 +247,8 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
             <div className="flex gap-2">
               <input
                 data-testid="manual-code"
+                autoFocus
+                autoCapitalize="characters"
                 className="input flex-1 font-mono uppercase"
                 placeholder="YW26-000123"
                 value={manualCode}

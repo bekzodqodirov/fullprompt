@@ -63,6 +63,7 @@ export default async function ClientsPage({
           </Link>
         ))}
       </div>
+      {rows.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
     </div>
   );
 }

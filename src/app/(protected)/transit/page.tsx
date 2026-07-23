@@ -19,6 +19,7 @@ export default async function TransitPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('transit');
+  const tc = await getTranslations('common');
   const format = await getFormatter();
 
   const dest = aliasedTable(warehouses, 'dest');
@@ -91,7 +92,7 @@ export default async function TransitPage() {
             </div>
           </Link>
         ))}
-        {inTransit.length === 0 && <p className="text-gray-500">—</p>}
+        {inTransit.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
       </div>
     </div>
   );

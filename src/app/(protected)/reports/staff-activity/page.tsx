@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { staffActivity } from '@/modules/wms/reports/queries';
+import { BackLink } from '@/components/back-link';
 
 /** Report §13.8: staff activity per user per day (from audit + scans). */
 export default async function StaffActivityPage() {
@@ -14,6 +15,7 @@ export default async function StaffActivityPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
+      <BackLink href="/reports" label={t('title')} />
       <div className="flex flex-wrap items-baseline gap-2">
         <h1 className="text-xl font-bold">👥 {t('staffActivity')}</h1>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- API download */}

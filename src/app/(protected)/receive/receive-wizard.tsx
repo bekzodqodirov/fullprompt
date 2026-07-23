@@ -250,9 +250,14 @@ export function ReceiveWizard({
   }
 
   async function removeAttachment(id: string, apply: () => void) {
-    const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
-    // 404 = already gone server-side; still drop it from the draft.
-    if (res.ok || res.status === 404) apply();
+    try {
+      const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
+      // 404 = already gone server-side; still drop it from the draft.
+      if (res.ok || res.status === 404) apply();
+      else setError(tc('error'));
+    } catch {
+      setError(tc('error')); // offline — the ✕ visibly did nothing otherwise
+    }
   }
 
   async function translateLot(lot: LotDraft) {
@@ -605,7 +610,7 @@ export function ReceiveWizard({
               <button
                 type="button"
                 aria-label={tc('cancel')}
-                className="ml-auto shrink-0 text-lg"
+                className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center text-lg"
                 onClick={() => update({ clientId: null, clientLabel: '' })}
               >
                 ✕
@@ -902,7 +907,12 @@ export function ReceiveWizard({
                           type="button"
                           aria-label={tc('delete')}
                           className="text-gray-400 hover:text-red-600"
-                          onClick={() => update({ lots: draft.lots.filter((l) => l.id !== lot.id) })}
+                          onClick={() => {
+                            // A filled line dies with one mis-tap otherwise (UX audit).
+                            const hasData = lot.zh.trim() || lot.photoIds.length > 0 || lot.boxCount;
+                            if (hasData && !window.confirm(`${tc('delete')}? ${lot.zh}`)) return;
+                            update({ lots: draft.lots.filter((l) => l.id !== lot.id) });
+                          }}
                         >
                           🗑
                         </button>
@@ -945,7 +955,12 @@ export function ReceiveWizard({
                   type="button"
                   aria-label={tc('delete')}
                   className="shrink-0 text-lg"
-                  onClick={() => update({ lots: draft.lots.filter((l) => l.id !== lot.id) })}
+                  onClick={() => {
+                            // A filled line dies with one mis-tap otherwise (UX audit).
+                            const hasData = lot.zh.trim() || lot.photoIds.length > 0 || lot.boxCount;
+                            if (hasData && !window.confirm(`${tc('delete')}? ${lot.zh}`)) return;
+                            update({ lots: draft.lots.filter((l) => l.id !== lot.id) });
+                          }}
                 >
                   🗑
                 </button>

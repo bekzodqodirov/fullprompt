@@ -47,7 +47,7 @@ export function LightboxImg({
         <button
           type="button"
           aria-label="✕"
-          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold leading-none text-white shadow"
+          className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-xs font-bold leading-none text-white shadow"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();

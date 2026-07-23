@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { SortTh, sortRows } from '@/components/sort-th';
 import { stockAging } from '@/modules/wms/reports/queries';
+import { BackLink } from '@/components/back-link';
 
 const SORTABLE = ['whCode', 'code', 'boxCount', 'kg', 'm3', 'density', 'days'] as const;
 
@@ -28,6 +29,7 @@ export default async function StockAgingReportPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
+      <BackLink href="/reports" label={t('title')} />
       <div className="flex flex-wrap items-baseline gap-2">
         <h1 className="text-xl font-bold">🕰 {t('stockAging')}</h1>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- API download, not a page */}

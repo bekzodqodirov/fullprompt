@@ -48,6 +48,7 @@ export default async function UsersPage() {
           </Link>
         ))}
       </div>
+      {rows.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
     </div>
   );
 }

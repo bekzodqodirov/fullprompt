@@ -3,6 +3,33 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 
+function Tile({
+  href,
+  label,
+  primary = false,
+  small = false,
+}: {
+  href: string;
+  label: string;
+  primary?: boolean;
+  small?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`card flex items-center justify-center text-center font-bold [overflow-wrap:anywhere] ${
+        small ? 'min-h-20 text-base' : 'min-h-28 text-lg'
+      } ${primary ? 'bg-blue-700 text-white hover:bg-blue-800' : 'hover:bg-gray-100'}`}
+    >
+      {label}
+    </Link>
+  );
+}
+
+/**
+ * Role-aware home: tiles grouped into daily operations / information /
+ * management so the screen stays scannable as features grow (UX round).
+ */
 export default async function HomePage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -16,137 +43,84 @@ export default async function HomePage() {
   const tCosting = await getTranslations('costing');
   const tDashboard = await getTranslations('dashboard');
   const tInventory = await getTranslations('inventory');
+  const tReports = await getTranslations('reports');
 
-  const isAdmin = actor.permissions.has('admin.warehouses.manage');
-  const canReceive = actor.permissions.has('receipts.create');
-  const canDashboard =
-    actor.permissions.has('reports.all_warehouses') ||
-    actor.permissions.has('reports.own_warehouse');
+  const has = (p: string) => actor.permissions.has(p);
+  const canDashboard = has('reports.all_warehouses') || has('reports.own_warehouse');
 
-  const comingSoon: { label: string; permission: string }[] = [];
+  const operations = [
+    ...(has('receipts.create') ? [{ href: '/receive', label: t('receiving'), primary: true }] : []),
+    ...(has('scan.load') ? [{ href: '/batches', label: t('loading') }] : []),
+    ...(has('plans.manage') ? [{ href: '/plans', label: `🚛 ${tPlans('title')}` }] : []),
+    ...(has('scan.issue') ? [{ href: '/issue', label: t('handover') }] : []),
+    ...(has('crates.manage') ? [{ href: '/crates', label: `🧰 ${tCrates('title')}` }] : []),
+    ...(has('scan.load') ? [{ href: '/inventory', label: `📋 ${tInventory('title')}` }] : []),
+  ];
+
+  const info = [
+    { href: '/stock', label: `📦 ${ts('title')}` },
+    { href: '/receipts', label: `📄 ${tr('title')}` },
+    { href: '/unclaimed', label: `❓ ${tr('unclaimedTitle')}` },
+    { href: '/search', label: `🔍 ${tSearch('title')}` },
+    ...(canDashboard
+      ? [
+          { href: '/dashboard', label: `📊 ${tDashboard('title')}` },
+          { href: '/reports', label: `📑 ${tReports('title')}` },
+        ]
+      : []),
+    ...(actor.roles.includes('sales_manager')
+      ? [{ href: '/pipeline', label: `📈 ${tPipeline('title')}` }]
+      : []),
+  ];
+
+  const management = [
+    ...(has('costs.fx.manage') ? [{ href: '/admin/fx', label: `💱 ${tCosting('fxTitle')}` }] : []),
+    ...(has('plans.manage') ? [{ href: '/trucks', label: `🚛 ${tPlans('trucksTitle')}` }] : []),
+    ...(has('admin.warehouses.manage')
+      ? [{ href: '/admin/warehouses', label: t('adminPanel') }]
+      : []),
+  ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <h1 className="text-xl font-bold">{t('welcome', { name: actor.fullName })}</h1>
-      <div className="grid grid-cols-2 gap-3">
-        {canReceive && (
-          <Link
-            href="/receive"
-            className="card flex min-h-28 items-center justify-center bg-blue-700 text-lg font-bold text-white hover:bg-blue-800"
-          >
-            {t('receiving')}
-          </Link>
-        )}
-        {actor.permissions.has('scan.load') && (
-          <Link
-            href="/batches"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            {t('loading')}
-          </Link>
-        )}
-        {actor.permissions.has('plans.manage') && (
-          <Link
-            href="/plans"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            🚛 {tPlans('title')}
-          </Link>
-        )}
-        {actor.permissions.has('scan.issue') && (
-          <Link
-            href="/issue"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            {t('handover')}
-          </Link>
-        )}
-        {actor.roles.includes('sales_manager') && (
-          <Link
-            href="/pipeline"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            📈 {tPipeline('title')}
-          </Link>
-        )}
-        {comingSoon
-          .filter((op) => actor.permissions.has(op.permission))
-          .map((op) => (
-            <button
-              key={op.label}
-              disabled
-              title={t('comingSoon')}
-              className="card flex min-h-28 flex-col items-center justify-center text-lg font-bold opacity-60"
-            >
-              {op.label}
-              <span className="mt-1 text-xs font-normal text-gray-500">{t('comingSoon')}</span>
-            </button>
+
+      {operations.length > 0 && (
+        <section>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            {t('sectionOperations')}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {operations.map((tile) => (
+              <Tile key={tile.href} {...tile} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          {t('sectionInfo')}
+        </p>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          {info.map((tile) => (
+            <Tile key={tile.href} small {...tile} />
           ))}
-        <Link
-          href="/receipts"
-          className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-        >
-          📄 {tr('title')}
-        </Link>
-        <Link
-          href="/stock"
-          className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-        >
-          📦 {ts('title')}
-        </Link>
-        <Link
-          href="/unclaimed"
-          className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-        >
-          ❓ {tr('unclaimedTitle')}
-        </Link>
-        {actor.permissions.has('crates.manage') && (
-          <Link
-            href="/crates"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            🧰 {tCrates('title')}
-          </Link>
-        )}
-        <Link
-          href="/search"
-          className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-        >
-          🔍 {tSearch('title')}
-        </Link>
-        {actor.permissions.has('scan.load') && (
-          <Link
-            href="/inventory"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            📋 {tInventory('title')}
-          </Link>
-        )}
-        {canDashboard && (
-          <Link
-            href="/dashboard"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            📊 {tDashboard('title')}
-          </Link>
-        )}
-        {actor.permissions.has('costs.fx.manage') && (
-          <Link
-            href="/admin/fx"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            💱 {tCosting('fxTitle')}
-          </Link>
-        )}
-        {isAdmin && (
-          <Link
-            href="/admin/warehouses"
-            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
-          >
-            {t('adminPanel')}
-          </Link>
-        )}
-      </div>
+        </div>
+      </section>
+
+      {management.length > 0 && (
+        <section>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            {t('sectionManagement')}
+          </p>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            {management.map((tile) => (
+              <Tile key={tile.href} small {...tile} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

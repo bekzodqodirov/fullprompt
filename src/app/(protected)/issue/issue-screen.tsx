@@ -66,13 +66,23 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       setSelected(new Set());
       return;
     }
+    // Abort on client/warehouse switch — a stale slow response must not
+    // overwrite the fresh list and wipe the selection (UX audit).
+    const controller = new AbortController();
     void (async () => {
-      const res = await fetch(`/api/issue/list?warehouseId=${warehouseId}&clientId=${client.id}`);
-      if (res.ok) {
-        setList(((await res.json()) as { boxes: IssuableBox[] }).boxes);
-        setSelected(new Set());
+      try {
+        const res = await fetch(`/api/issue/list?warehouseId=${warehouseId}&clientId=${client.id}`, {
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          setList(((await res.json()) as { boxes: IssuableBox[] }).boxes);
+          setSelected(new Set());
+        }
+      } catch {
+        /* aborted */
       }
     })();
+    return () => controller.abort();
   }, [client, warehouseId, doneHandover]);
 
   function toggle(boxId: string) {
@@ -145,7 +155,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                 <span className="truncate font-mono font-extrabold text-green-800">
                   {client.clientCode} — {client.name}
                 </span>
-                <button type="button" aria-label={tc('cancel')} className="ml-auto shrink-0 text-lg" onClick={() => setClient(null)}>
+                <button type="button" aria-label={tc('cancel')} className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center text-lg" onClick={() => setClient(null)}>
                   ✕
                 </button>
               </div>
@@ -238,7 +248,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                       <button
                         key={box.boxId}
                         type="button"
-                        className={`rounded-md border px-2 py-1 font-mono text-xs font-semibold ${
+                        className={`min-h-10 rounded-md border px-3 py-1.5 font-mono text-sm font-semibold ${
                           selected.has(box.boxId)
                             ? 'border-blue-700 bg-blue-50 text-blue-800'
                             : 'border-gray-200 text-gray-600'

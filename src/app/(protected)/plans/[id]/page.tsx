@@ -17,6 +17,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { VerdictForm } from './verdict-form';
+import { BackLink } from '@/components/back-link';
 
 export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -66,6 +67,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
+      <BackLink href="/plans" label={t('title')} />
       <div className="card space-y-2">
         <div className="flex flex-wrap items-baseline gap-2">
           <h1 className="font-mono text-xl font-extrabold">

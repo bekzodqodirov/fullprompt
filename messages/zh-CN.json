@@ -20,7 +20,14 @@
     "saved": "已保存",
     "history": "历史记录",
     "notFound": "未找到",
-    "forbidden": "权限不足"
+    "forbidden": "权限不足",
+    "errorTitle": "发生错误",
+    "errorBody": "意外错误。请重试 — 如果再次出现，请把下面的代码发给管理员。",
+    "retry": "重试",
+    "goHome": "回首页",
+    "notFoundTitle": "页面不存在",
+    "notFoundBody": "该页面不存在或已被删除。",
+    "empty": "暂无内容"
   },
   "login": {
     "title": "登录系统",
@@ -49,7 +56,10 @@
     "handover": "🤝 交货",
     "comingSoon": "将在下一阶段推出",
     "adminPanel": "⚙️ 系统管理",
-    "welcome": "您好，{name}！"
+    "welcome": "您好，{name}！",
+    "sectionOperations": "日常操作",
+    "sectionInfo": "信息",
+    "sectionManagement": "管理"
   },
   "dashboard": {
     "title": "仪表盘",
@@ -250,7 +260,9 @@
     },
     "field": "字段",
     "before": "原值",
-    "after": "新值"
+    "after": "新值",
+    "filterEntityPlaceholder": "例如：warehouse、client、receipt",
+    "noRows": "按筛选没有记录"
   },
   "profile": {
     "title": "个人资料",
@@ -372,7 +384,8 @@
     "markLost": "丢失",
     "markVoid": "作废",
     "markFound": "找到（退回在库）",
-    "reasonRequired": "原因（必填）"
+    "reasonRequired": "原因（必填）",
+    "empty": "按筛选未找到货物"
   },
   "search": {
     "placeholder": "搜索：GS777、GS777-A、YW26-000123、货物…",

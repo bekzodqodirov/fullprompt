@@ -13,6 +13,7 @@ export default async function PipelinePage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('pipeline');
+  const tc = await getTranslations('common');
   const isManagerScoped = actor.roles.includes('sales_manager') && !actor.permissions.has('admin.users.manage');
 
   const rows = await db
@@ -62,7 +63,7 @@ export default async function PipelinePage() {
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">—</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{tc('empty')}</p>}
       </div>
     </div>
   );

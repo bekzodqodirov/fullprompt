@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import {
   boxes,
@@ -22,6 +22,7 @@ export default async function StockPage({
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('stock');
+  const format = await getFormatter();
   const params = await searchParams;
 
   const scopeFilter: SQL[] = [eq(boxes.status, 'in_stock')];
@@ -295,13 +296,14 @@ export default async function StockPage({
                   </td>
                   <td className="p-2 font-mono font-bold">{line.whCode}</td>
                   <td className="whitespace-nowrap p-2 text-gray-500">
-                    {new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short' }).format(line.receivedAt)}
+                    {format.dateTime(line.receivedAt, { dateStyle: 'short' })}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+        {lines.length === 0 && <p className="p-4 text-sm text-gray-500">{t('empty')}</p>}
       </div>
     </div>
   );

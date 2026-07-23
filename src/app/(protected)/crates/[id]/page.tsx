@@ -15,6 +15,7 @@ import {
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { dissolveCrateAction, updateCrateAction } from '../actions';
+import { BackLink } from '@/components/back-link';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -71,6 +72,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
+      <BackLink href="/crates" label={t('title')} />
       <div className="card space-y-2">
         <div className="flex flex-wrap items-baseline gap-2">
           <h1 className="font-mono text-xl font-extrabold text-blue-800">{crate.code}</h1>

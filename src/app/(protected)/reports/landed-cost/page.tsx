@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { landedCostByClient, landedCostByLot } from '@/modules/wms/reports/queries';
+import { BackLink } from '@/components/back-link';
 
 /**
  * Report §13.7 (owner's #1 priority): landed cost by client — every client's
@@ -26,6 +27,7 @@ export default async function LandedCostReportPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
+      <BackLink href="/reports" label={t('title')} />
       <div className="flex flex-wrap items-baseline gap-2">
         <h1 className="text-xl font-bold">💰 {t('landedCost')}</h1>
         <a

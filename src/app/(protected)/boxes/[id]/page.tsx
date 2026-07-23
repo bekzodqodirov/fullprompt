@@ -14,6 +14,7 @@ import {
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { boxLandedCost } from '@/modules/wms/costing/service';
 import { BoxStatusActions } from './status-actions';
+import { BackLink } from '@/components/back-link';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
 export default async function BoxPage({ params }: { params: Promise<{ id: string }> }) {
@@ -52,6 +53,7 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
 
   return (
     <div className="space-y-4">
+      <BackLink href="/stock" label={t('title')} />
       <h1 className="font-mono text-xl font-extrabold">{box.shortCode}</h1>
       <div className="card !p-3 text-sm">
         <p className="text-lg">

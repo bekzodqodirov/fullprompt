@@ -102,6 +102,7 @@ export function CostPanel({
     if (!reason?.trim()) return;
     const res = await voidCostEntryAction({ id, reason });
     if (res.ok) router.refresh();
+    else setError(res.error ?? 'error'); // a silent failed void looked like success
   }
 
   return (
@@ -138,6 +139,11 @@ export function CostPanel({
       ))}
       {entries.length === 0 && <p className="text-sm text-gray-500">—</p>}
 
+      {error && !adding && (
+        <p role="alert" className="text-sm font-semibold text-red-700">
+          {error}
+        </p>
+      )}
       {canEdit && !adding && (
         <button type="button" className="btn-secondary w-full" onClick={() => setAdding(true)}>
           ＋ {t('addCost')}

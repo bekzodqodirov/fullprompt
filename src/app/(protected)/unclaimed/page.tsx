@@ -11,6 +11,7 @@ export default async function UnclaimedPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('receipts');
+  const tc = await getTranslations('common');
   const format = await getFormatter();
 
   const rows = await db
@@ -36,7 +37,7 @@ export default async function UnclaimedPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">❓ {t('unclaimedTitle')}</h1>
-      {rows.length === 0 && <p className="text-gray-500">—</p>}
+      {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ receipt, whCode, boxCount }) => (
           <Link

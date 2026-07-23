@@ -20,7 +20,14 @@
     "saved": "Сохранено",
     "history": "История",
     "notFound": "Не найдено",
-    "forbidden": "Недостаточно прав"
+    "forbidden": "Недостаточно прав",
+    "errorTitle": "Произошла ошибка",
+    "errorBody": "Непредвиденная ошибка. Попробуйте ещё раз — если повторится, отправьте код ниже администратору.",
+    "retry": "Повторить",
+    "goHome": "На главную",
+    "notFoundTitle": "Страница не найдена",
+    "notFoundBody": "Такой страницы нет или она удалена.",
+    "empty": "Пока пусто"
   },
   "login": {
     "title": "Вход в систему",
@@ -49,7 +56,10 @@
     "handover": "🤝 Выдача",
     "comingSoon": "Появится в следующем этапе",
     "adminPanel": "⚙️ Администрирование",
-    "welcome": "Здравствуйте, {name}!"
+    "welcome": "Здравствуйте, {name}!",
+    "sectionOperations": "Рабочие процессы",
+    "sectionInfo": "Информация",
+    "sectionManagement": "Управление"
   },
   "dashboard": {
     "title": "Дашборд",
@@ -250,7 +260,9 @@
     },
     "field": "Поле",
     "before": "Было",
-    "after": "Стало"
+    "after": "Стало",
+    "filterEntityPlaceholder": "например: warehouse, client, receipt",
+    "noRows": "По фильтру записей нет"
   },
   "profile": {
     "title": "Профиль",
@@ -372,7 +384,8 @@
     "markLost": "Потеряна",
     "markVoid": "Аннулировать",
     "markFound": "Нашлась (вернуть на склад)",
-    "reasonRequired": "Причина (обязательно)"
+    "reasonRequired": "Причина (обязательно)",
+    "empty": "По фильтру ничего не найдено"
   },
   "search": {
     "placeholder": "Поиск: GS777, GS777-A, YW26-000123, товар…",

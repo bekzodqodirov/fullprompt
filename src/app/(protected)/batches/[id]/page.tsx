@@ -21,6 +21,7 @@ import { VehicleForm } from './vehicle-form';
 import { setSentToAgentAction } from '../batch-actions-server';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
+import { BackLink } from '@/components/back-link';
 
 export default async function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -105,6 +106,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
+      <BackLink href="/batches" label={t('title')} />
       <div className="card space-y-2">
         <div className="flex flex-wrap items-baseline gap-2">
           <h1 className="font-mono text-xl font-extrabold text-blue-800">{batch.code}</h1>
@@ -194,7 +196,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             <form action={setSentToAgentAction}>
               <input type="hidden" name="batchId" value={batch.id} />
               <button type="submit" className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${batch.sentToAgentAt ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-300 text-gray-600'}`}>
-                {batch.sentToAgentAt ? `✅ ${t('sentToAgent')}: ${batch.sentToAgentAt}` : `📤 ${t('markSentToAgent')}`}
+                {batch.sentToAgentAt
+                  ? `✅ ${t('sentToAgent')}: ${format.dateTime(new Date(batch.sentToAgentAt), { dateStyle: 'short' })}`
+                  : `📤 ${t('markSentToAgent')}`}
               </button>
             </form>
           )}

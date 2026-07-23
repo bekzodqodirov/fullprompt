@@ -5,6 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { clients } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientHistory } from '@/modules/wms/reports/queries';
+import { BackLink } from '@/components/back-link';
 
 /** Report §13.6: one client's full cargo journey per lot. */
 export default async function ClientHistoryPage({
@@ -26,6 +27,7 @@ export default async function ClientHistoryPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
+      <BackLink href="/reports" label={t('title')} />
       <div className="flex flex-wrap items-baseline gap-2">
         <h1 className="text-xl font-bold">📜 {t('clientHistory')}</h1>
         {client && (

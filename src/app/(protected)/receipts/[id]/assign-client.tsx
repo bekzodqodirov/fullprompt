@@ -1,8 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { useTranslations } from 'next-intl';
 import { assignClientAction } from './edit-actions';
+
+/** Disable-while-submitting (UX audit: double-tap re-fired the action). */
+function ConfirmButton({ label }: { label: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className="btn-primary ml-auto disabled:opacity-60">
+      {pending ? '…' : `✅ ${label}`}
+    </button>
+  );
+}
 
 interface ClientHit {
   id: string;
@@ -39,9 +50,7 @@ export function AssignClient({ receiptId, current }: { receiptId: string; curren
           <input type="hidden" name="clientId" value={selected.id} />
           <span className="font-mono font-extrabold text-blue-800">{selected.clientCode}</span>
           <span className="truncate text-sm">{selected.name}</span>
-          <button type="submit" className="btn-primary ml-auto">
-            ✅ {t('assignConfirm')}
-          </button>
+          <ConfirmButton label={t('assignConfirm')} />
           <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
             ✕
           </button>

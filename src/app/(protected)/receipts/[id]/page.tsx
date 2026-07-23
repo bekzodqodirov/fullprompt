@@ -22,6 +22,7 @@ import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
 import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
+import { BackLink } from '@/components/back-link';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -98,6 +99,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="space-y-6">
+      <BackLink href="/receipts" label={t('title')} />
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-bold">
           <span className="font-mono">{receipt.number}</span>
