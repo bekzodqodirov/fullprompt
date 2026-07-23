@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## Receipt header panel rework — 2026-07-23
+
+- The receipt-info panel is now compact: client row, then one line with the source note + a SINGLE total-cost amount+currency (no more per-type cost rows — stored under the "other" cost type), then two small buttons (📷 general box photos, 📎 files) with thumbnails inline. No stacked label-above-field blocks.
+- Removed the photo-required warning icon from product lines (the confirm button staying disabled is the signal).
+
 ## Owner feedback round 3 — 2026-07-23
 
 - **Photos fixed**: attachments are now streamed directly by the server instead of redirecting to an absolute URL — the redirect host could differ from the one the browser used (phone on LAN → `localhost` → broken images). Correct content type is set too.

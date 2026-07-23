@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { computeLotTotals, densityBand } from '@/modules/wms/receipts/math';
-import { AttachmentsPanel } from '@/components/attachments-panel';
 import { LightboxImg } from '@/components/lightbox-img';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
 
@@ -284,6 +283,38 @@ export function ReceiveWizard({
     }
   }
 
+  async function addReceiptFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setError(null);
+    for (const file of Array.from(files)) {
+      try {
+        const isImage = file.type.startsWith('image/');
+        const body = isImage
+          ? await imageCompression(file, { maxSizeMB: 0.3, maxWidthOrHeight: 1600, useWebWorker: true })
+          : file;
+        const formData = new FormData();
+        formData.set('file', new File([body], file.name, { type: body.type || file.type }));
+        formData.set('entityType', 'receipt');
+        formData.set('entityId', draft!.receiptId);
+        const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+        if (res.ok) {
+          const { id } = (await res.json()) as { id: string };
+          const item = {
+            id,
+            fileName: file.name,
+            contentType: file.type,
+            kind: isImage ? 'photo' : 'file',
+          };
+          setDraft((d) => (d ? { ...d, files: [...(d.files ?? []), item] } : d));
+        } else {
+          setError(t('photoUploadFailed'));
+        }
+      } catch {
+        setError(t('photoUploadFailed'));
+      }
+    }
+  }
+
   async function addGeneralPhotos(files: FileList | null) {
     if (!files?.length) return;
     setError(null);
@@ -453,11 +484,6 @@ export function ReceiveWizard({
         {lot.photoIds.map((photoId) => (
           <LightboxImg key={photoId} attachmentId={photoId} className="h-9 w-9 rounded-md object-cover" />
         ))}
-        {lot.photoIds.length === 0 && (
-          <span title={t('photoRequired')} className="text-base" aria-label={t('photoRequired')}>
-            ⚠️
-          </span>
-        )}
       </div>
     );
   }
@@ -603,131 +629,94 @@ export function ReceiveWizard({
     </div>
   );
 
+  // Single total-cost entry (owner's request: no per-type cost rows) — stored
+  // as one cost line under the "other" cost type.
+  const cost = draft.costs[0] ?? { costTypeId: '', amount: '', currency: defaultCurrency, note: '' };
+  const otherCostTypeId =
+    costTypes.find((type) => type.code === 'other')?.id ?? costTypes[0]?.id ?? '';
+  const setCost = (patch: Partial<CostDraft>) =>
+    update({ costs: [{ ...cost, costTypeId: otherCostTypeId, ...patch }] });
+
   const bottomBlock = (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <div>
-        <p className="label">📷 {t('generalPhotos')}</p>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-gray-400 text-2xl hover:bg-gray-50">
-            📷
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              multiple
-              className="hidden"
-              onChange={(e) => addGeneralPhotos(e.target.files)}
-            />
-          </label>
-          {draft.generalPhotoIds.map((photoId) => (
-            <LightboxImg
-              key={photoId}
-              attachmentId={photoId}
-              className="h-16 w-16 rounded-lg object-cover"
-            />
-          ))}
-        </div>
-      </div>
-      <div>
-        <p className="label">{t('sourceNote')}</p>
-        <textarea
+    <div className="space-y-2">
+      <div className="flex flex-col gap-2 md:flex-row">
+        <input
           aria-label={t('sourceNote')}
-          className="input min-h-20 py-2"
-          rows={3}
+          className="input md:flex-1"
+          placeholder={`📝 ${t('sourceNote')}`}
           value={draft.sourceNote}
           onChange={(e) => update({ sourceNote: e.target.value })}
         />
-      </div>
-      <div>
-        <p className="label">📎 {t('attachments')}</p>
-        <AttachmentsPanel
-          entityType="receipt"
-          entityId={draft.receiptId}
-          initial={draft.files}
-          editable
-          onAdd={(item) => update({ files: [...(draft.files ?? []), item] })}
-        />
-      </div>
-      <div>
-        <p className="label">
-          💰 {t('stepCosts')} {draft.costs.length > 0 && `(${draft.costs.length})`}
-        </p>
-        <div className="space-y-2">
-          {draft.costs.map((cost, i) => (
-            <div key={i} className="space-y-1.5 rounded-lg border border-gray-200 p-2">
-              <select
-                aria-label={t('costType')}
-                className="input-cell"
-                value={cost.costTypeId}
-                onChange={(e) => {
-                  const costs = [...draft.costs];
-                  costs[i] = { ...cost, costTypeId: e.target.value };
-                  update({ costs });
-                }}
-              >
-                <option value="">{t('costType')}…</option>
-                {costTypes.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.name}
-                  </option>
-                ))}
-              </select>
-              <div className="flex gap-1.5">
-                <input
-                  aria-label={t('amount')}
-                  className="input-cell"
-                  inputMode="decimal"
-                  placeholder={t('amount')}
-                  value={cost.amount}
-                  onChange={(e) => {
-                    const costs = [...draft.costs];
-                    costs[i] = { ...cost, amount: e.target.value };
-                    update({ costs });
-                  }}
-                />
-                <select
-                  aria-label="currency"
-                  className="input-cell !w-20 shrink-0"
-                  value={cost.currency}
-                  onChange={(e) => {
-                    const costs = [...draft.costs];
-                    costs[i] = { ...cost, currency: e.target.value };
-                    update({ costs });
-                  }}
-                >
-                  {currencies.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-              <input
-                aria-label={t('note')}
-                className="input-cell"
-                placeholder={t('note')}
-                value={cost.note}
-                onChange={(e) => {
-                  const costs = [...draft.costs];
-                  costs[i] = { ...cost, note: e.target.value };
-                  update({ costs });
-                }}
-              />
-            </div>
-          ))}
-          <button
-            type="button"
-            className="w-full rounded-lg border border-dashed border-gray-400 p-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
-            onClick={() =>
-              update({
-                costs: [
-                  ...draft.costs,
-                  { costTypeId: '', amount: '', currency: defaultCurrency, note: '' },
-                ],
-              })
-            }
+        <div className="flex gap-2">
+          <input
+            aria-label={t('stepCosts')}
+            className="input !w-40 md:!w-36"
+            inputMode="decimal"
+            placeholder={`💰 ${t('stepCosts')}`}
+            value={cost.amount}
+            onChange={(e) => setCost({ amount: e.target.value })}
+          />
+          <select
+            aria-label="currency"
+            className="input !w-24 shrink-0"
+            value={cost.currency}
+            onChange={(e) => setCost({ currency: e.target.value })}
           >
-            ＋ {t('addCost')}
-          </button>
+            {currencies.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
         </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <label className="btn-secondary !min-h-10 cursor-pointer gap-1.5 px-3 text-sm">
+          📷 {t('generalPhotos')}
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            className="hidden"
+            onChange={(e) => addGeneralPhotos(e.target.files)}
+          />
+        </label>
+        <label className="btn-secondary !min-h-10 cursor-pointer gap-1.5 px-3 text-sm">
+          📎 {t('attachments')}
+          <input
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => addReceiptFiles(e.target.files)}
+          />
+        </label>
+        {draft.generalPhotoIds.map((photoId) => (
+          <LightboxImg
+            key={photoId}
+            attachmentId={photoId}
+            className="h-10 w-10 rounded-md object-cover"
+          />
+        ))}
+        {draft.files.map((file) =>
+          file.kind === 'photo' ? (
+            <LightboxImg
+              key={file.id}
+              attachmentId={file.id}
+              alt={file.fileName}
+              className="h-10 w-10 rounded-md object-cover"
+            />
+          ) : (
+            <a
+              key={file.id}
+              href={`/api/attachments/${file.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-10 max-w-32 items-center gap-1 truncate rounded-md bg-gray-100 px-2 text-xs text-gray-700"
+              title={file.fileName}
+            >
+              📄 <span className="truncate">{file.fileName}</span>
+            </a>
+          ),
+        )}
       </div>
     </div>
   );
