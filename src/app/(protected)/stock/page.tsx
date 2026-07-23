@@ -208,7 +208,7 @@ export default async function StockPage({
               <th className="p-2 text-right">Σ kg</th>
               <th className="p-2 text-right">m³</th>
               <th className="p-2 text-right">kg/m³</th>
-              <th className="p-2 text-right">{t('colPieces')}</th>
+              <th className="p-2">📝</th>
               <th className="p-2">{t('colWh')}</th>
               <th className="p-2">{t('colDate')}</th>
             </tr>
@@ -272,7 +272,9 @@ export default async function StockPage({
                       </span>
                     )}
                   </td>
-                  <td className="p-2 text-right">{line.lot.piecesCount ?? '—'}</td>
+                  <td className="max-w-32 truncate p-2 text-xs text-gray-500" title={line.lot.note ?? ''}>
+                    {line.lot.note ?? ''}
+                  </td>
                   <td className="p-2 font-mono font-bold">{line.whCode}</td>
                   <td className="whitespace-nowrap p-2 text-gray-500">
                     {new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short' }).format(line.receivedAt)}

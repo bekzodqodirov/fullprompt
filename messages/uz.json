@@ -211,7 +211,10 @@
     "unclaimedMarking": "Karobkadagi markirovka",
     "unclaimedMarkingHint": "Yuk ustida yozilgan kod — keyin mijozga biriktiramiz",
     "boxCountShort": "Kar.",
-    "pieces": "dona"
+    "pieces": "dona",
+    "dims": "O'lchamlar",
+    "notePlaceholder": "Qator bo'yicha izoh",
+    "attachments": "Fayllar"
   },
   "receipts": {
     "title": "Qabullar",
@@ -240,7 +243,9 @@
     "labelsToPrint": "{n} ta yangi stiker chiqaring",
     "labelsToDestroy": "stikerlarni yo'q qiling: {codes}",
     "editWindowClosed": "Tahrirlash faqat qabul kunida (keyin — mudir/logist)",
-    "structuralLocked": "Karobkalar harakatda — o'lcham/sonini o'zgartirib bo'lmaydi"
+    "structuralLocked": "Karobkalar harakatda — o'lcham/sonini o'zgartirib bo'lmaydi",
+    "attach": "Biriktirish",
+    "attachFailed": "Fayl yuklanmadi"
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",

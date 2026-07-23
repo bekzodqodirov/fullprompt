@@ -33,7 +33,7 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   await page.getByTestId('lot-W').fill('30');
   await page.getByTestId('lot-H').fill('20');
   await page.getByTestId('lot-kg').fill('8');
-  await expect(page.getByText('32kg').first()).toBeVisible(); // live math 4×8
+  await expect(page.locator('#mobile-product-lines').getByText('32kg')).toBeVisible(); // live math 4×8
 
   // Photo upload (min-1-photo rule)
   const photo = await sharp({
@@ -45,7 +45,12 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
     .locator('input[type="file"]')
     .first()
     .setInputFiles({ name: 'box.jpg', mimeType: 'image/jpeg', buffer: photo });
-  await expect(page.locator('img[src*="/api/attachments/"]')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('#mobile-product-lines img[src*="/api/attachments/"]').first()).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // Per-line note (replaces the removed "pieces" field, owner's feedback)
+  await page.getByTestId('lot-note').fill('доставщик перепутал коробку');
 
   // Sticky footer totals + confirm
   await expect(page.getByText('Σ 4 📦')).toBeVisible();
@@ -63,6 +68,11 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('application/pdf');
   expect((await res.body()).subarray(0, 4).toString()).toBe('%PDF');
+
+  // The note shows on the receipt detail page
+  const receiptId = href!.match(/\/api\/receipts\/([^/]+)\/labels/)![1];
+  await page.goto(`/receipts/${receiptId}`);
+  await expect(page.getByText('доставщик перепутал коробку')).toBeVisible();
 
   // Combined client+letter search still resolves
   await page.goto('/search?q=gs777-a');
@@ -102,7 +112,9 @@ test('unclaimed intake captures the box marking', async ({ page }) => {
     .locator('input[type="file"]')
     .first()
     .setInputFiles({ name: 'u.jpg', mimeType: 'image/jpeg', buffer: photo });
-  await expect(page.locator('img[src*="/api/attachments/"]')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('#mobile-product-lines img[src*="/api/attachments/"]').first()).toBeVisible({
+    timeout: 10_000,
+  });
 
   await page.getByTestId('confirm-receipt').click();
   await expect(page.getByText(/YW-IN-\d{6}-\d{3}/)).toBeVisible({ timeout: 15_000 });

@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -14,6 +14,7 @@ import {
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { HistoryTab } from '@/components/history-tab';
 import { PhotoGallery } from '@/components/photo-gallery';
+import { AttachmentsPanel } from '@/components/attachments-panel';
 import { voidReceiptAction } from './actions';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
@@ -59,6 +60,16 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .where(eq(costEntries.receiptId, id));
+
+  const receiptFiles = await db
+    .select({
+      id: attachments.id,
+      fileName: attachments.fileName,
+      contentType: attachments.contentType,
+      kind: attachments.kind,
+    })
+    .from(attachments)
+    .where(and(eq(attachments.entityType, 'receipt'), eq(attachments.entityId, id)));
 
   const canVoid = actor.permissions.has('receipts.void') && receipt.status === 'confirmed';
   const canPrint = actor.permissions.has('receipts.create');
@@ -145,8 +156,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               {lot.boxCount} 📦 · {lot.totalWeightKg} kg · {lot.totalVolumeM3} m³
               {lot.dimsMode === 'uniform' &&
                 ` · ${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm} cm`}
-              {lot.piecesCount && ` · ${lot.piecesCount} pcs`}
             </p>
+            {lot.note && <p className="mt-1 text-sm italic text-gray-500">📝 {lot.note}</p>}
             <div className="mt-2">
               <PhotoGallery photos={photosByLot.get(lot.id) ?? []} />
             </div>
@@ -165,7 +176,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                     boxWeightKg: lot.boxWeightKg,
                     totalWeightKg: lot.totalWeightKg,
                     totalVolumeM3: lot.totalVolumeM3,
-                    piecesCount: lot.piecesCount,
+                    note: lot.note,
                   }}
                 />
               </div>
@@ -176,21 +187,33 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
       {canAssign && <AssignClient receiptId={id} current={client?.clientCode ?? null} />}
 
-      {costs.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
-          <ul className="card divide-y divide-gray-100 !p-0 text-sm">
-            {costs.map(({ entry, typeName }) => (
-              <li key={entry.id} className="flex gap-2 p-3">
-                <span>{typeName}</span>
-                <span className="ml-auto font-semibold">
-                  {entry.amount} {entry.currency}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <section className="card space-y-3">
+        <div>
+          <h2 className="mb-2 text-lg font-bold">{t('attachments')}</h2>
+          <AttachmentsPanel
+            entityType="receipt"
+            entityId={id}
+            initial={receiptFiles}
+            editable={canEdit}
+          />
+        </div>
+        {costs.length > 0 && (
+          <div className="border-t border-gray-100 pt-3">
+            <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
+            <ul className="divide-y divide-gray-100 text-sm">
+              {costs.map(({ entry, typeName }) => (
+                <li key={entry.id} className="flex flex-wrap gap-2 py-2">
+                  <span>{typeName}</span>
+                  <span className="font-semibold">
+                    {entry.amount} {entry.currency}
+                  </span>
+                  {entry.note && <span className="w-full text-xs text-gray-500">{entry.note}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       {canVoid && (
         <form action={voidReceiptAction} className="card space-y-2">

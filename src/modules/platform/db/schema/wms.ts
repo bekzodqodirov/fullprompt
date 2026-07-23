@@ -111,10 +111,9 @@ export const receiptLots = pgTable(
     boxHeightCm: integer('box_height_cm'),
     boxWeightKg: numeric('box_weight_kg', { precision: 12, scale: 3 }),
     totalWeightKg: numeric('total_weight_kg', { precision: 12, scale: 3 }).notNull(),
-    /** Units inside the boxes (their Excel tracks this, e.g. 9600 pcs). */
-    piecesCount: integer('pieces_count'),
-    packagingType: text('packaging_type'),
     totalVolumeM3: numeric('total_volume_m3', { precision: 12, scale: 4 }).notNull(),
+    /** Free-text remark per line (owner's Kashgar file: notes like "loader miscounted"). */
+    note: text('note'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

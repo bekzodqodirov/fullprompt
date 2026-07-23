@@ -37,7 +37,7 @@ export default async function ReceivePage() {
     .where(eq(currencies.active, true));
 
   return (
-    <div className="mx-auto max-w-lg">
+    <div className="mx-auto max-w-lg md:max-w-4xl">
       <h1 className="mb-3 text-xl font-bold">{t('title')}</h1>
       <ReceiveWizard
         warehouses={whs}

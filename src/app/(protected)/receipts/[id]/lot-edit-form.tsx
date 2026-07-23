@@ -16,7 +16,7 @@ export interface LotEditValues {
   boxWeightKg: string | null;
   totalWeightKg: string;
   totalVolumeM3: string;
-  piecesCount: number | null;
+  note: string | null;
 }
 
 /** Inline lot editor on the receipt detail (spec 4.4 — audited edits). */
@@ -73,15 +73,14 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
           required
         />
         <span className="text-xs">📦</span>
-        <input
-          name="piecesCount"
-          className="input !min-h-10 w-0 flex-1 !px-2 text-center"
-          inputMode="numeric"
-          defaultValue={lot.piecesCount ?? ''}
-          aria-label="pieces"
-          placeholder="pcs"
-        />
       </div>
+      <input
+        name="note"
+        className="input"
+        defaultValue={lot.note ?? ''}
+        aria-label="note"
+        placeholder="Примечание"
+      />
       {lot.dimsMode === 'uniform' ? (
         <div className="flex items-center gap-1.5">
           <input name="boxLengthCm" className="input !min-h-10 w-0 flex-1 !px-2 text-center" inputMode="decimal" defaultValue={lot.boxLengthCm ?? ''} placeholder="L" aria-label="L" required />

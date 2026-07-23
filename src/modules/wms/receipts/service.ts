@@ -32,8 +32,8 @@ export const lotInputSchema = z
     boxWeightKg: z.number().min(0.001).max(10_000).optional(),
     totalWeightKg: z.number().min(0.001).max(1_000_000).optional(),
     totalVolumeM3: z.number().min(0.0001).max(10_000).optional(),
-    piecesCount: z.number().int().min(1).max(100_000_000).optional(),
-    packagingType: z.string().trim().max(100).optional().or(z.literal('')),
+    /** Free-text remark per line (owner's Kashgar file has notes like "loader miscounted"). */
+    note: z.string().trim().max(500).optional().or(z.literal('')),
   })
   .refine(
     (lot) =>
@@ -192,8 +192,7 @@ export async function confirmReceipt(
           boxWeightKg: lotInput.boxWeightKg?.toString() ?? null,
           totalWeightKg: totals.totalWeightKg.toString(),
           totalVolumeM3: totals.totalVolumeM3.toString(),
-          piecesCount: lotInput.piecesCount ?? null,
-          packagingType: lotInput.packagingType || null,
+          note: lotInput.note || null,
         })
         .returning();
 

@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## M1.6 — Excel-style desktop entry, notes, receipt files — 2026-07-23
+
+- Desktop (md+ viewport): product lines are now a real spreadsheet-style table — one row per lot, tab through cells like Excel (product zh/ru, boxes, dims, note, photos, live totals) — matches the owner's request to enter receipts "like filling an Excel sheet" on a computer.
+- Mobile: unchanged stacked-card layout (kept mobile-friendly per owner's request).
+- Replaced the "pieces" (shtuk) field with a free-text **note** per line (owner's Kashgar file uses remarks like "loader miscounted", not a pieces count) — schema column swap (pieces_count/packaging_type → note), service/edit/UI updated.
+- Added **receipt-level file attachments** (any type — invoice, packing list, supplier docs, not just box photos) via a shared AttachmentsPanel component, persisted in the draft so they survive reload; shown on the receipt detail page too.
+- Costs + notes are no longer hidden behind a collapsed accordion — attachments, costs, and the source note are all visible together in one open section, as requested.
+- Fixed a missing i18n key (receive.attachments) caught during visual verification.
+- e2e updated for the responsive layout (scoped locators to the visible container) and extended to cover the new note field end-to-end.
+
 ## M1.5 — Owner feedback round — 2026-07-23
 
 - Single-window receiving (owner's request): client + Excel-style product lines + collapsed costs + sticky totals/confirm on one screen; no more stepper.

@@ -211,7 +211,10 @@
     "unclaimedMarking": "箱上标记",
     "unclaimedMarkingHint": "货物上写的代码——之后绑定客户",
     "boxCountShort": "箱",
-    "pieces": "件"
+    "pieces": "件",
+    "dims": "尺寸",
+    "notePlaceholder": "该行备注",
+    "attachments": "文件"
   },
   "receipts": {
     "title": "收货单",
@@ -240,7 +243,9 @@
     "labelsToPrint": "需打印{n}张新标签",
     "labelsToDestroy": "需销毁标签：{codes}",
     "editWindowClosed": "仅收货当天可编辑（之后由主管/物流经理）",
-    "structuralLocked": "箱子已在流转中——尺寸/数量不可更改"
+    "structuralLocked": "箱子已在流转中——尺寸/数量不可更改",
+    "attach": "添加文件",
+    "attachFailed": "文件上传失败"
   },
   "stock": {
     "title": "库存",

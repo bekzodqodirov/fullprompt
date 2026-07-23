@@ -5,12 +5,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { computeLotTotals, densityBand } from '@/modules/wms/receipts/math';
+import { AttachmentsPanel } from '@/components/attachments-panel';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
 
 /**
  * Single-window receiving (owner's request): client on top, product LINES in
- * the middle (Excel-style rows), costs collapsed, sticky totals + one
- * Confirm button. Draft autosaves to localStorage after every change.
+ * the middle — a real spreadsheet-style table on desktop (tab through
+ * cells like Excel), the original stacked-card layout on mobile — then
+ * receipt-level attachments + costs + notes together (not collapsed), and a
+ * sticky totals/confirm bar. Draft autosaves to localStorage after every
+ * change.
  */
 
 interface WarehouseOption {
@@ -43,7 +47,7 @@ interface LotDraft {
   boxWeightKg: string;
   totalWeightKg: string;
   totalVolumeM3: string;
-  piecesCount: string;
+  note: string;
   photoIds: string[];
 }
 
@@ -64,6 +68,7 @@ interface Draft {
   sourceNote: string;
   lots: LotDraft[];
   costs: CostDraft[];
+  files: { id: string; fileName: string; contentType: string; kind: string }[];
 }
 
 const DENSITY_COLORS: Record<string, string> = {
@@ -88,7 +93,7 @@ function newLot(): LotDraft {
     boxWeightKg: '',
     totalWeightKg: '',
     totalVolumeM3: '',
-    piecesCount: '',
+    note: '',
     photoIds: [],
   };
 }
@@ -104,6 +109,7 @@ function newDraft(warehouseId: string): Draft {
     sourceNote: '',
     lots: [newLot()],
     costs: [],
+    files: [],
   };
 }
 
@@ -150,7 +156,6 @@ export function ReceiveWizard({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmitReceiptResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
 
   // Draft restore — localStorage is client-only, hence the mount effect.
   useEffect(() => {
@@ -227,10 +232,9 @@ export function ReceiveWizard({
 
   async function addPhotos(lot: LotDraft, files: FileList | null) {
     if (!files?.length) return;
-    setUploading(true);
     setError(null);
-    try {
-      for (const file of Array.from(files)) {
+    for (const file of Array.from(files)) {
+      try {
         const compressed = await imageCompression(file, {
           maxSizeMB: 0.3,
           maxWidthOrHeight: 1600,
@@ -261,11 +265,9 @@ export function ReceiveWizard({
         } else {
           setError(t('photoUploadFailed'));
         }
+      } catch {
+        setError(t('photoUploadFailed'));
       }
-    } catch {
-      setError(t('photoUploadFailed'));
-    } finally {
-      setUploading(false);
     }
   }
 
@@ -293,7 +295,7 @@ export function ReceiveWizard({
           productNameRu: lot.ru.trim(),
           boxCount: Number(lot.boxCount),
           dimsMode: lot.dimsMode,
-          ...(lot.piecesCount ? { piecesCount: Number(lot.piecesCount) } : {}),
+          note: lot.note.trim(),
           ...(lot.dimsMode === 'uniform'
             ? {
                 boxLengthCm: Number(lot.lengthCm),
@@ -369,6 +371,115 @@ export function ReceiveWizard({
   const sumBoxes = draft.lots.reduce((acc, lot) => acc + (Number(lot.boxCount) || 0), 0);
   const sumKg = allTotals.reduce((acc, totals) => acc + (totals?.totalWeightKg ?? 0), 0);
   const sumM3 = allTotals.reduce((acc, totals) => acc + (totals?.totalVolumeM3 ?? 0), 0);
+
+  // --- Shared bits rendered by both the desktop table and the mobile cards ---
+
+  function dimsFields(lot: LotDraft, testIds: boolean) {
+    return lot.dimsMode === 'uniform' ? (
+      <div className="flex items-center gap-1.5">
+        {(
+          [
+            ['lengthCm', 'L'],
+            ['widthCm', 'W'],
+            ['heightCm', 'H'],
+          ] as const
+        ).map(([field, label]) => (
+          <input
+            key={field}
+            data-testid={testIds ? 'lot-' + label : undefined}
+            aria-label={label}
+            className="input !min-h-10 w-0 flex-1 !px-2 text-center"
+            inputMode="decimal"
+            value={lot[field]}
+            onChange={(e) => updateLot(lot.id, { [field]: e.target.value })}
+            placeholder={label}
+          />
+        ))}
+        <input
+          aria-label="kg"
+          data-testid={testIds ? 'lot-kg' : undefined}
+          className="input !min-h-10 w-0 flex-1 !px-2 text-center"
+          inputMode="decimal"
+          value={lot.boxWeightKg}
+          onChange={(e) => updateLot(lot.id, { boxWeightKg: e.target.value })}
+          placeholder="kg"
+        />
+      </div>
+    ) : (
+      <div className="flex items-center gap-1.5">
+        <input
+          aria-label={t('totalKg')}
+          className="input !min-h-10 w-0 flex-1 !px-2 text-center"
+          inputMode="decimal"
+          value={lot.totalWeightKg}
+          onChange={(e) => updateLot(lot.id, { totalWeightKg: e.target.value })}
+          placeholder={t('totalKg')}
+        />
+        <input
+          aria-label={t('totalM3')}
+          className="input !min-h-10 w-0 flex-1 !px-2 text-center"
+          inputMode="decimal"
+          value={lot.totalVolumeM3}
+          onChange={(e) => updateLot(lot.id, { totalVolumeM3: e.target.value })}
+          placeholder={t('totalM3')}
+        />
+      </div>
+    );
+  }
+
+  function photosField(lot: LotDraft) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <label className="btn-secondary !min-h-9 cursor-pointer !px-2 text-sm">
+          📷
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            className="hidden"
+            onChange={(e) => addPhotos(lot, e.target.files)}
+          />
+        </label>
+        {lot.photoIds.map((photoId) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={photoId}
+            src={`/api/attachments/${photoId}?variant=thumb200`}
+            alt=""
+            className="h-9 w-9 rounded object-cover"
+            onError={(e) => {
+              const img = e.currentTarget;
+              if (!img.dataset.retried) {
+                img.dataset.retried = '1';
+                img.src = `/api/attachments/${photoId}?variant=original`;
+              }
+            }}
+          />
+        ))}
+        {lot.photoIds.length === 0 && (
+          <span className="text-xs font-semibold text-orange-600">{t('photoRequired')}</span>
+        )}
+      </div>
+    );
+  }
+
+  function totalsBadge(lot: LotDraft) {
+    const totals = lotTotals(lot);
+    if (!totals) return null;
+    const band = densityBand(totals.densityKgM3, THRESHOLDS);
+    return (
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-xs">
+        <b>{totals.totalWeightKg}kg</b>
+        <b>{totals.totalVolumeM3}m³</b>
+        {band && totals.densityKgM3 !== null && (
+          <span className={`rounded px-1.5 py-0.5 font-semibold ${DENSITY_COLORS[band]}`}>
+            {Math.round(totals.densityKgM3)}
+          </span>
+        )}
+      </span>
+    );
+  }
 
   return (
     <div className="space-y-3 pb-28">
@@ -474,28 +585,127 @@ export function ReceiveWizard({
             <p className="mt-1 text-xs text-gray-500">{t('unclaimedMarkingHint')}</p>
           </div>
         )}
-        <input
-          aria-label={t('sourceNote')}
-          className="input"
-          value={draft.sourceNote}
-          onChange={(e) => update({ sourceNote: e.target.value })}
-          placeholder={t('sourceNote')}
-        />
       </div>
 
-      {/* --- Product lines (Excel-style) --- */}
-      {draft.lots.map((lot, i) => {
-        const totals = lotTotals(lot);
-        const band = totals ? densityBand(totals.densityKgM3, THRESHOLDS) : null;
-        return (
+      {/* --- Product lines: real spreadsheet table on desktop --- */}
+      {letterPreview.length > 0 && (
+        <p className="hidden text-sm text-gray-600 md:block">
+          {t('letterPreview')}: ≈ <span className="font-mono font-bold">{letterPreview.join(', ')}</span>
+        </p>
+      )}
+      <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
+        <table className="w-full min-w-[1100px] text-sm">
+          <thead>
+            <tr className="border-b border-gray-300 bg-gray-50 text-left">
+              <th className="p-2">≈</th>
+              <th className="p-2">{t('productZh')}</th>
+              <th className="p-2">{t('productRu')}</th>
+              <th className="p-2">📦</th>
+              <th className="p-2">{t('dims')}</th>
+              <th className="p-2">{t('note')}</th>
+              <th className="p-2">{t('photos')}</th>
+              <th className="p-2">Σ</th>
+              <th className="p-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {draft.lots.map((lot, i) => (
+              <tr key={lot.id} className="border-b border-gray-100 align-top">
+                <td className="p-2 font-mono font-bold text-blue-800">{letterPreview[i] ?? `#${i + 1}`}</td>
+                <td className="p-2">
+                  <input
+                    aria-label={t('productZh')}
+                    className="input w-40"
+                    value={lot.zh}
+                    onChange={(e) => updateLot(lot.id, { zh: e.target.value, ru: '' })}
+                    onBlur={() => translateLot(lot)}
+                  />
+                </td>
+                <td className="p-2">
+                  <input
+                    aria-label={t('productRu')}
+                    className="input w-40"
+                    value={lot.ru}
+                    onChange={(e) => updateLot(lot.id, { ru: e.target.value })}
+                  />
+                </td>
+                <td className="p-2">
+                  <div className="flex items-center gap-1">
+                    <input
+                      aria-label={t('boxCount')}
+                      className="input !min-h-10 w-16 !px-2 text-center"
+                      inputMode="numeric"
+                      value={lot.boxCount}
+                      onChange={(e) => updateLot(lot.id, { boxCount: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="rounded bg-gray-100 px-1.5 py-1 text-xs"
+                      title={lot.dimsMode === 'uniform' ? t('uniform') : t('mixed')}
+                      onClick={() =>
+                        updateLot(lot.id, {
+                          dimsMode: lot.dimsMode === 'uniform' ? 'mixed' : 'uniform',
+                        })
+                      }
+                    >
+                      ⇄
+                    </button>
+                  </div>
+                </td>
+                <td className="p-2">{dimsFields(lot, false)}</td>
+                <td className="p-2">
+                  <input
+                    aria-label={t('note')}
+                    className="input w-36"
+                    value={lot.note}
+                    onChange={(e) => updateLot(lot.id, { note: e.target.value })}
+                    placeholder={t('notePlaceholder')}
+                  />
+                </td>
+                <td className="p-2">{photosField(lot)}</td>
+                <td className="p-2">{totalsBadge(lot)}</td>
+                <td className="p-2">
+                  {draft.lots.length > 1 && (
+                    <button
+                      type="button"
+                      aria-label={tc('delete')}
+                      className="text-lg"
+                      onClick={() => update({ lots: draft.lots.filter((l) => l.id !== lot.id) })}
+                    >
+                      🗑
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button
+          type="button"
+          className="w-full border-t border-gray-200 p-2 text-sm font-semibold text-blue-800 hover:bg-gray-50"
+          onClick={() => update({ lots: [...draft.lots, newLot()] })}
+        >
+          ＋ {t('addLot')}
+        </button>
+      </div>
+
+      {/* --- Product lines: stacked cards on mobile --- */}
+      <div id="mobile-product-lines" className="space-y-3 md:hidden">
+        {letterPreview.length > 0 && (
+          <p className="text-sm text-gray-600">
+            {t('letterPreview')}: ≈{' '}
+            <span className="font-mono font-bold">{letterPreview.join(', ')}</span>
+          </p>
+        )}
+        {draft.lots.map((lot, i) => (
           <div key={lot.id} className="card space-y-2 !p-3">
             <div className="flex items-center gap-2">
               <span className="font-mono text-lg font-extrabold text-blue-800">
                 {letterPreview[i] ? `≈${letterPreview[i]}` : `#${i + 1}`}
               </span>
               <input
-                aria-label={t('productZh')}
                 data-testid="lot-zh"
+                aria-label={t('productZh')}
                 className="input flex-1"
                 value={lot.zh}
                 onChange={(e) => updateLot(lot.id, { zh: e.target.value, ru: '' })}
@@ -520,24 +730,15 @@ export function ReceiveWizard({
               onChange={(e) => updateLot(lot.id, { ru: e.target.value })}
               placeholder={t('productRu')}
             />
-
             <div className="flex items-center gap-2 text-sm">
               <span className="w-14 font-semibold">{t('boxCountShort')}</span>
               <input
-                aria-label={t('boxCount')}
                 data-testid="lot-count"
+                aria-label={t('boxCount')}
                 className="input !min-h-10 flex-1 !px-2"
                 inputMode="numeric"
                 value={lot.boxCount}
                 onChange={(e) => updateLot(lot.id, { boxCount: e.target.value })}
-              />
-              <span className="w-12 font-semibold">{t('pieces')}</span>
-              <input
-                aria-label={t('pieces')}
-                className="input !min-h-10 flex-1 !px-2"
-                inputMode="numeric"
-                value={lot.piecesCount}
-                onChange={(e) => updateLot(lot.id, { piecesCount: e.target.value })}
               />
               <button
                 type="button"
@@ -549,195 +750,135 @@ export function ReceiveWizard({
                 {lot.dimsMode === 'uniform' ? t('uniform') : t('mixed')} ⇄
               </button>
             </div>
-
-            {lot.dimsMode === 'uniform' ? (
-              <div className="flex items-center gap-1.5">
-                {(
-                  [
-                    ['lengthCm', 'L'],
-                    ['widthCm', 'W'],
-                    ['heightCm', 'H'],
-                  ] as const
-                ).map(([field, label]) => (
-                  <input
-                    key={field}
-                    data-testid={'lot-' + label}
-                    aria-label={label}
-                    className="input !min-h-10 w-0 flex-1 !px-2 text-center"
-                    inputMode="decimal"
-                    value={lot[field]}
-                    onChange={(e) => updateLot(lot.id, { [field]: e.target.value })}
-                    placeholder={label}
-                  />
-                ))}
-                <span className="text-xs text-gray-500">cm</span>
-                <input
-                  aria-label="kg"
-                  data-testid="lot-kg"
-                  className="input !min-h-10 w-0 flex-1 !px-2 text-center"
-                  inputMode="decimal"
-                  value={lot.boxWeightKg}
-                  onChange={(e) => updateLot(lot.id, { boxWeightKg: e.target.value })}
-                  placeholder="kg"
-                />
-                <span className="text-xs text-gray-500">kg/📦</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <input
-                  aria-label={t('totalKg')}
-                  className="input !min-h-10 w-0 flex-1 !px-2 text-center"
-                  inputMode="decimal"
-                  value={lot.totalWeightKg}
-                  onChange={(e) => updateLot(lot.id, { totalWeightKg: e.target.value })}
-                  placeholder={t('totalKg')}
-                />
-                <input
-                  aria-label={t('totalM3')}
-                  className="input !min-h-10 w-0 flex-1 !px-2 text-center"
-                  inputMode="decimal"
-                  value={lot.totalVolumeM3}
-                  onChange={(e) => updateLot(lot.id, { totalVolumeM3: e.target.value })}
-                  placeholder={t('totalM3')}
-                />
-              </div>
-            )}
-
+            {dimsFields(lot, true)}
+            <input
+              data-testid="lot-note"
+              aria-label={t('note')}
+              className="input"
+              value={lot.note}
+              onChange={(e) => updateLot(lot.id, { note: e.target.value })}
+              placeholder={t('notePlaceholder')}
+            />
             <div className="flex items-center gap-2">
-              <label className="btn-secondary !min-h-10 cursor-pointer px-3 text-sm">
-                📷
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => addPhotos(lot, e.target.files)}
-                />
-              </label>
-              {lot.photoIds.map((photoId) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  key={photoId}
-                  src={`/api/attachments/${photoId}?variant=thumb200`}
-                  alt=""
-                  className="h-10 w-10 rounded object-cover"
-                  onError={(e) => {
-                    const img = e.currentTarget;
-                    if (!img.dataset.retried) {
-                      img.dataset.retried = '1';
-                      img.src = `/api/attachments/${photoId}?variant=original`;
-                    }
-                  }}
-                />
-              ))}
-              {lot.photoIds.length === 0 && (
-                <span className="text-xs font-semibold text-orange-600">{t('photoRequired')}</span>
-              )}
-              {totals && (
-                <span className="ml-auto flex items-center gap-1.5 whitespace-nowrap text-xs">
-                  <b>{totals.totalWeightKg}kg</b>
-                  <b>{totals.totalVolumeM3}m³</b>
-                  {band && totals.densityKgM3 !== null && (
-                    <span className={`rounded px-1.5 py-0.5 font-semibold ${DENSITY_COLORS[band]}`}>
-                      {Math.round(totals.densityKgM3)}
-                    </span>
-                  )}
-                </span>
-              )}
+              {photosField(lot)}
+              <span className="ml-auto">{totalsBadge(lot)}</span>
             </div>
           </div>
-        );
-      })}
+        ))}
+        <button
+          type="button"
+          className="btn-secondary w-full"
+          onClick={() => update({ lots: [...draft.lots, newLot()] })}
+        >
+          ＋ {t('addLot')}
+        </button>
+      </div>
 
-      <button
-        type="button"
-        className="btn-secondary w-full"
-        onClick={() => update({ lots: [...draft.lots, newLot()] })}
-      >
-        ＋ {t('addLot')}
-      </button>
-
-      {/* --- Costs (collapsed) --- */}
-      <details className="card !p-3">
-        <summary className="cursor-pointer font-semibold">
-          💰 {t('stepCosts')} {draft.costs.length > 0 && `(${draft.costs.length})`}
-        </summary>
-        <div className="mt-3 space-y-3">
-          {draft.costs.map((cost, i) => (
-            <div key={i} className="grid grid-cols-2 gap-2">
-              <select
-                aria-label={t('costType')}
-                className="input col-span-2"
-                value={cost.costTypeId}
-                onChange={(e) => {
-                  const costs = [...draft.costs];
-                  costs[i] = { ...cost, costTypeId: e.target.value };
-                  update({ costs });
-                }}
-              >
-                <option value="">{t('costType')}…</option>
-                {costTypes.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                aria-label={t('amount')}
-                className="input"
-                inputMode="decimal"
-                placeholder={t('amount')}
-                value={cost.amount}
-                onChange={(e) => {
-                  const costs = [...draft.costs];
-                  costs[i] = { ...cost, amount: e.target.value };
-                  update({ costs });
-                }}
-              />
-              <select
-                aria-label="currency"
-                className="input"
-                value={cost.currency}
-                onChange={(e) => {
-                  const costs = [...draft.costs];
-                  costs[i] = { ...cost, currency: e.target.value };
-                  update({ costs });
-                }}
-              >
-                {currencies.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-              <input
-                aria-label={t('note')}
-                className="input col-span-2"
-                placeholder={t('note')}
-                value={cost.note}
-                onChange={(e) => {
-                  const costs = [...draft.costs];
-                  costs[i] = { ...cost, note: e.target.value };
-                  update({ costs });
-                }}
-              />
-            </div>
-          ))}
-          <button
-            type="button"
-            className="btn-secondary w-full"
-            onClick={() =>
-              update({
-                costs: [
-                  ...draft.costs,
-                  { costTypeId: '', amount: '', currency: defaultCurrency, note: '' },
-                ],
-              })
-            }
-          >
-            ＋ {t('addCost')}
-          </button>
+      {/* --- Attachments + costs + notes, all visible together --- */}
+      <div className="card space-y-4 !p-3">
+        <div>
+          <label className="label" htmlFor="sourceNote">
+            {t('sourceNote')}
+          </label>
+          <input
+            id="sourceNote"
+            className="input"
+            value={draft.sourceNote}
+            onChange={(e) => update({ sourceNote: e.target.value })}
+          />
         </div>
-      </details>
+
+        <div>
+          <p className="label">{t('attachments')}</p>
+          <AttachmentsPanel
+            entityType="receipt"
+            entityId={draft.receiptId}
+            initial={draft.files}
+            editable
+            onAdd={(item) => update({ files: [...draft.files, item] })}
+          />
+        </div>
+
+        <div>
+          <p className="label">
+            💰 {t('stepCosts')} {draft.costs.length > 0 && `(${draft.costs.length})`}
+          </p>
+          <div className="space-y-3">
+            {draft.costs.map((cost, i) => (
+              <div key={i} className="grid grid-cols-2 gap-2">
+                <select
+                  aria-label={t('costType')}
+                  className="input col-span-2"
+                  value={cost.costTypeId}
+                  onChange={(e) => {
+                    const costs = [...draft.costs];
+                    costs[i] = { ...cost, costTypeId: e.target.value };
+                    update({ costs });
+                  }}
+                >
+                  <option value="">{t('costType')}…</option>
+                  {costTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  aria-label={t('amount')}
+                  className="input"
+                  inputMode="decimal"
+                  placeholder={t('amount')}
+                  value={cost.amount}
+                  onChange={(e) => {
+                    const costs = [...draft.costs];
+                    costs[i] = { ...cost, amount: e.target.value };
+                    update({ costs });
+                  }}
+                />
+                <select
+                  aria-label="currency"
+                  className="input"
+                  value={cost.currency}
+                  onChange={(e) => {
+                    const costs = [...draft.costs];
+                    costs[i] = { ...cost, currency: e.target.value };
+                    update({ costs });
+                  }}
+                >
+                  {currencies.map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+                <input
+                  aria-label={t('note')}
+                  className="input col-span-2"
+                  placeholder={t('note')}
+                  value={cost.note}
+                  onChange={(e) => {
+                    const costs = [...draft.costs];
+                    costs[i] = { ...cost, note: e.target.value };
+                    update({ costs });
+                  }}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn-secondary w-full"
+              onClick={() =>
+                update({
+                  costs: [
+                    ...draft.costs,
+                    { costTypeId: '', amount: '', currency: defaultCurrency, note: '' },
+                  ],
+                })
+              }
+            >
+              ＋ {t('addCost')}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {error && (
         <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
@@ -747,7 +888,7 @@ export function ReceiveWizard({
 
       {/* --- Sticky totals + confirm --- */}
       <div className="fixed inset-x-0 bottom-0 border-t border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-lg items-center gap-3 p-3">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 p-3">
           <div className="text-sm font-bold leading-tight">
             Σ {sumBoxes} 📦
             <br />
@@ -759,7 +900,7 @@ export function ReceiveWizard({
             type="button"
             data-testid="confirm-receipt"
             className="btn-primary flex-1 disabled:opacity-50"
-            disabled={submitting || uploading || !clientChosen || !lotsValid()}
+            disabled={submitting || !clientChosen || !lotsValid()}
             onClick={confirm}
           >
             {submitting ? tc('loading') : `✅ ${t('confirm')}`}

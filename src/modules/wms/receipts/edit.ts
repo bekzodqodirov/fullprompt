@@ -27,7 +27,7 @@ export const editLotSchema = z.object({
   boxWeightKg: z.number().min(0.001).max(10_000).optional(),
   totalWeightKg: z.number().min(0.001).max(1_000_000).optional(),
   totalVolumeM3: z.number().min(0.0001).max(10_000).optional(),
-  piecesCount: z.number().int().min(1).max(100_000_000).nullable().optional(),
+  note: z.string().trim().max(500).nullable().optional(),
 });
 
 export type EditLotInput = z.infer<typeof editLotSchema>;
@@ -136,7 +136,7 @@ export async function editLot(
       boxWeightKg: lot.boxWeightKg ? Number(lot.boxWeightKg) : null,
       totalWeightKg: Number(lot.totalWeightKg),
       totalVolumeM3: Number(lot.totalVolumeM3),
-      piecesCount: lot.piecesCount,
+      note: lot.note,
     };
     const after = {
       productNameZh: input.productNameZh,
@@ -148,7 +148,7 @@ export async function editLot(
       boxWeightKg: input.boxWeightKg ?? null,
       totalWeightKg: totals.totalWeightKg,
       totalVolumeM3: totals.totalVolumeM3,
-      piecesCount: input.piecesCount ?? null,
+      note: input.note ?? null,
     };
 
     await tx
@@ -163,7 +163,7 @@ export async function editLot(
         boxWeightKg: input.boxWeightKg?.toString() ?? null,
         totalWeightKg: totals.totalWeightKg.toString(),
         totalVolumeM3: totals.totalVolumeM3.toString(),
-        piecesCount: input.piecesCount ?? null,
+        note: input.note ?? null,
       })
       .where(eq(receiptLots.id, lot.id));
 

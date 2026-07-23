@@ -38,7 +38,7 @@ export async function editLotAction(_prev: EditLotState, formData: FormData): Pr
     boxWeightKg: num('boxWeightKg'),
     totalWeightKg: num('totalWeightKg'),
     totalVolumeM3: num('totalVolumeM3'),
-    piecesCount: num('piecesCount') ?? null,
+    note: formData.get('note') ?? '',
   });
   if (!parsed.success) return { error: 'validation' };
 
