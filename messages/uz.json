@@ -214,7 +214,8 @@
     "pieces": "dona",
     "dims": "O'lchamlar",
     "notePlaceholder": "Qator bo'yicha izoh",
-    "attachments": "Fayllar"
+    "attachments": "Fayllar",
+    "generalPhotos": "Umumiy karobkalar rasmi"
   },
   "receipts": {
     "title": "Qabullar",

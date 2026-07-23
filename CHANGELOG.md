@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Owner feedback round 3 — 2026-07-23
+
+- **Photos fixed**: attachments are now streamed directly by the server instead of redirecting to an absolute URL — the redirect host could differ from the one the browser used (phone on LAN → `localhost` → broken images). Correct content type is set too.
+- Receiving: per-line note field removed (only the receipt-level note remains); warehouse+client, general box photos, note, files and costs all live in ONE top panel.
+- New: general box photos (receipt-level) with camera upload in receiving, shown in the stock list next to the product photo (amber border) — both open in a tap-to-zoom popup instead of navigating away.
+- Russian translation no longer has its own column/field — it shows in parentheses under the Chinese name.
+- "Need at least 1 photo" text replaced with a compact ⚠️ icon.
+- Mixed-mode line entry order is now m³ first, then kg.
+
 ## UI cleanup — receive screen — 2026-07-23
 
 - Receive page reorganized into three aligned panels on every screen size: client/warehouse card → product lines → note/files/costs card, with the sticky totals bar below. No more scattered blocks.

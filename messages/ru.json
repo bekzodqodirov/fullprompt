@@ -214,7 +214,8 @@
     "pieces": "шт",
     "dims": "Размеры",
     "notePlaceholder": "Заметка по строке",
-    "attachments": "Файлы"
+    "attachments": "Файлы",
+    "generalPhotos": "Общее фото коробок"
   },
   "receipts": {
     "title": "Приёмки",

@@ -214,7 +214,8 @@
     "pieces": "件",
     "dims": "尺寸",
     "notePlaceholder": "该行备注",
-    "attachments": "文件"
+    "attachments": "文件",
+    "generalPhotos": "整体箱子照片"
   },
   "receipts": {
     "title": "收货单",

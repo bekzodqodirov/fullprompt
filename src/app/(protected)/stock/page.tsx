@@ -11,6 +11,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { LightboxImg } from '@/components/lightbox-img';
 
 /** Stock browser v1 (spec §10 screen 6): WH → client → lot → box. */
 export default async function StockPage({
@@ -134,6 +135,11 @@ export default async function StockPage({
         WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
         ORDER BY a.created_at LIMIT 1
       )`,
+      generalPhotoId: sql<string | null>`(
+        SELECT a.id FROM attachments a
+        WHERE a.entity_type = 'receipt' AND a.entity_id = ${receipts.id} AND a.kind = 'photo'
+        ORDER BY a.created_at LIMIT 1
+      )`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -236,17 +242,22 @@ export default async function StockPage({
               return (
                 <tr key={line.lot.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="p-1.5">
-                    {line.photoId ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={`/api/attachments/${line.photoId}?variant=thumb200`}
-                        alt=""
-                        className="h-12 w-12 rounded object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className="text-gray-300">—</span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {line.photoId ? (
+                        <LightboxImg
+                          attachmentId={line.photoId}
+                          className="h-14 w-14 rounded object-cover"
+                        />
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                      {line.generalPhotoId && (
+                        <LightboxImg
+                          attachmentId={line.generalPhotoId}
+                          className="h-14 w-14 rounded border-2 border-amber-300 object-cover"
+                        />
+                      )}
+                    </div>
                   </td>
                   <td className="whitespace-nowrap p-2">
                     <Link href={`/stock?lot=${line.lot.id}`} className="font-mono font-extrabold text-blue-800">

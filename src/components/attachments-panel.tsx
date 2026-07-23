@@ -3,6 +3,7 @@
 import imageCompression from 'browser-image-compression';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { LightboxImg } from '@/components/lightbox-img';
 
 export interface AttachmentItem {
   id: string;
@@ -74,14 +75,12 @@ export function AttachmentsPanel({
       <div className="flex flex-wrap gap-2">
         {items.map((item) =>
           item.kind === 'photo' ? (
-            <a key={item.id} href={`/api/attachments/${item.id}`} target="_blank" rel="noreferrer">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`/api/attachments/${item.id}?variant=thumb200`}
-                alt={item.fileName}
-                className="h-16 w-16 rounded object-cover"
-              />
-            </a>
+            <LightboxImg
+              key={item.id}
+              attachmentId={item.id}
+              alt={item.fileName}
+              className="h-16 w-16 rounded object-cover"
+            />
           ) : (
             <a
               key={item.id}

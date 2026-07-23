@@ -42,15 +42,12 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
     .jpeg()
     .toBuffer();
   await page
-    .locator('input[type="file"]')
+    .locator('#mobile-product-lines input[type="file"]')
     .first()
     .setInputFiles({ name: 'box.jpg', mimeType: 'image/jpeg', buffer: photo });
   await expect(page.locator('#mobile-product-lines img[src*="/api/attachments/"]').first()).toBeVisible({
     timeout: 10_000,
   });
-
-  // Per-line note (replaces the removed "pieces" field, owner's feedback)
-  await page.getByTestId('lot-note').fill('доставщик перепутал коробку');
 
   // Sticky footer totals + confirm
   await expect(page.getByText('Σ 4 📦')).toBeVisible();
@@ -68,11 +65,6 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('application/pdf');
   expect((await res.body()).subarray(0, 4).toString()).toBe('%PDF');
-
-  // The note shows on the receipt detail page
-  const receiptId = href!.match(/\/api\/receipts\/([^/]+)\/labels/)![1];
-  await page.goto(`/receipts/${receiptId}`);
-  await expect(page.getByText('доставщик перепутал коробку')).toBeVisible();
 
   // Combined client+letter search still resolves
   await page.goto('/search?q=gs777-a');
@@ -109,7 +101,7 @@ test('unclaimed intake captures the box marking', async ({ page }) => {
     .jpeg()
     .toBuffer();
   await page
-    .locator('input[type="file"]')
+    .locator('#mobile-product-lines input[type="file"]')
     .first()
     .setInputFiles({ name: 'u.jpg', mimeType: 'image/jpeg', buffer: photo });
   await expect(page.locator('#mobile-product-lines img[src*="/api/attachments/"]').first()).toBeVisible({

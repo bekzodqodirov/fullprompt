@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { computeLotTotals, densityBand } from '@/modules/wms/receipts/math';
 import { AttachmentsPanel } from '@/components/attachments-panel';
+import { LightboxImg } from '@/components/lightbox-img';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
 
 /**
@@ -69,6 +70,8 @@ interface Draft {
   lots: LotDraft[];
   costs: CostDraft[];
   files: { id: string; fileName: string; contentType: string; kind: string }[];
+  /** Receipt-level photos of the overall boxes (owner's request). */
+  generalPhotoIds: string[];
 }
 
 const DENSITY_COLORS: Record<string, string> = {
@@ -110,6 +113,7 @@ function newDraft(warehouseId: string): Draft {
     lots: [newLot()],
     costs: [],
     files: [],
+    generalPhotoIds: [],
   };
 }
 
@@ -170,6 +174,7 @@ export function ReceiveWizard({
             ...parsed,
             costs: parsed.costs ?? [],
             files: parsed.files ?? [],
+            generalPhotoIds: parsed.generalPhotoIds ?? [],
             lots: parsed.lots.map((lot) => ({ ...newLot(), ...lot })),
           } as Draft;
           // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -270,6 +275,38 @@ export function ReceiveWizard({
                 }
               : d,
           );
+        } else {
+          setError(t('photoUploadFailed'));
+        }
+      } catch {
+        setError(t('photoUploadFailed'));
+      }
+    }
+  }
+
+  async function addGeneralPhotos(files: FileList | null) {
+    if (!files?.length) return;
+    setError(null);
+    for (const file of Array.from(files)) {
+      try {
+        const compressed = await imageCompression(file, {
+          maxSizeMB: 0.3,
+          maxWidthOrHeight: 1600,
+          useWebWorker: true,
+        });
+        const formData = new FormData();
+        formData.set(
+          'file',
+          new File([compressed], file.name || 'photo.jpg', {
+            type: compressed.type || 'image/jpeg',
+          }),
+        );
+        formData.set('entityType', 'receipt');
+        formData.set('entityId', draft!.receiptId);
+        const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+        if (res.ok) {
+          const { id } = (await res.json()) as { id: string };
+          setDraft((d) => (d ? { ...d, generalPhotoIds: [...d.generalPhotoIds, id] } : d));
         } else {
           setError(t('photoUploadFailed'));
         }
@@ -414,24 +451,11 @@ export function ReceiveWizard({
           />
         </label>
         {lot.photoIds.map((photoId) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={photoId}
-            src={`/api/attachments/${photoId}?variant=thumb200`}
-            alt=""
-            className="h-9 w-9 rounded-md object-cover"
-            onError={(e) => {
-              const img = e.currentTarget;
-              if (!img.dataset.retried) {
-                img.dataset.retried = '1';
-                img.src = `/api/attachments/${photoId}?variant=original`;
-              }
-            }}
-          />
+          <LightboxImg key={photoId} attachmentId={photoId} className="h-9 w-9 rounded-md object-cover" />
         ))}
         {lot.photoIds.length === 0 && (
-          <span className="text-[11px] font-semibold leading-tight text-orange-600">
-            {t('photoRequired')}
+          <span title={t('photoRequired')} className="text-base" aria-label={t('photoRequired')}>
+            ⚠️
           </span>
         )}
       </div>
@@ -580,7 +604,30 @@ export function ReceiveWizard({
   );
 
   const bottomBlock = (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div>
+        <p className="label">📷 {t('generalPhotos')}</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-gray-400 text-2xl hover:bg-gray-50">
+            📷
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              className="hidden"
+              onChange={(e) => addGeneralPhotos(e.target.files)}
+            />
+          </label>
+          {draft.generalPhotoIds.map((photoId) => (
+            <LightboxImg
+              key={photoId}
+              attachmentId={photoId}
+              className="h-16 w-16 rounded-lg object-cover"
+            />
+          ))}
+        </div>
+      </div>
       <div>
         <p className="label">{t('sourceNote')}</p>
         <textarea
@@ -687,17 +734,20 @@ export function ReceiveWizard({
 
   return (
     <div className="space-y-4 pb-24">
-      {/* ===== Warehouse + client — one shared card (both layouts) ===== */}
-      <div className="card !p-3 md:!p-4">{clientBlock}</div>
+      {/* ===== One place for everything about the receipt (owner's request):
+           warehouse + client, general box photos, note, files, costs ===== */}
+      <div className="card space-y-3 !p-3 md:!p-4">
+        {clientBlock}
+        {bottomBlock}
+      </div>
 
       {/* ===== Desktop: spreadsheet-style product lines ===== */}
       <div className="hidden md:block">
         <div className="card !p-0">
           <div className="overflow-x-auto rounded-xl">
-            <table className="w-full min-w-[960px] table-fixed text-sm">
+            <table className="w-full min-w-[860px] table-fixed text-sm">
               <colgroup>
                 <col className="w-10" />
-                <col />
                 <col />
                 <col className="w-16" />
                 <col className="w-8" />
@@ -705,8 +755,7 @@ export function ReceiveWizard({
                 <col className="w-14" />
                 <col className="w-14" />
                 <col className="w-16" />
-                <col />
-                <col className="w-28" />
+                <col className="w-44" />
                 <col className="w-32" />
                 <col className="w-9" />
               </colgroup>
@@ -714,14 +763,12 @@ export function ReceiveWizard({
                 <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                   <th className="p-2">#</th>
                   <th className="p-2">{t('productZh')}</th>
-                  <th className="p-2">{t('productRu')}</th>
                   <th className="p-2 text-center">📦</th>
                   <th className="p-2" />
                   <th className="p-2 text-center">L</th>
                   <th className="p-2 text-center">W</th>
                   <th className="p-2 text-center">H</th>
                   <th className="p-2 text-center">kg/📦</th>
-                  <th className="p-2">{t('note')}</th>
                   <th className="p-2">{t('photos')}</th>
                   <th className="p-2 text-right">Σ</th>
                   <th className="p-2" />
@@ -742,15 +789,9 @@ export function ReceiveWizard({
                         onBlur={() => translateLot(lot)}
                         placeholder="化妆品"
                       />
-                    </td>
-                    <td className="p-1.5">
-                      <input
-                        aria-label={t('productRu')}
-                        className="input-cell"
-                        value={lot.ru}
-                        onChange={(e) => updateLot(lot.id, { ru: e.target.value })}
-                        placeholder="Косметика"
-                      />
+                      {lot.ru && (
+                        <p className="mt-0.5 truncate px-1 text-xs text-gray-500">({lot.ru})</p>
+                      )}
                     </td>
                     <td className="p-1.5">
                       <input
@@ -772,20 +813,11 @@ export function ReceiveWizard({
                     ) : (
                       <td className="p-1.5" colSpan={4}>
                         <div className="flex gap-1.5">
-                          {cellNum(lot, 'totalWeightKg', t('totalKg'))}
                           {cellNum(lot, 'totalVolumeM3', t('totalM3'))}
+                          {cellNum(lot, 'totalWeightKg', t('totalKg'))}
                         </div>
                       </td>
                     )}
-                    <td className="p-1.5">
-                      <input
-                        aria-label={t('note')}
-                        className="input-cell"
-                        value={lot.note}
-                        onChange={(e) => updateLot(lot.id, { note: e.target.value })}
-                        placeholder={t('notePlaceholder')}
-                      />
-                    </td>
                     <td className="p-1.5">{photosField(lot)}</td>
                     <td className="p-1.5 text-right">{totalsBadge(lot)}</td>
                     <td className="p-1.5 text-center">
@@ -843,13 +875,7 @@ export function ReceiveWizard({
                 </button>
               )}
             </div>
-            <input
-              aria-label={t('productRu')}
-              className="input"
-              value={lot.ru}
-              onChange={(e) => updateLot(lot.id, { ru: e.target.value })}
-              placeholder={t('productRu')}
-            />
+            {lot.ru && <p className="px-10 text-sm text-gray-500">({lot.ru})</p>}
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <p className="mb-0.5 text-[11px] font-semibold text-gray-500">{t('boxCount')}</p>
@@ -886,26 +912,18 @@ export function ReceiveWizard({
               <div className="grid grid-cols-2 gap-1.5">
                 <div>
                   <p className="mb-0.5 text-center text-[11px] font-semibold text-gray-500">
-                    {t('totalKg')}
-                  </p>
-                  {cellNum(lot, 'totalWeightKg', t('totalKg'))}
-                </div>
-                <div>
-                  <p className="mb-0.5 text-center text-[11px] font-semibold text-gray-500">
                     {t('totalM3')}
                   </p>
                   {cellNum(lot, 'totalVolumeM3', t('totalM3'))}
                 </div>
+                <div>
+                  <p className="mb-0.5 text-center text-[11px] font-semibold text-gray-500">
+                    {t('totalKg')}
+                  </p>
+                  {cellNum(lot, 'totalWeightKg', t('totalKg'))}
+                </div>
               </div>
             )}
-            <input
-              data-testid="lot-note"
-              aria-label={t('note')}
-              className="input"
-              value={lot.note}
-              onChange={(e) => updateLot(lot.id, { note: e.target.value })}
-              placeholder={t('notePlaceholder')}
-            />
             <div className="flex items-center gap-2">
               {photosField(lot)}
               <span className="ml-auto">{totalsBadge(lot)}</span>
@@ -920,9 +938,6 @@ export function ReceiveWizard({
           ＋ {t('addLot')}
         </button>
       </div>
-
-      {/* ===== Note + attachments + costs — one shared card ===== */}
-      <div className="card !p-3 md:!p-4">{bottomBlock}</div>
 
       {error && (
         <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
