@@ -64,7 +64,8 @@
     "aging": "Груз старше {days} дн.",
     "days": "дн.",
     "missingInTransit": "Потеряно в пути",
-    "undocumented": "Перемещено без документов"
+    "undocumented": "Перемещено без документов",
+    "costMissing": "Партии без расходов (более 3 дней после отправки)"
   },
   "inventory": {
     "title": "Инвентаризация",
@@ -106,7 +107,30 @@
     "status": "Статус",
     "departed": "Отправлена",
     "shortLoaded": "Недогруз",
-    "addedOnSpot": "Добавлено вне плана"
+    "addedOnSpot": "Добавлено вне плана",
+    "receiptsJournal": "Журнал приёмок",
+    "unclaimedReport": "Грузы без владельца",
+    "clientHistory": "История грузов клиента",
+    "staffActivity": "Активность сотрудников",
+    "labelPrints": "Журнал печати этикеток",
+    "date": "Дата",
+    "operator": "Оператор",
+    "marking": "Маркировка",
+    "noUnclaimed": "Грузов без владельца нет",
+    "clientNotFound": "Клиент не найден",
+    "batches": "Партии",
+    "inStock": "На складе",
+    "inTransitCol": "В пути",
+    "ready": "Готово",
+    "issued": "Выдано",
+    "employee": "Сотрудник",
+    "receiptsCol": "Приёмки",
+    "edits": "Правки",
+    "scans": "Сканы",
+    "when": "Когда",
+    "who": "Кто",
+    "receipt": "Приёмка",
+    "labels": "Этикеток"
   },
   "warehouses": {
     "title": "Склады",

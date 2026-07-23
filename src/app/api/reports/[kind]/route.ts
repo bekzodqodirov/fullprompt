@@ -4,11 +4,29 @@ import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
   buildBatchRegisterXlsx,
+  buildClientHistoryXlsx,
+  buildInTransitXlsx,
+  buildLabelPrintLogXlsx,
   buildLandedCostXlsx,
+  buildReceiptsJournalXlsx,
+  buildStaffActivityXlsx,
   buildStockAgingXlsx,
+  buildUnclaimedXlsx,
 } from '@/modules/wms/reports/xlsx';
 
-const kindSchema = z.enum(['landed-cost', 'stock-aging', 'batches']);
+const kindSchema = z.enum([
+  'landed-cost',
+  'stock-aging',
+  'batches',
+  'receipts-journal',
+  'unclaimed',
+  'client-history',
+  'staff-activity',
+  'label-prints',
+  'in-transit',
+]);
+/** Reports only management sees (costs, staff performance, client history). */
+const ALL_WH_ONLY = new Set(['landed-cost', 'client-history', 'staff-activity', 'label-prints']);
 
 /**
  * §13 report XLSX exports. Landed cost needs all-warehouse reporting rights;
@@ -22,7 +40,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
 
   let actor;
   try {
-    if (kind.data === 'landed-cost') {
+    if (ALL_WH_ONLY.has(kind.data)) {
       actor = await authorize('reports.all_warehouses');
     } else {
       actor = await getActor();
@@ -42,13 +60,39 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   const scope = actor.permissions.has('reports.all_warehouses') ? undefined : actor.warehouseIds;
   const url = new URL(request.url);
   const clientId = z.string().uuid().safeParse(url.searchParams.get('clientId'));
+  const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30));
 
-  const xlsx =
-    kind.data === 'landed-cost'
-      ? await buildLandedCostXlsx(clientId.success ? clientId.data : undefined)
-      : kind.data === 'stock-aging'
-        ? await buildStockAgingXlsx(scope)
-        : await buildBatchRegisterXlsx(scope);
+  let xlsx: Buffer;
+  switch (kind.data) {
+    case 'landed-cost':
+      xlsx = await buildLandedCostXlsx(clientId.success ? clientId.data : undefined);
+      break;
+    case 'stock-aging':
+      xlsx = await buildStockAgingXlsx(scope);
+      break;
+    case 'batches':
+      xlsx = await buildBatchRegisterXlsx(scope);
+      break;
+    case 'receipts-journal':
+      xlsx = await buildReceiptsJournalXlsx(days, scope);
+      break;
+    case 'unclaimed':
+      xlsx = await buildUnclaimedXlsx(scope);
+      break;
+    case 'client-history':
+      if (!clientId.success) return new Response('clientId required', { status: 400 });
+      xlsx = await buildClientHistoryXlsx(clientId.data);
+      break;
+    case 'staff-activity':
+      xlsx = await buildStaffActivityXlsx(days);
+      break;
+    case 'label-prints':
+      xlsx = await buildLabelPrintLogXlsx(days);
+      break;
+    case 'in-transit':
+      xlsx = await buildInTransitXlsx(scope);
+      break;
+  }
 
   const meta = await requestMeta();
   await writeAudit(

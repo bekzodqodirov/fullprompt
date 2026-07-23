@@ -1,17 +1,30 @@
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { SortTh, sortRows } from '@/components/sort-th';
 import { stockAging } from '@/modules/wms/reports/queries';
 
+const SORTABLE = ['whCode', 'code', 'boxCount', 'kg', 'm3', 'density', 'days'] as const;
+
 /** Report §13.1: current stock with aging days + density (oldest first). */
-export default async function StockAgingReportPage() {
+export default async function StockAgingReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const allWh = actor.permissions.has('reports.all_warehouses');
   if (!allWh && !actor.permissions.has('reports.own_warehouse')) redirect('/');
   const t = await getTranslations('reports');
+  const { sort, dir } = await searchParams;
 
-  const rows = await stockAging(allWh ? undefined : actor.warehouseIds);
+  const rows = sortRows(
+    await stockAging(allWh ? undefined : actor.warehouseIds),
+    sort,
+    dir,
+    SORTABLE,
+  );
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
@@ -27,14 +40,14 @@ export default async function StockAgingReportPage() {
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
-                <th className="p-2">WH</th>
-                <th className="p-2">{t('code')}</th>
+                <SortTh label="WH" field="whCode" sort={sort} dir={dir} />
+                <SortTh label={t('code')} field="code" sort={sort} dir={dir} />
                 <th className="p-2">{t('product')}</th>
-                <th className="p-2 text-right">📦</th>
-                <th className="p-2 text-right">kg</th>
-                <th className="p-2 text-right">m³</th>
-                <th className="p-2 text-right">kg/m³</th>
-                <th className="p-2 text-right">{t('days')}</th>
+                <SortTh label="📦" field="boxCount" sort={sort} dir={dir} className="p-2 text-right" />
+                <SortTh label="kg" field="kg" sort={sort} dir={dir} className="p-2 text-right" />
+                <SortTh label="m³" field="m3" sort={sort} dir={dir} className="p-2 text-right" />
+                <SortTh label="kg/m³" field="density" sort={sort} dir={dir} className="p-2 text-right" />
+                <SortTh label={t('days')} field="days" sort={sort} dir={dir} className="p-2 text-right" />
               </tr>
             </thead>
             <tbody>

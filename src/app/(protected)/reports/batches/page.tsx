@@ -2,10 +2,17 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { SortTh, sortRows } from '@/components/sort-th';
 import { batchRegister } from '@/modules/wms/reports/queries';
 
+const SORTABLE = ['code', 'status', 'departedAt', 'loaded', 'kg', 'costUsd'] as const;
+
 /** Report §13.3: batch register with deviations + costs + unit cost. */
-export default async function BatchRegisterReportPage() {
+export default async function BatchRegisterReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const allWh = actor.permissions.has('reports.all_warehouses');
@@ -13,8 +20,14 @@ export default async function BatchRegisterReportPage() {
   const t = await getTranslations('reports');
   const tb = await getTranslations('batches');
   const format = await getFormatter();
+  const { sort, dir } = await searchParams;
 
-  const rows = await batchRegister(allWh ? undefined : actor.warehouseIds);
+  const rows = sortRows(
+    await batchRegister(allWh ? undefined : actor.warehouseIds),
+    sort,
+    dir,
+    SORTABLE,
+  );
   const showCosts = actor.permissions.has('reports.all_warehouses');
 
   return (
@@ -31,15 +44,15 @@ export default async function BatchRegisterReportPage() {
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
-                <th className="p-2">{t('batch')}</th>
-                <th className="p-2">{t('status')}</th>
-                <th className="p-2">{t('departed')}</th>
-                <th className="p-2 text-right">📦</th>
+                <SortTh label={t('batch')} field="code" sort={sort} dir={dir} />
+                <SortTh label={t('status')} field="status" sort={sort} dir={dir} />
+                <SortTh label={t('departed')} field="departedAt" sort={sort} dir={dir} />
+                <SortTh label="📦" field="loaded" sort={sort} dir={dir} className="p-2 text-right" />
                 <th className="p-2 text-right" title={t('shortLoaded')}>⤵️</th>
                 <th className="p-2 text-right" title={t('addedOnSpot')}>➕</th>
-                <th className="p-2 text-right">kg</th>
+                <SortTh label="kg" field="kg" sort={sort} dir={dir} className="p-2 text-right" />
                 <th className="p-2 text-right">m³</th>
-                {showCosts && <th className="p-2 text-right">$</th>}
+                {showCosts && <SortTh label="$" field="costUsd" sort={sort} dir={dir} className="p-2 text-right" />}
                 {showCosts && <th className="p-2 text-right">$/kg</th>}
               </tr>
             </thead>

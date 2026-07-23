@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { getSetting } from '@/modules/platform/settings/service';
 import {
   agingSummary,
+  costMissingBatches,
   discrepancySummary,
   inTransitBatches,
   recentReceipts,
@@ -31,15 +32,18 @@ export default async function DashboardPage() {
   const format = await getFormatter();
   const staleDays = Number(await getSetting('stale_stock_days')) || 30;
 
-  const [fills, stock, receipts24, transit, unclaimed, aging, flags] = await Promise.all([
-    warehouseFill(scope),
-    stockByWarehouse(scope),
-    recentReceipts(scope),
-    inTransitBatches(scope),
-    unclaimedSummary(scope),
-    agingSummary(staleDays, scope),
-    discrepancySummary(scope),
-  ]);
+  const [fills, stock, receipts24, transit, unclaimed, aging, flags, costMissing] =
+    await Promise.all([
+      warehouseFill(scope),
+      stockByWarehouse(scope),
+      recentReceipts(scope),
+      inTransitBatches(scope),
+      unclaimedSummary(scope),
+      agingSummary(staleDays, scope),
+      discrepancySummary(scope),
+      // Costing hygiene (spec 6.9): departed > 3 days with zero cost entries.
+      allWh ? costMissingBatches(3) : Promise.resolve([]),
+    ]);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
@@ -161,6 +165,22 @@ export default async function DashboardPage() {
               {flags.undocumented}
             </span>
           </div>
+          {costMissing.length > 0 && (
+            <div className="space-y-1 border-t border-gray-100 pt-2 text-sm">
+              <p className="font-semibold text-orange-700">💸 {t('costMissing')}</p>
+              {costMissing.map((batch) => (
+                <Link key={batch.id} href={`/batches/${batch.id}`} className="flex gap-2 text-xs">
+                  <span className="font-mono font-bold text-blue-800">{batch.code}</span>
+                  <span className="font-mono">{batch.originCode}→{batch.destCode}</span>
+                  {batch.departedAt && (
+                    <span className="ml-auto text-gray-500">
+                      {format.dateTime(batch.departedAt, { dateStyle: 'short' })}
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

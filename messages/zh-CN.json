@@ -64,7 +64,8 @@
     "aging": "存放超过 {days} 天",
     "days": "天",
     "missingInTransit": "途中丢失",
-    "undocumented": "无单据转移"
+    "undocumented": "无单据转移",
+    "costMissing": "未录入费用的批次（发出超过 3 天）"
   },
   "inventory": {
     "title": "盘点",
@@ -106,7 +107,30 @@
     "status": "状态",
     "departed": "已发出",
     "shortLoaded": "少装",
-    "addedOnSpot": "计划外添加"
+    "addedOnSpot": "计划外添加",
+    "receiptsJournal": "收货日志",
+    "unclaimedReport": "无主货物",
+    "clientHistory": "客户货物历史",
+    "staffActivity": "员工活动",
+    "labelPrints": "标签打印日志",
+    "date": "日期",
+    "operator": "操作员",
+    "marking": "唛头",
+    "noUnclaimed": "没有无主货物",
+    "clientNotFound": "未找到客户",
+    "batches": "批次",
+    "inStock": "在库",
+    "inTransitCol": "在途",
+    "ready": "备好",
+    "issued": "已发放",
+    "employee": "员工",
+    "receiptsCol": "收货",
+    "edits": "修改",
+    "scans": "扫描",
+    "when": "时间",
+    "who": "谁",
+    "receipt": "收货单",
+    "labels": "标签数"
   },
   "warehouses": {
     "title": "仓库",

@@ -371,3 +371,227 @@ export async function batchRegister(warehouseIds?: string[]) {
     };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Reports 4-8: receipts journal, unclaimed, client history, staff activity,
+// label reprint log (§13) — same scoping convention as above.
+// ---------------------------------------------------------------------------
+
+export async function receiptsJournal(days: number, warehouseIds?: string[]) {
+  const rows = await db
+    .select({
+      id: receipts.id,
+      number: receipts.number,
+      receivedAt: receipts.receivedAt,
+      status: receipts.status,
+      whCode: warehouses.code,
+      clientCode: clients.clientCode,
+      marking: receipts.unclaimedMarking,
+      operator: sql<string | null>`(SELECT u.full_name FROM users u WHERE u.id = ${receipts.createdBy})`,
+      lots: sql<number>`(SELECT count(*) FROM receipt_lots rl WHERE rl.receipt_id = ${receipts.id})`,
+      boxCount: sql<number>`(SELECT coalesce(sum(rl.box_count), 0) FROM receipt_lots rl WHERE rl.receipt_id = ${receipts.id})`,
+      kg: sql<string>`(SELECT coalesce(sum(rl.total_weight_kg), 0) FROM receipt_lots rl WHERE rl.receipt_id = ${receipts.id})`,
+      m3: sql<string>`(SELECT coalesce(sum(rl.total_volume_m3), 0) FROM receipt_lots rl WHERE rl.receipt_id = ${receipts.id})`,
+    })
+    .from(receipts)
+    .innerJoin(warehouses, eq(receipts.warehouseId, warehouses.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .where(
+      and(
+        sql`${receipts.receivedAt} > now() - make_interval(days => ${days})`,
+        warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
+      ),
+    )
+    .orderBy(desc(receipts.receivedAt))
+    .limit(500);
+  return rows.map((r) => ({
+    ...r,
+    lots: Number(r.lots),
+    boxCount: Number(r.boxCount),
+    kg: Math.round(Number(r.kg) * 10) / 10,
+    m3: Math.round(Number(r.m3) * 100) / 100,
+  }));
+}
+
+export async function unclaimedReport(warehouseIds?: string[]) {
+  const rows = await db
+    .select({
+      id: receipts.id,
+      number: receipts.number,
+      marking: receipts.unclaimedMarking,
+      whCode: warehouses.code,
+      receivedAt: receipts.receivedAt,
+      boxesInStock: sql<number>`(
+        SELECT count(*) FROM ${boxes} b JOIN receipt_lots rl ON b.lot_id = rl.id
+        WHERE rl.receipt_id = ${receipts.id} AND b.status = 'in_stock'
+      )`,
+      kg: sql<string>`(SELECT coalesce(sum(rl.total_weight_kg), 0) FROM receipt_lots rl WHERE rl.receipt_id = ${receipts.id})`,
+    })
+    .from(receipts)
+    .innerJoin(warehouses, eq(receipts.warehouseId, warehouses.id))
+    .where(
+      and(
+        isNull(receipts.clientId),
+        eq(receipts.status, 'confirmed'),
+        warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
+      ),
+    )
+    .orderBy(asc(receipts.receivedAt));
+  return rows
+    .map((r) => ({
+      ...r,
+      boxesInStock: Number(r.boxesInStock),
+      kg: Math.round(Number(r.kg) * 10) / 10,
+      days: Math.floor((Date.now() - new Date(r.receivedAt).getTime()) / 86_400_000),
+    }))
+    .filter((r) => r.boxesInStock > 0);
+}
+
+/** Client cargo history: every lot's journey summary (§13.6). */
+export async function clientHistory(clientId: string) {
+  const rows = await db
+    .select({
+      lotId: receiptLots.id,
+      letter: receiptLots.letter,
+      productNameZh: receiptLots.productNameZh,
+      productNameRu: receiptLots.productNameRu,
+      boxCount: receiptLots.boxCount,
+      receivedAt: receipts.receivedAt,
+      whCode: warehouses.code,
+      inStock: sql<number>`count(*) FILTER (WHERE ${boxes.status} IN ('in_stock', 'planned', 'loading'))`,
+      inTransit: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'in_transit')`,
+      ready: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'ready_for_pickup')`,
+      issued: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'issued')`,
+      lostVoid: sql<number>`count(*) FILTER (WHERE ${boxes.status} IN ('lost', 'void'))`,
+      batchCodes: sql<string | null>`(
+        SELECT string_agg(DISTINCT bt.code, ', ')
+        FROM box_movements bm
+        JOIN ${boxes} b2 ON b2.id = bm.box_id
+        JOIN ${batches} bt ON bt.id = bm.ref_id
+        WHERE b2.lot_id = ${receiptLots.id} AND bm.ref_type = 'batch' AND bm.cause = 'batch_departed'
+      )`,
+    })
+    .from(receiptLots)
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .innerJoin(warehouses, eq(receipts.warehouseId, warehouses.id))
+    .innerJoin(boxes, eq(boxes.lotId, receiptLots.id))
+    .where(eq(receipts.clientId, clientId))
+    .groupBy(receiptLots.id, receipts.receivedAt, warehouses.code)
+    .orderBy(desc(receipts.receivedAt));
+  return rows.map((r) => ({
+    ...r,
+    inStock: Number(r.inStock),
+    inTransit: Number(r.inTransit),
+    ready: Number(r.ready),
+    issued: Number(r.issued),
+    lostVoid: Number(r.lostVoid),
+  }));
+}
+
+/** Staff activity per user per day (§13.8): receipts, edits, prints, scans. */
+export async function staffActivity(days: number) {
+  const rows = await db.execute(sql`
+    WITH audit AS (
+      SELECT a.actor_id,
+             date_trunc('day', a.created_at)::date AS day,
+             count(*) FILTER (WHERE a.entity_type = 'receipt' AND a.action = 'create') AS receipts,
+             count(*) FILTER (WHERE a.action = 'update') AS edits,
+             count(*) FILTER (WHERE a.action = 'label_print') AS prints,
+             count(*) FILTER (WHERE a.action = 'export') AS exports
+      FROM audit_log a
+      WHERE a.created_at > now() - make_interval(days => ${days}) AND a.actor_id IS NOT NULL
+      GROUP BY a.actor_id, day
+    ), scans AS (
+      SELECT s.scanned_by AS actor_id,
+             date_trunc('day', s.created_at)::date AS day,
+             count(*) AS scans
+      FROM scan_events s
+      WHERE s.created_at > now() - make_interval(days => ${days})
+      GROUP BY s.scanned_by, day
+    )
+    SELECT coalesce(a.actor_id, s.actor_id) AS actor_id,
+           coalesce(a.day, s.day) AS day,
+           u.full_name,
+           coalesce(a.receipts, 0) AS receipts,
+           coalesce(a.edits, 0) AS edits,
+           coalesce(a.prints, 0) AS prints,
+           coalesce(a.exports, 0) AS exports,
+           coalesce(s.scans, 0) AS scans
+    FROM audit a
+    FULL OUTER JOIN scans s ON s.actor_id = a.actor_id AND s.day = a.day
+    JOIN users u ON u.id = coalesce(a.actor_id, s.actor_id)
+    ORDER BY day DESC, u.full_name ASC
+  `);
+  return (rows as unknown as {
+    day: string;
+    full_name: string;
+    receipts: string;
+    edits: string;
+    prints: string;
+    exports: string;
+    scans: string;
+  }[]).map((r) => ({
+    day: String(r.day).slice(0, 10),
+    name: r.full_name,
+    receipts: Number(r.receipts),
+    edits: Number(r.edits),
+    prints: Number(r.prints),
+    exports: Number(r.exports),
+    scans: Number(r.scans),
+  }));
+}
+
+/** Label reprint log (§13.9): every label_print audit entry. */
+export async function labelPrintLog(days: number) {
+  const rows = await db.execute(sql`
+    SELECT a.created_at, u.full_name, a.entity_id,
+           a.after->>'count' AS count,
+           r.number AS receipt_number
+    FROM audit_log a
+    JOIN users u ON u.id = a.actor_id
+    LEFT JOIN receipts r ON r.id = a.entity_id
+    WHERE a.action = 'label_print' AND a.created_at > now() - make_interval(days => ${days})
+    ORDER BY a.created_at DESC
+    LIMIT 300
+  `);
+  return (rows as unknown as {
+    created_at: string;
+    full_name: string;
+    entity_id: string;
+    count: string | null;
+    receipt_number: string | null;
+  }[]).map((r) => ({
+    at: new Date(r.created_at),
+    name: r.full_name,
+    receiptId: r.entity_id,
+    receiptNumber: r.receipt_number,
+    count: r.count ? Number(r.count) : null,
+  }));
+}
+
+/** Batches departed > N days ago with zero cost entries (spec 6.9 warning). */
+export async function costMissingBatches(warnDays: number, warehouseIds?: string[]) {
+  const dest = aliasedTable(warehouses, 'dest');
+  const rows = await db
+    .select({
+      id: batches.id,
+      code: batches.code,
+      originCode: warehouses.code,
+      destCode: dest.code,
+      departedAt: batches.departedAt,
+    })
+    .from(batches)
+    .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
+    .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
+    .where(
+      and(
+        inArray(batches.status, ['in_transit', 'arrived', 'unloaded', 'closed']),
+        sql`${batches.departedAt} < now() - make_interval(days => ${warnDays})`,
+        sql`NOT EXISTS (SELECT 1 FROM ${costEntries} ce WHERE ce.batch_id = ${batches.id} AND ce.voided_at IS NULL)`,
+        warehouseIds?.length ? inArray(batches.originWarehouseId, warehouseIds) : undefined,
+      ),
+    )
+    .orderBy(asc(batches.departedAt))
+    .limit(20);
+  return rows;
+}

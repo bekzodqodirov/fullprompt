@@ -16,6 +16,15 @@ export default async function ReportsPage() {
     ...(allWh ? [{ href: '/reports/landed-cost', icon: '💰', label: t('landedCost') }] : []),
     { href: '/reports/stock-aging', icon: '🕰', label: t('stockAging') },
     { href: '/reports/batches', icon: '🚛', label: t('batchRegister') },
+    { href: '/reports/receipts-journal', icon: '📥', label: t('receiptsJournal') },
+    { href: '/reports/unclaimed', icon: '❓', label: t('unclaimedReport') },
+    ...(allWh
+      ? [
+          { href: '/reports/client-history', icon: '📜', label: t('clientHistory') },
+          { href: '/reports/staff-activity', icon: '👥', label: t('staffActivity') },
+          { href: '/reports/label-prints', icon: '🖨', label: t('labelPrints') },
+        ]
+      : []),
     { href: '/transit', icon: '🧭', label: t('transit') },
     { href: '/dashboard', icon: '📊', label: t('dashboard') },
   ];

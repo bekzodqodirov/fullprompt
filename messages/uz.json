@@ -64,7 +64,8 @@
     "aging": "{days} kundan eski yuk",
     "days": "kun",
     "missingInTransit": "Yo‘lda yo‘qolganlar",
-    "undocumented": "Hujjatsiz ko‘chirilganlar"
+    "undocumented": "Hujjatsiz ko‘chirilganlar",
+    "costMissing": "Xarajati kiritilmagan partiyalar (3 kundan oshdi)"
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -106,7 +107,30 @@
     "status": "Holat",
     "departed": "Jo‘nagan",
     "shortLoaded": "Kam yuklangan",
-    "addedOnSpot": "Rejadan tashqari qo‘shilgan"
+    "addedOnSpot": "Rejadan tashqari qo‘shilgan",
+    "receiptsJournal": "Qabullar jurnali",
+    "unclaimedReport": "Egasiz yuklar",
+    "clientHistory": "Klient yuk tarixi",
+    "staffActivity": "Xodimlar faoliyati",
+    "labelPrints": "Stiker chiqarish jurnali",
+    "date": "Sana",
+    "operator": "Operator",
+    "marking": "Markirovka",
+    "noUnclaimed": "Egasiz yuk yo‘q",
+    "clientNotFound": "Klient topilmadi",
+    "batches": "Partiyalar",
+    "inStock": "Skladda",
+    "inTransitCol": "Yo‘lda",
+    "ready": "Tayyor",
+    "issued": "Topshirilgan",
+    "employee": "Xodim",
+    "receiptsCol": "Qabullar",
+    "edits": "Tahrirlar",
+    "scans": "Skanlar",
+    "when": "Qachon",
+    "who": "Kim",
+    "receipt": "Qabul",
+    "labels": "Stikerlar"
   },
   "warehouses": {
     "title": "Skladlar",
