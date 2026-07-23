@@ -1,26 +1,11 @@
 /**
- * Next.js server-boot hook: starts pg-boss workers and the Telegram bot
- * alongside the web server (single-process deployment, spec §3).
- *
- * Resilient by design: a database or network hiccup at boot must NEVER take
- * the web app down — workers retry in the background until they come up.
+ * Next.js server-boot hook. The import MUST sit directly inside the positive
+ * NEXT_RUNTIME check — that is the pattern webpack's define-plugin can
+ * dead-code-eliminate when compiling the edge variant of this file (edge has
+ * no Node builtins, so tracing the worker graph there breaks the dev server).
  */
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-
-  const start = async () => {
-    const { startBoss } = await import('./modules/platform/jobs/boss');
-    await startBoss();
-    const { startTelegramBot } = await import('./modules/platform/telegram/bot');
-    startTelegramBot();
-  };
-
-  const attempt = (retryMs: number) => {
-    start().catch((err) => {
-      console.error(`background workers failed to start, retrying in ${retryMs / 1000}s:`, err);
-      setTimeout(() => attempt(Math.min(retryMs * 2, 60_000)), retryMs);
-    });
-  };
-
-  attempt(5_000);
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    await import('./instrumentation-node');
+  }
 }
