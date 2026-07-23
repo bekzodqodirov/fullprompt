@@ -174,3 +174,12 @@ A cross-check of the draft plan against every spec section surfaced these additi
 73. **First unload scan flips the batch to `arrived`** (no separate "truck arrived" button); `finishUnload` flags never-scanned manifest boxes `missing_in_transit` (they stay `in_transit` on the batch) and the resolutions are `found_at_origin` (back to origin stock) / `found_here` (into destination stock), manager-gated per #43.
 74. **KA hub dashboard v1 = the /transit report**: in-transit/arrived batches + all missing-in-transit boxes in one screen; the fuller role dashboard with charts arrives in M6 as planned.
 75. **Batch-scope cost entry UI deferred to M6** (with the FX/cost module) — the schema already accepts scope=batch entries on closed batches, so nothing blocks late cost capture when that UI lands.
+
+## M5 decisions (2026-07-23)
+
+76. **VED invoice/packing list are download-drafts, not in-app documents**: rows come from the actual manifest; the price column is blank with a live amount formula — the VED manager fills prices in Excel before sending (in-app price editing deferred until asked). The company header comes from settings keys `company_name/address/phone` — **owner still owes the real requisites (open Q4)**.
+77. **`handovers` generalized** (migration 0009): `receipt_id` nullable + `client_id`/`debt_ok` added — one table for whole-receipt returns (M2) and client issues (M5), matching the original architecture sketch.
+78. **Issue flow is one idempotent submit, not per-scan events**: the phone selects boxes locally (tap or scan against a local list — works offline until the final confirm), then a single `issueBoxes` call with a client-generated handoverId creates the handover, flips boxes to `issued`, writes `issue` scan_events, and notifies the sales manager with the remaining count.
+79. **Client-notify "Share" = message drafts inside the manager's Telegram**: the ReadyForPickup notification carries ready-to-forward client texts in uz AND ru (owner's Q5 wording: arrived, being cleared) — no separate share UI.
+80. **Quick batches are plan-less batches**: created directly from the batch board (manager gate `batches.depart_close`); the load scanner detects the absent plan and accepts any loose box at the origin (in_stock or ready_for_pickup) without the not-on-plan ceremony or flags.
+81. **`ready_for_pickup` happens at customs/distribution unload** and those boxes stay issuable and quick-batch-loadable; plan approval marks batches to customs warehouses as `export`.

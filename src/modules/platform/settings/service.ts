@@ -20,6 +20,10 @@ export const SETTING_DEFAULTS = {
   default_locale: 'ru' as 'ru' | 'uz' | 'zh-CN',
   pin_relock: false,
   block_issue_if_unpaid: false,
+  // VED document header (spec W6) — owner supplies real values (open Q4).
+  company_name: 'GSR LOGISTICS',
+  company_address: '—',
+  company_phone: '—',
 };
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

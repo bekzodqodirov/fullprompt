@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## M5 — Export & UZ side — 2026-07-23
+
+- **VED documents (W6)**: invoice + packing-list DRAFT XLSX from the actual manifest (blank price column with live amount formulas; company header from settings — real requisites still needed from the owner), "sent to agent" flag with date on the batch card.
+- **UZ arrival**: unloading at a customs/distribution warehouse puts cargo straight into `ready_for_pickup`; per-client `ReadyForPickup` Telegram to the sales manager including ready-to-forward client message drafts in uz + ru (cautious "being cleared" wording per the owner's answer).
+- **Issue mode (W7)** 🤝: warehouse + client → issuable boxes grouped by lot → tap or scan out → receiver name/phone + "no debt" checkbox (record-only) → partial pickup leaves the rest; handover record + `BoxIssued` notify with remaining count; **handover act PDF**.
+- **Quick batch** ⚡: plan-less internal transfers from the batch board — load scanning accepts any loose box at the origin without the not-on-plan ceremony.
+- **Sales pipeline view** 📈: per-client counts across in stock → in transit → ready → issued (managers see own clients).
+- Home tiles: issue + pipeline are live; no "coming soon" buttons remain.
+- Migration 0009 (handovers: nullable receipt, client_id, debt_ok). Tests: 51 unit/integration + 12 e2e (full export chain: plan→load→depart→customs unload→ready→issue→act PDF). DECISIONS #76–81.
+
 ## M4 — Transfer receiving — 2026-07-23
 
 - **Unload mode (W5)**: same scanner core + offline outbox as loading; first scan marks the batch `arrived`; on-manifest boxes land `in_stock` at the destination; crate scans fan out; sticker-lost manual entry from the un-unloaded list.

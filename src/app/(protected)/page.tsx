@@ -12,14 +12,12 @@ export default async function HomePage() {
   const tSearch = await getTranslations('search');
   const tCrates = await getTranslations('crates');
   const tPlans = await getTranslations('plans');
+  const tPipeline = await getTranslations('pipeline');
 
   const isAdmin = actor.permissions.has('admin.warehouses.manage');
   const canReceive = actor.permissions.has('receipts.create');
 
-  const comingSoon: { label: string; permission: string }[] = [
-    { label: t('unloading'), permission: 'scan.unload' },
-    { label: t('handover'), permission: 'scan.issue' },
-  ];
+  const comingSoon: { label: string; permission: string }[] = [];
 
   return (
     <div className="space-y-4">
@@ -47,6 +45,22 @@ export default async function HomePage() {
             className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
           >
             🚛 {tPlans('title')}
+          </Link>
+        )}
+        {actor.permissions.has('scan.issue') && (
+          <Link
+            href="/issue"
+            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
+          >
+            {t('handover')}
+          </Link>
+        )}
+        {actor.roles.includes('sales_manager') && (
+          <Link
+            href="/pipeline"
+            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
+          >
+            📈 {tPipeline('title')}
           </Link>
         )}
         {comingSoon

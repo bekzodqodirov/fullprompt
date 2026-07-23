@@ -7,7 +7,9 @@ import {
   boxes,
   boxMovements,
   receiptLots,
+  receipts,
   scanEvents,
+  warehouses,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
@@ -90,9 +92,18 @@ export async function ingestUnloadScans(
         members = rows;
       }
 
-      // Business duplicate: everything already in stock at this destination.
+      // UZ side (spec 6.6): unloading at a customs/distribution warehouse puts
+      // cargo straight into ready_for_pickup.
+      const destWh = (await tx.query.warehouses.findFirst({
+        where: eq(warehouses.id, batch.destWarehouseId),
+      }))!;
+      const landedStatus = ['customs', 'distribution'].includes(destWh.type)
+        ? 'ready_for_pickup'
+        : 'in_stock';
+
+      // Business duplicate: everything already landed at this destination.
       const allDone = members.every(
-        (b) => b.status === 'in_stock' && b.currentWarehouseId === batch.destWarehouseId,
+        (b) => b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId,
       );
       if (allDone) return { clientEventUuid: input.clientEventUuid, result: 'duplicate' };
 
@@ -110,7 +121,7 @@ export async function ingestUnloadScans(
       );
 
       const toMove = members.filter(
-        (b) => !(b.status === 'in_stock' && b.currentWarehouseId === batch.destWarehouseId),
+        (b) => !(b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId),
       );
       // Reality wins: everything scanned here IS here now. Rogue boxes keep
       // no stale crate link (their crate stayed wherever it really is).
@@ -119,7 +130,7 @@ export async function ingestUnloadScans(
         await tx
           .update(boxes)
           .set({
-            status: 'in_stock',
+            status: landedStatus,
             currentWarehouseId: batch.destWarehouseId,
             currentBatchId: null,
             statusReason: null,
@@ -135,13 +146,44 @@ export async function ingestUnloadScans(
           fromWarehouseId: box.currentWarehouseId,
           toWarehouseId: batch.destWarehouseId,
           fromStatus: box.status,
-          toStatus: 'in_stock',
+          toStatus: landedStatus,
           cause: rogue.includes(box) ? 'undocumented_transfer' : 'unload_scan',
           refType: 'batch',
           refId: input.batchId,
           actorId,
         })),
       );
+
+      // Client arrival summary (spec 6.6): emit per client so sales managers
+      // get the ready-for-pickup draft message.
+      if (landedStatus === 'ready_for_pickup' && toMove.length > 0) {
+        const lotRows = await tx
+          .select({ lotId: receiptLots.id, clientId: receipts.clientId })
+          .from(receiptLots)
+          .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+          .where(inArray(receiptLots.id, [...new Set(toMove.map((b) => b.lotId))]));
+        const clientByLot = new Map(lotRows.map((r) => [r.lotId, r.clientId]));
+        const perClient = new Map<string, number>();
+        for (const box of toMove) {
+          const cid = clientByLot.get(box.lotId);
+          if (cid) perClient.set(cid, (perClient.get(cid) ?? 0) + 1);
+        }
+        for (const [cid, n] of perClient) {
+          await emitEvent(tx, {
+            type: 'ReadyForPickup',
+            payload: {
+              clientId: cid,
+              warehouseId: batch.destWarehouseId,
+              warehouseCode: destWh.code,
+              batchCode: batch.code,
+              boxCount: n,
+            },
+            entityType: 'batch',
+            entityId: input.batchId,
+            actorId,
+          });
+        }
+      }
       await tx
         .insert(scanEvents)
         .values(

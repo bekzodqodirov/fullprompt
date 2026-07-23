@@ -54,6 +54,69 @@ export async function resolveMissingAction(
   }
 }
 
+/** Quick batch (spec 6.6): internal transfer with no plan/approval loop. */
+export async function createQuickBatchAction(
+  formData: FormData,
+): Promise<void> {
+  const originId = String(formData.get('originId') ?? '');
+  const destId = String(formData.get('destId') ?? '');
+  if (!originId || !destId || originId === destId) return;
+  const actor = await authorize('batches.depart_close', { warehouseId: originId });
+  const meta = await requestMeta();
+  const { nextBatchCode } = await import('@/modules/wms/codes');
+  const { warehouses } = await import('@/modules/platform/db/schema');
+  const { writeAudit } = await import('@/modules/platform/audit/service');
+  const { redirect } = await import('next/navigation');
+  const [origin, dest] = await Promise.all([
+    db.query.warehouses.findFirst({ where: eq(warehouses.id, originId) }),
+    db.query.warehouses.findFirst({ where: eq(warehouses.id, destId) }),
+  ]);
+  if (!origin || !dest) return;
+  const batch = await db.transaction(async (tx) => {
+    const code = await nextBatchCode(tx, origin);
+    const [row] = await tx
+      .insert(batches)
+      .values({
+        code,
+        originWarehouseId: originId,
+        destWarehouseId: destId,
+        type: ['customs', 'distribution'].includes(dest.type) ? 'distribution' : 'transfer',
+        status: 'forming',
+        createdBy: actor.id,
+      })
+      .returning();
+    await writeAudit(tx, { actorId: actor.id, ...meta, warehouseId: originId }, {
+      entityType: 'batch',
+      entityId: row!.id,
+      action: 'create',
+      after: { code, quick: true },
+    });
+    return row!;
+  });
+  redirect(`/batches/${batch.id}`);
+}
+
+/** VED "sent to agent" flag (spec 6.6). */
+export async function setSentToAgentAction(formData: FormData): Promise<void> {
+  const batchId = String(formData.get('batchId') ?? '');
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return;
+  const actor = await authorize('ved.docs', {});
+  const meta = await requestMeta();
+  await db
+    .update(batches)
+    .set({ sentToAgentAt: batch.sentToAgentAt ? null : new Date().toISOString().slice(0, 10) })
+    .where(eq(batches.id, batchId));
+  const { writeAudit } = await import('@/modules/platform/audit/service');
+  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId }, {
+    entityType: 'batch',
+    entityId: batchId,
+    action: 'update',
+    after: { sentToAgent: !batch.sentToAgentAt },
+  });
+  revalidatePath(`/batches/${batchId}`);
+}
+
 export async function closeBatchAction(batchId: string): Promise<{ ok: boolean; error?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };

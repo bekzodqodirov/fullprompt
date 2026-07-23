@@ -6,6 +6,7 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { batches, boxes, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { createQuickBatchAction } from './batch-actions-server';
 
 const COLUMNS = ['forming', 'loading', 'in_transit', 'arrived'] as const;
 
@@ -14,6 +15,11 @@ export default async function BatchesPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('batches');
+  const canQuick = actor.permissions.has('batches.depart_close');
+  const quickWhs = await db
+    .select({ id: warehouses.id, code: warehouses.code })
+    .from(warehouses)
+    .orderBy(warehouses.code);
 
   const dest = aliasedTable(warehouses, 'dest');
   const rows = await db
@@ -45,6 +51,30 @@ export default async function BatchesPage() {
           🔍 {t('transitReport')}
         </Link>
       </div>
+
+      {canQuick && (
+        <form action={createQuickBatchAction} className="card flex flex-wrap items-center gap-2 !p-3">
+          <span className="text-sm font-bold">⚡ {t('quickBatch')}</span>
+          <select name="originId" aria-label={t('quickOrigin')} className="input !w-24 font-mono font-bold" defaultValue={quickWhs[0]?.id}>
+            {quickWhs.map((wh) => (
+              <option key={wh.id} value={wh.id}>
+                {wh.code}
+              </option>
+            ))}
+          </select>
+          <span className="font-bold">→</span>
+          <select name="destId" aria-label={t('quickDest')} className="input !w-24 font-mono font-bold" defaultValue={quickWhs[1]?.id}>
+            {quickWhs.map((wh) => (
+              <option key={wh.id} value={wh.id}>
+                {wh.code}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="btn-primary flex-1 whitespace-nowrap px-3" data-testid="create-quick-batch">
+            ＋ {t('create')}
+          </button>
+        </form>
+      )}
       <div className="grid gap-3 md:grid-cols-4">
         {COLUMNS.map((status) => (
           <div key={status} className="space-y-2">

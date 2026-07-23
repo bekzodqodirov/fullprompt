@@ -101,10 +101,19 @@ export async function ingestLoadScans(
       );
       if (allLoaded) return { clientEventUuid: input.clientEventUuid, result: 'duplicate' };
 
-      const onPlan = members.every(
-        (b) => b.currentBatchId === input.batchId && b.status === 'planned',
-      );
-      if (!onPlan && !input.addedOnSpot) {
+      // Quick batches (no plan, spec 6.6 internal transfers) load any loose
+      // box at the origin without the not-on-plan ceremony.
+      const hasPlan = !!(await tx.query.loadPlans.findFirst({
+        where: eq(loadPlans.batchId, input.batchId),
+      }));
+      const looseAtOrigin = (b: (typeof members)[number]) =>
+        ['in_stock', 'ready_for_pickup'].includes(b.status) &&
+        b.currentWarehouseId === batch.originWarehouseId;
+
+      const onPlan = hasPlan
+        ? members.every((b) => b.currentBatchId === input.batchId && b.status === 'planned')
+        : members.every(looseAtOrigin);
+      if (hasPlan && !onPlan && !input.addedOnSpot) {
         // Client shows the red screen and may retry with addedOnSpot=true.
         const letters = await lettersFor(tx, members);
         return {
@@ -116,7 +125,7 @@ export async function ingestLoadScans(
       for (const box of members) {
         const loadable =
           (box.currentBatchId === input.batchId && box.status === 'planned') ||
-          (input.addedOnSpot && box.status === 'in_stock' && box.currentWarehouseId === batch.originWarehouseId);
+          ((input.addedOnSpot || !hasPlan) && looseAtOrigin(box));
         if (!loadable && !(box.status === 'loading' && box.currentBatchId === input.batchId)) {
           return {
             clientEventUuid: input.clientEventUuid,

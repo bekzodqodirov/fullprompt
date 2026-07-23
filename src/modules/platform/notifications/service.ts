@@ -57,6 +57,22 @@ async function buildRecipients(event: {
         payload: event.payload,
       }));
     }
+    // UZ side: arrival summary and issue confirmations go to the client's
+    // sales manager with a shareable client-message draft (spec 6.6/6.7).
+    case 'ReadyForPickup':
+    case 'BoxIssued': {
+      const clientId = event.payload.clientId as string | null;
+      if (!clientId) return [];
+      const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+      if (!client?.salesManagerId) return [];
+      return [
+        {
+          userId: client.salesManagerId,
+          type: event.type,
+          payload: { ...event.payload, clientCode: client.clientCode, clientName: client.name },
+        },
+      ];
+    }
     // Plan verdict, not-on-plan and unload discrepancies go to logists (spec §11).
     case 'PlanApproved':
     case 'PlanChangesRequested':
@@ -134,6 +150,20 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
         `🔍 Не выгружены из ${payload.batchCode} (потеряны в пути?)\n` +
         `Коробки: ${(payload.shortCodes as string[] | undefined)?.join(', ') ?? ''}\n` +
         `${appUrl}/batches/${payload.batchId}`
+      );
+    case 'ReadyForPickup':
+      // The second half is the ready client-message draft (uz + ru) the
+      // manager forwards as-is (owner's Q5 wording: arrived, being cleared).
+      return (
+        `📦 Груз клиента ${payload.clientCode} (${payload.clientName}) прибыл: ${payload.boxCount} кор. · склад ${payload.warehouseCode} · партия ${payload.batchCode}\n\n` +
+        `— Клиенту (uz):\nAssalomu alaykum! ${payload.clientCode} kodli yukingiz (${payload.boxCount} karobka) ${payload.warehouseCode} omboriga yetib keldi. Rasmiylashtiruv tugagach olib ketish vaqtini kelishamiz.\n\n` +
+        `— Клиенту (ru):\nЗдравствуйте! Ваш груз с кодом ${payload.clientCode} (${payload.boxCount} кор.) прибыл на склад ${payload.warehouseCode}. Согласуем выдачу после оформления.`
+      );
+    case 'BoxIssued':
+      return (
+        `🤝 Выдано клиенту ${payload.clientCode} (${payload.clientName}): ${payload.boxCount} кор. · склад ${payload.warehouseCode}\n` +
+        `Получил: ${payload.personName}${payload.personPhone ? ` (${payload.personPhone})` : ''}` +
+        (payload.remaining ? `\nОсталось на складе: ${payload.remaining} кор.` : '')
       );
     case 'DailyDigest':
       return String(payload.text ?? '');

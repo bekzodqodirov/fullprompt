@@ -239,9 +239,12 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
       return { plan: { ...plan, status: 'changes_requested' as const }, batch: null };
     }
 
-    // Approved → batch + reservation.
+    // Approved → batch + reservation. Export batches head to customs WHs.
     const origin = (await tx.query.warehouses.findFirst({
       where: eq(warehouses.id, plan.originWarehouseId),
+    }))!;
+    const destWh = (await tx.query.warehouses.findFirst({
+      where: eq(warehouses.id, plan.destWarehouseId),
     }))!;
     const code = await nextBatchCode(tx, origin);
     const [batch] = await tx
@@ -250,7 +253,7 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
         code,
         originWarehouseId: plan.originWarehouseId,
         destWarehouseId: plan.destWarehouseId,
-        type: 'transfer',
+        type: destWh.type === 'customs' ? 'export' : 'transfer',
         status: 'forming',
         createdBy: actorId,
       })

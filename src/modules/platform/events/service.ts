@@ -22,7 +22,8 @@ export type DomainEventType =
   | 'UnclaimedReturned'
   | 'BoxStatusChanged'
   | 'UndocumentedTransfer'
-  | 'MissingInTransit';
+  | 'MissingInTransit'
+  | 'ReadyForPickup';
 
 /**
  * Persist a domain event in the same transaction as the mutation that caused

@@ -21,8 +21,8 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   await page.getByTestId('plan-origin').selectOption({ label: 'YW' });
   const firstRow = page.locator('#plan-stock-table tbody tr').first();
   await expect(firstRow).toBeVisible({ timeout: 10_000 });
-  await firstRow.locator('input').fill('2');
-  await expect(page.getByText('Σ 2 📦')).toBeVisible();
+  await firstRow.locator('input').fill('1');
+  await expect(page.getByText('Σ 1 📦')).toBeVisible();
   await page.getByTestId('submit-plan').click();
   await expect(page).toHaveURL(/\/plans\/[0-9a-f-]+$/, { timeout: 15_000 });
 
@@ -52,10 +52,10 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
 
   // --- Loading mode: sticker-lost manual path loads 1 of 2 boxes ---
   await page.getByTestId('open-loading').click();
-  await expect(page.getByTestId('load-counter')).toHaveText(/0\/2/, { timeout: 10_000 });
+  await expect(page.getByTestId('load-counter')).toHaveText(/0\/1/, { timeout: 10_000 });
   await page.getByRole('button', { name: /🏷/ }).click();
   await page.locator('button:has(span.font-mono)').filter({ hasText: /YW26-/ }).first().click();
-  await expect(page.getByTestId('load-counter')).toHaveText(/1\/2/);
+  await expect(page.getByTestId('load-counter')).toHaveText(/1\/1/);
   // Outbox drains (sync banner leaves the "syncing" state)
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
 

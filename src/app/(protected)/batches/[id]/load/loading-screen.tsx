@@ -156,13 +156,14 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     const crate = snapshot.crates.find((c) => c.code === code);
     const memberCodes = crate ? crate.boxShortCodes : [code];
     const planned = new Set(snapshot.boxes.map((b) => b.shortCode));
+    const quick = snapshot.boxes.length === 0; // quick batch: no plan, no ceremony
 
     if (memberCodes.every((c) => loaded.has(c))) {
       feedback('dup');
       setToast(`🔁 ${t('alreadyScanned')} ${code}`);
       return;
     }
-    if (crate || memberCodes.every((c) => planned.has(c))) {
+    if (quick || crate || memberCodes.every((c) => planned.has(c))) {
       void accept(memberCodes, { code, method, manualReason });
       return;
     }
@@ -210,8 +211,8 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       <Scanner active={confirmCode === null} onCode={(code) => onCode(code)} />
 
       <p className="text-center font-mono text-4xl font-extrabold" data-testid="load-counter">
-        {doneCount}
-        <span className="text-gray-400">/{total}</span> 📦
+        {total === 0 ? loaded.size : doneCount}
+        {total > 0 && <span className="text-gray-400">/{total}</span>} 📦
       </p>
 
       <div className="card space-y-1 !p-3">

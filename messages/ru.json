@@ -380,7 +380,16 @@
       "batch_not_loading": "Партия не в погрузке"
     },
     "startUnloading": "Выгрузка (скан)",
-    "transitReport": "В пути"
+    "transitReport": "В пути",
+    "vedDocs": "Документы ВЭД",
+    "invoice": "Инвойс (черновик)",
+    "packingList": "Упаковочный лист (черновик)",
+    "sentToAgent": "Отправлено агенту",
+    "markSentToAgent": "Отметить «отправлено агенту»",
+    "quickBatch": "Быстрая партия (без плана)",
+    "quickOrigin": "Откуда",
+    "quickDest": "Куда",
+    "create": "Создать"
   },
   "loading": {
     "title": "Погрузка",
@@ -418,5 +427,25 @@
   "transit": {
     "title": "Грузы в пути",
     "missingTitle": "Потеряны в пути"
+  },
+  "issue": {
+    "title": "Выдача клиенту",
+    "warehouse": "Склад",
+    "clientCode": "КОД КЛИЕНТА",
+    "noBoxes": "Нет готового к выдаче груза",
+    "personName": "ФИО получателя",
+    "personPhone": "Телефон",
+    "debtOk": "Долгов нет (отметка, без блокировки)",
+    "confirm": "Выдать",
+    "issued": "Выдано",
+    "act": "Акт приёма-передачи (PDF)"
+  },
+  "pipeline": {
+    "title": "Мои клиенты",
+    "client": "Клиент",
+    "inStock": "На складе",
+    "inTransit": "В пути",
+    "ready": "К выдаче",
+    "issued": "Выдано"
   }
 }

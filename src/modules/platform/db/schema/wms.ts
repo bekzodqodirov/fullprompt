@@ -219,15 +219,17 @@ export const handovers = pgTable(
   'handovers',
   {
     id: id(),
-    receiptId: uuid('receipt_id')
-      .notNull()
-      .references(() => receipts.id),
+    /** Set for whole-receipt returns; client issues span receipts and use clientId. */
+    receiptId: uuid('receipt_id').references(() => receipts.id),
+    clientId: uuid('client_id').references(() => clients.id),
     warehouseId: uuid('warehouse_id')
       .notNull()
       .references(() => warehouses.id),
     kind: text('kind').notNull().default('returned_to_sender'),
     personName: text('person_name').notNull(),
     personPhone: text('person_phone').notNull(),
+    /** Phase 3 debt-control hook — checkbox only, no logic (spec). */
+    debtOk: boolean('debt_ok').notNull().default(false),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -236,7 +238,12 @@ export const handovers = pgTable(
   },
   (t) => [
     check('handovers_kind_check', sql`${t.kind} IN ('returned_to_sender', 'issued_to_client')`),
+    check(
+      'handovers_target_check',
+      sql`(${t.kind} = 'returned_to_sender' AND ${t.receiptId} IS NOT NULL) OR (${t.kind} = 'issued_to_client' AND ${t.clientId} IS NOT NULL)`,
+    ),
     index('handovers_receipt_idx').on(t.receiptId),
+    index('handovers_client_idx').on(t.clientId),
   ],
 );
 

@@ -15,6 +15,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { saveVehicleAction } from '../../plans/actions';
+import { setSentToAgentAction } from '../batch-actions-server';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
 
@@ -153,6 +154,28 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           />
         )}
       </div>
+
+      {(actor.permissions.has('ved.docs') || actor.permissions.has('plans.manage')) && (
+        <div className="card space-y-2">
+          <h2 className="text-lg font-bold">📑 {t('vedDocs')}</h2>
+          <div className="flex flex-wrap gap-2">
+            <a href={`/api/batches/${batch.id}/invoice`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
+              ⬇️ {t('invoice')}
+            </a>
+            <a href={`/api/batches/${batch.id}/packing`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
+              ⬇️ {t('packingList')}
+            </a>
+          </div>
+          {actor.permissions.has('ved.docs') && (
+            <form action={setSentToAgentAction}>
+              <input type="hidden" name="batchId" value={batch.id} />
+              <button type="submit" className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${batch.sentToAgentAt ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-300 text-gray-600'}`}>
+                {batch.sentToAgentAt ? `✅ ${t('sentToAgent')}: ${batch.sentToAgentAt}` : `📤 ${t('markSentToAgent')}`}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
 
       {canVehicle && ['forming', 'loading'].includes(batch.status) ? (
         <form action={saveVehicleAction} className="card space-y-2">

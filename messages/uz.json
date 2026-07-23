@@ -380,7 +380,16 @@
       "batch_not_loading": "Partiya pogruzkada emas"
     },
     "startUnloading": "Razgruzka (skan)",
-    "transitReport": "Yo‘lda"
+    "transitReport": "Yo‘lda",
+    "vedDocs": "VED hujjatlari",
+    "invoice": "Invoys (qoralama)",
+    "packingList": "Upakovka listi (qoralama)",
+    "sentToAgent": "Agentga yuborilgan",
+    "markSentToAgent": "«Agentga yuborildi» deb belgilash",
+    "quickBatch": "Tezkor partiya (rejasiz)",
+    "quickOrigin": "Qayerdan",
+    "quickDest": "Qayerga",
+    "create": "Yaratish"
   },
   "loading": {
     "title": "Pogruzka",
@@ -418,5 +427,25 @@
   "transit": {
     "title": "Yo‘ldagi yuklar",
     "missingTitle": "Yo‘lda yo‘qolganlar"
+  },
+  "issue": {
+    "title": "Klientga topshirish",
+    "warehouse": "Sklad",
+    "clientCode": "KLIENT KODI",
+    "noBoxes": "Topshirishga tayyor yuk yo‘q",
+    "personName": "Oluvchining F.I.O.",
+    "personPhone": "Telefon",
+    "debtOk": "Qarzi yo‘q (belgi, bloklamaydi)",
+    "confirm": "Topshirish",
+    "issued": "Topshirildi",
+    "act": "Topshirish akti (PDF)"
+  },
+  "pipeline": {
+    "title": "Mening klientlarim",
+    "client": "Klient",
+    "inStock": "Skladda",
+    "inTransit": "Yo‘lda",
+    "ready": "Topshirishga tayyor",
+    "issued": "Topshirilgan"
   }
 }
