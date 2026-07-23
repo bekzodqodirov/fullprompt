@@ -32,6 +32,8 @@ export default defineConfig({
     },
   ],
   webServer: {
+    // Must be the standalone server: `next start` + output:'standalone' can
+    // serve a broken client manifest for route-group pages (CI failure mode).
     command: 'pnpm start',
     url: 'http://localhost:3000/api/health',
     reuseExistingServer: !process.env.CI,
