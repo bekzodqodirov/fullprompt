@@ -4,13 +4,30 @@
 
 ---
 
+## STATUS — 2026-07-23
+
+| Milestone | State | Shipped |
+|---|---|---|
+| M0 Platform foundation | ✅ done | auth, RBAC, audit, admin CRUDs, i18n ru/uz/zh, files+thumbnails, PWA, CI |
+| M1 Receiving + labels + Telegram | ✅ done | single-window receiving (+5 owner feedback rounds), letter sequencer, label PDF (incl. unclaimed marking), translation, Telegram notify |
+| M2 Stock ops | ✅ done | crates, stock XLSX, lost/found/void, WH-move, unclaimed return, daily digest |
+| M3 Load planning & loading | ✅ done | plan editor (avg density, crates = 1 place, owner-managed trucks), agent loop (all photos in Excel), batch board, scanner + offline outbox, loading mode with crate contents |
+| M4 Transfer receiving | ✅ done | unload mode, auto-transfer, missing-in-transit + resolutions, batch close, /transit |
+| M5 Export & UZ side | ✅ done | INVOICE&PACKING LIST in the owner's real ka23 format (`ved_*` settings), ready_for_pickup, quick batch, issue mode + handover act PDF, pipeline |
+| **M6 Costing, reports, polish** | **🔄 in progress** | see per-task marks below |
+
+**M6 progress:** done — FX rates (manual, per owner) ✅, allocation engine + recompute (§6.9 test green) ✅, cost capture on batch/receipt + batch cost sheet ✅, box landed cost ✅, warehouse capacity indicator (60%/80%) ✅, nightly local backups + `pnpm backup` ✅.
+**M6 remaining:** §13 reports + XLSX (priority per owner: landed cost by client → stock/aging → batch register, then the rest), role-aware dashboards (fill bar shipped as the seed), landed-cost-by-client report page + unclaimed-cost warnings, digest polish (per-user mute, delivery-failure view), performance/3G pass, weekly restore-test script, audit browser filters, README/ops runbook, **inventory mode** (#12), **sortable columns** (#13), full regression.
+
+---
+
 ## Work plan (M0–M6)
 
 Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order within a milestone. Acceptance tests reference spec §20 (⭐ = automated in CI). Each of the 20 scenarios is mapped to exactly one milestone — the milestone where the scenario can first pass end-to-end.
 
 ---
 
-### M0 — Platform foundation
+### M0 — Platform foundation ✅ DONE
 
 **Goal:** Auth, users, RBAC, warehouses/clients admin, settings, audit core + history component, i18n scaffold, PWA shell, file pipeline, seed script, CI.
 **Done when (spec):** admin creates a WH + client + operator on a phone; every change visible in the audit browser.
@@ -41,7 +58,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 
 ---
 
-### M1 — Receiving + labels + Telegram (go-live MVP)
+### M1 — Receiving + labels + Telegram (go-live MVP) ✅ DONE
 
 **Goal:** W1 wizard, letter sequencer, box generation, label PDF + reprint, dictionary + translation, unclaimed intake, edit rules + label reconciliation, `ReceiptConfirmed` Telegram, receipt list/detail, stock browser v1, global search v1.
 **Done when (spec):** the GS777 demo receipt entered on a phone in < 3 min, labels print, Dilnoza gets the Telegram.
@@ -74,7 +91,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 
 ---
 
-### M2 — Stock ops
+### M2 — Stock ops ✅ DONE
 
 **Goal:** Crates (W2), box timeline, voids, wrong-WH receipt move, unclaimed resolution, stale/unclaimed digests, stock report XLSX.
 **Done when:** *(not stated in spec)* **DECISION:** done when a crate can be built/dissolved with its own label, an unclaimed receipt can be assigned or returned, a receipt can be moved between WHs, and the stock XLSX exports — all audited and demoed on a phone.
@@ -99,7 +116,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 
 ---
 
-### M3 — Load planning & loading
+### M3 — Load planning & loading ✅ DONE
 
 **Goal:** Truck presets, plan editor with live gauges + partial counts, versioning + agent approval loop, agent Excel with photos, batch creation + vehicle info, Loading mode (scan, offline outbox, not-on-plan / sticker-lost / duplicate handling), finish-loading deviations, depart + actual manifest, SSE.
 **Done when:** *(not stated)* **DECISION:** done when a plan goes draft→v2 approved→batch→scanned load→departed with the actual manifest generated, demoed with a real phone camera scanning printed labels.
@@ -130,7 +147,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 
 ---
 
-### M4 — Transfer receiving
+### M4 — Transfer receiving ✅ DONE
 
 **Goal:** Unload mode (W5), auto-transfer of rogue boxes, missing-in-transit lifecycle, batch close, discrepancy reports, KA hub dashboard.
 **Done when:** *(not stated)* **DECISION:** done when unloading YW-001 at KA reconciles a rogue box and a missing box exactly per §6.5, demoed by scanning on a phone.
@@ -153,7 +170,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 
 ---
 
-### M5 — Export & UZ side
+### M5 — Export & UZ side ✅ DONE
 
 **Goal:** VED invoice/packing list generators, customs arrival, distribution "quick batch", ready-for-pickup + client-notify drafts, Issue mode with receiver capture + handover act, sales-manager pipeline view.
 **Done when:** *(not stated)* **DECISION:** done when an export batch produces both VED drafts, arrives at AND, clients' cargo turns `ready_for_pickup`, and a partial handover completes on a phone.
@@ -177,7 +194,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 
 ---
 
-### M6 — Costing, reports, polish
+### M6 — Costing, reports, polish 🔄 IN PROGRESS
 
 **Goal:** Cost entries + FX + allocation engine (tested with the worked example), all §13 reports, dashboards, digests, performance pass, backups, audit browser filters, docs.
 **Done when:** *(not stated)* **DECISION:** done when acceptance test 16 passes automated, all 9 reports export, the 3G budget is met, and the restore test script succeeds.
@@ -377,7 +394,7 @@ Per-milestone test focus: M0 → auth/RBAC integration + I-6 audit immutability;
 
 ## Open questions for the owner
 
-*(Status 2026-07-23: Q1 ANSWERED — owner supplied a bot token, DECISIONS #26. Q2 ANSWERED — owner chose a free/open API for now, LibreTranslate default with a pluggable provider, DECISIONS #25. Q3–Q5 remain open: hosting decision deferred until dev wraps; company doc details due at M5; AND notification wording = recommended default accepted.)*
+*(Status 2026-07-23 (evening): Q1 ANSWERED — owner supplied a bot token, DECISIONS #26. Q2 ANSWERED — LibreTranslate default with a pluggable provider, DECISIONS #25. Q4 ANSWERED — owner uploaded the real ka23 invoice file; all requisites (sender/seller/consignee/transport/delivery/customs post) captured as editable `ved_*` settings, DECISIONS #89. Q5 ANSWERED — recommended wording accepted. Q3 (hosting/VPS) is the ONLY one still open — deferred until dev wraps; the app currently runs on the owner's Windows machine via `pnpm start` / `start:https`.)*
 
 1. **Do you already have a Telegram bot (token) we can use, or should we create a new bot now?**
    *Why it matters:* M1's "done" criterion includes a real Telegram message to the sales manager; dev can run against a stub, but the M1 demo on a phone needs a live bot.
