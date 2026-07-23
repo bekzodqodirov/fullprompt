@@ -71,6 +71,13 @@
       "when": 1784814447276,
       "tag": "0009_silky_terror",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784814447277,
+      "tag": "0010_boxes_flags_gin",
+      "breakpoints": true
     }
   ]
 }
