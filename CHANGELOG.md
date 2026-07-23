@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## M4 — Transfer receiving — 2026-07-23
+
+- **Unload mode (W5)**: same scanner core + offline outbox as loading; first scan marks the batch `arrived`; on-manifest boxes land `in_stock` at the destination; crate scans fan out; sticker-lost manual entry from the un-unloaded list.
+- **Auto-transfer** (edge case 4, reality wins): a known box NOT on the manifest is accepted and moved to THIS warehouse regardless of its recorded location — flagged `undocumented_transfer`, correcting movement, instant logist Telegram. Unknown QR → red toast with a link to the unclaimed intake.
+- **Finish unload**: never-scanned manifest boxes flagged `missing_in_transit` + alert; batch card shows them with manager resolutions "found at origin" (back to origin stock) / "found here"; batch → `unloaded` → `closed`.
+- **/transit report** (KA hub v1): in-transit/arrived batches + every missing-in-transit box, linked from the batch board.
+- Notification rules + Telegram texts for `UndocumentedTransfer` / `MissingInTransit`.
+- Tests: 49 unit/integration (+ unload reconciliation, auto-transfer, resolutions, close) + 11 e2e including the full phone round-trip plan→load→depart→unload→close. DECISIONS #71–75.
+
 ## M3 — Load planning & scanning — 2026-07-23
 
 - **Plan editor (W3)**: pick origin→dest + truck preset, tick lots from FIFO-sorted stock with photos and days-in-stock, partial box counts, live kg/m³ gauges that go red over capacity but never block; submit creates an immutable version for the agent.

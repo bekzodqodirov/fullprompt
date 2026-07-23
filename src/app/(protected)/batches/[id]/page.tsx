@@ -16,6 +16,7 @@ import {
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { saveVehicleAction } from '../../plans/actions';
 import { BatchActions } from './batch-actions';
+import { UnloadActions } from './unload-actions';
 
 export default async function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -67,6 +68,15 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const canLoad = actor.permissions.has('scan.load') && ['forming', 'loading'].includes(batch.status);
   const canDepart = actor.permissions.has('batches.depart_close');
   const canVehicle = actor.permissions.has('batches.vehicle_info');
+  const canUnload = actor.permissions.has('scan.unload');
+
+  const missingRows = await db
+    .select({ box: boxes, letter: receiptLots.letter, clientCode: clients.clientCode, marking: receipts.unclaimedMarking })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .where(sql`${boxes.currentBatchId} = ${id} AND ${boxes.flags} @> '["missing_in_transit"]'::jsonb`);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -109,6 +119,15 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               📱 {t('startLoading')}
             </Link>
           )}
+          {canUnload && ['in_transit', 'arrived'].includes(batch.status) && (
+            <Link
+              href={`/batches/${batch.id}/unload`}
+              className="btn-primary flex-1 whitespace-nowrap px-3"
+              data-testid="open-unloading"
+            >
+              📤 {t('startUnloading')}
+            </Link>
+          )}
           <a
             href={`/api/batches/${batch.id}/manifest`}
             target="_blank"
@@ -119,6 +138,19 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         </div>
         {['forming', 'loading'].includes(batch.status) && (
           <BatchActions batchId={batch.id} canDepart={canDepart} />
+        )}
+        {(['in_transit', 'arrived', 'unloaded'].includes(batch.status) || missingRows.length > 0) && (
+          <UnloadActions
+            batchId={batch.id}
+            status={batch.status}
+            missing={missingRows.map(({ box, letter, clientCode, marking }) => ({
+              boxId: box.id,
+              shortCode: box.shortCode,
+              label: `${clientCode ?? marking ?? '?'}-${letter}`,
+            }))}
+            canResolve={actor.permissions.has('receipts.void')}
+            canClose={canDepart}
+          />
         )}
       </div>
 

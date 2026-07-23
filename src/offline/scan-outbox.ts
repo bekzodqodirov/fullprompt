@@ -15,11 +15,12 @@ export interface OutboxScan {
   addedOnSpot: boolean;
   addedReason?: string;
   scannedAt: string;
+  scanType?: 'load' | 'unload';
 }
 
 export interface SyncAck {
   clientEventUuid: string;
-  result: 'ok' | 'duplicate' | 'not_on_plan' | 'unknown_code' | 'rejected';
+  result: 'ok' | 'duplicate' | 'not_on_plan' | 'auto_transfer' | 'unknown_code' | 'rejected';
   detail?: string;
   boxes?: { shortCode: string; letter: string | null }[];
 }

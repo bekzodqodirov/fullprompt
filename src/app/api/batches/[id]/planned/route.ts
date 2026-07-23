@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   batches,
@@ -20,7 +20,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, id) });
   if (!batch) return Response.json({ error: 'not_found' }, { status: 404 });
   try {
-    await authorize('scan.load', { warehouseId: batch.originWarehouseId });
+    // Loader at the origin OR unloader at the destination.
+    await authorize('scan.load', { warehouseId: batch.originWarehouseId }).catch(() =>
+      authorize('scan.unload', { warehouseId: batch.destWarehouseId }),
+    );
   } catch (err) {
     if (err instanceof AuthError) return Response.json({ error: 'forbidden' }, { status: 403 });
     throw err;
@@ -43,11 +46,28 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .where(eq(boxes.currentBatchId, id))
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
 
-  // Active crates at the origin WH → local crate-scan expansion offline.
+  // Crate codes for local crate-scan expansion offline: crates at the origin
+  // WH (load mode) plus crates any member box belongs to (unload mode).
+  const memberCrateIds = [
+    ...new Set(
+      (
+        await db
+          .select({ crateId: boxes.crateId })
+          .from(boxes)
+          .where(eq(boxes.currentBatchId, id))
+      )
+        .map((r) => r.crateId)
+        .filter(Boolean) as string[],
+    ),
+  ];
   const originCrates = await db
     .select({ id: crates.id, code: crates.code })
     .from(crates)
-    .where(eq(crates.warehouseId, batch.originWarehouseId));
+    .where(
+      memberCrateIds.length
+        ? sql`${crates.warehouseId} = ${batch.originWarehouseId} OR ${crates.id} IN ${memberCrateIds}`
+        : eq(crates.warehouseId, batch.originWarehouseId),
+    );
   const crateBoxes = originCrates.length
     ? await db
         .select({ crateId: boxes.crateId, shortCode: boxes.shortCode })

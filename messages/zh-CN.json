@@ -378,7 +378,9 @@
       "finish_loading_first": "请先结束装车",
       "nothing_loaded": "未装任何货",
       "batch_not_loading": "车次不在装车状态"
-    }
+    },
+    "startUnloading": "卸货（扫码）",
+    "transitReport": "在途"
   },
   "loading": {
     "title": "装车",
@@ -392,5 +394,29 @@
     "stickerLost": "标签丢失/手动输入",
     "stickerLostHint": "从未扫描列表选择箱子或输入编码",
     "unscannedList": "未扫描的箱子："
+  },
+  "unloading": {
+    "title": "卸货",
+    "online": "在线，已全部同步",
+    "offline": "离线——队列中{n}次扫码",
+    "syncing": "同步中…（{n}）",
+    "alreadyScanned": "已扫过：",
+    "autoTransferred": "不在舱单——已接收并转入本仓库：",
+    "unknownCode": "未知编码——请按无主货入库",
+    "openIntake": "打开收货",
+    "stickerLost": "标签丢失/手动输入",
+    "stickerLostHint": "选择箱子或输入编码",
+    "unscannedList": "未卸的箱子：",
+    "finishUnload": "结束卸货",
+    "missingSummary": "{n}箱未卸——标记为在途丢失",
+    "allUnloaded": "全部卸完，无差异",
+    "missingTitle": "在途丢失",
+    "foundAtOrigin": "留在发货仓",
+    "foundHere": "在本仓找到",
+    "closeBatch": "关闭车次"
+  },
+  "transit": {
+    "title": "在途货物",
+    "missingTitle": "在途丢失"
   }
 }

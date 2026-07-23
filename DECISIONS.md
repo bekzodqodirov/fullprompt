@@ -166,3 +166,11 @@ A cross-check of the draft plan against every spec section surfaced these additi
 68. **SSE deferred**: the loading counter is local-first and the logist sees state on refresh; the `/api/sse` live-push layer (plan live-adds, remote progress) moves to the M4/M5 polish backlog — recorded as a deviation from the original M3 task list.
 69. **Sticker-lost = manual entry from the unscanned list** (edge case 3): the loading screen lists the batch's unscanned boxes; tapping one (or typing its code) records a `manual` scan with reason `sticker_lost`. The reprint offer arrives with the M4 polish.
 70. **Truck presets are seed-managed for now**: two real presets seeded (13.6 m / 90 m³ / 24 t and 17.5 m / 130 m³ / 28 t); a presets admin CRUD is deferred until the owner asks.
+
+## M4 decisions (2026-07-23)
+
+71. **Unload has no confirm dialog for off-manifest scans** (edge case 4, "reality wins"): a known box scanned at unload is ALWAYS accepted — on-manifest lands normally, off-manifest is auto-transferred to this warehouse with flag `undocumented_transfer`, a correcting movement, and an instant logist Telegram. The loader never decides; the system records reality and alerts.
+72. **Unknown QR at unload links to the full receiving screen** rather than a separate mini-intake form — the receive screen is already single-window and fast; a second intake form would drift from it. The ack toast carries the link.
+73. **First unload scan flips the batch to `arrived`** (no separate "truck arrived" button); `finishUnload` flags never-scanned manifest boxes `missing_in_transit` (they stay `in_transit` on the batch) and the resolutions are `found_at_origin` (back to origin stock) / `found_here` (into destination stock), manager-gated per #43.
+74. **KA hub dashboard v1 = the /transit report**: in-transit/arrived batches + all missing-in-transit boxes in one screen; the fuller role dashboard with charts arrives in M6 as planned.
+75. **Batch-scope cost entry UI deferred to M6** (with the FX/cost module) — the schema already accepts scope=batch entries on closed batches, so nothing blocks late cost capture when that UI lands.

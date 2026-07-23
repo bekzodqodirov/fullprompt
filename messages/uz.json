@@ -378,7 +378,9 @@
       "finish_loading_first": "Avval pogruzkani yakunlang",
       "nothing_loaded": "Hech narsa yuklanmagan",
       "batch_not_loading": "Partiya pogruzkada emas"
-    }
+    },
+    "startUnloading": "Razgruzka (skan)",
+    "transitReport": "Yo‘lda"
   },
   "loading": {
     "title": "Pogruzka",
@@ -392,5 +394,29 @@
     "stickerLost": "Stiker yo‘qolgan / qo‘lda kiritish",
     "stickerLostHint": "Skanlanmagan karobkani tanlang yoki kodini kiriting",
     "unscannedList": "Skanlanmagan karobkalar:"
+  },
+  "unloading": {
+    "title": "Razgruzka",
+    "online": "Onlayn, hammasi sinxron",
+    "offline": "Oflayn — navbatda {n} ta skan",
+    "syncing": "Sinxronlanmoqda… ({n})",
+    "alreadyScanned": "Allaqachon skanlangan:",
+    "autoTransferred": "Manifestda yo‘q — qabul qilindi va shu skladga o‘tkazildi:",
+    "unknownCode": "Noma’lum kod — egasiz yuk sifatida rasmiylashtiring",
+    "openIntake": "Qabulni ochish",
+    "stickerLost": "Stiker yo‘qolgan / qo‘lda kiritish",
+    "stickerLostHint": "Karobkani tanlang yoki kodini kiriting",
+    "unscannedList": "Tushirilmagan karobkalar:",
+    "finishUnload": "Razgruzkani yakunlash",
+    "missingSummary": "{n} ta tushirilmadi — yo‘lda yo‘qolgan deb belgilandi",
+    "allUnloaded": "Hammasi tushirildi, farq yo‘q",
+    "missingTitle": "Yo‘lda yo‘qolganlar",
+    "foundAtOrigin": "Jo‘natgan skladda qolgan",
+    "foundHere": "Shu yerda topildi",
+    "closeBatch": "Partiyani yopish"
+  },
+  "transit": {
+    "title": "Yo‘ldagi yuklar",
+    "missingTitle": "Yo‘lda yo‘qolganlar"
   }
 }

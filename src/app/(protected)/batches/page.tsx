@@ -39,7 +39,12 @@ export default async function BatchesPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold">🚚 {t('title')}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">🚚 {t('title')}</h1>
+        <Link href="/transit" className="btn-secondary px-3 text-sm">
+          🔍 {t('transitReport')}
+        </Link>
+      </div>
       <div className="grid gap-3 md:grid-cols-4">
         {COLUMNS.map((status) => (
           <div key={status} className="space-y-2">
