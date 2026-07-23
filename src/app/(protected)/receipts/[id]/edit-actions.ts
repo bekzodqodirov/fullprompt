@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { receiptLots, receipts } from '@/modules/platform/db/schema';
-import { authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize, type Actor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import {
@@ -48,7 +48,13 @@ export async function editLotAction(_prev: EditLotState, formData: FormData): Pr
   if (!lot) return { error: 'not_found' };
   const receipt = (await db.query.receipts.findFirst({ where: eq(receipts.id, lot.receiptId) }))!;
 
-  const actor = await authorize('receipts.edit', { warehouseId: receipt.warehouseId });
+  let actor: Actor;
+  try {
+    actor = await authorize('receipts.edit', { warehouseId: receipt.warehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
   const meta = await requestMeta();
 
   try {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { attachments } from '@/modules/platform/db/schema';
 import { getLocalDriver, getStorage } from '@/modules/platform/files/storage';
+import { AttachmentDeleteError, deleteAttachment } from '@/modules/platform/files/service';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 
 const variantSchema = z.enum(['original', 'thumb200', 'thumb800']).default('original');
@@ -54,4 +55,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const url = await getStorage().signedUrl(key);
   return Response.redirect(new URL(url, request.url), 302);
+}
+
+/** Remove a wrongly-added photo/file (uploader or anyone with receipts.edit). */
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  let actor;
+  try {
+    actor = await requireActor();
+  } catch (err) {
+    if (err instanceof AuthError) return Response.json({ error: 'unauthorized' }, { status: 401 });
+    throw err;
+  }
+
+  const { id } = await params;
+  try {
+    await deleteAttachment(id, actor);
+  } catch (err) {
+    if (err instanceof AttachmentDeleteError) {
+      return Response.json(
+        { error: err.code },
+        { status: err.code === 'not_found' ? 404 : 403 },
+      );
+    }
+    throw err;
+  }
+  return Response.json({ ok: true });
 }

@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     return Response.json(result, { status: 201 });
   } catch (err) {
     if (err instanceof FileValidationError) {
-      return Response.json({ error: err.message }, { status: 400 });
+      return Response.json({ error: err.code, detail: err.message }, { status: 400 });
     }
     throw err;
   }

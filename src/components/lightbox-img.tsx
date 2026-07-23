@@ -12,15 +12,18 @@ export function LightboxImg({
   attachmentId,
   alt = '',
   className = 'h-12 w-12 rounded object-cover',
+  onDelete,
 }: {
   attachmentId: string;
   alt?: string;
   className?: string;
+  /** When set, a small ✕ badge removes the wrongly-added photo. */
+  onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <>
+    <span className="relative inline-block">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={`/api/attachments/${attachmentId}?variant=thumb200`}
@@ -40,6 +43,20 @@ export function LightboxImg({
           }
         }}
       />
+      {onDelete && (
+        <button
+          type="button"
+          aria-label="✕"
+          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold leading-none text-white shadow"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          ✕
+        </button>
+      )}
       {open && (
         <button
           type="button"
@@ -66,6 +83,6 @@ export function LightboxImg({
           />
         </button>
       )}
-    </>
+    </span>
   );
 }

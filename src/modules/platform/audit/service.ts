@@ -5,6 +5,7 @@ export type AuditAction =
   | 'create'
   | 'update'
   | 'void'
+  | 'delete'
   | 'status_change'
   | 'scan'
   | 'label_print'

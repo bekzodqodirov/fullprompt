@@ -32,14 +32,33 @@ export function AttachmentsPanel({
   onAdd?: (item: AttachmentItem) => void;
 }) {
   const t = useTranslations('receipts');
+  const tr = useTranslations('receive');
   const [items, setItems] = useState(initial ?? []);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function uploadErrorText(res: Response): Promise<string> {
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error === 'unsupported_type') return tr('fileTypeUnsupported');
+      if (body.error === 'too_large') return tr('fileTooLarge');
+    } catch {
+      /* non-JSON reply — fall through to the generic message */
+    }
+    return t('attachFailed');
+  }
+
+  async function remove(id: string) {
+    const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
+    if (res.ok || res.status === 404) {
+      setItems((prev) => prev.filter((item) => item.id !== id));
+    }
+  }
 
   async function addFiles(files: FileList | null) {
     if (!files?.length) return;
     setUploading(true);
-    setError(false);
+    setError(null);
     try {
       for (const file of Array.from(files)) {
         const isImage = file.type.startsWith('image/');
@@ -62,7 +81,7 @@ export function AttachmentsPanel({
           setItems((prev) => [...prev, item]);
           onAdd?.(item);
         } else {
-          setError(true);
+          setError(await uploadErrorText(res));
         }
       }
     } finally {
@@ -80,19 +99,31 @@ export function AttachmentsPanel({
               attachmentId={item.id}
               alt={item.fileName}
               className="h-16 w-16 rounded object-cover"
+              onDelete={editable ? () => remove(item.id) : undefined}
             />
           ) : (
-            <a
-              key={item.id}
-              href={`/api/attachments/${item.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex h-16 w-16 flex-col items-center justify-center rounded-lg bg-gray-100 p-1 text-center text-2xl"
-              title={item.fileName}
-            >
-              📄
-              <span className="max-w-full truncate text-[10px] text-gray-600">{item.fileName}</span>
-            </a>
+            <span key={item.id} className="relative inline-block">
+              <a
+                href={`/api/attachments/${item.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-16 w-16 flex-col items-center justify-center rounded-lg bg-gray-100 p-1 text-center text-2xl"
+                title={item.fileName}
+              >
+                📄
+                <span className="max-w-full truncate text-[10px] text-gray-600">{item.fileName}</span>
+              </a>
+              {editable && (
+                <button
+                  type="button"
+                  aria-label="✕"
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold leading-none text-white shadow"
+                  onClick={() => remove(item.id)}
+                >
+                  ✕
+                </button>
+              )}
+            </span>
           ),
         )}
         {editable && (
@@ -109,7 +140,7 @@ export function AttachmentsPanel({
           </label>
         )}
       </div>
-      {error && <p className="text-xs font-semibold text-red-700">{t('attachFailed')}</p>}
+      {error && <p className="text-xs font-semibold text-red-700">{error}</p>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { editLotAction, type EditLotState } from './edit-actions';
 
@@ -26,20 +26,27 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<EditLotState, FormData>(editLotAction, {});
 
+  // On success the form used to just sit there with no sign anything happened
+  // (owner's bug report) — collapse it so the green "saved" badge is visible.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (state.ok) setOpen(false);
+  }, [state]);
+
   if (!open) {
     return (
       <div>
         <button type="button" className="btn-secondary !min-h-9 px-2 text-sm" onClick={() => setOpen(true)}>
           ✏️ {tc('edit')}
         </button>
-        {state.ok && state.reconciliation && (
+        {state.ok && (
           <span className="ml-2 text-xs font-semibold text-green-700">
-            {tc('saved')}
-            {state.reconciliation.labelsToPrint > 0 &&
-              ` · 🖨 ${t('labelsToPrint', { n: state.reconciliation.labelsToPrint })}`}
-            {state.reconciliation.labelsToDestroy.length > 0 &&
+            ✅ {tc('saved')}
+            {(state.reconciliation?.labelsToPrint ?? 0) > 0 &&
+              ` · 🖨 ${t('labelsToPrint', { n: state.reconciliation!.labelsToPrint })}`}
+            {(state.reconciliation?.labelsToDestroy.length ?? 0) > 0 &&
               ` · 🗑 ${t('labelsToDestroy', {
-                codes: state.reconciliation.labelsToDestroy.join(', '),
+                codes: state.reconciliation!.labelsToDestroy.join(', '),
               })}`}
           </span>
         )}

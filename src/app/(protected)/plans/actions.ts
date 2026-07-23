@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/modules/platform/db/client';
 import { batches, loadPlans, loadPlanVersions } from '@/modules/platform/db/schema';
-import { authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import {
@@ -63,17 +63,30 @@ const vehicleSchema = z.object({
   driverPhone: z.string().trim().max(50).optional().or(z.literal('')),
 });
 
-export async function saveVehicleAction(formData: FormData): Promise<void> {
+export interface VehicleFormState {
+  ok?: boolean;
+  error?: string;
+}
+
+export async function saveVehicleAction(
+  _prev: VehicleFormState,
+  formData: FormData,
+): Promise<VehicleFormState> {
   const parsed = vehicleSchema.safeParse({
     batchId: formData.get('batchId'),
     vehiclePlate: formData.get('vehiclePlate'),
     driverName: formData.get('driverName'),
     driverPhone: formData.get('driverPhone'),
   });
-  if (!parsed.success) return;
+  if (!parsed.success) return { error: 'validation' };
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
-  if (!batch) return;
-  await authorize('batches.vehicle_info', { warehouseId: batch.originWarehouseId });
+  if (!batch) return { error: 'not_found' };
+  try {
+    await authorize('batches.vehicle_info', { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
   await db
     .update(batches)
     .set({
@@ -83,6 +96,7 @@ export async function saveVehicleAction(formData: FormData): Promise<void> {
     })
     .where(eq(batches.id, parsed.data.batchId));
   revalidatePath(`/batches/${parsed.data.batchId}`);
+  return { ok: true };
 }
 
 export async function finishLoadingAction(

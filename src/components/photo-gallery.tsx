@@ -9,26 +9,53 @@ export interface GalleryPhoto {
 
 /**
  * Thumbnails-first photo gallery with tap-to-zoom (spec 4.8). Thumbnails are
- * 200px; tapping opens the 800px variant in a full-screen overlay.
+ * 200px; tapping opens the 800px variant in a full-screen overlay. With
+ * `deletable`, each thumb gets a ✕ badge that removes a wrongly-added photo.
  */
-export function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
+export function PhotoGallery({
+  photos,
+  deletable = false,
+}: {
+  photos: GalleryPhoto[];
+  deletable?: boolean;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
 
-  if (photos.length === 0) return null;
+  const visible = photos.filter((photo) => !removed.has(photo.id));
+  if (visible.length === 0) return null;
+
+  async function remove(id: string) {
+    const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
+    if (res.ok || res.status === 404) {
+      setRemoved((prev) => new Set(prev).add(id));
+    }
+  }
 
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        {photos.map((photo) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={photo.id}
-            src={`/api/attachments/${photo.id}?variant=thumb200`}
-            alt={photo.fileName}
-            className="h-20 w-20 cursor-zoom-in rounded-lg object-cover"
-            loading="lazy"
-            onClick={() => setOpenId(photo.id)}
-          />
+        {visible.map((photo) => (
+          <span key={photo.id} className="relative inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/api/attachments/${photo.id}?variant=thumb200`}
+              alt={photo.fileName}
+              className="h-20 w-20 cursor-zoom-in rounded-lg object-cover"
+              loading="lazy"
+              onClick={() => setOpenId(photo.id)}
+            />
+            {deletable && (
+              <button
+                type="button"
+                aria-label="✕"
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold leading-none text-white shadow"
+                onClick={() => remove(photo.id)}
+              >
+                ✕
+              </button>
+            )}
+          </span>
         ))}
       </div>
       {openId && (

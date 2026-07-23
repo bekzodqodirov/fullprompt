@@ -12,6 +12,18 @@ export default async function ReceivePage() {
   if (!actor.permissions.has('receipts.create')) redirect('/');
   const t = await getTranslations('receive');
 
+  // A warehouse-scoped operator may ONLY receive into their assigned
+  // warehouses — never fall back to "all" (submitting to an unassigned one
+  // is rejected by authorize() anyway, so offering it just sets a trap).
+  if (actor.warehouseScoped && actor.warehouseIds.length === 0) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <h1 className="mb-3 text-xl font-bold">{t('title')}</h1>
+        <div className="card text-sm">⚠️ {t('noWarehouseAssigned')}</div>
+      </div>
+    );
+  }
+
   const whs = await db
     .select({
       id: warehouses.id,
@@ -21,7 +33,7 @@ export default async function ReceivePage() {
     })
     .from(warehouses)
     .where(
-      actor.warehouseScoped && actor.warehouseIds.length
+      actor.warehouseScoped
         ? inArray(warehouses.id, actor.warehouseIds)
         : eq(warehouses.active, true),
     )

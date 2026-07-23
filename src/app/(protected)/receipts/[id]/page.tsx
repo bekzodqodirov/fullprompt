@@ -165,7 +165,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             </p>
             {lot.note && <p className="mt-1 text-sm italic text-gray-500">📝 {lot.note}</p>}
             <div className="mt-2">
-              <PhotoGallery photos={photosByLot.get(lot.id) ?? []} />
+              <PhotoGallery photos={photosByLot.get(lot.id) ?? []} deletable={canEdit} />
             </div>
             {canEdit && (
               <div className="mt-2">

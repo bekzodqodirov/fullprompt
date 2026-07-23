@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Bugfix round 4 (owner testing) — 2026-07-23
+
+- **File attach fixed**: the upload whitelist was too narrow — now accepts TXT/CSV/ZIP/RAR/7z/GIF/HEIC and MP4/MOV/WebM video (photos ≤15 MB, files ≤25 MB, video ≤60 MB), with an extension fallback for files the browser sends without a content type (common on Windows). Rejections now show the real reason ("type not supported" / "too large") in the operator's language instead of a generic "upload failed".
+- **Delete wrongly-added photos/files**: ✕ badge on every thumb/file chip in the receiving screen (lot photos, general photos, receipt files), on the receipt page galleries and attachments panel (for users who can edit). New `DELETE /api/attachments/[id]` — allowed for the uploader and `receipts.edit` holders; removes bytes + thumbnails and writes an audit entry.
+- **"Warehouse out of scope" crash fixed**: a stale localStorage draft (same browser, different account) kept a warehouse the operator wasn't assigned to; the confirm action then threw an unhandled AuthError and crashed the page with a digest. The restored draft now snaps back to an allowed warehouse, the action returns a translated error instead of throwing, and a warehouse-scoped operator never sees the all-warehouses fallback (zero assignments → clear "no warehouse assigned" message).
+- **Save feedback**: lot edit now collapses on success and shows ✅ Saved (+ label reprint hints); vehicle info form shows a pending state and ✅ Saved on the button (was a silent server action).
+- Tests: 57 unit/integration (+ attachment lifecycle, content-type fallback) + 12 e2e.
+
 ## M5 — Export & UZ side — 2026-07-23
 
 - **VED documents (W6)**: invoice + packing-list DRAFT XLSX from the actual manifest (blank price column with live amount formulas; company header from settings — real requisites still needed from the owner), "sent to agent" flag with date on the batch card.

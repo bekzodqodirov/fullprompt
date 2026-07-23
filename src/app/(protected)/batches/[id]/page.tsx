@@ -14,7 +14,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { saveVehicleAction } from '../../plans/actions';
+import { VehicleForm } from './vehicle-form';
 import { setSentToAgentAction } from '../batch-actions-server';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
@@ -24,7 +24,6 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('batches');
-  const tc = await getTranslations('common');
   const format = await getFormatter();
 
   const dest = aliasedTable(warehouses, 'dest');
@@ -178,18 +177,12 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       )}
 
       {canVehicle && ['forming', 'loading'].includes(batch.status) ? (
-        <form action={saveVehicleAction} className="card space-y-2">
-          <h2 className="text-lg font-bold">🚛 {t('vehicle')}</h2>
-          <input type="hidden" name="batchId" value={batch.id} />
-          <input name="vehiclePlate" className="input font-mono" placeholder={t('plate')} defaultValue={batch.vehiclePlate ?? ''} />
-          <div className="flex gap-2">
-            <input name="driverName" className="input flex-1" placeholder={t('driver')} defaultValue={batch.driverName ?? ''} />
-            <input name="driverPhone" className="input flex-1" inputMode="tel" placeholder={t('driverPhone')} defaultValue={batch.driverPhone ?? ''} />
-          </div>
-          <button type="submit" className="btn-secondary w-full">
-            {tc('save')}
-          </button>
-        </form>
+        <VehicleForm
+          batchId={batch.id}
+          vehiclePlate={batch.vehiclePlate ?? ''}
+          driverName={batch.driverName ?? ''}
+          driverPhone={batch.driverPhone ?? ''}
+        />
       ) : (
         (batch.vehiclePlate || batch.driverName) && (
           <div className="card text-sm">

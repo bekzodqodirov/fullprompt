@@ -166,8 +166,15 @@ export function ReceiveWizard({
         if (parsed.receiptId && Array.isArray(parsed.lots)) {
           // Backfill fields added after this draft was saved (schema grows
           // over time; a stale localStorage draft must never crash the page).
+          // The saved warehouse may no longer be allowed for THIS user (same
+          // browser, different account) — snap it back to an allowed one so
+          // confirm can't hit "Warehouse out of scope".
+          const allowedWh = warehouses.some((wh) => wh.id === parsed.warehouseId)
+            ? parsed.warehouseId!
+            : (warehouses[0]?.id ?? '');
           const backfilled: Draft = {
             ...parsed,
+            warehouseId: allowedWh,
             costs: parsed.costs ?? [],
             files: parsed.files ?? [],
             generalPhotoIds: parsed.generalPhotoIds ?? [],
@@ -230,6 +237,24 @@ export function ReceiveWizard({
   const warehouse = warehouses.find((w) => w.id === draft.warehouseId);
   const defaultCurrency = warehouse?.country === 'CN' ? 'CNY' : 'USD';
 
+  /** Server rejection → human message (file type / size), not just "failed". */
+  async function uploadErrorText(res: Response): Promise<string> {
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error === 'unsupported_type') return t('fileTypeUnsupported');
+      if (body.error === 'too_large') return t('fileTooLarge');
+    } catch {
+      /* non-JSON reply — fall through to the generic message */
+    }
+    return t('photoUploadFailed');
+  }
+
+  async function removeAttachment(id: string, apply: () => void) {
+    const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
+    // 404 = already gone server-side; still drop it from the draft.
+    if (res.ok || res.status === 404) apply();
+  }
+
   async function translateLot(lot: LotDraft) {
     if (!lot.zh.trim() || lot.ru) return;
     const res = await fetch(`/api/translate?zh=${encodeURIComponent(lot.zh)}`);
@@ -272,7 +297,7 @@ export function ReceiveWizard({
               : d,
           );
         } else {
-          setError(t('photoUploadFailed'));
+          setError(await uploadErrorText(res));
         }
       } catch {
         setError(t('photoUploadFailed'));
@@ -304,7 +329,7 @@ export function ReceiveWizard({
           };
           setDraft((d) => (d ? { ...d, files: [...(d.files ?? []), item] } : d));
         } else {
-          setError(t('photoUploadFailed'));
+          setError(await uploadErrorText(res));
         }
       } catch {
         setError(t('photoUploadFailed'));
@@ -336,7 +361,7 @@ export function ReceiveWizard({
           const { id } = (await res.json()) as { id: string };
           setDraft((d) => (d ? { ...d, generalPhotoIds: [...d.generalPhotoIds, id] } : d));
         } else {
-          setError(t('photoUploadFailed'));
+          setError(await uploadErrorText(res));
         }
       } catch {
         setError(t('photoUploadFailed'));
@@ -406,6 +431,8 @@ export function ReceiveWizard({
       if (res.ok) {
         localStorage.removeItem(DRAFT_KEY);
         setResult(res);
+      } else if (res.error === 'warehouse_forbidden') {
+        setError(t('warehouseForbidden'));
       } else {
         setError(res.detail ? `${res.error}: ${res.detail}` : (res.error ?? 'error'));
       }
@@ -491,7 +518,16 @@ export function ReceiveWizard({
           />
         </label>
         {lot.photoIds.map((photoId) => (
-          <LightboxImg key={photoId} attachmentId={photoId} className="h-9 w-9 rounded-md object-cover" />
+          <LightboxImg
+            key={photoId}
+            attachmentId={photoId}
+            className="h-9 w-9 rounded-md object-cover"
+            onDelete={() =>
+              removeAttachment(photoId, () =>
+                updateLot(lot.id, { photoIds: lot.photoIds.filter((id) => id !== photoId) }),
+              )
+            }
+          />
         ))}
       </div>
     );
@@ -705,6 +741,11 @@ export function ReceiveWizard({
             key={photoId}
             attachmentId={photoId}
             className="h-10 w-10 rounded-md object-cover"
+            onDelete={() =>
+              removeAttachment(photoId, () =>
+                update({ generalPhotoIds: draft.generalPhotoIds.filter((id) => id !== photoId) }),
+              )
+            }
           />
         ))}
         {draft.files.map((file) =>
@@ -714,18 +755,39 @@ export function ReceiveWizard({
               attachmentId={file.id}
               alt={file.fileName}
               className="h-10 w-10 rounded-md object-cover"
+              onDelete={() =>
+                removeAttachment(file.id, () =>
+                  update({ files: draft.files.filter((f) => f.id !== file.id) }),
+                )
+              }
             />
           ) : (
-            <a
+            <span
               key={file.id}
-              href={`/api/attachments/${file.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex h-10 max-w-32 items-center gap-1 truncate rounded-md bg-gray-100 px-2 text-xs text-gray-700"
+              className="flex h-10 max-w-40 items-center gap-1 rounded-md bg-gray-100 pl-2 text-xs text-gray-700"
               title={file.fileName}
             >
-              📄 <span className="truncate">{file.fileName}</span>
-            </a>
+              <a
+                href={`/api/attachments/${file.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-w-0 items-center gap-1"
+              >
+                📄 <span className="truncate">{file.fileName}</span>
+              </a>
+              <button
+                type="button"
+                aria-label="✕"
+                className="px-1.5 text-sm font-bold text-red-600"
+                onClick={() =>
+                  removeAttachment(file.id, () =>
+                    update({ files: draft.files.filter((f) => f.id !== file.id) }),
+                  )
+                }
+              >
+                ✕
+              </button>
+            </span>
           ),
         )}
       </div>

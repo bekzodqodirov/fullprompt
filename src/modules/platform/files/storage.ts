@@ -1,7 +1,7 @@
 import { createHash, createHmac } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 /**
@@ -11,6 +11,8 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 export interface StorageDriver {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   get(key: string): Promise<Buffer>;
+  /** Remove the object; missing keys are not an error. */
+  delete(key: string): Promise<void>;
   /** URL the browser can fetch for a limited time. */
   signedUrl(key: string, expiresSeconds?: number): Promise<string>;
 }
@@ -41,6 +43,10 @@ class S3Driver implements StorageDriver {
   async get(key: string): Promise<Buffer> {
     const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     return Buffer.from(await res.Body!.transformToByteArray());
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 
   async signedUrl(key: string, expiresSeconds = 600): Promise<string> {
@@ -75,6 +81,10 @@ class LocalDriver implements StorageDriver {
 
   async get(key: string): Promise<Buffer> {
     return readFile(this.filePath(key));
+  }
+
+  async delete(key: string): Promise<void> {
+    await rm(this.filePath(key), { force: true });
   }
 
   async signedUrl(key: string, expiresSeconds = 600): Promise<string> {
