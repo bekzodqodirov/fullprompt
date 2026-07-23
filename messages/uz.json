@@ -369,8 +369,36 @@
       "crate_not_available": "Yashik bu skladda emas yoki band"
     }
   },
+  "costing": {
+    "fxTitle": "Valyuta kurslari",
+    "rate": "Kurs (1 birlik = ? USD)",
+    "ratePlaceholder": "masalan 0.14",
+    "rateHint": "1 birlik valyuta necha USD bo‘lishini kiriting (CNY ≈ 0.14). Kurs sanasi bilan saqlanadi — xarajat o‘z sanasidagi kurs bilan hisoblanadi.",
+    "date": "Sana",
+    "noRates": "Hali kurs kiritilmagan",
+    "addCost": "Xarajat qo‘shish",
+    "type": "Xarajat turi",
+    "amount": "Summa",
+    "basis": "Taqsimlash usuli",
+    "client": "Klient",
+    "clientRequired": "Bu usul uchun klientni tanlang",
+    "note": "Izoh",
+    "void": "Bekor qilish",
+    "voidReason": "Bekor qilish sababi:",
+    "noRate": "kurs yo‘q",
+    "landedCost": "Tan narx",
+    "scopeReceipt": "qabul",
+    "bases": {
+      "weight": "og‘irlik bo‘yicha",
+      "volume": "hajm bo‘yicha",
+      "chargeable": "hisobiy og‘irlik bo‘yicha",
+      "boxes": "karobka soni bo‘yicha",
+      "direct_to_client": "to‘g‘ridan-to‘g‘ri klientga"
+    }
+  },
   "batches": {
     "title": "Partiyalar",
+    "costs": "Xarajatlar",
     "statuses": {
       "forming": "Shakllanmoqda",
       "loading": "Pogruzka",

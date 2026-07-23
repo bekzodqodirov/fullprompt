@@ -1,0 +1,362 @@
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '../../platform/db/client';
+import {
+  batches,
+  boxes,
+  boxMovements,
+  clients,
+  costAllocations,
+  costEntries,
+  costTypes,
+  crates,
+  fxRates,
+  receiptLots,
+  receipts,
+} from '../../platform/db/schema';
+import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { getSetting } from '../../platform/settings/service';
+import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
+
+export class CostError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FX
+// ---------------------------------------------------------------------------
+
+export const fxRateSchema = z.object({
+  currency: z.string().length(3).toUpperCase(),
+  rateToUsd: z.number().positive().max(1_000_000),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+export async function upsertFxRate(input: z.infer<typeof fxRateSchema>, ctx: AuditContext) {
+  if (!ctx.actorId) throw new CostError('unauthenticated');
+  const [row] = await db
+    .insert(fxRates)
+    .values({
+      currency: input.currency,
+      rateToUsd: String(input.rateToUsd),
+      effectiveDate: input.effectiveDate,
+      enteredBy: ctx.actorId,
+    })
+    .onConflictDoUpdate({
+      target: [fxRates.currency, fxRates.effectiveDate],
+      set: { rateToUsd: String(input.rateToUsd), enteredBy: ctx.actorId },
+    })
+    .returning();
+  await writeAudit(db, ctx, {
+    entityType: 'fx_rate',
+    entityId: row!.id,
+    action: 'update',
+    after: { currency: input.currency, rateToUsd: input.rateToUsd, date: input.effectiveDate },
+  });
+  return row!;
+}
+
+/**
+ * Rate in force on a date: the latest rate with effective_date ≤ costDate;
+ * falls back to the earliest known rate (better than nothing for entries
+ * dated before the first rate). USD is always 1. Null = currency has no
+ * rates at all — the entry stays unconverted and reports flag it.
+ */
+export async function rateFor(currency: string, costDate: string): Promise<number | null> {
+  if (currency === 'USD') return 1;
+  const [hit] = await db
+    .select()
+    .from(fxRates)
+    .where(and(eq(fxRates.currency, currency), lte(fxRates.effectiveDate, costDate)))
+    .orderBy(desc(fxRates.effectiveDate))
+    .limit(1);
+  if (hit) return Number(hit.rateToUsd);
+  const [earliest] = await db
+    .select()
+    .from(fxRates)
+    .where(eq(fxRates.currency, currency))
+    .orderBy(asc(fxRates.effectiveDate))
+    .limit(1);
+  return earliest ? Number(earliest.rateToUsd) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Cost entry capture
+// ---------------------------------------------------------------------------
+
+export const costEntrySchema = z.object({
+  scope: z.enum(['receipt', 'batch']),
+  receiptId: z.string().uuid().optional(),
+  batchId: z.string().uuid().optional(),
+  costTypeId: z.string().uuid(),
+  amount: z.number().positive().max(1_000_000_000),
+  currency: z.string().length(3).toUpperCase(),
+  costDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  allocationBasis: z.enum(['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client']),
+  clientId: z.string().uuid().optional(),
+  note: z.string().trim().max(2000).optional().or(z.literal('')),
+});
+
+export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: AuditContext) {
+  if (!ctx.actorId) throw new CostError('unauthenticated');
+  if (input.scope === 'receipt' && !input.receiptId) throw new CostError('validation');
+  if (input.scope === 'batch' && !input.batchId) throw new CostError('validation');
+  if (input.allocationBasis === 'direct_to_client' && !input.clientId) {
+    throw new CostError('client_required');
+  }
+
+  const [entry] = await db
+    .insert(costEntries)
+    .values({
+      scope: input.scope,
+      receiptId: input.receiptId ?? null,
+      batchId: input.batchId ?? null,
+      costTypeId: input.costTypeId,
+      amount: String(input.amount),
+      currency: input.currency,
+      costDate: input.costDate,
+      allocationBasis: input.allocationBasis,
+      clientId: input.clientId ?? null,
+      note: input.note || null,
+      enteredBy: ctx.actorId,
+    })
+    .returning();
+  await writeAudit(db, ctx, {
+    entityType: 'cost_entry',
+    entityId: entry!.id,
+    action: 'create',
+    after: { scope: input.scope, amount: input.amount, currency: input.currency },
+  });
+  await recomputeEntry(entry!.id);
+  return entry!;
+}
+
+export async function voidCostEntry(id: string, reason: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new CostError('unauthenticated');
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, id) });
+  if (!entry) throw new CostError('not_found');
+  if (entry.voidedAt) throw new CostError('already_voided');
+  await db
+    .update(costEntries)
+    .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
+    .where(eq(costEntries.id, id));
+  await db.delete(costAllocations).where(eq(costAllocations.costEntryId, id));
+  await writeAudit(db, ctx, {
+    entityType: 'cost_entry',
+    entityId: id,
+    action: 'void',
+    after: { reason },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Recompute (idempotent — spec 6.9)
+// ---------------------------------------------------------------------------
+
+interface BoxDims {
+  boxId: string;
+  clientId: string | null;
+  weightKg: number;
+  volumeM3: number;
+}
+
+/** Per-box kg/m³ pro-rated from the lot; client from the receipt. */
+async function boxDims(boxIds: string[]): Promise<BoxDims[]> {
+  if (boxIds.length === 0) return [];
+  const rows = await db
+    .select({
+      boxId: boxes.id,
+      clientId: receipts.clientId,
+      boxCount: receiptLots.boxCount,
+      totalWeightKg: receiptLots.totalWeightKg,
+      totalVolumeM3: receiptLots.totalVolumeM3,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(inArray(boxes.id, boxIds));
+  return rows.map((r) => ({
+    boxId: r.boxId,
+    clientId: r.clientId,
+    weightKg: Number(r.totalWeightKg) / r.boxCount,
+    volumeM3: Number(r.totalVolumeM3) / r.boxCount,
+  }));
+}
+
+/** Boxes in an entry's scope: receipt → its boxes; crate → its boxes; batch → everything that rode it. */
+async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promise<string[]> {
+  if (entry.scope === 'receipt' && entry.receiptId) {
+    const rows = await db
+      .select({ id: boxes.id })
+      .from(boxes)
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .where(eq(receiptLots.receiptId, entry.receiptId));
+    return rows.map((r) => r.id);
+  }
+  if (entry.scope === 'crate' && entry.crateId) {
+    const rows = await db.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, entry.crateId));
+    return rows.map((r) => r.id);
+  }
+  if (entry.scope === 'batch' && entry.batchId) {
+    // Departed boxes are the ground truth; before departure fall back to the
+    // currently loaded/reserved members so early-entered costs still show.
+    const departed = await db
+      .selectDistinct({ id: boxMovements.boxId })
+      .from(boxMovements)
+      .where(
+        and(
+          eq(boxMovements.refType, 'batch'),
+          eq(boxMovements.refId, entry.batchId),
+          eq(boxMovements.cause, 'batch_departed'),
+        ),
+      );
+    if (departed.length) return departed.map((r) => r.id);
+    const current = await db
+      .select({ id: boxes.id })
+      .from(boxes)
+      .where(eq(boxes.currentBatchId, entry.batchId));
+    return current.map((r) => r.id);
+  }
+  return [];
+}
+
+/** Rebuild one entry's USD conversion + per-box allocation rows. */
+export async function recomputeEntry(costEntryId: string): Promise<void> {
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costEntryId) });
+  if (!entry) return;
+  if (entry.voidedAt) {
+    await db.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
+    return;
+  }
+
+  const rate = await rateFor(entry.currency, entry.costDate);
+  const amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
+  await db
+    .update(costEntries)
+    .set({ amountUsd: amountUsd !== null ? String(amountUsd) : null, fxRateUsed: rate !== null ? String(rate) : null })
+    .where(eq(costEntries.id, costEntryId));
+
+  await db.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
+  if (amountUsd === null) return; // unconverted — reports flag it
+
+  const ids = await scopeBoxIds(entry);
+  const dims = await boxDims(ids);
+  const factor = await getSetting('chargeable_weight_factor');
+  const pool: AllocBox[] = dims.map((d) => ({
+    ...d,
+    chargeableKg: Math.max(d.weightKg, d.volumeM3 * Number(factor)),
+  }));
+  const shares = allocateEntry(
+    {
+      amountUsd,
+      basis: entry.allocationBasis as AllocationBasis,
+      clientId: entry.clientId,
+    },
+    pool,
+  );
+  if (shares.length) {
+    await db.insert(costAllocations).values(
+      shares.map((s) => ({
+        costEntryId,
+        boxId: s.boxId,
+        clientId: s.clientId,
+        amountUsd: String(s.amountUsd),
+      })),
+    );
+  }
+}
+
+/**
+ * Sweep recompute: everything (FX table edited), one currency, or one
+ * batch/receipt. Idempotent — safe to run repeatedly.
+ */
+export async function recomputeAll(filter?: { currency?: string; batchId?: string; receiptId?: string }) {
+  const rows = await db
+    .select({ id: costEntries.id })
+    .from(costEntries)
+    .where(
+      and(
+        isNull(costEntries.voidedAt),
+        filter?.currency ? eq(costEntries.currency, filter.currency) : undefined,
+        filter?.batchId ? eq(costEntries.batchId, filter.batchId) : undefined,
+        filter?.receiptId ? eq(costEntries.receiptId, filter.receiptId) : undefined,
+      ),
+    );
+  for (const row of rows) await recomputeEntry(row.id);
+  return rows.length;
+}
+
+// ---------------------------------------------------------------------------
+// Read models
+// ---------------------------------------------------------------------------
+
+/** Landed cost of one box: entry-level shares with type names (spec 6.9). */
+export async function boxLandedCost(boxId: string) {
+  const rows = await db
+    .select({
+      amountUsd: costAllocations.amountUsd,
+      scope: costEntries.scope,
+      typeName: costTypes.name,
+      currency: costEntries.currency,
+      amount: costEntries.amount,
+      batchCode: batches.code,
+      crateCode: crates.code,
+    })
+    .from(costAllocations)
+    .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
+    .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
+    .leftJoin(batches, eq(costEntries.batchId, batches.id))
+    .leftJoin(crates, eq(costEntries.crateId, crates.id))
+    .where(eq(costAllocations.boxId, boxId))
+    .orderBy(asc(costAllocations.id));
+  const totalUsd = rows.reduce((a, r) => a + Number(r.amountUsd), 0);
+  return { totalUsd: Math.round(totalUsd * 100) / 100, shares: rows };
+}
+
+/** Batch cost sheet: entries + totals + unit costs per kg / m³. */
+export async function batchCostSheet(batchId: string) {
+  const entries = await db
+    .select({
+      entry: costEntries,
+      typeName: costTypes.name,
+      clientCode: clients.clientCode,
+    })
+    .from(costEntries)
+    .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
+    .leftJoin(clients, eq(costEntries.clientId, clients.id))
+    .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)))
+    .orderBy(asc(costEntries.createdAt));
+
+  const [load] = await db
+    .select({
+      boxCount: sql<number>`count(*)`,
+      kg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount}), 0)`,
+      m3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}), 0)`,
+    })
+    .from(boxMovements)
+    .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .where(
+      and(
+        eq(boxMovements.refType, 'batch'),
+        eq(boxMovements.refId, batchId),
+        eq(boxMovements.cause, 'batch_departed'),
+      ),
+    );
+
+  const totalUsd = entries.reduce((a, e) => a + Number(e.entry.amountUsd ?? 0), 0);
+  const kg = Number(load?.kg ?? 0);
+  const m3 = Number(load?.m3 ?? 0);
+  return {
+    entries,
+    totalUsd: Math.round(totalUsd * 100) / 100,
+    unconverted: entries.filter((e) => e.entry.amountUsd === null).length,
+    boxCount: Number(load?.boxCount ?? 0),
+    kg: Math.round(kg * 10) / 10,
+    m3: Math.round(m3 * 1000) / 1000,
+    usdPerKg: kg > 0 ? Math.round((totalUsd / kg) * 1000) / 1000 : null,
+    usdPerM3: m3 > 0 ? Math.round((totalUsd / m3) * 100) / 100 : null,
+  };
+}

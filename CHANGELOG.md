@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## M6 part 1 — Costing core (W9) — 2026-07-23
+
+- **Allocation engine** (pure, tests-first): all five bases (weight/volume/chargeable/boxes/direct-to-client), 4-dp shares with drift absorbed by the last box; §6.9 worked example passes as a unit test AND as a full two-leg integration test (acceptance test 16): box P rides two batches → landed cost = Σ per-leg shares, each converted at that entry's dated rate; rate edit recomputes; void removes the share.
+- **FX rates** (migration 0012, replaces the unused M0 pair-based placeholder): USD-base dated manual rates, `/admin/fx` page (`costs.fx.manage`), rate edits enqueue a per-currency recompute. Currencies with no rate leave entries visibly "no rate" instead of guessing (DECISIONS #86).
+- **Cost capture (W9)**: 💰 panel on the batch card (freight/agent/customs…, `costs.enter_batch`) and the receipt page (`costs.enter_receipt`) — type, amount+currency, dated, allocation basis, void with reason; batch card shows Σ USD + unit cost per kg / m³ of the departed load.
+- **Materialized `cost_allocations`** rebuilt idempotently by a pg-boss job on entry create/void, FX edit and batch depart (DECISIONS #87–88).
+- **Box card shows landed cost** with a per-entry breakdown (receipt/batch/crate share) for cost/report roles.
+- Migration 0012 also adds `warehouses.capacity_m3` (fill indicator lands with the M6 dashboards).
+- Seed: dated CNY/UZS rates for the worked example. Tests: 65 unit/integration + 12 e2e.
+
 ## Feedback round 5 (owner testing) — 2026-07-23
 
 - **Unclaimed labels print the marking**: sticker shows `444-A` (whatever is written on the box) as the dominant code with a small `#UNKNOWN` flag; `#UNKNOWN` alone only when no marking was captured (DECISIONS #82).

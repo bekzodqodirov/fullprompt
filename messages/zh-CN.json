@@ -369,8 +369,36 @@
       "crate_not_available": "木箱不在此仓库或已被占用"
     }
   },
+  "costing": {
+    "fxTitle": "汇率",
+    "rate": "汇率（1 单位 = ? USD）",
+    "ratePlaceholder": "例如 0.14",
+    "rateHint": "输入 1 单位货币等于多少 USD（CNY ≈ 0.14）。汇率带日期保存 — 费用按其日期的汇率折算。",
+    "date": "日期",
+    "noRates": "尚未输入汇率",
+    "addCost": "添加费用",
+    "type": "费用类型",
+    "amount": "金额",
+    "basis": "分摊方式",
+    "client": "客户",
+    "clientRequired": "此方式需要选择客户",
+    "note": "备注",
+    "void": "作废",
+    "voidReason": "作废原因：",
+    "noRate": "无汇率",
+    "landedCost": "到岸成本",
+    "scopeReceipt": "收货",
+    "bases": {
+      "weight": "按重量",
+      "volume": "按体积",
+      "chargeable": "按计费重量",
+      "boxes": "按箱数",
+      "direct_to_client": "直接归客户"
+    }
+  },
   "batches": {
     "title": "车次",
+    "costs": "费用",
     "statuses": {
       "forming": "组建中",
       "loading": "装车中",

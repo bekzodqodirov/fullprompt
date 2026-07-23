@@ -13,6 +13,7 @@ export default async function HomePage() {
   const tCrates = await getTranslations('crates');
   const tPlans = await getTranslations('plans');
   const tPipeline = await getTranslations('pipeline');
+  const tCosting = await getTranslations('costing');
 
   const isAdmin = actor.permissions.has('admin.warehouses.manage');
   const canReceive = actor.permissions.has('receipts.create');
@@ -108,6 +109,14 @@ export default async function HomePage() {
         >
           🔍 {tSearch('title')}
         </Link>
+        {actor.permissions.has('costs.fx.manage') && (
+          <Link
+            href="/admin/fx"
+            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
+          >
+            💱 {tCosting('fxTitle')}
+          </Link>
+        )}
         {isAdmin && (
           <Link
             href="/admin/warehouses"

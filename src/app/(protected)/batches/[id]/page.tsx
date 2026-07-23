@@ -14,6 +14,9 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { batchCostSheet } from '@/modules/wms/costing/service';
+import { costTypes, currencies } from '@/modules/platform/db/schema';
+import { CostPanel } from '@/components/cost-panel';
 import { VehicleForm } from './vehicle-form';
 import { setSentToAgentAction } from '../batch-actions-server';
 import { BatchActions } from './batch-actions';
@@ -69,6 +72,28 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const canDepart = actor.permissions.has('batches.depart_close');
   const canVehicle = actor.permissions.has('batches.vehicle_info');
   const canUnload = actor.permissions.has('scan.unload');
+  const canEnterCosts = actor.permissions.has('costs.enter_batch');
+  const canSeeCosts = canEnterCosts || actor.permissions.has('reports.all_warehouses');
+
+  const costSheet = canSeeCosts ? await batchCostSheet(id) : null;
+  const costMeta = canSeeCosts
+    ? {
+        types: await db
+          .select({ id: costTypes.id, code: costTypes.code, name: costTypes.name })
+          .from(costTypes)
+          .where(eq(costTypes.active, true)),
+        currencies: (
+          await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true))
+        ).map((c) => c.code),
+        clients: await db
+          .selectDistinct({ id: clients.id, clientCode: clients.clientCode })
+          .from(boxes)
+          .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+          .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+          .innerJoin(clients, eq(receipts.clientId, clients.id))
+          .where(eq(boxes.currentBatchId, id)),
+      }
+    : null;
 
   const missingRows = await db
     .select({ box: boxes, letter: receiptLots.letter, clientCode: clients.clientCode, marking: receipts.unclaimedMarking })
@@ -193,6 +218,48 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             {batch.driverPhone && ` · ${batch.driverPhone}`}
           </div>
         )
+      )}
+
+      {costSheet && costMeta && (
+        <div className="card space-y-2">
+          <h2 className="text-lg font-bold">💰 {t('costs')}</h2>
+          <CostPanel
+            scope="batch"
+            targetId={batch.id}
+            entries={costSheet.entries.map(({ entry, typeName, clientCode }) => ({
+              id: entry.id,
+              typeName,
+              amount: entry.amount,
+              currency: entry.currency,
+              amountUsd: entry.amountUsd,
+              costDate: entry.costDate,
+              allocationBasis: entry.allocationBasis,
+              note: entry.note,
+              clientCode,
+            }))}
+            costTypes={costMeta.types}
+            currencies={costMeta.currencies}
+            clientOptions={costMeta.clients}
+            defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
+            canEdit={canEnterCosts}
+          />
+          {costSheet.entries.length > 0 && (
+            <p className="border-t border-gray-100 pt-2 text-sm">
+              <b>Σ ${costSheet.totalUsd}</b>
+              {costSheet.usdPerKg !== null && (
+                <span className="text-gray-600">
+                  {' '}· ${costSheet.usdPerKg}/kg · ${costSheet.usdPerM3}/m³ ({costSheet.boxCount} 📦,{' '}
+                  {costSheet.kg} kg, {costSheet.m3} m³)
+                </span>
+              )}
+              {costSheet.unconverted > 0 && (
+                <span className="ml-2 rounded bg-orange-100 px-1.5 text-xs font-semibold text-orange-800">
+                  ⚠️ {costSheet.unconverted}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
       )}
 
       <div className="card space-y-1">

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -7,10 +7,12 @@ import {
   clients,
   costEntries,
   costTypes,
+  currencies,
   receiptLots,
   receipts,
   warehouses,
 } from '@/modules/platform/db/schema';
+import { CostPanel } from '@/components/cost-panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { HistoryTab } from '@/components/history-tab';
 import { PhotoGallery } from '@/components/photo-gallery';
@@ -65,7 +67,19 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     .select({ entry: costEntries, typeName: costTypes.name })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
-    .where(eq(costEntries.receiptId, id));
+    .where(and(eq(costEntries.receiptId, id), isNull(costEntries.voidedAt)));
+  const canEnterCosts = actor.permissions.has('costs.enter_receipt');
+  const costMeta = canEnterCosts
+    ? {
+        types: await db
+          .select({ id: costTypes.id, code: costTypes.code, name: costTypes.name })
+          .from(costTypes)
+          .where(eq(costTypes.active, true)),
+        currencies: (
+          await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true))
+        ).map((c) => c.code),
+      }
+    : null;
 
   const receiptFiles = await db
     .select({
@@ -211,7 +225,30 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             editable={canEdit}
           />
         </div>
-        {costs.length > 0 && (
+        {costMeta ? (
+          <div className="border-t border-gray-100 pt-3">
+            <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
+            <CostPanel
+              scope="receipt"
+              targetId={id}
+              entries={costs.map(({ entry, typeName }) => ({
+                id: entry.id,
+                typeName,
+                amount: entry.amount,
+                currency: entry.currency,
+                amountUsd: entry.amountUsd,
+                costDate: entry.costDate,
+                allocationBasis: entry.allocationBasis,
+                note: entry.note,
+              }))}
+              costTypes={costMeta.types}
+              currencies={costMeta.currencies}
+              clientOptions={client ? [{ id: client.id, clientCode: client.clientCode }] : []}
+              defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
+              canEdit={receipt.status === 'confirmed'}
+            />
+          </div>
+        ) : costs.length > 0 && (
           <div className="border-t border-gray-100 pt-3">
             <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
             <ul className="divide-y divide-gray-100 text-sm">

@@ -317,6 +317,9 @@ export const costEntries = pgTable(
     currency: varchar('currency', { length: 3 })
       .notNull()
       .references(() => currencies.code),
+    /** Derived by the recompute job: amount × dated FX rate (spec 6.9). */
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }),
+    fxRateUsed: numeric('fx_rate_used', { precision: 18, scale: 8 }),
     costDate: date('cost_date').notNull(),
     allocationBasis: text('allocation_basis').notNull().default('weight'),
     clientId: uuid('client_id').references(() => clients.id),
@@ -343,6 +346,54 @@ export const costEntries = pgTable(
     ),
     index('cost_entries_receipt_idx').on(t.receiptId),
     index('cost_entries_batch_idx').on(t.batchId),
+  ],
+);
+
+/** Manual dated FX rates (admin/accountant enters; USD is the costing base). */
+export const fxRates = pgTable(
+  'fx_rates',
+  {
+    id: id(),
+    currency: varchar('currency', { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    /** USD per 1 unit of the currency (CNY ≈ 0.14, UZS ≈ 0.00008). */
+    rateToUsd: numeric('rate_to_usd', { precision: 18, scale: 8 }).notNull(),
+    effectiveDate: date('effective_date').notNull(),
+    enteredBy: uuid('entered_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('fx_rates_rate_check', sql`${t.rateToUsd} > 0`),
+    uniqueIndex('fx_rates_currency_date_unique').on(t.currency, t.effectiveDate),
+  ],
+);
+
+/**
+ * Materialized per-box shares of a cost entry (spec 6.9) — rebuilt whole per
+ * entry by the recompute job; a box's landed cost = Σ its rows.
+ */
+export const costAllocations = pgTable(
+  'cost_allocations',
+  {
+    id: bigint('id', { mode: 'bigint' }).generatedAlwaysAsIdentity().primaryKey(),
+    costEntryId: uuid('cost_entry_id')
+      .notNull()
+      .references(() => costEntries.id, { onDelete: 'cascade' }),
+    boxId: uuid('box_id')
+      .notNull()
+      .references(() => boxes.id),
+    clientId: uuid('client_id').references(() => clients.id),
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 4 }).notNull(),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('cost_allocations_entry_box_unique').on(t.costEntryId, t.boxId),
+    index('cost_allocations_box_idx').on(t.boxId),
+    index('cost_allocations_client_idx').on(t.clientId),
   ],
 );
 

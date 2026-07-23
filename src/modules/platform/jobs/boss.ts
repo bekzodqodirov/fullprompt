@@ -4,6 +4,7 @@ import { logger } from '../logger';
 export const JOB_THUMBNAILS = 'files.thumbnails';
 export const JOB_PROCESS_EVENTS = 'events.process';
 export const JOB_SEND_TELEGRAM = 'notify.telegram';
+export const JOB_RECOMPUTE_COSTS = 'costs.recompute';
 
 const globalForBoss = globalThis as unknown as { boss?: PgBoss; bossStarted?: boolean };
 
@@ -29,6 +30,8 @@ export async function startBoss(): Promise<PgBoss> {
     await registerNotificationWorkers(boss);
     const { registerDigestWorker } = await import('./digest');
     await registerDigestWorker(boss);
+    const { registerCostRecomputeWorker } = await import('./cost-recompute');
+    await registerCostRecomputeWorker(boss);
     logger.info('pg-boss started');
   }
   return boss;

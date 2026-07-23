@@ -9,6 +9,7 @@ import {
   auditLog,
   clients,
   currencies,
+  fxRates,
   letterBlacklist,
   permissions,
   rolePermissions,
@@ -149,6 +150,19 @@ async function main() {
   }
   for (const combo of ['AM', 'XU']) {
     await db.insert(letterBlacklist).values({ combo }).onConflictDoNothing();
+  }
+  // FX rates for the §6.9 worked example (manual, dated — admin edits later).
+  const seedAdmin = (await db.select().from(users).limit(1))[0];
+  if (seedAdmin) {
+    for (const rate of [
+      { currency: 'CNY', rateToUsd: '0.14', effectiveDate: '2026-07-01' },
+      { currency: 'UZS', rateToUsd: '0.00008', effectiveDate: '2026-07-01' },
+    ]) {
+      await db
+        .insert(fxRates)
+        .values({ ...rate, enteredBy: seedAdmin.id })
+        .onConflictDoNothing();
+    }
   }
   for (const [key, value] of Object.entries(SETTING_DEFAULTS)) {
     await db

@@ -6,7 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { batches, loadPlans, loadPlanVersions } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
-import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
+import { enqueue, JOB_PROCESS_EVENTS, JOB_RECOMPUTE_COSTS } from '@/modules/platform/jobs/boss';
 import {
   PlanError,
   recordVerdict,
@@ -128,6 +128,8 @@ export async function departBatchAction(
   try {
     const result = await departBatch(batchId, { actorId: actor.id, ...meta });
     await enqueue(JOB_PROCESS_EVENTS, {});
+    // The departed load is the ground truth for batch-cost shares (spec 6.9).
+    await enqueue(JOB_RECOMPUTE_COSTS, { batchId });
     revalidatePath(`/batches/${batchId}`);
     return { ok: true, boxCount: result.boxCount };
   } catch (err) {

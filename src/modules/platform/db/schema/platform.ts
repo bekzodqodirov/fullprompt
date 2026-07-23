@@ -3,7 +3,6 @@ import {
   bigint,
   boolean,
   check,
-  date,
   index,
   inet,
   integer,
@@ -160,6 +159,8 @@ export const warehouses = pgTable(
     timezone: text('timezone').notNull(),
     batchPrefix: text('batch_prefix').notNull(),
     address: text('address'),
+    /** Optional storage capacity for the fill indicator (owner request, M6). */
+    capacityM3: numeric('capacity_m3', { precision: 12, scale: 2 }),
     // Letter sequencer state (spec 5.3): position is the 0-based index into
     // the A..ZZ sequence *before* blacklist skipping; cycleNo increments on
     // ZZ→A wrap. Locked with SELECT ... FOR UPDATE at receipt confirmation.
@@ -216,29 +217,9 @@ export const currencies = pgTable('currencies', {
   createdAt: createdAt(),
 });
 
-export const fxRates = pgTable(
-  'fx_rates',
-  {
-    id: id(),
-    fromCurrency: varchar('from_currency', { length: 3 })
-      .notNull()
-      .references(() => currencies.code),
-    toCurrency: varchar('to_currency', { length: 3 })
-      .notNull()
-      .references(() => currencies.code),
-    rate: numeric('rate', { precision: 18, scale: 8 }).notNull(),
-    rateDate: date('rate_date').notNull(),
-    enteredBy: uuid('entered_by')
-      .notNull()
-      .references(() => users.id),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    uniqueIndex('fx_rates_pair_date_unique').on(t.fromCurrency, t.toCurrency, t.rateDate),
-    check('fx_rates_rate_positive', sql`${t.rate} > 0`),
-  ],
-);
+// fx_rates lives in wms.ts since M6: the M0 placeholder was pair-based
+// (from/to); costing needs one USD-base rate per currency per date, so
+// migration 0012 replaced the (never-written) table wholesale.
 
 export const letterBlacklist = pgTable(
   'letter_blacklist',

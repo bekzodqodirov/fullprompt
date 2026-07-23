@@ -12,6 +12,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { boxLandedCost } from '@/modules/wms/costing/service';
 import { BoxStatusActions } from './status-actions';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
@@ -33,6 +34,13 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
   const wh = box.currentWarehouseId
     ? await db.query.warehouses.findFirst({ where: eq(warehouses.id, box.currentWarehouseId) })
     : null;
+
+  const canSeeCosts =
+    actor.permissions.has('costs.enter_batch') ||
+    actor.permissions.has('costs.enter_receipt') ||
+    actor.permissions.has('reports.all_warehouses');
+  const landed = canSeeCosts ? await boxLandedCost(box.id) : null;
+  const tCost = await getTranslations('costing');
 
   const movements = await db
     .select({ movement: boxMovements, actorName: users.fullName, toWh: warehouses.code })
@@ -71,6 +79,27 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
 
       {actor.permissions.has('receipts.void') && (
         <BoxStatusActions boxId={box.id} status={box.status} inCrate={box.crateId !== null} />
+      )}
+
+      {landed && landed.shares.length > 0 && (
+        <section className="card !p-3 text-sm">
+          <h2 className="mb-1 text-lg font-bold">
+            💰 {tCost('landedCost')}: <span className="font-mono">${landed.totalUsd}</span>
+          </h2>
+          <ul className="divide-y divide-gray-100">
+            {landed.shares.map((share, i) => (
+              <li key={i} className="flex flex-wrap gap-2 py-1">
+                <span>{share.typeName}</span>
+                <span className="text-gray-500">
+                  {share.batchCode ?? share.crateCode ?? tCost('scopeReceipt')}
+                </span>
+                <span className="ml-auto font-mono font-semibold">
+                  ${Math.round(Number(share.amountUsd) * 100) / 100}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <section>
