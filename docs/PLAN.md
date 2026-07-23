@@ -54,7 +54,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 4. Wizard step Client: fuzzy autocomplete (`gs777`→`GS777`), client name + manager avatar confirmation; **unknown-code path** → unclaimed intake (`client=null`, photos mandatory) into per-WH Unclaimed pool (intake half of edge case 2).
 5. Wizard step Lots: uniform/mixed dims modes, live volume/density/chargeable-weight computation with color badge, min-1-photo enforcement, supplier attachments, letter preview ("≈ D, E, F"). (Edge case 8.)
 6. Translation pipeline: dictionary exact → fuzzy → pluggable API (config provider), cache into dictionary, never block on failure; `(Клавиатура)` inline display; dictionary admin (verify/merge/XLSX import).
-7. Wizard step Extra costs: `cost_entries` scope=receipt capture (types from admin list, currency from the `currencies` table with CNY defaulted at China WHs per warehouse country, note, photo) — capture only, allocation deferred to M6.
+7. Wizard step Extra costs: `cost_entries` scope=receipt capture (types from admin list, currency from the `currencies` table with CNY defaulted at China WHs per warehouse country, note, photo) — capture only, allocation deferred to M6. *(As built 2026-07-23: intake captures ONE total amount+currency stored under cost type `other` — per-type rows removed at the owner's request, DECISIONS #50; per-type entry/reclassification deferred to M6.)*
 8. Review + Confirm: single transaction — assign letters, generate boxes + movements, emit `ReceiptConfirmed`; idempotent confirm (client UUID).
 9. Offline draft autosave: IndexedDB after every field, survives app kill / connection loss, sync banner (edge case 13, receiving half).
 10. Label renderer: 100×100 mm PDF per §7 (dominant client-code+letter, QR = short code only, WH-local date, `#UNKNOWN` variant), `LabelRenderer` interface, per-receipt/lot/box reprint with reprint audit.
@@ -63,6 +63,8 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 13. Stock browser v1: WH → client → lot → box, box timeline view.
 14. Global search v1: trigram indexes, grouped results, `/` hotkey, < 300 ms target; recognizes the combined `client-code+letter` query form (`gs777-a` → GS777's lot A, spec §12).
 15. Seed the canonical GS777 receipt (A/B/C) + GS102 receipt starting at D; mobile e2e for the 3-lot flow; 3-minute speed check on throttled 3G.
+
+*As built after owner feedback rounds (M1.5–M1.6+, 2026-07-23, DECISIONS #39–55):* the stepper became a **single-window screen** — one compact header card (warehouse+client, one-line source note, single total cost, receipt-level general-box-photos + file buttons with inline thumbs) above the product lines (desktop spreadsheet table / mobile cards, dual-rendered); per-lot note and manual ru inputs removed from intake (ru shows in parentheses via the translation pipeline); stock browser shipped as an Excel-like table with product + general photos opening a `LightboxImg` overlay; local-driver attachments stream bytes directly.
 
 **Acceptance tests:** 1⭐, 2⭐, 3⭐, 4⭐, 5⭐, 6, 7, 8⭐, 17.
 
@@ -85,7 +87,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 4. Crating cost entry (type `crating`) linked to receipt/client (capture only).
 5. Box status admin flows: `lost` / `void` with reason, manager-only; surfaced in stock browser until resolved. (Edge case 11.)
 6. Wrong-WH receipt move: manager moves a whole receipt between warehouses with correcting `box_movements`. (Edge case 15.)
-7. Unclaimed resolution: **Assign to client** (reprint labels with new code, notify sales manager, dual-actor audit) + **Return to sender** (handover record → `issued`, reason `returned_to_sender`). (Resolution half of edge case 2.)
+7. Unclaimed resolution: **Assign to client** (reprint labels with new code, notify sales manager, dual-actor audit) + **Return to sender** (handover record → `issued`, reason `returned_to_sender`). (Resolution half of edge case 2.) *(Assign-to-client shipped early in M1.5 — `assignReceiptClient`; M2's remaining scope is the return-to-sender handover flow.)*
 8. Scheduled digests: unclaimed > N days + stale-stock, daily 09:00 WH-local via pg-boss cron, Telegram to logist + admin.
 9. `exceljs` export infra + Stock report XLSX (current filter applied), stored as attachment.
 
@@ -182,7 +184,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 
 **Tasks:**
 
-1. FX rates admin (dated manual rates) + cost types admin; batch-scope cost entry UI (any currency → USD by dated rate), attachments.
+1. FX rates admin (dated manual rates) + cost types admin; batch-scope cost entry UI (any currency → USD by dated rate), attachments. *(Note: since DECISIONS #50, receiving-time costs are captured as a single `other`-type total — this task must also add receipt-scope per-type entry/reclassification so the M6 cost-type breakdowns are meaningful.)*
 2. **Allocation engine — tests first**: pure function over all five bases (weight/volume/chargeable/boxes/direct), the §6.9 worked example (box P = 90 CNY-equiv; box Q differs), per-entry dated USD conversion; then implementation.
 3. Idempotent recompute job triggered on any cost or FX edit, fully audited. (Edge cases 17, 18 — late costs on closed batches and rate corrections both flow through this path.)
 4. Cost reports: batch cost sheet (entries + per-kg/per-m³ unit cost), landed cost by client/lot and by batch, unclaimed-cost warnings (departed > N days with 0 costs).
@@ -371,6 +373,8 @@ Per-milestone test focus: M0 → auth/RBAC integration + I-6 audit immutability;
 ---
 
 ## Open questions for the owner
+
+*(Status 2026-07-23: Q1 ANSWERED — owner supplied a bot token, DECISIONS #26. Q2 ANSWERED — owner chose a free/open API for now, LibreTranslate default with a pluggable provider, DECISIONS #25. Q3–Q5 remain open: hosting decision deferred until dev wraps; company doc details due at M5; AND notification wording = recommended default accepted.)*
 
 1. **Do you already have a Telegram bot (token) we can use, or should we create a new bot now?**
    *Why it matters:* M1's "done" criterion includes a real Telegram message to the sales manager; dev can run against a stub, but the M1 demo on a phone needs a live bot.

@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Status sync + hygiene sweep — 2026-07-23
+
+- Docs brought up to date with the three feedback rounds: DECISIONS #48–55 recorded (per-lot note removed from intake, ru display-only, single total cost under "other", general box photos as a first-class concept, direct attachment streaming, LightboxImg standard, no photo-required indicator, dual rendering scoped to product lines only); PLAN.md M1/M2/M6 tasks annotated as-built; ARCHITECTURE.md attachment-read path corrected; open questions Q1/Q2 marked answered.
+- Cleanup found by a full audit: removed ghost `note` fields from the wizard draft (a stale localStorage draft could silently submit text the operator can no longer see), pruned 21 orphaned i18n keys from all three locales, localized the last hardcoded placeholder (lot editor note).
+- Tests caught up with the recent features: the receipt e2e now also uploads a general box photo, enters the single total cost, and asserts the cost + photos on the receipt detail, the stock table (product + amber general photo), and the tap-to-zoom lightbox open/close; the hardcoded debounce sleep replaced with a deterministic response wait; e2e serialized (shared DB/sequencer); CI seeds before vitest.
+
 ## Receipt header panel rework — 2026-07-23
 
 - The receipt-info panel is now compact: client row, then one line with the source note + a SINGLE total-cost amount+currency (no more per-type cost rows — stored under the "other" cost type), then two small buttons (📷 general box photos, 📎 files) with thumbnails inline. No stacked label-above-field blocks.

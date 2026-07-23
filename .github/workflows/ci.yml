@@ -37,10 +37,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      # Integration tests hit the database — migrate first.
+      # Integration tests hit the database — migrate first. Seed before
+      # vitest too, so tests may rely on seed data without a local/CI split
+      # (seed is idempotent).
       - run: pnpm db:migrate
-      - run: pnpm test
       - run: pnpm db:seed
+      - run: pnpm test
       - run: pnpm build
       - name: Install Playwright chromium
         run: pnpm exec playwright install --with-deps chromium

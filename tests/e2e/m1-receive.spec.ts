@@ -49,6 +49,20 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
     timeout: 10_000,
   });
 
+  // Receipt-level extras: general box photo + single total cost
+  const generalPhoto = await sharp({
+    create: { width: 300, height: 200, channels: 3, background: { r: 90, g: 160, b: 200 } },
+  })
+    .jpeg()
+    .toBuffer();
+  await page
+    .getByTestId('general-photo-input')
+    .setInputFiles({ name: 'general.jpg', mimeType: 'image/jpeg', buffer: generalPhoto });
+  await expect(
+    page.locator('[data-testid="receipt-files-row"] img[src*="/api/attachments/"]').first(),
+  ).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId('receipt-cost-amount').fill('120');
+
   // Sticky footer totals + confirm
   await expect(page.getByText('Σ 4 📦')).toBeVisible();
   await page.getByTestId('confirm-receipt').click();
@@ -66,6 +80,30 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   expect(res.headers()['content-type']).toContain('application/pdf');
   expect((await res.body()).subarray(0, 4).toString()).toBe('%PDF');
 
+  // Receipt detail shows the single "other"-type cost and the general photo
+  const receiptId = href!.match(/\/api\/receipts\/([^/]+)\/labels/)![1];
+  await page.goto(`/receipts/${receiptId}`);
+  await expect(page.getByText(/120(\.\d+)?\s+CNY/)).toBeVisible();
+  await expect(page.locator('img[src*="/api/attachments/"]').first()).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // Stock table: product photo + amber-bordered general photo, ru in parentheses
+  await page.goto('/stock?q=灯具');
+  await expect(page.locator('td img[src*="/api/attachments/"]').first()).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.locator('td img.border-amber-300').first()).toBeVisible();
+
+  // Lightbox: tapping a thumbnail opens the overlay in place (no navigation)
+  await page.locator('td img[src*="/api/attachments/"]').first().click();
+  const overlay = page.getByRole('button', { name: 'Close' });
+  await expect(overlay).toBeVisible();
+  await expect(overlay.locator('img[src*="variant=thumb800"]')).toBeVisible();
+  await overlay.click();
+  await expect(overlay).toBeHidden();
+  await expect(page).toHaveURL(/\/stock/);
+
   // Combined client+letter search still resolves
   await page.goto('/search?q=gs777-a');
   await expect(page.getByText('化妆品')).toBeVisible();
@@ -82,9 +120,11 @@ test('unclaimed intake captures the box marking', async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('gsr-receipt-draft'));
   await page.reload();
 
-  // Unknown code → unclaimed with marking prefilled from the query
+  // Unknown code → unclaimed with marking prefilled from the query. Wait for
+  // the debounced search to settle (deterministic, no fixed sleep).
+  const searchSettled = page.waitForResponse((r) => r.url().includes('/api/clients/search'));
   await page.locator('#clientQuery').fill('QQ9');
-  await page.waitForTimeout(600); // debounce; no hits expected
+  await searchSettled;
   await page.locator('button', { hasText: '❓' }).click();
   await expect(page.locator('#marking')).toHaveValue('QQ9');
 

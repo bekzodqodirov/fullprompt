@@ -79,7 +79,7 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
         className="input"
         defaultValue={lot.note ?? ''}
         aria-label="note"
-        placeholder="Примечание"
+        placeholder={t('note')}
       />
       {lot.dimsMode === 'uniform' ? (
         <div className="flex items-center gap-1.5">

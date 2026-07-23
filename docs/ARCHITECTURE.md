@@ -34,7 +34,7 @@ gsr-erp/
         │   │   ├── sse/[channel]/route.ts
         │   │   ├── telegram/webhook/route.ts
         │   │   ├── sync/route.ts            # offline outbox batch endpoint
-        │   │   └── files/[id]/route.ts      # signed-URL redirect
+        │   │   └── attachments/[id]/route.ts # authz + direct byte streaming (local driver) / signed-URL redirect (S3)
         │   ├── manifest.ts / sw.ts          # PWA (Serwist)
         │   └── layout.tsx
         ├── modules/
@@ -150,7 +150,7 @@ Retry policy defaults: `retryLimit: 5`, exponential backoff (`retryDelay: 30s`, 
 
 - **Storage:** MinIO on the VPS (S3 API), one private bucket, versioning on. `attachments` table: `id, entity_type, entity_id, kind, s3_key, mime, size, width/height, thumb keys, uploaded_by`.
 - **Upload path:** client compresses images with `browser-image-compression` (target ≤ 300 KB) and strips EXIF → requests a presigned PUT from a server action (authz on the target entity) → uploads direct to MinIO → confirms; confirmation enqueues `file.thumbnail` (sharp, 200px & 800px WebP).
-- **Reads:** short-lived (10 min) presigned GET URLs minted per request; `/api/files/[id]` checks authz then 302s to the signed URL. No public bucket. Lists always render thumbnails first; tap-to-zoom loads the 800px then original.
+- **Reads:** `/api/attachments/[id]?variant=` checks authz, then — local driver — streams the bytes directly with the correct Content-Type (an absolute-URL redirect broke when the browser reached the app via a LAN IP: the phone was redirected to `localhost`; DECISIONS #52), or — S3 — 302s to a short-lived (10 min) presigned GET URL. No public bucket. Lists always render thumbnails first; tap-to-zoom (`LightboxImg` overlay) loads the 800px then original.
 
 ### A9. i18n (next-intl)
 

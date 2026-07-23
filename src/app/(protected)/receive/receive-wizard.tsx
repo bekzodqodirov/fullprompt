@@ -47,7 +47,6 @@ interface LotDraft {
   boxWeightKg: string;
   totalWeightKg: string;
   totalVolumeM3: string;
-  note: string;
   photoIds: string[];
 }
 
@@ -55,7 +54,6 @@ interface CostDraft {
   costTypeId: string;
   amount: string;
   currency: string;
-  note: string;
 }
 
 interface Draft {
@@ -95,7 +93,6 @@ function newLot(): LotDraft {
     boxWeightKg: '',
     totalWeightKg: '',
     totalVolumeM3: '',
-    note: '',
     photoIds: [],
   };
 }
@@ -371,7 +368,6 @@ export function ReceiveWizard({
           productNameRu: lot.ru.trim(),
           boxCount: Number(lot.boxCount),
           dimsMode: lot.dimsMode,
-          note: lot.note.trim(),
           ...(lot.dimsMode === 'uniform'
             ? {
                 boxLengthCm: Number(lot.lengthCm),
@@ -390,7 +386,6 @@ export function ReceiveWizard({
             costTypeId: c.costTypeId,
             amount: Number(c.amount),
             currency: c.currency,
-            note: c.note,
           })),
       };
       const res = await submitReceiptAction(payload);
@@ -631,7 +626,7 @@ export function ReceiveWizard({
 
   // Single total-cost entry (owner's request: no per-type cost rows) — stored
   // as one cost line under the "other" cost type.
-  const cost = draft.costs[0] ?? { costTypeId: '', amount: '', currency: defaultCurrency, note: '' };
+  const cost = draft.costs[0] ?? { costTypeId: '', amount: '', currency: defaultCurrency };
   const otherCostTypeId =
     costTypes.find((type) => type.code === 'other')?.id ?? costTypes[0]?.id ?? '';
   const setCost = (patch: Partial<CostDraft>) =>
@@ -649,6 +644,7 @@ export function ReceiveWizard({
         />
         <div className="flex gap-2">
           <input
+            data-testid="receipt-cost-amount"
             aria-label={t('stepCosts')}
             className="input !w-40 md:!w-36"
             inputMode="decimal"
@@ -668,10 +664,11 @@ export function ReceiveWizard({
           </select>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div data-testid="receipt-files-row" className="flex flex-wrap items-center gap-1.5">
         <label className="btn-secondary !min-h-10 cursor-pointer gap-1.5 px-3 text-sm">
           📷 {t('generalPhotos')}
           <input
+            data-testid="general-photo-input"
             type="file"
             accept="image/*"
             capture="environment"
