@@ -1,0 +1,67 @@
+import { asc, eq, inArray } from 'drizzle-orm';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
+import { db } from '@/modules/platform/db/client';
+import { warehouses } from '@/modules/platform/db/schema';
+import { getActor } from '@/modules/platform/rbac/authorize';
+import { InventoryScreen } from './inventory-screen';
+
+/** Inventory mode entry: pick a warehouse (scoped staff see their own). */
+export default async function InventoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ warehouseId?: string }>;
+}) {
+  const actor = await getActor();
+  if (!actor) redirect('/login');
+  if (!actor.permissions.has('scan.load')) redirect('/');
+  const t = await getTranslations('inventory');
+  const { warehouseId } = await searchParams;
+
+  const whs = await db
+    .select({ id: warehouses.id, code: warehouses.code, name: warehouses.name })
+    .from(warehouses)
+    .where(
+      actor.warehouseScoped
+        ? actor.warehouseIds.length
+          ? inArray(warehouses.id, actor.warehouseIds)
+          : eq(warehouses.id, '00000000-0000-0000-0000-000000000000')
+        : eq(warehouses.active, true),
+    )
+    .orderBy(asc(warehouses.code));
+
+  const selected = warehouseId ? whs.find((wh) => wh.id === warehouseId) : null;
+
+  return (
+    <div className="mx-auto max-w-lg space-y-4">
+      <h1 className="text-xl font-bold">📋 {t('title')}</h1>
+      {selected ? (
+        <>
+          <p className="text-sm text-gray-600">
+            <span className="font-mono font-extrabold">{selected.code}</span> · {t('hint')}
+          </p>
+          <InventoryScreen
+            warehouseId={selected.id}
+            warehouseCode={selected.code}
+            canMarkLost={actor.permissions.has('receipts.void')}
+          />
+        </>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {whs.map((wh) => (
+            <Link
+              key={wh.id}
+              href={`/inventory?warehouseId=${wh.id}`}
+              className="card flex min-h-24 flex-col items-center justify-center text-center hover:bg-gray-100"
+            >
+              <span className="font-mono text-xl font-extrabold">{wh.code}</span>
+              <span className="text-sm text-gray-600">{wh.name}</span>
+            </Link>
+          ))}
+          {whs.length === 0 && <p className="text-sm text-gray-500">—</p>}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -66,6 +66,27 @@
     "missingInTransit": "途中丢失",
     "undocumented": "无单据转移"
   },
+  "inventory": {
+    "title": "盘点",
+    "hint": "扫描仓库里的所有货物（木箱扫一个 QR 即可）",
+    "foundHere": "在此找到",
+    "unknown": "未知编码",
+    "finish": "扫描完成 — 查看结果",
+    "foundHereTitle": "记录在别处但在此找到",
+    "foundHereHint": "确认后这些箱子将转移到本仓库（带纠正移动记录）",
+    "missingTitle": "未扫描",
+    "missingHintManager": "勾选要标记为丢失的 — 其余保持原样",
+    "missingHintOperator": "只有仓库主管可以标记丢失",
+    "tickAll": "全选",
+    "untickAll": "取消全选",
+    "allScanned": "全部扫描完成 — 无差异！",
+    "submit": "确认",
+    "backToScan": "返回扫描",
+    "doneTitle": "{wh} 盘点完成",
+    "doneScanned": "已扫描：{n}",
+    "skipped": "已跳过（状态不符）",
+    "telegramSent": "结果已通过 Telegram 发送给管理层"
+  },
   "reports": {
     "title": "报表",
     "landedCost": "到岸成本（按客户）",

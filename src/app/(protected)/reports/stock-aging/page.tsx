@@ -47,7 +47,8 @@ export default async function StockAgingReportPage() {
                   <td className="p-2 text-right">{row.kg}</td>
                   <td className="p-2 text-right">{row.m3}</td>
                   <td className="p-2 text-right text-gray-500">{row.density ?? '—'}</td>
-                  <td className={`p-2 text-right font-bold ${row.days > 30 ? 'text-red-700' : row.days > 14 ? 'text-orange-600' : ''}`}>
+                  {/* Owner's thresholds: ≥7 days yellow, ≥14 days red. */}
+                  <td className={`p-2 text-right font-bold ${row.days >= 14 ? 'text-red-700' : row.days >= 7 ? 'text-yellow-600' : ''}`}>
                     {row.days}
                   </td>
                 </tr>

@@ -15,6 +15,7 @@ export default async function HomePage() {
   const tPipeline = await getTranslations('pipeline');
   const tCosting = await getTranslations('costing');
   const tDashboard = await getTranslations('dashboard');
+  const tInventory = await getTranslations('inventory');
 
   const isAdmin = actor.permissions.has('admin.warehouses.manage');
   const canReceive = actor.permissions.has('receipts.create');
@@ -113,6 +114,14 @@ export default async function HomePage() {
         >
           🔍 {tSearch('title')}
         </Link>
+        {actor.permissions.has('scan.load') && (
+          <Link
+            href="/inventory"
+            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
+          >
+            📋 {tInventory('title')}
+          </Link>
+        )}
         {canDashboard && (
           <Link
             href="/dashboard"

@@ -66,6 +66,27 @@
     "missingInTransit": "Yo‘lda yo‘qolganlar",
     "undocumented": "Hujjatsiz ko‘chirilganlar"
   },
+  "inventory": {
+    "title": "Inventarizatsiya",
+    "hint": "Skladdagi HAMMA yukni skan qilib chiqing (yashikni bitta QR bilan)",
+    "foundHere": "shu yerda topildi",
+    "unknown": "noma’lum kod",
+    "finish": "Skan tugadi — natijaga o‘tish",
+    "foundHereTitle": "Boshqa joyda ro‘yxatda, lekin shu yerda topildi",
+    "foundHereHint": "Tasdiqlansa, bu karobkalar shu skladga o‘tkaziladi (tuzatuvchi harakat bilan)",
+    "missingTitle": "Skan qilinmaganlar",
+    "missingHintManager": "Yo‘qolgan deb belgilanadiganlarini belgilang — qolganlari joyida qoladi",
+    "missingHintOperator": "Yo‘qolgan deb belgilashni faqat sklad boshlig‘i qila oladi",
+    "tickAll": "Hammasini belgilash",
+    "untickAll": "Belgilarni olib tashlash",
+    "allScanned": "Hammasi skan qilindi — farq yo‘q!",
+    "submit": "Tasdiqlash",
+    "backToScan": "Skanga qaytish",
+    "doneTitle": "{wh} inventarizatsiyasi yakunlandi",
+    "doneScanned": "Skan qilindi: {n}",
+    "skipped": "O‘tkazilmadi (holati mos emas)",
+    "telegramSent": "Natija rahbariyatga Telegram orqali yuborildi"
+  },
   "reports": {
     "title": "Hisobotlar",
     "landedCost": "Tan narx (klient bo‘yicha)",

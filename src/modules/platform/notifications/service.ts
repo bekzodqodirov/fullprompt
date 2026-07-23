@@ -77,7 +77,10 @@ async function buildRecipients(event: {
     case 'PlanApproved':
     case 'PlanChangesRequested':
     case 'UndocumentedTransfer':
-    case 'MissingInTransit': {
+    case 'MissingInTransit':
+    // Inventory result goes to the owner/admins (owner's answer: the
+    // warehouse manager decides, the boss gets the Telegram).
+    case 'InventoryCompleted': {
       const userIds = await usersWithRoles(['logist', 'admin', 'super_admin']);
       return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
     }
@@ -151,6 +154,18 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
         `Коробки: ${(payload.shortCodes as string[] | undefined)?.join(', ') ?? ''}\n` +
         `${appUrl}/batches/${payload.batchId}`
       );
+    case 'InventoryCompleted': {
+      const moved = (payload.moved as string[] | undefined) ?? [];
+      const lost = (payload.lost as string[] | undefined) ?? [];
+      return (
+        `📋 Инвентаризация на складе ${payload.warehouseCode}\n` +
+        `Отсканировано: ${payload.scanned}\n` +
+        (moved.length ? `↩️ Перемещено сюда (нашлись тут): ${moved.join(', ')}\n` : '') +
+        (lost.length ? `❌ Помечены потерянными: ${lost.join(', ')}\n` : '') +
+        (!moved.length && !lost.length ? `✅ Расхождений нет\n` : '') +
+        `${appUrl}/dashboard`
+      );
+    }
     case 'ReadyForPickup':
       // The second half is the ready client-message draft (uz + ru) the
       // manager forwards as-is (owner's Q5 wording: arrived, being cleared).

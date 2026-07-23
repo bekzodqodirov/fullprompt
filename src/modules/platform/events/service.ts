@@ -23,7 +23,8 @@ export type DomainEventType =
   | 'BoxStatusChanged'
   | 'UndocumentedTransfer'
   | 'MissingInTransit'
-  | 'ReadyForPickup';
+  | 'ReadyForPickup'
+  | 'InventoryCompleted';
 
 /**
  * Persist a domain event in the same transaction as the mutation that caused

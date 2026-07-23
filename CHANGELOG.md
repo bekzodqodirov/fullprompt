@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## M6 part 4 — Inventory mode — 2026-07-23
+
+- **📋 Inventory (stocktake) mode** (owner's request, home tile for scan-capable staff): pick a warehouse → scan everything (camera/HID/manual; a crate QR counts all its boxes) with a live X/Y counter → results screen. Boxes recorded elsewhere but scanned here move to this warehouse on submit (`inventory_found` correcting movement; issued/void boxes are listed but never auto-moved). Unscanned boxes become `lost` only when TICKED by a warehouse manager (`receipts.void` gate — operators see the list read-only). The full summary (scanned / moved / lost) goes to admins+logists via Telegram (`InventoryCompleted`). Runs parallel to normal operations (DECISIONS #93).
+- **Aging colors 7/14** per the owner: stock/aging report days turn yellow at 7, red at 14 (DECISIONS #94).
+- Landed cost confirmed management-only (DECISIONS #95).
+- Tests: 68 unit/integration (+ inventory reconciliation: found-here move, manager gate, no-op/skip cases) + 12 e2e.
+
 ## M6 part 3 — Dashboard + first reports — 2026-07-23
 
 - **📊 /dashboard** (role-aware, §13): warehouse fill bars (moved here from the home screen per the owner), stock per warehouse (boxes/kg/m³), in-transit batches, last-24h receipts, and an "attention" card — unclaimed, stale stock (> `stale_stock_days`), missing-in-transit and undocumented-transfer counts. Admin/logist/VED/accountant see all warehouses; warehouse staff their own; sales managers land on the pipeline.
