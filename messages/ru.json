@@ -307,5 +307,83 @@
       "validation": "Проверьте данные"
     },
     "cratingCost": "Стоимость ящика"
+  },
+  "plans": {
+    "title": "Планы погрузки",
+    "newTitle": "Новый план",
+    "resubmitTitle": "Правка плана",
+    "origin": "Откуда",
+    "dest": "Куда",
+    "truck": "Фура",
+    "code": "Код",
+    "product": "Товар",
+    "days": "Дней",
+    "take": "Взять",
+    "noStock": "На складе нет свободного груза",
+    "submitToAgent": "Отправить агенту",
+    "agentXlsx": "Excel для агента",
+    "editResubmit": "Изменить и отправить заново",
+    "verdictHint": "Ответ агента (агент не заходит в систему — логист записывает ответ):",
+    "agentComment": "Комментарий агента",
+    "agentApproved": "Агент одобрил",
+    "agentChanges": "Просит изменить",
+    "lines": "Строки плана",
+    "versionHistory": "История версий",
+    "statuses": {
+      "draft": "Черновик",
+      "pending_agent": "У агента",
+      "changes_requested": "Нужны правки",
+      "approved": "Одобрен",
+      "loading": "Погрузка",
+      "completed": "Завершён",
+      "cancelled": "Отменён"
+    },
+    "errors": {
+      "insufficient_stock": "Недостаточно свободных коробок",
+      "same_warehouse": "Склады совпадают",
+      "validation": "Проверьте данные"
+    }
+  },
+  "batches": {
+    "title": "Партии",
+    "statuses": {
+      "forming": "Формируется",
+      "loading": "Погрузка",
+      "in_transit": "В пути",
+      "arrived": "Прибыла",
+      "unloaded": "Выгружена",
+      "closed": "Закрыта",
+      "cancelled": "Отменена"
+    },
+    "loadedOfPlanned": "погружено",
+    "onSpot": "вне плана",
+    "startLoading": "Погрузка (скан)",
+    "manifest": "Манифест XLSX",
+    "finishLoading": "Завершить погрузку",
+    "depart": "Отправить",
+    "vehicle": "Фура и водитель",
+    "plate": "Гос. номер",
+    "driver": "Водитель",
+    "driverPhone": "Телефон",
+    "contents": "Содержимое",
+    "finishSummary": "Погружено {loaded}, осталось на складе {short}",
+    "errors": {
+      "finish_loading_first": "Сначала завершите погрузку",
+      "nothing_loaded": "Ничего не погружено",
+      "batch_not_loading": "Партия не в погрузке"
+    }
+  },
+  "loading": {
+    "title": "Погрузка",
+    "online": "Онлайн, всё синхронизировано",
+    "offline": "Офлайн — {n} скан(ов) в очереди",
+    "syncing": "Синхронизация… ({n})",
+    "alreadyScanned": "Уже отсканировано:",
+    "notOnPlan": "ГРУЗА НЕТ В ПЛАНЕ!",
+    "reasonRequired": "Причина (обязательно)",
+    "loadAnyway": "Всё равно погрузить",
+    "stickerLost": "Стикер потерян / ввести вручную",
+    "stickerLostHint": "Выберите коробку из неотсканированных или введите код",
+    "unscannedList": "Неотсканированные коробки:"
   }
 }

@@ -195,6 +195,21 @@ async function seedM1(whIds: Map<string, string>) {
     await db.insert(costTypes).values(type).onConflictDoNothing();
   }
 
+  // Truck presets for the M3 plan editor (idempotent by name).
+  const { truckPresets } = await import('../src/modules/platform/db/schema');
+  const { eq: eqOp } = await import('drizzle-orm');
+  for (const preset of [
+    { name: 'Фура 13.6м тент — 90 м³ / 24 т', maxKg: '24000', maxM3: '90' },
+    { name: 'Фура 17.5м — 130 м³ / 28 т', maxKg: '28000', maxM3: '130' },
+  ]) {
+    const existing = await db
+      .select({ id: truckPresets.id })
+      .from(truckPresets)
+      .where(eqOp(truckPresets.name, preset.name))
+      .limit(1);
+    if (existing.length === 0) await db.insert(truckPresets).values(preset);
+  }
+
   for (const entry of [
     { zh: '化妆品', ru: 'Косметика', verified: true },
     { zh: '键盘', ru: 'Клавиатура', verified: true },

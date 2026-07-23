@@ -307,5 +307,83 @@
       "validation": "Ma’lumotlarni tekshiring"
     },
     "cratingCost": "Yashik narxi (rasxod)"
+  },
+  "plans": {
+    "title": "Pogruzka rejalari",
+    "newTitle": "Yangi reja",
+    "resubmitTitle": "Rejani tahrirlash",
+    "origin": "Qayerdan",
+    "dest": "Qayerga",
+    "truck": "Fura",
+    "code": "Kod",
+    "product": "Tovar",
+    "days": "Kun",
+    "take": "Olish",
+    "noStock": "Skladda bo‘sh yuk yo‘q",
+    "submitToAgent": "Agentga yuborish",
+    "agentXlsx": "Agent uchun Excel",
+    "editResubmit": "O‘zgartirib qayta yuborish",
+    "verdictHint": "Agent javobi (agent tizimga kirmaydi — logist javobni yozadi):",
+    "agentComment": "Agent izohi",
+    "agentApproved": "Agent tasdiqladi",
+    "agentChanges": "O‘zgartirishni so‘radi",
+    "lines": "Reja qatorlari",
+    "versionHistory": "Versiyalar tarixi",
+    "statuses": {
+      "draft": "Qoralama",
+      "pending_agent": "Agentda",
+      "changes_requested": "Tuzatish kerak",
+      "approved": "Tasdiqlangan",
+      "loading": "Pogruzka",
+      "completed": "Yakunlangan",
+      "cancelled": "Bekor qilingan"
+    },
+    "errors": {
+      "insufficient_stock": "Bo‘sh karobkalar yetarli emas",
+      "same_warehouse": "Skladlar bir xil",
+      "validation": "Ma’lumotlarni tekshiring"
+    }
+  },
+  "batches": {
+    "title": "Partiyalar",
+    "statuses": {
+      "forming": "Shakllanmoqda",
+      "loading": "Pogruzka",
+      "in_transit": "Yo‘lda",
+      "arrived": "Yetib keldi",
+      "unloaded": "Tushirilgan",
+      "closed": "Yopilgan",
+      "cancelled": "Bekor"
+    },
+    "loadedOfPlanned": "yuklandi",
+    "onSpot": "rejadan tashqari",
+    "startLoading": "Pogruzka (skan)",
+    "manifest": "Manifest XLSX",
+    "finishLoading": "Pogruzkani yakunlash",
+    "depart": "Jo‘natish",
+    "vehicle": "Fura va haydovchi",
+    "plate": "Davlat raqami",
+    "driver": "Haydovchi",
+    "driverPhone": "Telefon",
+    "contents": "Ichidagilar",
+    "finishSummary": "{loaded} yuklandi, {short} skladda qoldi",
+    "errors": {
+      "finish_loading_first": "Avval pogruzkani yakunlang",
+      "nothing_loaded": "Hech narsa yuklanmagan",
+      "batch_not_loading": "Partiya pogruzkada emas"
+    }
+  },
+  "loading": {
+    "title": "Pogruzka",
+    "online": "Onlayn, hammasi sinxron",
+    "offline": "Oflayn — navbatda {n} ta skan",
+    "syncing": "Sinxronlanmoqda… ({n})",
+    "alreadyScanned": "Allaqachon skanlangan:",
+    "notOnPlan": "YUK REJada YO‘Q!",
+    "reasonRequired": "Sabab (majburiy)",
+    "loadAnyway": "Baribir yuklash",
+    "stickerLost": "Stiker yo‘qolgan / qo‘lda kiritish",
+    "stickerLostHint": "Skanlanmagan karobkani tanlang yoki kodini kiriting",
+    "unscannedList": "Skanlanmagan karobkalar:"
   }
 }

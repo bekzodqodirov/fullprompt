@@ -15,8 +15,9 @@ for (const extra of ['public', 'src/assets']) {
   if (existsSync(extra)) cpSync(extra, path.join('.next/standalone', extra), { recursive: true });
 }
 
-// server.js chdir()s into .next/standalone — keep local file storage where
-// the dev/seed data lives.
-process.env.STORAGE_LOCAL_DIR ??= path.resolve('.data/files');
+// server.js chdir()s into .next/standalone — resolve local file storage to an
+// absolute path FIRST (a relative value from .env would silently point into
+// the standalone dir and 404 every previously stored file).
+process.env.STORAGE_LOCAL_DIR = path.resolve(process.env.STORAGE_LOCAL_DIR ?? '.data/files');
 
 await import(pathToFileURL(path.resolve('.next/standalone/server.js')).href);

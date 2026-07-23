@@ -57,6 +57,17 @@ async function buildRecipients(event: {
         payload: event.payload,
       }));
     }
+    // Plan verdict + not-on-plan alerts go to logists (spec §11).
+    case 'PlanApproved':
+    case 'PlanChangesRequested': {
+      const userIds = await usersWithRoles(['logist', 'admin', 'super_admin']);
+      return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
+    }
+    case 'BoxScannedOnLoad': {
+      if (!event.payload.addedOnSpot) return [];
+      const userIds = await usersWithRoles(['logist', 'admin', 'super_admin']);
+      return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
+    }
     default:
       return [];
   }
@@ -94,6 +105,21 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
         `❓ Неопознанный груз ${payload.number}\n` +
         (payload.unclaimedMarking ? `Маркировка: ${payload.unclaimedMarking}\n` : '') +
         `Склад: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
+      );
+    case 'PlanApproved':
+      return `✅ План одобрен агентом — партия ${payload.batchCode}\n${appUrl}/batches/${payload.batchId}`;
+    case 'PlanChangesRequested':
+      return (
+        `✏️ Агент просит изменить план (v${payload.versionNo})\n` +
+        (payload.comment ? `Комментарий: ${payload.comment}\n` : '') +
+        `${appUrl}/plans/${payload.planId}`
+      );
+    case 'BoxScannedOnLoad':
+      return (
+        `🚨 Груз вне плана погружен в ${payload.batchCode}\n` +
+        `Коробки: ${(payload.shortCodes as string[] | undefined)?.join(', ') ?? ''}\n` +
+        (payload.reason ? `Причина: ${payload.reason}\n` : '') +
+        `${appUrl}/batches/${payload.batchId}`
       );
     case 'DailyDigest':
       return String(payload.text ?? '');

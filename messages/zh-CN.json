@@ -307,5 +307,83 @@
       "validation": "请检查数据"
     },
     "cratingCost": "打箱费用"
+  },
+  "plans": {
+    "title": "装车计划",
+    "newTitle": "新计划",
+    "resubmitTitle": "修改计划",
+    "origin": "起点",
+    "dest": "终点",
+    "truck": "货车",
+    "code": "编码",
+    "product": "货物",
+    "days": "天数",
+    "take": "装载",
+    "noStock": "仓库没有可装货物",
+    "submitToAgent": "发送给代理",
+    "agentXlsx": "代理Excel",
+    "editResubmit": "修改并重新提交",
+    "verdictHint": "代理答复（代理不进系统——物流员记录答复）：",
+    "agentComment": "代理意见",
+    "agentApproved": "代理已批准",
+    "agentChanges": "要求修改",
+    "lines": "计划明细",
+    "versionHistory": "版本历史",
+    "statuses": {
+      "draft": "草稿",
+      "pending_agent": "待代理",
+      "changes_requested": "需修改",
+      "approved": "已批准",
+      "loading": "装车中",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "errors": {
+      "insufficient_stock": "可用箱数不足",
+      "same_warehouse": "仓库相同",
+      "validation": "请检查数据"
+    }
+  },
+  "batches": {
+    "title": "车次",
+    "statuses": {
+      "forming": "组建中",
+      "loading": "装车中",
+      "in_transit": "在途",
+      "arrived": "已到达",
+      "unloaded": "已卸货",
+      "closed": "已关闭",
+      "cancelled": "已取消"
+    },
+    "loadedOfPlanned": "已装",
+    "onSpot": "计划外",
+    "startLoading": "装车（扫码）",
+    "manifest": "舱单XLSX",
+    "finishLoading": "结束装车",
+    "depart": "发车",
+    "vehicle": "车辆与司机",
+    "plate": "车牌号",
+    "driver": "司机",
+    "driverPhone": "电话",
+    "contents": "内容",
+    "finishSummary": "已装{loaded}箱，{short}箱留仓",
+    "errors": {
+      "finish_loading_first": "请先结束装车",
+      "nothing_loaded": "未装任何货",
+      "batch_not_loading": "车次不在装车状态"
+    }
+  },
+  "loading": {
+    "title": "装车",
+    "online": "在线，已全部同步",
+    "offline": "离线——队列中{n}次扫码",
+    "syncing": "同步中…（{n}）",
+    "alreadyScanned": "已扫过：",
+    "notOnPlan": "货物不在计划内！",
+    "reasonRequired": "原因（必填）",
+    "loadAnyway": "仍然装车",
+    "stickerLost": "标签丢失/手动输入",
+    "stickerLostHint": "从未扫描列表选择箱子或输入编码",
+    "unscannedList": "未扫描的箱子："
   }
 }

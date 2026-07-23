@@ -56,7 +56,6 @@ export async function ingestLoadScans(
   const acks: ScanAck[] = [];
 
   for (const input of inputs) {
-    // eslint-disable-next-line no-await-in-loop
     const ack = await db.transaction(async (tx): Promise<ScanAck> => {
       const batch = await tx.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
       if (!batch) return { clientEventUuid: input.clientEventUuid, result: 'rejected', detail: 'batch_not_found' };
@@ -130,7 +129,12 @@ export async function ingestLoadScans(
       const toLoad = members.filter((b) => b.status !== 'loading');
       await tx
         .update(boxes)
-        .set({ status: 'loading', currentBatchId: input.batchId })
+        .set({
+          status: 'loading',
+          currentBatchId: input.batchId,
+          // The manifest marks on-spot boxes from this flag.
+          ...(input.addedOnSpot ? { flags: ['added_on_spot'] } : {}),
+        })
         .where(inArray(boxes.id, toLoad.map((b) => b.id)));
       await tx.insert(boxMovements).values(
         toLoad.map((box) => ({

@@ -54,10 +54,11 @@ test('crate lifecycle: build from GS777 boxes, label, dissolve', async ({ page }
 test('box lost → found (manager flow with mandatory reason)', async ({ page }) => {
   await login(page);
 
-  // Stock → 化妆品 lot → first box
+  // Stock → first lot with in-stock boxes → its LAST box (plan reservation
+  // takes the lowest seq first, so the last box stays in stock longest).
   await page.goto('/stock?q=化妆品');
   await page.locator('td a[href*="/stock?lot="]').first().click();
-  await page.locator('a[href*="/boxes/"]').first().click();
+  await page.locator('a[href*="/boxes/"]').last().click();
   await expect(page).toHaveURL(/\/boxes\//);
 
   await page.getByRole('button', { name: /⚠️/ }).click();

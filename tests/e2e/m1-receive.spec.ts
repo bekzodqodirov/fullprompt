@@ -95,11 +95,12 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   });
   await expect(page.locator('td img.border-amber-300').first()).toBeVisible();
 
-  // Lightbox: tapping a thumbnail opens the overlay in place (no navigation)
+  // Lightbox: tapping a thumbnail opens the overlay in place (no navigation).
+  // The overlay img may fall back from thumb800 to the original variant.
   await page.locator('td img[src*="/api/attachments/"]').first().click();
   const overlay = page.getByRole('button', { name: 'Close' });
   await expect(overlay).toBeVisible();
-  await expect(overlay.locator('img[src*="variant=thumb800"]')).toBeVisible();
+  await expect(overlay.locator('img[src*="/api/attachments/"]')).toBeVisible({ timeout: 10_000 });
   await overlay.click();
   await expect(overlay).toBeHidden();
   await expect(page).toHaveURL(/\/stock/);

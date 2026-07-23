@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## M3 — Load planning & scanning — 2026-07-23
+
+- **Plan editor (W3)**: pick origin→dest + truck preset, tick lots from FIFO-sorted stock with photos and days-in-stock, partial box counts, live kg/m³ gauges that go red over capacity but never block; submit creates an immutable version for the agent.
+- **Agent loop** (owner's rule: agent stays outside the system): Excel with embedded photo thumbnails per line; the logist records the verdict — changes_requested reopens the editor for v2, approved creates the batch (`YW-001` per-WH sequence) and reserves the lowest-seq boxes as `planned` (no double-planning).
+- **Batch card & board**: kanban (forming/loading/in transit/arrived), vehicle info (plate, driver, phone), finish-loading deviation summary (short-loaded boxes revert to stock), depart → everything `in_transit` + `BatchDeparted`, actual-manifest XLSX (fact, not plan — per-box sheet with crate + on-spot flags, per-lot summary).
+- **Loading mode (W4)**: camera scanning (native BarcodeDetector, @zxing fallback) + USB/BT HID scanners; <300 ms local verdicts from a cached batch snapshot; big running counter + per-lot progress; duplicate soft-warning; **not-on-plan red screen** with "load anyway + reason" → flagged + instant Telegram to logists; **sticker-lost** manual entry from the unscanned list; **offline outbox** in IndexedDB with idempotent sync and a visible online/offline/pending banner.
+- Notifications: PlanApproved / PlanChangesRequested / not-on-plan alerts → logists+admins.
+- Seed: two real truck presets. Deferred (recorded in DECISIONS #68–70): SSE live-push, reprint offer in sticker-lost flow, presets admin CRUD.
+- Tests: 47 unit/integration (plan lifecycle, double-plan guard, scan idempotency/replay, crate fan-out, finish/depart) + 10 e2e including the full phone lifecycle plan→verdict loop→approve→load→depart→manifest.
+
 ## M2 — Stock ops: crates, lost/void, WH-move, unclaimed return, digests, XLSX — 2026-07-23
 
 - **Crates (yashik/karkas, W2)**: schema + `CR-{WH}{YY}-{00000}` codes; mobile builder — pick warehouse + client, tick whole lots or individual boxes, mandatory "Logist approved" checkbox, optional measured dims/weight + note + crating cost (stored scope=crate under the `crating` type, carried to the client for M6 allocation); one-client-per-crate enforced with clear errors (unclaimed cannot be crated); crate label PDF (dominant client code, ЯЩИК/КАРКАС marker, contents A×10-style summary, QR = crate code); crate detail with contents, measurements-after-packing form, photos, dissolve (audited); crate-resolution service ready as the shared primitive for M3–M5 scan modes.

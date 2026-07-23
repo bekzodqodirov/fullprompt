@@ -11,12 +11,12 @@ export default async function HomePage() {
   const ts = await getTranslations('stock');
   const tSearch = await getTranslations('search');
   const tCrates = await getTranslations('crates');
+  const tPlans = await getTranslations('plans');
 
   const isAdmin = actor.permissions.has('admin.warehouses.manage');
   const canReceive = actor.permissions.has('receipts.create');
 
   const comingSoon: { label: string; permission: string }[] = [
-    { label: t('loading'), permission: 'scan.load' },
     { label: t('unloading'), permission: 'scan.unload' },
     { label: t('handover'), permission: 'scan.issue' },
   ];
@@ -31,6 +31,22 @@ export default async function HomePage() {
             className="card flex min-h-28 items-center justify-center bg-blue-700 text-lg font-bold text-white hover:bg-blue-800"
           >
             {t('receiving')}
+          </Link>
+        )}
+        {actor.permissions.has('scan.load') && (
+          <Link
+            href="/batches"
+            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
+          >
+            {t('loading')}
+          </Link>
+        )}
+        {actor.permissions.has('plans.manage') && (
+          <Link
+            href="/plans"
+            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
+          >
+            🚛 {tPlans('title')}
           </Link>
         )}
         {comingSoon
