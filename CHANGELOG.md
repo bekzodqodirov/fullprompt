@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## M6 part 5 — All nine reports + sorting — 2026-07-23
+
+- **§13 report set complete** (all with audited XLSX): + receipts journal (7/30/90-day filter, operator column), unclaimed cargo (7/14-day colors), client cargo history (search by code → per-lot journey: batches ridden, in stock / in transit / ready / issued), staff activity (receipts/edits/prints/scans per user per day, last 14 days), label print log; in-transit XLSX added to the existing view.
+- **Sortable columns** (owner request #13): clickable headers on stock-aging, batch register, receipts journal and unclaimed tables — sort lives in the URL so it composes with filters (DECISIONS #96).
+- **Dashboard cost-hygiene warning**: batches departed > 3 days with zero cost entries (spec 6.9) in the attention card (DECISIONS #97).
+- Management-only reports (landed cost, client history, staff activity, label prints) gated by `reports.all_warehouses`.
+
 ## M6 part 4 — Inventory mode — 2026-07-23
 
 - **📋 Inventory (stocktake) mode** (owner's request, home tile for scan-capable staff): pick a warehouse → scan everything (camera/HID/manual; a crate QR counts all its boxes) with a live X/Y counter → results screen. Boxes recorded elsewhere but scanned here move to this warehouse on submit (`inventory_found` correcting movement; issued/void boxes are listed but never auto-moved). Unscanned boxes become `lost` only when TICKED by a warehouse manager (`receipts.void` gate — operators see the list read-only). The full summary (scanned / moved / lost) goes to admins+logists via Telegram (`InventoryCompleted`). Runs parallel to normal operations (DECISIONS #93).
