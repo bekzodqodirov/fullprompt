@@ -32,6 +32,8 @@ export async function startBoss(): Promise<PgBoss> {
     await registerDigestWorker(boss);
     const { registerCostRecomputeWorker } = await import('./cost-recompute');
     await registerCostRecomputeWorker(boss);
+    const { registerBackupWorker } = await import('./backup');
+    await registerBackupWorker(boss);
     logger.info('pg-boss started');
   }
   return boss;

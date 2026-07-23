@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## M6 part 2 — Real invoice, capacity, backups (+ owner answers) — 2026-07-23
+
+- **INVOICE & PACKING LIST now mirrors the owner's real ka23 file**: combined sheet with Invoice №/date/container, Sender/Seller/Consignee, transport/delivery-terms/customs-post — all six requisites are editable settings (`ved_*`) with defaults taken from the uploaded document; ТНВЭД column present (VED fills codes+prices), live amount/total formulas (DECISIONS #89).
+- **Warehouse capacity indicator**: `capacity_m3` on the warehouse admin form; home screen shows a fill bar per warehouse — yellow from 60%, red + 🚨 from 80% (owner's thresholds, DECISIONS #90).
+- **Backups**: nightly 02:00 Tashkent `pg_dump` to `.data/backups` with 30-day retention + manual `pnpm backup` (owner: local disk for now, DECISIONS #91).
+- **Loading screen shows crate contents** (owner's request): crated boxes group under `🧰 CR-…` with a "GS777-A 化妆品 · …" summary so the operator scans the crate instead of hunting boxes; sticker-lost list shows the crate chip per box.
+- **Vehicle panel collapses to one line** once filled (owner's request) — ✏️ expands it back.
+- Plan editor: origin switch now clears the stock list instantly + aborts stale fetches — typed counts can no longer vanish mid-entry (this was also an e2e flake, DECISIONS #92).
+- Owner's answers recorded: FX stays manual; dashboard order approved; report priority = landed cost → stock/aging → batch register; inventory runs parallel to operations.
+
 ## M6 part 1 — Costing core (W9) — 2026-07-23
 
 - **Allocation engine** (pure, tests-first): all five bases (weight/volume/chargeable/boxes/direct-to-client), 4-dp shares with drift absorbed by the last box; §6.9 worked example passes as a unit test AND as a full two-leg integration test (acceptance test 16): box P rides two batches → landed cost = Σ per-leg shares, each converted at that entry's dated rate; rate edit recomputes; void removes the share.

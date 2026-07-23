@@ -33,6 +33,14 @@ const warehouseSchema = z.object({
     .max(10)
     .transform((v) => v.toUpperCase()),
   address: z.string().trim().max(500).optional().or(z.literal('')),
+  /** Storage capacity in m³ for the fill indicator (empty = no indicator). */
+  capacityM3: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(',', '.'))
+    .pipe(z.coerce.number().positive().max(1_000_000))
+    .optional()
+    .or(z.literal('')),
 });
 
 export interface WarehouseFormState {
@@ -48,7 +56,16 @@ function parseForm(formData: FormData) {
     timezone: formData.get('timezone'),
     batchPrefix: formData.get('batchPrefix'),
     address: formData.get('address') ?? '',
+    capacityM3: formData.get('capacityM3') ?? '',
   });
+}
+
+function toValues(data: z.infer<typeof warehouseSchema>) {
+  return {
+    ...data,
+    address: data.address || null,
+    capacityM3: data.capacityM3 ? String(data.capacityM3) : null,
+  };
 }
 
 export async function createWarehouseAction(
@@ -65,10 +82,7 @@ export async function createWarehouseAction(
   if (existing) return { error: 'code_exists' };
 
   const meta = await requestMeta();
-  const [row] = await db
-    .insert(warehouses)
-    .values({ ...parsed.data, address: parsed.data.address || null })
-    .returning();
+  const [row] = await db.insert(warehouses).values(toValues(parsed.data)).returning();
   if (!row) return { error: 'validation' };
   await writeAudit(
     db,
@@ -97,7 +111,7 @@ export async function updateWarehouseAction(
   });
   if (duplicate && duplicate.id !== id) return { error: 'code_exists' };
 
-  const values = { ...parsed.data, address: parsed.data.address || null };
+  const values = toValues(parsed.data);
   const diff = diffFields(before as unknown as Record<string, unknown>, values);
   await db.update(warehouses).set(values).where(eq(warehouses.id, id));
   if (diff) {

@@ -79,14 +79,28 @@ export function PlanEditor({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Origin changed: empty the table immediately (leaving the old origin's
+    // rows visible invited counts typed into rows that were about to vanish)
+    // and abort any in-flight fetch so a stale response can't overwrite.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLots([]);
+    setStockCrates([]);
+    const controller = new AbortController();
     void (async () => {
-      const res = await fetch(`/api/plans/stock?warehouseId=${originId}`);
-      if (res.ok) {
-        const data = (await res.json()) as { lots: StockLot[]; crates?: StockCrate[] };
-        setLots(data.lots);
-        setStockCrates(data.crates ?? []);
+      try {
+        const res = await fetch(`/api/plans/stock?warehouseId=${originId}`, {
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { lots: StockLot[]; crates?: StockCrate[] };
+          setLots(data.lots);
+          setStockCrates(data.crates ?? []);
+        }
+      } catch {
+        /* aborted */
       }
     })();
+    return () => controller.abort();
   }, [originId]);
 
   const preset = presets.find((p) => p.id === presetId);

@@ -48,6 +48,7 @@ export default async function WarehouseDetailPage({
           timezone: wh.timezone,
           batchPrefix: wh.batchPrefix,
           address: wh.address ?? '',
+          capacityM3: wh.capacityM3 ? String(Number(wh.capacityM3)) : '',
         }}
       />
 

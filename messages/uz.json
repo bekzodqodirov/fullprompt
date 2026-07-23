@@ -49,7 +49,9 @@
     "handover": "🤝 Topshirish",
     "comingSoon": "Keyingi bosqichda qo'shiladi",
     "adminPanel": "⚙️ Boshqaruv",
-    "welcome": "Assalomu alaykum, {name}!"
+    "welcome": "Assalomu alaykum, {name}!",
+    "warehouseFill": "Skladlar to‘lganligi",
+    "fillShipHint": "Sklad to‘lyapti — yuklatish kerak!"
   },
   "warehouses": {
     "title": "Skladlar",
@@ -61,6 +63,8 @@
     "timezone": "Vaqt mintaqasi",
     "batchPrefix": "Partiya prefiksi",
     "address": "Manzil",
+    "capacityM3": "Sig‘im (m³)",
+    "capacityHint": "Bo‘sh qoldirsangiz to‘lganlik indikatori ko‘rinmaydi. 60% dan sariq, 80% dan qizil.",
     "types": {
       "origin": "Qabul (Xitoy)",
       "hub": "Konsolidatsiya habi",
@@ -130,7 +134,13 @@
       "block_issue_if_unpaid": "Qarzdorlarga topshirishni bloklash (3-bosqich)",
       "company_name": "VED hujjatlari uchun kompaniya nomi (invoys, upakovka listi, akt)",
       "company_address": "Hujjatlar shapkasi uchun kompaniya manzili",
-      "company_phone": "Hujjatlar shapkasi uchun kompaniya telefoni"
+      "company_phone": "Hujjatlar shapkasi uchun kompaniya telefoni",
+      "ved_sender": "Invoysdagi Отправитель/Sender rekviziti (nomi va manzili)",
+      "ved_seller": "Invoysdagi Seller/Продавец rekviziti (nomi va manzili)",
+      "ved_consignee": "Invoysdagi Получатель/Consignee rekviziti (nomi, INN, manzil, bank, telefon)",
+      "ved_transport": "Tashish usuli (masalan: авто транспорт)",
+      "ved_delivery_terms": "Yetkazib berish sharti (masalan: CIP Андижан)",
+      "ved_customs_post": "Bojxona posti nomi va kodi (masalan: Андижон ВЭД / 03011)"
     }
   },
   "audit": {

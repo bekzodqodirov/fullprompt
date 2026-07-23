@@ -52,29 +52,80 @@ async function header(sheet: ExcelJS.Worksheet, batchId: string, title: string) 
 }
 
 /**
- * Invoice DRAFT (W6, spec 6.6): rows from the actual manifest; price/amount
- * columns left blank for the VED manager to fill in Excel before sending —
- * the file is a draft, not a final document.
+ * INVOICE & PACKING LIST draft (W6) mirroring the owner's real ka23 invoice
+ * file (feedback round 6): the same header block (Invoice №, date, container,
+ * Sender / Seller / Consignee requisites from settings, transport + delivery
+ * terms) and the same table columns incl. ТНВЭД. Prices, ТНВЭД codes and the
+ * netto correction are left for the VED manager; the amount column and totals
+ * are live formulas.
  */
 export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return null;
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Invoice');
-  await header(sheet, batchId, 'INVOICE (draft)');
-
-  const head = sheet.addRow(['№', 'Код', 'Описание товара', 'Кол-во кор.', 'Вес, кг', 'Цена/кг, USD', 'Сумма, USD']);
-  head.font = { bold: true };
+  const sheet = workbook.addWorksheet('invoice packinglist');
   sheet.columns = [
-    { width: 5 }, { width: 14 }, { width: 44 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 14 },
+    { width: 4 }, { width: 46 }, { width: 13 }, { width: 8 }, { width: 11 },
+    { width: 11 }, { width: 13 }, { width: 14 }, { width: 12 }, { width: 15 },
   ];
 
+  const [sender, seller, consignee, transport, delivery, customsPost] = await Promise.all([
+    getSetting('ved_sender'),
+    getSetting('ved_seller'),
+    getSetting('ved_consignee'),
+    getSetting('ved_transport'),
+    getSetting('ved_delivery_terms'),
+    getSetting('ved_customs_post'),
+  ]);
+
+  const today = new Date();
+  const dateCompact = today.toISOString().slice(0, 10).replaceAll('-', '');
+  const setWrapped = (cell: string, value: string) => {
+    sheet.getCell(cell).value = value;
+    sheet.getCell(cell).alignment = { wrapText: true, vertical: 'top' };
+  };
+
+  sheet.mergeCells('B1:I1');
+  sheet.getCell('B1').value = 'I N V O I C E  &  PACKING LIST';
+  sheet.getCell('B1').font = { bold: true, size: 14 };
+  sheet.getCell('B1').alignment = { horizontal: 'center' };
+
+  sheet.getCell('A3').value = 'Invoice № :';
+  sheet.getCell('B3').value = `${dateCompact}${batch.code.replace('-', '').toLowerCase()}`;
+  sheet.getCell('A4').value = 'Date :';
+  sheet.getCell('B4').value = today.toISOString().slice(0, 10);
+  sheet.getCell('A5').value = '№ Контейнер /Container:';
+  sheet.getCell('B5').value = batch.vehiclePlate ?? 'by track';
+
+  sheet.getCell('A7').value = 'Отправитель/Sender:';
+  sheet.mergeCells('B7:I8');
+  setWrapped('B7', String(sender));
+  sheet.getCell('A10').value = 'Seller/ Продавец:';
+  sheet.mergeCells('B10:I11');
+  setWrapped('B10', String(seller));
+  sheet.getCell('A13').value = 'Получатель/Consignee:';
+  sheet.mergeCells('B13:I15');
+  setWrapped('B13', String(consignee));
+
+  sheet.getCell('A17').value = 'Способ транспортировки:';
+  sheet.getCell('B17').value = String(transport);
+  sheet.getCell('H17').value = String(customsPost);
+  sheet.getCell('A18').value = 'Условия поставки:';
+  sheet.getCell('B18').value = String(delivery);
+
+  const head = sheet.getRow(20);
+  head.values = [
+    '№', 'Наименование', 'Код ТНВЭД', 'Ед.изм', 'Количество', 'кол-ва мест',
+    'Вес Нетто (кг)', 'Вес брутто (кг)', 'Цена за ед $', 'Общая сумма $',
+  ];
+  head.font = { bold: true };
+  head.alignment = { wrapText: true, vertical: 'middle' };
+
   const rows = await batchLines(batchId);
-  const byLot = new Map<string, { code: string; product: string; boxCount: number; kg: number }>();
-  for (const { lot, clientCode, marking } of rows) {
+  const byLot = new Map<string, { product: string; boxCount: number; kg: number }>();
+  for (const { lot } of rows) {
     const agg = byLot.get(lot.id) ?? {
-      code: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
-      product: `${lot.productNameZh}${lot.productNameRu ? ` / ${lot.productNameRu}` : ''}`,
+      product: lot.productNameRu?.trim() || lot.productNameZh,
       boxCount: 0,
       kg: 0,
     };
@@ -82,22 +133,32 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
     agg.kg += Number(lot.totalWeightKg) / lot.boxCount;
     byLot.set(lot.id, agg);
   }
+
   let n = 0;
-  let totalKg = 0;
-  let totalBoxes = 0;
+  let rowNo = head.number;
   for (const agg of byLot.values()) {
     n += 1;
-    totalKg += agg.kg;
-    totalBoxes += agg.boxCount;
-    const row = sheet.addRow([n, agg.code, agg.product, agg.boxCount, Math.round(agg.kg * 10) / 10, '', '']);
-    // Amount = price × kg, live formula so the VED manager only fills prices.
-    row.getCell(7).value = { formula: `E${row.number}*F${row.number}` };
+    rowNo += 1;
+    const kg = Math.round(agg.kg * 10) / 10;
+    const row = sheet.getRow(rowNo);
+    // ТНВЭД + price stay blank for the VED manager; our measured weight goes
+    // into both netto and brutto — netto is corrected by hand when the tare
+    // matters. Amount = price × quantity, live.
+    row.values = [n, agg.product, '', 'кг', kg, agg.boxCount, kg, kg, '', ''];
+    row.getCell(10).value = { formula: `I${rowNo}*E${rowNo}` };
   }
-  const total = sheet.addRow(['', 'ИТОГО', '', totalBoxes, Math.round(totalKg * 10) / 10, '', '']);
+  const total = sheet.getRow(rowNo + 1);
   total.font = { bold: true };
-  total.getCell(7).value = {
-    formula: `SUM(G${head.number + 1}:G${total.number - 1})`,
-  };
+  total.getCell(6).value = { formula: `SUM(F${head.number + 1}:F${rowNo})` };
+  total.getCell(7).value = { formula: `SUM(G${head.number + 1}:G${rowNo})` };
+  total.getCell(8).value = { formula: `SUM(H${head.number + 1}:H${rowNo})` };
+  total.getCell(10).value = { formula: `SUM(J${head.number + 1}:J${rowNo})` };
+
+  sheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.font = { ...(cell.font ?? {}), name: 'Arial' };
+    });
+  });
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 

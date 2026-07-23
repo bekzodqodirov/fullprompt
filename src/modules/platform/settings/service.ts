@@ -24,6 +24,17 @@ export const SETTING_DEFAULTS = {
   company_name: 'GSR LOGISTICS',
   company_address: '—',
   company_phone: '—',
+  // INVOICE & PACKING LIST requisites — defaults taken from the owner's real
+  // ka23 invoice file (feedback round 6); all editable in admin settings.
+  ved_sender:
+    'SHENZHEN SUNSHINE INTERNATIONAL LOGISTICS CO.,LTD\nADD: Room 1505, No.15, Niulanqian Building, minzhi road, Longhua new district, Shenzhen city, China',
+  ved_seller:
+    'Yiwu Attila International Trade Co., LTD\nАдрес: 15TH FLOOR, BUILDING A, FORTUNE BUILDING, FUTIAN STREET, YIWU, JINHUA, CHINA (ZHEJIANG) PILOT',
+  ved_consignee:
+    '"UNIVERSAL ELEGANCE МЧЖ" (311770414)\nМанзил: Андижон шахар храбек куча 15 уй\nБанк: УзМиллийбанк Андижон вилояти булими\nТел.: +998 97 991 00 09 Сидиков Ш',
+  ved_transport: 'авто транспорт',
+  ved_delivery_terms: 'CIP Андижан',
+  ved_customs_post: 'Андижон ВЭД / 03011',
 };
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

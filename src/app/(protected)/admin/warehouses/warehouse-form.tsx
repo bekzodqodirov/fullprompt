@@ -12,6 +12,7 @@ export interface WarehouseFormValues {
   timezone: string;
   batchPrefix: string;
   address: string;
+  capacityM3: string;
 }
 
 const TYPES = ['origin', 'hub', 'customs', 'distribution'] as const;
@@ -111,6 +112,20 @@ export function WarehouseForm({
           {t('address')}
         </label>
         <input id="address" name="address" className="input" defaultValue={initial?.address} />
+      </div>
+      <div>
+        <label className="label" htmlFor="capacityM3">
+          {t('capacityM3')}
+        </label>
+        <input
+          id="capacityM3"
+          name="capacityM3"
+          className="input"
+          inputMode="decimal"
+          placeholder="500"
+          defaultValue={initial?.capacityM3}
+        />
+        <p className="mt-1 text-xs text-gray-500">{t('capacityHint')}</p>
       </div>
       {state.error && (
         <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">

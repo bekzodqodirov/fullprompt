@@ -49,7 +49,9 @@
     "handover": "🤝 交货",
     "comingSoon": "将在下一阶段推出",
     "adminPanel": "⚙️ 系统管理",
-    "welcome": "您好，{name}！"
+    "welcome": "您好，{name}！",
+    "warehouseFill": "仓库占用率",
+    "fillShipHint": "仓库快满了 — 该发货了！"
   },
   "warehouses": {
     "title": "仓库",
@@ -61,6 +63,8 @@
     "timezone": "时区",
     "batchPrefix": "批次前缀",
     "address": "地址",
+    "capacityM3": "容量（m³）",
+    "capacityHint": "留空则不显示占用指示。60% 起黄色，80% 起红色。",
     "types": {
       "origin": "收货仓（中国）",
       "hub": "集运中转仓",
@@ -130,7 +134,13 @@
       "block_issue_if_unpaid": "欠款客户禁止提货（第三阶段）",
       "company_name": "外贸单证用公司名称（发票、装箱单、交接单）",
       "company_address": "单证抬头用公司地址",
-      "company_phone": "单证抬头用公司电话"
+      "company_phone": "单证抬头用公司电话",
+      "ved_sender": "发票中的发货人/Sender（名称和地址）",
+      "ved_seller": "发票中的卖方/Seller（名称和地址）",
+      "ved_consignee": "发票中的收货人/Consignee（名称、税号、地址、银行、电话）",
+      "ved_transport": "运输方式（例如：汽运）",
+      "ved_delivery_terms": "交货条件（例如：CIP 安集延）",
+      "ved_customs_post": "海关关口及代码（例如：Андижон ВЭД / 03011）"
     }
   },
   "audit": {

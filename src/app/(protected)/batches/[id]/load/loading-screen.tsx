@@ -19,6 +19,7 @@ interface PlannedBox {
   productNameZh: string;
   clientCode: string | null;
   marking: string | null;
+  crateCode?: string | null;
 }
 interface Snapshot {
   batch: { id: string; code: string; status: string };
@@ -176,16 +177,27 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   if (!snapshot) return <p className="p-4 text-gray-500">{tc('loading')}</p>;
 
   const total = snapshot.boxes.length;
-  const byLot = new Map<string, { label: string; product: string; total: number; done: number }>();
+  // Crated boxes group under their CRATE (owner's request: the operator must
+  // see WHAT sits inside and scan the crate, not hunt loose boxes).
+  const byLot = new Map<
+    string,
+    { label: string; product: string; total: number; done: number; crate: boolean }
+  >();
   for (const box of snapshot.boxes) {
-    const key = box.lotId;
+    const codeLabel = `${box.clientCode ?? box.marking ?? '?'}-${box.letter}`;
+    const key = box.crateCode ? `crate:${box.crateCode}` : box.lotId;
     const entry =
-      byLot.get(key) ?? {
-        label: `${box.clientCode ?? box.marking ?? '?'}-${box.letter}`,
-        product: box.productNameZh,
-        total: 0,
-        done: 0,
-      };
+      byLot.get(key) ??
+      (box.crateCode
+        ? { label: `🧰 ${box.crateCode}`, product: '', total: 0, done: 0, crate: true }
+        : { label: codeLabel, product: box.productNameZh, total: 0, done: 0, crate: false });
+    if (entry.crate) {
+      // Contents summary: "GS777-A 化妆品 · GS777-B 键盘 …"
+      const piece = `${codeLabel} ${box.productNameZh}`;
+      if (!entry.product.includes(piece)) {
+        entry.product = entry.product ? `${entry.product} · ${piece}` : piece;
+      }
+    }
     entry.total += 1;
     if (loaded.has(box.shortCode)) entry.done += 1;
     byLot.set(key, entry);
@@ -318,6 +330,11 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
                 <span className="font-mono font-extrabold text-blue-800">
                   {box.clientCode ?? box.marking ?? '?'}-{box.letter}
                 </span>
+                {box.crateCode && (
+                  <span className="whitespace-nowrap rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">
+                    🧰 {box.crateCode}
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 truncate text-gray-500">{box.productNameZh}</span>
               </button>
             ))}

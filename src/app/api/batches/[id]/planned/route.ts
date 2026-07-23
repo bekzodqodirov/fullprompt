@@ -38,11 +38,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       productNameZh: receiptLots.productNameZh,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
+      // The loading list groups crated boxes under their crate so the
+      // operator scans the crate instead of hunting loose boxes (owner).
+      crateCode: crates.code,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .leftJoin(crates, eq(boxes.crateId, crates.id))
     .where(eq(boxes.currentBatchId, id))
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
 

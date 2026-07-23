@@ -1,13 +1,13 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { saveVehicleAction, type VehicleFormState } from '../../plans/actions';
 
 /**
- * Vehicle/driver info for a batch. A plain server-action form gave no sign
- * the save happened (owner's bug report) — this wraps it in useActionState
- * so the button shows progress and a ✅ appears on success.
+ * Vehicle/driver info for a batch. Once filled it collapses to a one-line
+ * summary with an ✏️ (owner's request — the big form was eating the screen);
+ * saving shows an explicit ✅ and collapses again.
  */
 export function VehicleForm({
   batchId,
@@ -22,10 +22,39 @@ export function VehicleForm({
 }) {
   const t = useTranslations('batches');
   const tc = useTranslations('common');
+  const hasInfo = Boolean(vehiclePlate || driverName || driverPhone);
+  const [open, setOpen] = useState(!hasInfo);
   const [state, formAction, pending] = useActionState<VehicleFormState, FormData>(
     saveVehicleAction,
     {},
   );
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (state.ok) setOpen(false);
+  }, [state]);
+
+  if (!open) {
+    return (
+      <div className="card flex items-center gap-2 !p-2.5 text-sm">
+        <span>🚛</span>
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-mono font-bold">{vehiclePlate || '—'}</span>
+          {driverName && ` · ${driverName}`}
+          {driverPhone && ` · ${driverPhone}`}
+        </span>
+        {state.ok && <span className="text-xs font-semibold text-green-700">✅ {tc('saved')}</span>}
+        <button
+          type="button"
+          aria-label={tc('edit')}
+          className="btn-secondary !min-h-9 shrink-0 px-2 text-sm"
+          onClick={() => setOpen(true)}
+        >
+          ✏️
+        </button>
+      </div>
+    );
+  }
 
   return (
     <form action={formAction} className="card space-y-2">
@@ -41,9 +70,16 @@ export function VehicleForm({
           {tc('error')}
         </p>
       )}
-      <button type="submit" disabled={pending} className="btn-secondary w-full disabled:opacity-60">
-        {pending ? '…' : state.ok ? `✅ ${tc('saved')}` : tc('save')}
-      </button>
+      <div className="flex gap-2">
+        <button type="submit" disabled={pending} className="btn-primary flex-1 disabled:opacity-60">
+          {pending ? '…' : tc('save')}
+        </button>
+        {hasInfo && (
+          <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
+            {tc('cancel')}
+          </button>
+        )}
+      </div>
     </form>
   );
 }
