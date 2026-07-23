@@ -8,6 +8,7 @@ import {
   boxes,
   clients,
   costTypes,
+  currencies,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
@@ -229,6 +230,12 @@ describe('landed cost across a two-leg journey (acceptance test 16)', () => {
   });
 
   it('currency without any rate stays unconverted and is flagged', async () => {
+    // Seed data may include rates for real currencies (CNY/UZS) — use a
+    // dedicated test currency that is guaranteed to have none.
+    await db
+      .insert(currencies)
+      .values({ code: 'TST', name: 'No-rate test currency' })
+      .onConflictDoNothing();
     const lot = await makeLot(1, 10, whA);
     const batch = await rideBatch([{ lotId: lot.lotId, shortCodes: lot.shortCodes, take: 1 }], whA, whB);
     await addCostEntry(
@@ -237,7 +244,7 @@ describe('landed cost across a two-leg journey (acceptance test 16)', () => {
         batchId: batch.id,
         costTypeId: freightTypeId,
         amount: 500,
-        currency: 'UZS',
+        currency: 'TST',
         costDate: '2026-07-20',
         allocationBasis: 'boxes',
       },
