@@ -15,7 +15,10 @@ export interface LabelData {
   /** Warehouse-local date, already formatted (dd.MM.yyyy). */
   dateLocal: string;
   receiptNumber: string;
-  /** `GS777-A`; unclaimed prints `#UNKNOWN` + receipt number instead. */
+  /**
+   * `GS777-A`; unclaimed cargo prints the marking written on the box
+   * (`444-A`, owner's request) or `#UNKNOWN` when there is none.
+   */
   clientCodeWithLetter: string;
   unclaimed: boolean;
   productZh: string;
@@ -107,8 +110,11 @@ async function drawLabel(
     color: black,
   });
 
-  // --- Dominant element: client code + letter (~22 mm tall, spec §7) ---
-  const codeText = label.unclaimed ? '#UNKNOWN' : label.clientCodeWithLetter;
+  // --- Dominant element: client code + letter (~22 mm tall, spec §7).
+  // Unclaimed cargo keeps whatever marking was on the box (route passes
+  // `444-A`) so the sticker matches the physical writing; a small #UNKNOWN
+  // marker below flags it as unresolved.
+  const codeText = label.clientCodeWithLetter;
   const codeSize = fitSize(fonts.bold, codeText, 22 * MM, width);
   page.drawText(codeText, {
     x: (PAGE - fonts.bold.widthOfTextAtSize(codeText, codeSize)) / 2,
@@ -117,6 +123,16 @@ async function drawLabel(
     font: fonts.bold,
     color: black,
   });
+  if (label.unclaimed && codeText !== '#UNKNOWN') {
+    const marker = '#UNKNOWN';
+    page.drawText(marker, {
+      x: (PAGE - fonts.bold.widthOfTextAtSize(marker, 12)) / 2,
+      y: PAGE - margin - 37 * MM,
+      size: 12,
+      font: fonts.bold,
+      color: black,
+    });
+  }
 
   // --- Product zh (ru) ---
   const productText = label.productRu

@@ -335,6 +335,16 @@
     "take": "装载",
     "noStock": "仓库没有可装货物",
     "submitToAgent": "发送给代理",
+    "place": "件位",
+    "avgDensity": "平均密度（每 m³ 多少 kg）",
+    "cratesOnePlace": "木箱（每个 = 1 件位）",
+    "manageTrucks": "管理卡车",
+    "trucksTitle": "卡车",
+    "truckName": "卡车名称",
+    "addTruck": "添加卡车",
+    "truckHide": "隐藏",
+    "truckShow": "恢复",
+    "truckHidden": "已隐藏",
     "agentXlsx": "代理Excel",
     "editResubmit": "修改并重新提交",
     "verdictHint": "代理答复（代理不进系统——物流员记录答复）：",
@@ -355,7 +365,8 @@
     "errors": {
       "insufficient_stock": "可用箱数不足",
       "same_warehouse": "仓库相同",
-      "validation": "请检查数据"
+      "validation": "请检查数据",
+      "crate_not_available": "木箱不在此仓库或已被占用"
     }
   },
   "batches": {

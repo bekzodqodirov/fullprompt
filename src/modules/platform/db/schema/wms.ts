@@ -486,6 +486,11 @@ export const loadPlanLines = pgTable(
     lotId: uuid('lot_id')
       .notNull()
       .references(() => receiptLots.id),
+    /**
+     * Set when this line covers boxes packed in a crate — the crate is
+     * planned as ONE place and approval reserves exactly its boxes.
+     */
+    crateId: uuid('crate_id').references(() => crates.id),
     /** Partial selection: may be < the lot's total; remainder stays in stock. */
     plannedBoxCount: integer('planned_box_count').notNull(),
     plannedKg: numeric('planned_kg', { precision: 12, scale: 3 }).notNull(),
@@ -493,8 +498,9 @@ export const loadPlanLines = pgTable(
   },
   (t) => [
     check('load_plan_lines_count_check', sql`${t.plannedBoxCount} > 0`),
-    uniqueIndex('load_plan_lines_version_lot_unique').on(t.versionId, t.lotId),
+    uniqueIndex('load_plan_lines_version_lot_unique').on(t.versionId, t.lotId, t.crateId),
     index('load_plan_lines_lot_idx').on(t.lotId),
+    index('load_plan_lines_crate_idx').on(t.crateId),
   ],
 );
 

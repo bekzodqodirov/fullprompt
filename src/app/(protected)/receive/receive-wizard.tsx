@@ -462,6 +462,20 @@ export function ReceiveWizard({
         >
           🖨 {t('printLabels')}
         </a>
+        {(result.lots?.length ?? 0) > 1 && (
+          <div className="flex flex-wrap justify-center gap-2">
+            {result.lots?.map((lot) => (
+              <a
+                key={lot.lotId}
+                href={`/api/receipts/${result.receiptId}/labels?lotId=${lot.lotId}`}
+                target="_blank"
+                className="btn-secondary !min-h-10 px-3 font-mono text-sm font-extrabold"
+              >
+                🖨 {lot.letter}
+              </a>
+            ))}
+          </div>
+        )}
         <a href={`/receipts/${result.receiptId}`} className="btn-secondary w-full">
           {t('openReceipt')}
         </a>

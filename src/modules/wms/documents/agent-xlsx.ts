@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
 import {
@@ -37,11 +37,6 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
       lot: receiptLots,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
-      photoId: sql<string | null>`(
-        SELECT a.id FROM attachments a
-        WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
-        ORDER BY a.created_at LIMIT 1
-      )`,
     })
     .from(loadPlanLines)
     .innerJoin(receiptLots, eq(loadPlanLines.lotId, receiptLots.id))
@@ -50,16 +45,42 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     .where(eq(loadPlanLines.versionId, version.id))
     .orderBy(asc(loadPlanLines.id));
 
+  // ALL photos of every lot go side by side after the data columns (owner's
+  // request — one photo was not enough for the agent to judge the cargo).
+  const lotIds = [...new Set(lines.map((l) => l.lot.id))];
+  const photoRows = lotIds.length
+    ? await db
+        .select()
+        .from(attachments)
+        .where(
+          and(
+            eq(attachments.entityType, 'receipt_lot'),
+            inArray(attachments.entityId, lotIds),
+            eq(attachments.kind, 'photo'),
+          ),
+        )
+        .orderBy(asc(attachments.createdAt))
+    : [];
+  const photosByLot = new Map<string, string[]>();
+  for (const att of photoRows) {
+    photosByLot.set(att.entityId, [...(photosByLot.get(att.entityId) ?? []), att.id]);
+  }
+  const maxPhotos = Math.max(1, ...[...photosByLot.values()].map((ids) => ids.length));
+
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(`План v${versionNo}`);
   sheet.columns = [
-    { header: 'Фото', key: 'photo', width: 14 },
     { header: 'Код', key: 'code', width: 14 },
     { header: 'Товар', key: 'product', width: 40 },
     { header: 'Коробок', key: 'boxCount', width: 10 },
     { header: 'кг', key: 'kg', width: 10 },
     { header: 'м³', key: 'm3', width: 10 },
     { header: 'кг/м³', key: 'density', width: 10 },
+    ...Array.from({ length: maxPhotos }, (_, i) => ({
+      header: i === 0 ? 'Фото' : '',
+      key: `photo${i}`,
+      width: 14,
+    })),
   ];
   sheet.getRow(1).font = { bold: true };
   sheet.insertRow(1, [
@@ -68,15 +89,10 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   sheet.getRow(1).font = { bold: true, size: 13 };
 
   // Photo thumbnails: exceljs embeds png/jpeg only; thumbs are webp — convert.
-  const photoIds = lines.map((l) => l.photoId).filter(Boolean) as string[];
   const thumbs = new Map<string, Buffer>();
-  if (photoIds.length) {
-    const rows = await db
-      .select()
-      .from(attachments)
-      .where(inArray(attachments.id, photoIds));
+  if (photoRows.length) {
     const sharp = (await import('sharp')).default;
-    for (const att of rows) {
+    for (const att of photoRows) {
       try {
         const bytes = await getStorage().get(att.thumb200Key ?? att.storageKey);
         thumbs.set(att.id, await sharp(bytes).jpeg({ quality: 70 }).toBuffer());
@@ -86,8 +102,9 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     }
   }
 
+  const PHOTO_START_COL = 6; // zero-based: right after кг/м³
   let rowNo = 3;
-  for (const { line, lot, clientCode, marking, photoId } of lines) {
+  for (const { line, lot, clientCode, marking } of lines) {
     const density =
       Number(line.plannedM3) > 0 ? Math.round(Number(line.plannedKg) / Number(line.plannedM3)) : '';
     sheet.getRow(rowNo).values = {
@@ -99,14 +116,16 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
       density,
     };
     sheet.getRow(rowNo).height = 60;
-    const thumb = photoId ? thumbs.get(photoId) : undefined;
-    if (thumb) {
+    const photoIds = photosByLot.get(lot.id) ?? [];
+    photoIds.forEach((photoId, i) => {
+      const thumb = thumbs.get(photoId);
+      if (!thumb) return;
       const imageId = workbook.addImage({ buffer: thumb as unknown as ExcelJS.Buffer, extension: 'jpeg' });
       sheet.addImage(imageId, {
-        tl: { col: 0.1, row: rowNo - 1 + 0.1 },
+        tl: { col: PHOTO_START_COL + i + 0.1, row: rowNo - 1 + 0.1 },
         ext: { width: 78, height: 72 },
       });
-    }
+    });
     rowNo += 1;
   }
 

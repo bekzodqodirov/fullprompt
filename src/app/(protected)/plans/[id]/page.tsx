@@ -7,6 +7,7 @@ import { db } from '@/modules/platform/db/client';
 import {
   batches,
   clients,
+  crates,
   loadPlanLines,
   loadPlans,
   loadPlanVersions,
@@ -52,11 +53,13 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
           lot: receiptLots,
           clientCode: clients.clientCode,
           marking: receipts.unclaimedMarking,
+          crateCode: crates.code,
         })
         .from(loadPlanLines)
         .innerJoin(receiptLots, eq(loadPlanLines.lotId, receiptLots.id))
         .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
         .leftJoin(clients, eq(receipts.clientId, clients.id))
+        .leftJoin(crates, eq(loadPlanLines.crateId, crates.id))
         .where(eq(loadPlanLines.versionId, current.id))
         .orderBy(asc(loadPlanLines.id))
     : [];
@@ -102,11 +105,16 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
 
       <div className="card space-y-1">
         <h2 className="text-lg font-bold">{t('lines')}</h2>
-        {lines.map(({ line, lot, clientCode, marking }) => (
+        {lines.map(({ line, lot, clientCode, marking, crateCode }) => (
           <div key={line.id} className="flex items-baseline gap-2 border-b border-gray-100 py-1.5 text-sm last:border-0">
             <span className="font-mono font-extrabold text-blue-800">
               {clientCode ?? marking ?? '?'}-{lot.letter}
             </span>
+            {crateCode && (
+              <span className="whitespace-nowrap rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">
+                🧰 {crateCode}
+              </span>
+            )}
             <span className="min-w-0 flex-1 truncate">
               {lot.productNameZh}
               {lot.productNameRu && <span className="text-gray-500"> ({lot.productNameRu})</span>}

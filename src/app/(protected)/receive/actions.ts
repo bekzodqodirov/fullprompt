@@ -13,7 +13,7 @@ export interface SubmitReceiptResult {
   ok: boolean;
   receiptId?: string;
   number?: string;
-  lots?: { letter: string; productNameZh: string; boxCount: number }[];
+  lots?: { lotId: string; letter: string; productNameZh: string; boxCount: number }[];
   error?: string;
   detail?: string;
 }
@@ -48,6 +48,7 @@ export async function submitReceiptAction(input: unknown): Promise<SubmitReceipt
       receiptId: result.receiptId,
       number: result.number,
       lots: result.lots.map((l) => ({
+        lotId: l.lotId,
         letter: l.letter,
         productNameZh: l.productNameZh,
         boxCount: l.boxCount,

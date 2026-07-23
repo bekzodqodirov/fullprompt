@@ -1,10 +1,11 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
   batches,
   boxes,
   boxMovements,
+  crates,
   loadPlanLines,
   loadPlans,
   loadPlanVersions,
@@ -39,13 +40,17 @@ export const submitPlanSchema = z.object({
   maxKg: z.number().positive().max(100_000).optional(),
   maxM3: z.number().positive().max(1_000).optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  lines: z.array(planLineSchema).min(1).max(500),
+  /** Loose (un-crated) boxes only; crated cargo goes via crateIds. */
+  lines: z.array(planLineSchema).max(500),
+  /** Whole crates — each counts as one place; boxes come from the crate. */
+  crateIds: z.array(z.string().uuid()).max(200).optional(),
 });
 export type SubmitPlanInput = z.infer<typeof submitPlanSchema>;
 
 /**
- * How many boxes of a lot are still available to plan: in_stock at the
- * origin WH and not reserved by another batch.
+ * How many LOOSE boxes of a lot are still available to plan: in_stock at the
+ * origin WH, not reserved by another batch and not packed in a crate (crated
+ * cargo is planned as whole crates — one place each).
  */
 export async function availableByLot(originWarehouseId: string, lotIds: string[]) {
   if (lotIds.length === 0) return new Map<string, number>();
@@ -57,6 +62,7 @@ export async function availableByLot(originWarehouseId: string, lotIds: string[]
         inArray(boxes.lotId, lotIds),
         eq(boxes.status, 'in_stock'),
         eq(boxes.currentWarehouseId, originWarehouseId),
+        isNull(boxes.crateId),
       ),
     )
     .groupBy(boxes.lotId);
@@ -74,8 +80,50 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
   const actorId = ctx.actorId;
   if (input.originWarehouseId === input.destWarehouseId) throw new PlanError('same_warehouse');
 
+  const crateIds = [...new Set(input.crateIds ?? [])];
+  if (input.lines.length === 0 && crateIds.length === 0) throw new PlanError('validation');
+
   return db.transaction(async (tx) => {
-    const lotIds = input.lines.map((l) => l.lotId);
+    // Whole crates → per-lot lines carrying the crate id, so approval can
+    // reserve EXACTLY the crate's boxes (a crate is one place, spec change).
+    const crateLines: { lotId: string; boxCount: number; crateId: string }[] = [];
+    if (crateIds.length) {
+      const crateRows = await tx
+        .select()
+        .from(crates)
+        .where(inArray(crates.id, crateIds));
+      for (const crateId of crateIds) {
+        const crate = crateRows.find((c) => c.id === crateId);
+        if (
+          !crate ||
+          crate.status !== 'active' ||
+          crate.warehouseId !== input.originWarehouseId
+        ) {
+          throw new PlanError('crate_not_available', crate?.code);
+        }
+      }
+      const crateBoxes = await tx
+        .select({ crateId: boxes.crateId, lotId: boxes.lotId, n: sql<number>`count(*)` })
+        .from(boxes)
+        .where(
+          and(
+            inArray(boxes.crateId, crateIds),
+            eq(boxes.status, 'in_stock'),
+            eq(boxes.currentWarehouseId, input.originWarehouseId),
+          ),
+        )
+        .groupBy(boxes.crateId, boxes.lotId);
+      for (const row of crateBoxes) {
+        crateLines.push({ lotId: row.lotId, boxCount: Number(row.n), crateId: row.crateId! });
+      }
+      for (const crateId of crateIds) {
+        if (!crateLines.some((l) => l.crateId === crateId)) {
+          throw new PlanError('crate_not_available', crateRows.find((c) => c.id === crateId)?.code);
+        }
+      }
+    }
+
+    const lotIds = [...new Set([...input.lines, ...crateLines].map((l) => l.lotId))];
     const lots = await tx
       .select()
       .from(receiptLots)
@@ -83,7 +131,10 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
     if (lots.length !== lotIds.length) throw new PlanError('lot_not_found');
     const lotById = new Map(lots.map((l) => [l.id, l]));
 
-    const available = await availableByLot(input.originWarehouseId, lotIds);
+    const available = await availableByLot(
+      input.originWarehouseId,
+      input.lines.map((l) => l.lotId),
+    );
     for (const line of input.lines) {
       const free = available.get(line.lotId) ?? 0;
       if (line.boxCount > free) {
@@ -92,7 +143,10 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
     }
 
     // Per-line kg/m³ pro-rated from the lot totals.
-    const computed = input.lines.map((line) => {
+    const computed = [
+      ...input.lines.map((line) => ({ ...line, crateId: null as string | null })),
+      ...crateLines,
+    ].map((line) => {
       const lot = lotById.get(line.lotId)!;
       const perBoxKg = Number(lot.totalWeightKg) / lot.boxCount;
       const perBoxM3 = Number(lot.totalVolumeM3) / lot.boxCount;
@@ -167,6 +221,7 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
       computed.map((line) => ({
         versionId: version!.id,
         lotId: line.lotId,
+        crateId: line.crateId ?? null,
         plannedBoxCount: line.boxCount,
         plannedKg: String(line.kg),
         plannedM3: String(line.m3),
@@ -264,6 +319,8 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
       .from(loadPlanLines)
       .where(eq(loadPlanLines.versionId, version.id));
     for (const line of lines) {
+      // Crate lines take the crate's exact boxes (the crate is one place);
+      // loose lines take the lowest sequence numbers among un-crated stock.
       const candidates = await tx
         .select()
         .from(boxes)
@@ -272,6 +329,7 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
             eq(boxes.lotId, line.lotId),
             eq(boxes.status, 'in_stock'),
             eq(boxes.currentWarehouseId, plan.originWarehouseId),
+            line.crateId ? eq(boxes.crateId, line.crateId) : isNull(boxes.crateId),
           ),
         )
         .orderBy(asc(boxes.seqInLot))

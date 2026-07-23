@@ -194,6 +194,9 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 8. Performance & UX pass: 3G P75 < 3 s budget, list virtualization > 100 rows, thumbnails-first audit, CN-access checklist (no external CDNs, < 5 s from CN), high-contrast check for bright warehouse light on all operator screens (§15).
 9. Reliability: nightly `pg_dump` to object storage (30-day retention), weekly restore-test script, bucket versioning.
 10. Admin audit browser advanced filters; `README` + ops runbook; full-suite regression incl. re-running test 19 with allocation live.
+11. **Warehouse capacity indicator** (owner request, feedback round 5): optional `capacity_m3` per warehouse (admin-editable); occupied m³ from in-stock boxes; fill-percentage bar on the dashboard/home that goes yellow→red as the warehouse fills so the logist sees when to ship.
+12. **Inventory / stocktake mode** (owner request, feedback round 5): warehouse staff scan every box in the warehouse; a reconciliation screen shows (a) boxes recorded elsewhere but scanned here → move here with a correcting movement, (b) boxes expected here but not scanned → manual confirm list (mark found/lost); full audit trail; XLSX report of discrepancies.
+13. **Sortable table columns** (owner request, feedback round 5): click-to-sort headers on the big tables (stock browser, receipts journal, batch board lists) — server-side via URL params so sorting composes with filters and pagination.
 
 **Acceptance tests:** 16⭐ (plus full regression of 1–15, 17–20).
 

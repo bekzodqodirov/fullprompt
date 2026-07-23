@@ -1,9 +1,10 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import {
   boxes,
   clients,
+  crates,
   receiptLots,
   receipts,
 } from '@/modules/platform/db/schema';
@@ -11,7 +12,11 @@ import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 
 const querySchema = z.object({ warehouseId: z.string().uuid() });
 
-/** Plannable stock at a warehouse: lots with un-reserved in-stock boxes. */
+/**
+ * Plannable stock at a warehouse: LOOSE lots (un-crated in-stock boxes) plus
+ * active crates as single units — a crate is planned whole and counts as one
+ * place (owner's request).
+ */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = querySchema.safeParse({ warehouseId: url.searchParams.get('warehouseId') });
@@ -47,11 +52,42 @@ export async function GET(request: Request) {
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(
-      and(eq(boxes.status, 'in_stock'), eq(boxes.currentWarehouseId, query.data.warehouseId)),
+      and(
+        eq(boxes.status, 'in_stock'),
+        eq(boxes.currentWarehouseId, query.data.warehouseId),
+        isNull(boxes.crateId),
+      ),
     )
     .groupBy(receiptLots.id, clients.clientCode, receipts.unclaimedMarking, receipts.receivedAt)
     // FIFO default (spec 6.3): oldest stock first.
     .orderBy(asc(receipts.receivedAt), asc(receiptLots.letter));
+
+  const crateRows = await db
+    .select({
+      crateId: crates.id,
+      code: crates.code,
+      kind: crates.kind,
+      clientCode: clients.clientCode,
+      boxCount: sql<number>`count(*)`,
+      kg: sql<string>`sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount})`,
+      m3: sql<string>`sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount})`,
+      oldestReceivedAt: sql<string>`min(${receipts.receivedAt})`,
+    })
+    .from(boxes)
+    .innerJoin(crates, eq(boxes.crateId, crates.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(crates.clientId, clients.id))
+    .where(
+      and(
+        eq(boxes.status, 'in_stock'),
+        eq(boxes.currentWarehouseId, query.data.warehouseId),
+        isNotNull(boxes.crateId),
+        eq(crates.status, 'active'),
+      ),
+    )
+    .groupBy(crates.id, clients.clientCode)
+    .orderBy(asc(crates.code));
 
   return Response.json({
     lots: rows.map((r) => ({
@@ -60,6 +96,18 @@ export async function GET(request: Request) {
       perBoxKg: Number(r.totalWeightKg) / r.boxCount,
       perBoxM3: Number(r.totalVolumeM3) / r.boxCount,
       daysInStock: Math.floor((Date.now() - new Date(r.receivedAt).getTime()) / 86_400_000),
+    })),
+    crates: crateRows.map((c) => ({
+      crateId: c.crateId,
+      code: c.code,
+      kind: c.kind,
+      clientCode: c.clientCode,
+      boxCount: Number(c.boxCount),
+      kg: Math.round(Number(c.kg) * 10) / 10,
+      m3: Math.round(Number(c.m3) * 1000) / 1000,
+      daysInStock: Math.floor(
+        (Date.now() - new Date(c.oldestReceivedAt).getTime()) / 86_400_000,
+      ),
     })),
   });
 }

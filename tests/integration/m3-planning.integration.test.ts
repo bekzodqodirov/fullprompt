@@ -7,6 +7,7 @@ import {
   attachments,
   boxes,
   clients,
+  loadPlanLines,
   scanEvents,
   users,
   warehouses,
@@ -264,5 +265,75 @@ describe('load scanning', () => {
     expect(events).toHaveLength(2);
     expect(new Set(events.map((e) => e.clientEventUuid)).size).toBe(2);
     void lot;
+  });
+});
+
+describe('crate = one place (owner feedback round 5)', () => {
+  it('crated boxes leave loose availability; crate plans whole and reserves its exact boxes', async () => {
+    const lot = await makeLot(6);
+    const crateId = uuidv4();
+    // Crate boxes 3..6 (seq 3,4,5,6) — leaves 2 loose.
+    const crate = await createCrate(
+      { crateId, warehouseId: originId, boxIds: lot.boxIds.slice(2), kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+
+    // Loose availability is now 2: asking 3 loose must fail.
+    await expect(
+      submitPlan(
+        { originWarehouseId: originId, destWarehouseId: destId, lines: [{ lotId: lot.lotId, boxCount: 3 }] },
+        ctx(),
+      ),
+    ).rejects.toThrowError(PlanError);
+
+    const sub = await submitPlan(
+      {
+        originWarehouseId: originId,
+        destWarehouseId: destId,
+        lines: [{ lotId: lot.lotId, boxCount: 1 }],
+        crateIds: [crateId],
+      },
+      ctx(),
+    );
+    // Two lines for the same lot: one loose, one carrying the crate.
+    const lines = await db
+      .select()
+      .from(loadPlanLines)
+      .where(eq(loadPlanLines.versionId, sub.version.id));
+    expect(lines).toHaveLength(2);
+    expect(lines.find((l) => l.crateId === crateId)?.plannedBoxCount).toBe(4);
+    expect(lines.find((l) => l.crateId === null)?.plannedBoxCount).toBe(1);
+    expect(sub.version.totalBoxes).toBe(5);
+
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    const after = await db.select().from(boxes).where(inArray(boxes.id, lot.boxIds));
+    const planned = after.filter((b) => b.status === 'planned');
+    expect(planned).toHaveLength(5);
+    // The crate's 4 boxes exactly (seq 3-6) + the lowest loose seq (1).
+    expect(planned.map((b) => b.seqInLot).sort((a, b) => a - b)).toEqual([1, 3, 4, 5, 6]);
+    expect(planned.filter((b) => b.crateId === crateId)).toHaveLength(4);
+    expect(batch).not.toBeNull();
+    void crate;
+  });
+
+  it('a crate at another warehouse or already planned is rejected', async () => {
+    const lot = await makeLot(2);
+    const crateId = uuidv4();
+    await createCrate(
+      { crateId, warehouseId: originId, boxIds: lot.boxIds, kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+    const sub = await submitPlan(
+      { originWarehouseId: originId, destWarehouseId: destId, lines: [], crateIds: [crateId] },
+      ctx(),
+    );
+    await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    // Boxes are now planned → the same crate cannot go into a second plan.
+    await expect(
+      submitPlan(
+        { originWarehouseId: originId, destWarehouseId: destId, lines: [], crateIds: [crateId] },
+        ctx(),
+      ),
+    ).rejects.toThrowError(PlanError);
   });
 });

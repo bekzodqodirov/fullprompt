@@ -335,6 +335,16 @@
     "take": "Olish",
     "noStock": "Skladda bo‘sh yuk yo‘q",
     "submitToAgent": "Agentga yuborish",
+    "place": "joy",
+    "avgDensity": "O‘rtacha zichlik (1 m³ da necha kg)",
+    "cratesOnePlace": "Yashiklar (har biri = 1 joy)",
+    "manageTrucks": "Furalarni boshqarish",
+    "trucksTitle": "Furalar",
+    "truckName": "Fura nomi",
+    "addTruck": "Fura qo‘shish",
+    "truckHide": "Yashirish",
+    "truckShow": "Qaytarish",
+    "truckHidden": "Yashirilgan",
     "agentXlsx": "Agent uchun Excel",
     "editResubmit": "O‘zgartirib qayta yuborish",
     "verdictHint": "Agent javobi (agent tizimga kirmaydi — logist javobni yozadi):",
@@ -355,7 +365,8 @@
     "errors": {
       "insufficient_stock": "Bo‘sh karobkalar yetarli emas",
       "same_warehouse": "Skladlar bir xil",
-      "validation": "Ma’lumotlarni tekshiring"
+      "validation": "Ma’lumotlarni tekshiring",
+      "crate_not_available": "Yashik bu skladda emas yoki band"
     }
   },
   "batches": {

@@ -29,6 +29,16 @@ interface StockLot {
   daysInStock: number;
   photoId: string | null;
 }
+interface StockCrate {
+  crateId: string;
+  code: string;
+  kind: string;
+  clientCode: string | null;
+  boxCount: number;
+  kg: number;
+  m3: number;
+  daysInStock: number;
+}
 
 /**
  * W3 plan editor: pick origin/dest + truck, tick lots (partial counts OK),
@@ -48,6 +58,7 @@ export function PlanEditor({
     destWarehouseId: string;
     truckPresetId: string | null;
     lines: { lotId: string; boxCount: number }[];
+    crateIds: string[];
   };
 }) {
   const t = useTranslations('plans');
@@ -57,8 +68,12 @@ export function PlanEditor({
   const [destId, setDestId] = useState(resubmit?.destWarehouseId ?? warehouses[1]?.id ?? '');
   const [presetId, setPresetId] = useState(resubmit?.truckPresetId ?? presets[0]?.id ?? '');
   const [lots, setLots] = useState<StockLot[]>([]);
+  const [stockCrates, setStockCrates] = useState<StockCrate[]>([]);
   const [selection, setSelection] = useState<Map<string, number>>(
     () => new Map(resubmit?.lines.map((l) => [l.lotId, l.boxCount]) ?? []),
+  );
+  const [selectedCrates, setSelectedCrates] = useState<Set<string>>(
+    () => new Set(resubmit?.crateIds ?? []),
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,8 +82,9 @@ export function PlanEditor({
     void (async () => {
       const res = await fetch(`/api/plans/stock?warehouseId=${originId}`);
       if (res.ok) {
-        const data = (await res.json()) as { lots: StockLot[] };
+        const data = (await res.json()) as { lots: StockLot[]; crates?: StockCrate[] };
         setLots(data.lots);
+        setStockCrates(data.crates ?? []);
       }
     })();
   }, [originId]);
@@ -84,8 +100,24 @@ export function PlanEditor({
       kg += count * lot.perBoxKg;
       m3 += count * lot.perBoxM3;
     }
-    return { boxes, kg: Math.round(kg * 10) / 10, m3: Math.round(m3 * 1000) / 1000 };
-  }, [lots, selection]);
+    // A crate is ONE place: its boxes ride inside, so places = loose boxes
+    // + selected crates while boxes/kg/m³ still count everything.
+    let places = boxes;
+    for (const crate of stockCrates) {
+      if (!selectedCrates.has(crate.crateId)) continue;
+      boxes += crate.boxCount;
+      kg += crate.kg;
+      m3 += crate.m3;
+      places += 1;
+    }
+    return {
+      boxes,
+      places,
+      kg: Math.round(kg * 10) / 10,
+      m3: Math.round(m3 * 1000) / 1000,
+      density: m3 > 0 ? Math.round(kg / m3) : null,
+    };
+  }, [lots, stockCrates, selection, selectedCrates]);
 
   function setCount(lotId: string, raw: string, max: number) {
     const n = Math.max(0, Math.min(max, Number(raw) || 0));
@@ -107,6 +139,7 @@ export function PlanEditor({
         destWarehouseId: destId,
         truckPresetId: presetId || undefined,
         lines: [...selection.entries()].map(([lotId, boxCount]) => ({ lotId, boxCount })),
+        crateIds: [...selectedCrates],
       });
       if (res.ok) router.push(`/plans/${res.planId}`);
       else setError(res.error ?? 'error');
@@ -188,7 +221,55 @@ export function PlanEditor({
             </option>
           ))}
         </select>
+        <a
+          href="/trucks"
+          aria-label={t('manageTrucks')}
+          title={t('manageTrucks')}
+          className="btn-secondary !min-h-10 shrink-0 px-3"
+        >
+          ⚙️
+        </a>
       </div>
+
+      {stockCrates.length > 0 && (
+        <div className="card space-y-1 !p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            🧰 {t('cratesOnePlace')}
+          </p>
+          {stockCrates.map((crate) => {
+            const on = selectedCrates.has(crate.crateId);
+            return (
+              <button
+                key={crate.crateId}
+                type="button"
+                data-testid={`crate-${crate.code}`}
+                className={`flex w-full items-baseline gap-2 rounded-lg border-2 p-2 text-left text-sm ${
+                  on ? 'border-blue-600 bg-blue-50' : 'border-gray-200'
+                }`}
+                onClick={() =>
+                  setSelectedCrates((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(crate.crateId)) next.delete(crate.crateId);
+                    else next.add(crate.crateId);
+                    return next;
+                  })
+                }
+              >
+                <span className="font-bold">{on ? '☑' : '☐'}</span>
+                <span className="font-mono font-extrabold text-blue-800">{crate.code}</span>
+                <span className="font-mono font-bold">{crate.clientCode ?? '?'}</span>
+                <span className="text-gray-600">{crate.boxCount} 📦</span>
+                <span className="ml-auto whitespace-nowrap font-mono text-xs">
+                  {crate.kg}kg {crate.m3}m³
+                </span>
+                <span className="whitespace-nowrap text-xs text-gray-500">
+                  = 1 {t('place')}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="card !p-0">
         <div className="overflow-x-auto">
@@ -280,9 +361,22 @@ export function PlanEditor({
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
         <div className="mx-auto max-w-4xl space-y-2 px-4 py-2.5">
           <div className="flex items-center gap-4">
-            <span className="whitespace-nowrap text-sm font-bold">Σ {totals.boxes} 📦</span>
+            <span className="whitespace-nowrap text-sm font-bold">
+              Σ {totals.boxes} 📦
+              {totals.places !== totals.boxes && (
+                <span className="text-gray-600"> · {totals.places} {t('place')}</span>
+              )}
+            </span>
             {gauge(totals.kg, preset ? preset.maxKg : undefined, 'kg')}
             {gauge(totals.m3, preset ? preset.maxM3 : undefined, 'm³')}
+            {totals.density !== null && (
+              <span
+                className="whitespace-nowrap font-mono text-xs font-bold text-gray-600"
+                title={t('avgDensity')}
+              >
+                Ø {totals.density} kg/m³
+              </span>
+            )}
           </div>
           <button
             type="button"

@@ -176,7 +176,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         </div>
       )}
 
-      {canVehicle && ['forming', 'loading'].includes(batch.status) ? (
+      {/* Editable until the batch is closed — a wrong plate/driver must be
+          fixable even after departure (owner's request). */}
+      {canVehicle && !['closed', 'cancelled'].includes(batch.status) ? (
         <VehicleForm
           batchId={batch.id}
           vehiclePlate={batch.vehiclePlate ?? ''}

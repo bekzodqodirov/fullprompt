@@ -54,7 +54,10 @@ export default async function NewPlanPage({
         originWarehouseId: plan.originWarehouseId,
         destWarehouseId: plan.destWarehouseId,
         truckPresetId: plan.truckPresetId,
-        lines: lines.map((l) => ({ lotId: l.lotId, boxCount: l.plannedBoxCount })),
+        lines: lines
+          .filter((l) => !l.crateId)
+          .map((l) => ({ lotId: l.lotId, boxCount: l.plannedBoxCount })),
+        crateIds: [...new Set(lines.map((l) => l.crateId).filter((id): id is string => !!id))],
       };
     }
   }

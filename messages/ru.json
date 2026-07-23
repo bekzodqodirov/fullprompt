@@ -335,6 +335,16 @@
     "take": "Взять",
     "noStock": "На складе нет свободного груза",
     "submitToAgent": "Отправить агенту",
+    "place": "мест",
+    "avgDensity": "Средняя плотность (кг на 1 м³)",
+    "cratesOnePlace": "Ящики (каждый = 1 место)",
+    "manageTrucks": "Управление фурами",
+    "trucksTitle": "Фуры",
+    "truckName": "Название фуры",
+    "addTruck": "Добавить фуру",
+    "truckHide": "Скрыть",
+    "truckShow": "Вернуть",
+    "truckHidden": "Скрыта",
     "agentXlsx": "Excel для агента",
     "editResubmit": "Изменить и отправить заново",
     "verdictHint": "Ответ агента (агент не заходит в систему — логист записывает ответ):",
@@ -355,7 +365,8 @@
     "errors": {
       "insufficient_stock": "Недостаточно свободных коробок",
       "same_warehouse": "Склады совпадают",
-      "validation": "Проверьте данные"
+      "validation": "Проверьте данные",
+      "crate_not_available": "Ящик не на этом складе или занят"
     }
   },
   "batches": {

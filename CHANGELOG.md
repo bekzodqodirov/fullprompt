@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## Feedback round 5 (owner testing) — 2026-07-23
+
+- **Unclaimed labels print the marking**: sticker shows `444-A` (whatever is written on the box) as the dominant code with a small `#UNKNOWN` flag; `#UNKNOWN` alone only when no marking was captured (DECISIONS #82).
+- **Per-letter sticker printing**: the after-confirm screen offers a 🖨 button per letter (A, B, C…) next to "print all".
+- **Plan editor**: live average density (Ø kg/m³) in the totals bar; place count shown when crates are selected (`Σ 12 📦 · 5 joy`).
+- **Truck presets are owner-managed** (`/trucks`, linked via ⚙️ from the plan editor): add/edit/hide with audit — no more seed-only trucks (DECISIONS #84).
+- **Crate = one place in a plan** (migration 0011): crated boxes leave loose availability; the editor lists each active crate as a single tickable unit; approval reserves the crate's exact boxes so scanning the crate QR at loading matches the plan (DECISIONS #83).
+- **Agent Excel**: ALL lot photos embedded side by side after the data columns (was: single photo in column A).
+- **Vehicle info editable until batch close** — wrong plate/driver fixable after departure (DECISIONS #85).
+- Planned for M6 (owner's questions): warehouse capacity indicator with red fill warning, inventory/stocktake mode with reconciliation, sortable table columns (PLAN.md M6 #11–13).
+- Tests: 59 unit/integration (+ crate-planning lifecycle) + 12 e2e.
+
 ## Bugfix round 4 (owner testing) — 2026-07-23
 
 - **File attach fixed**: the upload whitelist was too narrow — now accepts TXT/CSV/ZIP/RAR/7z/GIF/HEIC and MP4/MOV/WebM video (photos ≤15 MB, files ≤25 MB, video ≤60 MB), with an extension fallback for files the browser sends without a content type (common on Windows). Rejections now show the real reason ("type not supported" / "too large") in the operator's language instead of a generic "upload failed".
