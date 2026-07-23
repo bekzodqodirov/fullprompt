@@ -140,8 +140,7 @@ export const boxes = pgTable(
     seqInLot: integer('seq_in_lot').notNull(),
     status: text('status').notNull().default('in_stock'),
     currentWarehouseId: uuid('current_warehouse_id').references(() => warehouses.id),
-    /** FK to batches arrives with M3; plain uuid until then. */
-    currentBatchId: uuid('current_batch_id'),
+    currentBatchId: uuid('current_batch_id').references(() => batches.id),
     crateId: uuid('crate_id').references(() => crates.id),
     labelPrintedAt: timestamp('label_printed_at', { withTimezone: true }),
     damaged: boolean('damaged').notNull().default(false),
@@ -301,8 +300,7 @@ export const costEntries = pgTable(
     id: id(),
     scope: text('scope').notNull(),
     receiptId: uuid('receipt_id').references(() => receipts.id),
-    /** FK to batches arrives with M3. */
-    batchId: uuid('batch_id'),
+    batchId: uuid('batch_id').references(() => batches.id),
     /** Crating cost target (owner's answer: cost sticks to the crate; M6 allocates to the client). */
     crateId: uuid('crate_id').references(() => crates.id),
     costTypeId: uuid('cost_type_id')
@@ -338,5 +336,200 @@ export const costEntries = pgTable(
     ),
     index('cost_entries_receipt_idx').on(t.receiptId),
     index('cost_entries_batch_idx').on(t.batchId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// M3 — Planning, batches, scanning (spec 6.3–6.4, W3/W4)
+// ---------------------------------------------------------------------------
+
+/** Truck size presets for the plan editor gauges (reference data). */
+export const truckPresets = pgTable(
+  'truck_presets',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    maxKg: numeric('max_kg', { precision: 12, scale: 3 }).notNull(),
+    maxM3: numeric('max_m3', { precision: 12, scale: 4 }).notNull(),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('truck_presets_max_kg_check', sql`${t.maxKg} > 0`),
+    check('truck_presets_max_m3_check', sql`${t.maxM3} > 0`),
+  ],
+);
+
+export const batches = pgTable(
+  'batches',
+  {
+    id: id(),
+    /** `{WH}-{001}` per-origin-WH sequence. */
+    code: text('code').notNull().unique(),
+    originWarehouseId: uuid('origin_warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    destWarehouseId: uuid('dest_warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    type: text('type').notNull().default('transfer'),
+    status: text('status').notNull().default('forming'),
+    vehiclePlate: text('vehicle_plate'),
+    driverName: text('driver_name'),
+    driverPhone: text('driver_phone'),
+    departedAt: timestamp('departed_at', { withTimezone: true }),
+    arrivedAt: timestamp('arrived_at', { withTimezone: true }),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    /** VED "sent to agent" checkbox (export batches). */
+    sentToAgentAt: date('sent_to_agent_at'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('batches_type_check', sql`${t.type} IN ('transfer', 'export', 'distribution')`),
+    check(
+      'batches_status_check',
+      sql`${t.status} IN ('forming', 'loading', 'in_transit', 'arrived', 'unloaded', 'closed', 'cancelled')`,
+    ),
+    check('batches_route_check', sql`${t.originWarehouseId} <> ${t.destWarehouseId}`),
+    index('batches_origin_status_idx').on(t.originWarehouseId, t.status),
+  ],
+);
+
+/**
+ * Load plans (W3). "Quick batch" internal transfers may create a batch with
+ * no plan; a plan's batch_id is set at approval.
+ */
+export const loadPlans = pgTable(
+  'load_plans',
+  {
+    id: id(),
+    originWarehouseId: uuid('origin_warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    destWarehouseId: uuid('dest_warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    batchId: uuid('batch_id').references(() => batches.id).unique(),
+    truckPresetId: uuid('truck_preset_id').references(() => truckPresets.id),
+    /** Snapshot of the preset (or custom limits) at plan creation. */
+    maxKg: numeric('max_kg', { precision: 12, scale: 3 }),
+    maxM3: numeric('max_m3', { precision: 12, scale: 4 }),
+    targetDate: date('target_date'),
+    status: text('status').notNull().default('draft'),
+    currentVersionNo: integer('current_version_no').notNull().default(0),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check(
+      'load_plans_status_check',
+      sql`${t.status} IN ('draft', 'pending_agent', 'changes_requested', 'approved', 'loading', 'completed', 'cancelled')`,
+    ),
+    index('load_plans_origin_idx').on(t.originWarehouseId, t.status),
+  ],
+);
+
+/** Immutable per-submission snapshots; never updated after a verdict. */
+export const loadPlanVersions = pgTable(
+  'load_plan_versions',
+  {
+    id: id(),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => loadPlans.id),
+    versionNo: integer('version_no').notNull(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+    submittedBy: uuid('submitted_by')
+      .notNull()
+      .references(() => users.id),
+    totalBoxes: integer('total_boxes').notNull(),
+    totalKg: numeric('total_kg', { precision: 12, scale: 3 }).notNull(),
+    totalM3: numeric('total_m3', { precision: 12, scale: 4 }).notNull(),
+    /** The agent stays outside the system — the logist records the verdict. */
+    agentVerdict: text('agent_verdict'),
+    agentComment: text('agent_comment'),
+    verdictRecordedBy: uuid('verdict_recorded_by').references(() => users.id),
+    verdictRecordedAt: timestamp('verdict_recorded_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'load_plan_versions_verdict_check',
+      sql`${t.agentVerdict} IS NULL OR ${t.agentVerdict} IN ('approved', 'changes_requested')`,
+    ),
+    uniqueIndex('load_plan_versions_plan_no_unique').on(t.planId, t.versionNo),
+  ],
+);
+
+export const loadPlanLines = pgTable(
+  'load_plan_lines',
+  {
+    id: id(),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => loadPlanVersions.id),
+    lotId: uuid('lot_id')
+      .notNull()
+      .references(() => receiptLots.id),
+    /** Partial selection: may be < the lot's total; remainder stays in stock. */
+    plannedBoxCount: integer('planned_box_count').notNull(),
+    plannedKg: numeric('planned_kg', { precision: 12, scale: 3 }).notNull(),
+    plannedM3: numeric('planned_m3', { precision: 12, scale: 4 }).notNull(),
+  },
+  (t) => [
+    check('load_plan_lines_count_check', sql`${t.plannedBoxCount} > 0`),
+    uniqueIndex('load_plan_lines_version_lot_unique').on(t.versionId, t.lotId),
+    index('load_plan_lines_lot_idx').on(t.lotId),
+  ],
+);
+
+/**
+ * Scan facts (W4/W5/W8) — append-only. `clientEventUuid` is the offline
+ * idempotency key; crate-scan fan-out rows get derived UUIDs (uuid5).
+ */
+export const scanEvents = pgTable(
+  'scan_events',
+  {
+    id: id(),
+    clientEventUuid: uuid('client_event_uuid').notNull().unique(),
+    boxId: uuid('box_id')
+      .notNull()
+      .references(() => boxes.id),
+    crateId: uuid('crate_id').references(() => crates.id),
+    batchId: uuid('batch_id').references(() => batches.id),
+    handoverId: uuid('handover_id').references(() => handovers.id),
+    type: text('type').notNull(),
+    method: text('method').notNull(),
+    manualReason: text('manual_reason'),
+    addedOnSpot: boolean('added_on_spot').notNull().default(false),
+    scannedBy: uuid('scanned_by')
+      .notNull()
+      .references(() => users.id),
+    /** Client-side capture time (offline scans arrive late). */
+    scannedAt: timestamp('scanned_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('scan_events_type_check', sql`${t.type} IN ('load', 'unload', 'issue')`),
+    check('scan_events_method_check', sql`${t.method} IN ('qr', 'manual', 'crate')`),
+    check(
+      'scan_events_manual_reason_check',
+      sql`${t.method} <> 'manual' OR ${t.manualReason} IS NOT NULL`,
+    ),
+    check(
+      'scan_events_target_check',
+      sql`(${t.type} = 'issue') = (${t.handoverId} IS NOT NULL) AND (${t.type} <> 'issue') = (${t.batchId} IS NOT NULL)`,
+    ),
+    index('scan_events_batch_type_idx').on(t.batchId, t.type),
+    index('scan_events_box_idx').on(t.boxId),
+    index('scan_events_scanner_idx').on(t.scannedBy, t.scannedAt),
   ],
 );

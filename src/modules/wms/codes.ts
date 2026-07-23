@@ -47,6 +47,16 @@ export async function nextReceiptNumber(
   return `${warehouse.code}-IN-${dateKey}-${String(seq).padStart(3, '0')}`;
 }
 
+/** Batch code `{PREFIX}-{001}`, lifetime per-origin-warehouse sequence. */
+export async function nextBatchCode(
+  tx: Db | Tx,
+  warehouse: { code: string; batchPrefix: string | null },
+): Promise<string> {
+  const prefix = warehouse.batchPrefix || warehouse.code;
+  const seq = await bumpCounter(tx, 'batch_seq', prefix);
+  return `${prefix}-${String(seq).padStart(3, '0')}`;
+}
+
 /** Crate code `CR-{WH}{YY}-{00000}`, per-WH-per-year sequence (DECISIONS #19). */
 export async function nextCrateCode(
   tx: Db | Tx,
