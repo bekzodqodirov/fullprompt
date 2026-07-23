@@ -127,7 +127,10 @@
       "translation_provider": "翻译服务商",
       "default_locale": "默认语言",
       "pin_relock": "共用手机PIN锁",
-      "block_issue_if_unpaid": "欠款客户禁止提货（第三阶段）"
+      "block_issue_if_unpaid": "欠款客户禁止提货（第三阶段）",
+      "company_name": "外贸单证用公司名称（发票、装箱单、交接单）",
+      "company_address": "单证抬头用公司地址",
+      "company_phone": "单证抬头用公司电话"
     }
   },
   "audit": {

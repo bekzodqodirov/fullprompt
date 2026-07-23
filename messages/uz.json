@@ -127,7 +127,10 @@
       "translation_provider": "Tarjima provayderi",
       "default_locale": "Standart til",
       "pin_relock": "Umumiy telefonlarda PIN-qulf",
-      "block_issue_if_unpaid": "Qarzdorlarga topshirishni bloklash (3-bosqich)"
+      "block_issue_if_unpaid": "Qarzdorlarga topshirishni bloklash (3-bosqich)",
+      "company_name": "VED hujjatlari uchun kompaniya nomi (invoys, upakovka listi, akt)",
+      "company_address": "Hujjatlar shapkasi uchun kompaniya manzili",
+      "company_phone": "Hujjatlar shapkasi uchun kompaniya telefoni"
     }
   },
   "audit": {
