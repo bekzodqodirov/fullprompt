@@ -32,7 +32,11 @@ export async function getBotUsername(): Promise<string | null> {
 
 export function startTelegramBot(): void {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token || globalForBot.telegramBot) return;
+  // TELEGRAM_POLLING=0 disables receiving (linking) on this instance —
+  // Telegram allows only ONE getUpdates poller per bot, so extra
+  // environments (CI, staging, a second dev machine) must opt out.
+  // Sending notifications still works everywhere.
+  if (!token || process.env.TELEGRAM_POLLING === '0' || globalForBot.telegramBot) return;
 
   const bot = new Bot(token);
   globalForBot.telegramBot = bot;
@@ -65,9 +69,23 @@ export function startTelegramBot(): void {
 
   bot.catch((err) => logger.error({ err: err.error }, 'telegram bot error'));
 
-  void bot.start({ drop_pending_updates: true }).catch((err) => {
-    logger.error({ err }, 'telegram bot polling failed');
-    globalForBot.telegramBot = undefined;
-  });
+  const startPolling = (retryMs: number) => {
+    void bot.start({ drop_pending_updates: true }).catch((err: unknown) => {
+      const is409 =
+        typeof err === 'object' && err !== null && 'error_code' in err && err.error_code === 409;
+      if (is409) {
+        // Another instance holds the getUpdates lock (e.g. a dev machine and
+        // a server sharing one token). Keep retrying — when the other side
+        // stops, this instance takes over. Never crashes anything.
+        logger.warn(
+          `telegram: another bot instance is polling this token; retrying in ${retryMs / 1000}s`,
+        );
+      } else {
+        logger.error({ err }, 'telegram bot polling failed; retrying');
+      }
+      setTimeout(() => startPolling(Math.min(retryMs * 2, 300_000)), retryMs);
+    });
+  };
+  startPolling(30_000);
   logger.info('telegram bot polling started');
 }
