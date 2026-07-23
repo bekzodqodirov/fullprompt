@@ -344,13 +344,27 @@ export function ReceiveWizard({
     }
   }
 
+  const clientChosen = draft.clientId !== null || (draft.unclaimed && draft.unclaimedMarking.trim());
+
+  /** First missing thing per lot — shown next to the disabled confirm so the operator knows WHAT is wrong. */
+  function firstProblem(): string | null {
+    if (!clientChosen) return t('problems.client');
+    for (let i = 0; i < draft!.lots.length; i += 1) {
+      const lot = draft!.lots[i]!;
+      const line = letterPreview[i] ?? `#${i + 1}`;
+      if (!lot.zh.trim()) return `${line}: ${t('problems.name')}`;
+      if (!(Number(lot.boxCount) >= 1)) return `${line}: ${t('problems.count')}`;
+      if (!lotTotals(lot)) return `${line}: ${t('problems.dims')}`;
+      if (lot.photoIds.length === 0) return `${line}: ${t('problems.photo')}`;
+    }
+    return null;
+  }
+
   function lotsValid(): boolean {
     return draft!.lots.every(
       (lot) => lot.zh.trim() && Number(lot.boxCount) && lot.photoIds.length > 0 && lotTotals(lot),
     );
   }
-
-  const clientChosen = draft.clientId !== null || (draft.unclaimed && draft.unclaimedMarking.trim());
 
   async function confirm() {
     setSubmitting(true);
@@ -393,7 +407,7 @@ export function ReceiveWizard({
         localStorage.removeItem(DRAFT_KEY);
         setResult(res);
       } else {
-        setError(res.error ?? 'error');
+        setError(res.detail ? `${res.error}: ${res.detail}` : (res.error ?? 'error'));
       }
     } finally {
       setSubmitting(false);
@@ -457,7 +471,7 @@ export function ReceiveWizard({
       className="input-cell text-center"
       inputMode="decimal"
       value={lot[field]}
-      onChange={(e) => updateLot(lot.id, { [field]: e.target.value })}
+      onChange={(e) => updateLot(lot.id, { [field]: e.target.value.replace(',', '.') })}
       placeholder={placeholder}
     />
   );
@@ -785,7 +799,7 @@ export function ReceiveWizard({
                         className="input-cell text-center font-semibold"
                         inputMode="numeric"
                         value={lot.boxCount}
-                        onChange={(e) => updateLot(lot.id, { boxCount: e.target.value })}
+                        onChange={(e) => updateLot(lot.id, { boxCount: e.target.value.replace(/\D/g, '') })}
                       />
                     </td>
                     <td className="p-1.5 text-center">{modeToggle(lot, true)}</td>
@@ -871,7 +885,7 @@ export function ReceiveWizard({
                   className="input-cell !h-10 text-center font-semibold"
                   inputMode="numeric"
                   value={lot.boxCount}
-                  onChange={(e) => updateLot(lot.id, { boxCount: e.target.value })}
+                  onChange={(e) => updateLot(lot.id, { boxCount: e.target.value.replace(/\D/g, '') })}
                 />
               </div>
               <div className="pt-4">{modeToggle(lot, false)}</div>
@@ -933,6 +947,11 @@ export function ReceiveWizard({
 
       {/* ===== Sticky totals + confirm ===== */}
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+        {(!clientChosen || !lotsValid()) && (
+          <p className="mx-auto max-w-4xl px-4 pt-1.5 text-xs font-semibold text-orange-700">
+            ⚠️ {firstProblem()}
+          </p>
+        )}
         <div className="mx-auto flex max-w-4xl items-center gap-4 px-4 py-2.5">
           <div className="whitespace-nowrap text-sm leading-tight">
             <span className="font-bold">Σ {sumBoxes} 📦</span>

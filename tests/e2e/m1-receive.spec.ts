@@ -32,8 +32,9 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   await page.getByTestId('lot-L').fill('40');
   await page.getByTestId('lot-W').fill('30');
   await page.getByTestId('lot-H').fill('20');
-  await page.getByTestId('lot-kg').fill('8');
-  await expect(page.locator('#mobile-product-lines').getByText('32kg')).toBeVisible(); // live math 4×8
+  // Decimal weight (owner's bug report: decimals/commas failed validation)
+  await page.getByTestId('lot-kg').fill('8.5');
+  await expect(page.locator('#mobile-product-lines').getByText('34kg')).toBeVisible(); // live math 4×8.5
 
   // Photo upload (min-1-photo rule)
   const photo = await sharp({

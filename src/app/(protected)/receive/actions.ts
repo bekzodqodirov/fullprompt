@@ -15,11 +15,17 @@ export interface SubmitReceiptResult {
   number?: string;
   lots?: { letter: string; productNameZh: string; boxCount: number }[];
   error?: string;
+  detail?: string;
 }
 
 export async function submitReceiptAction(input: unknown): Promise<SubmitReceiptResult> {
   const parsed = confirmReceiptSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: 'validation' };
+  if (!parsed.success) {
+    // Tell the operator WHICH field failed, not just "validation".
+    const issue = parsed.error.issues[0];
+    const detail = issue ? `${issue.path.join('.')}: ${issue.message}` : undefined;
+    return { ok: false, error: 'validation', detail };
+  }
 
   const actor = await authorize('receipts.create', { warehouseId: parsed.data.warehouseId });
   const meta = await requestMeta();

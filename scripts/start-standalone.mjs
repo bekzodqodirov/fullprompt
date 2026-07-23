@@ -20,4 +20,8 @@ for (const extra of ['public', 'src/assets']) {
 // the standalone dir and 404 every previously stored file).
 process.env.STORAGE_LOCAL_DIR = path.resolve(process.env.STORAGE_LOCAL_DIR ?? '.data/files');
 
+// Self-heal: photos uploaded while the old bug was live landed inside
+// .next/standalone/.data — merge them back (never overwrites existing files).
+await import('./heal-storage.mjs');
+
 await import(pathToFileURL(path.resolve('.next/standalone/server.js')).href);

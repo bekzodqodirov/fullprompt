@@ -21,50 +21,68 @@ interface TranslationProvider {
   translate(zh: string): Promise<string | null>;
 }
 
+async function fetchJson(url: string, init: RequestInit, timeoutMs = 3500): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** LibreTranslate-compatible API (owner's choice: free/open provider for now). */
 class LibreTranslateProvider implements TranslationProvider {
+  constructor(private readonly url: string) {}
+
   async translate(zh: string): Promise<string | null> {
-    const url = process.env.TRANSLATE_API_URL || 'https://libretranslate.com/translate';
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          q: zh,
-          source: 'zh',
-          target: 'ru',
-          format: 'text',
-          ...(process.env.TRANSLATE_API_KEY ? { api_key: process.env.TRANSLATE_API_KEY } : {}),
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) return null;
-      const data = (await res.json()) as { translatedText?: string };
-      return data.translatedText?.trim() || null;
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
+    const data = (await fetchJson(this.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        q: zh,
+        source: 'zh',
+        target: 'ru',
+        format: 'text',
+        ...(process.env.TRANSLATE_API_KEY ? { api_key: process.env.TRANSLATE_API_KEY } : {}),
+      }),
+    })) as { translatedText?: string } | null;
+    return data?.translatedText?.trim() || null;
   }
 }
 
-class NullProvider implements TranslationProvider {
-  async translate(): Promise<string | null> {
-    return null;
+/** MyMemory — free keyless fallback; keeps translation alive when the public LibreTranslate instance is rate-limited. */
+class MyMemoryProvider implements TranslationProvider {
+  async translate(zh: string): Promise<string | null> {
+    const data = (await fetchJson(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(zh)}&langpair=zh-CN|ru-RU`,
+      { method: 'GET' },
+    )) as { responseData?: { translatedText?: string } } | null;
+    const text = data?.responseData?.translatedText?.trim();
+    // MyMemory sometimes echoes the source or returns upper-cased noise on failure.
+    if (!text || text === zh || /NO QUERY|INVALID/i.test(text)) return null;
+    return text;
   }
 }
 
-function getProvider(): TranslationProvider {
-  const name = process.env.TRANSLATE_PROVIDER ?? 'libretranslate';
-  switch (name) {
-    case 'libretranslate':
-      return new LibreTranslateProvider();
-    default:
-      return new NullProvider();
+/**
+ * Provider chain (owner: translation drops out intermittently — the free
+ * public endpoints rate-limit): custom URL if configured, then the public
+ * LibreTranslate, then MyMemory. First non-empty answer wins.
+ */
+function getProviders(): TranslationProvider[] {
+  if (process.env.TRANSLATE_PROVIDER === 'none') return [];
+  const chain: TranslationProvider[] = [];
+  if (process.env.TRANSLATE_API_URL) {
+    chain.push(new LibreTranslateProvider(process.env.TRANSLATE_API_URL));
   }
+  chain.push(new LibreTranslateProvider('https://libretranslate.com/translate'));
+  chain.push(new MyMemoryProvider());
+  return chain;
 }
 
 export async function translateZh(zh: string): Promise<TranslationHit> {
@@ -85,21 +103,23 @@ export async function translateZh(zh: string): Promise<TranslationHit> {
   `)) as unknown as { zh: string; ru: string }[];
   if (fuzzy[0]) return { ru: fuzzy[0].ru, source: 'fuzzy', matchedZh: fuzzy[0].zh };
 
-  // 3. Provider API — cache the result as unverified
-  try {
-    const ru = await getProvider().translate(trimmed);
-    if (ru) {
-      await db
-        .insert(productDictionary)
-        .values({ zh: trimmed, ru, source: 'api', verified: false })
-        .onConflictDoUpdate({
-          target: productDictionary.zh,
-          set: { ru: sql`COALESCE(${productDictionary.ru}, ${ru})` },
-        });
-      return { ru, source: 'api' };
+  // 3. Provider chain — first answer wins, cached as unverified
+  for (const provider of getProviders()) {
+    try {
+      const ru = await provider.translate(trimmed);
+      if (ru) {
+        await db
+          .insert(productDictionary)
+          .values({ zh: trimmed, ru, source: 'api', verified: false })
+          .onConflictDoUpdate({
+            target: productDictionary.zh,
+            set: { ru: sql`COALESCE(${productDictionary.ru}, ${ru})` },
+          });
+        return { ru, source: 'api' };
+      }
+    } catch (err) {
+      logger.warn({ err }, 'translation provider failed');
     }
-  } catch (err) {
-    logger.warn({ err }, 'translation provider failed');
   }
   return { ru: null, source: 'none' };
 }

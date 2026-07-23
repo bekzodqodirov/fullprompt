@@ -197,7 +197,14 @@
     "unclaimedMarking": "箱上标记",
     "unclaimedMarkingHint": "货物上写的代码——之后绑定客户",
     "attachments": "文件",
-    "generalPhotos": "整体箱子照片"
+    "generalPhotos": "整体箱子照片",
+    "problems": {
+      "client": "请选择客户（或❓无主货）",
+      "name": "请填写货物名称",
+      "count": "请填写箱数",
+      "dims": "请填写尺寸和重量（数字，如40或8.5）",
+      "photo": "请至少添加1张照片"
+    }
   },
   "receipts": {
     "title": "收货单",

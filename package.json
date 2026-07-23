@@ -4,7 +4,7 @@
   "private": true,
   "description": "GSR LOGISTICS ERP — Phase 1: WMS",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/heal-storage.mjs && next dev",
     "build": "next build",
     "start": "node scripts/start-standalone.mjs",
     "lint": "eslint .",

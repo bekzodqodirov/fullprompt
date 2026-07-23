@@ -26,9 +26,11 @@ export const lotInputSchema = z
     productNameRu: z.string().trim().max(300).optional().or(z.literal('')),
     boxCount: z.number().int().min(1).max(10_000),
     dimsMode: z.enum(['uniform', 'mixed']),
-    boxLengthCm: z.number().int().min(1).max(1000).optional(),
-    boxWidthCm: z.number().int().min(1).max(1000).optional(),
-    boxHeightCm: z.number().int().min(1).max(1000).optional(),
+    // Operators measure to the half-centimeter — accept decimals, store rounded
+    // (cm columns are integers per spec 4.6).
+    boxLengthCm: z.number().min(1).max(1000).transform(Math.round).optional(),
+    boxWidthCm: z.number().min(1).max(1000).transform(Math.round).optional(),
+    boxHeightCm: z.number().min(1).max(1000).transform(Math.round).optional(),
     boxWeightKg: z.number().min(0.001).max(10_000).optional(),
     totalWeightKg: z.number().min(0.001).max(1_000_000).optional(),
     totalVolumeM3: z.number().min(0.0001).max(10_000).optional(),

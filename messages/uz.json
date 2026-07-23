@@ -197,7 +197,14 @@
     "unclaimedMarking": "Karobkadagi markirovka",
     "unclaimedMarkingHint": "Yuk ustida yozilgan kod — keyin mijozga biriktiramiz",
     "attachments": "Fayllar",
-    "generalPhotos": "Umumiy karobkalar rasmi"
+    "generalPhotos": "Umumiy karobkalar rasmi",
+    "problems": {
+      "client": "Klientni tanlang (yoki ❓ egasiz yuk)",
+      "name": "tovar nomini kiriting",
+      "count": "karobkalar sonini kiriting",
+      "dims": "o'lcham va og'irlikni to'ldiring (raqam, masalan 40 yoki 8.5)",
+      "photo": "kamida 1 ta rasm qo‘shing"
+    }
   },
   "receipts": {
     "title": "Qabullar",
