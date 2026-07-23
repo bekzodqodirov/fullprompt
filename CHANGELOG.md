@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## UI cleanup — receive screen — 2026-07-23
+
+- Receive page reorganized into three aligned panels on every screen size: client/warehouse card → product lines → note/files/costs card, with the sticky totals bar below. No more scattered blocks.
+- Desktop table now fits the page without hidden horizontal scroll (per-line Σ totals and delete are visible); tighter column widths, compact cell inputs, wider page container.
+- Client and bottom panels are rendered once and shared by both layouts (previously duplicated for desktop/mobile, which also produced duplicate element ids).
+- Mobile keeps stacked cards with labeled dims grid; same visual language (cards, compact inputs) as desktop.
+
 ## M1.6 — Excel-style desktop entry, notes, receipt files — 2026-07-23
 
 - Desktop (md+ viewport): product lines are now a real spreadsheet-style table — one row per lot, tab through cells like Excel (product zh/ru, boxes, dims, note, photos, live totals) — matches the owner's request to enter receipts "like filling an Excel sheet" on a computer.
