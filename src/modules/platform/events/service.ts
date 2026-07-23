@@ -16,7 +16,11 @@ export type DomainEventType =
   | 'BatchUnloaded'
   | 'BoxIssued'
   | 'UnknownCargoReceived'
-  | 'CostEntryAdded';
+  | 'CostEntryAdded'
+  | 'CrateDissolved'
+  | 'ReceiptMoved'
+  | 'UnclaimedReturned'
+  | 'BoxStatusChanged';
 
 /**
  * Persist a domain event in the same transaction as the mutation that caused

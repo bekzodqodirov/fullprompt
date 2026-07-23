@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## M2 — Stock ops: crates, lost/void, WH-move, unclaimed return, digests, XLSX — 2026-07-23
+
+- **Crates (yashik/karkas, W2)**: schema + `CR-{WH}{YY}-{00000}` codes; mobile builder — pick warehouse + client, tick whole lots or individual boxes, mandatory "Logist approved" checkbox, optional measured dims/weight + note + crating cost (stored scope=crate under the `crating` type, carried to the client for M6 allocation); one-client-per-crate enforced with clear errors (unclaimed cannot be crated); crate label PDF (dominant client code, ЯЩИК/КАРКАС marker, contents A×10-style summary, QR = crate code); crate detail with contents, measurements-after-packing form, photos, dissolve (audited); crate-resolution service ready as the shared primitive for M3–M5 scan modes.
+- **Box lost/void/found**: manager-only (`receipts.void` holders) with mandatory reason; lost boxes can be marked found (back to stock, owner's decision); boxes in an active crate must be un-crated first; full movement trail.
+- **Wrong-warehouse fix**: manager moves a whole receipt between warehouses with correcting movements — only while everything is still in stock and un-crated; UI prompts a label reprint afterwards.
+- **Unclaimed return-to-sender**: whole receipt handed over at once; receiver name + phone mandatory, note/photo optional; boxes → issued (`returned_to_sender`) with a handover record; audited + event.
+- **Daily digest**: one consolidated Telegram/in-app message at 09:00 Tashkent to logist + admins — unclaimed cargo older than `unclaimed_aging_days`, stale stock older than `stale_stock_days`, grouped per warehouse; suppressed when empty.
+- **Stock XLSX export** from the stock browser with the current filter applied (download-only for now); exports audit-logged.
+- Migrations 0006 (crates, handovers, boxes.crate_id FK) + 0007 (cost_entries scope=crate); new home tile 🧰; long home-tile labels now wrap at 360px.
+- Tests: +8 integration (crate lifecycle incl. idempotent create, cross-client/unclaimed rejection, crating cost row, lost→found transitions, move guards, return idempotency, digest run) and +4 e2e (crate build→label→dissolve on a phone, lost→found, unclaimed return, XLSX download): 42 unit/integration + 9 e2e, all green.
+
 ## Status sync + hygiene sweep — 2026-07-23
 
 - Docs brought up to date with the three feedback rounds: DECISIONS #48–55 recorded (per-lot note removed from intake, ru display-only, single total cost under "other", general box photos as a first-class concept, direct attachment streaming, LightboxImg standard, no photo-required indicator, dual rendering scoped to product lines only); PLAN.md M1/M2/M6 tasks annotated as-built; ARCHITECTURE.md attachment-read path corrected; open questions Q1/Q2 marked answered.

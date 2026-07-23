@@ -10,6 +10,7 @@ export default async function HomePage() {
   const tr = await getTranslations('receipts');
   const ts = await getTranslations('stock');
   const tSearch = await getTranslations('search');
+  const tCrates = await getTranslations('crates');
 
   const isAdmin = actor.permissions.has('admin.warehouses.manage');
   const canReceive = actor.permissions.has('receipts.create');
@@ -47,32 +48,40 @@ export default async function HomePage() {
           ))}
         <Link
           href="/receipts"
-          className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+          className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
         >
           📄 {tr('title')}
         </Link>
         <Link
           href="/stock"
-          className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+          className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
         >
           📦 {ts('title')}
         </Link>
         <Link
           href="/unclaimed"
-          className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+          className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
         >
           ❓ {tr('unclaimedTitle')}
         </Link>
+        {actor.permissions.has('crates.manage') && (
+          <Link
+            href="/crates"
+            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
+          >
+            🧰 {tCrates('title')}
+          </Link>
+        )}
         <Link
           href="/search"
-          className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+          className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
         >
           🔍 {tSearch('title')}
         </Link>
         {isAdmin && (
           <Link
             href="/admin/warehouses"
-            className="card flex min-h-28 items-center justify-center text-lg font-bold hover:bg-gray-100"
+            className="card flex min-h-28 items-center justify-center text-center text-lg font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
           >
             {t('adminPanel')}
           </Link>

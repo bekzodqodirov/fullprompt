@@ -95,6 +95,8 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
         (payload.unclaimedMarking ? `Маркировка: ${payload.unclaimedMarking}\n` : '') +
         `Склад: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
+    case 'DailyDigest':
+      return String(payload.text ?? '');
     default:
       return `${type}\n${link}`;
   }

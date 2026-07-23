@@ -145,3 +145,13 @@ A cross-check of the draft plan against every spec section surfaced these additi
 53. **`LightboxImg` is the standard photo thumbnail**: every photo thumb (receiving, stock, attachments) opens a tap-to-zoom overlay in place — never a navigation or new tab (owner: photos must open "alohida oynachada"). Falls back to the original variant if a thumbnail is missing.
 54. **No photo-required indicator on product lines** (reverses the round-3 icon): the owner wants no badge on/near photos; the disabled Confirm button is the only signal that a line still needs its mandatory photo.
 55. **Dual rendering now applies only to the product-line editor** (amends #46): the client/warehouse header and the note/cost/files panel render once and are shared by both layouts; only the lot editor keeps the desktop-table + mobile-cards split, so e2e locators scope to `#mobile-product-lines` for line inputs only.
+
+## M2 decisions (2026-07-23, owner's answers)
+
+56. **Crating cost targets the crate itself** (owner Q1): `cost_entries` gained scope `crate` + `crate_id`; the entry also carries the crate's `client_id` so the M6 allocation engine can attribute it even when the crate spans several receipts of that client.
+57. **Return-to-sender is whole-receipt** (owner Q2): the entire unclaimed receipt is handed over at once; the receiver's name + phone are mandatory, photo optional. `handovers` is a general handover table — the M5 client-issue flow will reuse it with kind `issued_to_client`.
+58. **A lost box is recoverable** (owner Q3): manager-level `lost → in_stock` ("found") with a mandatory reason, audited; `void` remains terminal. Boxes inside an active crate cannot be marked lost/void — dissolve first, so crate contents stay truthful.
+59. **Wrong-WH move guard** (recommended default; owner asked for a re-explanation of Q4 — to revisit if he disagrees): a receipt moves only while every box is `in_stock` and un-crated; the receipt number and letters keep the origin-WH prefix (immutable labels) and the UI prompts a label reprint after the move.
+60. **Daily digest is one consolidated message** (owner Q5): 09:00 Asia/Tashkent (04:00 UTC pg-boss cron), sections per warehouse, sent to logist + admins over the existing notification rows/Telegram worker; suppressed entirely when there is nothing to report.
+61. **Stock XLSX is download-only** (owner Q6): ad-hoc filtered exports are not archived as attachments (they'd pile up with no owning entity); official archived reports arrive with M6. Every export is still audit-logged.
+62. **Manager gates for M2 ops** (extends #43): box lost/void/found and receipt WH-move require `receipts.void`; crate build/dissolve/label requires `crates.manage`; return-to-sender requires `receipts.unclaimed.resolve`.

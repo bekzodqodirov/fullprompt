@@ -27,6 +27,8 @@ export async function startBoss(): Promise<PgBoss> {
     await registerThumbnailWorker(boss);
     const { registerNotificationWorkers } = await import('./notifications');
     await registerNotificationWorkers(boss);
+    const { registerDigestWorker } = await import('./digest');
+    await registerDigestWorker(boss);
     logger.info('pg-boss started');
   }
   return boss;

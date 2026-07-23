@@ -181,3 +181,117 @@ async function drawLabel(
 }
 
 export const labelRenderer: LabelRenderer = new PdfLabelRenderer();
+
+// ---------------------------------------------------------------------------
+// Crate label (spec 6.2): dominant client code, KARKAS/YASHIK marker, contents
+// summary ("18 boxes / GS777: A×10, B×8"), QR = crate code.
+// ---------------------------------------------------------------------------
+
+export interface CrateLabelData {
+  warehouseCode: string;
+  dateLocal: string;
+  code: string;
+  clientCode: string;
+  /** 'yashik' | 'karkas' — printed as ЯЩИК / КАРКАС. */
+  kind: string;
+  boxCount: number;
+  /** e.g. "A×10, B×8". */
+  contents: string;
+  weightKg: string | null;
+  dimsCm: string | null;
+}
+
+export async function renderCrateLabel(label: CrateLabelData): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const regular = await doc.embedFont(StandardFonts.Helvetica);
+  const cjk = await doc.embedFont(await cjkFontBytes(), { subset: true });
+
+  const page = doc.addPage([PAGE, PAGE]);
+  const margin = 4 * MM;
+  const width = PAGE - margin * 2;
+  const black = rgb(0, 0, 0);
+
+  page.drawText(label.warehouseCode, {
+    x: margin,
+    y: PAGE - margin - 9 * MM,
+    size: 9 * MM,
+    font: bold,
+    color: black,
+  });
+  const marker = label.kind === 'karkas' ? 'КАРКАС' : 'ЯЩИК';
+  page.drawText(marker, {
+    x: PAGE - margin - cjk.widthOfTextAtSize(marker, 18),
+    y: PAGE - margin - 7 * MM,
+    size: 18,
+    font: cjk,
+    color: black,
+  });
+  page.drawText(label.dateLocal, {
+    x: PAGE - margin - regular.widthOfTextAtSize(label.dateLocal, 11),
+    y: PAGE - margin - 11 * MM,
+    size: 11,
+    font: regular,
+    color: black,
+  });
+
+  const codeSize = fitSize(bold, label.clientCode, 22 * MM, width);
+  page.drawText(label.clientCode, {
+    x: (PAGE - bold.widthOfTextAtSize(label.clientCode, codeSize)) / 2,
+    y: PAGE - margin - 14 * MM - codeSize,
+    size: codeSize,
+    font: bold,
+    color: black,
+  });
+
+  const contentsText = `${label.boxCount} 📦  ${label.contents}`.replace('📦', 'kor.');
+  const contentsSize = fitSize(cjk, contentsText, 14, width);
+  page.drawText(contentsText, {
+    x: margin,
+    y: PAGE - margin - 42 * MM,
+    size: contentsSize,
+    font: cjk,
+    color: black,
+  });
+
+  const detailParts: string[] = [];
+  if (label.weightKg) detailParts.push(`${label.weightKg} kg`);
+  if (label.dimsCm) detailParts.push(label.dimsCm);
+  if (detailParts.length) {
+    page.drawText(detailParts.join('    '), {
+      x: margin,
+      y: PAGE - margin - 50 * MM,
+      size: 12,
+      font: regular,
+      color: black,
+    });
+  }
+
+  const qrPng = await QRCode.toBuffer(label.code, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 400,
+  });
+  const qrImage = await doc.embedPng(qrPng);
+  const qrSize = 34 * MM;
+  page.drawImage(qrImage, { x: margin, y: margin, width: qrSize, height: qrSize });
+  const textX = margin + qrSize + 4 * MM;
+  const codeFontSize = fitSize(bold, label.code, 16, PAGE - textX - margin);
+  page.drawText(label.code, {
+    x: textX,
+    y: margin + qrSize / 2 + 2 * MM,
+    size: codeFontSize,
+    font: bold,
+    color: black,
+  });
+  page.drawText('GSR LOGISTICS', {
+    x: textX,
+    y: margin + qrSize / 2 - 5 * MM,
+    size: 10,
+    font: regular,
+    color: black,
+  });
+
+  return doc.save();
+}

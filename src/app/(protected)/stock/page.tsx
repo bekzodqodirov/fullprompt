@@ -196,6 +196,13 @@ export default async function StockPage({
         <button type="submit" className="btn-primary">
           🔍
         </button>
+        <a
+          href={`/api/reports/stock?wh=${encodeURIComponent(params.wh ?? '')}&q=${encodeURIComponent(params.q ?? '')}`}
+          className="btn-secondary whitespace-nowrap"
+          title="XLSX"
+        >
+          ⬇️ XLSX
+        </a>
       </form>
 
       <p className="text-sm font-semibold text-gray-700">

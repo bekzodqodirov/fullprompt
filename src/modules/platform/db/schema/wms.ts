@@ -142,7 +142,7 @@ export const boxes = pgTable(
     currentWarehouseId: uuid('current_warehouse_id').references(() => warehouses.id),
     /** FK to batches arrives with M3; plain uuid until then. */
     currentBatchId: uuid('current_batch_id'),
-    crateId: uuid('crate_id'),
+    crateId: uuid('crate_id').references(() => crates.id),
     labelPrintedAt: timestamp('label_printed_at', { withTimezone: true }),
     damaged: boolean('damaged').notNull().default(false),
     flags: jsonb('flags').notNull().default([]),
@@ -158,6 +158,86 @@ export const boxes = pgTable(
     uniqueIndex('boxes_lot_seq_unique').on(t.lotId, t.seqInLot),
     index('boxes_wh_status_idx').on(t.currentWarehouseId, t.status),
     index('boxes_lot_idx').on(t.lotId),
+    index('boxes_crate_idx').on(t.crateId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Crates (yashik/karkas, spec 6.2) — physical consolidation of boxes; a crate
+// scan substitutes for its member-box scans in every later scan mode.
+// ---------------------------------------------------------------------------
+
+export const crates = pgTable(
+  'crates',
+  {
+    id: id(),
+    /** `CR-{WH}{YY}-{00000}`, per-WH-per-year counter (DECISIONS #19). */
+    code: text('code').notNull().unique(),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    /** One client per crate (spec 6.2 v1 rule); unclaimed cargo cannot be crated. */
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    status: text('status').notNull().default('active'),
+    /** Physical form printed on the label: ЯЩИК (yashik) or КАРКАС (karkas). */
+    kind: text('kind').notNull().default('yashik'),
+    /** Mirrors the real-world "ask the logist" step — no in-app approval flow. */
+    logistApproved: boolean('logist_approved').notNull().default(false),
+    note: text('note'),
+    /** Measured after packing; may be filled in later. */
+    lengthCm: integer('length_cm'),
+    widthCm: integer('width_cm'),
+    heightCm: integer('height_cm'),
+    weightKg: numeric('weight_kg', { precision: 12, scale: 3 }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    dissolvedAt: timestamp('dissolved_at', { withTimezone: true }),
+    dissolvedBy: uuid('dissolved_by').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('crates_status_check', sql`${t.status} IN ('active', 'dissolved')`),
+    check('crates_kind_check', sql`${t.kind} IN ('yashik', 'karkas')`),
+    check(
+      'crates_dissolved_consistency',
+      sql`(${t.dissolvedAt} IS NULL) = (${t.dissolvedBy} IS NULL)`,
+    ),
+    index('crates_wh_status_idx').on(t.warehouseId, t.status),
+    index('crates_client_idx').on(t.clientId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Handovers — physical release of cargo to a person (M2: unclaimed cargo
+// returned to the sender; issuing to clients reuses this in W7/M5).
+// ---------------------------------------------------------------------------
+
+export const handovers = pgTable(
+  'handovers',
+  {
+    id: id(),
+    receiptId: uuid('receipt_id')
+      .notNull()
+      .references(() => receipts.id),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    kind: text('kind').notNull().default('returned_to_sender'),
+    personName: text('person_name').notNull(),
+    personPhone: text('person_phone').notNull(),
+    note: text('note'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('handovers_kind_check', sql`${t.kind} IN ('returned_to_sender', 'issued_to_client')`),
+    index('handovers_receipt_idx').on(t.receiptId),
   ],
 );
 
@@ -223,6 +303,8 @@ export const costEntries = pgTable(
     receiptId: uuid('receipt_id').references(() => receipts.id),
     /** FK to batches arrives with M3. */
     batchId: uuid('batch_id'),
+    /** Crating cost target (owner's answer: cost sticks to the crate; M6 allocates to the client). */
+    crateId: uuid('crate_id').references(() => crates.id),
     costTypeId: uuid('cost_type_id')
       .notNull()
       .references(() => costTypes.id),
@@ -244,10 +326,10 @@ export const costEntries = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    check('cost_entries_scope_check', sql`${t.scope} IN ('receipt', 'batch')`),
+    check('cost_entries_scope_check', sql`${t.scope} IN ('receipt', 'batch', 'crate')`),
     check(
       'cost_entries_scope_target_check',
-      sql`(${t.scope} = 'receipt' AND ${t.receiptId} IS NOT NULL) OR (${t.scope} = 'batch' AND ${t.batchId} IS NOT NULL)`,
+      sql`(${t.scope} = 'receipt' AND ${t.receiptId} IS NOT NULL) OR (${t.scope} = 'batch' AND ${t.batchId} IS NOT NULL) OR (${t.scope} = 'crate' AND ${t.crateId} IS NOT NULL)`,
     ),
     check('cost_entries_amount_check', sql`${t.amount} > 0`),
     check(

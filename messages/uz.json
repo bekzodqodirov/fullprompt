@@ -226,7 +226,22 @@
     "structuralLocked": "Karobkalar harakatda — o'lcham/sonini o'zgartirib bo'lmaydi",
     "attach": "Biriktirish",
     "attachFailed": "Fayl yuklanmadi",
-    "note": "Izoh"
+    "note": "Izoh",
+    "returnToSender": "Jo‘natuvchiga qaytarish",
+    "returnToSenderHint": "Yukni kim olib ketyapti? (butun prixod birdaniga)",
+    "personName": "Olib ketuvchining F.I.O.",
+    "personPhone": "Telefon",
+    "handoverPhoto": "Topshirish rasmi (ixtiyoriy)",
+    "moveReceipt": "Boshqa skladga ko‘chirish",
+    "moveReceiptHint": "Prixod noto‘g‘ri skladga kiritilganmi? To‘g‘risini tanlang. Faqat butun yuk skladda bo‘lsa mumkin.",
+    "movedTo": "{wh} skladiga ko‘chirildi",
+    "movedReprintHint": "yorliqlarni qayta chiqaring — ularda eski sklad kodi",
+    "moveErrors": {
+      "box_not_in_stock": "Yukning bir qismi skladda emas — ko‘chirib bo‘lmaydi",
+      "box_in_crate": "Avval bu prixodning yashiklarini buzing",
+      "same_warehouse": "Bu o‘sha sklad",
+      "validation": "Ma’lumotlarni tekshiring"
+    }
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -250,7 +265,11 @@
     "colProduct": "Tovar",
     "colPieces": "dona",
     "colWh": "Sklad",
-    "colDate": "Sana"
+    "colDate": "Sana",
+    "markLost": "Yo‘qolgan",
+    "markVoid": "Bekor qilish",
+    "markFound": "Topildi (skladga qaytarish)",
+    "reasonRequired": "Sabab (majburiy)"
   },
   "search": {
     "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",
@@ -260,5 +279,33 @@
     "boxesGroup": "Karobkalar",
     "lotsGroup": "Partiyalar",
     "title": "Qidiruv"
+  },
+  "crates": {
+    "title": "Yashiklar",
+    "create": "Yashik yaratish",
+    "createTitle": "Yangi yashik / karkas",
+    "yashik": "YASHIK",
+    "karkas": "KARKAS",
+    "warehouse": "Sklad",
+    "clientCode": "KLIENT KODI",
+    "note": "Izoh",
+    "dimsHint": "O'lcham va og'irlikni qadoqlashdan keyin kiritsa ham bo'ladi",
+    "noBoxes": "Bu klientning skladda karobkasi yo‘q",
+    "logistApproved": "Logist ruxsat berdi ✅",
+    "printLabel": "Yorliq chiqarish",
+    "dissolve": "Buzish (rasformirovka)",
+    "dissolved": "Buzilgan",
+    "contents": "Ichidagilar",
+    "measured": "Qadoqlashdan keyingi o'lchamlar",
+    "photos": "Rasmlar",
+    "errors": {
+      "multiple_clients": "Bitta yashikka faqat bitta klient yuki",
+      "unclaimed_not_allowed": "Egasiz yukni yashiklab bo‘lmaydi — avval klient biriktiring",
+      "box_not_in_stock": "Karobka skladda emas",
+      "box_already_crated": "Karobka allaqachon yashikda",
+      "box_wrong_warehouse": "Karobka boshqa skladda",
+      "validation": "Ma’lumotlarni tekshiring"
+    },
+    "cratingCost": "Yashik narxi (rasxod)"
   }
 }

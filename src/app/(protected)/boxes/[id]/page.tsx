@@ -12,6 +12,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { BoxStatusActions } from './status-actions';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
 export default async function BoxPage({ params }: { params: Promise<{ id: string }> }) {
@@ -59,6 +60,7 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
             {t(`statuses.${box.status}`)}
           </span>{' '}
           {wh && <span className="font-mono font-bold">{wh.code}</span>}
+          {box.statusReason && <span className="ml-2 text-xs text-gray-500">({box.statusReason})</span>}
         </p>
         <p className="mt-1 text-gray-500">
           {receipt.number}
@@ -66,6 +68,10 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
             ` · 🖨 ${format.dateTime(box.labelPrintedAt, { dateStyle: 'short', timeStyle: 'short' })}`}
         </p>
       </div>
+
+      {actor.permissions.has('receipts.void') && (
+        <BoxStatusActions boxId={box.id} status={box.status} inCrate={box.crateId !== null} />
+      )}
 
       <section>
         <h2 className="mb-2 text-lg font-bold">{t('timeline')}</h2>

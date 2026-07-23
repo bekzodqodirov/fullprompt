@@ -18,6 +18,8 @@ import { AttachmentsPanel } from '@/components/attachments-panel';
 import { voidReceiptAction } from './actions';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
+import { MoveReceipt } from './move-receipt';
+import { ReturnToSender } from './return-to-sender';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -34,6 +36,10 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   const warehouse = (await db.query.warehouses.findFirst({
     where: eq(warehouses.id, receipt.warehouseId),
   }))!;
+  const allWarehouses = await db
+    .select({ id: warehouses.id, code: warehouses.code })
+    .from(warehouses)
+    .orderBy(asc(warehouses.code));
   const client = receipt.clientId
     ? await db.query.clients.findFirst({ where: eq(clients.id, receipt.clientId) })
     : null;
@@ -186,6 +192,14 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       </section>
 
       {canAssign && <AssignClient receiptId={id} current={client?.clientCode ?? null} />}
+      {canAssign && !client && <ReturnToSender receiptId={id} />}
+      {canVoid && (
+        <MoveReceipt
+          receiptId={id}
+          currentWarehouseId={receipt.warehouseId}
+          warehouses={allWarehouses}
+        />
+      )}
 
       <section className="card space-y-3">
         <div>

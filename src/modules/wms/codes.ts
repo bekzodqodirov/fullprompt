@@ -47,6 +47,17 @@ export async function nextReceiptNumber(
   return `${warehouse.code}-IN-${dateKey}-${String(seq).padStart(3, '0')}`;
 }
 
+/** Crate code `CR-{WH}{YY}-{00000}`, per-WH-per-year sequence (DECISIONS #19). */
+export async function nextCrateCode(
+  tx: Db | Tx,
+  warehouse: { code: string; timezone: string },
+  now = new Date(),
+): Promise<string> {
+  const { yy } = warehouseLocalDate(now, warehouse.timezone);
+  const seq = await bumpCounter(tx, 'crate_year', `${warehouse.code}:${yy}`);
+  return `CR-${warehouse.code}${yy}-${String(seq).padStart(5, '0')}`;
+}
+
 /**
  * Reserve `count` box short codes `{WH}{YY}-{000000}` (per-WH-per-year
  * sequence, spec 5.2). Returns codes in ascending order.

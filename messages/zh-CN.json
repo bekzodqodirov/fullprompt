@@ -226,7 +226,22 @@
     "structuralLocked": "箱子已在流转中——尺寸/数量不可更改",
     "attach": "添加文件",
     "attachFailed": "文件上传失败",
-    "note": "备注"
+    "note": "备注",
+    "returnToSender": "退回发货人",
+    "returnToSenderHint": "谁来取货？（整单退回）",
+    "personName": "取货人姓名",
+    "personPhone": "电话",
+    "handoverPhoto": "交接照片（可选）",
+    "moveReceipt": "转移到其他仓库",
+    "moveReceiptHint": "入库单选错仓库了？选择正确的仓库。仅当全部货物在库时可转移。",
+    "movedTo": "已转移到 {wh} 仓库",
+    "movedReprintHint": "请重新打印标签——旧标签上是原仓库代码",
+    "moveErrors": {
+      "box_not_in_stock": "部分货物已不在库——无法转移",
+      "box_in_crate": "请先拆掉该入库单的木箱",
+      "same_warehouse": "是同一个仓库",
+      "validation": "请检查数据"
+    }
   },
   "stock": {
     "title": "库存",
@@ -250,7 +265,11 @@
     "colProduct": "货物",
     "colPieces": "件数",
     "colWh": "仓库",
-    "colDate": "日期"
+    "colDate": "日期",
+    "markLost": "丢失",
+    "markVoid": "作废",
+    "markFound": "找到（退回在库）",
+    "reasonRequired": "原因（必填）"
   },
   "search": {
     "placeholder": "搜索：GS777、GS777-A、YW26-000123、货物…",
@@ -260,5 +279,33 @@
     "boxesGroup": "箱子",
     "lotsGroup": "批次",
     "title": "搜索"
+  },
+  "crates": {
+    "title": "木箱",
+    "create": "创建木箱",
+    "createTitle": "新木箱 / 木架",
+    "yashik": "木箱",
+    "karkas": "木架",
+    "warehouse": "仓库",
+    "clientCode": "客户编码",
+    "note": "备注",
+    "dimsHint": "尺寸和重量可在打包后填写",
+    "noBoxes": "该客户在此仓库没有在库箱子",
+    "logistApproved": "物流员已批准 ✅",
+    "printLabel": "打印标签",
+    "dissolve": "拆箱",
+    "dissolved": "已拆箱",
+    "contents": "内容",
+    "measured": "打包后测量",
+    "photos": "照片",
+    "errors": {
+      "multiple_clients": "一个木箱只能装同一客户的货",
+      "unclaimed_not_allowed": "无主货不能装箱——请先绑定客户",
+      "box_not_in_stock": "箱子不在库",
+      "box_already_crated": "箱子已在木箱中",
+      "box_wrong_warehouse": "箱子在其他仓库",
+      "validation": "请检查数据"
+    },
+    "cratingCost": "打箱费用"
   }
 }
