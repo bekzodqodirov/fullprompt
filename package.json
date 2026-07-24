@@ -18,6 +18,7 @@
     "e2e": "playwright test",
     "check:files": "node scripts/check-storage.mjs",
     "backup": "tsx scripts/backup.ts",
+    "restore-test": "tsx scripts/restore-test.ts",
     "refresh": "pnpm install && pnpm db:migrate && pnpm build",
     "start:https": "node scripts/start-https.mjs",
     "dev:https": "node scripts/heal-storage.mjs && next dev --experimental-https"

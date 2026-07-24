@@ -48,6 +48,9 @@ export const users = pgTable(
     passwordHash: text('password_hash').notNull(),
     quickPinHash: text('quick_pin_hash'),
     locale: text('locale').notNull().default('ru'),
+    // Telegram mute list (spec §11): event type names, or 'all'. The in-app
+    // bell is never muted — it mirrors everything.
+    mutedNotificationTypes: jsonb('muted_notification_types').notNull().default([]),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

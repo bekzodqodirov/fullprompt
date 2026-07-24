@@ -1,0 +1,49 @@
+/**
+ * Per-user Telegram mute settings (spec §11). Stored on users as a jsonb
+ * list of event type names ('all' = everything). The profile UI exposes
+ * them as a few understandable groups instead of an 11-row type matrix.
+ */
+
+export const MUTE_GROUPS = {
+  digest: ['DailyDigest'],
+  alerts: ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
+  operations: [
+    'ReceiptConfirmed',
+    'UnknownCargoReceived',
+    'ReadyForPickup',
+    'BoxIssued',
+    'PlanApproved',
+    'PlanChangesRequested',
+    'InventoryCompleted',
+  ],
+} as const;
+
+export type MuteGroup = keyof typeof MUTE_GROUPS;
+
+export function isTelegramMuted(muted: unknown, type: string): boolean {
+  if (!Array.isArray(muted)) return false;
+  return muted.includes('all') || muted.includes(type);
+}
+
+/** Which groups are fully covered by the stored list (for checkbox state). */
+export function groupsFromList(muted: unknown): { all: boolean; groups: Record<MuteGroup, boolean> } {
+  const list = Array.isArray(muted) ? (muted as string[]) : [];
+  const all = list.includes('all');
+  const groups = Object.fromEntries(
+    (Object.keys(MUTE_GROUPS) as MuteGroup[]).map((g) => [
+      g,
+      all || MUTE_GROUPS[g].every((t) => list.includes(t)),
+    ]),
+  ) as Record<MuteGroup, boolean>;
+  return { all, groups };
+}
+
+/** Build the stored list from the profile form's group checkboxes. */
+export function listFromGroups(all: boolean, groups: Record<MuteGroup, boolean>): string[] {
+  if (all) return ['all'];
+  const list: string[] = [];
+  for (const g of Object.keys(MUTE_GROUPS) as MuteGroup[]) {
+    if (groups[g]) list.push(...MUTE_GROUPS[g]);
+  }
+  return list;
+}

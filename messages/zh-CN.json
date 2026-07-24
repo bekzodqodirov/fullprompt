@@ -47,7 +47,8 @@
     "settings": "设置",
     "audit": "审计日志",
     "profile": "个人资料",
-    "logout": "退出"
+    "logout": "退出",
+    "notifications": "通知"
   },
   "home": {
     "receiving": "📥 收货",
@@ -275,7 +276,13 @@
     "lastSeen": "活动时间",
     "telegramConnect": "绑定 Telegram",
     "telegramLinked": "已绑定 ✅",
-    "telegramPending": "等待绑定"
+    "telegramPending": "等待绑定",
+    "notifTitle": "Telegram 通知",
+    "notifHint": "关闭不需要的消息类型 — 应用内铃铛仍会显示全部。",
+    "notifMuteAll": "全部关闭",
+    "notifMuteDigest": "每日汇总",
+    "notifMuteAlerts": "警报（计划外、丢失、无单货物）",
+    "notifMuteOps": "业务消息（收货、到达、发放…）"
   },
   "receive": {
     "title": "收货",
@@ -595,5 +602,24 @@
     "inTransit": "在途",
     "ready": "待交付",
     "issued": "已交付"
+  },
+  "notifDelivery": {
+    "title": "Telegram 发送日志",
+    "problems": "问题",
+    "all": "全部",
+    "week": "最近 7 天",
+    "when": "时间",
+    "user": "接收人",
+    "type": "类型",
+    "status": "状态",
+    "error": "错误",
+    "empty": "暂无记录",
+    "note": "发送失败会自动重试。'muted' — 用户已关闭或未绑定 Telegram。",
+    "statuses": {
+      "pending": "排队中",
+      "sent": "已发送",
+      "failed": "失败",
+      "muted": "已关闭"
+    }
   }
 }

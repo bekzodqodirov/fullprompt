@@ -54,6 +54,9 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           <Link href="/admin/audit" className="rounded-md px-3 py-2 hover:bg-gray-100">
             {t('audit')}
           </Link>
+          <Link href="/admin/notifications" className="rounded-md px-3 py-2 hover:bg-gray-100">
+            {t('notifications')}
+          </Link>
         </nav>
       )}
       <main className="flex-1 p-4">{children}</main>

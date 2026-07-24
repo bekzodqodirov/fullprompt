@@ -4,7 +4,7 @@
 
 ---
 
-## STATUS — 2026-07-23
+## STATUS — 2026-07-24
 
 | Milestone | State | Shipped |
 |---|---|---|
@@ -14,10 +14,11 @@
 | M3 Load planning & loading | ✅ done | plan editor (avg density, crates = 1 place, owner-managed trucks), agent loop (all photos in Excel), batch board, scanner + offline outbox, loading mode with crate contents |
 | M4 Transfer receiving | ✅ done | unload mode, auto-transfer, missing-in-transit + resolutions, batch close, /transit |
 | M5 Export & UZ side | ✅ done | INVOICE&PACKING LIST in the owner's real ka23 format (`ved_*` settings), ready_for_pickup, quick batch, issue mode + handover act PDF, pipeline |
-| **M6 Costing, reports, polish** | **🔄 in progress** | see per-task marks below |
+| **M6 Costing, reports, polish** | **✅ done** | FX+allocation engine (§6.9/test 16 green), all 9 §13 reports + XLSX, role-aware dashboard, inventory mode, capacity 60/80, sortable columns, per-user Telegram mutes + delivery journal, nightly backup + weekly restore fire drill, UI/UX sweep, README/ops runbook |
 
-**M6 progress:** done — FX rates (manual, per owner) ✅, allocation engine + recompute (§6.9 test green) ✅, cost capture on batch/receipt + batch cost sheet ✅, box landed cost ✅, warehouse capacity indicator (60%/80%, lives on /dashboard per owner) ✅, nightly local backups + `pnpm backup` ✅, **role-aware /dashboard** (fill, stock, in-transit, 24h receipts, unclaimed, aging, discrepancy flags) ✅, **/reports hub + top-3 reports with XLSX** (landed cost by client with per-lot drill-down, stock/aging, batch register with deviations + unit costs) ✅.
-**M6 remaining:** digest polish (per-user mute, delivery-failure view), performance/3G pass, weekly restore-test script, README/ops runbook, full regression. *(Shipped 2026-07-23: inventory mode #12 — DECISIONS #93; ALL nine §13 reports + XLSX; sortable columns #13 — DECISIONS #96; cost-hygiene warning — DECISIONS #97; whole-app UI/UX sweep — grouped home, error/404 pages, back links, empty states, touch targets, pending states, scan feedback, audit-filter crash fix — DECISIONS #98–99.)*
+**M6 wrap-up (2026-07-24):** per-user Telegram mutes (profile) + admin delivery-failure journal (DECISIONS #100), weekly restore-test job + `pnpm restore-test` (verified against a real dump, DECISIONS #101), README/ops runbook, performance numbers checked (first-load JS 104 kB shared / ≤150 kB worst route — within the 3G budget; charts stay CSS-only by design, list virtualization unnecessary since every list is server-limited — DECISIONS #101). Full regression: 74 unit/integration + 12 e2e green.
+
+**Phase 1 remaining:** owner acceptance walkthrough and hosting/VPS choice (open Q3) → production deploy.
 
 ---
 
@@ -194,7 +195,7 @@ Conventions: task sizes are 0.5–2 dev-days each; tasks are in build order with
 
 ---
 
-### M6 — Costing, reports, polish 🔄 IN PROGRESS
+### M6 — Costing, reports, polish ✅ DONE (2026-07-24)
 
 **Goal:** Cost entries + FX + allocation engine (tested with the worked example), all §13 reports, dashboards, digests, performance pass, backups, audit browser filters, docs.
 **Done when:** *(not stated)* **DECISION:** done when acceptance test 16 passes automated, all 9 reports export, the 3G budget is met, and the restore test script succeeds.

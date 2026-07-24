@@ -47,7 +47,8 @@
     "settings": "Sozlamalar",
     "audit": "Audit jurnali",
     "profile": "Profil",
-    "logout": "Chiqish"
+    "logout": "Chiqish",
+    "notifications": "Xabarlar"
   },
   "home": {
     "receiving": "📥 Qabul",
@@ -275,7 +276,13 @@
     "lastSeen": "Faollik",
     "telegramConnect": "Telegram ulash",
     "telegramLinked": "Ulangan ✅",
-    "telegramPending": "Ulanish kutilmoqda"
+    "telegramPending": "Ulanish kutilmoqda",
+    "notifTitle": "Telegram xabarlari",
+    "notifHint": "Kerak bo'lmagan xabar turlarini o'chirib qo'ying — qo'ng'iroq (ilova ichidagi) baribir hammasini ko'rsatadi.",
+    "notifMuteAll": "Hammasini o'chirish",
+    "notifMuteDigest": "Kunlik svodka",
+    "notifMuteAlerts": "Ogohlantirishlar (plandan tashqari, yo'qolgan, hujjatsiz yuk)",
+    "notifMuteOps": "Operatsiya xabarlari (prixod, kelish, topshirish...)"
   },
   "receive": {
     "title": "Qabul",
@@ -595,5 +602,24 @@
     "inTransit": "Yo‘lda",
     "ready": "Topshirishga tayyor",
     "issued": "Topshirilgan"
+  },
+  "notifDelivery": {
+    "title": "Telegram yetkazish jurnali",
+    "problems": "Muammolar",
+    "all": "Hammasi",
+    "week": "Oxirgi 7 kun",
+    "when": "Qachon",
+    "user": "Kimga",
+    "type": "Turi",
+    "status": "Holat",
+    "error": "Xato",
+    "empty": "Yozuvlar yo'q",
+    "note": "Xato bo'lgan yuborishlar avtomatik qayta uriniladi. 'muted' — foydalanuvchi o'chirgan yoki Telegram ulanmagan.",
+    "statuses": {
+      "pending": "navbatda",
+      "sent": "yuborildi",
+      "failed": "xato",
+      "muted": "o'chirilgan"
+    }
   }
 }

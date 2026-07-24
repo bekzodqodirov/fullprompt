@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## M6 part 7 (final) — Digest polish, restore fire drill, runbook — 2026-07-24
+
+**M6 closes with this release — all Phase 1 milestones (M0–M6) are done.**
+
+- **Per-user Telegram mutes** (spec §11): profile page gained a 🔕 card — mute everything, or just the daily digest / alerts / operational messages. The in-app bell still shows everything; muted sends are recorded as `muted by user` (migration 0013, DECISIONS #100).
+- **Admin → Notifications**: Telegram delivery journal with a problems-first filter (retrying errors, muted/unlinked recipients) and a 7-day status summary — spec §11's "failures visible in admin".
+- **Weekly backup fire drill**: new `db.restore_test` job (Sunday 04:00 Tashkent) + `pnpm restore-test` — restores the latest dump into a scratch DB, sanity-checks the six core tables, drops it, and alerts admins in Telegram if anything fails (DECISIONS #101). Verified against a real dump.
+- **README rewritten as an ops runbook**: production start rules (standalone only), update procedure, job schedule table, backup/restore commands, Telegram bot setup, troubleshooting; `.env.example` documents `BACKUP_DIR`/`BACKUP_RETENTION_DAYS`.
+- **Performance pass**: first-load JS measured at 104 kB shared / ≤150 kB worst route — within the 3G budget; dashboards intentionally stay chart-lib-free (DECISIONS #101).
+- Tests: 74 unit/integration (+6 mute-logic) + 12 e2e — full regression green.
+
 ## M6 part 6 — Whole-app UI/UX sweep — 2026-07-23
 
 Full-project audit (every page + shared component) against the owner's "find and fix the UX shortcomings" request:

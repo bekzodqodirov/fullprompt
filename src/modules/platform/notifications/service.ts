@@ -7,8 +7,10 @@ import {
   roles,
   telegramLinks,
   userRoles,
+  users,
 } from '../db/schema';
 import { logger } from '../logger';
+import { isTelegramMuted } from './mutes';
 
 /**
  * Event → recipient rules (spec §11). Each event fans out to notification
@@ -182,6 +184,8 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
       );
     case 'DailyDigest':
       return String(payload.text ?? '');
+    case 'RestoreTestFailed':
+      return `🆘 Тест восстановления бэкапа НЕ ПРОШЁЛ!\n${payload.error}\nПроверьте бэкапы на сервере (BACKUP_DIR).`;
     default:
       return `${type}\n${link}`;
   }
@@ -220,14 +224,19 @@ export async function processPendingEvents(): Promise<number> {
           eq(telegramLinks.status, 'linked'),
         ),
       });
+      const user = await db.query.users.findFirst({
+        columns: { mutedNotificationTypes: true },
+        where: eq(users.id, recipient.userId),
+      });
+      const userMuted = isTelegramMuted(user?.mutedNotificationTypes, recipient.type);
       await db.insert(notifications).values({
         userId: recipient.userId,
         eventId: event.id,
         channel: 'telegram',
         type: recipient.type,
         payload: recipient.payload,
-        status: link ? 'pending' : 'muted',
-        error: link ? null : 'telegram not linked',
+        status: link && !userMuted ? 'pending' : 'muted',
+        error: userMuted ? 'muted by user' : link ? null : 'telegram not linked',
       });
       created += 1;
     }

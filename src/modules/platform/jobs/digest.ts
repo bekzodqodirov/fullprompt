@@ -9,10 +9,12 @@ import {
   roles,
   telegramLinks,
   userRoles,
+  users,
   warehouses,
 } from '../db/schema';
 import { getSetting } from '../settings/service';
 import { logger } from '../logger';
+import { isTelegramMuted } from '../notifications/mutes';
 
 export const JOB_DAILY_DIGEST = 'notify.digest';
 
@@ -106,13 +108,18 @@ export async function sendDailyDigest(now = new Date()): Promise<boolean> {
     const link = await db.query.telegramLinks.findFirst({
       where: and(eq(telegramLinks.userId, userId), eq(telegramLinks.status, 'linked')),
     });
+    const user = await db.query.users.findFirst({
+      columns: { mutedNotificationTypes: true },
+      where: eq(users.id, userId),
+    });
+    const userMuted = isTelegramMuted(user?.mutedNotificationTypes, 'DailyDigest');
     await db.insert(notifications).values({
       userId,
       channel: 'telegram',
       type: 'DailyDigest',
       payload: { text },
-      status: link ? 'pending' : 'muted',
-      error: link ? null : 'telegram not linked',
+      status: link && !userMuted ? 'pending' : 'muted',
+      error: userMuted ? 'muted by user' : link ? null : 'telegram not linked',
     });
   }
   return true;
