@@ -626,5 +626,22 @@
       "failed": "失败",
       "muted": "已关闭"
     }
+  },
+  "tnved": {
+    "title": "海关编码 (ТНВЭД)",
+    "empty": "该批次没有货物",
+    "suggestAll": "AI 建议 — 填充空白项（{n}）",
+    "saveAll": "全部保存（存入记忆）",
+    "saved": "已保存 {n} 个编码 — 这些商品今后将自动填充",
+    "invalidCode": "编码须为 4–10 位数字",
+    "aiNotConfigured": "AI 未配置 — 服务器未设置 ANTHROPIC_API_KEY",
+    "aiFailed": "AI 未响应 — 请稍后重试或手动输入",
+    "fromMemory": "来自记忆（此前已确认）",
+    "hint": "AI 建议仅为草稿，最终由您确认。已保存的编码会记入记忆，下次批次（及发票）自动填充。",
+    "confidence": {
+      "high": "置信度高",
+      "medium": "置信度中",
+      "low": "置信度低 — 请核对"
+    }
   }
 }

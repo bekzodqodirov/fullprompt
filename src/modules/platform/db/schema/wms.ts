@@ -597,3 +597,26 @@ export const scanEvents = pgTable(
     index('scan_events_scanner_idx').on(t.scannedBy, t.scannedAt),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// ТНВЭД memory (Phase 1.5): confirmed product→customs-code assignments.
+// The AI is consulted only for products this table has never seen.
+// ---------------------------------------------------------------------------
+
+export const tnvedAssignments = pgTable(
+  'tnved_assignments',
+  {
+    id: id(),
+    /** Normalized zh product name — the lookup key. */
+    productKey: text('product_key').notNull().unique(),
+    productNameZh: text('product_name_zh').notNull(),
+    productNameRu: text('product_name_ru'),
+    tnvedCode: text('tnved_code').notNull(),
+    source: text('source').notNull().default('manual'),
+    aiReasoning: text('ai_reasoning'),
+    assignedBy: uuid('assigned_by').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check('tnved_assignments_source_check', sql`${t.source} IN ('manual', 'ai')`)],
+);

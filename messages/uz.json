@@ -626,5 +626,22 @@
       "failed": "xato",
       "muted": "o'chirilgan"
     }
+  },
+  "tnved": {
+    "title": "ТНВЭД kodlari",
+    "empty": "Bu partiyada tovarlar yo'q",
+    "suggestAll": "AI taklifi — bo'sh turganlarga ({n})",
+    "saveAll": "Hammasini saqlash (xotiraga)",
+    "saved": "{n} ta kod saqlandi — endi bu tovarlar avtomatik to'ldiriladi",
+    "invalidCode": "Kod 4–10 ta raqamdan iborat bo'lishi kerak",
+    "aiNotConfigured": "AI sozlanmagan — serverda ANTHROPIC_API_KEY kiritilmagan",
+    "aiFailed": "AI javob berolmadi — keyinroq urinib ko'ring yoki qo'lda kiriting",
+    "fromMemory": "xotiradan (avval tasdiqlangan)",
+    "hint": "AI taklifi — qoralama: yakuniy qarorni siz berasiz. Saqlangan kod xotirada qoladi va shu tovar keyingi partiyalarda (va invoysda) avtomatik to'ldiriladi.",
+    "confidence": {
+      "high": "ishonch yuqori",
+      "medium": "ishonch o'rtacha",
+      "low": "ishonch past — tekshiring"
+    }
   }
 }

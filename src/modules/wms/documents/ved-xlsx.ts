@@ -11,6 +11,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
+import { productKey, tnvedFor } from '../tnved/service';
 
 async function batchLines(batchId: string) {
   return db
@@ -122,10 +123,11 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
   head.alignment = { wrapText: true, vertical: 'middle' };
 
   const rows = await batchLines(batchId);
-  const byLot = new Map<string, { product: string; boxCount: number; kg: number }>();
+  const byLot = new Map<string, { product: string; nameZh: string; boxCount: number; kg: number }>();
   for (const { lot } of rows) {
     const agg = byLot.get(lot.id) ?? {
       product: lot.productNameRu?.trim() || lot.productNameZh,
+      nameZh: lot.productNameZh,
       boxCount: 0,
       kg: 0,
     };
@@ -133,6 +135,8 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
     agg.kg += Number(lot.totalWeightKg) / lot.boxCount;
     byLot.set(lot.id, agg);
   }
+  // ТНВЭД memory (Phase 1.5): known products prefill; unknown stay blank.
+  const tnved = await tnvedFor([...byLot.values()].map((a) => a.nameZh));
 
   let n = 0;
   let rowNo = head.number;
@@ -141,10 +145,11 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
     rowNo += 1;
     const kg = Math.round(agg.kg * 10) / 10;
     const row = sheet.getRow(rowNo);
-    // ТНВЭД + price stay blank for the VED manager; our measured weight goes
-    // into both netto and brutto — netto is corrected by hand when the tare
-    // matters. Amount = price × quantity, live.
-    row.values = [n, agg.product, '', 'кг', kg, agg.boxCount, kg, kg, '', ''];
+    // ТНВЭД prefills from memory (still editable in Excel); price stays for
+    // the VED manager; measured weight goes into both netto and brutto —
+    // netto is corrected by hand when the tare matters. Amount is live.
+    const code = tnved.get(productKey(agg.nameZh))?.tnvedCode ?? '';
+    row.values = [n, agg.product, code, 'кг', kg, agg.boxCount, kg, kg, '', ''];
     row.getCell(10).value = { formula: `I${rowNo}*E${rowNo}` };
   }
   const total = sheet.getRow(rowNo + 1);

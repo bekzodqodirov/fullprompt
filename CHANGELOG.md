@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Phase 1.5 — AI ТНВЭД assistant (memory-first) — 2026-07-24
+
+- **🏷 ТНВЭД page per batch** (VED-doc card → "ТНВЭД"): one row per product with photo, code input and a 🤖 button — the AI (Claude) suggests a 10-digit UZ customs code from the product name (zh/ru) + photo, tuned to be duty-optimal but customs-defensible, with a confidence note and reasoning. "Suggest for all empty" fills the gaps in one tap.
+- **Memory-first** (owner's rule): every SAVED code lands in `tnved_assignments` keyed by the normalized product name — known products pre-fill instantly and the AI is only asked about products never seen before. The human always confirms; AI output is a draft.
+- **Invoice prefill**: the ka23 INVOICE & PACKING LIST now fills its ТНВЭД column from the memory (still editable in Excel); unknown products stay blank as before.
+- Requires `ANTHROPIC_API_KEY` in `.env` (documented in `.env.example`); without it the page still works with manual entry + memory, and the 🤖 button explains what's missing.
+- Migration 0014; audited saves; unit tests for the key/code helpers (76 total).
+
 ## Feedback round 8 — Depart for loaders, iPhone scan feedback, photo packing list — 2026-07-24
 
 - **"Отправить" now visible to the loading warehouse too** (owner's request): anyone who can load (`scan.load`) at the origin warehouse can send the truck off — behind a confirmation dialog for everyone ("after this the load list locks"). Closing/arrival stays manager-only.

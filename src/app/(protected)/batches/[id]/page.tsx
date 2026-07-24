@@ -221,6 +221,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                 ⬇️ 📷 {t('packingPhotos')}
               </a>
             )}
+            <Link href={`/batches/${batch.id}/tnved`} className="btn-secondary flex-1 whitespace-nowrap px-3">
+              🏷 ТНВЭД
+            </Link>
           </div>
           {actor.permissions.has('ved.docs') && (
             <form action={setSentToAgentAction}>
