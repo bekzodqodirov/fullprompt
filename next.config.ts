@@ -30,6 +30,9 @@ const NODE_ONLY_PACKAGES = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Shown on /profile so "is the server on the new build?" is answerable at
+  // a glance (inlined at build time).
+  env: { NEXT_PUBLIC_BUILD_AT: new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC' },
   // Pin the tracing root to THIS project. Without it, a stray lockfile in a
   // parent folder (seen on the owner's Windows PC: C:\Users\USER\package-lock.json)
   // makes Next treat the parent as the workspace root and emit the standalone

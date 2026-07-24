@@ -99,6 +99,8 @@ export default async function ProfilePage() {
           </button>
         </form>
       </section>
+
+      <p className="text-center text-xs text-gray-400">build: {process.env.NEXT_PUBLIC_BUILD_AT}</p>
     </div>
   );
 }
