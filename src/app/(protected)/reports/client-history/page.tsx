@@ -1,4 +1,5 @@
-import { ilike } from 'drizzle-orm';
+import Link from 'next/link';
+import { asc, ilike, or } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -20,9 +21,26 @@ export default async function ClientHistoryPage({
   const format = await getFormatter();
   const { code } = await searchParams;
 
-  const client = code?.trim()
-    ? await db.query.clients.findFirst({ where: ilike(clients.clientCode, code.trim()) })
+  // Forgiving lookup (owner: "doesn't work" = exact-only matching): exact
+  // code first, then substring over code OR name; a single hit opens
+  // directly, several hits render a pick list.
+  const raw = code?.trim() ?? '';
+  let client = raw
+    ? await db.query.clients.findFirst({ where: ilike(clients.clientCode, raw) })
     : null;
+  let suggestions: { id: string; clientCode: string; name: string }[] = [];
+  if (raw && !client) {
+    suggestions = await db
+      .select({ id: clients.id, clientCode: clients.clientCode, name: clients.name })
+      .from(clients)
+      .where(or(ilike(clients.clientCode, `%${raw}%`), ilike(clients.name, `%${raw}%`)))
+      .orderBy(asc(clients.clientCode))
+      .limit(10);
+    if (suggestions.length === 1) {
+      client = await db.query.clients.findFirst({ where: ilike(clients.clientCode, suggestions[0]!.clientCode) });
+      suggestions = [];
+    }
+  }
   const rows = client ? await clientHistory(client.id) : [];
 
   return (
@@ -51,7 +69,23 @@ export default async function ClientHistoryPage({
           🔍
         </button>
       </form>
-      {code && !client && <p className="text-sm font-semibold text-red-700">{t('clientNotFound')}</p>}
+      {raw && !client && suggestions.length === 0 && (
+        <p className="text-sm font-semibold text-red-700">{t('clientNotFound')}</p>
+      )}
+      {suggestions.length > 0 && (
+        <div className="card space-y-1 !p-2">
+          {suggestions.map((s) => (
+            <Link
+              key={s.id}
+              href={`?code=${encodeURIComponent(s.clientCode)}`}
+              className="flex min-h-10 items-center gap-2 rounded-lg px-2 hover:bg-gray-50"
+            >
+              <span className="font-mono font-extrabold text-blue-800">{s.clientCode}</span>
+              <span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {client && (
         <div className="card !p-0">
