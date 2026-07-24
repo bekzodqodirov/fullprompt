@@ -39,6 +39,22 @@ services:
       minio:
         condition: service_started
 
+  # LAN HTTPS with a self-signed cert (no domain needed) — for office/trial
+  # runs where phones need the camera scanner. Browsers warn once; tap
+  # "Advanced → proceed". Enable with:
+  #   docker compose --profile https-local up -d
+  caddy-local:
+    image: caddy:2
+    profiles: ['https-local']
+    restart: unless-stopped
+    ports:
+      - '443:443'
+    command: sh -c 'printf "https://:443 {\n tls internal\n reverse_proxy app:3000\n}\n" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
+    volumes:
+      - caddydata:/data
+    depends_on:
+      - app
+
   # HTTPS front (needed for the phone camera scanner — secure context).
   # Enable with: DOMAIN=wms.example.com docker compose --profile https up -d
   caddy:
