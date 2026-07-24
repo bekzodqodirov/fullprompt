@@ -1,7 +1,14 @@
 import { createHash, createHmac } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CreateBucketCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 /**
@@ -34,7 +41,23 @@ class S3Driver implements StorageDriver {
     this.bucket = process.env.S3_BUCKET ?? 'gsr-files';
   }
 
+  private ensured = false;
+
+  /** Fresh MinIO ships without our bucket — create it on first write. */
+  private async ensureBucket(): Promise<void> {
+    if (this.ensured) return;
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    } catch {
+      // On real AWS restricted creds may forbid CreateBucket — ignore and let
+      // the actual put surface the error if the bucket truly doesn't exist.
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket })).catch(() => {});
+    }
+    this.ensured = true;
+  }
+
   async put(key: string, body: Buffer, contentType: string): Promise<void> {
+    await this.ensureBucket();
     await this.client.send(
       new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
     );

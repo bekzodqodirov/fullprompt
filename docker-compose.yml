@@ -29,10 +29,15 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
+      # Same storage view as the app — the seed uploads demo photos.
+      S3_ENDPOINT: http://minio:9000
+      STORAGE_DRIVER: s3
     command: sh -c "pnpm db:migrate && pnpm db:seed"
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
 
   # HTTPS front (needed for the phone camera scanner — secure context).
   # Enable with: DOMAIN=wms.example.com docker compose --profile https up -d
