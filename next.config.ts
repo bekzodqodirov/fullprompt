@@ -23,6 +23,9 @@ const NODE_ONLY_PACKAGES = [
   'pg',
   'pg-native',
   'grammy',
+  // Loads a wasm binary (harfbuzz) — webpack must not try to parse it.
+  'subset-font',
+  'harfbuzzjs',
 ];
 
 const nextConfig: NextConfig = {

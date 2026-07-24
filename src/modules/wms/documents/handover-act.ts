@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { asc, eq, inArray } from 'drizzle-orm';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
@@ -13,6 +11,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
+import { cjkSubsetFor } from '../labels/cjk-font';
 
 /** Handover act PDF (spec 6.7, optional per issue): who took what, signatures. */
 export async function buildHandoverAct(handoverId: string): Promise<Uint8Array | null> {
@@ -39,8 +38,15 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
 
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
-  const cjkBytes = await readFile(path.join(process.cwd(), 'src/assets/fonts/NotoSansSC-Regular.otf'));
-  const font = await doc.embedFont(cjkBytes, { subset: true });
+  // HarfBuzz-subsetted (fontkit's subsetter drops CJK glyphs — see cjk-font.ts).
+  const cjkBytes = await cjkSubsetFor([
+    String(await getSetting('company_name')),
+    handover.personName,
+    handover.note ?? '',
+    client?.name ?? '',
+    ...boxRows.flatMap((r) => [r.productNameZh, r.productNameRu ?? '']),
+  ]);
+  const font = await doc.embedFont(cjkBytes, { subset: false });
 
   const page = doc.addPage([595, 842]); // A4 portrait, pt
   const black = rgb(0, 0, 0);

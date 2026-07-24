@@ -544,7 +544,8 @@
     "quickBatch": "Tezkor partiya (rejasiz)",
     "quickOrigin": "Qayerdan",
     "quickDest": "Qayerga",
-    "create": "Yaratish"
+    "create": "Yaratish",
+    "loadedBoxes": "Yuklangan korobkalar"
   },
   "loading": {
     "title": "Pogruzka",

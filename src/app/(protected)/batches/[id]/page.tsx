@@ -28,6 +28,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('batches');
+  const tc = await getTranslations('common');
   const format = await getFormatter();
 
   const dest = aliasedTable(warehouses, 'dest');
@@ -103,6 +104,26 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(sql`${boxes.currentBatchId} = ${id} AND ${boxes.flags} @> '["missing_in_transit"]'::jsonb`);
+
+  // What was actually loaded, box by box — from load scan events, so the
+  // list survives unload/close (owner: after the truck leaves, the sending
+  // warehouse only needs to SEE what it loaded — read-only).
+  const loadedBoxes = ['forming'].includes(batch.status)
+    ? []
+    : await db
+        .selectDistinct({
+          shortCode: boxes.shortCode,
+          letter: receiptLots.letter,
+          clientCode: clients.clientCode,
+          marking: receipts.unclaimedMarking,
+        })
+        .from(scanEvents)
+        .innerJoin(boxes, eq(scanEvents.boxId, boxes.id))
+        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+        .leftJoin(clients, eq(receipts.clientId, clients.id))
+        .where(sql`${scanEvents.batchId} = ${id} AND ${scanEvents.type} = 'load'`)
+        .orderBy(asc(receiptLots.letter), asc(boxes.shortCode));
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -279,8 +300,30 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             </span>
           </div>
         ))}
-        {lots.length === 0 && <p className="text-sm text-gray-500">—</p>}
+        {lots.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
       </div>
+
+      {loadedBoxes.length > 0 && (
+        <details className="card">
+          <summary className="cursor-pointer text-lg font-bold">
+            🧾 {t('loadedBoxes')} ({loadedBoxes.length})
+          </summary>
+          <div className="mt-2 space-y-1 text-sm">
+            {[...loadedBoxes
+              .reduce((acc, b) => {
+                const label = `${b.clientCode ?? b.marking ?? '?'}-${b.letter}`;
+                acc.set(label, [...(acc.get(label) ?? []), b.shortCode]);
+                return acc;
+              }, new Map<string, string[]>())
+              .entries()].map(([label, codes]) => (
+              <p key={label} className="border-b border-gray-100 py-1 last:border-0">
+                <span className="font-mono font-extrabold text-blue-800">{label}</span>{' '}
+                <span className="font-mono text-xs text-gray-600">{codes.join(', ')}</span>
+              </p>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

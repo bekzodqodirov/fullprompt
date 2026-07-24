@@ -1,8 +1,7 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import QRCode from 'qrcode';
+import { cjkSubsetFor } from './cjk-font';
 
 /**
  * Label ("sticker") rendering — spec §7. 100×100 mm thermal, one page per
@@ -37,23 +36,16 @@ export interface LabelRenderer {
 const MM = 72 / 25.4; // pt per mm
 const PAGE = 100 * MM;
 
-let cachedCjkBytes: Buffer | null = null;
-async function cjkFontBytes(): Promise<Buffer> {
-  if (!cachedCjkBytes) {
-    cachedCjkBytes = await readFile(
-      path.join(process.cwd(), 'src/assets/fonts/NotoSansSC-Regular.otf'),
-    );
-  }
-  return cachedCjkBytes;
-}
-
 export class PdfLabelRenderer implements LabelRenderer {
   async render(labels: LabelData[]): Promise<Uint8Array> {
     const doc = await PDFDocument.create();
     doc.registerFontkit(fontkit);
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
     const regular = await doc.embedFont(StandardFonts.Helvetica);
-    const cjk = await doc.embedFont(await cjkFontBytes(), { subset: true });
+    // HarfBuzz-subsetted to this document's characters; fontkit's own
+    // subsetter drops CJK glyphs (see cjk-font.ts), hence subset: false.
+    const cjkBytes = await cjkSubsetFor(labels.flatMap((l) => [l.productZh, l.productRu]));
+    const cjk = await doc.embedFont(cjkBytes, { subset: false });
 
     for (const label of labels) {
       const page = doc.addPage([PAGE, PAGE]);
@@ -222,7 +214,8 @@ export async function renderCrateLabel(label: CrateLabelData): Promise<Uint8Arra
   doc.registerFontkit(fontkit);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
-  const cjk = await doc.embedFont(await cjkFontBytes(), { subset: true });
+  const cjkBytes = await cjkSubsetFor(['ЯЩИК КАРКАС', label.contents, label.clientCode]);
+  const cjk = await doc.embedFont(cjkBytes, { subset: false });
 
   const page = doc.addPage([PAGE, PAGE]);
   const margin = 4 * MM;

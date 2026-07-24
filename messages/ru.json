@@ -544,7 +544,8 @@
     "quickBatch": "Быстрая партия (без плана)",
     "quickOrigin": "Откуда",
     "quickDest": "Куда",
-    "create": "Создать"
+    "create": "Создать",
+    "loadedBoxes": "Погруженные коробки"
   },
   "loading": {
     "title": "Погрузка",

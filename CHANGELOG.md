@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Feedback round 7 — Sticker product names, departed-batch view — 2026-07-24
+
+- **Sticker bug fixed: product name now actually prints** (owner's report). The PDF library's font subsetter silently emitted broken CJK fonts — 化妆品 came out as empty squares (or nothing at all on thermal printers) on box labels, crate labels and the handover act. Fonts are now subsetted with HarfBuzz (`subset-font`) to exactly the characters each document uses: both 中文 and русский names print, and label PDFs stay small (DECISIONS #103).
+- **Departed batch: sending warehouse keeps a read-only view** (owner's request): the batch card gained a collapsible "🧾 Loaded boxes" list built from load scan events — box codes grouped by client-letter — so the origin operator can always see exactly WHAT left, even after unload/close. No actions — view only.
+- Owner's question about photo size answered in-app: photos are already compressed on the phone before upload (≤1600 px, ~0.3 MB, web worker) at all three upload points, and lists serve server-generated thumbnails.
+
 ## Deploy kit — probniy server in one command — 2026-07-24
 
 - `docker-compose.yml`: one-shot **migrate+seed service** (the app previously started against an empty DB with no admin user), optional **Caddy HTTPS profile** (`DOMAIN=… docker compose --profile https up -d`) — phones need a secure context for the camera scanner.

@@ -2,7 +2,7 @@
   "name": "gsr-erp",
   "version": "0.1.0",
   "private": true,
-  "description": "GSR LOGISTICS ERP \u2014 Phase 1: WMS",
+  "description": "GSR LOGISTICS ERP — Phase 1: WMS",
   "scripts": {
     "dev": "node scripts/heal-storage.mjs && next dev",
     "build": "node scripts/heal-storage.mjs && next build",
@@ -45,6 +45,7 @@
     "react-dom": "^19.0.0",
     "selfsigned": "^5.5.0",
     "sharp": "^0.33.5",
+    "subset-font": "^2.5.0",
     "uuid": "^11.0.5",
     "zod": "^3.24.1"
   },
