@@ -25,6 +25,8 @@ interface PlannedBox {
 interface Snapshot {
   batch: { id: string; code: string; status: string };
   boxes: PlannedBox[];
+  /** Quick batch only: the origin warehouse's loadable stock (tap-to-pick). */
+  available?: PlannedBox[];
   crates: { code: string; boxShortCodes: string[] }[];
 }
 
@@ -47,6 +49,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   const [confirmReason, setConfirmReason] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  const [manualQuery, setManualQuery] = useState('');
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cacheKey = `gsr-load-${batchId}`;
@@ -225,6 +228,22 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   }
   const doneCount = snapshot.boxes.filter((b) => loaded.has(b.shortCode)).length;
   const unscanned = snapshot.boxes.filter((b) => !loaded.has(b.shortCode));
+  // Quick batch: no plan, so "sticker lost" picks from the origin WH stock
+  // instead of the (empty) plan list (owner: tap the box, don't type codes).
+  const quickBatch = snapshot.boxes.length === 0;
+  const q = manualQuery.trim().toUpperCase();
+  const basePick = (quickBatch ? (snapshot.available ?? []) : unscanned).filter(
+    (b) => !loaded.has(b.shortCode),
+  );
+  const pickList = basePick.filter(
+      (b) =>
+        !q ||
+        b.shortCode.includes(q) ||
+        (b.clientCode ?? '').toUpperCase().includes(q) ||
+        (b.marking ?? '').toUpperCase().includes(q) ||
+        `${b.clientCode ?? b.marking ?? ''}-${b.letter ?? ''}`.toUpperCase().includes(q) ||
+        b.productNameZh.toUpperCase().includes(q),
+    );
 
   return (
     <div
@@ -261,7 +280,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       </div>
 
       <button type="button" className="btn-secondary w-full" onClick={() => setManualOpen(true)}>
-        🏷 {t('stickerLost')}
+        {quickBatch ? `📦 ${t('pickFromStock')}` : `🏷 ${t('stickerLost')}`}
       </button>
 
       {toast && (
@@ -338,15 +357,28 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
                 ✓
               </button>
             </div>
-            <p className="text-xs font-semibold text-gray-500">{t('unscannedList')}</p>
-            {unscanned.slice(0, 80).map((box) => (
+            <p className="text-xs font-semibold text-gray-500">
+              {quickBatch ? t('stockList') : t('unscannedList')}
+            </p>
+            {basePick.length > 8 && (
+              <input
+                className="input"
+                value={manualQuery}
+                onChange={(e) => setManualQuery(e.target.value)}
+                placeholder={t('pickSearch')}
+                autoComplete="off"
+              />
+            )}
+            {pickList.slice(0, 80).map((box) => (
               <button
                 key={box.shortCode}
                 type="button"
                 className="flex w-full items-center gap-2 rounded-lg border border-gray-200 p-2 text-left text-sm hover:bg-gray-50"
                 onClick={() => {
                   onCode(box.shortCode, 'manual', 'sticker_lost');
-                  setManualOpen(false);
+                  // Quick batch: stay open — the operator picks several boxes
+                  // in a row; loaded ones drop off the list immediately.
+                  if (!quickBatch) setManualOpen(false);
                 }}
               >
                 <span className="font-mono font-bold">{box.shortCode}</span>

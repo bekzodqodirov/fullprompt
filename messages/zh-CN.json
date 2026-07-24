@@ -567,7 +567,10 @@
     "loadAnyway": "仍然装车",
     "stickerLost": "标签丢失/手动输入",
     "stickerLostHint": "从未扫描列表选择箱子或输入编码",
-    "unscannedList": "未扫描的箱子："
+    "unscannedList": "未扫描的箱子：",
+    "stockList": "仓库中的箱子（点击装车）：",
+    "pickSearch": "搜索：编号、客户、货名…",
+    "pickFromStock": "从仓库选择装车 / 手动输入"
   },
   "unloading": {
     "title": "卸货",

@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Quick-batch loading: pick the box, don't type the code — 2026-07-24
+
+- **⚡ Quick (plan-less) batches**: the loading screen's manual button becomes "📦 Skladdan tanlab yuklash" — it opens the origin warehouse's loadable stock (in_stock / ready_for_pickup, grouped by client-letter with product names and crate badges). Tap a box → loaded; the sheet stays open so several boxes go in a row, and loaded ones drop off the list instantly (owner's request: no code typing).
+- A search field (code / client / marking / product) appears on lists longer than 8 — for both the quick-batch stock list and the planned batches' sticker-lost list.
+- Typing the code by hand still works as a fallback; everything is recorded as a `manual / sticker_lost` scan exactly as before.
+- e2e flake fixed: the M0 smoke test's generated warehouse code collided with leftovers of earlier runs — now uses the full 6-digit run id.
+
 ## Phase 2.2 — Telegram client cabinet — 2026-07-24
 
 - **Clients get their own cabinet in the SAME bot** (owner's spec): staff opens Admin → Client → "🤖 Telegram kabinet", mints a one-time deep link and sends it to the client; the client taps it and gets a persistent uz-language menu.

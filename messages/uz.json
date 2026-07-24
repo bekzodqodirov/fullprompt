@@ -567,7 +567,10 @@
     "loadAnyway": "Baribir yuklash",
     "stickerLost": "Stiker yo‘qolgan / qo‘lda kiritish",
     "stickerLostHint": "Skanlanmagan karobkani tanlang yoki kodini kiriting",
-    "unscannedList": "Skanlanmagan karobkalar:"
+    "unscannedList": "Skanlanmagan karobkalar:",
+    "stockList": "Skladdagi karobkalar (bosib yuklang):",
+    "pickSearch": "Qidirish: kod, klient, tovar…",
+    "pickFromStock": "Skladdan tanlab yuklash / qo‘lda kiritish"
   },
   "unloading": {
     "title": "Razgruzka",

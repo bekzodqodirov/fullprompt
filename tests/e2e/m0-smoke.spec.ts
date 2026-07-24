@@ -32,8 +32,8 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
 
   // Create a warehouse
   await page.goto('/admin/warehouses/new');
-  await page.locator('input[name="code"]').fill(`T${runId.slice(0, 3)}`);
-  await page.locator('input[name="batchPrefix"]').fill(`T${runId.slice(0, 3)}`);
+  await page.locator('input[name="code"]').fill(`T${runId}`);
+  await page.locator('input[name="batchPrefix"]').fill(`T${runId}`);
   await page.locator('input[name="name"]').fill(`Test WH ${runId}`);
   await page.locator('select[name="country"]').selectOption('UZ');
   await page.locator('select[name="type"]').selectOption('distribution');

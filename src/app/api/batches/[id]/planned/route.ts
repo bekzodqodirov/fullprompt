@@ -5,6 +5,7 @@ import {
   boxes,
   clients,
   crates,
+  loadPlans,
   receiptLots,
   receipts,
 } from '@/modules/platform/db/schema';
@@ -84,9 +85,41 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     byCrate.set(row.crateId, [...(byCrate.get(row.crateId) ?? []), row.shortCode]);
   }
 
+  // Quick batches have no plan, so the manual "sticker lost" sheet has no
+  // list to tap. Ship the origin warehouse's loadable stock instead (owner's
+  // request: pick the box, don't type the code).
+  let available: typeof memberBoxes = [];
+  if (['forming', 'loading'].includes(batch.status)) {
+    const hasPlan = await db.query.loadPlans.findFirst({ where: eq(loadPlans.batchId, id) });
+    if (!hasPlan) {
+      available = await db
+        .select({
+          shortCode: boxes.shortCode,
+          status: boxes.status,
+          letter: receiptLots.letter,
+          lotId: receiptLots.id,
+          productNameZh: receiptLots.productNameZh,
+          clientCode: clients.clientCode,
+          marking: receipts.unclaimedMarking,
+          crateCode: crates.code,
+        })
+        .from(boxes)
+        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+        .leftJoin(clients, eq(receipts.clientId, clients.id))
+        .leftJoin(crates, eq(boxes.crateId, crates.id))
+        .where(
+          sql`${boxes.currentWarehouseId} = ${batch.originWarehouseId} AND ${boxes.status} IN ('in_stock', 'ready_for_pickup')`,
+        )
+        .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot))
+        .limit(1500);
+    }
+  }
+
   return Response.json({
     batch: { id: batch.id, code: batch.code, status: batch.status },
     boxes: memberBoxes,
+    available,
     crates: originCrates.map((c) => ({ code: c.code, boxShortCodes: byCrate.get(c.id) ?? [] })),
   });
 }
