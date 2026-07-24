@@ -545,7 +545,9 @@
     "quickOrigin": "Откуда",
     "quickDest": "Куда",
     "create": "Создать",
-    "loadedBoxes": "Погруженные коробки"
+    "loadedBoxes": "Погруженные коробки",
+    "departConfirm": "Отправить машину? После этого список груза фиксируется.",
+    "packingPhotos": "Packing (фото)"
   },
   "loading": {
     "title": "Погрузка",

@@ -20,6 +20,8 @@
 
 **Phase 1 remaining:** owner acceptance walkthrough and hosting/VPS choice (open Q3) → production deploy.
 
+**Phase 1.5 — AI assist (owner's request, 2026-07-24):** AI suggests the ТНВЭД code per lot from the product name (zh/ru) + photo, tuned for an optimal (duty-favorable but defensible) classification. **Memory-first:** every confirmed name→code assignment is stored (extending the product dictionary), and an exact/known product reuses the stored code WITHOUT calling the AI — the model is only asked for products the dictionary hasn't seen; the VED manager stays the final authority (AI fills the draft, human confirms in the invoice/packing flow). Scope: dictionary schema + suggestion service + VED-doc integration; provider/API choice and cost review with the owner before build.
+
 ---
 
 ## Work plan (M0–M6)

@@ -545,7 +545,9 @@
     "quickOrigin": "Qayerdan",
     "quickDest": "Qayerga",
     "create": "Yaratish",
-    "loadedBoxes": "Yuklangan korobkalar"
+    "loadedBoxes": "Yuklangan korobkalar",
+    "departConfirm": "Mashinani jo'natishni tasdiqlaysizmi? Bundan keyin yuk ro'yxati qulflanadi.",
+    "packingPhotos": "Packing (rasmlar)"
   },
   "loading": {
     "title": "Pogruzka",

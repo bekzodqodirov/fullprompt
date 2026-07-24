@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Feedback round 8 — Depart for loaders, iPhone scan feedback, photo packing list — 2026-07-24
+
+- **"Отправить" now visible to the loading warehouse too** (owner's request): anyone who can load (`scan.load`) at the origin warehouse can send the truck off — behind a confirmation dialog for everyone ("after this the load list locks"). Closing/arrival stays manager-only.
+- **Scan counter goes live across phones**: every 15-second sync now also pulls the server's view of the batch, so boxes scanned on ANOTHER phone (or an earlier session) count without refreshing the page. Union-merge keeps local unsynced scans visible.
+- **iPhone scan feedback**: iOS has no vibration API — every scan verdict now also beeps (WebAudio: high blip = ok, low buzz = duplicate/error), armed on the first touch as iOS requires. Shared module used by loading, unloading, inventory and issue screens; the issue screen also buzzes on unknown/duplicate codes instead of silently ignoring them.
+- **Packing list with photos** (owner's request): new "⬇️ 📷 Packing (фото)" on the batch card — one row per loaded lot (code, product zh/ru, boxes, kg, m³) with every lot photo embedded, built from load scans so it works after unload/close too.
+- **Stock page bug (owner's report: "13 boxes at TAS1 but stock shows nothing")**: boxes unloaded at a customs/distribution warehouse become `ready_for_pickup` and vanished from the stock browser/stock XLSX, which filtered `in_stock` only. Stock now shows everything physically on the shelf (in_stock / planned / loading / ready_for_pickup) with per-box status chips.
+- **Planned (Phase 1.5)**: AI ТНВЭД assistant — suggests the customs code from product name+photo, remembers every confirmed assignment and reuses it without calling the AI again; VED manager confirms (PLAN.md).
+
 ## Feedback round 7 — Sticker product names, departed-batch view — 2026-07-24
 
 - **Sticker bug fixed: product name now actually prints** (owner's report). The PDF library's font subsetter silently emitted broken CJK fonts — 化妆品 came out as empty squares (or nothing at all on thermal printers) on box labels, crate labels and the handover act. Fonts are now subsetted with HarfBuzz (`subset-font`) to exactly the characters each document uses: both 中文 and русский names print, and label PDFs stay small (DECISIONS #103).

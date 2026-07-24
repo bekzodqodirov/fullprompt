@@ -545,7 +545,9 @@
     "quickOrigin": "起点",
     "quickDest": "终点",
     "create": "创建",
-    "loadedBoxes": "已装箱明细"
+    "loadedBoxes": "已装箱明细",
+    "departConfirm": "确认发车？发车后装载清单将锁定。",
+    "packingPhotos": "装箱单（带照片）"
   },
   "loading": {
     "title": "装车",

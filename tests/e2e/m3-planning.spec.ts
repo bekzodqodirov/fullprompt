@@ -63,6 +63,7 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   await page.goto(batchUrl);
   await page.getByTestId('finish-loading').click();
   await expect(page.getByText(/1/).first()).toBeVisible({ timeout: 10_000 });
+  page.once('dialog', (d) => void d.accept()); // depart confirm
   await page.getByTestId('depart-batch').click();
   await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
 

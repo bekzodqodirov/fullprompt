@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { Scanner } from '@/components/scan/scanner';
+import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
 import { issueBoxesAction } from './actions';
 
 interface WarehouseOption {
@@ -94,11 +95,18 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
     });
   }
 
+  // iOS unlocks the beep only inside a user gesture — arm on mount.
+  useEffect(() => armScanAudio(), []);
+
   function onScan(code: string) {
     const hit = list.find((b) => b.shortCode === code);
     if (hit && !selected.has(hit.boxId)) {
       toggle(hit.boxId);
-      if ('vibrate' in navigator) navigator.vibrate(60);
+      scanFeedback('ok');
+    } else {
+      // Unknown code or already selected — buzz so a silent no-op never
+      // reads as "scanned fine" (UX audit leftover).
+      scanFeedback(hit ? 'dup' : 'bad');
     }
   }
 

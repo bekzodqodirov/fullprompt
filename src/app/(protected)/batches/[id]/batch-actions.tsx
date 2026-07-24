@@ -31,6 +31,8 @@ export function BatchActions({ batchId, canDepart }: { batchId: string; canDepar
   }
 
   async function depart() {
+    // Everyone confirms — a truck departure locks the load (owner's rule).
+    if (!window.confirm(t('departConfirm'))) return;
     setPending(true);
     setError(null);
     try {

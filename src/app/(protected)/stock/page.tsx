@@ -25,7 +25,13 @@ export default async function StockPage({
   const format = await getFormatter();
   const params = await searchParams;
 
-  const scopeFilter: SQL[] = [eq(boxes.status, 'in_stock')];
+  // Everything physically ON the shelf counts as stock — including boxes
+  // reserved for a plan, mid-loading, or unloaded at a customs/distribution
+  // warehouse as ready_for_pickup (owner's report: "13 boxes at TAS1 but the
+  // stock page shows nothing"). Each box row still shows its exact status.
+  const scopeFilter: SQL[] = [
+    inArray(boxes.status, ['in_stock', 'planned', 'loading', 'ready_for_pickup']),
+  ];
   if (actor.warehouseScoped && actor.warehouseIds.length) {
     scopeFilter.push(inArray(boxes.currentWarehouseId, actor.warehouseIds));
   }

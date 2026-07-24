@@ -48,6 +48,7 @@ test('export → ready_for_pickup → issue with handover act', async ({ page })
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
   await page.goto(batchUrl);
   await page.getByTestId('finish-loading').click();
+  page.once('dialog', (d) => void d.accept()); // depart confirm
   await page.getByTestId('depart-batch').click();
   await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
 

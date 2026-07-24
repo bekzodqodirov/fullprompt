@@ -121,9 +121,15 @@ export async function departBatchAction(
 ): Promise<{ ok: boolean; boxCount?: number; error?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
-  const actor = await authorize('batches.depart_close', {
-    warehouseId: batch.originWarehouseId,
-  });
+  // Owner's rule: the origin-warehouse loader may send the truck off too
+  // (the UI asks for confirmation); closing/arrival stays manager-only.
+  let actor;
+  try {
+    actor = await authorize('batches.depart_close', { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (!(err instanceof AuthError)) throw err;
+    actor = await authorize('scan.load', { warehouseId: batch.originWarehouseId });
+  }
   const meta = await requestMeta();
   try {
     const result = await departBatch(batchId, { actorId: actor.id, ...meta });

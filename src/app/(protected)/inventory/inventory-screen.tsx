@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Scanner } from '@/components/scan/scanner';
+import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
 import { reconcileInventoryAction, type ReconcileResult } from './actions';
 
 interface ExpectedBox {
@@ -52,13 +53,14 @@ export function InventoryScreen({
 
   // Same haptic + color feedback as the loading screen — without it the
   // operator can't tell a scan registered (UX audit).
+  // iOS unlocks the beep only inside a user gesture — arm on mount.
+  useEffect(() => armScanAudio(), []);
+
   function feedback(kind: 'ok' | 'dup' | 'bad') {
     setFlash(kind);
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 450);
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate(kind === 'ok' ? 60 : [70, 60, 70]);
-    }
+    scanFeedback(kind);
   }
 
   useEffect(() => {

@@ -71,7 +71,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const totalPlanned = lots.reduce((a, l) => a + Number(l.planned), 0);
   const totalLoaded = lots.reduce((a, l) => a + Number(l.loaded), 0);
   const canLoad = actor.permissions.has('scan.load') && ['forming', 'loading'].includes(batch.status);
-  const canDepart = actor.permissions.has('batches.depart_close');
+  const canDepartClose = actor.permissions.has('batches.depart_close');
+  // Owner's rule: the origin-warehouse loader can also send the truck off
+  // (with a confirm dialog); closing/arrival stays manager-only.
+  const inOriginScope = !actor.warehouseScoped || actor.warehouseIds.includes(batch.originWarehouseId);
+  const canDepart = canDepartClose || (actor.permissions.has('scan.load') && inOriginScope);
   const canVehicle = actor.permissions.has('batches.vehicle_info');
   const canUnload = actor.permissions.has('scan.unload');
   const canEnterCosts = actor.permissions.has('costs.enter_batch');
@@ -197,7 +201,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               label: `${clientCode ?? marking ?? '?'}-${letter}`,
             }))}
             canResolve={actor.permissions.has('receipts.void')}
-            canClose={canDepart}
+            canClose={canDepartClose}
           />
         )}
       </div>
@@ -212,6 +216,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             <a href={`/api/batches/${batch.id}/packing`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
               ⬇️ {t('packingList')}
             </a>
+            {(totalLoaded > 0 || loadedBoxes.length > 0) && (
+              <a href={`/api/batches/${batch.id}/packing-photos`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
+                ⬇️ 📷 {t('packingPhotos')}
+              </a>
+            )}
           </div>
           {actor.permissions.has('ved.docs') && (
             <form action={setSentToAgentAction}>

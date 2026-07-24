@@ -30,7 +30,11 @@ export async function GET(request: Request) {
   const wh = url.searchParams.get('wh') ?? '';
   const q = url.searchParams.get('q') ?? '';
 
-  const filters: SQL[] = [eq(boxes.status, 'in_stock')];
+  // Match the stock browser: everything physically in the warehouse,
+  // including planned/loading reservations and ready_for_pickup boxes.
+  const filters: SQL[] = [
+    inArray(boxes.status, ['in_stock', 'planned', 'loading', 'ready_for_pickup']),
+  ];
   if (actor.warehouseScoped && actor.warehouseIds.length) {
     filters.push(inArray(boxes.currentWarehouseId, actor.warehouseIds));
   }

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { Scanner } from '@/components/scan/scanner';
+import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
 import {
   enqueueScan,
   flushScans,
@@ -97,11 +98,27 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       const acks = await flushScans();
       handleAcks(acks);
       setOnline(true);
+      // Live counter across phones: merge the server's unloaded set in.
+      try {
+        const res = await fetch(`/api/batches/${batchId}/planned`);
+        if (res.ok) {
+          const data = (await res.json()) as Snapshot;
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+          setSnapshot(data);
+          setDone((prev) => {
+            const next = new Set(prev);
+            for (const b of data.boxes) if (b.status === 'in_stock') next.add(b.shortCode);
+            return next;
+          });
+        }
+      } catch {
+        /* snapshot refresh is best-effort */
+      }
     } catch {
       setOnline(false);
     }
     await refreshPending();
-  }, [handleAcks, refreshPending]);
+  }, [handleAcks, refreshPending, batchId, cacheKey]);
 
   useEffect(() => {
     const up = () => {
@@ -122,13 +139,14 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
     };
   }, [flush]);
 
+  // iOS unlocks the beep only inside a user gesture — arm on mount.
+  useEffect(() => armScanAudio(), []);
+
   function feedback(kind: 'ok' | 'dup' | 'bad') {
     setFlash(kind);
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 450);
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate(kind === 'ok' ? 60 : [70, 60, 70]);
-    }
+    scanFeedback(kind);
   }
 
   async function accept(codes: string[], scan: { code: string; method: 'qr' | 'manual'; manualReason?: string }) {
