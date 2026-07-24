@@ -30,6 +30,11 @@ const NODE_ONLY_PACKAGES = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Pin the tracing root to THIS project. Without it, a stray lockfile in a
+  // parent folder (seen on the owner's Windows PC: C:\Users\USER\package-lock.json)
+  // makes Next treat the parent as the workspace root and emit the standalone
+  // build into .next/standalone/<project>/ where start-standalone.mjs can't find it.
+  outputFileTracingRoot: __dirname,
   serverExternalPackages: NODE_ONLY_PACKAGES,
   webpack: (config, { isServer }) => {
     if (isServer) {
