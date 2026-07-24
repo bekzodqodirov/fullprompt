@@ -1,7 +1,7 @@
 import { Bot, InlineKeyboard, InputFile, Keyboard } from 'grammy';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client';
-import { clients, clientTelegramLinks } from '../db/schema';
+import { clients, clientTelegramLinks, telegramLinks } from '../db/schema';
 import { getStorage } from '../files/storage';
 import { logger } from '../logger';
 import {
@@ -10,6 +10,7 @@ import {
   debtSummary,
   issuedHistory,
   lotPhotoKeys,
+  phoneBelongsToClient,
   type CabinetLot,
 } from '../../wms/client-cabinet/service';
 
@@ -49,13 +50,58 @@ function lotLine(lot: CabinetLot): string {
   return `${lot.letter ?? '·'} — ${name}\n   ${statuses}${wh}`;
 }
 
-/** Link a pending client code to this chat. Returns the client, or null. */
-export async function linkClientChat(code: string, chatId: number) {
+/**
+ * Linking is TWO-step (owner's incident: a link minted for client A reached
+ * person B, who instantly saw A's cargo and debt). Tapping the link no longer
+ * links or reveals anything — the bot first asks the person to share their
+ * OWN phone number (Telegram contact button, spoof-proof) and completes the
+ * link only when it matches one of the client's registered phones.
+ */
+
+interface PendingLink {
+  linkId: string;
+  clientId: string;
+}
+const pendingByChat = new Map<number, PendingLink>();
+
+export const PHONE_KEYBOARD = new Keyboard()
+  .requestContact('📱 Telefon raqamimni yuborish')
+  .resized()
+  .oneTime();
+
+/**
+ * Step 1: /start <code>. Returns what the bot should do next:
+ * ask_phone (verification starts), no_phone (client card lacks a phone —
+ * staff must add one first; the code is NOT burned), or null (unknown code).
+ */
+export async function beginClientLink(
+  code: string,
+  chatId: number,
+): Promise<'ask_phone' | 'no_phone' | null> {
   const link = await db.query.clientTelegramLinks.findFirst({
     where: eq(clientTelegramLinks.linkCode, code),
   });
-  if (!link || link.status === 'revoked') return null;
-  // A chat may already hold this client via another code — reuse the row.
+  if (!link || link.status !== 'pending') return null;
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, link.clientId) });
+  if (!client) return null;
+  const phones = (client.phones as unknown[]) ?? [];
+  if (!Array.isArray(phones) || phones.length === 0) {
+    await notifyStaff(
+      link.createdBy,
+      `⚠️ Кабинет: у клиента ${client.clientCode} не указан телефон — ссылку нельзя подтвердить. Добавьте номер в карточку клиента, затем клиент может открыть ту же ссылку ещё раз.`,
+    );
+    return 'no_phone';
+  }
+  pendingByChat.set(chatId, { linkId: link.id, clientId: link.clientId });
+  return 'ask_phone';
+}
+
+/** Step 2: verified — actually link. A chat may already hold this client. */
+export async function completeClientLink(linkId: string, chatId: number) {
+  const link = await db.query.clientTelegramLinks.findFirst({
+    where: eq(clientTelegramLinks.id, linkId),
+  });
+  if (!link || link.status !== 'pending') return null;
   const dup = await db.query.clientTelegramLinks.findFirst({
     where: and(
       eq(clientTelegramLinks.clientId, link.clientId),
@@ -82,7 +128,78 @@ export async function linkClientChat(code: string, chatId: number) {
   return db.query.clients.findFirst({ where: eq(clients.id, link.clientId) });
 }
 
+/** Verification failed: burn the code so it cannot be retried or passed on. */
+export async function failClientLink(linkId: string): Promise<void> {
+  const link = await db.query.clientTelegramLinks.findFirst({
+    where: eq(clientTelegramLinks.id, linkId),
+  });
+  if (!link || link.status !== 'pending') return;
+  await db
+    .update(clientTelegramLinks)
+    .set({ status: 'revoked', linkCode: null })
+    .where(eq(clientTelegramLinks.id, link.id));
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, link.clientId) });
+  await notifyStaff(
+    link.createdBy,
+    `🚨 Кабинет: ссылку клиента ${client?.clientCode ?? '?'} открыл человек с ДРУГИМ номером телефона. Ссылка аннулирована — проверьте, кому вы её отправили, и при необходимости создайте новую.`,
+  );
+}
+
+/** Best-effort Telegram ping to the staff user who minted the link. */
+async function notifyStaff(userId: string, text: string): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  const staff = await db.query.telegramLinks.findFirst({
+    where: and(eq(telegramLinks.userId, userId), eq(telegramLinks.status, 'linked')),
+  });
+  if (!staff?.telegramChatId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: Number(staff.telegramChatId), text }),
+    });
+  } catch (err) {
+    logger.warn({ err, userId }, 'cabinet staff notify failed');
+  }
+}
+
 export function registerClientCabinet(bot: Bot): void {
+  // Step 2 of linking: the person shares their phone via the contact button.
+  bot.on('message:contact', async (ctx) => {
+    const pending = pendingByChat.get(ctx.chat.id);
+    if (!pending) return;
+    pendingByChat.delete(ctx.chat.id);
+    const contact = ctx.message.contact;
+    // The button always sends the sender's OWN number; a manually forwarded
+    // contact card (someone else's number) has a different user_id — treat
+    // it as an impersonation attempt.
+    const ownContact = contact.user_id === ctx.from?.id;
+    const client = ownContact
+      ? await db.query.clients.findFirst({ where: eq(clients.id, pending.clientId) })
+      : null;
+    if (!client || !phoneBelongsToClient(contact.phone_number, client.phones)) {
+      await failClientLink(pending.linkId);
+      await ctx.reply(
+        '❌ Telefon raqamingiz bu havolaga mos kelmadi. Havola bekor qilindi — menejeringizga murojaat qiling.',
+        { reply_markup: { remove_keyboard: true } },
+      );
+      return;
+    }
+    const linked = await completeClientLink(pending.linkId, ctx.chat.id);
+    if (!linked) {
+      await ctx.reply('Havola eskirgan. Menejeringizdan yangisini so‘rang.', {
+        reply_markup: { remove_keyboard: true },
+      });
+      return;
+    }
+    await ctx.reply(
+      `✅ Assalomu alaykum, ${linked.name}!\n` +
+        `Kod: ${linked.clientCode}. Bu yerda yuklaringiz holati, rasmlari va balansingizni ko‘rasiz.`,
+      { reply_markup: CABINET_KEYBOARD },
+    );
+  });
+
   bot.hears(BTN_CARGO, async (ctx) => {
     const linked = await clientsForChat(BigInt(ctx.chat.id));
     if (!linked.length) return;

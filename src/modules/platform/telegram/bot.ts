@@ -4,7 +4,12 @@ import { db } from '../db/client';
 import { telegramLinks, users } from '../db/schema';
 import { logger } from '../logger';
 import { clientsForChat } from '../../wms/client-cabinet/service';
-import { CABINET_KEYBOARD, linkClientChat, registerClientCabinet } from './client-cabinet';
+import {
+  beginClientLink,
+  CABINET_KEYBOARD,
+  PHONE_KEYBOARD,
+  registerClientCabinet,
+} from './client-cabinet';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -62,13 +67,20 @@ export function startTelegramBot(): void {
       where: eq(telegramLinks.linkCode, code),
     });
     if (!link || link.status === 'revoked') {
-      // Not a staff code — maybe a client cabinet code (Phase 2.2).
-      const client = await linkClientChat(code, ctx.chat.id);
-      if (client) {
+      // Not a staff code — maybe a client cabinet code (Phase 2.2). Identity
+      // is verified by phone BEFORE anything is linked or shown (owner's
+      // incident: a link sent to the wrong person exposed another client).
+      const step = await beginClientLink(code, ctx.chat.id);
+      if (step === 'ask_phone') {
         await ctx.reply(
-          `✅ Assalomu alaykum, ${client.name}!\n` +
-            `Kod: ${client.clientCode}. Bu yerda yuklaringiz holati, rasmlari va balansingizni ko‘rasiz.`,
-          { reply_markup: CABINET_KEYBOARD },
+          'Assalomu alaykum! Xavfsizlik uchun telefon raqamingizni tasdiqlang — pastdagi «📱 Telefon raqamimni yuborish» tugmasini bosing.',
+          { reply_markup: PHONE_KEYBOARD },
+        );
+        return;
+      }
+      if (step === 'no_phone') {
+        await ctx.reply(
+          'Bu havolani tasdiqlab bo‘lmadi — menejeringizga murojaat qiling.',
         );
         return;
       }

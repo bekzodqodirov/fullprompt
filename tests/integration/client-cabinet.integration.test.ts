@@ -18,7 +18,11 @@ import {
   debtSummary,
   lotPhotoKeys,
 } from '@/modules/wms/client-cabinet/service';
-import { linkClientChat } from '@/modules/platform/telegram/client-cabinet';
+import {
+  beginClientLink,
+  completeClientLink,
+  failClientLink,
+} from '@/modules/platform/telegram/client-cabinet';
 import { renderClientCabinetText } from '@/modules/platform/notifications/service';
 
 /** Phase 2.2: Telegram client cabinet — linking, cargo view, photos, debt. */
@@ -44,7 +48,10 @@ beforeAll(async () => {
       )[0]!.id;
   actorId = (await db.select().from(users).limit(1))[0]!.id;
   const suffix = String(Date.now()).slice(-6);
-  const [c] = await db.insert(clients).values({ clientCode: `C2${suffix}`, name: 'Cabinet client' }).returning();
+  const [c] = await db
+    .insert(clients)
+    .values({ clientCode: `C2${suffix}`, name: 'Cabinet client', phones: ['+998 90 175 78 00'] })
+    .returning();
   clientId = c!.id;
   const [o] = await db.insert(clients).values({ clientCode: `C9${suffix}`, name: 'Other client' }).returning();
   otherClientId = o!.id;
@@ -90,32 +97,59 @@ afterAll(async () => {
   await pgClient.end();
 });
 
-describe('linking', () => {
-  it('one-time code links a chat to the client; revoked/unknown codes fail', async () => {
-    const code = `c-test-${Date.now()}`;
-    await db
+describe('linking (two-step, phone-verified)', () => {
+  async function mintCode(forClient: string) {
+    const code = `c-test-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const [row] = await db
       .insert(clientTelegramLinks)
-      .values({ clientId, linkCode: code, status: 'pending', createdBy: actorId });
+      .values({ clientId: forClient, linkCode: code, status: 'pending', createdBy: actorId })
+      .returning();
+    return { code, linkId: row!.id };
+  }
 
-    const linked = await linkClientChat(code, CHAT_ID);
+  it('start asks for the phone, completion links, the code is single-use', async () => {
+    const { code, linkId } = await mintCode(clientId);
+    expect(await beginClientLink(code, CHAT_ID)).toBe('ask_phone');
+
+    const linked = await completeClientLink(linkId, CHAT_ID);
     expect(linked?.id).toBe(clientId);
-
     const chats = await clientsForChat(BigInt(CHAT_ID));
     expect(chats.map((c) => c.id)).toContain(clientId);
 
-    // The code is single-use — burned on link.
-    expect(await linkClientChat(code, CHAT_ID + 1)).toBeNull();
-    expect(await linkClientChat('no-such-code', CHAT_ID)).toBeNull();
+    // Burned on link — cannot be started or completed again.
+    expect(await beginClientLink(code, CHAT_ID + 1)).toBeNull();
+    expect(await completeClientLink(linkId, CHAT_ID + 1)).toBeNull();
+    expect(await beginClientLink('no-such-code', CHAT_ID)).toBeNull();
   });
 
   it('re-linking the same client to the same chat does not duplicate', async () => {
-    const code = `c-test2-${Date.now()}`;
-    await db
-      .insert(clientTelegramLinks)
-      .values({ clientId, linkCode: code, status: 'pending', createdBy: actorId });
-    await linkClientChat(code, CHAT_ID);
+    const { linkId } = await mintCode(clientId);
+    await completeClientLink(linkId, CHAT_ID);
     const chats = await clientsForChat(BigInt(CHAT_ID));
     expect(chats.filter((c) => c.id === clientId)).toHaveLength(1);
+  });
+
+  it('failed verification burns the code (wrong-recipient incident)', async () => {
+    const { code, linkId } = await mintCode(clientId);
+    expect(await beginClientLink(code, CHAT_ID + 5)).toBe('ask_phone');
+    await failClientLink(linkId);
+    const row = await db.query.clientTelegramLinks.findFirst({
+      where: eq(clientTelegramLinks.id, linkId),
+    });
+    expect(row?.status).toBe('revoked');
+    expect(row?.linkCode).toBeNull();
+    expect(await beginClientLink(code, CHAT_ID + 5)).toBeNull();
+    expect(await completeClientLink(linkId, CHAT_ID + 5)).toBeNull();
+  });
+
+  it('a client without a registered phone cannot be verified, code stays for retry', async () => {
+    const { code } = await mintCode(otherClientId); // otherClient has no phones
+    expect(await beginClientLink(code, CHAT_ID + 6)).toBe('no_phone');
+    // NOT burned — staff adds the phone, the client taps the same link again.
+    const row = await db.query.clientTelegramLinks.findFirst({
+      where: eq(clientTelegramLinks.linkCode, code),
+    });
+    expect(row?.status).toBe('pending');
   });
 });
 

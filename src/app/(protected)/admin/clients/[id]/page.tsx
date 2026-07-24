@@ -71,11 +71,18 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 {link.linkedAt && ` · ${format.dateTime(new Date(link.linkedAt), { dateStyle: 'short' })}`}
               </span>
             ) : botUsername && link.linkCode ? (
-              <input
-                readOnly
-                className="input flex-1 font-mono text-xs"
-                value={`https://t.me/${botUsername}?start=${link.linkCode}`}
-              />
+              <>
+                {/* The code label guards against sending another tab's link
+                    to the wrong client (owner's incident). */}
+                <span className="shrink-0 font-mono font-extrabold text-blue-800">
+                  {client.clientCode}
+                </span>
+                <input
+                  readOnly
+                  className="input flex-1 font-mono text-xs"
+                  value={`https://t.me/${botUsername}?start=${link.linkCode}`}
+                />
+              </>
             ) : (
               <span className="text-gray-500">{tcab('cabinetPending')}</span>
             )}

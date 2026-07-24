@@ -17,6 +17,31 @@ import { clientBalanceUsd, clientLedger } from '../finance/service';
  * chat's linked client(s). All queries verify ownership by clientId.
  */
 
+/**
+ * Phone identity check (owner's incident: a cabinet link minted for client A
+ * was sent to person B, who got linked to A's data). Numbers are compared as
+ * digit strings by their last 9 digits, so +998 90 175-78-00, 998901757800
+ * and 901757800 all match each other, and country-code formatting never
+ * causes a false mismatch.
+ */
+export function phoneDigits(phone: string): string {
+  return phone.replace(/\D/g, '');
+}
+
+export function phonesMatch(a: string, b: string): boolean {
+  const da = phoneDigits(a);
+  const db2 = phoneDigits(b);
+  if (da.length < 7 || db2.length < 7) return false;
+  const n = Math.min(9, da.length, db2.length);
+  return da.slice(-n) === db2.slice(-n);
+}
+
+/** Does the shared phone belong to this client (any of its registered numbers)? */
+export function phoneBelongsToClient(shared: string, clientPhones: unknown): boolean {
+  if (!Array.isArray(clientPhones)) return false;
+  return clientPhones.some((p) => typeof p === 'string' && phonesMatch(shared, p));
+}
+
 /** Clients represented by a Telegram chat (a broker chat may hold several). */
 export async function clientsForChat(chatId: bigint) {
   return db

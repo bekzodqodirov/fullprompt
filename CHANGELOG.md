@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Cabinet linking is now phone-verified — 2026-07-24
+
+- **Owner's incident**: a cabinet link minted for one client was sent to a different person, who tapped it and instantly saw the other client's cargo and debt. Root cause: the link was a bearer token — whoever tapped it got linked, identity unchecked.
+- **Now linking is two-step**: tapping the link reveals NOTHING — the bot first asks the person to share their own phone number via Telegram's contact button (spoof-proof: a forwarded stranger's contact card is detected and rejected). The number is matched against the client card's registered phones (digit-normalized, so +998 90 175-78-00 and 998901757800 match) and only then does the cabinet open.
+- **On mismatch**: the link is burned immediately, the person sees a neutral "contact your manager" (no client data), and the staff member who minted the link gets a 🚨 Telegram alert to check who they sent it to.
+- A client with NO phone on file can't be verified — the bot tells the person to contact the manager, the staff member gets a prompt to fill the phone in (the link survives for a retry after that).
+- The admin card now shows the client code right next to each pending link — the incident started as a wrong-tab mix-up between two same-named clients.
+- Phone-matching unit suite + reworked linking integration tests (97 unit/integration + 12 e2e green). Also fixed the second e2e code-collision flake (client code now uses the full run id).
+
 ## Quick-batch loading: pick the box, don't type the code — 2026-07-24
 
 - **⚡ Quick (plan-less) batches**: the loading screen's manual button becomes "📦 Skladdan tanlab yuklash" — it opens the origin warehouse's loadable stock (in_stock / ready_for_pickup, grouped by client-letter with product names and crate badges). Tap a box → loaded; the sheet stays open so several boxes go in a row, and loaded ones drop off the list instantly (owner's request: no code typing).

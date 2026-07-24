@@ -44,7 +44,7 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
 
   // Create a client bound to the seeded sales manager
   await page.goto('/admin/clients/new');
-  await page.locator('input[name="clientCode"]').fill(`GS9${runId.slice(0, 3)}`);
+  await page.locator('input[name="clientCode"]').fill(`GS9${runId}`);
   await page.locator('input[name="name"]').fill(`Test Client ${runId}`);
   await page.locator('select[name="salesManagerId"]').selectOption({ label: 'Dilnoza (Sales)' });
   await page.locator('main form button[type="submit"]').first().click();
