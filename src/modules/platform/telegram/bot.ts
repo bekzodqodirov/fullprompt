@@ -3,6 +3,8 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { telegramLinks, users } from '../db/schema';
 import { logger } from '../logger';
+import { clientsForChat } from '../../wms/client-cabinet/service';
+import { CABINET_KEYBOARD, linkClientChat, registerClientCabinet } from './client-cabinet';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -44,6 +46,15 @@ export function startTelegramBot(): void {
   bot.command('start', async (ctx) => {
     const code = ctx.match?.trim();
     if (!code) {
+      // A linked client without a code gets the cabinet menu back.
+      const linkedClients = await clientsForChat(BigInt(ctx.chat.id));
+      if (linkedClients.length) {
+        await ctx.reply(
+          `Assalomu alaykum! Kabinet: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
+          { reply_markup: CABINET_KEYBOARD },
+        );
+        return;
+      }
       await ctx.reply('GSR LOGISTICS. Профиль → «Подключить Telegram» — ссылка оттуда.');
       return;
     }
@@ -51,6 +62,16 @@ export function startTelegramBot(): void {
       where: eq(telegramLinks.linkCode, code),
     });
     if (!link || link.status === 'revoked') {
+      // Not a staff code — maybe a client cabinet code (Phase 2.2).
+      const client = await linkClientChat(code, ctx.chat.id);
+      if (client) {
+        await ctx.reply(
+          `✅ Assalomu alaykum, ${client.name}!\n` +
+            `Kod: ${client.clientCode}. Bu yerda yuklaringiz holati, rasmlari va balansingizni ko‘rasiz.`,
+          { reply_markup: CABINET_KEYBOARD },
+        );
+        return;
+      }
       await ctx.reply('Код не найден или устарел. Откройте профиль и попробуйте снова.');
       return;
     }
@@ -66,6 +87,8 @@ export function startTelegramBot(): void {
     const user = await db.query.users.findFirst({ where: eq(users.id, link.userId) });
     await ctx.reply(`✅ Telegram подключён: ${user?.fullName ?? ''}. Уведомления будут приходить сюда.`);
   });
+
+  registerClientCabinet(bot);
 
   bot.catch((err) => logger.error({ err: err.error }, 'telegram bot error'));
 

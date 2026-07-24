@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Phase 2.2 — Telegram client cabinet — 2026-07-24
+
+- **Clients get their own cabinet in the SAME bot** (owner's spec): staff opens Admin → Client → "🤖 Telegram kabinet", mints a one-time deep link and sends it to the client; the client taps it and gets a persistent uz-language menu.
+- **📦 Yuklarim** — active cargo grouped by lot (letter, product zh/ru, per-status counts: skladda / yo'lda 🚛 / olib ketishga tayyor ✅, warehouse codes) with 📷 buttons that send the lot's photos (server thumbnails, ownership re-checked on every tap).
+- **💰 Balans** — the Phase 2.1 ledger balance ("qarzingiz: $X" or "qarzingiz yo'q ✅") plus the last 5 charges/payments — old delivered-cargo debt included (owner explicit).
+- **🗄 Tarix** — already-issued cargo history.
+- **Auto-messages to the client's own chat** (best-effort, uz): cargo arrived at the UZ warehouse (owner's Q5 wording — "rasmiylashtiruv tugagach olib ketish vaqtini kelishamiz") and cargo issued (receiver name, boxes left).
+- One chat can hold several clients (broker case); codes are single-use; staff can revoke a link any time and access ends immediately; linking/revoking is audited. Migration 0016; cabinet integration suite (90 unit/integration + 12 e2e green).
+
 ## Phase 2.1 — Finance: client ledger, batch pricing, debt gate — 2026-07-24
 
 - **💰 Finance section** (`/finance`, home tile for finance roles): every client with money activity, charges/payments/balance in USD, debtors first and in red; client page shows the full ledger (who entered what, when, against which batch) with void-with-reason for mistakes (audited, struck-through in history — never deleted).

@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
+  clientTelegramLinks,
   events,
   notifications,
   roles,
@@ -191,6 +192,67 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
   }
 }
 
+/**
+ * Direct message to the client's own linked Telegram chats (Phase 2.2
+ * cabinet). Best-effort: a send failure is logged and never blocks the event
+ * — the client can always open the cabinet and see the same state.
+ */
+export function renderClientCabinetText(
+  type: string,
+  payload: Record<string, unknown>,
+): string | null {
+  switch (type) {
+    case 'ReadyForPickup':
+      // Owner's Q5 wording: arrived, being cleared — pickup after paperwork.
+      return (
+        `📦 Assalomu alaykum! ${payload.clientCode} kodli yukingiz (${payload.boxCount} karobka) ` +
+        `${payload.warehouseCode} omboriga yetib keldi. Rasmiylashtiruv tugagach olib ketish vaqtini kelishamiz.`
+      );
+    case 'BoxIssued':
+      return (
+        `🤝 ${payload.clientCode}: ${payload.boxCount} karobka yukingiz berildi (sklad ${payload.warehouseCode}). ` +
+        `Oluvchi: ${payload.personName}.` +
+        (Number(payload.remaining) > 0 ? `\nSkladda qoldi: ${payload.remaining} karobka.` : '')
+      );
+    default:
+      return null;
+  }
+}
+
+async function notifyLinkedClients(event: {
+  type: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  const clientId = event.payload.clientId as string | null;
+  if (!clientId) return;
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+  const text = renderClientCabinetText(event.type, {
+    ...event.payload,
+    clientCode: client?.clientCode ?? '',
+  });
+  if (!text) return;
+  const links = await db
+    .select()
+    .from(clientTelegramLinks)
+    .where(
+      and(eq(clientTelegramLinks.clientId, clientId), eq(clientTelegramLinks.status, 'linked')),
+    );
+  for (const link of links) {
+    if (!link.telegramChatId) continue;
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chat_id: Number(link.telegramChatId), text }),
+      });
+    } catch (err) {
+      logger.warn({ err, clientId }, 'client cabinet notify failed');
+    }
+  }
+}
+
 /** Fan out unprocessed events into notification rows. Called by the events worker. */
 export async function processPendingEvents(): Promise<number> {
   const pending = await db
@@ -240,6 +302,10 @@ export async function processPendingEvents(): Promise<number> {
       });
       created += 1;
     }
+    await notifyLinkedClients({
+      type: event.type,
+      payload: event.payload as Record<string, unknown>,
+    });
     await db.update(events).set({ processedAt: new Date() }).where(eq(events.id, event.id));
   }
   return created;

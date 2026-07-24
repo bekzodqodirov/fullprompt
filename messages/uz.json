@@ -178,7 +178,13 @@
     "codeFormat": "Kod {prefix} + raqamlar formatida bo'lishi kerak, masalan {example}",
     "noManager": "Biriktirilmagan",
     "codeAutoPlaceholder": "{prefix}… (avto)",
-    "codeAutoHint": "Bo'sh qoldirsangiz — tizim o'zi navbatdagi kodni beradi"
+    "codeAutoHint": "Bo'sh qoldirsangiz — tizim o'zi navbatdagi kodni beradi",
+    "cabinetTitle": "Telegram kabinet",
+    "cabinetHint": "Havolani yarating va klientga yuboring — u botda yuklari holati, rasmlari va balansini ko‘radi.",
+    "cabinetLinked": "Ulangan",
+    "cabinetPending": "Kod kutilmoqda",
+    "cabinetRevoke": "Uzish",
+    "cabinetNewCode": "Yangi havola yaratish"
   },
   "users": {
     "title": "Xodimlar",

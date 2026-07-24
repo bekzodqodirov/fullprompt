@@ -178,7 +178,13 @@
     "codeFormat": "Код должен быть в формате {prefix} + цифры, например {example}",
     "noManager": "Не назначен",
     "codeAutoPlaceholder": "{prefix}… (авто)",
-    "codeAutoHint": "Оставьте пустым — система сама присвоит следующий код"
+    "codeAutoHint": "Оставьте пустым — система сама присвоит следующий код",
+    "cabinetTitle": "Telegram-кабинет",
+    "cabinetHint": "Создайте ссылку и отправьте клиенту — в боте он увидит статус грузов, фото и баланс.",
+    "cabinetLinked": "Подключён",
+    "cabinetPending": "Ожидает код",
+    "cabinetRevoke": "Отключить",
+    "cabinetNewCode": "Создать ссылку"
   },
   "users": {
     "title": "Сотрудники",

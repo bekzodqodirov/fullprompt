@@ -337,6 +337,37 @@ export const telegramLinks = pgTable(
   ],
 );
 
+/**
+ * Client cabinet links (Phase 2.2): a CLIENT (not a staff user) connected to
+ * the same bot via a one-time code minted by staff. A chat may represent
+ * several clients (broker) and a client may have several chats.
+ */
+export const clientTelegramLinks = pgTable(
+  'client_telegram_links',
+  {
+    id: id(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    telegramChatId: bigint('telegram_chat_id', { mode: 'bigint' }),
+    linkCode: text('link_code').unique(),
+    status: text('status').notNull().default('pending'),
+    linkedAt: timestamp('linked_at', { withTimezone: true }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'client_telegram_links_status_check',
+      sql`${t.status} IN ('pending', 'linked', 'revoked')`,
+    ),
+    index('client_telegram_links_client_idx').on(t.clientId),
+    index('client_telegram_links_chat_idx').on(t.telegramChatId),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Attachments (polymorphic files, spec 4.8)
 // ---------------------------------------------------------------------------

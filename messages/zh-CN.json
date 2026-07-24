@@ -178,7 +178,13 @@
     "codeFormat": "代码格式必须为 {prefix} + 数字，例如 {example}",
     "noManager": "未分配",
     "codeAutoPlaceholder": "{prefix}…（自动）",
-    "codeAutoHint": "留空则系统自动分配下一个代码"
+    "codeAutoHint": "留空则系统自动分配下一个代码",
+    "cabinetTitle": "Telegram 客户端",
+    "cabinetHint": "生成链接发给客户——客户可在机器人中查看货物状态、照片和余额。",
+    "cabinetLinked": "已连接",
+    "cabinetPending": "等待验证码",
+    "cabinetRevoke": "断开",
+    "cabinetNewCode": "生成链接"
   },
   "users": {
     "title": "员工",
