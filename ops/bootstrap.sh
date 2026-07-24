@@ -22,7 +22,9 @@ docker compose version >/dev/null
 
 say "2/5 .env"
 if [ ! -f .env ]; then
-  gen() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
+  # openssl instead of tr|head: head closing the pipe SIGPIPEs tr, which
+  # under `set -o pipefail` silently killed the whole script.
+  gen() { openssl rand -hex "$1"; }
   POSTGRES_PASSWORD="$(gen 24)"
   cat > .env <<EOF
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
