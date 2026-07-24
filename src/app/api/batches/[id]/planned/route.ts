@@ -87,10 +87,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   // Quick batches have no plan, so the manual "sticker lost" sheet has no
   // list to tap. Ship the origin warehouse's loadable stock instead (owner's
-  // request: pick the box, don't type the code).
+  // request: pick the box, don't type the code). The quick flag itself must
+  // come from "has no plan" — NOT from "has no member boxes", because the
+  // first loaded box becomes a member and would flip the screen mid-work.
+  const hasPlan = !!(await db.query.loadPlans.findFirst({
+    where: eq(loadPlans.batchId, id),
+  }));
   let available: typeof memberBoxes = [];
   if (['forming', 'loading'].includes(batch.status)) {
-    const hasPlan = await db.query.loadPlans.findFirst({ where: eq(loadPlans.batchId, id) });
     if (!hasPlan) {
       available = await db
         .select({
@@ -118,6 +122,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   return Response.json({
     batch: { id: batch.id, code: batch.code, status: batch.status },
+    quick: !hasPlan,
     boxes: memberBoxes,
     available,
     crates: originCrates.map((c) => ({ code: c.code, boxShortCodes: byCrate.get(c.id) ?? [] })),

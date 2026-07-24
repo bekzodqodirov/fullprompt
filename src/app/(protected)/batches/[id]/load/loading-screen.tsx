@@ -24,10 +24,21 @@ interface PlannedBox {
 }
 interface Snapshot {
   batch: { id: string; code: string; status: string };
+  /** True when the batch has NO plan (quick batch). */
+  quick?: boolean;
   boxes: PlannedBox[];
   /** Quick batch only: the origin warehouse's loadable stock (tap-to-pick). */
   available?: PlannedBox[];
   crates: { code: string; boxShortCodes: string[] }[];
+}
+
+/**
+ * Plan-less (quick) batch? The server flag is the truth; the box-count
+ * fallback covers stale cached snapshots — but ONLY before anything was
+ * loaded, since loaded boxes become members and would flip the mode.
+ */
+function isQuick(snapshot: Snapshot): boolean {
+  return snapshot.quick ?? snapshot.boxes.length === 0;
 }
 
 /**
@@ -181,7 +192,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     const crate = snapshot.crates.find((c) => c.code === code);
     const memberCodes = crate ? crate.boxShortCodes : [code];
     const planned = new Set(snapshot.boxes.map((b) => b.shortCode));
-    const quick = snapshot.boxes.length === 0; // quick batch: no plan, no ceremony
+    const quick = isQuick(snapshot); // quick batch: no plan, no ceremony
 
     if (memberCodes.every((c) => loaded.has(c))) {
       feedback('dup');
@@ -230,7 +241,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   const unscanned = snapshot.boxes.filter((b) => !loaded.has(b.shortCode));
   // Quick batch: no plan, so "sticker lost" picks from the origin WH stock
   // instead of the (empty) plan list (owner: tap the box, don't type codes).
-  const quickBatch = snapshot.boxes.length === 0;
+  const quickBatch = isQuick(snapshot);
   const q = manualQuery.trim().toUpperCase();
   const basePick = (quickBatch ? (snapshot.available ?? []) : unscanned).filter(
     (b) => !loaded.has(b.shortCode),
