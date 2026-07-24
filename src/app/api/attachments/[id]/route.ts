@@ -2,17 +2,16 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { attachments } from '@/modules/platform/db/schema';
-import { getLocalDriver, getStorage } from '@/modules/platform/files/storage';
+import { getStorage } from '@/modules/platform/files/storage';
 import { AttachmentDeleteError, deleteAttachment } from '@/modules/platform/files/service';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 
 const variantSchema = z.enum(['original', 'thumb200', 'thumb800']).default('original');
 
 /**
- * Serve an attachment (original or thumbnail). Local driver streams the bytes
- * directly — a redirect to an absolute URL breaks when the app is opened via a
- * LAN IP from a phone (the redirect host may not match the one the client
- * used). S3 deployments redirect to a presigned object-storage URL.
+ * Serve an attachment (original or thumbnail) by streaming the bytes through
+ * the app — never a redirect to the storage host (minio:9000 / a LAN IP is
+ * often unreachable from the viewer's browser).
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -38,23 +37,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         : attachment.storageKey;
   const contentType = key.endsWith('.webp') ? 'image/webp' : attachment.contentType;
 
-  const local = getLocalDriver();
-  if (local) {
-    try {
-      const body = await local.get(key);
-      return new Response(new Uint8Array(body), {
-        headers: {
-          'content-type': contentType,
-          'cache-control': 'private, max-age=600',
-        },
-      });
-    } catch {
-      return new Response('Not found', { status: 404 });
-    }
+  // Always stream through the app, for BOTH drivers. A redirect to a
+  // presigned URL breaks whenever the storage host isn't reachable from the
+  // browser — http://minio:9000 exists only inside the Docker network, and a
+  // LAN-IP phone session has the same problem with any absolute host.
+  try {
+    const body = await getStorage().get(key);
+    return new Response(new Uint8Array(body), {
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'private, max-age=600',
+      },
+    });
+  } catch {
+    return new Response('Not found', { status: 404 });
   }
-
-  const url = await getStorage().signedUrl(key);
-  return Response.redirect(new URL(url, request.url), 302);
 }
 
 /** Remove a wrongly-added photo/file (uploader or anyone with receipts.edit). */
