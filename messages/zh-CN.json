@@ -580,7 +580,9 @@
     "missingTitle": "在途丢失",
     "foundAtOrigin": "留在发货仓",
     "foundHere": "在本仓找到",
-    "closeBatch": "关闭车次"
+    "closeBatch": "关闭车次",
+    "foundHereAll": "全部在此（{n} 箱）— 入库",
+    "foundHereAllConfirm": "确认全部 {n} 箱都在本仓库？"
   },
   "transit": {
     "title": "在途货物",

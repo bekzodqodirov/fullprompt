@@ -580,7 +580,9 @@
     "missingTitle": "Yo‘lda yo‘qolganlar",
     "foundAtOrigin": "Jo‘natgan skladda qolgan",
     "foundHere": "Shu yerda topildi",
-    "closeBatch": "Partiyani yopish"
+    "closeBatch": "Partiyani yopish",
+    "foundHereAll": "Hammasi shu yerda ({n} ta) — skladga kirgizish",
+    "foundHereAllConfirm": "{n} ta korobkaning hammasi shu skladda deb tasdiqlaysizmi?"
   },
   "transit": {
     "title": "Yo‘ldagi yuklar",

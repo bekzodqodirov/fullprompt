@@ -79,6 +79,32 @@ export function UnloadActions({
       {missing.length > 0 && (
         <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
           <p className="text-sm font-bold">🔍 {t('missingTitle')}</p>
+          {canResolve && missing.length > 1 && (
+            <button
+              type="button"
+              data-testid="found-here-all"
+              className="btn-primary w-full disabled:opacity-50"
+              disabled={pending}
+              onClick={async () => {
+                // The whole truck arrived but was accepted without scanning —
+                // one tap lands everything here instead of 13 taps.
+                if (!window.confirm(t('foundHereAllConfirm', { n: missing.length }))) return;
+                setPending(true);
+                setError(null);
+                try {
+                  for (const box of missing) {
+                    const res = await resolveMissingAction({ boxId: box.boxId, resolution: 'found_here' });
+                    if (!res.ok) setError(res.error ?? 'error');
+                  }
+                  router.refresh();
+                } finally {
+                  setPending(false);
+                }
+              }}
+            >
+              ✅ {t('foundHereAll', { n: missing.length })}
+            </button>
+          )}
           {missing.map((box) => (
             <div key={box.boxId} className="space-y-1.5 rounded-lg bg-white p-2 text-sm">
               <p>
