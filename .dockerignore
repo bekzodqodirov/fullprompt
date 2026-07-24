@@ -1,0 +1,14 @@
+# Secrets and runtime data must never enter the image.
+.env
+.env.*
+!.env.example
+.data
+# Build/dev artifacts — the image builds its own.
+node_modules
+.next
+test-results
+playwright-report
+.git
+.github
+docs
+*.md

@@ -16,6 +16,40 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  # One-shot: apply migrations + idempotent seed before the app starts.
+  # Uses the build stage (full sources + tsx), not the slim runtime image.
+  migrate:
+    build:
+      context: .
+      target: build
+    restart: 'no'
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
+    command: sh -c "pnpm db:migrate && pnpm db:seed"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # HTTPS front (needed for the phone camera scanner — secure context).
+  # Enable with: DOMAIN=wms.example.com docker compose --profile https up -d
+  caddy:
+    image: caddy:2
+    profiles: ['https']
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    command: sh -c 'printf "%s {\n reverse_proxy app:3000\n}\n" "$$DOMAIN" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
+    volumes:
+      - caddydata:/data
+    depends_on:
+      - app
 
   postgres:
     image: postgres:16
@@ -58,3 +92,4 @@ volumes:
   pgdata:
   miniodata:
   backups:
+  caddydata:

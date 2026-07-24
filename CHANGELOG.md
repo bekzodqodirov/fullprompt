@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Deploy kit — probniy server in one command — 2026-07-24
+
+- `docker-compose.yml`: one-shot **migrate+seed service** (the app previously started against an empty DB with no admin user), optional **Caddy HTTPS profile** (`DOMAIN=… docker compose --profile https up -d`) — phones need a secure context for the camera scanner.
+- **`.dockerignore` added** — `.env` secrets and `.data` (dumps, photos) no longer leak into the image (`COPY . .` was copying them).
+- **`ops/bootstrap.sh`**: fresh Ubuntu VPS → running stack in one command (installs Docker, generates `.env` with random secrets, build, health-wait, prints the URL and demo login).
+- **`docs/DEPLOY.md`** (uz): the owner's 10-minute path — buy a HK/SG VPS, clone, run the script; or hand Claude SSH access and skip even that.
+
 ## M6 part 7 (final) — Digest polish, restore fire drill, runbook — 2026-07-24
 
 **M6 closes with this release — all Phase 1 milestones (M0–M6) are done.**

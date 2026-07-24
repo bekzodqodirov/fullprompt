@@ -106,9 +106,14 @@ failures are visible under **Admin → Notifications**.
 
 ## Deployment
 
-`docker-compose.yml` runs app + Postgres + MinIO + nightly backup on a VPS
-(HK/SG region for VPN-free mainland-China access). All assets self-hosted —
-no Google/Facebook CDNs. See `ops/backup.sh` and `.env.example`.
+**Owner's 10-minute path: [`docs/DEPLOY.md`](docs/DEPLOY.md)** — buy a VPS,
+clone, `bash ops/bootstrap.sh` (installs Docker, generates `.env`, builds,
+migrates, seeds, starts everything; `DOMAIN=… ` adds automatic HTTPS via
+Caddy — required for the phone camera scanner).
+
+`docker-compose.yml` runs app + Postgres + MinIO + one-shot migrate/seed +
+nightly backup (+ optional Caddy) on a VPS (HK/SG region for VPN-free
+mainland-China access). All assets self-hosted — no Google/Facebook CDNs.
 
 ## Project layout
 
