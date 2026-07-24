@@ -13,6 +13,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { clientBalanceUsd } from '../finance/service';
 
 export class IssueError extends Error {
   constructor(public readonly code: string) {
@@ -28,7 +29,7 @@ export const issueSchema = z.object({
   boxIds: z.array(z.string().uuid()).min(1).max(500),
   personName: z.string().trim().min(2).max(200),
   personPhone: z.string().trim().min(5).max(50),
-  /** Phase 3 hook — recorded, no logic (spec 6.7). */
+  /** Debt gate override (Phase 2.1): a permitted manager allows issuing to a debtor. */
   debtOk: z.boolean().default(false),
   note: z.string().trim().max(500).optional().or(z.literal('')),
 });
@@ -42,6 +43,11 @@ export type IssueInput = z.infer<typeof issueSchema>;
 export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new IssueError('unauthenticated');
   const actorId = ctx.actorId;
+  // Debt gate (Phase 2.1, owner's rule): a debtor gets cargo only with a
+  // manager's permission — debtOk is that permission, checked in the action
+  // layer against finance.debt_override.
+  const balance = await clientBalanceUsd(input.clientId);
+  if (balance > 0.009 && !input.debtOk) throw new IssueError('debt_block');
   return db.transaction(async (tx) => {
     const existing = await tx.query.handovers.findFirst({
       where: eq(handovers.id, input.handoverId),

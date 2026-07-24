@@ -620,3 +620,50 @@ export const tnvedAssignments = pgTable(
   },
   (t) => [check('tnved_assignments_source_check', sql`${t.source} IN ('manual', 'ai')`)],
 );
+
+// ---------------------------------------------------------------------------
+// Client money ledger (Phase 2.1): no tariffs — every shipment's price is
+// negotiated, so the ledger only records agreed charges and incoming
+// payments. Balance = Σ charges − Σ payments, in USD via dated FX rates.
+// ---------------------------------------------------------------------------
+
+export const clientTransactions = pgTable(
+  'client_transactions',
+  {
+    id: id(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    type: text('type').notNull(),
+    amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    currency: varchar('currency', { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    /** Frozen at entry time — a later FX edit must not move settled money. */
+    rateToUsd: numeric('rate_to_usd', { precision: 18, scale: 8 }).notNull(),
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    /** Payments only: cash / card / transfer (owner accepts all three). */
+    method: text('method'),
+    txDate: date('tx_date').notNull(),
+    /** Charges from batch pricing point at the batch they price. */
+    batchId: uuid('batch_id').references(() => batches.id),
+    note: text('note'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedBy: uuid('voided_by').references(() => users.id),
+    voidReason: text('void_reason'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment')`),
+    check('client_transactions_amount_check', sql`${t.amount} > 0`),
+    check(
+      'client_transactions_method_check',
+      sql`${t.method} IS NULL OR ${t.method} IN ('cash', 'card', 'transfer')`,
+    ),
+    index('client_transactions_client_idx').on(t.clientId, t.createdAt),
+    index('client_transactions_batch_idx').on(t.batchId),
+  ],
+);

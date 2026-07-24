@@ -20,6 +20,11 @@
 
 **Phase 1 remaining:** owner acceptance walkthrough and hosting/VPS choice (open Q3) → production deploy.
 
+**Phase 2 — order agreed with the owner 2026-07-24: 2.1 Finance → 2.2 Telegram client cabinet → CRM (waits).**
+- **Phase 2.1 Finance — ✅ SHIPPED 2026-07-24** (DECISIONS #108–109): client money ledger (`client_transactions`, no tariffs — negotiated charges + payments cash/card/transfer in any currency, USD balance with entry-time-frozen FX), `/finance` balances + per-client ledger with void, batch pricing page for VED manager + accountant after customs, debt gate on issue behind `finance.debt_override` (owner: debtor cargo only with manager permission).
+- **Phase 2.2 Telegram client cabinet — NEXT:** client links via code (like staff `telegram_links`), sees cargo status/history, photos AND debt (old delivered-cargo debt included — owner explicit); same bot token.
+- **CRM — deferred** (owner: "ha kutib tursin").
+
 **Phase 1.5 — AI assist (owner's request, 2026-07-24) — ✅ SHIPPED 2026-07-24:** AI suggests the ТНВЭД code per lot from the product name (zh/ru) + photo, tuned for an optimal (duty-favorable but defensible) classification. **Memory-first:** every confirmed name→code assignment is stored (extending the product dictionary), and an exact/known product reuses the stored code WITHOUT calling the AI — the model is only asked for products the dictionary hasn't seen; the VED manager stays the final authority (AI fills the draft, human confirms in the invoice/packing flow). Scope: dictionary schema + suggestion service + VED-doc integration; provider/API choice and cost review with the owner before build.
 
 ---

@@ -12,6 +12,11 @@ export async function issueBoxesAction(
   const parsed = issueSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: 'validation' };
   const actor = await authorize('scan.issue', { warehouseId: parsed.data.warehouseId });
+  // Ticking "manager allowed" needs the actual permission — otherwise anyone
+  // could wave the debt gate through (Phase 2.1, owner's rule).
+  if (parsed.data.debtOk && !actor.permissions.has('finance.debt_override')) {
+    return { ok: false, error: 'debt_override_forbidden' };
+  }
   const meta = await requestMeta();
   try {
     const handover = await issueBoxes(parsed.data, { actorId: actor.id, ...meta });

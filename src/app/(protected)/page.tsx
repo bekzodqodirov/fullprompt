@@ -44,6 +44,7 @@ export default async function HomePage() {
   const tDashboard = await getTranslations('dashboard');
   const tInventory = await getTranslations('inventory');
   const tReports = await getTranslations('reports');
+  const tFinance = await getTranslations('finance');
 
   const has = (p: string) => actor.permissions.has(p);
   const canDashboard = has('reports.all_warehouses') || has('reports.own_warehouse');
@@ -70,6 +71,9 @@ export default async function HomePage() {
       : []),
     ...(actor.roles.includes('sales_manager')
       ? [{ href: '/pipeline', label: `📈 ${tPipeline('title')}` }]
+      : []),
+    ...(has('finance.view') || has('finance.manage')
+      ? [{ href: '/finance', label: `💰 ${tFinance('title')}` }]
       : []),
   ];
 

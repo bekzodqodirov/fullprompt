@@ -37,6 +37,10 @@ export const PERMISSION_CODES = [
   'costs.enter_batch',
   'costs.enter_receipt',
   'costs.fx.manage',
+  // Finance (Phase 2.1): client ledger + batch pricing + debt override
+  'finance.manage',
+  'finance.view',
+  'finance.debt_override',
   // Reports
   'reports.all_warehouses',
   'reports.own_warehouse',
@@ -96,9 +100,17 @@ export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
     'batches.depart_close',
     'batches.vehicle_info',
     'costs.enter_batch',
+    'finance.view',
+    'finance.debt_override',
     'reports.all_warehouses',
   ],
-  ved_manager: ['ved.docs', 'costs.enter_batch', 'reports.all_warehouses'],
+  ved_manager: [
+    'ved.docs',
+    'costs.enter_batch',
+    'finance.manage',
+    'finance.view',
+    'reports.all_warehouses',
+  ],
   warehouse_manager: [
     'receipts.create',
     'receipts.edit',
@@ -111,6 +123,7 @@ export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
     'batches.depart_close',
     'batches.vehicle_info',
     'costs.enter_receipt',
+    'finance.debt_override',
     'reports.own_warehouse',
   ],
   warehouse_operator: [
@@ -124,7 +137,15 @@ export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
     'costs.enter_receipt',
     'reports.own_warehouse',
   ],
-  sales_manager: ['clients.view_own', 'reports.own_clients'],
-  accountant: ['costs.enter_batch', 'costs.enter_receipt', 'costs.fx.manage', 'reports.all_warehouses'],
+  sales_manager: ['clients.view_own', 'finance.view', 'finance.debt_override', 'reports.own_clients'],
+  accountant: [
+    'costs.enter_batch',
+    'costs.enter_receipt',
+    'costs.fx.manage',
+    'finance.manage',
+    'finance.view',
+    'finance.debt_override',
+    'reports.all_warehouses',
+  ],
   viewer: ['reports.all_warehouses'],
 };

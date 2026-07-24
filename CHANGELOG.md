@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Phase 2.1 — Finance: client ledger, batch pricing, debt gate — 2026-07-24
+
+- **💰 Finance section** (`/finance`, home tile for finance roles): every client with money activity, charges/payments/balance in USD, debtors first and in red; client page shows the full ledger (who entered what, when, against which batch) with void-with-reason for mistakes (audited, struck-through in history — never deleted).
+- **No tariffs by design** (owner's rule): the price of every shipment is whatever the sales manager and the client agreed — the ledger records **charges** (agreed prices) and **payments** (cash 💵 / card 💳 / bank transfer 🏦, owner accepts all three) in any currency. Amounts convert to USD at the dated FX rate **frozen at entry time** — later rate edits never move settled money. A currency with no rate at all is refused with a pointer to the FX page.
+- **Batch pricing page** (`/batches/[id]/pricing`, batch card → "💰"): after customs, the VED manager and accountant see each client on the batch (boxes / kg / m³), enter the negotiated amount, and it lands in the client's ledger as a charge tied to that batch (owner's flow: "yangi yuki rastamojkadan keyin tayyor bo'lganda VED menejer va buxgalter narxlarni belgilab chiqishadi").
+- **Debt gate on issue** (owner's rule: "manager ruxsati bilan yuklar beriladi"): the issue screen shows the client's debt up front; a debtor's cargo is blocked at confirm unless someone holding the new `finance.debt_override` permission ticks "manager allowed" (recorded on the handover + audit). Operators can't override — managers, sales managers, accountants and admins can (adjustable per role in admin, as all grants are).
+- New permissions `finance.manage` (accountant, VED manager, admins), `finance.view`, `finance.debt_override`; migration 0015 (`client_transactions`); integration suite for conversion/balance/void + the debt gate (84 unit/integration + 12 e2e green).
+
 ## Phase 1.5 — AI ТНВЭД assistant (memory-first) — 2026-07-24
 
 - **🏷 ТНВЭД page per batch** (VED-doc card → "ТНВЭД"): one row per product with photo, code input and a 🤖 button — the AI (Claude) suggests a 10-digit UZ customs code from the product name (zh/ru) + photo, tuned to be duty-optimal but customs-defensible, with a confidence note and reasoning. "Suggest for all empty" fills the gaps in one tap.

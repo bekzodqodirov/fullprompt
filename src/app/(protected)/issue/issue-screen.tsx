@@ -43,6 +43,8 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const [personName, setPersonName] = useState('');
   const [personPhone, setPersonPhone] = useState('');
   const [debtOk, setDebtOk] = useState(false);
+  const [debtUsd, setDebtUsd] = useState(0);
+  const [canOverrideDebt, setCanOverrideDebt] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneHandover, setDoneHandover] = useState<string | null>(null);
@@ -76,8 +78,16 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
           signal: controller.signal,
         });
         if (res.ok) {
-          setList(((await res.json()) as { boxes: IssuableBox[] }).boxes);
+          const data = (await res.json()) as {
+            boxes: IssuableBox[];
+            debtUsd: number;
+            canOverrideDebt: boolean;
+          };
+          setList(data.boxes);
+          setDebtUsd(data.debtUsd);
+          setCanOverrideDebt(data.canOverrideDebt);
           setSelected(new Set());
+          setDebtOk(false);
         }
       } catch {
         /* aborted */
@@ -129,6 +139,10 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
         setPersonName('');
         setPersonPhone('');
         setDebtOk(false);
+      } else if (res.error === 'debt_block') {
+        setError(t('debtBlocked'));
+      } else if (res.error === 'debt_override_forbidden') {
+        setError(t('debtNeedsManager'));
       } else {
         setError(res.error ?? 'error');
       }
@@ -212,6 +226,15 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
           >
             📄 {t('act')}
           </a>
+        </div>
+      )}
+
+      {client && debtUsd > 0.009 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+          <p className="font-bold text-red-800">
+            ⚠️ {t('debtBanner', { amount: debtUsd.toFixed(2) })}
+          </p>
+          {!canOverrideDebt && <p className="mt-1 text-red-700">{t('debtNeedsManager')}</p>}
         </div>
       )}
 
@@ -300,15 +323,23 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                 onChange={(e) => setPersonPhone(e.target.value)}
               />
             </div>
-            <label className="flex items-center gap-2 text-sm font-semibold">
-              <input type="checkbox" className="h-5 w-5" checked={debtOk} onChange={(e) => setDebtOk(e.target.checked)} />
-              {t('debtOk')}
-            </label>
+            {debtUsd > 0.009 && canOverrideDebt && (
+              <label className="flex items-center gap-2 text-sm font-semibold text-red-800">
+                <input type="checkbox" className="h-5 w-5" checked={debtOk} onChange={(e) => setDebtOk(e.target.checked)} />
+                {t('debtOk')}
+              </label>
+            )}
             <button
               type="button"
               data-testid="confirm-issue"
               className="btn-primary w-full disabled:opacity-50"
-              disabled={submitting || selected.size === 0 || personName.trim().length < 2 || personPhone.trim().length < 5}
+              disabled={
+                submitting ||
+                selected.size === 0 ||
+                personName.trim().length < 2 ||
+                personPhone.trim().length < 5 ||
+                (debtUsd > 0.009 && !debtOk)
+              }
               onClick={submit}
             >
               {submitting ? tc('loading') : `🤝 ${t('confirm')} (${selected.size} 📦)`}

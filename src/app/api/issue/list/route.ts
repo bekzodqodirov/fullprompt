@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { boxes, receiptLots, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { clientBalanceUsd } from '@/modules/wms/finance/service';
 
 const querySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -17,8 +18,10 @@ export async function GET(request: Request) {
     clientId: url.searchParams.get('clientId'),
   });
   if (!query.success) return Response.json({ error: 'validation' }, { status: 400 });
+  let canOverrideDebt = false;
   try {
-    await authorize('scan.issue', { warehouseId: query.data.warehouseId });
+    const actor = await authorize('scan.issue', { warehouseId: query.data.warehouseId });
+    canOverrideDebt = actor.permissions.has('finance.debt_override');
   } catch (err) {
     if (err instanceof AuthError) return Response.json({ error: 'forbidden' }, { status: 403 });
     throw err;
@@ -47,5 +50,9 @@ export async function GET(request: Request) {
     )
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
 
-  return Response.json({ boxes: rows });
+  // Debt gate (Phase 2.1): the screen shows the debt up front so the operator
+  // isn't surprised by a blocked confirm.
+  const debtUsd = await clientBalanceUsd(query.data.clientId);
+
+  return Response.json({ boxes: rows, debtUsd, canOverrideDebt });
 }

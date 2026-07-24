@@ -547,7 +547,8 @@
     "create": "Yaratish",
     "loadedBoxes": "Yuklangan korobkalar",
     "departConfirm": "Mashinani jo'natishni tasdiqlaysizmi? Bundan keyin yuk ro'yxati qulflanadi.",
-    "packingPhotos": "Packing (rasmlar)"
+    "packingPhotos": "Packing (rasmlar)",
+    "pricing": "Narx belgilash (moliya)"
   },
   "loading": {
     "title": "Pogruzka",
@@ -595,10 +596,13 @@
     "noBoxes": "Topshirishga tayyor yuk yo‘q",
     "personName": "Oluvchining F.I.O.",
     "personPhone": "Telefon",
-    "debtOk": "Qarzi yo‘q (belgi, bloklamaydi)",
+    "debtOk": "Menejer ruxsat berdi (qarzdorga berish)",
     "confirm": "Topshirish",
     "issued": "Topshirildi",
-    "act": "Topshirish akti (PDF)"
+    "act": "Topshirish akti (PDF)",
+    "debtBanner": "Klient qarzi: ${amount}",
+    "debtNeedsManager": "Qarzdor klientga yuk faqat menejer ruxsati bilan beriladi",
+    "debtBlocked": "Klient qarzdor — berish bloklangan (menejer ruxsati kerak)"
   },
   "pipeline": {
     "title": "Mening klientlarim",
@@ -643,5 +647,36 @@
       "medium": "ishonch o'rtacha",
       "low": "ishonch past — tekshiring"
     }
+  },
+  "finance": {
+    "title": "Moliya",
+    "totalDebt": "Jami qarzdorlik",
+    "client": "Klient",
+    "charges": "Hisoblangan",
+    "payments": "To‘langan",
+    "balance": "Balans",
+    "empty": "Hozircha yozuvlar yo‘q",
+    "balanceHint": "Balans = hisoblangan narxlar − to‘lovlar (USD). Musbat qiymat — klient qarzdor.",
+    "findClient": "Klientni qidirish (kod yoki ism)",
+    "payment": "To‘lov",
+    "charge": "Hisoblash (narx)",
+    "amount": "Summa",
+    "currency": "Valyuta",
+    "method": "To‘lov usuli",
+    "methodCash": "Naqd",
+    "methodCard": "Karta",
+    "methodTransfer": "O‘tkazma (hisob raqamga)",
+    "date": "Sana",
+    "note": "Izoh",
+    "fxMissing": "Bu valyuta uchun kurs kiritilmagan — avval Kurslar bo‘limida kurs kiriting",
+    "history": "Tarix",
+    "debtor": "qarzdor",
+    "void": "Bekor qilish",
+    "voidReason": "Bekor qilish sababi?",
+    "voided": "Bekor qilingan",
+    "pricingTitle": "Partiya narxlarini belgilash",
+    "pricingHint": "Rastamojkadan keyin har bir klient uchun kelishilgan narxni kiriting — u klient hisobiga qarz sifatida yoziladi.",
+    "setPrice": "Narx belgilash",
+    "alreadyCharged": "Hisoblangan"
   }
 }

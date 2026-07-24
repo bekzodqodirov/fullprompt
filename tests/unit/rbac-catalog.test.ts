@@ -26,10 +26,22 @@ describe('RBAC catalog (spec §16 matrix)', () => {
     expect(ROLE_MATRIX.warehouse_operator).not.toContain('receipts.unclaimed.resolve');
   });
 
-  it('sales_manager is read-only: own clients + own reports', () => {
+  it('sales_manager is read-only plus debt override (Phase 2.1)', () => {
     expect(new Set(ROLE_MATRIX.sales_manager)).toEqual(
-      new Set(['clients.view_own', 'reports.own_clients']),
+      new Set(['clients.view_own', 'finance.view', 'finance.debt_override', 'reports.own_clients']),
     );
+  });
+
+  it('finance.manage belongs to accountant + ved_manager (and admins) only', () => {
+    for (const role of ROLE_CODES) {
+      const has = ROLE_MATRIX[role].includes('finance.manage');
+      const should = ['super_admin', 'admin', 'accountant', 'ved_manager'].includes(role);
+      expect(has, `${role} finance.manage`).toBe(should);
+    }
+  });
+
+  it('warehouse_operator cannot override the debt gate', () => {
+    expect(ROLE_MATRIX.warehouse_operator).not.toContain('finance.debt_override');
   });
 
   it('only logist/admin manage load plans', () => {

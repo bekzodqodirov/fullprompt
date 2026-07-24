@@ -238,6 +238,17 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         </div>
       )}
 
+      {/* Phase 2.1: VED manager + accountant set each client's negotiated
+          price after customs — charges land in the client ledger. */}
+      {actor.permissions.has('finance.manage') && (
+        <Link
+          href={`/batches/${batch.id}/pricing`}
+          className="card block text-center font-bold text-amber-800 hover:bg-amber-50"
+        >
+          💰 {t('pricing')}
+        </Link>
+      )}
+
       {/* Editable until the batch is closed — a wrong plate/driver must be
           fixable even after departure (owner's request). */}
       {canVehicle && !['closed', 'cancelled'].includes(batch.status) ? (

@@ -59,7 +59,6 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
     for (const row of rows) {
       if (!row.code.trim()) {
         // Sequential on purpose — visible progress + no rate-limit bursts.
-        // eslint-disable-next-line no-await-in-loop
         await suggest(row);
       }
     }

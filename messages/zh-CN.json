@@ -547,7 +547,8 @@
     "create": "创建",
     "loadedBoxes": "已装箱明细",
     "departConfirm": "确认发车？发车后装载清单将锁定。",
-    "packingPhotos": "装箱单（带照片）"
+    "packingPhotos": "装箱单（带照片）",
+    "pricing": "定价（财务）"
   },
   "loading": {
     "title": "装车",
@@ -595,10 +596,13 @@
     "noBoxes": "没有可交付的货物",
     "personName": "收货人姓名",
     "personPhone": "电话",
-    "debtOk": "无欠款（仅标记）",
+    "debtOk": "经理已批准（欠款客户提货）",
     "confirm": "交付",
     "issued": "已交付",
-    "act": "交接单（PDF）"
+    "act": "交接单（PDF）",
+    "debtBanner": "客户欠款：${amount}",
+    "debtNeedsManager": "欠款客户须经经理批准方可提货",
+    "debtBlocked": "客户有欠款——提货已锁定（需经理批准）"
   },
   "pipeline": {
     "title": "我的客户",
@@ -643,5 +647,36 @@
       "medium": "置信度中",
       "low": "置信度低 — 请核对"
     }
+  },
+  "finance": {
+    "title": "财务",
+    "totalDebt": "总欠款",
+    "client": "客户",
+    "charges": "应收",
+    "payments": "已付",
+    "balance": "余额",
+    "empty": "暂无记录",
+    "balanceHint": "余额 = 应收 − 已付（美元）。正数表示客户欠款。",
+    "findClient": "查找客户（编号或名称）",
+    "payment": "收款",
+    "charge": "计费（价格）",
+    "amount": "金额",
+    "currency": "货币",
+    "method": "付款方式",
+    "methodCash": "现金",
+    "methodCard": "银行卡",
+    "methodTransfer": "转账（对公账户）",
+    "date": "日期",
+    "note": "备注",
+    "fxMissing": "该货币尚无汇率——请先在汇率页录入",
+    "history": "历史",
+    "debtor": "欠款客户",
+    "void": "作废",
+    "voidReason": "作废原因？",
+    "voided": "已作废",
+    "pricingTitle": "批次定价",
+    "pricingHint": "清关后为每位客户录入协商价格——将作为应收记入客户账。",
+    "setPrice": "定价",
+    "alreadyCharged": "已计费"
   }
 }
