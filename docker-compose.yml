@@ -49,7 +49,14 @@ services:
     restart: unless-stopped
     ports:
       - '443:443'
-    command: sh -c 'printf "https://:443 {\n tls internal\n reverse_proxy app:3000\n}\n" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
+    environment:
+      # The PC's LAN IP (set LAN_IP=192.168.x.x in .env) — the internal cert
+      # must name it explicitly, and browsers hitting a bare IP send no SNI,
+      # so it's also the default_sni fallback.
+      LAN_IP: ${LAN_IP:-127.0.0.1}
+    command: >
+      sh -c 'printf "{\n default_sni %s\n}\nhttps://localhost, https://%s {\n tls internal\n reverse_proxy app:3000\n}\n" "$$LAN_IP" "$$LAN_IP" > /etc/caddy/Caddyfile
+      && caddy run --config /etc/caddy/Caddyfile'
     volumes:
       - caddydata:/data
     depends_on:
