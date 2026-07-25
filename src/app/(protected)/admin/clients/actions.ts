@@ -50,6 +50,11 @@ async function validateCodeFormat(code: string): Promise<boolean> {
   return /^[A-Z0-9]{2,10}$/.test(code);
 }
 
+/** Postgres unique_violation (23505) — the client_code unique index. */
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
+}
+
 function toValues(data: z.infer<typeof clientSchema>) {
   return {
     clientCode: data.clientCode,
@@ -86,14 +91,22 @@ export async function createClientAction(
   }
 
   const values = toValues(parsed.data);
-  const row = await db.transaction(async (tx) => {
-    if (!manual) {
-      const prefix = await getSetting('client_code_prefix');
-      values.clientCode = await nextClientCode(tx, prefix);
-    }
-    const [inserted] = await tx.insert(clients).values(values).returning();
-    return inserted;
-  });
+  let row;
+  try {
+    row = await db.transaction(async (tx) => {
+      if (!manual) {
+        const prefix = await getSetting('client_code_prefix');
+        values.clientCode = await nextClientCode(tx, prefix);
+      }
+      const [inserted] = await tx.insert(clients).values(values).returning();
+      return inserted;
+    });
+  } catch (err) {
+    // Two managers typing the same manual code at once both pass the check
+    // above; the loser must see "code taken", not a crash page.
+    if (isUniqueViolation(err)) return { error: 'code_exists' };
+    throw err;
+  }
   if (!row) return { error: 'validation' };
 
   const meta = await requestMeta();

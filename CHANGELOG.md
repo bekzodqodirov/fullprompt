@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Auto client code follows the MAIN sequence again — 2026-07-25
+
+- **Owner's report**: codes run GS1…GS425, but a few one-off manual codes exist (GS777, GS5564, GS5909); asking the system to assign a code produced **GS5910** instead of **GS426** — plain "biggest + 1" was dragged along by the outliers.
+- **New rule**: the existing numbers are split into groups (a jump of more than 50 starts a new group), the **biggest group is the main sequence**, and the next code is the first free number above it. Isolated special codes form their own one-member groups and are stepped over — until the sequence genuinely grows up to them, at which point it simply continues past. Scattered codes with no real sequence keep the old "biggest + 1" behaviour, and gaps left by voided codes are never re-issued.
+- Hardened along the way (found by an adversarial review of the first attempt): a prefix that itself ends in a digit no longer corrupts the extracted number; a prefix containing regex characters is matched literally; a lowercase `client_code_prefix` setting no longer generates codes the database rejects; absurd/overflowing numbers can no longer hang the generator while it holds the sequence lock; and two managers saving the same manual code at the same moment now get a clean "code already exists" instead of an error page.
+- 14 unit cases (including the owner's exact dataset and the 100-start variant) + a DB-level suite covering the prefix edge cases. 126 unit/integration + 12 e2e green.
+
 ## Real basemap for the tracking map (self-hosted, China-safe) — 2026-07-25
 
 - **The /map schematic upgrades to a REAL zoomable map** (owner's ask for an external map): Leaflet renders a self-hosted OpenStreetMap extract (PMTiles vector tiles) covering the whole corridor (UZ + KG + all of China). Why not Yandex/Baidu: Baidu requires a Chinese-ID developer account and barely covers Uzbekistan; Yandex is unreliable behind the GFW. Hosting the map data ourselves gives the same look with guaranteed China performance and zero runtime dependency on anyone.
