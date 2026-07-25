@@ -26,6 +26,10 @@ export interface MapTruck {
   x: number;
   /** lat */
   y: number;
+  /** True when the dot is a fresh fix from the driver's phone, not the estimate. */
+  live: boolean;
+  fixAgeMinutes: number | null;
+  fixSource: string | null;
   segKey: string;
   progress: number;
   overdue: boolean;
@@ -117,6 +121,11 @@ export function TrackingMap({
               ✕
             </button>
           </div>
+          <p className="text-sm font-semibold">
+            {selTruck.live
+              ? `🟢 ${t('liveFix', { minutes: selTruck.fixAgeMinutes ?? 0 })}`
+              : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { minutes: selTruck.fixAgeMinutes })}` : ''}`}
+          </p>
           <p className={`text-sm font-semibold ${selTruck.overdue ? 'text-red-700' : ''}`}>
             📍 {t(`seg_${selTruck.segKey}`)}
             {selTruck.overdue

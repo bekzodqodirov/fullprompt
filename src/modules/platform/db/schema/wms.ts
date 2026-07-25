@@ -624,6 +624,64 @@ export const tnvedAssignments = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Driver tracking: the warehouse worker pairs the driver's phone with THIS
+// trip while loading. Android streams real fixes; other phones stay on the
+// logist's manual updates + the schedule estimate. Trip-scoped by design, so
+// tracking stops by itself when the cargo is delivered.
+// ---------------------------------------------------------------------------
+
+export const driverDevices = pgTable(
+  'driver_devices',
+  {
+    id: id(),
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => batches.id),
+    platform: text('platform').notNull().default('android'),
+    label: text('label'),
+    /** Short code typed into the app once; cleared when the token is issued. */
+    pairCode: text('pair_code').unique(),
+    tokenHash: text('token_hash').unique(),
+    pairedAt: timestamp('paired_at', { withTimezone: true }),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('driver_devices_platform_check', sql`${t.platform} IN ('android', 'other')`),
+    index('driver_devices_batch_idx').on(t.batchId),
+  ],
+);
+
+export const driverPositions = pgTable(
+  'driver_positions',
+  {
+    id: bigint('id', { mode: 'bigint' }).generatedAlwaysAsIdentity().primaryKey(),
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => batches.id),
+    deviceId: uuid('device_id').references(() => driverDevices.id),
+    lat: numeric('lat', { precision: 9, scale: 6 }).notNull(),
+    lon: numeric('lon', { precision: 9, scale: 6 }).notNull(),
+    accuracyM: integer('accuracy_m'),
+    speedKmh: numeric('speed_kmh', { precision: 6, scale: 2 }),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    source: text('source').notNull().default('device'),
+    createdBy: uuid('created_by').references(() => users.id),
+  },
+  (t) => [
+    check('driver_positions_source_check', sql`${t.source} IN ('device', 'manual')`),
+    check('driver_positions_lat_check', sql`${t.lat} BETWEEN -90 AND 90`),
+    check('driver_positions_lon_check', sql`${t.lon} BETWEEN -180 AND 180`),
+    index('driver_positions_batch_idx').on(t.batchId, t.recordedAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Client money ledger (Phase 2.1): no tariffs — every shipment's price is
 // negotiated, so the ledger only records agreed charges and incoming
 // payments. Balance = Σ charges − Σ payments, in USD via dated FX rates.

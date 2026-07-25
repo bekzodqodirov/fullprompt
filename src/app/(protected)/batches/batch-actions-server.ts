@@ -143,6 +143,38 @@ export async function setTrackingCheckpointAction(formData: FormData): Promise<v
   revalidatePath('/map');
 }
 
+/**
+ * Driver tracking (owner's flow): at loading the warehouse worker installs
+ * the app on the driver's phone and types this code once.
+ */
+export async function createDriverDeviceAction(formData: FormData): Promise<void> {
+  const batchId = String(formData.get('batchId') ?? '');
+  const label = String(formData.get('label') ?? '');
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return;
+  const actor = await authorize('batches.vehicle_info', {});
+  const meta = await requestMeta();
+  const { createDriverDevice, TrackingError } = await import('@/modules/wms/tracking/devices');
+  try {
+    await createDriverDevice({ batchId, label }, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof TrackingError) return;
+    throw err;
+  }
+  revalidatePath(`/batches/${batchId}`);
+}
+
+export async function revokeDriverDeviceAction(formData: FormData): Promise<void> {
+  const deviceId = String(formData.get('deviceId') ?? '');
+  const batchId = String(formData.get('batchId') ?? '');
+  if (!deviceId) return;
+  const actor = await authorize('batches.vehicle_info', {});
+  const meta = await requestMeta();
+  const { revokeDriverDevice } = await import('@/modules/wms/tracking/devices');
+  await revokeDriverDevice(deviceId, { actorId: actor.id, ...meta });
+  revalidatePath(`/batches/${batchId}`);
+}
+
 export async function closeBatchAction(batchId: string): Promise<{ ok: boolean; error?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };

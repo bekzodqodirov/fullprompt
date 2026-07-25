@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## Driver tracking — server side (phase A) — 2026-07-25
+
+Owner's flow: at loading the warehouse worker takes the driver's phone, installs the app and grants the permissions himself, then sends the truck off. Android phones stream real positions; iPhone / HarmonyOS stay on the logist's manual updates plus the schedule estimate.
+
+- **Pairing is per TRIP, not per driver**: the batch card gained a "📲 Haydovchi telefoni" panel that mints a single-use 6-character code (ambiguous letters excluded — it is read off a screen). The app sends the code once and gets a trip token back; the code is burned immediately, so a screenshot of it is worthless. Tracking ends by itself when the batch is closed — the server answers "trip finished" and the app stops.
+- **Position ingest** accepts a whole queue of fixes at once (the corridor is full of dead zones, so the phone stores and flushes on reconnect) and ignores duplicates from a re-flush. Every device shows its last-seen time and fix count on the batch card; the code can be revoked at any moment.
+- **The map now prefers reality**: a fix newer than 90 minutes replaces the estimated dot and the truck panel says "🟢 Real position · N minutes ago"; an older one falls back to the schedule with "🟡 Estimated · last real signal N minutes ago". Manual pins by the logist count as positions too, which is exactly the iPhone/HarmonyOS path.
+- Migration 0018 (`driver_devices`, `driver_positions`); tokens are stored hashed like session tokens and never leave the server; 10 integration cases cover single-use pairing, re-flush deduplication, revoked/finished-trip rejection and freshness. 145 unit/integration + 12 e2e green.
+- Next: the Android app itself (`apps/driver-android/`, built into an APK by CI) against this API.
+
 ## Demo accounts stop coming back — 2026-07-25
 
 - **The seed no longer re-creates demo data on a live system.** It runs on every deploy (that is how new permissions reach the roles), and it used to re-insert any demo user/client/warehouse that was missing — so an account the owner deleted, with the published `demo1234` password, reappeared on the next update. Demo users, demo clients, demo warehouses, the example FX rates and the canonical GS777 receipt are now seeded **only into an empty database** (the bootstrap that gives a fresh install someone to log in as). `SEED_DEMO=1` forces them back for test environments.

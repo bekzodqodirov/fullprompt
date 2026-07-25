@@ -533,7 +533,7 @@
     "vehicle": "Fura va haydovchi",
     "plate": "Davlat raqami",
     "driver": "Haydovchi",
-    "driverPhone": "Telefon",
+    "driverPhone": "Haydovchi telefoni (kuzatuv)",
     "contents": "Ichidagilar",
     "finishSummary": "{loaded} yuklandi, {short} skladda qoldi",
     "errors": {
@@ -560,7 +560,13 @@
     "cpBorder": "Chegarada turibdi",
     "cpKg": "Qirg‘izistonda",
     "cpUz": "O‘zbekistonda",
-    "openMap": "Xaritada ko‘rish"
+    "openMap": "Xaritada ko‘rish",
+    "driverPhoneHint": "Yuklash paytida haydovchi telefoniga ilovani o‘rnating va quyidagi kodni bir marta kiriting. Android — joylashuv avtomatik keladi; iPhone/HarmonyOS — pastdagi tugmalar bilan qo‘lda belgilanadi.",
+    "driverPhoneLabel": "Haydovchi ismi / telefon modeli",
+    "newPairCode": "Kod yaratish",
+    "pairCodeHint": "ilovaga shu kodni kiriting (bir martalik)",
+    "lastSeen": "oxirgi xabar: {when}",
+    "noFixesYet": "hali joylashuv kelmadi"
   },
   "loading": {
     "title": "Pogruzka",
@@ -710,6 +716,9 @@
     "seg_kg": "Qirg‘iziston hududida",
     "seg_uz": "O‘zbekiston hududida",
     "seg_transit": "Yo‘lda",
-    "basemapMissing": "Batafsil xarita hali yuklanmagan — serverda `bash ops/fetch-basemap.sh` ishga tushirilsa, bu chizma haqiqiy xaritaga almashadi."
+    "basemapMissing": "Batafsil xarita hali yuklanmagan — serverda `bash ops/fetch-basemap.sh` ishga tushirilsa, bu chizma haqiqiy xaritaga almashadi.",
+    "liveFix": "Haqiqiy joylashuv · {minutes} daqiqa oldin",
+    "estimated": "Taxminiy joylashuv (jadval bo‘yicha)",
+    "lastFix": "oxirgi haqiqiy signal {minutes} daqiqa oldin"
   }
 }

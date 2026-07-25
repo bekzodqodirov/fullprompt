@@ -18,7 +18,13 @@ import { batchCostSheet } from '@/modules/wms/costing/service';
 import { costTypes, currencies } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
 import { VehicleForm } from './vehicle-form';
-import { setSentToAgentAction, setTrackingCheckpointAction } from '../batch-actions-server';
+import {
+  createDriverDeviceAction,
+  revokeDriverDeviceAction,
+  setSentToAgentAction,
+  setTrackingCheckpointAction,
+} from '../batch-actions-server';
+import { devicesForBatch } from '@/modules/wms/tracking/devices';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
 import { BackLink } from '@/components/back-link';
@@ -81,6 +87,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const canEnterCosts = actor.permissions.has('costs.enter_batch');
   const canSeeCosts = canEnterCosts || actor.permissions.has('reports.all_warehouses');
 
+  const devices = canVehicle ? await devicesForBatch(id) : [];
   const costSheet = canSeeCosts ? await batchCostSheet(id) : null;
   const costMeta = canSeeCosts
     ? {
@@ -235,6 +242,56 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               </button>
             </form>
           )}
+        </div>
+      )}
+
+      {/* Driver phone (owner's flow): while the truck is being loaded the
+          warehouse worker installs the app on the driver's phone and types
+          this code once. Android then streams real positions; iPhone /
+          HarmonyOS stay on the manual pins below. */}
+      {canVehicle && !['closed', 'cancelled'].includes(batch.status) && (
+        <div className="card space-y-2">
+          <h2 className="text-sm font-bold uppercase text-gray-500">📲 {t('driverPhone')}</h2>
+          {devices.length === 0 && <p className="text-xs text-gray-500">{t('driverPhoneHint')}</p>}
+          {devices.map((device) => (
+            <div key={device.id} className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-2 text-sm last:border-0">
+              {device.pairCode ? (
+                <>
+                  <span className="font-mono text-2xl font-extrabold tracking-widest text-blue-800">
+                    {device.pairCode}
+                  </span>
+                  <span className="text-xs text-gray-500">{t('pairCodeHint')}</span>
+                </>
+              ) : (
+                <span className="font-semibold text-green-700">
+                  ✅ {device.label || t('driverPhone')}
+                  {device.lastSeenAt
+                    ? ` · ${t('lastSeen', { when: format.dateTime(new Date(device.lastSeenAt), { dateStyle: 'short', timeStyle: 'short' }) })}`
+                    : ` · ${t('noFixesYet')}`}
+                  {device.fixes > 0 && ` · ${device.fixes} 📍`}
+                </span>
+              )}
+              <form action={revokeDriverDeviceAction} className="ml-auto">
+                <input type="hidden" name="deviceId" value={device.id} />
+                <input type="hidden" name="batchId" value={batch.id} />
+                <button type="submit" className="text-xs font-semibold text-red-700 underline">
+                  ✖ {tc('delete')}
+                </button>
+              </form>
+            </div>
+          ))}
+          <form action={createDriverDeviceAction} className="flex flex-wrap gap-2">
+            <input type="hidden" name="batchId" value={batch.id} />
+            <input
+              name="label"
+              className="input min-w-40 flex-1"
+              placeholder={batch.driverName || t('driverPhoneLabel')}
+              maxLength={100}
+            />
+            <button type="submit" className="btn-secondary whitespace-nowrap px-3">
+              📲 {t('newPairCode')}
+            </button>
+          </form>
         </div>
       )}
 

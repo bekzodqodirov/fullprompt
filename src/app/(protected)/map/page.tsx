@@ -14,6 +14,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { basemapAvailable } from '@/modules/wms/tracking/basemap';
+import { latestPositions, type LatestPosition } from '@/modules/wms/tracking/devices';
 import { estimateTransit } from '@/modules/wms/tracking/engine';
 import { CHECKPOINT_SEGMENTS, routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 import { TrackingMap, type MapTruck, type MapWarehouse } from './tracking-map';
@@ -88,9 +89,13 @@ export default async function MapPage() {
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
     .where(eq(batches.status, 'in_transit'));
 
+  // Real fixes from paired driver phones win over the schedule estimate
+  // while they are fresh (owner's flow: Android streams, other phones don't).
+  const fixes = await latestPositions(transit.map((t) => t.batch.id));
+
   const trucks: MapTruck[] = [];
   for (const { batch, originCode, destCode } of transit) {
-    const truck = await truckFor(batch, originCode, destCode);
+    const truck = await truckFor(batch, originCode, destCode, fixes.get(batch.id));
     if (truck) trucks.push(truck);
   }
 
@@ -108,6 +113,7 @@ async function truckFor(
   batch: typeof batches.$inferSelect,
   originCode: string,
   destCode: string,
+  fix?: LatestPosition,
 ): Promise<MapTruck | null> {
   const route = routeFor(originCode, destCode);
   if (!route || !batch.departedAt) return null;
@@ -142,13 +148,20 @@ async function truckFor(
       )
       .groupBy(sql`coalesce(${clients.clientCode}, ${receipts.unclaimedMarking})`);
 
+  // A fresh fix from the driver's phone replaces the estimated dot; a stale
+  // one is kept as information but the schedule drives the marker again.
+  const live = fix?.fresh ? fix : null;
+
   return {
     batchId: batch.id,
     code: batch.code,
     originCode,
     destCode,
-    x: est.x,
-    y: est.y,
+    x: live ? live.lon : est.x,
+    y: live ? live.lat : est.y,
+    live: live !== null,
+    fixAgeMinutes: fix?.ageMinutes ?? null,
+    fixSource: fix?.source ?? null,
     segKey: est.segKey,
     progress: est.progress,
     overdue: est.overdue,

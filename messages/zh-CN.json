@@ -533,7 +533,7 @@
     "vehicle": "车辆与司机",
     "plate": "车牌号",
     "driver": "司机",
-    "driverPhone": "电话",
+    "driverPhone": "司机手机（追踪）",
     "contents": "内容",
     "finishSummary": "已装{loaded}箱，{short}箱留仓",
     "errors": {
@@ -560,7 +560,13 @@
     "cpBorder": "停在口岸",
     "cpKg": "在吉尔吉斯斯坦",
     "cpUz": "在乌兹别克斯坦",
-    "openMap": "在地图上查看"
+    "openMap": "在地图上查看",
+    "driverPhoneLabel": "司机姓名 / 手机型号",
+    "driverPhoneHint": "装车时在司机手机上安装应用并输入此代码一次。安卓自动上报位置；iPhone/HarmonyOS 用下方按钮手动标记。",
+    "newPairCode": "生成代码",
+    "pairCodeHint": "在应用中输入此代码（一次性）",
+    "lastSeen": "最后信号：{when}",
+    "noFixesYet": "暂无位置"
   },
   "loading": {
     "title": "装车",
@@ -710,6 +716,9 @@
     "seg_kg": "吉尔吉斯斯坦境内",
     "seg_uz": "乌兹别克斯坦境内",
     "seg_transit": "运输中",
-    "basemapMissing": "详细地图尚未加载——在服务器运行 `bash ops/fetch-basemap.sh` 后将替换为真实地图。"
+    "basemapMissing": "详细地图尚未加载——在服务器运行 `bash ops/fetch-basemap.sh` 后将替换为真实地图。",
+    "liveFix": "实时位置 · {minutes} 分钟前",
+    "estimated": "估算位置（按时刻表）",
+    "lastFix": "最后实时信号 {minutes} 分钟前"
   }
 }
