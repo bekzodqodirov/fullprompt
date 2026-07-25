@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## English in the exports and the paperwork (part 2 of 3) — 2026-07-25
+
+Two different rules, because these files have two different readers.
+
+- **Report exports follow the reader.** All ten downloads (landed cost, stock aging, batch register, receipts journal, unclaimed, client history, staff activity, label prints, in transit, stock) now take the locale of whoever pressed the button, so an English-speaking manager gets English column headers and sheet titles — ~55 labels in all four languages.
+- **Customs paperwork is bilingual RU/EN and ignores the interface language.** The invoice, packing list, manifest, packing photos, agent file and handover act are read by an Uzbek customs officer and a Chinese forwarding agent, never by the person who clicked download. Letting them follow the interface would let someone working in English hand customs a paper nobody at the border can process. The invoice already carried a few pairs ("Отправитель/Sender:"); this finishes the pattern everywhere.
+- **Caught in verification**: a bilingual label was used as an Excel TAB name, and Excel rejects `/` in one — every manifest download answered 500. Sheet names got their own slash-free constants, and two tests now stand where the bug was: one asserting no sheet name carries an illegal character, one generating all five documents end to end.
+- Also guarded: every report label exists in every language, and an unknown locale on a user row falls back instead of producing blank headers.
+- **Deliberately untouched**: the box and crate stickers. Their Russian words sit in a fixed 100×100 mm layout that I cannot proof-print here, and a longer bilingual string risks clipped text on real labels. Say the word and I will do them with a careful layout pass.
+- 167 unit/integration + 12 e2e green.
+
+
 ## English interface (part 1 of 3) — 2026-07-25
 
 - **English joins Russian, Uzbek and Chinese** — all 644 interface strings across 30 areas (receiving, batches, stock, finance, reports, map, admin…). Pick it from the language selector or set it per employee.

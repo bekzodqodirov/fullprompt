@@ -1,3 +1,4 @@
+import { DOC } from './labels';
 import { asc, eq } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
@@ -41,22 +42,22 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
 
   const workbook = new ExcelJS.Workbook();
-  const summary = workbook.addWorksheet('Сводка');
+  const summary = workbook.addWorksheet(DOC.sheetSummary);
   summary.columns = [
-    { header: 'Код', key: 'code', width: 14 },
-    { header: 'Товар', key: 'product', width: 40 },
-    { header: 'Коробок', key: 'boxCount', width: 10 },
-    { header: 'кг', key: 'kg', width: 12 },
-    { header: 'м³', key: 'm3', width: 10 },
+    { header: DOC.code, key: 'code', width: 14 },
+    { header: DOC.product, key: 'product', width: 40 },
+    { header: DOC.boxes, key: 'boxCount', width: 10 },
+    { header: DOC.kg, key: 'kg', width: 12 },
+    { header: DOC.m3, key: 'm3', width: 10 },
   ];
-  const detail = workbook.addWorksheet('Коробки');
+  const detail = workbook.addWorksheet(DOC.sheetBoxes);
   detail.columns = [
     { header: '№', key: 'n', width: 6 },
-    { header: 'Штрих-код', key: 'shortCode', width: 16 },
-    { header: 'Код', key: 'code', width: 14 },
-    { header: 'Товар', key: 'product', width: 36 },
-    { header: 'Ящик', key: 'crate', width: 16 },
-    { header: 'Вне плана', key: 'onSpot', width: 10 },
+    { header: DOC.barcode, key: 'shortCode', width: 16 },
+    { header: DOC.code, key: 'code', width: 14 },
+    { header: DOC.product, key: 'product', width: 36 },
+    { header: DOC.crate, key: 'crate', width: 16 },
+    { header: DOC.offPlan, key: 'onSpot', width: 10 },
   ];
 
   const header = `Партия ${batch.code} · ${origin?.code} → ${dest?.code}` +
@@ -103,7 +104,7 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
     totalM3 += agg.m3;
   }
   const totalRow = summary.addRow({
-    code: 'ИТОГО',
+    code: DOC.total,
     product: '',
     boxCount: n,
     kg: Math.round(totalKg * 10) / 10,

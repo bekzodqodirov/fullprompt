@@ -69,3 +69,43 @@ describe('locale bundles', () => {
     });
   }
 });
+
+describe('export labels', () => {
+  it('report columns exist in every locale and fall back on an unknown one', async () => {
+    const { reportLabels } = await import('@/modules/wms/reports/labels');
+    const ru = reportLabels('ru');
+    for (const locale of LOCALES) {
+      const labels = reportLabels(locale);
+      expect(Object.keys(labels), locale).toEqual(Object.keys(ru));
+      expect(
+        Object.entries(labels).filter(([, value]) => !value),
+        `${locale} has empty labels`,
+      ).toEqual([]);
+    }
+    // A user row could carry anything; the builder must not produce blanks.
+    expect(reportLabels('xx-YY')).toEqual(ru);
+    expect(reportLabels(undefined)).toEqual(ru);
+  });
+
+  it('customs document labels stay bilingual, never one language', async () => {
+    const { DOC } = await import('@/modules/wms/documents/labels');
+    // A customs officer reads Russian, a forwarding agent reads English —
+    // these documents leave the company, so every label carries both.
+    const oneSided = Object.entries(DOC).filter(
+      ([, value]) => !/\p{Script=Cyrillic}/u.test(value) || !/[A-Za-z]/.test(value),
+    );
+    expect(oneSided).toEqual([]);
+  });
+});
+
+describe('worksheet names', () => {
+  it('never contain a character Excel rejects', async () => {
+    const { DOC } = await import('@/modules/wms/documents/labels');
+    // Excel refuses \ / ? * [ ] : in a tab name — a bilingual label with a
+    // slash used as a sheet name made every manifest download 500.
+    const illegal = Object.entries(DOC).filter(
+      ([key, value]) => key.startsWith('sheet') && /[\\/?*[\]:]/.test(value),
+    );
+    expect(illegal).toEqual([]);
+  });
+});

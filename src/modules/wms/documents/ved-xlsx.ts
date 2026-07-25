@@ -1,3 +1,4 @@
+import { DOC } from './labels';
 import { asc, eq } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
@@ -116,8 +117,8 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
 
   const head = sheet.getRow(20);
   head.values = [
-    '№', 'Наименование', 'Код ТНВЭД', 'Ед.изм', 'Количество', 'кол-ва мест',
-    'Вес Нетто (кг)', 'Вес брутто (кг)', 'Цена за ед $', 'Общая сумма $',
+    '№', DOC.productName, DOC.hsCode, DOC.unit, DOC.quantity, DOC.places,
+    DOC.netWeight, DOC.grossWeight, DOC.price, DOC.totalAmount,
   ];
   head.font = { bold: true };
   head.alignment = { wrapText: true, vertical: 'middle' };
@@ -175,7 +176,7 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
   const sheet = workbook.addWorksheet('Packing list');
   await header(sheet, batchId, 'PACKING LIST (draft)');
 
-  const head = sheet.addRow(['№', 'Код', 'Товар', 'Упаковка', 'Кол-во кор.', 'Вес, кг', 'Объём, м³']);
+  const head = sheet.addRow(['№', DOC.code, DOC.product, DOC.packaging, DOC.boxes, DOC.weightKg, DOC.m3]);
   head.font = { bold: true };
   sheet.columns = [
     { width: 5 }, { width: 14 }, { width: 40 }, { width: 16 }, { width: 10 }, { width: 12 }, { width: 10 },
@@ -213,7 +214,7 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
     ]);
   }
   const total = sheet.addRow([
-    '', 'ИТОГО', '', '', totalBoxes, Math.round(totalKg * 10) / 10, Math.round(totalM3 * 1000) / 1000,
+    '', DOC.total, '', '', totalBoxes, Math.round(totalKg * 10) / 10, Math.round(totalM3 * 1000) / 1000,
   ]);
   total.font = { bold: true };
   return Buffer.from(await workbook.xlsx.writeBuffer());

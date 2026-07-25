@@ -1,3 +1,4 @@
+import { DOC } from './labels';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
@@ -65,13 +66,13 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('PACKING LIST');
   sheet.columns = [
-    { header: 'Код', key: 'code', width: 14 },
-    { header: 'Товар', key: 'product', width: 40 },
-    { header: 'Коробок', key: 'boxCount', width: 10 },
-    { header: 'кг', key: 'kg', width: 10 },
-    { header: 'м³', key: 'm3', width: 10 },
+    { header: DOC.code, key: 'code', width: 14 },
+    { header: DOC.product, key: 'product', width: 40 },
+    { header: DOC.boxes, key: 'boxCount', width: 10 },
+    { header: DOC.kg, key: 'kg', width: 10 },
+    { header: DOC.m3, key: 'm3', width: 10 },
     ...Array.from({ length: maxPhotos }, (_, i) => ({
-      header: i === 0 ? 'Фото' : '',
+      header: i === 0 ? DOC.photo : '',
       key: `photo${i}`,
       width: 14,
     })),

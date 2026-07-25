@@ -1,3 +1,4 @@
+import { DOC } from './labels';
 import { asc, eq, inArray } from 'drizzle-orm';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
@@ -57,7 +58,7 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
   };
 
   line(String(await getSetting('company_name')), 16);
-  line('АКТ ПРИЁМА-ПЕРЕДАЧИ ГРУЗА / YUK TOPSHIRISH DALOLATNOMASI', 12);
+  line(DOC.handoverTitle, 12);
   y -= 6;
   line(`Дата: ${handover.createdAt.toISOString().slice(0, 10)}    Склад: ${wh?.code ?? ''}`);
   line(`Клиент: ${client ? `${client.clientCode} — ${client.name}` : '—'}`);
@@ -77,8 +78,8 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
   if (boxRows.length > 45) line(`… и ещё ${boxRows.length - 45}`, 10, 60);
 
   y = Math.min(y, 110);
-  page.drawText('Сдал (склад): ____________________', { x: 50, y, size: 11, font, color: black });
-  page.drawText('Принял: ____________________', { x: 330, y, size: 11, font, color: black });
+  page.drawText(DOC.handedBy, { x: 50, y, size: 11, font, color: black });
+  page.drawText(DOC.receivedBy, { x: 330, y, size: 11, font, color: black });
 
   return doc.save();
 }

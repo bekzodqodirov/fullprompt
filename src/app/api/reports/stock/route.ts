@@ -1,3 +1,4 @@
+import { reportLabels } from '@/modules/wms/reports/labels';
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '@/modules/platform/db/client';
@@ -35,6 +36,8 @@ export async function GET(request: Request) {
   const filters: SQL[] = [
     inArray(boxes.status, ['in_stock', 'planned', 'loading', 'ready_for_pickup']),
   ];
+  // Downloaded to be read → follows the reader's language.
+  const L = reportLabels(actor.locale);
   if (actor.warehouseScoped && actor.warehouseIds.length) {
     filters.push(inArray(boxes.currentWarehouseId, actor.warehouseIds));
   }
@@ -73,17 +76,17 @@ export async function GET(request: Request) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Stock');
   sheet.columns = [
-    { header: 'Склад', key: 'wh', width: 8 },
-    { header: 'Код', key: 'code', width: 14 },
-    { header: 'Товар', key: 'product', width: 40 },
-    { header: 'Коробок', key: 'boxCount', width: 10 },
-    { header: 'кг/кор', key: 'perBoxKg', width: 10 },
-    { header: 'Σ кг', key: 'totalKg', width: 10 },
-    { header: 'м³', key: 'totalM3', width: 10 },
-    { header: 'кг/м³', key: 'density', width: 10 },
-    { header: 'Дней', key: 'aging', width: 8 },
-    { header: 'Примечание', key: 'note', width: 30 },
-    { header: 'Дата', key: 'date', width: 12 },
+    { header: L.warehouse, key: 'wh', width: 8 },
+    { header: L.code, key: 'code', width: 14 },
+    { header: L.product, key: 'product', width: 40 },
+    { header: L.boxes, key: 'boxCount', width: 10 },
+    { header: L.kgPerBox, key: 'perBoxKg', width: 10 },
+    { header: L.sumKg, key: 'totalKg', width: 10 },
+    { header: L.m3, key: 'totalM3', width: 10 },
+    { header: L.density, key: 'density', width: 10 },
+    { header: L.days, key: 'aging', width: 8 },
+    { header: L.note, key: 'note', width: 30 },
+    { header: L.date, key: 'date', width: 12 },
   ];
   sheet.getRow(1).font = { bold: true };
 

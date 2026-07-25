@@ -62,35 +62,38 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   const clientId = z.string().uuid().safeParse(url.searchParams.get('clientId'));
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30));
 
+  // The file is downloaded to be read, so its headers follow the reader.
+  const locale = actor.locale;
+
   let xlsx: Buffer;
   switch (kind.data) {
     case 'landed-cost':
-      xlsx = await buildLandedCostXlsx(clientId.success ? clientId.data : undefined);
+      xlsx = await buildLandedCostXlsx(clientId.success ? clientId.data : undefined, locale);
       break;
     case 'stock-aging':
-      xlsx = await buildStockAgingXlsx(scope);
+      xlsx = await buildStockAgingXlsx(scope, locale);
       break;
     case 'batches':
-      xlsx = await buildBatchRegisterXlsx(scope);
+      xlsx = await buildBatchRegisterXlsx(scope, locale);
       break;
     case 'receipts-journal':
-      xlsx = await buildReceiptsJournalXlsx(days, scope);
+      xlsx = await buildReceiptsJournalXlsx(days, scope, locale);
       break;
     case 'unclaimed':
-      xlsx = await buildUnclaimedXlsx(scope);
+      xlsx = await buildUnclaimedXlsx(scope, locale);
       break;
     case 'client-history':
       if (!clientId.success) return new Response('clientId required', { status: 400 });
-      xlsx = await buildClientHistoryXlsx(clientId.data);
+      xlsx = await buildClientHistoryXlsx(clientId.data, locale);
       break;
     case 'staff-activity':
-      xlsx = await buildStaffActivityXlsx(days);
+      xlsx = await buildStaffActivityXlsx(days, locale);
       break;
     case 'label-prints':
-      xlsx = await buildLabelPrintLogXlsx(days);
+      xlsx = await buildLabelPrintLogXlsx(days, locale);
       break;
     case 'in-transit':
-      xlsx = await buildInTransitXlsx(scope);
+      xlsx = await buildInTransitXlsx(scope, locale);
       break;
   }
 

@@ -387,3 +387,46 @@ describe('renaming a batch', () => {
     await expect(renameBatch(batch.id, 'TOO-LATE', ctx())).rejects.toThrow('batch_departed');
   });
 });
+
+/**
+ * The customs paperwork is bilingual RU/EN, which nearly went out broken: a
+ * label with a slash was used as an Excel TAB name, and Excel rejects "/" in
+ * one — every manifest download answered 500. Generating each document here
+ * catches that class of mistake without a browser.
+ */
+describe('customs documents still generate', () => {
+  it('invoice, packing list, manifest, packing photos and the agent file', async () => {
+    const { buildInvoiceXlsx, buildPackingXlsx } = await import(
+      '@/modules/wms/documents/ved-xlsx'
+    );
+    const { buildManifestXlsx } = await import('@/modules/wms/documents/manifest-xlsx');
+    const { buildPackingPhotosXlsx } = await import(
+      '@/modules/wms/documents/packing-photos-xlsx'
+    );
+    const { buildAgentXlsx } = await import('@/modules/wms/documents/agent-xlsx');
+
+    const lot = await makeLot(2);
+    const sub = await submitPlan(
+      {
+        originWarehouseId: originId,
+        destWarehouseId: destId,
+        lines: [{ lotId: lot.lotId, boxCount: 2 }],
+      },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    for (const code of lot.shortCodes) {
+      await ingestLoadScans([{ ...scan(batch!.id, code), addedOnSpot: false }], ctx());
+    }
+
+    const isXlsx = (buffer: Buffer | null) => buffer?.subarray(0, 2).toString() === 'PK';
+    expect(isXlsx(await buildInvoiceXlsx(batch!.id)), 'invoice').toBe(true);
+    expect(isXlsx(await buildPackingXlsx(batch!.id)), 'packing list').toBe(true);
+    expect(isXlsx(await buildManifestXlsx(batch!.id)), 'manifest').toBe(true);
+    expect(isXlsx(await buildPackingPhotosXlsx(batch!.id)), 'packing photos').toBe(true);
+    expect(
+      isXlsx(await buildAgentXlsx(sub.plan.id, sub.version.versionNo)),
+      'agent file',
+    ).toBe(true);
+  });
+});
