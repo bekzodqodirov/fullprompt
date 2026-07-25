@@ -26,10 +26,28 @@ describe('RBAC catalog (spec §16 matrix)', () => {
     expect(ROLE_MATRIX.warehouse_operator).not.toContain('receipts.unclaimed.resolve');
   });
 
-  it('sales_manager is read-only plus debt override (Phase 2.1)', () => {
+  it('sales_manager is read-only plus debt override and own leads', () => {
     expect(new Set(ROLE_MATRIX.sales_manager)).toEqual(
-      new Set(['clients.view_own', 'finance.view', 'finance.debt_override', 'reports.own_clients']),
+      new Set([
+        'clients.view_own',
+        'finance.view',
+        'finance.debt_override',
+        'reports.own_clients',
+        // Phase 2.3: own leads only — seeing everyone's needs
+        // crm.leads.view_all, which stays with the owner and the logist.
+        'crm.leads',
+      ]),
     );
+    expect(ROLE_MATRIX.sales_manager).not.toContain('crm.leads.view_all');
+    expect(ROLE_MATRIX.sales_manager).not.toContain('crm.manage');
+  });
+
+  it('the company margin stays away from sales (Phase 2.3/2.4)', () => {
+    // A sales manager legitimately holds finance.view for client balances.
+    // Profit, overheads and the funnel settings are a different question.
+    for (const code of ['finance.reports', 'finance.expenses', 'crm.manage'] as const) {
+      expect(ROLE_MATRIX.sales_manager, code).not.toContain(code);
+    }
   });
 
   it('finance.manage belongs to accountant + ved_manager (and admins) only', () => {

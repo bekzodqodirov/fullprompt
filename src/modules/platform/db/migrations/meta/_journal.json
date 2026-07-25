@@ -148,6 +148,13 @@
       "when": 1784970000000,
       "tag": "0020_accounting",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785056400000,
+      "tag": "0021_crm",
+      "breakpoints": true
     }
   ]
 }

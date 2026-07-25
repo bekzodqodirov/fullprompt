@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   inet,
   integer,
@@ -191,6 +192,13 @@ export const clients = pgTable(
     salesManagerId: uuid('sales_manager_id').references(() => users.id),
     messengerNote: text('messenger_note'),
     notes: text('notes'),
+    /**
+     * CRM follow-up (Phase 2.3). Lives on the client card rather than in a
+     * separate table so a sales manager has ONE "who am I calling today"
+     * list covering leads and existing clients alike.
+     */
+    nextActionAt: date('next_action_at'),
+    nextActionNote: text('next_action_note'),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -199,6 +207,7 @@ export const clients = pgTable(
     uniqueIndex('clients_code_unique').on(t.clientCode),
     check('clients_code_upper_check', sql`${t.clientCode} = upper(${t.clientCode})`),
     index('clients_sales_manager_idx').on(t.salesManagerId),
+    index('clients_next_action_idx').on(t.nextActionAt),
   ],
 );
 

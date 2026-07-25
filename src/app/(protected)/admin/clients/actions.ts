@@ -9,9 +9,12 @@ import { clients } from '@/modules/platform/db/schema';
 import { authorize } from '@/modules/platform/rbac/authorize';
 import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
-import { getSetting } from '@/modules/platform/settings/service';
-import { nextClientCode } from '@/modules/platform/clients/code';
 import { autoLinkClientToVerifiedChats } from '@/modules/platform/telegram/client-cabinet';
+import {
+  ClientError,
+  createClient,
+  isValidClientCode,
+} from '@/modules/platform/clients/service';
 
 export interface ClientFormState {
   error?: 'validation' | 'code_exists' | 'code_format';
@@ -41,20 +44,6 @@ function parseForm(formData: FormData) {
   });
 }
 
-/**
- * Real-world markings are arbitrary short codes (444, GS277, A55 — owner's
- * Kashgar stock file), so manual codes accept any 2–10 alphanumerics.
- * Auto-generated codes still use the configured prefix.
- */
-async function validateCodeFormat(code: string): Promise<boolean> {
-  return /^[A-Z0-9]{2,10}$/.test(code);
-}
-
-/** Postgres unique_violation (23505) — the client_code unique index. */
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
-}
-
 function toValues(data: z.infer<typeof clientSchema>) {
   return {
     clientCode: data.clientCode,
@@ -80,50 +69,28 @@ export async function createClientAction(
   if (!parsed.success) return { error: 'validation' };
 
   // Owner's rule: empty code ⇒ the system assigns the next sequential code;
-  // a manually entered code must be well-formed and free.
-  const manual = parsed.data.clientCode.length > 0;
-  if (manual) {
-    if (!(await validateCodeFormat(parsed.data.clientCode))) return { error: 'code_format' };
-    const existing = await db.query.clients.findFirst({
-      where: sql`upper(${clients.clientCode}) = ${parsed.data.clientCode}`,
-    });
-    if (existing) return { error: 'code_exists' };
-  }
-
+  // a manually entered code must be well-formed and free. All of that (and
+  // the cabinet auto-link) lives in the shared service, which CRM's
+  // lead → client conversion calls too.
   const values = toValues(parsed.data);
+  const meta = await requestMeta();
   let row;
   try {
-    row = await db.transaction(async (tx) => {
-      if (!manual) {
-        const prefix = await getSetting('client_code_prefix');
-        values.clientCode = await nextClientCode(tx, prefix);
-      }
-      const [inserted] = await tx.insert(clients).values(values).returning();
-      return inserted;
-    });
+    row = await createClient(
+      {
+        clientCode: values.clientCode,
+        name: values.name,
+        phones: values.phones,
+        salesManagerId: values.salesManagerId ?? undefined,
+        messengerNote: values.messengerNote ?? undefined,
+        notes: values.notes ?? undefined,
+      },
+      { actorId: actor.id, ...meta },
+    );
   } catch (err) {
-    // Two managers typing the same manual code at once both pass the check
-    // above; the loser must see "code taken", not a crash page.
-    if (isUniqueViolation(err)) return { error: 'code_exists' };
+    if (err instanceof ClientError) return { error: err.code };
     throw err;
   }
-  if (!row) return { error: 'validation' };
-
-  const meta = await requestMeta();
-  await writeAudit(
-    db,
-    { actorId: actor.id, ...meta },
-    {
-      entityType: 'client',
-      entityId: row.id,
-      action: 'create',
-      after: values as unknown as Record<string, unknown>,
-    },
-  );
-
-  // A person often holds several codes on one phone — if that phone already
-  // passed cabinet verification, the new code joins their chat automatically.
-  await autoLinkClientToVerifiedChats(row.id, actor.id).catch(() => {});
 
   revalidatePath('/admin/clients');
   // Land on the new card: the owner must SEE the assigned code (and the
@@ -139,7 +106,7 @@ export async function updateClientAction(
   const actor = await authorize('clients.manage');
   const parsed = parseForm(formData);
   if (!parsed.success) return { error: 'validation' };
-  if (!(await validateCodeFormat(parsed.data.clientCode))) return { error: 'code_format' };
+  if (!isValidClientCode(parsed.data.clientCode)) return { error: 'code_format' };
 
   const before = await db.query.clients.findFirst({ where: eq(clients.id, id) });
   if (!before) return { error: 'validation' };

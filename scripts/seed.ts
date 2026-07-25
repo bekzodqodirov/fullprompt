@@ -200,6 +200,7 @@ async function main() {
   // --- M1: cost types, product dictionary, canonical GS777 receipt (§18) ---
   await seedM1(whIds, seedDemo);
   await seedAccounting();
+  await seedCrm();
 
   // --- Single audit marker for the seed run ---
   await db.insert(auditLog).values({
@@ -420,6 +421,43 @@ async function seedAccounting() {
       { name: 'O‘zbekiston — firma hisobi (so‘m)', currency: 'UZS', kind: 'bank', sortOrder: 50 },
     ]);
     console.log('money accounts seeded (owner list; editable)');
+  }
+}
+
+/**
+ * A starter funnel and a starter source list — both are DATA the owner edits,
+ * so these only ever fill an empty table. `kind` is what the code reasons
+ * about; the names are his to rename.
+ */
+async function seedCrm() {
+  const { leadSources, leadStages } = await import('../src/modules/platform/db/schema');
+
+  const existingSources = await db.select({ id: leadSources.id }).from(leadSources).limit(1);
+  if (existingSources.length === 0) {
+    await db.insert(leadSources).values([
+      { name: 'Instagram', sortOrder: 10 },
+      { name: 'Telegram', sortOrder: 20 },
+      { name: 'Tavsiya (tanish orqali)', sortOrder: 30 },
+      { name: 'Reklama', sortOrder: 40 },
+      { name: 'WeChat', sortOrder: 50 },
+      { name: 'Sayt', sortOrder: 60 },
+      { name: 'O‘zi keldi', sortOrder: 70 },
+      { name: 'Boshqa', sortOrder: 200 },
+    ]);
+    console.log('lead sources seeded (editable)');
+  }
+
+  const existingStages = await db.select({ id: leadStages.id }).from(leadStages).limit(1);
+  if (existingStages.length === 0) {
+    await db.insert(leadStages).values([
+      { name: 'Yangi', kind: 'open', sortOrder: 10 },
+      { name: 'Bog‘lanildi', kind: 'open', sortOrder: 20 },
+      { name: 'Narx aytildi', kind: 'open', sortOrder: 30 },
+      { name: 'Javob kutilmoqda', kind: 'open', sortOrder: 40 },
+      { name: 'Mijoz bo‘ldi', kind: 'won', sortOrder: 50 },
+      { name: 'Yo‘qotildi', kind: 'lost', sortOrder: 60 },
+    ]);
+    console.log('lead stages seeded (editable)');
   }
 }
 

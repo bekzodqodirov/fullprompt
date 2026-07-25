@@ -45,6 +45,12 @@ export const PERMISSION_CODES = [
   // only: a sales manager sees client balances, never the company's margin.
   'finance.expenses',
   'finance.reports',
+  // CRM (Phase 2.3): leads and the contact history. `crm.leads.view_all` is
+  // what separates a sales manager (own leads) from the owner (everyone's);
+  // `crm.manage` covers the editable funnel stages and lead sources.
+  'crm.leads',
+  'crm.leads.view_all',
+  'crm.manage',
   // Reports
   'reports.all_warehouses',
   'reports.own_warehouse',
@@ -106,6 +112,8 @@ export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
     'costs.enter_batch',
     'finance.view',
     'finance.debt_override',
+    'crm.leads',
+    'crm.leads.view_all',
     'reports.all_warehouses',
   ],
   ved_manager: [
@@ -141,7 +149,14 @@ export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
     'costs.enter_receipt',
     'reports.own_warehouse',
   ],
-  sales_manager: ['clients.view_own', 'finance.view', 'finance.debt_override', 'reports.own_clients'],
+  sales_manager: [
+    'clients.view_own',
+    'finance.view',
+    'finance.debt_override',
+    'reports.own_clients',
+    // Own leads only — `crm.leads.view_all` stays with the owner/admins.
+    'crm.leads',
+  ],
   accountant: [
     'finance.expenses',
     'finance.reports',

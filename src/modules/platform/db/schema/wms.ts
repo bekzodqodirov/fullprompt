@@ -887,3 +887,95 @@ export const accountTransfers = pgTable(
     index('account_transfers_date_idx').on(t.transferDate),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// CRM (Phase 2.3): leads, funnel, contact history
+// ---------------------------------------------------------------------------
+
+/** Where a lead came from — the owner maintains the list himself. */
+export const leadSources = pgTable('lead_sources', {
+  id: id(),
+  name: text('name').notNull().unique(),
+  sortOrder: integer('sort_order').notNull().default(100),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+});
+
+/**
+ * Funnel stages as data, not an enum: every company words its funnel
+ * differently. `kind` is the only part the code reasons about — a stage is
+ * still open, a won deal, or a lost one.
+ */
+export const leadStages = pgTable(
+  'lead_stages',
+  {
+    id: id(),
+    name: text('name').notNull().unique(),
+    kind: text('kind').notNull().default('open'),
+    sortOrder: integer('sort_order').notNull().default(100),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [check('lead_stages_kind_check', sql`${t.kind} IN ('open', 'won', 'lost')`)],
+);
+
+/** Someone who has asked about cargo but has no client code yet. */
+export const leads = pgTable(
+  'leads',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    phone: text('phone'),
+    company: text('company'),
+    sourceId: uuid('source_id').references(() => leadSources.id),
+    stageId: uuid('stage_id')
+      .notNull()
+      .references(() => leadStages.id),
+    /** The sales manager who owns the conversation. */
+    ownerId: uuid('owner_id').references(() => users.id),
+    note: text('note'),
+    /** "Call back on Friday" — what the follow-up list is built from. */
+    nextActionAt: date('next_action_at'),
+    nextActionNote: text('next_action_note'),
+    /** Set when the lead becomes a client card; the lead row itself stays. */
+    clientId: uuid('client_id').references(() => clients.id),
+    lostReason: text('lost_reason'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('leads_stage_idx').on(t.stageId),
+    index('leads_owner_idx').on(t.ownerId),
+    index('leads_next_action_idx').on(t.nextActionAt),
+    uniqueIndex('leads_client_unique').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
+  ],
+);
+
+/**
+ * One log for both sides of the funnel. The call that won a lead and the call
+ * about a late payment a year later belong on the same timeline; two tables
+ * would have split a single person's history in half.
+ */
+export const crmActivities = pgTable(
+  'crm_activities',
+  {
+    id: id(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    kind: text('kind').notNull(),
+    happenedAt: timestamp('happened_at', { withTimezone: true }).notNull().defaultNow(),
+    note: text('note').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client')`),
+    check('crm_activities_kind_check', sql`${t.kind} IN ('call', 'meeting', 'message', 'note')`),
+    index('crm_activities_entity_idx').on(t.entityType, t.entityId, t.happenedAt),
+  ],
+);
