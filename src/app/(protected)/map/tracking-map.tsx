@@ -2,13 +2,16 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
-import { DECOR_PATHS, LANDMARKS, VIEWBOX } from '@/modules/wms/tracking/map-data';
+import { DECOR_PATHS, LANDMARKS, toSvg, VIEWBOX } from '@/modules/wms/tracking/map-data';
 
 export interface MapWarehouse {
   code: string;
   name: string;
+  /** lon */
   x: number;
+  /** lat */
   y: number;
   totalBoxes: number;
   stock: { clientCode: string; n: number }[];
@@ -19,7 +22,9 @@ export interface MapTruck {
   code: string;
   originCode: string;
   destCode: string;
+  /** lon */
   x: number;
+  /** lat */
   y: number;
   segKey: string;
   progress: number;
@@ -34,13 +39,24 @@ export interface MapTruck {
 
 type Selected = { kind: 'wh'; code: string } | { kind: 'truck'; batchId: string } | null;
 
-/** Self-drawn corridor map — zero external tiles, opens instantly in China. */
+// Leaflet touches `window` at import time — client-only chunk.
+const LeafletCorridor = dynamic(
+  () => import('./leaflet-corridor').then((m) => m.LeafletCorridor),
+  { ssr: false, loading: () => <div className="h-[420px] w-full animate-pulse rounded-xl bg-blue-50 md:h-[520px]" /> },
+);
+
+/**
+ * Corridor map. With the self-hosted OSM basemap installed → real zoomable
+ * map (Leaflet); without it → the built-in schematic SVG, same data.
+ */
 export function TrackingMap({
   warehouses,
   trucks,
+  basemap,
 }: {
   warehouses: MapWarehouse[];
   trucks: MapTruck[];
+  basemap: boolean;
 }) {
   const t = useTranslations('map');
   const [selected, setSelected] = useState<Selected>(null);
@@ -51,83 +67,16 @@ export function TrackingMap({
 
   return (
     <div className="space-y-3">
-      <div className="card overflow-x-auto !p-2">
-        <svg
-          viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
-          className="h-auto w-full min-w-[640px]"
-          role="img"
-          aria-label={t('title')}
-        >
-          <rect width={VIEWBOX.w} height={VIEWBOX.h} fill="#eff6ff" />
-          {DECOR_PATHS.map((d, i) => (
-            <path key={i} d={d} fill="#dbeafe" stroke="#bfdbfe" strokeWidth={1.5} />
-          ))}
-
-          {/* Route trails of active trucks */}
-          {trucks.map((tr) => (
-            <polyline
-              key={`route-${tr.batchId}`}
-              points={tr.routePoints.map((p) => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke="#93c5fd"
-              strokeWidth={3}
-              strokeDasharray="7 5"
-              strokeLinecap="round"
-            />
-          ))}
-
-          {LANDMARKS.map((lm) => (
-            <g key={lm.name}>
-              <circle cx={lm.p.x} cy={lm.p.y} r={4} fill="#9ca3af" />
-              <text x={lm.p.x + 7} y={lm.p.y + 4} fontSize={13} fill="#6b7280">
-                {lm.name}
-              </text>
-            </g>
-          ))}
-
-          {warehouses.map((w) => (
-            <g
-              key={w.code}
-              className="cursor-pointer"
-              onClick={() => setSelected({ kind: 'wh', code: w.code })}
-            >
-              <circle cx={w.x} cy={w.y} r={17} fill="#1d4ed8" opacity={0.12} />
-              <text x={w.x} y={w.y + 7} fontSize={20} textAnchor="middle">
-                🏭
-              </text>
-              <text x={w.x} y={w.y + 30} fontSize={14} fontWeight={800} textAnchor="middle" fill="#1e3a8a">
-                {w.code}
-              </text>
-              {w.totalBoxes > 0 && (
-                <g>
-                  <rect x={w.x + 8} y={w.y - 26} rx={8} width={Math.max(26, 12 + String(w.totalBoxes).length * 8)} height={17} fill="#1d4ed8" />
-                  <text x={w.x + 8 + Math.max(26, 12 + String(w.totalBoxes).length * 8) / 2} y={w.y - 13} fontSize={12} fontWeight={700} textAnchor="middle" fill="#fff">
-                    {w.totalBoxes}
-                  </text>
-                </g>
-              )}
-            </g>
-          ))}
-
-          {trucks.map((tr) => (
-            <g
-              key={tr.batchId}
-              className="cursor-pointer"
-              onClick={() => setSelected({ kind: 'truck', batchId: tr.batchId })}
-            >
-              <circle cx={tr.x} cy={tr.y} r={15} fill={tr.overdue ? '#dc2626' : '#f59e0b'} opacity={0.25}>
-                <animate attributeName="r" values="13;19;13" dur="2.2s" repeatCount="indefinite" />
-              </circle>
-              <text x={tr.x} y={tr.y + 7} fontSize={20} textAnchor="middle">
-                🚛
-              </text>
-              <text x={tr.x} y={tr.y - 14} fontSize={12} fontWeight={800} textAnchor="middle" fill={tr.overdue ? '#b91c1c' : '#92400e'}>
-                {tr.code}
-              </text>
-            </g>
-          ))}
-        </svg>
-      </div>
+      {basemap ? (
+        <div className="card !p-1.5">
+          <LeafletCorridor warehouses={warehouses} trucks={trucks} onSelect={setSelected} />
+        </div>
+      ) : (
+        <div className="card overflow-x-auto !p-2">
+          <SvgCorridor warehouses={warehouses} trucks={trucks} onSelect={setSelected} label={t('title')} />
+          <p className="px-1 pt-1 text-[11px] text-gray-400">{t('basemapMissing')}</p>
+        </div>
+      )}
 
       {selWh && (
         <div className="card space-y-1.5">
@@ -192,5 +141,99 @@ export function TrackingMap({
 
       {trucks.length === 0 && <p className="text-sm text-gray-500">{t('noTrucks')}</p>}
     </div>
+  );
+}
+
+/** Fallback schematic drawing (no basemap file yet) — projects lon/lat. */
+function SvgCorridor({
+  warehouses,
+  trucks,
+  onSelect,
+  label,
+}: {
+  warehouses: MapWarehouse[];
+  trucks: MapTruck[];
+  onSelect: (sel: Exclude<Selected, null>) => void;
+  label: string;
+}) {
+  return (
+    <svg
+      viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
+      className="h-auto w-full min-w-[640px]"
+      role="img"
+      aria-label={label}
+    >
+      <rect width={VIEWBOX.w} height={VIEWBOX.h} fill="#eff6ff" />
+      {DECOR_PATHS.map((d, i) => (
+        <path key={i} d={d} fill="#dbeafe" stroke="#bfdbfe" strokeWidth={1.5} />
+      ))}
+
+      {trucks.map((tr) => (
+        <polyline
+          key={`route-${tr.batchId}`}
+          points={tr.routePoints.map((p) => {
+            const s = toSvg(p);
+            return `${s.x},${s.y}`;
+          }).join(' ')}
+          fill="none"
+          stroke="#93c5fd"
+          strokeWidth={3}
+          strokeDasharray="7 5"
+          strokeLinecap="round"
+        />
+      ))}
+
+      {LANDMARKS.map((lm) => {
+        const s = toSvg(lm.p);
+        return (
+          <g key={lm.name}>
+            <circle cx={s.x} cy={s.y} r={4} fill="#9ca3af" />
+            <text x={s.x + 7} y={s.y + 4} fontSize={13} fill="#6b7280">
+              {lm.name}
+            </text>
+          </g>
+        );
+      })}
+
+      {warehouses.map((w) => {
+        const s = toSvg({ x: w.x, y: w.y });
+        return (
+          <g key={w.code} className="cursor-pointer" onClick={() => onSelect({ kind: 'wh', code: w.code })}>
+            <circle cx={s.x} cy={s.y} r={17} fill="#1d4ed8" opacity={0.12} />
+            <text x={s.x} y={s.y + 7} fontSize={20} textAnchor="middle">
+              🏭
+            </text>
+            <text x={s.x} y={s.y + 30} fontSize={14} fontWeight={800} textAnchor="middle" fill="#1e3a8a">
+              {w.code}
+            </text>
+            {w.totalBoxes > 0 && (
+              <g>
+                <rect x={s.x + 8} y={s.y - 26} rx={8} width={Math.max(26, 12 + String(w.totalBoxes).length * 8)} height={17} fill="#1d4ed8" />
+                <text x={s.x + 8 + Math.max(26, 12 + String(w.totalBoxes).length * 8) / 2} y={s.y - 13} fontSize={12} fontWeight={700} textAnchor="middle" fill="#fff">
+                  {w.totalBoxes}
+                </text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+
+      {trucks.map((tr) => {
+        const s = toSvg({ x: tr.x, y: tr.y });
+        return (
+          <g key={tr.batchId} className="cursor-pointer" onClick={() => onSelect({ kind: 'truck', batchId: tr.batchId })}>
+            <circle cx={s.x} cy={s.y} r={15} fill={tr.overdue ? '#dc2626' : '#f59e0b'} opacity={0.25}>
+              <animate attributeName="r" values="13;19;13" dur="2.2s" repeatCount="indefinite" />
+            </circle>
+            <text x={s.x} y={s.y + 7} fontSize={20} textAnchor="middle">
+              🚛
+            </text>
+            <text x={s.x} y={s.y - 14} fontSize={12} fontWeight={800} textAnchor="middle" fill={tr.overdue ? '#b91c1c' : '#92400e'}>
+              {tr.code}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
   );
 }

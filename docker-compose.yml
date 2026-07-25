@@ -11,6 +11,9 @@ services:
       DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
       S3_ENDPOINT: http://minio:9000
       STORAGE_DRIVER: s3
+    volumes:
+      # Self-hosted OSM basemap for /map (ops/fetch-basemap.sh downloads it).
+      - ./.data/basemap:/app/.data/basemap:ro
     depends_on:
       postgres:
         condition: service_healthy

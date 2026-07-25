@@ -708,6 +708,7 @@
     "seg_border_wait": "Chegarada navbatda (1–3 kun)",
     "seg_kg": "Qirg‘iziston hududida",
     "seg_uz": "O‘zbekiston hududida",
-    "seg_transit": "Yo‘lda"
+    "seg_transit": "Yo‘lda",
+    "basemapMissing": "Batafsil xarita hali yuklanmagan — serverda `bash ops/fetch-basemap.sh` ishga tushirilsa, bu chizma haqiqiy xaritaga almashadi."
   }
 }

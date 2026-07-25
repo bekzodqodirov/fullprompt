@@ -708,6 +708,7 @@
     "seg_border_wait": "口岸排队（1–3天）",
     "seg_kg": "吉尔吉斯斯坦境内",
     "seg_uz": "乌兹别克斯坦境内",
-    "seg_transit": "运输中"
+    "seg_transit": "运输中",
+    "basemapMissing": "详细地图尚未加载——在服务器运行 `bash ops/fetch-basemap.sh` 后将替换为真实地图。"
   }
 }

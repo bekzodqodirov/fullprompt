@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Real basemap for the tracking map (self-hosted, China-safe) — 2026-07-25
+
+- **The /map schematic upgrades to a REAL zoomable map** (owner's ask for an external map): Leaflet renders a self-hosted OpenStreetMap extract (PMTiles vector tiles) covering the whole corridor (UZ + KG + all of China). Why not Yandex/Baidu: Baidu requires a Chinese-ID developer account and barely covers Uzbekistan; Yandex is unreliable behind the GFW. Hosting the map data ourselves gives the same look with guaranteed China performance and zero runtime dependency on anyone.
+- **One-time server step**: `bash ops/fetch-basemap.sh` downloads a ~30-80 MB corridor extract into `.data/basemap/` (docker volume added); until then the map page keeps the schematic SVG with a gray hint — nothing breaks, both modes share the same trucks/warehouses/popups.
+- Waypoints refactored to real lon/lat (single source for both renderers); `/api/basemap/corridor.pmtiles` serves the file with proper HTTP Range support (the PMTiles reader fetches byte ranges) — unit-tested including 206/416 edges.
+- 110 unit/integration + 12 e2e green (CI exercises the SVG fallback path).
+
 ## 🗺 Tracking map: approximate truck positions + warehouse stock — 2026-07-24
 
 - **New "Xarita" page** (home → info tiles): a self-drawn SVG of the whole corridor (Guangzhou/Yiwu → Urumqi → Kashgar → Irkeshtam → Osh → Andijan → Tashkent) — deliberately NO external map tiles, so it opens instantly in China and adds zero dependencies (owner-approved tradeoff).

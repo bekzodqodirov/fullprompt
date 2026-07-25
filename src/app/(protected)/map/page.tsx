@@ -13,6 +13,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { basemapAvailable } from '@/modules/wms/tracking/basemap';
 import { estimateTransit } from '@/modules/wms/tracking/engine';
 import { CHECKPOINT_SEGMENTS, routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 import { TrackingMap, type MapTruck, type MapWarehouse } from './tracking-map';
@@ -97,7 +98,7 @@ export default async function MapPage() {
     <div className="mx-auto max-w-5xl space-y-3">
       <h1 className="text-xl font-bold">🗺 {t('title')}</h1>
       <p className="text-xs text-gray-500">{t('disclaimer')}</p>
-      <TrackingMap warehouses={mapWarehouses} trucks={trucks} />
+      <TrackingMap warehouses={mapWarehouses} trucks={trucks} basemap={basemapAvailable()} />
     </div>
   );
 }

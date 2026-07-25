@@ -1,28 +1,34 @@
 import type { RouteDef, RoutePoint } from './engine';
 
 /**
- * Hand-drawn corridor geometry (owner's routes, DECISIONS: self-hosted SVG —
- * no external map tiles, must open instantly in China). Coordinates are a
- * linear lon/lat projection into a 1000×600 viewBox:
- *   x = (lon − 66) × 16.6,  y = (45 − lat) × 24.
+ * Corridor geometry (owner's routes). Points are REAL lon/lat (x = lon,
+ * y = lat), so the same data drives both renderers:
+ *  - the Leaflet basemap (self-hosted OSM PMTiles — real zoomable map);
+ *  - the fallback SVG drawing (shown until the basemap file is downloaded),
+ *    which projects lon/lat into a 1000×600 viewBox via toSvg().
  */
 
 export const VIEWBOX = { w: 1000, h: 600 };
 
+/** lon/lat → fallback-SVG coordinates. */
+export function toSvg(p: RoutePoint): { x: number; y: number } {
+  return { x: (p.x - 66) * 16.6, y: (45 - p.y) * 24 };
+}
+
 const P = {
-  TAS: { x: 53, y: 89 }, // Tashkent 69.2E 41.3N
-  AND: { x: 105, y: 101 }, // Andijan 72.3E 40.8N
-  OSH: { x: 113, y: 108 }, // Osh (KG)
-  IRK: { x: 131, y: 127 }, // Irkeshtam border
-  KA: { x: 166, y: 132 }, // Kashgar
-  AKS: { x: 237, y: 91 }, // Aksu
-  UCH: { x: 359, y: 29 }, // Urumqi
-  HAM: { x: 457, y: 53 }, // Hami
-  LAN: { x: 627, y: 216 }, // Lanzhou
-  XIA: { x: 712, y: 257 }, // Xi'an
-  CSX: { x: 780, y: 403 }, // Changsha
-  YW: { x: 898, y: 377 }, // Yiwu
-  GZ: { x: 785, y: 526 }, // Guangzhou
+  TAS: { x: 69.24, y: 41.31 }, // Tashkent
+  AND: { x: 72.34, y: 40.78 }, // Andijan
+  OSH: { x: 72.8, y: 40.53 }, // Osh (KG)
+  IRK: { x: 73.91, y: 39.68 }, // Irkeshtam border
+  KA: { x: 75.98, y: 39.47 }, // Kashgar
+  AKS: { x: 80.26, y: 41.17 }, // Aksu
+  UCH: { x: 87.62, y: 43.83 }, // Urumqi
+  HAM: { x: 93.51, y: 42.83 }, // Hami
+  LAN: { x: 103.83, y: 36.06 }, // Lanzhou
+  XIA: { x: 108.94, y: 34.34 }, // Xi'an
+  CSX: { x: 113.0, y: 28.2 }, // Changsha
+  YW: { x: 120.07, y: 29.31 }, // Yiwu
+  GZ: { x: 113.26, y: 23.13 }, // Guangzhou
 } satisfies Record<string, RoutePoint>;
 
 /** Warehouse code → map dot. TAS2 sits beside TAS1 so both stay clickable. */
@@ -33,20 +39,24 @@ export const WAREHOUSE_POINTS: Record<string, RoutePoint> = {
   KA: P.KA,
   AND: P.AND,
   TAS1: P.TAS,
-  TAS2: { x: P.TAS.x - 14, y: P.TAS.y + 14 },
+  TAS2: { x: P.TAS.x - 0.85, y: P.TAS.y - 0.58 },
 };
 
-/** Named dots drawn on the map even without a warehouse (context). */
+/** Named dots drawn for context even without a warehouse. */
 export const LANDMARKS: { name: string; p: RoutePoint }[] = [
   { name: 'Irkeshtam', p: P.IRK },
   { name: 'Osh', p: P.OSH },
 ];
 
+/** Leaflet initial view: whole corridor. */
+export const MAP_BOUNDS: [[number, number], [number, number]] = [
+  [20, 60], // south-west lat,lon
+  [47, 125], // north-east
+];
+
 const CN_SPINE = [P.XIA, P.LAN, P.HAM, P.UCH, P.AKS, P.KA];
 
-function ka2uz(dest: RoutePoint, uzHours: [number, number]): Omit<RouteDef, 'points'> & {
-  points: RoutePoint[];
-} {
+function ka2uz(dest: RoutePoint, uzHours: [number, number]): RouteDef {
   return {
     points: [P.KA, P.IRK, P.OSH, P.AND, dest],
     segments: [
@@ -113,7 +123,7 @@ export const CHECKPOINT_SEGMENTS: Record<string, string> = {
   in_uz: 'uz',
 };
 
-/** Decorative country outlines (very rough, purely visual context). */
+/** Decorative country outlines for the FALLBACK SVG (already projected). */
 export const DECOR_PATHS: string[] = [
   // UZ / KG hint
   'M 10 60 L 90 55 L 150 95 L 150 150 L 60 140 L 10 110 Z',
