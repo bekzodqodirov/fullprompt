@@ -19,6 +19,10 @@ for (const extra of ['public', 'src/assets']) {
 // absolute path FIRST (a relative value from .env would silently point into
 // the standalone dir and 404 every previously stored file).
 process.env.STORAGE_LOCAL_DIR = path.resolve(process.env.STORAGE_LOCAL_DIR ?? '.data/files');
+// Same trap for the map basemap: pin it to the repo's .data before chdir.
+process.env.BASEMAP_PATH = path.resolve(
+  process.env.BASEMAP_PATH ?? '.data/basemap/corridor.pmtiles',
+);
 
 // Self-heal: photos uploaded while the old bug was live landed inside
 // .next/standalone/.data — merge them back (never overwrites existing files).
