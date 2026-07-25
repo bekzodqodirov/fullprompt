@@ -139,6 +139,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (chainActive) step() else render()
+        startTrackingIfReady()
         handler.removeCallbacks(liveRefresh)
         handler.postDelayed(liveRefresh, 5_000)
     }
@@ -317,7 +318,9 @@ class MainActivity : AppCompatActivity() {
         renderChecklist()
         renderInterval()
         renderTiming()
-        startTrackingIfReady()
+        // Deliberately no service start here: render() also runs on the 5 s
+        // screen refresh, and poking the service that often would keep asking
+        // it to report. Starting is tied to onResume and to the setup chain.
     }
 
     private fun renderChecklist() {

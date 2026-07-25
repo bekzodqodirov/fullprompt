@@ -145,11 +145,13 @@ class TrackingService : Service() {
         when (intent?.action) {
             ACTION_TICK, ACTION_SEND_NOW -> startCycle()
             else -> {
-                // Fresh start, or a restart after the OS killed us. Report at
-                // once when nothing has ever been sent (the warehouse worker
-                // must see the first dot appear) or when the alarm is overdue;
-                // otherwise just make sure the alarm is armed.
-                if (store.lastFixAt == 0L || store.nextTickAt <= System.currentTimeMillis()) {
+                // Fresh start, or a restart after the OS killed us. `nextTickAt`
+                // is only set at the END of a cycle, so an unset/past value
+                // means one is genuinely due — including the very first one,
+                // which is how the warehouse worker sees the dot appear before
+                // the truck leaves. Anything else just re-arms the alarm, so
+                // repeated starts can never turn into a reporting loop.
+                if (store.nextTickAt <= System.currentTimeMillis()) {
                     startCycle()
                 } else {
                     scheduleNext(store.nextTickAt - System.currentTimeMillis())
