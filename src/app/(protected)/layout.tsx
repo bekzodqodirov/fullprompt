@@ -10,8 +10,6 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   if (!actor) redirect('/login');
   const t = await getTranslations('nav');
 
-  const isAdmin = actor.permissions.has('admin.warehouses.manage');
-
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col">
       <header className="sticky top-0 z-10 flex items-center gap-1.5 border-b border-gray-200 bg-white px-3 py-2">
@@ -37,28 +35,8 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           </button>
         </form>
       </header>
-      {isAdmin && (
-        <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 bg-white px-4 py-2 text-sm font-semibold">
-          <Link href="/admin/warehouses" className="rounded-md px-3 py-2 hover:bg-gray-100">
-            {t('warehouses')}
-          </Link>
-          <Link href="/admin/clients" className="rounded-md px-3 py-2 hover:bg-gray-100">
-            {t('clients')}
-          </Link>
-          <Link href="/admin/users" className="rounded-md px-3 py-2 hover:bg-gray-100">
-            {t('users')}
-          </Link>
-          <Link href="/admin/settings" className="rounded-md px-3 py-2 hover:bg-gray-100">
-            {t('settings')}
-          </Link>
-          <Link href="/admin/audit" className="rounded-md px-3 py-2 hover:bg-gray-100">
-            {t('audit')}
-          </Link>
-          <Link href="/admin/notifications" className="rounded-md px-3 py-2 hover:bg-gray-100">
-            {t('notifications')}
-          </Link>
-        </nav>
-      )}
+      {/* The admin nav lives in the admin layout — it used to sit here and
+          followed the user onto every operational screen (owner). */}
       <main className="flex-1 p-4">{children}</main>
     </div>
   );

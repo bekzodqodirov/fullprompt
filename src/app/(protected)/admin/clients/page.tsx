@@ -3,12 +3,18 @@ import { asc, eq, sql, type SQL } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients, users } from '@/modules/platform/db/schema';
+import { redirect } from 'next/navigation';
+import { getActor } from '@/modules/platform/rbac/authorize';
 
 export default async function ClientsPage({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  // Own gate, not just the layout's: the section is now reachable by roles
+  // that only hold FX or audit rights.
+  const actor = await getActor();
+  if (!actor?.permissions.has('admin.warehouses.manage')) redirect('/');
   const t = await getTranslations('clients');
   const tc = await getTranslations('common');
   const { q } = await searchParams;

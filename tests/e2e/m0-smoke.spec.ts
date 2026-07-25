@@ -30,6 +30,12 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(360);
 
+  // The admin nav belongs to the admin section, not to every screen — an
+  // admin used to meet "warehouses / clients / employees" on the home page.
+  await expect(page.locator('nav')).toHaveCount(0);
+  await page.goto('/admin/warehouses');
+  await expect(page.locator('nav')).toHaveCount(1);
+
   // Create a warehouse
   await page.goto('/admin/warehouses/new');
   await page.locator('input[name="code"]').fill(`T${runId}`);

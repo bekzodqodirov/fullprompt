@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## The admin nav stays in the admin section — 2026-07-25
+
+- **Owner's report**: "warehouses / clients / employees" sat at the top of the home screen; it should appear only after opening the admin panel. It was rendered by the protected layout, so it followed an admin onto every operational screen. Moved into the admin section's own layout, reachable from the home tile as before.
+- **Found while moving it**: the section gate demanded `admin.warehouses.manage`, but the accountant holds `costs.fx.manage` and the home screen offers them the 💱 FX tile — clicking it bounced them straight back home, so an accountant could never open their own exchange-rate page. The gate now admits any admin-section permission and the nav lists only what the person may actually use; the four pages that had been leaning on the old gate (warehouses, clients, users, settings) check `admin.warehouses.manage` themselves, so widening the entrance opened nothing.
+- The smoke test now asserts both halves: no nav on an admin's home screen, a nav inside the admin section. 153 unit/integration + 12 e2e green.
+
+
 ## Owner's UI round: archive, foldable panels, manual batch code — 2026-07-25
 
 - **A finished batch used to vanish.** The board rendered only forming/loading/in transit/arrived, so once a truck was unloaded its manifest, costs and history were unreachable. There is now an archive drawer under the board — unloaded/closed/cancelled — searchable by code, plate or driver. Its box count comes from the departure movements, since a finished batch no longer owns any boxes.

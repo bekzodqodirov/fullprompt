@@ -3,8 +3,14 @@ import { getTranslations } from 'next-intl/server';
 import { asc } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { warehouses } from '@/modules/platform/db/schema';
+import { redirect } from 'next/navigation';
+import { getActor } from '@/modules/platform/rbac/authorize';
 
 export default async function WarehousesPage() {
+  // Own gate, not just the layout's: the section is now reachable by roles
+  // that only hold FX or audit rights.
+  const actor = await getActor();
+  if (!actor?.permissions.has('admin.warehouses.manage')) redirect('/');
   const t = await getTranslations('warehouses');
   const tc = await getTranslations('common');
   const rows = await db.select().from(warehouses).orderBy(asc(warehouses.code));
