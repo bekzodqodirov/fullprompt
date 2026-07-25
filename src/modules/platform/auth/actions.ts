@@ -79,7 +79,7 @@ export async function logoutOtherDevicesAction(): Promise<void> {
   await revokeOtherSessions(user.id, user.sessionId);
 }
 
-const localeSchema = z.enum(['ru', 'uz', 'zh-CN']);
+const localeSchema = z.enum(['ru', 'uz', 'zh-CN', 'en']);
 
 export async function changeLocaleAction(formData: FormData): Promise<void> {
   const user = await getSessionUser();

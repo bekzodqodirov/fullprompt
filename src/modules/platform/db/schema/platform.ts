@@ -55,7 +55,7 @@ export const users = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [check('users_locale_check', sql`${t.locale} IN ('ru', 'uz', 'zh-CN')`)],
+  (t) => [check('users_locale_check', sql`${t.locale} IN ('ru', 'uz', 'zh-CN', 'en')`)],
 );
 
 export const sessions = pgTable(

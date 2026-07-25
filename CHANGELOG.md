@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## English interface (part 1 of 3) — 2026-07-25
+
+- **English joins Russian, Uzbek and Chinese** — all 644 interface strings across 30 areas (receiving, batches, stock, finance, reports, map, admin…). Pick it from the language selector or set it per employee.
+- Migration 0019 widens the `users_locale_check` constraint; without it nobody could actually be switched to English. Existing users keep their language — nothing moves by itself.
+- **A test now guards all four bundles**: every locale must carry every key, keep the same `{placeholders}`, and not silently ship a Russian string as a translation. next-intl throws at RENDER time on a missing key, so a forgotten translation would otherwise surface as a broken page for whoever uses that language — usually not the person who added it. Verified against deliberately broken bundles: all three checks fire.
+- Verified in a browser: 15 screens render English with no client-side errors. 163 unit/integration + 12 e2e green.
+- **Still Russian/Uzbek** (parts 2 and 3, next): the customs documents (invoice, packing list, manifest, handover act, report exports) and the Telegram bot.
+
+
 ## The admin nav stays in the admin section — 2026-07-25
 
 - **Owner's report**: "warehouses / clients / employees" sat at the top of the home screen; it should appear only after opening the admin panel. It was rendered by the protected layout, so it followed an admin onto every operational screen. Moved into the admin section's own layout, reachable from the home tile as before.

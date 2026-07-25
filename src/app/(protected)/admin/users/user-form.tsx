@@ -80,6 +80,7 @@ export function UserForm({
           <option value="ru">Русский</option>
           <option value="uz">O&apos;zbekcha</option>
           <option value="zh-CN">中文</option>
+          <option value="en">English</option>
         </select>
       </div>
       <fieldset>

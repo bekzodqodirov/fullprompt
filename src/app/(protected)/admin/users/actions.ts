@@ -21,7 +21,7 @@ const userSchema = z.object({
   phone: z.string().trim().min(5).max(30),
   username: z.string().trim().max(50).optional().or(z.literal('')),
   password: z.string().max(200).optional().or(z.literal('')),
-  locale: z.enum(['ru', 'uz', 'zh-CN']),
+  locale: z.enum(['ru', 'uz', 'zh-CN', 'en']),
   roleCodes: z.array(z.enum(ROLE_CODES)).min(1),
   warehouseIds: z.array(z.string().uuid()),
 });

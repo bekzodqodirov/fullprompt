@@ -8,6 +8,7 @@ const LOCALE_LABELS: Record<string, string> = {
   ru: 'РУ',
   uz: "O'Z",
   'zh-CN': '中文',
+  en: 'EN',
 };
 
 export function LocaleSwitcher({ current }: { current: string }) {

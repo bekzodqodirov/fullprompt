@@ -17,7 +17,7 @@ export const SETTING_DEFAULTS = {
   client_code_prefix: 'GS',
   label_size: '100x100',
   translation_provider: 'libretranslate',
-  default_locale: 'ru' as 'ru' | 'uz' | 'zh-CN',
+  default_locale: 'ru' as 'ru' | 'uz' | 'zh-CN' | 'en',
   pin_relock: false,
   block_issue_if_unpaid: false,
   // VED document header (spec W6) — owner supplies real values (open Q4).

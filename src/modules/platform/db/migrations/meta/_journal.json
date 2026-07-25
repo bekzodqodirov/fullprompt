@@ -134,6 +134,13 @@
       "when": 1784950000000,
       "tag": "0018_driver_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784960000000,
+      "tag": "0019_locale_en",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { getRequestConfig } from 'next-intl/server';
 import { cookies } from 'next/headers';
 import { getSessionUser } from '../auth/session';
 
-export const LOCALES = ['ru', 'uz', 'zh-CN'] as const;
+export const LOCALES = ['ru', 'uz', 'zh-CN', 'en'] as const;
 export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'ru';
 
