@@ -152,6 +152,7 @@ export function ReceiveWizard({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
+  const [searching, setSearching] = useState(false);
   const [letterPreview, setLetterPreview] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmitReceiptResult | null>(null);
@@ -206,16 +207,25 @@ export function ReceiveWizard({
     );
   }, []);
 
-  // Client autocomplete
+  // Client autocomplete. `searching` gates the "unknown cargo" offer: until
+  // the lookup has actually answered we must not claim the code is unknown —
+  // for an existing code that button flashed up for a moment and a fast tap
+  // filed the receipt as unclaimed.
   useEffect(() => {
     if (!clientQuery.trim()) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setClientHits([]);
+      setSearching(false);
       return;
     }
+    setSearching(true);
     const timer = setTimeout(async () => {
-      const res = await fetch(`/api/clients/search?q=${encodeURIComponent(clientQuery)}`);
-      if (res.ok) setClientHits(((await res.json()) as { results: ClientHit[] }).results);
+      try {
+        const res = await fetch(`/api/clients/search?q=${encodeURIComponent(clientQuery)}`);
+        if (res.ok) setClientHits(((await res.json()) as { results: ClientHit[] }).results);
+      } finally {
+        setSearching(false);
+      }
     }, 250);
     return () => clearTimeout(timer);
   }, [clientQuery]);
@@ -656,13 +666,38 @@ export function ReceiveWizard({
                   </button>
                 </li>
               ))}
+              {/* Last row, after the real matches: the dropdown overlays the
+                  standalone button below, so without this a fuzzy hit left
+                  no way to accept an unknown code (owner's GS500 → GS300).
+                  Deliberately NOT labelled with the typed code — it must not
+                  read like one of the matches above. */}
+              <li>
+                <button
+                  type="button"
+                  data-testid="accept-unclaimed-inline"
+                  className="w-full bg-orange-50 p-3 text-left text-sm font-semibold text-orange-800 hover:bg-orange-100"
+                  onClick={() => {
+                    update({ unclaimed: true, unclaimedMarking: clientQuery.toUpperCase() });
+                    setClientHits([]);
+                  }}
+                >
+                  ❓ {t('acceptUnclaimed')}
+                </button>
+              </li>
             </ul>
           )}
         </div>
       </div>
-      {!draft.clientId && clientQuery.trim() && clientHits.length === 0 && (
+      {/* Only when the dropdown is closed — while it is open the unclaimed
+          choice is its last row, so the code-labelled button below can never
+          be mistaken for (or overlay) one of the real matches. */}
+      {!draft.clientId &&
+        !searching &&
+        clientHits.length === 0 &&
+        (clientQuery.trim() || draft.unclaimed) && (
         <button
           type="button"
+          data-testid="accept-unclaimed"
           className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${
             draft.unclaimed
               ? 'border-orange-500 bg-orange-50 text-orange-800'
@@ -672,7 +707,10 @@ export function ReceiveWizard({
             update({ unclaimed: !draft.unclaimed, unclaimedMarking: clientQuery.toUpperCase() })
           }
         >
-          ❓ {t('acceptUnclaimed')}
+          ❓{' '}
+          {clientQuery.trim()
+            ? t('acceptUnclaimedAs', { code: clientQuery.toUpperCase() })
+            : t('acceptUnclaimed')}
         </button>
       )}
       {draft.unclaimed && (

@@ -127,8 +127,22 @@ test('unclaimed intake captures the box marking', async ({ page }) => {
   const searchSettled = page.waitForResponse((r) => r.url().includes('/api/clients/search'));
   await page.locator('#clientQuery').fill('QQ9');
   await searchSettled;
-  await page.locator('button', { hasText: '❓' }).click();
+  await page.locator('button', { hasText: '❓' }).first().click();
   await expect(page.locator('#marking')).toHaveValue('QQ9');
+
+  // An unknown code that LOOKS like an existing one must not steal the
+  // unclaimed path (owner: typing GS500 offered GS300 and left no way out).
+  const secondSearch = page.waitForResponse((r) => r.url().includes('/api/clients/search'));
+  await page.locator('#clientQuery').fill('GS500');
+  await secondSearch;
+  // GS500 does not exist; whatever the search returns, the unclaimed path
+  // stays reachable — inline row when there are hits, standalone otherwise.
+  const inline = page.getByTestId('accept-unclaimed-inline');
+  if (await inline.isVisible().catch(() => false)) await inline.click();
+  else await page.getByTestId('accept-unclaimed').click();
+  await expect(page.locator('#marking')).toHaveValue('GS500');
+  // Back to the intended marking for the rest of the flow.
+  await page.locator('#marking').fill('QQ9');
 
   await page.getByTestId('lot-zh').fill('杂货');
   await page.getByTestId('lot-count').fill('2');

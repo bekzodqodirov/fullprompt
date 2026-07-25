@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Receiving: an unknown code no longer offers a look-alike client — 2026-07-25
+
+- **Owner's report**: typing GS500 (a code that does not exist) during receiving offered **GS300**, and the "unknown cargo" path disappeared behind that suggestion.
+- **Search fixed**: digits in a client code are meaningful — GS500 and GS300 are different customers, but trigram similarity happily matched them. A query containing digits now matches codes literally (exact / prefix / substring); fuzzy matching is kept for names and for digit-free code typos, so `gs777` → GS777, `777` → GS777 and a misspelled client name still work, while GS500 simply finds nothing.
+- **"Unknown cargo" is always reachable**: it is now the last row of the suggestion list (after the real matches, never before them, and deliberately unlabelled with the typed code so it cannot be mistaken for one), and the big button below appears whenever the list is empty.
+- **Race removed**: that button used to flash up with the typed code for a moment BEFORE the lookup answered — a fast tap on an existing code filed the receipt as unclaimed. It now waits for the search to finish before claiming a code is unknown.
+- Client search extracted into one module used by the receiving, issue and finance screens alike, with a DB-level suite (unknown code → nothing, exact/lowercase/partial, name typos, inactive clients hidden). 132 unit/integration + 12 e2e green; the e2e receiving flow now asserts the unclaimed path stays reachable for a look-alike code.
+
 ## Auto client code follows the MAIN sequence again — 2026-07-25
 
 - **Owner's report**: codes run GS1…GS425, but a few one-off manual codes exist (GS777, GS5564, GS5909); asking the system to assign a code produced **GS5910** instead of **GS426** — plain "biggest + 1" was dragged along by the outliers.

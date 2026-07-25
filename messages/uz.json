@@ -325,7 +325,8 @@
       "count": "karobkalar sonini kiriting",
       "dims": "o'lcham va og'irlikni to'ldiring (raqam, masalan 40 yoki 8.5)",
       "photo": "kamida 1 ta rasm qo‘shing"
-    }
+    },
+    "acceptUnclaimedAs": "{code} — notanish yuk sifatida qabul qilish"
   },
   "receipts": {
     "title": "Qabullar",
