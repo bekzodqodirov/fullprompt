@@ -199,6 +199,7 @@ async function main() {
 
   // --- M1: cost types, product dictionary, canonical GS777 receipt (§18) ---
   await seedM1(whIds, seedDemo);
+  await seedAccounting();
 
   // --- Single audit marker for the seed run ---
   await db.insert(auditLog).values({
@@ -374,6 +375,52 @@ async function seedM1(whIds: Map<string, string>, seedDemo: boolean) {
     ctx,
   );
   console.log('M1 canonical receipts seeded (GS777 → A,B,C; GS102 → D)');
+}
+
+/**
+ * Starter expense categories and cash accounts (owner's own list).
+ *
+ * Seeded ONLY into empty tables. Both are meant to be edited by hand from the
+ * admin pages, and a category the owner deleted must not reappear on the next
+ * deploy — the same rule that stopped demo users coming back (DECISIONS #117).
+ */
+async function seedAccounting() {
+  const { expenseCategories, moneyAccounts } = await import(
+    '../src/modules/platform/db/schema'
+  );
+
+  const existingCategories = await db.select({ id: expenseCategories.id }).from(expenseCategories).limit(1);
+  if (existingCategories.length === 0) {
+    await db.insert(expenseCategories).values([
+      { name: 'Ijara (sklad, ofis)', sortOrder: 10 },
+      { name: 'Ish haqi', sortOrder: 20 },
+      { name: 'Ish haqi soliqlari va ajratmalar', sortOrder: 30 },
+      { name: 'Kommunal (svet, suv, isitish)', sortOrder: 40 },
+      { name: 'Aloqa va internet', sortOrder: 50 },
+      { name: 'Transport (yoqilg‘i, ta’mir, sug‘urta)', sortOrder: 60 },
+      { name: 'Sklad sarf materiallari', sortOrder: 70 },
+      { name: 'Dasturiy ta’minot va serverlar', sortOrder: 80 },
+      { name: 'Bank xizmatlari va komissiyalar', sortOrder: 90 },
+      { name: 'Yuridik va buxgalteriya xizmati', sortOrder: 100 },
+      { name: 'Reklama va marketing', sortOrder: 110 },
+      // Never leaves the bank account, so it stays out of the cash flow.
+      { name: 'Amortizatsiya', cash: false, sortOrder: 120 },
+      { name: 'Boshqa', sortOrder: 200 },
+    ]);
+    console.log('expense categories seeded (editable in the admin pages)');
+  }
+
+  const existingAccounts = await db.select({ id: moneyAccounts.id }).from(moneyAccounts).limit(1);
+  if (existingAccounts.length === 0) {
+    await db.insert(moneyAccounts).values([
+      { name: 'Xitoy — naqd (USD)', currency: 'USD', kind: 'cash', sortOrder: 10 },
+      { name: 'O‘zbekiston — naqd (USD)', currency: 'USD', kind: 'cash', sortOrder: 20 },
+      { name: 'O‘zbekiston — naqd (so‘m)', currency: 'UZS', kind: 'cash', sortOrder: 30 },
+      { name: 'O‘zbekiston — karta (so‘m)', currency: 'UZS', kind: 'card', sortOrder: 40 },
+      { name: 'O‘zbekiston — firma hisobi (so‘m)', currency: 'UZS', kind: 'bank', sortOrder: 50 },
+    ]);
+    console.log('money accounts seeded (owner list; editable)');
+  }
 }
 
 main()

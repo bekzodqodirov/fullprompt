@@ -707,6 +707,8 @@ export const clientTransactions = pgTable(
     txDate: date('tx_date').notNull(),
     /** Charges from batch pricing point at the batch they price. */
     batchId: uuid('batch_id').references(() => batches.id),
+    /** Which cash box the payment landed in (Phase 2.4 cash flow). */
+    accountId: uuid('account_id'),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -725,5 +727,163 @@ export const clientTransactions = pgTable(
     ),
     index('client_transactions_client_idx').on(t.clientId, t.createdAt),
     index('client_transactions_batch_idx').on(t.batchId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Phase 2.4 — Management accounting (owner: P&L, cash flow, profitability)
+//
+// Deliberately management accounting, not double-entry bookkeeping (owner's
+// choice): the numbers here run the business, while the official books stay
+// with the accountant. Cargo costs already live in `cost_entries` and reach
+// every box through `cost_allocations`; what was missing was the overhead
+// side (rent, salaries…) and somewhere for money to actually sit.
+// ---------------------------------------------------------------------------
+
+/** Operating-expense categories — maintained by hand, not hardcoded (owner). */
+export const expenseCategories = pgTable('expense_categories', {
+  id: id(),
+  name: text('name').notNull().unique(),
+  /**
+   * False for expenses that never move money (depreciation). They belong in
+   * the P&L but must stay out of the cash-flow report.
+   */
+  cash: boolean('cash').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(100),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+});
+
+/** Where money actually sits. Owner's list: CN cash USD, UZ cash USD/UZS, card, company account. */
+export const moneyAccounts = pgTable(
+  'money_accounts',
+  {
+    id: id(),
+    name: text('name').notNull().unique(),
+    currency: varchar('currency', { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    kind: text('kind').notNull().default('cash'),
+    /** Balance carried in from before the system started (owner: "ha kiritamiz"). */
+    openingBalance: numeric('opening_balance', { precision: 16, scale: 2 })
+      .notNull()
+      .default('0'),
+    openingDate: date('opening_date'),
+    sortOrder: integer('sort_order').notNull().default(100),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [check('money_accounts_kind_check', sql`${t.kind} IN ('cash', 'bank', 'card')`)],
+);
+
+/**
+ * One overhead expense. FX is frozen at entry exactly like a client
+ * transaction (DECISIONS #108): a later rate correction must not silently
+ * rewrite a month that has already been reported.
+ */
+export const expenses = pgTable(
+  'expenses',
+  {
+    id: id(),
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => expenseCategories.id),
+    amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    currency: varchar('currency', { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    rateToUsd: numeric('rate_to_usd', { precision: 18, scale: 8 }).notNull(),
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    expenseDate: date('expense_date').notNull(),
+    /** Optional: lets the P&L be split per warehouse / direction (owner). */
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id),
+    /** Salaries are entered per employee (owner's answer 5b). */
+    employeeId: uuid('employee_id').references(() => users.id),
+    /** Which cash box / account it was paid from — drives the cash flow. */
+    accountId: uuid('account_id').references(() => moneyAccounts.id),
+    note: text('note'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedBy: uuid('voided_by').references(() => users.id),
+    voidReason: text('void_reason'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('expenses_amount_check', sql`${t.amount} > 0`),
+    index('expenses_date_idx').on(t.expenseDate),
+    index('expenses_category_idx').on(t.categoryId, t.expenseDate),
+    index('expenses_account_idx').on(t.accountId, t.expenseDate),
+  ],
+);
+
+/**
+ * Rent, salaries and the like. A template, not an automatic posting: the
+ * accountant presses "create this month's fixed costs" and reviews what
+ * landed — a silent monthly insert would quietly falsify a P&L the month
+ * something changed.
+ */
+export const recurringExpenses = pgTable(
+  'recurring_expenses',
+  {
+    id: id(),
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => expenseCategories.id),
+    amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    currency: varchar('currency', { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    dayOfMonth: integer('day_of_month').notNull().default(1),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id),
+    employeeId: uuid('employee_id').references(() => users.id),
+    accountId: uuid('account_id').references(() => moneyAccounts.id),
+    note: text('note'),
+    active: boolean('active').notNull().default(true),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('recurring_expenses_amount_check', sql`${t.amount} > 0`),
+    check('recurring_expenses_day_check', sql`${t.dayOfMonth} BETWEEN 1 AND 28`),
+  ],
+);
+
+/**
+ * Moving money between our own accounts (China cash → company account).
+ * Without this the cash-flow report would read a transfer as an expense.
+ */
+export const accountTransfers = pgTable(
+  'account_transfers',
+  {
+    id: id(),
+    fromAccountId: uuid('from_account_id')
+      .notNull()
+      .references(() => moneyAccounts.id),
+    toAccountId: uuid('to_account_id')
+      .notNull()
+      .references(() => moneyAccounts.id),
+    /** Amounts are per side: a CNY cash box can fund a USD account. */
+    amountFrom: numeric('amount_from', { precision: 14, scale: 2 }).notNull(),
+    amountTo: numeric('amount_to', { precision: 14, scale: 2 }).notNull(),
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    transferDate: date('transfer_date').notNull(),
+    note: text('note'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedBy: uuid('voided_by').references(() => users.id),
+    voidReason: text('void_reason'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('account_transfers_amount_check', sql`${t.amountFrom} > 0 AND ${t.amountTo} > 0`),
+    check('account_transfers_distinct_check', sql`${t.fromAccountId} <> ${t.toAccountId}`),
+    index('account_transfers_date_idx').on(t.transferDate),
   ],
 );

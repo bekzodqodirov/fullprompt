@@ -41,6 +41,10 @@ export const PERMISSION_CODES = [
   'finance.manage',
   'finance.view',
   'finance.debt_override',
+  // Phase 2.4 management accounting — profit and overheads are owner/accountant
+  // only: a sales manager sees client balances, never the company's margin.
+  'finance.expenses',
+  'finance.reports',
   // Reports
   'reports.all_warehouses',
   'reports.own_warehouse',
@@ -139,6 +143,8 @@ export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
   ],
   sales_manager: ['clients.view_own', 'finance.view', 'finance.debt_override', 'reports.own_clients'],
   accountant: [
+    'finance.expenses',
+    'finance.reports',
     'costs.enter_batch',
     'costs.enter_receipt',
     'costs.fx.manage',

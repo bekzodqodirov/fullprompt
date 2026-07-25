@@ -28,6 +28,12 @@ export const transactionSchema = z
     method: z.enum(['cash', 'card', 'transfer']).optional(),
     txDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     batchId: z.string().uuid().optional(),
+    /**
+     * Which cash box the money landed in (Phase 2.4). Optional: rows entered
+     * before accounts existed have none, and the cash-flow report treats an
+     * unassigned payment as money received but not yet placed.
+     */
+    accountId: z.string().uuid().optional().or(z.literal('')),
     note: z.string().trim().max(2000).optional().or(z.literal('')),
   })
   .refine((v) => v.type === 'payment' || !v.method, { message: 'method_on_charge' });
@@ -53,6 +59,7 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
       method: input.type === 'payment' ? (input.method ?? 'cash') : null,
       txDate: input.txDate,
       batchId: input.batchId ?? null,
+      accountId: input.accountId || null,
       note: input.note || null,
       createdBy: ctx.actorId,
     })
