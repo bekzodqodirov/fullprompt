@@ -19,6 +19,8 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   // --- Plan editor: origin YW, take 2 boxes of the first (oldest) lot ---
   await page.goto('/plans/new');
   await page.getByTestId('plan-origin').selectOption({ label: 'YW' });
+  // Mapped destination — the tracking-map assertion below needs a corridor.
+  await page.getByTestId('plan-dest').selectOption({ label: 'TAS1' });
   const firstRow = page.locator('#plan-stock-table tbody tr').first();
   await expect(firstRow).toBeVisible({ timeout: 10_000 });
   await firstRow.locator('input').fill('1');
@@ -70,4 +72,17 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   const manifestRes = await page.request.get(`${new URL(batchUrl).pathname.replace('/batches/', '/api/batches/')}/manifest`);
   expect(manifestRes.status()).toBe(200);
   expect((await manifestRes.body()).subarray(0, 2).toString()).toBe('PK');
+
+  // --- Tracking map: the departed truck shows up, checkpoint pin works ---
+  const batchCode = await page.getByText(/YW-\d{3}/).first().innerText();
+  await page.goto(batchUrl);
+  await page.getByRole('button', { name: /🛃/ }).click(); // "at the border" pin
+  await expect(page.getByRole('button', { name: /🛃/ })).toHaveClass(/border-blue-700/, {
+    timeout: 10_000,
+  });
+  await page.goto('/map');
+  await expect(page.locator('svg[role="img"]')).toBeVisible();
+  await expect(page.locator(`svg text:has-text("${batchCode}")`).first()).toBeVisible({
+    timeout: 10_000,
+  });
 });

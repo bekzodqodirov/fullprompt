@@ -441,6 +441,8 @@ export const batches = pgTable(
     closedAt: timestamp('closed_at', { withTimezone: true }),
     /** VED "sent to agent" checkbox (export batches). */
     sentToAgentAt: date('sent_to_agent_at'),
+    /** Latest manual position pin: {key: at_border|in_kg|in_uz, at: ISO} — re-anchors the map estimate. */
+    trackingCheckpoint: jsonb('tracking_checkpoint'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),

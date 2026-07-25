@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 🗺 Tracking map: approximate truck positions + warehouse stock — 2026-07-24
+
+- **New "Xarita" page** (home → info tiles): a self-drawn SVG of the whole corridor (Guangzhou/Yiwu → Urumqi → Kashgar → Irkeshtam → Osh → Andijan → Tashkent) — deliberately NO external map tiles, so it opens instantly in China and adds zero dependencies (owner-approved tradeoff).
+- **Trucks on the map**: every in-transit batch is placed along its route by the owner's typical timings (YW→KA 6-7 d, GZ→KA 5-6 d, KA→UZ: to border → 1-3 d border queue → 2 d Kyrgyzstan → UZ leg), pulsing amber; red when the schedule says it should already have arrived. Tap a truck → batch code, phase ("Chegarada navbatda"), ETA range, progress bar, per-client contents, link to the batch.
+- **Warehouses on the map**: 🏭 icons with live stock badges; tap → per-client stock chips + link to the stock browser.
+- **Manual position pins** (the honesty mechanism — this is a simulation, not GPS): the batch card gains "📍 Mashina qayerda?" buttons — 🛃 at the border / 🇰🇬 in Kyrgyzstan / 🇺🇿 in Uzbekistan. One tap re-anchors the map estimate from that moment (audited, tap again to clear). The map header always says positions are approximate.
+- Estimator is a pure unit-tested engine (segment schedules, stationary border wait, checkpoint re-anchoring, overdue detection); migration 0017 (`batches.tracking_checkpoint`); map assertions added to the m3 e2e flow. 105 unit/integration + 12 e2e green.
+
 ## One phone = all codes: cabinet multi-code round — 2026-07-24
 
 - **New-client save lands on the client CARD**, not the list (owner: "after Сохранить everything vanishes — can't tell what code the system assigned"). The assigned code is in the heading, and the Telegram-cabinet block is right there for the next step. Client edits land on the card too.

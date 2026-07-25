@@ -554,7 +554,12 @@
     "loadedBoxes": "已装箱明细",
     "departConfirm": "确认发车？发车后装载清单将锁定。",
     "packingPhotos": "装箱单（带照片）",
-    "pricing": "定价（财务）"
+    "pricing": "定价（财务）",
+    "whereIsTruck": "车在哪里？",
+    "cpBorder": "停在口岸",
+    "cpKg": "在吉尔吉斯斯坦",
+    "cpUz": "在乌兹别克斯坦",
+    "openMap": "在地图上查看"
   },
   "loading": {
     "title": "装车",
@@ -687,5 +692,22 @@
     "pricingHint": "清关后为每位客户录入协商价格——将作为应收记入客户账。",
     "setPrice": "定价",
     "alreadyCharged": "已计费"
+  },
+  "map": {
+    "title": "地图",
+    "disclaimer": "车辆位置为估算值——按通常时长推算（非GPS）。可在批次页用📍按钮校正。",
+    "emptyWh": "仓库为空",
+    "openStock": "查看库存",
+    "openBatch": "打开批次",
+    "openMap": "在地图上查看",
+    "noTrucks": "当前没有在途车辆。",
+    "overdue": "已超过预计时间——请联系司机",
+    "eta": "预计 ~{min}–{max} 天到达",
+    "seg_cn_transit": "中国境内运输中",
+    "seg_to_border": "驶向口岸",
+    "seg_border_wait": "口岸排队（1–3天）",
+    "seg_kg": "吉尔吉斯斯坦境内",
+    "seg_uz": "乌兹别克斯坦境内",
+    "seg_transit": "运输中"
   }
 }

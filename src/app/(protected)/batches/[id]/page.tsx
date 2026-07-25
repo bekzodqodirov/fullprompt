@@ -18,7 +18,7 @@ import { batchCostSheet } from '@/modules/wms/costing/service';
 import { costTypes, currencies } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
 import { VehicleForm } from './vehicle-form';
-import { setSentToAgentAction } from '../batch-actions-server';
+import { setSentToAgentAction, setTrackingCheckpointAction } from '../batch-actions-server';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
 import { BackLink } from '@/components/back-link';
@@ -235,6 +235,43 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               </button>
             </form>
           )}
+        </div>
+      )}
+
+      {/* Tracking map pins: the logist marks where the truck ACTUALLY is —
+          the map's estimate re-anchors from that moment (owner's feature). */}
+      {batch.status === 'in_transit' && canVehicle && (
+        <div className="card space-y-2">
+          <h2 className="text-sm font-bold uppercase text-gray-500">📍 {t('whereIsTruck')}</h2>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ['at_border', `🛃 ${t('cpBorder')}`],
+                ['in_kg', `🇰🇬 ${t('cpKg')}`],
+                ['in_uz', `🇺🇿 ${t('cpUz')}`],
+              ] as const
+            ).map(([key, label]) => {
+              const active =
+                (batch.trackingCheckpoint as { key?: string } | null)?.key === key;
+              return (
+                <form key={key} action={setTrackingCheckpointAction} className="flex-1">
+                  <input type="hidden" name="batchId" value={batch.id} />
+                  <input type="hidden" name="key" value={key} />
+                  <button
+                    type="submit"
+                    className={`w-full whitespace-nowrap rounded-lg border-2 px-3 py-2 text-sm font-semibold ${
+                      active ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                </form>
+              );
+            })}
+          </div>
+          <Link href="/map" className="text-sm font-semibold text-blue-700 underline">
+            🗺 {t('openMap')} →
+          </Link>
         </div>
       )}
 

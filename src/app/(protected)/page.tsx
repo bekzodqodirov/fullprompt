@@ -45,6 +45,7 @@ export default async function HomePage() {
   const tInventory = await getTranslations('inventory');
   const tReports = await getTranslations('reports');
   const tFinance = await getTranslations('finance');
+  const tMap = await getTranslations('map');
 
   const has = (p: string) => actor.permissions.has(p);
   const canDashboard = has('reports.all_warehouses') || has('reports.own_warehouse');
@@ -60,6 +61,7 @@ export default async function HomePage() {
 
   const info = [
     { href: '/stock', label: `📦 ${ts('title')}` },
+    { href: '/map', label: `🗺 ${tMap('title')}` },
     { href: '/receipts', label: `📄 ${tr('title')}` },
     { href: '/unclaimed', label: `❓ ${tr('unclaimedTitle')}` },
     { href: '/search', label: `🔍 ${tSearch('title')}` },

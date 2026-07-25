@@ -554,7 +554,12 @@
     "loadedBoxes": "Yuklangan korobkalar",
     "departConfirm": "Mashinani jo'natishni tasdiqlaysizmi? Bundan keyin yuk ro'yxati qulflanadi.",
     "packingPhotos": "Packing (rasmlar)",
-    "pricing": "Narx belgilash (moliya)"
+    "pricing": "Narx belgilash (moliya)",
+    "whereIsTruck": "Mashina qayerda?",
+    "cpBorder": "Chegarada turibdi",
+    "cpKg": "Qirg‘izistonda",
+    "cpUz": "O‘zbekistonda",
+    "openMap": "Xaritada ko‘rish"
   },
   "loading": {
     "title": "Pogruzka",
@@ -687,5 +692,22 @@
     "pricingHint": "Rastamojkadan keyin har bir klient uchun kelishilgan narxni kiriting — u klient hisobiga qarz sifatida yoziladi.",
     "setPrice": "Narx belgilash",
     "alreadyCharged": "Hisoblangan"
+  },
+  "map": {
+    "title": "Xarita",
+    "disclaimer": "Mashinalarning joyi taxminiy — odatiy yo‘l vaqtlaridan hisoblanadi (GPS emas). Partiya sahifasidagi 📍 tugmalar bilan aniqlashtiriladi.",
+    "emptyWh": "Skladda yuk yo‘q",
+    "openStock": "Sklad qoldig‘ini ochish",
+    "openBatch": "Partiyani ochish",
+    "openMap": "Xaritada ko‘rish",
+    "noTrucks": "Hozir yo‘lda mashina yo‘q.",
+    "overdue": "kutilgan muddatdan oshdi — haydovchi bilan bog‘laning",
+    "eta": "yetib kelishiga ~{min}–{max} kun",
+    "seg_cn_transit": "Xitoy ichida yo‘lda",
+    "seg_to_border": "Chegara tomon yo‘lda",
+    "seg_border_wait": "Chegarada navbatda (1–3 kun)",
+    "seg_kg": "Qirg‘iziston hududida",
+    "seg_uz": "O‘zbekiston hududida",
+    "seg_transit": "Yo‘lda"
   }
 }

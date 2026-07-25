@@ -117,6 +117,32 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
   revalidatePath(`/batches/${batchId}`);
 }
 
+/**
+ * Manual position pin for the tracking map ("still at the border") — the
+ * simulation re-anchors from this moment. Tapping the active pin clears it.
+ */
+export async function setTrackingCheckpointAction(formData: FormData): Promise<void> {
+  const batchId = String(formData.get('batchId') ?? '');
+  const key = String(formData.get('key') ?? '');
+  if (!['at_border', 'in_kg', 'in_uz'].includes(key)) return;
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch || batch.status !== 'in_transit') return;
+  const actor = await authorize('batches.vehicle_info', {});
+  const meta = await requestMeta();
+  const current = batch.trackingCheckpoint as { key?: string } | null;
+  const next = current?.key === key ? null : { key, at: new Date().toISOString() };
+  await db.update(batches).set({ trackingCheckpoint: next }).where(eq(batches.id, batchId));
+  const { writeAudit } = await import('@/modules/platform/audit/service');
+  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId }, {
+    entityType: 'batch',
+    entityId: batchId,
+    action: 'update',
+    after: { trackingCheckpoint: next },
+  });
+  revalidatePath(`/batches/${batchId}`);
+  revalidatePath('/map');
+}
+
 export async function closeBatchAction(batchId: string): Promise<{ ok: boolean; error?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
