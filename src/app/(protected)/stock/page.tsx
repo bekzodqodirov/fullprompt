@@ -12,12 +12,34 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { LightboxImg } from '@/components/lightbox-img';
+import { SortTh, sortRows } from '@/components/sort-th';
+
+/** Owner's request: order the stock table by any column, filters kept. */
+const SORTABLE = [
+  'code',
+  'product',
+  'boxes',
+  'perBoxKg',
+  'stockKg',
+  'stockM3',
+  'density',
+  'note',
+  'whCode',
+  'receivedAt',
+] as const;
 
 /** Stock browser v1 (spec §10 screen 6): WH → client → lot → box. */
 export default async function StockPage({
   searchParams,
 }: {
-  searchParams: Promise<{ wh?: string; client?: string; lot?: string; q?: string }>;
+  searchParams: Promise<{
+    wh?: string;
+    client?: string;
+    lot?: string;
+    q?: string;
+    sort?: string;
+    dir?: string;
+  }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -171,15 +193,34 @@ export default async function StockPage({
     .from(warehouses)
     .orderBy(asc(warehouses.code));
 
-  const sumBoxes = lines.reduce((acc, l) => acc + Number(l.inStock), 0);
-  const sumKg = lines.reduce(
-    (acc, l) => acc + (Number(l.lot.totalWeightKg) / l.lot.boxCount) * Number(l.inStock),
-    0,
-  );
-  const sumM3 = lines.reduce(
-    (acc, l) => acc + (Number(l.lot.totalVolumeM3) / l.lot.boxCount) * Number(l.inStock),
-    0,
-  );
+  // Flatten first: the numbers the owner sorts by (Σ kg, m³, density) are
+  // derived per row, so they have to exist before sortRows can order them.
+  const rows = lines.map((line) => {
+    const perBoxKg = Number(line.lot.totalWeightKg) / line.lot.boxCount;
+    const boxCount = Number(line.inStock);
+    return {
+      line,
+      code: `${line.clientCode ?? line.marking ?? '❓'}-${line.lot.letter}`,
+      product: `${line.lot.productNameZh} ${line.lot.productNameRu ?? ''}`.trim(),
+      boxes: boxCount,
+      perBoxKg,
+      stockKg: perBoxKg * boxCount,
+      stockM3: (Number(line.lot.totalVolumeM3) / line.lot.boxCount) * boxCount,
+      density:
+        Number(line.lot.totalVolumeM3) > 0
+          ? Number(line.lot.totalWeightKg) / Number(line.lot.totalVolumeM3)
+          : null,
+      note: line.lot.note ?? '',
+      whCode: line.whCode,
+      receivedAt: line.receivedAt,
+    };
+  });
+  const sorted = sortRows(rows, params.sort, params.dir, SORTABLE);
+  const sortParams = { wh: params.wh, q: params.q };
+
+  const sumBoxes = rows.reduce((acc, r) => acc + r.boxes, 0);
+  const sumKg = rows.reduce((acc, r) => acc + r.stockKg, 0);
+  const sumM3 = rows.reduce((acc, r) => acc + r.stockM3, 0);
 
   return (
     <div className="space-y-3">
@@ -221,28 +262,21 @@ export default async function StockPage({
           <thead>
             <tr className="border-b border-gray-300 bg-gray-50 text-left">
               <th className="p-2">📷</th>
-              <th className="p-2">{t('colCode')}</th>
-              <th className="p-2">{t('colProduct')}</th>
-              <th className="p-2 text-right">📦</th>
-              <th className="p-2 text-right">kg/📦</th>
-              <th className="p-2 text-right">Σ kg</th>
-              <th className="p-2 text-right">m³</th>
-              <th className="p-2 text-right">kg/m³</th>
-              <th className="p-2">📝</th>
-              <th className="p-2">{t('colWh')}</th>
-              <th className="p-2">{t('colDate')}</th>
+              <SortTh label={t('colCode')} field="code" sort={params.sort} dir={params.dir} params={sortParams} />
+              <SortTh label={t('colProduct')} field="product" sort={params.sort} dir={params.dir} params={sortParams} />
+              <SortTh label="📦" field="boxes" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
+              <SortTh label="kg/📦" field="perBoxKg" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
+              <SortTh label="Σ kg" field="stockKg" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
+              <SortTh label="m³" field="stockM3" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
+              <SortTh label="kg/m³" field="density" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
+              <SortTh label="📝" field="note" sort={params.sort} dir={params.dir} params={sortParams} />
+              <SortTh label={t('colWh')} field="whCode" sort={params.sort} dir={params.dir} params={sortParams} />
+              <SortTh label={t('colDate')} field="receivedAt" sort={params.sort} dir={params.dir} params={sortParams} />
             </tr>
           </thead>
           <tbody>
-            {lines.map((line) => {
-              const perBoxKg = Number(line.lot.totalWeightKg) / line.lot.boxCount;
-              const stockKg = perBoxKg * Number(line.inStock);
-              const stockM3 =
-                (Number(line.lot.totalVolumeM3) / line.lot.boxCount) * Number(line.inStock);
-              const density =
-                Number(line.lot.totalVolumeM3) > 0
-                  ? Number(line.lot.totalWeightKg) / Number(line.lot.totalVolumeM3)
-                  : null;
+            {sorted.map((row) => {
+              const { line, perBoxKg, stockKg, stockM3, density } = row;
               const densityClass =
                 density === null
                   ? ''
@@ -286,7 +320,7 @@ export default async function StockPage({
                       )}
                     </Link>
                   </td>
-                  <td className="p-2 text-right font-semibold">{line.inStock}</td>
+                  <td className="p-2 text-right font-semibold">{row.boxes}</td>
                   <td className="p-2 text-right">{Math.round(perBoxKg * 10) / 10}</td>
                   <td className="p-2 text-right font-semibold">{Math.round(stockKg)}</td>
                   <td className="p-2 text-right">{Math.round(stockM3 * 100) / 100}</td>

@@ -26,6 +26,7 @@ import {
 } from '../batch-actions-server';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
 import { remainingToUnload } from '@/modules/wms/scanning/unload';
+import { Panel } from '@/components/panel';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
 import { BackLink } from '@/components/back-link';
@@ -224,15 +225,14 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       </div>
 
       {(actor.permissions.has('ved.docs') || actor.permissions.has('plans.manage')) && (
-        <div className="card space-y-2">
-          <h2 className="text-lg font-bold">📑 {t('vedDocs')}</h2>
+        <Panel title={`📑 ${t('vedDocs')}`}>
           <div className="flex flex-wrap gap-2">
             <a href={`/api/batches/${batch.id}/invoice`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
               ⬇️ {t('invoice')}
             </a>
-            <a href={`/api/batches/${batch.id}/packing`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
-              ⬇️ {t('packingList')}
-            </a>
+            {/* The draft packing list is gone: the photo packing list replaced
+                it in practice (owner). The generator stays reachable at
+                /api/batches/[id]/packing if it is ever needed again. */}
             {(totalLoaded > 0 || loadedBoxes.length > 0) && (
               <a href={`/api/batches/${batch.id}/packing-photos`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
                 ⬇️ 📷 {t('packingPhotos')}
@@ -252,16 +252,22 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               </button>
             </form>
           )}
-        </div>
+        </Panel>
       )}
 
       {/* Driver phone (owner's flow): while the truck is being loaded the
           warehouse worker installs the app on the driver's phone and types
           this code once. Android then streams real positions; iPhone /
-          HarmonyOS stay on the manual pins below. */}
+          HarmonyOS stay on the manual pins below.
+
+          Folded away by default (owner: "it should sit somewhere small where
+          it bothers nobody") — it is touched once per trip, at loading. The
+          badge shows a pending code so it is still findable at a glance. */}
       {canVehicle && !['closed', 'cancelled'].includes(batch.status) && (
-        <div className="card space-y-2">
-          <h2 className="text-sm font-bold uppercase text-gray-500">📲 {t('driverPhone')}</h2>
+        <Panel
+          title={`📲 ${t('driverPhone')}`}
+          badge={devices.find((d) => d.pairCode)?.pairCode ?? (devices.length > 0 ? '✅' : undefined)}
+        >
           {devices.length === 0 && <p className="text-xs text-gray-500">{t('driverPhoneHint')}</p>}
           {devices.map((device) => (
             <div key={device.id} className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-2 text-sm last:border-0">
@@ -302,7 +308,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               📲 {t('newPairCode')}
             </button>
           </form>
-        </div>
+        </Panel>
       )}
 
       {/* Tracking map pins: the logist marks where the truck ACTUALLY is —

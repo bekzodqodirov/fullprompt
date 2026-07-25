@@ -567,7 +567,10 @@
     "newPairCode": "生成代码",
     "pairCodeHint": "在应用中输入此代码（一次性）",
     "lastSeen": "最后信号：{when}",
-    "noFixesYet": "暂无位置"
+    "noFixesYet": "暂无位置",
+    "archive": "归档 — 已完成批次",
+    "archiveSearch": "批次代码、车牌或司机",
+    "archiveEmpty": "未找到"
   },
   "loading": {
     "title": "装车",

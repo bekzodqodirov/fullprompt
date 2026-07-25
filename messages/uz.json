@@ -567,7 +567,10 @@
     "newPairCode": "Kod yaratish",
     "pairCodeHint": "ilovaga shu kodni kiriting (bir martalik)",
     "lastSeen": "oxirgi xabar: {when}",
-    "noFixesYet": "hali joylashuv kelmadi"
+    "noFixesYet": "hali joylashuv kelmadi",
+    "archive": "Arxiv — yakunlangan partiyalar",
+    "archiveSearch": "Partiya kodi, mashina raqami yoki haydovchi",
+    "archiveEmpty": "Topilmadi"
   },
   "loading": {
     "title": "Pogruzka",
