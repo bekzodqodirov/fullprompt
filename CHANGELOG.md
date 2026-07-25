@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Demo accounts stop coming back — 2026-07-25
+
+- **The seed no longer re-creates demo data on a live system.** It runs on every deploy (that is how new permissions reach the roles), and it used to re-insert any demo user/client/warehouse that was missing — so an account the owner deleted, with the published `demo1234` password, reappeared on the next update. Demo users, demo clients, demo warehouses, the example FX rates and the canonical GS777 receipt are now seeded **only into an empty database** (the bootstrap that gives a fresh install someone to log in as). `SEED_DEMO=1` forces them back for test environments.
+- Reference data — permissions, roles, role grants, settings, currencies, cost types, truck presets, the product dictionary — still refreshes on every run, unchanged.
+- **`pnpm demo-users`** retires the accounts an existing server already carries: it reports every demo phone still present and, with `--disable`, deactivates the ones that STILL HAVE the demo password (login blocked, live sessions dropped). An account whose password was changed is in real use and is never touched, and the last active super admin is always kept with a warning to change its password.
+- Verified end to end on scratch databases: fresh DB → demo seeded; existing DB → deleted demo account stays deleted while grants still refresh; `SEED_DEMO=1` → restored. A unit test pins the gating so it cannot be undone by accident.
+- `docs/UPDATE.md` (production update runbook) documents the step.
+
 ## Receiving: an unknown code no longer offers a look-alike client — 2026-07-25
 
 - **Owner's report**: typing GS500 (a code that does not exist) during receiving offered **GS300**, and the "unknown cargo" path disappeared behind that suggestion.

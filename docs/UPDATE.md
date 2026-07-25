@@ -53,7 +53,26 @@ Brauzerda: saytni **Ctrl+F5** bilan oching → **Profil** sahifasi pastida
 `build: ...` sanasi bugungi bo'lsin. Keyin bitta prixod va bitta partiyani
 ochib ko'ring.
 
-## 5. Xarita (ixtiyoriy, bir marta)
+## 5. Demo hisoblarni yopish (bir marta)
+
+Server birinchi marta bo'sh bazadan ko'tarilgani uchun unda demo hisoblar
+(`+998900000001…011`, paroli `demo1234`) qolgan bo'lishi mumkin. Ularni
+tekshirish va yopish:
+
+```bash
+docker compose run --rm migrate pnpm demo-users            # faqat ro'yxat
+docker compose run --rm migrate pnpm demo-users --disable  # yopish
+```
+
+Skript **paroli o'zgartirilgan** hisoblarga tegmaydi (ular ishlatilyapti
+degani) va oxirgi faol super-adminni ham qoldiradi — o'sha hisobning
+parolini saytdan o'zgartirib qo'ying. Yopilgan hisob kira olmaydi, ochiq
+sessiyalari ham uziladi.
+
+> Yangi versiyada seed demo hisoblarni **faqat bo'sh bazaga** yozadi, shuning
+> uchun yopgan/o'chirgan hisoblaringiz keyingi yangilanishlarda qaytmaydi.
+
+## 6. Xarita (ixtiyoriy, bir marta)
 
 ```bash
 docker compose --profile basemap run --rm basemap

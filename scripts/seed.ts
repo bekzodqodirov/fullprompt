@@ -62,7 +62,26 @@ const DEMO_USERS: {
   { phone: '+998900000011', fullName: 'Viewer Demo', role: 'viewer' },
 ];
 
+/**
+ * Demo data (users with the well-known password, demo clients, the canonical
+ * GS777 receipt) is seeded ONLY into an empty database — the bootstrap that
+ * gives a fresh install someone to log in as. On a live system the seed still
+ * runs on every deploy, but it must never resurrect a demo account the owner
+ * deleted, nor re-grant a role they took away. `SEED_DEMO=1` forces it back
+ * for test environments.
+ */
+async function shouldSeedDemo(): Promise<boolean> {
+  if (process.env.SEED_DEMO === '1') return true;
+  const [row] = await db.select({ n: sql<number>`count(*)` }).from(users);
+  return Number(row?.n ?? 0) === 0;
+}
+
 async function main() {
+  const seedDemo = await shouldSeedDemo();
+  if (!seedDemo) {
+    console.log('seed: existing installation — reference data only, no demo accounts');
+  }
+
   // --- Roles & permissions (spec §16 matrix as data) ---
   for (const code of PERMISSION_CODES) {
     await db.insert(permissions).values({ code }).onConflictDoNothing();
@@ -83,61 +102,67 @@ async function main() {
     }
   }
 
-  // --- Warehouses ---
-  for (const wh of WAREHOUSES) {
-    await db
-      .insert(warehouses)
-      .values({ ...wh, batchPrefix: wh.code })
-      .onConflictDoNothing({ target: warehouses.code });
+  // --- Warehouses (bootstrap only: a deleted one must stay deleted) ---
+  if (seedDemo) {
+    for (const wh of WAREHOUSES) {
+      await db
+        .insert(warehouses)
+        .values({ ...wh, batchPrefix: wh.code })
+        .onConflictDoNothing({ target: warehouses.code });
+    }
   }
   const whIds = new Map((await db.select().from(warehouses)).map((w) => [w.code, w.id] as const));
 
-  // --- Users ---
-  const passwordHash = await hashPassword(DEMO_PASSWORD);
-  for (const demoUser of DEMO_USERS) {
-    const existing = await db.query.users.findFirst({ where: eq(users.phone, demoUser.phone) });
-    let userId = existing?.id;
-    if (!userId) {
-      const [row] = await db
-        .insert(users)
-        .values({
-          phone: demoUser.phone,
-          fullName: demoUser.fullName,
-          passwordHash,
-          locale: demoUser.locale ?? 'ru',
-        })
-        .returning({ id: users.id });
-      userId = row!.id;
-    }
-    await db
-      .insert(userRoles)
-      .values({ userId, roleId: roleIds.get(demoUser.role)! })
-      .onConflictDoNothing();
-    for (const whCode of demoUser.warehouses ?? []) {
+  // --- Demo users (bootstrap only — never resurrect deleted accounts) ---
+  if (seedDemo) {
+    const passwordHash = await hashPassword(DEMO_PASSWORD);
+    for (const demoUser of DEMO_USERS) {
+      const existing = await db.query.users.findFirst({ where: eq(users.phone, demoUser.phone) });
+      let userId = existing?.id;
+      if (!userId) {
+        const [row] = await db
+          .insert(users)
+          .values({
+            phone: demoUser.phone,
+            fullName: demoUser.fullName,
+            passwordHash,
+            locale: demoUser.locale ?? 'ru',
+          })
+          .returning({ id: users.id });
+        userId = row!.id;
+      }
       await db
-        .insert(userWarehouses)
-        .values({ userId, warehouseId: whIds.get(whCode)! })
+        .insert(userRoles)
+        .values({ userId, roleId: roleIds.get(demoUser.role)! })
         .onConflictDoNothing();
+      for (const whCode of demoUser.warehouses ?? []) {
+        const whId = whIds.get(whCode);
+        if (whId) {
+          await db.insert(userWarehouses).values({ userId, warehouseId: whId }).onConflictDoNothing();
+        }
+      }
     }
   }
 
-  // --- Clients: GS777 → Dilnoza + 19 more demo clients ---
-  const dilnoza = await db.query.users.findFirst({ where: eq(users.phone, '+998900000009') });
-  const demoClients = [
-    { clientCode: 'GS777', name: 'Alisher aka', salesManagerId: dilnoza?.id ?? null },
-    { clientCode: 'GS102', name: 'Bobur Trading', salesManagerId: dilnoza?.id ?? null },
-    { clientCode: 'GS205', name: 'Nodira opa', salesManagerId: dilnoza?.id ?? null },
-    ...Array.from({ length: 17 }, (_, i) => ({
-      clientCode: `GS${300 + i}`,
-      name: `Demo mijoz ${i + 1}`,
-      salesManagerId: dilnoza?.id ?? null,
-    })),
-  ];
-  for (const client of demoClients) {
-    await db
-      .insert(clients)
-      .values({ ...client, phones: [] })
-      .onConflictDoNothing({ target: clients.clientCode });
+  // --- Demo clients: GS777 → Dilnoza + 19 more (bootstrap only) ---
+  if (seedDemo) {
+    const dilnoza = await db.query.users.findFirst({ where: eq(users.phone, '+998900000009') });
+    const demoClients = [
+      { clientCode: 'GS777', name: 'Alisher aka', salesManagerId: dilnoza?.id ?? null },
+      { clientCode: 'GS102', name: 'Bobur Trading', salesManagerId: dilnoza?.id ?? null },
+      { clientCode: 'GS205', name: 'Nodira opa', salesManagerId: dilnoza?.id ?? null },
+      ...Array.from({ length: 17 }, (_, i) => ({
+        clientCode: `GS${300 + i}`,
+        name: `Demo mijoz ${i + 1}`,
+        salesManagerId: dilnoza?.id ?? null,
+      })),
+    ];
+    for (const client of demoClients) {
+      await db
+        .insert(clients)
+        .values({ ...client, phones: [] })
+        .onConflictDoNothing({ target: clients.clientCode });
+    }
   }
 
   // --- Currencies, letter blacklist, settings ---
@@ -151,8 +176,9 @@ async function main() {
   for (const combo of ['AM', 'XU']) {
     await db.insert(letterBlacklist).values({ combo }).onConflictDoNothing();
   }
-  // FX rates for the §6.9 worked example (manual, dated — admin edits later).
-  const seedAdmin = (await db.select().from(users).limit(1))[0];
+  // FX rates for the §6.9 worked example (bootstrap only — a live system has
+  // real dated rates and must not get example numbers back).
+  const seedAdmin = seedDemo ? (await db.select().from(users).limit(1))[0] : undefined;
   if (seedAdmin) {
     for (const rate of [
       { currency: 'CNY', rateToUsd: '0.14', effectiveDate: '2026-07-01' },
@@ -172,7 +198,7 @@ async function main() {
   }
 
   // --- M1: cost types, product dictionary, canonical GS777 receipt (§18) ---
-  await seedM1(whIds);
+  await seedM1(whIds, seedDemo);
 
   // --- Single audit marker for the seed run ---
   await db.insert(auditLog).values({
@@ -180,7 +206,7 @@ async function main() {
     entityType: 'system',
     entityId: '00000000-0000-0000-0000-000000000000',
     action: 'seed',
-    after: { script: 'seed.ts', milestone: 'M0' },
+    after: { script: 'seed.ts', milestone: 'M0', demo: seedDemo },
   });
 
   const counts = await db.execute(sql`
@@ -193,7 +219,7 @@ async function main() {
   console.log('seed complete:', counts[0]);
 }
 
-async function seedM1(whIds: Map<string, string>) {
+async function seedM1(whIds: Map<string, string>, seedDemo: boolean) {
   const { costTypes, productDictionary, attachments, receipts } = await import(
     '../src/modules/platform/db/schema'
   );
@@ -242,6 +268,9 @@ async function seedM1(whIds: Map<string, string>) {
   ];
   const LOT_GS102 = '018f0000-0000-7000-8000-000000000201';
 
+  // Everything above is reference data (cost types, truck presets, product
+  // dictionary) and stays on every run; the canonical receipt is demo data.
+  if (!seedDemo) return;
   const existing = await db.query.receipts.findFirst({ where: eq(receipts.id, RECEIPT_GS777) });
   if (existing) return;
 
