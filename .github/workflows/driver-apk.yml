@@ -1,0 +1,48 @@
+name: driver-apk
+
+# The APK is built here because the driver app is handed out directly (no
+# store): every push that touches it produces a downloadable artifact.
+on:
+  push:
+    paths:
+      - 'apps/driver-android/**'
+      - '.github/workflows/driver-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/driver-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('apps/driver-android/**/*.gradle.kts', 'apps/driver-android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Rename
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/GSRDriver-${GITHUB_SHA::7}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GSRDriver-apk
+          path: apps/driver-android/out/*.apk
+          retention-days: 30

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Uzbek: the phone is set up by our warehouse worker and carried by the
+     driver, so every string is written for them, not for an operator. -->
+<resources>
+    <string name="app_name">GSRDriver</string>
+
+    <string name="pair_hint">Sklad xodimi: partiya sahifasidagi 6 belgili kodni kiriting. Kuzatuv shu reys uchun yoqiladi.</string>
+    <string name="server_label">Server manzili</string>
+    <string name="code_label">Reys kodi</string>
+    <string name="pair">Ulash</string>
+    <string name="pairing">Ulanmoqda…</string>
+    <string name="paired">Ulandi</string>
+    <string name="error_pair">Kod noto‘g‘ri yoki server javob bermadi</string>
+    <string name="error_fill_both">Server manzili va kodni to‘ldiring</string>
+    <string name="error_settings">Sozlamalarni ochib bo‘lmadi</string>
+
+    <string name="trip_active">Reys faol</string>
+    <string name="grant_permissions">Ruxsatlarni berish</string>
+    <string name="background_hint">Keyingi oynada «Doim ruxsat berish»ni tanlang</string>
+    <string name="battery_settings">Batareya sozlamalari</string>
+    <string name="battery_hint">Telefon ilovani o‘chirib qo‘ymasligi uchun: Batareya → cheklovsiz / avtoishga tushirishga ruxsat.</string>
+    <string name="stop_trip">Kuzatuvni to‘xtatish</string>
+
+    <string name="channel_name">Reys kuzatuvi</string>
+    <string name="notification_title">Reys: %1$s</string>
+    <string name="status_starting">Ishga tushmoqda…</string>
+    <string name="status_ok">✅ Kuzatuv ishlayapti</string>
+    <string name="status_sent">✅ Hammasi yuborildi</string>
+    <string name="status_queued">📦 Yuborilmagan nuqtalar: %1$d</string>
+    <string name="status_last_sent">Oxirgi yuborilgan: %1$s</string>
+    <string name="status_last_error">Aloqa xatosi: %1$s</string>
+    <string name="status_no_permission">⚠️ Joylashuvga ruxsat berilmagan</string>
+    <string name="status_background_missing">⚠️ «Doim ruxsat» berilmagan — ekran o‘chganda to‘xtaydi</string>
+    <string name="status_trip_finished">Reys tugadi — kuzatuv o‘chdi</string>
+</resources>

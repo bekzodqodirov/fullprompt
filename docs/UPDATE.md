@@ -72,7 +72,13 @@ sessiyalari ham uziladi.
 > Yangi versiyada seed demo hisoblarni **faqat bo'sh bazaga** yozadi, shuning
 > uchun yopgan/o'chirgan hisoblaringiz keyingi yangilanishlarda qaytmaydi.
 
-## 6. Xarita (ixtiyoriy, bir marta)
+## 6. Haydovchi ilovasi (APK)
+
+APK GitHub'da avtomatik yig'iladi — serverga hech narsa o'rnatilmaydi:
+repo → **Actions** → **driver-apk** → oxirgi ✅ ish → **Artifacts** →
+`GSRDriver-apk`. Batafsil: `apps/driver-android/README.md`.
+
+## 7. Xarita (ixtiyoriy, bir marta)
 
 ```bash
 docker compose --profile basemap run --rm basemap

@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## GSRDriver — Android app for drivers (phase B) — 2026-07-25
+
+- **The app the warehouse worker installs on the driver's phone** while the truck is being loaded: type the trip's 6-character code once, grant the permissions (the worker does it, not the driver), hand the phone back. From then on the phone reports its position by itself.
+- **Works on ANY Android phone**: location comes from the framework's own `LocationManager`, not Google's fused provider — most Chinese phones (Huawei above all) ship without Google services, and the driver's own phone is whatever it is. No third-party networking library either; the whole app is Kotlin + the Android SDK.
+- **Built for the corridor's dead zones**: a fix every ~5 minutes (or 250 m) goes into a local SQLite queue and is deleted only once the server has accepted it, so a week without signal loses nothing. A truck restart brings tracking back by itself (boot receiver), and Android killing the service is answered with an automatic restart.
+- **Stops itself when the trip ends**: the server answers "trip finished" once the batch is closed and the app clears the token and shuts down — nobody is tracked outside a trip.
+- **The screen is written for the warehouse worker**: status in Uzbek ("✅ Kuzatuv ishlayapti", "📦 Yuborilmagan nuqtalar: 12", "⚠️ «Doim ruxsat» berilmagan"), plus a one-tap shortcut to the battery settings — the Chinese-OEM battery killer is the single most common reason tracking goes silent, so it gets its own button and a hint.
+- **Distribution without a store**: GitHub Actions builds the APK on every change (`apps/driver-android/`); download it from the run's artifacts and install it directly. No Play Console, no review, no $25 — and it works in China where Play does not exist. `apps/driver-android/README.md` documents the whole setup in Uzbek.
+
 ## Driver tracking — server side (phase A) — 2026-07-25
 
 Owner's flow: at loading the warehouse worker takes the driver's phone, installs the app and grants the permissions himself, then sends the truck off. Android phones stream real positions; iPhone / HarmonyOS stay on the logist's manual updates plus the schedule estimate.
