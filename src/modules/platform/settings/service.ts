@@ -13,6 +13,8 @@ export const SETTING_DEFAULTS = {
   density_thresholds: { light: 200, medium: 300, heavy: 400 },
   unclaimed_aging_days: 7,
   stale_stock_days: 30,
+  /** Days of silence before a client counts as gone quiet (owner: 60). */
+  crm_dormant_days: 60,
   costing_base_currency: 'USD',
   client_code_prefix: 'GS',
   label_size: '100x100',

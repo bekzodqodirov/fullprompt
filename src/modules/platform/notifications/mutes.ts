@@ -5,7 +5,10 @@
  */
 
 export const MUTE_GROUPS = {
-  digest: ['DailyDigest'],
+  // The CRM digests belong here rather than in `operations`: they are the
+  // same kind of "once a day, nothing is on fire" message as the warehouse
+  // digest, and someone who mutes that means these too.
+  digest: ['DailyDigest', 'CrmFollowUps', 'CrmDormant'],
   alerts: ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
   operations: [
     'ReceiptConfirmed',

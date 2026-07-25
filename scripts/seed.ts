@@ -434,14 +434,17 @@ async function seedCrm() {
 
   const existingSources = await db.select({ id: leadSources.id }).from(leadSources).limit(1);
   if (existingSources.length === 0) {
+    // The owner's list, verbatim; the screen adds and removes them freely.
     await db.insert(leadSources).values([
       { name: 'Instagram', sortOrder: 10 },
-      { name: 'Telegram', sortOrder: 20 },
-      { name: 'Tavsiya (tanish orqali)', sortOrder: 30 },
-      { name: 'Reklama', sortOrder: 40 },
+      { name: 'Facebook', sortOrder: 20 },
+      { name: 'YouTube', sortOrder: 30 },
+      { name: 'Telegram', sortOrder: 40 },
       { name: 'WeChat', sortOrder: 50 },
-      { name: 'Sayt', sortOrder: 60 },
-      { name: 'O‘zi keldi', sortOrder: 70 },
+      { name: 'Tavsiya (tanish orqali)', sortOrder: 60 },
+      { name: 'Reklama', sortOrder: 70 },
+      { name: 'Sayt', sortOrder: 80 },
+      { name: 'O‘zi keldi', sortOrder: 90 },
       { name: 'Boshqa', sortOrder: 200 },
     ]);
     console.log('lead sources seeded (editable)');
@@ -449,13 +452,17 @@ async function seedCrm() {
 
   const existingStages = await db.select({ id: leadStages.id }).from(leadStages).limit(1);
   if (existingStages.length === 0) {
+    // The owner's funnel, verbatim. Stages can be added, renamed, recoloured,
+    // reordered and removed — only `kind` (open/won/lost) is code.
     await db.insert(leadStages).values([
-      { name: 'Yangi', kind: 'open', sortOrder: 10 },
-      { name: 'Bog‘lanildi', kind: 'open', sortOrder: 20 },
-      { name: 'Narx aytildi', kind: 'open', sortOrder: 30 },
-      { name: 'Javob kutilmoqda', kind: 'open', sortOrder: 40 },
-      { name: 'Mijoz bo‘ldi', kind: 'won', sortOrder: 50 },
-      { name: 'Yo‘qotildi', kind: 'lost', sortOrder: 60 },
+      { name: 'Yangi', kind: 'open', color: 'gray', sortOrder: 10 },
+      { name: 'Bog‘lanildi', kind: 'open', color: 'blue', sortOrder: 20 },
+      { name: 'Ma’lumot olindi', kind: 'open', color: 'blue', sortOrder: 30 },
+      { name: 'Hisoblanilyapti', kind: 'open', color: 'purple', sortOrder: 40 },
+      { name: 'Narx aytildi', kind: 'open', color: 'amber', sortOrder: 50 },
+      { name: 'Javob kutilyapti', kind: 'open', color: 'teal', sortOrder: 60 },
+      { name: 'Sotuv', kind: 'won', color: 'green', sortOrder: 70 },
+      { name: 'Yo‘qotildi', kind: 'lost', color: 'red', sortOrder: 80 },
     ]);
     console.log('lead stages seeded (editable)');
   }

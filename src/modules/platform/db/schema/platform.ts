@@ -199,6 +199,13 @@ export const clients = pgTable(
      */
     nextActionAt: date('next_action_at'),
     nextActionNote: text('next_action_note'),
+    /**
+     * The human being behind the code, when one person holds several
+     * (Phase 2.3). Declared without a drizzle reference on purpose: the FK
+     * exists in SQL, but `crm_people` lives in the wms schema file and
+     * platform never imports wms (ARCHITECTURE §0).
+     */
+    personId: uuid('person_id'),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -208,6 +215,7 @@ export const clients = pgTable(
     check('clients_code_upper_check', sql`${t.clientCode} = upper(${t.clientCode})`),
     index('clients_sales_manager_idx').on(t.salesManagerId),
     index('clients_next_action_idx').on(t.nextActionAt),
+    index('clients_person_idx').on(t.personId),
   ],
 );
 

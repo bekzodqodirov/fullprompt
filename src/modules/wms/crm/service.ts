@@ -43,9 +43,13 @@ export const sourceSchema = z.object({
   active: z.boolean().default(true),
 });
 
+/** Compiled Tailwind classes, so the palette cannot be free-form. */
+export const STAGE_COLORS = ['gray', 'blue', 'green', 'amber', 'red', 'purple', 'teal'] as const;
+
 export const stageSchema = sourceSchema.extend({
   /** The only part the code reasons about; the NAME is the owner's to choose. */
   kind: z.enum(['open', 'won', 'lost']).default('open'),
+  color: z.enum(STAGE_COLORS).default('gray'),
 });
 
 export async function listSources(includeInactive = false) {
@@ -91,6 +95,7 @@ export async function saveStage(
   const values = {
     name: input.name,
     kind: input.kind,
+    color: input.color,
     sortOrder: input.sortOrder,
     active: input.active,
   };
@@ -118,6 +123,72 @@ export async function saveStage(
     after: values,
   });
   return row;
+}
+
+/**
+ * Reorder the funnel in one go (owner: "etaplarni qo'shib-ayirish imkoni").
+ *
+ * Takes the stage ids in the order the owner arranged them and rewrites
+ * `sort_order` from that, so dragging a stage between two others never has to
+ * renumber by hand and two stages can never share a position.
+ */
+export async function reorderStages(ids: string[], ctx: AuditContext) {
+  if (!ctx.actorId) throw new CrmError('unauthenticated');
+  await db.transaction(async (tx) => {
+    for (const [index, stageId] of ids.entries()) {
+      await tx
+        .update(leadStages)
+        .set({ sortOrder: (index + 1) * 10 })
+        .where(eq(leadStages.id, stageId));
+    }
+  });
+  await writeAudit(db, ctx, {
+    entityType: 'lead_stage',
+    entityId: ids[0] ?? '00000000-0000-0000-0000-000000000000',
+    action: 'update',
+    after: { order: ids },
+  });
+}
+
+/**
+ * Remove a stage, moving whatever sits in it somewhere else first.
+ *
+ * Deleting a stage that still holds leads would either orphan them or hide
+ * them from every screen, so the caller must say where they go — and the
+ * funnel must still have an open and a won stage when the dust settles.
+ */
+export async function deleteStage(id: string, moveToId: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new CrmError('unauthenticated');
+  if (id === moveToId) throw new CrmError('same_stage');
+  const target = await db.query.leadStages.findFirst({ where: eq(leadStages.id, moveToId) });
+  if (!target) throw new CrmError('stage_not_found');
+
+  await db.transaction(async (tx) => {
+    await tx.update(leads).set({ stageId: moveToId }).where(eq(leads.stageId, id));
+    await tx.delete(leadStages).where(eq(leadStages.id, id));
+    const remaining = await tx.select().from(leadStages).where(eq(leadStages.active, true));
+    for (const required of ['open', 'won'] as const) {
+      if (!remaining.some((stage) => stage.kind === required)) {
+        throw new CrmError(`needs_${required}`);
+      }
+    }
+  });
+
+  await writeAudit(db, ctx, {
+    entityType: 'lead_stage',
+    entityId: id,
+    action: 'delete',
+    after: { movedTo: moveToId },
+  });
+}
+
+/** How many leads sit in each stage — shown before a stage can be removed. */
+export async function stageUsage() {
+  const rows = await db
+    .select({ stageId: leads.stageId, n: sql<number>`count(*)` })
+    .from(leads)
+    .groupBy(leads.stageId);
+  return Object.fromEntries(rows.map((row) => [row.stageId, Number(row.n)]));
 }
 
 // --- Leads ------------------------------------------------------------------

@@ -912,11 +912,22 @@ export const leadStages = pgTable(
     id: id(),
     name: text('name').notNull().unique(),
     kind: text('kind').notNull().default('open'),
+    /**
+     * A fixed palette rather than free-form hex: the classes are compiled by
+     * Tailwind, so an arbitrary colour would simply not render.
+     */
+    color: text('color').notNull().default('gray'),
     sortOrder: integer('sort_order').notNull().default(100),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
   },
-  (t) => [check('lead_stages_kind_check', sql`${t.kind} IN ('open', 'won', 'lost')`)],
+  (t) => [
+    check('lead_stages_kind_check', sql`${t.kind} IN ('open', 'won', 'lost')`),
+    check(
+      'lead_stages_color_check',
+      sql`${t.color} IN ('gray', 'blue', 'green', 'amber', 'red', 'purple', 'teal')`,
+    ),
+  ],
 );
 
 /** Someone who has asked about cargo but has no client code yet. */
@@ -939,6 +950,8 @@ export const leads = pgTable(
     nextActionNote: text('next_action_note'),
     /** Set when the lead becomes a client card; the lead row itself stays. */
     clientId: uuid('client_id').references(() => clients.id),
+    /** Which human being this is, when several codes belong to one person. */
+    personId: uuid('person_id'),
     lostReason: text('lost_reason'),
     createdBy: uuid('created_by')
       .notNull()
@@ -949,6 +962,7 @@ export const leads = pgTable(
   (t) => [
     index('leads_stage_idx').on(t.stageId),
     index('leads_owner_idx').on(t.ownerId),
+    index('leads_person_idx').on(t.personId),
     index('leads_next_action_idx').on(t.nextActionAt),
     uniqueIndex('leads_client_unique').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
   ],
@@ -979,3 +993,70 @@ export const crmActivities = pgTable(
     index('crm_activities_entity_idx').on(t.entityType, t.entityId, t.happenedAt),
   ],
 );
+
+/**
+ * Custom fields (owner: "amoCRM/Bitrix kabi custom bo'lsin"). The owner
+ * defines what a lead or a client card asks for; `type` drives both the input
+ * widget and the validation.
+ */
+export const crmFields = pgTable(
+  'crm_fields',
+  {
+    id: id(),
+    entityType: text('entity_type').notNull(),
+    label: text('label').notNull(),
+    type: text('type').notNull(),
+    /** Choices for select / multiselect; empty for every other type. */
+    options: jsonb('options').notNull().default([]),
+    required: boolean('required').notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(100),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('crm_fields_entity_check', sql`${t.entityType} IN ('lead', 'client')`),
+    check(
+      'crm_fields_type_check',
+      sql`${t.type} IN ('text', 'textarea', 'number', 'date', 'select', 'multiselect', 'checkbox', 'phone', 'url')`,
+    ),
+    uniqueIndex('crm_fields_label_unique').on(t.entityType, sql`lower(${t.label})`),
+  ],
+);
+
+/** One answer per (field, entity). */
+export const crmFieldValues = pgTable(
+  'crm_field_values',
+  {
+    fieldId: uuid('field_id')
+      .notNull()
+      .references(() => crmFields.id, { onDelete: 'cascade' }),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    value: jsonb('value').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.fieldId, t.entityId] }),
+    check('crm_field_values_entity_check', sql`${t.entityType} IN ('lead', 'client')`),
+    index('crm_field_values_entity_idx').on(t.entityType, t.entityId),
+  ],
+);
+
+/**
+ * One human being holding several client codes (owner: "ha birlashtiraylik").
+ *
+ * A layer ABOVE clients, not a merge: each code keeps its own letters, stock,
+ * cargo history and cabinet link — merging the rows would rewrite years of
+ * receipts — while the person ties them together for the sales side.
+ */
+export const crmPeople = pgTable('crm_people', {
+  id: id(),
+  name: text('name').notNull(),
+  phones: jsonb('phones').notNull().default([]),
+  note: text('note'),
+  createdBy: uuid('created_by')
+    .notNull()
+    .references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});

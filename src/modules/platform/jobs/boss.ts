@@ -36,6 +36,8 @@ export async function startBoss(): Promise<PgBoss> {
     await registerBackupWorker(boss);
     const { registerRestoreTestWorker } = await import('./restore-test');
     await registerRestoreTestWorker(boss);
+    const { registerCrmWorkers } = await import('../../wms/crm/digest');
+    await registerCrmWorkers(boss);
     logger.info('pg-boss started');
   }
   return boss;

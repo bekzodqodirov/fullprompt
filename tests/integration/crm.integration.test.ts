@@ -9,6 +9,7 @@ import {
   convertLead,
   createLead,
   CrmError,
+  deleteStage,
   dormantClients,
   followUps,
   funnelReport,
@@ -17,10 +18,27 @@ import {
   listSources,
   listStages,
   moveLead,
+  reorderStages,
   saveSource,
   saveStage,
+  stageUsage,
   updateLead,
 } from '@/modules/wms/crm/service';
+import {
+  countFieldAnswers,
+  deleteField,
+  fieldValues,
+  listFields,
+  saveField,
+  setFieldValues,
+} from '@/modules/wms/crm/fields';
+import {
+  groupClients,
+  listPeople,
+  personCodes,
+  personForClient,
+  suggestGroups,
+} from '@/modules/wms/crm/people';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 
 /**
@@ -76,7 +94,10 @@ describe('funnel dictionaries', () => {
     const stages = await listStages();
     const won = stages.find((stage) => stage.kind === 'won')!;
     await expect(
-      saveStage({ id: won.id, name: won.name, kind: 'won', sortOrder: won.sortOrder, active: false }, ctx()),
+      saveStage(
+        { id: won.id, name: won.name, kind: 'won', color: 'green', sortOrder: won.sortOrder, active: false },
+        ctx(),
+      ),
     ).rejects.toThrow('needs_won');
     // The guard must not have left the stage deactivated on its way out.
     expect((await listStages()).some((stage) => stage.id === won.id)).toBe(true);
@@ -310,5 +331,208 @@ describe('funnel report', () => {
 
   it('errors carry a code the UI can translate', async () => {
     await expect(moveLead(uuidv4(), stageNewId, '', ctx())).rejects.toBeInstanceOf(CrmError);
+  });
+});
+
+describe('custom fields (amoCRM/Bitrix-style customisation)', () => {
+  it('validates each answer against the type the field declared', async () => {
+    const city = await saveField(
+      {
+        entityType: 'lead',
+        label: `Shahar ${SUFFIX}`,
+        type: 'select',
+        options: ['Toshkent', 'Andijon', 'Farg‘ona'],
+        required: false,
+        sortOrder: 10,
+        active: true,
+      },
+      ctx(),
+    );
+    const volume = await saveField(
+      {
+        entityType: 'lead',
+        label: `Oyiga m³ ${SUFFIX}`,
+        type: 'number',
+        options: [],
+        required: false,
+        sortOrder: 20,
+        active: true,
+      },
+      ctx(),
+    );
+    const lead = await createLead({ name: `Custom ${SUFFIX}` }, ctx());
+
+    await setFieldValues(
+      'lead',
+      lead.id,
+      { [city.id]: 'Andijon', [volume.id]: '12,5' },
+      ctx(),
+    );
+    const stored = await fieldValues('lead', lead.id);
+    expect(stored[city.id]).toBe('Andijon');
+    // A comma decimal is what an Uzbek keyboard produces.
+    expect(stored[volume.id]).toBe(12.5);
+
+    // A choice that is not on the list is a typo, not a new option.
+    await expect(
+      setFieldValues('lead', lead.id, { [city.id]: 'Qarshi' }, ctx()),
+    ).rejects.toThrow('bad_option');
+    await expect(
+      setFieldValues('lead', lead.id, { [volume.id]: 'ko‘p' }, ctx()),
+    ).rejects.toThrow('bad_number');
+
+    // Clearing an answer removes the row rather than storing an empty string.
+    await setFieldValues('lead', lead.id, { [city.id]: '' }, ctx());
+    expect(city.id in (await fieldValues('lead', lead.id))).toBe(false);
+  });
+
+  it('a partial form cannot wipe the answers it does not render', async () => {
+    const a = await saveField(
+      { entityType: 'lead', label: `A ${SUFFIX}`, type: 'text', options: [], required: false, sortOrder: 30, active: true },
+      ctx(),
+    );
+    const b = await saveField(
+      { entityType: 'lead', label: `B ${SUFFIX}`, type: 'text', options: [], required: false, sortOrder: 40, active: true },
+      ctx(),
+    );
+    const lead = await createLead({ name: `Qisman ${SUFFIX}` }, ctx());
+    await setFieldValues('lead', lead.id, { [a.id]: 'bir', [b.id]: 'ikki' }, ctx());
+    // The quick-add dialog only knows about A.
+    await setFieldValues('lead', lead.id, { [a.id]: 'yangi' }, ctx());
+    const stored = await fieldValues('lead', lead.id);
+    expect(stored[a.id]).toBe('yangi');
+    expect(stored[b.id]).toBe('ikki');
+  });
+
+  it('refuses a select with nothing to select, and a type change after the fact', async () => {
+    await expect(
+      saveField(
+        { entityType: 'lead', label: `Bo‘sh ${SUFFIX}`, type: 'select', options: [], required: false, sortOrder: 50, active: true },
+        ctx(),
+      ),
+    ).rejects.toThrow('options_required');
+
+    const field = await saveField(
+      { entityType: 'client', label: `Tur ${SUFFIX}`, type: 'text', options: [], required: false, sortOrder: 60, active: true },
+      ctx(),
+    );
+    // Changing the type would leave every stored answer in the old shape.
+    await expect(
+      saveField(
+        { id: field.id, entityType: 'client', label: `Tur ${SUFFIX}`, type: 'number', options: [], required: false, sortOrder: 60, active: true },
+        ctx(),
+      ),
+    ).rejects.toThrow('type_locked');
+  });
+
+  it('a checkbox left unticked is a real "no", not a missing answer', async () => {
+    const flag = await saveField(
+      { entityType: 'lead', label: `VIP ${SUFFIX}`, type: 'checkbox', options: [], required: false, sortOrder: 70, active: true },
+      ctx(),
+    );
+    const lead = await createLead({ name: `Belgi ${SUFFIX}` }, ctx());
+    await setFieldValues('lead', lead.id, { [flag.id]: undefined }, ctx());
+    expect((await fieldValues('lead', lead.id))[flag.id]).toBe(false);
+    await setFieldValues('lead', lead.id, { [flag.id]: 'on' }, ctx());
+    expect((await fieldValues('lead', lead.id))[flag.id]).toBe(true);
+  });
+
+  it('deleting a field takes its answers with it, and says how many first', async () => {
+    const field = await saveField(
+      { entityType: 'lead', label: `O‘chadi ${SUFFIX}`, type: 'text', options: [], required: false, sortOrder: 80, active: true },
+      ctx(),
+    );
+    const lead = await createLead({ name: `O‘chirish ${SUFFIX}` }, ctx());
+    await setFieldValues('lead', lead.id, { [field.id]: 'javob' }, ctx());
+    expect(await countFieldAnswers(field.id)).toBe(1);
+
+    await deleteField(field.id, ctx());
+    expect(await countFieldAnswers(field.id)).toBe(0);
+    expect((await listFields('lead')).some((row) => row.id === field.id)).toBe(false);
+  });
+});
+
+describe('the funnel is the owner’s to reshape', () => {
+  it('reordering rewrites the positions in the order given', async () => {
+    const before = await listStages();
+    const flipped = [before[1]!.id, before[0]!.id, ...before.slice(2).map((s) => s.id)];
+    await reorderStages(flipped, ctx());
+    const after = await listStages();
+    expect(after.map((stage) => stage.id)).toEqual(flipped);
+    // Put it back so the rest of the suite reads the seeded order.
+    await reorderStages(before.map((stage) => stage.id), ctx());
+  });
+
+  it('a removed stage hands its leads to another one', async () => {
+    const extra = await saveStage(
+      { name: `Vaqtinchalik ${SUFFIX}`, kind: 'open', color: 'teal', sortOrder: 45, active: true },
+      ctx(),
+    );
+    const lead = await createLead({ name: `Ko‘chadi ${SUFFIX}`, stageId: extra.id }, ctx());
+    expect((await stageUsage())[extra.id]).toBe(1);
+
+    await deleteStage(extra.id, stageNewId, ctx());
+    const moved = await db.query.leads.findFirst({ where: eq(leads.id, lead.id) });
+    expect(moved!.stageId).toBe(stageNewId);
+    expect((await listStages()).some((stage) => stage.id === extra.id)).toBe(false);
+  });
+
+  it('the last won stage cannot be deleted out of the funnel', async () => {
+    const won = (await listStages()).find((stage) => stage.kind === 'won')!;
+    await expect(deleteStage(won.id, stageNewId, ctx())).rejects.toThrow('needs_won');
+    // The rollback must have kept the stage AND left no lead stranded.
+    expect((await listStages()).some((stage) => stage.id === won.id)).toBe(true);
+  });
+});
+
+describe('one person, several codes', () => {
+  it('groups codes without merging the cards behind them', async () => {
+    const phone = `+9989${SUFFIX}`;
+    const [first] = await db
+      .insert(clients)
+      .values({ clientCode: `P1${SUFFIX}`.slice(0, 10), name: 'Aka', phones: [phone] })
+      .returning();
+    const [second] = await db
+      .insert(clients)
+      .values({ clientCode: `P2${SUFFIX}`.slice(0, 10), name: 'Aka (2)', phones: [phone] })
+      .returning();
+
+    const personId = await groupClients([first!.id, second!.id], { name: 'Aka' }, ctx());
+    const codes = await personCodes(personId);
+    expect(codes.map((row) => row.code).sort()).toEqual(
+      [first!.clientCode, second!.clientCode].sort(),
+    );
+    // Each code keeps its own card — grouping must not rewrite history.
+    const reread = await db.query.clients.findFirst({ where: eq(clients.id, first!.id) });
+    expect(reread!.clientCode).toBe(first!.clientCode);
+    expect(reread!.personId).toBe(personId);
+
+    const view = await personForClient(second!.id);
+    expect(view!.person.name).toBe('Aka');
+    expect(view!.codes).toHaveLength(2);
+    expect((await listPeople()).some((row) => row.id === personId && row.codes === 2)).toBe(true);
+  });
+
+  it('suggests codes that share a phone, and stops suggesting once grouped', async () => {
+    const phone = `+99871${SUFFIX}`;
+    const [a] = await db
+      .insert(clients)
+      .values({ clientCode: `S1${SUFFIX}`.slice(0, 10), name: 'Uka', phones: [phone] })
+      .returning();
+    const [b] = await db
+      .insert(clients)
+      .values({ clientCode: `S2${SUFFIX}`.slice(0, 10), name: 'Uka (2)', phones: [`998 71 ${SUFFIX}`] })
+      .returning();
+
+    const hasBoth = (groups: Awaited<ReturnType<typeof suggestGroups>>) =>
+      groups.some((group) => {
+        const ids = group.members.map((member) => member.id);
+        return ids.includes(a!.id) && ids.includes(b!.id);
+      });
+
+    // Formatting differences must not hide the match (last-9-digit rule).
+    expect(hasBoth(await suggestGroups(500))).toBe(true);
+    await groupClients([a!.id, b!.id], {}, ctx());
+    expect(hasBoth(await suggestGroups(500))).toBe(false);
   });
 });
