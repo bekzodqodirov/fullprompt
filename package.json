@@ -22,7 +22,8 @@
     "refresh": "pnpm install && pnpm db:migrate && pnpm build",
     "start:https": "node scripts/start-https.mjs",
     "dev:https": "node scripts/heal-storage.mjs && next dev --experimental-https",
-    "demo-users": "tsx scripts/demo-users.ts"
+    "demo-users": "tsx scripts/demo-users.ts",
+    "import-clients": "tsx scripts/import-clients.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.114.0",

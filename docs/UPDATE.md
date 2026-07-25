@@ -124,3 +124,33 @@ docker compose restart app
   yangi ruxsatlar (masalan `finance.manage`) rollarga tarqalishi.
 - **Fayllar/rasmlar** MinIO volume'ida qoladi, image qayta qurilishi ularga
   tegmaydi.
+
+---
+
+## Mijozlar ro'yxatini bazaga yuklash (bir martalik)
+
+Ro'yxat repoda: `data/clients-import.tsv` (303 qator). Skript **avval faqat hisobot beradi**, hech narsa yozmaydi — bu jonli baza, xato qilsa yuk boshqa mijozga bog'lanib qolishi mumkin.
+
+```bash
+cd /opt/gsr-erp
+git pull
+
+# 1) Ko'rish: nima tushadi, nima tushmaydi (hech narsa yozilmaydi)
+docker compose run --rm migrate pnpm import-clients
+
+# 2) Yozish: mavjud kodlarga tegmaydi, faqat yo'qlarini qo'shadi
+docker compose run --rm migrate pnpm import-clients --apply
+```
+
+`--update` ni faqat **ataylab** ishlating: u mavjud kartalardagi ism va telefonni fayldagisiga almashtiradi.
+
+```bash
+docker compose run --rm migrate pnpm import-clients --apply --update
+```
+
+**Nima bo'ladi:**
+- Telefon `+998XXXXXXXXX` ko'rinishiga keltiriladi (xitoy raqami `+86...`)
+- Ismi yo'q qatorga kodning o'zi ism bo'lib qo'yiladi — keyin qo'lda tuzatasiz
+- «sotuvchi» ustuni mijoz kartasidagi **«Sotuvchi»** maydoniga tushadi (CRM custom field). Sotuvchining login akkaunti bo'lsa, mijoz o'sha xodimga biriktiriladi ham; akkaunt ochilgandan keyin `--apply --update` bilan qayta yurgizsangiz bog'lanadi
+- Bir xil kod ikki marta yozilgan bo'lsa — birinchisi olinadi, ikkinchisi hisobotda ko'rsatiladi
+- Kirilcha kod (`аднаротка Б`) tushmaydi — kod faqat lotin harf/raqamdan iborat bo'lishi kerak, hisobotda chiqadi
