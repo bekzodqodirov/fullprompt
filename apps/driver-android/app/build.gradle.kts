@@ -16,6 +16,14 @@ android {
     // The app ships pointed at the production server; the pairing screen
     // lets the warehouse worker change it (domain move, test server).
     buildConfigField("String", "DEFAULT_SERVER", "\"https://169-58-65-23.sslip.io\"")
+    // Shown on the app's own screen. Two builds look identical on a phone,
+    // and "did the new APK actually install?" has to be answerable without
+    // guessing — CI passes the commit, a local build says "dev".
+    buildConfigField(
+      "String",
+      "BUILD_ID",
+      "\"${(System.getenv("GSR_BUILD_ID") ?: "dev").take(7)}\"",
+    )
   }
 
   buildFeatures {

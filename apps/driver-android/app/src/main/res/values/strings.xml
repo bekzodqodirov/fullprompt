@@ -5,6 +5,8 @@
 <resources>
     <string name="app_name">GSRDriver</string>
     <string name="app_tagline">GSR LOGISTICS · reys kuzatuvi</string>
+    <!-- tagline · v1.1 (93faf93) — locale-independent, no translation needed -->
+    <string name="app_version">%1$s · v%2$s (%3$s)</string>
 
     <!-- Pairing -->
     <string name="pair_hint">Sklad xodimi: partiya sahifasidagi 6 belgili kodni kiriting. Kuzatuv shu reys uchun yoqiladi.</string>

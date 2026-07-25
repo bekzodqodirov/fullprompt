@@ -106,6 +106,13 @@ class MainActivity : AppCompatActivity() {
         errorText = findViewById(R.id.errorText)
 
         serverInput.setText(store.server)
+        // Two builds look the same on a phone: say out loud which one this is.
+        findViewById<TextView>(R.id.versionText).text = getString(
+            R.string.app_version,
+            getString(R.string.app_tagline),
+            BuildConfig.VERSION_NAME,
+            BuildConfig.BUILD_ID,
+        )
         pairButton.setOnClickListener { pair() }
 
         // Every red row offers the same escape hatch: restart the chain from

@@ -32,6 +32,9 @@ jobs:
           key: gradle-${{ hashFiles('apps/driver-android/**/*.gradle.kts', 'apps/driver-android/gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Build APK
+        env:
+          # Stamped into the app so the screen can say which build it is.
+          GSR_BUILD_ID: ${{ github.sha }}
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
