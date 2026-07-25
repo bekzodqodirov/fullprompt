@@ -132,8 +132,15 @@ docker compose restart app
 Ro'yxat repoda: `data/clients-import.tsv` (303 qator). Skript **avval faqat hisobot beradi**, hech narsa yozmaydi — bu jonli baza, xato qilsa yuk boshqa mijozga bog'lanib qolishi mumkin.
 
 ```bash
-cd /opt/gsr-erp
-git pull
+cd ~/gsr                 # yoki repo qayerda bo'lsa
+
+# 0) Kodni yangilash. `migrate` konteyner OBRAZ ichida yuradi, ya'ni
+#    skript obrazga build paytida tushadi — pull qilgach REBUILD shart,
+#    aks holda "Command import-clients not found" chiqadi.
+git fetch origin
+git checkout claude/gsr-logistics-wms-phase1-o8h4en
+git pull --ff-only
+docker compose build migrate
 
 # 1) Ko'rish: nima tushadi, nima tushmaydi (hech narsa yozilmaydi)
 docker compose run --rm migrate pnpm import-clients
@@ -147,6 +154,9 @@ docker compose run --rm migrate pnpm import-clients --apply
 ```bash
 docker compose run --rm migrate pnpm import-clients --apply --update
 ```
+
+**«Command not found» chiqsa** — obraz eski. `docker compose build migrate` ni qayta yurgizing.
+**`git pull` «Already up to date» desa** — boshqa branchdasiz. `git branch --show-current` bilan tekshiring; yuqoridagi `git checkout` qatori shuni tuzatadi.
 
 **Nima bo'ladi:**
 - Telefon `+998XXXXXXXXX` ko'rinishiga keltiriladi (xitoy raqami `+86...`)
