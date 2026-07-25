@@ -20,9 +20,13 @@ test('export → ready_for_pickup → issue with handover act', async ({ page })
   await page.goto('/plans/new');
   await page.getByTestId('plan-origin').selectOption({ label: 'YW' });
   await page.getByTestId('plan-dest').selectOption({ label: 'AND' });
-  const firstRow = page.locator('#plan-stock-table tbody tr').first();
+  // First row with a REAL client (GS…): unclaimed rows carry a marking, not
+  // a client code, and the issue step below needs a searchable client.
+  const firstRow = page
+    .locator('#plan-stock-table tbody tr')
+    .filter({ hasText: /GS\d+/ })
+    .first();
   await expect(firstRow).toBeVisible({ timeout: 10_000 });
-  // Remember the client code of the first row to issue to later
   const rowCode = await firstRow.locator('td').nth(1).innerText(); // e.g. GS777-A
   const clientCode = rowCode.split('-')[0]!;
   await firstRow.locator('input').fill('1');

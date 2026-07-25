@@ -48,8 +48,11 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
   await page.locator('input[name="name"]').fill(`Test Client ${runId}`);
   await page.locator('select[name="salesManagerId"]').selectOption({ label: 'Dilnoza (Sales)' });
   await page.locator('main form button[type="submit"]').first().click();
-  await expect(page).toHaveURL('/admin/clients');
+  // Saving lands on the new client CARD so the assigned code is visible
+  // (owner: the list hid what code the system gave).
+  await expect(page).toHaveURL(/\/admin\/clients\/[0-9a-f-]{36}$/);
   await expect(page.getByText(`Test Client ${runId}`)).toBeVisible();
+  await expect(page.getByText(`GS9${runId}`)).toBeVisible();
 
   // Client code format validation rejects a malformed code (too short)
   await page.goto('/admin/clients/new');

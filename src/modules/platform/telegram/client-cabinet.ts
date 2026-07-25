@@ -5,12 +5,14 @@ import { clients, clientTelegramLinks, telegramLinks } from '../db/schema';
 import { getStorage } from '../files/storage';
 import { logger } from '../logger';
 import {
+  activeClientsByPhone,
   cargoOverview,
   clientsForChat,
   debtSummary,
   issuedHistory,
   lotPhotoKeys,
   phoneBelongsToClient,
+  phonesOverlap,
   type CabinetLot,
 } from '../../wms/client-cabinet/service';
 
@@ -128,6 +130,91 @@ export async function completeClientLink(linkId: string, chatId: number) {
   return db.query.clients.findFirst({ where: eq(clients.id, link.clientId) });
 }
 
+/**
+ * One person = one phone = possibly MANY marking codes (owner: 777, 555,
+ * 444, 333…). Once the phone is verified, every active client registered
+ * under that number joins the same chat — one link covers them all.
+ */
+export async function linkAllClientsForPhone(
+  phone: string,
+  chatId: number,
+  createdBy: string,
+): Promise<{ clientCode: string; name: string }[]> {
+  const owners = await activeClientsByPhone(phone);
+  const already = new Set((await clientsForChat(BigInt(chatId))).map((c) => c.id));
+  for (const client of owners) {
+    if (already.has(client.id)) continue;
+    await db.insert(clientTelegramLinks).values({
+      clientId: client.id,
+      telegramChatId: BigInt(chatId),
+      status: 'linked',
+      linkedAt: new Date(),
+      createdBy,
+    });
+  }
+  return (await clientsForChat(BigInt(chatId))).map((c) => ({
+    clientCode: c.clientCode,
+    name: c.name,
+  }));
+}
+
+/**
+ * A NEW code opened for an already-verified person appears in their cabinet
+ * automatically (called after client create/update). Best-effort ping tells
+ * them about it. Returns how many chats were attached.
+ */
+export async function autoLinkClientToVerifiedChats(
+  clientId: string,
+  actorId: string,
+): Promise<number> {
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+  if (!client || !client.active) return 0;
+  const phones = client.phones as unknown[];
+  if (!Array.isArray(phones) || phones.length === 0) return 0;
+
+  // Chats verified for OTHER clients that share a phone with this one.
+  const linkedRows = await db
+    .select({ chatId: clientTelegramLinks.telegramChatId, phones: clients.phones })
+    .from(clientTelegramLinks)
+    .innerJoin(clients, eq(clientTelegramLinks.clientId, clients.id))
+    .where(eq(clientTelegramLinks.status, 'linked'));
+  const targetChats = new Set<bigint>();
+  for (const row of linkedRows) {
+    if (row.chatId && phonesOverlap(phones, row.phones)) targetChats.add(row.chatId);
+  }
+  if (targetChats.size === 0) return 0;
+
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  let added = 0;
+  for (const chatId of targetChats) {
+    const already = (await clientsForChat(chatId)).some((c) => c.id === clientId);
+    if (already) continue;
+    await db.insert(clientTelegramLinks).values({
+      clientId,
+      telegramChatId: chatId,
+      status: 'linked',
+      linkedAt: new Date(),
+      createdBy: actorId,
+    });
+    added += 1;
+    if (token) {
+      try {
+        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: Number(chatId),
+            text: `🔗 Kabinetingizga yangi kod qo‘shildi: ${client.clientCode}`,
+          }),
+        });
+      } catch (err) {
+        logger.warn({ err, clientId }, 'auto-link notify failed');
+      }
+    }
+  }
+  return added;
+}
+
 /** Verification failed: burn the code so it cannot be retried or passed on. */
 export async function failClientLink(linkId: string): Promise<void> {
   const link = await db.query.clientTelegramLinks.findFirst({
@@ -186,6 +273,9 @@ export function registerClientCabinet(bot: Bot): void {
       );
       return;
     }
+    const linkRow = await db.query.clientTelegramLinks.findFirst({
+      where: eq(clientTelegramLinks.id, pending.linkId),
+    });
     const linked = await completeClientLink(pending.linkId, ctx.chat.id);
     if (!linked) {
       await ctx.reply('Havola eskirgan. Menejeringizdan yangisini so‘rang.', {
@@ -193,9 +283,18 @@ export function registerClientCabinet(bot: Bot): void {
       });
       return;
     }
+    // One phone, many codes (owner): connect every code registered under
+    // the verified number in one go.
+    const all = linkRow
+      ? await linkAllClientsForPhone(contact.phone_number, ctx.chat.id, linkRow.createdBy).catch(
+          () => [{ clientCode: linked.clientCode, name: linked.name }],
+        )
+      : [{ clientCode: linked.clientCode, name: linked.name }];
+    const codes = all.map((c) => c.clientCode).join(', ');
     await ctx.reply(
       `✅ Assalomu alaykum, ${linked.name}!\n` +
-        `Kod: ${linked.clientCode}. Bu yerda yuklaringiz holati, rasmlari va balansingizni ko‘rasiz.`,
+        `Ulangan kodlaringiz: ${codes}.\n` +
+        `Bu yerda yuklaringiz holati, rasmlari va balansingizni ko‘rasiz.`,
       { reply_markup: CABINET_KEYBOARD },
     );
   });

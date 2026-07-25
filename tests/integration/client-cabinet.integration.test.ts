@@ -19,9 +19,11 @@ import {
   lotPhotoKeys,
 } from '@/modules/wms/client-cabinet/service';
 import {
+  autoLinkClientToVerifiedChats,
   beginClientLink,
   completeClientLink,
   failClientLink,
+  linkAllClientsForPhone,
 } from '@/modules/platform/telegram/client-cabinet';
 import { renderClientCabinetText } from '@/modules/platform/notifications/service';
 
@@ -34,6 +36,8 @@ let actorId: string;
 let clientId: string;
 let otherClientId: string;
 let lotId: string;
+let testPhone: string;
+let suffix: string;
 const ctx = () => ({ actorId });
 
 beforeAll(async () => {
@@ -47,10 +51,12 @@ beforeAll(async () => {
           .returning()
       )[0]!.id;
   actorId = (await db.select().from(users).limit(1))[0]!.id;
-  const suffix = String(Date.now()).slice(-6);
+  suffix = String(Date.now()).slice(-6);
+  // Run-unique phone so seed/other-test clients can never collide.
+  testPhone = `+998${suffix}111`;
   const [c] = await db
     .insert(clients)
-    .values({ clientCode: `C2${suffix}`, name: 'Cabinet client', phones: ['+998 90 175 78 00'] })
+    .values({ clientCode: `C2${suffix}`, name: 'Cabinet client', phones: [testPhone] })
     .returning();
   clientId = c!.id;
   const [o] = await db.insert(clients).values({ clientCode: `C9${suffix}`, name: 'Other client' }).returning();
@@ -140,6 +146,35 @@ describe('linking (two-step, phone-verified)', () => {
     expect(row?.linkCode).toBeNull();
     expect(await beginClientLink(code, CHAT_ID + 5)).toBeNull();
     expect(await completeClientLink(linkId, CHAT_ID + 5)).toBeNull();
+  });
+
+  it('one verified phone connects EVERY code of that person; new codes auto-join', async () => {
+    const chatId = CHAT_ID + 10;
+    // Second code of the same person (same phone, different formatting).
+    const [second] = await db
+      .insert(clients)
+      .values({ clientCode: `C5${suffix}`, name: 'Same person', phones: [`998 ${suffix} 111`] })
+      .returning();
+
+    const { linkId } = await mintCode(clientId);
+    await completeClientLink(linkId, chatId);
+    const all = await linkAllClientsForPhone(testPhone, chatId, actorId);
+    expect(all.map((c) => c.clientCode)).toContain(`C2${suffix}`);
+    expect(all.map((c) => c.clientCode)).toContain(`C5${suffix}`);
+
+    // A THIRD code opened later for the same phone joins the chat by itself.
+    const [third] = await db
+      .insert(clients)
+      .values({ clientCode: `C7${suffix}`, name: 'Same person again', phones: [testPhone] })
+      .returning();
+    const added = await autoLinkClientToVerifiedChats(third!.id, actorId);
+    expect(added).toBeGreaterThan(0);
+    const chats = await clientsForChat(BigInt(chatId));
+    expect(chats.map((c) => c.id)).toContain(third!.id);
+    expect(chats.map((c) => c.id)).toContain(second!.id);
+
+    // A client with a DIFFERENT phone never rides along.
+    expect(chats.map((c) => c.id)).not.toContain(otherClientId);
   });
 
   it('a client without a registered phone cannot be verified, code stays for retry', async () => {

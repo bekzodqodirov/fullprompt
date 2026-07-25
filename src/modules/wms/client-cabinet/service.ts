@@ -42,6 +42,21 @@ export function phoneBelongsToClient(shared: string, clientPhones: unknown): boo
   return clientPhones.some((p) => typeof p === 'string' && phonesMatch(shared, p));
 }
 
+/** Do two clients share at least one phone number (same real person)? */
+export function phonesOverlap(a: unknown, b: unknown): boolean {
+  if (!Array.isArray(a)) return false;
+  return a.some((p) => typeof p === 'string' && phoneBelongsToClient(p, b));
+}
+
+/**
+ * All active clients registered under this phone — the owner's reality:
+ * one person often holds 2–4 marking codes (777, 555, 444…).
+ */
+export async function activeClientsByPhone(phone: string) {
+  const rows = await db.select().from(clients).where(eq(clients.active, true));
+  return rows.filter((c) => phoneBelongsToClient(phone, c.phones));
+}
+
 /** Clients represented by a Telegram chat (a broker chat may hold several). */
 export async function clientsForChat(chatId: bigint) {
   return db

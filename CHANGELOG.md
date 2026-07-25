@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## One phone = all codes: cabinet multi-code round — 2026-07-24
+
+- **New-client save lands on the client CARD**, not the list (owner: "after Сохранить everything vanishes — can't tell what code the system assigned"). The assigned code is in the heading, and the Telegram-cabinet block is right there for the next step. Client edits land on the card too.
+- **One verified phone connects EVERY code of that person** (owner: one customer holds 777, 555, 444, 333): the client taps ONE link, confirms their phone once, and all active client codes registered under that number join the chat together — the welcome message lists them all.
+- **New codes join automatically**: when staff opens another code for an already-verified person (same phone on the card), it appears in their cabinet by itself with a "🔗 yangi kod qo'shildi" ping — no new link ceremony.
+- Phone verification stays (it is exactly what catches the wrong-recipient case from the last incident) — but it now runs ONCE per person, not once per code.
+- In the bot every code shows separately under 📦/💰/🗄 — a multi-code client scrolls through each code's cargo and balance.
+- e2e: m5 spec no longer trips over accumulated unclaimed stock rows (picks a real GS client row).
+
+
 ## Cabinet linking is now phone-verified — 2026-07-24
 
 - **Owner's incident**: a cabinet link minted for one client was sent to a different person, who tapped it and instantly saw the other client's cargo and debt. Root cause: the link was a bearer token — whoever tapped it got linked, identity unchecked.

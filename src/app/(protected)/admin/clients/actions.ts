@@ -11,6 +11,7 @@ import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { getSetting } from '@/modules/platform/settings/service';
 import { nextClientCode } from '@/modules/platform/clients/code';
+import { autoLinkClientToVerifiedChats } from '@/modules/platform/telegram/client-cabinet';
 
 export interface ClientFormState {
   error?: 'validation' | 'code_exists' | 'code_format';
@@ -107,8 +108,14 @@ export async function createClientAction(
     },
   );
 
+  // A person often holds several codes on one phone — if that phone already
+  // passed cabinet verification, the new code joins their chat automatically.
+  await autoLinkClientToVerifiedChats(row.id, actor.id).catch(() => {});
+
   revalidatePath('/admin/clients');
-  redirect('/admin/clients');
+  // Land on the new card: the owner must SEE the assigned code (and the
+  // cabinet block) right after saving — the list hid it.
+  redirect(`/admin/clients/${row.id}`);
 }
 
 export async function updateClientAction(
@@ -140,9 +147,11 @@ export async function updateClientAction(
       { entityType: 'client', entityId: id, action: 'update', ...diff },
     );
   }
+  // Phone edits may connect this code to an already-verified cabinet chat.
+  await autoLinkClientToVerifiedChats(id, actor.id).catch(() => {});
 
   revalidatePath('/admin/clients');
-  redirect('/admin/clients');
+  redirect(`/admin/clients/${id}`);
 }
 
 export async function toggleClientActiveAction(id: string): Promise<void> {
