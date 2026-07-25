@@ -32,7 +32,8 @@ services:
     volumes:
       - ./.data/basemap:/out
       - ./ops:/ops:ro
-    command: sh /ops/fetch-basemap-docker.sh
+    # tr -d '\r': survive CRLF checkouts on Windows hosts.
+    command: sh -c "tr -d '\r' </ops/fetch-basemap-docker.sh >/tmp/fb.sh && sh /tmp/fb.sh"
 
   # One-shot: apply migrations + idempotent seed before the app starts.
   # Uses the build stage (full sources + tsx), not the slim runtime image.
