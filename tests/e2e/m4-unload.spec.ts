@@ -48,8 +48,15 @@ test('unload lifecycle: scan in at destination, finish, close', async ({ page })
   await expect(page.getByTestId('unload-counter')).toHaveText(/1\/1/);
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
 
-  // Finish unload (no discrepancies) and close
-  await page.goto(batchUrl);
+  // Finish unload (no discrepancies) and close.
+  // The scan has to have REACHED THE SERVER first: the counter above is the
+  // phone's own optimistic mark and the outbox may still be flushing, so
+  // finishing here would rightly offer to declare the box lost. The batch
+  // card is the server's answer, so poll it.
+  await expect(async () => {
+    await page.goto(batchUrl);
+    await expect(page.getByTestId('unload-remaining')).toContainText('✅');
+  }).toPass({ timeout: 20_000 });
   await page.getByTestId('finish-unload').click();
   await expect(page.getByTestId('close-batch')).toBeVisible({ timeout: 15_000 });
   await page.getByTestId('close-batch').click();
