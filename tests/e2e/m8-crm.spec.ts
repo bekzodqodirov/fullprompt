@@ -31,7 +31,9 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await addStage.locator('summary').click();
   await addStage.locator('input[name="name"]').fill(`Sinov bosqichi ${runId}`);
   await page.getByTestId('save-stage').click();
-  await expect(page.getByText('✅').first()).toBeVisible();
+  // Scoped to THIS panel: a ✅ left over from another form would let the test
+  // race ahead while the save was still in flight.
+  await expect(addStage.getByText('✅')).toBeVisible();
 
   const addField = page.locator('details').filter({ has: page.getByTestId('save-field') });
   await addField.locator('summary').click();
@@ -39,7 +41,7 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await addField.locator('select[name="type"]').selectOption('select');
   await addField.locator('input[name="options"]').fill('Toshkent, Andijon');
   await page.getByTestId('save-field').click();
-  await expect(page.getByText('✅').first()).toBeVisible();
+  await expect(addField.getByText('✅')).toBeVisible();
 
   // A new lead, answering the field that did not exist a minute ago.
   await page.goto('/crm/leads/new');
@@ -63,6 +65,33 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   // The funnel board shows it, and the custom answer survived the round trip.
   await page.goto('/crm/leads?scope=all');
   await expect(page.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
+
+  // Drag the card from one column to the next with a real pointer gesture —
+  // HTML5 drag-and-drop does not fire on touch, so this is what the phone
+  // actually does: press, hold, move, release.
+  await page.goto('/crm/leads?scope=all');
+  const card = page.getByTestId('lead-card').filter({ hasText: `Sinov mijoz ${runId}` });
+  const from = (await card.boundingBox())!;
+  const target = page.getByTestId('column-open').nth(1);
+  const to = (await target.boundingBox())!;
+
+  await page.mouse.move(from.x + from.width / 2, from.y + 20);
+  await page.mouse.down();
+  // The project runs Playwright in mobile emulation, so these arrive as TOUCH
+  // pointer events — which means the card only comes off the board after the
+  // long press, exactly like a real finger.
+  await page.waitForTimeout(400);
+  await page.mouse.move(from.x + from.width / 2 + 20, from.y + 20, { steps: 5 });
+  // Drop on the VISIBLE sliver of the next column: at 360 px only ~76 px of
+  // it is on screen, and a point outside the viewport has no element under
+  // it at all. Real fingers reach the rest through the edge auto-scroll.
+  await page.mouse.move(to.x + 16, to.y + 60, { steps: 10 });
+  await page.mouse.up();
+
+  // The card lands in the new column and stays there after a reload.
+  await expect(target.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId('column-open').nth(1).getByText(`Sinov mijoz ${runId}`)).toBeVisible();
 
   // Won → convert. The convert panel opens by itself on a won stage, so the
   // last step of a deal is never a tap away from being forgotten.

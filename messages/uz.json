@@ -899,6 +899,7 @@
     "badNumber": "Bu yerga raqam kerak",
     "badDate": "Bu yerga sana kerak",
     "dormantNote": "Ilgari yuk yuborib, keyin to‘xtagan mijoz. Hech qachon yubormagan odam bu yerga tushmaydi.",
-    "personNote": "Kodlar birlashtirilmaydi: har birida o‘z harflari, yuklari va kabineti qoladi. Odam ularni faqat sotuv uchun bog‘laydi."
+    "personNote": "Kodlar birlashtirilmaydi: har birida o‘z harflari, yuklari va kabineti qoladi. Odam ularni faqat sotuv uchun bog‘laydi.",
+    "dragHint": "Kartochkani ushlab turib boshqa bosqichga sudrang"
   }
 }

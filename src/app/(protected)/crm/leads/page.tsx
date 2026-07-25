@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listLeads, listStages, funnelReport } from '@/modules/wms/crm/service';
-import { stageClass } from '../stage-color';
+import { KanbanBoard } from './kanban';
 
 /**
  * The funnel board.
@@ -34,7 +34,8 @@ export default async function LeadsPage({
     listLeads({ ownerId: scope }),
     funnelReport(scope),
   ]);
-  const counts = Object.fromEntries(funnel.stages.map((row) => [row.stageId, row.n]));
+  // The board counts its own columns: a card dropped into another stage must
+  // update the header immediately, before the server has revalidated.
 
   return (
     <div className="space-y-3">
@@ -61,55 +62,25 @@ export default async function LeadsPage({
         </Link>
       </div>
 
-      <div className="-mx-4 overflow-x-auto px-4 pb-2">
-        <div className="flex gap-3">
-          {stages.map((stage) => {
-            const inStage = rows.filter((row) => row.lead.stageId === stage.id);
-            return (
-              <section key={stage.id} className="w-64 shrink-0">
-                <header
-                  className={`sticky top-0 rounded-lg border px-3 py-2 text-sm font-bold ${stageClass(
-                    stage.color,
-                  )}`}
-                >
-                  {stage.name}
-                  <span className="ml-2 opacity-70">{counts[stage.id] ?? 0}</span>
-                </header>
-                <div className="mt-2 space-y-2">
-                  {inStage.map(({ lead, sourceName, ownerName, clientCode }) => (
-                    <Link
-                      key={lead.id}
-                      href={`/crm/leads/${lead.id}`}
-                      className="card block !p-2.5 hover:bg-gray-50"
-                    >
-                      <div className="font-semibold [overflow-wrap:anywhere]">{lead.name}</div>
-                      {lead.company && (
-                        <div className="text-xs text-gray-600">{lead.company}</div>
-                      )}
-                      {lead.phone && <div className="text-xs font-mono">{lead.phone}</div>}
-                      <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-gray-500">
-                        {sourceName && <span className="rounded bg-gray-100 px-1.5">{sourceName}</span>}
-                        {ownerName && <span>{ownerName}</span>}
-                        {clientCode && (
-                          <span className="font-mono font-bold text-green-700">{clientCode}</span>
-                        )}
-                      </div>
-                      {lead.nextActionAt && (
-                        <div className="mt-1 text-[11px] font-semibold text-amber-700">
-                          📅 {lead.nextActionAt}
-                        </div>
-                      )}
-                    </Link>
-                  ))}
-                  {inStage.length === 0 && (
-                    <p className="px-1 text-xs text-gray-400">{t('empty')}</p>
-                  )}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      </div>
+      <KanbanBoard
+        stages={stages.map((stage) => ({
+          id: stage.id,
+          name: stage.name,
+          kind: stage.kind,
+          color: stage.color,
+        }))}
+        leads={rows.map(({ lead, sourceName, ownerName, clientCode }) => ({
+          id: lead.id,
+          stageId: lead.stageId,
+          name: lead.name,
+          company: lead.company,
+          phone: lead.phone,
+          sourceName,
+          ownerName,
+          clientCode,
+          nextActionAt: lead.nextActionAt,
+        }))}
+      />
 
       <div className="card !p-0">
         <div className="overflow-x-auto">

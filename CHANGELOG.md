@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Voronkada kartani ushlab sudrash (drag & drop) — 2026-07-25
+
+- **Kartochkani ushlab turib boshqa bosqichga sudrasangiz bo'ladi** — amoCRM dagidek. Telefonda: bosib **ushlab turasiz** (~0.3 soniya), karta qo'lingizga «ko'chadi», keyin sudraysiz. Kompyuterda oddiy sichqoncha bilan sudrasangiz kifoya.
+- Ustun chetiga yaqinlashsangiz **doska o'zi suriladi** — 360 px ekranda qo'shni ustunning atigi ~76 px'i ko'rinadi, shusiz uzoqdagi bosqichga yeta olmas edingiz.
+- Karta darhol yangi ustunga tushadi (server javobini kutmaydi); server rad etsa joyiga qaytadi va xato ko'rsatiladi.
+- «Yo'qotildi» ga sudrasangiz — sababini so'raydi, bekor qilsangiz karta joyida qoladi. Kartani oddiy bosish avvalgidek uni ochadi.
+- Kutubxona qo'shilmadi: drag-and-drop paketi shu 150 qatordan kattaroq bo'lardi va baribir touch uchun alohida kod kerak edi. HTML5 drag-and-drop telefonda umuman ishlamaydi.
+
 ## CRM: leads, the funnel and one place for every conversation (Phase 2.3) — 2026-07-25
 
 Endi CRM ishlaydi — quyida qayerda nima qilishingiz yozilgan.
