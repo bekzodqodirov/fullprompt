@@ -10,6 +10,7 @@ import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { toggleClientActiveAction, updateClientAction } from '../actions';
 import { createClientCabinetCodeAction, revokeClientCabinetLinkAction } from '../cabinet-actions';
 import { ClientForm } from '../client-form';
+import { ClientCrmSections } from '../../../crm/client-crm';
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -101,6 +102,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           </button>
         </form>
       </section>
+
+      {/* Phase 2.3: the sales side of the card — what was said, the owner's
+          own fields, and the other codes the same person holds. */}
+      <ClientCrmSections clientId={client.id} clientName={client.name} />
 
       <section>
         <h2 className="mb-2 text-lg font-bold">{tc('history')}</h2>

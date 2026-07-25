@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## CRM: leads, the funnel and one place for every conversation (Phase 2.3) — 2026-07-25
+
+Endi CRM ishlaydi — quyida qayerda nima qilishingiz yozilgan.
+
+**📞 CRM (bosh sahifadan)** — ertalab ochasiz: bugun kimga qo'ng'iroq qilish kerak, leadlar va mijozlar bitta ro'yxatda, kechikkanlari sariq chiziq bilan.
+
+**🎯 Voronka** (`/crm/leads`) — amoCRM kabi ustunlar: Yangi → Bog'lanildi → Ma'lumot olindi → Hisoblanilyapti → Narx aytildi → Javob kutilyapti → Sotuv / Yo'qotildi. Har ustunda kartochkalar, pastda esa qaysi manba haqiqiy mijoz berayotgani.
+
+**Lead kartasi** — bosqichni bitta bosishda ko'chirasiz (yo'qotilganda sabab so'raydi), qo'ng'iroqni yozasiz va o'sha zahoti keyingi sanani qo'yasiz, «Mijozga aylantirish» tugmasi kod berib mijoz kartasini ochadi. Lead «Sotuv» ga o'tishi bilan aylantirish paneli o'zi ochiladi.
+
+**😴 Uxlab qolgan mijozlar** — ilgari yuk yuborib, keyin to'xtaganlar. Kunini o'zgartirasiz (60 kun standart).
+
+**👥 Odamlar** — bitta odamning bir nechta kodi (GS777 + GS102). Telefoni bir xil kodlarni sistema o'zi topib taklif qiladi, siz tasdiqlaysiz. Kodlar birlashtirilmaydi — har biri o'z harflari, yuklari va kabineti bilan qoladi.
+
+**⚙️ CRM sozlamalari** — bu yerda CRM sizniki bo'ladi: bosqich qo'shasiz/o'chirasiz/rangini va tartibini o'zgartirasiz, manbalar ro'yxatini yuritasiz, va **o'z maydonlaringizni** qo'shasiz (matn, raqam, sana, tanlov, ko'p tanlov, belgi, telefon, havola) — lead kartasiga ham, mijoz kartasiga ham.
+
+**Mijoz kartasida** — qo'ng'iroqlar tarixi, o'zingiz qo'shgan maydonlar va shu odamning boshqa kodlari.
+
+**Telegram** — har kuni 08:30 «bugun kimga qo'ng'iroq», har dushanba 09:00 uxlab qolganlar. Har kimga o'zinikini: sotuv menejeriga o'z mijozlari, sizga hammasi.
+
+Sotuv menejeri o'z leadlarini yuritadi, lekin voronkani hamma uchun o'zgartira olmaydi — buni e2e test tekshiradi.
+
+Migratsiyalar 0021–0022, 213 test + 16 e2e yashil.
+
+
 ## Management accounting: P&L, cash flow, receivables, profit per batch (Phase 2.4) — 2026-07-25
 
 The money side is now closed: the cargo costs were already in the system, what was missing was everything around them.

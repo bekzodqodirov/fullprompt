@@ -46,6 +46,7 @@ export default async function HomePage() {
   const tReports = await getTranslations('reports');
   const tFinance = await getTranslations('finance');
   const tAccounting = await getTranslations('accounting');
+  const tCrm = await getTranslations('crm');
   const tMap = await getTranslations('map');
 
   const has = (p: string) => actor.permissions.has(p);
@@ -75,6 +76,9 @@ export default async function HomePage() {
     ...(actor.roles.includes('sales_manager')
       ? [{ href: '/pipeline', label: `📈 ${tPipeline('title')}` }]
       : []),
+    // The CRM tile sits with the daily screens, not under management: for a
+    // sales manager the call list IS the day's work.
+    ...(has('crm.leads') ? [{ href: '/crm', label: `📞 ${tCrm('title')}` }] : []),
     ...(has('finance.view') || has('finance.manage')
       ? [{ href: '/finance', label: `💰 ${tFinance('title')}` }]
       : []),
