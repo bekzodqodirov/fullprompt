@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Telegram messages in each person's own language (part 3 of 3) — 2026-07-25
+
+- **Staff Telegram notifications now follow the recipient**, not a fixed Russian channel language. Every event (receipt confirmed, unidentified cargo, plan approved / changes requested, off-plan load, undocumented transfer, missing in transit, stocktake summary, cargo arrived, handover, backup-restore failure) renders once per reader in their own `users.locale` — a warehouse manager reading Uzbek and an accountant reading English get the same event in their own words.
+- **The client-facing drafts stay as they were.** Inside the "cargo arrived" message there are two ready-to-forward texts for the client (uz + ru); the manager copies them to the client, so they follow the CLIENT's language, not the manager's. Translating those into the manager's language would have been the wrong move.
+- Tests: a message rendered in English contains no Russian labels (not merely English ones alongside), an Uzbek one uses Uzbek wording, and an unknown locale on a user row never produces the word "undefined" in a message going to a real phone.
+- 168 unit/integration + 12 e2e green.
+- **Client cabinet bot**: still Uzbek. Clients are Uzbek and there is no per-chat language yet; adding one means storing a language per client and a switch button in the bot. Say the word if a foreign client needs it.
+
+
 ## English in the exports and the paperwork (part 2 of 3) — 2026-07-25
 
 Two different rules, because these files have two different readers.

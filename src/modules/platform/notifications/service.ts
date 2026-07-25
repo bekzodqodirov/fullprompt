@@ -11,6 +11,7 @@ import {
   users,
 } from '../db/schema';
 import { logger } from '../logger';
+import { notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
 
 /**
@@ -97,8 +98,21 @@ async function buildRecipients(event: {
   }
 }
 
-/** Render the Telegram message text (ru — staff channel language). */
-export function renderTelegramText(type: string, payload: Record<string, unknown>): string {
+/**
+ * Render the Telegram message text in the RECIPIENT's language.
+ *
+ * Every staff message is rendered once per reader, so a warehouse manager
+ * working in Uzbek and an accountant working in English get the same event in
+ * their own words. The client-facing drafts inside ReadyForPickup stay as they
+ * are: the manager forwards those to the client, and the client's language has
+ * nothing to do with the manager's.
+ */
+export function renderTelegramText(
+  type: string,
+  payload: Record<string, unknown>,
+  locale?: string | null,
+): string {
+  const L = notificationLabels(locale);
   const appUrl = process.env.APP_URL ?? '';
   const lots =
     (payload.lots as {
@@ -112,60 +126,61 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
   const lotLines = lots
     .map(
       (l) =>
-        `${l.letter} — ${l.productNameZh}${l.productNameRu ? ` (${l.productNameRu})` : ''}: ${l.boxCount} кор., ${l.totalWeightKg} кг, ${l.totalVolumeM3} м³`,
+        `${l.letter} — ${l.productNameZh}${l.productNameRu ? ` (${l.productNameRu})` : ''}: ${l.boxCount} ${L.boxesShort}, ${l.totalWeightKg} ${L.kg}, ${l.totalVolumeM3} ${L.m3}`,
     )
     .join('\n');
   const link = `${appUrl}/receipts/${payload.receiptId}`;
+  const codes = (payload.shortCodes as string[] | undefined)?.join(', ') ?? '';
 
   switch (type) {
     case 'ReceiptConfirmed':
       return (
-        `📥 Приёмка ${payload.number}\n` +
-        `Клиент: ${payload.clientCode} (${payload.clientName})\n` +
-        `Склад: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
+        `📥 ${L.receiptConfirmed} ${payload.number}\n` +
+        `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
     case 'UnknownCargoReceived':
       return (
-        `❓ Неопознанный груз ${payload.number}\n` +
-        (payload.unclaimedMarking ? `Маркировка: ${payload.unclaimedMarking}\n` : '') +
-        `Склад: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
+        `❓ ${L.unknownCargo} ${payload.number}\n` +
+        (payload.unclaimedMarking ? `${L.marking}: ${payload.unclaimedMarking}\n` : '') +
+        `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
     case 'PlanApproved':
-      return `✅ План одобрен агентом — партия ${payload.batchCode}\n${appUrl}/batches/${payload.batchId}`;
+      return `✅ ${L.planApproved} ${payload.batchCode}\n${appUrl}/batches/${payload.batchId}`;
     case 'PlanChangesRequested':
       return (
-        `✏️ Агент просит изменить план (v${payload.versionNo})\n` +
-        (payload.comment ? `Комментарий: ${payload.comment}\n` : '') +
+        `✏️ ${L.planChanges} (v${payload.versionNo})\n` +
+        (payload.comment ? `${L.comment}: ${payload.comment}\n` : '') +
         `${appUrl}/plans/${payload.planId}`
       );
     case 'BoxScannedOnLoad':
       return (
-        `🚨 Груз вне плана погружен в ${payload.batchCode}\n` +
-        `Коробки: ${(payload.shortCodes as string[] | undefined)?.join(', ') ?? ''}\n` +
-        (payload.reason ? `Причина: ${payload.reason}\n` : '') +
+        `🚨 ${L.offPlanLoaded} ${payload.batchCode}\n` +
+        `${L.boxesLine}: ${codes}\n` +
+        (payload.reason ? `${L.reason}: ${payload.reason}\n` : '') +
         `${appUrl}/batches/${payload.batchId}`
       );
     case 'UndocumentedTransfer':
       return (
-        `📦❗ Недокументированный груз выгружен из ${payload.batchCode}\n` +
-        `Коробки: ${(payload.shortCodes as string[] | undefined)?.join(', ') ?? ''}\n` +
+        `📦❗ ${L.undocumented} ${payload.batchCode}\n` +
+        `${L.boxesLine}: ${codes}\n` +
         `${appUrl}/batches/${payload.batchId}`
       );
     case 'MissingInTransit':
       return (
-        `🔍 Не выгружены из ${payload.batchCode} (потеряны в пути?)\n` +
-        `Коробки: ${(payload.shortCodes as string[] | undefined)?.join(', ') ?? ''}\n` +
+        `🔍 ${L.missingInTransit} ${payload.batchCode}\n` +
+        `${L.boxesLine}: ${codes}\n` +
         `${appUrl}/batches/${payload.batchId}`
       );
     case 'InventoryCompleted': {
       const moved = (payload.moved as string[] | undefined) ?? [];
       const lost = (payload.lost as string[] | undefined) ?? [];
       return (
-        `📋 Инвентаризация на складе ${payload.warehouseCode}\n` +
-        `Отсканировано: ${payload.scanned}\n` +
-        (moved.length ? `↩️ Перемещено сюда (нашлись тут): ${moved.join(', ')}\n` : '') +
-        (lost.length ? `❌ Помечены потерянными: ${lost.join(', ')}\n` : '') +
-        (!moved.length && !lost.length ? `✅ Расхождений нет\n` : '') +
+        `📋 ${L.inventoryAt} ${payload.warehouseCode}\n` +
+        `${L.scanned}: ${payload.scanned}\n` +
+        (moved.length ? `↩️ ${L.movedHere}: ${moved.join(', ')}\n` : '') +
+        (lost.length ? `❌ ${L.markedLost}: ${lost.join(', ')}\n` : '') +
+        (!moved.length && !lost.length ? `✅ ${L.noDiscrepancies}\n` : '') +
         `${appUrl}/dashboard`
       );
     }
@@ -173,20 +188,20 @@ export function renderTelegramText(type: string, payload: Record<string, unknown
       // The second half is the ready client-message draft (uz + ru) the
       // manager forwards as-is (owner's Q5 wording: arrived, being cleared).
       return (
-        `📦 Груз клиента ${payload.clientCode} (${payload.clientName}) прибыл: ${payload.boxCount} кор. · склад ${payload.warehouseCode} · партия ${payload.batchCode}\n\n` +
-        `— Клиенту (uz):\nAssalomu alaykum! ${payload.clientCode} kodli yukingiz (${payload.boxCount} karobka) ${payload.warehouseCode} omboriga yetib keldi. Rasmiylashtiruv tugagach olib ketish vaqtini kelishamiz.\n\n` +
-        `— Клиенту (ru):\nЗдравствуйте! Ваш груз с кодом ${payload.clientCode} (${payload.boxCount} кор.) прибыл на склад ${payload.warehouseCode}. Согласуем выдачу после оформления.`
+        `📦 ${L.cargoArrived} ${payload.clientCode} (${payload.clientName}) ${L.arrivedWord}: ${payload.boxCount} ${L.boxesShort} · ${L.warehouse} ${payload.warehouseCode} · ${L.batchWord} ${payload.batchCode}\n\n` +
+        `— ${L.forTheClient} (uz):\nAssalomu alaykum! ${payload.clientCode} kodli yukingiz (${payload.boxCount} karobka) ${payload.warehouseCode} omboriga yetib keldi. Rasmiylashtiruv tugagach olib ketish vaqtini kelishamiz.\n\n` +
+        `— ${L.forTheClient} (ru):\nЗдравствуйте! Ваш груз с кодом ${payload.clientCode} (${payload.boxCount} кор.) прибыл на склад ${payload.warehouseCode}. Согласуем выдачу после оформления.`
       );
     case 'BoxIssued':
       return (
-        `🤝 Выдано клиенту ${payload.clientCode} (${payload.clientName}): ${payload.boxCount} кор. · склад ${payload.warehouseCode}\n` +
-        `Получил: ${payload.personName}${payload.personPhone ? ` (${payload.personPhone})` : ''}` +
-        (payload.remaining ? `\nОсталось на складе: ${payload.remaining} кор.` : '')
+        `🤝 ${L.issuedTo} ${payload.clientCode} (${payload.clientName}): ${payload.boxCount} ${L.boxesShort} · ${L.warehouse} ${payload.warehouseCode}\n` +
+        `${L.receivedBy}: ${payload.personName}${payload.personPhone ? ` (${payload.personPhone})` : ''}` +
+        (payload.remaining ? `\n${L.leftInStock}: ${payload.remaining} ${L.boxesShort}` : '')
       );
     case 'DailyDigest':
       return String(payload.text ?? '');
     case 'RestoreTestFailed':
-      return `🆘 Тест восстановления бэкапа НЕ ПРОШЁЛ!\n${payload.error}\nПроверьте бэкапы на сервере (BACKUP_DIR).`;
+      return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;
     default:
       return `${type}\n${link}`;
   }
@@ -323,6 +338,10 @@ export async function sendPendingTelegram(): Promise<void> {
     .limit(30);
 
   for (const notification of pending) {
+    const recipient = await db.query.users.findFirst({
+      columns: { locale: true },
+      where: eq(users.id, notification.userId),
+    });
     const link = await db.query.telegramLinks.findFirst({
       where: and(
         eq(telegramLinks.userId, notification.userId),
@@ -345,6 +364,7 @@ export async function sendPendingTelegram(): Promise<void> {
           text: renderTelegramText(
             notification.type,
             notification.payload as Record<string, unknown>,
+            recipient?.locale,
           ),
         }),
       });

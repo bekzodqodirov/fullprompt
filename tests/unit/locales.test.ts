@@ -109,3 +109,38 @@ describe('worksheet names', () => {
     expect(illegal).toEqual([]);
   });
 });
+
+describe('staff Telegram messages', () => {
+  it('render in the recipient language and never leak an untranslated word', async () => {
+    const { renderTelegramText } = await import('@/modules/platform/notifications/service');
+    const payload = {
+      receiptId: '019f0000-0000-7000-8000-000000000001',
+      batchId: '019f0000-0000-7000-8000-000000000002',
+      error: 'pg_restore exited 1',
+      personName: 'Ali',
+      number: 'YW-25-0001',
+      clientCode: 'GS777',
+      clientName: 'Test',
+      warehouseCode: 'YW',
+      batchCode: 'YW-001',
+      boxCount: 3,
+      shortCodes: ['YW26-000001'],
+      lots: [],
+    };
+    const en = renderTelegramText('ReceiptConfirmed', payload, 'en');
+    expect(en).toContain('Receipt');
+    expect(en).toContain('Warehouse: YW');
+    // The Russian labels must be gone, not merely joined by English ones.
+    expect(en).not.toMatch(/Приёмка|Склад|Клиент/);
+
+    const uz = renderTelegramText('BoxIssued', payload, 'uz');
+    expect(uz).toContain('Mijozga berildi');
+
+    // An unknown locale must not produce "undefined" in a message that goes
+    // out to a real phone.
+    for (const type of ['ReceiptConfirmed', 'MissingInTransit', 'RestoreTestFailed']) {
+      expect(renderTelegramText(type, payload, 'xx'), type).not.toContain('undefined');
+      expect(renderTelegramText(type, payload, null), type).not.toContain('undefined');
+    }
+  });
+});
