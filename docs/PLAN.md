@@ -4,7 +4,7 @@
 
 ---
 
-## STATUS — 2026-07-24
+## STATUS — 2026-07-25
 
 | Milestone | State | Shipped |
 |---|---|---|
@@ -18,7 +18,18 @@
 
 **M6 wrap-up (2026-07-24):** per-user Telegram mutes (profile) + admin delivery-failure journal (DECISIONS #100), weekly restore-test job + `pnpm restore-test` (verified against a real dump, DECISIONS #101), README/ops runbook, performance numbers checked (first-load JS 104 kB shared / ≤150 kB worst route — within the 3G budget; charts stay CSS-only by design, list virtualization unnecessary since every list is server-limited — DECISIONS #101). Full regression: 74 unit/integration + 12 e2e green.
 
-**Phase 1 remaining:** owner acceptance walkthrough and hosting/VPS choice (open Q3) → production deploy.
+**Phase 1 — ✅ LIVE.** Running on the owner's VPS behind HTTPS; `docs/UPDATE.md` is the update runbook (backup → pull → rebuild → verify).
+
+**Phase 3 — driver tracking (owner's request, 2026-07-25) — ✅ SHIPPED:** trip-scoped pairing (`driver_devices`, migration 0018) and the **GSRDriver Android app** (`apps/driver-android/`, APK built by GitHub Actions — no store, works in China). One position every 2 h by default (1/2/3 h selectable), GPS off in between, offline queue, stops by itself when the batch closes. iPhone/HarmonyOS stay on the logist's manual pins. DECISIONS #118–120.
+
+**English interface (owner: "for everyone", 2026-07-25) — ✅ SHIPPED:** a fourth locale (migration 0019) across the screens, the report exports (which follow the reader) and the staff Telegram messages (rendered per recipient). Customs paperwork is bilingual RU/EN and deliberately locale-blind. DECISIONS #124–125.
+
+**Still open / not started:**
+- **CRM (Phase 2.3)** — deferred by the owner ("ha kutib tursin").
+- **Client cabinet bot language** — Uzbek only; needs a language stored per client + a switch button in the chat.
+- **Box/crate sticker wording** — single-language; a bilingual label needs a proof print on the real 100×100 mm stock.
+- **GSRDriver on a real trip** — the app is field-tested on one phone; a full corridor run has not happened yet.
+- **Owner's server chores** — `pnpm demo-users --disable`, `ANTHROPIC_API_KEY` in `.env`, the basemap fetch if the map still draws the schematic.
 
 **Phase 2 — order agreed with the owner 2026-07-24: 2.1 Finance → 2.2 Telegram client cabinet → CRM (waits).**
 - **Phase 2.1 Finance — ✅ SHIPPED 2026-07-24** (DECISIONS #108–109): client money ledger (`client_transactions`, no tariffs — negotiated charges + payments cash/card/transfer in any currency, USD balance with entry-time-frozen FX), `/finance` balances + per-client ledger with void, batch pricing page for VED manager + accountant after customs, debt gate on issue behind `finance.debt_override` (owner: debtor cargo only with manager permission).
