@@ -131,6 +131,67 @@ const DICT = {
   },
   /** "(30 d.)" appended to the journal titles. */
   daysSuffix: { ru: 'дн.', uz: 'kun', 'zh-CN': '天', en: 'd.' },
+
+  // Management accounting (Phase 2.4)
+  account: { ru: 'Касса/счёт', uz: 'Kassa/hisob', 'zh-CN': '账户', en: 'Account' },
+  amount: { ru: 'Сумма', uz: 'Summa', 'zh-CN': '金额', en: 'Amount' },
+  balance: { ru: 'Баланс', uz: 'Balans', 'zh-CN': '余额', en: 'Balance' },
+  cargoCosts: { ru: 'Расходы по грузам', uz: 'Yuk xarajatlari', 'zh-CN': '货物费用', en: 'Cargo costs' },
+  category: { ru: 'Статья', uz: 'Turi', 'zh-CN': '类别', en: 'Category' },
+  clientPayments: { ru: 'Оплаты клиентов', uz: 'Mijoz to‘lovlari', 'zh-CN': '客户付款', en: 'Client payments' },
+  cost: { ru: 'Расход', uz: 'Xarajat', 'zh-CN': '成本', en: 'Cost' },
+  currency: { ru: 'Валюта', uz: 'Valyuta', 'zh-CN': '币种', en: 'Currency' },
+  days0: { ru: '0–30 дн.', uz: '0–30 kun', 'zh-CN': '0–30 天', en: '0–30 d.' },
+  days30: { ru: '31–60 дн.', uz: '31–60 kun', 'zh-CN': '31–60 天', en: '31–60 d.' },
+  days60: { ru: '61–90 дн.', uz: '61–90 kun', 'zh-CN': '61–90 天', en: '61–90 d.' },
+  days90: { ru: '90+ дн.', uz: '90+ kun', 'zh-CN': '90+ 天', en: '90+ d.' },
+  debt: { ru: 'Долг', uz: 'Qarz', 'zh-CN': '欠款', en: 'Debt' },
+  directCosts: { ru: 'Себестоимость грузов', uz: 'Yuk tannarxi', 'zh-CN': '货物成本', en: 'Direct cargo costs' },
+  grossProfit: { ru: 'ВАЛОВАЯ ПРИБЫЛЬ', uz: 'YALPI FOYDA', 'zh-CN': '毛利', en: 'GROSS PROFIT' },
+  margin: { ru: 'Маржа %', uz: 'Marja %', 'zh-CN': '毛利率 %', en: 'Margin %' },
+  month: { ru: 'Месяц', uz: 'Oy', 'zh-CN': '月份', en: 'Month' },
+  netFlow: { ru: 'Чистый поток', uz: 'Sof oqim', 'zh-CN': '净流量', en: 'Net flow' },
+  netProfit: { ru: 'ЧИСТАЯ ПРИБЫЛЬ', uz: 'SOF FOYDA', 'zh-CN': '净利润', en: 'NET PROFIT' },
+  opex: { ru: 'Операционные расходы', uz: 'Operatsion xarajatlar', 'zh-CN': '运营费用', en: 'Operating expenses' },
+  profit: { ru: 'Прибыль', uz: 'Foyda', 'zh-CN': '利润', en: 'Profit' },
+  revenue: { ru: 'Выручка', uz: 'Tushum', 'zh-CN': '收入', en: 'Revenue' },
+  tCashFlow: {
+    ru: 'Движение денежных средств',
+    uz: 'Pul mablag‘lari harakati',
+    'zh-CN': '现金流量表',
+    en: 'Cash flow',
+  },
+  tExpenses: { ru: 'Расходы', uz: 'Xarajatlar', 'zh-CN': '费用明细', en: 'Expenses' },
+  tPnl: {
+    ru: 'Отчёт о прибылях и убытках',
+    uz: 'Foyda va zarar hisoboti',
+    'zh-CN': '损益表',
+    en: 'Profit and loss',
+  },
+  tProfitBatch: {
+    ru: 'Прибыль по партиям',
+    uz: 'Partiyalar bo‘yicha foyda',
+    'zh-CN': '按批次利润',
+    en: 'Profit by batch',
+  },
+  tProfitClient: {
+    ru: 'Прибыль по клиентам',
+    uz: 'Mijozlar bo‘yicha foyda',
+    'zh-CN': '按客户利润',
+    en: 'Profit by client',
+  },
+  tProfitRoute: {
+    ru: 'Прибыль по маршрутам',
+    uz: 'Yo‘nalishlar bo‘yicha foyda',
+    'zh-CN': '按路线利润',
+    en: 'Profit by route',
+  },
+  tReceivables: {
+    ru: 'Дебиторская задолженность',
+    uz: 'Debitorlik qarzi',
+    'zh-CN': '应收账款账龄',
+    en: 'Accounts receivable ageing',
+  },
 } satisfies Record<string, Record<Locale, string>>;
 
 export type ReportLabels = { [K in keyof typeof DICT]: string };

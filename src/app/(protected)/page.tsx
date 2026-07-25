@@ -45,6 +45,7 @@ export default async function HomePage() {
   const tInventory = await getTranslations('inventory');
   const tReports = await getTranslations('reports');
   const tFinance = await getTranslations('finance');
+  const tAccounting = await getTranslations('accounting');
   const tMap = await getTranslations('map');
 
   const has = (p: string) => actor.permissions.has(p);
@@ -80,6 +81,11 @@ export default async function HomePage() {
   ];
 
   const management = [
+    // Profit and overheads are owner/accountant territory (owner's answer 7),
+    // so this tile follows the accounting permissions, not `finance.view`.
+    ...(has('finance.reports') || has('finance.expenses')
+      ? [{ href: '/accounting', label: `💼 ${tAccounting('title')}` }]
+      : []),
     ...(has('costs.fx.manage') ? [{ href: '/admin/fx', label: `💱 ${tCosting('fxTitle')}` }] : []),
     ...(has('plans.manage') ? [{ href: '/trucks', label: `🚛 ${tPlans('trucksTitle')}` }] : []),
     ...(has('admin.warehouses.manage')

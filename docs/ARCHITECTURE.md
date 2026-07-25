@@ -63,7 +63,9 @@ gsr-erp/
         │       ├── costing/         # W9: cost entries, FX-dated conversion, allocation engine
         │       ├── documents/       # exceljs/pdf-lib builders (manifest, invoice, packing list, acts)
         │       ├── labels/          # LabelRenderer interface + PdfLabelRenderer
-        │       └── reports/         # section 13 queries + XLSX export
+        │       ├── reports/         # section 13 queries + XLSX export
+        │       ├── finance/         # 2.1: client ledger (charges, payments, balances)
+        │       └── accounting/      # 2.4: overheads, money accounts, P&L / cash flow / profit
         ├── db/
         │   ├── schema/              # Drizzle schema split per module (platform.ts, wms.ts)
         │   ├── client.ts            # drizzle instance

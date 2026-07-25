@@ -96,14 +96,14 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
   const costRows = await db
     .select({
       month: sql<string>`to_char(${costEntries.costDate}, 'YYYY-MM')`,
-      typeName: sql<string>`(SELECT name FROM cost_types ct WHERE ct.id = ${costEntries.costTypeId})`,
+      typeName: sql<string>`(SELECT name FROM cost_types ct WHERE ct.id = ${costEntries}.cost_type_id)`,
       sum: sql<string>`sum(coalesce(${costEntries.amountUsd}, 0))`,
     })
     .from(costEntries)
     .where(and(gte(costEntries.costDate, from), lte(costEntries.costDate, to)))
     .groupBy(
       sql`to_char(${costEntries.costDate}, 'YYYY-MM')`,
-      sql`(SELECT name FROM cost_types ct WHERE ct.id = ${costEntries.costTypeId})`,
+      sql`(SELECT name FROM cost_types ct WHERE ct.id = ${costEntries}.cost_type_id)`,
     );
 
   const directMap = new Map<string, PnlRow>();
@@ -374,31 +374,36 @@ export async function profitByBatch(from: string, to: string) {
       code: batches.code,
       status: batches.status,
       departedAt: batches.departedAt,
-      originCode: sql<string>`(SELECT code FROM warehouses w WHERE w.id = ${batches.originWarehouseId})`,
-      destCode: sql<string>`(SELECT code FROM warehouses w WHERE w.id = ${batches.destWarehouseId})`,
+      // NOTE: every correlated reference is written as `${batches}.column`,
+      // never `${batches.column}`. In a single-table select drizzle renders a
+      // column unqualified, so a bare `"id"` inside these subqueries binds to
+      // the SUBQUERY's own table: revenue and cost silently came back as zero
+      // and the box count died on `uuid = bigint`.
+      originCode: sql<string>`(SELECT code FROM warehouses w WHERE w.id = ${batches}.origin_warehouse_id)`,
+      destCode: sql<string>`(SELECT code FROM warehouses w WHERE w.id = ${batches}.dest_warehouse_id)`,
       revenueUsd: sql<string>`coalesce((
         SELECT sum(ct.amount_usd) FROM client_transactions ct
-        WHERE ct.batch_id = ${batches.id} AND ct.type = 'charge' AND ct.voided_at IS NULL
+        WHERE ct.batch_id = ${batches}.id AND ct.type = 'charge' AND ct.voided_at IS NULL
       ), 0)`,
       costUsd: sql<string>`coalesce((
         SELECT sum(coalesce(ce.amount_usd, 0)) FROM cost_entries ce
-        WHERE ce.batch_id = ${batches.id}
+        WHERE ce.batch_id = ${batches}.id
       ), 0)`,
       boxCount: sql<number>`coalesce((
         SELECT count(*) FROM box_movements bm
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
+        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
       ), 0)`,
       kg: sql<string>`coalesce((
         SELECT sum(rl.total_weight_kg / rl.box_count) FROM box_movements bm
         JOIN boxes b ON b.id = bm.box_id
         JOIN receipt_lots rl ON rl.id = b.lot_id
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
+        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
       ), 0)`,
       m3: sql<string>`coalesce((
         SELECT sum(rl.total_volume_m3 / rl.box_count) FROM box_movements bm
         JOIN boxes b ON b.id = bm.box_id
         JOIN receipt_lots rl ON rl.id = b.lot_id
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
+        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
       ), 0)`,
     })
     .from(batches)

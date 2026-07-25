@@ -1,24 +1,50 @@
 import 'dotenv/config';
+import ExcelJS from 'exceljs';
 import { eq, sql } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { clients, expenses, fxRates, users } from '@/modules/platform/db/schema';
+import {
+  attachments,
+  boxes,
+  clients,
+  costTypes,
+  expenses,
+  fxRates,
+  users,
+  warehouses,
+} from '@/modules/platform/db/schema';
+import { confirmReceipt } from '@/modules/wms/receipts/service';
+import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
+import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
+import { addCostEntry } from '@/modules/wms/costing/service';
 import {
   accountBalances,
   addExpense,
   addTransfer,
   generateRecurring,
+  listExpenses,
+  listTransfers,
   saveAccount,
   saveCategory,
   saveRecurring,
   voidExpense,
 } from '@/modules/wms/accounting/service';
 import {
+  buildCashFlowXlsx,
+  buildExpensesXlsx,
+  buildPnlXlsx,
+  buildProfitXlsx,
+  buildReceivablesXlsx,
+} from '@/modules/wms/accounting/xlsx';
+import {
   arAging,
   cashFlow,
   monthsBetween,
   profitAndLoss,
+  profitByBatch,
   profitByClient,
+  profitByRoute,
 } from '@/modules/wms/accounting/reports';
 import { addTransaction } from '@/modules/wms/finance/service';
 
@@ -48,6 +74,14 @@ const M2 = `${YEAR}-04`;
 
 beforeAll(async () => {
   actorId = (await db.select().from(users).limit(1))[0]!.id;
+  // The P&L is a period query with no client filter, so anything an earlier
+  // run left in this year would add to the totals. The year is far in the
+  // future and belongs to nobody, so clearing it is safe and makes the run
+  // idempotent even when two runs land on the same year.
+  await db.execute(sql`DELETE FROM client_transactions WHERE tx_date BETWEEN ${`${YEAR}-01-01`} AND ${`${YEAR}-12-31`}`);
+  await db.execute(sql`DELETE FROM expenses WHERE expense_date BETWEEN ${`${YEAR}-01-01`} AND ${`${YEAR}-12-31`}`);
+  await db.execute(sql`DELETE FROM account_transfers WHERE transfer_date BETWEEN ${`${YEAR}-01-01`} AND ${`${YEAR}-12-31`}`);
+
   const [client] = await db
     .insert(clients)
     .values({ clientCode: `AC${SUFFIX}`, name: 'Accounting client' })
@@ -368,6 +402,149 @@ describe('recurring fixed costs', () => {
 });
 
 describe('profitability', () => {
+  /**
+   * Per batch: the report reads revenue, cost and box count through correlated
+   * subqueries, and drizzle renders a column unqualified in a single-table
+   * select — so a bare `id` inside them bound to the SUBQUERY's table and the
+   * whole report came back as zeros (the box count died outright on
+   * `uuid = bigint`). Every column below is pinned to a known figure.
+   */
+  it('per batch: its own revenue, its own costs, its own boxes', async () => {
+    const wh = async (code: string, type: 'origin' | 'distribution') => {
+      const existing = await db.query.warehouses.findFirst({ where: eq(warehouses.code, code) });
+      if (existing) return existing.id;
+      const [row] = await db
+        .insert(warehouses)
+        .values({
+          code,
+          name: `Accounting ${code}`,
+          country: type === 'origin' ? 'CN' : 'UZ',
+          type,
+          timezone: 'Asia/Tashkent',
+          batchPrefix: code,
+        })
+        .returning();
+      return row!.id;
+    };
+    const origin = await wh('ACWA', 'origin');
+    const dest = await wh('ACWB', 'distribution');
+
+    const lotId = uuidv4();
+    await db.insert(attachments).values({
+      entityType: 'receipt_lot',
+      entityId: lotId,
+      kind: 'photo',
+      storageKey: `acc/${lotId}`,
+      fileName: 'x.jpg',
+      contentType: 'image/jpeg',
+      sizeBytes: 1,
+      uploadedBy: actorId,
+    });
+    await confirmReceipt(
+      {
+        receiptId: uuidv4(),
+        warehouseId: origin,
+        clientId,
+        unclaimedMarking: '',
+        lots: [
+          {
+            id: lotId,
+            productNameZh: '利润货',
+            boxCount: 2,
+            dimsMode: 'uniform',
+            boxLengthCm: 50,
+            boxWidthCm: 40,
+            boxHeightCm: 30,
+            boxWeightKg: 25,
+          },
+        ],
+        extraCosts: [],
+      },
+      ctx(),
+    );
+    const lotBoxes = await db.select().from(boxes).where(eq(boxes.lotId, lotId));
+
+    const submitted = await submitPlan(
+      { originWarehouseId: origin, destWarehouseId: dest, lines: [{ lotId, boxCount: 2 }] },
+      ctx(),
+    );
+    const { batch } = await recordVerdict(
+      { versionId: submitted.version.id, verdict: 'approved' },
+      ctx(),
+    );
+    for (const box of lotBoxes) {
+      await ingestLoadScans(
+        [
+          {
+            clientEventUuid: uuidv4(),
+            batchId: batch!.id,
+            code: box.shortCode,
+            method: 'qr' as const,
+            addedOnSpot: false,
+            scannedAt: new Date().toISOString(),
+          },
+        ],
+        ctx(),
+      );
+    }
+    await departBatch(batch!.id, ctx());
+
+    const today = new Date().toISOString().slice(0, 10);
+    await db
+      .insert(fxRates)
+      .values({ currency: 'USD', rateToUsd: '1', effectiveDate: today, enteredBy: actorId })
+      .onConflictDoNothing();
+    await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: batch!.id,
+        costTypeId: (await db.select().from(costTypes).limit(1))[0]!.id,
+        amount: 400,
+        currency: 'USD',
+        costDate: today,
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+    await addTransaction(
+      {
+        clientId,
+        type: 'charge',
+        amount: 1000,
+        currency: 'USD',
+        txDate: today,
+        batchId: batch!.id,
+      },
+      ctx(),
+    );
+
+    const departedToday = await profitByBatch(today, today);
+    const row = departedToday.find((entry) => entry.batchId === batch!.id)!;
+    expect(row, 'the departed batch must appear').toBeDefined();
+    expect(row.boxCount).toBe(2);
+    expect(row.kg).toBe(50);
+    expect(row.revenueUsd).toBe(1000);
+    expect(row.costUsd).toBe(400);
+    expect(row.profitUsd).toBe(600);
+    expect(row.marginPct).toBe(60);
+    expect(row.profitPerKg).toBe(12);
+    expect(row.route).toBe('ACWA → ACWB');
+
+    // The corridor roll-up must carry the same money through. Compared
+    // against the batches on that corridor rather than a fixed number: an
+    // earlier run may have left its own batch on the same route today.
+    const onRoute = departedToday.filter((entry) => entry.route === 'ACWA → ACWB');
+    const route = (await profitByRoute(today, today)).find((entry) => entry.route === 'ACWA → ACWB')!;
+    const sum = (pick: (entry: (typeof onRoute)[number]) => number) =>
+      Math.round(onRoute.reduce((acc, entry) => acc + pick(entry), 0) * 100) / 100;
+    expect(route.batches).toBe(onRoute.length);
+    expect(route.revenueUsd).toBe(sum((entry) => entry.revenueUsd));
+    expect(route.costUsd).toBe(sum((entry) => entry.costUsd));
+    expect(route.revenueUsd).toBeGreaterThanOrEqual(1000);
+    // A receipt, a plan, two load scans, a departure and a cost allocation —
+    // real work against a real database, well past the 5 s default.
+  }, 30_000);
+
   it('per client: charges minus the costs allocated to that client', async () => {
     const rows = await profitByClient(`${M2}-01`, `${M2}-28`);
     const row = rows.find((entry) => entry.clientId === clientId)!;
@@ -376,5 +553,76 @@ describe('profitability', () => {
     expect(row.marginPct).toBe(
       Math.round((row.profitUsd / row.revenueUsd) * 1000) / 10,
     );
+  });
+});
+
+describe('transfers', () => {
+  it('are listed with both sides named, so a move can be read back', async () => {
+    const rows = await listTransfers();
+    const row = rows.find((entry) => entry.fromName === `Kassa test ${SUFFIX}`)!;
+    expect(row).toBeDefined();
+    expect(row.toName).toBe(`Bank test ${SUFFIX}`);
+    expect(Number(row.transfer.amountFrom)).toBe(150);
+  });
+});
+
+describe('XLSX exports', () => {
+  /** Read a built file back the way Excel would, not the way we wrote it. */
+  const open = async (buffer: Buffer) => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    return workbook;
+  };
+  const cells = (sheet: ExcelJS.Worksheet) => {
+    const out: unknown[][] = [];
+    sheet.eachRow((row) => out.push((row.values as unknown[]).slice(1)));
+    return out;
+  };
+
+  it('P&L carries the same net profit as the screen', async () => {
+    const pnl = await profitAndLoss(`${M2}-01`, `${M2}-28`);
+    const rows = cells((await open(await buildPnlXlsx(`${M2}-01`, `${M2}-28`, 'uz'))).worksheets[0]!);
+    const net = rows.find((row) => String(row[0]).toUpperCase().includes('FOYDA') && row.includes(pnl.netProfit.total));
+    expect(net, 'net profit row').toBeDefined();
+    // Month column header, so a reader can tell which period they are holding.
+    expect(rows.some((row) => row.includes(M2))).toBe(true);
+  });
+
+  it('the expense register totals what it lists', async () => {
+    const rows = cells((await open(await buildExpensesXlsx(`${M2}-01`, `${M2}-28`, undefined, 'ru'))).worksheets[0]!);
+    const listed = await listExpenses({ from: `${M2}-01`, to: `${M2}-28`, limit: 5000 });
+    const expected =
+      Math.round(listed.reduce((acc, row) => acc + Number(row.expense.amountUsd), 0) * 100) / 100;
+    expect(rows.at(-1)![4]).toBe(expected);
+    // Title, header, one row per expense, total (the blank spacer row is not
+    // emitted by eachRow).
+    expect(rows.length).toBe(listed.length + 3);
+  });
+
+  it('receivables export matches the ageing report', async () => {
+    const asOf = new Date().toISOString().slice(0, 10);
+    const aging = await arAging(asOf);
+    const rows = cells((await open(await buildReceivablesXlsx(asOf, 'en'))).worksheets[0]!);
+    const debtor = aging.find((row) => row.clientCode === `AD${SUFFIX}`)!;
+    expect(rows.some((row) => row[0] === debtor.clientCode && row[2] === debtor.balance)).toBe(true);
+  });
+
+  it('every sheet name survives Excel', async () => {
+    // A bilingual label with a slash once made every manifest download 500;
+    // Excel refuses \ / ? * [ ] : in a tab name.
+    const buffers = await Promise.all([
+      buildPnlXlsx(`${M2}-01`, `${M2}-28`),
+      buildCashFlowXlsx(`${M2}-01`, `${M2}-28`),
+      buildReceivablesXlsx(`${M2}-28`),
+      buildProfitXlsx('batch', `${M2}-01`, `${M2}-28`),
+      buildProfitXlsx('client', `${M2}-01`, `${M2}-28`),
+      buildProfitXlsx('route', `${M2}-01`, `${M2}-28`),
+      buildExpensesXlsx(`${M2}-01`, `${M2}-28`, undefined),
+    ]);
+    for (const buffer of buffers) {
+      expect(buffer.byteLength).toBeGreaterThan(0);
+      const workbook = await open(buffer);
+      for (const sheet of workbook.worksheets) expect(sheet.name).not.toMatch(/[\\/?*[\]:]/);
+    }
   });
 });

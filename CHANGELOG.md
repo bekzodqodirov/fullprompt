@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## Management accounting: P&L, cash flow, receivables, profit per batch (Phase 2.4) — 2026-07-25
+
+The money side is now closed: the cargo costs were already in the system, what was missing was everything around them.
+
+**What you can now do**
+- **Expense book** (`/accounting/expenses`) — rent, salaries, phone bills, anything. Kind, amount in any currency, date, and optionally which warehouse, which employee and which cash box it was paid from. Nothing is deleted: a mistake is voided with a reason, exactly like the client ledger.
+- **Fixed costs as templates** — enter the rent and each salary once, then press "post this month's fixed costs" and review what landed. Deliberately a button, not an automatic job: a silent monthly insert would quietly falsify the P&L of any month where the rent changed or someone left. Pressing it twice cannot double-charge.
+- **Expense kinds are yours** (`/accounting/categories`) — nothing hard-coded, as you asked. 13 starter kinds are seeded and you edit the list yourself. One flag matters: untick "Cash" for something that never moves money (depreciation) and it enters the P&L but stays out of the cash flow.
+- **Cash boxes and accounts** (`/accounting/accounts`) — your five: China (USD), Uzbekistan cash USD, cash soʻm, card soʻm, company account soʻm. Opening balances entered, so a balance on screen matches what is actually in the box. Moving money between your own accounts is a transfer with two amounts (a CNY box can fund a USD account) and is never counted as income or spending.
+
+**The reports, each downloadable as XLSX**
+- **P&L** — one column per month: revenue, cargo costs by type, gross profit with margin, overheads by kind, net profit. Totals also shown in soʻm at today's rate.
+- **Cash flow (ДДС)** — money that actually moved, plus what sits in each account right now.
+- **Receivables by age** — 0–30 / 31–60 / 61–90 / 90+ days, where a payment settles the OLDEST charge first, so a client who pays every month never appears in the 90+ column just because they have been a client for a year.
+- **Profit by batch / client / route** — the report that answers "did that trip earn money?". Unlike the monthly P&L, both sides belong to the batch whatever month they were entered, so a price agreed after the costs were booked does not distort it. The P&L page says so on the page itself.
+
+**Who sees it**: owner and accountant only. A sales manager keeps client balances and cannot reach the company's margin — checked on the pages and on the download links, and an e2e test now holds that line.
+
+**Caught in verification**: the per-batch profit report was returning zeros. Drizzle renders a column name unqualified in a single-table select, so a bare `id` inside the report's correlated subqueries bound to the *subquery's* table instead of the batch — revenue and cost silently came back as 0 and the box count died outright on a type mismatch. Fixed by qualifying every correlated reference, and a test now pins each column of a real batch (2 boxes, 50 kg, $1000 revenue, $400 cost, $600 profit, 60% margin).
+
+- Tax is out of scope on purpose — the accountant runs that separately, so there is no tax line in the P&L.
+- Migration 0020, 187 unit/integration + 14 e2e green on a fresh build and a fresh database.
+
+
 ## Telegram messages in each person's own language (part 3 of 3) — 2026-07-25
 
 - **Staff Telegram notifications now follow the recipient**, not a fixed Russian channel language. Every event (receipt confirmed, unidentified cargo, plan approved / changes requested, off-plan load, undocumented transfer, missing in transit, stocktake summary, cargo arrived, handover, backup-restore failure) renders once per reader in their own `users.locale` — a warehouse manager reading Uzbek and an accountant reading English get the same event in their own words.

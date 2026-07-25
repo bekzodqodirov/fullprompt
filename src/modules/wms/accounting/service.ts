@@ -1,4 +1,5 @@
 import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -383,6 +384,24 @@ export async function addTransfer(input: z.infer<typeof transferSchema>, ctx: Au
     after: { from: input.fromAccountId, to: input.toAccountId, amount: input.amountFrom },
   });
   return row!;
+}
+
+export async function listTransfers(limit = 50) {
+  const from = alias(moneyAccounts, 'from_account');
+  const to = alias(moneyAccounts, 'to_account');
+  return db
+    .select({
+      transfer: accountTransfers,
+      fromName: from.name,
+      fromCurrency: from.currency,
+      toName: to.name,
+      toCurrency: to.currency,
+    })
+    .from(accountTransfers)
+    .innerJoin(from, eq(accountTransfers.fromAccountId, from.id))
+    .innerJoin(to, eq(accountTransfers.toAccountId, to.id))
+    .orderBy(sql`${accountTransfers.transferDate} DESC`, sql`${accountTransfers.createdAt} DESC`)
+    .limit(limit);
 }
 
 export async function voidTransfer(id: string, reason: string, ctx: AuditContext) {

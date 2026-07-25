@@ -24,6 +24,8 @@
 
 **English interface (owner: "for everyone", 2026-07-25) — ✅ SHIPPED:** a fourth locale (migration 0019) across the screens, the report exports (which follow the reader) and the staff Telegram messages (rendered per recipient). Customs paperwork is bilingual RU/EN and deliberately locale-blind. DECISIONS #124–125.
 
+**Phase 2.4 — management accounting (owner: "moliyani yopamiz, foyda hisobini qilamiz", 2026-07-25) — ✅ SHIPPED:** expense book with hand-maintained kinds, cash boxes/accounts with opening balances and transfers, fixed costs posted by a button (idempotent per month), and five reports — P&L by month, cash flow, receivables by age, profit by batch/client/route — each downloadable as XLSX. Owner + accountant only. Migration 0020, DECISIONS #126–128.
+
 **Still open / not started:**
 - **CRM (Phase 2.3)** — deferred by the owner ("ha kutib tursin").
 - **Client cabinet bot language** — Uzbek only; needs a language stored per client + a switch button in the chat.
@@ -34,6 +36,7 @@
 **Phase 2 — order agreed with the owner 2026-07-24: 2.1 Finance → 2.2 Telegram client cabinet → CRM (waits).**
 - **Phase 2.1 Finance — ✅ SHIPPED 2026-07-24** (DECISIONS #108–109): client money ledger (`client_transactions`, no tariffs — negotiated charges + payments cash/card/transfer in any currency, USD balance with entry-time-frozen FX), `/finance` balances + per-client ledger with void, batch pricing page for VED manager + accountant after customs, debt gate on issue behind `finance.debt_override` (owner: debtor cargo only with manager permission).
 - **Phase 2.2 Telegram client cabinet — ✅ SHIPPED 2026-07-24** (DECISIONS #110): client links via a staff-minted one-time code into the SAME bot (`client_telegram_links`, migration 0016); uz-language cabinet menu — 📦 active cargo per lot with photo buttons, 💰 balance from the 2.1 ledger (old debt included), 🗄 issued history; direct best-effort pings on cargo-arrived / cargo-issued; revoke from the admin client page cuts access immediately.
+- **Phase 2.4 Management accounting — ✅ SHIPPED 2026-07-25** (DECISIONS #126–128): overhead expenses + recurring templates, money accounts with opening balances and own-account transfers, P&L / cash flow / AR ageing / profit-by-batch-client-route with XLSX exports, gated on `finance.reports` + `finance.expenses`.
 - **CRM — deferred** (owner: "ha kutib tursin").
 
 **Phase 1.5 — AI assist (owner's request, 2026-07-24) — ✅ SHIPPED 2026-07-24:** AI suggests the ТНВЭД code per lot from the product name (zh/ru) + photo, tuned for an optimal (duty-favorable but defensible) classification. **Memory-first:** every confirmed name→code assignment is stored (extending the product dictionary), and an exact/known product reuses the stored code WITHOUT calling the AI — the model is only asked for products the dictionary hasn't seen; the VED manager stays the final authority (AI fills the draft, human confirms in the invoice/packing flow). Scope: dictionary schema + suggestion service + VED-doc integration; provider/API choice and cost review with the owner before build.
