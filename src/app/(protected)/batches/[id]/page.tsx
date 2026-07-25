@@ -25,6 +25,7 @@ import {
   setTrackingCheckpointAction,
 } from '../batch-actions-server';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
+import { remainingToUnload } from '@/modules/wms/scanning/unload';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
 import { BackLink } from '@/components/back-link';
@@ -115,6 +116,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(sql`${boxes.currentBatchId} = ${id} AND ${boxes.flags} @> '["missing_in_transit"]'::jsonb`);
+
+  // Still on the truck as far as the system knows. Shown next to the unload
+  // actions so nobody finishes an unload without seeing what it will declare
+  // missing (owner's report).
+  const remainingToAccept = ['in_transit', 'arrived'].includes(batch.status)
+    ? (await remainingToUnload(id)).length
+    : 0;
 
   // What was actually loaded, box by box — from load scan events, so the
   // list survives unload/close (owner: after the truck leaves, the sending
@@ -207,6 +215,8 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               shortCode: box.shortCode,
               label: `${clientCode ?? marking ?? '?'}-${letter}`,
             }))}
+            remaining={remainingToAccept}
+            canUnload={canUnload}
             canResolve={actor.permissions.has('receipts.void')}
             canClose={canDepartClose}
           />

@@ -51,7 +51,10 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
   const applySnapshot = useCallback((data: Snapshot) => {
     setSnapshot(data);
-    setDone(new Set(data.boxes.filter((b) => b.status === 'in_stock').map((b) => b.shortCode)));
+    // "Accepted here" is "no longer in transit" — NOT "in_stock". A customs or
+    // distribution destination lands cargo straight in ready_for_pickup, and
+    // matching on in_stock alone left the counter at 0 there for ever.
+    setDone(new Set(data.boxes.filter((b) => b.status !== 'in_transit').map((b) => b.shortCode)));
   }, []);
 
   useEffect(() => {
@@ -107,7 +110,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
           setSnapshot(data);
           setDone((prev) => {
             const next = new Set(prev);
-            for (const b of data.boxes) if (b.status === 'in_stock') next.add(b.shortCode);
+            for (const b of data.boxes) if (b.status !== 'in_transit') next.add(b.shortCode);
             return next;
           });
         }

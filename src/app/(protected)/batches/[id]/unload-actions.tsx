@@ -7,6 +7,7 @@ import {
   closeBatchAction,
   finishUnloadAction,
   resolveMissingAction,
+  unloadRemainingAction,
 } from '../batch-actions-server';
 
 interface MissingBox {
@@ -20,12 +21,17 @@ export function UnloadActions({
   batchId,
   status,
   missing,
+  remaining,
+  canUnload,
   canResolve,
   canClose,
 }: {
   batchId: string;
   status: string;
   missing: MissingBox[];
+  /** Manifest boxes still waiting to be accepted at the destination. */
+  remaining: number;
+  canUnload: boolean;
   canResolve: boolean;
   canClose: boolean;
 }) {
@@ -52,12 +58,43 @@ export function UnloadActions({
   return (
     <div className="space-y-2">
       {['in_transit', 'arrived'].includes(status) && (
+        <p className="rounded-lg bg-gray-50 p-2 text-sm font-semibold" data-testid="unload-remaining">
+          {remaining > 0 ? `📦 ${t('remaining', { n: remaining })}` : `✅ ${t('allAccepted')}`}
+        </p>
+      )}
+
+      {/* The truck is standing in the yard: accepting everything must be at
+          least as easy as finishing, or the operator reaches for the button
+          that declares the cargo lost (owner's report). */}
+      {['in_transit', 'arrived'].includes(status) && remaining > 0 && canUnload && (
         <button
           type="button"
-          data-testid="finish-unload"
+          data-testid="accept-all"
           className="btn-primary w-full disabled:opacity-50"
           disabled={pending}
           onClick={async () => {
+            if (!window.confirm(t('acceptAllConfirm', { n: remaining }))) return;
+            const res = (await run(() => unloadRemainingAction(batchId))) as {
+              ok: boolean;
+              accepted?: number;
+            };
+            if (res.ok) setSummary(`✅ ${t('acceptAllDone', { n: res.accepted ?? 0 })}`);
+          }}
+        >
+          📥 {t('acceptAll', { n: remaining })}
+        </button>
+      )}
+
+      {['in_transit', 'arrived'].includes(status) && (
+        <button
+          type="button"
+          data-testid="finish-unload"
+          className={`w-full disabled:opacity-50 ${remaining > 0 ? 'btn-secondary' : 'btn-primary'}`}
+          disabled={pending}
+          onClick={async () => {
+            // Finishing with boxes left over marks them lost — never let that
+            // happen on a tap the operator read as "accept everything".
+            if (remaining > 0 && !window.confirm(t('finishConfirm', { n: remaining }))) return;
             const res = (await run(() => finishUnloadAction(batchId))) as {
               ok: boolean;
               missing?: string[];

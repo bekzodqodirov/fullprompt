@@ -242,6 +242,77 @@ async function lettersFor(
 }
 
 /**
+ * Boxes that travelled with this batch — INCLUDING the ones already accepted
+ * at the destination.
+ *
+ * Accepting a box clears its `current_batch_id`, so a plain
+ * `current_batch_id = batch` filter loses it at exactly the moment it matters:
+ * the unload screen's counter went down instead of up, and a page reload
+ * showed nothing had been accepted at all. What departed is written to
+ * box_movements once and never changes.
+ */
+export function batchMemberFilter(batchId: string) {
+  return sql`(${boxes.currentBatchId} = ${batchId} OR EXISTS (
+    SELECT 1 FROM box_movements bm
+    WHERE bm.box_id = ${boxes.id}
+      AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId} AND bm.cause = 'batch_departed'
+  ))`;
+}
+
+/** How many manifest boxes are still waiting to be accepted here. */
+export async function remainingToUnload(batchId: string): Promise<string[]> {
+  const rows = await db
+    .select({ shortCode: boxes.shortCode })
+    .from(boxes)
+    .where(sql`${boxes.currentBatchId} = ${batchId} AND ${boxes.status} = 'in_transit'`)
+    .orderBy(boxes.shortCode);
+  return rows.map((r) => r.shortCode);
+}
+
+/**
+ * Accept every remaining manifest box at once, without scanning.
+ *
+ * The owner asked for this after finishing an unload cost him a truckload
+ * flagged "missing in transit": the whole truck was standing in the yard, but
+ * the only one-tap action available was the one that declares cargo lost.
+ * Runs each box through the normal unload ingest, so movements, scan events,
+ * the ready-for-pickup client notice and the audit trail are identical to a
+ * scanned unload — only the method is recorded as a manual bulk accept.
+ */
+export async function unloadRemaining(batchId: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new ScanError('unauthenticated');
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) throw new ScanError('batch_not_found');
+  if (!['in_transit', 'arrived'].includes(batch.status)) throw new ScanError('batch_not_unloading');
+
+  const remaining = await remainingToUnload(batchId);
+  if (remaining.length === 0) return { accepted: 0 };
+
+  const scannedAt = new Date().toISOString();
+  const acks = await ingestUnloadScans(
+    remaining.map((shortCode) => ({
+      // Derived from the batch, so pressing the button twice replays instead
+      // of writing a second scan event.
+      clientEventUuid: uuidv5(`bulk:${shortCode}`, batchId),
+      batchId,
+      code: shortCode,
+      method: 'manual' as const,
+      manualReason: 'bulk_accept',
+      scannedAt,
+    })),
+    ctx,
+  );
+  const accepted = acks.filter((a) => ['ok', 'auto_transfer'].includes(a.result)).length;
+  await writeAudit(db, { ...ctx, warehouseId: batch.destWarehouseId }, {
+    entityType: 'batch',
+    entityId: batchId,
+    action: 'update',
+    after: { bulkUnload: accepted, shortCodes: remaining },
+  });
+  return { accepted };
+}
+
+/**
  * Finish unload (spec 6.5): manifest boxes never scanned here stay
  * `in_transit` flagged `missing_in_transit` + alert; batch → `unloaded`.
  */
@@ -316,13 +387,23 @@ export async function resolveMissing(
     const batch = (await tx.query.batches.findFirst({
       where: eq(batches.id, box.currentBatchId),
     }))!;
-    const targetWh =
-      input.resolution === 'found_at_origin' ? batch.originWarehouseId : batch.destWarehouseId;
+    const foundHere = input.resolution === 'found_here';
+    const targetWh = foundHere ? batch.destWarehouseId : batch.originWarehouseId;
+    // A box found at the destination has to land exactly where a scanned one
+    // lands, or it would sit in `in_stock` at a customs/distribution warehouse
+    // and never show up as ready for the client.
+    const targetWhRow = (await tx.query.warehouses.findFirst({
+      where: eq(warehouses.id, targetWh),
+    }))!;
+    const landedStatus =
+      foundHere && ['customs', 'distribution'].includes(targetWhRow.type)
+        ? 'ready_for_pickup'
+        : 'in_stock';
 
     await tx
       .update(boxes)
       .set({
-        status: 'in_stock',
+        status: landedStatus,
         currentWarehouseId: targetWh,
         currentBatchId: null,
         flags: [],
@@ -333,7 +414,7 @@ export async function resolveMissing(
       fromWarehouseId: box.currentWarehouseId,
       toWarehouseId: targetWh,
       fromStatus: box.status,
-      toStatus: 'in_stock',
+      toStatus: landedStatus,
       cause: input.resolution,
       refType: 'batch',
       refId: batch.id,

@@ -8,18 +8,24 @@ import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
 import {
+  batchMemberFilter,
   closeBatch,
   finishUnload,
   ingestUnloadScans,
+  remainingToUnload,
   resolveMissing,
+  unloadRemaining,
 } from '@/modules/wms/scanning/unload';
 
 /** M4: unload reconciliation per spec 6.5 — acceptance tests 13/14 core. */
 
 const WH_O = 'M4STO';
 const WH_D = 'M4STD';
+/** The real Uzbekistan destination is a distribution warehouse, not an origin. */
+const WH_DIST = 'M4DIS';
 let originId: string;
 let destId: string;
+let distId: string;
 let actorId: string;
 let clientId: string;
 const ctx = () => ({ actorId });
@@ -75,9 +81,17 @@ function scan(batchId: string, code: string, extra: Record<string, unknown> = {}
 }
 
 /** Full M3 path: plan → approve → load all → depart. Returns the batch. */
-async function departedBatch(planCount: number, lot: Awaited<ReturnType<typeof makeLot>>) {
+async function departedBatch(
+  planCount: number,
+  lot: Awaited<ReturnType<typeof makeLot>>,
+  destination?: string,
+) {
   const sub = await submitPlan(
-    { originWarehouseId: originId, destWarehouseId: destId, lines: [{ lotId: lot.lotId, boxCount: planCount }] },
+    {
+      originWarehouseId: originId,
+      destWarehouseId: destination ?? destId,
+      lines: [{ lotId: lot.lotId, boxCount: planCount }],
+    },
     ctx(),
   );
   const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
@@ -90,17 +104,18 @@ async function departedBatch(planCount: number, lot: Awaited<ReturnType<typeof m
 }
 
 beforeAll(async () => {
-  async function ensureWarehouse(code: string): Promise<string> {
+  async function ensureWarehouse(code: string, type = 'origin'): Promise<string> {
     const existing = await db.query.warehouses.findFirst({ where: eq(warehouses.code, code) });
     if (existing) return existing.id;
     const [wh] = await db
       .insert(warehouses)
-      .values({ code, name: `M4 ${code}`, country: 'CN', type: 'origin', timezone: 'Asia/Shanghai', batchPrefix: code })
+      .values({ code, name: `M4 ${code}`, country: 'CN', type, timezone: 'Asia/Shanghai', batchPrefix: code })
       .returning();
     return wh!.id;
   }
   originId = await ensureWarehouse(WH_O);
   destId = await ensureWarehouse(WH_D);
+  distId = await ensureWarehouse(WH_DIST, 'distribution');
   actorId = (await db.select().from(users).limit(1))[0]!.id;
   const suffix = String(Date.now()).slice(-6);
   const [c] = await db.insert(clients).values({ clientCode: `M4${suffix}`, name: 'M4 client' }).returning();
@@ -169,5 +184,87 @@ describe('unload reconciliation', () => {
     // Unknown code
     const [unknown] = await ingestUnloadScans([scan(batch.id, 'ZZ99-999999')], ctx());
     expect(unknown!.result).toBe('unknown_code');
+  });
+});
+
+/**
+ * Owner's report: cargo arrived at the Uzbekistan warehouse, boxes were
+ * accepted by hand, the screen never moved, and finishing the unload declared
+ * the whole truck "missing in transit".
+ */
+describe('accepting cargo at a distribution destination (owner bug round)', () => {
+  it('an accepted box stays on the batch snapshot instead of vanishing', async () => {
+    const lot = await makeLot(3);
+    const batch = await departedBatch(3, lot, distId);
+
+    const before = await db.select({ id: boxes.id }).from(boxes).where(batchMemberFilter(batch.id));
+    expect(before).toHaveLength(3);
+
+    const [ack] = await ingestUnloadScans([scan(batch.id, lot.shortCodes[0]!)], ctx());
+    expect(ack!.result).toBe('ok');
+
+    // The regression: the box used to disappear the moment it was accepted,
+    // so the counter fell from 0/3 to 0/2 instead of rising to 1/3.
+    const after = await db
+      .select({ id: boxes.id, status: boxes.status })
+      .from(boxes)
+      .where(batchMemberFilter(batch.id));
+    expect(after).toHaveLength(3);
+    expect(after.filter((b) => b.status !== 'in_transit')).toHaveLength(1);
+  });
+
+  it('lands cargo in ready_for_pickup, which the screen must read as accepted', async () => {
+    const lot = await makeLot(1);
+    const batch = await departedBatch(1, lot, distId);
+
+    await ingestUnloadScans([scan(batch.id, lot.shortCodes[0]!)], ctx());
+    const row = (await db.select().from(boxes).where(eq(boxes.id, lot.boxIds[0]!)))[0]!;
+    expect(row.status).toBe('ready_for_pickup');
+    expect(row.currentWarehouseId).toBe(distId);
+    expect(await remainingToUnload(batch.id)).toHaveLength(0);
+  });
+
+  it('accept-all takes the whole truck in; finishing then reports nothing missing', async () => {
+    const lot = await makeLot(4);
+    const batch = await departedBatch(4, lot, distId);
+
+    await ingestUnloadScans([scan(batch.id, lot.shortCodes[0]!)], ctx());
+    expect(await remainingToUnload(batch.id)).toHaveLength(3);
+
+    const bulk = await unloadRemaining(batch.id, ctx());
+    expect(bulk.accepted).toBe(3);
+    expect(await remainingToUnload(batch.id)).toHaveLength(0);
+
+    // Pressing it again must not write a second round of scan events.
+    expect((await unloadRemaining(batch.id, ctx())).accepted).toBe(0);
+
+    const summary = await finishUnload(batch.id, ctx());
+    expect(summary.missing).toEqual([]);
+    const rows = await db.select().from(boxes).where(batchMemberFilter(batch.id));
+    expect(rows.every((b) => b.status === 'ready_for_pickup')).toBe(true);
+    expect(rows.every((b) => b.currentWarehouseId === distId)).toBe(true);
+  });
+
+  it('a box resolved as found here lands exactly where a scanned one lands', async () => {
+    const lot = await makeLot(2);
+    const batch = await departedBatch(2, lot, distId);
+
+    await ingestUnloadScans([scan(batch.id, lot.shortCodes[0]!)], ctx());
+    await finishUnload(batch.id, ctx());
+    await resolveMissing({ boxId: lot.boxIds[1]!, resolution: 'found_here' }, ctx());
+
+    const resolved = (await db.select().from(boxes).where(eq(boxes.id, lot.boxIds[1]!)))[0]!;
+    // Used to be in_stock — the client would never have seen it as ready.
+    expect(resolved.status).toBe('ready_for_pickup');
+    expect(resolved.currentWarehouseId).toBe(distId);
+    expect(resolved.flags).toEqual([]);
+  });
+
+  it('refuses to bulk-accept a batch that is not being unloaded', async () => {
+    const lot = await makeLot(1);
+    const batch = await departedBatch(1, lot, distId);
+    await unloadRemaining(batch.id, ctx());
+    await finishUnload(batch.id, ctx());
+    await expect(unloadRemaining(batch.id, ctx())).rejects.toThrow('batch_not_unloading');
   });
 });

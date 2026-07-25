@@ -13,7 +13,31 @@ import {
   finishUnload,
   resolveMissing,
   resolveMissingSchema,
+  unloadRemaining,
 } from '@/modules/wms/scanning/unload';
+
+/**
+ * Accept the whole remaining manifest at the destination without scanning
+ * (owner: the truck is here, the boxes are here — finishing the unload should
+ * not be the only one-tap action, because that one declares them lost).
+ */
+export async function unloadRemainingAction(
+  batchId: string,
+): Promise<{ ok: boolean; accepted?: number; error?: string }> {
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return { ok: false, error: 'batch_not_found' };
+  const actor = await authorize('scan.unload', { warehouseId: batch.destWarehouseId });
+  const meta = await requestMeta();
+  try {
+    const result = await unloadRemaining(batchId, { actorId: actor.id, ...meta });
+    await enqueue(JOB_PROCESS_EVENTS, {});
+    revalidatePath(`/batches/${batchId}`);
+    return { ok: true, accepted: result.accepted };
+  } catch (err) {
+    if (err instanceof ScanError) return { ok: false, error: err.code };
+    throw err;
+  }
+}
 
 export async function finishUnloadAction(
   batchId: string,

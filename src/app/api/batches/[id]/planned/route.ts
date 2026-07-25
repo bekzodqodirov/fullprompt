@@ -10,6 +10,7 @@ import {
   receipts,
 } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 
 /**
  * Loading-mode snapshot: planned/loaded boxes of the batch + active crate
@@ -30,6 +31,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     throw err;
   }
 
+  // Includes boxes already accepted here — see batchMemberFilter.
+  const memberFilter = batchMemberFilter(id);
+
   const memberBoxes = await db
     .select({
       shortCode: boxes.shortCode,
@@ -48,7 +52,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .leftJoin(crates, eq(boxes.crateId, crates.id))
-    .where(eq(boxes.currentBatchId, id))
+    .where(memberFilter)
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
 
   // Crate codes for local crate-scan expansion offline: crates at the origin
@@ -59,7 +63,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         await db
           .select({ crateId: boxes.crateId })
           .from(boxes)
-          .where(eq(boxes.currentBatchId, id))
+          .where(memberFilter)
       )
         .map((r) => r.crateId)
         .filter(Boolean) as string[],

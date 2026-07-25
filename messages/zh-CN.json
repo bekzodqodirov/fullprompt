@@ -263,7 +263,8 @@
       "export": "导出了",
       "login": "登录了系统",
       "logout": "退出了系统",
-      "seed": "初始数据"
+      "seed": "初始数据",
+      "delete": "删除了"
     },
     "field": "字段",
     "before": "原值",
@@ -604,7 +605,13 @@
     "foundHere": "在本仓找到",
     "closeBatch": "关闭车次",
     "foundHereAll": "全部在此（{n} 箱）— 入库",
-    "foundHereAllConfirm": "确认全部 {n} 箱都在本仓库？"
+    "foundHereAllConfirm": "确认全部 {n} 箱都在本仓库？",
+    "remaining": "尚未接收：{n} 箱",
+    "allAccepted": "货物已全部接收",
+    "acceptAll": "全部接收（{n} 箱）",
+    "acceptAllConfirm": "确认车上的 {n} 箱全部已到达本仓库？将跳过扫码。",
+    "acceptAllDone": "已接收 {n} 箱",
+    "finishConfirm": "注意：还有 {n} 箱未接收。完成后它们将被标记为「途中丢失」。如果货物在此，请先点「全部接收」。要继续吗？"
   },
   "transit": {
     "title": "在途货物",

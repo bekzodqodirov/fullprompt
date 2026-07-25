@@ -115,7 +115,11 @@ export default async function AuditBrowserPage({
                   {format.dateTime(entry.createdAt, { dateStyle: 'short', timeStyle: 'medium' })}
                 </td>
                 <td className="p-2 font-semibold">{actorName ?? t('system')}</td>
-                <td className="p-2">{t(`actions.${entry.action}`)}</td>
+                {/* A new action code must never take the audit page down with
+                    it — show the raw verb until it gets a translation. */}
+                <td className="p-2">
+                  {t.has(`actions.${entry.action}`) ? t(`actions.${entry.action}`) : entry.action}
+                </td>
                 <td className="p-2 font-mono text-xs">
                   {entry.entityType}
                   <br />

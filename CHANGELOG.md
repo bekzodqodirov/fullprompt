@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## Unload: accepted cargo stopped disappearing, and "accept everything" exists — 2026-07-25
+
+Owner's report: cargo arrived, boxes were accepted by hand, the counter never moved, and finishing the unload declared the whole truck missing.
+
+- **Root cause: an accepted box fell off the unload screen.** The screen's snapshot selected boxes by `current_batch_id` — which accepting a box CLEARS. So each acceptance removed a box from the list instead of ticking it off: the counter went 0/13 → 0/12 → 0/11, and a page reload showed nothing had been accepted at all. Membership now comes from the departure movement, which is written once and never changes.
+- **Second cause: the screen only recognised `in_stock`.** Unloading at a customs or distribution warehouse — which is every Uzbekistan destination — lands cargo in `ready_for_pickup`, so even a correct snapshot would have read as "nothing accepted". The screen now treats anything that is no longer `in_transit` as accepted, whatever the destination type.
+- **"Accept everything" is now its own button.** Finishing an unload marks whatever was not accepted as lost — and it was the ONLY one-tap action on the screen, so it got pressed by someone who meant "take it all in". `📥 Hammasini qabul qilish (N ta)` accepts the remaining manifest in one go, through the normal unload path (movements, scan events, ready-for-pickup notices, audit trail identical to a scanned unload; pressing it twice is a no-op). It sits ABOVE the finish button whenever anything is outstanding.
+- **Finishing now says what it is about to do**: the batch card shows "Hali qabul qilinmagan: N ta", the finish button steps back to secondary styling while boxes remain, and it asks for confirmation naming the number that will be flagged lost.
+- **A box resolved as "found here" lands where a scanned one lands.** It was hardcoded to `in_stock`, so at a distribution warehouse a recovered box stayed invisible to the ready-for-pickup and issue flows.
+- Also: the audit page threw `MISSING_MESSAGE` on any `delete` entry (untranslated in all three languages) — added, and an unknown action now falls back to the raw verb instead of taking the page down.
+- Five integration cases cover the owner's exact scenario end to end at a distribution destination; the membership one was checked against the old query and fails there. 151 unit/integration + 12 e2e green.
+
+
 ## GSRDriver: battery-first schedule, quiet notification, real setup screen — 2026-07-25
 
 Owner's first field round on the driver app, after it ran on a real phone.

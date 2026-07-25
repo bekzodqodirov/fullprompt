@@ -263,7 +263,8 @@
       "export": "eksport qildi",
       "login": "tizimga kirdi",
       "logout": "tizimdan chiqdi",
-      "seed": "boshlang'ich ma'lumotlar"
+      "seed": "boshlang'ich ma'lumotlar",
+      "delete": "o‘chirdi"
     },
     "field": "Maydon",
     "before": "Oldin",
@@ -604,7 +605,13 @@
     "foundHere": "Shu yerda topildi",
     "closeBatch": "Partiyani yopish",
     "foundHereAll": "Hammasi shu yerda ({n} ta) — skladga kirgizish",
-    "foundHereAllConfirm": "{n} ta korobkaning hammasi shu skladda deb tasdiqlaysizmi?"
+    "foundHereAllConfirm": "{n} ta korobkaning hammasi shu skladda deb tasdiqlaysizmi?",
+    "remaining": "Hali qabul qilinmagan: {n} ta",
+    "allAccepted": "Hamma yuk qabul qilindi",
+    "acceptAll": "Hammasini qabul qilish ({n} ta)",
+    "acceptAllConfirm": "Mashinadagi {n} ta korobkaning hammasi shu skladga tushdi deb qabul qilamizmi? Skanerlash o‘tkazib yuboriladi.",
+    "acceptAllDone": "{n} ta korobka qabul qilindi",
+    "finishConfirm": "Diqqat: {n} ta korobka hali qabul qilinmagan. Yakunlasangiz, ular «yo‘lda yo‘qolgan» deb belgilanadi. Agar yuklar shu yerda bo‘lsa, avval «Hammasini qabul qilish»ni bosing. Davom etamizmi?"
   },
   "transit": {
     "title": "Yo‘ldagi yuklar",
