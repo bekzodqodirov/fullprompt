@@ -65,6 +65,11 @@ export function TrackingMap({
   const t = useTranslations('map');
   const [selected, setSelected] = useState<Selected>(null);
 
+  // The driver app reports every 2-3 hours, so a raw minute count reads as
+  // "185 daqiqa oldin" — switch to hours once that is the honest unit.
+  const ago = (minutes: number) =>
+    minutes < 90 ? t('agoMin', { n: minutes }) : t('agoHour', { n: Math.round(minutes / 60) });
+
   const selWh = selected?.kind === 'wh' ? warehouses.find((w) => w.code === selected.code) : null;
   const selTruck =
     selected?.kind === 'truck' ? trucks.find((tr) => tr.batchId === selected.batchId) : null;
@@ -123,8 +128,8 @@ export function TrackingMap({
           </div>
           <p className="text-sm font-semibold">
             {selTruck.live
-              ? `🟢 ${t('liveFix', { minutes: selTruck.fixAgeMinutes ?? 0 })}`
-              : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { minutes: selTruck.fixAgeMinutes })}` : ''}`}
+              ? `🟢 ${t('liveFix', { ago: ago(selTruck.fixAgeMinutes ?? 0) })}`
+              : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { ago: ago(selTruck.fixAgeMinutes) })}` : ''}`}
           </p>
           <p className={`text-sm font-semibold ${selTruck.overdue ? 'text-red-700' : ''}`}>
             📍 {t(`seg_${selTruck.segKey}`)}

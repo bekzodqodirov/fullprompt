@@ -7,6 +7,7 @@ import {
   addManualPosition,
   createDriverDevice,
   devicesForBatch,
+  FRESH_MINUTES,
   ingestPositions,
   latestPositions,
   pairDevice,
@@ -154,16 +155,30 @@ describe('latest position', () => {
     expect(fresh.ageMinutes).toBeLessThan(5);
   });
 
+  // The app reports every 2-3 hours to save the driver's battery, so a gap of
+  // one skipped cycle must NOT demote the real dot back to the estimate.
+  it('still trusts a fix from a few hours ago (normal reporting gap)', async () => {
+    const trip = await newBatch();
+    const device = await createDriverDevice({ batchId: trip }, ctx());
+    const { token } = await pairDevice(device.pairCode!);
+    await ingestPositions(token, {
+      positions: [{ lat: 39.9, lon: 74.1, recordedAt: new Date(Date.now() - 5 * 3_600_000).toISOString() }],
+    });
+    const recent = (await latestPositions([trip])).get(trip)!;
+    expect(recent.fresh).toBe(true);
+    expect(FRESH_MINUTES).toBeGreaterThanOrEqual(3 * 60);
+  });
+
   it('marks an old fix as stale so the estimate takes over', async () => {
     const trip = await newBatch();
     const device = await createDriverDevice({ batchId: trip }, ctx());
     const { token } = await pairDevice(device.pairCode!);
     await ingestPositions(token, {
-      positions: [{ lat: 41.3, lon: 69.2, recordedAt: new Date(Date.now() - 6 * 3_600_000).toISOString() }],
+      positions: [{ lat: 41.3, lon: 69.2, recordedAt: new Date(Date.now() - 12 * 3_600_000).toISOString() }],
     });
     const stale = (await latestPositions([trip])).get(trip)!;
     expect(stale.fresh).toBe(false);
-    expect(stale.ageMinutes).toBeGreaterThan(300);
+    expect(stale.ageMinutes).toBeGreaterThan(FRESH_MINUTES);
   });
 
   it("the logist's manual pin counts as a position too (iPhone / HarmonyOS)", async () => {

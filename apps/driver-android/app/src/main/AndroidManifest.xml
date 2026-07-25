@@ -12,8 +12,31 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- The truck may be restarted mid-trip; tracking resumes by itself. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Keeps the CPU up for the ~90 s it takes to get a fix and upload it. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!--
+      Lets the setup screen show the system "run in the background?" dialog.
+      Not a Play Store build (the APK is handed out at the warehouse), and
+      without the allowlist the every-2-hours alarm is deferred by Doze.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <!--
+      Android 11+ hides other packages unless they are declared here, which
+      would stop the setup screen from opening the vendor auto-start list.
+    -->
+    <queries>
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.iqoo.secure" />
+        <package android:name="com.letv.android.letvsafe" />
+        <package android:name="com.asus.mobilemanager" />
+    </queries>
 
     <application
         android:allowBackup="false"
@@ -45,5 +68,10 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- Fires every interval to take one position and go back to sleep. -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false" />
     </application>
 </manifest>

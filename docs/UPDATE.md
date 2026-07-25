@@ -78,6 +78,14 @@ APK GitHub'da avtomatik yig'iladi — serverga hech narsa o'rnatilmaydi:
 repo → **Actions** → **driver-apk** → oxirgi ✅ ish → **Artifacts** →
 `GSRDriver-apk`. Batafsil: `apps/driver-android/README.md`.
 
+> **Muhim:** har bir CI yig'ilishi APK'ni yangi kalit bilan imzolaydi, shuning
+> uchun yangi versiyani eskisining **ustiga o'rnatib bo'lmaydi** (Android
+> "imzo mos kelmadi" deydi). Telefonda eski GSRDriver bo'lsa: avval **o'chirib
+> tashlang**, keyin yangisini o'rnating va reys kodini qaytadan kiriting.
+> Ilova har reysda skladda yangi kod bilan ulanadigani uchun bu qo'shimcha ish
+> emas. Ustiga-ustma yangilash kerak bo'lsa — doimiy imzo kalitini GitHub
+> secret sifatida qo'shish kerak, ayting, sozlab beraman.
+
 ## 7. Xarita (ixtiyoriy, bir marta)
 
 ```bash

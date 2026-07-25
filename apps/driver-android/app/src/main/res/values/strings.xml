@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Uzbek: the phone is set up by our warehouse worker and carried by the
-     driver, so every string is written for them, not for an operator. -->
+<!-- Uzbek is the default: the phone is set up by our warehouse worker. The
+     driver reads the same screen afterwards, so values-zh / values-ru take
+     over automatically on a phone that is not in Uzbek. -->
 <resources>
     <string name="app_name">GSRDriver</string>
+    <string name="app_tagline">GSR LOGISTICS · reys kuzatuvi</string>
 
+    <!-- Pairing -->
     <string name="pair_hint">Sklad xodimi: partiya sahifasidagi 6 belgili kodni kiriting. Kuzatuv shu reys uchun yoqiladi.</string>
     <string name="server_label">Server manzili</string>
     <string name="code_label">Reys kodi</string>
@@ -12,24 +15,52 @@
     <string name="paired">Ulandi</string>
     <string name="error_pair">Kod noto‘g‘ri yoki server javob bermadi</string>
     <string name="error_fill_both">Server manzili va kodni to‘ldiring</string>
-    <string name="error_settings">Sozlamalarni ochib bo‘lmadi</string>
+    <string name="error_settings">Sozlamalarni ochib bo‘lmadi — qo‘lda oching</string>
 
+    <!-- Status -->
     <string name="trip_active">Reys faol</string>
-    <string name="grant_permissions">Ruxsatlarni berish</string>
+    <string name="state_ok">✅ Kuzatuv ishlayapti</string>
+    <string name="state_setup">⚠️ Sozlash tugallanmagan</string>
+    <string name="state_hint_ok">Telefonni haydovchiga qaytarsangiz bo‘ladi.</string>
+    <string name="state_hint_setup">Quyidagi qadamlarni bajaring — aks holda kuzatuv yo‘lda to‘xtaydi.</string>
+
+    <!-- Setup checklist -->
+    <string name="setup_title">Sozlash</string>
+    <string name="mark_ok">✅ %1$s</string>
+    <string name="mark_warn">⚠️ %1$s</string>
+    <string name="check_location">Joylashuvga ruxsat</string>
+    <string name="check_background">«Doim ruxsat berish»</string>
+    <string name="check_notify">Bildirishnomalar</string>
+    <string name="check_battery">Batareya cheklovidan chiqarilgan</string>
+    <string name="check_autostart">Avtoishga tushirishga ruxsat</string>
+    <string name="check_autostart_hint">Xiaomi/Huawei/Oppo/Vivo telefonlarida majburiy. Sozlamada GSRDriver’ni yoqing va «Bajarildi»ni bosing.</string>
+    <string name="btn_grant">Ruxsat</string>
+    <string name="btn_open">Ochish</string>
+    <string name="btn_done">Bajarildi</string>
     <string name="background_hint">Keyingi oynada «Doim ruxsat berish»ni tanlang</string>
-    <string name="battery_settings">Batareya sozlamalari</string>
-    <string name="battery_hint">Telefon ilovani o‘chirib qo‘ymasligi uchun: Batareya → cheklovsiz / avtoishga tushirishga ruxsat.</string>
+    <string name="battery_prompt">Keyingi oynada «Ruxsat berish» (Allow) ni bosing</string>
+    <string name="autostart_prompt">Ro‘yxatdan GSRDriver’ni toping va yoqing</string>
+
+    <!-- Schedule -->
+    <string name="interval_label">Joylashuv yuborish oralig‘i</string>
+    <string name="interval_1">1 soat</string>
+    <string name="interval_2">2 soat</string>
+    <string name="interval_3">3 soat</string>
+    <string name="interval_hint">Oraliq uzunroq bo‘lsa, batareya kamroq sarflanadi. Oraliqlar orasida GPS butunlay o‘chib turadi.</string>
+    <string name="info_last_fix">Oxirgi joylashuv: %1$s (%2$s)</string>
+    <string name="info_last_fix_none">Oxirgi joylashuv: hali olinmadi</string>
+    <string name="info_next">Keyingi yuborish: %1$s</string>
+    <string name="info_next_now">Keyingi yuborish: hozir</string>
+    <string name="info_queue">Yuborilmagan nuqtalar: %1$d</string>
+    <string name="info_error">Aloqa xatosi: %1$s</string>
+    <string name="send_now">Hozir yuborish</string>
+    <string name="sending">Joylashuv olinmoqda…</string>
     <string name="stop_trip">Kuzatuvni to‘xtatish</string>
 
+    <!-- Notification -->
     <string name="channel_name">Reys kuzatuvi</string>
     <string name="notification_title">Reys: %1$s</string>
-    <string name="status_starting">Ishga tushmoqda…</string>
-    <string name="status_ok">✅ Kuzatuv ishlayapti</string>
-    <string name="status_sent">✅ Hammasi yuborildi</string>
-    <string name="status_queued">📦 Yuborilmagan nuqtalar: %1$d</string>
-    <string name="status_last_sent">Oxirgi yuborilgan: %1$s</string>
-    <string name="status_last_error">Aloqa xatosi: %1$s</string>
-    <string name="status_no_permission">⚠️ Joylashuvga ruxsat berilmagan</string>
-    <string name="status_background_missing">⚠️ «Doim ruxsat» berilmagan — ekran o‘chganda to‘xtaydi</string>
+    <string name="notify_no_permission">⚠️ Joylashuvga ruxsat berilmagan</string>
+    <string name="notify_backlog">⚠️ %1$d nuqta yuborilmadi — internet yo‘q</string>
     <string name="status_trip_finished">Reys tugadi — kuzatuv o‘chdi</string>
 </resources>

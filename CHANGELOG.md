@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## GSRDriver: battery-first schedule, quiet notification, real setup screen — 2026-07-25
+
+Owner's first field round on the driver app, after it ran on a real phone.
+
+- **A position every 2 hours instead of every 5 minutes** ("menga aniq hozirgi location kerak emas"). The GPS is no longer registered permanently: an `AlarmManager` wakes the service, it takes ONE fix (up to a 90 s window, stopping early once accuracy is good enough), uploads, and lets the radio sleep until the next slot — the phone spends the trip idle instead of tracking. A cycle that gets nothing (tunnel, garage) retries in 10 minutes rather than waiting out the full interval, and the interval itself is 1 / 2 / 3 hours, switchable on the phone.
+- **The battery exemption is now part of the first-run flow, not a button to remember.** Setup walks location → notifications → "always allow" → the system *"let this app run in the background?"* dialog → the vendor auto-start list, one step at a time, and each step is offered once so a refusal cannot loop. It is not cosmetic: without the exemption Android defers the alarm, so the every-2-hours schedule only holds because the app is on the allowlist.
+- **The notification stopped narrating.** No more "✅ Hammasi yuborildi" every cycle: the channel is silent and minimum-importance (a new channel id — Android never lowers an existing one), and the text stays empty unless something is actually wrong (no location permission, or a real upload backlog). Android does not allow a foreground service to hide its notification entirely, so the trip name remains.
+- **A real screen for the phone**: a green/amber state line, the trip, a setup checklist that stays red per unfinished item with a button that opens exactly that setting, the chosen interval, the last position with its time and coordinates, the next report time, the offline queue, the last error, and "Hozir yuborish" for the warehouse worker who wants to see a dot appear before the truck leaves. It renders in the **phone's own language** — Uzbek, Chinese or Russian — since the driver in China is the one who reads it for the next six days.
+- **Server side follows the new rhythm**: a fix counts as real for 8 hours instead of 90 minutes (2-3 h reporting + a missed cycle + a dead zone), otherwise every genuine position would have been drawn as stale and handed back to the estimate. Ages are shown in hours once minutes stop being the honest unit, and the map/batch texts say the location updates every 2-3 hours so nobody reads a still dot as a fault. 146 unit/integration green.
+
+
 ## GSRDriver — Android app for drivers (phase B) — 2026-07-25
 
 - **The app the warehouse worker installs on the driver's phone** while the truck is being loaded: type the trip's 6-character code once, grant the permissions (the worker does it, not the driver), hand the phone back. From then on the phone reports its position by itself.

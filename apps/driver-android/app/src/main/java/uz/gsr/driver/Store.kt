@@ -24,6 +24,11 @@ data class Fix(
 class Store(context: Context) :
     SQLiteOpenHelper(context.applicationContext, "gsrdriver.db", null, 1) {
 
+    companion object {
+        /** Owner's call: a truck position every couple of hours is plenty. */
+        const val DEFAULT_INTERVAL_MINUTES = 120
+    }
+
     private val prefs =
         context.applicationContext.getSharedPreferences("gsrdriver", Context.MODE_PRIVATE)
 
@@ -62,11 +67,50 @@ class Store(context: Context) :
         get() = prefs.getString("lastError", "") ?: ""
         set(value) = prefs.edit().putString("lastError", value).apply()
 
+    /** Minutes between position reports — the driver's battery depends on it. */
+    var intervalMinutes: Int
+        get() = prefs.getInt("interval", DEFAULT_INTERVAL_MINUTES)
+        set(value) = prefs.edit().putInt("interval", value).apply()
+
+    /** When the next report is due (shown on the status screen). */
+    var nextTickAt: Long
+        get() = prefs.getLong("nextTick", 0L)
+        set(value) = prefs.edit().putLong("nextTick", value).apply()
+
+    /**
+     * The OEM auto-start whitelist (Xiaomi/Huawei/Oppo/Vivo) cannot be read
+     * back from an app, so the warehouse worker ticks it off by hand.
+     */
+    var autostartConfirmed: Boolean
+        get() = prefs.getBoolean("autostart", false)
+        set(value) = prefs.edit().putBoolean("autostart", value).apply()
+
+    val lastFixAt: Long get() = prefs.getLong("fixAt", 0L)
+    val lastFixLat: Double get() = prefs.getString("fixLat", null)?.toDoubleOrNull() ?: 0.0
+    val lastFixLon: Double get() = prefs.getString("fixLon", null)?.toDoubleOrNull() ?: 0.0
+
+    fun rememberFix(lat: Double, lon: Double, at: Long) {
+        prefs.edit()
+            .putString("fixLat", lat.toString())
+            .putString("fixLon", lon.toString())
+            .putLong("fixAt", at)
+            .apply()
+    }
+
     val isPaired: Boolean get() = !token.isNullOrEmpty()
 
     /** Trip finished or link revoked: forget everything, keep no history. */
     fun clearTrip() {
-        prefs.edit().remove("token").remove("trip").remove("lastSent").remove("lastError").apply()
+        prefs.edit()
+            .remove("token")
+            .remove("trip")
+            .remove("lastSent")
+            .remove("lastError")
+            .remove("nextTick")
+            .remove("fixAt")
+            .remove("fixLat")
+            .remove("fixLon")
+            .apply()
         writableDatabase.delete("fixes", null, null)
     }
 

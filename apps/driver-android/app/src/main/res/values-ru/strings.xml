@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_tagline">GSR LOGISTICS · отслеживание рейса</string>
+
+    <string name="pair_hint">Работник склада: введите 6-значный код со страницы партии. Отслеживание включится только для этого рейса.</string>
+    <string name="server_label">Адрес сервера</string>
+    <string name="code_label">Код рейса</string>
+    <string name="pair">Подключить</string>
+    <string name="pairing">Подключение…</string>
+    <string name="paired">Подключено</string>
+    <string name="error_pair">Неверный код или сервер не отвечает</string>
+    <string name="error_fill_both">Заполните адрес сервера и код</string>
+    <string name="error_settings">Не удалось открыть настройки — откройте вручную</string>
+
+    <string name="trip_active">Рейс активен</string>
+    <string name="state_ok">✅ Отслеживание работает</string>
+    <string name="state_setup">⚠️ Настройка не завершена</string>
+    <string name="state_hint_ok">Телефон можно вернуть водителю.</string>
+    <string name="state_hint_setup">Выполните шаги ниже — иначе отслеживание прервётся в пути.</string>
+
+    <string name="setup_title">Настройка</string>
+    <string name="check_location">Доступ к геолокации</string>
+    <string name="check_background">«Разрешать всегда»</string>
+    <string name="check_notify">Уведомления</string>
+    <string name="check_battery">Снято ограничение батареи</string>
+    <string name="check_autostart">Разрешён автозапуск</string>
+    <string name="check_autostart_hint">Обязательно на Xiaomi/Huawei/Oppo/Vivo. Включите GSRDriver в списке и нажмите «Готово».</string>
+    <string name="btn_grant">Разрешить</string>
+    <string name="btn_open">Открыть</string>
+    <string name="btn_done">Готово</string>
+    <string name="background_hint">В следующем окне выберите «Разрешать всегда»</string>
+    <string name="battery_prompt">В следующем окне нажмите «Разрешить»</string>
+    <string name="autostart_prompt">Найдите GSRDriver в списке и включите</string>
+
+    <string name="interval_label">Интервал отправки координат</string>
+    <string name="interval_1">1 час</string>
+    <string name="interval_2">2 часа</string>
+    <string name="interval_3">3 часа</string>
+    <string name="interval_hint">Чем больше интервал, тем меньше расход батареи. Между отправками GPS полностью выключен.</string>
+    <string name="info_last_fix">Последняя точка: %1$s (%2$s)</string>
+    <string name="info_last_fix_none">Последняя точка: ещё не получена</string>
+    <string name="info_next">Следующая отправка: %1$s</string>
+    <string name="info_next_now">Следующая отправка: сейчас</string>
+    <string name="info_queue">Не отправлено точек: %1$d</string>
+    <string name="info_error">Ошибка связи: %1$s</string>
+    <string name="send_now">Отправить сейчас</string>
+    <string name="sending">Получаем координаты…</string>
+    <string name="stop_trip">Остановить отслеживание</string>
+
+    <string name="channel_name">Отслеживание рейса</string>
+    <string name="notification_title">Рейс: %1$s</string>
+    <string name="notify_no_permission">⚠️ Нет доступа к геолокации</string>
+    <string name="notify_backlog">⚠️ Не отправлено точек: %1$d — нет интернета</string>
+    <string name="status_trip_finished">Рейс завершён — отслеживание выключено</string>
+</resources>

@@ -27,8 +27,15 @@ function newPairCode(): string {
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
-/** Positions older than this are shown as stale (the estimate takes over). */
-export const FRESH_MINUTES = 90;
+/**
+ * Positions older than this are shown as stale (the estimate takes over).
+ *
+ * The driver app reports every 2-3 hours by design — the owner asked for a
+ * schedule the driver's battery survives, not a live dot. So "fresh" has to
+ * cover a missed cycle plus a dead zone; anything tighter would paint every
+ * real fix as stale and hand the map back to the estimate.
+ */
+export const FRESH_MINUTES = 8 * 60;
 
 /** Mint a pairing code for a trip. The phone exchanges it for a token. */
 export async function createDriverDevice(

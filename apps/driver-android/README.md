@@ -17,36 +17,61 @@ GitHub har o'zgarishdan keyin APK'ni o'zi yig'adi:
 O'rnatishda Android "noma'lum manbadan" deb ogohlantiradi — bu normal, ilova
 do'konda emas, o'zimizniki. "Baribir o'rnatish" ni tanlang.
 
+> **Telefonda eski GSRDriver bo'lsa — avval o'chirib tashlang.** Har bir CI
+> yig'ilishi APK'ni yangi kalit bilan imzolaydi, shuning uchun yangi versiya
+> eskisining ustiga o'rnatilmaydi ("imzo mos kelmadi"). Ustiga-ustma
+> yangilash kerak bo'lsa, doimiy imzo kalitini GitHub secret sifatida qo'shish
+> kerak.
+
 ## Telefonni sozlash (sklad xodimi, 1 daqiqa)
 
 1. Ilovani oching. **Server manzili** allaqachon to'ldirilgan bo'ladi (domen
    o'zgarsa shu yerdan tahrirlanadi).
 2. Saytda partiya sahifasidagi **📲 Haydovchi telefoni → Kod yaratish** ni
    bosing va chiqqan 6 belgili kodni ilovaga kiriting → **Ulash**.
-3. Ilova ruxsat so'raydi — hammasiga rozilik bering. Joylashuv so'ralganda
-   **«Doim ruxsat berish»** ni tanlash shart (aks holda ekran o'chgach
-   kuzatuv to'xtaydi).
-4. **Batareya sozlamalari** tugmasini bosib, ilovani batareya cheklovidan
-   chiqaring va avtoishga tushirishga ruxsat bering. Xitoy telefonlarida
-   (Xiaomi, Huawei, Oppo, Vivo) bu qadam **majburiy** — aks holda tizim
-   ilovani fonda o'ldiradi.
+3. Ilova **ketma-ket** so'raydi — hammasiga rozilik bering:
+   joylashuv → bildirishnomalar → **«Doim ruxsat berish»** → **batareya
+   cheklovini olib tashlash** → **avtoishga tushirish** ro'yxati.
+   Avtoishga tushirish oynasida GSRDriver'ni yoqib, ilovadagi **«Bajarildi»**
+   tugmasini bosing (bu qadamni telefon o'zi aytmaydi, shuning uchun qo'lda
+   tasdiqlanadi).
+4. Ekranda **✅ Kuzatuv ishlayapti** chiqsa — tayyor. **⚠️ Sozlash
+   tugallanmagan** tursa, ro'yxatdagi qizil qatorlar qolgan qadamlarni
+   ko'rsatadi; ularning yonidagi tugma o'sha sozlamani ochadi.
 
-Shundan keyin telefonni haydovchiga qaytarasiz. Ekranda doimiy bildirishnoma
-turadi ("Reys: PARTIYA-KODI") — bu ilova ishlayotganining belgisi.
+Shundan keyin telefonni haydovchiga qaytarasiz.
+
+> Bildirishnoma sohasida ilova jim turadi — faqat reys nomi ko'rinadi.
+> Muammo bo'lsa (ruxsat olinmagan, internetsiz uzoq qolib ketgan) o'shanda
+> yozuv chiqadi. Android foydali ish bajarayotgan ilovadan bildirishnomani
+> olib tashlashga ruxsat bermaydi, shuning uchun uni butunlay yashirib
+> bo'lmaydi.
 
 ## Qanday ishlaydi
 
-- Har ~5 daqiqada (yoki 250 metr siljiganda) joylashuv olinadi va telefonda
-  saqlanadi.
-- Internet bo'lganda hammasi serverga yuboriladi; internet yo'q joyda (chegara,
-  tog'lar) navbatda turadi va aloqa paydo bo'lishi bilan birdan ketadi.
+- **Har 2 soatda** bitta joylashuv olinadi (ilovada 1 / 2 / 3 soat qilib
+  o'zgartirsa bo'ladi). Oraliqlar orasida GPS **butunlay o'chib turadi** —
+  batareya shuning uchun kam sarflanadi.
+- Joylashuv olinmasa (tunnel, garaj, yopiq osmon) ilova 10 daqiqadan keyin
+  qayta urinadi, 2 soat kutmaydi.
+- Nuqtalar avval telefonda saqlanadi, keyin serverga yuboriladi; internet
+  yo'q joyda (chegara, tog'lar) navbatda turadi va aloqa paydo bo'lishi bilan
+  birdan ketadi. Ekranda «Yuborilmagan nuqtalar» soni ko'rinadi.
 - Telefon o'chirilib yoqilsa, kuzatuv o'zi qayta ishga tushadi.
 - **Partiya yopilganda kuzatuv avtomatik o'chadi** va ilova reys ma'lumotini
   o'zidan o'chiradi — haydovchi reysdan tashqarida kuzatilmaydi.
+- Ekran haydovchining telefoni tilida ko'rinadi: o'zbekcha, **xitoycha** yoki
+  ruscha.
 
-Texnik izoh: Google Play xizmatlari **ishlatilmaydi** (Xitoy telefonlarining
-ko'pida u yo'q) — joylashuv Android'ning o'z `LocationManager`i orqali
-olinadi, shuning uchun ilova har qanday Android telefonda ishlaydi.
+Texnik izohlar:
+
+- Google Play xizmatlari **ishlatilmaydi** (Xitoy telefonlarining ko'pida u
+  yo'q) — joylashuv Android'ning o'z `LocationManager`i orqali olinadi,
+  shuning uchun ilova har qanday Android telefonda ishlaydi.
+- Oraliqni `AlarmManager` yuritadi (`setAndAllowWhileIdle`), shuning uchun
+  telefon uxlab yotganda ham signal keladi. Aynan shu sababdan **batareya
+  cheklovini olib tashlash majburiy**: aks holda Android signalni kechiktiradi
+  va nuqtalar 2 soatda emas, tasodifiy kelib turadi.
 
 ## Ishlab chiquvchi uchun
 
@@ -57,3 +82,7 @@ cd apps/driver-android
 
 Android SDK kerak (Android Studio yoki `ANDROID_HOME`). Server manzilining
 standart qiymati `app/build.gradle.kts` dagi `DEFAULT_SERVER` da.
+
+Serverdagi mos sozlama: `FRESH_MINUTES` (`src/modules/wms/tracking/devices.ts`)
+— xaritada nuqta qachongacha "haqiqiy" hisoblanishi. Oraliqni jiddiy
+o'zgartirsangiz, uni ham moslang.

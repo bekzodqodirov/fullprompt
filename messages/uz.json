@@ -561,7 +561,7 @@
     "cpKg": "Qirg‘izistonda",
     "cpUz": "O‘zbekistonda",
     "openMap": "Xaritada ko‘rish",
-    "driverPhoneHint": "Yuklash paytida haydovchi telefoniga ilovani o‘rnating va quyidagi kodni bir marta kiriting. Android — joylashuv avtomatik keladi; iPhone/HarmonyOS — pastdagi tugmalar bilan qo‘lda belgilanadi.",
+    "driverPhoneHint": "Yuklash paytida haydovchi telefoniga ilovani o‘rnating va quyidagi kodni bir marta kiriting. Android — joylashuv har 2–3 soatda avtomatik keladi (batareyani tejash uchun); iPhone/HarmonyOS — pastdagi tugmalar bilan qo‘lda belgilanadi.",
     "driverPhoneLabel": "Haydovchi ismi / telefon modeli",
     "newPairCode": "Kod yaratish",
     "pairCodeHint": "ilovaga shu kodni kiriting (bir martalik)",
@@ -702,7 +702,7 @@
   },
   "map": {
     "title": "Xarita",
-    "disclaimer": "Mashinalarning joyi taxminiy — odatiy yo‘l vaqtlaridan hisoblanadi (GPS emas). Partiya sahifasidagi 📍 tugmalar bilan aniqlashtiriladi.",
+    "disclaimer": "Haydovchi telefoni ulangan mashinalarda joylashuv haqiqiy (har 2–3 soatda yangilanadi). Qolganlarida taxminiy — odatiy yo‘l vaqtlaridan hisoblanadi va partiya sahifasidagi 📍 tugmalar bilan aniqlashtiriladi.",
     "emptyWh": "Skladda yuk yo‘q",
     "openStock": "Sklad qoldig‘ini ochish",
     "openBatch": "Partiyani ochish",
@@ -717,8 +717,10 @@
     "seg_uz": "O‘zbekiston hududida",
     "seg_transit": "Yo‘lda",
     "basemapMissing": "Batafsil xarita hali yuklanmagan — serverda `bash ops/fetch-basemap.sh` ishga tushirilsa, bu chizma haqiqiy xaritaga almashadi.",
-    "liveFix": "Haqiqiy joylashuv · {minutes} daqiqa oldin",
+    "liveFix": "Haqiqiy joylashuv · {ago} oldin",
     "estimated": "Taxminiy joylashuv (jadval bo‘yicha)",
-    "lastFix": "oxirgi haqiqiy signal {minutes} daqiqa oldin"
+    "lastFix": "oxirgi haqiqiy signal {ago} oldin",
+    "agoMin": "{n} daqiqa",
+    "agoHour": "{n} soat"
   }
 }

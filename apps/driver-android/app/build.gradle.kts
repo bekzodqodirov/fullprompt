@@ -11,8 +11,8 @@ android {
     applicationId = "uz.gsr.driver"
     minSdk = 24
     targetSdk = 35
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "1.1"
     // The app ships pointed at the production server; the pairing screen
     // lets the warehouse worker change it (domain move, test server).
     buildConfigField("String", "DEFAULT_SERVER", "\"https://169-58-65-23.sslip.io\"")
