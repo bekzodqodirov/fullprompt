@@ -327,7 +327,8 @@
       "dims": "请填写尺寸和重量（数字，如40或8.5）",
       "photo": "请至少添加1张照片"
     },
-    "acceptUnclaimedAs": "{code} — 按无主货物接收"
+    "acceptUnclaimedAs": "{code} — 按无主货物接收",
+    "noteAndCost": "备注与费用（如需要）"
   },
   "receipts": {
     "title": "收货单",
@@ -570,7 +571,8 @@
     "noFixesYet": "暂无位置",
     "archive": "归档 — 已完成批次",
     "archiveSearch": "批次代码、车牌或司机",
-    "archiveEmpty": "未找到"
+    "archiveEmpty": "未找到",
+    "codeTaken": "该代码已被占用"
   },
   "loading": {
     "title": "装车",

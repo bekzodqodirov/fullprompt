@@ -10,6 +10,7 @@ import { enqueue, JOB_PROCESS_EVENTS, JOB_RECOMPUTE_COSTS } from '@/modules/plat
 import {
   PlanError,
   recordVerdict,
+  renameBatch,
   submitPlan,
   submitPlanSchema,
   verdictSchema,
@@ -140,6 +141,44 @@ export async function departBatchAction(
     return { ok: true, boxCount: result.boxCount };
   } catch (err) {
     if (err instanceof ScanError) return { ok: false, error: err.code };
+    throw err;
+  }
+}
+
+export interface BatchCodeFormState {
+  ok?: boolean;
+  error?: string;
+  code?: string;
+}
+
+/**
+ * Rename a batch before it departs (owner's request). Guarded by the same
+ * permission that creates batches from a plan, not the vehicle-info one — the
+ * code is the batch's identity on every document it appears in.
+ */
+export async function renameBatchAction(
+  _prev: BatchCodeFormState,
+  formData: FormData,
+): Promise<BatchCodeFormState> {
+  const batchId = String(formData.get('batchId') ?? '');
+  const code = String(formData.get('code') ?? '');
+  if (!/^[0-9a-f-]{36}$/i.test(batchId)) return { error: 'validation' };
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return { error: 'not_found' };
+  let actor;
+  try {
+    actor = await authorize('plans.manage', { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    const updated = await renameBatch(batchId, code, { actorId: actor.id, ...meta });
+    revalidatePath(`/batches/${batchId}`);
+    return { ok: true, code: updated.code };
+  } catch (err) {
+    if (err instanceof PlanError) return { error: err.code };
     throw err;
   }
 }

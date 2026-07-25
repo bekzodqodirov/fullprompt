@@ -379,3 +379,49 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
     return { plan: updatedPlan!, batch: batch! };
   });
 }
+
+/**
+ * Rename a batch (owner: "YW-001/002 is assigned by warehouse — I want to
+ * type it myself sometimes").
+ *
+ * Only before departure. Once the truck leaves, the code is already on the
+ * invoice, the manifest and whatever the customs agent received, so renaming
+ * it there would leave the papers and the system disagreeing — the owner
+ * agreed to the cutoff. The auto-generated code stays the default; typing
+ * over it is the exception.
+ */
+export async function renameBatch(batchId: string, rawCode: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new PlanError('unauthenticated');
+  // Uppercased to match every existing code and so a near-duplicate cannot
+  // hide behind a case difference (the unique index is case-sensitive).
+  const code = rawCode.trim().replace(/\s+/g, ' ').toUpperCase();
+  if (code.length < 2 || code.length > 40) throw new PlanError('bad_code');
+
+  return db.transaction(async (tx) => {
+    const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
+    if (!batch) throw new PlanError('batch_not_found');
+    if (!['forming', 'loading'].includes(batch.status)) throw new PlanError('batch_departed');
+    if (code === batch.code) return batch;
+
+    const clash = await tx
+      .select({ id: batches.id })
+      .from(batches)
+      .where(sql`upper(${batches.code}) = ${code} AND ${batches.id} <> ${batchId}`)
+      .limit(1);
+    if (clash.length > 0) throw new PlanError('code_taken');
+
+    const [updated] = await tx
+      .update(batches)
+      .set({ code })
+      .where(eq(batches.id, batchId))
+      .returning();
+    await writeAudit(tx, { ...ctx, warehouseId: batch.originWarehouseId }, {
+      entityType: 'batch',
+      entityId: batchId,
+      action: 'update',
+      before: { code: batch.code },
+      after: { code },
+    });
+    return updated!;
+  });
+}

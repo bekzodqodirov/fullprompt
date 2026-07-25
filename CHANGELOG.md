@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## Owner's UI round: archive, foldable panels, manual batch code — 2026-07-25
+
+- **A finished batch used to vanish.** The board rendered only forming/loading/in transit/arrived, so once a truck was unloaded its manifest, costs and history were unreachable. There is now an archive drawer under the board — unloaded/closed/cancelled — searchable by code, plate or driver. Its box count comes from the departure movements, since a finished batch no longer owns any boxes.
+- **The batch code can be typed by hand** (owner: the per-warehouse sequence YW-001, YW-002 is not always the number the papers use). A ✏️ next to the code opens an input, the generated code stays the default, and the new one is trimmed, uppercased and checked for collisions case-insensitively. Editable **only before departure**: after that the code is on the invoice, the manifest and whatever the agent already received, and renaming it would leave papers and system disagreeing. The change is audited with the old and new value.
+- **Three panels fold away**: the driver pairing code ("it should sit somewhere small where it bothers nobody" — collapsed, with a badge showing the pending code so it stays findable), the VED documents, and — in receiving — the note and extra-cost fields, which belong to a minority of receipts. Photos and file attachments stay open, because those are used on every receipt. A draft that already carries a note or a cost comes back open. Native `<details>`: no client JavaScript, works on the slowest warehouse phone.
+- **The draft packing list button is gone** — the photo packing list replaced it in practice. The generator itself stays reachable.
+- **The stock table sorts by any column** (code, product, boxes, kg, m³, density, note, warehouse, date), reusing the reports' sort header, with the warehouse filter and search preserved in the link.
+- 153 unit/integration + 12 e2e green, verified against a fresh build and a fresh database.
+
+
 ## Unload: accepted cargo stopped disappearing, and "accept everything" exists — 2026-07-25
 
 Owner's report: cargo arrived, boxes were accepted by hand, the counter never moved, and finishing the unload declared the whole truck missing.

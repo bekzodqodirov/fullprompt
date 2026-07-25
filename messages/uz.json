@@ -327,7 +327,8 @@
       "dims": "o'lcham va og'irlikni to'ldiring (raqam, masalan 40 yoki 8.5)",
       "photo": "kamida 1 ta rasm qo‘shing"
     },
-    "acceptUnclaimedAs": "{code} — notanish yuk sifatida qabul qilish"
+    "acceptUnclaimedAs": "{code} — notanish yuk sifatida qabul qilish",
+    "noteAndCost": "Izoh va rasxod (kerak bo‘lsa)"
   },
   "receipts": {
     "title": "Qabullar",
@@ -570,7 +571,8 @@
     "noFixesYet": "hali joylashuv kelmadi",
     "archive": "Arxiv — yakunlangan partiyalar",
     "archiveSearch": "Partiya kodi, mashina raqami yoki haydovchi",
-    "archiveEmpty": "Topilmadi"
+    "archiveEmpty": "Topilmadi",
+    "codeTaken": "Bunday kod band"
   },
   "loading": {
     "title": "Pogruzka",

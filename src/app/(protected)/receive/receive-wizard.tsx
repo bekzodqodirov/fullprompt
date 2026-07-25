@@ -739,38 +739,56 @@ export function ReceiveWizard({
   const setCost = (patch: Partial<CostDraft>) =>
     update({ costs: [{ ...cost, costTypeId: otherCostTypeId, ...patch }] });
 
+  // Owner: a note and an extra cost belong to a minority of receipts, while
+  // photos and files are used on every one — so these two fold away and the
+  // attachment row below stays open. A draft that already carries either one
+  // comes back open, so nothing hides from the person who typed it.
+  const extrasFilled = Boolean(draft.sourceNote || cost.amount);
   const bottomBlock = (
     <div className="space-y-2">
-      <div className="flex flex-col gap-2 md:flex-row">
-        <input
-          aria-label={t('sourceNote')}
-          className="input md:flex-1"
-          placeholder={`📝 ${t('sourceNote')}`}
-          value={draft.sourceNote}
-          onChange={(e) => update({ sourceNote: e.target.value })}
-        />
-        <div className="flex gap-2">
+      <details
+        className="rounded-lg border border-gray-200 bg-gray-50"
+        open={extrasFilled}
+        data-testid="receipt-extras"
+      >
+        <summary
+          data-testid="receipt-extras-toggle"
+          className="cursor-pointer p-2 text-sm font-semibold text-gray-700 marker:text-gray-400"
+        >
+          📝 {t('noteAndCost')}
+          {extrasFilled && <span className="ml-2 text-xs text-green-700">●</span>}
+        </summary>
+        <div className="flex flex-col gap-2 p-2 pt-0 md:flex-row">
           <input
-            data-testid="receipt-cost-amount"
-            aria-label={t('stepCosts')}
-            className="input !w-40 md:!w-36"
-            inputMode="decimal"
-            placeholder={`💰 ${t('stepCosts')}`}
-            value={cost.amount}
-            onChange={(e) => setCost({ amount: e.target.value })}
+            aria-label={t('sourceNote')}
+            className="input md:flex-1"
+            placeholder={`📝 ${t('sourceNote')}`}
+            value={draft.sourceNote}
+            onChange={(e) => update({ sourceNote: e.target.value })}
           />
-          <select
-            aria-label="currency"
-            className="input !w-24 shrink-0"
-            value={cost.currency}
-            onChange={(e) => setCost({ currency: e.target.value })}
-          >
-            {currencies.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <input
+              data-testid="receipt-cost-amount"
+              aria-label={t('stepCosts')}
+              className="input !w-40 md:!w-36"
+              inputMode="decimal"
+              placeholder={`💰 ${t('stepCosts')}`}
+              value={cost.amount}
+              onChange={(e) => setCost({ amount: e.target.value })}
+            />
+            <select
+              aria-label="currency"
+              className="input !w-24 shrink-0"
+              value={cost.currency}
+              onChange={(e) => setCost({ currency: e.target.value })}
+            >
+              {currencies.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
+      </details>
       <div data-testid="receipt-files-row" className="flex flex-wrap items-center gap-1.5">
         <label className="btn-secondary !min-h-10 cursor-pointer gap-1.5 px-3 text-sm">
           📷 {t('generalPhotos')}

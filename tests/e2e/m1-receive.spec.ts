@@ -62,6 +62,8 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   await expect(
     page.locator('[data-testid="receipt-files-row"] img[src*="/api/attachments/"]').first(),
   ).toBeVisible({ timeout: 10_000 });
+  // Note + cost fold away now (owner: used on a minority of receipts).
+  await page.getByTestId('receipt-extras-toggle').click();
   await page.getByTestId('receipt-cost-amount').fill('120');
 
   // Sticky footer totals + confirm

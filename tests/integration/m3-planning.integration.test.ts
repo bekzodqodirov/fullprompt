@@ -14,7 +14,12 @@ import {
 } from '@/modules/platform/db/schema';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { createCrate } from '@/modules/wms/crates/service';
-import { PlanError, recordVerdict, submitPlan } from '@/modules/wms/planning/service';
+import {
+  PlanError,
+  recordVerdict,
+  renameBatch,
+  submitPlan,
+} from '@/modules/wms/planning/service';
 import { departBatch, finishLoading, ingestLoadScans } from '@/modules/wms/scanning/service';
 
 /** M3: plan → verdict loop → batch reservation → scan → finish → depart. */
@@ -335,5 +340,50 @@ describe('crate = one place (owner feedback round 5)', () => {
         ctx(),
       ),
     ).rejects.toThrowError(PlanError);
+  });
+});
+
+/** Owner: "YW-001/002 comes from the warehouse — let me type it myself." */
+describe('renaming a batch', () => {
+  async function newBatch(boxCount: number) {
+    const lot = await makeLot(boxCount);
+    const sub = await submitPlan(
+      {
+        originWarehouseId: originId,
+        destWarehouseId: destId,
+        lines: [{ lotId: lot.lotId, boxCount }],
+      },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    return { lot, batch: batch! };
+  }
+
+  it('accepts a manual code before departure and refuses one that is taken', async () => {
+    const { batch } = await newBatch(2);
+    const wanted = `GSR-KASHGAR ${String(Date.now()).slice(-6)}`;
+
+    // Trimmed, inner spaces collapsed, uppercased — so a near-duplicate
+    // cannot hide behind whitespace or case.
+    const renamed = await renameBatch(batch.id, `  ${wanted.toLowerCase()}  `, ctx());
+    expect(renamed.code).toBe(wanted);
+
+    const other = await newBatch(1);
+    await expect(renameBatch(other.batch.id, wanted.toLowerCase(), ctx())).rejects.toThrow(
+      'code_taken',
+    );
+    // Saving its own code again is a no-op, not a clash with itself.
+    expect((await renameBatch(batch.id, wanted, ctx())).code).toBe(wanted);
+
+    await expect(renameBatch(batch.id, 'X', ctx())).rejects.toThrow('bad_code');
+  });
+
+  it('locks the code once the truck has left', async () => {
+    const { lot, batch } = await newBatch(1);
+    for (const code of lot.shortCodes) {
+      await ingestLoadScans([{ ...scan(batch.id, code), addedOnSpot: false }], ctx());
+    }
+    await departBatch(batch.id, ctx());
+    await expect(renameBatch(batch.id, 'TOO-LATE', ctx())).rejects.toThrow('batch_departed');
   });
 });

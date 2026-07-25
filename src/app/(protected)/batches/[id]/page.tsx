@@ -27,6 +27,7 @@ import {
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
 import { remainingToUnload } from '@/modules/wms/scanning/unload';
 import { Panel } from '@/components/panel';
+import { BatchCodeForm } from './batch-code-form';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
 import { BackLink } from '@/components/back-link';
@@ -150,7 +151,14 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       <BackLink href="/batches" label={t('title')} />
       <div className="card space-y-2">
         <div className="flex flex-wrap items-baseline gap-2">
-          <h1 className="font-mono text-xl font-extrabold text-blue-800">{batch.code}</h1>
+          <BatchCodeForm
+            batchId={batch.id}
+            code={batch.code}
+            editable={
+              actor.permissions.has('plans.manage') &&
+              ['forming', 'loading'].includes(batch.status)
+            }
+          />
           <span className="font-mono font-bold">
             {originCode} → {destCode}
           </span>
