@@ -22,6 +22,18 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # One-shot, on demand: downloads the self-hosted OSM basemap for /map.
+  # Works the same on Windows/Mac/Linux hosts:
+  #   docker compose --profile basemap run --rm basemap
+  basemap:
+    profiles: ['basemap']
+    image: alpine:3.20
+    restart: 'no'
+    volumes:
+      - ./.data/basemap:/out
+      - ./ops:/ops:ro
+    command: sh /ops/fetch-basemap-docker.sh
+
   # One-shot: apply migrations + idempotent seed before the app starts.
   # Uses the build stage (full sources + tsx), not the slim runtime image.
   migrate:

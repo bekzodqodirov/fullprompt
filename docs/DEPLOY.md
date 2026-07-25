@@ -43,10 +43,13 @@ Kirish: `+998900000001 / demo1234` (demo seed; darhol parol almashtiring).
 - **Backup**: har kuni avtomatik (`backups` volume), haftalik restore-sinov
   app ichidagi job orqali; qo'lda tekshirish — `docker compose exec app node
   --version` emas, README'dagi restore bo'limiga qarang.
-- **🗺 Xarita (haqiqiy)**: bir marta `bash ops/fetch-basemap.sh` ishga
-  tushiring (~30-80 MB OSM nusxasi `.data/basemap/` ga tushadi), so'ng
-  `docker compose up -d app` — /map sahifadagi chizma zoom'lanadigan haqiqiy
-  xaritaga almashadi. Faylsiz ham xarita chizma rejimda ishlayveradi.
+- **🗺 Xarita (haqiqiy)**: bir marta
+  `docker compose --profile basemap run --rm basemap`
+  (~30-80 MB OSM nusxasi `.data/basemap/` ga tushadi; Windows/Mac/Linux —
+  farqi yo'q), so'ng `docker compose up -d app` — /map sahifadagi chizma
+  zoom'lanadigan haqiqiy xaritaga almashadi. Faylsiz ham xarita chizma
+  rejimda ishlayveradi. (Docker'siz Linux serverda muqobil:
+  `bash ops/fetch-basemap.sh`.)
 
 ## Claude'ga topshirish varianti
 
