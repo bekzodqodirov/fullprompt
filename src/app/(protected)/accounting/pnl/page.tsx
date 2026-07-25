@@ -4,6 +4,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { profitAndLoss, type PnlRow } from '@/modules/wms/accounting/reports';
 import { resolvePeriod, toUzs, uzsRate } from '@/modules/wms/accounting/period';
 import { PeriodForm } from '../period-form';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * P&L, one column per month.
@@ -47,7 +48,7 @@ export default async function PnlPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-5xl">
-      <h1 className="text-xl font-bold">📈 {t('pnl')}</h1>
+      <PageHeader icon="chart" title={t('pnl')} />
       <PeriodForm from={from} to={to} exportHref="/api/accounting/pnl" />
 
       <div className="card !p-0">

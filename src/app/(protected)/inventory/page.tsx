@@ -6,6 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { InventoryScreen } from './inventory-screen';
+import { PageHeader } from '@/components/ui/page';
 
 /** Inventory mode entry: pick a warehouse (scoped staff see their own). */
 export default async function InventoryPage({
@@ -35,7 +36,7 @@ export default async function InventoryPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
-      <h1 className="text-xl font-bold">📋 {t('title')}</h1>
+      <PageHeader icon="clipboard" title={t('title')} />
       {selected ? (
         <>
           <p className="text-sm text-gray-600">

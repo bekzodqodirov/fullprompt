@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { SubNav, type SubNavItem } from '@/components/ui/sub-nav';
 
 /**
  * The admin section, with its own nav.
@@ -27,38 +27,29 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const canFx = actor.permissions.has('costs.fx.manage');
   if (!canManage && !canAudit && !canFx) redirect('/');
 
-  const links = [
+  const links: SubNavItem[] = [
     ...(canManage
-      ? [
-          { href: '/admin/warehouses', label: t('warehouses') },
-          { href: '/admin/clients', label: t('clients') },
-          { href: '/admin/users', label: t('users') },
-          { href: '/admin/settings', label: t('settings') },
-        ]
+      ? ([
+          { href: '/admin/warehouses', label: t('warehouses'), icon: 'crate' },
+          { href: '/admin/clients', label: t('clients'), icon: 'users' },
+          { href: '/admin/users', label: t('users'), icon: 'user' },
+          { href: '/admin/settings', label: t('settings'), icon: 'settings' },
+        ] as SubNavItem[])
       : []),
     ...(canAudit
-      ? [
-          { href: '/admin/audit', label: t('audit') },
-          { href: '/admin/notifications', label: t('notifications') },
-        ]
+      ? ([
+          { href: '/admin/audit', label: t('audit'), icon: 'clipboard' },
+          { href: '/admin/notifications', label: t('notifications'), icon: 'alert' },
+        ] as SubNavItem[])
       : []),
-    ...(canFx ? [{ href: '/admin/fx', label: `💱 ${tCosting('fxTitle')}` }] : []),
+    ...(canFx
+      ? ([{ href: '/admin/fx', label: tCosting('fxTitle'), icon: 'exchange' }] as SubNavItem[])
+      : []),
   ];
 
   return (
     <>
-      {/* Negative margins pull the bar to the edges of <main>'s padding. */}
-      <nav className="-mx-4 -mt-4 mb-4 flex gap-1 overflow-x-auto border-b border-gray-200 bg-white px-4 py-2 text-sm font-semibold">
-        {links.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className="whitespace-nowrap rounded-md px-3 py-2 hover:bg-gray-100"
-          >
-            {link.label}
-          </Link>
-        ))}
-      </nav>
+      <SubNav items={links} />
       {children}
     </>
   );

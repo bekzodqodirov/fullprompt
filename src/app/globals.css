@@ -2,45 +2,171 @@
 @tailwind components;
 @tailwind utilities;
 
-/* High-contrast palette for bright warehouse light (spec §15). System font
-   stack — zero webfont downloads, China-safe (spec §3). */
+/**
+ * GSR design system.
+ *
+ * Built for two very different places at once: a cheap Android phone held in
+ * bright warehouse daylight, and an office desktop. That rules out low
+ * contrast, thin type and decorative gradients — and it rules IN large touch
+ * targets, a strict spacing rhythm and one obvious accent colour.
+ *
+ * System fonts only: zero webfont downloads, and nothing that fails behind
+ * the GFW (spec §3).
+ */
 :root {
   --font-sans:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
     'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* Brand — a deep, unfussy blue. One accent, used for what you can act on. */
+  --brand-50: 239 245 255;
+  --brand-100: 219 233 254;
+  --brand-200: 191 214 254;
+  --brand-500: 47 106 233;
+  --brand-600: 29 78 216;
+  --brand-700: 24 64 175;
+  --brand-800: 21 52 141;
+
+  /* Ink — near-black for content, two greys for support. */
+  --ink-900: 15 23 42;
+  --ink-700: 51 65 85;
+  --ink-500: 100 116 139;
+  --ink-400: 148 163 184;
+
+  /* Surfaces — the page is faintly cool, the cards are white. */
+  --surface: 247 248 250;
+  --surface-raised: 255 255 255;
+  --surface-sunken: 241 243 246;
+
+  --line: 226 232 240;
+  --line-strong: 203 213 225;
 }
 
 html {
   font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-surface text-ink antialiased;
 }
 
-/* Big touch targets (spec §10: ≥ 48px). */
+/* Headings carry the hierarchy, so they get the tight tracking. */
+h1,
+h2,
+h3 {
+  @apply font-bold tracking-[-0.01em];
+}
+
+/* A visible focus ring everywhere — for keyboard users and, more to the
+   point, for gloved fingers that miss. */
+:where(a, button, input, select, textarea, summary):focus-visible {
+  @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-surface;
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons — ≥ 48 px tall (spec §10) with a pressed state you can feel.
+   --------------------------------------------------------------------------- */
 .btn {
-  @apply inline-flex min-h-12 items-center justify-center rounded-lg px-4 font-semibold transition-colors;
+  @apply inline-flex min-h-12 select-none items-center justify-center gap-2 rounded-xl px-4
+         text-[0.9375rem] font-semibold transition-[background-color,box-shadow,transform]
+         duration-100 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
 }
 .btn-primary {
-  @apply btn bg-blue-700 text-white hover:bg-blue-800 active:bg-blue-900;
+  @apply btn bg-brand-600 text-white shadow-card hover:bg-brand-700 active:bg-brand-800;
 }
 .btn-secondary {
-  @apply btn border border-gray-300 bg-white text-gray-900 hover:bg-gray-100;
+  @apply btn border border-line-strong bg-surface-raised text-ink-900 hover:bg-surface-sunken;
+}
+.btn-ghost {
+  @apply btn text-ink-700 hover:bg-surface-sunken;
 }
 .btn-danger {
-  @apply btn bg-red-700 text-white hover:bg-red-800;
+  @apply btn bg-red-600 text-white shadow-card hover:bg-red-700 active:bg-red-800;
 }
+/* Icon-only: square, still a large target. */
+.btn-icon {
+  @apply btn min-h-11 w-11 !px-0;
+}
+
+/* ---------------------------------------------------------------------------
+   Fields
+   --------------------------------------------------------------------------- */
 .input {
-  @apply min-h-12 w-full rounded-lg border border-gray-300 bg-white px-3 text-base focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200;
+  @apply min-h-12 w-full rounded-xl border border-line-strong bg-surface-raised px-3.5 text-base
+         text-ink-900 placeholder:text-ink-400
+         focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15;
 }
-/* Compact cell input for spreadsheet-style tables (desktop receiving). */
+/* Compact cell input for the spreadsheet-style desktop receiving grid. */
 .input-cell {
-  @apply h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-200;
+  @apply h-9 w-full rounded-lg border border-line-strong bg-surface-raised px-2 text-sm
+         focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/15;
 }
 .label {
-  @apply mb-1 block text-sm font-semibold text-gray-700;
+  @apply mb-1 block text-sm font-semibold text-ink-700;
 }
+
+/* ---------------------------------------------------------------------------
+   Surfaces
+   --------------------------------------------------------------------------- */
 .card {
-  @apply rounded-xl border border-gray-200 bg-white p-4 shadow-sm;
+  @apply rounded-2xl border border-line bg-surface-raised p-4 shadow-card;
+}
+/* A card that is a link or a button: it should answer the finger. */
+.card-tap {
+  @apply card transition-[box-shadow,transform] duration-100 hover:shadow-pop active:scale-[0.99];
+}
+
+/* Label above a group of cards. */
+.section-title {
+  @apply text-2xs font-bold uppercase tracking-[0.08em] text-ink-500;
+}
+
+/* Small status pill; the colour comes from a modifier class. */
+.chip {
+  @apply inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-semibold;
+}
+.chip-neutral {
+  @apply chip bg-surface-sunken text-ink-700;
+}
+.chip-brand {
+  @apply chip bg-brand-50 text-brand-800;
+}
+.chip-good {
+  @apply chip bg-emerald-50 text-emerald-800;
+}
+.chip-warn {
+  @apply chip bg-amber-50 text-amber-800;
+}
+.chip-bad {
+  @apply chip bg-red-50 text-red-800;
+}
+
+/* ---------------------------------------------------------------------------
+   Tables — the app is full of them, and on a phone they all scroll sideways.
+   --------------------------------------------------------------------------- */
+.table-wrap {
+  @apply -mx-4 overflow-x-auto px-4 md:mx-0 md:rounded-2xl md:border md:border-line md:px-0;
+}
+.table {
+  @apply w-full border-collapse text-sm;
+}
+.table thead th {
+  @apply whitespace-nowrap border-b border-line bg-surface-sunken px-3 py-2.5 text-left
+         text-2xs font-bold uppercase tracking-[0.06em] text-ink-500;
+}
+.table tbody td {
+  @apply border-b border-line/70 px-3 py-2.5 align-middle;
+}
+.table tbody tr:last-child td {
+  @apply border-b-0;
+}
+/* Numbers only line up if they are tabular. */
+.num {
+  @apply text-right font-mono tabular-nums;
+}
+
+/* The tab bar sits on the safe area on iPhones. */
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
 }

@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { followUps, funnelReport, openLeadCount } from '@/modules/wms/crm/service';
+import { Icon } from '@/components/ui/icon';
+import { EmptyState, Stat } from '@/components/ui/page';
 
 /**
  * The CRM home screen is the call list, not a dashboard.
@@ -28,46 +30,40 @@ export default async function CrmPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
-      <div className="grid grid-cols-3 gap-2">
-        <Link href="/crm/leads" className="card text-center">
-          <div className="text-2xl font-extrabold text-blue-800">{openLeads}</div>
-          <div className="text-xs text-gray-500">{t('leads')}</div>
+      {/* No page title here: the section tab strip above already says
+          "today's calls", and repeating it wasted the first screenful. */}
+      <div className="flex justify-end">
+        <Link href="/crm/leads/new" className="btn-primary">
+          <Icon name="plus" className="h-4 w-4" />
+          {t('newLead')}
         </Link>
-        <div className="card text-center">
-          <div className="text-2xl font-extrabold text-green-700">{won}</div>
-          <div className="text-xs text-gray-500">{t('kindWon')}</div>
-        </div>
-        <div className="card text-center">
-          <div className={`text-2xl font-extrabold ${due.length ? 'text-amber-600' : 'text-gray-400'}`}>
-            {due.length}
-          </div>
-          <div className="text-xs text-gray-500">{t('today')}</div>
-        </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">📞 {t('today')}</h1>
-        <Link href="/crm/leads/new" className="btn-primary">
-          + {t('newLead')}
-        </Link>
+      <div className="grid grid-cols-3 gap-2.5">
+        <Stat href="/crm/leads" label={t('leads')} value={openLeads} tone="brand" />
+        <Stat label={t('kindWon')} value={won} tone="good" />
+        <Stat label={t('today')} value={due.length} tone={due.length ? 'warn' : 'neutral'} />
       </div>
 
       {due.length === 0 ? (
-        <p className="card text-sm text-gray-500">✅ {t('nothingToday')}</p>
+        <EmptyState icon="check" title={t('nothingToday')} />
       ) : (
         <div className="space-y-2">
           {due.map((item) => (
             <Link
               key={`${item.kind}-${item.id}`}
               href={item.kind === 'lead' ? `/crm/leads/${item.id}` : `/admin/clients/${item.id}`}
-              className={`card block hover:bg-gray-50 ${
+              className={`card-tap block ${
                 item.dueOn < today ? 'border-l-4 border-l-amber-500' : ''
               }`}
             >
-              <div className="flex items-baseline gap-2">
-                <span>{item.kind === 'lead' ? '🆕' : '👤'}</span>
+              <div className="flex items-center gap-2">
+                <Icon
+                  name={item.kind === 'lead' ? 'target' : 'user'}
+                  className="h-4 w-4 text-ink-400"
+                />
                 <span className="font-semibold">{item.title}</span>
-                {item.subtitle && <span className="text-sm text-gray-500">{item.subtitle}</span>}
+                {item.subtitle && <span className="text-sm text-ink-500">{item.subtitle}</span>}
                 <span
                   className={`ml-auto text-xs ${
                     item.dueOn < today ? 'font-bold text-amber-700' : 'text-gray-500'

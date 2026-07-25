@@ -16,6 +16,7 @@ import { PeriodForm } from '../period-form';
 import { ExpenseForm } from './expense-form';
 import { GenerateRecurringButton, RecurringForm } from './recurring-form';
 import { VoidExpenseButton } from './void-expense-button';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * The expense book: what the company spent that is not cargo cost.
@@ -70,7 +71,7 @@ export default async function ExpensesPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-4xl">
-      <h1 className="text-xl font-bold">🧾 {t('expenses')}</h1>
+      <PageHeader icon="doc" title={t('expenses')} />
 
       {categories.length === 0 ? (
         <p className="card text-sm text-gray-600">{t('noCategories')}</p>

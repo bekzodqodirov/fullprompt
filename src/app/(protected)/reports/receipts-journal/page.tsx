@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { SortTh, sortRows } from '@/components/sort-th';
 import { receiptsJournal } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
+import { PageHeader } from '@/components/ui/page';
 
 const SORTABLE = ['number', 'receivedAt', 'whCode', 'boxCount', 'kg'] as const;
 
@@ -35,7 +36,7 @@ export default async function ReceiptsJournalPage({
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
       <BackLink href="/reports" label={t('title')} />
       <div className="flex flex-wrap items-baseline gap-2">
-        <h1 className="text-xl font-bold">📥 {t('receiptsJournal')}</h1>
+        <PageHeader icon="inbox" title={t('receiptsJournal')} />
         <span className="flex gap-1 text-sm">
           {[7, 30, 90].map((d) => (
             <Link

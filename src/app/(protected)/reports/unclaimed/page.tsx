@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { SortTh, sortRows } from '@/components/sort-th';
 import { unclaimedReport } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
+import { PageHeader } from '@/components/ui/page';
 
 const SORTABLE = ['number', 'marking', 'whCode', 'days', 'boxesInStock', 'kg'] as const;
 
@@ -33,7 +34,7 @@ export default async function UnclaimedReportPage({
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
       <BackLink href="/reports" label={t('title')} />
       <div className="flex flex-wrap items-baseline gap-2">
-        <h1 className="text-xl font-bold">❓ {t('unclaimedReport')}</h1>
+        <PageHeader icon="alert" title={t('unclaimedReport')} />
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- API download */}
         <a href="/api/reports/unclaimed" className="btn-secondary !min-h-9 ml-auto px-3 text-sm">
           ⬇️ XLSX

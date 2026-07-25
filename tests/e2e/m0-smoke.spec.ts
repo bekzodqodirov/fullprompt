@@ -32,9 +32,10 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
 
   // The admin nav belongs to the admin section, not to every screen — an
   // admin used to meet "warehouses / clients / employees" on the home page.
-  await expect(page.locator('nav')).toHaveCount(0);
+  // (The app's own tab bar is a <nav> too, hence the section-specific id.)
+  await expect(page.getByTestId('sub-nav')).toHaveCount(0);
   await page.goto('/admin/warehouses');
-  await expect(page.locator('nav')).toHaveCount(1);
+  await expect(page.getByTestId('sub-nav')).toHaveCount(1);
 
   // Create a warehouse
   await page.goto('/admin/warehouses/new');
@@ -79,7 +80,7 @@ test('warehouse-scoped operator sees no admin nav', async ({ page }) => {
   await page.locator('input[name="password"]').fill(PASSWORD);
   await page.locator('main form button[type="submit"]').first().click();
   await expect(page).toHaveURL('/');
-  await expect(page.locator('nav')).toHaveCount(0);
+  await expect(page.getByTestId('sub-nav')).toHaveCount(0);
   // Direct admin URL bounces back home (server-side gate)
   await page.goto('/admin/warehouses');
   await expect(page).toHaveURL('/');

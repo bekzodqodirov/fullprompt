@@ -18,6 +18,7 @@ import { latestPositions, type LatestPosition } from '@/modules/wms/tracking/dev
 import { estimateTransit } from '@/modules/wms/tracking/engine';
 import { CHECKPOINT_SEGMENTS, routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 import { TrackingMap, type MapTruck, type MapWarehouse } from './tracking-map';
+import { PageHeader } from '@/components/ui/page';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,7 +102,7 @@ export default async function MapPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-3">
-      <h1 className="text-xl font-bold">🗺 {t('title')}</h1>
+      <PageHeader icon="map" title={t('title')} />
       <p className="text-xs text-gray-500">{t('disclaimer')}</p>
       <TrackingMap warehouses={mapWarehouses} trucks={trucks} basemap={basemapAvailable()} />
     </div>

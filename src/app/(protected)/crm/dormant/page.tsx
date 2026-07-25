@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { getSetting } from '@/modules/platform/settings/service';
 import { dormantClients } from '@/modules/wms/crm/service';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * Clients who used to ship and stopped.
@@ -30,7 +31,7 @@ export default async function DormantPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
-      <h1 className="text-xl font-bold">😴 {t('dormant')}</h1>
+      <PageHeader icon="sleep" title={t('dormant')} />
 
       <form method="get" className="flex items-end gap-2">
         <label className="text-sm">

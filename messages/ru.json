@@ -48,19 +48,21 @@
     "audit": "Журнал аудита",
     "profile": "Профиль",
     "logout": "Выйти",
-    "notifications": "Уведомления"
+    "notifications": "Уведомления",
+    "homeTile": "Главная"
   },
   "home": {
-    "receiving": "📥 Приёмка",
-    "loading": "🚚 Погрузка",
-    "unloading": "📤 Выгрузка",
-    "handover": "🤝 Выдача",
+    "receiving": "Приёмка",
+    "loading": "Погрузка",
+    "unloading": "Выгрузка",
+    "handover": "Выдача",
     "comingSoon": "Появится в следующем этапе",
-    "adminPanel": "⚙️ Администрирование",
+    "adminPanel": "Администрирование",
     "welcome": "Здравствуйте, {name}!",
     "sectionOperations": "Рабочие процессы",
     "sectionInfo": "Информация",
-    "sectionManagement": "Управление"
+    "sectionManagement": "Управление",
+    "sectionSales": "Продажи"
   },
   "dashboard": {
     "title": "Дашборд",

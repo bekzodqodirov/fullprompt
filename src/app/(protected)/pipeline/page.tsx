@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { boxes, clients, receiptLots, receipts } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * Sales-manager pipeline (spec §10 screen 12): own clients' cargo by stage —
@@ -36,7 +37,7 @@ export default async function PipelinePage() {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold">📈 {t('title')}</h1>
+      <PageHeader icon="chart" title={t('title')} />
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full min-w-[560px] text-sm">
           <thead>

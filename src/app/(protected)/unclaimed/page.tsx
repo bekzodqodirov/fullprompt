@@ -5,6 +5,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { boxes, receiptLots, receipts, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { PageHeader } from '@/components/ui/page';
 
 /** Unclaimed pool (spec 6.7) — resolution actions arrive in M2. */
 export default async function UnclaimedPage() {
@@ -36,7 +37,7 @@ export default async function UnclaimedPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold">❓ {t('unclaimedTitle')}</h1>
+      <PageHeader icon="alert" title={t('unclaimedTitle')} />
       {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ receipt, whCode, boxCount }) => (

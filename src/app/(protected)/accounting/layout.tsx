@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { SubNav, type SubNavItem } from '@/components/ui/sub-nav';
 
 /**
  * Management accounting section.
@@ -18,40 +18,28 @@ export default async function AccountingLayout({ children }: { children: React.R
   if (!canReport && !canEnter) redirect('/');
   const t = await getTranslations('accounting');
 
-  const links = [
+  const items: SubNavItem[] = [
+    { href: '/accounting', label: t('title'), icon: 'briefcase', exact: true },
     ...(canReport
-      ? [
-          { href: '/accounting/pnl', label: `📈 ${t('pnl')}` },
-          { href: '/accounting/cashflow', label: `💵 ${t('cashflow')}` },
-          { href: '/accounting/receivables', label: `⏳ ${t('receivables')}` },
-          { href: '/accounting/profit', label: `🚛 ${t('profitBatch')}` },
-        ]
+      ? ([
+          { href: '/accounting/pnl', label: t('pnl'), icon: 'chart' },
+          { href: '/accounting/cashflow', label: t('cashflow'), icon: 'exchange' },
+          { href: '/accounting/receivables', label: t('receivables'), icon: 'clock' },
+          { href: '/accounting/profit', label: t('profitBatch'), icon: 'truck' },
+        ] as SubNavItem[])
       : []),
     ...(canEnter
-      ? [
-          { href: '/accounting/expenses', label: `🧾 ${t('expenses')}` },
-          { href: '/accounting/accounts', label: `🏦 ${t('accounts')}` },
-          { href: '/accounting/categories', label: `🗂 ${t('categories')}` },
-        ]
+      ? ([
+          { href: '/accounting/expenses', label: t('expenses'), icon: 'doc' },
+          { href: '/accounting/accounts', label: t('accounts'), icon: 'wallet' },
+          { href: '/accounting/categories', label: t('categories'), icon: 'clipboard' },
+        ] as SubNavItem[])
       : []),
   ];
 
   return (
     <>
-      <nav className="-mx-4 -mt-4 mb-4 flex gap-1 overflow-x-auto border-b border-gray-200 bg-white px-4 py-2 text-sm font-semibold">
-        <Link href="/accounting" className="whitespace-nowrap rounded-md px-3 py-2 hover:bg-gray-100">
-          💼 {t('title')}
-        </Link>
-        {links.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className="whitespace-nowrap rounded-md px-3 py-2 hover:bg-gray-100"
-          >
-            {link.label}
-          </Link>
-        ))}
-      </nav>
+      <SubNav items={items} />
       {children}
     </>
   );

@@ -5,6 +5,7 @@ import { cashFlow } from '@/modules/wms/accounting/reports';
 import { accountBalances } from '@/modules/wms/accounting/service';
 import { resolvePeriod, toUzs, uzsRate } from '@/modules/wms/accounting/period';
 import { PeriodForm } from '../period-form';
+import { PageHeader } from '@/components/ui/page';
 
 /** Money that actually moved, plus where it currently sits. */
 export default async function CashFlowPage({
@@ -30,7 +31,7 @@ export default async function CashFlowPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
-      <h1 className="text-xl font-bold">💵 {t('cashflow')}</h1>
+      <PageHeader icon="exchange" title={t('cashflow')} />
       <PeriodForm from={from} to={to} exportHref="/api/accounting/cashflow" />
 
       <div className="card !p-0">

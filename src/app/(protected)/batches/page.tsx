@@ -8,6 +8,7 @@ import { batches, boxes, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
 import { createQuickBatchAction } from './batch-actions-server';
+import { PageHeader } from '@/components/ui/page';
 
 const COLUMNS = ['forming', 'loading', 'in_transit', 'arrived'] as const;
 /** Finished work: off the board, but the owner still needs to find it. */
@@ -83,12 +84,13 @@ export default async function BatchesPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">🚚 {t('title')}</h1>
-        <Link href="/transit" className="btn-secondary px-3 text-sm">
+      <PageHeader icon="truck" title={t('title')}
+        actions={
+          <Link href="/transit" className="btn-secondary px-3 text-sm">
           🔍 {t('transitReport')}
         </Link>
-      </div>
+        }
+      />
 
       {canQuick && (
         <form action={createQuickBatchAction} className="card flex flex-wrap items-center gap-2 !p-3">

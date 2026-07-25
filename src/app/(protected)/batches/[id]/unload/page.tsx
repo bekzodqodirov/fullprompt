@@ -6,6 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { batches } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { UnloadScreen } from './unload-screen';
+import { PageHeader } from '@/components/ui/page';
 
 export default async function UnloadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,7 +20,7 @@ export default async function UnloadPage({ params }: { params: Promise<{ id: str
   return (
     <div className="mx-auto max-w-lg">
       <div className="mb-2 flex items-baseline gap-2">
-        <h1 className="text-xl font-bold">📤 {t('title')}</h1>
+        <PageHeader icon="inbox" title={t('title')} />
         <Link href={`/batches/${id}`} className="font-mono font-extrabold text-blue-800">
           {batch.code}
         </Link>

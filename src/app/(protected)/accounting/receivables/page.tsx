@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { arAging } from '@/modules/wms/accounting/reports';
 import { toUzs, uzsRate } from '@/modules/wms/accounting/period';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * Who owes, and for how long.
@@ -43,7 +44,7 @@ export default async function ReceivablesPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-4xl">
-      <h1 className="text-xl font-bold">⏳ {t('receivables')}</h1>
+      <PageHeader icon="clock" title={t('receivables')} />
 
       <form method="get" className="flex flex-wrap items-end gap-2">
         <label className="text-sm">

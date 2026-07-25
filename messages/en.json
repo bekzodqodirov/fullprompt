@@ -48,19 +48,21 @@
     "audit": "Audit log",
     "profile": "Profile",
     "logout": "Sign out",
-    "notifications": "Notifications"
+    "notifications": "Notifications",
+    "homeTile": "Home"
   },
   "home": {
-    "receiving": "📥 Receiving",
-    "loading": "🚚 Loading",
-    "unloading": "📤 Unloading",
-    "handover": "🤝 Handover",
+    "receiving": "Receiving",
+    "loading": "Loading",
+    "unloading": "Unloading",
+    "handover": "Handover",
     "comingSoon": "Coming in the next stage",
-    "adminPanel": "⚙️ Administration",
+    "adminPanel": "Administration",
     "welcome": "Hello, {name}!",
     "sectionOperations": "Operations",
     "sectionInfo": "Information",
-    "sectionManagement": "Management"
+    "sectionManagement": "Management",
+    "sectionSales": "Sales"
   },
   "dashboard": {
     "title": "Dashboard",

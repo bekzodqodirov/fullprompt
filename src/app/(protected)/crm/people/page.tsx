@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listPeople, personCodes, suggestGroups } from '@/modules/wms/crm/people';
 import { GroupButton } from './group-button';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * One human being, several client codes.
@@ -24,7 +25,7 @@ export default async function PeoplePage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
-      <h1 className="text-xl font-bold">👥 {t('people')}</h1>
+      <PageHeader icon="users" title={t('people')} />
       <p className="text-xs text-gray-500">ℹ️ {t('personNote')}</p>
 
       {suggestions.length > 0 && (

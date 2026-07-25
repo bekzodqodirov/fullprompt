@@ -8,6 +8,7 @@ import { Panel } from '@/components/panel';
 import { accountBalances, listAccounts, listTransfers } from '@/modules/wms/accounting/service';
 import { AccountForm } from './account-form';
 import { TransferForm, VoidTransferButton } from './transfer-form';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * Cash boxes and accounts: what is in each one, and how it got there.
@@ -35,7 +36,7 @@ export default async function AccountsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
-      <h1 className="text-xl font-bold">🏦 {t('accounts')}</h1>
+      <PageHeader icon="wallet" title={t('accounts')} />
 
       <div className="card !p-0">
         <div className="overflow-x-auto">

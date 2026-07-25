@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { SortTh, sortRows } from '@/components/sort-th';
 import { batchRegister } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
+import { PageHeader } from '@/components/ui/page';
 
 const SORTABLE = ['code', 'status', 'departedAt', 'loaded', 'kg', 'costUsd'] as const;
 
@@ -35,7 +36,7 @@ export default async function BatchRegisterReportPage({
     <div className="mx-auto max-w-lg space-y-4 md:max-w-5xl">
       <BackLink href="/reports" label={t('title')} />
       <div className="flex flex-wrap items-baseline gap-2">
-        <h1 className="text-xl font-bold">🚛 {t('batchRegister')}</h1>
+        <PageHeader icon="truck" title={t('batchRegister')} />
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- API download, not a page */}
         <a href="/api/reports/batches" className="btn-secondary !min-h-9 ml-auto px-3 text-sm">
           ⬇️ XLSX

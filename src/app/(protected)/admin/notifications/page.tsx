@@ -5,6 +5,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { notifications, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { PageHeader } from '@/components/ui/page';
 
 async function weekTotals(telegramOnly: SQL) {
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
@@ -70,7 +71,7 @@ export default async function NotificationDeliveryPage({
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
       <div className="flex flex-wrap items-baseline gap-2">
-        <h1 className="text-xl font-bold">🔔 {t('title')}</h1>
+        <PageHeader icon="alert" title={t('title')} />
         <span className="flex gap-1 text-sm">
           <Link
             href="?view=problems"

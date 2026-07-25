@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## Yangi dizayn — 1-qism: poydevor va navigatsiya — 2026-07-25
+
+Siz aytgan «hamma narsa har qayoqda yotgandek» — bu bo'yoq muammosi emas edi, navigatsiya muammosi. Tuzatildi.
+
+- **Pastdagi menu (telefonda)** — endi har doim barmoq ostida: Bosh sahifa · Qabul · Yuklash · CRM/Moliya · ••• (qolgan hammasi). Ilgari bir bo'limdan boshqasiga o'tish uchun bosh sahifaga qaytish kerak edi — «har qayoqda yotgan» degan tuyg'u shundan.
+- **Kompyuterda chap tomonda menu** — hamma bo'lim bir ko'rinishda.
+- **Emoji o'rniga haqiqiy ikonkalar** — 30 ta ikonka qo'lda chizildi. Emoji xitoy telefonlarida har xil chiqardi, ba'zan kvadrat bo'lib qolardi; endi hamma joyda bir xil.
+- **Bo'lim ichidagi tablar** (moliya, CRM, boshqaruv) — endi qaysi sahifada turganingiz ko'rinib turadi va tab o'zi ko'rinadigan joyga suriladi.
+- **Bir xil sahifa sarlavhasi** — ikonka + nom + o'ng tomonda amal tugmasi. 67 ta ekran o'z o'lchamini o'zi tanlab yurardi.
+- **Ranglar, shriftlar, soyalar, tugmalar, inputlar, jadvallar** — bitta tizimga keltirildi (`.card`, `.btn`, `.input`, `.table`). Barcha ekranlar birdan yangilandi.
+- **Ish rejimlarida** (qabul, plan, yashik, berish, skanerlash) pastki menu ko'rinmaydi — o'sha ekranlarning o'z tugmalar paneli bor, menu ustiga chiqib bosishga xalaqit berardi. Buni testda ushladik.
+
+224 test + 16 e2e yashil.
+
+**Keyingi qism:** qolgan ekranlar ichidagi emoji va jadvallar yangi uslubga o'tkaziladi (sklad, prixodlar, partiyalar, hisobotlar, mijoz kartasi).
+
 ## Voronkada kartani ushlab sudrash (drag & drop) — 2026-07-25
 
 - **Kartochkani ushlab turib boshqa bosqichga sudrasangiz bo'ladi** — amoCRM dagidek. Telefonda: bosib **ushlab turasiz** (~0.3 soniya), karta qo'lingizga «ko'chadi», keyin sudraysiz. Kompyuterda oddiy sichqoncha bilan sudrasangiz kifoya.

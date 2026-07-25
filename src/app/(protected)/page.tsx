@@ -2,141 +2,114 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-
-function Tile({
-  href,
-  label,
-  primary = false,
-  small = false,
-}: {
-  href: string;
-  label: string;
-  primary?: boolean;
-  small?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`card flex items-center justify-center text-center font-bold [overflow-wrap:anywhere] ${
-        small ? 'min-h-20 text-base' : 'min-h-28 text-lg'
-      } ${primary ? 'bg-blue-700 text-white hover:bg-blue-800' : 'hover:bg-gray-100'}`}
-    >
-      {label}
-    </Link>
-  );
-}
+import { canSee, NAV } from '@/modules/platform/rbac/nav';
+import { Icon, type IconName } from '@/components/ui/icon';
+import { Section } from '@/components/ui/page';
 
 /**
- * Role-aware home: tiles grouped into daily operations / information /
- * management so the screen stays scannable as features grow (UX round).
+ * Home.
+ *
+ * Two jobs, in this order: put the one thing this person came to do under
+ * their thumb, and let them reach everything else without thinking. The first
+ * operational tile is the big one — for a warehouse operator that is
+ * receiving, and it is 90 % of their day.
+ *
+ * The tiles are generated from the same navigation model as the sidebar and
+ * the tab bar, so a new screen appears in all three at once.
  */
 export default async function HomePage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('home');
-  const tr = await getTranslations('receipts');
-  const ts = await getTranslations('stock');
-  const tSearch = await getTranslations('search');
-  const tCrates = await getTranslations('crates');
-  const tPlans = await getTranslations('plans');
-  const tPipeline = await getTranslations('pipeline');
-  const tCosting = await getTranslations('costing');
-  const tDashboard = await getTranslations('dashboard');
-  const tInventory = await getTranslations('inventory');
-  const tReports = await getTranslations('reports');
-  const tFinance = await getTranslations('finance');
-  const tAccounting = await getTranslations('accounting');
-  const tCrm = await getTranslations('crm');
-  const tMap = await getTranslations('map');
 
-  const has = (p: string) => actor.permissions.has(p);
-  const canDashboard = has('reports.all_warehouses') || has('reports.own_warehouse');
+  const label = async (namespace: string, key: string) =>
+    (await getTranslations(namespace as 'home'))(key as 'receiving');
 
-  const operations = [
-    ...(has('receipts.create') ? [{ href: '/receive', label: t('receiving'), primary: true }] : []),
-    ...(has('scan.load') ? [{ href: '/batches', label: t('loading') }] : []),
-    ...(has('plans.manage') ? [{ href: '/plans', label: `🚛 ${tPlans('title')}` }] : []),
-    ...(has('scan.issue') ? [{ href: '/issue', label: t('handover') }] : []),
-    ...(has('crates.manage') ? [{ href: '/crates', label: `🧰 ${tCrates('title')}` }] : []),
-    ...(has('scan.load') ? [{ href: '/inventory', label: `📋 ${tInventory('title')}` }] : []),
-  ];
+  const viewer = { permissions: actor.permissions, roles: actor.roles };
+  const groups: { title: string; items: { href: string; label: string; icon: IconName }[] }[] = [];
+  for (const group of NAV) {
+    const items = [];
+    for (const item of group.items) {
+      // The home tile for "home" itself would be a link to this page.
+      if (item.href === '/' || !canSee(item, viewer)) continue;
+      items.push({
+        href: item.href,
+        label: await label(item.namespace, item.labelKey),
+        icon: item.icon,
+      });
+    }
+    if (items.length > 0)
+      groups.push({ title: t(group.titleKey as 'sectionInfo'), items });
+  }
 
-  const info = [
-    { href: '/stock', label: `📦 ${ts('title')}` },
-    { href: '/map', label: `🗺 ${tMap('title')}` },
-    { href: '/receipts', label: `📄 ${tr('title')}` },
-    { href: '/unclaimed', label: `❓ ${tr('unclaimedTitle')}` },
-    { href: '/search', label: `🔍 ${tSearch('title')}` },
-    ...(canDashboard
-      ? [
-          { href: '/dashboard', label: `📊 ${tDashboard('title')}` },
-          { href: '/reports', label: `📑 ${tReports('title')}` },
-        ]
-      : []),
-    ...(actor.roles.includes('sales_manager')
-      ? [{ href: '/pipeline', label: `📈 ${tPipeline('title')}` }]
-      : []),
-    // The CRM tile sits with the daily screens, not under management: for a
-    // sales manager the call list IS the day's work.
-    ...(has('crm.leads') ? [{ href: '/crm', label: `📞 ${tCrm('title')}` }] : []),
-    ...(has('finance.view') || has('finance.manage')
-      ? [{ href: '/finance', label: `💰 ${tFinance('title')}` }]
-      : []),
-  ];
-
-  const management = [
-    // Profit and overheads are owner/accountant territory (owner's answer 7),
-    // so this tile follows the accounting permissions, not `finance.view`.
-    ...(has('finance.reports') || has('finance.expenses')
-      ? [{ href: '/accounting', label: `💼 ${tAccounting('title')}` }]
-      : []),
-    ...(has('costs.fx.manage') ? [{ href: '/admin/fx', label: `💱 ${tCosting('fxTitle')}` }] : []),
-    ...(has('plans.manage') ? [{ href: '/trucks', label: `🚛 ${tPlans('trucksTitle')}` }] : []),
-    ...(has('admin.warehouses.manage')
-      ? [{ href: '/admin/warehouses', label: t('adminPanel') }]
-      : []),
-  ];
+  const [first, ...rest] = groups[0]?.items ?? [];
+  const firstGroupTitle = groups[0]?.title;
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-xl font-bold">{t('welcome', { name: actor.fullName })}</h1>
-
-      {operations.length > 0 && (
-        <section>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            {t('sectionOperations')}
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            {operations.map((tile) => (
-              <Tile key={tile.href} {...tile} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          {t('sectionInfo')}
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs font-medium text-ink-500">
+          {new Date().toLocaleDateString('en-GB')}
         </p>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-          {info.map((tile) => (
-            <Tile key={tile.href} small {...tile} />
-          ))}
-        </div>
-      </section>
+        {/* Two lines at most: a long full name used to push the first action
+            below the fold on a 360 px screen. */}
+        <h1 className="line-clamp-2 text-xl leading-tight">
+          {t('welcome', { name: actor.fullName })}
+        </h1>
+      </div>
 
-      {management.length > 0 && (
-        <section>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            {t('sectionManagement')}
-          </p>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-            {management.map((tile) => (
-              <Tile key={tile.href} small {...tile} />
+      {first && (
+        <Section title={firstGroupTitle}>
+          {/* The primary action gets the width and the colour; the rest of the
+              group sits under it at half size. */}
+          <Link
+            href={first.href}
+            className="flex items-center gap-3 rounded-2xl bg-brand-600 p-4 text-white shadow-card transition-transform duration-100 active:scale-[0.99]"
+          >
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/15">
+              <Icon name={first.icon} className="h-6 w-6" strokeWidth={2} />
+            </span>
+            <span className="text-lg font-bold">{first.label}</span>
+            <Icon name="chevronRight" className="ml-auto h-5 w-5 opacity-70" />
+          </Link>
+          {rest.length > 0 && (
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {rest.map((item) => (
+                <Tile key={item.href} {...item} />
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {groups.slice(1).map((group) => (
+        <Section key={group.title} title={group.title}>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {group.items.map((item) => (
+              <Tile key={item.href} {...item} />
             ))}
           </div>
-        </section>
-      )}
+        </Section>
+      ))}
     </div>
+  );
+}
+
+/**
+ * Icon left, label right.
+ *
+ * A stacked tile centred the text, and Russian/Uzbek screen names are long —
+ * "Инвентаризация" broke across three ragged lines. Reading left to right
+ * also matches the sidebar and the sheet, so the same screen looks the same
+ * wherever it is offered.
+ */
+function Tile({ href, label, icon }: { href: string; label: string; icon: IconName }) {
+  return (
+    <Link href={href} className="card-tap flex min-h-16 items-center gap-2.5 !p-3">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">
+        <Icon name={icon} className="h-5 w-5" />
+      </span>
+      <span className="text-sm font-bold leading-tight [overflow-wrap:anywhere]">{label}</span>
+    </Link>
   );
 }

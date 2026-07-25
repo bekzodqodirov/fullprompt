@@ -48,19 +48,21 @@
     "audit": "Audit jurnali",
     "profile": "Profil",
     "logout": "Chiqish",
-    "notifications": "Xabarlar"
+    "notifications": "Xabarlar",
+    "homeTile": "Bosh sahifa"
   },
   "home": {
-    "receiving": "📥 Qabul",
-    "loading": "🚚 Yuklash",
-    "unloading": "📤 Tushirish",
-    "handover": "🤝 Topshirish",
+    "receiving": "Qabul",
+    "loading": "Yuklash",
+    "unloading": "Tushirish",
+    "handover": "Topshirish",
     "comingSoon": "Keyingi bosqichda qo'shiladi",
-    "adminPanel": "⚙️ Boshqaruv",
+    "adminPanel": "Boshqaruv",
     "welcome": "Assalomu alaykum, {name}!",
     "sectionOperations": "Ish jarayonlari",
     "sectionInfo": "Ma’lumot",
-    "sectionManagement": "Boshqaruv"
+    "sectionManagement": "Boshqaruv",
+    "sectionSales": "Sotuv"
   },
   "dashboard": {
     "title": "Dashboard",

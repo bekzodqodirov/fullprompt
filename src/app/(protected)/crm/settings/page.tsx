@@ -5,6 +5,7 @@ import { Panel } from '@/components/panel';
 import { listSources, listStages, stageUsage } from '@/modules/wms/crm/service';
 import { countFieldAnswers, listFields } from '@/modules/wms/crm/fields';
 import { FieldForm, SourceForm, StageForm, StageTools, type FieldRow } from './forms';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * Everything that makes the CRM the owner's rather than mine: the funnel, the
@@ -54,7 +55,7 @@ export default async function CrmSettingsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
-      <h1 className="text-xl font-bold">⚙️ {t('settings')}</h1>
+      <PageHeader icon="settings" title={t('settings')} />
 
       <div className="card space-y-2">
         <h2 className="text-sm font-bold uppercase text-gray-500">🎯 {t('stages')}</h2>

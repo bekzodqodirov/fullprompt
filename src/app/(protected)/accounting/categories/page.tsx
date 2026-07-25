@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listCategories } from '@/modules/wms/accounting/service';
 import { CategoryForm } from './category-form';
+import { PageHeader } from '@/components/ui/page';
 
 /** Expense kinds, maintained by the owner rather than baked into the code. */
 export default async function CategoriesPage() {
@@ -15,7 +16,7 @@ export default async function CategoriesPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-3">
-      <h1 className="text-xl font-bold">🗂 {t('categories')}</h1>
+      <PageHeader icon="clipboard" title={t('categories')} />
       <CategoryForm />
       <div className="card space-y-2">
         {rows.map((row) => (

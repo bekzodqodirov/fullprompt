@@ -6,6 +6,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { batches, loadPlans, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { PageHeader } from '@/components/ui/page';
 
 const STATUS_COLORS: Record<string, string> = {
   pending_agent: 'bg-orange-100 text-orange-800',
@@ -45,12 +46,13 @@ export default async function PlansPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">🚛 {t('title')}</h1>
-        <Link href="/plans/new" className="btn-primary px-4">
+      <PageHeader icon="truck" title={t('title')}
+        actions={
+          <Link href="/plans/new" className="btn-primary px-4">
           ＋ {t('newTitle')}
         </Link>
-      </div>
+        }
+      />
       {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ plan, originCode, destCode, batchCode }) => (

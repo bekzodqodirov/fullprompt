@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientBalances } from '@/modules/wms/finance/service';
 import { FinanceClientSearch } from './client-search';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * Finance home (Phase 2.1): every client with ledger activity and their USD
@@ -22,7 +23,7 @@ export default async function FinancePage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
-      <h1 className="text-xl font-bold">💰 {t('title')}</h1>
+      <PageHeader icon="wallet" title={t('title')} />
       {actor.permissions.has('finance.manage') && <FinanceClientSearch />}
       <div className="card flex items-baseline gap-2">
         <span className="text-sm text-gray-600">{t('totalDebt')}:</span>

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { PageHeader } from '@/components/ui/page';
 
 /** Reports hub (§13) — owner's priority order: landed cost, stock/aging, batches. */
 export default async function ReportsPage() {
@@ -31,7 +32,7 @@ export default async function ReportsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
-      <h1 className="text-xl font-bold">📑 {t('title')}</h1>
+      <PageHeader icon="report" title={t('title')} />
       <div className="grid grid-cols-2 gap-3">
         {tiles.map((tile) => (
           <Link

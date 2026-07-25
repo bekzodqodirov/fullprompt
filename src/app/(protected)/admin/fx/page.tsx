@@ -5,6 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { currencies, fxRates, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { FxForm } from './fx-form';
+import { PageHeader } from '@/components/ui/page';
 
 /** Dated manual FX rates (W9) — USD is the costing base. */
 export default async function FxPage() {
@@ -26,7 +27,7 @@ export default async function FxPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
-      <h1 className="text-xl font-bold">💱 {t('fxTitle')}</h1>
+      <PageHeader icon="exchange" title={t('fxTitle')} />
       <FxForm
         currencies={currencyRows.map((c) => c.code)}
         today={new Date().toISOString().slice(0, 10)}

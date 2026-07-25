@@ -5,6 +5,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { boxes, clients, crates, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { PageHeader } from '@/components/ui/page';
 
 /** W2 — crate list (spec 6.2). */
 export default async function CratesPage() {
@@ -38,12 +39,13 @@ export default async function CratesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">🧰 {t('title')}</h1>
-        <Link href="/crates/new" className="btn-primary px-4">
+      <PageHeader icon="crate" title={t('title')}
+        actions={
+          <Link href="/crates/new" className="btn-primary px-4">
           ＋ {t('create')}
         </Link>
-      </div>
+        }
+      />
       {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ crate, clientCode, whCode, boxCount }) => (

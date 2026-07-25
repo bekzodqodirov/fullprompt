@@ -4,6 +4,8 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listLeads, listStages, funnelReport } from '@/modules/wms/crm/service';
 import { KanbanBoard } from './kanban';
+import { Icon } from '@/components/ui/icon';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * The funnel board.
@@ -39,28 +41,35 @@ export default async function LeadsPage({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-xl font-bold">🎯 {t('funnel')}</h1>
-        {seesAll && (
-          <div className="flex gap-1 text-sm font-semibold">
+      <PageHeader
+        icon="target"
+        title={t('funnel')}
+        actions={
+          <Link href="/crm/leads/new" className="btn-primary">
+            <Icon name="plus" className="h-4 w-4" />
+            {t('newLead')}
+          </Link>
+        }
+      />
+
+      {seesAll && (
+        <div className="flex gap-1.5 text-sm font-semibold">
+          {[
+            { href: '/crm/leads', label: t('mine'), on: mine },
+            { href: '/crm/leads?scope=all', label: t('all'), on: !mine },
+          ].map((tab) => (
             <Link
-              href="/crm/leads"
-              className={`rounded-lg px-3 py-1.5 ${mine ? 'bg-blue-700 text-white' : 'bg-gray-100'}`}
+              key={tab.href}
+              href={tab.href}
+              className={`rounded-xl px-3 py-2 ${
+                tab.on ? 'bg-brand-600 text-white shadow-card' : 'bg-surface-raised ring-1 ring-line'
+              }`}
             >
-              {t('mine')}
+              {tab.label}
             </Link>
-            <Link
-              href="/crm/leads?scope=all"
-              className={`rounded-lg px-3 py-1.5 ${mine ? 'bg-gray-100' : 'bg-blue-700 text-white'}`}
-            >
-              {t('all')}
-            </Link>
-          </div>
-        )}
-        <Link href="/crm/leads/new" className="btn-primary ml-auto">
-          + {t('newLead')}
-        </Link>
-      </div>
+          ))}
+        </div>
+      )}
 
       <KanbanBoard
         stages={stages.map((stage) => ({

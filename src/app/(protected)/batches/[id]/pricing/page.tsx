@@ -16,6 +16,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { batchCharges } from '@/modules/wms/finance/service';
 import { BackLink } from '@/components/back-link';
 import { PricingForm } from './pricing-form';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * Batch pricing (Phase 2.1, owner's flow): when the cargo is through customs
@@ -90,7 +91,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-2xl">
       <BackLink href={`/batches/${id}`} label={batch.code} />
-      <h1 className="text-xl font-bold">💰 {t('pricingTitle')}</h1>
+      <PageHeader icon="wallet" title={t('pricingTitle')} />
       <p className="text-sm text-gray-500">{t('pricingHint')}</p>
 
       {clientRows.length === 0 && <p className="text-sm text-gray-500">{t('empty')}</p>}

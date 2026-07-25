@@ -13,6 +13,7 @@ import {
   unclaimedSummary,
   warehouseFill,
 } from '@/modules/wms/reports/queries';
+import { PageHeader } from '@/components/ui/page';
 
 /**
  * Role-aware dashboard (spec §13): admin/logist see every warehouse,
@@ -48,7 +49,7 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
       <div className="flex items-baseline gap-2">
-        <h1 className="text-xl font-bold">📊 {t('title')}</h1>
+        <PageHeader icon="chart" title={t('title')} />
         <Link href="/reports" className="ml-auto text-sm font-semibold text-blue-800">
           {t('toReports')} →
         </Link>

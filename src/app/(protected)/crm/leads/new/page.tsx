@@ -7,6 +7,7 @@ import { listFields } from '@/modules/wms/crm/fields';
 import { createLeadAction } from '../../actions';
 import { CustomFieldInputs } from '../../custom-fields';
 import { LeadForm } from '../lead-form';
+import { PageHeader } from '@/components/ui/page';
 
 export default async function NewLeadPage() {
   const actor = await getActor();
@@ -23,7 +24,7 @@ export default async function NewLeadPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-3">
-      <h1 className="text-xl font-bold">🆕 {t('newLead')}</h1>
+      <PageHeader icon="plus" title={t('newLead')} />
       <LeadForm
         action={createLeadAction}
         sources={sources.map((row) => ({ id: row.id, label: row.name }))}

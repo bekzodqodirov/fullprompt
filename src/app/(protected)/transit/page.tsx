@@ -13,6 +13,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { PageHeader } from '@/components/ui/page';
 
 /** In-transit / missing-in-transit report (spec §13; KA hub view). */
 export default async function TransitPage() {
@@ -54,7 +55,7 @@ export default async function TransitPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold">🚚 {t('title')}</h1>
+      <PageHeader icon="truck" title={t('title')} />
 
       {missing.length > 0 && (
         <div className="space-y-2 rounded-xl border border-red-200 bg-red-50 p-3">

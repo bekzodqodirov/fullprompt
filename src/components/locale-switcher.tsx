@@ -24,10 +24,13 @@ export function LocaleSwitcher({ current }: { current: string }) {
     });
   }
 
+  // Borderless in the app bar: a full-height bordered field made the language
+  // picker the loudest thing on every screen. It is still a native select, so
+  // the phone opens its own wheel.
   return (
     <select
       aria-label="Language"
-      className="input !min-h-10 !w-auto text-sm"
+      className="h-11 cursor-pointer rounded-xl bg-transparent px-1.5 text-sm font-semibold text-ink-700 hover:bg-surface-sunken focus:outline-none disabled:opacity-50"
       value={current}
       disabled={pending}
       onChange={(e) => onChange(e.target.value)}
