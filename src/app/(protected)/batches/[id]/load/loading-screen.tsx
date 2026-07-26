@@ -21,6 +21,9 @@ interface PlannedBox {
   clientCode: string | null;
   marking: string | null;
   crateCode?: string | null;
+  /** Numeric strings from the API — a lot's boxes are identical. */
+  perBoxKg?: string | null;
+  perBoxM3?: string | null;
 }
 interface Snapshot {
   batch: { id: string; code: string; status: string };
@@ -238,6 +241,23 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     byLot.set(key, entry);
   }
   const doneCount = snapshot.boxes.filter((b) => loaded.has(b.shortCode)).length;
+
+  // What is actually on the truck so far (owner: "yuklash paytida umumiy
+  // kubi, kilosi va kg/m³ ko'rinsa yaxshi bo'lardi"). A quick batch has no
+  // plan, so its loaded boxes come from the origin stock list instead.
+  const weighed = new Map<string, PlannedBox>();
+  for (const box of [...snapshot.boxes, ...(snapshot.available ?? [])]) {
+    if (!weighed.has(box.shortCode)) weighed.set(box.shortCode, box);
+  }
+  let loadedKg = 0;
+  let loadedM3 = 0;
+  for (const code of loaded) {
+    const box = weighed.get(code);
+    if (!box) continue;
+    loadedKg += Number(box.perBoxKg ?? 0);
+    loadedM3 += Number(box.perBoxM3 ?? 0);
+  }
+  const loadedDensity = loadedM3 > 0.0005 ? Math.round(loadedKg / loadedM3) : null;
   const unscanned = snapshot.boxes.filter((b) => !loaded.has(b.shortCode));
   // Quick batch: no plan, so "sticker lost" picks from the origin WH stock
   // instead of the (empty) plan list (owner: tap the box, don't type codes).
@@ -277,6 +297,24 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         {total === 0 ? loaded.size : doneCount}
         {total > 0 && <span className="text-ink-400">/{total}</span>} 📦
       </p>
+
+      {/* Weight and volume on board, updated with every scan — a truck is
+          filled by kg and m³, and until now the loader could only count
+          boxes and hope. */}
+      <div
+        data-testid="load-totals"
+        className="flex items-baseline justify-center gap-3 text-center font-mono text-sm font-bold"
+      >
+        <span>{Math.round(loadedKg)} kg</span>
+        <span className="text-ink-400">·</span>
+        <span>{Math.round(loadedM3 * 100) / 100} m³</span>
+        {loadedDensity !== null && (
+          <>
+            <span className="text-ink-400">·</span>
+            <span className="text-ink-700">{loadedDensity} kg/m³</span>
+          </>
+        )}
+      </div>
 
       <div className="card space-y-1 !p-3">
         {[...byLot.values()].map((lot) => (

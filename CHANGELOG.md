@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Uchta tuzatish: sklad tanlash, QR skaner ramkasi, yuklashdagi kg/m³ — 2026-07-26
+
+- **Skladchi endi faqat o'z omborini tanlaydi.** «Yuklash» sahifasidagi tez partiya shaklida barcha omborlar ro'yxatda turardi. Server allaqachon begona omborni rad etardi — lekin ro'yxatda ko'rinib turgani odamlarni urinishga o'rgatardi, rad etish esa xatoga o'xshab ko'rinardi. Endi: bitta omborda ishlaydigan odamga tanlov umuman ko'rsatilmaydi (ombor kodi shunchaki yozilib turadi), bir nechta omborda ishlaydiganga faqat o'shalar ko'rsatiladi. **Qayerga** yuborish — hamma ombor, avvalgidek (partiyaning maqsadi shu). Plan yaratish ekranida ham xuddi shunday tuzatildi — u yerda aksincha xato bor edi: bitta omborga biriktirilgan odam manzil tanlay olmasdi.
+- **QR skaner endi faqat ramka ichini o'qiydi.** Kamera tasviri `object-cover` bilan kesilardi — ya'ni ekranda ko'rinmagan joy ham skanerlanardi va yonidagi quti yorlig'ini o'qib yuborardi. Endi: **kvadrat oyna**, ichida burchakli ramka, tashqarisi qorong'ilashtirilgan — va eng muhimi, har bir kadr **ramka bo'yicha kesilib** keyin o'qishga beriladi. Ekranda ko'rinmayotgan QR endi o'qilmaydi. Ikkala skaner (telefon o'zining BarcodeDetector'i va zaxira zxing) bir xil kesilgan tasvirni o'qiydi.
+- **Yuklash paytida umumiy kg, m³ va kg/m³ ko'rinadi** — quti sanog'i ostida, har bir skandan keyin yangilanadi. Mashina kg va m³ bilan to'ldiriladi, ilgari esa faqat quti sanab, taxmin qilinardi.
+
+241 test + 26 e2e yashil.
+
 ## Sizning ro'yxatingiz — 4-partiya: dashboard va xarita — 2026-07-26
 
 **(7) Dashboard endi butun kompaniyani ko'rsatadi** — ilgari u faqat ombor dashboardi edi (ostatka, yo'ldagilar, egasiz yuklar); oy foyda keltirdimi yoki lidlar bilan kim ishlayapti — javob yo'q edi. Endi yuqoridan pastga to'rtta savolga javob beradi:

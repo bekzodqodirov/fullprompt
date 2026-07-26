@@ -33,7 +33,17 @@ export default async function BatchesPage({
   const quickWhs = await db
     .select({ id: warehouses.id, code: warehouses.code })
     .from(warehouses)
+    .where(eq(warehouses.active, true))
     .orderBy(warehouses.code);
+  // A warehouse worker loads from THEIR warehouse and nowhere else (owner:
+  // "faqat o'zinikini belgilasin"). The action already refuses a foreign
+  // origin, but offering it in the dropdown taught people to try — and the
+  // refusal looked like a bug rather than a rule. The destination stays the
+  // full list: sending cargo somewhere else is the whole point.
+  const originWhs =
+    actor.warehouseScoped && actor.warehouseIds.length
+      ? quickWhs.filter((wh) => actor.warehouseIds.includes(wh.id))
+      : quickWhs;
 
   const dest = aliasedTable(warehouses, 'dest');
   const scope =
@@ -92,18 +102,41 @@ export default async function BatchesPage({
         }
       />
 
-      {canQuick && (
+      {canQuick && originWhs.length > 0 && (
         <form action={createQuickBatchAction} className="card flex flex-wrap items-center gap-2 !p-3">
           <span className="text-sm font-bold">⚡ {t('quickBatch')}</span>
-          <select name="originId" aria-label={t('quickOrigin')} className="input !w-24 font-mono font-bold" defaultValue={quickWhs[0]?.id}>
-            {quickWhs.map((wh) => (
-              <option key={wh.id} value={wh.id}>
-                {wh.code}
-              </option>
-            ))}
-          </select>
+          {originWhs.length === 1 ? (
+            // One warehouse, no choice to make: show it and send it.
+            <>
+              <input type="hidden" name="originId" value={originWhs[0]!.id} />
+              <span
+                data-testid="quick-origin-fixed"
+                className="input !w-24 flex items-center font-mono font-bold"
+              >
+                {originWhs[0]!.code}
+              </span>
+            </>
+          ) : (
+            <select
+              name="originId"
+              aria-label={t('quickOrigin')}
+              className="input !w-24 font-mono font-bold"
+              defaultValue={originWhs[0]?.id}
+            >
+              {originWhs.map((wh) => (
+                <option key={wh.id} value={wh.id}>
+                  {wh.code}
+                </option>
+              ))}
+            </select>
+          )}
           <span className="font-bold">→</span>
-          <select name="destId" aria-label={t('quickDest')} className="input !w-24 font-mono font-bold" defaultValue={quickWhs[1]?.id}>
+          <select
+            name="destId"
+            aria-label={t('quickDest')}
+            className="input !w-24 font-mono font-bold"
+            defaultValue={quickWhs.find((wh) => wh.id !== originWhs[0]?.id)?.id}
+          >
             {quickWhs.map((wh) => (
               <option key={wh.id} value={wh.id}>
                 {wh.code}

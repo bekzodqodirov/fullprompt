@@ -46,6 +46,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       // The loading list groups crated boxes under their crate so the
       // operator scans the crate instead of hunting loose boxes (owner).
       crateCode: crates.code,
+      // Per-box weight and volume so the loading screen can total what is
+      // actually on the truck (owner: "yuklash paytida umumiy kubi, kilosi
+      // va kg/m³ ko'rinsa"). A lot's boxes are identical by construction —
+      // nothing in this business weighs a box on its own.
+      perBoxKg: sql<string>`${receiptLots.totalWeightKg} / ${receiptLots.boxCount}`,
+      perBoxM3: sql<string>`${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -110,6 +116,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
           clientCode: clients.clientCode,
           marking: receipts.unclaimedMarking,
           crateCode: crates.code,
+          perBoxKg: sql<string>`${receiptLots.totalWeightKg} / ${receiptLots.boxCount}`,
+          perBoxM3: sql<string>`${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}`,
         })
         .from(boxes)
         .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))

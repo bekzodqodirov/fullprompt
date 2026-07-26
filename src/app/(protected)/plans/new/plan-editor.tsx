@@ -47,10 +47,14 @@ interface StockCrate {
  */
 export function PlanEditor({
   warehouses,
+  destinations,
   presets,
   resubmit,
 }: {
+  /** Where this planner may load FROM — their own warehouses. */
   warehouses: WarehouseOption[];
+  /** Where cargo may be sent — everywhere. */
+  destinations: WarehouseOption[];
   presets: PresetOption[];
   resubmit?: {
     planId: string;
@@ -65,7 +69,11 @@ export function PlanEditor({
   const tc = useTranslations('common');
   const router = useRouter();
   const [originId, setOriginId] = useState(resubmit?.originWarehouseId ?? warehouses[0]?.id ?? '');
-  const [destId, setDestId] = useState(resubmit?.destWarehouseId ?? warehouses[1]?.id ?? '');
+  const [destId, setDestId] = useState(
+    resubmit?.destWarehouseId ??
+      destinations.find((wh) => wh.id !== (resubmit?.originWarehouseId ?? warehouses[0]?.id))?.id ??
+      '',
+  );
   const [presetId, setPresetId] = useState(resubmit?.truckPresetId ?? presets[0]?.id ?? '');
   const [lots, setLots] = useState<StockLot[]>([]);
   const [stockCrates, setStockCrates] = useState<StockCrate[]>([]);
@@ -215,7 +223,7 @@ export function PlanEditor({
           onChange={(e) => setDestId(e.target.value)}
           disabled={!!resubmit}
         >
-          {warehouses
+          {destinations
             .filter((wh) => wh.id !== originId)
             .map((wh) => (
               <option key={wh.id} value={wh.id}>

@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { asc, desc, eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -23,15 +23,19 @@ export default async function NewPlanPage({
   const t = await getTranslations('plans');
   const { planId } = await searchParams;
 
-  const whs = await db
+  // A plan is built FROM the warehouse you work at, TO anywhere (owner:
+  // "faqat o'zinikini belgilasin"). Scoping both lists left a scoped planner
+  // unable to name a destination at all, and leaving both open offered an
+  // origin the submit action would refuse.
+  const allWhs = await db
     .select({ id: warehouses.id, code: warehouses.code })
     .from(warehouses)
-    .where(
-      actor.warehouseScoped && actor.warehouseIds.length
-        ? inArray(warehouses.id, actor.warehouseIds)
-        : undefined,
-    )
+    .where(eq(warehouses.active, true))
     .orderBy(asc(warehouses.code));
+  const whs =
+    actor.warehouseScoped && actor.warehouseIds.length
+      ? allWhs.filter((wh) => actor.warehouseIds.includes(wh.id))
+      : allWhs;
   const presets = await db
     .select()
     .from(truckPresets)
@@ -67,6 +71,7 @@ export default async function NewPlanPage({
       <h1 className="mb-3 text-xl font-bold">🚛 {resubmit ? t('resubmitTitle') : t('newTitle')}</h1>
       <PlanEditor
         warehouses={whs}
+        destinations={allWhs}
         presets={presets.map((p) => ({
           id: p.id,
           name: p.name,

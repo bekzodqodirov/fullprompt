@@ -78,3 +78,19 @@ test('the logist sees where every truck is, and the presets moved to settings', 
   await page.getByTestId('add-truck').click();
   await expect(page.getByTestId('save-truck')).toBeVisible();
 });
+
+test('a warehouse worker can only load FROM their own warehouse', async ({ page }) => {
+  await login(page, YW_MANAGER);
+  await page.goto('/batches');
+
+  // Aziz works at YW and nowhere else, so there is no origin to choose —
+  // the form states it (owner: "faqat o'zinikini belgilasin"). The action
+  // refused a foreign origin already; offering it taught people to try.
+  await expect(page.getByTestId('quick-origin-fixed')).toHaveText('YW');
+  await expect(page.getByLabel(/Откуда|Qayerdan|From|从/)).toHaveCount(0);
+
+  // The destination is still every warehouse — sending cargo elsewhere is
+  // the entire point of a batch.
+  const dest = page.locator('select[name="destId"]');
+  expect((await dest.locator('option').allInnerTexts()).length).toBeGreaterThan(2);
+});

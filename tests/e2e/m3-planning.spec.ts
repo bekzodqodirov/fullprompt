@@ -58,6 +58,15 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   await page.getByRole('button', { name: /🏷/ }).click();
   await page.locator('button:has(span.font-mono)').filter({ hasText: /YW26-/ }).first().click();
   await expect(page.getByTestId('load-counter')).toHaveText(/1\/1/);
+
+  // The camera reads only what is inside the square guide, so the guide has
+  // to BE square — an `object-cover` rectangle read far more than it showed.
+  const finder = (await page.getByTestId('scan-viewfinder').boundingBox())!;
+  expect(Math.abs(finder.width - finder.height)).toBeLessThan(2);
+
+  // Weight and volume on board, not just a box count (owner).
+  await expect(page.getByTestId('load-totals')).toContainText(/[1-9]\d* kg/);
+  await expect(page.getByTestId('load-totals')).toContainText('m³');
   // Outbox drains (sync banner leaves the "syncing" state)
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
 
