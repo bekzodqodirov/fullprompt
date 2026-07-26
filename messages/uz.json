@@ -315,7 +315,8 @@
     "notifMuteAll": "Hammasini o'chirish",
     "notifMuteDigest": "Kunlik svodka",
     "notifMuteAlerts": "Ogohlantirishlar (plandan tashqari, yo'qolgan, hujjatsiz yuk)",
-    "notifMuteOps": "Operatsiya xabarlari (prixod, kelish, topshirish...)"
+    "notifMuteOps": "Operatsiya xabarlari (prixod, kelish, topshirish...)",
+    "notifMuteTasks": "Mening vazifalarim"
   },
   "receive": {
     "title": "Qabul",
@@ -1136,6 +1137,48 @@
       "too_short": "Juda qisqa",
       "too_long": "Juda uzun",
       "pattern": "Shablonga mos emas"
+    }
+  },
+  "tasks": {
+    "title": "Vazifalar",
+    "today": "Mening kunim",
+    "calendar": "Kalendar",
+    "newTask": "Yangi vazifa",
+    "titlePlaceholder": "Nima qilish kerak?",
+    "notePlaceholder": "Tafsilot (ixtiyoriy)",
+    "assignee": "Kimga",
+    "due": "Muddat",
+    "type": "Turi",
+    "priority": "Muhimligi",
+    "note": "Izoh",
+    "high": "shoshilinch",
+    "normal": "oddiy",
+    "low": "keyinroq",
+    "finish": "Bajarildi",
+    "result": "Natija",
+    "resultPlaceholder": "Nima bo‘ldi?",
+    "reassign": "Boshqaga berish",
+    "cancel": "Bekor qilish",
+    "confirmCancel": "Vazifa bekor qilinsinmi?",
+    "cancelled": "bekor qilindi",
+    "none": "Vazifa yo‘q",
+    "noneThisMonth": "Bu oyda vazifa yo‘q",
+    "overdue": "Kechikkan",
+    "dueToday": "Bugunga",
+    "noDeadline": "Muddatsiz",
+    "allClear": "Bugunga hammasi bajarilgan",
+    "everyone": "Hamma",
+    "errors": {
+      "validation": "Maydonlarni tekshiring",
+      "unauthenticated": "Qayta kiring",
+      "not_found": "Topilmadi",
+      "unknown_entity": "Noma’lum obyekt",
+      "half_pointer": "Obyekt ko‘rsatilmagan",
+      "no_assignee": "Xodim topilmadi",
+      "assignee_inactive": "Xodim o‘chirilgan",
+      "already_closed": "Vazifa allaqachon yopilgan",
+      "bad_due_date": "Muddat noto‘g‘ri",
+      "not_created": "Yaratib bo‘lmadi"
     }
   }
 }

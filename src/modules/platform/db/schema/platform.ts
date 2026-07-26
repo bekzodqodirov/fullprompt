@@ -533,3 +533,65 @@ export const customFieldValues = pgTable(
     index('custom_field_values_ref_idx').on(t.valueRef),
   ],
 );
+
+/**
+ * Tasks (owner: "tasklar calendarlar").
+ *
+ * The entity link reuses `custom_entities`, so a task hangs off any object the
+ * registry knows — and the owner's own entities, when they arrive, carry tasks
+ * without another migration. Both columns null = a standalone task.
+ *
+ * Deliberately NOT a replacement for the CRM follow-up on a lead: that is a
+ * reminder someone sets for themselves, this is work one person gives another,
+ * with a due time and a closing note. `/bugun` shows both in one list.
+ */
+export const taskTypes = pgTable(
+  'task_types',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    icon: text('icon'),
+    sortOrder: integer('sort_order').notNull().default(100),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('task_types_name_unique').on(sql`lower(${t.name})`)],
+);
+
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: id(),
+    title: text('title').notNull(),
+    note: text('note'),
+    typeId: uuid('type_id').references(() => taskTypes.id),
+    assigneeId: uuid('assignee_id')
+      .notNull()
+      .references(() => users.id),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    /** Optional: "sometime" is a real answer, and a forced date is a fake one. */
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    /** Most deadlines are a DAY; the flag keeps "Friday" off 00:00. */
+    allDay: boolean('all_day').notNull().default(true),
+    status: text('status').notNull().default('open'),
+    doneAt: timestamp('done_at', { withTimezone: true }),
+    doneBy: uuid('done_by').references(() => users.id),
+    /** What actually happened — the answer, not the question. */
+    result: text('result'),
+    entityType: text('entity_type').references(() => customEntities.code),
+    entityId: uuid('entity_id'),
+    priority: integer('priority').notNull().default(2),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('tasks_status_check', sql`${t.status} IN ('open', 'done', 'cancelled')`),
+    check('tasks_priority_check', sql`${t.priority} BETWEEN 1 AND 3`),
+    check('tasks_entity_check', sql`(${t.entityType} IS NULL) = (${t.entityId} IS NULL)`),
+    check('tasks_done_check', sql`(${t.status} = 'done') = (${t.doneAt} IS NOT NULL)`),
+    index('tasks_assignee_idx').on(t.assigneeId, t.status, t.dueAt),
+    index('tasks_entity_idx').on(t.entityType, t.entityId),
+  ],
+);

@@ -16,6 +16,7 @@ import { CustomFieldInputs } from '@/components/custom-fields';
 import { LeadForm } from '../lead-form';
 import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
+import { TasksPanel } from '@/components/tasks-panel';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
 export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
@@ -127,6 +128,12 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
           <CustomFieldInputs {...custom} />
         </LeadForm>
       </Panel>
+
+      <TasksPanel
+        entityType="lead"
+        entityId={id}
+        revalidate={`/crm/leads/${id}`}
+      />
     </div>
   );
 }

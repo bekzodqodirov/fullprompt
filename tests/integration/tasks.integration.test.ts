@@ -1,0 +1,266 @@
+import 'dotenv/config';
+import { eq } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { db, pgClient } from '@/modules/platform/db/client';
+import { roles, tasks, userRoles, users } from '@/modules/platform/db/schema';
+import { createClient } from '@/modules/platform/clients/service';
+import {
+  TaskError,
+  aboutLabels,
+  calendarTasks,
+  cancelTask,
+  cancelTasksFor,
+  completeTask,
+  createTask,
+  listTaskTypes,
+  myDay,
+  openCounts,
+  overdueByAssignee,
+  parseDue,
+  reassignTask,
+  tasksFor,
+  updateTask,
+} from '@/modules/platform/tasks/service';
+
+/**
+ * Work one person gives another.
+ *
+ * The cases that matter are the ones where a task would silently disappear —
+ * assigned to somebody who has left, pointing at half a record, or closed
+ * twice — and the day boundary, which decides whether the whole company opens
+ * the app to a list of things it is told are already late.
+ */
+
+const SUFFIX = String(Date.now()).slice(-7);
+let owner: string;
+let other: string;
+let clientId: string;
+const ctx = () => ({ actorId: owner });
+const made: string[] = [];
+
+async function task(over: Record<string, unknown> = {}) {
+  const row = await createTask(
+    {
+      title: `Ish ${SUFFIX}`,
+      note: '',
+      typeId: null,
+      assigneeId: owner,
+      dueAt: '',
+      priority: 2,
+      entityType: null,
+      entityId: null,
+      ...over,
+    } as Parameters<typeof createTask>[0],
+    ctx(),
+  );
+  made.push(row.id);
+  return row;
+}
+
+beforeAll(async () => {
+  const staff = await db
+    .select({ id: users.id, code: roles.code })
+    .from(users)
+    .innerJoin(userRoles, eq(userRoles.userId, users.id))
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(users.active, true));
+  owner = staff.find((row) => row.code === 'super_admin')!.id;
+  other = staff.find((row) => row.id !== owner)!.id;
+  clientId = (
+    await createClient({ clientCode: `TK${SUFFIX}`, name: `Task mijoz ${SUFFIX}`, phones: [] }, ctx())
+  ).id;
+});
+
+afterAll(async () => {
+  // Configuration and work left behind changes what every other screen shows
+  // (DECISIONS #183); this suite shares its database with the e2e run.
+  for (const id of made) await db.delete(tasks).where(eq(tasks.id, id));
+  await pgClient.end();
+});
+
+describe('a deadline is a day unless someone named a time', () => {
+  it('a bare date is due at the END of that day', () => {
+    const { dueAt, allDay } = parseDue('2026-08-14');
+    expect(allDay).toBe(true);
+    // Not 00:00: a task due Friday is not late one minute into Friday, which
+    // is what the whole company would see first thing in the morning.
+    expect(dueAt!.toISOString()).toBe('2026-08-14T23:59:59.999Z');
+  });
+
+  it('a date with a time keeps the time', () => {
+    const { dueAt, allDay } = parseDue('2026-08-14T09:30');
+    expect(allDay).toBe(false);
+    expect(dueAt!.getUTCHours()).toBe(9);
+  });
+
+  it('no deadline is a real answer, and nonsense is refused', () => {
+    expect(parseDue('')).toEqual({ dueAt: null, allDay: true });
+    expect(parseDue(undefined)).toEqual({ dueAt: null, allDay: true });
+    expect(() => parseDue('ertaga')).toThrow('bad_due_date');
+  });
+});
+
+describe('a task cannot be given somewhere it will not be seen', () => {
+  it('refuses somebody who has left', async () => {
+    const [gone] = await db
+      .insert(users)
+      .values({
+        fullName: `Ketgan ${SUFFIX}`,
+        phone: `+99890${SUFFIX}`,
+        passwordHash: 'x',
+        locale: 'uz',
+        active: false,
+      })
+      .returning();
+    await expect(task({ assigneeId: gone!.id })).rejects.toThrow('assignee_inactive');
+    await db.delete(users).where(eq(users.id, gone!.id));
+  });
+
+  it('refuses an object the registry does not know', async () => {
+    await expect(
+      task({ entityType: 'unicorn', entityId: clientId }),
+    ).rejects.toThrow('unknown_entity');
+  });
+
+  it('refuses half a pointer', async () => {
+    await expect(task({ entityType: 'client', entityId: null })).rejects.toThrow('half_pointer');
+    await expect(task({ entityType: null, entityId: clientId })).rejects.toThrow('half_pointer');
+  });
+});
+
+describe('a task hangs off any object the registry knows', () => {
+  it('appears on that record and says what it is about', async () => {
+    const row = await task({
+      title: `Mijozga qo‘ng‘iroq ${SUFFIX}`,
+      entityType: 'client',
+      entityId: clientId,
+    });
+    const onCard = await tasksFor('client', clientId);
+    expect(onCard.map((item) => item.id)).toContain(row.id);
+
+    const labels = await aboutLabels(onCard);
+    expect(labels.get(`client:${clientId}`)).toContain(`Task mijoz ${SUFFIX}`);
+  });
+
+  it('a standalone task belongs to nothing and that is allowed', async () => {
+    const row = await task({ title: `Yolg‘iz ${SUFFIX}` });
+    expect(row.entityType).toBeNull();
+  });
+});
+
+describe('closing, cancelling and handing over', () => {
+  it('records what actually happened, and refuses to close twice', async () => {
+    const row = await task({ title: `Yopiladi ${SUFFIX}` });
+    await completeTask(row.id, 'mijoz rozi', ctx());
+    const [after] = await db.select().from(tasks).where(eq(tasks.id, row.id));
+    expect(after!.status).toBe('done');
+    expect(after!.result).toBe('mijoz rozi');
+    expect(after!.doneAt).not.toBeNull();
+    await expect(completeTask(row.id, 'yana', ctx())).rejects.toThrow('already_closed');
+  });
+
+  it('cancels rather than deletes — the ask itself is a fact', async () => {
+    const row = await task({ title: `Bekor ${SUFFIX}` });
+    await cancelTask(row.id, 'kerak emas', ctx());
+    const [after] = await db.select().from(tasks).where(eq(tasks.id, row.id));
+    expect(after!.status).toBe('cancelled');
+    expect(after!.result).toBe('kerak emas');
+    // Still there — the record of what was asked survives.
+    expect(after).toBeTruthy();
+  });
+
+  it('hands a task to somebody else, but not a closed one', async () => {
+    const row = await task({ title: `O‘tkaziladi ${SUFFIX}` });
+    await reassignTask(row.id, other, ctx());
+    const [after] = await db.select().from(tasks).where(eq(tasks.id, row.id));
+    expect(after!.assigneeId).toBe(other);
+
+    await completeTask(row.id, '', ctx());
+    await expect(reassignTask(row.id, owner, ctx())).rejects.toBeInstanceOf(TaskError);
+    await expect(updateTask(row.id, {
+      title: 'x', note: '', typeId: null, dueAt: '', priority: 2,
+    }, ctx())).rejects.toThrow('already_closed');
+  });
+});
+
+describe('my day', () => {
+  it('separates overdue from today from undated', async () => {
+    const today = new Date();
+    const endOfToday = new Date(today);
+    endOfToday.setUTCHours(23, 59, 59, 999);
+    const yesterday = new Date(today);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const tomorrow = new Date(today);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const day = (value: Date) => value.toISOString().slice(0, 10);
+
+    const late = await task({ title: `Kechikkan ${SUFFIX}`, dueAt: day(yesterday) });
+    const now = await task({ title: `Bugun ${SUFFIX}`, dueAt: day(today) });
+    const later = await task({ title: `Ertaga ${SUFFIX}`, dueAt: day(tomorrow) });
+    const someday = await task({ title: `Qachondir ${SUFFIX}` });
+
+    const mine = await myDay(owner, endOfToday);
+    expect(mine.overdue.map((row) => row.id)).toContain(late.id);
+    expect(mine.today.map((row) => row.id)).toContain(now.id);
+    expect(mine.undated.map((row) => row.id)).toContain(someday.id);
+    // Tomorrow is not today's problem.
+    const all = [...mine.overdue, ...mine.today, ...mine.undated].map((row) => row.id);
+    expect(all).not.toContain(later.id);
+    // …and a task due TODAY is not reported as late.
+    expect(mine.overdue.map((row) => row.id)).not.toContain(now.id);
+  });
+
+  it('counts what each person is carrying', async () => {
+    const counts = await openCounts();
+    expect(counts.get(owner)).toBeGreaterThan(0);
+  });
+
+  it('groups overdue work per person, one message not three', async () => {
+    const grouped = await overdueByAssignee(new Date());
+    const mine = grouped.get(owner) ?? [];
+    expect(mine.every((row) => row.status === 'open')).toBe(true);
+  });
+});
+
+describe('the calendar and the dictionary', () => {
+  it('returns tasks inside the window and excludes cancelled ones', async () => {
+    const from = new Date();
+    from.setUTCDate(from.getUTCDate() - 3);
+    const to = new Date();
+    to.setUTCDate(to.getUTCDate() + 3);
+    const day = to.toISOString().slice(0, 10);
+
+    const shown = await task({ title: `Kalendarda ${SUFFIX}`, dueAt: day });
+    const hidden = await task({ title: `Bekorlangan ${SUFFIX}`, dueAt: day });
+    await cancelTask(hidden.id, 'kerak emas', ctx());
+
+    const window = await calendarTasks(from, to);
+    expect(window.map((row) => row.id)).toContain(shown.id);
+    expect(window.map((row) => row.id)).not.toContain(hidden.id);
+  });
+
+  it('ships usable task types that the owner can edit', async () => {
+    const types = await listTaskTypes();
+    expect(types.length).toBeGreaterThanOrEqual(5);
+    expect(types.map((row) => row.name)).toContain('Hisoblash');
+  });
+});
+
+describe('when the record goes, its open work goes with it', () => {
+  it('cancels open tasks and leaves closed ones alone', async () => {
+    const open = await task({ title: `Ochiq ${SUFFIX}`, entityType: 'client', entityId: clientId });
+    const closed = await task({
+      title: `Yopilgan ${SUFFIX}`,
+      entityType: 'client',
+      entityId: clientId,
+    });
+    await completeTask(closed.id, 'bo‘ldi', ctx());
+
+    await cancelTasksFor(db, 'client', [clientId]);
+    const [a] = await db.select().from(tasks).where(eq(tasks.id, open.id));
+    const [b] = await db.select().from(tasks).where(eq(tasks.id, closed.id));
+    expect(a!.status).toBe('cancelled');
+    // A finished job is history, not something to tidy away.
+    expect(b!.status).toBe('done');
+  });
+});

@@ -9,6 +9,11 @@ export const MUTE_GROUPS = {
   // same kind of "once a day, nothing is on fire" message as the warehouse
   // digest, and someone who mutes that means these too.
   digest: ['DailyDigest', 'CrmFollowUps', 'CrmDormant'],
+  // A group of its own rather than folded into `digest`: someone silencing the
+  // warehouse summary is not saying "stop telling me about the work I was
+  // personally given", and that is the one message nobody should lose by
+  // accident.
+  tasks: ['TasksDue'],
   alerts: ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
   operations: [
     'ReceiptConfirmed',

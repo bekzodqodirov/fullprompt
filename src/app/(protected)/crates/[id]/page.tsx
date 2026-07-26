@@ -17,6 +17,7 @@ import { AttachmentsPanel } from '@/components/attachments-panel';
 import { dissolveCrateAction, updateCrateAction } from '../actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
+import { TasksPanel } from '@/components/tasks-panel';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -179,6 +180,12 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           editable={active}
         />
       </div>
+
+      <TasksPanel
+        entityType="crate"
+        entityId={crate.id}
+        revalidate={`/crates/${crate.id}`}
+      />
 
       <CustomFieldsPanel
         entityType="crate"

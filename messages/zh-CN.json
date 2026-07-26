@@ -315,7 +315,8 @@
     "notifMuteAll": "全部关闭",
     "notifMuteDigest": "每日汇总",
     "notifMuteAlerts": "警报（计划外、丢失、无单货物）",
-    "notifMuteOps": "业务消息（收货、到达、发放…）"
+    "notifMuteOps": "业务消息（收货、到达、发放…）",
+    "notifMuteTasks": "我的任务"
   },
   "receive": {
     "title": "收货",
@@ -1136,6 +1137,48 @@
       "too_short": "太短",
       "too_long": "太长",
       "pattern": "不符合格式"
+    }
+  },
+  "tasks": {
+    "title": "任务",
+    "today": "我的一天",
+    "calendar": "日历",
+    "newTask": "新建任务",
+    "titlePlaceholder": "需要做什么？",
+    "notePlaceholder": "详情（可选）",
+    "assignee": "负责人",
+    "due": "截止",
+    "type": "类型",
+    "priority": "优先级",
+    "note": "备注",
+    "high": "紧急",
+    "normal": "普通",
+    "low": "稍后",
+    "finish": "完成",
+    "result": "结果",
+    "resultPlaceholder": "结果如何？",
+    "reassign": "转交",
+    "cancel": "取消",
+    "confirmCancel": "取消该任务？",
+    "cancelled": "已取消",
+    "none": "暂无任务",
+    "noneThisMonth": "本月无任务",
+    "overdue": "已逾期",
+    "dueToday": "今天到期",
+    "noDeadline": "无截止",
+    "allClear": "今天已全部完成",
+    "everyone": "全部",
+    "errors": {
+      "validation": "请检查字段",
+      "unauthenticated": "请重新登录",
+      "not_found": "未找到",
+      "unknown_entity": "未知对象",
+      "half_pointer": "未指定记录",
+      "no_assignee": "查无此人",
+      "assignee_inactive": "该员工已停用",
+      "already_closed": "任务已关闭",
+      "bad_due_date": "截止时间无效",
+      "not_created": "创建失败"
     }
   }
 }

@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 3-bosqich: vazifalar va kalendar — 2026-07-26
+
+Xodimlar bir-biriga ish topshiradigan joy. Ilgari bu Telegramda edi: kim nima qilishi kerakligi yozishmada qolib ketardi, kim bajardi — bilinmasdi.
+
+**«Mening kunim» (`/bugun`)** — ertalab ochiladigan bitta ekran:
+- 🔴 **Kechikkan** — muddati o'tgan ishlar, tepada
+- 🟡 **Bugunga**
+- 📞 **Bugun qo'ng'iroq qilinadiganlar** — CRM'dagi eski ro'yxat, o'sha joyida
+- ⚪ **Muddatsiz** — pastda, chunki uni e'tiborsiz qoldirish hech qachon xato emas
+
+Vazifa **har qanday yozuvga ilinadi**: mijoz kartochkasidan, prixoddan, partiyadan, lid'dan, yuklash rejasidan, yashikdan. Ya'ni ombor boshlig'i prixodni ko'rib turib, o'sha yerdan VED managerga «kubini qayta hisobla» deb topshiradi — qaysi prixod ekanini tushuntirib o'tirmaydi, vazifada havola turadi.
+
+**Har bir vazifada:** nima qilish kerak, kimga, muddat (sana yoki sana+vaqt), turi (📞 qo'ng'iroq / 🤝 uchrashuv / 🧮 hisoblash / 📄 hujjat / 💰 to'lov — bu ro'yxat tahrirlanadi), muhimligi, izoh.
+
+**Yopishda natija so'raladi** — «nima bo'ldi?». Bu ortiqcha rasmiyatchilik emas: «qo'ng'iroq qildim, dushanba kuni tasdiqlaydi» — bu yagona qoladigan iz. Natijasiz yopiladigan maydonni odamlar bir haftada bezak deb bilib qoladi.
+
+**Kalendar (`/kalendar`)** — oy to'ri, har kunda nima borligi ko'rinadi. Kunni bosib to'liq ro'yxatini ko'rasiz. Oy o'zgartirish — havola, ya'ni oyni **birovga yuborsa bo'ladi**. Rahbar boshqa xodimning yoki hammaning kalendarini ko'ra oladi.
+
+**Telegram:** ertalab **08:00** da har bir xodimga **shaxsan o'ziga** «bugun sizda nima bor» xabari ketadi (kechikkanlari alohida). Hech narsa bo'lmasa — **xabar yubormaydi**: doim bo'sh keladigan kundalik xabar odamni o'qimaslikka o'rgatadi. Profil sozlamalarida buni alohida o'chirish mumkin — ataylab «kunlik xabarlar» guruhidan ajratildi, chunki ombor hisobotini o'chirgan odam «o'z ishim haqida ham aytmang» demagan.
+
+**Nima buzilmadi:** CRM'ning «bugun qo'ng'iroq» mexanizmi **tegilmadi**. U ishlayapti va sotuvchilar har kuni ishlatadi; uni vazifaga aylantirib bitta chiroyli ro'yxat qilish — ishlaydigan ekranni yangisiga almashtirish bo'lardi. `/crm/today` ham o'z joyida qoldi, `/bugun` esa ikkalasini bir joyda ko'rsatadi.
+
+**Ikkita mayda, lekin muhim qaror:**
+- «Juma» deb qo'yilgan muddat — juma kunining **oxiri**, boshi emas. Aks holda butun kompaniya juma kuni ertalab soat 00:01 dan «kechikdingiz» degan qizil ro'yxatni ko'rardi.
+- Vazifa **o'chirilmaydi, bekor qilinadi**. Kimgadir topshirilgan va keyin «kerak emas» deyilgan ish — bu ham ishning qanday ketgani haqidagi ma'lumot.
+
+**Yangi huquq kodi yo'q** — hammada vazifa bo'ladi, ya'ni kirish uchun tizimga kirgan bo'lish yetarli. 20 kishilik kompaniyada «kim kimga vazifa bera oladi» matritsasini hech kim yuritmaydi.
+
+314 test + 37 e2e yashil.
+
 ## 2-bosqich: har joyda «o'zim qo'shgan maydonlar» — 2026-07-26
 
 Custom maydonlar mexanizmi bor edi, lekin faqat **ikkita** obyektga: lid va mijoz. Qaysi obyektlar ruxsat etilganini baza darajasida CHECK bog'lab turardi va uni o'zgartirish uchun beshta faylni bir vaqtda tahrirlash kerak edi. Endi bu **platforma qatlami**: prixod, quti, yashik, partiya, yuklash rejasi, ombor, xodim, mashina, xarajat — hammasiga maydon qo'shasiz.

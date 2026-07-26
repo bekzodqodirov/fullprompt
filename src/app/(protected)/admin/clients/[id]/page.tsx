@@ -14,6 +14,7 @@ import { toggleClientActiveAction, updateClientAction } from '../actions';
 import { createClientCabinetCodeAction, revokeClientCabinetLinkAction } from '../cabinet-actions';
 import { ClientForm } from '../client-form';
 import { ClientCrmSections } from '../../../crm/client-crm';
+import { TasksPanel } from '@/components/tasks-panel';
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -140,6 +141,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       </section>
 
       {/* The fields the owner added to a client, whatever they are. */}
+      <TasksPanel
+        entityType="client"
+        entityId={client.id}
+        revalidate={`/admin/clients/${client.id}`}
+      />
+
       <CustomFieldsPanel
         entityType="client"
         entityId={client.id}

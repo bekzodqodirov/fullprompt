@@ -24,6 +24,7 @@ import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
+import { TasksPanel } from '@/components/tasks-panel';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -281,6 +282,12 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           </button>
         </form>
       )}
+
+      <TasksPanel
+        entityType="receipt"
+        entityId={id}
+        revalidate={`/receipts/${id}`}
+      />
 
       <CustomFieldsPanel
         entityType="receipt"

@@ -315,7 +315,8 @@
     "notifMuteAll": "Отключить все",
     "notifMuteDigest": "Ежедневная сводка",
     "notifMuteAlerts": "Тревоги (вне плана, потери, недокументированный груз)",
-    "notifMuteOps": "Операционные сообщения (приёмка, прибытие, выдача...)"
+    "notifMuteOps": "Операционные сообщения (приёмка, прибытие, выдача...)",
+    "notifMuteTasks": "Мои задачи"
   },
   "receive": {
     "title": "Приёмка",
@@ -1136,6 +1137,48 @@
       "too_short": "Слишком коротко",
       "too_long": "Слишком длинно",
       "pattern": "Не подходит под шаблон"
+    }
+  },
+  "tasks": {
+    "title": "Задачи",
+    "today": "Мой день",
+    "calendar": "Календарь",
+    "newTask": "Новая задача",
+    "titlePlaceholder": "Что нужно сделать?",
+    "notePlaceholder": "Подробности (необязательно)",
+    "assignee": "Кому",
+    "due": "Срок",
+    "type": "Тип",
+    "priority": "Важность",
+    "note": "Описание",
+    "high": "срочно",
+    "normal": "обычно",
+    "low": "потом",
+    "finish": "Выполнено",
+    "result": "Результат",
+    "resultPlaceholder": "Что получилось?",
+    "reassign": "Передать",
+    "cancel": "Отменить",
+    "confirmCancel": "Отменить задачу?",
+    "cancelled": "отменена",
+    "none": "Задач нет",
+    "noneThisMonth": "В этом месяце задач нет",
+    "overdue": "Просрочено",
+    "dueToday": "На сегодня",
+    "noDeadline": "Без срока",
+    "allClear": "На сегодня всё сделано",
+    "everyone": "Все",
+    "errors": {
+      "validation": "Проверьте поля",
+      "unauthenticated": "Войдите заново",
+      "not_found": "Не найдено",
+      "unknown_entity": "Неизвестный объект",
+      "half_pointer": "Не указан объект",
+      "no_assignee": "Сотрудник не найден",
+      "assignee_inactive": "Сотрудник отключён",
+      "already_closed": "Задача уже закрыта",
+      "bad_due_date": "Неверный срок",
+      "not_created": "Не удалось создать"
     }
   }
 }

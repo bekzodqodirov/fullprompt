@@ -19,6 +19,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { VerdictForm } from './verdict-form';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
+import { TasksPanel } from '@/components/tasks-panel';
 
 export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -158,6 +159,12 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
           </div>
         ))}
       </div>
+
+      <TasksPanel
+        entityType="plan"
+        entityId={plan.id}
+        revalidate={`/plans/${plan.id}`}
+      />
 
       <CustomFieldsPanel
         entityType="plan"

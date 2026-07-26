@@ -32,6 +32,7 @@ import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
+import { TasksPanel } from '@/components/tasks-panel';
 
 export default async function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -485,6 +486,12 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           </div>
         </details>
       )}
+
+      <TasksPanel
+        entityType="batch"
+        entityId={batch.id}
+        revalidate={`/batches/${batch.id}`}
+      />
 
       <CustomFieldsPanel
         entityType="batch"

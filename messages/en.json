@@ -315,7 +315,8 @@
     "notifMuteAll": "Mute everything",
     "notifMuteDigest": "Daily digest",
     "notifMuteAlerts": "Alerts (off-plan, losses, undocumented cargo)",
-    "notifMuteOps": "Operational messages (receiving, arrival, handover…)"
+    "notifMuteOps": "Operational messages (receiving, arrival, handover…)",
+    "notifMuteTasks": "My tasks"
   },
   "receive": {
     "title": "Receiving",
@@ -1136,6 +1137,48 @@
       "too_short": "Too short",
       "too_long": "Too long",
       "pattern": "Does not match the pattern"
+    }
+  },
+  "tasks": {
+    "title": "Tasks",
+    "today": "My day",
+    "calendar": "Calendar",
+    "newTask": "New task",
+    "titlePlaceholder": "What needs doing?",
+    "notePlaceholder": "Details (optional)",
+    "assignee": "Who",
+    "due": "Due",
+    "type": "Type",
+    "priority": "Priority",
+    "note": "Note",
+    "high": "urgent",
+    "normal": "normal",
+    "low": "later",
+    "finish": "Done",
+    "result": "Result",
+    "resultPlaceholder": "What happened?",
+    "reassign": "Hand over",
+    "cancel": "Cancel",
+    "confirmCancel": "Cancel this task?",
+    "cancelled": "cancelled",
+    "none": "No tasks",
+    "noneThisMonth": "Nothing due this month",
+    "overdue": "Overdue",
+    "dueToday": "Due today",
+    "noDeadline": "No deadline",
+    "allClear": "Nothing left for today",
+    "everyone": "Everyone",
+    "errors": {
+      "validation": "Check the fields",
+      "unauthenticated": "Sign in again",
+      "not_found": "Not found",
+      "unknown_entity": "Unknown object",
+      "half_pointer": "No record given",
+      "no_assignee": "No such person",
+      "assignee_inactive": "That person is deactivated",
+      "already_closed": "Already closed",
+      "bad_due_date": "Bad deadline",
+      "not_created": "Could not create"
     }
   }
 }

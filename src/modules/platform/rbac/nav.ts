@@ -41,6 +41,21 @@ export const NAV: NavGroupSpec[] = [
     items: [
       { href: '/', labelKey: 'homeTile', namespace: 'nav', icon: 'home', primary: 0, shortKey: 'home' },
       {
+        // Everyone's morning screen: what is late, what is due today. No
+        // permission — every employee has work assigned to them.
+        href: '/bugun',
+        shortKey: 'today',
+        labelKey: 'today',
+        namespace: 'tasks',
+        icon: 'check',
+      },
+      {
+        href: '/kalendar',
+        labelKey: 'calendar',
+        namespace: 'tasks',
+        icon: 'calendar',
+      },
+      {
         href: '/receive',
         shortKey: 'receive',
         labelKey: 'receiving',
@@ -248,16 +263,21 @@ export interface Viewer {
  * and the next entry moves up, so a short list still fills the bar.
  */
 const PRIMARY_BY_ROLE: Record<string, string[]> = {
+  // The warehouse bars are unchanged: receiving IS the job there, and tasks
+  // are occasional — /bugun stays one tap away on the home tiles.
   warehouse_operator: ['/', '/receive', '/arrivals', '/batches', '/issue'],
   warehouse_manager: ['/', '/receive', '/arrivals', '/batches', '/stock'],
-  logist: ['/', '/plans', '/batches', '/trucks', '/stock'],
-  sales_manager: ['/', '/crm', '/crm/today', '/my-clients', '/finance'],
-  accountant: ['/', '/accounting', '/finance', '/reports', '/stock'],
-  ved_manager: ['/', '/batches', '/finance', '/stock', '/reports'],
+  logist: ['/', '/bugun', '/plans', '/batches', '/trucks'],
+  // /crm/today is gone from the bar, not from the app: /bugun shows those same
+  // follow-ups alongside the tasks, so keeping both would be two doors to one
+  // list.
+  sales_manager: ['/', '/bugun', '/crm', '/my-clients', '/finance'],
+  accountant: ['/', '/bugun', '/accounting', '/finance', '/reports'],
+  ved_manager: ['/', '/bugun', '/batches', '/finance', '/stock'],
   // The owner watches the money and the funnel; the operational screens are
   // one tap away behind •••.
-  super_admin: ['/', '/accounting', '/crm', '/stock', '/batches'],
-  admin: ['/', '/accounting', '/crm', '/stock', '/batches'],
+  super_admin: ['/', '/bugun', '/accounting', '/crm', '/stock'],
+  admin: ['/', '/bugun', '/accounting', '/crm', '/stock'],
 };
 
 export function canSee(item: NavItemSpec, viewer: Viewer): boolean {
