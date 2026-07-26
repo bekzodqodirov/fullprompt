@@ -961,7 +961,8 @@
     "today": "Qo‘ng‘iroq",
     "myClients": "Mijozlar",
     "arrivals": "Kelayotgan",
-    "trucks": "Mashina"
+    "trucks": "Mashina",
+    "myDay": "Kunim"
   },
   "cargo": {
     "title": "Yuk",

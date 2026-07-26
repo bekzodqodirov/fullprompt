@@ -961,7 +961,8 @@
     "today": "Звонки",
     "myClients": "Клиенты",
     "arrivals": "Ожидаем",
-    "trucks": "Машины"
+    "trucks": "Машины",
+    "myDay": "Мой день"
   },
   "cargo": {
     "title": "Груз",

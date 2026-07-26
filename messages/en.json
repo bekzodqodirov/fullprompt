@@ -961,7 +961,8 @@
     "today": "Calls",
     "myClients": "Clients",
     "arrivals": "Incoming",
-    "trucks": "Trucks"
+    "trucks": "Trucks",
+    "myDay": "My day"
   },
   "cargo": {
     "title": "Cargo",

@@ -44,7 +44,9 @@ export const NAV: NavGroupSpec[] = [
         // Everyone's morning screen: what is late, what is due today. No
         // permission — every employee has work assigned to them.
         href: '/bugun',
-        shortKey: 'today',
+        // NOT 'today': that short label is the CRM call list's ("Звонки"), and
+        // reusing it put the wrong word under this tab.
+        shortKey: 'myDay',
         labelKey: 'today',
         namespace: 'tasks',
         icon: 'check',
