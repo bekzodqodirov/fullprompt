@@ -5,6 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { roles, userRoles, users, userWarehouses, warehouses } from '@/modules/platform/db/schema';
 import { HistoryTab } from '@/components/history-tab';
 import { toggleUserActiveAction, updateUserAction } from '../actions';
+import { roleOptions } from '../role-options';
 import { UserForm } from '../user-form';
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,6 +32,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       .where(eq(userWarehouses.userId, id))
   ).map((w) => w.warehouseId);
 
+  const roleList = await roleOptions();
   const update = updateUserAction.bind(null, id);
   const toggle = toggleUserActiveAction.bind(null, id);
 
@@ -48,6 +50,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       <UserForm
         action={update}
         warehouses={whs}
+        roles={roleList}
         isNew={false}
         initial={{
           fullName: user.fullName,

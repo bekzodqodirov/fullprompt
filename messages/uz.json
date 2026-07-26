@@ -1025,5 +1025,32 @@
     "notDeparted": "hali yo‘lga chiqmagan",
     "showClosed": "Yopilganlarni ham ko‘rsatish",
     "activeOnly": "Faqat faollari"
+  },
+  "roles": {
+    "title": "Rollar va huquqlar",
+    "intro": "Kim nimani qila olishini shu yerdan o'zgartirasiz. O'zgartirilgan rolga keyingi yangilanish tegmaydi.",
+    "newRole": "Yangi rol",
+    "namePlaceholder": "Rol nomi (masalan: Dispecher)",
+    "descriptionPlaceholder": "Izoh (ixtiyoriy)",
+    "codeHint": "Kod faqat kichik lotin harflari va pastki chiziq: dispatcher, ombor_boshligi",
+    "holders": "{n} kishi",
+    "system": "tizim roli",
+    "custom": "o'zingiz yaratgan",
+    "grantCount": "{n} ta huquq",
+    "edited": "qo'lda o'zgartirilgan",
+    "ownRole": "Bu sizdagi rol — o'z huquqlaringizni o'zgartirib bo'lmaydi. Boshqa admin o'zgartirsin.",
+    "notYours": "sizda yo'q",
+    "errors": {
+      "own_role": "Bu sizdagi rol — o'zgartirib bo'lmaydi",
+      "not_grantable": "O'zingizda yo'q huquqni bera olmaysiz",
+      "unknown_permission": "Noma'lum huquq",
+      "last_admin": "Bunda hech kim rollarni boshqara olmay qoladi — rad etildi",
+      "code_exists": "Bu kod band",
+      "bad_code": "Kod faqat kichik lotin harflari va pastki chiziq bo'lsin",
+      "system_role": "Tizim rolini o'chirib bo'lmaydi",
+      "role_in_use": "Bu rol kimdadir bor — avval olib tashlang",
+      "not_found": "Rol topilmadi",
+      "validation": "Ma'lumot to'liq emas"
+    }
   }
 }

@@ -6,6 +6,11 @@
 
 export const PERMISSION_CODES = [
   // Platform administration
+  // Who may reshape the permission system itself. Deliberately separate from
+  // admin.users.manage: handing out logins and rewriting what a role can do
+  // are different powers, and only the second can quietly create a second
+  // owner.
+  'platform.roles.manage',
   'admin.users.manage',
   'admin.settings.manage',
   'admin.warehouses.manage',

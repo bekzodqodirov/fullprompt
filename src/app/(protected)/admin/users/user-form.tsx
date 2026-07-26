@@ -2,8 +2,8 @@
 
 import { useActionState } from 'react';
 import { useTranslations } from 'next-intl';
-import { ROLE_CODES } from '@/modules/platform/rbac/catalog';
 import type { UserFormState } from './actions';
+import type { RoleOption } from './role-options';
 
 export interface UserFormValues {
   fullName: string;
@@ -18,11 +18,14 @@ export function UserForm({
   action,
   initial,
   warehouses,
+  roles,
   isNew,
 }: {
   action: (prev: UserFormState, formData: FormData) => Promise<UserFormState>;
   initial?: UserFormValues;
   warehouses: { id: string; code: string; name: string }[];
+  /** Every role that exists right now, the owner's own ones included. */
+  roles: RoleOption[];
   isNew: boolean;
 }) {
   const t = useTranslations('users');
@@ -86,16 +89,16 @@ export function UserForm({
       <fieldset>
         <legend className="label">{t('roles')}</legend>
         <div className="grid grid-cols-2 gap-2">
-          {ROLE_CODES.map((code) => (
-            <label key={code} className="flex min-h-10 items-center gap-2 text-sm">
+          {roles.map((role) => (
+            <label key={role.code} className="flex min-h-10 items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 name="roleCodes"
-                value={code}
-                defaultChecked={initial?.roleCodes.includes(code)}
+                value={role.code}
+                defaultChecked={initial?.roleCodes.includes(role.code)}
                 className="h-5 w-5"
               />
-              {t(`roleNames.${code}`)}
+              {role.label}
             </label>
           ))}
         </div>

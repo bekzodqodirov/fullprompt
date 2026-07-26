@@ -14,6 +14,7 @@ export function Panel({
   badge,
   open = false,
   className = '',
+  testId,
   children,
 }: {
   title: ReactNode;
@@ -21,11 +22,16 @@ export function Panel({
   badge?: ReactNode;
   open?: boolean;
   className?: string;
+  /** Put on the summary, so a test can open the panel without reading its label. */
+  testId?: string;
   children: ReactNode;
 }) {
   return (
     <details className={`card !p-0 ${className}`} open={open}>
-      <summary className="cursor-pointer p-3 text-sm font-bold text-ink-700 marker:text-ink-400">
+      <summary
+        data-testid={testId}
+        className="cursor-pointer p-3 text-sm font-bold text-ink-700 marker:text-ink-400"
+      >
         {title}
         {badge != null && (
           <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-xs font-semibold text-brand-700">

@@ -1025,5 +1025,32 @@
     "notDeparted": "not departed yet",
     "showClosed": "Show closed ones too",
     "activeOnly": "Active only"
+  },
+  "roles": {
+    "title": "Roles and permissions",
+    "intro": "Who can do what. A role you edit here is left alone by future updates.",
+    "newRole": "New role",
+    "namePlaceholder": "Role name (e.g. Dispatcher)",
+    "descriptionPlaceholder": "Description (optional)",
+    "codeHint": "Code: lowercase latin letters and underscores only — dispatcher, warehouse_lead",
+    "holders": "{n} people",
+    "system": "system",
+    "custom": "yours",
+    "grantCount": "{n} permissions",
+    "edited": "edited by hand",
+    "ownRole": "This is your own role — you cannot edit your own powers. Ask another admin.",
+    "notYours": "not yours to grant",
+    "errors": {
+      "own_role": "This is your own role — it cannot be edited",
+      "not_grantable": "You cannot grant a permission you do not hold",
+      "unknown_permission": "Unknown permission",
+      "last_admin": "That would leave nobody able to manage roles — refused",
+      "code_exists": "That code is taken",
+      "bad_code": "Code must be lowercase latin letters and underscores",
+      "system_role": "A system role cannot be deleted",
+      "role_in_use": "Somebody holds this role — remove it from them first",
+      "not_found": "Role not found",
+      "validation": "Incomplete data"
+    }
   }
 }

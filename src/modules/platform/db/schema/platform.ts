@@ -98,7 +98,15 @@ export const roles = pgTable('roles', {
   id: id(),
   code: text('code').notNull().unique(),
   name: text('name').notNull(),
+  description: text('description'),
+  /** Ships with the app: renameable, but never deletable. */
   isSystem: boolean('is_system').notNull().default(true),
+  /**
+   * Set the first time someone edits this role's grants. From then on the
+   * seed leaves the role alone — otherwise the next deploy would restore
+   * every permission the owner had just taken away.
+   */
+  grantsCustomised: boolean('grants_customised').notNull().default(false),
   createdAt: createdAt(),
 });
 
@@ -118,8 +126,13 @@ export const rolePermissions = pgTable(
     permissionId: uuid('permission_id')
       .notNull()
       .references(() => permissions.id, { onDelete: 'cascade' }),
+    /** 'seed' = shipped with the app, 'admin' = someone chose it. */
+    source: text('source').notNull().default('seed'),
   },
-  (t) => [primaryKey({ columns: [t.roleId, t.permissionId] })],
+  (t) => [
+    primaryKey({ columns: [t.roleId, t.permissionId] }),
+    check('role_permissions_source_check', sql`${t.source} IN ('seed', 'admin')`),
+  ],
 );
 
 export const userRoles = pgTable(

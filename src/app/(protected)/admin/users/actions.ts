@@ -7,7 +7,6 @@ import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { roles, userRoles, users, userWarehouses } from '@/modules/platform/db/schema';
 import { authorize } from '@/modules/platform/rbac/authorize';
-import { ROLE_CODES } from '@/modules/platform/rbac/catalog';
 import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { hashPassword } from '@/modules/platform/auth/password';
 import { requestMeta } from '@/modules/platform/auth/session';
@@ -22,7 +21,9 @@ const userSchema = z.object({
   username: z.string().trim().max(50).optional().or(z.literal('')),
   password: z.string().max(200).optional().or(z.literal('')),
   locale: z.enum(['ru', 'uz', 'zh-CN', 'en']),
-  roleCodes: z.array(z.enum(ROLE_CODES)).min(1),
+  // Not `z.enum(ROLE_CODES)`: roles the owner invents on /admin/roles are just
+  // as real as the shipped nine. Existence is checked against the table below.
+  roleCodes: z.array(z.string().trim().min(1)).min(1),
   warehouseIds: z.array(z.string().uuid()),
 });
 
@@ -38,18 +39,28 @@ function parseForm(formData: FormData) {
   });
 }
 
+/**
+ * Turn ticked role codes into ids, or refuse.
+ *
+ * Resolved BEFORE the person is written, and refusing when a code does not
+ * resolve: a code deleted between opening the form and saving it would
+ * otherwise be dropped in silence, and the admin would be told the save
+ * succeeded while the person ended up with fewer roles than was ticked.
+ */
+async function resolveRoleIds(roleCodes: string[]): Promise<string[] | null> {
+  const wanted = [...new Set(roleCodes)];
+  const rows = await db.select({ id: roles.id }).from(roles).where(inArray(roles.code, wanted));
+  return rows.length === wanted.length ? rows.map((row) => row.id) : null;
+}
+
 async function syncRolesAndWarehouses(
   userId: string,
-  roleCodes: string[],
+  roleIds: string[],
   warehouseIds: string[],
 ): Promise<void> {
-  const roleRows = await db
-    .select({ id: roles.id })
-    .from(roles)
-    .where(inArray(roles.code, roleCodes));
   await db.delete(userRoles).where(eq(userRoles.userId, userId));
-  if (roleRows.length) {
-    await db.insert(userRoles).values(roleRows.map((r) => ({ userId, roleId: r.id })));
+  if (roleIds.length) {
+    await db.insert(userRoles).values(roleIds.map((roleId) => ({ userId, roleId })));
   }
   await db.delete(userWarehouses).where(eq(userWarehouses.userId, userId));
   if (warehouseIds.length) {
@@ -68,6 +79,9 @@ export async function createUserAction(
   const existing = await db.query.users.findFirst({ where: eq(users.phone, parsed.data.phone) });
   if (existing) return { error: 'phone_exists' };
 
+  const roleIds = await resolveRoleIds(parsed.data.roleCodes);
+  if (!roleIds) return { error: 'validation' };
+
   const [row] = await db
     .insert(users)
     .values({
@@ -80,7 +94,7 @@ export async function createUserAction(
     .returning();
   if (!row) return { error: 'validation' };
 
-  await syncRolesAndWarehouses(row.id, parsed.data.roleCodes, parsed.data.warehouseIds);
+  await syncRolesAndWarehouses(row.id, roleIds, parsed.data.warehouseIds);
 
   const meta = await requestMeta();
   await writeAudit(
@@ -120,6 +134,9 @@ export async function updateUserAction(
   const duplicate = await db.query.users.findFirst({ where: eq(users.phone, parsed.data.phone) });
   if (duplicate && duplicate.id !== id) return { error: 'phone_exists' };
 
+  const roleIds = await resolveRoleIds(parsed.data.roleCodes);
+  if (!roleIds) return { error: 'validation' };
+
   const beforeRoles = (
     await db
       .select({ code: roles.code })
@@ -145,7 +162,7 @@ export async function updateUserAction(
   }
 
   await db.update(users).set(values).where(eq(users.id, id));
-  await syncRolesAndWarehouses(id, parsed.data.roleCodes, parsed.data.warehouseIds);
+  await syncRolesAndWarehouses(id, roleIds, parsed.data.warehouseIds);
 
   const diff = diffFields(
     {

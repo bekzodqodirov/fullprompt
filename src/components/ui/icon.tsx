@@ -45,6 +45,7 @@ export type IconName =
   | 'logout'
   | 'globe'
   | 'menu'
+  | 'shield'
   | 'exchange'
   | 'maximize'
   | 'doc';
@@ -198,6 +199,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  shield: <path d="M12 3.5 5 6.2v5.4c0 4 2.8 7.5 7 9 4.2-1.5 7-5 7-9V6.2l-7-2.7z" />,
   exchange: <path d="M4 8h13m0 0-3-3m3 3-3 3M20 16H7m0 0 3-3m-3 3 3 3" />,
   doc: (
     <>

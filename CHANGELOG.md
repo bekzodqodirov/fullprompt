@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 1-bosqich: rollar konstruktori — kim nimani qila olishi endi sozlama — 2026-07-26
+
+Shu paytgacha «kim nimaga ruxsatli» degan savolning javobi **kodda** turardi (`ROLE_MATRIX`) va bazaga faqat bir marta, seed orqali tushardi — faqat **qo'shish** mumkin edi. Rolga bitta huquq qo'shish uchun ham men kerak edim (yangi versiya chiqarish kerak edi), olib tashlashning esa **umuman iloji yo'q edi**.
+
+Endi `Sozlamalar → Rollar va huquqlar` sahifasi bor:
+
+- **Har bir rol — kartochka**: kodi, nomi, nechta odam shu rolda ishlayapti, nechta huquqi bor. Ochib, **har bir huquqni belgilash yoki olib tashlash** mumkin. Huquqlar sohalar bo'yicha guruhlangan (prixod, partiya, moliya, CRM, admin...) — 38 ta katakcha bir ustunda emas.
+- **Yangi rol yaratish.** Masalan «Dispecher» yoki «Ombor boshlig'i o'rinbosari» — o'zingiz nom berasiz, o'zingiz huquq belgilaysiz. Yangi rol **nol huquq bilan** boshlanadi.
+- **Yangi rol darhol odamlarga beriladi** — xodim kartochkasidagi rollar ro'yxati endi bazadan o'qiydi. (Ilgari u ham kodga yozilgan edi: siz yaratgan rolni hech kimga bera olmasdingiz — ya'ni konstruktor hech kim kiya olmaydigan kiyim tikkan bo'lardi.)
+- **Ishlatilmayotgan rolni o'chirish** mumkin — lekin faqat tizim roli bo'lmasa **va** unda hech kim ishlamasa.
+
+**Himoya choralari — sahifaning asosiy qismi shu.** O'zini o'chirib qo'yadigan yoki birov o'zini yashirincha ko'tarib oladigan ekran — yo'q ekrandan yomonroq:
+
+1. **O'zingiz turgan rolni o'zgartira olmaysiz.** Ekran buni oldindan aytadi (ogohlantirish + katakchalar bloklangan), server ham rad etadi. Sizga rolingizni boshqa admin o'zgartiradi. Bu — o'zini tizimdan qulflab qo'yishning va o'ziga yashirincha huquq berishning eng keng tarqalgan yo'li.
+2. **O'zingizda yo'q huquqni bera olmaysiz.** Aks holda `rollarni boshqarish` huquqi bor har qanday odam amalda super-admin bo'lardi: rolga hamma katakchani belgilab, o'sha rolni o'ziga berardi. Bunday huquqlar ko'rinadi, lekin qulf belgisi bilan — yashirish rolni aslidan kuchsizroq ko'rsatgan bo'lardi.
+3. **Rollarni boshqara oladigan oxirgi odamni yo'qotib bo'lmaydi.** Tekshiruv **tranzaksiya ichida**, ya'ni yozuv qanday holat yaratayotgan bo'lsa, o'shanga qarab. Agar saqlash natijasida tizimda bu ekranga kira oladigan **birorta ham faol odam** qolmasa — o'zgarish butunlay bekor qilinadi.
+4. **Har bir o'zgarish tarixga yoziladi** — kim, qachon, qaysi huquqni qo'shdi yoki oldi (oldingi va yangi ro'yxat bilan).
+5. **Qo'lda o'zgartirilgan rolga yangilanish tegmaydi.** Rolni tahrirlaganingizdan keyin u «✏️ o'zgartirilgan» deb belgilanadi va keyingi versiyalarda seed uni **qayta yozmaydi** — aks holda mening har bir yangilanishim sizning sozlamangizni bekor qilardi. (Seed konsolda qaysi rollarga tegmaganini aytadi.)
+
+Texnik tomondan: 0026-migratsiya (`roles.description`, `roles.grants_customised`, `role_permissions.source`), yangi `platform.roles.manage` huquqi (hozircha faqat `super_admin` va `admin`da), 16 ta integratsiya testi — jumladan «oxirgi admin» ssenariysi (u testda **atayin bekor qilinadigan tranzaksiya** ichida ishlaydi, chunki bu holat bazada qolsa tizimga kirib bo'lmaydi) — va 3 ta e2e.
+
+272 test + 29 e2e yashil.
+
 ## 0-bosqich: serverda turgan xatolarni tuzatish — 2026-07-26
 
 CRM platformasini qurishdan oldin kodni chuqur tekshirdim va **jonli 6 ta xato** topildi. Hammasi tuzatildi.

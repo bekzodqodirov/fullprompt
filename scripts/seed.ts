@@ -83,23 +83,39 @@ async function main() {
   }
 
   // --- Roles & permissions (spec §16 matrix as data) ---
+  //
+  // The matrix BOOTSTRAPS a role; it does not own it. The moment someone
+  // edits a role on the admin screen, `grants_customised` flips and the seed
+  // steps away from that role for good — otherwise the next deploy would
+  // silently restore every permission the owner had just removed, which is
+  // exactly how people learn not to trust a permissions screen.
   for (const code of PERMISSION_CODES) {
     await db.insert(permissions).values({ code }).onConflictDoNothing();
   }
   for (const code of ROLE_CODES) {
     await db.insert(roles).values({ code, name: ROLE_NAMES[code] }).onConflictDoNothing();
   }
-  const roleIds = new Map(
-    (await db.select().from(roles)).map((r) => [r.code as RoleCode, r.id] as const),
-  );
+  const roleRows = await db.select().from(roles);
+  const roleIds = new Map(roleRows.map((r) => [r.code as RoleCode, r.id] as const));
+  const customised = new Set(roleRows.filter((r) => r.grantsCustomised).map((r) => r.code));
   const permIds = new Map((await db.select().from(permissions)).map((p) => [p.code, p.id] as const));
+  const skipped: string[] = [];
   for (const [roleCode, permCodes] of Object.entries(ROLE_MATRIX)) {
+    if (customised.has(roleCode)) {
+      skipped.push(roleCode);
+      continue;
+    }
     for (const permCode of permCodes) {
       await db
         .insert(rolePermissions)
         .values({ roleId: roleIds.get(roleCode as RoleCode)!, permissionId: permIds.get(permCode)! })
         .onConflictDoNothing();
     }
+  }
+  if (skipped.length) {
+    // Said out loud: a new permission shipped in this release did NOT reach
+    // these roles, and somebody has to tick it on the admin screen.
+    console.log(`roles left alone (edited by an admin): ${skipped.join(', ')}`);
   }
 
   // --- Warehouses (bootstrap only: a deleted one must stay deleted) ---

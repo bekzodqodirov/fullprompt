@@ -208,6 +208,13 @@ export const NAV: NavGroupSpec[] = [
         permissions: ['clients.manage'],
       },
       {
+        href: '/admin/roles',
+        labelKey: 'title',
+        namespace: 'roles',
+        icon: 'shield',
+        permissions: ['platform.roles.manage'],
+      },
+      {
         href: '/admin/warehouses',
         labelKey: 'adminPanel',
         namespace: 'home',

@@ -1025,5 +1025,32 @@
     "notDeparted": "尚未发车",
     "showClosed": "同时显示已关闭",
     "activeOnly": "仅活动中"
+  },
+  "roles": {
+    "title": "角色与权限",
+    "intro": "在此设置谁能做什么。手动修改过的角色不会被后续更新覆盖。",
+    "newRole": "新角色",
+    "namePlaceholder": "角色名称（如：调度员）",
+    "descriptionPlaceholder": "说明（可选）",
+    "codeHint": "代码仅限小写拉丁字母和下划线：dispatcher、warehouse_lead",
+    "holders": "{n} 人",
+    "system": "系统角色",
+    "custom": "自建",
+    "grantCount": "{n} 项权限",
+    "edited": "已手动修改",
+    "ownRole": "这是您本人的角色——不能修改自己的权限，请由其他管理员修改。",
+    "notYours": "您无此权限",
+    "errors": {
+      "own_role": "这是您本人的角色，无法修改",
+      "not_grantable": "不能授予您本人没有的权限",
+      "unknown_permission": "未知权限",
+      "last_admin": "这样将无人能管理角色——已拒绝",
+      "code_exists": "该代码已被占用",
+      "bad_code": "代码仅限小写拉丁字母和下划线",
+      "system_role": "系统角色不可删除",
+      "role_in_use": "有人持有该角色——请先解除",
+      "not_found": "未找到角色",
+      "validation": "信息不完整"
+    }
   }
 }

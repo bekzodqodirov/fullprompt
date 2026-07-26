@@ -183,6 +183,13 @@
       "when": 1785130000000,
       "tag": "0025_notification_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785140000000,
+      "tag": "0026_editable_roles",
+      "breakpoints": true
     }
   ]
 }
