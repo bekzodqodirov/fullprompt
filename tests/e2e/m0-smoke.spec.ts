@@ -58,8 +58,11 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
   // Saving lands on the new client CARD so the assigned code is visible
   // (owner: the list hid what code the system gave).
   await expect(page).toHaveURL(/\/admin\/clients\/[0-9a-f-]{36}$/);
-  await expect(page.getByText(`Test Client ${runId}`)).toBeVisible();
-  await expect(page.getByText(`GS9${runId}`)).toBeVisible();
+  // The heading, not any text on the page: a custom LOOKUP field pointing at
+  // clients is a configuration the owner may legitimately add, and it puts
+  // every client's name into an <option> on this very card.
+  await expect(page.getByRole('heading', { name: `Test Client ${runId}` })).toBeVisible();
+  await expect(page.getByRole('heading', { name: `GS9${runId}` })).toBeVisible();
 
   // Client code format validation rejects a malformed code (too short)
   await page.goto('/admin/clients/new');

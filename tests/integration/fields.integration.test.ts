@@ -1,9 +1,16 @@
 import 'dotenv/config';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { clients, customFieldValues, roles, userRoles, users } from '@/modules/platform/db/schema';
+import {
+  clients,
+  customFields,
+  customFieldValues,
+  roles,
+  userRoles,
+  users,
+} from '@/modules/platform/db/schema';
 import { createClient } from '@/modules/platform/clients/service';
 import {
   countFieldAnswers,
@@ -55,11 +62,8 @@ function def(over: Record<string, unknown>) {
   } as Parameters<typeof saveField>[0];
 }
 
-const created: string[] = [];
 async function field(over: Record<string, unknown>) {
-  const row = await saveField(def(over), ctx());
-  created.push(row.id);
-  return row;
+  return saveField(def(over), ctx());
 }
 
 let clientA: string;
@@ -85,10 +89,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Definitions cascade to their answers; the clients are left as data.
-  for (const id of created.reverse()) {
-    await db.delete(customFieldValues).where(eq(customFieldValues.fieldId, id));
-  }
+  // The DEFINITIONS have to go, not just the answers. CI runs vitest and
+  // Playwright against ONE database, so a field left behind here appears on
+  // every client card in the e2e run — a leaked required field makes every
+  // save fail, and a leaked lookup renders a list of every client, which is
+  // enough to break an unrelated spec. Deleted straight from the table rather
+  // than through deleteField, which refuses while a dependent exists; answers
+  // follow by cascade.
+  await db.delete(customFields).where(sql`${customFields.label} LIKE ${`% ${SUFFIX}`}`);
   await pgClient.end();
 });
 
