@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { boxes, clients, crates, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader } from '@/components/ui/page';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 
 /** W2 — crate list (spec 6.2). */
 export default async function CratesPage() {
@@ -29,9 +30,7 @@ export default async function CratesPage() {
     .where(
       and(
         eq(crates.status, 'active'),
-        actor.warehouseScoped && actor.warehouseIds.length
-          ? inArray(crates.warehouseId, actor.warehouseIds)
-          : undefined,
+        warehouseScope(actor, crates.warehouseId),
       ),
     )
     .orderBy(desc(crates.createdAt))

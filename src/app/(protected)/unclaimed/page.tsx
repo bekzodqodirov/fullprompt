@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { boxes, receiptLots, receipts, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader } from '@/components/ui/page';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 
 /** Unclaimed pool (spec 6.7) — resolution actions arrive in M2. */
 export default async function UnclaimedPage() {
@@ -27,9 +28,7 @@ export default async function UnclaimedPage() {
       and(
         isNull(receipts.clientId),
         eq(receipts.status, 'confirmed'),
-        actor.warehouseScoped && actor.warehouseIds.length
-          ? inArray(receipts.warehouseId, actor.warehouseIds)
-          : undefined,
+        warehouseScope(actor, receipts.warehouseId),
       ),
     )
     .orderBy(desc(receipts.receivedAt))

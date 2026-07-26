@@ -1,4 +1,4 @@
-import { asc, eq, inArray, and } from 'drizzle-orm';
+import { asc, eq, and } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -6,6 +6,7 @@ import { warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { EmptyState } from '@/components/ui/page';
 import { IssueScreen } from './issue-screen';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 
 export default async function IssuePage() {
   const actor = await getActor();
@@ -23,9 +24,7 @@ export default async function IssuePage() {
       and(
         eq(warehouses.issuesToClients, true),
         eq(warehouses.active, true),
-        actor.warehouseScoped && actor.warehouseIds.length
-          ? inArray(warehouses.id, actor.warehouseIds)
-          : undefined,
+        warehouseScope(actor, warehouses.id),
       ),
     )
     .orderBy(asc(warehouses.code));

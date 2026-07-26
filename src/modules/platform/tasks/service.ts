@@ -19,6 +19,17 @@ import { entitySpec } from '../fields/registry';
  * receipt, a batch — or at nothing at all.
  */
 
+/**
+ * Who is doing this, alongside the audit trail.
+ *
+ * The mutations need the actor's PERMISSIONS, not just their id, to answer
+ * "is this yours" — so the context carries both rather than every function
+ * growing a fourth argument.
+ */
+export type TaskContext = AuditContext & {
+  actor: { id: string; permissions: Set<string> };
+};
+
 export class TaskError extends Error {
   constructor(public readonly code: string) {
     super(code);
@@ -232,11 +243,12 @@ export async function byId(id: string): Promise<TaskRow | null> {
 export async function completeTask(
   id: string,
   result: string,
-  ctx: AuditContext,
+  ctx: TaskContext,
 ): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!before) throw new TaskError('not_found');
+  if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
 
   const now = new Date();
@@ -306,10 +318,11 @@ export async function completeTask(
  * series on, cancelling ends it. That needs no extra button and the meaning
  * matches the words — "I am not doing this one" versus "we are done with this".
  */
-export async function cancelTask(id: string, reason: string, ctx: AuditContext): Promise<void> {
+export async function cancelTask(id: string, reason: string, ctx: TaskContext): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!before) throw new TaskError('not_found');
+  if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
   await db
     .update(tasks)
@@ -328,11 +341,12 @@ export async function cancelTask(id: string, reason: string, ctx: AuditContext):
 export async function reassignTask(
   id: string,
   assigneeId: string,
-  ctx: AuditContext,
+  ctx: TaskContext,
 ): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!before) throw new TaskError('not_found');
+  if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
   const person = await db.query.users.findFirst({ where: eq(users.id, assigneeId) });
   if (!person?.active) throw new TaskError('assignee_inactive');
@@ -350,11 +364,12 @@ export async function reassignTask(
 export async function updateTask(
   id: string,
   input: Pick<TaskInput, 'title' | 'note' | 'typeId' | 'dueAt' | 'priority'>,
-  ctx: AuditContext,
+  ctx: TaskContext,
 ): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!before) throw new TaskError('not_found');
+  if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
   const { dueAt, allDay } = parseDue(input.dueAt);
   await db
@@ -389,6 +404,28 @@ export async function tasksFor(entityType: string, entityId: string): Promise<Ta
       desc(tasks.createdAt),
     )
     .limit(200);
+}
+
+/**
+ * May this person act on somebody else's task?
+ *
+ * Creating stays open — a company of twenty asks each other for things all
+ * day. CLOSING, cancelling, reassigning and rewriting are not open: without
+ * this, any employee could finish or hand off any task in the company by its
+ * id, and the audit trail would say they did it on purpose.
+ *
+ * The pair of codes is the one `/kalendar` already uses for "may look at
+ * everyone's month", so there is one rule rather than two that drift.
+ */
+export function canActOnTask(
+  task: { assigneeId: string; createdBy: string },
+  actor: { id: string; permissions: Set<string> },
+): boolean {
+  if (task.assigneeId === actor.id || task.createdBy === actor.id) return true;
+  return (
+    actor.permissions.has('crm.leads.view_all') ||
+    actor.permissions.has('reports.all_warehouses')
+  );
 }
 
 export interface DayFilter {

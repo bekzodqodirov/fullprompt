@@ -18,6 +18,7 @@ import { dissolveCrateAction, updateCrateAction } from '../actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
+import { inScope } from '@/modules/platform/rbac/scope';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +39,9 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
     .limit(1);
   const hit = rows[0];
   if (!hit) notFound();
+  // The LIST is warehouse-filtered and this was not, so a uuid from a
+  // colleague's link opened another warehouse's cargo.
+  if (!inScope(actor, hit.crate.warehouseId)) notFound();
   const { crate, clientCode, clientName, whCode } = hit;
 
   const members = await db

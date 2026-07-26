@@ -53,8 +53,8 @@ next-intl · Tailwind (CSS-variable tokens) · pg-boss · Playwright + Vitest.
 ```
 pnpm db:migrate         # hand-written SQL migrations
 pnpm db:seed            # idempotent; reference data, demo only on a fresh db
-pnpm lint && pnpm test  # 297 tests
-pnpm build && pnpm e2e  # 32 e2e
+pnpm lint && pnpm test  # 336 tests
+pnpm build && pnpm e2e  # 41 e2e
 ```
 
 ## Verification ritual (follow it, it catches real bugs)
@@ -127,7 +127,12 @@ Done in this round:
   + file types, validation rules, conditional visibility. Migration 0027.
   `/admin/fields`.
 
-Next, in order: **3** tasks + calendar → **4** record comments with @mentions →
+Phase **3** (tasks + calendar) shipped, followed by an access/clutter pass:
+`MENU_BY_ROLE` in `rbac/nav.ts` (what a job NEEDS, distinct from what it may
+open — #194), `rbac/scope.ts` (the warehouse filter, #199), per-page admin
+guards (#198), card-level scoping (#200) and `canActOnTask` (#201).
+
+Next, in order: **4** record comments with @mentions →
 **5** deals (`docs/DEALS.md`) → **6** approval for issuing to a debtor →
 **7** automation rules → **8** custom entities.
 Explicitly cut: formula fields, a visual node editor, an in-app chat, a
@@ -139,6 +144,12 @@ Deploy 0/1/2 · merge PR #1 · create logins for the 17 sellers then re-run
 `pnpm import-clients --apply --update` · 3 rejected rows · ~19 nameless clients ·
 2 truncated phones (GS161, GS252) · opening balances · confirm person groupings ·
 `pnpm demo-users --disable` · `ANTHROPIC_API_KEY` on the server.
+
+Deferred access work, blocked on the chores above: scoping clients to their
+sales manager (needs the 17 logins first, or it hides nearly every client from
+sales) · warehouse scoping as a `roles` COLUMN rather than two hard-coded role
+names, so an invented warehouse role is not born unscoped · attachment
+authorization (log-only mode first) · lead-mutation ownership.
 
 ## How to work here
 

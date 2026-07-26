@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { canSee, NAV } from '@/modules/platform/rbac/nav';
+import { menuItems, NAV } from '@/modules/platform/rbac/nav';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { Section } from '@/components/ui/page';
+import { myDay } from '@/modules/platform/tasks/service';
+import { endOfToday } from '@/modules/platform/tasks/view';
 
 /**
  * Home.
@@ -31,7 +33,7 @@ export default async function HomePage() {
     const items = [];
     for (const item of group.items) {
       // The home tile for "home" itself would be a link to this page.
-      if (item.href === '/' || !canSee(item, viewer)) continue;
+      if (item.href === '/' || !menuItems(item, viewer)) continue;
       items.push({
         href: item.href,
         label: await label(item.namespace, item.labelKey),
@@ -45,6 +47,16 @@ export default async function HomePage() {
   const [first, ...rest] = groups[0]?.items ?? [];
   const firstGroupTitle = groups[0]?.title;
 
+  // Work somebody gave THIS person, on the screen everyone opens.
+  //
+  // Load-bearing rather than decorative: warehouse staff no longer carry
+  // "my day" in their menu (the owner: they need warehouse work and nothing
+  // else), so without this line a task assigned to a packer would exist and
+  // never be seen. Hiding a screen must never be able to hide the work.
+  const tt = await getTranslations('tasks');
+  const day = await myDay(actor.id, endOfToday());
+  const due = day.overdue.length + day.today.length;
+
   return (
     <div className="space-y-6">
       <div>
@@ -57,6 +69,24 @@ export default async function HomePage() {
           {t('welcome', { name: actor.fullName })}
         </h1>
       </div>
+
+      {due > 0 && (
+        <Link
+          href="/bugun"
+          data-testid="home-tasks"
+          className={`flex items-center gap-3 rounded-2xl border p-3 shadow-card ${
+            day.overdue.length > 0
+              ? 'border-bad/30 bg-bad/10 text-bad'
+              : 'border-warn/30 bg-warn/10 text-warn'
+          }`}
+        >
+          <span className="text-xl">{day.overdue.length > 0 ? '🔴' : '🟡'}</span>
+          <span className="min-w-0 flex-1 font-bold">
+            {day.overdue.length > 0 ? tt('overdue') : tt('dueToday')} · {due}
+          </span>
+          <Icon name="chevronRight" className="h-5 w-5 opacity-70" />
+        </Link>
+      )}
 
       {first && (
         <Section title={firstGroupTitle}>

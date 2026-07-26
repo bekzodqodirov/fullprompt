@@ -33,7 +33,7 @@ export default async function NewPlanPage({
     .where(eq(warehouses.active, true))
     .orderBy(asc(warehouses.code));
   const whs =
-    actor.warehouseScoped && actor.warehouseIds.length
+    actor.warehouseScoped
       ? allWhs.filter((wh) => actor.warehouseIds.includes(wh.id))
       : allWhs;
   const presets = await db

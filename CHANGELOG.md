@@ -1,5 +1,84 @@
 # CHANGELOG
 
+## Dostuplar va tozalash: kimga nima ko'rinadi — 2026-07-26
+
+Sizning so'zingiz bilan: «mening kunim / kalendarlar skladchiga ko'rinishi shart emas … dostuplarni kimga nimalar ko'rinishini yahwilab organ va to'g'irla … juda ko'p funksiyalar bo'lib ketti».
+
+Ikkita **butunlay boshqa** ish qildim va ularni ataylab aralashtirmadim. Birinchisi — **ortiqcha narsalarni yashirish** (xavfsizlikka aloqasi yo'q). Ikkinchisi — **haqiqiy teshiklarni yopish** (men tekshirganimda topilgan, va ochig'i, bir nechtasi jiddiy edi).
+
+---
+
+### 1. Menyu endi har kimning ishiga qarab
+
+Ilgari menyuda 8 ta bo'lim **hech qanday ruxsat so'ramas edi** — ya'ni ular *hammaga* ko'rinardi. Kalendar, «mening kunim», mashinalar taxtasi, xarita — skladchining telefonida ham turardi. Buni faylni o'qib topib bo'lmaydi: xato aynan **hech narsa yozilmagan** qatorlarda edi, shuning uchun har bir rol uchun har bir bo'limni sanab chiqadigan skript yozdim.
+
+Natija (menyudagi bo'limlar soni):
+
+| Rol | Ilgari | Endi |
+|---|---|---|
+| Sklad operatori | 15 | **8** |
+| Sklad boshlig'i | 15 | **11** |
+| Sotuv manageri | 14 | **9** |
+| VED manager | 11 | **8** |
+| Buxgalter | 13 | **10** |
+| Logist | 22 | **13** |
+| Kuzatuvchi | 10 | **5** |
+| Siz (super admin) | 27 | **27** — o'zgarmadi |
+
+**Skladchi endi faqat sklad ishini ko'radi:** qabul, kutilayotgan yuklar, partiyalar, berish, yashiklar, qoldiq, prixodlar. Kalendar ham, «mening kunim» ham, CRM ham, buxgalteriya ham yo'q.
+
+Uchta muhim jihat:
+
+**a) Bu ruxsat emas, tozalash.** Menyudan yashirish hech kimga hech narsa **qo'sha olmaydi** — faqat olib tashlaydi. Kod shunday yozilgan (`ruxsat bor && kerakli`), va buni test tekshiradi. Ya'ni bu ikkinchi, chalkash ruxsat tizimiga aylanib ketmaydi.
+
+**b) Siz yangi rol o'ylab topsangiz — u to'liq menyuni oladi.** `/admin/roles` da yaratilgan rol uchun ro'yxat yo'q, demak u ochiq bo'lib qoladi. Bo'sh ilova bilan qolib ketish — eng yomon variant. Keyin kerak bo'lsa toraytiramiz.
+
+**c) Ish yo'qolib qolmaydi.** `/bugun` skladchining menyusidan chiqdi — lekin unga topshirilgan vazifa **bosh ekranda** ko'rinadi: 🔴 kechikkan yoki 🟡 bugunga, soni bilan, bosilsa o'sha ro'yxatga olib boradi. Bu shart edi: menyuni tozalash ishni yo'qotishga aylanib qolsa, bu tozalash emas. Test ikkala tomonni bitta faylda tekshiradi.
+
+Kuzatuvchi rolida yana bitta eskidan kelayotgan xato chiqdi: telefonning pastki panelida **atigi 2 ta tugma** turardi (o'rniga 4 ta). To'g'rilandi.
+
+---
+
+### 2. Endi haqiqiy teshiklar — bularni topganimda kutmagan edim
+
+**a) 5 ta admin sahifada umuman tekshiruv yo'q edi.**
+`/admin/users`, `/admin/users/new`, `/admin/users/<id>`, `/admin/warehouses/new`, `/admin/warehouses/<id>`, `/admin/clients/new` va `/admin/settings`.
+
+Ular «admin bo'limi» darvozasi ortida turardi — lekin o'sha darvoza `clients.view_own` yoki `crm.leads` bo'lgan **har qanday odamni**, ya'ni **har bir sotuv managerini** kiritadi. Ya'ni sotuv manageri manzilni qo'lda yozsa, **yangi login yaratadigan va rol beradigan ishlaydigan forma** ochilardi. Yana ikkitasi noto'g'ri ruxsatni tekshirardi (xodimlar ro'yxati va sozlamalar «omborlarni boshqarish» ruxsatini so'rardi).
+
+Endi har bir sahifa **o'zining** ruxsatini tekshiradi.
+
+**b) Ombor cheklovi 13 ta joyda teshik edi.**
+Kod shunday yozilgan edi: «agar odam omborga bog'langan **va** omborlari bo'lsa — filtrla, aks holda — filtrlama». Ikkinchi qismi xato: omborga bog'langan, lekin **hali hech qaysi omborga biriktirilmagan** odam (yangi ishga kirgan, yoki biriktiruvi olib tashlangan) **butun kompaniyaning** yukini ko'rardi. Jimgina, va aynan ochib yuboradigan tomonga.
+
+Endi bitta yordamchi funksiya bor va u **«filtrsiz»ni umuman ifodalay olmaydi**: bog'lanmagan → filtr yo'q; omborlari bor → o'shalar; omborsiz → **hech narsa**. Xatoning shakli muhim: eski yozuvni to'g'ri yozish va noto'g'ri yozish ko'zga bir xil ko'rinadi, shuning uchun u shuncha vaqt turgan.
+
+**c) Ro'yxatlar cheklangan edi, kartochkalar — yo'q.**
+`/receipts` Yiwu operatoriga Guanchjou prixodini hech qachon ko'rsatmasdi. `/receipts/<id>` esa — **doim** ko'rsatardi. Bu yerda havolalar Telegramda kun bo'yi yuriladi. Endi prixod, yashik, reja, partiya va karobka kartochkalari ham tekshiradi.
+
+Ikkita nozik joy: **partiya** ikkala uchida ham ko'rinadi (u yetib borgunicha jo'natgan omborniki, keyin qabul qilgannikki — ikkalasiga ham kerak), **karobka** esa hozirgi ombori yoki uni qabul qilgan omborda ko'rinadi (ko'chirilgan karobkani uni joylagan odam ko'ra olishi kerak).
+
+**d) Vazifani istalgan odam yopa olardi.**
+Vazifa mexanizmi faqat «tizimga kirganmi» deb tekshirardi. Ya'ni har qanday xodim, id sini bilsa, **kompaniyadagi istalgan vazifani** yopishi, bekor qilishi yoki boshqaga o'tkazishi mumkin edi — va tarixda «ataylab qildi» deb yozilardi. Endi: **kimga berilgan**, **kim bergan**, va hammaning ishini ko'rish huquqi borlar. **Yaratish ochiq qoladi** — bu yerda hamma bir-biridan kun bo'yi narsa so'raydi, muammo hech qachon bunda emas edi.
+
+Yana bittasi: VED managerga menyuda **partiyalar** yo'q edi — bojxona hujjatlari aynan partiya kartochkasida turadi. Qo'shildi.
+
+---
+
+### Nima qilinmadi va nega
+
+To'rtta narsani **ataylab** qoldirdim, chunki hozir qilinsa ishlab turgan narsani buzardi:
+
+1. **Sotuvchi faqat o'z mijozini ko'rsin.** Bu to'g'ri, lekin hozir mijozlarning deyarli hech biriga sotuvchi biriktirilmagan — 17 ta sotuvchi login hali yaratilmagan. Bugun yoqsam, sotuv bo'limi ertaga **bo'sh ro'yxat** ochadi. Avval loginlar, keyin `pnpm import-clients --apply --update`, keyin bu.
+2. **Ombor cheklovi rol nomiga emas, rol sozlamasiga bog'lansin.** Hozir «bu rol omborga bog'lanadimi» degan javob ikkita rol nomiga qattiq yozilgan — siz yangi sklad roli o'ylab topsangiz, u **cheklovsiz** tug'iladi. To'g'rilash kerak, lekin bu `roles` jadvaliga ustun qo'shish, ya'ni migratsiya — alohida qadam.
+3. **Fayllarga (rasm/hujjat) ruxsat tekshiruvi.** Hozir havolani bilgan tizimdagi odam ochadi. To'g'ri yechim — avval faqat **log yozadigan** rejimda qo'yib, kim nimani ochayotganini bir hafta kuzatish; to'g'ridan-to'g'ri yopsam, ishlab turgan biror jarayonni bilmasdan sindirishim mumkin.
+4. **Lid tahrirlashda egalik tekshiruvi** — yuqoridagi 1-band bilan bir paytda qilinishi kerak.
+
+---
+
+**Tekshiruv:** 336 test (14 tasi yangi) + 41 e2e (4 tasi yangi) — hammasi yashil, toza bazada, CI dagi tartibda. Lint va typecheck toza. Ishlab turgan bironta ekran o'zgarmadi.
+
+
 ## 3-bosqich davomi: takror, mashinalar kalendarda, rahbarga xabar — 2026-07-26
 
 To'rtta savolimga javobingiz bo'yicha:

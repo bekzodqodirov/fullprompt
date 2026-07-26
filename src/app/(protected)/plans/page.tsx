@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
@@ -7,6 +7,7 @@ import { db } from '@/modules/platform/db/client';
 import { batches, loadPlans, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader } from '@/components/ui/page';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 
 const STATUS_COLORS: Record<string, string> = {
   pending_agent: 'bg-orange-100 text-orange-800',
@@ -37,9 +38,7 @@ export default async function PlansPage() {
     .innerJoin(dest, eq(loadPlans.destWarehouseId, dest.id))
     .leftJoin(batches, eq(loadPlans.batchId, batches.id))
     .where(
-      actor.warehouseScoped && actor.warehouseIds.length
-        ? inArray(loadPlans.originWarehouseId, actor.warehouseIds)
-        : undefined,
+      warehouseScope(actor, loadPlans.originWarehouseId),
     )
     .orderBy(desc(loadPlans.createdAt))
     .limit(100);

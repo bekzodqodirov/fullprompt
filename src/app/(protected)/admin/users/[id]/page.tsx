@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { getActor } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
 import { roles, userRoles, users, userWarehouses, warehouses } from '@/modules/platform/db/schema';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
@@ -10,6 +11,10 @@ import { roleOptions } from '../role-options';
 import { UserForm } from '../user-form';
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // Its own gate: the /admin section gate is cosmetic and admits anyone
+  // holding clients.view_own or crm.leads — every sales manager.
+  const actor = await getActor();
+  if (!actor?.permissions.has('admin.users.manage')) redirect('/');
   const { id } = await params;
   const user = await db.query.users.findFirst({ where: eq(users.id, id) });
   if (!user) notFound();

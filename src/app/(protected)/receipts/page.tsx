@@ -1,10 +1,11 @@
 import Link from 'next/link';
-import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { boxes, clients, receiptLots, receipts, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 
 export default async function ReceiptsPage() {
   const actor = await getActor();
@@ -24,9 +25,7 @@ export default async function ReceiptsPage() {
     .innerJoin(warehouses, eq(receipts.warehouseId, warehouses.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(
-      actor.warehouseScoped && actor.warehouseIds.length
-        ? inArray(receipts.warehouseId, actor.warehouseIds)
-        : undefined,
+      warehouseScope(actor, receipts.warehouseId),
     )
     .orderBy(desc(receipts.receivedAt))
     .limit(100);

@@ -72,7 +72,10 @@ export const NAV: NavGroupSpec[] = [
         labelKey: 'loading',
         namespace: 'home',
         icon: 'truck',
-        permissions: ['scan.load'],
+        // `ved.docs` belongs here: the customs papers live on the batch card,
+        // and gating the tile on scan.load alone left the VED manager with no
+        // way in but a pasted URL.
+        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage'],
         primary: 2,
       },
       {
@@ -276,11 +279,83 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
   sales_manager: ['/', '/bugun', '/crm', '/my-clients', '/finance'],
   accountant: ['/', '/bugun', '/accounting', '/finance', '/reports'],
   ved_manager: ['/', '/bugun', '/batches', '/finance', '/stock'],
+  // A read-only viewer had a TWO-icon bar: only `/` and `/stock` carry a
+  // `primary` number among the ten screens they may open, and the generic
+  // fallback can only pick from those. Naming their four makes half the phone
+  // screen useful again.
+  viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // The owner watches the money and the funnel; the operational screens are
   // one tap away behind •••.
   super_admin: ['/', '/bugun', '/accounting', '/crm', '/stock'],
   admin: ['/', '/bugun', '/accounting', '/crm', '/stock'],
 };
+
+/**
+ * What each job actually needs in its MENU (owner: "skladchiga mening kunim
+ * kalendarlar korinishi shart emas — ularga faqat sklad boyicha ishlar").
+ *
+ * This is a different question from what a person may DO. `canSee` answers
+ * "are they allowed"; this answers "is it any use to them". Eight of the
+ * entries above require no permission at all — `canSee` returns true when
+ * `permissions` is absent — so the menu's default was "show everyone", and a
+ * packer in Yiwu was offered the map, the truck board and the calendar.
+ *
+ * Three rules, and the third is the one that matters:
+ *  - a role listed here sees only what it lists (intersected with what it is
+ *    ALLOWED to open, so this can never widen access);
+ *  - several roles union, because permissions union (DECISIONS #166) and
+ *    somebody who is both accountant and warehouse manager does both jobs;
+ *  - a role that is NOT listed here sees everything it may open. That is the
+ *    safe default for the roles an admin invents on /admin/roles: a new role
+ *    gets a full menu rather than an empty one, and the owner narrows it here
+ *    only if it is worth narrowing.
+ *
+ * Hiding a screen from the menu does NOT close the route. A task assigned to
+ * a warehouse operator still reaches them — it surfaces on the home screen and
+ * `/bugun` still answers — because a menu decision must never be able to make
+ * assigned work disappear.
+ */
+const MENU_BY_ROLE: Record<string, string[]> = {
+  // Receive, load, unload, hand over. Nothing else is their job.
+  warehouse_operator: [
+    '/', '/receive', '/arrivals', '/batches', '/issue', '/crates', '/stock', '/receipts',
+  ],
+  // The same, plus the two screens a manager answers questions from.
+  warehouse_manager: [
+    '/', '/receive', '/arrivals', '/batches', '/issue', '/crates', '/stock', '/receipts',
+    '/unclaimed', '/dashboard', '/reports',
+  ],
+  // Plans and trucks. A logist does not receive cargo, but does chase it.
+  logist: [
+    '/', '/bugun', '/kalendar', '/plans', '/batches', '/arrivals', '/trucks', '/map',
+    '/stock', '/receipts', '/admin/trucks', '/dashboard', '/reports',
+  ],
+  // Customs papers hang off the batch; the rest is reference.
+  ved_manager: [
+    '/', '/bugun', '/kalendar', '/batches', '/stock', '/receipts', '/reports', '/finance',
+  ],
+  // Clients, the funnel, and what clients owe — never the company's margin.
+  sales_manager: [
+    '/', '/bugun', '/kalendar', '/crm', '/crm/today', '/my-clients', '/finance',
+    '/pipeline', '/arrivals',
+  ],
+  accountant: [
+    '/', '/bugun', '/kalendar', '/accounting', '/finance', '/reports', '/dashboard',
+    '/admin/fx', '/receipts', '/stock',
+  ],
+  viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
+  // super_admin and admin are deliberately absent: the owner looks at
+  // everything, and a curated list for him would be a list to maintain.
+};
+
+/** Is this screen worth showing to this viewer at all? */
+export function isRelevant(href: string, roles: string[]): boolean {
+  const curated = roles.filter((role) => MENU_BY_ROLE[role]);
+  // An uncurated role — super_admin, or one the owner invented — carries the
+  // whole menu, so nobody is ever left with an empty app.
+  if (curated.length === 0 || curated.length < roles.length) return true;
+  return curated.some((role) => MENU_BY_ROLE[role]!.includes(href));
+}
 
 export function canSee(item: NavItemSpec, viewer: Viewer): boolean {
   if (item.roles && !item.roles.some((role) => viewer.roles.includes(role))) return false;
@@ -288,12 +363,24 @@ export function canSee(item: NavItemSpec, viewer: Viewer): boolean {
   return item.permissions.some((code) => viewer.permissions.has(code));
 }
 
+/**
+ * The menu this viewer gets: allowed AND useful.
+ *
+ * Both conditions, in that order — the relevance list can only ever remove,
+ * never add, so it cannot become a way of granting anything.
+ */
+export function menuItems(item: NavItemSpec, viewer: Viewer): boolean {
+  return canSee(item, viewer) && isRelevant(item.href, viewer.roles);
+}
+
 /** The tab-bar destinations this viewer gets, in the order they want them. */
 export function primaryItems(viewer: Viewer, limit = 4): NavItemSpec[] {
   const all = NAV.flatMap((group) => group.items);
   const visible = (href: string) => {
     const item = all.find((candidate) => candidate.href === href);
-    return item && canSee(item, viewer) ? item : null;
+    // menuItems, not canSee: a screen hidden from the menu must not come back
+    // as a thumb tab.
+    return item && menuItems(item, viewer) ? item : null;
   };
 
   // The most specific role the viewer holds wins; PRIMARY_BY_ROLE is ordered
@@ -305,7 +392,7 @@ export function primaryItems(viewer: Viewer, limit = 4): NavItemSpec[] {
   }
 
   return all
-    .filter((item) => item.primary !== undefined && canSee(item, viewer))
+    .filter((item) => item.primary !== undefined && menuItems(item, viewer))
     .sort((a, b) => a.primary! - b.primary!)
     .slice(0, limit);
 }

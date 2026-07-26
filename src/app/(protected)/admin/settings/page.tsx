@@ -8,7 +8,7 @@ export default async function SettingsPage() {
   // Own gate, not just the layout's: the section is now reachable by roles
   // that only hold FX or audit rights.
   const actor = await getActor();
-  if (!actor?.permissions.has('admin.warehouses.manage')) redirect('/');
+  if (!actor?.permissions.has('admin.settings.manage')) redirect('/');
   const t = await getTranslations('settings');
   const tc = await getTranslations('common');
   const values = await getAllSettings();

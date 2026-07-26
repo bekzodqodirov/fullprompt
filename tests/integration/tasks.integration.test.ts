@@ -36,7 +36,13 @@ const SUFFIX = String(Date.now()).slice(-7);
 let owner: string;
 let other: string;
 let clientId: string;
-const ctx = () => ({ actorId: owner });
+let ownerPerms: Set<string>;
+const ctx = () => ({ actorId: owner, actor: { id: owner, permissions: ownerPerms } });
+/** Somebody with no special rights, for the "not yours" cases. */
+const strangerCtx = () => ({
+  actorId: other,
+  actor: { id: other, permissions: new Set<string>() },
+});
 const made: string[] = [];
 
 async function task(over: Record<string, unknown> = {}) {
@@ -68,6 +74,7 @@ beforeAll(async () => {
     .innerJoin(roles, eq(userRoles.roleId, roles.id))
     .where(eq(users.active, true));
   owner = staff.find((row) => row.code === 'super_admin')!.id;
+  ownerPerms = new Set(['crm.leads.view_all', 'reports.all_warehouses']);
   other = staff.find((row) => row.id !== owner)!.id;
   clientId = (
     await createClient({ clientCode: `TK${SUFFIX}`, name: `Task mijoz ${SUFFIX}`, phones: [] }, ctx())
@@ -337,5 +344,43 @@ describe('a repeating task schedules the next one when this one is closed', () =
     await expect(task({ title: `Muddatsiz ${SUFFIX}`, repeatUnit: 'week' })).rejects.toThrow(
       'repeat_needs_due',
     );
+  });
+});
+
+describe('a task is not something anybody can close', () => {
+  it('refuses a stranger, and allows the assignee, the author and a manager', async () => {
+    // Given to `other`, created by `owner`.
+    const row = await task({ title: `Egasi bor ${SUFFIX}`, assigneeId: other });
+
+    // A third person with no rights over it — the case that was open until
+    // now: any employee could close any task in the company by its id.
+    const stranger = { actorId: clientId, actor: { id: clientId, permissions: new Set<string>() } };
+    await expect(completeTask(row.id, 'men yopdim', stranger)).rejects.toThrow('not_yours');
+    await expect(cancelTask(row.id, '', stranger)).rejects.toThrow('not_yours');
+    await expect(reassignTask(row.id, owner, stranger)).rejects.toThrow('not_yours');
+
+    // The assignee may close their own work…
+    await expect(
+      completeTask(row.id, 'bajardim', strangerCtx()),
+    ).resolves.toBeUndefined();
+
+    // …and the author may act on what they gave out.
+    const second = await task({ title: `Berdim ${SUFFIX}`, assigneeId: other });
+    await expect(cancelTask(second.id, 'kerak emas', ctx())).resolves.toBeUndefined();
+  });
+
+  it('anybody may still CREATE a task for anybody — that stays open', async () => {
+    const row = await createTask(
+      {
+        title: `Begona so‘radi ${SUFFIX}`,
+        note: '', typeId: null, assigneeId: owner, dueAt: '', priority: 2,
+        entityType: null, entityId: null, repeatUnit: null, repeatEvery: 1,
+      },
+      // createTask takes the plain audit context — creation is deliberately
+      // open, so it never needs the actor's permissions.
+      { actorId: other },
+    );
+    made.push(row.id);
+    expect(row.assigneeId).toBe(owner);
   });
 });

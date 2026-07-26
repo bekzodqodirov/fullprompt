@@ -1,10 +1,11 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { currencies, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { CrateBuilder } from './crate-builder';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 
 export default async function NewCratePage() {
   const actor = await getActor();
@@ -16,9 +17,7 @@ export default async function NewCratePage() {
     .select({ id: warehouses.id, code: warehouses.code, country: warehouses.country })
     .from(warehouses)
     .where(
-      actor.warehouseScoped && actor.warehouseIds.length
-        ? inArray(warehouses.id, actor.warehouseIds)
-        : undefined,
+      warehouseScope(actor, warehouses.id),
     )
     .orderBy(asc(warehouses.code));
   const currencyRows = await db

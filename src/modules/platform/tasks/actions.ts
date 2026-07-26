@@ -30,7 +30,15 @@ export interface TaskFormState {
 async function who() {
   const actor = await getActor();
   if (!actor) return null;
-  return { actor, ctx: { actorId: actor.id, ...(await requestMeta()) } };
+  return {
+    actor,
+    ctx: {
+      actorId: actor.id,
+      ...(await requestMeta()),
+      // Carried so the service can answer "is this task yours".
+      actor: { id: actor.id, permissions: actor.permissions },
+    },
+  };
 }
 
 export async function createTaskAction(

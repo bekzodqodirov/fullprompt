@@ -8,6 +8,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { latestPositions } from '@/modules/wms/tracking/devices';
 import { Icon } from '@/components/ui/icon';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
+import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
 
 /**
  * Where every truck is (owner: "/trucks o'rniga «qaysi partiya qayerga yetib
@@ -76,12 +77,7 @@ export default async function TrucksPage({
         showClosed
           ? or(inArray(batches.status, ACTIVE), gte(batches.closedAt, monthAgo))
           : inArray(batches.status, ACTIVE),
-        actor.warehouseScoped && actor.warehouseIds.length
-          ? or(
-              inArray(batches.originWarehouseId, actor.warehouseIds),
-              inArray(batches.destWarehouseId, actor.warehouseIds),
-            )
-          : undefined,
+        warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId),
       ),
     )
     .groupBy(batches.id, origin.code, dest.code)

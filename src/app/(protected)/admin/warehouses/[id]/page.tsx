@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { getActor } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
 import { warehouses } from '@/modules/platform/db/schema';
 import { HistoryTab } from '@/components/history-tab';
@@ -13,6 +14,10 @@ export default async function WarehouseDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  // Its own gate: the /admin section gate is cosmetic and admits anyone
+  // holding clients.view_own or crm.leads — every sales manager.
+  const actor = await getActor();
+  if (!actor?.permissions.has('admin.warehouses.manage')) redirect('/');
   const { id } = await params;
   const wh = await db.query.warehouses.findFirst({ where: eq(warehouses.id, id) });
   if (!wh) notFound();

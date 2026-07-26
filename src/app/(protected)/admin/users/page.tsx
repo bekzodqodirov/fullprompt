@@ -10,7 +10,7 @@ export default async function UsersPage() {
   // Own gate, not just the layout's: the section is now reachable by roles
   // that only hold FX or audit rights.
   const actor = await getActor();
-  if (!actor?.permissions.has('admin.warehouses.manage')) redirect('/');
+  if (!actor?.permissions.has('admin.users.manage')) redirect('/');
   const t = await getTranslations('users');
   const tc = await getTranslations('common');
 

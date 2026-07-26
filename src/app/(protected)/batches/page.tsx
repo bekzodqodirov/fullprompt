@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
@@ -9,6 +9,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
 import { createQuickBatchAction } from './batch-actions-server';
 import { PageHeader } from '@/components/ui/page';
+import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
 
 const COLUMNS = ['forming', 'loading', 'in_transit', 'arrived'] as const;
 /** Finished work: off the board, but the owner still needs to find it. */
@@ -26,6 +27,11 @@ export default async function BatchesPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
+  // The tile promises a permission the page never checked, so the board and
+  // the archive were open by URL to everyone. `ved.docs` is in the list on
+  // purpose: the customs papers live here and it is the VED manager's job.
+  const canOpen = ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close'];
+  if (!canOpen.some((code) => actor.permissions.has(code))) redirect('/');
   const t = await getTranslations('batches');
   const params = await searchParams;
   const archiveOpen = params.archive === '1' || !!params.q;
@@ -40,19 +46,12 @@ export default async function BatchesPage({
   // origin, but offering it in the dropdown taught people to try — and the
   // refusal looked like a bug rather than a rule. The destination stays the
   // full list: sending cargo somewhere else is the whole point.
-  const originWhs =
-    actor.warehouseScoped && actor.warehouseIds.length
-      ? quickWhs.filter((wh) => actor.warehouseIds.includes(wh.id))
-      : quickWhs;
+  const originWhs = actor.warehouseScoped
+    ? quickWhs.filter((wh) => actor.warehouseIds.includes(wh.id))
+    : quickWhs;
 
   const dest = aliasedTable(warehouses, 'dest');
-  const scope =
-    actor.warehouseScoped && actor.warehouseIds.length
-      ? or(
-          inArray(batches.originWarehouseId, actor.warehouseIds),
-          inArray(batches.destWarehouseId, actor.warehouseIds),
-        )
-      : undefined;
+  const scope = warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId);
 
   const listBatches = (statuses: readonly string[], limit: number, search?: string) =>
     db

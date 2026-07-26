@@ -8,7 +8,7 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { readTheme } from '@/modules/platform/theme/theme';
 import { Icon } from '@/components/ui/icon';
 import { MobileNav, Sidebar, type NavGroup, type NavItem } from '@/components/ui/nav';
-import { canSee, NAV, primaryItems } from '@/modules/platform/rbac/nav';
+import { menuItems, NAV, primaryItems } from '@/modules/platform/rbac/nav';
 
 /**
  * The app shell.
@@ -36,7 +36,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   for (const group of NAV) {
     const items: NavItem[] = [];
     for (const item of group.items) {
-      if (!canSee(item, viewer)) continue;
+      if (!menuItems(item, viewer)) continue;
       items.push({
         href: item.href,
         label: await label(item.namespace, item.labelKey),

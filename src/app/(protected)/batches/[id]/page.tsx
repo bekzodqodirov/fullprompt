@@ -33,6 +33,7 @@ import { UnloadActions } from './unload-actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
+import { inScope } from '@/modules/platform/rbac/scope';
 
 export default async function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -52,6 +53,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     .limit(1);
   const hit = rows[0];
   if (!hit) notFound();
+  // Origin OR destination — exactly the rule the batch LIST already uses. A
+  // trip belongs to both warehouses; only the list was saying so.
+  if (!inScope(actor, hit.batch.originWarehouseId) && !inScope(actor, hit.batch.destWarehouseId)) {
+    notFound();
+  }
   const { batch, originCode, destCode } = hit;
 
   const lots = await db

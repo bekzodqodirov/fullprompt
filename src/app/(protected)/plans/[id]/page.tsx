@@ -20,6 +20,7 @@ import { VerdictForm } from './verdict-form';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
+import { inScope } from '@/modules/platform/rbac/scope';
 
 export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -40,6 +41,9 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
     .limit(1);
   const hit = rows[0];
   if (!hit) notFound();
+  // The LIST is warehouse-filtered and this was not, so a uuid from a
+  // colleague's link opened another warehouse's cargo.
+  if (!inScope(actor, hit.plan.originWarehouseId)) notFound();
   const { plan, originCode, destCode, batchCode } = hit;
 
   const versions = await db

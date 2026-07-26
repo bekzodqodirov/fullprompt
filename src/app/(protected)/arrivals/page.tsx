@@ -32,7 +32,9 @@ export default async function ArrivalsPage() {
   const format = await getFormatter();
   const today = new Date().toISOString().slice(0, 10);
 
-  const scoped = actor.warehouseScoped && actor.warehouseIds.length ? actor.warehouseIds : undefined;
+  // An empty array, not undefined: a scoped person with no warehouse must
+  // see nothing rather than everything.
+  const scoped = actor.warehouseScoped ? actor.warehouseIds : undefined;
   const [expected, trucks, whs] = await Promise.all([
     listExpected(scoped),
     incomingTrucks(scoped),

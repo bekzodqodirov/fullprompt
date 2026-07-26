@@ -12,6 +12,7 @@ import {
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 
 /**
  * Stock report XLSX (spec §9/§13 report 1) with the current stock-browser
@@ -38,9 +39,8 @@ export async function GET(request: Request) {
   ];
   // Downloaded to be read → follows the reader's language.
   const L = reportLabels(actor.locale);
-  if (actor.warehouseScoped && actor.warehouseIds.length) {
-    filters.push(inArray(boxes.currentWarehouseId, actor.warehouseIds));
-  }
+  const scope = warehouseScope(actor, boxes.currentWarehouseId);
+  if (scope) filters.push(scope);
   if (wh) filters.push(eq(boxes.currentWarehouseId, wh));
   if (q) {
     filters.push(

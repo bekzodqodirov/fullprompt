@@ -25,6 +25,7 @@ import { ReturnToSender } from './return-to-sender';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
+import { inScope } from '@/modules/platform/rbac/scope';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -33,6 +34,9 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, id) });
   if (!receipt) notFound();
+  // The LIST is warehouse-filtered and this was not, so a uuid from a
+  // colleague's link opened another warehouse's cargo.
+  if (!inScope(actor, receipt.warehouseId)) notFound();
 
   const t = await getTranslations('receipts');
   const tc = await getTranslations('common');

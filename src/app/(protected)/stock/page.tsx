@@ -13,6 +13,7 @@ import {
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { LightboxImg } from '@/components/lightbox-img';
 import { SortTh, sortRows } from '@/components/sort-th';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = [
@@ -54,9 +55,8 @@ export default async function StockPage({
   const scopeFilter: SQL[] = [
     inArray(boxes.status, ['in_stock', 'planned', 'loading', 'ready_for_pickup']),
   ];
-  if (actor.warehouseScoped && actor.warehouseIds.length) {
-    scopeFilter.push(inArray(boxes.currentWarehouseId, actor.warehouseIds));
-  }
+  const boxScope = warehouseScope(actor, boxes.currentWarehouseId);
+  if (boxScope) scopeFilter.push(boxScope);
   if (params.wh) scopeFilter.push(eq(boxes.currentWarehouseId, params.wh));
 
   // Lot drill-down: box list
@@ -64,7 +64,9 @@ export default async function StockPage({
     const boxRows = await db
       .select()
       .from(boxes)
-      .where(eq(boxes.lotId, params.lot))
+      // The list above is scoped and this branch was not: a lot id in the URL
+      // showed another warehouse's boxes.
+      .where(boxScope ? and(eq(boxes.lotId, params.lot), boxScope) : eq(boxes.lotId, params.lot))
       .orderBy(asc(boxes.seqInLot));
     const lot = await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, params.lot) });
     return (
