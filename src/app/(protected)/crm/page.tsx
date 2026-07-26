@@ -2,81 +2,94 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { followUps, funnelReport, openLeadCount } from '@/modules/wms/crm/service';
+import { listLeads, listStages } from '@/modules/wms/crm/service';
+import { KanbanBoard } from './leads/kanban';
 import { Icon } from '@/components/ui/icon';
-import { EmptyState, Stat } from '@/components/ui/page';
+import { PageHeader } from '@/components/ui/page';
 
 /**
- * The CRM home screen is the call list, not a dashboard.
+ * The funnel board — and nothing else.
  *
- * A sales manager opens this in the morning to find out who to ring; putting
- * charts here first would bury the only thing that has to happen today.
+ * The per-source conversion table used to sit under it; the owner asked for a
+ * clean kanban, and a report is not what you open a board to read.
+ *
+ * Columns scroll sideways INSIDE the board rather than making the page scroll
+ * — a 360 px phone cannot show eight stages at once, and this is the shape
+ * every salesperson already knows from amoCRM.
  */
-export default async function CrmPage() {
+export default async function LeadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ scope?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crm.leads')) redirect('/');
   const t = await getTranslations('crm');
-  const seesAll = actor.permissions.has('crm.leads.view_all');
-  const scope = seesAll ? undefined : actor.id;
+  const params = await searchParams;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const [due, openLeads, funnel] = await Promise.all([
-    followUps(today, scope),
-    openLeadCount(scope),
-    funnelReport(scope),
-  ]);
-  const won = funnel.stages.filter((row) => row.kind === 'won').reduce((a, r) => a + r.n, 0);
+  const seesAll = actor.permissions.has('crm.leads.view_all');
+  // Someone who may see everything still starts on their own leads; "all" is
+  // one tap away and is what the owner uses.
+  const mine = !seesAll || params.scope !== 'all';
+  const scope = mine ? actor.id : undefined;
+
+  const [stages, rows] = await Promise.all([listStages(), listLeads({ ownerId: scope })]);
+  // The board counts its own columns: a card dropped into another stage must
+  // update the header immediately, before the server has revalidated.
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
-      {/* No page title here: the section tab strip above already says
-          "today's calls", and repeating it wasted the first screenful. */}
-      <div className="flex justify-end">
-        <Link href="/crm/leads/new" className="btn-primary">
-          <Icon name="plus" className="h-4 w-4" />
-          {t('newLead')}
-        </Link>
-      </div>
+    <div className="space-y-3">
+      <PageHeader
+        icon="target"
+        title={t('funnel')}
+        actions={
+          <Link href="/crm/leads/new" className="btn-primary">
+            <Icon name="plus" className="h-4 w-4" />
+            {t('newLead')}
+          </Link>
+        }
+      />
 
-      <div className="grid grid-cols-3 gap-2.5">
-        <Stat href="/crm/leads" label={t('leads')} value={openLeads} tone="brand" />
-        <Stat label={t('kindWon')} value={won} tone="good" />
-        <Stat label={t('today')} value={due.length} tone={due.length ? 'warn' : 'neutral'} />
-      </div>
-
-      {due.length === 0 ? (
-        <EmptyState icon="check" title={t('nothingToday')} />
-      ) : (
-        <div className="space-y-2">
-          {due.map((item) => (
+      {seesAll && (
+        <div className="flex gap-1.5 text-sm font-semibold">
+          {[
+            { href: '/crm', label: t('mine'), on: mine },
+            { href: '/crm?scope=all', label: t('all'), on: !mine },
+          ].map((tab) => (
             <Link
-              key={`${item.kind}-${item.id}`}
-              href={item.kind === 'lead' ? `/crm/leads/${item.id}` : `/admin/clients/${item.id}`}
-              className={`card-tap block ${
-                item.dueOn < today ? 'border-l-4 border-l-warn' : ''
+              key={tab.href}
+              href={tab.href}
+              className={`rounded-xl px-3 py-2 ${
+                tab.on ? 'bg-brand-600 text-white shadow-card' : 'bg-surface-raised ring-1 ring-line'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <Icon
-                  name={item.kind === 'lead' ? 'target' : 'user'}
-                  className="h-4 w-4 text-ink-400"
-                />
-                <span className="font-semibold">{item.title}</span>
-                {item.subtitle && <span className="text-sm text-ink-500">{item.subtitle}</span>}
-                <span
-                  className={`ml-auto text-xs ${
-                    item.dueOn < today ? 'font-bold text-warn' : 'text-ink-500'
-                  }`}
-                >
-                  {item.dueOn < today ? `⚠️ ${item.dueOn}` : item.dueOn}
-                </span>
-              </div>
-              {item.note && <p className="mt-1 text-sm text-ink-700">{item.note}</p>}
+              {tab.label}
             </Link>
           ))}
         </div>
       )}
+
+      <KanbanBoard
+        stages={stages.map((stage) => ({
+          id: stage.id,
+          name: stage.name,
+          kind: stage.kind,
+          color: stage.color,
+        }))}
+        leads={rows.map(({ lead, sourceName, ownerName, clientCode }) => ({
+          id: lead.id,
+          stageId: lead.stageId,
+          name: lead.name,
+          company: lead.company,
+          phone: lead.phone,
+          sourceName,
+          ownerName,
+          clientCode,
+          nextActionAt: lead.nextActionAt,
+        }))}
+      />
+
     </div>
   );
 }

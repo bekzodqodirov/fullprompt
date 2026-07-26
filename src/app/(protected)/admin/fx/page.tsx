@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { currencies, fxRates, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { perUsd } from '@/modules/wms/costing/fx-display';
 import { FxForm } from './fx-form';
 import { PageHeader } from '@/components/ui/page';
 
@@ -35,8 +36,12 @@ export default async function FxPage() {
       <div className="card space-y-1">
         {rates.map(({ rate, enteredBy }) => (
           <div key={rate.id} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
+            {/* Read the way it was entered: 1 USD = N units. */}
+            <span className="font-semibold">1 USD =</span>
+            <span className="font-mono font-bold tabular-nums">
+              {perUsd(Number(rate.rateToUsd))?.toLocaleString('en-US') ?? '—'}
+            </span>
             <span className="font-mono font-bold">{rate.currency}</span>
-            <span className="font-semibold">{Number(rate.rateToUsd)}</span>
             <span className="text-ink-500">{rate.effectiveDate}</span>
             {enteredBy && <span className="ml-auto text-xs text-ink-500">{enteredBy}</span>}
           </div>

@@ -83,20 +83,17 @@ export const NAV: NavGroupSpec[] = [
         icon: 'crate',
         permissions: ['crates.manage'],
       },
-      {
-        href: '/inventory',
-        labelKey: 'title',
-        namespace: 'inventory',
-        icon: 'scan',
-        permissions: ['scan.load'],
-      },
+      // Stocktake is hidden until the RFID readers arrive (owner): counting a
+      // warehouse by hand-scanning every box is not a job anyone will do, so
+      // offering it only teaches people to ignore a menu entry. The screens
+      // and the service stay — /inventory still answers, and the entry comes
+      // back the day the hardware does.
     ],
   },
   {
     titleKey: 'sectionInfo',
     items: [
       { href: '/stock', labelKey: 'title', namespace: 'stock', icon: 'boxes', primary: 3, shortKey: 'stock' },
-      { href: '/search', labelKey: 'title', namespace: 'search', icon: 'search', primary: 8, shortKey: 'search' },
       { href: '/receipts', labelKey: 'title', namespace: 'receipts', icon: 'doc' },
       { href: '/unclaimed', labelKey: 'unclaimedTitle', namespace: 'receipts', icon: 'alert' },
       { href: '/map', labelKey: 'title', namespace: 'map', icon: 'map' },
@@ -125,16 +122,16 @@ export const NAV: NavGroupSpec[] = [
         shortKey: 'crm',
         labelKey: 'title',
         namespace: 'crm',
-        icon: 'phone',
+        icon: 'target',
         permissions: ['crm.leads'],
         primary: 2,
       },
       {
-        href: '/crm/leads',
-        shortKey: 'funnel',
-        labelKey: 'funnel',
+        href: '/crm/today',
+        shortKey: 'today',
+        labelKey: 'today',
         namespace: 'crm',
-        icon: 'target',
+        icon: 'phone',
         permissions: ['crm.leads'],
       },
       {
@@ -218,7 +215,7 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
   warehouse_operator: ['/', '/receive', '/batches', '/issue', '/stock'],
   warehouse_manager: ['/', '/receive', '/batches', '/stock', '/issue'],
   logist: ['/', '/plans', '/batches', '/stock', '/crm'],
-  sales_manager: ['/', '/crm', '/crm/leads', '/finance', '/stock'],
+  sales_manager: ['/', '/crm', '/crm/today', '/finance', '/stock'],
   accountant: ['/', '/accounting', '/finance', '/reports', '/stock'],
   ved_manager: ['/', '/batches', '/finance', '/stock', '/reports'],
   // The owner watches the money and the funnel; the operational screens are

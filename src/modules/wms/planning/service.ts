@@ -16,6 +16,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { nextBatchCode } from '../codes';
+import { mintBatchPairCode } from '../tracking/devices';
 
 export class PlanError extends Error {
   constructor(
@@ -313,6 +314,9 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
         createdBy: actorId,
       })
       .returning();
+    // The driver's pairing code exists from the batch's first second, printed
+    // on its header — nobody has to remember to create one at the gate.
+    await mintBatchPairCode(tx, batch!.id, actorId);
 
     const lines = await tx
       .select()

@@ -124,7 +124,9 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
             <span className="font-semibold">
               {line.plannedBoxCount}/{lot.boxCount} 📦
             </span>
-            <span className="text-ink-500">{line.plannedKg} kg</span>
+            <span className="whitespace-nowrap text-ink-500">
+              {line.plannedKg} kg · {line.plannedM3} m³
+            </span>
           </div>
         ))}
       </div>

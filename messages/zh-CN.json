@@ -493,7 +493,7 @@
     "fxTitle": "汇率",
     "rate": "汇率（1 单位 = ? USD）",
     "ratePlaceholder": "例如 0.14",
-    "rateHint": "输入 1 单位货币等于多少 USD（CNY ≈ 0.14）。汇率带日期保存 — 费用按其日期的汇率折算。",
+    "rateHint": "按口语写法填写：1 USD = 12 500 苏姆",
     "date": "日期",
     "noRates": "尚未输入汇率",
     "addCost": "添加费用",
@@ -574,7 +574,9 @@
     "archive": "归档 — 已完成批次",
     "archiveSearch": "批次代码、车牌或司机",
     "archiveEmpty": "未找到",
-    "codeTaken": "该代码已被占用"
+    "codeTaken": "该代码已被占用",
+    "vehicleTitle": "车辆与司机",
+    "pairCodeLabel": "司机应用代码"
   },
   "loading": {
     "title": "装车",
@@ -916,6 +918,7 @@
     "finance": "财务",
     "accounting": "管账",
     "reports": "报表",
-    "search": "搜索"
+    "search": "搜索",
+    "today": "跟进"
   }
 }

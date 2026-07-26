@@ -5,6 +5,7 @@ import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_RECOMPUTE_COSTS } from '@/modules/platform/jobs/boss';
 import { fxRateSchema, upsertFxRate } from '@/modules/wms/costing/service';
+import { toRateToUsd } from '@/modules/wms/costing/fx-display';
 
 export interface FxFormState {
   ok?: boolean;
@@ -15,9 +16,14 @@ export async function saveFxRateAction(
   _prev: FxFormState,
   formData: FormData,
 ): Promise<FxFormState> {
+  // The form asks the question the way people say it — "1 USD = how many
+  // so'm" — and this is where it becomes the rate_to_usd the engine stores.
+  const quoted = Number(String(formData.get('unitsPerUsd') ?? '').replace(/\s/g, '').replace(',', '.'));
+  const rateToUsd = toRateToUsd(quoted);
+  if (rateToUsd === null) return { error: 'validation' };
   const parsed = fxRateSchema.safeParse({
     currency: formData.get('currency'),
-    rateToUsd: Number(String(formData.get('rateToUsd') ?? '').replace(',', '.')),
+    rateToUsd,
     effectiveDate: formData.get('effectiveDate'),
   });
   if (!parsed.success) return { error: 'validation' };

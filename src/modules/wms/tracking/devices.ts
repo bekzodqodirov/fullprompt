@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, driverDevices, driverPositions } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 
@@ -36,6 +36,23 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
  * real fix as stale and hand the map back to the estimate.
  */
 export const FRESH_MINUTES = 8 * 60;
+
+/**
+ * Every trip is born with a code (owner: "code shu plan yaratilgani o'zida
+ * yaratilib bu sarlavhaga yozib qo'yilsa bo'ladimi").
+ *
+ * It rides in the same transaction as the batch, so there is no window where a
+ * trip exists without one: the loader reads it off the batch header while the
+ * driver is still at the gate instead of hunting for a button. Pairing burns
+ * the code, which is why the manual "new code" button stays.
+ */
+export async function mintBatchPairCode(dbOrTx: Db | Tx, batchId: string, actorId: string) {
+  const [row] = await dbOrTx
+    .insert(driverDevices)
+    .values({ batchId, pairCode: newPairCode(), createdBy: actorId })
+    .returning();
+  return row!;
+}
 
 /** Mint a pairing code for a trip. The phone exchanges it for a token. */
 export async function createDriverDevice(

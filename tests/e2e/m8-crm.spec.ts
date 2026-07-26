@@ -59,17 +59,18 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await page.getByTestId('save-activity').click();
   await expect(page.getByText('narx aytdim')).toBeVisible();
 
-  await page.goto('/crm');
+  // Booked for today, so it is on the call list.
+  await page.goto('/crm/today');
   await expect(page.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
 
-  // The funnel board shows it, and the custom answer survived the round trip.
-  await page.goto('/crm/leads?scope=all');
+  // /crm IS the board now (owner: the CRM opens on the funnel, not a table).
+  await page.goto('/crm?scope=all');
   await expect(page.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
 
   // Drag the card from one column to the next with a real pointer gesture —
   // HTML5 drag-and-drop does not fire on touch, so this is what the phone
   // actually does: press, hold, move, release.
-  await page.goto('/crm/leads?scope=all');
+  await page.goto('/crm?scope=all');
   const card = page.getByTestId('lead-card').filter({ hasText: `Sinov mijoz ${runId}` });
   const from = (await card.boundingBox())!;
   const target = page.getByTestId('column-open').nth(1);
@@ -95,7 +96,7 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
 
   // Won → convert. The convert panel opens by itself on a won stage, so the
   // last step of a deal is never a tap away from being forgotten.
-  await page.goto('/crm/leads?scope=all');
+  await page.goto('/crm?scope=all');
   await page.getByText(`Sinov mijoz ${runId}`).click();
   await expect(page.getByLabel(`Shahar ${runId}`)).toHaveValue('Andijon');
   await page.getByTestId('stage-won').click();

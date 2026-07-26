@@ -23,6 +23,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   if (!actor) redirect('/login');
   const t = await getTranslations('nav');
   const tHome = await getTranslations('home');
+  const tSearch = await getTranslations('search');
   const theme = await readTheme();
 
   // Labels come from each screen's own namespace, so the nav never invents a
@@ -72,10 +73,12 @@ export default async function ProtectedLayout({ children }: { children: React.Re
             <span className="hidden text-ink-900 sm:inline">GSR GROUP</span>
           </Link>
           <div className="min-w-0 flex-1" />
+          {/* Search is a tool, not a destination (owner): it lives in the bar
+              at every width instead of taking a tile and a sidebar row. */}
           <Link
             href="/search"
-            aria-label={t('home')}
-            className="btn-ghost btn-icon text-ink-700 md:hidden"
+            aria-label={tSearch('title')}
+            className="btn-ghost btn-icon text-ink-700"
           >
             <Icon name="search" />
           </Link>

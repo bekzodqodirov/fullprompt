@@ -90,6 +90,7 @@ export async function createQuickBatchAction(
   const { nextBatchCode } = await import('@/modules/wms/codes');
   const { warehouses } = await import('@/modules/platform/db/schema');
   const { writeAudit } = await import('@/modules/platform/audit/service');
+  const { mintBatchPairCode } = await import('@/modules/wms/tracking/devices');
   const { redirect } = await import('next/navigation');
   const [origin, dest] = await Promise.all([
     db.query.warehouses.findFirst({ where: eq(warehouses.id, originId) }),
@@ -109,6 +110,7 @@ export async function createQuickBatchAction(
         createdBy: actor.id,
       })
       .returning();
+    await mintBatchPairCode(tx, row!.id, actor.id);
     await writeAudit(tx, { actorId: actor.id, ...meta, warehouseId: originId }, {
       entityType: 'batch',
       entityId: row!.id,

@@ -493,7 +493,7 @@
     "fxTitle": "Exchange rates",
     "rate": "Rate (1 unit = ? USD)",
     "ratePlaceholder": "for example 0.14",
-    "rateHint": "Enter how many USD one unit of the currency is worth (CNY ≈ 0.14). A rate is stored with its date — a cost is converted at the rate of its own date.",
+    "rateHint": "Write it the way it is quoted: 1 USD = 12,500 UZS",
     "date": "Date",
     "noRates": "No rates entered yet",
     "addCost": "Add a cost",
@@ -574,7 +574,9 @@
     "archive": "Archive — finished batches",
     "archiveSearch": "Batch code, plate number or driver",
     "archiveEmpty": "Nothing found",
-    "codeTaken": "This code is already taken"
+    "codeTaken": "This code is already taken",
+    "vehicleTitle": "Truck and driver",
+    "pairCodeLabel": "Driver app code"
   },
   "loading": {
     "title": "Loading",
@@ -916,6 +918,7 @@
     "finance": "Finance",
     "accounting": "Books",
     "reports": "Reports",
-    "search": "Search"
+    "search": "Search",
+    "today": "Calls"
   }
 }

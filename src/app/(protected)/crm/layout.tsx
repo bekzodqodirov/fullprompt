@@ -14,9 +14,11 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
   if (!actor.permissions.has('crm.leads')) redirect('/');
   const t = await getTranslations('crm');
 
+  // The funnel comes first: the owner opens CRM to look at the board, and
+  // the call list is the second thing, not the front door.
   const items: SubNavItem[] = [
-    { href: '/crm', label: t('today'), icon: 'phone', exact: true },
-    { href: '/crm/leads', label: t('funnel'), icon: 'target' },
+    { href: '/crm', label: t('funnel'), icon: 'target', exact: true },
+    { href: '/crm/today', label: t('today'), icon: 'phone' },
     { href: '/crm/dormant', label: t('dormant'), icon: 'sleep' },
     ...(actor.permissions.has('crm.manage')
       ? ([

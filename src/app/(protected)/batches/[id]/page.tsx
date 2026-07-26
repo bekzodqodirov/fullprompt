@@ -91,6 +91,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const canSeeCosts = canEnterCosts || actor.permissions.has('reports.all_warehouses');
 
   const devices = canVehicle ? await devicesForBatch(id) : [];
+  // Every batch is minted with a driver code, so the header can carry it
+  // (owner) instead of making the loader scroll to a panel and press a button
+  // while the driver waits with the phone in their hand. It disappears the
+  // moment a phone claims it — a burnt code on a header teaches nothing.
+  const pairCode = devices.find((device) => device.pairCode)?.pairCode ?? null;
   const costSheet = canSeeCosts ? await batchCostSheet(id) : null;
   const costMeta = canSeeCosts
     ? {
@@ -185,6 +190,17 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             🚀 {format.dateTime(batch.departedAt, { dateStyle: 'short', timeStyle: 'short' })}
           </p>
         )}
+        {pairCode && !['closed', 'cancelled'].includes(batch.status) && (
+          <p className="flex flex-wrap items-baseline gap-2">
+            <span className="text-sm text-ink-500">📲 {t('pairCodeLabel')}</span>
+            <span
+              data-testid="batch-pair-code"
+              className="font-mono text-2xl font-extrabold tracking-widest text-brand-700"
+            >
+              {pairCode}
+            </span>
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           {canLoad && (
             <Link
@@ -204,13 +220,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               📤 {t('startUnloading')}
             </Link>
           )}
-          <a
-            href={`/api/batches/${batch.id}/manifest`}
-            target="_blank"
-            className="btn-secondary flex-1 whitespace-nowrap px-3"
-          >
-            ⬇️ {t('manifest')}
-          </a>
+          {/* The manifest XLSX is gone (owner): the VED papers and the photo
+              packing list are what actually travel with the truck. The route
+              /api/batches/[id]/manifest still exists if it is ever wanted. */}
         </div>
         {['forming', 'loading'].includes(batch.status) && (
           <BatchActions batchId={batch.id} canDepart={canDepart} />
@@ -262,6 +274,31 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           )}
         </Panel>
       )}
+
+      {/* Truck and driver: folded, and below the papers (owner). Editable
+          until the batch closes — a wrong plate must be fixable even after
+          departure. The summary carries the plate so a collapsed panel still
+          answers "which truck is this". */}
+      <Panel
+        title={`🚛 ${t('vehicleTitle')}`}
+        badge={batch.vehiclePlate || undefined}
+      >
+        {canVehicle && !['closed', 'cancelled'].includes(batch.status) ? (
+          <VehicleForm
+            batchId={batch.id}
+            vehiclePlate={batch.vehiclePlate ?? ''}
+            driverName={batch.driverName ?? ''}
+            driverPhone={batch.driverPhone ?? ''}
+          />
+        ) : (
+          <p className="text-sm">
+            <span className="font-mono font-bold">{batch.vehiclePlate || '—'}</span>
+            {batch.driverName && ` · ${batch.driverName}`}
+            {batch.driverPhone && ` · ${batch.driverPhone}`}
+          </p>
+        )}
+      </Panel>
+
 
       {/* Driver phone (owner's flow): while the truck is being loaded the
           warehouse worker installs the app on the driver's phone and types
@@ -367,24 +404,6 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         </Link>
       )}
 
-      {/* Editable until the batch is closed — a wrong plate/driver must be
-          fixable even after departure (owner's request). */}
-      {canVehicle && !['closed', 'cancelled'].includes(batch.status) ? (
-        <VehicleForm
-          batchId={batch.id}
-          vehiclePlate={batch.vehiclePlate ?? ''}
-          driverName={batch.driverName ?? ''}
-          driverPhone={batch.driverPhone ?? ''}
-        />
-      ) : (
-        (batch.vehiclePlate || batch.driverName) && (
-          <div className="card text-sm">
-            🚛 <span className="font-mono font-bold">{batch.vehiclePlate}</span>
-            {batch.driverName && ` · ${batch.driverName}`}
-            {batch.driverPhone && ` · ${batch.driverPhone}`}
-          </div>
-        )
-      )}
 
       {costSheet && costMeta && (
         <div className="card space-y-2">

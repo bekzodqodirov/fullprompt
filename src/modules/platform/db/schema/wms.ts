@@ -319,7 +319,7 @@ export const costEntries = pgTable(
       .references(() => currencies.code),
     /** Derived by the recompute job: amount × dated FX rate (spec 6.9). */
     amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }),
-    fxRateUsed: numeric('fx_rate_used', { precision: 18, scale: 8 }),
+    fxRateUsed: numeric('fx_rate_used', { precision: 24, scale: 12 }),
     costDate: date('cost_date').notNull(),
     allocationBasis: text('allocation_basis').notNull().default('weight'),
     clientId: uuid('client_id').references(() => clients.id),
@@ -358,7 +358,7 @@ export const fxRates = pgTable(
       .notNull()
       .references(() => currencies.code),
     /** USD per 1 unit of the currency (CNY ≈ 0.14, UZS ≈ 0.00008). */
-    rateToUsd: numeric('rate_to_usd', { precision: 18, scale: 8 }).notNull(),
+    rateToUsd: numeric('rate_to_usd', { precision: 24, scale: 12 }).notNull(),
     effectiveDate: date('effective_date').notNull(),
     enteredBy: uuid('entered_by')
       .notNull()
@@ -700,7 +700,7 @@ export const clientTransactions = pgTable(
       .notNull()
       .references(() => currencies.code),
     /** Frozen at entry time — a later FX edit must not move settled money. */
-    rateToUsd: numeric('rate_to_usd', { precision: 18, scale: 8 }).notNull(),
+    rateToUsd: numeric('rate_to_usd', { precision: 24, scale: 12 }).notNull(),
     amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
     /** Payments only: cash / card / transfer (owner accepts all three). */
     method: text('method'),
@@ -792,7 +792,7 @@ export const expenses = pgTable(
     currency: varchar('currency', { length: 3 })
       .notNull()
       .references(() => currencies.code),
-    rateToUsd: numeric('rate_to_usd', { precision: 18, scale: 8 }).notNull(),
+    rateToUsd: numeric('rate_to_usd', { precision: 24, scale: 12 }).notNull(),
     amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
     expenseDate: date('expense_date').notNull(),
     /** Optional: lets the P&L be split per warehouse / direction (owner). */

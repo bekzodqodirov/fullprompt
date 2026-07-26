@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## Sizning ro'yxatingiz — 1-partiya (17 tadan 8 tasi) — 2026-07-26
+
+- **(1) «Inventarizatsiya» menudan olib tashlandi** — RFID o'quvchilar kelgunicha. Butun omborni qo'lda skanerlab sanashni hech kim qilmaydi; ekranlar va kod joyida qoldi, apparat kelgan kuni menuga qaytadi.
+- **(5) Qidiruv — yuqoridagi panelda, har qanday ekran kengligida.** Ilgari u menuda alohida bo'lim edi; qidiruv — bo'lim emas, asbob.
+- **(10, 11) CRM endi darhol voronkani ochadi.** `/crm` — doskaning o'zi (ilgari u yerda hech kimga kerak bo'lmagan «manbalar» jadvali turardi). Bugungi qo'ng'iroqlar ro'yxati `/crm/today` ga ko'chdi. Sotuvchining pastki menusi: Bosh · CRM · Bugun · Moliya.
+- **(17) Partiya kartasi tozalandi** — manifest XLSX tugmasi olib tashlandi (yuk bilan VED hujjatlari va foto-qadoqlash ro'yxati ketadi, manifest emas). Mashina va haydovchi ma'lumoti VED hujjatlaridan keyingi yig'iladigan panelga o'tdi, panel sarlavhasida mashina raqami ko'rinib turadi.
+- **(14) Kurs endi odam o'ylaganday kiritiladi: «1 USD = 12 345 UZS».** Ilgari teskari raqam (0.000081) so'ralardi. Ustunning aniqligi ham oshirildi (12 xona) — 12 345 kiritib 12 346 chiqib qolish xatosi shundan edi, endi yo'q. 4 ta test buni ushlab turadi.
+- **(4) Plan berayotganda kg/m³ ko'rinib turadi** — sklad ostatkasidagidek: kg/📦, Σ kg, m³ va zichlik (kg/m³, rangli). Qutilarni belgilaganingizda raqamlar **olayotgan miqdorga** o'zgaradi, ya'ni «qancha yuk oldim» savolining javobi o'sha qatorning o'zida turadi. Plan kartasida ham har qator kg va m³ bilan ko'rsatiladi.
+- **(Savol 1) Haydovchi kodi endi partiya tug'ilishi bilan yaratiladi** va partiya kartasining sarlavhasida katta harflar bilan turadi. Yuk ortayotgan skladchi tugma qidirmaydi — kodni sarlavhadan o'qib beradi. Telefon ulangach kod kuyadi va sarlavhadan yo'qoladi; kerak bo'lsa «Kod yaratish» tugmasi o'z joyida.
+
+229 test + 16 e2e yashil.
+
 ## Yangi dizayn — 2-qism: GSR brendi, qorong'i rejim, rolga qarab menu — 2026-07-26
 
 - **Logotip va rang** — endi haqiqiy GSR GROUP belgisi ilova sarlavhasida va kirish ekranida. Butun ilovaning rangi logotipdan olindi (#B80000). PWA ikonkalari ham yangilandi — telefon ekraniga chiqarsangiz o'z belgingiz turadi.

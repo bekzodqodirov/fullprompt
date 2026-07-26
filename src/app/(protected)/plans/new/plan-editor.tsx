@@ -287,15 +287,21 @@ export function PlanEditor({
 
       <div className="card !p-0">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm" id="plan-stock-table">
+          <table className="w-full min-w-[720px] text-sm" id="plan-stock-table">
             <thead>
               <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase tracking-wide text-ink-500">
                 <th className="p-2">📷</th>
                 <th className="p-2">{t('code')}</th>
                 <th className="p-2">{t('product')}</th>
                 <th className="p-2 text-right">📦</th>
-                <th className="p-2 text-right">kg</th>
+                {/* The same numbers, in the same order, as the stock table
+                    (owner: "plan berayotganda kg/m³ ko'rinib tursin, sklad
+                    ostatkaga o'xshab") — you plan by weight and volume, so
+                    the figures have to be on the row you are ticking. */}
+                <th className="p-2 text-right">kg/📦</th>
+                <th className="p-2 text-right">Σ kg</th>
                 <th className="p-2 text-right">m³</th>
+                <th className="p-2 text-right">kg/m³</th>
                 <th className="p-2 text-right">{t('days')}</th>
                 <th className="p-2 text-center">{t('take')}</th>
               </tr>
@@ -303,6 +309,23 @@ export function PlanEditor({
             <tbody>
               {lots.map((lot) => {
                 const count = selection.get(lot.lotId) ?? 0;
+                // Once boxes are ticked the row shows what you are TAKING,
+                // not what is on the shelf: on a partial take the shelf
+                // figure answers a question nobody asked.
+                const shown = count > 0 ? count : lot.available;
+                const kg = lot.perBoxKg * shown;
+                const m3 = lot.perBoxM3 * shown;
+                const density = lot.perBoxM3 > 0 ? lot.perBoxKg / lot.perBoxM3 : null;
+                const densityClass =
+                  density === null
+                    ? ''
+                    : density >= 400
+                      ? 'bg-bad/15 text-bad'
+                      : density >= 300
+                        ? 'bg-warn/15 text-warn'
+                        : density >= 200
+                          ? 'bg-good/15 text-good'
+                          : 'bg-brand-100 text-brand-700';
                 return (
                   <tr
                     key={lot.lotId}
@@ -324,10 +347,31 @@ export function PlanEditor({
                         <span className="text-ink-500"> ({lot.productNameRu})</span>
                       )}
                     </td>
-                    <td className="p-2 text-right font-semibold">{lot.available}</td>
-                    <td className="p-2 text-right">{Math.round(lot.perBoxKg * lot.available)}</td>
+                    <td className="p-2 text-right font-semibold">
+                      {count > 0 ? (
+                        <span className="text-brand-700">
+                          {count}
+                          <span className="text-ink-500">/{lot.available}</span>
+                        </span>
+                      ) : (
+                        lot.available
+                      )}
+                    </td>
+                    <td className="p-2 text-right">{Math.round(lot.perBoxKg * 10) / 10}</td>
+                    <td
+                      className={`p-2 text-right font-semibold ${count > 0 ? 'text-brand-700' : ''}`}
+                    >
+                      {Math.round(kg)}
+                    </td>
+                    <td className={`p-2 text-right ${count > 0 ? 'text-brand-700' : ''}`}>
+                      {Math.round(m3 * 100) / 100}
+                    </td>
                     <td className="p-2 text-right">
-                      {Math.round(lot.perBoxM3 * lot.available * 100) / 100}
+                      {density !== null && (
+                        <span className={`rounded px-1.5 py-0.5 font-semibold ${densityClass}`}>
+                          {Math.round(density)}
+                        </span>
+                      )}
                     </td>
                     <td className="p-2 text-right text-ink-500">{lot.daysInStock}</td>
                     <td className="p-1.5 text-center">

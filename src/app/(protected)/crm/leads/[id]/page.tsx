@@ -48,7 +48,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="mx-auto max-w-lg space-y-3">
-      <Link href="/crm/leads" className="text-sm font-semibold text-brand-700">
+      <Link href="/crm" className="text-sm font-semibold text-brand-700">
         ← {t('funnel')}
       </Link>
       <h1 className="text-xl font-bold [overflow-wrap:anywhere]">{lead.name}</h1>

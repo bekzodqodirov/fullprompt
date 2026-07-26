@@ -21,6 +21,7 @@ import {
   submitPlan,
 } from '@/modules/wms/planning/service';
 import { departBatch, finishLoading, ingestLoadScans } from '@/modules/wms/scanning/service';
+import { devicesForBatch } from '@/modules/wms/tracking/devices';
 
 /** M3: plan → verdict loop → batch reservation → scan → finish → depart. */
 
@@ -149,6 +150,12 @@ describe('plan lifecycle', () => {
     const approved = await recordVerdict({ versionId: v2.version.id, verdict: 'approved' }, ctx());
     expect(approved.plan.status).toBe('approved');
     expect(approved.batch!.code).toMatch(new RegExp(`^${WH_O}-\\d{3}$`));
+
+    // The driver's pairing code is born with the batch (owner) — the loader
+    // reads it off the batch header instead of pressing a button at the gate.
+    const bornWith = await devicesForBatch(approved.batch!.id);
+    expect(bornWith).toHaveLength(1);
+    expect(bornWith[0]!.pairCode).toMatch(/^[A-Z2-9]{6}$/);
 
     const reserved = await db
       .select()
