@@ -78,7 +78,28 @@
     "days": "kun",
     "missingInTransit": "Yo‘lda yo‘qolganlar",
     "undocumented": "Hujjatsiz ko‘chirilganlar",
-    "costMissing": "Xarajati kiritilmagan partiyalar (3 kundan oshdi)"
+    "costMissing": "Xarajati kiritilmagan partiyalar (3 kundan oshdi)",
+    "kpiStock": "Omborda",
+    "kpiOnRoad": "Yo‘lda",
+    "kpiReceivable": "Qarzdorlik",
+    "kpiOpenLeads": "Ochiq lidlar",
+    "kpiVolume": "Hajm",
+    "todayTitle": "Bugun",
+    "todayReceipts": "prixod",
+    "todayDeparted": "yo‘lga chiqdi",
+    "todayArrived": "yetib keldi",
+    "todayExpected": "kutilmoqda",
+    "lateCount": "{n} kechikkan",
+    "moneyTitle": "Pul",
+    "monthCharged": "Shu oyda hisoblangan",
+    "monthPaid": "Shu oyda tushgan",
+    "toPnl": "P&L hisoboti",
+    "debtorCount": "{n} ta mijoz qarzdor",
+    "debtOld": "{amount} — 60 kundan oshgan",
+    "noDebtors": "Qarzdor yo‘q",
+    "salesTitle": "Sotuv",
+    "wonThisMonth": "shu oyda sotildi",
+    "logisticsTitle": "Logistika"
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -745,7 +766,11 @@
     "estimated": "Taxminiy joylashuv (jadval bo‘yicha)",
     "lastFix": "oxirgi haqiqiy signal {ago} oldin",
     "agoMin": "{n} daqiqa",
-    "agoHour": "{n} soat"
+    "agoHour": "{n} soat",
+    "goFull": "To‘liq ekran",
+    "exitFull": "Chiqish",
+    "legendWarehouse": "Ombor",
+    "legendTruck": "Mashina"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",

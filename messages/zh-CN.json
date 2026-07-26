@@ -78,7 +78,28 @@
     "days": "天",
     "missingInTransit": "途中丢失",
     "undocumented": "无单据转移",
-    "costMissing": "未录入费用的批次（发出超过 3 天）"
+    "costMissing": "未录入费用的批次（发出超过 3 天）",
+    "kpiStock": "在库",
+    "kpiOnRoad": "在途",
+    "kpiReceivable": "应收",
+    "kpiOpenLeads": "在跟进线索",
+    "kpiVolume": "体积",
+    "todayTitle": "今天",
+    "todayReceipts": "收货",
+    "todayDeparted": "发车",
+    "todayArrived": "到达",
+    "todayExpected": "待收",
+    "lateCount": "逾期 {n}",
+    "moneyTitle": "资金",
+    "monthCharged": "本月计费",
+    "monthPaid": "本月收款",
+    "toPnl": "损益表",
+    "debtorCount": "{n} 位客户欠款",
+    "debtOld": "{amount} 超过 60 天",
+    "noDebtors": "无欠款客户",
+    "salesTitle": "销售",
+    "wonThisMonth": "本月成交",
+    "logisticsTitle": "物流"
   },
   "inventory": {
     "title": "盘点",
@@ -745,7 +766,11 @@
     "estimated": "估算位置（按时刻表）",
     "lastFix": "最后一次真实信号 {ago}前",
     "agoMin": "{n} 分钟",
-    "agoHour": "{n} 小时"
+    "agoHour": "{n} 小时",
+    "goFull": "全屏",
+    "exitFull": "退出",
+    "legendWarehouse": "仓库",
+    "legendTruck": "车辆"
   },
   "accounting": {
     "title": "管理会计",

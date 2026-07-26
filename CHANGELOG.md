@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## Sizning ro'yxatingiz — 4-partiya: dashboard va xarita — 2026-07-26
+
+**(7) Dashboard endi butun kompaniyani ko'rsatadi** — ilgari u faqat ombor dashboardi edi (ostatka, yo'ldagilar, egasiz yuklar); oy foyda keltirdimi yoki lidlar bilan kim ishlayapti — javob yo'q edi. Endi yuqoridan pastga to'rtta savolga javob beradi:
+
+1. **Sarlavhada 4 ta raqam** — omborda nechta quti, yo'lda nechta mashina, qancha qarzdorlik, nechta ochiq lid. Har biri bosiladi.
+2. **Bugun** — nechta prixod, nechta mashina yo'lga chiqdi, nechtasi yetib keldi, bugun nima kutilmoqda (kechikkanlari sariq bilan).
+3. **Pul** — shu oyda qancha hisoblandi va qancha tushdi (nisbati chiziqcha bilan ko'rinadi), jami qarzdorlik, nechta mijoz qarzdor, shundan qanchasi 60 kundan oshgan, va **eng katta 5 ta qarzdor** — to'g'ridan-to'g'ri ularning hisobiga o'tiladi.
+4. **Sotuv** — ochiq lidlar, shu oyda sotilganlar, bugun qo'ng'iroq qilinishi kerak bo'lganlar, va **voronkaning o'zi chiziqchalar bilan** — qaysi bosqichda tiqilib qolgani raqam o'qimasdan ko'rinadi.
+5. Keyin logistika (omborlar to'lganligi, ostatka, yo'ldagilar) va «e'tibor talab qiladi» bloki — avvalgidek.
+
+Har bir blok huquqqa qarab: buxgalter bo'lmagan odam pul blokini umuman ko'rmaydi (bo'sh emas — yo'q). Skladchi eski ombor dashboardini oladi.
+
+**(6) Xarita:**
+- **To'g'ri nisbatlar.** Ilgari uzunlik 16.6, kenglik 24 ga ko'paytirilardi — nisbati 0.69, aslida 35° kenglikda 0.819 bo'lishi kerak. Ya'ni xarita yon tomondan ~16% siqilgan edi. Endi proyeksiya to'g'ri, va buni test tekshiradi.
+- **To'liq ekran** — o'ng yuqoridagi tugma. Butun ekranni egallaydi (menyu ham, sarlavha ham ostida qoladi), Escape yoki o'sha tugma bilan chiqiladi. Leaflet xaritasi o'lchamini qayta hisoblaydi — kulrang bo'sh joylar qolmaydi.
+- **Sklad va mashina endi aralashmaydi** — 🏭 va 🚛 emojilar o'rniga: sklad — **ko'k kvadrat**, mashina — **sariq doira** (kechikkani qizil). Shakl bilan farq qiladi, ya'ni ustma-ust tushsa ham, kichraytirilsa ham ajratib bo'ladi. Pastda **izoh (legenda)** turadi. Mashinaning kodi belgidan **yuqorida**, skladniki **pastda** — mashina sklad ustida turganda yozuvlar bir-birini bosmaydi.
+- Sxematik xaritada qo'lda chizilgan «davlat konturlari» olib tashlandi (ular hech qachon haqiqiy geografiya emas edi va yangi nisbatlarda butunlay noto'g'ri bo'lib qolardi) — o'rniga **koordinata to'ri** (70°E, 80°E … 25°N, 30°N …), u proyeksiyaning o'zi, ya'ni hech qachon noto'g'ri bo'lolmaydi.
+
+241 test + 25 e2e yashil.
+
 ## Sizning ro'yxatingiz — 3-partiya: sklad jarayoni — 2026-07-26
 
 - **(3) «Kelayotgan yuklar» — yangi ekran.** Skladga nima kelayotganini oldindan ko'rsatadi, ikki qismda:

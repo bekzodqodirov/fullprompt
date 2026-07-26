@@ -78,7 +78,28 @@
     "days": "d.",
     "missingInTransit": "Lost in transit",
     "undocumented": "Moved without documents",
-    "costMissing": "Batches without costs (more than 3 days after departure)"
+    "costMissing": "Batches without costs (more than 3 days after departure)",
+    "kpiStock": "In stock",
+    "kpiOnRoad": "On the road",
+    "kpiReceivable": "Receivable",
+    "kpiOpenLeads": "Open leads",
+    "kpiVolume": "Volume",
+    "todayTitle": "Today",
+    "todayReceipts": "receipts",
+    "todayDeparted": "departed",
+    "todayArrived": "arrived",
+    "todayExpected": "expected",
+    "lateCount": "{n} late",
+    "moneyTitle": "Money",
+    "monthCharged": "Charged this month",
+    "monthPaid": "Received this month",
+    "toPnl": "P&L report",
+    "debtorCount": "{n} clients owe us",
+    "debtOld": "{amount} older than 60 days",
+    "noDebtors": "Nobody owes us",
+    "salesTitle": "Sales",
+    "wonThisMonth": "won this month",
+    "logisticsTitle": "Logistics"
   },
   "inventory": {
     "title": "Stocktake",
@@ -745,7 +766,11 @@
     "estimated": "Estimated position (from the schedule)",
     "lastFix": "last real signal {ago} ago",
     "agoMin": "{n} min",
-    "agoHour": "{n} h"
+    "agoHour": "{n} h",
+    "goFull": "Fullscreen",
+    "exitFull": "Exit",
+    "legendWarehouse": "Warehouse",
+    "legendTruck": "Truck"
   },
   "accounting": {
     "title": "Management accounting",

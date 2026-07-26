@@ -78,7 +78,28 @@
     "days": "дн.",
     "missingInTransit": "Потеряно в пути",
     "undocumented": "Перемещено без документов",
-    "costMissing": "Партии без расходов (более 3 дней после отправки)"
+    "costMissing": "Партии без расходов (более 3 дней после отправки)",
+    "kpiStock": "На складах",
+    "kpiOnRoad": "В пути",
+    "kpiReceivable": "Дебиторка",
+    "kpiOpenLeads": "Открытых лидов",
+    "kpiVolume": "Объём",
+    "todayTitle": "Сегодня",
+    "todayReceipts": "приёмок",
+    "todayDeparted": "выехало",
+    "todayArrived": "прибыло",
+    "todayExpected": "ожидаем",
+    "lateCount": "просрочено: {n}",
+    "moneyTitle": "Деньги",
+    "monthCharged": "Начислено за месяц",
+    "monthPaid": "Получено за месяц",
+    "toPnl": "Отчёт P&L",
+    "debtorCount": "должников: {n}",
+    "debtOld": "{amount} — старше 60 дней",
+    "noDebtors": "Должников нет",
+    "salesTitle": "Продажи",
+    "wonThisMonth": "продано за месяц",
+    "logisticsTitle": "Логистика"
   },
   "inventory": {
     "title": "Инвентаризация",
@@ -745,7 +766,11 @@
     "estimated": "Примерное положение (по графику)",
     "lastFix": "последний реальный сигнал {ago} назад",
     "agoMin": "{n} мин",
-    "agoHour": "{n} ч"
+    "agoHour": "{n} ч",
+    "goFull": "Во весь экран",
+    "exitFull": "Выйти",
+    "legendWarehouse": "Склад",
+    "legendTruck": "Машина"
   },
   "accounting": {
     "title": "Управленческий учёт",

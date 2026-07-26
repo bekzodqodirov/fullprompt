@@ -46,6 +46,7 @@ export type IconName =
   | 'globe'
   | 'menu'
   | 'exchange'
+  | 'maximize'
   | 'doc';
 
 const PATHS: Record<IconName, React.ReactNode> = {
@@ -166,6 +167,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
   plus: <path d="M12 5.5v13M5.5 12h13" />,
   check: <path d="m5 12.5 4.5 4.5L19 7" />,
   x: <path d="m6 6 12 12M18 6 6 18" />,
+  // Fullscreen: four corners pulling outwards.
+  maximize: <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />,
   alert: (
     <>
       <path d="M12 4.5 21 19H3z" />

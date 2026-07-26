@@ -8,11 +8,36 @@ import type { RouteDef, RoutePoint } from './engine';
  *    which projects lon/lat into a 1000×600 viewBox via toSvg().
  */
 
-export const VIEWBOX = { w: 1000, h: 600 };
+/**
+ * Equirectangular projection, and the reference latitude that makes it
+ * honest (owner: "xarita to'g'ri nisbatlarda bo'lsin").
+ *
+ * A degree of longitude is shorter than a degree of latitude by cos(lat): at
+ * 35°N, 0.819 as long. The old projection scaled x by 16.6 and y by 24 — a
+ * ratio of 0.69 — which squeezed the corridor sideways, so China looked
+ * narrow and the Uzbek end looked stretched. Scaling x by `SCALE * cos(35°)`
+ * puts every distance on the drawing in the right proportion to every other.
+ */
+const REF_LAT = 35;
+const SCALE = 20;
+const LON_SCALE = SCALE * Math.cos((REF_LAT * Math.PI) / 180);
 
-/** lon/lat → fallback-SVG coordinates. */
+/** Drawing extent, in degrees, with a margin for labels. */
+const BOX = { west: 66.5, east: 122, north: 45.5, south: 21.5 };
+
+/**
+ * Deliberately NOT rounded: the viewBox has to be exactly the projected
+ * extent, or the graticule's outermost lines fall a fraction outside the
+ * drawing and get clipped.
+ */
+export const VIEWBOX = {
+  w: (BOX.east - BOX.west) * LON_SCALE,
+  h: (BOX.north - BOX.south) * SCALE,
+};
+
+/** lon/lat → fallback-SVG coordinates, in proportion. */
 export function toSvg(p: RoutePoint): { x: number; y: number } {
-  return { x: (p.x - 66) * 16.6, y: (45 - p.y) * 24 };
+  return { x: (p.x - BOX.west) * LON_SCALE, y: (BOX.north - p.y) * SCALE };
 }
 
 const P = {
@@ -123,10 +148,55 @@ export const CHECKPOINT_SEGMENTS: Record<string, string> = {
   in_uz: 'uz',
 };
 
-/** Decorative country outlines for the FALLBACK SVG (already projected). */
-export const DECOR_PATHS: string[] = [
-  // UZ / KG hint
-  'M 10 60 L 90 55 L 150 95 L 150 150 L 60 140 L 10 110 Z',
-  // China hint
-  'M 155 160 L 240 60 L 340 5 L 520 15 L 700 120 L 900 250 L 950 420 L 830 570 L 700 560 L 560 470 L 350 300 L 180 190 Z',
-];
+/**
+ * A lat/lon grid for the fallback drawing, generated from the projection.
+ *
+ * It replaces two hand-drawn "country hint" blobs that were never real
+ * geography and were drawn against the old, squashed projection — so they
+ * became wrong the moment the proportions were fixed. A graticule cannot be
+ * wrong: it IS the projection, and it is what makes a schematic read as a
+ * map rather than a diagram.
+ */
+export interface GridLine {
+  /** Line ends in SVG space. */
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  label: string;
+  /** Where to put the label. */
+  lx: number;
+  ly: number;
+}
+
+export function graticule(): { meridians: GridLine[]; parallels: GridLine[] } {
+  const meridians: GridLine[] = [];
+  for (let lon = 70; lon <= BOX.east; lon += 10) {
+    const top = toSvg({ x: lon, y: BOX.north });
+    const bottom = toSvg({ x: lon, y: BOX.south });
+    meridians.push({
+      x1: top.x,
+      y1: top.y,
+      x2: bottom.x,
+      y2: bottom.y,
+      label: `${lon}°E`,
+      lx: top.x + 4,
+      ly: 16,
+    });
+  }
+  const parallels: GridLine[] = [];
+  for (let lat = 25; lat <= BOX.north; lat += 5) {
+    const left = toSvg({ x: BOX.west, y: lat });
+    const right = toSvg({ x: BOX.east, y: lat });
+    parallels.push({
+      x1: left.x,
+      y1: left.y,
+      x2: right.x,
+      y2: right.y,
+      label: `${lat}°N`,
+      lx: 4,
+      ly: left.y - 4,
+    });
+  }
+  return { meridians, parallels };
+}
