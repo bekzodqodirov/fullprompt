@@ -53,8 +53,8 @@ next-intl · Tailwind (CSS-variable tokens) · pg-boss · Playwright + Vitest.
 ```
 pnpm db:migrate         # hand-written SQL migrations
 pnpm db:seed            # idempotent; reference data, demo only on a fresh db
-pnpm lint && pnpm test  # 336 tests
-pnpm build && pnpm e2e  # 41 e2e
+pnpm lint && pnpm test  # 370 tests
+pnpm build && pnpm e2e  # 43 e2e
 ```
 
 ## Verification ritual (follow it, it catches real bugs)
@@ -132,8 +132,20 @@ Phase **3** (tasks + calendar) shipped, followed by an access/clutter pass:
 open — #194), `rbac/scope.ts` (the warehouse filter, #199), per-page admin
 guards (#198), card-level scoping (#200) and `canActOnTask` (#201).
 
+Phase **5 (deals / bitim)** shipped: migrations 0030-0031, `wms/deals/**`,
+`/bitimlar`, price control from `confirmReceipt`, deferral wired into the
+handover gate (#203-#215). Still open inside it: the damage discount form,
+profit per deal, the 50-goods spreadsheet + TNVED grouping.
+
+A full 14-subsystem audit ran on 2026-07-26 (30 defects confirmed after
+adversarial review, 4 refuted). Its findings are the work queue — start with
+`scripts/import-clients.ts --update` overwriting corrected data, the
+sales-manager dropdown deleting assignments on save, receipt void with no
+state guard, customs documents emptying during unload, voided costs still
+counted in the P&L, and `JOB_SEND_TELEGRAM` never being scheduled.
+
 Next, in order: **4** record comments with @mentions →
-**5** deals (`docs/DEALS.md`) → **6** approval for issuing to a debtor →
+**6** approval for issuing to a debtor →
 **7** automation rules → **8** custom entities.
 Explicitly cut: formula fields, a visual node editor, an in-app chat, a
 separate projects module, an external web form builder.

@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  type AnyPgColumn,
   date,
   index,
   integer,
@@ -71,6 +72,13 @@ export const receipts = pgTable(
     confirmedBy: uuid('confirmed_by').references(() => users.id),
     /** Client-generated idempotency key for offline-safe confirm (spec §3). */
     clientEventUuid: uuid('client_event_uuid').unique(),
+    /**
+     * The job this cargo was quoted under, when it was quoted at all.
+     * Null for ever on the years of receipts that predate deals, and on the
+     * cargo clients keep sending without asking a price first — which is
+     * exactly the case the deal engine shouts about.
+     */
+    dealId: uuid('deal_id').references((): AnyPgColumn => deals.id),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedBy: uuid('voided_by').references(() => users.id),
     voidReason: text('void_reason'),
@@ -707,6 +715,12 @@ export const clientTransactions = pgTable(
     txDate: date('tx_date').notNull(),
     /** Charges from batch pricing point at the batch they price. */
     batchId: uuid('batch_id').references(() => batches.id),
+    /**
+     * The job this charge is for, when it was raised from one. Null for every
+     * charge posted from batch pricing — which is a correct answer, not a gap:
+     * a deferral cannot cover money nobody tied to a job.
+     */
+    dealId: uuid('deal_id').references(() => deals.id),
     /** Which cash box the payment landed in (Phase 2.4 cash flow). */
     accountId: uuid('account_id'),
     note: text('note'),
@@ -1012,6 +1026,137 @@ export const crmPeople = pgTable('crm_people', {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+// ---------------------------------------------------------------------------
+// Bitim (deal) — one client's job, from "please price this" to "paid"
+//
+// The specification is docs/DEALS.md, settled with the owner in his own words.
+// The reason it exists is worth repeating here, because it decides the shape:
+// the pain is NOT the absence of a record, it is the GAP between the price we
+// quoted and the cargo that actually turned up, seen too late. So a deal holds
+// the quote and the reality side by side — and the reality side is never typed
+// in by a human, it is summed from the receipts pointing at the deal.
+// ---------------------------------------------------------------------------
+
+/** The board's columns; the owner reshapes his own pipeline. */
+export const dealStages = pgTable(
+  'deal_stages',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    kind: text('kind').notNull().default('open'),
+    color: text('color').notNull().default('gray'),
+    sortOrder: integer('sort_order').notNull().default(100),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('deal_stages_kind_check', sql`${t.kind} IN ('open', 'won', 'lost')`),
+    check(
+      'deal_stages_color_check',
+      sql`${t.color} IN ('gray', 'blue', 'green', 'amber', 'red', 'purple', 'teal')`,
+    ),
+  ],
+);
+
+export const deals = pgTable(
+  'deals',
+  {
+    id: id(),
+    /** `B-000123` — the number staff say out loud on the phone. */
+    code: text('code').notNull().unique(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    stageId: uuid('stage_id')
+      .notNull()
+      .references(() => dealStages.id),
+    /**
+     * Who is carrying it right now. Ownership changes hands mid-job here, so
+     * this is a current value with an audit trail behind it, not a stamp.
+     */
+    ownerId: uuid('owner_id').references(() => users.id),
+    title: text('title'),
+
+    // The quote: what we told the client.
+    quotedVolumeM3: numeric('quoted_volume_m3', { precision: 12, scale: 3 }),
+    quotedWeightKg: numeric('quoted_weight_kg', { precision: 12, scale: 3 }),
+    quotedAmount: numeric('quoted_amount', { precision: 14, scale: 2 }),
+    quotedCurrency: varchar('quoted_currency', { length: 3 }).references(() => currencies.code),
+    quotedAt: timestamp('quoted_at', { withTimezone: true }),
+    quotedBy: uuid('quoted_by').references(() => users.id),
+    /** The clock starts when the VED manager is GIVEN the task (DEALS.md #5). */
+    quoteRequestedAt: timestamp('quote_requested_at', { withTimezone: true }),
+
+    /** Damage is a discount ON THE DEAL, so profit per deal stays honest (#3). */
+    discountAmount: numeric('discount_amount', { precision: 14, scale: 2 })
+      .notNull()
+      .default('0'),
+    discountReason: text('discount_reason'),
+    discountBy: uuid('discount_by').references(() => users.id),
+    discountAt: timestamp('discount_at', { withTimezone: true }),
+
+    /** "I'll pay when it's all here" — scoped to this job, with an end (#4). */
+    deferralReason: text('deferral_reason'),
+    deferredBy: uuid('deferred_by').references(() => users.id),
+    deferredAt: timestamp('deferred_at', { withTimezone: true }),
+    deferUntilAllArrived: boolean('defer_until_all_arrived').notNull().default(false),
+    deferUntilDate: date('defer_until_date'),
+    deferralEndedAt: timestamp('deferral_ended_at', { withTimezone: true }),
+
+    note: text('note'),
+    lostReason: text('lost_reason'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check(
+      'deals_quote_currency_check',
+      sql`(${t.quotedAmount} IS NULL) OR (${t.quotedCurrency} IS NOT NULL)`,
+    ),
+    check('deals_discount_check', sql`${t.discountAmount} >= 0`),
+    check(
+      'deals_discount_reason_check',
+      sql`(${t.discountAmount} = 0) OR (${t.discountReason} IS NOT NULL)`,
+    ),
+    check(
+      'deals_deferral_check',
+      sql`(${t.deferredAt} IS NULL) OR (${t.deferralReason} IS NOT NULL AND (${t.deferUntilAllArrived} OR ${t.deferUntilDate} IS NOT NULL))`,
+    ),
+    index('deals_client_idx').on(t.clientId, t.createdAt),
+    index('deals_stage_idx').on(t.stageId),
+    index('deals_owner_idx').on(t.ownerId),
+  ],
+);
+
+/**
+ * One priced item. A price may be set per line OR as one total on the deal —
+ * the owner's people do both — so amounts here are nullable and the deal's own
+ * `quotedAmount` wins when it is set.
+ */
+export const dealLines = pgTable(
+  'deal_lines',
+  {
+    id: id(),
+    dealId: uuid('deal_id')
+      .notNull()
+      .references(() => deals.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    description: text('description').notNull(),
+    tnvedCode: text('tnved_code'),
+    quantity: numeric('quantity', { precision: 14, scale: 3 }),
+    unit: text('unit'),
+    quotedVolumeM3: numeric('quoted_volume_m3', { precision: 12, scale: 3 }),
+    quotedWeightKg: numeric('quoted_weight_kg', { precision: 12, scale: 3 }),
+    quotedAmount: numeric('quoted_amount', { precision: 14, scale: 2 }),
+    note: text('note'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('deal_lines_deal_idx').on(t.dealId, t.seq)],
+);
 
 /**
  * Cargo a client has told us is on its way to one of our warehouses.

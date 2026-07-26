@@ -60,6 +60,36 @@ async function buildRecipients(event: {
         },
       ];
     }
+    // Price control (docs/DEALS.md). The alert is worth nothing unless it
+    // reaches somebody who can act on it WHILE the cargo is still in China, so
+    // it goes to the deal's owner if it has one, otherwise to the client's
+    // sales manager — never broadcast, because a list of somebody else's
+    // pricing problems is a message people learn to swipe away.
+    case 'UnquotedCargo':
+    case 'DealDeviation':
+    case 'DealDeferralEnded': {
+      const clientId = event.payload.clientId as string | null;
+      if (!clientId) return [];
+      const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+      const owner = (event.payload.ownerId as string | null) ?? client?.salesManagerId ?? null;
+      if (!owner) {
+        // A client with nobody assigned would otherwise lose the alert
+        // silently — which is the very failure this feature exists to stop.
+        const userIds = await usersWithRoles(['admin', 'super_admin']);
+        return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
+      }
+      return [
+        {
+          userId: owner,
+          type: event.type,
+          payload: {
+            ...event.payload,
+            clientCode: client?.clientCode,
+            clientName: client?.name,
+          },
+        },
+      ];
+    }
     case 'UnknownCargoReceived': {
       const userIds = await usersWithRoles(['logist', 'admin', 'super_admin']);
       return userIds.map((userId) => ({
@@ -163,6 +193,39 @@ export function renderTelegramText(
         `❓ ${L.unknownCargo} ${payload.number}\n` +
         (payload.unclaimedMarking ? `${L.marking}: ${payload.unclaimedMarking}\n` : '') +
         `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
+      );
+    // Cargo that landed with no agreed price — the single biggest source of
+    // "it came out expensive" arguments, caught while it is still in China.
+    case 'UnquotedCargo':
+      return (
+        `💰❓ ${L.unquotedCargo} — ${payload.number}\n` +
+        `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        `${L.warehouse}: ${payload.warehouseCode}\n` +
+        `${payload.volumeM3} ${L.m3} · ${payload.weightKg} ${L.kg} · ${payload.boxCount} ${L.boxesShort}\n\n` +
+        `${L.setPrice}\n${link}`
+      );
+    // Quoted, but the cargo is more than the threshold away from the quote.
+    case 'DealDeviation': {
+      const pct = Number(payload.worstPct ?? 0);
+      const sign = pct > 0 ? '+' : '';
+      return (
+        `⚖️ ${L.dealDeviation} — ${payload.dealCode}\n` +
+        `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        `${L.quoted}: ${payload.quotedVolumeM3 ?? '—'} ${L.m3} · ${payload.quotedWeightKg ?? '—'} ${L.kg}` +
+        (payload.quotedAmount ? ` · ${payload.quotedAmount} ${payload.quotedCurrency ?? ''}` : '') +
+        `\n${L.actual}: ${payload.actualVolumeM3} ${L.m3} · ${payload.actualWeightKg} ${L.kg}` +
+        ` (${sign}${pct.toFixed(1)} %)\n` +
+        (payload.suggestedAmount !== null && payload.suggestedAmount !== undefined
+          ? `${L.suggested}: ${payload.suggestedAmount} ${payload.quotedCurrency ?? ''}\n`
+          : '') +
+        `\n${appUrl}/bitimlar/${payload.dealId}`
+      );
+    }
+    case 'DealDeferralEnded':
+      return (
+        `⏰ ${L.deferralEnded} — ${payload.dealCode}\n` +
+        `${payload.reason === 'all_arrived' ? L.allBoxesArrived : L.datePassed}\n\n` +
+        `${appUrl}/bitimlar/${payload.dealId}`
       );
     case 'PlanApproved':
       return `✅ ${L.planApproved} ${payload.batchCode}\n${appUrl}/batches/${payload.batchId}`;

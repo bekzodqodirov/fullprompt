@@ -61,6 +61,12 @@ interface Draft {
   warehouseId: string;
   clientId: string | null;
   clientLabel: string;
+  /**
+   * The job this cargo was quoted under, when there is one. Optional for ever
+   * — plenty of cargo arrives with no quote behind it, and that case is
+   * exactly what the price-control alert shouts about (docs/DEALS.md).
+   */
+  dealId: string | null;
   unclaimed: boolean;
   unclaimedMarking: string;
   sourceNote: string;
@@ -103,6 +109,7 @@ function newDraft(warehouseId: string): Draft {
     warehouseId,
     clientId: null,
     clientLabel: '',
+    dealId: null,
     unclaimed: false,
     unclaimedMarking: '',
     sourceNote: '',
@@ -149,9 +156,13 @@ export function ReceiveWizard({
 }) {
   const t = useTranslations('receive');
   const tc = useTranslations('common');
+  const td = useTranslations('deals');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
+  const [openDeals, setOpenDeals] = useState<
+    { id: string; code: string; title: string | null; quotedAmount: string | null; quotedCurrency: string | null }[]
+  >([]);
   const [searching, setSearching] = useState(false);
   const [letterPreview, setLetterPreview] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -200,6 +211,34 @@ export function ReceiveWizard({
   const update = useCallback((patch: Partial<Draft>) => {
     setDraft((d) => (d ? { ...d, ...patch } : d));
   }, []);
+
+  /**
+   * The client's open jobs.
+   *
+   * Loaded only once a client is chosen, and silent when it fails: linking the
+   * cargo to its job is valuable, but a receipt of real boxes must never be
+   * held up because a lookup did not answer.
+   */
+  useEffect(() => {
+    const clientId = draft?.clientId;
+    if (!clientId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOpenDeals([]);
+      return;
+    }
+    let live = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/deals/open?client=${clientId}`);
+        if (res.ok && live) setOpenDeals((await res.json()).results ?? []);
+      } catch {
+        // no deals offered; the receipt still saves
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [draft?.clientId]);
 
   const updateLot = useCallback((lotId: string, patch: Partial<LotDraft>) => {
     setDraft((d) =>
@@ -414,6 +453,7 @@ export function ReceiveWizard({
         receiptId: draft!.receiptId,
         warehouseId: draft!.warehouseId,
         clientId: draft!.unclaimed ? null : draft!.clientId,
+        dealId: draft!.unclaimed ? null : draft!.dealId,
         sourceNote: draft!.sourceNote,
         unclaimedMarking: draft!.unclaimedMarking,
         lots: draft!.lots.map((lot) => ({
@@ -621,7 +661,7 @@ export function ReceiveWizard({
                 type="button"
                 aria-label={tc('cancel')}
                 className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center text-lg"
-                onClick={() => update({ clientId: null, clientLabel: '' })}
+                onClick={() => update({ clientId: null, clientLabel: '', dealId: null })}
               >
                 ✕
               </button>
@@ -650,6 +690,7 @@ export function ReceiveWizard({
                       update({
                         clientId: hit.id,
                         clientLabel: `${hit.clientCode} — ${hit.name}`,
+                        dealId: null,
                         unclaimed: false,
                       });
                       setClientHits([]);
@@ -688,6 +729,31 @@ export function ReceiveWizard({
           )}
         </div>
       </div>
+      {/* The one moment that decides whether the price-control alert can do
+          its job: cargo linked to the job it was quoted under compares against
+          that quote, cargo linked to nothing shouts "unpriced". Shown only when
+          the client HAS an open job — a select with one "—" in it is furniture. */}
+      {draft.clientId && openDeals.length > 0 && (
+        <label className="block">
+          <span className="label">{td('pickDeal')}</span>
+          <select
+            className="input"
+            data-testid="receive-deal"
+            value={draft.dealId ?? ''}
+            onChange={(e) => update({ dealId: e.target.value || null })}
+          >
+            <option value="">{td('noDeal')}</option>
+            {openDeals.map((deal) => (
+              <option key={deal.id} value={deal.id}>
+                {deal.code}
+                {deal.title ? ` · ${deal.title}` : ''}
+                {deal.quotedAmount ? ` · ${deal.quotedAmount} ${deal.quotedCurrency ?? ''}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {/* Only when the dropdown is closed — while it is open the unclaimed
           choice is its last row, so the code-labelled button below can never
           be mistaken for (or overlay) one of the real matches. */}

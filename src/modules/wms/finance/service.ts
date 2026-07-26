@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
-import { batches, clients, clientTransactions, users } from '../../platform/db/schema';
+import { batches, clients, clientTransactions, deals, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
 
@@ -28,6 +28,8 @@ export const transactionSchema = z
     method: z.enum(['cash', 'card', 'transfer']).optional(),
     txDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     batchId: z.string().uuid().optional(),
+    /** The job this charge is for, when it was raised from a deal card. */
+    dealId: z.string().uuid().optional().or(z.literal('')),
     /**
      * Which cash box the money landed in (Phase 2.4). Optional: rows entered
      * before accounts existed have none, and the cash-flow report treats an
@@ -59,6 +61,7 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
       method: input.type === 'payment' ? (input.method ?? 'cash') : null,
       txDate: input.txDate,
       batchId: input.batchId ?? null,
+      dealId: input.dealId || null,
       accountId: input.accountId || null,
       note: input.note || null,
       createdBy: ctx.actorId,
@@ -107,6 +110,42 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
     .from(clientTransactions)
     .where(and(eq(clientTransactions.clientId, clientId), isNull(clientTransactions.voidedAt)));
   return Math.round(Number(row?.balance ?? 0) * 100) / 100;
+}
+
+/**
+ * The part of a client's balance that has been deliberately put off.
+ *
+ * "I'll pay when it is all here" is a decision with an owner and an end
+ * (docs/DEALS.md answer 4), and it is worth nothing unless the handover gate
+ * honours it — otherwise the warehouse still refuses the cargo, the operator
+ * still presses the override, and the reason goes back to being a Telegram
+ * message nobody can find later.
+ *
+ * Only charges raised ON a deferred deal count. A charge posted from batch
+ * pricing carries no deal, so an old unrelated debt keeps blocking exactly as
+ * it should: the deferral was granted for one job, not for the client.
+ */
+export async function deferredBalanceUsd(clientId: string): Promise<number> {
+  const [row] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
+    })
+    .from(clientTransactions)
+    .innerJoin(deals, eq(clientTransactions.dealId, deals.id))
+    .where(
+      and(
+        eq(clientTransactions.clientId, clientId),
+        eq(clientTransactions.type, 'charge'),
+        isNull(clientTransactions.voidedAt),
+        sql`${deals.deferredAt} IS NOT NULL`,
+        isNull(deals.deferralEndedAt),
+        // A deferral whose date has passed is no longer a deferral, and the
+        // hourly sweep may not have run yet — the gate must not honour it in
+        // the meantime.
+        sql`(${deals.deferUntilAllArrived} OR ${deals.deferUntilDate} >= CURRENT_DATE)`,
+      ),
+    );
+  return Math.round(Number(row?.total ?? 0) * 100) / 100;
 }
 
 /** Per-client totals for the balances screen — only clients with any activity. */

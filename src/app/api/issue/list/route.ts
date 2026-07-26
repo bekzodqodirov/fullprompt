@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { boxes, receiptLots, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
-import { clientBalanceUsd } from '@/modules/wms/finance/service';
+import { clientBalanceUsd, deferredBalanceUsd } from '@/modules/wms/finance/service';
 
 const querySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -51,8 +51,12 @@ export async function GET(request: Request) {
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
 
   // Debt gate (Phase 2.1): the screen shows the debt up front so the operator
-  // isn't surprised by a blocked confirm.
+  // isn't surprised by a blocked confirm. `deferredUsd` is the part the client
+  // was given more time for — the screen must say so, otherwise an operator
+  // looking at an open gate beside a real debt reads it as a bug and calls the
+  // office (docs/DEALS.md).
   const debtUsd = await clientBalanceUsd(query.data.clientId);
+  const deferredUsd = await deferredBalanceUsd(query.data.clientId);
 
-  return Response.json({ boxes: rows, debtUsd, canOverrideDebt });
+  return Response.json({ boxes: rows, debtUsd, deferredUsd, canOverrideDebt });
 }

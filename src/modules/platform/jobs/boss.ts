@@ -40,6 +40,8 @@ export async function startBoss(): Promise<PgBoss> {
     await registerCrmWorkers(boss);
     const { registerTaskWorkers } = await import('../tasks/digest');
     await registerTaskWorkers(boss);
+    const { registerDealWorkers } = await import('../../wms/deals/jobs');
+    await registerDealWorkers(boss);
     logger.info('pg-boss started');
   }
   return boss;

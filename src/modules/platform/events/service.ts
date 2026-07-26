@@ -24,7 +24,13 @@ export type DomainEventType =
   | 'UndocumentedTransfer'
   | 'MissingInTransit'
   | 'ReadyForPickup'
-  | 'InventoryCompleted';
+  | 'InventoryCompleted'
+  // Price control (docs/DEALS.md): fired while the cargo is still in the
+  // Chinese warehouse, which is the only moment the client can still say
+  // "then send it back".
+  | 'UnquotedCargo'
+  | 'DealDeviation'
+  | 'DealDeferralEnded';
 
 /**
  * Persist a domain event in the same transaction as the mutation that caused

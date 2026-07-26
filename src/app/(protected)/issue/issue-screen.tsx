@@ -44,6 +44,14 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const [personPhone, setPersonPhone] = useState('');
   const [debtOk, setDebtOk] = useState(false);
   const [debtUsd, setDebtUsd] = useState(0);
+  /** The slice of that debt the client was deliberately given more time for. */
+  const [deferredUsd, setDeferredUsd] = useState(0);
+  /**
+   * What the gate actually decides on. The client's real debt still shows in
+   * full — a screen that quietly hid the deferred part would be lying about
+   * what is owed — but only the undeferred remainder blocks the handover.
+   */
+  const blockingDebt = debtUsd - deferredUsd;
   const [canOverrideDebt, setCanOverrideDebt] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,10 +89,12 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
           const data = (await res.json()) as {
             boxes: IssuableBox[];
             debtUsd: number;
+            deferredUsd: number;
             canOverrideDebt: boolean;
           };
           setList(data.boxes);
           setDebtUsd(data.debtUsd);
+          setDeferredUsd(data.deferredUsd ?? 0);
           setCanOverrideDebt(data.canOverrideDebt);
           setSelected(new Set());
           setDebtOk(false);
@@ -230,11 +240,26 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       )}
 
       {client && debtUsd > 0.009 && (
-        <div className="rounded-lg border border-bad/30 bg-bad/10 p-3 text-sm">
-          <p className="font-bold text-bad">
+        <div
+          className={`rounded-lg border p-3 text-sm ${
+            blockingDebt > 0.009
+              ? 'border-bad/30 bg-bad/10'
+              : 'border-warn/30 bg-warn/10'
+          }`}
+        >
+          <p className={`font-bold ${blockingDebt > 0.009 ? 'text-bad' : 'text-warn'}`}>
             ⚠️ {t('debtBanner', { amount: debtUsd.toFixed(2) })}
           </p>
-          {!canOverrideDebt && <p className="mt-1 text-bad">{t('debtNeedsManager')}</p>}
+          {/* An open gate beside a real debt reads as a bug unless the screen
+              says why (docs/DEALS.md). */}
+          {deferredUsd > 0.009 && (
+            <p className="mt-1 font-semibold text-warn">
+              ⏳ {t('debtDeferred', { amount: deferredUsd.toFixed(2) })}
+            </p>
+          )}
+          {blockingDebt > 0.009 && !canOverrideDebt && (
+            <p className="mt-1 text-bad">{t('debtNeedsManager')}</p>
+          )}
         </div>
       )}
 
@@ -323,7 +348,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                 onChange={(e) => setPersonPhone(e.target.value)}
               />
             </div>
-            {debtUsd > 0.009 && canOverrideDebt && (
+            {blockingDebt > 0.009 && canOverrideDebt && (
               <label className="flex items-center gap-2 text-sm font-semibold text-bad">
                 <input type="checkbox" className="h-5 w-5" checked={debtOk} onChange={(e) => setDebtOk(e.target.checked)} />
                 {t('debtOk')}
@@ -338,7 +363,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                 selected.size === 0 ||
                 personName.trim().length < 2 ||
                 personPhone.trim().length < 5 ||
-                (debtUsd > 0.009 && !debtOk)
+                (blockingDebt > 0.009 && !debtOk)
               }
               onClick={submit}
             >

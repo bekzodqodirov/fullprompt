@@ -262,7 +262,8 @@
       "ved_transport": "运输方式（例如：汽运）",
       "ved_delivery_terms": "交货条件（例如：CIP 安集延）",
       "ved_customs_post": "海关关口及代码（例如：Андижон ВЭД / 03011）",
-      "crm_dormant_days": "客户多少天未发货即视为「沉寂」（出现在周一的 CRM 摘要中）"
+      "crm_dormant_days": "客户多少天未发货即视为「沉寂」（出现在周一的 CRM 摘要中）",
+      "deal_deviation_threshold_pct": "货物与报价相差多少百分比时向负责人发送提醒。不会阻止装车。"
     }
   },
   "audit": {
@@ -665,7 +666,8 @@
     "debtBanner": "客户欠款：${amount}",
     "debtNeedsManager": "欠款客户须经经理批准方可提货",
     "debtBlocked": "客户有欠款——提货已锁定（需经理批准）",
-    "noIssuingWarehouse": "您的仓库均不向客户交付货物。此项可在仓库设置中开启。"
+    "noIssuingWarehouse": "您的仓库均不向客户交付货物。此项可在仓库设置中开启。",
+    "debtDeferred": "其中 {amount} 美元已按交易延期 — 不阻止交付"
   },
   "pipeline": {
     "title": "我的客户",
@@ -962,7 +964,8 @@
     "myClients": "客户",
     "arrivals": "待收",
     "trucks": "车辆",
-    "myDay": "我的一天"
+    "myDay": "我的一天",
+    "deals": "交易"
   },
   "cargo": {
     "title": "货物",
@@ -1094,7 +1097,8 @@
       "warehouse": "仓库",
       "user": "员工",
       "truck": "车辆",
-      "expense": "支出"
+      "expense": "支出",
+      "deal": "交易"
     },
     "types": {
       "text": "文本",
@@ -1188,5 +1192,86 @@
     "repeatWeek": "每周",
     "repeatMonth": "每月",
     "showRoad": "日历显示车辆"
+  },
+  "deals": {
+    "title": "交易",
+    "deals": "笔",
+    "newDeal": "新建交易",
+    "deal": "交易",
+    "forClient": "客户",
+    "owner": "负责人",
+    "stage": "阶段",
+    "dealTitle": "名称",
+    "note": "备注",
+    "save": "保存",
+    "quote": "已报价",
+    "actual": "实际",
+    "gap": "差异",
+    "volume": "体积 m³",
+    "weight": "重量 kg",
+    "amount": "金额",
+    "currency": "货币",
+    "suggested": "按实际重算",
+    "suggestedHint": "这只是建议，价格由人决定。",
+    "notQuoted": "尚未报价",
+    "noCargoYet": "货物尚未到达",
+    "withinQuote": "与报价相符",
+    "overQuote": "超出报价",
+    "underQuote": "低于报价",
+    "threshold": "提醒阈值",
+    "lines": "明细",
+    "addLine": "添加明细",
+    "description": "货物",
+    "tnved": "HS 编码",
+    "quantity": "数量",
+    "unit": "单位",
+    "noLines": "无明细 — 总价",
+    "receipts": "入库单",
+    "linkReceipt": "关联入库单",
+    "unlink": "取消关联",
+    "noReceipts": "尚未入库",
+    "pickDeal": "交易（如有）",
+    "noDeal": "无交易",
+    "boxes": "箱数",
+    "arrived": "已到达",
+    "pending": "在途",
+    "defer": "延期付款",
+    "deferred": "付款已延期",
+    "deferReason": "原因",
+    "deferUntilAll": "直到全部货物到达",
+    "deferUntilDate": "截止日期",
+    "deferralEnded": "延期已结束",
+    "discount": "折扣",
+    "discountReason": "折扣原因",
+    "attention": "需要处理",
+    "unpriced": "货物到达但无价格",
+    "deviation": "与报价不符",
+    "empty": "空",
+    "lostReason": "交易为何失败？",
+    "moveTo": "移动到阶段",
+    "cancelMove": "取消",
+    "prevStage": "上一阶段",
+    "nextStage": "下一阶段",
+    "dragHint": "将卡片拖到其他阶段",
+    "mine": "我的",
+    "all": "全部",
+    "errors": {
+      "not_found": "未找到交易",
+      "client_not_found": "未找到客户",
+      "receipt_not_found": "未找到入库单",
+      "client_mismatch": "入库单属于其他客户",
+      "stage_not_found": "未找到阶段",
+      "no_stages": "没有阶段",
+      "lost_reason_required": "请填写原因",
+      "reason_required": "请填写原因",
+      "end_required": "请指明期限",
+      "forbidden": "无权限",
+      "validation": "请检查字段",
+      "fx_missing": "该货币没有汇率"
+    },
+    "postCharge": "记入客户账户",
+    "charge": "客户账单",
+    "chargeHint": "延期仅适用于此处按交易记入的金额。",
+    "charged": "已记入"
   }
 }

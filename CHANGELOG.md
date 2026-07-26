@@ -1,5 +1,87 @@
 # CHANGELOG
 
+## Bitim (deal) — kelishilgan narx bilan haqiqat yonma-yon — 2026-07-26
+
+Siz 26-iyulda men bilan to'liq kelishib olgan, lekin hali qurilmagan eng katta narsa shu edi. Endi bor.
+
+### Nima uchun
+
+Sizning so'zingiz bilan: klientga **1 kub / 100 kg — 200$** deyiladi. Yuk skladga kelganda **1.4 kub** chiqadi. Sotuv manageri ko'rib qolsa — qayta hisoblab, klientga aytadi; klient rozi bo'ladi yoki yukini qaytarib oladi. **Ko'rmasa** — yuk Toshkentga yetib boradi va «narxi qimmat chiqdi» degan janjal boshlanadi.
+
+Muammo «yozuv yo'q»ligida emas — hammasi Telegram va Excelda bor. Muammo **kelishilgan narx bilan haqiqatda chiqqan narsa orasidagi farqni hech kim o'z vaqtida ko'rmasligida**.
+
+### Bitim nima
+
+Bitta mijozning bitta ishi — «narx ayting» dan «to'landi» gacha. **Ikkita ustun yonma-yon:**
+
+| Kelishilgan | Haqiqatda |
+|---|---|
+| Hajm, og'irlik, summa — **odam yozadi** | Hajm, og'irlik, karobkalar — **prixodlardan o'zi qo'shiladi** |
+
+Haqiqat tomonini **hech kim qo'lda kirita olmaydi**. Buni ataylab shunday qildim: agar u yerga ham qo'lda yozish mumkin bo'lsa, birinchi marta kimdir «to'g'rilab» qo'yishi bilan butun taqqoslashning ma'nosi yo'qoladi.
+
+### Eng muhimi — ogohlantirish
+
+**Prixod tasdiqlangan zahoti** tizim solishtiradi va sotuv managerga xabar yuboradi:
+
+1. **Yuk umuman narxsiz keldi** → «GS777 dan narxi kelishilmagan yuk: 1.4 kub, 180 kg — narx qo'ying». Sizning aytishingizcha bu «qimmat chiqdi» shikoyatlarining eng katta manbasi.
+2. **Bitim bor, lekin farq chegaradan oshdi** → «Kelishilgan 1.0 kub / 200$, haqiqatda 1.4 kub, **+40%**. Fakt bo'yicha qayta hisob: **280$**».
+
+**Yuk hali Xitoyda turganida** ketadi — ya'ni klient hali «unda orqaga qaytaring» deya oladigan paytda. Toshkentdagi janjal aynan shu yerda oldi olinadi.
+
+**Yuklashni hech qachon to'xtatmaydi** (sizning javobingiz: «10% dan oshsa xabar, lekin bloklamasin»). Chegara — **sozlama**, hozir 10%, Sozlamalardan o'zgartiriladi.
+
+Ikkita nozik joy, ikkalasini ham test topdi:
+
+- **Yuk bo'lib kelsa — bekorga qo'ng'iroq qilmaydi.** Bugun yarmi, ertaga yarmi kelsa, birinchi yarmi «50% kam» bo'lib ko'rinadi. Agar shunga xabar yuborilsa, har bir bo'lib kelgan yukda yolg'on signal ketardi va bir oyda hech kim bu xabarlarni o'qimay qo'yardi. Shuning uchun **faqat ko'p chiqqanda** xabar ketadi; kam chiqqani kartochkada ko'rinadi, lekin xabar qilinmaydi.
+- **Solishtirish butun bitim bo'yicha**, bitta prixod bo'yicha emas. Ikkinchi yarmi kelganda bitim yana me'yorga qaytadi.
+
+### To'lovni kechiktirish — «hammasi kelganda to'layman»
+
+Siz aytgan holat: 10 ta karobkadan 9 tasi keldi, 1 tasi kech qoladi, klient «hammasi kelsin, keyin to'layman» deydi.
+
+Bu **mijozga emas, bitimga** yoziladi. Sababi oddiy: mijozga yozilsa u **abadiy** bo'lib qoladi, hamma unutadi, va qarz nazorati shu bilan o'ladi. Bitimga yozilsa — faqat o'sha ishga tegishli.
+
+Har bir kechiktirishda: **sabab**, **kim ruxsat berdi**, va **qachongacha**. Muddat ikki xil bo'ladi — sana, yoki **«butun yuk yetib kelguncha»**. Ikkinchisi **o'zi tugaydi**: tizim bitimda nechta karobka borligini va nechtasi yetib kelganini biladi, oxirgisi yetib kelganda kechiktirish avtomat yopiladi va ruxsat bergan odamga xabar ketadi. Hech kim eslab turishi shart emas.
+
+**Yo'qolgan karobka kutilmaydi** — u hech qachon kelmaydi, va uni kutish kechiktirishni abadiy ochiq qoldirardi.
+
+Ruxsat: `finance.debt_override` — bu allaqachon bor va aynan shuni bildiradi.
+
+### Qayerda ko'rinadi
+
+- **`/bitimlar`** — kanban taxta, lidlar voronkasi bilan bir xil ko'rinishda (odamlaringiz uni allaqachon biladi). Ustida **«E'tibor kerak»** ro'yxati: qaysi ishlar noto'g'ri ketyapti. Taxta «hammasi qayerda» ga javob beradi, bu ro'yxat esa «nima yonyapti» ga — va odam ilovani aynan shuning uchun ochadi.
+- **Bitim kartochkasi** — ikkita ustun, farq foizda, taklif qilingan yangi summa (bu **faqat taklif** — narxni odam qo'yadi), qatorlar, bog'langan prixodlar, vazifalar, o'z maydonlaringiz, tarix.
+- **Mijoz kartochkasida** — o'sha mijozning bitimlari, qaysi biri chetga chiqqani bilan. Sotuvchi telefon qilishdan oldin shu yerga qaraydi.
+- **Qabul ekranida** — mijoz tanlangach, uning ochiq bitimlari ro'yxati chiqadi. Skladchi yukni o'z ishiga bog'laydi. **Bu — butun ogohlantirish shu bir tanlovga bog'liq**, shuning uchun uni skladchidan yashirmadim.
+
+Bosqichlar: Narx so'raldi → Narx berildi → Yuk kutilmoqda → Skladda → Yo'lda → Yetkazildi → To'landi / Bekor qilindi. Bular **jadval**, ya'ni keyin o'zingiz nomini o'zgartirasiz.
+
+### Ruxsatlar
+
+Yangi ruxsat kodi **yaratmadim** — ataylab. Yangi kod rollarga faqat seed orqali yetadi, seed esa siz tahrirlagan rolni chetlab o'tadi (#170), ya'ni sizning bazangizda ekran **hech kimga berib bo'lmaydigan** holga tushib qolardi. Bitimni **sotuv manageri ham, VED manageri ham** ochadi (sizning javobingiz: «ikkalasi») — mavjud kodlar bilan.
+
+### Pul: bitimga hisob yozish
+
+Kechiktirish faqat gapda qolmasligi uchun bitta narsa yetishmayotgan edi: **qarz darvozasi uni ko'rmasdi**. Ya'ni siz «hammasi kelganda to'laydi» deb yozardingiz, sklad esa baribir yukni bermasdi — operator yana «ruxsat» tugmasini bosardi va sabab yana Telegramda qolardi.
+
+Endi: bitim kartochkasidan **mijoz hisobiga summa yoziladi** (kelishilgan narx, yoki yuk katta chiqqan bo'lsa qayta hisoblangan summa — o'zi taklif qilinadi). Aynan **shu yozuv** kechiktirish ostiga tushadi.
+
+Ikkita nozik joy:
+- **Mijozning qarzi kamaymaydi** — ekranda to'liq summa turadi. Faqat **darvoza qaraydigan raqam** kamayadi. Tizim qarzni yashirmaydi.
+- **Eski qarz baribir to'sadi.** Kechiktirish bitta ishga berilgan, mijozga emas — shuning uchun partiya bo'yicha yozilgan eski qarz o'z holicha to'sib turaveradi. Test buni alohida tekshiradi.
+
+Berish ekranida endi sabab yozilib turadi: «shundan 200$ bitim bo'yicha kechiktirilgan — berishni to'xtatmaydi». Aks holda operator ochiq darvozani xato deb o'ylab ofisga qo'ng'iroq qilardi.
+
+### Nima qilinmadi
+
+- **Shikast uchun chegirma** — jadval va sabab majburiyati tayyor, formasi keyingi bosqichda.
+- **50 ta tovarli faylni o'qish va TN VED bo'yicha guruhlash** — bu alohida ish, `ANTHROPIC_API_KEY` serverga qo'yilgandan keyin.
+- **Bitim bo'yicha foyda** — tannarx mexanizmiga ulanishi kerak, keyingi bosqich.
+
+**Tekshiruv:** 368 test (32 tasi yangi) + 43 e2e (2 tasi yangi) — toza bazada, CI tartibida, hammasi yashil. Migratsiya 0030 — faqat **qo'shadi**, bironta ustunni o'zgartirmaydi.
+
+
 ## Dostuplar va tozalash: kimga nima ko'rinadi — 2026-07-26
 
 Sizning so'zingiz bilan: «mening kunim / kalendarlar skladchiga ko'rinishi shart emas … dostuplarni kimga nimalar ko'rinishini yahwilab organ va to'g'irla … juda ko'p funksiyalar bo'lib ketti».

@@ -18,6 +18,7 @@ import { getSetting } from '../../platform/settings/service';
 import { assignLetters } from '../sequencer';
 import { nextBoxCodes, nextReceiptNumber } from '../codes';
 import { closeExpectedOnReceipt } from '../arrivals/service';
+import { priceControlOnReceipt } from '../deals/service';
 import { computeLotTotals } from './math';
 
 export const lotInputSchema = z
@@ -62,6 +63,12 @@ export const confirmReceiptSchema = z.object({
   unclaimedMarking: z.string().trim().max(50).optional().or(z.literal('')),
   lots: z.array(lotInputSchema).min(1).max(50),
   extraCosts: z.array(extraCostSchema).max(20).default([]),
+  /**
+   * The job this cargo was quoted under, when the receiving screen was told.
+   * Optional for ever: plenty of cargo arrives with no quote behind it, and
+   * that case is exactly what the price-control alert shouts about.
+   */
+  dealId: z.string().uuid().nullable().optional(),
 });
 
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
@@ -150,6 +157,9 @@ export async function confirmReceipt(
         confirmedAt: new Date(),
         confirmedBy: ctx.actorId,
         clientEventUuid: input.receiptId,
+        // Only when the cargo actually belongs to this client's job; a deal
+        // filed against the wrong client would make two clients' money wrong.
+        dealId: input.clientId ? input.dealId ?? null : null,
       })
       .returning();
 
@@ -300,6 +310,22 @@ export async function confirmReceipt(
       entityId: receipt!.id,
       actorId: ctx.actorId,
     });
+
+    // Price control (docs/DEALS.md). Runs last, after the cargo is recorded,
+    // and cannot fail the confirm: the boxes are physically in the building.
+    await priceControlOnReceipt(
+      tx,
+      {
+        receiptId: receipt!.id,
+        receiptNumber: number,
+        clientId: input.clientId,
+        warehouseCode: warehouse.code,
+        volumeM3: summaries.reduce((sum, s) => sum + s.totalVolumeM3, 0),
+        weightKg: summaries.reduce((sum, s) => sum + s.totalWeightKg, 0),
+        boxCount: summaries.reduce((sum, s) => sum + s.boxCount, 0),
+      },
+      ctx,
+    );
 
     return { receiptId: receipt!.id, number: number, lots: summaries };
   });

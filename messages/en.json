@@ -262,7 +262,8 @@
       "ved_transport": "Mode of transport (for example: road transport)",
       "ved_delivery_terms": "Delivery terms (for example: CIP Andijan)",
       "ved_customs_post": "Customs post and code (for example: Andijan customs / 03011)",
-      "crm_dormant_days": "Days of silence before a client counts as gone quiet (appears in the Monday CRM digest)"
+      "crm_dormant_days": "Days of silence before a client counts as gone quiet (appears in the Monday CRM digest)",
+      "deal_deviation_threshold_pct": "How far the cargo may differ from the quote before the manager is alerted. Never blocks loading."
     }
   },
   "audit": {
@@ -665,7 +666,8 @@
     "debtBanner": "Client's debt: ${amount}",
     "debtNeedsManager": "Cargo goes to a debtor only with the manager's approval",
     "debtBlocked": "The client is in debt — handover is blocked (the manager must approve)",
-    "noIssuingWarehouse": "None of your warehouses hand cargo to clients. This is a warehouse setting."
+    "noIssuingWarehouse": "None of your warehouses hand cargo to clients. This is a warehouse setting.",
+    "debtDeferred": "{amount} $ of it is deferred on a deal — it does not block the handover"
   },
   "pipeline": {
     "title": "My clients",
@@ -962,7 +964,8 @@
     "myClients": "Clients",
     "arrivals": "Incoming",
     "trucks": "Trucks",
-    "myDay": "My day"
+    "myDay": "My day",
+    "deals": "Deals"
   },
   "cargo": {
     "title": "Cargo",
@@ -1094,7 +1097,8 @@
       "warehouse": "Warehouse",
       "user": "Employee",
       "truck": "Truck",
-      "expense": "Expense"
+      "expense": "Expense",
+      "deal": "Deal"
     },
     "types": {
       "text": "text",
@@ -1188,5 +1192,86 @@
     "repeatWeek": "every week",
     "repeatMonth": "every month",
     "showRoad": "Trucks on the calendar"
+  },
+  "deals": {
+    "title": "Deals",
+    "deals": "deals",
+    "newDeal": "New deal",
+    "deal": "Deal",
+    "forClient": "Client",
+    "owner": "Owner",
+    "stage": "Stage",
+    "dealTitle": "Title",
+    "note": "Note",
+    "save": "Save",
+    "quote": "Quoted",
+    "actual": "Actual",
+    "gap": "Gap",
+    "volume": "Volume m³",
+    "weight": "Weight kg",
+    "amount": "Amount",
+    "currency": "Currency",
+    "suggested": "Recalculated on the actuals",
+    "suggestedHint": "A suggestion only — a human sets the price.",
+    "notQuoted": "No price set",
+    "noCargoYet": "The cargo has not arrived yet",
+    "withinQuote": "Matches the quote",
+    "overQuote": "Bigger than quoted",
+    "underQuote": "Smaller than quoted",
+    "threshold": "Alert threshold",
+    "lines": "Lines",
+    "addLine": "Add a line",
+    "description": "Goods",
+    "tnved": "HS code",
+    "quantity": "Qty",
+    "unit": "Unit",
+    "noLines": "No lines — one total",
+    "receipts": "Receipts",
+    "linkReceipt": "Link a receipt",
+    "unlink": "Unlink",
+    "noReceipts": "Nothing received yet",
+    "pickDeal": "Deal (if any)",
+    "noDeal": "No deal",
+    "boxes": "Boxes",
+    "arrived": "arrived",
+    "pending": "in transit",
+    "defer": "Defer the payment",
+    "deferred": "Payment deferred",
+    "deferReason": "Why",
+    "deferUntilAll": "Until every box has arrived",
+    "deferUntilDate": "Until a date",
+    "deferralEnded": "The deferral has ended",
+    "discount": "Discount",
+    "discountReason": "Why the discount",
+    "attention": "Needs attention",
+    "unpriced": "cargo arrived with no price",
+    "deviation": "differs from the quote",
+    "empty": "Empty",
+    "lostReason": "Why did this fall through?",
+    "moveTo": "Move to stage",
+    "cancelMove": "Cancel",
+    "prevStage": "Previous stage",
+    "nextStage": "Next stage",
+    "dragHint": "Drag a card to another stage",
+    "mine": "Mine",
+    "all": "All",
+    "errors": {
+      "not_found": "Deal not found",
+      "client_not_found": "Client not found",
+      "receipt_not_found": "Receipt not found",
+      "client_mismatch": "That receipt belongs to another client",
+      "stage_not_found": "Stage not found",
+      "no_stages": "There are no stages",
+      "lost_reason_required": "Write the reason",
+      "reason_required": "Write the reason",
+      "end_required": "Say until when",
+      "forbidden": "No access",
+      "validation": "Check the fields",
+      "fx_missing": "No exchange rate for that currency"
+    },
+    "postCharge": "Post to the client’s account",
+    "charge": "Charge the client",
+    "chargeHint": "A deferral only covers an amount posted here, against the deal.",
+    "charged": "Posted"
   }
 }

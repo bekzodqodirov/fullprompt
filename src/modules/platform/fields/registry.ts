@@ -56,6 +56,16 @@ export const ENTITY_SPECS: EntitySpec[] = [
     sortOrder: 20,
   },
   {
+    // A deal is worked by BOTH sides — the sales manager who quoted it and the
+    // VED manager who recalculated it (DEALS.md answer 2) — so the write list
+    // carries both codes rather than picking a winner.
+    code: 'deal',
+    labelKey: 'deal',
+    writePermissions: ['crm.leads', 'ved.docs', 'clients.manage'],
+    lookup: { table: 'deals', label: 'code', secondary: 'title' },
+    sortOrder: 15,
+  },
+  {
     code: 'receipt',
     labelKey: 'receipt',
     writePermissions: ['receipts.edit'],

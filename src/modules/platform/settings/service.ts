@@ -15,6 +15,12 @@ export const SETTING_DEFAULTS = {
   stale_stock_days: 30,
   /** Days of silence before a client counts as gone quiet (owner: 60). */
   crm_dormant_days: 60,
+  /**
+   * How far the cargo may differ from the quote before anyone is told
+   * (docs/DEALS.md answer 1: "notify above 10 %, never block loading").
+   * A setting rather than a constant because the owner asked for it to be one.
+   */
+  deal_deviation_threshold_pct: 10,
   costing_base_currency: 'USD',
   client_code_prefix: 'GS',
   label_size: '100x100',

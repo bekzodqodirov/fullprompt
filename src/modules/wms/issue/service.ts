@@ -13,7 +13,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
-import { clientBalanceUsd } from '../finance/service';
+import { clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
 
 export class IssueError extends Error {
   constructor(public readonly code: string) {
@@ -46,8 +46,13 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
   // Debt gate (Phase 2.1, owner's rule): a debtor gets cargo only with a
   // manager's permission — debtOk is that permission, checked in the action
   // layer against finance.debt_override.
+  // Money the client agreed to pay LATER, on a job that is still waiting for
+  // its last box, is not overdue (docs/DEALS.md answer 4). The client's
+  // displayed balance stays honest — only the figure the GATE reads is
+  // reduced, and only by charges raised on a deal that is deferred right now.
   const balance = await clientBalanceUsd(input.clientId);
-  if (balance > 0.009 && !input.debtOk) throw new IssueError('debt_block');
+  const deferred = await deferredBalanceUsd(input.clientId);
+  if (balance - deferred > 0.009 && !input.debtOk) throw new IssueError('debt_block');
   return db.transaction(async (tx) => {
     const existing = await tx.query.handovers.findFirst({
       where: eq(handovers.id, input.handoverId),

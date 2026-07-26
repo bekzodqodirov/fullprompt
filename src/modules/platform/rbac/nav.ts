@@ -150,6 +150,19 @@ export const NAV: NavGroupSpec[] = [
     titleKey: 'sectionSales',
     items: [
       {
+        // The deal board, above the funnel on purpose: a lead is worked once,
+        // a deal is an existing client's job and repeats, and "which of my
+        // jobs is stuck" is the question the sales side opens the app to
+        // answer (docs/DEALS.md, "The board").
+        href: '/bitimlar',
+        shortKey: 'deals',
+        labelKey: 'title',
+        namespace: 'deals',
+        icon: 'handshake',
+        // Both sides work a deal — sales quoted it, VED recalculated it.
+        permissions: ['crm.leads', 'ved.docs', 'clients.manage'],
+      },
+      {
         href: '/crm',
         shortKey: 'crm',
         labelKey: 'title',
@@ -330,13 +343,17 @@ const MENU_BY_ROLE: Record<string, string[]> = {
     '/', '/bugun', '/kalendar', '/plans', '/batches', '/arrivals', '/trucks', '/map',
     '/stock', '/receipts', '/admin/trucks', '/dashboard', '/reports',
   ],
-  // Customs papers hang off the batch; the rest is reference.
+  // Customs papers hang off the batch; the rest is reference. The deal board
+  // is here because recalculating a job the client was mis-quoted for is a VED
+  // manager's work as much as a salesperson's (DEALS.md answer 2).
   ved_manager: [
-    '/', '/bugun', '/kalendar', '/batches', '/stock', '/receipts', '/reports', '/finance',
+    '/', '/bugun', '/kalendar', '/bitimlar', '/batches', '/stock', '/receipts', '/reports',
+    '/finance',
   ],
-  // Clients, the funnel, and what clients owe — never the company's margin.
+  // Clients, their jobs, the funnel, and what they owe — never the company's
+  // margin.
   sales_manager: [
-    '/', '/bugun', '/kalendar', '/crm', '/crm/today', '/my-clients', '/finance',
+    '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/crm/today', '/my-clients', '/finance',
     '/pipeline', '/arrivals',
   ],
   accountant: [

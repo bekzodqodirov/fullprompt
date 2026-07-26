@@ -14,7 +14,18 @@ export const MUTE_GROUPS = {
   // personally given", and that is the one message nobody should lose by
   // accident.
   tasks: ['TasksDue'],
-  alerts: ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
+  // "Something is wrong, act now." The three price-control messages belong
+  // here rather than in `operations`: cargo that arrived is routine, cargo
+  // that arrived at a different size to the one the client was quoted is not,
+  // and it is only worth anything while the cargo is still in China.
+  alerts: [
+    'BoxScannedOnLoad',
+    'UndocumentedTransfer',
+    'MissingInTransit',
+    'UnquotedCargo',
+    'DealDeviation',
+    'DealDeferralEnded',
+  ],
   operations: [
     'ReceiptConfirmed',
     'UnknownCargoReceived',

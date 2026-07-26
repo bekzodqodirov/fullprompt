@@ -262,7 +262,8 @@
       "ved_transport": "Tashish usuli (masalan: авто транспорт)",
       "ved_delivery_terms": "Yetkazib berish sharti (masalan: CIP Андижан)",
       "ved_customs_post": "Bojxona posti nomi va kodi (masalan: Андижон ВЭД / 03011)",
-      "crm_dormant_days": "Mijoz necha kun yuk yubormasa «jim qolgan» hisoblanadi (CRM dushanba digestida chiqadi)"
+      "crm_dormant_days": "Mijoz necha kun yuk yubormasa «jim qolgan» hisoblanadi (CRM dushanba digestida chiqadi)",
+      "deal_deviation_threshold_pct": "Yuk hisob-kitobdan necha foizga farq qilsa, menejerga xabar ketadi. Yuklashni to‘xtatmaydi."
     }
   },
   "audit": {
@@ -665,7 +666,8 @@
     "debtBanner": "Klient qarzi: ${amount}",
     "debtNeedsManager": "Qarzdor klientga yuk faqat menejer ruxsati bilan beriladi",
     "debtBlocked": "Klient qarzdor — berish bloklangan (menejer ruxsati kerak)",
-    "noIssuingWarehouse": "Sizning omborlaringizda mijozga yuk berilmaydi. Buni sozlamalardan yoqish mumkin."
+    "noIssuingWarehouse": "Sizning omborlaringizda mijozga yuk berilmaydi. Buni sozlamalardan yoqish mumkin.",
+    "debtDeferred": "Shundan {amount} $ bitim bo‘yicha kechiktirilgan — berishni to‘xtatmaydi"
   },
   "pipeline": {
     "title": "Mening klientlarim",
@@ -962,7 +964,8 @@
     "myClients": "Mijozlar",
     "arrivals": "Kelayotgan",
     "trucks": "Mashina",
-    "myDay": "Kunim"
+    "myDay": "Kunim",
+    "deals": "Bitimlar"
   },
   "cargo": {
     "title": "Yuk",
@@ -1094,7 +1097,8 @@
       "warehouse": "Ombor",
       "user": "Xodim",
       "truck": "Mashina",
-      "expense": "Xarajat"
+      "expense": "Xarajat",
+      "deal": "Bitim"
     },
     "types": {
       "text": "matn",
@@ -1188,5 +1192,86 @@
     "repeatWeek": "har hafta",
     "repeatMonth": "har oy",
     "showRoad": "Kalendarda mashinalar"
+  },
+  "deals": {
+    "title": "Bitimlar",
+    "deals": "bitim",
+    "newDeal": "Yangi bitim",
+    "deal": "Bitim",
+    "forClient": "Mijoz",
+    "owner": "Mas’ul",
+    "stage": "Bosqich",
+    "dealTitle": "Nomi",
+    "note": "Izoh",
+    "save": "Saqlash",
+    "quote": "Kelishilgan",
+    "actual": "Haqiqatda",
+    "gap": "Farq",
+    "volume": "Hajm, m³",
+    "weight": "Og‘irlik, kg",
+    "amount": "Summa",
+    "currency": "Valyuta",
+    "suggested": "Fakt bo‘yicha qayta hisob",
+    "suggestedHint": "Bu faqat taklif — narxni odam qo‘yadi.",
+    "notQuoted": "Narx qo‘yilmagan",
+    "noCargoYet": "Yuk hali kelmadi",
+    "withinQuote": "Hisobga to‘g‘ri keldi",
+    "overQuote": "Hisobdan ko‘p chiqdi",
+    "underQuote": "Hisobdan kam chiqdi",
+    "threshold": "Ogohlantirish chegarasi",
+    "lines": "Qatorlar",
+    "addLine": "Qator qo‘shish",
+    "description": "Tovar",
+    "tnved": "TN VED",
+    "quantity": "Soni",
+    "unit": "Birlik",
+    "noLines": "Qator yo‘q — narx yaxlit",
+    "receipts": "Prixodlar",
+    "linkReceipt": "Prixodni bog‘lash",
+    "unlink": "Uzish",
+    "noReceipts": "Yuk hali qabul qilinmagan",
+    "pickDeal": "Bitim (bo‘lsa)",
+    "noDeal": "Bitimsiz",
+    "boxes": "Karobkalar",
+    "arrived": "yetib keldi",
+    "pending": "yo‘lda",
+    "defer": "To‘lovni kechiktirish",
+    "deferred": "To‘lov kechiktirilgan",
+    "deferReason": "Sababi",
+    "deferUntilAll": "Butun yuk yetib kelguncha",
+    "deferUntilDate": "Sanagacha",
+    "deferralEnded": "Muddat tugadi",
+    "discount": "Chegirma",
+    "discountReason": "Chegirma sababi",
+    "attention": "E’tibor kerak",
+    "unpriced": "yuk narxsiz keldi",
+    "deviation": "hisobga to‘g‘ri kelmadi",
+    "empty": "Bo‘sh",
+    "lostReason": "Bitim nega bekor bo‘ldi?",
+    "moveTo": "Bosqichga ko‘chirish",
+    "cancelMove": "Bekor",
+    "prevStage": "Oldingi bosqich",
+    "nextStage": "Keyingi bosqich",
+    "dragHint": "Kartochkani boshqa bosqichga torting",
+    "mine": "Meniki",
+    "all": "Hammasi",
+    "errors": {
+      "not_found": "Bitim topilmadi",
+      "client_not_found": "Mijoz topilmadi",
+      "receipt_not_found": "Prixod topilmadi",
+      "client_mismatch": "Prixod boshqa mijozniki",
+      "stage_not_found": "Bosqich topilmadi",
+      "no_stages": "Bosqichlar yo‘q",
+      "lost_reason_required": "Sababini yozing",
+      "reason_required": "Sababini yozing",
+      "end_required": "Qachongacha ekanini ko‘rsating",
+      "forbidden": "Ruxsat yo‘q",
+      "validation": "Maydonlarni tekshiring",
+      "fx_missing": "Bu valyutaga kurs yo‘q"
+    },
+    "postCharge": "Mijoz hisobiga yozish",
+    "charge": "Mijozga hisob",
+    "chargeHint": "Kechiktirish faqat shu yerda, bitim bo‘yicha yozilgan summaga ishlaydi.",
+    "charged": "Yozilgan"
   }
 }

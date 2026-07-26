@@ -15,6 +15,7 @@ import { createClientCabinetCodeAction, revokeClientCabinetLinkAction } from '..
 import { ClientForm } from '../client-form';
 import { ClientCrmSections } from '../../../crm/client-crm';
 import { TasksPanel } from '@/components/tasks-panel';
+import { ClientDeals } from '@/components/client-deals';
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -139,6 +140,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         <h2 className="text-lg font-bold">📦 {tcargo('title')}</h2>
         <CargoSummary clientId={client.id} money={canSeeMoney} />
       </section>
+
+      {/* The jobs we are doing for them, and which of those has gone wrong. */}
+      <ClientDeals clientId={client.id} />
 
       {/* The fields the owner added to a client, whatever they are. */}
       <TasksPanel

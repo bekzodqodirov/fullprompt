@@ -119,6 +119,53 @@ const DICT = {
     'zh-CN': '请检查服务器上的备份（BACKUP_DIR）。',
     en: 'Check the backups on the server (BACKUP_DIR).',
   },
+
+  // Price control (docs/DEALS.md)
+  unquotedCargo: {
+    ru: 'Груз без цены',
+    uz: 'Narxi kelishilmagan yuk',
+    'zh-CN': '未报价货物',
+    en: 'Unpriced cargo',
+  },
+  setPrice: {
+    ru: 'Назначьте цену, пока груз ещё в Китае.',
+    uz: 'Yuk hali Xitoyda turganida narx qo‘ying.',
+    'zh-CN': '货物仍在中国时请先定价。',
+    en: 'Set a price while the cargo is still in China.',
+  },
+  dealDeviation: {
+    ru: 'Груз не совпал с расчётом',
+    uz: 'Yuk hisob-kitobga to‘g‘ri kelmadi',
+    'zh-CN': '货物与报价不符',
+    en: 'The cargo differs from the quote',
+  },
+  quoted: { ru: 'Договорено', uz: 'Kelishilgan', 'zh-CN': '报价', en: 'Quoted' },
+  actual: { ru: 'Фактически', uz: 'Haqiqatda', 'zh-CN': '实际', en: 'Actual' },
+  suggested: {
+    ru: 'Пересчёт по факту',
+    uz: 'Fakt bo‘yicha qayta hisob',
+    'zh-CN': '按实际重算',
+    en: 'Recalculated on the actual figures',
+  },
+  deferralEnded: {
+    ru: 'Отсрочка платежа закончилась',
+    uz: 'To‘lov muddati tugadi',
+    'zh-CN': '付款延期已结束',
+    en: 'The payment deferral has ended',
+  },
+  allBoxesArrived: {
+    ru: 'весь груз доехал',
+    uz: 'yukning hammasi yetib keldi',
+    'zh-CN': '货物已全部到达',
+    en: 'every box has arrived',
+  },
+  datePassed: {
+    ru: 'срок вышел',
+    uz: 'muddat o‘tdi',
+    'zh-CN': '期限已过',
+    en: 'the date has passed',
+  },
+  deal: { ru: 'Сделка', uz: 'Bitim', 'zh-CN': '交易', en: 'Deal' },
 } satisfies Record<string, Record<Locale, string>>;
 
 export type NotificationLabels = { [K in keyof typeof DICT]: string };
