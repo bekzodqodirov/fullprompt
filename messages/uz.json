@@ -261,7 +261,8 @@
       "ved_consignee": "Invoysdagi Получатель/Consignee rekviziti (nomi, INN, manzil, bank, telefon)",
       "ved_transport": "Tashish usuli (masalan: авто транспорт)",
       "ved_delivery_terms": "Yetkazib berish sharti (masalan: CIP Андижан)",
-      "ved_customs_post": "Bojxona posti nomi va kodi (masalan: Андижон ВЭД / 03011)"
+      "ved_customs_post": "Bojxona posti nomi va kodi (masalan: Андижон ВЭД / 03011)",
+      "crm_dormant_days": "Mijoz necha kun yuk yubormasa «jim qolgan» hisoblanadi (CRM dushanba digestida chiqadi)"
     }
   },
   "audit": {

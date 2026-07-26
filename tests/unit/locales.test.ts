@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LOCALES } from '@/modules/platform/i18n/request';
+import { SETTING_DEFAULTS } from '@/modules/platform/settings/service';
 import en from '../../messages/en.json';
 import ru from '../../messages/ru.json';
 import uz from '../../messages/uz.json';
@@ -143,4 +144,26 @@ describe('staff Telegram messages', () => {
       expect(renderTelegramText(type, payload, null), type).not.toContain('undefined');
     }
   });
+});
+
+/**
+ * The settings screen renders `t('descriptions.<key>')` for EVERY key in
+ * SETTING_DEFAULTS, and next-intl throws at render on a missing key — so
+ * adding a setting without a description takes the whole admin page down.
+ *
+ * The bundle-parity test above cannot catch this: `crm_dormant_days` was
+ * missing from all four bundles equally, so they matched each other perfectly
+ * while /admin/settings threw on every visit for weeks.
+ */
+describe('every setting can be described', () => {
+  for (const locale of Object.keys(BUNDLES)) {
+    it(`${locale} describes all ${Object.keys(SETTING_DEFAULTS).length} settings`, () => {
+      const descriptions =
+        ((BUNDLES[locale] as Tree).settings as Tree | undefined)?.descriptions ?? {};
+      const missing = Object.keys(SETTING_DEFAULTS).filter(
+        (key) => typeof (descriptions as Tree)[key] !== 'string',
+      );
+      expect(missing, `${locale} is missing setting descriptions`).toEqual([]);
+    });
+  }
 });

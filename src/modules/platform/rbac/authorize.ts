@@ -1,8 +1,9 @@
+import { cache } from 'react';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { permissions, rolePermissions, roles, userRoles, userWarehouses } from '../db/schema';
 import { getSessionUser, type SessionUser } from '../auth/session';
-import { WAREHOUSE_SCOPED_ROLES, type PermissionCode, type RoleCode } from './catalog';
+import { isWarehouseScoped, type PermissionCode, type RoleCode } from './catalog';
 
 export class AuthError extends Error {
   constructor(
@@ -17,12 +18,21 @@ export interface Actor extends SessionUser {
   roles: RoleCode[];
   permissions: Set<string>;
   warehouseIds: string[];
-  /** True when every role the user has is warehouse-scoped (spec 4.2). */
+  /** True when ANY role the user has is warehouse-scoped (spec 4.2). */
   warehouseScoped: boolean;
 }
 
-/** Load the current user with roles, permissions and warehouse assignments. */
-export async function getActor(): Promise<Actor | null> {
+/**
+ * Load the current user with roles, permissions and warehouse assignments.
+ *
+ * Memoised per request with React's `cache`: this is called from 70-odd
+ * files — layout, page, every server action, several API routes — and each
+ * call was three round-trips to Postgres. One dashboard render was doing the
+ * same three queries a dozen times. `cache` keys on the arguments (there are
+ * none) and is discarded when the request ends, so there is no cross-request
+ * leak: two users cannot see each other's actor.
+ */
+export const getActor = cache(async function getActor(): Promise<Actor | null> {
   const user = await getSessionUser();
   if (!user) return null;
 
@@ -45,8 +55,7 @@ export async function getActor(): Promise<Actor | null> {
     .from(userWarehouses)
     .where(eq(userWarehouses.userId, user.id));
 
-  const warehouseScoped =
-    roleCodes.length > 0 && roleCodes.every((rc) => WAREHOUSE_SCOPED_ROLES.includes(rc));
+  const warehouseScoped = isWarehouseScoped(roleCodes);
 
   return {
     ...user,
@@ -55,7 +64,7 @@ export async function getActor(): Promise<Actor | null> {
     warehouseIds: whRows.map((w) => w.warehouseId),
     warehouseScoped,
   };
-}
+});
 
 /**
  * The single server-side authz gate (spec 4.2): every mutation and protected

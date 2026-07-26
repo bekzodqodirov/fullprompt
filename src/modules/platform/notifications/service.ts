@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
@@ -19,6 +19,13 @@ import { isTelegramMuted } from './mutes';
  * rows (one per user per channel); Telegram rows are then sent by the
  * telegram worker with retry, in-app rows feed the bell.
  */
+
+/**
+ * Telegram tries this many times before a message is written off. Six
+ * attempts across pg-boss's backoff is roughly a day — long enough to ride
+ * out an outage, short enough that a blocked bot stops being retried.
+ */
+const MAX_TELEGRAM_ATTEMPTS = 6;
 
 interface RecipientNotification {
   userId: string;
@@ -132,6 +139,18 @@ export function renderTelegramText(
   const link = `${appUrl}/receipts/${payload.receiptId}`;
   const codes = (payload.shortCodes as string[] | undefined)?.join(', ') ?? '';
 
+  /**
+   * A digest carries its own text and that text IS the message.
+   *
+   * Checked BEFORE the switch, not as one more case: a digest is composed per
+   * recipient from rows no case here could reproduce, so every digest that
+   * will ever be written needs this branch. `DailyDigest` had a case; the two
+   * CRM digests shipped without one and every reader got the literal string
+   * "CrmFollowUps" followed by a link to /receipts/undefined.
+   */
+  const preRendered = typeof payload.text === 'string' ? payload.text.trim() : '';
+  if (preRendered) return preRendered;
+
   switch (type) {
     case 'ReceiptConfirmed':
       return (
@@ -198,12 +217,13 @@ export function renderTelegramText(
         `${L.receivedBy}: ${payload.personName}${payload.personPhone ? ` (${payload.personPhone})` : ''}` +
         (payload.remaining ? `\n${L.leftInStock}: ${payload.remaining} ${L.boxesShort}` : '')
       );
-    case 'DailyDigest':
-      return String(payload.text ?? '');
     case 'RestoreTestFailed':
       return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;
     default:
-      return `${type}\n${link}`;
+      // No case and no pre-rendered text. Say what happened and point at the
+      // app — never at `/receipts/undefined`, which is what this branch used
+      // to send for every event that had no receipt.
+      return payload.receiptId ? `${type}\n${link}` : `${type}\n${appUrl}`;
   }
 }
 
@@ -334,8 +354,20 @@ export async function sendPendingTelegram(): Promise<void> {
   const pending = await db
     .select()
     .from(notifications)
-    .where(and(eq(notifications.channel, 'telegram'), eq(notifications.status, 'pending')))
+    .where(
+      and(
+        eq(notifications.channel, 'telegram'),
+        eq(notifications.status, 'pending'),
+        lt(notifications.attempts, MAX_TELEGRAM_ATTEMPTS),
+      ),
+    )
     .limit(30);
+
+  // One dead chat must not hold up the queue. Every row is attempted, its
+  // own failure recorded, and the batch reports at the end — before this,
+  // the first driver who blocked the bot stopped every message behind them,
+  // including "boxes missing in transit".
+  let failed = 0;
 
   for (const notification of pending) {
     const recipient = await db.query.users.findFirst({
@@ -376,13 +408,26 @@ export async function sendPendingTelegram(): Promise<void> {
         .where(eq(notifications.id, notification.id));
     } catch (err) {
       logger.error({ err, notificationId: notification.id }, 'telegram send failed');
+      failed += 1;
+      const attempts = notification.attempts + 1;
       await db
         .update(notifications)
-        .set({ error: String(err) })
+        .set({
+          attempts,
+          error: String(err),
+          // Out of attempts: stop asking. A blocked bot or a deleted chat
+          // never becomes deliverable, and a row that retries for ever keeps
+          // the whole job failing.
+          status: attempts >= MAX_TELEGRAM_ATTEMPTS ? 'failed' : 'pending',
+        })
         .where(eq(notifications.id, notification.id));
-      throw err; // let pg-boss retry with backoff
     }
   }
+
+  // Still throw so pg-boss retries — but only after every row had its turn.
+  // Rows already marked `sent` are excluded from the next pass, so a retry
+  // re-sends nothing.
+  if (failed > 0) throw new Error(`${failed} telegram message(s) failed`);
 }
 
 export async function unreadCount(userId: string): Promise<number> {

@@ -227,26 +227,34 @@ export async function setFieldValues(
   const fields = await listFields(entityType, true);
   const touched: Record<string, unknown> = {};
 
-  for (const field of fields) {
-    if (!(field.id in raw)) continue;
-    const value = coerceFieldValue(field, raw[field.id]);
-    if (value === null) {
-      if (field.required && field.active) throw new CrmError('field_required');
-      await db
-        .delete(crmFieldValues)
-        .where(and(eq(crmFieldValues.fieldId, field.id), eq(crmFieldValues.entityId, entityId)));
-      touched[field.label] = null;
-      continue;
+  // One transaction for the whole card. Every field used to be its own
+  // statement against `db`, so a required-field rejection — or a dropped
+  // connection — half-way down a card left the first fields written and the
+  // rest not, with no sign that anything had gone wrong.
+  await db.transaction(async (tx) => {
+    for (const field of fields) {
+      // Only fields PRESENT in the payload are touched, so a form that
+      // renders a subset cannot wipe what the full card collected.
+      if (!(field.id in raw)) continue;
+      const value = coerceFieldValue(field, raw[field.id]);
+      if (value === null) {
+        if (field.required && field.active) throw new CrmError('field_required');
+        await tx
+          .delete(crmFieldValues)
+          .where(and(eq(crmFieldValues.fieldId, field.id), eq(crmFieldValues.entityId, entityId)));
+        touched[field.label] = null;
+        continue;
+      }
+      await tx
+        .insert(crmFieldValues)
+        .values({ fieldId: field.id, entityType, entityId, value })
+        .onConflictDoUpdate({
+          target: [crmFieldValues.fieldId, crmFieldValues.entityId],
+          set: { value, updatedAt: new Date() },
+        });
+      touched[field.label] = value;
     }
-    await db
-      .insert(crmFieldValues)
-      .values({ fieldId: field.id, entityType, entityId, value })
-      .onConflictDoUpdate({
-        target: [crmFieldValues.fieldId, crmFieldValues.entityId],
-        set: { value, updatedAt: new Date() },
-      });
-    touched[field.label] = value;
-  }
+  });
 
   if (Object.keys(touched).length > 0) {
     await writeAudit(db, ctx, {

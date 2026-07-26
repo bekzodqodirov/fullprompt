@@ -536,3 +536,49 @@ describe('one person, several codes', () => {
     expect(hasBoth(await suggestGroups(500))).toBe(false);
   });
 });
+
+/**
+ * The digest that shipped broken.
+ *
+ * `sendFollowUpDigest` composes a per-recipient list and hands it to
+ * `deliver`, which stores it as `payload.text`. The Telegram sender then
+ * re-renders every row through `renderTelegramText`, which had no case for
+ * `CrmFollowUps` — so the composed text was discarded and the reader got the
+ * literal string "CrmFollowUps" and a link to `/receipts/undefined`.
+ *
+ * This walks the real path: compose → row → render.
+ */
+describe('the follow-up digest reaches the phone intact', () => {
+  it('renders the composed list, not the event name', async () => {
+    const { sendFollowUpDigest } = await import('@/modules/wms/crm/digest');
+    const { renderTelegramText } = await import('@/modules/platform/notifications/service');
+    const { notifications } = await import('@/modules/platform/db/schema');
+
+    // A lead due today for a manager who sees everything.
+    const name = `Digest sinov ${SUFFIX}`;
+    await createLead(
+      { name, stageId: stageNewId, ownerId: actorId, nextActionAt: iso(0) },
+      ctx(),
+    );
+
+    await sendFollowUpDigest();
+
+    const rows = await db
+      .select()
+      .from(notifications)
+      .where(sql`${notifications.type} = 'CrmFollowUps' AND ${notifications.channel} = 'telegram'`)
+      .orderBy(sql`${notifications.createdAt} DESC`)
+      .limit(5);
+    expect(rows.length, 'the digest produced no telegram row').toBeGreaterThan(0);
+
+    const text = renderTelegramText(
+      rows[0]!.type,
+      rows[0]!.payload as Record<string, unknown>,
+      'uz',
+    );
+    // What the driver actually receives.
+    expect(text).not.toBe('CrmFollowUps');
+    expect(text).not.toContain('undefined');
+    expect(text).toContain('📞');
+  });
+});

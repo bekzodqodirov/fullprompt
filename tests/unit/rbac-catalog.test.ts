@@ -4,6 +4,7 @@ import {
   ROLE_CODES,
   ROLE_MATRIX,
   WAREHOUSE_SCOPED_ROLES,
+  isWarehouseScoped,
 } from '@/modules/platform/rbac/catalog';
 
 describe('RBAC catalog (spec §16 matrix)', () => {
@@ -113,5 +114,42 @@ describe('the phone tab bar', () => {
       expect(items.length, role).toBeLessThanOrEqual(4);
       expect(items.length, role).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * Warehouse scoping decides whether a Yiwu operator sees Yiwu or sees every
+ * warehouse in the company. It was computed with `.every()`, so holding ANY
+ * second role — `viewer` is the obvious one — made the predicate false and
+ * removed the scope entirely. Nobody held two roles yet, which is the only
+ * reason it never fired; the seventeen sales logins the owner is about to
+ * create are exactly the kind of change that would have set it off.
+ *
+ * The rule: permissions UNION across roles (widest wins), scope INTERSECTS
+ * (narrowest wins).
+ */
+describe('warehouse scoping across combined roles', () => {
+  // The real function authorize.ts calls — not a copy of it, so reverting
+  // the fix fails these cases instead of quietly passing them.
+  const isScoped = isWarehouseScoped;
+
+  it('scopes a warehouse role even when another role is added', () => {
+    expect(isScoped(['warehouse_operator'])).toBe(true);
+    expect(isScoped(['warehouse_manager'])).toBe(true);
+    // The regression: a second, unscoped role must NOT widen the scope.
+    expect(isScoped(['warehouse_operator', 'viewer'])).toBe(true);
+    expect(isScoped(['warehouse_manager', 'accountant'])).toBe(true);
+  });
+
+  it('leaves company-wide roles unscoped', () => {
+    expect(isScoped(['super_admin'])).toBe(false);
+    expect(isScoped(['logist'])).toBe(false);
+    expect(isScoped(['sales_manager', 'accountant'])).toBe(false);
+  });
+
+  it('treats a user with no role as unscoped, not as scoped-to-nothing', () => {
+    // `[]` returning true would silently hide every warehouse from them and
+    // read as data loss rather than as a missing role.
+    expect(isScoped([])).toBe(false);
   });
 });

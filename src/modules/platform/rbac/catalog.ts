@@ -93,6 +93,22 @@ const ALL = [...PERMISSION_CODES] as PermissionCode[];
  */
 export const WAREHOUSE_SCOPED_ROLES: RoleCode[] = ['warehouse_manager', 'warehouse_operator'];
 
+/**
+ * Does this set of roles confine the user to their assigned warehouses?
+ *
+ * ANY warehouse-scoped role scopes the user. This was `.every()` inline in
+ * authorize.ts, which meant a second role — `viewer` alongside
+ * `warehouse_operator` — made the predicate false and handed one warehouse's
+ * operator every warehouse in the company. Permissions UNION across roles
+ * (widest wins); scope INTERSECTS (narrowest wins).
+ *
+ * Exported as a function so the rule has one home and can be tested for real,
+ * rather than being restated in a test that would pass if it were reverted.
+ */
+export function isWarehouseScoped(roleCodes: readonly string[]): boolean {
+  return roleCodes.some((code) => (WAREHOUSE_SCOPED_ROLES as readonly string[]).includes(code));
+}
+
 export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
   super_admin: ALL,
   admin: ALL,

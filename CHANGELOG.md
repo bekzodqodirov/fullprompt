@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 0-bosqich: serverda turgan xatolarni tuzatish — 2026-07-26
+
+CRM platformasini qurishdan oldin kodni chuqur tekshirdim va **jonli 6 ta xato** topildi. Hammasi tuzatildi.
+
+- **`/admin/settings` sahifasi ochilmasdi.** `crm_dormant_days` sozlamasining tavsifi 4 ta tilning **hech birida** yo'q edi, sahifa esa har bir sozlama uchun tavsif chiqaradi — natijada sahifa qulardi. Tavsif qo'shildi va **test yozildi**: endi tavsifsiz sozlama qo'shilsa CI to'xtatadi. (Eski til testi buni ushlay olmasdi — kalit 4 ta tilda barobar yo'q edi, ya'ni ular bir-biriga «mos» edi.)
+- **CRM Telegram digestlari axlat matn yuborardi.** «Bugun bog'lanish kerak» va «Jim qolgan mijozlar» xabarlarining matni tayyorlanardi-yu, yuborishda tashlab yuborilardi; haydovchi `CrmFollowUps` va `/receipts/undefined` havolasini olardi. Endi qoida umumiy: **xabarda tayyor matn bo'lsa — o'sha matn yuboriladi**, ya'ni kelajakda yoziladigan har qanday digest ham ishlaydi. Test bor va u tuzatishsiz **yiqiladi** (tekshirdim).
+- **Bitta yomon Telegram chat butun navbatni to'xtatardi.** Xato bo'lsa kod darhol `throw` qilardi — o'sha partiyadagi qolgan xabarlar (jumladan «yuk yo'qoldi») yuborilmasdi. Endi har bir xabar alohida urinib ko'riladi, xatosi yoziladi, oxirida navbat qayta urinadi. Botni bloklagan raqam **6 marta**dan keyin «yuborilmadi» deb yopiladi va boshqalarni ushlab turmaydi.
+- **Huquq teshigi.** Ombor cheklovi `.every()` bilan hisoblanardi: bir odamga ikkita rol berilsa (masalan `skladchi` + `viewer`) cheklov **butunlay yo'qolardi** va u hamma omborni ko'rardi. Endi: **bittasi ham ombor roli bo'lsa — cheklov qoladi** (huquqlar qo'shiladi, cheklov toraytiriladi). Qoida alohida funksiyaga ajratildi va **haqiqiy funksiya** test qilinadi — nusxasi emas, ya'ni orqaga qaytarilsa test yiqiladi. 17 ta sotuvchiga login yaratganingizda birinchi tegib ketadigan joy shu edi.
+- **Tezlik:** foydalanuvchi huquqlari har sahifada **70+ marta** bazadan qayta o'qilardi (har safar 3 ta so'rov). Endi bir so'rov davomida bir marta o'qiladi. Dashboard kabi og'ir sahifalarda sezilarli.
+- **Custom maydonlar yarim saqlanishi mumkin edi** — har bir maydon alohida yozilardi, o'rtada xato chiqsa birinchilari saqlanib, qolgani yo'qolardi. Endi bitta tranzaksiya: yo hammasi, yo hech narsa.
+- **Fayl yuklash** endi faqat haqiqiy 4 turdagi obyektga ruxsat beradi (prixod, lot, yashik, akt) — ilgari brauzer istalgan nomni yuborishi mumkin edi. *(Har bir faylni kim ko'rishi mumkinligini tekshirish — 1-bosqichda, huquqlar qatlami bilan birga.)*
+
+256 test + 26 e2e yashil.
+
 ## Uchta tuzatish: sklad tanlash, QR skaner ramkasi, yuklashdagi kg/m³ — 2026-07-26
 
 - **Skladchi endi faqat o'z omborini tanlaydi.** «Yuklash» sahifasidagi tez partiya shaklida barcha omborlar ro'yxatda turardi. Server allaqachon begona omborni rad etardi — lekin ro'yxatda ko'rinib turgani odamlarni urinishga o'rgatardi, rad etish esa xatoga o'xshab ko'rinardi. Endi: bitta omborda ishlaydigan odamga tanlov umuman ko'rsatilmaydi (ombor kodi shunchaki yozilib turadi), bir nechta omborda ishlaydiganga faqat o'shalar ko'rsatiladi. **Qayerga** yuborish — hamma ombor, avvalgidek (partiyaning maqsadi shu). Plan yaratish ekranida ham xuddi shunday tuzatildi — u yerda aksincha xato bor edi: bitta omborga biriktirilgan odam manzil tanlay olmasdi.

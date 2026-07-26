@@ -261,7 +261,8 @@
       "ved_consignee": "Consignee field on the invoice (name, tax ID, address, bank, phone)",
       "ved_transport": "Mode of transport (for example: road transport)",
       "ved_delivery_terms": "Delivery terms (for example: CIP Andijan)",
-      "ved_customs_post": "Customs post and code (for example: Andijan customs / 03011)"
+      "ved_customs_post": "Customs post and code (for example: Andijan customs / 03011)",
+      "crm_dormant_days": "Days of silence before a client counts as gone quiet (appears in the Monday CRM digest)"
     }
   },
   "audit": {

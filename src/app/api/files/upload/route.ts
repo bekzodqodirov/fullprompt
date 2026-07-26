@@ -2,8 +2,23 @@ import { z } from 'zod';
 import { requireActor, AuthError } from '@/modules/platform/rbac/authorize';
 import { FileValidationError, saveAttachment } from '@/modules/platform/files/service';
 
+/**
+ * The only things anything in this app attaches a file to.
+ *
+ * `entityType` used to be `z.string().max(50)` straight from the browser, and
+ * it becomes both the attachment's identity and the storage key prefix
+ * (`${entityType}/${entityId}/…`) — so a caller could invent a type, write
+ * objects into a namespace no screen ever lists and no cleanup ever reaches.
+ * An allowlist costs nothing and the list is four entries long.
+ *
+ * NOT a substitute for per-record authorization: this says WHAT kind of thing
+ * may carry a file, not WHICH one this user may touch. That check needs the
+ * policy layer and lands with it.
+ */
+const ATTACHABLE = ['receipt', 'receipt_lot', 'crate', 'handover'] as const;
+
 const metaSchema = z.object({
-  entityType: z.string().min(1).max(50),
+  entityType: z.enum(ATTACHABLE),
   entityId: z.string().uuid(),
 });
 

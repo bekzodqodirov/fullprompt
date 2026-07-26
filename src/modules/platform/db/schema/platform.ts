@@ -324,6 +324,8 @@ export const notifications = pgTable(
     type: text('type').notNull(),
     payload: jsonb('payload').notNull(),
     status: text('status').notNull().default('pending'),
+    /** Telegram sends that failed; at the cap the row goes terminal. */
+    attempts: integer('attempts').notNull().default(0),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     error: text('error'),
     readAt: timestamp('read_at', { withTimezone: true }),
