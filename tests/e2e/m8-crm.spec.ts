@@ -64,40 +64,43 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await expect(page.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
 
   // /crm IS the board now (owner: the CRM opens on the funnel, not a table).
+  // On a phone that board is ONE stage at a time, and the funnel lives in the
+  // strip of stage tabs across the top.
   await page.goto('/crm?scope=all');
-  await expect(page.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
+  const board = page.getByTestId('funnel-mobile');
+  await expect(board).toBeVisible();
+  await expect(page.getByTestId('funnel-desktop')).toBeHidden();
+  const card = board.getByTestId('lead-card').filter({ hasText: `Sinov mijoz ${runId}` });
+  await expect(card).toBeVisible();
 
-  // Drag the card from one column to the next with a real pointer gesture —
-  // HTML5 drag-and-drop does not fire on touch, so this is what the phone
-  // actually does: press, hold, move, release.
-  await page.goto('/crm?scope=all');
-  const card = page.getByTestId('lead-card').filter({ hasText: `Sinov mijoz ${runId}` });
-  const from = (await card.boundingBox())!;
-  const target = page.getByTestId('column-open').nth(1);
-  const to = (await target.boundingBox())!;
+  // One tap moves it a stage forward — the move that happens ten times a day
+  // should not be a drag across columns that are off the screen.
+  await card.getByTestId('move-next').click();
+  await expect(card).toHaveCount(0);
 
-  await page.mouse.move(from.x + from.width / 2, from.y + 20);
-  await page.mouse.down();
-  // The project runs Playwright in mobile emulation, so these arrive as TOUCH
-  // pointer events — which means the card only comes off the board after the
-  // long press, exactly like a real finger.
-  await page.waitForTimeout(400);
-  await page.mouse.move(from.x + from.width / 2 + 20, from.y + 20, { steps: 5 });
-  // Drop on the VISIBLE sliver of the next column: at 360 px only ~76 px of
-  // it is on screen, and a point outside the viewport has no element under
-  // it at all. Real fingers reach the rest through the edge auto-scroll.
-  await page.mouse.move(to.x + 16, to.y + 60, { steps: 10 });
-  await page.mouse.up();
-
-  // The card lands in the new column and stays there after a reload.
-  await expect(target.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
+  // It really is in the next stage, and it survives a reload.
+  await page.getByTestId('stage-tab').nth(1).click();
+  await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
   await page.reload();
-  await expect(page.getByTestId('column-open').nth(1).getByText(`Sinov mijoz ${runId}`)).toBeVisible();
+  await page.getByTestId('stage-tab').nth(1).click();
+  await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
+
+  // Any other stage goes through the sheet: here, back to the start.
+  await board
+    .getByTestId('lead-card')
+    .filter({ hasText: `Sinov mijoz ${runId}` })
+    .getByTestId('move-other')
+    .click();
+  await page.getByTestId('move-to-open').first().click();
+  await page.getByTestId('stage-tab').first().click();
+  await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
 
   // Won → convert. The convert panel opens by itself on a won stage, so the
   // last step of a deal is never a tap away from being forgotten.
+  // Both funnel shapes are in the DOM (CSS decides which one is on screen),
+  // so a click has to say which one it means.
   await page.goto('/crm?scope=all');
-  await page.getByText(`Sinov mijoz ${runId}`).click();
+  await page.getByTestId('funnel-mobile').getByText(`Sinov mijoz ${runId}`).click();
   await expect(page.getByLabel(`Shahar ${runId}`)).toHaveValue('Andijon');
   await page.getByTestId('stage-won').click();
   await expect(page.getByTestId('convert-lead')).toBeVisible();

@@ -869,7 +869,7 @@
     "sources": "Manbalar",
     "addStage": "Bosqich qo‘shish",
     "addSource": "Manba qo‘shish",
-    "moveTo": "Lidlarni qayerga ko‘chirish",
+    "moveTo": "Boshqa bosqichga",
     "kind": "Bosqich roli",
     "kindOpen": "Ishlanyapti",
     "kindWon": "Sotuv",
@@ -909,7 +909,10 @@
     "badDate": "Bu yerga sana kerak",
     "dormantNote": "Ilgari yuk yuborib, keyin to‘xtagan mijoz. Hech qachon yubormagan odam bu yerga tushmaydi.",
     "personNote": "Kodlar birlashtirilmaydi: har birida o‘z harflari, yuklari va kabineti qoladi. Odam ularni faqat sotuv uchun bog‘laydi.",
-    "dragHint": "Kartochkani ushlab turib boshqa bosqichga sudrang"
+    "dragHint": "Kartochkani ushlab turib boshqa bosqichga sudrang",
+    "cancelMove": "Bekor qilish",
+    "prevStage": "Oldingi bosqich",
+    "nextStage": "Keyingi bosqich"
   },
   "navShort": {
     "home": "Bosh",

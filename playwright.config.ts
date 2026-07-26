@@ -24,9 +24,24 @@ export default defineConfig({
   projects: [
     {
       name: 'mobile-chromium',
+      testIgnore: /\.desktop\.spec\.ts$/,
       use: {
         ...devices['Pixel 5'],
         viewport: { width: 360, height: 800 },
+        launchOptions: executablePath ? { executablePath } : {},
+      },
+    },
+    {
+      // The funnel has two shapes — one stage at a time on a phone, all the
+      // columns with drag-and-drop from `md` up — so the second one needs a
+      // viewport where it exists. Only *.desktop.spec.ts runs here.
+      name: 'desktop-chromium',
+      testMatch: /\.desktop\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 900 },
+        isMobile: false,
+        hasTouch: false,
         launchOptions: executablePath ? { executablePath } : {},
       },
     },

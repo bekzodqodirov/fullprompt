@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## CRM voronkasi telefonda — yangi ko'rinish — 2026-07-26
+
+Telefonda 8 ta ustunni yonma-yon qo'yish ishlamas edi: 360 px ekranda qo'shni bosqichning atigi ~76 px'i ko'rinadi, kartani ko'rinmayotgan ustunga sudrash bir necha soniya davom etadi va ko'pincha noto'g'ri joyga tushadi. Shuning uchun telefondagi voronka boshqacha ishlaydi:
+
+- **Yuqorida — bosqichlar lentasi**: har bir bosqich nomi va soni bilan. Butun voronka bir qarashda ko'rinadi, boshqasiga o'tish — bitta bosish. Tanlangan bosqich lenta o'rtasiga o'zi suriladi.
+- **Pastda — o'sha bosqichning kartalari, to'liq kenglikda.** O'qish qulay, matn kesilmaydi.
+- **Kartada «→ Keyingi bosqich» tugmasi** — kuniga o'n marta bo'ladigan harakat endi bitta bosish. Yonidagi «⋯» tugmasi pastdan chiqadigan ro'yxatni ochadi: istalgan bosqichga ko'chirish (yo'qotilganga ko'chirsangiz sababini so'raydi, avvalgidek).
+- **‹ › tugmalari** bosqichlar orasida oldinga-orqaga yurish uchun.
+- Voronka ochilganda **birinchi bo'sh bo'lmagan bosqich** ko'rsatiladi — ish uchinchi bosqichda bo'lsa, bo'sh «yangi» ustuniga qarab turmaysiz.
+
+**Kompyuterda hech narsa o'zgarmadi** — hamma ustunlar yonma-yon, sudrab ko'chirish avvalgidek ishlaydi (u yerda hamma ustun ekranga sig'adi, sudrash eng tez usul).
+
+Ikkala ko'rinish ham test bilan qoplandi: telefon uchun bosish orqali ko'chirish, kompyuter uchun sudrash (Playwright'ga alohida «desktop» profili qo'shildi).
+
+232 test + 19 e2e yashil.
+
 ## Sizning ro'yxatingiz — 2-partiya: pul va mijoz (5 punkt) — 2026-07-26
 
 - **(8) Narx qo'yish ekrani endi tannarx ↔ narx ↔ foyda ni bir qatorda ko'rsatadi.** Mashinaga bir marta kiritgan rastamojka/yo'l xarajati har bir klientga kg/m³ nisbatida bo'linib, o'sha klientning qatorida turadi: **tannarx** (va $/kg, $/m³), **narx**, **foyda** (va foizi). Yuqorida — butun partiya bo'yicha jami: qancha ketdi, qancha oldik, qancha qoldi, nechta klientga narx qo'yilgan. Xarajat kiritilmagan klient ⚠️ bilan belgilanadi — foyda 0 dan hisoblanib qolmasin.

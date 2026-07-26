@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { Icon } from '@/components/ui/icon';
 import { moveLeadAction } from '../actions';
 import { stageClass } from '../stage-color';
 
@@ -29,55 +30,289 @@ export interface KanbanLead {
 const MOVE_THRESHOLD = 8;
 /** A touch has to be held this long before the card comes off the board. */
 const HOLD_MS = 250;
-/** Auto-scroll the board when the finger nears an edge. */
+/** Auto-scroll the board when the pointer nears an edge. */
 const EDGE = 48;
 const EDGE_STEP = 12;
 
 /**
- * Drag a lead from one stage to the next (owner: "ushlab statusdan statusga
- * o'tkazish").
+ * The funnel, in the two shapes it is actually used in.
  *
- * Written against Pointer Events rather than HTML5 drag-and-drop, which does
- * not fire on touch at all — and this board is used on a phone first. No
- * library: a drag-and-drop package would be a bigger dependency than the
- * 150 lines it replaces, and it would still need the touch handling below.
+ * A phone gets ONE stage at a time (owner: "mobileda kanban view'ni ishlashga
+ * qulay qilib ber"). Eight columns side by side on a 360 px screen means
+ * ~76 px of the next stage is visible, and dragging a card to a column you
+ * cannot see is a several-second edge-scroll that misses as often as it
+ * lands. So the phone gets a stage strip, the stage's cards full width, and
+ * a button that moves a card on ONE tap — which is what the gesture was for.
  *
- * Touch starts the drag on a long press, so a normal swipe still scrolls the
- * board and a normal tap still opens the card. A mouse skips the wait and
- * starts as soon as the pointer has actually moved.
+ * A desktop, where all the columns fit, keeps the drag board.
+ *
+ * Both are rendered and toggled by CSS rather than by measuring the window:
+ * a breakpoint read in JavaScript renders the wrong shape for the first
+ * frame, and this board is the CRM's home screen.
  */
-export function KanbanBoard({
-  stages,
-  leads,
-}: {
-  stages: KanbanStage[];
-  leads: KanbanLead[];
-}) {
+export function KanbanBoard({ stages, leads }: { stages: KanbanStage[]; leads: KanbanLead[] }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
   const [placement, setPlacement] = useState<Record<string, string>>({});
+  const [error, setError] = useState(false);
+
+  // The server is the truth; `placement` only holds a card in its new column
+  // between the move and the revalidation, so the card never jumps back for
+  // half a second. Cleared the moment fresh rows arrive — adjusted during
+  // render rather than in an effect, so there is no frame where the
+  // optimistic position and the server's disagree.
+  const [renderedLeads, setRenderedLeads] = useState(leads);
+  if (renderedLeads !== leads) {
+    setRenderedLeads(leads);
+    setPlacement({});
+  }
+  const stageOf = useCallback(
+    (lead: KanbanLead) => placement[lead.id] ?? lead.stageId,
+    [placement],
+  );
+
+  /**
+   * Move a lead, optimistically. Shared by the drag board and the phone's
+   * move buttons so the two can never disagree about what a move means — a
+   * lost deal has to say why, and refusing the prompt leaves the card alone.
+   */
+  const move = useCallback(
+    async (lead: KanbanLead, stageId: string) => {
+      const stage = stages.find((row) => row.id === stageId);
+      if (!stage || stage.id === (placement[lead.id] ?? lead.stageId)) return;
+
+      let reason = '';
+      if (stage.kind === 'lost') {
+        reason = window.prompt(t('lostReason')) ?? '';
+        if (reason.trim().length < 2) return;
+      }
+
+      setPlacement((current) => ({ ...current, [lead.id]: stageId }));
+      setError(false);
+      const result = await moveLeadAction(lead.id, stageId, reason);
+      if (!result.ok) {
+        setPlacement((current) => {
+          const next = { ...current };
+          delete next[lead.id];
+          return next;
+        });
+        setError(true);
+      }
+    },
+    [placement, stages, t],
+  );
+
+  const counts = Object.fromEntries(
+    stages.map((stage) => [stage.id, leads.filter((lead) => stageOf(lead) === stage.id).length]),
+  );
+
+  return (
+    <>
+      {error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
+
+      <div data-testid="funnel-mobile" className="md:hidden">
+        <StageView stages={stages} leads={leads} counts={counts} stageOf={stageOf} move={move} />
+      </div>
+      <div data-testid="funnel-desktop" className="hidden md:block">
+        <DragBoard stages={stages} leads={leads} counts={counts} stageOf={stageOf} move={move} />
+      </div>
+    </>
+  );
+}
+
+interface ViewProps {
+  stages: KanbanStage[];
+  leads: KanbanLead[];
+  counts: Record<string, number>;
+  stageOf: (lead: KanbanLead) => string;
+  move: (lead: KanbanLead, stageId: string) => void | Promise<void>;
+}
+
+/**
+ * The phone's funnel: one stage, full width.
+ *
+ * The strip along the top is the funnel — it shows every stage and its count
+ * at a glance, which is the thing a board is opened for, and it is a tap to
+ * switch instead of a long sideways drag.
+ */
+function StageView({ stages, leads, counts, stageOf, move }: ViewProps) {
+  const t = useTranslations('crm');
+  // Open on the first stage that has anything in it: an empty "new" column is
+  // a wasted first screen when the work is three stages along.
+  const [activeId, setActiveId] = useState(
+    () => stages.find((stage) => counts[stage.id])?.id ?? stages[0]?.id ?? '',
+  );
+  const [sheetFor, setSheetFor] = useState<KanbanLead | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // A stage deleted or reordered under us must not leave the screen blank.
+  const active = stages.find((stage) => stage.id === activeId) ?? stages[0];
+  const activeIndex = active ? stages.indexOf(active) : -1;
+  const inStage = active ? leads.filter((lead) => stageOf(lead) === active.id) : [];
+
+  // Keep the chosen stage on screen — with eight stages the one you are
+  // looking at is often off the end of the strip.
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector<HTMLElement>('[data-active="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }, [activeId]);
+
+  const step = (delta: number) => {
+    const next = stages[activeIndex + delta];
+    if (next) setActiveId(next.id);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div ref={stripRef} className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+        {stages.map((stage) => {
+          const on = stage.id === active?.id;
+          return (
+            <button
+              key={stage.id}
+              type="button"
+              data-testid="stage-tab"
+              data-active={on}
+              onClick={() => setActiveId(stage.id)}
+              className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold ${
+                on ? `${stageClass(stage.color)} ring-2 ring-brand-500` : 'border-line text-ink-700'
+              }`}
+            >
+              {stage.name}
+              <span className="ml-1.5 opacity-70">{counts[stage.id] ?? 0}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Stepping through the funnel without hunting in the strip. */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label={t('prevStage')}
+          disabled={activeIndex <= 0}
+          onClick={() => step(-1)}
+          className="btn-secondary btn-icon disabled:opacity-30"
+        >
+          <Icon name="chevronLeft" className="h-5 w-5" />
+        </button>
+        <p className="min-w-0 flex-1 truncate text-center text-sm font-bold">
+          {active?.name}{' '}
+          <span className="text-ink-500">
+            · {inStage.length} {t('leads').toLowerCase()}
+          </span>
+        </p>
+        <button
+          type="button"
+          aria-label={t('nextStage')}
+          disabled={activeIndex < 0 || activeIndex >= stages.length - 1}
+          onClick={() => step(1)}
+          className="btn-secondary btn-icon disabled:opacity-30"
+        >
+          <Icon name="chevronRight" className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {inStage.map((lead) => {
+          const next = stages[stages.indexOf(active!) + 1];
+          return (
+            <div key={lead.id} data-testid="lead-card" className="card !p-3">
+              <Link href={`/crm/leads/${lead.id}`} className="block">
+                <LeadCardBody lead={lead} />
+              </Link>
+              <div className="mt-2 flex gap-2 border-t border-line pt-2">
+                {/* One tap for the move that happens ten times a day; the
+                    sheet for everything else. */}
+                {next && (
+                  <button
+                    type="button"
+                    data-testid="move-next"
+                    onClick={() => void move(lead, next.id)}
+                    className="btn-secondary min-w-0 flex-1 !justify-start"
+                  >
+                    <Icon name="chevronRight" className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{next.name}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-testid="move-other"
+                  aria-label={t('moveTo')}
+                  onClick={() => setSheetFor(lead)}
+                  className="btn-secondary btn-icon shrink-0"
+                >
+                  ⋯
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {inStage.length === 0 && (
+          <p className="card text-center text-sm text-ink-500">{t('empty')}</p>
+        )}
+      </div>
+
+      {sheetFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40"
+          onClick={() => setSheetFor(null)}
+        >
+          <div
+            className="pb-safe max-h-[80vh] w-full space-y-1.5 overflow-y-auto rounded-t-2xl bg-surface-raised p-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="section-title">{t('moveTo')}</p>
+            <p className="truncate pb-1 font-semibold">{sheetFor.name}</p>
+            {stages
+              .filter((stage) => stage.id !== stageOf(sheetFor))
+              .map((stage) => (
+                <button
+                  key={stage.id}
+                  type="button"
+                  data-testid={`move-to-${stage.kind}`}
+                  onClick={() => {
+                    const lead = sheetFor;
+                    setSheetFor(null);
+                    void move(lead, stage.id);
+                  }}
+                  className={`w-full rounded-xl border px-3 py-3 text-left font-semibold ${stageClass(
+                    stage.color,
+                  )}`}
+                >
+                  {stage.name}
+                </button>
+              ))}
+            <button type="button" onClick={() => setSheetFor(null)} className="btn-secondary w-full">
+              {t('cancelMove')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The desktop funnel: every column at once, drag a card between them.
+ *
+ * Written against Pointer Events rather than HTML5 drag-and-drop, which does
+ * not fire on touch — a trackpad reports as touch on some machines. No
+ * library: a drag-and-drop package would be a bigger dependency than the code
+ * it replaces.
+ */
+function DragBoard({ stages, leads, counts, stageOf, move }: ViewProps) {
+  const t = useTranslations('crm');
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<string | null>(null);
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
-  const [error, setError] = useState(false);
 
   const boardRef = useRef<HTMLDivElement>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const dragged = useRef(false);
   const scrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // The server is the truth; `placement` only holds a card in its new column
-  // between the drop and the revalidation, so the card never jumps back for
-  // half a second. Cleared the moment fresh rows arrive — adjusted during
-  // render rather than in an effect, so there is no frame where the optimistic
-  // position and the server's disagree.
-  const [renderedLeads, setRenderedLeads] = useState(leads);
-  if (renderedLeads !== leads) {
-    setRenderedLeads(leads);
-    setPlacement({});
-  }
-  const stageOf = (lead: KanbanLead) => placement[lead.id] ?? lead.stageId;
 
   const stopScrolling = () => {
     if (scrollTimer.current) clearInterval(scrollTimer.current);
@@ -96,7 +331,7 @@ export function KanbanBoard({
 
   useEffect(() => cleanup, [cleanup]);
 
-  /** Which column is under the finger right now. */
+  /** Which column is under the pointer right now. */
   const stageUnder = (x: number, y: number) => {
     const element = document.elementFromPoint(x, y);
     return element?.closest<HTMLElement>('[data-stage-id]')?.dataset.stageId ?? null;
@@ -112,31 +347,6 @@ export function KanbanBoard({
     scrollTimer.current = setInterval(() => {
       board.scrollLeft += direction * EDGE_STEP;
     }, 16);
-  };
-
-  const drop = async (lead: KanbanLead, stageId: string) => {
-    const stage = stages.find((row) => row.id === stageId);
-    if (!stage || stage.id === stageOf(lead)) return;
-
-    let reason = '';
-    if (stage.kind === 'lost') {
-      // Same rule as the lead card: a lost deal has to say why, and a
-      // cancelled prompt leaves the card where it was.
-      reason = window.prompt(t('lostReason')) ?? '';
-      if (reason.trim().length < 2) return;
-    }
-
-    setPlacement((current) => ({ ...current, [lead.id]: stageId }));
-    setError(false);
-    const result = await moveLeadAction(lead.id, stageId, reason);
-    if (!result.ok) {
-      setPlacement((current) => {
-        const next = { ...current };
-        delete next[lead.id];
-        return next;
-      });
-      setError(true);
-    }
   };
 
   const onPointerDown = (event: React.PointerEvent, lead: KanbanLead) => {
@@ -173,7 +383,7 @@ export function KanbanBoard({
         setOverStage(stageOf(lead));
         (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
       } else {
-        // The finger moved before the hold completed — that is a scroll.
+        // The pointer moved before the hold completed — that is a scroll.
         if (holdTimer.current) clearTimeout(holdTimer.current);
         holdTimer.current = null;
         start.current = null;
@@ -191,24 +401,19 @@ export function KanbanBoard({
     const target = overStage;
     const wasDragging = dragId === lead.id;
     cleanup();
-    if (wasDragging && target) void drop(lead, target);
+    if (wasDragging && target) void move(lead, target);
   };
 
-  const counts = Object.fromEntries(
-    stages.map((stage) => [stage.id, leads.filter((lead) => stageOf(lead) === stage.id).length]),
-  );
   const dragLead = leads.find((lead) => lead.id === dragId) ?? null;
 
   return (
     <>
       <p className="text-xs text-ink-500">✋ {t('dragHint')}</p>
-      {error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
-
       <div
         ref={boardRef}
         className="-mx-4 overflow-x-auto px-4 pb-2"
         // While a card is in the air the board must not pan under it: the
-        // finger is already down, so the browser would otherwise treat the
+        // pointer is already down, so the browser would otherwise treat the
         // same gesture as a scroll.
         style={{ touchAction: dragId ? 'none' : undefined }}
       >
