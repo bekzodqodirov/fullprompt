@@ -94,6 +94,19 @@ test('cost → price → margin, and the client card knows which trip', async ({
   const trip = page.locator('a[href^="/batches/"]').first();
   await expect(trip).toContainText(/YW-\d{3}/);
   await expect(trip).toContainText('$150.00');
+
+  // Settle it before leaving. A test that walks away from a debt arms the
+  // handover debt gate against every later run of the suite — which is
+  // exactly how m5-issue started failing on a second pass.
+  const ledgerForm = page.locator('form').filter({ has: page.locator('input[name="txDate"]') });
+  await ledgerForm.locator('input[name="amount"]').fill('150');
+  await ledgerForm.locator('select[name="currency"]').selectOption('USD');
+  await ledgerForm.locator('button[type="submit"]').click();
+  await expect(ledgerForm.getByText('✅')).toBeVisible({ timeout: 15_000 });
+  await page.reload();
+  // The trip still shows what it was priced at — what changed is that none
+  // of it is outstanding, so the balance is zero.
+  await expect(page.getByText('$0.00').first()).toBeVisible();
 });
 
 test('a sales manager opens their own client book', async ({ page }) => {

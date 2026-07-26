@@ -61,7 +61,7 @@ export async function saveTruckAction(
     action: parsed.data.id ? 'update' : 'create',
     after: values,
   });
-  revalidatePath('/trucks');
+  revalidatePath('/admin/trucks');
   return { ok: true };
 }
 
@@ -85,5 +85,5 @@ export async function setTruckActiveAction(formData: FormData): Promise<void> {
     action: 'update',
     after: { active },
   });
-  revalidatePath('/trucks');
+  revalidatePath('/admin/trucks');
 }

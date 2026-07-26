@@ -164,7 +164,9 @@
       "distribution": "Distribution"
     },
     "codeExists": "A warehouse with this code already exists",
-    "letterState": "Letter counter"
+    "letterState": "Letter counter",
+    "issuesToClients": "Clients collect cargo here",
+    "issuesToClientsHint": "Only for warehouses a client actually collects from (TAS, AND). Unticked, the handover screen does not open here."
   },
   "clients": {
     "title": "Clients",
@@ -639,7 +641,8 @@
     "act": "Handover act (PDF)",
     "debtBanner": "Client's debt: ${amount}",
     "debtNeedsManager": "Cargo goes to a debtor only with the manager's approval",
-    "debtBlocked": "The client is in debt — handover is blocked (the manager must approve)"
+    "debtBlocked": "The client is in debt — handover is blocked (the manager must approve)",
+    "noIssuingWarehouse": "None of your warehouses hand cargo to clients. This is a warehouse setting."
   },
   "pipeline": {
     "title": "My clients",
@@ -928,7 +931,9 @@
     "reports": "Reports",
     "search": "Search",
     "today": "Calls",
-    "myClients": "Clients"
+    "myClients": "Clients",
+    "arrivals": "Incoming",
+    "trucks": "Trucks"
   },
   "cargo": {
     "title": "Cargo",
@@ -954,5 +959,45 @@
     "withDebt": "In debt",
     "lastReceipt": "last intake",
     "callToday": "call today"
+  },
+  "arrivals": {
+    "title": "Incoming cargo",
+    "trucksTitle": "Trucks heading here",
+    "noTrucks": "No trucks are on their way here",
+    "remaining": "{n} not accepted yet",
+    "expectedTitle": "Cargo expected from clients",
+    "noExpected": "Nothing is expected",
+    "addTitle": "Add expected cargo",
+    "warehouse": "Warehouse",
+    "expectedOn": "Expected on",
+    "client": "Client",
+    "clientPlaceholder": "Search by code or name",
+    "marking": "Marking",
+    "markingPlaceholder": "Marking on the boxes (if there is no code)",
+    "boxCount": "Boxes, roughly",
+    "note": "Note",
+    "whoRequired": "Pick a client code, or write the marking on the boxes",
+    "receiveIt": "Receive it",
+    "markArrived": "Mark as arrived",
+    "cancelReason": "Reason",
+    "status": {
+      "in_transit": "in transit",
+      "arrived": "arrived"
+    }
+  },
+  "trucks": {
+    "title": "Where the trucks are",
+    "onMap": "On the map",
+    "loading": "Loading",
+    "onRoad": "On the road",
+    "landed": "Arrived",
+    "empty": "No active trucks",
+    "arrivedAt": "arrived at {wh}",
+    "freshFix": "{h} h ago",
+    "staleFix": "stale signal",
+    "noSignal": "no signal",
+    "notDeparted": "not departed yet",
+    "showClosed": "Show closed ones too",
+    "activeOnly": "Active only"
   }
 }

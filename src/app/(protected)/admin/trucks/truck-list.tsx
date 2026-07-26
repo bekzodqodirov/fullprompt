@@ -50,7 +50,12 @@ export function TruckList({ trucks }: { trucks: (TruckValues & { active: boolean
       {adding ? (
         <TruckForm onDone={() => setAdding(false)} />
       ) : (
-        <button type="button" className="btn-primary w-full" onClick={() => setAdding(true)}>
+        <button
+          type="button"
+          data-testid="add-truck"
+          className="btn-primary w-full"
+          onClick={() => setAdding(true)}
+        >
           ＋ {t('addTruck')}
         </button>
       )}

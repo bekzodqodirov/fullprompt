@@ -9,6 +9,7 @@ import { warehouses } from '@/modules/platform/db/schema';
 import { authorize } from '@/modules/platform/rbac/authorize';
 import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
+import { checkbox } from '@/modules/platform/forms/checkbox';
 
 const warehouseSchema = z.object({
   code: z
@@ -41,6 +42,8 @@ const warehouseSchema = z.object({
     .pipe(z.coerce.number().positive().max(1_000_000))
     .optional()
     .or(z.literal('')),
+  /** Does a client collect cargo here? (owner: only TAS and AND.) */
+  issuesToClients: z.boolean(),
 });
 
 export interface WarehouseFormState {
@@ -57,6 +60,7 @@ function parseForm(formData: FormData) {
     batchPrefix: formData.get('batchPrefix'),
     address: formData.get('address') ?? '',
     capacityM3: formData.get('capacityM3') ?? '',
+    issuesToClients: checkbox(formData, 'issuesToClients', false),
   });
 }
 

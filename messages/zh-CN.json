@@ -164,7 +164,9 @@
       "distribution": "分拨仓"
     },
     "codeExists": "该代码的仓库已存在",
-    "letterState": "字母计数器"
+    "letterState": "字母计数器",
+    "issuesToClients": "客户在此仓提货",
+    "issuesToClientsHint": "仅适用于客户实际提货的仓库（TAS、AND）。未勾选时该仓不显示「交付」界面。"
   },
   "clients": {
     "title": "客户",
@@ -639,7 +641,8 @@
     "act": "交接单（PDF）",
     "debtBanner": "客户欠款：${amount}",
     "debtNeedsManager": "欠款客户须经经理批准方可提货",
-    "debtBlocked": "客户有欠款——提货已锁定（需经理批准）"
+    "debtBlocked": "客户有欠款——提货已锁定（需经理批准）",
+    "noIssuingWarehouse": "您的仓库均不向客户交付货物。此项可在仓库设置中开启。"
   },
   "pipeline": {
     "title": "我的客户",
@@ -928,7 +931,9 @@
     "reports": "报表",
     "search": "搜索",
     "today": "跟进",
-    "myClients": "客户"
+    "myClients": "客户",
+    "arrivals": "待收",
+    "trucks": "车辆"
   },
   "cargo": {
     "title": "货物",
@@ -954,5 +959,45 @@
     "withDebt": "有欠款",
     "lastReceipt": "最近收货",
     "callToday": "今天致电"
+  },
+  "arrivals": {
+    "title": "待收货物",
+    "trucksTitle": "开往本仓的车辆",
+    "noTrucks": "暂无开往本仓的车辆",
+    "remaining": "尚未接收 {n} 件",
+    "expectedTitle": "客户预告的货物",
+    "noExpected": "暂无预告货物",
+    "addTitle": "添加预告货物",
+    "warehouse": "仓库",
+    "expectedOn": "预计到达",
+    "client": "客户",
+    "clientPlaceholder": "按代码或姓名搜索",
+    "marking": "唛头",
+    "markingPlaceholder": "箱上唛头（无代码时）",
+    "boxCount": "大约件数",
+    "note": "备注",
+    "whoRequired": "请选择客户代码或填写唛头",
+    "receiveIt": "收货",
+    "markArrived": "标记为已到",
+    "cancelReason": "原因",
+    "status": {
+      "in_transit": "在途",
+      "arrived": "已到"
+    }
+  },
+  "trucks": {
+    "title": "车辆位置",
+    "onMap": "在地图上",
+    "loading": "装车中",
+    "onRoad": "在途",
+    "landed": "已到达",
+    "empty": "没有在途车辆",
+    "arrivedAt": "已到达 {wh}",
+    "freshFix": "{h} 小时前",
+    "staleFix": "信号过旧",
+    "noSignal": "无信号",
+    "notDeparted": "尚未发车",
+    "showClosed": "同时显示已关闭",
+    "activeOnly": "仅活动中"
   }
 }

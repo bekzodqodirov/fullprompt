@@ -19,6 +19,7 @@ import {
   voidExpense,
   voidTransfer,
 } from '@/modules/wms/accounting/service';
+import { checkbox } from '@/modules/platform/forms/checkbox';
 
 export interface AccountingFormState {
   ok?: boolean;
@@ -29,18 +30,6 @@ export interface AccountingFormState {
 const num = (value: FormDataEntryValue | null) =>
   Number(String(value ?? '').replace(/\s/g, '').replace(',', '.'));
 
-/**
- * Read a checkbox honestly.
- *
- * A browser sends nothing at all for an unchecked box, which is
- * indistinguishable from "the form has no such field". Every form here pairs
- * the checkbox with a hidden `off` before it, so the LAST value is the real
- * answer and a form that omits the field still gets the sensible default.
- */
-const flag = (formData: FormData, name: string, fallback = true) => {
-  const values = formData.getAll(name);
-  return values.length === 0 ? fallback : values[values.length - 1] === 'on';
-};
 
 /** Everything here is owner/accountant territory (owner's answer 7). */
 async function actor(permission: 'finance.expenses' | 'finance.reports') {
@@ -97,9 +86,9 @@ export async function saveCategoryAction(
 ): Promise<AccountingFormState> {
   const parsed = categorySchema.safeParse({
     name: formData.get('name'),
-    cash: flag(formData, 'cash'),
+    cash: checkbox(formData, 'cash'),
     sortOrder: num(formData.get('sortOrder')) || 100,
-    active: flag(formData, 'active'),
+    active: checkbox(formData, 'active'),
   });
   if (!parsed.success) return { error: 'validation' };
   const id = String(formData.get('id') ?? '') || undefined;
@@ -117,7 +106,7 @@ export async function saveAccountAction(
     openingBalance: num(formData.get('openingBalance')) || 0,
     openingDate: String(formData.get('openingDate') ?? ''),
     sortOrder: num(formData.get('sortOrder')) || 100,
-    active: flag(formData, 'active'),
+    active: checkbox(formData, 'active'),
   });
   if (!parsed.success) return { error: 'validation' };
   const id = String(formData.get('id') ?? '') || undefined;
@@ -137,7 +126,7 @@ export async function saveRecurringAction(
     employeeId: String(formData.get('employeeId') ?? ''),
     accountId: String(formData.get('accountId') ?? ''),
     note: String(formData.get('note') ?? ''),
-    active: flag(formData, 'active'),
+    active: checkbox(formData, 'active'),
   });
   if (!parsed.success) return { error: 'validation' };
   const id = String(formData.get('id') ?? '') || undefined;

@@ -236,7 +236,7 @@ export function PlanEditor({
           ))}
         </select>
         <a
-          href="/trucks"
+          href="/admin/trucks"
           aria-label={t('manageTrucks')}
           title={t('manageTrucks')}
           className="btn-secondary !min-h-10 shrink-0 px-3"

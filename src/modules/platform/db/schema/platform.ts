@@ -165,6 +165,13 @@ export const warehouses = pgTable(
     address: text('address'),
     /** Optional storage capacity for the fill indicator (owner request, M6). */
     capacityM3: numeric('capacity_m3', { precision: 12, scale: 2 }),
+    /**
+     * Does a client collect their cargo here? (owner: only TAS and AND.)
+     *
+     * Handover used to be a permission alone, which handed every warehouse
+     * operator a screen no client would ever stand in front of.
+     */
+    issuesToClients: boolean('issues_to_clients').notNull().default(false),
     // Letter sequencer state (spec 5.3): position is the 0-based index into
     // the A..ZZ sequence *before* blacklist skipping; cycleNo increments on
     // ZZ→A wrap. Locked with SELECT ... FOR UPDATE at receipt confirmation.

@@ -107,7 +107,13 @@ async function main() {
     for (const wh of WAREHOUSES) {
       await db
         .insert(warehouses)
-        .values({ ...wh, batchPrefix: wh.code })
+        // Clients collect from the Uzbek end only (owner: TAS and AND) —
+        // the same rule migration 0024 applied to the live rows.
+        .values({
+          ...wh,
+          batchPrefix: wh.code,
+          issuesToClients: ['customs', 'distribution'].includes(wh.type),
+        })
         .onConflictDoNothing({ target: warehouses.code });
     }
   }

@@ -164,7 +164,9 @@
       "distribution": "Taqsimlash"
     },
     "codeExists": "Bunday kodli sklad allaqachon mavjud",
-    "letterState": "Harf hisoblagichi"
+    "letterState": "Harf hisoblagichi",
+    "issuesToClients": "Bu omborda mijozga yuk beriladi",
+    "issuesToClientsHint": "Faqat mijoz o‘z yukini olib ketadigan omborlar uchun (TAS, AND). Belgilanmasa, «Berish» ekrani bu omborda ochilmaydi."
   },
   "clients": {
     "title": "Mijozlar",
@@ -639,7 +641,8 @@
     "act": "Topshirish akti (PDF)",
     "debtBanner": "Klient qarzi: ${amount}",
     "debtNeedsManager": "Qarzdor klientga yuk faqat menejer ruxsati bilan beriladi",
-    "debtBlocked": "Klient qarzdor — berish bloklangan (menejer ruxsati kerak)"
+    "debtBlocked": "Klient qarzdor — berish bloklangan (menejer ruxsati kerak)",
+    "noIssuingWarehouse": "Sizning omborlaringizda mijozga yuk berilmaydi. Buni sozlamalardan yoqish mumkin."
   },
   "pipeline": {
     "title": "Mening klientlarim",
@@ -928,7 +931,9 @@
     "reports": "Hisobot",
     "search": "Qidiruv",
     "today": "Qo‘ng‘iroq",
-    "myClients": "Mijozlar"
+    "myClients": "Mijozlar",
+    "arrivals": "Kelayotgan",
+    "trucks": "Mashina"
   },
   "cargo": {
     "title": "Yuk",
@@ -954,5 +959,45 @@
     "withDebt": "Qarzdor",
     "lastReceipt": "oxirgi qabul",
     "callToday": "bugun qo‘ng‘iroq"
+  },
+  "arrivals": {
+    "title": "Kelayotgan yuklar",
+    "trucksTitle": "Bizga kelayotgan mashinalar",
+    "noTrucks": "Hozircha bizga kelayotgan mashina yo‘q",
+    "remaining": "{n} ta qabul qilinmagan",
+    "expectedTitle": "Mijozlardan kutilayotgan yuk",
+    "noExpected": "Kutilayotgan yuk yo‘q",
+    "addTitle": "Kutilayotgan yuk qo‘shish",
+    "warehouse": "Ombor",
+    "expectedOn": "Qachon kutilmoqda",
+    "client": "Mijoz",
+    "clientPlaceholder": "Kod yoki ism bo‘yicha qidiring",
+    "marking": "Belgi (markirovka)",
+    "markingPlaceholder": "Qutidagi belgi (kodi yo‘q bo‘lsa)",
+    "boxCount": "Taxminiy quti soni",
+    "note": "Izoh",
+    "whoRequired": "Mijoz kodini tanlang yoki qutidagi belgini yozing",
+    "receiveIt": "Qabul qilish",
+    "markArrived": "Keldi deb belgilash",
+    "cancelReason": "Sabab",
+    "status": {
+      "in_transit": "yo‘lda",
+      "arrived": "yetib keldi"
+    }
+  },
+  "trucks": {
+    "title": "Mashinalar qayerda",
+    "onMap": "Xaritada",
+    "loading": "Yuklanmoqda",
+    "onRoad": "Yo‘lda",
+    "landed": "Yetib keldi",
+    "empty": "Faol mashina yo‘q",
+    "arrivedAt": "{wh} ga yetib keldi",
+    "freshFix": "{h} soat oldin",
+    "staleFix": "eski signal",
+    "noSignal": "signal yo‘q",
+    "notDeparted": "hali yo‘lga chiqmagan",
+    "showClosed": "Yopilganlarni ham ko‘rsatish",
+    "activeOnly": "Faqat faollari"
   }
 }

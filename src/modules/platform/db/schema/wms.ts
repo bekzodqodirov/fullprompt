@@ -1060,3 +1060,49 @@ export const crmPeople = pgTable('crm_people', {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/**
+ * Cargo a client has told us is on its way to one of our warehouses.
+ *
+ * The sales side hears "I'm sending five boxes to Yiwu on Friday" days before
+ * those boxes exist anywhere in this system; until now that sentence lived in
+ * a chat and the warehouse found out when a courier walked in. A waiting row
+ * is a promise, not stock: it holds no boxes, no letters and no money, and it
+ * closes when the real receipt is confirmed.
+ */
+export const expectedArrivals = pgTable(
+  'expected_arrivals',
+  {
+    id: id(),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    /** A known client, or a marking for someone who has no code yet. */
+    clientId: uuid('client_id').references(() => clients.id),
+    marking: text('marking'),
+    /** The client's own count — the receipt is what corrects it. */
+    boxCount: integer('box_count'),
+    expectedOn: date('expected_on'),
+    note: text('note'),
+    status: text('status').notNull().default('waiting'),
+    receiptId: uuid('receipt_id').references(() => receipts.id),
+    arrivedAt: timestamp('arrived_at', { withTimezone: true }),
+    cancelReason: text('cancel_reason'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check(
+      'expected_arrivals_status_check',
+      sql`${t.status} IN ('waiting', 'arrived', 'cancelled')`,
+    ),
+    check(
+      'expected_arrivals_who_check',
+      sql`${t.clientId} IS NOT NULL OR ${t.marking} IS NOT NULL`,
+    ),
+    index('expected_arrivals_client_idx').on(t.clientId),
+  ],
+);

@@ -17,6 +17,7 @@ import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import { assignLetters } from '../sequencer';
 import { nextBoxCodes, nextReceiptNumber } from '../codes';
+import { closeExpectedOnReceipt } from '../arrivals/service';
 import { computeLotTotals } from './math';
 
 export const lotInputSchema = z
@@ -273,6 +274,15 @@ export async function confirmReceipt(
         client: input.clientId,
         lots: summaries.map((s) => ({ letter: s.letter, zh: s.productNameZh, boxes: s.boxCount })),
       },
+    });
+
+    // The cargo the sales side promised has landed — close the promise so the
+    // warehouse's "incoming" list does not keep asking for it. Only fires on
+    // an unambiguous match and never throws (arrivals/service.ts).
+    await closeExpectedOnReceipt(tx, {
+      warehouseId: warehouse.id,
+      clientId: input.clientId ?? null,
+      receiptId: receipt!.id,
     });
 
     await emitEvent(tx, {

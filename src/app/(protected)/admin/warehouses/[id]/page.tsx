@@ -49,6 +49,7 @@ export default async function WarehouseDetailPage({
           batchPrefix: wh.batchPrefix,
           address: wh.address ?? '',
           capacityM3: wh.capacityM3 ? String(Number(wh.capacityM3)) : '',
+          issuesToClients: wh.issuesToClients,
         }}
       />
 

@@ -59,6 +59,17 @@ export const NAV: NavGroupSpec[] = [
         primary: 2,
       },
       {
+        // What is on its way HERE — a client's promised cargo in China, our
+        // own trucks in Uzbekistan. Sales writes the promises, the warehouse
+        // reads them, so both permissions open it.
+        href: '/arrivals',
+        shortKey: 'arrivals',
+        labelKey: 'title',
+        namespace: 'arrivals',
+        icon: 'inbox',
+        permissions: ['receipts.create', 'scan.unload', 'crm.leads'],
+      },
+      {
         href: '/plans',
         shortKey: 'plans',
         labelKey: 'title',
@@ -96,6 +107,7 @@ export const NAV: NavGroupSpec[] = [
       { href: '/stock', labelKey: 'title', namespace: 'stock', icon: 'boxes', primary: 3, shortKey: 'stock' },
       { href: '/receipts', labelKey: 'title', namespace: 'receipts', icon: 'doc' },
       { href: '/unclaimed', labelKey: 'unclaimedTitle', namespace: 'receipts', icon: 'alert' },
+      { href: '/trucks', shortKey: 'trucks', labelKey: 'title', namespace: 'trucks', icon: 'truck' },
       { href: '/map', labelKey: 'title', namespace: 'map', icon: 'map' },
       {
         href: '/dashboard',
@@ -180,10 +192,12 @@ export const NAV: NavGroupSpec[] = [
         permissions: ['costs.fx.manage'],
       },
       {
-        href: '/trucks',
+        // The truck PRESETS — a settings screen opened twice a year. Where
+        // the trucks actually are lives at /trucks, in the info section.
+        href: '/admin/trucks',
         labelKey: 'trucksTitle',
         namespace: 'plans',
-        icon: 'truck',
+        icon: 'settings',
         permissions: ['plans.manage'],
       },
       {
@@ -220,9 +234,9 @@ export interface Viewer {
  * and the next entry moves up, so a short list still fills the bar.
  */
 const PRIMARY_BY_ROLE: Record<string, string[]> = {
-  warehouse_operator: ['/', '/receive', '/batches', '/issue', '/stock'],
-  warehouse_manager: ['/', '/receive', '/batches', '/stock', '/issue'],
-  logist: ['/', '/plans', '/batches', '/stock', '/crm'],
+  warehouse_operator: ['/', '/receive', '/arrivals', '/batches', '/issue'],
+  warehouse_manager: ['/', '/receive', '/arrivals', '/batches', '/stock'],
+  logist: ['/', '/plans', '/batches', '/trucks', '/stock'],
   sales_manager: ['/', '/crm', '/crm/today', '/my-clients', '/finance'],
   accountant: ['/', '/accounting', '/finance', '/reports', '/stock'],
   ved_manager: ['/', '/batches', '/finance', '/stock', '/reports'],

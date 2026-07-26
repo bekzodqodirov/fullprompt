@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## Sizning ro'yxatingiz — 3-partiya: sklad jarayoni — 2026-07-26
+
+- **(3) «Kelayotgan yuklar» — yangi ekran.** Skladga nima kelayotganini oldindan ko'rsatadi, ikki qismda:
+  - **Bizga kelayotgan mashinalar** — boshqa skladdan yo'lga chiqqan partiyalar: kodi, yo'nalishi, nechta quti / kg, mashina raqami, haydovchi va **nechtasi hali qabul qilinmagani**. Bosasiz — to'g'ridan-to'g'ri skanerlab qabul qilish ekrani ochiladi.
+  - **Mijozlardan kutilayotgan yuk** — sotuvchi (yoki skladchi) «GS777 juma kuni 5 quti jo'natadi» deb yozib qo'yadi: kodi, taxminiy quti soni, kutilayotgan sana, izoh. Kodi yo'q mijoz uchun qutidagi belgini yozib qo'yish mumkin. Kechikkanlari ⚠️ bilan belgilanadi.
+  - **Yuk kelib prixod qilinganda yozuv o'zi yopiladi** — hech kim belgilashni eslab turishi shart emas. Bir mijozda ikkita ochiq yozuv bo'lsa, tizim taxmin qilmaydi — ikkalasi ham ochiq qoladi (noto'g'risini yopib qo'yishdan ko'ra yaxshiroq).
+- **(2) «Mijozga berish» endi har sklad uchun alohida sozlama.** Sozlamalarda (Omborlar → o'sha ombor) belgilanadi. Migratsiya TAS/AND (customs va distribution turidagi) omborlarga avtomatik yoqdi, Xitoy omborlarida o'chirdi. Endi Xitoydagi skladchining ekranida hech qachon kelmaydigan «Berish» tugmasi turmaydi.
+- **(15) Mashinalar ikkiga bo'lindi:**
+  - **Sozlamalarda «Mashinalar»** (`/admin/trucks`) — mashina turlari, sig'imi. Yiliga ikki marta ochiladigan sozlama.
+  - **«Mashinalar qayerda»** (`/trucks`) — endi shu manzilda: qaysi partiya yuklanmoqda, qaysisi yo'lda, qaysisi qayerga **yetib bordi**. Har qatorda quti/kg, mashina raqami, haydovchi va **hozir qayerdaligi**: yetib borgan bo'lsa sanasi, bo'lmasa haydovchi telefonidan kelgan oxirgi GPS nuqtasi, u ham bo'lmasa logist qo'ygan belgi (chegara / Qirg'iziston / O'zbekiston).
+
+**Yo'l-yo'lakay topilgan sekinlik:** kelayotgan mashinalar so'rovi 28 soniya ishlayotgan ekan — noto'g'ri join butun qutilar jadvalini har bir partiya uchun qaytadan o'qiyotgan edi. 0,36 soniyaga tushdi.
+
+237 test + 22 e2e yashil.
+
 ## CRM voronkasi telefonda — yangi ko'rinish — 2026-07-26
 
 Telefonda 8 ta ustunni yonma-yon qo'yish ishlamas edi: 360 px ekranda qo'shni bosqichning atigi ~76 px'i ko'rinadi, kartani ko'rinmayotgan ustunga sudrash bir necha soniya davom etadi va ko'pincha noto'g'ri joyga tushadi. Shuning uchun telefondagi voronka boshqacha ishlaydi:

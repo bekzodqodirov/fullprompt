@@ -13,6 +13,7 @@ export interface WarehouseFormValues {
   batchPrefix: string;
   address: string;
   capacityM3: string;
+  issuesToClients: boolean;
 }
 
 const TYPES = ['origin', 'hub', 'customs', 'distribution'] as const;
@@ -126,6 +127,24 @@ export function WarehouseForm({
           defaultValue={initial?.capacityM3}
         />
         <p className="mt-1 text-xs text-ink-500">{t('capacityHint')}</p>
+      </div>
+      {/* Owner: only TAS and AND hand cargo to a client. The hidden "off"
+          before the box is how an unticked checkbox reaches the server at
+          all — a browser sends nothing for one. */}
+      <div>
+        <input type="hidden" name="issuesToClients" value="off" />
+        <label className="flex items-start gap-2.5">
+          <input
+            type="checkbox"
+            name="issuesToClients"
+            className="mt-0.5 h-5 w-5"
+            defaultChecked={initial ? initial.issuesToClients : false}
+          />
+          <span>
+            <span className="font-semibold">{t('issuesToClients')}</span>
+            <span className="block text-xs text-ink-500">{t('issuesToClientsHint')}</span>
+          </span>
+        </label>
       </div>
       {state.error && (
         <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">

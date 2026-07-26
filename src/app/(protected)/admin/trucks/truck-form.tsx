@@ -65,7 +65,12 @@ export function TruckForm({ truck, onDone }: { truck?: TruckValues; onDone?: () 
           {tc('error')}
         </p>
       )}
-      <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">
+      <button
+        type="submit"
+        data-testid="save-truck"
+        disabled={pending}
+        className="btn-primary w-full disabled:opacity-60"
+      >
         {pending ? '…' : saved && state.ok ? `✅ ${tc('saved')}` : tc('save')}
       </button>
     </form>
