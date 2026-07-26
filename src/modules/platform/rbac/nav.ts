@@ -135,6 +135,14 @@ export const NAV: NavGroupSpec[] = [
         permissions: ['crm.leads'],
       },
       {
+        href: '/my-clients',
+        shortKey: 'myClients',
+        labelKey: 'myClients',
+        namespace: 'cargo',
+        icon: 'users',
+        permissions: ['crm.leads', 'clients.manage'],
+      },
+      {
         href: '/finance',
         shortKey: 'finance',
         labelKey: 'title',
@@ -215,7 +223,7 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
   warehouse_operator: ['/', '/receive', '/batches', '/issue', '/stock'],
   warehouse_manager: ['/', '/receive', '/batches', '/stock', '/issue'],
   logist: ['/', '/plans', '/batches', '/stock', '/crm'],
-  sales_manager: ['/', '/crm', '/crm/today', '/finance', '/stock'],
+  sales_manager: ['/', '/crm', '/crm/today', '/my-clients', '/finance'],
   accountant: ['/', '/accounting', '/finance', '/reports', '/stock'],
   ved_manager: ['/', '/batches', '/finance', '/stock', '/reports'],
   // The owner watches the money and the funnel; the operational screens are

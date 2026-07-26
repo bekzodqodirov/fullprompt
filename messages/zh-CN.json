@@ -714,7 +714,12 @@
     "pricingTitle": "批次定价",
     "pricingHint": "清关后为每位客户录入协商价格——将作为应收记入客户账。",
     "setPrice": "定价",
-    "alreadyCharged": "已计费"
+    "alreadyCharged": "已计费",
+    "costLabel": "成本",
+    "priceLabel": "价格",
+    "marginLabel": "利润",
+    "pricedOf": "已为 {total} 位客户中的 {priced} 位定价",
+    "noCostsYet": "该客户货物尚未录入费用——成本显示为 0"
   },
   "map": {
     "title": "地图",
@@ -919,6 +924,32 @@
     "accounting": "管账",
     "reports": "报表",
     "search": "搜索",
-    "today": "跟进"
+    "today": "跟进",
+    "myClients": "客户"
+  },
+  "cargo": {
+    "title": "货物",
+    "noCargo": "该客户暂无货物",
+    "whereTitle": "货物位置",
+    "tripsTitle": "发运历史（哪辆车）",
+    "stateStock": "在库",
+    "stateTransit": "在途",
+    "stateReady": "可提货",
+    "charged": "价格",
+    "owed": "欠款",
+    "settled": "已付",
+    "notPriced": "未定价",
+    "chargedTotal": "已计费：",
+    "paidTotal": "已付款：",
+    "balance": "欠款：",
+    "unassignedOwed": "其中 ${amount} 未关联任何车次（手工录入）",
+    "myClients": "我的客户",
+    "myClientsHint": "每位客户：货物位置、多少公斤/立方米、欠款多少。",
+    "allClients": "全部客户",
+    "noClients": "没有分配给您的客户",
+    "withCargo": "有货",
+    "withDebt": "有欠款",
+    "lastReceipt": "最近收货",
+    "callToday": "今天致电"
   }
 }

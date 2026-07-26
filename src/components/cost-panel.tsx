@@ -145,7 +145,12 @@ export function CostPanel({
         </p>
       )}
       {canEdit && !adding && (
-        <button type="button" className="btn-secondary w-full" onClick={() => setAdding(true)}>
+        <button
+          type="button"
+          data-testid="add-cost"
+          className="btn-secondary w-full"
+          onClick={() => setAdding(true)}
+        >
           ＋ {t('addCost')}
         </button>
       )}
@@ -161,6 +166,7 @@ export function CostPanel({
           <div className="flex gap-2">
             <input
               aria-label={t('amount')}
+              data-testid="cost-amount"
               className="input flex-1"
               inputMode="decimal"
               placeholder={t('amount')}
@@ -219,6 +225,7 @@ export function CostPanel({
           <div className="flex gap-2">
             <button
               type="button"
+              data-testid="save-cost"
               className="btn-primary flex-1 disabled:opacity-50"
               disabled={busy || !typeId || !(Number(amount.replace(',', '.')) > 0)}
               onClick={submit}

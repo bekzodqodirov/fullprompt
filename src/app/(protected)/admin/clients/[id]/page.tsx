@@ -1,11 +1,13 @@
 import { desc, eq } from 'drizzle-orm';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients, clientTelegramLinks } from '@/modules/platform/db/schema';
 import { getSetting } from '@/modules/platform/settings/service';
 import { getBotUsername } from '@/modules/platform/telegram/bot';
 import { HistoryTab } from '@/components/history-tab';
+import { CargoSummary } from '@/components/cargo-summary';
+import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { toggleClientActiveAction, updateClientAction } from '../actions';
 import { createClientCabinetCodeAction, revokeClientCabinetLinkAction } from '../cabinet-actions';
@@ -14,21 +16,36 @@ import { ClientCrmSections } from '../../../crm/client-crm';
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const actor = await getActor();
+  if (!actor) redirect('/login');
+  // Sales staff read the card their CRM sends them to; only an admin edits
+  // it or mints a cabinet link.
+  const canEdit = actor.permissions.has('clients.manage');
+  if (!canEdit && !actor.permissions.has('clients.view_own') && !actor.permissions.has('crm.leads')) {
+    redirect('/');
+  }
   const client = await db.query.clients.findFirst({ where: eq(clients.id, id) });
   if (!client) notFound();
 
   const tc = await getTranslations('common');
   const tcab = await getTranslations('clients');
+  const tcargo = await getTranslations('cargo');
   const format = await getFormatter();
-  const managers = await salesManagerOptions();
-  const codePrefix = await getSetting('client_code_prefix');
-  const cabinetLinks = await db
-    .select()
-    .from(clientTelegramLinks)
-    .where(eq(clientTelegramLinks.clientId, id))
-    .orderBy(desc(clientTelegramLinks.createdAt))
-    .then((rows) => rows.filter((r) => r.status !== 'revoked'));
-  const botUsername = await getBotUsername();
+  const canSeeMoney =
+    actor.permissions.has('finance.view') || actor.permissions.has('finance.manage');
+  // Only the admin half of the card needs these — a sales manager reading a
+  // card should not cost a settings read and a call to Telegram.
+  const managers = canEdit ? await salesManagerOptions() : [];
+  const codePrefix = canEdit ? await getSetting('client_code_prefix') : '';
+  const cabinetLinks = canEdit
+    ? await db
+        .select()
+        .from(clientTelegramLinks)
+        .where(eq(clientTelegramLinks.clientId, id))
+        .orderBy(desc(clientTelegramLinks.createdAt))
+        .then((rows) => rows.filter((r) => r.status !== 'revoked'))
+    : [];
+  const botUsername = canEdit ? await getBotUsername() : null;
   const update = updateClientAction.bind(null, id);
   const toggle = toggleClientActiveAction.bind(null, id);
 
@@ -38,29 +55,39 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         <h1 className="text-xl font-bold">
           <span className="font-mono text-brand-700">{client.clientCode}</span> — {client.name}
         </h1>
-        <form action={toggle}>
-          <button type="submit" className={client.active ? 'btn-danger' : 'btn-primary'}>
-            {client.active ? tc('deactivate') : tc('activate')}
-          </button>
-        </form>
+        {canEdit && (
+          <form action={toggle}>
+            <button type="submit" className={client.active ? 'btn-danger' : 'btn-primary'}>
+              {client.active ? tc('deactivate') : tc('activate')}
+            </button>
+          </form>
+        )}
       </div>
 
-      <ClientForm
-        action={update}
-        managers={managers}
-        codePrefix={codePrefix}
-        initial={{
-          clientCode: client.clientCode,
-          name: client.name,
-          phones: (client.phones as string[]).join(', '),
-          salesManagerId: client.salesManagerId ?? '',
-          messengerNote: client.messengerNote ?? '',
-          notes: client.notes ?? '',
-        }}
-      />
+      {canEdit ? (
+        <ClientForm
+          action={update}
+          managers={managers}
+          codePrefix={codePrefix}
+          initial={{
+            clientCode: client.clientCode,
+            name: client.name,
+            phones: (client.phones as string[]).join(', '),
+            salesManagerId: client.salesManagerId ?? '',
+            messengerNote: client.messengerNote ?? '',
+            notes: client.notes ?? '',
+          }}
+        />
+      ) : (
+        (client.phones as string[]).length > 0 && (
+          <p className="card num text-sm">📞 {(client.phones as string[]).join(', ')}</p>
+        )
+      )}
 
       {/* Phase 2.2: Telegram cabinet — staff mints a one-time deep link and
-          sends it to the client; the client sees cargo/photos/debt in the bot. */}
+          sends it to the client; the client sees cargo/photos/debt in the bot.
+          Minting one is an admin job, so the whole panel is admin-only. */}
+      {canEdit && (
       <section className="card space-y-2">
         <h2 className="text-lg font-bold">🤖 {tcab('cabinetTitle')}</h2>
         <p className="text-xs text-ink-500">{tcab('cabinetHint')}</p>
@@ -101,6 +128,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             🔗 {tcab('cabinetNewCode')}
           </button>
         </form>
+      </section>
+      )}
+
+      {/* Owner: the card has to answer "where is this client's cargo and what
+          do they owe" without a trip to two other screens. */}
+      <section className="card space-y-2">
+        <h2 className="text-lg font-bold">📦 {tcargo('title')}</h2>
+        <CargoSummary clientId={client.id} money={canSeeMoney} />
       </section>
 
       {/* Phase 2.3: the sales side of the card — what was said, the owner's

@@ -102,6 +102,7 @@ describe('the phone tab bar', () => {
     expect(hrefs('warehouse_operator')).toContain('/receive');
     expect(hrefs('warehouse_operator')).not.toContain('/accounting');
     expect(hrefs('sales_manager')).toContain('/crm');
+    expect(hrefs('sales_manager')).toContain('/my-clients');
     expect(hrefs('sales_manager')).not.toContain('/receive');
     expect(hrefs('accountant')).toContain('/accounting');
     expect(hrefs('accountant')).not.toContain('/receive');

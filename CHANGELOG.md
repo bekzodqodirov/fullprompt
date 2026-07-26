@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## Sizning ro'yxatingiz — 2-partiya: pul va mijoz (5 punkt) — 2026-07-26
+
+- **(8) Narx qo'yish ekrani endi tannarx ↔ narx ↔ foyda ni bir qatorda ko'rsatadi.** Mashinaga bir marta kiritgan rastamojka/yo'l xarajati har bir klientga kg/m³ nisbatida bo'linib, o'sha klientning qatorida turadi: **tannarx** (va $/kg, $/m³), **narx**, **foyda** (va foizi). Yuqorida — butun partiya bo'yicha jami: qancha ketdi, qancha oldik, qancha qoldi, nechta klientga narx qo'yilgan. Xarajat kiritilmagan klient ⚠️ bilan belgilanadi — foyda 0 dan hisoblanib qolmasin.
+- **(12) Moliyada: qarz qaysi yukdan kelgani ko'rinadi.** Klient hisobida endi har bir mashina alohida qator: kod, yo'nalish, sana, nechta quti / kg / m³, unga qo'yilgan narx va **o'shandan qancha qarz qolgani**. To'lov eng eski hisobdan yopiladi (bu qoida qarzdorlik hisobotidagi bilan bir xil, ikkalasi hech qachon qarama-qarshi javob bermaydi). Hech qaysi mashinaga bog'lanmagan qo'lda kiritilgan qarz ham alohida ko'rsatiladi.
+- **(9, 16) Mijoz kartasi endi yukni ham biladi.** Karta ichida: yuk hozir qayerda (qaysi omborda / yo'lda / olib ketishga tayyor) — har biri quti/kg/m³ bilan, keyin butun yuk tarixi (qaysi mashinada ketgan, qachon, qancha) va pastida hisoblangan / to'langan / qarz. Pul faqat moliyani ko'rish huquqi bor xodimga ko'rinadi.
+- **(13) «Mijozlarim» — yangi ekran.** Sotuvchi o'z mijozlarini bir ro'yxatda ko'radi: yuki bor / qarzdor filtrlari, har bir qatorda quti-kg-m³ va qarz summasi, qo'ng'iroq sanasi. Egasi va logist «hamma mijozlar» ga o'tib turishi mumkin. Sotuvchining pastki menusi: Bosh · CRM · Bugun · Mijozlar.
+- **Yo'l-yo'lakay tuzatilgan xato:** sotuvchi CRM'dan mijoz kartasiga bosganda bosh sahifaga uloqtirilardi (karta `/admin/...` ostida yotgani uchun). Endi sotuvchi kartani o'qiy oladi, lekin tahrirlash va Telegram-kabinet tugmalari faqat adminda qoladi.
+
+232 test + 18 e2e yashil.
+
 ## Sizning ro'yxatingiz — 1-partiya (17 tadan 8 tasi) — 2026-07-26
 
 - **(1) «Inventarizatsiya» menudan olib tashlandi** — RFID o'quvchilar kelgunicha. Butun omborni qo'lda skanerlab sanashni hech kim qilmaydi; ekranlar va kod joyida qoldi, apparat kelgan kuni menuga qaytadi.

@@ -17,6 +17,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
 import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
+import { batchMemberFilter } from '../scanning/unload';
 
 export class CostError extends Error {
   constructor(public readonly code: string) {
@@ -313,6 +314,52 @@ export async function boxLandedCost(boxId: string) {
     .orderBy(asc(costAllocations.id));
   const totalUsd = rows.reduce((a, r) => a + Number(r.amountUsd), 0);
   return { totalUsd: Math.round(totalUsd * 100) / 100, shares: rows };
+}
+
+export interface ClientLandedCost {
+  clientId: string;
+  /** Everything spent on this client's boxes so far, in USD. */
+  totalUsd: number;
+  /** The part that came from THIS batch's own cost entries. */
+  batchUsd: number;
+}
+
+/**
+ * What each client's cargo on a batch has cost us (owner: "rastamojka
+ * summalarini qayerda klientga kiritamiz — narxni shakllantirish uchun").
+ *
+ * The allocation engine already split every cost entry down to the box, so
+ * the answer is a sum over `cost_allocations` grouped by the box's client —
+ * customs entered once for the truck arrives here as each client's share.
+ * Two figures because they answer different questions: `totalUsd` is what the
+ * cargo cost us end to end (China-side receipt costs included) and is the one
+ * a price has to beat; `batchUsd` is what this trip added.
+ */
+export async function batchLandedCostByClient(batchId: string): Promise<Map<string, ClientLandedCost>> {
+  const rows = await db
+    .select({
+      clientId: receipts.clientId,
+      totalUsd: sql<string>`coalesce(sum(${costAllocations.amountUsd}), 0)`,
+      batchUsd: sql<string>`coalesce(sum(${costAllocations.amountUsd}) filter (where ${costEntries.batchId} = ${batchId}), 0)`,
+    })
+    .from(costAllocations)
+    .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
+    .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(and(isNull(costEntries.voidedAt), batchMemberFilter(batchId)))
+    .groupBy(receipts.clientId);
+
+  const out = new Map<string, ClientLandedCost>();
+  for (const row of rows) {
+    if (!row.clientId) continue;
+    out.set(row.clientId, {
+      clientId: row.clientId,
+      totalUsd: Math.round(Number(row.totalUsd) * 100) / 100,
+      batchUsd: Math.round(Number(row.batchUsd) * 100) / 100,
+    });
+  }
+  return out;
 }
 
 /** Batch cost sheet: entries + totals + unit costs per kg / m³. */

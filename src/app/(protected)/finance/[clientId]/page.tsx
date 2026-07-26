@@ -6,6 +6,7 @@ import { clients, currencies } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientBalanceUsd, clientLedger } from '@/modules/wms/finance/service';
 import { BackLink } from '@/components/back-link';
+import { CargoSummary } from '@/components/cargo-summary';
 import { TxForm } from './tx-form';
 import { VoidButton } from './void-button';
 
@@ -21,6 +22,7 @@ export default async function ClientLedgerPage({
   const canManage = actor.permissions.has('finance.manage');
   if (!actor.permissions.has('finance.view') && !canManage) redirect('/');
   const t = await getTranslations('finance');
+  const tcargo = await getTranslations('cargo');
   const format = await getFormatter();
 
   const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
@@ -56,6 +58,16 @@ export default async function ClientLedgerPage({
           today={new Date().toISOString().slice(0, 10)}
         />
       )}
+
+      {/* Owner: a balance alone never settles an argument — "which cargo is
+          this debt from and how much of it" is the question a client asks on
+          the phone, so the trips and their outstanding amounts sit above the
+          transaction list. Payments settle the oldest charge first, the same
+          rule the receivables ageing report uses. */}
+      <div className="card space-y-2">
+        <h2 className="text-sm font-bold uppercase text-ink-500">📦 {tcargo('title')}</h2>
+        <CargoSummary clientId={clientId} />
+      </div>
 
       <div className="card space-y-1 !p-3">
         <h2 className="text-sm font-bold uppercase text-ink-500">{t('history')}</h2>

@@ -714,7 +714,12 @@
     "pricingTitle": "Partiya narxlarini belgilash",
     "pricingHint": "Rastamojkadan keyin har bir klient uchun kelishilgan narxni kiriting — u klient hisobiga qarz sifatida yoziladi.",
     "setPrice": "Narx belgilash",
-    "alreadyCharged": "Hisoblangan"
+    "alreadyCharged": "Hisoblangan",
+    "costLabel": "Tannarx",
+    "priceLabel": "Narx",
+    "marginLabel": "Foyda",
+    "pricedOf": "{priced} / {total} klientga narx qo‘yildi",
+    "noCostsYet": "Bu klient yuki bo‘yicha hali xarajat kiritilmagan — tannarx 0 ko‘rinmoqda"
   },
   "map": {
     "title": "Xarita",
@@ -919,6 +924,32 @@
     "accounting": "Hisob",
     "reports": "Hisobot",
     "search": "Qidiruv",
-    "today": "Qo‘ng‘iroq"
+    "today": "Qo‘ng‘iroq",
+    "myClients": "Mijozlar"
+  },
+  "cargo": {
+    "title": "Yuk",
+    "noCargo": "Bu klientda hozircha yuk yo‘q",
+    "whereTitle": "Yuk qayerda",
+    "tripsTitle": "Yuk tarixi (qaysi mashinada ketgan)",
+    "stateStock": "omborda",
+    "stateTransit": "yo‘lda",
+    "stateReady": "olib ketishga tayyor",
+    "charged": "narx",
+    "owed": "qarz",
+    "settled": "to‘langan",
+    "notPriced": "narx qo‘yilmagan",
+    "chargedTotal": "Jami hisoblangan:",
+    "paidTotal": "To‘langan:",
+    "balance": "Qarz:",
+    "unassignedOwed": "Shundan ${amount} hech qaysi mashinaga bog‘lanmagan (qo‘lda kiritilgan)",
+    "myClients": "Mening mijozlarim",
+    "myClientsHint": "Har bir mijoz: yuki qayerda, necha kg/m³ va qancha qarzi bor.",
+    "allClients": "Hamma mijozlar",
+    "noClients": "Sizga biriktirilgan mijoz yo‘q",
+    "withCargo": "Yuki bor",
+    "withDebt": "Qarzdor",
+    "lastReceipt": "oxirgi qabul",
+    "callToday": "bugun qo‘ng‘iroq"
   }
 }

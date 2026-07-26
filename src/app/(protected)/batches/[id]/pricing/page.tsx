@@ -14,6 +14,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { batchCharges } from '@/modules/wms/finance/service';
+import { batchLandedCostByClient } from '@/modules/wms/costing/service';
 import { BackLink } from '@/components/back-link';
 import { PricingForm } from './pricing-form';
 import { PageHeader } from '@/components/ui/page';
@@ -78,9 +79,10 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     .filter((r) => r.clientId)
     .sort((a, b) => (a.clientCode ?? '').localeCompare(b.clientCode ?? ''));
 
-  const [charges, currencyRows] = await Promise.all([
+  const [charges, currencyRows, landed] = await Promise.all([
     batchCharges(id),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
+    batchLandedCostByClient(id),
   ]);
   const chargedByClient = new Map<string, number>();
   for (const { tx } of charges) {
@@ -88,15 +90,55 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   }
   const today = new Date().toISOString().slice(0, 10);
 
+  // Batch totals, so the header answers "did this truck earn money?" before
+  // anyone scrolls through twenty clients.
+  const totalCost = clientRows.reduce((a, r) => a + (landed.get(r.clientId!)?.totalUsd ?? 0), 0);
+  const totalCharged = clientRows.reduce((a, r) => a + (chargedByClient.get(r.clientId!) ?? 0), 0);
+  const priced = clientRows.filter((r) => (chargedByClient.get(r.clientId!) ?? 0) > 0).length;
+  const money = (value: number) => `$${value.toFixed(2)}`;
+
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-2xl">
       <BackLink href={`/batches/${id}`} label={batch.code} />
       <PageHeader icon="wallet" title={t('pricingTitle')} />
       <p className="text-sm text-ink-500">{t('pricingHint')}</p>
 
+      {clientRows.length > 0 && (
+        <div className="card grid grid-cols-3 gap-2 text-center">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-ink-500">{t('costLabel')}</p>
+            <p className="num text-lg font-extrabold">{money(totalCost)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-ink-500">{t('priceLabel')}</p>
+            <p className="num text-lg font-extrabold">{money(totalCharged)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-ink-500">{t('marginLabel')}</p>
+            <p
+              className={`num text-lg font-extrabold ${
+                totalCharged - totalCost >= 0 ? 'text-good' : 'text-bad'
+              }`}
+            >
+              {money(totalCharged - totalCost)}
+            </p>
+          </div>
+          <p className="col-span-3 text-xs text-ink-500">
+            {t('pricedOf', { priced, total: clientRows.length })}
+          </p>
+        </div>
+      )}
+
       {clientRows.length === 0 && <p className="text-sm text-ink-500">{t('empty')}</p>}
       {clientRows.map((row) => {
         const chargedUsd = chargedByClient.get(row.clientId!) ?? 0;
+        const cost = landed.get(row.clientId!);
+        const costUsd = cost?.totalUsd ?? 0;
+        const kg = Math.round(Number(row.kg) * 10) / 10;
+        const m3 = Math.round(Number(row.m3) * 1000) / 1000;
+        // Margin only means something once a price exists; before that the
+        // row would read as a 100 % loss on every client.
+        const margin = chargedUsd > 0 ? chargedUsd - costUsd : null;
         return (
           <div key={row.clientId} className="card space-y-2">
             <div className="flex items-baseline gap-2">
@@ -105,15 +147,49 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               </Link>
               <span className="truncate text-sm text-ink-700">{row.clientName}</span>
               <span className="ml-auto whitespace-nowrap text-sm font-semibold">
-                {row.boxCount} 📦 · {Math.round(Number(row.kg) * 10) / 10} kg ·{' '}
-                {Math.round(Number(row.m3) * 1000) / 1000} m³
+                {row.boxCount} 📦 · {kg} kg · {m3} m³
               </span>
             </div>
-            {chargedUsd > 0 && (
-              <p className="text-sm font-semibold text-good">
-                ✅ {t('alreadyCharged')}: ${chargedUsd.toFixed(2)}
-              </p>
+
+            {/* Cost → price → margin, the three numbers the price is decided
+                from (owner). The customs entered once for the whole truck
+                reaches this row as this client's share. */}
+            <div className="grid grid-cols-3 gap-2 rounded-lg bg-surface-sunken p-2 text-center text-sm">
+              <div>
+                <p className="text-xs text-ink-500">{t('costLabel')}</p>
+                <p className="num font-bold" data-testid="client-cost">
+                  {money(costUsd)}
+                </p>
+                {kg > 0 && costUsd > 0 && (
+                  <p className="num text-xs text-ink-500">
+                    {(costUsd / kg).toFixed(2)}/kg
+                    {m3 > 0 && ` · ${(costUsd / m3).toFixed(0)}/m³`}
+                  </p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-ink-500">{t('priceLabel')}</p>
+                <p className="num font-bold">{chargedUsd > 0 ? money(chargedUsd) : '—'}</p>
+                {chargedUsd > 0 && kg > 0 && (
+                  <p className="num text-xs text-ink-500">{(chargedUsd / kg).toFixed(2)}/kg</p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-ink-500">{t('marginLabel')}</p>
+                <p className={`num font-bold ${margin === null ? '' : margin >= 0 ? 'text-good' : 'text-bad'}`}>
+                  {margin === null ? '—' : money(margin)}
+                </p>
+                {margin !== null && chargedUsd > 0 && (
+                  <p className="num text-xs text-ink-500">
+                    {Math.round((margin / chargedUsd) * 100)}%
+                  </p>
+                )}
+              </div>
+            </div>
+            {costUsd === 0 && (
+              <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>
             )}
+
             <PricingForm
               clientId={row.clientId!}
               batchId={id}

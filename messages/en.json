@@ -714,7 +714,12 @@
     "pricingTitle": "Set prices for the batch",
     "pricingHint": "After customs clearance, enter the agreed price for each client — it goes onto their balance as a charge.",
     "setPrice": "Set the price",
-    "alreadyCharged": "Charged"
+    "alreadyCharged": "Charged",
+    "costLabel": "Cost",
+    "priceLabel": "Price",
+    "marginLabel": "Margin",
+    "pricedOf": "{priced} of {total} clients priced",
+    "noCostsYet": "No costs entered for this client's cargo yet — the cost reads as 0"
   },
   "map": {
     "title": "Map",
@@ -919,6 +924,32 @@
     "accounting": "Books",
     "reports": "Reports",
     "search": "Search",
-    "today": "Calls"
+    "today": "Calls",
+    "myClients": "Clients"
+  },
+  "cargo": {
+    "title": "Cargo",
+    "noCargo": "This client has no cargo yet",
+    "whereTitle": "Where the cargo is",
+    "tripsTitle": "Shipping history (which truck)",
+    "stateStock": "in stock",
+    "stateTransit": "in transit",
+    "stateReady": "ready for pickup",
+    "charged": "price",
+    "owed": "owed",
+    "settled": "paid",
+    "notPriced": "not priced",
+    "chargedTotal": "Charged:",
+    "paidTotal": "Paid:",
+    "balance": "Owed:",
+    "unassignedOwed": "Of that, ${amount} belongs to no truck (entered by hand)",
+    "myClients": "My clients",
+    "myClientsHint": "Per client: where the cargo is, how many kg/m³, and how much is owed.",
+    "allClients": "All clients",
+    "noClients": "No clients are assigned to you",
+    "withCargo": "With cargo",
+    "withDebt": "In debt",
+    "lastReceipt": "last intake",
+    "callToday": "call today"
   }
 }

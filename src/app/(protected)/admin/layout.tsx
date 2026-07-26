@@ -25,7 +25,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const canManage = actor.permissions.has('admin.warehouses.manage');
   const canAudit = actor.permissions.has('admin.audit.browse');
   const canFx = actor.permissions.has('costs.fx.manage');
-  if (!canManage && !canAudit && !canFx) redirect('/');
+  // A client CARD is not an admin screen — it just happens to live under
+  // /admin/clients. Without this a sales manager was bounced home from their
+  // own call list, the dormant list and "my clients", every one of which
+  // links straight here. The card checks its own permission; this gate is
+  // cosmetic (spec 4.2).
+  const canClients =
+    actor.permissions.has('clients.view_own') || actor.permissions.has('crm.leads');
+  if (!canManage && !canAudit && !canFx && !canClients) redirect('/');
 
   const links: SubNavItem[] = [
     ...(canManage
@@ -49,7 +56,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <>
-      <SubNav items={links} />
+      {/* Someone who is only here for a client card gets no admin tabs — an
+          empty strip is a bar of nothing at the top of every card. */}
+      {links.length > 0 && <SubNav items={links} />}
       {children}
     </>
   );
