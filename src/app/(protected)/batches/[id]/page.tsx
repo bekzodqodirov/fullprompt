@@ -162,10 +162,10 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <span className="font-mono font-bold">
             {originCode} → {destCode}
           </span>
-          <span className="rounded bg-gray-100 px-2 py-0.5 text-sm font-semibold">
+          <span className="rounded bg-surface-sunken px-2 py-0.5 text-sm font-semibold">
             {t(`statuses.${batch.status}`)}
           </span>
-          <span className="ml-auto text-xs text-gray-500">
+          <span className="ml-auto text-xs text-ink-500">
             {format.dateTime(batch.createdAt, { dateStyle: 'short' })}
           </span>
         </div>
@@ -181,7 +181,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           )}
         </p>
         {batch.departedAt && (
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-ink-700">
             🚀 {format.dateTime(batch.departedAt, { dateStyle: 'short', timeStyle: 'short' })}
           </p>
         )}
@@ -253,7 +253,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           {actor.permissions.has('ved.docs') && (
             <form action={setSentToAgentAction}>
               <input type="hidden" name="batchId" value={batch.id} />
-              <button type="submit" className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${batch.sentToAgentAt ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-300 text-gray-600'}`}>
+              <button type="submit" className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${batch.sentToAgentAt ? 'border-green-500 bg-good/10 text-good' : 'border-line-strong text-ink-700'}`}>
                 {batch.sentToAgentAt
                   ? `✅ ${t('sentToAgent')}: ${format.dateTime(new Date(batch.sentToAgentAt), { dateStyle: 'short' })}`
                   : `📤 ${t('markSentToAgent')}`}
@@ -276,18 +276,18 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           title={`📲 ${t('driverPhone')}`}
           badge={devices.find((d) => d.pairCode)?.pairCode ?? (devices.length > 0 ? '✅' : undefined)}
         >
-          {devices.length === 0 && <p className="text-xs text-gray-500">{t('driverPhoneHint')}</p>}
+          {devices.length === 0 && <p className="text-xs text-ink-500">{t('driverPhoneHint')}</p>}
           {devices.map((device) => (
-            <div key={device.id} className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-2 text-sm last:border-0">
+            <div key={device.id} className="flex flex-wrap items-center gap-2 border-b border-line pb-2 text-sm last:border-0">
               {device.pairCode ? (
                 <>
-                  <span className="font-mono text-2xl font-extrabold tracking-widest text-blue-800">
+                  <span className="font-mono text-2xl font-extrabold tracking-widest text-brand-700">
                     {device.pairCode}
                   </span>
-                  <span className="text-xs text-gray-500">{t('pairCodeHint')}</span>
+                  <span className="text-xs text-ink-500">{t('pairCodeHint')}</span>
                 </>
               ) : (
-                <span className="font-semibold text-green-700">
+                <span className="font-semibold text-good">
                   ✅ {device.label || t('driverPhone')}
                   {device.lastSeenAt
                     ? ` · ${t('lastSeen', { when: format.dateTime(new Date(device.lastSeenAt), { dateStyle: 'short', timeStyle: 'short' }) })}`
@@ -298,7 +298,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               <form action={revokeDriverDeviceAction} className="ml-auto">
                 <input type="hidden" name="deviceId" value={device.id} />
                 <input type="hidden" name="batchId" value={batch.id} />
-                <button type="submit" className="text-xs font-semibold text-red-700 underline">
+                <button type="submit" className="text-xs font-semibold text-bad underline">
                   ✖ {tc('delete')}
                 </button>
               </form>
@@ -323,7 +323,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           the map's estimate re-anchors from that moment (owner's feature). */}
       {batch.status === 'in_transit' && canVehicle && (
         <div className="card space-y-2">
-          <h2 className="text-sm font-bold uppercase text-gray-500">📍 {t('whereIsTruck')}</h2>
+          <h2 className="text-sm font-bold uppercase text-ink-500">📍 {t('whereIsTruck')}</h2>
           <div className="flex flex-wrap gap-2">
             {(
               [
@@ -341,7 +341,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                   <button
                     type="submit"
                     className={`w-full whitespace-nowrap rounded-lg border-2 px-3 py-2 text-sm font-semibold ${
-                      active ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-gray-200 text-gray-600'
+                      active ? 'border-blue-700 bg-brand-50 text-brand-700' : 'border-line text-ink-700'
                     }`}
                   >
                     {label}
@@ -350,7 +350,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               );
             })}
           </div>
-          <Link href="/map" className="text-sm font-semibold text-blue-700 underline">
+          <Link href="/map" className="text-sm font-semibold text-brand-700 underline">
             🗺 {t('openMap')} →
           </Link>
         </div>
@@ -361,7 +361,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       {actor.permissions.has('finance.manage') && (
         <Link
           href={`/batches/${batch.id}/pricing`}
-          className="card block text-center font-bold text-amber-800 hover:bg-amber-50"
+          className="card block text-center font-bold text-warn hover:bg-warn/10"
         >
           💰 {t('pricing')}
         </Link>
@@ -410,10 +410,10 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             canEdit={canEnterCosts}
           />
           {costSheet.entries.length > 0 && (
-            <p className="border-t border-gray-100 pt-2 text-sm">
+            <p className="border-t border-line pt-2 text-sm">
               <b>Σ ${costSheet.totalUsd}</b>
               {costSheet.usdPerKg !== null && (
-                <span className="text-gray-600">
+                <span className="text-ink-700">
                   {' '}· ${costSheet.usdPerKg}/kg · ${costSheet.usdPerM3}/m³ ({costSheet.boxCount} 📦,{' '}
                   {costSheet.kg} kg, {costSheet.m3} m³)
                 </span>
@@ -431,8 +431,8 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       <div className="card space-y-1">
         <h2 className="text-lg font-bold">{t('contents')}</h2>
         {lots.map((lot) => (
-          <div key={lot.lotId} className="flex items-baseline gap-2 border-b border-gray-100 py-1.5 text-sm last:border-0">
-            <span className="font-mono font-extrabold text-blue-800">
+          <div key={lot.lotId} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
+            <span className="font-mono font-extrabold text-brand-700">
               {lot.clientCode ?? lot.marking ?? '?'}-{lot.letter}
             </span>
             <span className="min-w-0 flex-1 truncate">{lot.productNameZh}</span>
@@ -441,7 +441,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             </span>
           </div>
         ))}
-        {lots.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
+        {lots.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
       </div>
 
       {loadedBoxes.length > 0 && (
@@ -457,9 +457,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                 return acc;
               }, new Map<string, string[]>())
               .entries()].map(([label, codes]) => (
-              <p key={label} className="border-b border-gray-100 py-1 last:border-0">
-                <span className="font-mono font-extrabold text-blue-800">{label}</span>{' '}
-                <span className="font-mono text-xs text-gray-600">{codes.join(', ')}</span>
+              <p key={label} className="border-b border-line py-1 last:border-0">
+                <span className="font-mono font-extrabold text-brand-700">{label}</span>{' '}
+                <span className="font-mono text-xs text-ink-700">{codes.join(', ')}</span>
               </p>
             ))}
           </div>

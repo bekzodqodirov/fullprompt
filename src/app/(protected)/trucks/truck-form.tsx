@@ -30,7 +30,7 @@ export function TruckForm({ truck, onDone }: { truck?: TruckValues; onDone?: () 
   }, [state, onDone]);
 
   return (
-    <form action={formAction} className="space-y-2 rounded-lg bg-gray-50 p-3">
+    <form action={formAction} className="space-y-2 rounded-lg bg-surface-sunken p-3">
       {truck && <input type="hidden" name="id" value={truck.id} />}
       <input
         name="name"
@@ -61,7 +61,7 @@ export function TruckForm({ truck, onDone }: { truck?: TruckValues; onDone?: () 
         />
       </div>
       {state.error && (
-        <p role="alert" className="text-sm font-semibold text-red-700">
+        <p role="alert" className="text-sm font-semibold text-bad">
           {tc('error')}
         </p>
       )}

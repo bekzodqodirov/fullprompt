@@ -111,14 +111,14 @@ export default async function SearchPage({
         />
       </form>
 
-      {query && total === 0 && <p className="text-gray-500">{t('nothing')}</p>}
+      {query && total === 0 && <p className="text-ink-500">{t('nothing')}</p>}
 
       {lotHits.length > 0 && (
         <section>
-          <h2 className="mb-1 text-sm font-bold text-gray-500">{t('lotsGroup')}</h2>
+          <h2 className="mb-1 text-sm font-bold text-ink-500">{t('lotsGroup')}</h2>
           {lotHits.map((lot) => (
-            <Link key={lot.id} href={`/stock?lot=${lot.id}`} className="card mb-1 block !p-3 hover:bg-gray-50">
-              <span className="font-mono font-extrabold text-blue-800">
+            <Link key={lot.id} href={`/stock?lot=${lot.id}`} className="card mb-1 block !p-3 hover:bg-surface-sunken">
+              <span className="font-mono font-extrabold text-brand-700">
                 {lot.clientCode ?? '❓'}-{lot.letter}
               </span>{' '}
               {lot.productNameZh} {lot.productNameRu && `(${lot.productNameRu})`}
@@ -129,10 +129,10 @@ export default async function SearchPage({
 
       {clientHits.length > 0 && (
         <section>
-          <h2 className="mb-1 text-sm font-bold text-gray-500">{t('clients')}</h2>
+          <h2 className="mb-1 text-sm font-bold text-ink-500">{t('clients')}</h2>
           {clientHits.map((client) => (
-            <Link key={client.id} href={`/stock?client=${client.id}`} className="card mb-1 block !p-3 hover:bg-gray-50">
-              <span className="font-mono font-extrabold text-blue-800">{client.clientCode}</span>{' '}
+            <Link key={client.id} href={`/stock?client=${client.id}`} className="card mb-1 block !p-3 hover:bg-surface-sunken">
+              <span className="font-mono font-extrabold text-brand-700">{client.clientCode}</span>{' '}
               {client.name}
             </Link>
           ))}
@@ -141,9 +141,9 @@ export default async function SearchPage({
 
       {boxHits.length > 0 && (
         <section>
-          <h2 className="mb-1 text-sm font-bold text-gray-500">{t('boxesGroup')}</h2>
+          <h2 className="mb-1 text-sm font-bold text-ink-500">{t('boxesGroup')}</h2>
           {boxHits.map((box) => (
-            <Link key={box.id} href={`/boxes/${box.id}`} className="card mb-1 block !p-3 font-mono hover:bg-gray-50">
+            <Link key={box.id} href={`/boxes/${box.id}`} className="card mb-1 block !p-3 font-mono hover:bg-surface-sunken">
               {box.shortCode}
             </Link>
           ))}
@@ -152,9 +152,9 @@ export default async function SearchPage({
 
       {receiptHits.length > 0 && (
         <section>
-          <h2 className="mb-1 text-sm font-bold text-gray-500">{t('receipts')}</h2>
+          <h2 className="mb-1 text-sm font-bold text-ink-500">{t('receipts')}</h2>
           {receiptHits.map((receipt) => (
-            <Link key={receipt.id} href={`/receipts/${receipt.id}`} className="card mb-1 block !p-3 font-mono hover:bg-gray-50">
+            <Link key={receipt.id} href={`/receipts/${receipt.id}`} className="card mb-1 block !p-3 font-mono hover:bg-surface-sunken">
               {receipt.number}
             </Link>
           ))}

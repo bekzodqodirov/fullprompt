@@ -58,19 +58,19 @@ export default async function TransitPage() {
       <PageHeader icon="truck" title={t('title')} />
 
       {missing.length > 0 && (
-        <div className="space-y-2 rounded-xl border border-red-200 bg-red-50 p-3">
-          <h2 className="font-bold text-red-800">🔍 {t('missingTitle')} ({missing.length})</h2>
+        <div className="space-y-2 rounded-xl border border-bad/30 bg-bad/10 p-3">
+          <h2 className="font-bold text-bad">🔍 {t('missingTitle')} ({missing.length})</h2>
           {missing.map((row) => (
             <Link
               key={row.box.id}
               href={`/batches/${row.batchId}`}
-              className="flex items-baseline gap-2 rounded-lg bg-white p-2 text-sm hover:bg-gray-50"
+              className="flex items-baseline gap-2 rounded-lg bg-surface-raised p-2 text-sm hover:bg-surface-sunken"
             >
               <span className="font-mono font-bold">{row.box.shortCode}</span>
-              <span className="font-mono font-extrabold text-blue-800">
+              <span className="font-mono font-extrabold text-brand-700">
                 {row.clientCode ?? row.marking ?? '?'}-{row.letter}
               </span>
-              <span className="ml-auto font-mono text-xs text-gray-500">{row.batchCode}</span>
+              <span className="ml-auto font-mono text-xs text-ink-500">{row.batchCode}</span>
             </Link>
           ))}
         </div>
@@ -78,22 +78,22 @@ export default async function TransitPage() {
 
       <div className="space-y-2">
         {inTransit.map(({ batch, originCode, destCode, boxCount }) => (
-          <Link key={batch.id} href={`/batches/${batch.id}`} className="card block !p-3 hover:bg-gray-50">
+          <Link key={batch.id} href={`/batches/${batch.id}`} className="card block !p-3 hover:bg-surface-sunken">
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="font-mono font-extrabold text-blue-800">{batch.code}</span>
+              <span className="font-mono font-extrabold text-brand-700">{batch.code}</span>
               <span className="font-mono font-bold">
                 {originCode} → {destCode}
               </span>
               <span className="font-semibold">{boxCount} 📦</span>
-              {batch.vehiclePlate && <span className="text-xs text-gray-500">🚛 {batch.vehiclePlate}</span>}
-              <span className="ml-auto text-xs text-gray-500">
+              {batch.vehiclePlate && <span className="text-xs text-ink-500">🚛 {batch.vehiclePlate}</span>}
+              <span className="ml-auto text-xs text-ink-500">
                 {batch.departedAt &&
                   `🚀 ${format.dateTime(batch.departedAt, { dateStyle: 'short', timeStyle: 'short' })}`}
               </span>
             </div>
           </Link>
         ))}
-        {inTransit.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
+        {inTransit.length === 0 && <p className="text-ink-500">{tc('empty')}</p>}
       </div>
     </div>
   );

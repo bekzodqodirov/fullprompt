@@ -61,7 +61,7 @@ export function VerdictForm({ versionId }: { versionId: string }) {
         </button>
       </div>
       {pending && <p className="text-sm">{tc('loading')}</p>}
-      {error && <p className="text-sm font-semibold text-red-700">{error}</p>}
+      {error && <p className="text-sm font-semibold text-bad">{error}</p>}
     </div>
   );
 }

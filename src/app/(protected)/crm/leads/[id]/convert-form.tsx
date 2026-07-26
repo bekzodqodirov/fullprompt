@@ -41,7 +41,7 @@ export function ConvertForm({
           className="input min-w-40 flex-1"
         />
       </div>
-      <p className="text-xs text-gray-500">{t('codeAuto')}</p>
+      <p className="text-xs text-ink-500">{t('codeAuto')}</p>
       <button
         type="submit"
         data-testid="convert-lead"
@@ -51,7 +51,7 @@ export function ConvertForm({
         {pending ? tc('loading') : `🤝 ${t('convert')}`}
       </button>
       {state.error && (
-        <p className="text-sm font-semibold text-red-700">
+        <p className="text-sm font-semibold text-bad">
           {state.error === 'code_exists'
             ? tc('error') + ': ' + t('clientCode')
             : state.error === 'already_converted'

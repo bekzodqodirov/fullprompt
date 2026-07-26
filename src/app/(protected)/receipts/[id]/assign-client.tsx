@@ -48,7 +48,7 @@ export function AssignClient({ receiptId, current }: { receiptId: string; curren
         <form action={assignClientAction} className="flex items-center gap-2">
           <input type="hidden" name="receiptId" value={receiptId} />
           <input type="hidden" name="clientId" value={selected.id} />
-          <span className="font-mono font-extrabold text-blue-800">{selected.clientCode}</span>
+          <span className="font-mono font-extrabold text-brand-700">{selected.clientCode}</span>
           <span className="truncate text-sm">{selected.name}</span>
           <ConfirmButton label={t('assignConfirm')} />
           <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
@@ -65,15 +65,15 @@ export function AssignClient({ receiptId, current }: { receiptId: string; curren
             autoComplete="off"
           />
           {hits.length > 0 && (
-            <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+            <ul className="divide-y divide-line rounded-lg border border-line">
               {hits.map((hit) => (
                 <li key={hit.id}>
                   <button
                     type="button"
-                    className="flex w-full items-baseline gap-2 p-2.5 text-left hover:bg-gray-50"
+                    className="flex w-full items-baseline gap-2 p-2.5 text-left hover:bg-surface-sunken"
                     onClick={() => setSelected(hit)}
                   >
-                    <span className="font-mono font-extrabold text-blue-800">{hit.clientCode}</span>
+                    <span className="font-mono font-extrabold text-brand-700">{hit.clientCode}</span>
                     <span className="truncate text-sm">{hit.name}</span>
                   </button>
                 </li>

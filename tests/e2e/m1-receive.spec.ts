@@ -96,7 +96,7 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   await expect(page.locator('td img[src*="/api/attachments/"]').first()).toBeVisible({
     timeout: 10_000,
   });
-  await expect(page.locator('td img.border-amber-300').first()).toBeVisible();
+  await expect(page.getByTestId('general-photo').first()).toBeVisible();
 
   // Lightbox: tapping a thumbnail opens the overlay in place (no navigation).
   // The overlay img may fall back from thumb800 to the original variant.

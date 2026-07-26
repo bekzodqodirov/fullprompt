@@ -10,11 +10,14 @@ import { useState } from 'react';
  */
 export function LightboxImg({
   attachmentId,
+  testId,
   alt = '',
   className = 'h-12 w-12 rounded object-cover',
   onDelete,
 }: {
   attachmentId: string;
+  /** Stable hook for tests; styling classes are not a contract. */
+  testId?: string;
   alt?: string;
   className?: string;
   /** When set, a small ✕ badge removes the wrongly-added photo. */
@@ -29,6 +32,7 @@ export function LightboxImg({
         src={`/api/attachments/${attachmentId}?variant=thumb200`}
         alt={alt}
         loading="lazy"
+        data-testid={testId}
         className={`cursor-zoom-in ${className}`}
         onClick={(e) => {
           e.preventDefault();

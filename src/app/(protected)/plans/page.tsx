@@ -10,10 +10,10 @@ import { PageHeader } from '@/components/ui/page';
 
 const STATUS_COLORS: Record<string, string> = {
   pending_agent: 'bg-orange-100 text-orange-800',
-  changes_requested: 'bg-red-100 text-red-800',
-  approved: 'bg-green-100 text-green-800',
-  loading: 'bg-blue-100 text-blue-800',
-  completed: 'bg-gray-100 text-gray-600',
+  changes_requested: 'bg-bad/15 text-bad',
+  approved: 'bg-good/15 text-good',
+  loading: 'bg-brand-100 text-brand-700',
+  completed: 'bg-surface-sunken text-ink-700',
 };
 
 export default async function PlansPage() {
@@ -53,21 +53,21 @@ export default async function PlansPage() {
         </Link>
         }
       />
-      {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
+      {rows.length === 0 && <p className="text-ink-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ plan, originCode, destCode, batchCode }) => (
-          <Link key={plan.id} href={`/plans/${plan.id}`} className="card block !p-3 hover:bg-gray-50">
+          <Link key={plan.id} href={`/plans/${plan.id}`} className="card block !p-3 hover:bg-surface-sunken">
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="font-mono font-extrabold">
                 {originCode} → {destCode}
               </span>
               <span
-                className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[plan.status] ?? 'bg-gray-100'}`}
+                className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[plan.status] ?? 'bg-surface-sunken'}`}
               >
                 {t(`statuses.${plan.status}`)}
               </span>
-              {batchCode && <span className="font-mono font-bold text-blue-800">{batchCode}</span>}
-              <span className="ml-auto text-xs text-gray-500">
+              {batchCode && <span className="font-mono font-bold text-brand-700">{batchCode}</span>}
+              <span className="ml-auto text-xs text-ink-500">
                 v{plan.currentVersionNo} · {format.dateTime(plan.createdAt, { dateStyle: 'short' })}
               </span>
             </div>

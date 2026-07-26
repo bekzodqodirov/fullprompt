@@ -11,6 +11,12 @@ export interface NavItemSpec {
   roles?: string[];
   /** Shown in the phone's bottom bar (first four the actor can see). */
   primary?: number;
+  /**
+   * A short name for the tab bar. "Управленческий учёт" under a 60 px icon
+   * pushed the ••• button off the screen; the sidebar and the home tiles keep
+   * the full name, where there is room for it.
+   */
+  shortKey?: string;
 }
 
 export interface NavGroupSpec {
@@ -33,9 +39,10 @@ export const NAV: NavGroupSpec[] = [
   {
     titleKey: 'sectionOperations',
     items: [
-      { href: '/', labelKey: 'homeTile', namespace: 'nav', icon: 'home', primary: 0 },
+      { href: '/', labelKey: 'homeTile', namespace: 'nav', icon: 'home', primary: 0, shortKey: 'home' },
       {
         href: '/receive',
+        shortKey: 'receive',
         labelKey: 'receiving',
         namespace: 'home',
         icon: 'inbox',
@@ -44,6 +51,7 @@ export const NAV: NavGroupSpec[] = [
       },
       {
         href: '/batches',
+        shortKey: 'batches',
         labelKey: 'loading',
         namespace: 'home',
         icon: 'truck',
@@ -52,6 +60,7 @@ export const NAV: NavGroupSpec[] = [
       },
       {
         href: '/plans',
+        shortKey: 'plans',
         labelKey: 'title',
         namespace: 'plans',
         icon: 'clipboard',
@@ -60,6 +69,7 @@ export const NAV: NavGroupSpec[] = [
       },
       {
         href: '/issue',
+        shortKey: 'issue',
         labelKey: 'handover',
         namespace: 'home',
         icon: 'handshake',
@@ -85,8 +95,8 @@ export const NAV: NavGroupSpec[] = [
   {
     titleKey: 'sectionInfo',
     items: [
-      { href: '/stock', labelKey: 'title', namespace: 'stock', icon: 'boxes', primary: 3 },
-      { href: '/search', labelKey: 'title', namespace: 'search', icon: 'search', primary: 8 },
+      { href: '/stock', labelKey: 'title', namespace: 'stock', icon: 'boxes', primary: 3, shortKey: 'stock' },
+      { href: '/search', labelKey: 'title', namespace: 'search', icon: 'search', primary: 8, shortKey: 'search' },
       { href: '/receipts', labelKey: 'title', namespace: 'receipts', icon: 'doc' },
       { href: '/unclaimed', labelKey: 'unclaimedTitle', namespace: 'receipts', icon: 'alert' },
       { href: '/map', labelKey: 'title', namespace: 'map', icon: 'map' },
@@ -99,6 +109,7 @@ export const NAV: NavGroupSpec[] = [
       },
       {
         href: '/reports',
+        shortKey: 'reports',
         labelKey: 'title',
         namespace: 'reports',
         icon: 'report',
@@ -111,6 +122,7 @@ export const NAV: NavGroupSpec[] = [
     items: [
       {
         href: '/crm',
+        shortKey: 'crm',
         labelKey: 'title',
         namespace: 'crm',
         icon: 'phone',
@@ -119,6 +131,7 @@ export const NAV: NavGroupSpec[] = [
       },
       {
         href: '/crm/leads',
+        shortKey: 'funnel',
         labelKey: 'funnel',
         namespace: 'crm',
         icon: 'target',
@@ -126,6 +139,7 @@ export const NAV: NavGroupSpec[] = [
       },
       {
         href: '/finance',
+        shortKey: 'finance',
         labelKey: 'title',
         namespace: 'finance',
         icon: 'wallet',
@@ -146,6 +160,7 @@ export const NAV: NavGroupSpec[] = [
     items: [
       {
         href: '/accounting',
+        shortKey: 'accounting',
         labelKey: 'title',
         namespace: 'accounting',
         icon: 'briefcase',
@@ -189,15 +204,52 @@ export interface Viewer {
   roles: string[];
 }
 
+/**
+ * The four tabs each kind of person actually wants under their thumb
+ * (owner: "skladchilar prixod/yuklash/qabul, sotuvchilar CRM, buxgalterlar
+ * pul bilan bog'liq joyni ishlatadi").
+ *
+ * A generic priority order cannot serve all three: the same list that puts
+ * receiving first for a warehouse operator would put it first for the
+ * accountant too, who never opens it. Anything a role may not see is skipped
+ * and the next entry moves up, so a short list still fills the bar.
+ */
+const PRIMARY_BY_ROLE: Record<string, string[]> = {
+  warehouse_operator: ['/', '/receive', '/batches', '/issue', '/stock'],
+  warehouse_manager: ['/', '/receive', '/batches', '/stock', '/issue'],
+  logist: ['/', '/plans', '/batches', '/stock', '/crm'],
+  sales_manager: ['/', '/crm', '/crm/leads', '/finance', '/stock'],
+  accountant: ['/', '/accounting', '/finance', '/reports', '/stock'],
+  ved_manager: ['/', '/batches', '/finance', '/stock', '/reports'],
+  // The owner watches the money and the funnel; the operational screens are
+  // one tap away behind •••.
+  super_admin: ['/', '/accounting', '/crm', '/stock', '/batches'],
+  admin: ['/', '/accounting', '/crm', '/stock', '/batches'],
+};
+
 export function canSee(item: NavItemSpec, viewer: Viewer): boolean {
   if (item.roles && !item.roles.some((role) => viewer.roles.includes(role))) return false;
   if (!item.permissions) return true;
   return item.permissions.some((code) => viewer.permissions.has(code));
 }
 
-/** The four tab-bar destinations this viewer gets, in priority order. */
+/** The tab-bar destinations this viewer gets, in the order they want them. */
 export function primaryItems(viewer: Viewer, limit = 4): NavItemSpec[] {
-  return NAV.flatMap((group) => group.items)
+  const all = NAV.flatMap((group) => group.items);
+  const visible = (href: string) => {
+    const item = all.find((candidate) => candidate.href === href);
+    return item && canSee(item, viewer) ? item : null;
+  };
+
+  // The most specific role the viewer holds wins; PRIMARY_BY_ROLE is ordered
+  // from the narrowest job to the broadest.
+  for (const role of Object.keys(PRIMARY_BY_ROLE)) {
+    if (!viewer.roles.includes(role)) continue;
+    const picked = PRIMARY_BY_ROLE[role]!.map(visible).filter(Boolean) as NavItemSpec[];
+    if (picked.length > 0) return picked.slice(0, limit);
+  }
+
+  return all
     .filter((item) => item.primary !== undefined && canSee(item, viewer))
     .sort((a, b) => a.primary! - b.primary!)
     .slice(0, limit);

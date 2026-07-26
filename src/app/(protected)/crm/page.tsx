@@ -54,7 +54,7 @@ export default async function CrmPage() {
               key={`${item.kind}-${item.id}`}
               href={item.kind === 'lead' ? `/crm/leads/${item.id}` : `/admin/clients/${item.id}`}
               className={`card-tap block ${
-                item.dueOn < today ? 'border-l-4 border-l-amber-500' : ''
+                item.dueOn < today ? 'border-l-4 border-l-warn' : ''
               }`}
             >
               <div className="flex items-center gap-2">
@@ -66,13 +66,13 @@ export default async function CrmPage() {
                 {item.subtitle && <span className="text-sm text-ink-500">{item.subtitle}</span>}
                 <span
                   className={`ml-auto text-xs ${
-                    item.dueOn < today ? 'font-bold text-amber-700' : 'text-gray-500'
+                    item.dueOn < today ? 'font-bold text-warn' : 'text-ink-500'
                   }`}
                 >
                   {item.dueOn < today ? `⚠️ ${item.dueOn}` : item.dueOn}
                 </span>
               </div>
-              {item.note && <p className="mt-1 text-sm text-gray-700">{item.note}</p>}
+              {item.note && <p className="mt-1 text-sm text-ink-700">{item.note}</p>}
             </Link>
           ))}
         </div>

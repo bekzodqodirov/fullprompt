@@ -85,7 +85,7 @@ export default async function BatchTnvedPage({ params }: { params: Promise<{ id:
       <BackLink href={`/batches/${id}`} label={batch.code} />
       <h1 className="text-xl font-bold">🏷 {t('title')}</h1>
       {byProduct.size === 0 ? (
-        <p className="text-sm text-gray-500">{t('empty')}</p>
+        <p className="text-sm text-ink-500">{t('empty')}</p>
       ) : (
         <TnvedEditor rows={[...byProduct.values()]} />
       )}

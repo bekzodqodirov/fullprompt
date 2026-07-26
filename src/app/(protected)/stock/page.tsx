@@ -77,13 +77,13 @@ export default async function StockPage({
             <Link
               key={box.id}
               href={`/boxes/${box.id}`}
-              className="card flex items-baseline gap-2 !p-3 hover:bg-gray-50"
+              className="card flex items-baseline gap-2 !p-3 hover:bg-surface-sunken"
             >
               <span className="font-mono font-bold">{box.shortCode}</span>
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-ink-500">
                 {box.seqInLot}/{lot?.boxCount}
               </span>
-              <span className="ml-auto rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold">
+              <span className="ml-auto rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
                 {t(`statuses.${box.status}`)}
               </span>
             </Link>
@@ -113,17 +113,17 @@ export default async function StockPage({
     return (
       <div className="space-y-3">
         <h1 className="text-xl font-bold">
-          <span className="font-mono text-blue-800">{client?.clientCode}</span> — {client?.name}
+          <span className="font-mono text-brand-700">{client?.clientCode}</span> — {client?.name}
         </h1>
         <div className="space-y-1">
           {lotRows.map(({ lot, receiptNumber, whCode, inStock }) => (
             <Link
               key={lot.id}
               href={`/stock?lot=${lot.id}`}
-              className="card block !p-3 hover:bg-gray-50"
+              className="card block !p-3 hover:bg-surface-sunken"
             >
               <div className="flex items-baseline gap-2">
-                <span className="font-mono text-lg font-extrabold text-blue-800">{lot.letter}</span>
+                <span className="font-mono text-lg font-extrabold text-brand-700">{lot.letter}</span>
                 <span>
                   {lot.productNameZh} {lot.productNameRu && `(${lot.productNameRu})`}
                 </span>
@@ -131,7 +131,7 @@ export default async function StockPage({
                   {inStock} {t('boxes')}
                 </span>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-ink-500">
                 {whCode} · {receiptNumber} · {lot.totalWeightKg} kg · {lot.totalVolumeM3} m³
               </p>
             </Link>
@@ -253,14 +253,14 @@ export default async function StockPage({
         </a>
       </form>
 
-      <p className="text-sm font-semibold text-gray-700">
+      <p className="text-sm font-semibold text-ink-700">
         Σ {sumBoxes} {t('boxes')} · {Math.round(sumKg)} kg · {Math.round(sumM3 * 100) / 100} m³
       </p>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface-raised">
         <table className="w-full min-w-[860px] text-sm">
           <thead>
-            <tr className="border-b border-gray-300 bg-gray-50 text-left">
+            <tr className="border-b border-line-strong bg-surface-sunken text-left">
               <th className="p-2">📷</th>
               <SortTh label={t('colCode')} field="code" sort={params.sort} dir={params.dir} params={sortParams} />
               <SortTh label={t('colProduct')} field="product" sort={params.sort} dir={params.dir} params={sortParams} />
@@ -281,14 +281,14 @@ export default async function StockPage({
                 density === null
                   ? ''
                   : density >= 400
-                    ? 'bg-red-100 text-red-800'
+                    ? 'bg-bad/15 text-bad'
                     : density >= 300
                       ? 'bg-orange-100 text-orange-800'
                       : density >= 200
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-blue-100 text-blue-800';
+                        ? 'bg-good/15 text-good'
+                        : 'bg-brand-100 text-brand-700';
               return (
-                <tr key={line.lot.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr key={line.lot.id} className="border-b border-line hover:bg-surface-sunken">
                   <td className="p-1.5">
                     <div className="flex items-center gap-1">
                       {line.photoId ? (
@@ -297,18 +297,19 @@ export default async function StockPage({
                           className="h-14 w-14 rounded object-cover"
                         />
                       ) : (
-                        <span className="text-gray-300">—</span>
+                        <span className="text-ink-400">—</span>
                       )}
                       {line.generalPhotoId && (
                         <LightboxImg
                           attachmentId={line.generalPhotoId}
-                          className="h-14 w-14 rounded border-2 border-amber-300 object-cover"
+                          testId="general-photo"
+                          className="h-14 w-14 rounded border-2 border-warn/40 object-cover"
                         />
                       )}
                     </div>
                   </td>
                   <td className="whitespace-nowrap p-2">
-                    <Link href={`/stock?lot=${line.lot.id}`} className="font-mono font-extrabold text-blue-800">
+                    <Link href={`/stock?lot=${line.lot.id}`} className="font-mono font-extrabold text-brand-700">
                       {line.clientCode ?? line.marking ?? '❓'}-{line.lot.letter}
                     </Link>
                   </td>
@@ -316,7 +317,7 @@ export default async function StockPage({
                     <Link href={`/receipts/${line.receiptId}`} className="block truncate">
                       {line.lot.productNameZh}
                       {line.lot.productNameRu && (
-                        <span className="text-gray-500"> ({line.lot.productNameRu})</span>
+                        <span className="text-ink-500"> ({line.lot.productNameRu})</span>
                       )}
                     </Link>
                   </td>
@@ -331,11 +332,11 @@ export default async function StockPage({
                       </span>
                     )}
                   </td>
-                  <td className="max-w-32 truncate p-2 text-xs text-gray-500" title={line.lot.note ?? ''}>
+                  <td className="max-w-32 truncate p-2 text-xs text-ink-500" title={line.lot.note ?? ''}>
                     {line.lot.note ?? ''}
                   </td>
                   <td className="p-2 font-mono font-bold">{line.whCode}</td>
-                  <td className="whitespace-nowrap p-2 text-gray-500">
+                  <td className="whitespace-nowrap p-2 text-ink-500">
                     {format.dateTime(line.receivedAt, { dateStyle: 'short' })}
                   </td>
                 </tr>
@@ -343,7 +344,7 @@ export default async function StockPage({
             })}
           </tbody>
         </table>
-        {lines.length === 0 && <p className="p-4 text-sm text-gray-500">{t('empty')}</p>}
+        {lines.length === 0 && <p className="p-4 text-sm text-ink-500">{t('empty')}</p>}
       </div>
     </div>
   );

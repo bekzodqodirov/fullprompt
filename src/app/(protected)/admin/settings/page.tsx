@@ -30,7 +30,7 @@ export default async function SettingsPage() {
                   <label className="label font-mono" htmlFor={`setting-${key}`}>
                     {key}
                   </label>
-                  <p className="mb-2 text-xs text-gray-500">{t(`descriptions.${key}`)}</p>
+                  <p className="mb-2 text-xs text-ink-500">{t(`descriptions.${key}`)}</p>
                   {isBool ? (
                     <select
                       id={`setting-${key}`}

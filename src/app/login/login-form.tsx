@@ -37,7 +37,7 @@ export function LoginForm() {
         />
       </div>
       {state.error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {state.error === 'invalid' && t('invalid')}
           {state.error === 'rate_limited' && t('rateLimited')}
           {state.error === 'validation' && t('validation')}

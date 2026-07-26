@@ -31,7 +31,7 @@ export default async function ProfitPage({
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const profitClass = (value: number) => (value >= 0 ? 'text-green-700' : 'text-red-700');
+  const profitClass = (value: number) => (value >= 0 ? 'text-good' : 'text-bad');
 
   const tabs: { key: View; label: string }[] = [
     { key: 'batch', label: t('profitBatch') },
@@ -67,7 +67,7 @@ export default async function ProfitPage({
             key={tab.key}
             href={`/accounting/profit?view=${tab.key}&from=${from}&to=${to}`}
             className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-              tab.key === view ? 'bg-blue-700 text-white' : 'bg-gray-100 hover:bg-gray-200'
+              tab.key === view ? 'bg-brand-600 text-white' : 'bg-surface-sunken hover:bg-surface-sunken'
             }`}
           >
             {tab.label}
@@ -81,7 +81,7 @@ export default async function ProfitPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <th className="p-2">
                   {view === 'batch' ? t('batch') : view === 'client' ? t('client') : t('route')}
                 </th>
@@ -97,7 +97,7 @@ export default async function ProfitPage({
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-3 text-center text-gray-500">
+                  <td colSpan={8} className="p-3 text-center text-ink-500">
                     {t('empty')}
                   </td>
                 </tr>
@@ -105,17 +105,17 @@ export default async function ProfitPage({
               {rows.map((row) => (
                 <tr
                   key={'batchId' in row ? row.batchId : 'clientId' in row ? row.clientId : row.route}
-                  className="border-b border-gray-100"
+                  className="border-b border-line"
                 >
                   <td className="p-2 font-mono font-bold">
                     {'code' in row ? (
-                      <Link href={`/batches/${row.batchId}`} className="text-blue-800">
+                      <Link href={`/batches/${row.batchId}`} className="text-brand-700">
                         {row.code}
                       </Link>
                     ) : 'clientCode' in row ? (
                       <>
-                        <span className="text-blue-800">{row.clientCode}</span>
-                        <span className="ml-2 font-sans font-normal text-gray-600">
+                        <span className="text-brand-700">{row.clientCode}</span>
+                        <span className="ml-2 font-sans font-normal text-ink-700">
                           {row.clientName}
                         </span>
                       </>
@@ -139,7 +139,7 @@ export default async function ProfitPage({
                 </tr>
               ))}
               {rows.length > 0 && (
-                <tr className="border-t-2 border-gray-400 font-bold">
+                <tr className="border-t-2 border-line-strong font-bold">
                   <td className="p-2" colSpan={view === 'batch' ? 3 : view === 'route' ? 2 : 1}>
                     {t('total')}
                   </td>

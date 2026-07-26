@@ -46,7 +46,7 @@ type Selected = { kind: 'wh'; code: string } | { kind: 'truck'; batchId: string 
 // Leaflet touches `window` at import time — client-only chunk.
 const LeafletCorridor = dynamic(
   () => import('./leaflet-corridor').then((m) => m.LeafletCorridor),
-  { ssr: false, loading: () => <div className="h-[420px] w-full animate-pulse rounded-xl bg-blue-50 md:h-[520px]" /> },
+  { ssr: false, loading: () => <div className="h-[420px] w-full animate-pulse rounded-xl bg-brand-50 md:h-[520px]" /> },
 );
 
 /**
@@ -83,7 +83,7 @@ export function TrackingMap({
       ) : (
         <div className="card overflow-x-auto !p-2">
           <SvgCorridor warehouses={warehouses} trucks={trucks} onSelect={setSelected} label={t('title')} />
-          <p className="px-1 pt-1 text-[11px] text-gray-400">{t('basemapMissing')}</p>
+          <p className="px-1 pt-1 text-[11px] text-ink-400">{t('basemapMissing')}</p>
         </div>
       )}
 
@@ -98,15 +98,15 @@ export function TrackingMap({
               ✕
             </button>
           </div>
-          {selWh.stock.length === 0 && <p className="text-sm text-gray-500">{t('emptyWh')}</p>}
+          {selWh.stock.length === 0 && <p className="text-sm text-ink-500">{t('emptyWh')}</p>}
           <div className="flex flex-wrap gap-1.5">
             {selWh.stock.map((s) => (
-              <span key={s.clientCode} className="rounded-lg bg-blue-50 px-2 py-1 font-mono text-sm font-bold text-blue-800">
+              <span key={s.clientCode} className="rounded-lg bg-brand-50 px-2 py-1 font-mono text-sm font-bold text-brand-700">
                 {s.clientCode} · {s.n}
               </span>
             ))}
           </div>
-          <Link href={`/stock?warehouse=${selWh.code}`} className="text-sm font-semibold text-blue-700 underline">
+          <Link href={`/stock?warehouse=${selWh.code}`} className="text-sm font-semibold text-brand-700 underline">
             {t('openStock')} →
           </Link>
         </div>
@@ -131,29 +131,29 @@ export function TrackingMap({
               ? `🟢 ${t('liveFix', { ago: ago(selTruck.fixAgeMinutes ?? 0) })}`
               : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { ago: ago(selTruck.fixAgeMinutes) })}` : ''}`}
           </p>
-          <p className={`text-sm font-semibold ${selTruck.overdue ? 'text-red-700' : ''}`}>
+          <p className={`text-sm font-semibold ${selTruck.overdue ? 'text-bad' : ''}`}>
             📍 {t(`seg_${selTruck.segKey}`)}
             {selTruck.overdue
               ? ` — ${t('overdue')}`
               : ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}`}
           </p>
-          <div className="h-2 overflow-hidden rounded bg-gray-100">
-            <div className="h-full rounded bg-blue-600" style={{ width: `${Math.round(selTruck.progress * 100)}%` }} />
+          <div className="h-2 overflow-hidden rounded bg-surface-sunken">
+            <div className="h-full rounded bg-brand-600" style={{ width: `${Math.round(selTruck.progress * 100)}%` }} />
           </div>
           <div className="flex flex-wrap gap-1.5">
             {selTruck.contents.map((c) => (
-              <span key={c.clientCode} className="rounded-lg bg-amber-50 px-2 py-1 font-mono text-sm font-bold text-amber-800">
+              <span key={c.clientCode} className="rounded-lg bg-warn/10 px-2 py-1 font-mono text-sm font-bold text-warn">
                 {c.clientCode} · {c.n}
               </span>
             ))}
           </div>
-          <Link href={`/batches/${selTruck.batchId}`} className="text-sm font-semibold text-blue-700 underline">
+          <Link href={`/batches/${selTruck.batchId}`} className="text-sm font-semibold text-brand-700 underline">
             {t('openBatch')} →
           </Link>
         </div>
       )}
 
-      {trucks.length === 0 && <p className="text-sm text-gray-500">{t('noTrucks')}</p>}
+      {trucks.length === 0 && <p className="text-sm text-ink-500">{t('noTrucks')}</p>}
     </div>
   );
 }

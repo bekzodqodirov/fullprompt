@@ -26,15 +26,15 @@ export default async function FinancePage() {
       <PageHeader icon="wallet" title={t('title')} />
       {actor.permissions.has('finance.manage') && <FinanceClientSearch />}
       <div className="card flex items-baseline gap-2">
-        <span className="text-sm text-gray-600">{t('totalDebt')}:</span>
-        <span className="font-mono text-lg font-extrabold text-red-700">
+        <span className="text-sm text-ink-700">{t('totalDebt')}:</span>
+        <span className="font-mono text-lg font-extrabold text-bad">
           ${totalDebt.toFixed(2)}
         </span>
       </div>
       <div className="card overflow-x-auto !p-0">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
+            <tr className="border-b border-line text-left text-xs uppercase text-ink-500">
               <th className="p-3">{t('client')}</th>
               <th className="p-3 text-right">{t('charges')}</th>
               <th className="p-3 text-right">{t('payments')}</th>
@@ -43,18 +43,18 @@ export default async function FinancePage() {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.clientId} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+              <tr key={r.clientId} className="border-b border-line last:border-0 hover:bg-surface-sunken">
                 <td className="p-0">
                   <Link href={`/finance/${r.clientId}`} className="block p-3">
-                    <span className="font-mono font-extrabold text-blue-800">{r.clientCode}</span>{' '}
-                    <span className="text-gray-600">{r.clientName}</span>
+                    <span className="font-mono font-extrabold text-brand-700">{r.clientCode}</span>{' '}
+                    <span className="text-ink-700">{r.clientName}</span>
                   </Link>
                 </td>
                 <td className="p-3 text-right font-mono">${r.chargesUsd.toFixed(2)}</td>
                 <td className="p-3 text-right font-mono">${r.paymentsUsd.toFixed(2)}</td>
                 <td
                   className={`p-3 text-right font-mono font-bold ${
-                    r.balanceUsd > 0.009 ? 'text-red-700' : 'text-green-700'
+                    r.balanceUsd > 0.009 ? 'text-bad' : 'text-good'
                   }`}
                 >
                   ${r.balanceUsd.toFixed(2)}
@@ -63,7 +63,7 @@ export default async function FinancePage() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={4} className="p-4 text-center text-gray-500">
+                <td colSpan={4} className="p-4 text-center text-ink-500">
                   {t('empty')}
                 </td>
               </tr>
@@ -71,7 +71,7 @@ export default async function FinancePage() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-500">{t('balanceHint')}</p>
+      <p className="text-xs text-ink-500">{t('balanceHint')}</p>
     </div>
   );
 }

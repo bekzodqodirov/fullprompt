@@ -58,7 +58,7 @@ export default async function CrmSettingsPage() {
       <PageHeader icon="settings" title={t('settings')} />
 
       <div className="card space-y-2">
-        <h2 className="text-sm font-bold uppercase text-gray-500">🎯 {t('stages')}</h2>
+        <h2 className="text-sm font-bold uppercase text-ink-500">🎯 {t('stages')}</h2>
         <StageTools stages={stageRows} usage={usage} />
       </div>
 

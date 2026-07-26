@@ -41,19 +41,19 @@ export default async function LandedCostReportPage({
 
       {selected ? (
         <>
-          <Link href="/reports/landed-cost" className="text-sm font-semibold text-blue-800">
+          <Link href="/reports/landed-cost" className="text-sm font-semibold text-brand-700">
             ← {t('allClients')}
           </Link>
           <div className="card !p-3">
             <p className="mb-2 text-lg">
-              <span className="font-mono font-extrabold text-blue-800">{selected.clientCode}</span>{' '}
+              <span className="font-mono font-extrabold text-brand-700">{selected.clientCode}</span>{' '}
               {selected.clientName} —{' '}
               <b className="font-mono">${selected.totalUsd}</b>
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-300 text-left text-xs uppercase text-gray-500">
+                  <tr className="border-b border-line-strong text-left text-xs uppercase text-ink-500">
                     <th className="p-1.5">{t('lot')}</th>
                     <th className="p-1.5">{t('product')}</th>
                     <th className="p-1.5 text-right">📦</th>
@@ -64,11 +64,11 @@ export default async function LandedCostReportPage({
                 </thead>
                 <tbody>
                   {lots.map((lot) => (
-                    <tr key={lot.lotId} className="border-b border-gray-100 last:border-0">
-                      <td className="p-1.5 font-mono font-extrabold text-blue-800">{lot.letter}</td>
+                    <tr key={lot.lotId} className="border-b border-line last:border-0">
+                      <td className="p-1.5 font-mono font-extrabold text-brand-700">{lot.letter}</td>
                       <td className="max-w-52 truncate p-1.5">
                         {lot.productNameZh}
-                        {lot.productNameRu && <span className="text-gray-500"> ({lot.productNameRu})</span>}
+                        {lot.productNameRu && <span className="text-ink-500"> ({lot.productNameRu})</span>}
                       </td>
                       <td className="p-1.5 text-right">{lot.boxCount}</td>
                       <td className="p-1.5 text-right">{lot.kg}</td>
@@ -85,7 +85,7 @@ export default async function LandedCostReportPage({
         <div className="card !p-0">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <th className="p-2">{t('client')}</th>
                 <th className="p-2 text-right">📦</th>
                 <th className="p-2 text-right">{t('landedCostUsd')}</th>
@@ -93,11 +93,11 @@ export default async function LandedCostReportPage({
             </thead>
             <tbody>
               {clientRows.map((row) => (
-                <tr key={row.clientId} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                <tr key={row.clientId} className="border-b border-line last:border-0 hover:bg-surface-sunken">
                   <td className="p-2">
                     <Link href={`/reports/landed-cost?clientId=${row.clientId}`} className="flex items-baseline gap-2">
-                      <span className="font-mono font-extrabold text-blue-800">{row.clientCode}</span>
-                      <span className="truncate text-gray-600">{row.clientName}</span>
+                      <span className="font-mono font-extrabold text-brand-700">{row.clientCode}</span>
+                      <span className="truncate text-ink-700">{row.clientName}</span>
                     </Link>
                   </td>
                   <td className="p-2 text-right">{row.boxCount}</td>
@@ -106,7 +106,7 @@ export default async function LandedCostReportPage({
               ))}
             </tbody>
           </table>
-          {clientRows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noData')}</p>}
+          {clientRows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noData')}</p>}
         </div>
       )}
     </div>

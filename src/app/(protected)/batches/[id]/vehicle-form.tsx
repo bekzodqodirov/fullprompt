@@ -43,7 +43,7 @@ export function VehicleForm({
           {driverName && ` · ${driverName}`}
           {driverPhone && ` · ${driverPhone}`}
         </span>
-        {state.ok && <span className="text-xs font-semibold text-green-700">✅ {tc('saved')}</span>}
+        {state.ok && <span className="text-xs font-semibold text-good">✅ {tc('saved')}</span>}
         <button
           type="button"
           aria-label={tc('edit')}
@@ -66,7 +66,7 @@ export function VehicleForm({
         <input name="driverPhone" className="input flex-1" inputMode="tel" placeholder={t('driverPhone')} defaultValue={driverPhone} />
       </div>
       {state.error && (
-        <p role="alert" className="text-sm font-semibold text-red-700">
+        <p role="alert" className="text-sm font-semibold text-bad">
           {tc('error')}
         </p>
       )}

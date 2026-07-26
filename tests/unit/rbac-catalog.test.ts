@@ -84,3 +84,33 @@ describe('RBAC catalog (spec §16 matrix)', () => {
     );
   });
 });
+
+describe('the phone tab bar', () => {
+  it('gives each role the four screens that role actually opens', async () => {
+    const { primaryItems } = await import('@/modules/platform/rbac/nav');
+    const { ROLE_MATRIX } = await import('@/modules/platform/rbac/catalog');
+    const viewer = (role: keyof typeof ROLE_MATRIX) => ({
+      permissions: new Set<string>(ROLE_MATRIX[role]),
+      roles: [role],
+    });
+
+    const hrefs = (role: keyof typeof ROLE_MATRIX) =>
+      primaryItems(viewer(role)).map((item) => item.href);
+
+    // Owner's words: warehouse staff receive and load, sales live in CRM,
+    // accountants live where the money is.
+    expect(hrefs('warehouse_operator')).toContain('/receive');
+    expect(hrefs('warehouse_operator')).not.toContain('/accounting');
+    expect(hrefs('sales_manager')).toContain('/crm');
+    expect(hrefs('sales_manager')).not.toContain('/receive');
+    expect(hrefs('accountant')).toContain('/accounting');
+    expect(hrefs('accountant')).not.toContain('/receive');
+
+    // Never more than four, and never a screen the role cannot open.
+    for (const role of Object.keys(ROLE_MATRIX) as (keyof typeof ROLE_MATRIX)[]) {
+      const items = primaryItems(viewer(role));
+      expect(items.length, role).toBeLessThanOrEqual(4);
+      expect(items.length, role).toBeGreaterThan(0);
+    }
+  });
+});

@@ -26,19 +26,19 @@ export default async function PeoplePage() {
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
       <PageHeader icon="users" title={t('people')} />
-      <p className="text-xs text-gray-500">ℹ️ {t('personNote')}</p>
+      <p className="text-xs text-ink-500">ℹ️ {t('personNote')}</p>
 
       {suggestions.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-sm font-bold uppercase text-gray-500">🔍 {t('suggestions')}</h2>
+          <h2 className="text-sm font-bold uppercase text-ink-500">🔍 {t('suggestions')}</h2>
           {suggestions.map((group) => (
             <div key={group.phone} className="card flex flex-wrap items-center gap-2">
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-sm">{group.phone}</div>
                 <div className="flex flex-wrap gap-1.5 text-sm">
                   {group.members.map((member) => (
-                    <span key={member.id} className="rounded bg-gray-100 px-1.5 py-0.5">
-                      <span className="font-mono font-bold text-blue-800">{member.code}</span>{' '}
+                    <span key={member.id} className="rounded bg-surface-sunken px-1.5 py-0.5">
+                      <span className="font-mono font-bold text-brand-700">{member.code}</span>{' '}
                       {member.name}
                     </span>
                   ))}
@@ -54,17 +54,17 @@ export default async function PeoplePage() {
       )}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-bold uppercase text-gray-500">👤 {t('people')}</h2>
+        <h2 className="text-sm font-bold uppercase text-ink-500">👤 {t('people')}</h2>
         {people.map((person, index) => (
           <div key={person.id} className="card">
             <div className="flex items-baseline gap-2">
               <span className="font-semibold">{person.name}</span>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-ink-500">
                 {person.codes} {t('codes')}
               </span>
             </div>
             {Array.isArray(person.phones) && (person.phones as string[]).length > 0 && (
-              <div className="font-mono text-xs text-gray-600">
+              <div className="font-mono text-xs text-ink-700">
                 {(person.phones as string[]).join(' · ')}
               </div>
             )}
@@ -73,7 +73,7 @@ export default async function PeoplePage() {
                 <Link
                   key={code.id}
                   href={`/admin/clients/${code.id}`}
-                  className="rounded bg-blue-50 px-1.5 py-0.5 font-mono font-bold text-blue-800"
+                  className="rounded bg-brand-50 px-1.5 py-0.5 font-mono font-bold text-brand-700"
                 >
                   {code.code}
                 </Link>
@@ -81,7 +81,7 @@ export default async function PeoplePage() {
             </div>
           </div>
         ))}
-        {people.length === 0 && <p className="card text-sm text-gray-500">{tc('empty')}</p>}
+        {people.length === 0 && <p className="card text-sm text-ink-500">{tc('empty')}</p>}
       </section>
     </div>
   );

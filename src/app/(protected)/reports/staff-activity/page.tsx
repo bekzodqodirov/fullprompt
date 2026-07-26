@@ -28,7 +28,7 @@ export default async function StaffActivityPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <th className="p-2">{t('date')}</th>
                 <th className="p-2">{t('employee')}</th>
                 <th className="p-2 text-right">{t('receiptsCol')}</th>
@@ -39,7 +39,7 @@ export default async function StaffActivityPage() {
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={i} className="border-b border-gray-100 last:border-0">
+                <tr key={i} className="border-b border-line last:border-0">
                   <td className="p-2 font-mono text-xs">{row.day}</td>
                   <td className="p-2">{row.name}</td>
                   <td className="p-2 text-right">{row.receipts || '—'}</td>
@@ -51,7 +51,7 @@ export default async function StaffActivityPage() {
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noData')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noData')}</p>}
       </div>
     </div>
   );

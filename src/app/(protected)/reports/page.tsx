@@ -38,7 +38,7 @@ export default async function ReportsPage() {
           <Link
             key={tile.href}
             href={tile.href}
-            className="card flex min-h-24 items-center justify-center text-center font-bold [overflow-wrap:anywhere] hover:bg-gray-100"
+            className="card flex min-h-24 items-center justify-center text-center font-bold [overflow-wrap:anywhere] hover:bg-surface-sunken"
           >
             {tile.icon} {tile.label}
           </Link>

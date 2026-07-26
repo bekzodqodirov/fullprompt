@@ -42,7 +42,7 @@ export default async function ReceiptsJournalPage({
             <Link
               key={d}
               href={`?days=${d}`}
-              className={`rounded px-2 py-0.5 font-semibold ${d === days ? 'bg-blue-700 text-white' : 'bg-gray-100'}`}
+              className={`rounded px-2 py-0.5 font-semibold ${d === days ? 'bg-brand-600 text-white' : 'bg-surface-sunken'}`}
             >
               {d}
             </Link>
@@ -56,7 +56,7 @@ export default async function ReceiptsJournalPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <SortTh label="№" field="number" sort={sort} dir={dir} params={params} />
                 <SortTh label={t('date')} field="receivedAt" sort={sort} dir={dir} params={params} />
                 <SortTh label="WH" field="whCode" sort={sort} dir={dir} params={params} />
@@ -68,18 +68,18 @@ export default async function ReceiptsJournalPage({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                <tr key={row.id} className="border-b border-line last:border-0 hover:bg-surface-sunken">
                   <td className="p-2">
-                    <Link href={`/receipts/${row.id}`} className="font-mono text-xs font-bold text-blue-800">
+                    <Link href={`/receipts/${row.id}`} className="font-mono text-xs font-bold text-brand-700">
                       {row.number}
                     </Link>
                   </td>
                   <td className="p-2 text-xs">{format.dateTime(row.receivedAt, { dateStyle: 'short' })}</td>
                   <td className="p-2 font-mono font-bold">{row.whCode}</td>
-                  <td className="p-2 font-mono font-extrabold text-blue-800">
+                  <td className="p-2 font-mono font-extrabold text-brand-700">
                     {row.clientCode ?? row.marking ?? '?'}
                   </td>
-                  <td className="max-w-36 truncate p-2 text-xs text-gray-600">{row.operator}</td>
+                  <td className="max-w-36 truncate p-2 text-xs text-ink-700">{row.operator}</td>
                   <td className="p-2 text-right font-semibold">{row.boxCount}</td>
                   <td className="p-2 text-right">{row.kg}</td>
                 </tr>
@@ -87,7 +87,7 @@ export default async function ReceiptsJournalPage({
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noData')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noData')}</p>}
       </div>
     </div>
   );

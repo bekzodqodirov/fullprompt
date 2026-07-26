@@ -107,10 +107,10 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         <span
           className={`rounded px-2 py-0.5 text-sm font-semibold ${
             receipt.status === 'confirmed'
-              ? 'bg-green-100 text-green-800'
+              ? 'bg-good/15 text-good'
               : receipt.status === 'voided'
-                ? 'bg-red-100 text-red-800'
-                : 'bg-gray-100'
+                ? 'bg-bad/15 text-bad'
+                : 'bg-surface-sunken'
           }`}
         >
           {t(`statuses.${receipt.status}`)}
@@ -126,7 +126,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         <p>
           <span className="font-semibold">{t('client')}: </span>
           {client ? (
-            <span className="font-mono font-extrabold text-blue-800">
+            <span className="font-mono font-extrabold text-brand-700">
               {client.clientCode} — {client.name}
             </span>
           ) : (
@@ -145,9 +145,9 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           {format.dateTime(receipt.receivedAt, { dateStyle: 'medium', timeStyle: 'short' })} ·{' '}
           {warehouse.code}
         </p>
-        {receipt.sourceNote && <p className="text-gray-600">{receipt.sourceNote}</p>}
+        {receipt.sourceNote && <p className="text-ink-700">{receipt.sourceNote}</p>}
         {receipt.voidReason && (
-          <p className="font-semibold text-red-700">
+          <p className="font-semibold text-bad">
             {t('voidReason')}: {receipt.voidReason}
           </p>
         )}
@@ -157,11 +157,11 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         {lots.map((lot) => (
           <div key={lot.id} className="card !p-3">
             <div className="flex items-baseline gap-2">
-              <span className="font-mono text-2xl font-extrabold text-blue-800">{lot.letter}</span>
+              <span className="font-mono text-2xl font-extrabold text-brand-700">{lot.letter}</span>
               <span className="font-semibold">
                 {lot.productNameZh}
                 {lot.productNameRu && (
-                  <span className="font-normal text-gray-600"> ({lot.productNameRu})</span>
+                  <span className="font-normal text-ink-700"> ({lot.productNameRu})</span>
                 )}
               </span>
               {canPrint && receipt.status === 'confirmed' && (
@@ -174,12 +174,12 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 </a>
               )}
             </div>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm text-ink-700">
               {lot.boxCount} 📦 · {lot.totalWeightKg} kg · {lot.totalVolumeM3} m³
               {lot.dimsMode === 'uniform' &&
                 ` · ${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm} cm`}
             </p>
-            {lot.note && <p className="mt-1 text-sm italic text-gray-500">📝 {lot.note}</p>}
+            {lot.note && <p className="mt-1 text-sm italic text-ink-500">📝 {lot.note}</p>}
             <div className="mt-2">
               <PhotoGallery photos={photosByLot.get(lot.id) ?? []} deletable={canEdit} />
             </div>
@@ -228,7 +228,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           />
         </div>
         {costMeta ? (
-          <div className="border-t border-gray-100 pt-3">
+          <div className="border-t border-line pt-3">
             <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
             <CostPanel
               scope="receipt"
@@ -251,16 +251,16 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             />
           </div>
         ) : costs.length > 0 && (
-          <div className="border-t border-gray-100 pt-3">
+          <div className="border-t border-line pt-3">
             <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
-            <ul className="divide-y divide-gray-100 text-sm">
+            <ul className="divide-y divide-line text-sm">
               {costs.map(({ entry, typeName }) => (
                 <li key={entry.id} className="flex flex-wrap gap-2 py-2">
                   <span>{typeName}</span>
                   <span className="font-semibold">
                     {entry.amount} {entry.currency}
                   </span>
-                  {entry.note && <span className="w-full text-xs text-gray-500">{entry.note}</span>}
+                  {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
                 </li>
               ))}
             </ul>

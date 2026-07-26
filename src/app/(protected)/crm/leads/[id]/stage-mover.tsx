@@ -46,7 +46,7 @@ export function StageMover({
               });
             }}
             className={`rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-100 ${
-              active ? `${stageClass(stage.color)} ring-2 ring-blue-600` : stageClass(stage.color)
+              active ? `${stageClass(stage.color)} ring-2 ring-brand-500` : stageClass(stage.color)
             } ${pending ? 'opacity-50' : ''}`}
           >
             {stage.name}

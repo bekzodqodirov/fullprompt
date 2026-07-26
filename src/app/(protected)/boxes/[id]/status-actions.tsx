@@ -89,7 +89,7 @@ export function BoxStatusActions({ boxId, status, inCrate }: { boxId: string; st
           </div>
         </>
       )}
-      {error && <p className="text-sm font-semibold text-red-700">{error}</p>}
+      {error && <p className="text-sm font-semibold text-bad">{error}</p>}
     </div>
   );
 }

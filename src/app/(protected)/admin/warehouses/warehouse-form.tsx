@@ -125,10 +125,10 @@ export function WarehouseForm({
           placeholder="500"
           defaultValue={initial?.capacityM3}
         />
-        <p className="mt-1 text-xs text-gray-500">{t('capacityHint')}</p>
+        <p className="mt-1 text-xs text-ink-500">{t('capacityHint')}</p>
       </div>
       {state.error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {state.error === 'code_exists' ? t('codeExists') : tc('error')}
         </p>
       )}

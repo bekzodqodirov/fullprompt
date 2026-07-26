@@ -57,7 +57,7 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
       <h1 className="font-mono text-xl font-extrabold">{box.shortCode}</h1>
       <div className="card !p-3 text-sm">
         <p className="text-lg">
-          <span className="font-mono font-extrabold text-blue-800">
+          <span className="font-mono font-extrabold text-brand-700">
             {client?.clientCode ?? '❓'}-{lot.letter}
           </span>{' '}
           · {box.seqInLot}/{lot.boxCount} {t('inLot')}
@@ -66,13 +66,13 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
           {lot.productNameZh} {lot.productNameRu && `(${lot.productNameRu})`}
         </p>
         <p className="mt-1">
-          <span className="rounded bg-gray-100 px-2 py-0.5 font-semibold">
+          <span className="rounded bg-surface-sunken px-2 py-0.5 font-semibold">
             {t(`statuses.${box.status}`)}
           </span>{' '}
           {wh && <span className="font-mono font-bold">{wh.code}</span>}
-          {box.statusReason && <span className="ml-2 text-xs text-gray-500">({box.statusReason})</span>}
+          {box.statusReason && <span className="ml-2 text-xs text-ink-500">({box.statusReason})</span>}
         </p>
-        <p className="mt-1 text-gray-500">
+        <p className="mt-1 text-ink-500">
           {receipt.number}
           {box.labelPrintedAt &&
             ` · 🖨 ${format.dateTime(box.labelPrintedAt, { dateStyle: 'short', timeStyle: 'short' })}`}
@@ -88,11 +88,11 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
           <h2 className="mb-1 text-lg font-bold">
             💰 {tCost('landedCost')}: <span className="font-mono">${landed.totalUsd}</span>
           </h2>
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-line">
             {landed.shares.map((share, i) => (
               <li key={i} className="flex flex-wrap gap-2 py-1">
                 <span>{share.typeName}</span>
-                <span className="text-gray-500">
+                <span className="text-ink-500">
                   {share.batchCode ?? share.crateCode ?? tCost('scopeReceipt')}
                 </span>
                 <span className="ml-auto font-mono font-semibold">
@@ -112,12 +112,12 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
               <div className="flex flex-wrap items-baseline gap-2">
                 <span className="font-semibold">{t(`statuses.${movement.toStatus}`)}</span>
                 {toWh && <span className="font-mono font-bold">{toWh}</span>}
-                <span className="text-gray-500">({movement.cause})</span>
-                <span className="ml-auto text-xs text-gray-500">
+                <span className="text-ink-500">({movement.cause})</span>
+                <span className="ml-auto text-xs text-ink-500">
                   {format.dateTime(movement.createdAt, { dateStyle: 'short', timeStyle: 'short' })}
                 </span>
               </div>
-              {actorName && <p className="text-xs text-gray-500">{actorName}</p>}
+              {actorName && <p className="text-xs text-ink-500">{actorName}</p>}
             </li>
           ))}
         </ol>

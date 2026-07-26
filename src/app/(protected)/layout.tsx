@@ -4,6 +4,8 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { logoutAction } from '@/modules/platform/auth/actions';
 import { LocaleSwitcher } from '@/components/locale-switcher';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { readTheme } from '@/modules/platform/theme/theme';
 import { Icon } from '@/components/ui/icon';
 import { MobileNav, Sidebar, type NavGroup, type NavItem } from '@/components/ui/nav';
 import { canSee, NAV, primaryItems } from '@/modules/platform/rbac/nav';
@@ -21,6 +23,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   if (!actor) redirect('/login');
   const t = await getTranslations('nav');
   const tHome = await getTranslations('home');
+  const theme = await readTheme();
 
   // Labels come from each screen's own namespace, so the nav never invents a
   // second name for a page that already has one.
@@ -42,11 +45,16 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     if (items.length > 0) groups.push({ title: tHome(group.titleKey as 'sectionInfo'), items });
   }
 
+  // The tab bar takes the short name where one exists — a full screen name
+  // under a 60 px icon pushed the ••• button off a 360 px phone.
+  const tShort = await getTranslations('navShort');
   const primary: NavItem[] = [];
   for (const item of primaryItems(viewer)) {
     primary.push({
       href: item.href,
-      label: await label(item.namespace, item.labelKey),
+      label: item.shortKey
+        ? tShort(item.shortKey as 'home')
+        : await label(item.namespace, item.labelKey),
       icon: item.icon,
     });
   }
@@ -56,10 +64,12 @@ export default async function ProtectedLayout({ children }: { children: React.Re
       <header className="sticky top-0 z-30 border-b border-line bg-surface-raised/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-1 px-3">
           <Link href="/" className="flex items-center gap-2 font-extrabold tracking-tight">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm text-white">
-              GS
-            </span>
-            <span className="hidden text-ink-900 sm:inline">GSR LOGISTICS</span>
+            {/* The real mark, keyed to transparency so it works on both
+                themes. A plain <img>: a 32 px logo gains nothing from the
+                image optimiser and would cost an extra request through it. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-mark.png" alt="GSR GROUP" width={32} height={32} className="h-8 w-8" />
+            <span className="hidden text-ink-900 sm:inline">GSR GROUP</span>
           </Link>
           <div className="min-w-0 flex-1" />
           <Link
@@ -69,6 +79,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           >
             <Icon name="search" />
           </Link>
+          <ThemeToggle current={theme} />
           <LocaleSwitcher current={actor.locale} />
           <Link href="/profile" aria-label={t('profile')} className="btn-ghost btn-icon text-ink-700">
             <Icon name="user" />

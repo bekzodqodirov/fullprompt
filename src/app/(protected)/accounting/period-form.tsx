@@ -16,11 +16,11 @@ export async function PeriodForm({
   return (
     <form method="get" className="flex flex-wrap items-end gap-2">
       <label className="text-sm">
-        <span className="block text-xs text-gray-500">{t('from')}</span>
+        <span className="block text-xs text-ink-500">{t('from')}</span>
         <input type="date" name="from" defaultValue={from} className="input !w-40" />
       </label>
       <label className="text-sm">
-        <span className="block text-xs text-gray-500">{t('to')}</span>
+        <span className="block text-xs text-ink-500">{t('to')}</span>
         <input type="date" name="to" defaultValue={to} className="input !w-40" />
       </label>
       {extra}

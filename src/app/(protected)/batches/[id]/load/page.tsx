@@ -20,7 +20,7 @@ export default async function LoadPage({ params }: { params: Promise<{ id: strin
     <div className="mx-auto max-w-lg">
       <div className="mb-2 flex items-baseline gap-2">
         <h1 className="text-xl font-bold">📱 {t('title')}</h1>
-        <Link href={`/batches/${id}`} className="font-mono font-extrabold text-blue-800">
+        <Link href={`/batches/${id}`} className="font-mono font-extrabold text-brand-700">
           {batch.code}
         </Link>
       </div>

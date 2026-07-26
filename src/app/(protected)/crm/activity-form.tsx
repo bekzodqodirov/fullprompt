@@ -31,7 +31,7 @@ export function ActivityForm({
 
   return (
     <form action={formAction} className="card space-y-2">
-      <h2 className="text-sm font-bold uppercase text-gray-500">📝 {t('addActivity')}</h2>
+      <h2 className="text-sm font-bold uppercase text-ink-500">📝 {t('addActivity')}</h2>
       <input type="hidden" name="entityType" value={entityType} />
       <input type="hidden" name="entityId" value={entityId} />
       <div className="flex flex-wrap gap-2">
@@ -61,7 +61,7 @@ export function ActivityForm({
       />
       <div className="flex flex-wrap gap-2">
         <label className="text-sm">
-          <span className="block text-xs text-gray-500">{t('nextAction')}</span>
+          <span className="block text-xs text-ink-500">{t('nextAction')}</span>
           <input type="date" name="nextActionAt" className="input !w-40" />
         </label>
         <input
@@ -79,8 +79,8 @@ export function ActivityForm({
       >
         {pending ? tc('loading') : tc('save')}
       </button>
-      {state.ok && <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>}
-      {state.error && <p className="text-sm font-semibold text-red-700">{tc('error')}</p>}
+      {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
+      {state.error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
     </form>
   );
 }

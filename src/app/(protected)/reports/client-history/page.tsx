@@ -70,7 +70,7 @@ export default async function ClientHistoryPage({
         </button>
       </form>
       {raw && !client && suggestions.length === 0 && (
-        <p className="text-sm font-semibold text-red-700">{t('clientNotFound')}</p>
+        <p className="text-sm font-semibold text-bad">{t('clientNotFound')}</p>
       )}
       {suggestions.length > 0 && (
         <div className="card space-y-1 !p-2">
@@ -78,9 +78,9 @@ export default async function ClientHistoryPage({
             <Link
               key={s.id}
               href={`?code=${encodeURIComponent(s.clientCode)}`}
-              className="flex min-h-10 items-center gap-2 rounded-lg px-2 hover:bg-gray-50"
+              className="flex min-h-10 items-center gap-2 rounded-lg px-2 hover:bg-surface-sunken"
             >
-              <span className="font-mono font-extrabold text-blue-800">{s.clientCode}</span>
+              <span className="font-mono font-extrabold text-brand-700">{s.clientCode}</span>
               <span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
             </Link>
           ))}
@@ -90,13 +90,13 @@ export default async function ClientHistoryPage({
       {client && (
         <div className="card !p-0">
           <p className="p-2 text-lg">
-            <span className="font-mono font-extrabold text-blue-800">{client.clientCode}</span>{' '}
+            <span className="font-mono font-extrabold text-brand-700">{client.clientCode}</span>{' '}
             {client.name}
           </p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-sm">
               <thead>
-                <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+                <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                   <th className="p-2">{t('lot')}</th>
                   <th className="p-2">{t('product')}</th>
                   <th className="p-2">{t('date')}</th>
@@ -110,11 +110,11 @@ export default async function ClientHistoryPage({
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.lotId} className="border-b border-gray-100 last:border-0">
-                    <td className="p-2 font-mono font-extrabold text-blue-800">{row.letter}</td>
+                  <tr key={row.lotId} className="border-b border-line last:border-0">
+                    <td className="p-2 font-mono font-extrabold text-brand-700">{row.letter}</td>
                     <td className="max-w-52 truncate p-2">
                       {row.productNameZh}
-                      {row.productNameRu && <span className="text-gray-500"> ({row.productNameRu})</span>}
+                      {row.productNameRu && <span className="text-ink-500"> ({row.productNameRu})</span>}
                     </td>
                     <td className="p-2 text-xs">
                       {format.dateTime(row.receivedAt, { dateStyle: 'short' })}{' '}
@@ -131,7 +131,7 @@ export default async function ClientHistoryPage({
               </tbody>
             </table>
           </div>
-          {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noData')}</p>}
+          {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noData')}</p>}
         </div>
       )}
     </div>

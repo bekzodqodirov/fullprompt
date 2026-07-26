@@ -37,7 +37,7 @@ export function BatchCodeForm({
   if (!editable || !open) {
     return (
       <>
-        <h1 className="font-mono text-xl font-extrabold text-blue-800">{state.code ?? code}</h1>
+        <h1 className="font-mono text-xl font-extrabold text-brand-700">{state.code ?? code}</h1>
         {editable && (
           <button
             type="button"
@@ -49,7 +49,7 @@ export function BatchCodeForm({
             ✏️
           </button>
         )}
-        {state.ok && <span className="text-xs font-semibold text-green-700">✅ {tc('saved')}</span>}
+        {state.ok && <span className="text-xs font-semibold text-good">✅ {tc('saved')}</span>}
       </>
     );
   }
@@ -76,7 +76,7 @@ export function BatchCodeForm({
         {tc('cancel')}
       </button>
       {state.error && (
-        <p className="w-full text-xs font-semibold text-red-700">
+        <p className="w-full text-xs font-semibold text-bad">
           {state.error === 'code_taken' ? t('codeTaken') : tc('error')}
         </p>
       )}

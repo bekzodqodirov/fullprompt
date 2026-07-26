@@ -209,7 +209,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     setConfirmReason('');
   }
 
-  if (!snapshot) return <p className="p-4 text-gray-500">{tc('loading')}</p>;
+  if (!snapshot) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
 
   const total = snapshot.boxes.length;
   // Crated boxes group under their CRATE (owner's request: the operator must
@@ -259,12 +259,12 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   return (
     <div
       className={`space-y-3 pb-6 transition-colors ${
-        flash === 'ok' ? 'bg-green-100' : flash ? 'bg-red-100' : ''
+        flash === 'ok' ? 'bg-good/15' : flash ? 'bg-bad/15' : ''
       }`}
     >
       <div
         className={`rounded-lg p-2 text-center text-sm font-semibold ${
-          online ? (pending > 0 ? 'bg-orange-100 text-orange-800' : 'bg-green-50 text-green-800') : 'bg-red-100 text-red-800'
+          online ? (pending > 0 ? 'bg-orange-100 text-orange-800' : 'bg-good/10 text-good') : 'bg-bad/15 text-bad'
         }`}
         data-testid="sync-banner"
       >
@@ -275,15 +275,15 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
 
       <p className="text-center font-mono text-4xl font-extrabold" data-testid="load-counter">
         {total === 0 ? loaded.size : doneCount}
-        {total > 0 && <span className="text-gray-400">/{total}</span>} 📦
+        {total > 0 && <span className="text-ink-400">/{total}</span>} 📦
       </p>
 
       <div className="card space-y-1 !p-3">
         {[...byLot.values()].map((lot) => (
           <div key={lot.label} className="flex items-center gap-2 text-sm">
-            <span className="font-mono font-extrabold text-blue-800">{lot.label}</span>
-            <span className="min-w-0 flex-1 truncate text-gray-600">{lot.product}</span>
-            <span className={`font-semibold ${lot.done === lot.total ? 'text-green-700' : ''}`}>
+            <span className="font-mono font-extrabold text-brand-700">{lot.label}</span>
+            <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
+            <span className={`font-semibold ${lot.done === lot.total ? 'text-good' : ''}`}>
               {lot.done}/{lot.total}
             </span>
           </div>
@@ -303,7 +303,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       {/* Not-on-plan red confirm */}
       {confirmCode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-700/95 p-4">
-          <div className="w-full max-w-sm space-y-3 rounded-2xl bg-white p-4">
+          <div className="w-full max-w-sm space-y-3 rounded-2xl bg-surface-raised p-4">
             <p className="text-center text-3xl">🚨</p>
             <p className="text-center font-bold">{t('notOnPlan')}</p>
             <p className="text-center font-mono text-lg font-extrabold">{confirmCode}</p>
@@ -341,7 +341,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       {/* Sticker-lost: unscanned list + manual code entry */}
       {manualOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setManualOpen(false)}>
-          <div className="max-h-[80vh] w-full max-w-md space-y-2 overflow-y-auto rounded-t-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[80vh] w-full max-w-md space-y-2 overflow-y-auto rounded-t-2xl bg-surface-raised p-4" onClick={(e) => e.stopPropagation()}>
             <p className="font-bold">🏷 {t('stickerLostHint')}</p>
             <div className="flex gap-2">
               <input
@@ -368,7 +368,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
                 ✓
               </button>
             </div>
-            <p className="text-xs font-semibold text-gray-500">
+            <p className="text-xs font-semibold text-ink-500">
               {quickBatch ? t('stockList') : t('unscannedList')}
             </p>
             {basePick.length > 8 && (
@@ -384,7 +384,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
               <button
                 key={box.shortCode}
                 type="button"
-                className="flex w-full items-center gap-2 rounded-lg border border-gray-200 p-2 text-left text-sm hover:bg-gray-50"
+                className="flex w-full items-center gap-2 rounded-lg border border-line p-2 text-left text-sm hover:bg-surface-sunken"
                 onClick={() => {
                   onCode(box.shortCode, 'manual', 'sticker_lost');
                   // Quick batch: stay open — the operator picks several boxes
@@ -393,15 +393,15 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
                 }}
               >
                 <span className="font-mono font-bold">{box.shortCode}</span>
-                <span className="font-mono font-extrabold text-blue-800">
+                <span className="font-mono font-extrabold text-brand-700">
                   {box.clientCode ?? box.marking ?? '?'}-{box.letter}
                 </span>
                 {box.crateCode && (
-                  <span className="whitespace-nowrap rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">
+                  <span className="whitespace-nowrap rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn">
                     🧰 {box.crateCode}
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate text-gray-500">{box.productNameZh}</span>
+                <span className="min-w-0 flex-1 truncate text-ink-500">{box.productNameZh}</span>
               </button>
             ))}
           </div>

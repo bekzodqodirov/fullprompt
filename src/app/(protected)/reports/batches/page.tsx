@@ -46,7 +46,7 @@ export default async function BatchRegisterReportPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <SortTh label={t('batch')} field="code" sort={sort} dir={dir} />
                 <SortTh label={t('status')} field="status" sort={sort} dir={dir} />
                 <SortTh label={t('departed')} field="departedAt" sort={sort} dir={dir} />
@@ -61,26 +61,26 @@ export default async function BatchRegisterReportPage({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                <tr key={row.id} className="border-b border-line last:border-0 hover:bg-surface-sunken">
                   <td className="p-2">
-                    <Link href={`/batches/${row.id}`} className="font-mono font-extrabold text-blue-800">
+                    <Link href={`/batches/${row.id}`} className="font-mono font-extrabold text-brand-700">
                       {row.code}
                     </Link>{' '}
-                    <span className="font-mono text-xs text-gray-500">{row.route}</span>
+                    <span className="font-mono text-xs text-ink-500">{row.route}</span>
                   </td>
                   <td className="p-2">
-                    <span className="rounded bg-gray-100 px-1.5 text-xs font-semibold">
+                    <span className="rounded bg-surface-sunken px-1.5 text-xs font-semibold">
                       {tb(`statuses.${row.status}`)}
                     </span>
                   </td>
-                  <td className="p-2 text-xs text-gray-600">
+                  <td className="p-2 text-xs text-ink-700">
                     {row.departedAt ? format.dateTime(row.departedAt, { dateStyle: 'short' }) : '—'}
                   </td>
                   <td className="p-2 text-right font-semibold">{row.loaded}</td>
-                  <td className={`p-2 text-right ${row.short > 0 ? 'font-bold text-orange-700' : 'text-gray-400'}`}>
+                  <td className={`p-2 text-right ${row.short > 0 ? 'font-bold text-warn' : 'text-ink-400'}`}>
                     {row.short}
                   </td>
-                  <td className={`p-2 text-right ${row.added > 0 ? 'font-bold text-red-700' : 'text-gray-400'}`}>
+                  <td className={`p-2 text-right ${row.added > 0 ? 'font-bold text-bad' : 'text-ink-400'}`}>
                     {row.added}
                   </td>
                   <td className="p-2 text-right">{row.kg}</td>
@@ -100,7 +100,7 @@ export default async function BatchRegisterReportPage({
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noData')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noData')}</p>}
       </div>
     </div>
   );

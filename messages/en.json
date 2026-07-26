@@ -903,5 +903,19 @@
     "dormantNote": "A client who used to ship and stopped. Someone who never shipped is not listed here.",
     "personNote": "The codes are not merged: each keeps its letters, cargo and cabinet. The person only ties them together for sales.",
     "dragHint": "Hold a card and drag it to another stage"
+  },
+  "navShort": {
+    "home": "Home",
+    "receive": "Receive",
+    "batches": "Loading",
+    "plans": "Plans",
+    "issue": "Issue",
+    "stock": "Stock",
+    "crm": "CRM",
+    "funnel": "Funnel",
+    "finance": "Finance",
+    "accounting": "Books",
+    "reports": "Reports",
+    "search": "Search"
   }
 }

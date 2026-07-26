@@ -42,7 +42,7 @@ export default async function AccountsPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <th className="p-2">{t('account')}</th>
                 <th className="p-2 text-right">{t('opening')}</th>
                 <th className="p-2 text-right">{t('inflow')}</th>
@@ -52,18 +52,18 @@ export default async function AccountsPage() {
             </thead>
             <tbody>
               {balances.map((row) => (
-                <tr key={row.id} className={`border-b border-gray-100 ${row.active ? '' : 'opacity-50'}`}>
+                <tr key={row.id} className={`border-b border-line ${row.active ? '' : 'opacity-50'}`}>
                   <td className="p-2">
                     <span className="font-semibold">{row.name}</span>
-                    <span className="ml-2 text-xs text-gray-500">
+                    <span className="ml-2 text-xs text-ink-500">
                       {row.currency} · {t(row.kind)}
                     </span>
                   </td>
-                  <td className="p-2 text-right font-mono text-gray-600">{money(row.opening)}</td>
-                  <td className="p-2 text-right font-mono text-green-700">
+                  <td className="p-2 text-right font-mono text-ink-700">{money(row.opening)}</td>
+                  <td className="p-2 text-right font-mono text-good">
                     +{money(Math.round((row.paidIn + row.transferredIn) * 100) / 100)}
                   </td>
-                  <td className="p-2 text-right font-mono text-red-700">
+                  <td className="p-2 text-right font-mono text-bad">
                     −{money(Math.round((row.spent + row.transferredOut) * 100) / 100)}
                   </td>
                   <td className="p-2 text-right font-mono font-bold">
@@ -73,7 +73,7 @@ export default async function AccountsPage() {
               ))}
               {balances.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="p-3 text-center text-gray-500">
+                  <td colSpan={5} className="p-3 text-center text-ink-500">
                     {tc('empty')}
                   </td>
                 </tr>
@@ -114,17 +114,17 @@ export default async function AccountsPage() {
             today={today}
           />
         ) : (
-          <p className="text-sm text-gray-500">{t('needTwoAccounts')}</p>
+          <p className="text-sm text-ink-500">{t('needTwoAccounts')}</p>
         )}
         <div className="space-y-1">
           {transfers.map(({ transfer, fromName, fromCurrency, toName, toCurrency }) => (
             <div
               key={transfer.id}
-              className={`flex flex-wrap items-baseline gap-2 border-b border-gray-100 py-1.5 text-sm last:border-0 ${
+              className={`flex flex-wrap items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0 ${
                 transfer.voidedAt ? 'opacity-50 line-through' : ''
               }`}
             >
-              <span className="font-mono text-xs text-gray-500">{transfer.transferDate}</span>
+              <span className="font-mono text-xs text-ink-500">{transfer.transferDate}</span>
               <span>
                 {fromName} → {toName}
               </span>
@@ -135,7 +135,7 @@ export default async function AccountsPage() {
               {!transfer.voidedAt && <VoidTransferButton id={transfer.id} />}
             </div>
           ))}
-          {transfers.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
+          {transfers.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
         </div>
       </Panel>
     </div>

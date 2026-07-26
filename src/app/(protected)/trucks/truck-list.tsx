@@ -18,11 +18,11 @@ export function TruckList({ trucks }: { trucks: (TruckValues & { active: boolean
         <div key={truck.id} className={`card space-y-2 !p-3 ${truck.active ? '' : 'opacity-60'}`}>
           <div className="flex items-baseline gap-2">
             <span className="font-bold">🚛 {truck.name}</span>
-            <span className="font-mono text-sm text-gray-600">
+            <span className="font-mono text-sm text-ink-700">
               {truck.maxKg} kg · {truck.maxM3} m³
             </span>
             {!truck.active && (
-              <span className="rounded bg-gray-200 px-1.5 text-xs">{t('truckHidden')}</span>
+              <span className="rounded bg-surface-sunken px-1.5 text-xs">{t('truckHidden')}</span>
             )}
             <span className="ml-auto flex gap-2">
               <button

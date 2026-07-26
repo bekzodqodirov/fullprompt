@@ -87,9 +87,9 @@ export function TransferForm({ accounts, today }: { accounts: Option[]; today: s
       >
         {pending ? tc('loading') : `↔️ ${t('transfer')}`}
       </button>
-      {state.ok && <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>}
+      {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
       {state.error && (
-        <p className="text-sm font-semibold text-red-700">
+        <p className="text-sm font-semibold text-bad">
           {state.error === 'fx_missing'
             ? t('fxMissing')
             : state.error === 'same_account'
@@ -106,7 +106,7 @@ export function VoidTransferButton({ id }: { id: string }) {
   return (
     <button
       type="button"
-      className="text-xs font-semibold text-red-700 underline"
+      className="text-xs font-semibold text-bad underline"
       onClick={() => {
         const reason = window.prompt(t('voidReason'));
         if (!reason || reason.trim().length < 2) return;

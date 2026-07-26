@@ -75,7 +75,7 @@ export function LeadForm({
       </div>
       <div className="flex flex-wrap gap-2">
         <label className="min-w-36 flex-1 text-sm">
-          <span className="block text-xs text-gray-500">{t('source')}</span>
+          <span className="block text-xs text-ink-500">{t('source')}</span>
           <select name="sourceId" defaultValue={initial?.sourceId ?? ''} className="input">
             <option value="">—</option>
             {sources.map((option) => (
@@ -86,7 +86,7 @@ export function LeadForm({
           </select>
         </label>
         <label className="min-w-36 flex-1 text-sm">
-          <span className="block text-xs text-gray-500">{t('stage')}</span>
+          <span className="block text-xs text-ink-500">{t('stage')}</span>
           <select name="stageId" defaultValue={initial?.stageId ?? ''} className="input">
             {stages.map((option) => (
               <option key={option.id} value={option.id}>
@@ -96,7 +96,7 @@ export function LeadForm({
           </select>
         </label>
         <label className="min-w-36 flex-1 text-sm">
-          <span className="block text-xs text-gray-500">{t('owner')}</span>
+          <span className="block text-xs text-ink-500">{t('owner')}</span>
           <select name="ownerId" defaultValue={initial?.ownerId ?? ''} className="input">
             <option value="">—</option>
             {owners.map((option) => (
@@ -119,7 +119,7 @@ export function LeadForm({
 
       <div className="flex flex-wrap gap-2">
         <label className="text-sm">
-          <span className="block text-xs text-gray-500">{t('nextAction')}</span>
+          <span className="block text-xs text-ink-500">{t('nextAction')}</span>
           <input
             type="date"
             name="nextActionAt"
@@ -141,9 +141,9 @@ export function LeadForm({
       <button type="submit" data-testid="save-lead" className="btn-primary w-full" disabled={pending}>
         {pending ? tc('loading') : tc('save')}
       </button>
-      {state.ok && <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>}
+      {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
       {state.error && (
-        <p className="text-sm font-semibold text-red-700">
+        <p className="text-sm font-semibold text-bad">
           {state.error === 'bad_number'
             ? t('badNumber')
             : state.error === 'bad_date'

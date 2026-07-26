@@ -30,9 +30,9 @@ export function FxForm({ currencies, today }: { currencies: string[]; today: str
         />
         <input name="effectiveDate" aria-label={t('date')} type="date" className="input flex-1" defaultValue={today} required />
       </div>
-      <p className="text-xs text-gray-500">{t('rateHint')}</p>
+      <p className="text-xs text-ink-500">{t('rateHint')}</p>
       {state.error && (
-        <p role="alert" className="text-sm font-semibold text-red-700">
+        <p role="alert" className="text-sm font-semibold text-bad">
           {tc('error')}
         </p>
       )}

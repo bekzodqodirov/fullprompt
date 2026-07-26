@@ -31,7 +31,7 @@ export function SortTh({
   query.set('dir', nextDir);
   return (
     <th className={className}>
-      <Link href={`?${query.toString()}`} className={active ? 'text-blue-800' : ''}>
+      <Link href={`?${query.toString()}`} className={active ? 'text-brand-700' : ''}>
         {label}
         {active && (dir === 'desc' ? ' ↓' : ' ↑')}
       </Link>

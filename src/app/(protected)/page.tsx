@@ -66,7 +66,7 @@ export default async function HomePage() {
             href={first.href}
             className="flex items-center gap-3 rounded-2xl bg-brand-600 p-4 text-white shadow-card transition-transform duration-100 active:scale-[0.99]"
           >
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/15">
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-surface-raised/15">
               <Icon name={first.icon} className="h-6 w-6" strokeWidth={2} />
             </span>
             <span className="text-lg font-bold">{first.label}</span>

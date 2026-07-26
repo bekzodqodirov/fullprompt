@@ -26,9 +26,9 @@ export function CustomFieldInputs({
 
         return (
           <label key={field.id} className="block text-sm">
-            <span className="mb-0.5 block text-xs font-semibold text-gray-500">
+            <span className="mb-0.5 block text-xs font-semibold text-ink-500">
               {field.label}
-              {field.required && <span className="text-red-600"> *</span>}
+              {field.required && <span className="text-bad"> *</span>}
             </span>
 
             {field.type === 'textarea' ? (

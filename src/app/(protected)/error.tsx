@@ -20,8 +20,8 @@ export default function ProtectedError({
     <div className="mx-auto max-w-md space-y-4 p-6 text-center">
       <p className="text-4xl">😵</p>
       <h1 className="text-xl font-bold">{t('errorTitle')}</h1>
-      <p className="text-sm text-gray-600">{t('errorBody')}</p>
-      {error.digest && <p className="font-mono text-xs text-gray-400">#{error.digest}</p>}
+      <p className="text-sm text-ink-700">{t('errorBody')}</p>
+      {error.digest && <p className="font-mono text-xs text-ink-400">#{error.digest}</p>}
       <div className="flex justify-center gap-2">
         <button type="button" className="btn-primary px-6" onClick={() => reset()}>
           🔄 {t('retry')}

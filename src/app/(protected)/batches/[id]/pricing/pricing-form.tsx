@@ -46,7 +46,7 @@ export function PricingForm({
         {pending ? '…' : state.ok ? '✅' : `🧾 ${t('setPrice')}`}
       </button>
       {state.error && (
-        <p role="alert" className="w-full text-sm font-semibold text-red-700">
+        <p role="alert" className="w-full text-sm font-semibold text-bad">
           {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
         </p>
       )}

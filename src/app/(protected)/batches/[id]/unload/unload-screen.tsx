@@ -194,7 +194,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
     void accept([], { code, method, manualReason });
   }
 
-  if (!snapshot) return <p className="p-4 text-gray-500">{tc('loading')}</p>;
+  if (!snapshot) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
 
   const total = snapshot.boxes.length;
   const doneCount = snapshot.boxes.filter((b) => done.has(b.shortCode)).length;
@@ -214,10 +214,10 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
   }
 
   return (
-    <div className={`space-y-3 pb-6 transition-colors ${flash === 'ok' ? 'bg-green-100' : flash ? 'bg-red-100' : ''}`}>
+    <div className={`space-y-3 pb-6 transition-colors ${flash === 'ok' ? 'bg-good/15' : flash ? 'bg-bad/15' : ''}`}>
       <div
         className={`rounded-lg p-2 text-center text-sm font-semibold ${
-          online ? (pending > 0 ? 'bg-orange-100 text-orange-800' : 'bg-green-50 text-green-800') : 'bg-red-100 text-red-800'
+          online ? (pending > 0 ? 'bg-orange-100 text-orange-800' : 'bg-good/10 text-good') : 'bg-bad/15 text-bad'
         }`}
         data-testid="sync-banner"
       >
@@ -228,16 +228,16 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
       <p className="text-center font-mono text-4xl font-extrabold" data-testid="unload-counter">
         {doneCount}
-        <span className="text-gray-400">/{total}</span> 📦
+        <span className="text-ink-400">/{total}</span> 📦
         {extra.length > 0 && <span className="ml-2 text-lg text-orange-600">+{extra.length}❗</span>}
       </p>
 
       <div className="card space-y-1 !p-3">
         {[...byLot.values()].map((lot) => (
           <div key={lot.label} className="flex items-center gap-2 text-sm">
-            <span className="font-mono font-extrabold text-blue-800">{lot.label}</span>
-            <span className="min-w-0 flex-1 truncate text-gray-600">{lot.product}</span>
-            <span className={`font-semibold ${lot.done === lot.total ? 'text-green-700' : ''}`}>
+            <span className="font-mono font-extrabold text-brand-700">{lot.label}</span>
+            <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
+            <span className={`font-semibold ${lot.done === lot.total ? 'text-good' : ''}`}>
               {lot.done}/{lot.total}
             </span>
           </div>
@@ -254,7 +254,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
             {toast.text}
           </button>
           {toast.intake && (
-            <Link href="/receive" className="block rounded bg-white/20 p-2 text-center">
+            <Link href="/receive" className="block rounded bg-surface-raised/20 p-2 text-center">
               📥 {t('openIntake')}
             </Link>
           )}
@@ -263,7 +263,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
       {manualOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setManualOpen(false)}>
-          <div className="max-h-[80vh] w-full max-w-md space-y-2 overflow-y-auto rounded-t-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[80vh] w-full max-w-md space-y-2 overflow-y-auto rounded-t-2xl bg-surface-raised p-4" onClick={(e) => e.stopPropagation()}>
             <p className="font-bold">🏷 {t('stickerLostHint')}</p>
             <div className="flex gap-2">
               <input
@@ -290,22 +290,22 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
                 ✓
               </button>
             </div>
-            <p className="text-xs font-semibold text-gray-500">{t('unscannedList')}</p>
+            <p className="text-xs font-semibold text-ink-500">{t('unscannedList')}</p>
             {unscanned.slice(0, 80).map((box) => (
               <button
                 key={box.shortCode}
                 type="button"
-                className="flex w-full items-center gap-2 rounded-lg border border-gray-200 p-2 text-left text-sm hover:bg-gray-50"
+                className="flex w-full items-center gap-2 rounded-lg border border-line p-2 text-left text-sm hover:bg-surface-sunken"
                 onClick={() => {
                   onCode(box.shortCode, 'manual', 'sticker_lost');
                   setManualOpen(false);
                 }}
               >
                 <span className="font-mono font-bold">{box.shortCode}</span>
-                <span className="font-mono font-extrabold text-blue-800">
+                <span className="font-mono font-extrabold text-brand-700">
                   {box.clientCode ?? box.marking ?? '?'}-{box.letter}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-gray-500">{box.productNameZh}</span>
+                <span className="min-w-0 flex-1 truncate text-ink-500">{box.productNameZh}</span>
               </button>
             ))}
           </div>

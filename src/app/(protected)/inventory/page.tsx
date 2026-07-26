@@ -39,7 +39,7 @@ export default async function InventoryPage({
       <PageHeader icon="clipboard" title={t('title')} />
       {selected ? (
         <>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-ink-700">
             <span className="font-mono font-extrabold">{selected.code}</span> · {t('hint')}
           </p>
           <InventoryScreen
@@ -54,13 +54,13 @@ export default async function InventoryPage({
             <Link
               key={wh.id}
               href={`/inventory?warehouseId=${wh.id}`}
-              className="card flex min-h-24 flex-col items-center justify-center text-center hover:bg-gray-100"
+              className="card flex min-h-24 flex-col items-center justify-center text-center hover:bg-surface-sunken"
             >
               <span className="font-mono text-xl font-extrabold">{wh.code}</span>
-              <span className="text-sm text-gray-600">{wh.name}</span>
+              <span className="text-sm text-ink-700">{wh.name}</span>
             </Link>
           ))}
-          {whs.length === 0 && <p className="text-sm text-gray-500">—</p>}
+          {whs.length === 0 && <p className="text-sm text-ink-500">—</p>}
         </div>
       )}
     </div>

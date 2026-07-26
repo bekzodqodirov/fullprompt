@@ -40,15 +40,15 @@ export function FinanceClientSearch() {
         autoComplete="off"
       />
       {hits.length > 0 && (
-        <ul className="absolute z-20 mt-1 w-full divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white shadow-lg">
+        <ul className="absolute z-20 mt-1 w-full divide-y divide-line rounded-lg border border-line bg-surface-raised shadow-lg">
           {hits.map((hit) => (
             <li key={hit.id}>
               <button
                 type="button"
-                className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-gray-50"
+                className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-surface-sunken"
                 onClick={() => router.push(`/finance/${hit.id}`)}
               >
-                <span className="font-mono font-extrabold text-blue-800">{hit.clientCode}</span>
+                <span className="font-mono font-extrabold text-brand-700">{hit.clientCode}</span>
                 <span className="truncate">{hit.name}</span>
               </button>
             </li>

@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## Yangi dizayn — 2-qism: GSR brendi, qorong'i rejim, rolga qarab menu — 2026-07-26
+
+- **Logotip va rang** — endi haqiqiy GSR GROUP belgisi ilova sarlavhasida va kirish ekranida. Butun ilovaning rangi logotipdan olindi (#B80000). PWA ikonkalari ham yangilandi — telefon ekraniga chiqarsangiz o'z belgingiz turadi.
+- **Qorong'i rejim** — yuqoridagi quyosh/oy tugmasi. Tanlovingiz eslab qolinadi (bir yil). Hech narsa tanlamasangiz, telefon sozlamasiga qarab o'zi tanlaydi. Sahifa ochilganda oq chaqnash bo'lmaydi — tanlov serverda o'qiladi.
+- **Har kimga o'z menusi** — pastdagi 4 ta tugma endi lavozimga qarab:
+  - skladchi: Bosh · Qabul · Yuklash · Berish
+  - sotuvchi: Bosh · CRM · Voronka · Moliya
+  - buxgalter: Bosh · Hisob · Moliya · Hisobot
+  - siz: Bosh · Hisob · CRM · Sklad
+  Qolgani ••• ortida. Buni test tekshiradi.
+- **Ranglar tizimga o'tkazildi** — 112 ta faylda qattiq yozilgan ranglar (oq fon, kulrang matn, ko'k tugma) tokenlarga almashtirildi. Shuning uchun qorong'i rejim bitta joydan boshqariladi.
+
+225 test + 16 e2e yashil.
+
 ## Yangi dizayn — 1-qism: poydevor va navigatsiya — 2026-07-25
 
 Siz aytgan «hamma narsa har qayoqda yotgandek» — bu bo'yoq muammosi emas edi, navigatsiya muammosi. Tuzatildi.

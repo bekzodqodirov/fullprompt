@@ -39,8 +39,8 @@ export function AccountForm({
   const kinds = ['cash', 'bank', 'card'] as const;
 
   return (
-    <form action={formAction} className={account ? 'space-y-2 border-t border-gray-100 pt-2' : 'card space-y-2'}>
-      {!account && <h2 className="text-sm font-bold uppercase text-gray-500">🏦 {t('accounts')}</h2>}
+    <form action={formAction} className={account ? 'space-y-2 border-t border-line pt-2' : 'card space-y-2'}>
+      {!account && <h2 className="text-sm font-bold uppercase text-ink-500">🏦 {t('accounts')}</h2>}
       {account && <input type="hidden" name="id" value={account.id} />}
       <div className="flex flex-wrap gap-2">
         <input
@@ -77,7 +77,7 @@ export function AccountForm({
       </div>
       <div className="flex flex-wrap gap-2">
         <label className="text-sm">
-          <span className="block text-xs text-gray-500">{t('opening')}</span>
+          <span className="block text-xs text-ink-500">{t('opening')}</span>
           <input
             name="openingBalance"
             inputMode="decimal"
@@ -87,7 +87,7 @@ export function AccountForm({
           />
         </label>
         <label className="text-sm">
-          <span className="block text-xs text-gray-500">{t('openingDate')}</span>
+          <span className="block text-xs text-ink-500">{t('openingDate')}</span>
           <input
             type="date"
             name="openingDate"
@@ -97,7 +97,7 @@ export function AccountForm({
           />
         </label>
         <label className="text-sm">
-          <span className="block text-xs text-gray-500">#</span>
+          <span className="block text-xs text-ink-500">#</span>
           <input
             name="sortOrder"
             type="number"
@@ -127,8 +127,8 @@ export function AccountForm({
       >
         {pending ? tc('loading') : tc('save')}
       </button>
-      {state.ok && <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>}
-      {state.error && <p className="text-sm font-semibold text-red-700">{tc('error')}</p>}
+      {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
+      {state.error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
     </form>
   );
 }

@@ -61,12 +61,12 @@ export default async function NotificationDeliveryPage({
 
   const badge = (status: string) =>
     status === 'sent'
-      ? 'bg-green-100 text-green-800'
+      ? 'bg-good/15 text-good'
       : status === 'pending'
         ? 'bg-yellow-100 text-yellow-800'
         : status === 'failed'
-          ? 'bg-red-100 text-red-800'
-          : 'bg-gray-100 text-gray-600';
+          ? 'bg-bad/15 text-bad'
+          : 'bg-surface-sunken text-ink-700';
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -75,20 +75,20 @@ export default async function NotificationDeliveryPage({
         <span className="flex gap-1 text-sm">
           <Link
             href="?view=problems"
-            className={`rounded px-2 py-0.5 font-semibold ${view === 'problems' ? 'bg-blue-700 text-white' : 'bg-gray-100'}`}
+            className={`rounded px-2 py-0.5 font-semibold ${view === 'problems' ? 'bg-brand-600 text-white' : 'bg-surface-sunken'}`}
           >
             {t('problems')}
           </Link>
           <Link
             href="?view=all"
-            className={`rounded px-2 py-0.5 font-semibold ${view === 'all' ? 'bg-blue-700 text-white' : 'bg-gray-100'}`}
+            className={`rounded px-2 py-0.5 font-semibold ${view === 'all' ? 'bg-brand-600 text-white' : 'bg-surface-sunken'}`}
           >
             {t('all')}
           </Link>
         </span>
       </div>
 
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-ink-700">
         {t('week')}: ✅ {count('sent')} · ⏳ {count('pending')} · ❌ {count('failed')} · 🔕{' '}
         {count('muted')}
       </p>
@@ -97,7 +97,7 @@ export default async function NotificationDeliveryPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <th className="p-2">{t('when')}</th>
                 <th className="p-2">{t('user')}</th>
                 <th className="p-2">{t('type')}</th>
@@ -107,7 +107,7 @@ export default async function NotificationDeliveryPage({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-b border-gray-100 last:border-0">
+                <tr key={row.id} className="border-b border-line last:border-0">
                   <td className="p-2 text-xs">
                     {format.dateTime(row.createdAt, { dateStyle: 'short', timeStyle: 'short' })}
                   </td>
@@ -118,7 +118,7 @@ export default async function NotificationDeliveryPage({
                       {t(`statuses.${row.status}`)}
                     </span>
                   </td>
-                  <td className="max-w-48 truncate p-2 text-xs text-gray-600" title={row.error ?? ''}>
+                  <td className="max-w-48 truncate p-2 text-xs text-ink-700" title={row.error ?? ''}>
                     {row.error ?? '—'}
                   </td>
                 </tr>
@@ -126,9 +126,9 @@ export default async function NotificationDeliveryPage({
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('empty')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('empty')}</p>}
       </div>
-      <p className="text-xs text-gray-400">{t('note')}</p>
+      <p className="text-xs text-ink-400">{t('note')}</p>
     </div>
   );
 }

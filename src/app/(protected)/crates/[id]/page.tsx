@@ -75,25 +75,25 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
       <BackLink href="/crates" label={t('title')} />
       <div className="card space-y-2">
         <div className="flex flex-wrap items-baseline gap-2">
-          <h1 className="font-mono text-xl font-extrabold text-blue-800">{crate.code}</h1>
-          <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold">
+          <h1 className="font-mono text-xl font-extrabold text-brand-700">{crate.code}</h1>
+          <span className="rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
             {crate.kind === 'karkas' ? t('karkas') : t('yashik')}
           </span>
           {!active && (
-            <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
+            <span className="rounded bg-bad/15 px-2 py-0.5 text-xs font-semibold text-bad">
               {t('dissolved')}
             </span>
           )}
-          <span className="ml-auto text-sm text-gray-500">
+          <span className="ml-auto text-sm text-ink-500">
             {whCode} · {format.dateTime(crate.createdAt, { dateStyle: 'short' })}
           </span>
         </div>
         <p>
           <span className="font-mono font-extrabold">{clientCode}</span>{' '}
-          <span className="text-gray-600">{clientName}</span>
+          <span className="text-ink-700">{clientName}</span>
           <span className="ml-2 font-semibold">{members.length} 📦</span>
         </p>
-        {crate.note && <p className="text-sm text-gray-600">📝 {crate.note}</p>}
+        {crate.note && <p className="text-sm text-ink-700">📝 {crate.note}</p>}
         {costs.map(({ entry, typeName }) => (
           <p key={entry.id} className="text-sm">
             💰 {typeName}:{' '}
@@ -127,20 +127,20 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
       <div className="card space-y-2">
         <h2 className="text-lg font-bold">{t('contents')}</h2>
         {[...byLot.entries()].map(([key, lotMembers]) => (
-          <div key={key} className="rounded-lg border border-gray-100 p-2">
+          <div key={key} className="rounded-lg border border-line p-2">
             <div className="flex items-baseline gap-2">
-              <span className="font-mono text-lg font-extrabold text-blue-800">
+              <span className="font-mono text-lg font-extrabold text-brand-700">
                 {lotMembers[0]!.letter ?? '·'}
               </span>
               <span className="truncate">
                 {lotMembers[0]!.productNameZh}
                 {lotMembers[0]!.productNameRu && (
-                  <span className="text-gray-500"> ({lotMembers[0]!.productNameRu})</span>
+                  <span className="text-ink-500"> ({lotMembers[0]!.productNameRu})</span>
                 )}
               </span>
               <span className="ml-auto text-sm font-semibold">{lotMembers.length} 📦</span>
             </div>
-            <p className="mt-1 font-mono text-xs text-gray-500">
+            <p className="mt-1 font-mono text-xs text-ink-500">
               {lotMembers.map((m) => m.box.shortCode).join(', ')}
             </p>
           </div>

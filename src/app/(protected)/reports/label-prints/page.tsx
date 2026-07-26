@@ -29,7 +29,7 @@ export default async function LabelPrintsPage() {
         <div className="overflow-x-auto">
         <table className="w-full min-w-[480px] text-sm">
           <thead>
-            <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+            <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
               <th className="p-2">{t('when')}</th>
               <th className="p-2">{t('who')}</th>
               <th className="p-2">{t('receipt')}</th>
@@ -38,13 +38,13 @@ export default async function LabelPrintsPage() {
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={i} className="border-b border-gray-100 last:border-0">
+              <tr key={i} className="border-b border-line last:border-0">
                 <td className="p-2 text-xs">
                   {format.dateTime(row.at, { dateStyle: 'short', timeStyle: 'short' })}
                 </td>
                 <td className="max-w-32 truncate p-2">{row.name}</td>
                 <td className="p-2">
-                  <Link href={`/receipts/${row.receiptId}`} className="font-mono text-xs font-bold text-blue-800">
+                  <Link href={`/receipts/${row.receiptId}`} className="font-mono text-xs font-bold text-brand-700">
                     {row.receiptNumber ?? row.receiptId.slice(0, 8)}
                   </Link>
                 </td>
@@ -54,7 +54,7 @@ export default async function LabelPrintsPage() {
           </tbody>
         </table>
         </div>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noData')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noData')}</p>}
       </div>
     </div>
   );

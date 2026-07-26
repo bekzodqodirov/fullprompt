@@ -38,13 +38,13 @@ export default async function CashFlowPage({
         <table className="w-full text-sm">
           <tbody>
             {flow.rows.map((row, index) => (
-              <tr key={`${row.label}-${index}`} className="border-b border-gray-100">
+              <tr key={`${row.label}-${index}`} className="border-b border-line">
                 <td className="p-2">
                   {row.kind === 'in' ? '⬅️' : '➡️'} {label(row.label)}
                 </td>
                 <td
                   className={`p-2 text-right font-mono ${
-                    row.kind === 'in' ? 'text-green-700' : 'text-red-700'
+                    row.kind === 'in' ? 'text-good' : 'text-bad'
                   }`}
                 >
                   {row.kind === 'in' ? '+' : '−'}
@@ -52,16 +52,16 @@ export default async function CashFlowPage({
                 </td>
               </tr>
             ))}
-            <tr className="border-t-2 border-gray-400 font-bold">
+            <tr className="border-t-2 border-line-strong font-bold">
               <td className="p-2">{t('net')}</td>
               <td
                 className={`p-2 text-right font-mono ${
-                  flow.net >= 0 ? 'text-green-700' : 'text-red-700'
+                  flow.net >= 0 ? 'text-good' : 'text-bad'
                 }`}
               >
                 {usd(flow.net)}
                 {rate && (
-                  <span className="ml-2 text-xs font-normal text-gray-500">
+                  <span className="ml-2 text-xs font-normal text-ink-500">
                     {toUzs(flow.net, rate)?.toLocaleString('en-US')} UZS
                   </span>
                 )}
@@ -72,13 +72,13 @@ export default async function CashFlowPage({
       </div>
 
       {flow.transferCount > 0 && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-ink-500">
           ℹ️ {t('transfersExcluded', { n: flow.transferCount })}
         </p>
       )}
 
       <div className="card space-y-1">
-        <h2 className="text-sm font-bold uppercase text-gray-500">🏦 {t('balance')}</h2>
+        <h2 className="text-sm font-bold uppercase text-ink-500">🏦 {t('balance')}</h2>
         {balances
           .filter((row) => row.active)
           .map((row) => (

@@ -118,7 +118,7 @@ export default async function BatchesPage({
       <div className="grid gap-3 md:grid-cols-4">
         {COLUMNS.map((status) => (
           <div key={status} className="space-y-2">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-ink-500">
               {t(`statuses.${status}`)}
             </h2>
             {rows
@@ -127,14 +127,14 @@ export default async function BatchesPage({
                 <Link
                   key={batch.id}
                   href={`/batches/${batch.id}`}
-                  className="card block !p-3 hover:bg-gray-50"
+                  className="card block !p-3 hover:bg-surface-sunken"
                 >
-                  <p className="font-mono font-extrabold text-blue-800">{batch.code}</p>
+                  <p className="font-mono font-extrabold text-brand-700">{batch.code}</p>
                   <p className="text-sm">
                     {originCode} → {destCode} · {boxCount} 📦
                   </p>
                   {batch.vehiclePlate && (
-                    <p className="text-xs text-gray-500">🚛 {batch.vehiclePlate}</p>
+                    <p className="text-xs text-ink-500">🚛 {batch.vehiclePlate}</p>
                   )}
                 </Link>
               ))}
@@ -157,21 +157,21 @@ export default async function BatchesPage({
           </button>
         </form>
         {archiveOpen && archived.length === 0 && (
-          <p className="text-sm text-gray-500">{t('archiveEmpty')}</p>
+          <p className="text-sm text-ink-500">{t('archiveEmpty')}</p>
         )}
         {archived.map(({ batch, originCode, destCode, boxCount }) => (
           <Link
             key={batch.id}
             href={`/batches/${batch.id}`}
-            className="flex flex-wrap items-baseline gap-2 border-b border-gray-100 py-2 text-sm last:border-0 hover:bg-gray-50"
+            className="flex flex-wrap items-baseline gap-2 border-b border-line py-2 text-sm last:border-0 hover:bg-surface-sunken"
           >
-            <span className="font-mono font-extrabold text-blue-800">{batch.code}</span>
+            <span className="font-mono font-extrabold text-brand-700">{batch.code}</span>
             <span className="font-mono">
               {originCode} → {destCode}
             </span>
             <span>{boxCount} 📦</span>
-            {batch.vehiclePlate && <span className="text-gray-500">🚛 {batch.vehiclePlate}</span>}
-            <span className="ml-auto text-xs text-gray-500">
+            {batch.vehiclePlate && <span className="text-ink-500">🚛 {batch.vehiclePlate}</span>}
+            <span className="ml-auto text-xs text-ink-500">
               {t(`statuses.${batch.status}`)}
               {batch.closedAt ? ` · ${batch.closedAt.toISOString().slice(0, 10)}` : ''}
             </span>

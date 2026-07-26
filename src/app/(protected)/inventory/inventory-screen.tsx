@@ -106,7 +106,7 @@ export function InventoryScreen({
     }
   }
 
-  if (!snapshot) return <p className="p-4 text-gray-500">{tc('loading')}</p>;
+  if (!snapshot) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
 
   const expectedScanned = snapshot.boxes.filter((b) => scanned.has(b.shortCode));
   const missing = snapshot.boxes.filter((b) => !scanned.has(b.shortCode));
@@ -137,11 +137,11 @@ export function InventoryScreen({
           {(result.lost?.length ?? 0) > 0 && ` · ❌ ${result.lost!.length}`}
         </p>
         {(result.skipped?.length ?? 0) > 0 && (
-          <p className="text-xs text-orange-700">
+          <p className="text-xs text-warn">
             ⚠️ {t('skipped')}: {result.skipped!.join(', ')}
           </p>
         )}
-        <p className="text-xs text-gray-500">{t('telegramSent')}</p>
+        <p className="text-xs text-ink-500">{t('telegramSent')}</p>
       </div>
     );
   }
@@ -149,7 +149,7 @@ export function InventoryScreen({
   return (
     <div
       className={`space-y-3 pb-8 transition-colors ${
-        flash === 'ok' ? 'bg-green-100' : flash ? 'bg-red-100' : ''
+        flash === 'ok' ? 'bg-good/15' : flash ? 'bg-bad/15' : ''
       }`}
     >
       {!finishing && (
@@ -187,11 +187,11 @@ export function InventoryScreen({
 
       <p className="text-center font-mono text-3xl font-extrabold">
         {expectedScanned.length}
-        <span className="text-gray-400">/{snapshot.boxes.length}</span> 📦
+        <span className="text-ink-400">/{snapshot.boxes.length}</span> 📦
       </p>
       <div className="flex justify-center gap-4 text-sm font-semibold">
-        {foundHere.size > 0 && <span className="text-orange-700">↩️ {t('foundHere')}: {foundHere.size}</span>}
-        {unknown.size > 0 && <span className="text-red-700">❓ {t('unknown')}: {unknown.size}</span>}
+        {foundHere.size > 0 && <span className="text-warn">↩️ {t('foundHere')}: {foundHere.size}</span>}
+        {unknown.size > 0 && <span className="text-bad">❓ {t('unknown')}: {unknown.size}</span>}
       </div>
 
       {!finishing ? (
@@ -203,7 +203,7 @@ export function InventoryScreen({
           {foundHere.size > 0 && (
             <div className="card space-y-1 !p-3">
               <p className="text-sm font-bold">↩️ {t('foundHereTitle')}</p>
-              <p className="text-xs text-gray-500">{t('foundHereHint')}</p>
+              <p className="text-xs text-ink-500">{t('foundHereHint')}</p>
               <p className="font-mono text-xs">{[...foundHere].join(', ')}</p>
             </div>
           )}
@@ -212,10 +212,10 @@ export function InventoryScreen({
             <p className="text-sm font-bold">
               🔍 {t('missingTitle')} ({missing.length})
             </p>
-            {missing.length === 0 && <p className="text-sm text-green-700">✅ {t('allScanned')}</p>}
+            {missing.length === 0 && <p className="text-sm text-good">✅ {t('allScanned')}</p>}
             {missing.length > 0 && (
               <>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-ink-500">
                   {canMarkLost ? t('missingHintManager') : t('missingHintOperator')}
                 </p>
                 {canMarkLost && missing.length > 0 && (
@@ -251,13 +251,13 @@ export function InventoryScreen({
                         />
                       )}
                       <span className="font-mono font-bold">{box.shortCode}</span>
-                      <span className="font-mono font-extrabold text-blue-800">
+                      <span className="font-mono font-extrabold text-brand-700">
                         {box.clientCode ?? box.marking ?? '?'}-{box.letter}
                       </span>
                       {box.crateCode && (
-                        <span className="rounded bg-amber-100 px-1 text-xs">🧰 {box.crateCode}</span>
+                        <span className="rounded bg-warn/15 px-1 text-xs">🧰 {box.crateCode}</span>
                       )}
-                      <span className="min-w-0 flex-1 truncate text-gray-500">{box.productNameZh}</span>
+                      <span className="min-w-0 flex-1 truncate text-ink-500">{box.productNameZh}</span>
                     </label>
                   ))}
                 </div>
@@ -266,7 +266,7 @@ export function InventoryScreen({
           </div>
 
           {result?.error && (
-            <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+            <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
               {tc('error')}: {result.error}
             </p>
           )}

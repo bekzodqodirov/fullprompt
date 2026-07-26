@@ -58,7 +58,7 @@ export function UnloadActions({
   return (
     <div className="space-y-2">
       {['in_transit', 'arrived'].includes(status) && (
-        <p className="rounded-lg bg-gray-50 p-2 text-sm font-semibold" data-testid="unload-remaining">
+        <p className="rounded-lg bg-surface-sunken p-2 text-sm font-semibold" data-testid="unload-remaining">
           {remaining > 0 ? `📦 ${t('remaining', { n: remaining })}` : `✅ ${t('allAccepted')}`}
         </p>
       )}
@@ -111,10 +111,10 @@ export function UnloadActions({
           🏁 {t('finishUnload')}
         </button>
       )}
-      {summary && <p className="rounded-lg bg-blue-50 p-2 text-sm font-semibold">{summary}</p>}
+      {summary && <p className="rounded-lg bg-brand-50 p-2 text-sm font-semibold">{summary}</p>}
 
       {missing.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
+        <div className="space-y-2 rounded-lg border border-bad/30 bg-bad/10 p-3">
           <p className="text-sm font-bold">🔍 {t('missingTitle')}</p>
           {canResolve && missing.length > 1 && (
             <button
@@ -143,10 +143,10 @@ export function UnloadActions({
             </button>
           )}
           {missing.map((box) => (
-            <div key={box.boxId} className="space-y-1.5 rounded-lg bg-white p-2 text-sm">
+            <div key={box.boxId} className="space-y-1.5 rounded-lg bg-surface-raised p-2 text-sm">
               <p>
                 <span className="font-mono font-bold">{box.shortCode}</span>{' '}
-                <span className="font-mono font-extrabold text-blue-800">{box.label}</span>
+                <span className="font-mono font-extrabold text-brand-700">{box.label}</span>
               </p>
               {canResolve && (
                 <div className="flex gap-2">
@@ -190,7 +190,7 @@ export function UnloadActions({
         </button>
       )}
       {pending && <p className="text-sm">{tc('loading')}</p>}
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm font-semibold text-red-800">{error}</p>}
+      {error && <p className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad">{error}</p>}
     </div>
   );
 }

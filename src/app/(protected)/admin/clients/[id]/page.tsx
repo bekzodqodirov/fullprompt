@@ -36,7 +36,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">
-          <span className="font-mono text-blue-800">{client.clientCode}</span> — {client.name}
+          <span className="font-mono text-brand-700">{client.clientCode}</span> — {client.name}
         </h1>
         <form action={toggle}>
           <button type="submit" className={client.active ? 'btn-danger' : 'btn-primary'}>
@@ -63,11 +63,11 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           sends it to the client; the client sees cargo/photos/debt in the bot. */}
       <section className="card space-y-2">
         <h2 className="text-lg font-bold">🤖 {tcab('cabinetTitle')}</h2>
-        <p className="text-xs text-gray-500">{tcab('cabinetHint')}</p>
+        <p className="text-xs text-ink-500">{tcab('cabinetHint')}</p>
         {cabinetLinks.map((link) => (
-          <div key={link.id} className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-2 text-sm last:border-0">
+          <div key={link.id} className="flex flex-wrap items-center gap-2 border-b border-line pb-2 text-sm last:border-0">
             {link.status === 'linked' ? (
-              <span className="font-semibold text-green-700">
+              <span className="font-semibold text-good">
                 ✅ {tcab('cabinetLinked')}
                 {link.linkedAt && ` · ${format.dateTime(new Date(link.linkedAt), { dateStyle: 'short' })}`}
               </span>
@@ -75,7 +75,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               <>
                 {/* The code label guards against sending another tab's link
                     to the wrong client (owner's incident). */}
-                <span className="shrink-0 font-mono font-extrabold text-blue-800">
+                <span className="shrink-0 font-mono font-extrabold text-brand-700">
                   {client.clientCode}
                 </span>
                 <input
@@ -85,11 +85,11 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 />
               </>
             ) : (
-              <span className="text-gray-500">{tcab('cabinetPending')}</span>
+              <span className="text-ink-500">{tcab('cabinetPending')}</span>
             )}
             <form action={revokeClientCabinetLinkAction}>
               <input type="hidden" name="linkId" value={link.id} />
-              <button type="submit" className="text-xs font-semibold text-red-700 underline">
+              <button type="submit" className="text-xs font-semibold text-bad underline">
                 ✖ {tcab('cabinetRevoke')}
               </button>
             </form>

@@ -28,9 +28,9 @@ export function ClientFieldsForm({
       >
         {pending ? tc('loading') : tc('save')}
       </button>
-      {state.ok && <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>}
+      {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
       {state.error && (
-        <p className="text-sm font-semibold text-red-700">
+        <p className="text-sm font-semibold text-bad">
           {state.error === 'bad_number'
             ? t('badNumber')
             : state.error === 'bad_date'

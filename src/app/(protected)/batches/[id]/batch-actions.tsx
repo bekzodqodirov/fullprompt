@@ -69,9 +69,9 @@ export function BatchActions({ batchId, canDepart }: { batchId: string; canDepar
         )}
       </div>
       {pending && <p className="text-sm">{tc('loading')}</p>}
-      {summary && <p className="rounded-lg bg-blue-50 p-2 text-sm font-semibold">{summary}</p>}
+      {summary && <p className="rounded-lg bg-brand-50 p-2 text-sm font-semibold">{summary}</p>}
       {error && (
-        <p className="rounded-lg bg-red-50 p-2 text-sm font-semibold text-red-800">
+        <p className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad">
           {t(`errors.${error}` as never) || error}
         </p>
       )}

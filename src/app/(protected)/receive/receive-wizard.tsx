@@ -72,10 +72,10 @@ interface Draft {
 }
 
 const DENSITY_COLORS: Record<string, string> = {
-  light: 'bg-blue-100 text-blue-800',
-  green: 'bg-green-100 text-green-800',
+  light: 'bg-brand-100 text-brand-700',
+  green: 'bg-good/15 text-good',
   orange: 'bg-orange-100 text-orange-800',
-  heavy: 'bg-red-100 text-red-800',
+  heavy: 'bg-bad/15 text-bad',
 };
 const THRESHOLDS = { light: 200, medium: 300, heavy: 400 };
 const DRAFT_KEY = 'gsr-receipt-draft';
@@ -464,9 +464,9 @@ export function ReceiveWizard({
         <ul className="space-y-1 text-left">
           {result.lots?.map((lot) => (
             <li key={lot.letter} className="flex items-baseline gap-2">
-              <span className="font-mono text-xl font-extrabold text-blue-800">{lot.letter}</span>
+              <span className="font-mono text-xl font-extrabold text-brand-700">{lot.letter}</span>
               <span>{lot.productNameZh}</span>
-              <span className="ml-auto text-sm text-gray-600">{lot.boxCount} 📦</span>
+              <span className="ml-auto text-sm text-ink-700">{lot.boxCount} 📦</span>
             </li>
           ))}
         </ul>
@@ -535,7 +535,7 @@ export function ReceiveWizard({
   function photosField(lot: LotDraft) {
     return (
       <div className="flex flex-wrap items-center gap-1.5">
-        <label className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-dashed border-gray-400 text-base hover:bg-gray-50">
+        <label className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-dashed border-line-strong text-base hover:bg-surface-sunken">
           📷
           <input
             type="file"
@@ -584,8 +584,8 @@ export function ReceiveWizard({
       type="button"
       className={
         compact
-          ? 'h-9 rounded-md bg-gray-100 px-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-200'
-          : 'rounded-lg bg-gray-100 px-2 py-1.5 text-xs font-semibold'
+          ? 'h-9 rounded-md bg-surface-sunken px-1.5 text-xs font-semibold text-ink-700 hover:bg-surface-sunken'
+          : 'rounded-lg bg-surface-sunken px-2 py-1.5 text-xs font-semibold'
       }
       title={lot.dimsMode === 'uniform' ? t('uniform') : t('mixed')}
       onClick={() =>
@@ -613,8 +613,8 @@ export function ReceiveWizard({
         </select>
         <div className="min-w-0 flex-1">
           {draft.clientId ? (
-            <div className="flex min-h-12 items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3">
-              <span className="truncate font-mono font-extrabold text-green-800">
+            <div className="flex min-h-12 items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3">
+              <span className="truncate font-mono font-extrabold text-good">
                 {draft.clientLabel}
               </span>
               <button
@@ -640,12 +640,12 @@ export function ReceiveWizard({
             />
           )}
           {clientHits.length > 0 && !draft.clientId && (
-            <ul className="absolute z-20 mt-1 w-72 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white shadow-lg">
+            <ul className="absolute z-20 mt-1 w-72 divide-y divide-line rounded-lg border border-line bg-surface-raised shadow-lg">
               {clientHits.map((hit) => (
                 <li key={hit.id}>
                   <button
                     type="button"
-                    className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-gray-50"
+                    className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-surface-sunken"
                     onClick={() => {
                       update({
                         clientId: hit.id,
@@ -656,10 +656,10 @@ export function ReceiveWizard({
                       setClientQuery('');
                     }}
                   >
-                    <span className="font-mono font-extrabold text-blue-800">{hit.clientCode}</span>
+                    <span className="font-mono font-extrabold text-brand-700">{hit.clientCode}</span>
                     <span className="truncate">{hit.name}</span>
                     {hit.managerName && (
-                      <span className="ml-auto whitespace-nowrap text-xs text-gray-500">
+                      <span className="ml-auto whitespace-nowrap text-xs text-ink-500">
                         {hit.managerName}
                       </span>
                     )}
@@ -701,7 +701,7 @@ export function ReceiveWizard({
           className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${
             draft.unclaimed
               ? 'border-orange-500 bg-orange-50 text-orange-800'
-              : 'border-gray-300 text-gray-600'
+              : 'border-line-strong text-ink-700'
           }`}
           onClick={() =>
             update({ unclaimed: !draft.unclaimed, unclaimedMarking: clientQuery.toUpperCase() })
@@ -725,7 +725,7 @@ export function ReceiveWizard({
             onChange={(e) => update({ unclaimedMarking: e.target.value.toUpperCase() })}
             placeholder="444"
           />
-          <p className="mt-1 text-xs text-gray-500">{t('unclaimedMarkingHint')}</p>
+          <p className="mt-1 text-xs text-ink-500">{t('unclaimedMarkingHint')}</p>
         </div>
       )}
     </div>
@@ -747,16 +747,16 @@ export function ReceiveWizard({
   const bottomBlock = (
     <div className="space-y-2">
       <details
-        className="rounded-lg border border-gray-200 bg-gray-50"
+        className="rounded-lg border border-line bg-surface-sunken"
         open={extrasFilled}
         data-testid="receipt-extras"
       >
         <summary
           data-testid="receipt-extras-toggle"
-          className="cursor-pointer p-2 text-sm font-semibold text-gray-700 marker:text-gray-400"
+          className="cursor-pointer p-2 text-sm font-semibold text-ink-700 marker:text-ink-400"
         >
           📝 {t('noteAndCost')}
-          {extrasFilled && <span className="ml-2 text-xs text-green-700">●</span>}
+          {extrasFilled && <span className="ml-2 text-xs text-good">●</span>}
         </summary>
         <div className="flex flex-col gap-2 p-2 pt-0 md:flex-row">
           <input
@@ -839,7 +839,7 @@ export function ReceiveWizard({
           ) : (
             <span
               key={file.id}
-              className="flex h-10 max-w-40 items-center gap-1 rounded-md bg-gray-100 pl-2 text-xs text-gray-700"
+              className="flex h-10 max-w-40 items-center gap-1 rounded-md bg-surface-sunken pl-2 text-xs text-ink-700"
               title={file.fileName}
             >
               <a
@@ -853,7 +853,7 @@ export function ReceiveWizard({
               <button
                 type="button"
                 aria-label="✕"
-                className="px-1.5 text-sm font-bold text-red-600"
+                className="px-1.5 text-sm font-bold text-bad"
                 onClick={() =>
                   removeAttachment(file.id, () =>
                     update({ files: draft.files.filter((f) => f.id !== file.id) }),
@@ -897,7 +897,7 @@ export function ReceiveWizard({
                 <col className="w-9" />
               </colgroup>
               <thead>
-                <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase tracking-wide text-ink-500">
                   <th className="p-2">#</th>
                   <th className="p-2">{t('productZh')}</th>
                   <th className="p-2 text-center">📦</th>
@@ -913,8 +913,8 @@ export function ReceiveWizard({
               </thead>
               <tbody>
                 {draft.lots.map((lot, i) => (
-                  <tr key={lot.id} className="border-b border-gray-100 last:border-0">
-                    <td className="p-1.5 text-center font-mono font-bold text-blue-800">
+                  <tr key={lot.id} className="border-b border-line last:border-0">
+                    <td className="p-1.5 text-center font-mono font-bold text-brand-700">
                       {letterPreview[i] ?? `·`}
                     </td>
                     <td className="p-1.5">
@@ -927,7 +927,7 @@ export function ReceiveWizard({
                         placeholder="化妆品"
                       />
                       {lot.ru && (
-                        <p className="mt-0.5 truncate px-1 text-xs text-gray-500">({lot.ru})</p>
+                        <p className="mt-0.5 truncate px-1 text-xs text-ink-500">({lot.ru})</p>
                       )}
                     </td>
                     <td className="p-1.5">
@@ -962,7 +962,7 @@ export function ReceiveWizard({
                         <button
                           type="button"
                           aria-label={tc('delete')}
-                          className="text-gray-400 hover:text-red-600"
+                          className="text-ink-400 hover:text-bad"
                           onClick={() => {
                             // A filled line dies with one mis-tap otherwise (UX audit).
                             const hasData = lot.zh.trim() || lot.photoIds.length > 0 || lot.boxCount;
@@ -980,7 +980,7 @@ export function ReceiveWizard({
             </table>
             <button
               type="button"
-              className="w-full border-t border-gray-200 p-2 text-sm font-semibold text-blue-800 hover:bg-blue-50"
+              className="w-full border-t border-line p-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"
               onClick={() => update({ lots: [...draft.lots, newLot()] })}
             >
               ＋ {t('addLot')}
@@ -994,7 +994,7 @@ export function ReceiveWizard({
         {draft.lots.map((lot, i) => (
           <div key={lot.id} className="card space-y-2 !p-3">
             <div className="flex items-center gap-2">
-              <span className="w-8 shrink-0 text-center font-mono text-lg font-extrabold text-blue-800">
+              <span className="w-8 shrink-0 text-center font-mono text-lg font-extrabold text-brand-700">
                 {letterPreview[i] ?? '·'}
               </span>
               <input
@@ -1022,10 +1022,10 @@ export function ReceiveWizard({
                 </button>
               )}
             </div>
-            {lot.ru && <p className="px-10 text-sm text-gray-500">({lot.ru})</p>}
+            {lot.ru && <p className="px-10 text-sm text-ink-500">({lot.ru})</p>}
             <div className="flex items-center gap-2">
               <div className="flex-1">
-                <p className="mb-0.5 text-[11px] font-semibold text-gray-500">{t('boxCount')}</p>
+                <p className="mb-0.5 text-[11px] font-semibold text-ink-500">{t('boxCount')}</p>
                 <input
                   data-testid="lot-count"
                   aria-label={t('boxCount')}
@@ -1048,7 +1048,7 @@ export function ReceiveWizard({
                   ] as const
                 ).map(([field, label, testId]) => (
                   <div key={field}>
-                    <p className="mb-0.5 text-center text-[11px] font-semibold text-gray-500">
+                    <p className="mb-0.5 text-center text-[11px] font-semibold text-ink-500">
                       {label}
                     </p>
                     {cellNum(lot, field, label, testId)}
@@ -1058,13 +1058,13 @@ export function ReceiveWizard({
             ) : (
               <div className="grid grid-cols-2 gap-1.5">
                 <div>
-                  <p className="mb-0.5 text-center text-[11px] font-semibold text-gray-500">
+                  <p className="mb-0.5 text-center text-[11px] font-semibold text-ink-500">
                     {t('totalM3')}
                   </p>
                   {cellNum(lot, 'totalVolumeM3', t('totalM3'))}
                 </div>
                 <div>
-                  <p className="mb-0.5 text-center text-[11px] font-semibold text-gray-500">
+                  <p className="mb-0.5 text-center text-[11px] font-semibold text-ink-500">
                     {t('totalKg')}
                   </p>
                   {cellNum(lot, 'totalWeightKg', t('totalKg'))}
@@ -1087,22 +1087,22 @@ export function ReceiveWizard({
       </div>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {error === 'photo_required' ? t('photoRequired') : tc('error')} ({error})
         </p>
       )}
 
       {/* ===== Sticky totals + confirm ===== */}
-      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
         {(!clientChosen || !lotsValid()) && (
-          <p className="mx-auto max-w-4xl px-4 pt-1.5 text-xs font-semibold text-orange-700">
+          <p className="mx-auto max-w-4xl px-4 pt-1.5 text-xs font-semibold text-warn">
             ⚠️ {firstProblem()}
           </p>
         )}
         <div className="mx-auto flex max-w-4xl items-center gap-4 px-4 py-2.5">
           <div className="whitespace-nowrap text-sm leading-tight">
             <span className="font-bold">Σ {sumBoxes} 📦</span>
-            <span className="ml-2 text-gray-600">
+            <span className="ml-2 text-ink-700">
               {Math.round(sumKg * 1000) / 1000} kg · {Math.round(sumM3 * 10000) / 10000} m³
             </span>
           </div>

@@ -201,8 +201,8 @@ export function KanbanBoard({
 
   return (
     <>
-      <p className="text-xs text-gray-500">✋ {t('dragHint')}</p>
-      {error && <p className="text-sm font-semibold text-red-700">{tc('error')}</p>}
+      <p className="text-xs text-ink-500">✋ {t('dragHint')}</p>
+      {error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
 
       <div
         ref={boardRef}
@@ -222,7 +222,7 @@ export function KanbanBoard({
                 data-stage-id={stage.id}
                 data-testid={`column-${stage.kind}`}
                 className={`w-64 shrink-0 rounded-lg ${
-                  isTarget ? 'bg-blue-50 ring-2 ring-blue-500' : ''
+                  isTarget ? 'bg-brand-50 ring-2 ring-brand-500' : ''
                 }`}
               >
                 <header
@@ -252,7 +252,7 @@ export function KanbanBoard({
                         // A drag must not also open the card underneath it.
                         if (dragged.current) event.preventDefault();
                       }}
-                      className={`card block !p-2.5 select-none hover:bg-gray-50 ${
+                      className={`card block !p-2.5 select-none hover:bg-surface-sunken ${
                         dragId === lead.id ? 'opacity-30' : ''
                       }`}
                       style={{ touchAction: dragId === lead.id ? 'none' : undefined }}
@@ -261,7 +261,7 @@ export function KanbanBoard({
                     </Link>
                   ))}
                   {inStage.length === 0 && (
-                    <p className="px-1 text-xs text-gray-400">{t('empty')}</p>
+                    <p className="px-1 text-xs text-ink-400">{t('empty')}</p>
                   )}
                 </div>
               </section>
@@ -272,7 +272,7 @@ export function KanbanBoard({
 
       {dragLead && ghost && (
         <div
-          className="card pointer-events-none fixed z-50 w-56 !p-2.5 shadow-xl ring-2 ring-blue-600"
+          className="card pointer-events-none fixed z-50 w-56 !p-2.5 shadow-xl ring-2 ring-brand-500"
           style={{ left: ghost.x - 112, top: ghost.y - 28 }}
         >
           <LeadCardBody lead={dragLead} />
@@ -286,17 +286,17 @@ function LeadCardBody({ lead }: { lead: KanbanLead }) {
   return (
     <>
       <div className="font-semibold [overflow-wrap:anywhere]">{lead.name}</div>
-      {lead.company && <div className="text-xs text-gray-600">{lead.company}</div>}
+      {lead.company && <div className="text-xs text-ink-700">{lead.company}</div>}
       {lead.phone && <div className="font-mono text-xs">{lead.phone}</div>}
-      <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-gray-500">
-        {lead.sourceName && <span className="rounded bg-gray-100 px-1.5">{lead.sourceName}</span>}
+      <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-ink-500">
+        {lead.sourceName && <span className="rounded bg-surface-sunken px-1.5">{lead.sourceName}</span>}
         {lead.ownerName && <span>{lead.ownerName}</span>}
         {lead.clientCode && (
-          <span className="font-mono font-bold text-green-700">{lead.clientCode}</span>
+          <span className="font-mono font-bold text-good">{lead.clientCode}</span>
         )}
       </div>
       {lead.nextActionAt && (
-        <div className="mt-1 text-[11px] font-semibold text-amber-700">📅 {lead.nextActionAt}</div>
+        <div className="mt-1 text-[11px] font-semibold text-warn">📅 {lead.nextActionAt}</div>
       )}
     </>
   );

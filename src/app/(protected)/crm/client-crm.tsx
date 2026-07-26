@@ -44,8 +44,8 @@ export async function ClientCrmSections({
 
       <Panel title={`🕘 ${t('history')}`} badge={log.length || undefined} open={log.length > 0}>
         {log.map(({ activity, authorName }) => (
-          <div key={activity.id} className="border-b border-gray-100 pb-2 last:border-0 last:pb-0">
-            <div className="flex items-baseline gap-2 text-xs text-gray-500">
+          <div key={activity.id} className="border-b border-line pb-2 last:border-0 last:pb-0">
+            <div className="flex items-baseline gap-2 text-xs text-ink-500">
               <span>{icon[activity.kind] ?? '📝'}</span>
               <span>{activity.happenedAt.toISOString().slice(0, 10)}</span>
               {authorName && <span className="ml-auto">{authorName}</span>}
@@ -53,7 +53,7 @@ export async function ClientCrmSections({
             <p className="text-sm [overflow-wrap:anywhere]">{activity.note}</p>
           </div>
         ))}
-        {log.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
+        {log.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
       </Panel>
 
       {fields.length > 0 && (
@@ -77,22 +77,22 @@ export async function ClientCrmSections({
                   key={code.id}
                   href={`/admin/clients/${code.id}`}
                   className={`rounded px-1.5 py-0.5 font-mono font-bold ${
-                    code.id === clientId ? 'bg-blue-700 text-white' : 'bg-blue-50 text-blue-800'
+                    code.id === clientId ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700'
                   }`}
                 >
                   {code.code}
                 </Link>
               ))}
             </div>
-            <p className="text-xs text-gray-500">{t('personNote')}</p>
+            <p className="text-xs text-ink-500">{t('personNote')}</p>
           </>
         ) : actor.permissions.has('crm.manage') ? (
           <>
-            <p className="text-xs text-gray-500">{t('personNote')}</p>
+            <p className="text-xs text-ink-500">{t('personNote')}</p>
             <MakePersonButton clientId={clientId} clientName={clientName} />
           </>
         ) : (
-          <p className="text-sm text-gray-500">{tc('empty')}</p>
+          <p className="text-sm text-ink-500">{tc('empty')}</p>
         )}
       </Panel>
     </div>

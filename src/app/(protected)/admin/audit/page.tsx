@@ -99,7 +99,7 @@ export default async function AuditBrowserPage({
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
-            <tr className="border-b border-gray-300 text-left">
+            <tr className="border-b border-line-strong text-left">
               <th className="p-2">{t('when')}</th>
               <th className="p-2">{t('who')}</th>
               <th className="p-2">{t('action')}</th>
@@ -110,7 +110,7 @@ export default async function AuditBrowserPage({
           </thead>
           <tbody>
             {rows.map(({ entry, actorName, warehouseCode }) => (
-              <tr key={String(entry.id)} className="border-b border-gray-100 align-top">
+              <tr key={String(entry.id)} className="border-b border-line align-top">
                 <td className="whitespace-nowrap p-2">
                   {format.dateTime(entry.createdAt, { dateStyle: 'short', timeStyle: 'medium' })}
                 </td>
@@ -128,7 +128,7 @@ export default async function AuditBrowserPage({
                 <td className="p-2">{warehouseCode ?? '—'}</td>
                 <td className="p-2">
                   {entry.after ? (
-                    <pre className="max-w-xs overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs text-gray-600">
+                    <pre className="max-w-xs overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs text-ink-700">
                       {JSON.stringify(entry.after)}
                     </pre>
                   ) : (
@@ -139,7 +139,7 @@ export default async function AuditBrowserPage({
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noRows')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noRows')}</p>}
       </div>
     </div>
   );

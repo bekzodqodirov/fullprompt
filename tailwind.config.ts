@@ -11,6 +11,9 @@ const token = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
 
 export default {
   content: ['./src/**/*.{ts,tsx}'],
+  // The theme is driven by CSS variables, so `dark:` is rarely needed — but
+  // when it is, it must follow the same attribute the toggle writes.
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
@@ -40,6 +43,9 @@ export default {
           DEFAULT: token('line'),
           strong: token('line-strong'),
         },
+        good: token('good'),
+        warn: token('warn'),
+        bad: token('bad'),
       },
       borderRadius: {
         lg: '0.625rem',

@@ -118,7 +118,7 @@ export function UserForm({
         </div>
       </fieldset>
       {state.error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {state.error === 'phone_exists' ? t('phoneExists') : tc('error')}
         </p>
       )}

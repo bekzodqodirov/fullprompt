@@ -39,26 +39,26 @@ export default async function ReceiptsPage() {
           📥
         </Link>
       </div>
-      {rows.length === 0 && <p className="text-gray-500">{t('empty')}</p>}
+      {rows.length === 0 && <p className="text-ink-500">{t('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ receipt, warehouseCode, clientCode, lotCount, boxCount }) => (
           <Link
             key={receipt.id}
             href={`/receipts/${receipt.id}`}
-            className={`card block !p-3 hover:bg-gray-50 ${receipt.status === 'voided' ? 'opacity-50' : ''}`}
+            className={`card block !p-3 hover:bg-surface-sunken ${receipt.status === 'voided' ? 'opacity-50' : ''}`}
           >
             <div className="flex items-baseline gap-2">
               <span className="font-mono font-bold">{receipt.number}</span>
               <span
-                className={`font-mono font-extrabold ${clientCode ? 'text-blue-800' : 'text-orange-600'}`}
+                className={`font-mono font-extrabold ${clientCode ? 'text-brand-700' : 'text-orange-600'}`}
               >
                 {clientCode ?? `❓ ${t('unclaimed')}`}
               </span>
-              <span className="ml-auto text-xs text-gray-500">
+              <span className="ml-auto text-xs text-ink-500">
                 {format.dateTime(receipt.receivedAt, { dateStyle: 'short', timeStyle: 'short' })}
               </span>
             </div>
-            <div className="mt-1 text-sm text-gray-600">
+            <div className="mt-1 text-sm text-ink-700">
               {warehouseCode} · {lotCount} {t('lots').toLowerCase()} · {boxCount} 📦 ·{' '}
               {t(`statuses.${receipt.status}`)}
             </div>

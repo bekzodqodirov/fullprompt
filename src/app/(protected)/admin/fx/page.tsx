@@ -34,14 +34,14 @@ export default async function FxPage() {
       />
       <div className="card space-y-1">
         {rates.map(({ rate, enteredBy }) => (
-          <div key={rate.id} className="flex items-baseline gap-2 border-b border-gray-100 py-1.5 text-sm last:border-0">
+          <div key={rate.id} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
             <span className="font-mono font-bold">{rate.currency}</span>
             <span className="font-semibold">{Number(rate.rateToUsd)}</span>
-            <span className="text-gray-500">{rate.effectiveDate}</span>
-            {enteredBy && <span className="ml-auto text-xs text-gray-500">{enteredBy}</span>}
+            <span className="text-ink-500">{rate.effectiveDate}</span>
+            {enteredBy && <span className="ml-auto text-xs text-ink-500">{enteredBy}</span>}
           </div>
         ))}
-        {rates.length === 0 && <p className="text-sm text-gray-500">{t('noRates')}</p>}
+        {rates.length === 0 && <p className="text-sm text-ink-500">{t('noRates')}</p>}
       </div>
     </div>
   );

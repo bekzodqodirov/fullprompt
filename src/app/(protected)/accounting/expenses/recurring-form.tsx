@@ -62,7 +62,7 @@ export function RecurringForm({
           ))}
         </select>
         <label className="text-sm">
-          <span className="block text-xs text-gray-500">{t('dayOfMonth')}</span>
+          <span className="block text-xs text-ink-500">{t('dayOfMonth')}</span>
           <input
             name="dayOfMonth"
             type="number"
@@ -109,9 +109,9 @@ export function RecurringForm({
       >
         {pending ? tc('loading') : tc('save')}
       </button>
-      {state.ok && <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>}
+      {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
       {state.error && (
-        <p className="text-sm font-semibold text-red-700">
+        <p className="text-sm font-semibold text-bad">
           {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
         </p>
       )}
@@ -131,7 +131,7 @@ export function GenerateRecurringButton({ month }: { month: string }) {
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-2">
       <label className="text-sm">
-        <span className="block text-xs text-gray-500">{t('period')}</span>
+        <span className="block text-xs text-ink-500">{t('period')}</span>
         <input type="month" name="month" defaultValue={month} className="input !w-40" />
       </label>
       <button
@@ -143,13 +143,13 @@ export function GenerateRecurringButton({ month }: { month: string }) {
         {pending ? tc('loading') : `▶️ ${t('generateMonth')}`}
       </button>
       {state.ok && (
-        <p className="w-full text-sm font-semibold text-green-700">
+        <p className="w-full text-sm font-semibold text-good">
           ✅ {t('generated', { n: state.created ?? 0 })}
           {state.skipped ? ` · ${t('alreadyPosted', { n: state.skipped })}` : ''}
         </p>
       )}
       {state.error && (
-        <p className="w-full text-sm font-semibold text-red-700">
+        <p className="w-full text-sm font-semibold text-bad">
           {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
         </p>
       )}

@@ -115,8 +115,8 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
           💾 {saving ? tc('loading') : t('saveAll')}
         </button>
       </div>
-      {message && <p className="rounded-lg bg-green-50 p-2 text-sm font-semibold text-green-800">{message}</p>}
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm font-semibold text-red-800">{error}</p>}
+      {message && <p className="rounded-lg bg-good/10 p-2 text-sm font-semibold text-good">{message}</p>}
+      {error && <p className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad">{error}</p>}
 
       <div className="space-y-2">
         {rows.map((row) => (
@@ -130,14 +130,14 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
                   className="h-14 w-14 shrink-0 rounded-lg object-cover"
                 />
               ) : (
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-2xl">📦</div>
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-2xl">📦</div>
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold">
                   {row.nameZh}
-                  {row.nameRu && <span className="text-gray-500"> ({row.nameRu})</span>}
+                  {row.nameRu && <span className="text-ink-500"> ({row.nameRu})</span>}
                 </p>
-                <p className="text-xs text-gray-500">{row.boxCount} 📦</p>
+                <p className="text-xs text-ink-500">{row.boxCount} 📦</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -158,15 +158,15 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
               </button>
             </div>
             {row.source === 'ai' && reasonings[row.lotId] && (
-              <p className="rounded-lg bg-blue-50 p-2 text-xs text-blue-900">🤖 {reasonings[row.lotId]}</p>
+              <p className="rounded-lg bg-brand-50 p-2 text-xs text-brand-800">🤖 {reasonings[row.lotId]}</p>
             )}
             {row.source === 'manual' && initial.find((r) => r.lotId === row.lotId)?.code === row.code && row.code && (
-              <p className="text-xs text-gray-500">💾 {t('fromMemory')}</p>
+              <p className="text-xs text-ink-500">💾 {t('fromMemory')}</p>
             )}
           </div>
         ))}
       </div>
-      <p className="text-xs text-gray-400">{t('hint')}</p>
+      <p className="text-xs text-ink-400">{t('hint')}</p>
     </div>
   );
 }

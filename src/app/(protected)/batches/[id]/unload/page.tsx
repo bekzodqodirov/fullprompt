@@ -21,7 +21,7 @@ export default async function UnloadPage({ params }: { params: Promise<{ id: str
     <div className="mx-auto max-w-lg">
       <div className="mb-2 flex items-baseline gap-2">
         <PageHeader icon="inbox" title={t('title')} />
-        <Link href={`/batches/${id}`} className="font-mono font-extrabold text-blue-800">
+        <Link href={`/batches/${id}`} className="font-mono font-extrabold text-brand-700">
           {batch.code}
         </Link>
       </div>

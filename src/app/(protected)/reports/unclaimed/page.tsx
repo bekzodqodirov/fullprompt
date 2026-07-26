@@ -44,7 +44,7 @@ export default async function UnclaimedReportPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <SortTh label="№" field="number" sort={sort} dir={dir} />
                 <SortTh label={t('marking')} field="marking" sort={sort} dir={dir} />
                 <SortTh label="WH" field="whCode" sort={sort} dir={dir} />
@@ -55,18 +55,18 @@ export default async function UnclaimedReportPage({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                <tr key={row.id} className="border-b border-line last:border-0 hover:bg-surface-sunken">
                   <td className="p-2">
-                    <Link href={`/receipts/${row.id}`} className="font-mono text-xs font-bold text-blue-800">
+                    <Link href={`/receipts/${row.id}`} className="font-mono text-xs font-bold text-brand-700">
                       {row.number}
                     </Link>
-                    <span className="ml-2 text-xs text-gray-500">
+                    <span className="ml-2 text-xs text-ink-500">
                       {format.dateTime(row.receivedAt, { dateStyle: 'short' })}
                     </span>
                   </td>
-                  <td className="p-2 font-mono font-extrabold text-orange-700">{row.marking ?? '—'}</td>
+                  <td className="p-2 font-mono font-extrabold text-warn">{row.marking ?? '—'}</td>
                   <td className="p-2 font-mono font-bold">{row.whCode}</td>
-                  <td className={`p-2 text-right font-bold ${row.days >= 14 ? 'text-red-700' : row.days >= 7 ? 'text-yellow-600' : ''}`}>
+                  <td className={`p-2 text-right font-bold ${row.days >= 14 ? 'text-bad' : row.days >= 7 ? 'text-yellow-600' : ''}`}>
                     {row.days}
                   </td>
                   <td className="p-2 text-right font-semibold">{row.boxesInStock}</td>
@@ -76,7 +76,7 @@ export default async function UnclaimedReportPage({
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">✅ {t('noUnclaimed')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">✅ {t('noUnclaimed')}</p>}
       </div>
     </div>
   );

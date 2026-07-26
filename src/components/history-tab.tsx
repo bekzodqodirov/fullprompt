@@ -26,7 +26,7 @@ export async function HistoryTab({
     .limit(100);
 
   if (rows.length === 0) {
-    return <p className="text-sm text-gray-500">—</p>;
+    return <p className="text-sm text-ink-500">—</p>;
   }
 
   return (
@@ -40,7 +40,7 @@ export async function HistoryTab({
             <div className="flex flex-wrap items-baseline gap-x-2">
               <span className="font-semibold">{actorName ?? t('system')}</span>
               <span>{t(`actions.${entry.action}`)}</span>
-              <span className="ml-auto text-xs text-gray-500">
+              <span className="ml-auto text-xs text-ink-500">
                 {format.dateTime(entry.createdAt, {
                   dateStyle: 'short',
                   timeStyle: 'short',
@@ -48,13 +48,13 @@ export async function HistoryTab({
               </span>
             </div>
             {entry.action === 'update' && changedKeys.length > 0 && (
-              <ul className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+              <ul className="mt-2 space-y-1 border-t border-line pt-2">
                 {changedKeys.map((key) => (
                   <li key={key} className="flex flex-wrap gap-x-2">
-                    <span className="font-mono text-xs text-gray-500">{key}:</span>
-                    <span className="text-red-700 line-through">{formatValue(before[key])}</span>
+                    <span className="font-mono text-xs text-ink-500">{key}:</span>
+                    <span className="text-bad line-through">{formatValue(before[key])}</span>
                     <span aria-hidden>→</span>
-                    <span className="font-semibold text-green-700">{formatValue(after[key])}</span>
+                    <span className="font-semibold text-good">{formatValue(after[key])}</span>
                   </li>
                 ))}
               </ul>

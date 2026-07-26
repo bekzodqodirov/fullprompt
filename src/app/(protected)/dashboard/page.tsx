@@ -50,7 +50,7 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
       <div className="flex items-baseline gap-2">
         <PageHeader icon="chart" title={t('title')} />
-        <Link href="/reports" className="ml-auto text-sm font-semibold text-blue-800">
+        <Link href="/reports" className="ml-auto text-sm font-semibold text-brand-700">
           {t('toReports')} →
         </Link>
       </div>
@@ -58,18 +58,18 @@ export default async function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2">
         {fills.length > 0 && (
           <div className="card space-y-2 !p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
               {t('fill')}
             </p>
             {fills.map((fill) => {
               const color =
                 fill.pct >= 80 ? 'bg-red-600' : fill.pct >= 60 ? 'bg-yellow-500' : 'bg-green-600';
               const text =
-                fill.pct >= 80 ? 'text-red-700' : fill.pct >= 60 ? 'text-yellow-700' : 'text-gray-600';
+                fill.pct >= 80 ? 'text-bad' : fill.pct >= 60 ? 'text-yellow-700' : 'text-ink-700';
               return (
                 <div key={fill.code} className="flex items-center gap-2">
                   <span className="w-14 shrink-0 font-mono text-sm font-extrabold">{fill.code}</span>
-                  <div className="h-3 min-w-0 flex-1 overflow-hidden rounded bg-gray-200">
+                  <div className="h-3 min-w-0 flex-1 overflow-hidden rounded bg-surface-sunken">
                     <div className={`h-full ${color}`} style={{ width: `${Math.min(100, fill.pct)}%` }} />
                   </div>
                   <span className={`w-32 shrink-0 text-right font-mono text-xs font-bold ${text}`}>
@@ -83,46 +83,46 @@ export default async function DashboardPage() {
         )}
 
         <div className="card space-y-1 !p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
             📦 {t('stock')}
           </p>
           {stock.map((row) => (
             <div key={row.code} className="flex items-baseline gap-2 text-sm">
               <span className="w-14 font-mono font-extrabold">{row.code}</span>
               <span className="font-semibold">{row.boxCount} 📦</span>
-              <span className="ml-auto font-mono text-xs text-gray-600">
+              <span className="ml-auto font-mono text-xs text-ink-700">
                 {row.kg} kg · {row.m3} m³
               </span>
             </div>
           ))}
-          {stock.length === 0 && <p className="text-sm text-gray-500">—</p>}
+          {stock.length === 0 && <p className="text-sm text-ink-500">—</p>}
         </div>
 
         <div className="card space-y-1 !p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
             🚛 {t('inTransit')}
           </p>
           {transit.map((batch) => (
             <Link
               key={batch.id}
               href={`/batches/${batch.id}`}
-              className="flex items-baseline gap-2 text-sm hover:bg-gray-50"
+              className="flex items-baseline gap-2 text-sm hover:bg-surface-sunken"
             >
-              <span className="font-mono font-extrabold text-blue-800">{batch.code}</span>
+              <span className="font-mono font-extrabold text-brand-700">{batch.code}</span>
               <span className="font-mono text-xs">{batch.originCode}→{batch.destCode}</span>
-              <span className="text-gray-600">{batch.boxCount} 📦</span>
+              <span className="text-ink-700">{batch.boxCount} 📦</span>
               {batch.departedAt && (
-                <span className="ml-auto text-xs text-gray-500">
+                <span className="ml-auto text-xs text-ink-500">
                   {format.dateTime(batch.departedAt, { dateStyle: 'short' })}
                 </span>
               )}
             </Link>
           ))}
-          {transit.length === 0 && <p className="text-sm text-gray-500">—</p>}
+          {transit.length === 0 && <p className="text-sm text-ink-500">—</p>}
         </div>
 
         <div className="card space-y-1 !p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
             📥 {t('receipts24h')}
           </p>
           {receipts24.map((row) => (
@@ -131,11 +131,11 @@ export default async function DashboardPage() {
               <span className="font-semibold">{row.n}</span>
             </div>
           ))}
-          {receipts24.length === 0 && <p className="text-sm text-gray-500">—</p>}
+          {receipts24.length === 0 && <p className="text-sm text-ink-500">—</p>}
         </div>
 
         <div className="card space-y-2 !p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
             ⚠️ {t('attention')}
           </p>
           <Link href="/unclaimed" className="flex items-baseline gap-2 text-sm">
@@ -149,32 +149,32 @@ export default async function DashboardPage() {
               <span>
                 🕰 {t('aging', { days: staleDays })} · <b className="font-mono">{row.code}</b>
               </span>
-              <span className="ml-auto font-bold text-orange-700">
+              <span className="ml-auto font-bold text-warn">
                 {row.n} 📦 (max {row.worstDays} {t('days')})
               </span>
             </div>
           ))}
           <Link href="/transit" className="flex items-baseline gap-2 text-sm">
             <span>🚨 {t('missingInTransit')}</span>
-            <span className={`ml-auto font-bold ${flags.missing > 0 ? 'text-red-700' : ''}`}>
+            <span className={`ml-auto font-bold ${flags.missing > 0 ? 'text-bad' : ''}`}>
               {flags.missing}
             </span>
           </Link>
           <div className="flex items-baseline gap-2 text-sm">
             <span>🌀 {t('undocumented')}</span>
-            <span className={`ml-auto font-bold ${flags.undocumented > 0 ? 'text-orange-700' : ''}`}>
+            <span className={`ml-auto font-bold ${flags.undocumented > 0 ? 'text-warn' : ''}`}>
               {flags.undocumented}
             </span>
           </div>
           {costMissing.length > 0 && (
-            <div className="space-y-1 border-t border-gray-100 pt-2 text-sm">
-              <p className="font-semibold text-orange-700">💸 {t('costMissing')}</p>
+            <div className="space-y-1 border-t border-line pt-2 text-sm">
+              <p className="font-semibold text-warn">💸 {t('costMissing')}</p>
               {costMissing.map((batch) => (
                 <Link key={batch.id} href={`/batches/${batch.id}`} className="flex gap-2 text-xs">
-                  <span className="font-mono font-bold text-blue-800">{batch.code}</span>
+                  <span className="font-mono font-bold text-brand-700">{batch.code}</span>
                   <span className="font-mono">{batch.originCode}→{batch.destCode}</span>
                   {batch.departedAt && (
-                    <span className="ml-auto text-gray-500">
+                    <span className="ml-auto text-ink-500">
                       {format.dateTime(batch.departedAt, { dateStyle: 'short' })}
                     </span>
                   )}

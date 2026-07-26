@@ -38,10 +38,10 @@ export default async function PipelinePage() {
   return (
     <div className="space-y-3">
       <PageHeader icon="chart" title={t('title')} />
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface-raised">
         <table className="w-full min-w-[560px] text-sm">
           <thead>
-            <tr className="border-b border-gray-300 bg-gray-50 text-left">
+            <tr className="border-b border-line-strong bg-surface-sunken text-left">
               <th className="p-2">{t('client')}</th>
               <th className="p-2 text-right">📦 {t('inStock')}</th>
               <th className="p-2 text-right">🚚 {t('inTransit')}</th>
@@ -51,20 +51,20 @@ export default async function PipelinePage() {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.clientId} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={row.clientId} className="border-b border-line hover:bg-surface-sunken">
                 <td className="p-2">
-                  <span className="font-mono font-extrabold text-blue-800">{row.clientCode}</span>{' '}
-                  <span className="text-gray-600">{row.clientName}</span>
+                  <span className="font-mono font-extrabold text-brand-700">{row.clientCode}</span>{' '}
+                  <span className="text-ink-700">{row.clientName}</span>
                 </td>
                 <td className="p-2 text-right font-semibold">{row.inStock}</td>
                 <td className="p-2 text-right">{row.inTransit}</td>
-                <td className="p-2 text-right font-semibold text-green-700">{row.ready}</td>
-                <td className="p-2 text-right text-gray-500">{row.issued}</td>
+                <td className="p-2 text-right font-semibold text-good">{row.ready}</td>
+                <td className="p-2 text-right text-ink-500">{row.issued}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{tc('empty')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{tc('empty')}</p>}
       </div>
     </div>
   );

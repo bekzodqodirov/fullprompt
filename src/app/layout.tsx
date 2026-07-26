@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
+import { readTheme } from '@/modules/platform/theme/theme';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -17,15 +18,17 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#1d4ed8',
+  themeColor: '#b80000',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getLocale();
   const messages = await getMessages();
+  // Rendered server-side so a dark phone never flashes white first.
+  const theme = await readTheme();
 
   return (
-    <html lang={locale}>
+    <html lang={locale} data-theme={theme ?? undefined}>
       <body>
         <NextIntlClientProvider locale={locale} messages={messages}>
           {children}

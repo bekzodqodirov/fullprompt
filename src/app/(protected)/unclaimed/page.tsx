@@ -38,21 +38,21 @@ export default async function UnclaimedPage() {
   return (
     <div className="space-y-4">
       <PageHeader icon="alert" title={t('unclaimedTitle')} />
-      {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
+      {rows.length === 0 && <p className="text-ink-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ receipt, whCode, boxCount }) => (
           <Link
             key={receipt.id}
             href={`/receipts/${receipt.id}`}
-            className="card block !p-3 hover:bg-gray-50"
+            className="card block !p-3 hover:bg-surface-sunken"
           >
             <div className="flex items-baseline gap-2">
               <span className="font-mono font-bold">{receipt.number}</span>
-              <span className="ml-auto text-xs text-gray-500">
+              <span className="ml-auto text-xs text-ink-500">
                 {format.dateTime(receipt.receivedAt, { dateStyle: 'short' })}
               </span>
             </div>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-ink-700">
               {whCode} · {boxCount} 📦 {receipt.sourceNote && `· ${receipt.sourceNote}`}
             </p>
           </Link>

@@ -18,14 +18,21 @@
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
     'PingFang SC', 'Microsoft YaHei', sans-serif;
 
-  /* Brand — a deep, unfussy blue. One accent, used for what you can act on. */
-  --brand-50: 239 245 255;
-  --brand-100: 219 233 254;
-  --brand-200: 191 214 254;
-  --brand-500: 47 106 233;
-  --brand-600: 29 78 216;
-  --brand-700: 24 64 175;
-  --brand-800: 21 52 141;
+  /* Brand — GSR GROUP red, sampled from the logo (its dominant is #B80000).
+     One accent, used for what you can act on. */
+  --brand-50: 253 242 242;
+  --brand-100: 251 226 226;
+  --brand-200: 245 196 196;
+  --brand-500: 196 16 16;
+  --brand-600: 184 0 0;
+  --brand-700: 156 0 0;
+  --brand-800: 122 0 0;
+
+  /* Semantic. Tokens rather than palette classes so the dark theme can
+     brighten them — green-700 on a dark card is unreadable. */
+  --good: 4 120 87;
+  --warn: 180 83 9;
+  --bad: 190 24 24;
 
   /* Ink — near-black for content, two greys for support. */
   --ink-900: 15 23 42;
@@ -40,6 +47,70 @@
 
   --line: 226 232 240;
   --line-strong: 203 213 225;
+}
+
+/**
+ * Dark theme.
+ *
+ * Every colour in the app resolves through the variables above, so the theme
+ * is this one block — not a `dark:` class on a thousand elements. The brand
+ * tints invert on purpose: `bg-brand-50 text-brand-800` is the icon chip used
+ * everywhere, and in the dark it has to be a dark tint with light text.
+ *
+ * `data-theme` wins over the system preference in both directions, so the
+ * toggle is authoritative; with no cookie set we follow the phone.
+ */
+:root[data-theme='dark'] {
+  --brand-50: 47 18 19;
+  --brand-100: 63 22 24;
+  --brand-200: 86 29 31;
+  --brand-500: 232 76 76;
+  --brand-600: 214 44 44;
+  --brand-700: 240 110 110;
+  --brand-800: 255 176 176;
+
+  --good: 52 211 153;
+  --warn: 251 191 36;
+  --bad: 248 113 113;
+
+  --ink-900: 232 236 243;
+  --ink-700: 197 205 217;
+  --ink-500: 145 155 170;
+  --ink-400: 116 126 141;
+
+  --surface: 13 16 20;
+  --surface-raised: 23 27 33;
+  --surface-sunken: 32 37 45;
+
+  --line: 41 47 57;
+  --line-strong: 58 66 78;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --brand-50: 47 18 19;
+    --brand-100: 63 22 24;
+    --brand-200: 86 29 31;
+    --brand-500: 232 76 76;
+    --brand-600: 214 44 44;
+    --brand-700: 240 110 110;
+    --brand-800: 255 176 176;
+
+    --good: 52 211 153;
+    --warn: 251 191 36;
+    --bad: 248 113 113;
+
+    --ink-900: 232 236 243;
+    --ink-700: 197 205 217;
+    --ink-500: 145 155 170;
+    --ink-400: 116 126 141;
+
+    --surface: 13 16 20;
+    --surface-raised: 23 27 33;
+    --surface-sunken: 32 37 45;
+
+    --line: 41 47 57;
+    --line-strong: 58 66 78;
+  }
 }
 
 html {
@@ -82,7 +153,7 @@ h3 {
   @apply btn text-ink-700 hover:bg-surface-sunken;
 }
 .btn-danger {
-  @apply btn bg-red-600 text-white shadow-card hover:bg-red-700 active:bg-red-800;
+  @apply btn bg-bad text-white shadow-card hover:opacity-90 active:opacity-80;
 }
 /* Icon-only: square, still a large target. */
 .btn-icon {
@@ -133,13 +204,13 @@ h3 {
   @apply chip bg-brand-50 text-brand-800;
 }
 .chip-good {
-  @apply chip bg-emerald-50 text-emerald-800;
+  @apply chip bg-good/10 text-good;
 }
 .chip-warn {
-  @apply chip bg-amber-50 text-amber-800;
+  @apply chip bg-warn/10 text-warn;
 }
 .chip-bad {
-  @apply chip bg-red-50 text-red-800;
+  @apply chip bg-bad/10 text-bad;
 }
 
 /* ---------------------------------------------------------------------------

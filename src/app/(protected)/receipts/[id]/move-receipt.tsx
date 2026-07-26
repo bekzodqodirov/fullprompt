@@ -49,7 +49,7 @@ export function MoveReceipt({
 
   if (movedTo) {
     return (
-      <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-semibold">
+      <div className="rounded-lg border border-good/30 bg-good/10 p-3 text-sm font-semibold">
         ✅ {t('movedTo', { wh: movedTo })} — 🖨 {t('movedReprintHint')}
       </div>
     );
@@ -64,7 +64,7 @@ export function MoveReceipt({
   }
 
   return (
-    <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
+    <div className="space-y-2 rounded-lg border border-brand-200 bg-brand-50 p-3">
       <p className="text-sm font-semibold">{t('moveReceiptHint')}</p>
       <select
         data-testid="move-wh"
@@ -94,7 +94,7 @@ export function MoveReceipt({
           {tc('cancel')}
         </button>
       </div>
-      {error && <p className="text-sm font-semibold text-red-700">{t(`moveErrors.${error}` as never) || error}</p>}
+      {error && <p className="text-sm font-semibold text-bad">{t(`moveErrors.${error}` as never) || error}</p>}
     </div>
   );
 }

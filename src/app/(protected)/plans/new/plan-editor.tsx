@@ -172,15 +172,15 @@ export function PlanEditor({
             {value} {unit}
           </span>
           {max ? (
-            <span className={over ? 'text-red-700' : 'text-gray-500'}>
+            <span className={over ? 'text-bad' : 'text-ink-500'}>
               / {max} {unit}
             </span>
           ) : null}
         </div>
         {max ? (
-          <div className="h-2 overflow-hidden rounded bg-gray-200">
+          <div className="h-2 overflow-hidden rounded bg-surface-sunken">
             <div
-              className={`h-full ${over ? 'bg-red-600' : 'bg-blue-600'}`}
+              className={`h-full ${over ? 'bg-red-600' : 'bg-brand-600'}`}
               style={{ width: `${Math.min(100, pct)}%` }}
             />
           </div>
@@ -247,7 +247,7 @@ export function PlanEditor({
 
       {stockCrates.length > 0 && (
         <div className="card space-y-1 !p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
             🧰 {t('cratesOnePlace')}
           </p>
           {stockCrates.map((crate) => {
@@ -258,7 +258,7 @@ export function PlanEditor({
                 type="button"
                 data-testid={`crate-${crate.code}`}
                 className={`flex w-full items-baseline gap-2 rounded-lg border-2 p-2 text-left text-sm ${
-                  on ? 'border-blue-600 bg-blue-50' : 'border-gray-200'
+                  on ? 'border-brand-500 bg-brand-50' : 'border-line'
                 }`}
                 onClick={() =>
                   setSelectedCrates((prev) => {
@@ -270,13 +270,13 @@ export function PlanEditor({
                 }
               >
                 <span className="font-bold">{on ? '☑' : '☐'}</span>
-                <span className="font-mono font-extrabold text-blue-800">{crate.code}</span>
+                <span className="font-mono font-extrabold text-brand-700">{crate.code}</span>
                 <span className="font-mono font-bold">{crate.clientCode ?? '?'}</span>
-                <span className="text-gray-600">{crate.boxCount} 📦</span>
+                <span className="text-ink-700">{crate.boxCount} 📦</span>
                 <span className="ml-auto whitespace-nowrap font-mono text-xs">
                   {crate.kg}kg {crate.m3}m³
                 </span>
-                <span className="whitespace-nowrap text-xs text-gray-500">
+                <span className="whitespace-nowrap text-xs text-ink-500">
                   = 1 {t('place')}
                 </span>
               </button>
@@ -289,7 +289,7 @@ export function PlanEditor({
         <div className="overflow-x-auto">
           <table className="w-full text-sm" id="plan-stock-table">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase tracking-wide text-ink-500">
                 <th className="p-2">📷</th>
                 <th className="p-2">{t('code')}</th>
                 <th className="p-2">{t('product')}</th>
@@ -306,7 +306,7 @@ export function PlanEditor({
                 return (
                   <tr
                     key={lot.lotId}
-                    className={`border-b border-gray-100 ${count > 0 ? 'bg-blue-50' : ''}`}
+                    className={`border-b border-line ${count > 0 ? 'bg-brand-50' : ''}`}
                   >
                     <td className="p-1.5">
                       {lot.photoId ? (
@@ -315,13 +315,13 @@ export function PlanEditor({
                         <span className="text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap p-2 font-mono font-extrabold text-blue-800">
+                    <td className="whitespace-nowrap p-2 font-mono font-extrabold text-brand-700">
                       {lot.clientCode ?? lot.marking ?? '?'}-{lot.letter}
                     </td>
                     <td className="max-w-44 truncate p-2">
                       {lot.productNameZh}
                       {lot.productNameRu && (
-                        <span className="text-gray-500"> ({lot.productNameRu})</span>
+                        <span className="text-ink-500"> ({lot.productNameRu})</span>
                       )}
                     </td>
                     <td className="p-2 text-right font-semibold">{lot.available}</td>
@@ -329,7 +329,7 @@ export function PlanEditor({
                     <td className="p-2 text-right">
                       {Math.round(lot.perBoxM3 * lot.available * 100) / 100}
                     </td>
-                    <td className="p-2 text-right text-gray-500">{lot.daysInStock}</td>
+                    <td className="p-2 text-right text-ink-500">{lot.daysInStock}</td>
                     <td className="p-1.5 text-center">
                       <div className="inline-flex items-center gap-1">
                         <button
@@ -337,8 +337,8 @@ export function PlanEditor({
                           aria-label={`all-${lot.letter}`}
                           className={`rounded-md px-2 py-1.5 text-xs font-bold ${
                             count === lot.available
-                              ? 'bg-blue-700 text-white'
-                              : 'bg-gray-100 text-gray-600'
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-surface-sunken text-ink-700'
                           }`}
                           onClick={() =>
                             setCount(lot.lotId, count === lot.available ? '0' : String(lot.available), lot.available)
@@ -363,29 +363,29 @@ export function PlanEditor({
             </tbody>
           </table>
         </div>
-        {lots.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noStock')}</p>}
+        {lots.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>}
       </div>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {t(`errors.${error}` as never) || tc('error')}
         </p>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
         <div className="mx-auto max-w-4xl space-y-2 px-4 py-2.5">
           <div className="flex items-center gap-4">
             <span className="whitespace-nowrap text-sm font-bold">
               Σ {totals.boxes} 📦
               {totals.places !== totals.boxes && (
-                <span className="text-gray-600"> · {totals.places} {t('place')}</span>
+                <span className="text-ink-700"> · {totals.places} {t('place')}</span>
               )}
             </span>
             {gauge(totals.kg, preset ? preset.maxKg : undefined, 'kg')}
             {gauge(totals.m3, preset ? preset.maxM3 : undefined, 'm³')}
             {totals.density !== null && (
               <span
-                className="whitespace-nowrap font-mono text-xs font-bold text-gray-600"
+                className="whitespace-nowrap font-mono text-xs font-bold text-ink-700"
                 title={t('avgDensity')}
               >
                 Ø {totals.density} kg/m³

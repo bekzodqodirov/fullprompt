@@ -33,14 +33,14 @@ export function TxForm({
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          className={`min-h-11 rounded-lg border-2 font-bold ${type === 'payment' ? 'border-green-600 bg-green-50 text-green-800' : 'border-gray-200 text-gray-500'}`}
+          className={`min-h-11 rounded-lg border-2 font-bold ${type === 'payment' ? 'border-green-600 bg-good/10 text-good' : 'border-line text-ink-500'}`}
           onClick={() => setType('payment')}
         >
           ➕ {t('payment')}
         </button>
         <button
           type="button"
-          className={`min-h-11 rounded-lg border-2 font-bold ${type === 'charge' ? 'border-red-600 bg-red-50 text-red-800' : 'border-gray-200 text-gray-500'}`}
+          className={`min-h-11 rounded-lg border-2 font-bold ${type === 'charge' ? 'border-red-600 bg-bad/10 text-bad' : 'border-line text-ink-500'}`}
           onClick={() => setType('charge')}
         >
           🧾 {t('charge')}
@@ -73,7 +73,7 @@ export function TxForm({
       </div>
       <input name="note" className="input" placeholder={t('note')} maxLength={2000} />
       {state.error && (
-        <p role="alert" className="text-sm font-semibold text-red-700">
+        <p role="alert" className="text-sm font-semibold text-bad">
           {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
         </p>
       )}

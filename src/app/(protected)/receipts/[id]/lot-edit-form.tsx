@@ -40,7 +40,7 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
           ✏️ {tc('edit')}
         </button>
         {state.ok && (
-          <span className="ml-2 text-xs font-semibold text-green-700">
+          <span className="ml-2 text-xs font-semibold text-good">
             ✅ {tc('saved')}
             {(state.reconciliation?.labelsToPrint ?? 0) > 0 &&
               ` · 🖨 ${t('labelsToPrint', { n: state.reconciliation!.labelsToPrint })}`}
@@ -55,7 +55,7 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
   }
 
   return (
-    <form action={formAction} className="mt-2 space-y-2 rounded-lg bg-gray-50 p-3">
+    <form action={formAction} className="mt-2 space-y-2 rounded-lg bg-surface-sunken p-3">
       <input type="hidden" name="lotId" value={lot.lotId} />
       <input
         name="productNameZh"
@@ -102,7 +102,7 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
         </div>
       )}
       {state.error && (
-        <p role="alert" className="text-sm font-semibold text-red-700">
+        <p role="alert" className="text-sm font-semibold text-bad">
           {state.error === 'edit_window_closed'
             ? t('editWindowClosed')
             : state.error === 'structural_locked'

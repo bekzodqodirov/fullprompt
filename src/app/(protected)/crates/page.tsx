@@ -46,23 +46,23 @@ export default async function CratesPage() {
         </Link>
         }
       />
-      {rows.length === 0 && <p className="text-gray-500">{tc('empty')}</p>}
+      {rows.length === 0 && <p className="text-ink-500">{tc('empty')}</p>}
       <div className="space-y-2">
         {rows.map(({ crate, clientCode, whCode, boxCount }) => (
           <Link
             key={crate.id}
             href={`/crates/${crate.id}`}
-            className="card block !p-3 hover:bg-gray-50"
+            className="card block !p-3 hover:bg-surface-sunken"
           >
             <div className="flex items-baseline gap-2">
-              <span className="font-mono font-extrabold text-blue-800">{crate.code}</span>
+              <span className="font-mono font-extrabold text-brand-700">{crate.code}</span>
               <span className="font-mono font-bold">{clientCode}</span>
-              <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold">
+              <span className="rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
                 {crate.kind === 'karkas' ? t('karkas') : t('yashik')}
               </span>
               <span className="ml-auto text-sm font-semibold">{boxCount} 📦</span>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-ink-500">
               {whCode} · {format.dateTime(crate.createdAt, { dateStyle: 'short' })}
               {crate.note && ` · ${crate.note}`}
             </p>

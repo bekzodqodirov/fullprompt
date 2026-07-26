@@ -31,9 +31,9 @@ export default async function CategoriesPage() {
             }}
           />
         ))}
-        {rows.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
+        {rows.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
       </div>
-      <p className="text-xs text-gray-500">ℹ️ {t('cashNote')}</p>
+      <p className="text-xs text-ink-500">ℹ️ {t('cashNote')}</p>
     </div>
   );
 }

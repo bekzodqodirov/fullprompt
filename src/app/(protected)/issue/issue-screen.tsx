@@ -173,8 +173,8 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
           </select>
           <div className="min-w-0 flex-1">
             {client ? (
-              <div className="flex min-h-12 items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3">
-                <span className="truncate font-mono font-extrabold text-green-800">
+              <div className="flex min-h-12 items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3">
+                <span className="truncate font-mono font-extrabold text-good">
                   {client.clientCode} — {client.name}
                 </span>
                 <button type="button" aria-label={tc('cancel')} className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center text-lg" onClick={() => setClient(null)}>
@@ -192,19 +192,19 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
               />
             )}
             {clientHits.length > 0 && !client && (
-              <ul className="absolute z-20 mt-1 w-72 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white shadow-lg">
+              <ul className="absolute z-20 mt-1 w-72 divide-y divide-line rounded-lg border border-line bg-surface-raised shadow-lg">
                 {clientHits.map((hit) => (
                   <li key={hit.id}>
                     <button
                       type="button"
-                      className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-gray-50"
+                      className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-surface-sunken"
                       onClick={() => {
                         setClient(hit);
                         setClientQuery('');
                         setDoneHandover(null);
                       }}
                     >
-                      <span className="font-mono font-extrabold text-blue-800">{hit.clientCode}</span>
+                      <span className="font-mono font-extrabold text-brand-700">{hit.clientCode}</span>
                       <span className="truncate">{hit.name}</span>
                     </button>
                   </li>
@@ -216,7 +216,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       </div>
 
       {doneHandover && (
-        <div className="space-y-2 rounded-lg border border-green-200 bg-green-50 p-3">
+        <div className="space-y-2 rounded-lg border border-good/30 bg-good/10 p-3">
           <p className="font-semibold">✅ {t('issued')}</p>
           <a
             href={`/api/handovers/${doneHandover}/act`}
@@ -230,11 +230,11 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       )}
 
       {client && debtUsd > 0.009 && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
-          <p className="font-bold text-red-800">
+        <div className="rounded-lg border border-bad/30 bg-bad/10 p-3 text-sm">
+          <p className="font-bold text-bad">
             ⚠️ {t('debtBanner', { amount: debtUsd.toFixed(2) })}
           </p>
-          {!canOverrideDebt && <p className="mt-1 text-red-700">{t('debtNeedsManager')}</p>}
+          {!canOverrideDebt && <p className="mt-1 text-bad">{t('debtNeedsManager')}</p>}
         </div>
       )}
 
@@ -242,12 +242,12 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
         <>
           <Scanner active onCode={onScan} />
           <div className="card space-y-2 !p-3" id="issuable-boxes">
-            {lots.size === 0 && <p className="text-sm text-gray-500">{t('noBoxes')}</p>}
+            {lots.size === 0 && <p className="text-sm text-ink-500">{t('noBoxes')}</p>}
             {[...lots.entries()].map(([lotId, lotBoxes]) => {
               const first = lotBoxes[0]!;
               const allIn = lotBoxes.every((b) => selected.has(b.boxId));
               return (
-                <div key={lotId} className="rounded-lg border border-gray-200 p-2">
+                <div key={lotId} className="rounded-lg border border-line p-2">
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 text-left"
@@ -262,13 +262,13 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                       })
                     }
                   >
-                    <span className={`flex h-6 w-6 items-center justify-center rounded border text-sm font-bold ${allIn ? 'border-blue-700 bg-blue-700 text-white' : 'border-gray-300'}`}>
+                    <span className={`flex h-6 w-6 items-center justify-center rounded border text-sm font-bold ${allIn ? 'border-blue-700 bg-brand-600 text-white' : 'border-line-strong'}`}>
                       {allIn ? '✓' : ''}
                     </span>
-                    <span className="font-mono text-lg font-extrabold text-blue-800">{first.letter ?? '·'}</span>
+                    <span className="font-mono text-lg font-extrabold text-brand-700">{first.letter ?? '·'}</span>
                     <span className="truncate">
                       {first.productNameZh}
-                      {first.productNameRu && <span className="text-gray-500"> ({first.productNameRu})</span>}
+                      {first.productNameRu && <span className="text-ink-500"> ({first.productNameRu})</span>}
                     </span>
                     <span className="ml-auto whitespace-nowrap text-sm font-semibold">
                       {lotBoxes.filter((b) => selected.has(b.boxId)).length}/{lotBoxes.length} 📦
@@ -281,8 +281,8 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                         type="button"
                         className={`min-h-10 rounded-md border px-3 py-1.5 font-mono text-sm font-semibold ${
                           selected.has(box.boxId)
-                            ? 'border-blue-700 bg-blue-50 text-blue-800'
-                            : 'border-gray-200 text-gray-600'
+                            ? 'border-blue-700 bg-brand-50 text-brand-700'
+                            : 'border-line text-ink-700'
                         }`}
                         onClick={() => toggle(box.boxId)}
                       >
@@ -298,13 +298,13 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       )}
 
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {error}
         </p>
       )}
 
       {client && (
-        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
           <div className="mx-auto max-w-4xl space-y-2 px-4 py-2.5">
             <div className="flex gap-2">
               <input
@@ -324,7 +324,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
               />
             </div>
             {debtUsd > 0.009 && canOverrideDebt && (
-              <label className="flex items-center gap-2 text-sm font-semibold text-red-800">
+              <label className="flex items-center gap-2 text-sm font-semibold text-bad">
                 <input type="checkbox" className="h-5 w-5" checked={debtOk} onChange={(e) => setDebtOk(e.target.checked)} />
                 {t('debtOk')}
               </label>

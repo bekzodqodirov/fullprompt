@@ -108,28 +108,28 @@ export function CostPanel({
   return (
     <div className="space-y-2">
       {entries.map((entry) => (
-        <div key={entry.id} className="flex flex-wrap items-baseline gap-2 border-b border-gray-100 py-1.5 text-sm last:border-0">
+        <div key={entry.id} className="flex flex-wrap items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
           <span>{entry.typeName}</span>
           <span className="font-semibold">
             {entry.amount} {entry.currency}
           </span>
           {entry.amountUsd !== null ? (
-            <span className="text-gray-500">≈ ${entry.amountUsd}</span>
+            <span className="text-ink-500">≈ ${entry.amountUsd}</span>
           ) : (
             <span className="rounded bg-orange-100 px-1.5 text-xs font-semibold text-orange-800">
               {t('noRate')}
             </span>
           )}
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-ink-500">
             {entry.costDate} · {t(`bases.${entry.allocationBasis}`)}
             {entry.clientCode && ` → ${entry.clientCode}`}
           </span>
-          {entry.note && <span className="w-full text-xs text-gray-500">{entry.note}</span>}
+          {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
           {canEdit && (
             <button
               type="button"
               aria-label={t('void')}
-              className="ml-auto text-xs font-semibold text-red-700"
+              className="ml-auto text-xs font-semibold text-bad"
               onClick={() => voidEntry(entry.id)}
             >
               🗑 {t('void')}
@@ -137,10 +137,10 @@ export function CostPanel({
           )}
         </div>
       ))}
-      {entries.length === 0 && <p className="text-sm text-gray-500">—</p>}
+      {entries.length === 0 && <p className="text-sm text-ink-500">—</p>}
 
       {error && !adding && (
-        <p role="alert" className="text-sm font-semibold text-red-700">
+        <p role="alert" className="text-sm font-semibold text-bad">
           {error}
         </p>
       )}
@@ -150,7 +150,7 @@ export function CostPanel({
         </button>
       )}
       {canEdit && adding && (
-        <div className="space-y-2 rounded-lg bg-gray-50 p-3">
+        <div className="space-y-2 rounded-lg bg-surface-sunken p-3">
           <select aria-label={t('type')} className="input" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
             {costTypes.map((type) => (
               <option key={type.id} value={type.id}>
@@ -212,7 +212,7 @@ export function CostPanel({
             onChange={(e) => setNote(e.target.value)}
           />
           {error && (
-            <p role="alert" className="text-sm font-semibold text-red-700">
+            <p role="alert" className="text-sm font-semibold text-bad">
               {error}
             </p>
           )}

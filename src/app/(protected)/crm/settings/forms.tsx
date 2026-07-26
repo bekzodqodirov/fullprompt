@@ -29,7 +29,7 @@ const TYPES = [
 function Feedback({ state }: { state: CrmFormState }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
-  if (state.ok) return <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>;
+  if (state.ok) return <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>;
   if (!state.error) return null;
   const message =
     state.error === 'options_required'
@@ -41,7 +41,7 @@ function Feedback({ state }: { state: CrmFormState }) {
           : state.error === 'needs_open'
             ? t('needsOpen')
             : tc('error');
-  return <p className="text-sm font-semibold text-red-700">{message}</p>;
+  return <p className="text-sm font-semibold text-bad">{message}</p>;
 }
 
 export interface StageRow {
@@ -60,7 +60,7 @@ export function StageForm({ stage }: { stage?: StageRow }) {
   const [state, formAction, pending] = useActionState<CrmFormState, FormData>(saveStageAction, {});
 
   return (
-    <form action={formAction} className="space-y-2 border-t border-gray-100 pt-2 first:border-0">
+    <form action={formAction} className="space-y-2 border-t border-line pt-2 first:border-0">
       {stage && <input type="hidden" name="id" value={stage.id} />}
       <div className="flex flex-wrap gap-2">
         <input
@@ -183,7 +183,7 @@ export function StageTools({ stages, usage }: { stages: StageRow[]; usage: Recor
                 await deleteStageAction(stage.id, others[index]!.id);
               });
             }}
-            className="px-1.5 text-red-700 disabled:opacity-30"
+            className="px-1.5 text-bad disabled:opacity-30"
             title={tc('delete')}
           >
             ✖
@@ -204,7 +204,7 @@ export function SourceForm({
   const [state, formAction, pending] = useActionState<CrmFormState, FormData>(saveSourceAction, {});
 
   return (
-    <form action={formAction} className="space-y-2 border-t border-gray-100 pt-2 first:border-0">
+    <form action={formAction} className="space-y-2 border-t border-line pt-2 first:border-0">
       {source && <input type="hidden" name="id" value={source.id} />}
       <div className="flex flex-wrap gap-2">
         <input
@@ -267,7 +267,7 @@ export function FieldForm({ field }: { field?: FieldRow }) {
   const [deleting, startDelete] = useTransition();
 
   return (
-    <form action={formAction} className="space-y-2 border-t border-gray-100 pt-2 first:border-0">
+    <form action={formAction} className="space-y-2 border-t border-line pt-2 first:border-0">
       {field && <input type="hidden" name="id" value={field.id} />}
       <div className="flex flex-wrap gap-2">
         <input

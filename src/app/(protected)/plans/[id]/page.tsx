@@ -73,17 +73,17 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
           <h1 className="font-mono text-xl font-extrabold">
             {originCode} → {destCode}
           </h1>
-          <span className="rounded bg-gray-100 px-2 py-0.5 text-sm font-semibold">
+          <span className="rounded bg-surface-sunken px-2 py-0.5 text-sm font-semibold">
             {t(`statuses.${plan.status}`)}
           </span>
           {batchCode && (
-            <Link href={`/batches/${plan.batchId}`} className="font-mono font-bold text-blue-800">
+            <Link href={`/batches/${plan.batchId}`} className="font-mono font-bold text-brand-700">
               {batchCode} →
             </Link>
           )}
         </div>
         {current && (
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-ink-700">
             v{current.versionNo} · {current.totalBoxes} 📦 · {current.totalKg} kg · {current.totalM3} m³
           </p>
         )}
@@ -108,23 +108,23 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
       <div className="card space-y-1">
         <h2 className="text-lg font-bold">{t('lines')}</h2>
         {lines.map(({ line, lot, clientCode, marking, crateCode }) => (
-          <div key={line.id} className="flex items-baseline gap-2 border-b border-gray-100 py-1.5 text-sm last:border-0">
-            <span className="font-mono font-extrabold text-blue-800">
+          <div key={line.id} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
+            <span className="font-mono font-extrabold text-brand-700">
               {clientCode ?? marking ?? '?'}-{lot.letter}
             </span>
             {crateCode && (
-              <span className="whitespace-nowrap rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">
+              <span className="whitespace-nowrap rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn">
                 🧰 {crateCode}
               </span>
             )}
             <span className="min-w-0 flex-1 truncate">
               {lot.productNameZh}
-              {lot.productNameRu && <span className="text-gray-500"> ({lot.productNameRu})</span>}
+              {lot.productNameRu && <span className="text-ink-500"> ({lot.productNameRu})</span>}
             </span>
             <span className="font-semibold">
               {line.plannedBoxCount}/{lot.boxCount} 📦
             </span>
-            <span className="text-gray-500">{line.plannedKg} kg</span>
+            <span className="text-ink-500">{line.plannedKg} kg</span>
           </div>
         ))}
       </div>
@@ -132,7 +132,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
       <div className="card space-y-2">
         <h2 className="text-lg font-bold">{t('versionHistory')}</h2>
         {versions.map((v) => (
-          <div key={v.id} className="rounded-lg border border-gray-100 p-2 text-sm">
+          <div key={v.id} className="rounded-lg border border-line p-2 text-sm">
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="font-bold">v{v.versionNo}</span>
               <span>{v.totalBoxes} 📦 · {v.totalKg} kg · {v.totalM3} m³</span>
@@ -140,18 +140,18 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
                 <span
                   className={`rounded px-2 py-0.5 text-xs font-semibold ${
                     v.agentVerdict === 'approved'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
+                      ? 'bg-good/15 text-good'
+                      : 'bg-bad/15 text-bad'
                   }`}
                 >
                   {v.agentVerdict === 'approved' ? t('agentApproved') : t('agentChanges')}
                 </span>
               )}
-              <span className="ml-auto text-xs text-gray-500">
+              <span className="ml-auto text-xs text-ink-500">
                 {format.dateTime(v.submittedAt, { dateStyle: 'short', timeStyle: 'short' })}
               </span>
             </div>
-            {v.agentComment && <p className="mt-1 text-xs text-gray-600">💬 {v.agentComment}</p>}
+            {v.agentComment && <p className="mt-1 text-xs text-ink-700">💬 {v.agentComment}</p>}
           </div>
         ))}
       </div>

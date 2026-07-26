@@ -175,8 +175,8 @@ export function CrateBuilder({
           </select>
           <div className="min-w-0 flex-1">
             {client ? (
-              <div className="flex min-h-12 items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3">
-                <span className="truncate font-mono font-extrabold text-green-800">
+              <div className="flex min-h-12 items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3">
+                <span className="truncate font-mono font-extrabold text-good">
                   {client.clientCode} — {client.name}
                 </span>
                 <button
@@ -199,18 +199,18 @@ export function CrateBuilder({
               />
             )}
             {clientHits.length > 0 && !client && (
-              <ul className="absolute z-20 mt-1 w-72 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white shadow-lg">
+              <ul className="absolute z-20 mt-1 w-72 divide-y divide-line rounded-lg border border-line bg-surface-raised shadow-lg">
                 {clientHits.map((hit) => (
                   <li key={hit.id}>
                     <button
                       type="button"
-                      className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-gray-50"
+                      className="flex w-full items-baseline gap-2 p-3 text-left hover:bg-surface-sunken"
                       onClick={() => {
                         setClient(hit);
                         setClientQuery('');
                       }}
                     >
-                      <span className="font-mono font-extrabold text-blue-800">{hit.clientCode}</span>
+                      <span className="font-mono font-extrabold text-brand-700">{hit.clientCode}</span>
                       <span className="truncate">{hit.name}</span>
                     </button>
                   </li>
@@ -220,12 +220,12 @@ export function CrateBuilder({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded-lg border border-gray-300 text-sm font-semibold">
+          <div className="flex overflow-hidden rounded-lg border border-line-strong text-sm font-semibold">
             {(['yashik', 'karkas'] as const).map((k) => (
               <button
                 key={k}
                 type="button"
-                className={`px-3 py-2 ${kind === k ? 'bg-blue-700 text-white' : 'bg-white'}`}
+                className={`px-3 py-2 ${kind === k ? 'bg-brand-600 text-white' : 'bg-surface-raised'}`}
                 onClick={() => setKind(k)}
               >
                 {k === 'yashik' ? t('yashik') : t('karkas')}
@@ -280,17 +280,17 @@ export function CrateBuilder({
             ))}
           </select>
         </div>
-        <p className="text-xs text-gray-500">{t('dimsHint')}</p>
+        <p className="text-xs text-ink-500">{t('dimsHint')}</p>
       </div>
 
       {client && (
         <div className="card space-y-2 !p-3" id="cratable-boxes">
-          {lots.size === 0 && <p className="text-sm text-gray-500">{t('noBoxes')}</p>}
+          {lots.size === 0 && <p className="text-sm text-ink-500">{t('noBoxes')}</p>}
           {[...lots.entries()].map(([lotId, lotBoxes]) => {
             const allIn = lotBoxes.every((b) => selected.has(b.boxId));
             const first = lotBoxes[0]!;
             return (
-              <div key={lotId} className="rounded-lg border border-gray-200 p-2">
+              <div key={lotId} className="rounded-lg border border-line p-2">
                 <button
                   type="button"
                   className="flex w-full items-center gap-2 text-left"
@@ -298,18 +298,18 @@ export function CrateBuilder({
                 >
                   <span
                     className={`flex h-6 w-6 items-center justify-center rounded border text-sm font-bold ${
-                      allIn ? 'border-blue-700 bg-blue-700 text-white' : 'border-gray-300'
+                      allIn ? 'border-blue-700 bg-brand-600 text-white' : 'border-line-strong'
                     }`}
                   >
                     {allIn ? '✓' : ''}
                   </span>
-                  <span className="font-mono text-lg font-extrabold text-blue-800">
+                  <span className="font-mono text-lg font-extrabold text-brand-700">
                     {first.letter ?? '·'}
                   </span>
                   <span className="truncate">
                     {first.productNameZh}
                     {first.productNameRu && (
-                      <span className="text-gray-500"> ({first.productNameRu})</span>
+                      <span className="text-ink-500"> ({first.productNameRu})</span>
                     )}
                   </span>
                   <span className="ml-auto whitespace-nowrap text-sm font-semibold">
@@ -323,8 +323,8 @@ export function CrateBuilder({
                       type="button"
                       className={`min-h-10 rounded-md border px-3 py-1.5 font-mono text-sm font-semibold ${
                         selected.has(box.boxId)
-                          ? 'border-blue-700 bg-blue-50 text-blue-800'
-                          : 'border-gray-200 text-gray-600'
+                          ? 'border-blue-700 bg-brand-50 text-brand-700'
+                          : 'border-line text-ink-700'
                       }`}
                       onClick={() => toggle(box.boxId)}
                     >
@@ -339,12 +339,12 @@ export function CrateBuilder({
       )}
 
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {t(`errors.${error}` as never) || tc('error')}
         </p>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
         <div className="mx-auto max-w-4xl space-y-2 px-4 py-2.5">
           <label className="flex items-center gap-2 text-sm font-semibold">
             <input

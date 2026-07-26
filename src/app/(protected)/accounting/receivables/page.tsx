@@ -48,7 +48,7 @@ export default async function ReceivablesPage({
 
       <form method="get" className="flex flex-wrap items-end gap-2">
         <label className="text-sm">
-          <span className="block text-xs text-gray-500">{t('asOf')}</span>
+          <span className="block text-xs text-ink-500">{t('asOf')}</span>
           <input type="date" name="asOf" defaultValue={asOf} className="input !w-40" />
         </label>
         <button type="submit" className="btn-primary px-4">
@@ -66,7 +66,7 @@ export default async function ReceivablesPage({
       <p className="text-sm font-semibold">
         {t('debt')}: {usd(totals.balance)} $
         {rate && (
-          <span className="ml-2 font-normal text-gray-500">
+          <span className="ml-2 font-normal text-ink-500">
             {toUzs(totals.balance, rate)?.toLocaleString('en-US')} UZS
           </span>
         )}
@@ -76,37 +76,37 @@ export default async function ReceivablesPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[600px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <th className="p-2">{t('client')}</th>
                 <th className="p-2 text-right">{t('debt')} $</th>
                 <th className="p-2 text-right">{t('days0')}</th>
                 <th className="p-2 text-right">{t('days30')}</th>
                 <th className="p-2 text-right">{t('days60')}</th>
-                <th className="p-2 text-right text-red-700">{t('days90')}</th>
+                <th className="p-2 text-right text-bad">{t('days90')}</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-3 text-center text-gray-500">
+                  <td colSpan={6} className="p-3 text-center text-ink-500">
                     {t('empty')}
                   </td>
                 </tr>
               )}
               {rows.map((row) => (
-                <tr key={row.clientCode} className="border-b border-gray-100">
+                <tr key={row.clientCode} className="border-b border-line">
                   <td className="p-2">
-                    <Link href={`/finance?q=${row.clientCode}`} className="font-mono font-bold text-blue-800">
+                    <Link href={`/finance?q=${row.clientCode}`} className="font-mono font-bold text-brand-700">
                       {row.clientCode}
                     </Link>
-                    <span className="ml-2 text-gray-600">{row.clientName}</span>
+                    <span className="ml-2 text-ink-700">{row.clientName}</span>
                   </td>
                   <td className="p-2 text-right font-mono font-bold">{usd(row.balance)}</td>
                   {row.buckets.map((value, index) => (
                     <td
                       key={index}
                       className={`p-2 text-right font-mono ${
-                        index === 3 && value > 0 ? 'bg-red-50 font-bold text-red-800' : ''
+                        index === 3 && value > 0 ? 'bg-bad/10 font-bold text-bad' : ''
                       }`}
                     >
                       {value ? usd(value) : ''}
@@ -115,7 +115,7 @@ export default async function ReceivablesPage({
                 </tr>
               ))}
               {rows.length > 0 && (
-                <tr className="border-t-2 border-gray-400 font-bold">
+                <tr className="border-t-2 border-line-strong font-bold">
                   <td className="p-2">{t('total')}</td>
                   <td className="p-2 text-right font-mono">{usd(totals.balance)}</td>
                   {totals.buckets.map((value, index) => (

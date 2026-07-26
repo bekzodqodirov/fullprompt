@@ -37,15 +37,15 @@ export default async function UsersPage() {
           <Link
             key={user.id}
             href={`/admin/users/${user.id}`}
-            className={`card block hover:bg-gray-50 ${user.active ? '' : 'opacity-50'}`}
+            className={`card block hover:bg-surface-sunken ${user.active ? '' : 'opacity-50'}`}
           >
             <div className="flex items-baseline gap-2">
               <span className="font-semibold">{user.fullName}</span>
-              <span className="ml-auto text-xs text-gray-500">
+              <span className="ml-auto text-xs text-ink-500">
                 {user.active ? tc('active') : tc('inactive')}
               </span>
             </div>
-            <div className="mt-1 text-sm text-gray-600">
+            <div className="mt-1 text-sm text-ink-700">
               {user.phone} ·{' '}
               {(rolesByUser.get(user.id) ?? [])
                 .map((code) => t(`roleNames.${code}`))
@@ -54,7 +54,7 @@ export default async function UsersPage() {
           </Link>
         ))}
       </div>
-      {rows.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
+      {rows.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
     </div>
   );
 }

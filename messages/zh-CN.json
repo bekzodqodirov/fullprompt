@@ -903,5 +903,19 @@
     "dormantNote": "曾经发货但已停止的客户。从未发过货的不会出现在这里。",
     "personNote": "代码不会被合并：各自保留字母、货物和客户端。主体只是在销售侧把它们关联起来。",
     "dragHint": "长按卡片可拖到其他阶段"
+  },
+  "navShort": {
+    "home": "首页",
+    "receive": "入库",
+    "batches": "装车",
+    "plans": "计划",
+    "issue": "交付",
+    "stock": "库存",
+    "crm": "CRM",
+    "funnel": "漏斗",
+    "finance": "财务",
+    "accounting": "管账",
+    "reports": "报表",
+    "search": "搜索"
   }
 }

@@ -48,7 +48,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="mx-auto max-w-lg space-y-3">
-      <Link href="/crm/leads" className="text-sm font-semibold text-blue-800">
+      <Link href="/crm/leads" className="text-sm font-semibold text-brand-700">
         ← {t('funnel')}
       </Link>
       <h1 className="text-xl font-bold [overflow-wrap:anywhere]">{lead.name}</h1>
@@ -64,11 +64,11 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         }))}
       />
       {lead.lostReason && (
-        <p className="card !py-2 text-sm text-red-700">✖ {lead.lostReason}</p>
+        <p className="card !py-2 text-sm text-bad">✖ {lead.lostReason}</p>
       )}
 
       {lead.clientId ? (
-        <Link href={`/admin/clients/${lead.clientId}`} className="card block text-sm font-semibold text-green-700">
+        <Link href={`/admin/clients/${lead.clientId}`} className="card block text-sm font-semibold text-good">
           ✅ {t('alreadyClient')} →
         </Link>
       ) : (
@@ -90,10 +90,10 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       <ActivityForm entityType="lead" entityId={id} today={today} />
 
       <div className="card space-y-2">
-        <h2 className="text-sm font-bold uppercase text-gray-500">🕘 {t('history')}</h2>
+        <h2 className="text-sm font-bold uppercase text-ink-500">🕘 {t('history')}</h2>
         {log.map(({ activity, authorName }) => (
-          <div key={activity.id} className="border-b border-gray-100 pb-2 last:border-0 last:pb-0">
-            <div className="flex items-baseline gap-2 text-xs text-gray-500">
+          <div key={activity.id} className="border-b border-line pb-2 last:border-0 last:pb-0">
+            <div className="flex items-baseline gap-2 text-xs text-ink-500">
               <span>{icon[activity.kind] ?? '📝'}</span>
               <span>{activity.happenedAt.toISOString().slice(0, 10)}</span>
               {authorName && <span className="ml-auto">{authorName}</span>}
@@ -101,7 +101,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
             <p className="text-sm [overflow-wrap:anywhere]">{activity.note}</p>
           </div>
         ))}
-        {log.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
+        {log.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
       </div>
 
       <Panel title={`✏️ ${tc('edit')}`}>

@@ -103,7 +103,7 @@ export default async function MapPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-3">
       <PageHeader icon="map" title={t('title')} />
-      <p className="text-xs text-gray-500">{t('disclaimer')}</p>
+      <p className="text-xs text-ink-500">{t('disclaimer')}</p>
       <TrackingMap warehouses={mapWarehouses} trucks={trucks} basemap={basemapAvailable()} />
     </div>
   );

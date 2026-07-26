@@ -92,25 +92,25 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     <div className="mx-auto max-w-lg space-y-4 md:max-w-2xl">
       <BackLink href={`/batches/${id}`} label={batch.code} />
       <PageHeader icon="wallet" title={t('pricingTitle')} />
-      <p className="text-sm text-gray-500">{t('pricingHint')}</p>
+      <p className="text-sm text-ink-500">{t('pricingHint')}</p>
 
-      {clientRows.length === 0 && <p className="text-sm text-gray-500">{t('empty')}</p>}
+      {clientRows.length === 0 && <p className="text-sm text-ink-500">{t('empty')}</p>}
       {clientRows.map((row) => {
         const chargedUsd = chargedByClient.get(row.clientId!) ?? 0;
         return (
           <div key={row.clientId} className="card space-y-2">
             <div className="flex items-baseline gap-2">
-              <Link href={`/finance/${row.clientId}`} className="font-mono text-lg font-extrabold text-blue-800">
+              <Link href={`/finance/${row.clientId}`} className="font-mono text-lg font-extrabold text-brand-700">
                 {row.clientCode}
               </Link>
-              <span className="truncate text-sm text-gray-600">{row.clientName}</span>
+              <span className="truncate text-sm text-ink-700">{row.clientName}</span>
               <span className="ml-auto whitespace-nowrap text-sm font-semibold">
                 {row.boxCount} 📦 · {Math.round(Number(row.kg) * 10) / 10} kg ·{' '}
                 {Math.round(Number(row.m3) * 1000) / 1000} m³
               </span>
             </div>
             {chargedUsd > 0 && (
-              <p className="text-sm font-semibold text-green-700">
+              <p className="text-sm font-semibold text-good">
                 ✅ {t('alreadyCharged')}: ${chargedUsd.toFixed(2)}
               </p>
             )}

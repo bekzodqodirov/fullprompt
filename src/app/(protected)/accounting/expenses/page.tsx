@@ -74,7 +74,7 @@ export default async function ExpensesPage({
       <PageHeader icon="doc" title={t('expenses')} />
 
       {categories.length === 0 ? (
-        <p className="card text-sm text-gray-600">{t('noCategories')}</p>
+        <p className="card text-sm text-ink-700">{t('noCategories')}</p>
       ) : (
         <ExpenseForm {...options} today={today} />
       )}
@@ -85,21 +85,21 @@ export default async function ExpensesPage({
           {recurring.map(({ recurring: template, categoryName, employeeName }) => (
             <div
               key={template.id}
-              className={`flex flex-wrap items-baseline gap-2 border-b border-gray-100 py-1.5 text-sm last:border-0 ${
+              className={`flex flex-wrap items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0 ${
                 template.active ? '' : 'opacity-50'
               }`}
             >
               <span className="font-semibold">{categoryName}</span>
-              {employeeName && <span className="text-gray-600">{employeeName}</span>}
+              {employeeName && <span className="text-ink-700">{employeeName}</span>}
               <span className="ml-auto font-mono font-bold">
                 {Number(template.amount).toLocaleString('en-US')} {template.currency}
               </span>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-ink-500">
                 {t('dayOfMonth')}: {template.dayOfMonth}
               </span>
             </div>
           ))}
-          {recurring.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
+          {recurring.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
         </div>
         {categories.length > 0 && <RecurringForm {...options} />}
       </Panel>
@@ -110,7 +110,7 @@ export default async function ExpensesPage({
         exportHref="/api/accounting/expenses"
         extra={
           <label className="text-sm">
-            <span className="block text-xs text-gray-500">{t('category')}</span>
+            <span className="block text-xs text-ink-500">{t('category')}</span>
             <select name="categoryId" defaultValue={categoryId ?? ''} className="input !w-44">
               <option value="">— {t('category')} —</option>
               {categories.map((row) => (
@@ -131,7 +131,7 @@ export default async function ExpensesPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <th className="p-2">{t('date')}</th>
                 <th className="p-2">{t('category')}</th>
                 <th className="p-2 text-right">{t('amount')}</th>
@@ -144,18 +144,18 @@ export default async function ExpensesPage({
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-3 text-center text-gray-500">
+                  <td colSpan={7} className="p-3 text-center text-ink-500">
                     {t('empty')}
                   </td>
                 </tr>
               )}
               {rows.map(({ expense, categoryName, warehouseCode, employeeName, accountName }) => (
-                <tr key={expense.id} className="border-b border-gray-100">
+                <tr key={expense.id} className="border-b border-line">
                   <td className="p-2 whitespace-nowrap font-mono">{expense.expenseDate}</td>
                   <td className="p-2">
                     {categoryName}
                     {(warehouseCode || employeeName) && (
-                      <span className="ml-2 text-xs text-gray-500">
+                      <span className="ml-2 text-xs text-ink-500">
                         {[warehouseCode, employeeName].filter(Boolean).join(' · ')}
                       </span>
                     )}
@@ -166,8 +166,8 @@ export default async function ExpensesPage({
                   <td className="p-2 text-right font-mono font-bold">
                     {Number(expense.amountUsd).toLocaleString('en-US')}
                   </td>
-                  <td className="p-2 text-gray-600">{accountName ?? ''}</td>
-                  <td className="p-2 text-gray-600">{expense.note ?? ''}</td>
+                  <td className="p-2 text-ink-700">{accountName ?? ''}</td>
+                  <td className="p-2 text-ink-700">{expense.note ?? ''}</td>
                   <td className="p-2 text-right">
                     <VoidExpenseButton id={expense.id} />
                   </td>

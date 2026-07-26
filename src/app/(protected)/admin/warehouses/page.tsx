@@ -28,22 +28,22 @@ export default async function WarehousesPage() {
           <Link
             key={wh.id}
             href={`/admin/warehouses/${wh.id}`}
-            className={`card block hover:bg-gray-50 ${wh.active ? '' : 'opacity-50'}`}
+            className={`card block hover:bg-surface-sunken ${wh.active ? '' : 'opacity-50'}`}
           >
             <div className="flex items-baseline gap-2">
-              <span className="font-mono text-lg font-extrabold text-blue-800">{wh.code}</span>
+              <span className="font-mono text-lg font-extrabold text-brand-700">{wh.code}</span>
               <span className="font-semibold">{wh.name}</span>
-              <span className="ml-auto text-xs text-gray-500">
+              <span className="ml-auto text-xs text-ink-500">
                 {wh.active ? tc('active') : tc('inactive')}
               </span>
             </div>
-            <div className="mt-1 text-sm text-gray-600">
+            <div className="mt-1 text-sm text-ink-700">
               {wh.country} · {t(`types.${wh.type}`)} · {wh.timezone}
             </div>
           </Link>
         ))}
       </div>
-      {rows.length === 0 && <p className="text-sm text-gray-500">{tc('empty')}</p>}
+      {rows.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
     </div>
   );
 }

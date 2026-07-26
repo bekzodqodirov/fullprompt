@@ -30,9 +30,9 @@ export function CategoryForm({ category }: { category?: CategoryRow }) {
   return (
     <form
       action={formAction}
-      className={category ? 'space-y-2 border-t border-gray-100 pt-2' : 'card space-y-2'}
+      className={category ? 'space-y-2 border-t border-line pt-2' : 'card space-y-2'}
     >
-      {!category && <h2 className="text-sm font-bold uppercase text-gray-500">🗂 {t('categories')}</h2>}
+      {!category && <h2 className="text-sm font-bold uppercase text-ink-500">🗂 {t('categories')}</h2>}
       {category && <input type="hidden" name="id" value={category.id} />}
       <div className="flex flex-wrap items-end gap-2">
         <input
@@ -45,7 +45,7 @@ export function CategoryForm({ category }: { category?: CategoryRow }) {
           required
         />
         <label className="text-sm">
-          <span className="block text-xs text-gray-500">#</span>
+          <span className="block text-xs text-ink-500">#</span>
           <input
             name="sortOrder"
             type="number"
@@ -86,8 +86,8 @@ export function CategoryForm({ category }: { category?: CategoryRow }) {
       >
         {pending ? tc('loading') : tc('save')}
       </button>
-      {state.ok && <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>}
-      {state.error && <p className="text-sm font-semibold text-red-700">{tc('error')}</p>}
+      {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
+      {state.error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
     </form>
   );
 }

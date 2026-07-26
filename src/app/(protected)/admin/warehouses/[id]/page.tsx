@@ -25,7 +25,7 @@ export default async function WarehouseDetailPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">
-          <span className="font-mono text-blue-800">{wh.code}</span> — {wh.name}
+          <span className="font-mono text-brand-700">{wh.code}</span> — {wh.name}
         </h1>
         <form action={toggle}>
           <button type="submit" className={wh.active ? 'btn-danger' : 'btn-primary'}>
@@ -34,7 +34,7 @@ export default async function WarehouseDetailPage({
         </form>
       </div>
 
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-ink-700">
         {t('letterState')}: {wh.letterPosition} / cycle {wh.letterCycleNo}
       </p>
 

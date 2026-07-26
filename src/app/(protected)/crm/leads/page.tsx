@@ -95,7 +95,7 @@ export default async function LeadsPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[420px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <th className="p-2">{t('source')}</th>
                 <th className="p-2 text-right">{t('totalLeads')}</th>
                 <th className="p-2 text-right">{t('kindWon')}</th>
@@ -105,17 +105,17 @@ export default async function LeadsPage({
             </thead>
             <tbody>
               {funnel.sources.map((row) => (
-                <tr key={row.name} className="border-b border-gray-100">
+                <tr key={row.name} className="border-b border-line">
                   <td className="p-2">{row.name}</td>
                   <td className="p-2 text-right font-mono">{row.total}</td>
-                  <td className="p-2 text-right font-mono text-green-700">{row.won}</td>
-                  <td className="p-2 text-right font-mono text-red-700">{row.lost}</td>
+                  <td className="p-2 text-right font-mono text-good">{row.won}</td>
+                  <td className="p-2 text-right font-mono text-bad">{row.lost}</td>
                   <td className="p-2 text-right font-bold">{row.decided ? `${row.winRate}%` : '—'}</td>
                 </tr>
               ))}
               {funnel.sources.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="p-3 text-center text-gray-500">
+                  <td colSpan={5} className="p-3 text-center text-ink-500">
                     {t('empty')}
                   </td>
                 </tr>

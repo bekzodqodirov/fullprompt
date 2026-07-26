@@ -126,9 +126,9 @@ export function Stat({
   const toneClass = {
     neutral: 'text-ink-900',
     brand: 'text-brand-700',
-    good: 'text-emerald-700',
-    warn: 'text-amber-600',
-    bad: 'text-red-600',
+    good: 'text-good',
+    warn: 'text-warn',
+    bad: 'text-bad',
   }[tone];
 
   const body = (

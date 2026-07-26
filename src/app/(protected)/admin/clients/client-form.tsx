@@ -42,7 +42,7 @@ export function ClientForm({
           placeholder={initial ? `${codePrefix}777` : t('codeAutoPlaceholder', { prefix: codePrefix })}
           required={Boolean(initial)}
         />
-        {!initial && <p className="mt-1 text-xs text-gray-500">{t('codeAutoHint')}</p>}
+        {!initial && <p className="mt-1 text-xs text-ink-500">{t('codeAutoHint')}</p>}
       </div>
       <div>
         <label className="label" htmlFor="name">
@@ -99,7 +99,7 @@ export function ClientForm({
         <textarea id="notes" name="notes" className="input py-2" rows={3} defaultValue={initial?.notes} />
       </div>
       {state.error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
           {state.error === 'code_exists' && t('codeExists')}
           {state.error === 'code_format' &&
             t('codeFormat', { prefix: codePrefix, example: `${codePrefix}777` })}

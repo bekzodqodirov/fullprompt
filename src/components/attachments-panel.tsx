@@ -107,11 +107,11 @@ export function AttachmentsPanel({
                 href={`/api/attachments/${item.id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="flex h-16 w-16 flex-col items-center justify-center rounded-lg bg-gray-100 p-1 text-center text-2xl"
+                className="flex h-16 w-16 flex-col items-center justify-center rounded-lg bg-surface-sunken p-1 text-center text-2xl"
                 title={item.fileName}
               >
                 📄
-                <span className="max-w-full truncate text-[10px] text-gray-600">{item.fileName}</span>
+                <span className="max-w-full truncate text-[10px] text-ink-700">{item.fileName}</span>
               </a>
               {editable && (
                 <button
@@ -140,7 +140,7 @@ export function AttachmentsPanel({
           </label>
         )}
       </div>
-      {error && <p className="text-xs font-semibold text-red-700">{error}</p>}
+      {error && <p className="text-xs font-semibold text-bad">{error}</p>}
     </div>
   );
 }

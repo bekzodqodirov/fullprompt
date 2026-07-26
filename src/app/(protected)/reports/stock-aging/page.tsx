@@ -41,7 +41,7 @@ export default async function StockAgingReportPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
-              <tr className="border-b border-gray-300 bg-gray-50 text-left text-xs uppercase text-gray-500">
+              <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
                 <SortTh label="WH" field="whCode" sort={sort} dir={dir} />
                 <SortTh label={t('code')} field="code" sort={sort} dir={dir} />
                 <th className="p-2">{t('product')}</th>
@@ -54,16 +54,16 @@ export default async function StockAgingReportPage({
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={i} className="border-b border-gray-100 last:border-0">
+                <tr key={i} className="border-b border-line last:border-0">
                   <td className="p-2 font-mono font-bold">{row.whCode}</td>
-                  <td className="p-2 font-mono font-extrabold text-blue-800">{row.code}</td>
+                  <td className="p-2 font-mono font-extrabold text-brand-700">{row.code}</td>
                   <td className="max-w-56 truncate p-2">{row.product}</td>
                   <td className="p-2 text-right">{row.boxCount}</td>
                   <td className="p-2 text-right">{row.kg}</td>
                   <td className="p-2 text-right">{row.m3}</td>
-                  <td className="p-2 text-right text-gray-500">{row.density ?? '—'}</td>
+                  <td className="p-2 text-right text-ink-500">{row.density ?? '—'}</td>
                   {/* Owner's thresholds: ≥7 days yellow, ≥14 days red. */}
-                  <td className={`p-2 text-right font-bold ${row.days >= 14 ? 'text-red-700' : row.days >= 7 ? 'text-yellow-600' : ''}`}>
+                  <td className={`p-2 text-right font-bold ${row.days >= 14 ? 'text-bad' : row.days >= 7 ? 'text-yellow-600' : ''}`}>
                     {row.days}
                   </td>
                 </tr>
@@ -71,7 +71,7 @@ export default async function StockAgingReportPage({
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && <p className="p-4 text-sm text-gray-500">{t('noData')}</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noData')}</p>}
       </div>
     </div>
   );

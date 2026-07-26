@@ -10,7 +10,7 @@ export function VoidExpenseButton({ id }: { id: string }) {
     <button
       type="button"
       data-testid="void-expense"
-      className="text-xs font-semibold text-red-700 underline"
+      className="text-xs font-semibold text-bad underline"
       onClick={() => {
         const reason = window.prompt(t('voidReason'));
         if (!reason || reason.trim().length < 2) return;

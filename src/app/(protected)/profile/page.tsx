@@ -28,7 +28,7 @@ export default async function ProfilePage() {
       <h1 className="text-xl font-bold">{t('title')}</h1>
       <div className="card">
         <p className="font-semibold">{user.fullName}</p>
-        <p className="text-sm text-gray-600">{user.phone}</p>
+        <p className="text-sm text-ink-700">{user.phone}</p>
       </div>
 
       <section className="space-y-3">
@@ -38,11 +38,11 @@ export default async function ProfilePage() {
             <div>
               <span className="font-semibold">{device.deviceLabel}</span>
               {device.id === user.sessionId && (
-                <span className="ml-2 rounded bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">
+                <span className="ml-2 rounded bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-700">
                   {t('thisDevice')}
                 </span>
               )}
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-ink-500">
                 {device.ip ?? ''} · {t('lastSeen')}:{' '}
                 {format.dateTime(device.lastSeenAt, { dateStyle: 'short', timeStyle: 'short' })}
               </div>
@@ -59,14 +59,14 @@ export default async function ProfilePage() {
       <section>
         <h2 className="mb-2 text-lg font-bold">{t('telegram')}</h2>
         {telegramLink?.status === 'linked' ? (
-          <p className="font-semibold text-green-700">{t('telegramLinked')}</p>
+          <p className="font-semibold text-good">{t('telegramLinked')}</p>
         ) : (
           <form action={createTelegramLinkAction}>
             <button type="submit" className="btn-primary">
               ✈️ {t('telegramConnect')}
             </button>
             {telegramLink?.status === 'pending' && (
-              <p className="mt-1 text-sm text-gray-500">{t('telegramPending')}</p>
+              <p className="mt-1 text-sm text-ink-500">{t('telegramPending')}</p>
             )}
           </form>
         )}
@@ -74,13 +74,13 @@ export default async function ProfilePage() {
 
       <section className="space-y-2">
         <h2 className="text-lg font-bold">🔕 {t('notifTitle')}</h2>
-        <p className="text-sm text-gray-500">{t('notifHint')}</p>
+        <p className="text-sm text-ink-500">{t('notifHint')}</p>
         <form action={setNotificationMutesAction} className="card space-y-3 !p-3 text-sm">
           <label className="flex min-h-10 items-center gap-3 font-semibold">
             <input type="checkbox" name="mute_all" defaultChecked={mutes.all} className="h-5 w-5" />
             {t('notifMuteAll')}
           </label>
-          <div className="space-y-2 border-t border-gray-100 pt-2">
+          <div className="space-y-2 border-t border-line pt-2">
             <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_digest" defaultChecked={mutes.groups.digest} className="h-5 w-5" />
               📊 {t('notifMuteDigest')}
@@ -100,7 +100,7 @@ export default async function ProfilePage() {
         </form>
       </section>
 
-      <p className="text-center text-xs text-gray-400">build: {process.env.NEXT_PUBLIC_BUILD_AT}</p>
+      <p className="text-center text-xs text-ink-400">build: {process.env.NEXT_PUBLIC_BUILD_AT}</p>
     </div>
   );
 }

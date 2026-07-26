@@ -38,7 +38,7 @@ export function ExpenseForm({
 
   return (
     <form action={formAction} className="card space-y-2">
-      <h2 className="text-sm font-bold uppercase text-gray-500">🧾 {t('addExpense')}</h2>
+      <h2 className="text-sm font-bold uppercase text-ink-500">🧾 {t('addExpense')}</h2>
       <div className="flex flex-wrap gap-2">
         <select name="categoryId" aria-label={t('category')} className="input min-w-44 flex-1" required>
           {categories.map((option) => (
@@ -105,9 +105,9 @@ export function ExpenseForm({
       >
         {pending ? tc('loading') : t('save')}
       </button>
-      {state.ok && <p className="text-sm font-semibold text-green-700">✅ {tc('saved')}</p>}
+      {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
       {state.error && (
-        <p className="text-sm font-semibold text-red-700">
+        <p className="text-sm font-semibold text-bad">
           {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
         </p>
       )}
