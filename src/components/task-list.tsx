@@ -26,6 +26,7 @@ export interface TaskView {
   status: string;
   result: string | null;
   priority: number;
+  repeatUnit: string | null;
   /** Where the record it is about lives, and what to call it. */
   aboutHref: string | null;
   aboutLabel: string | null;
@@ -121,6 +122,7 @@ function TaskCard({
         )}
         {task.status === 'done' && task.result && <span className="text-good">✅ {task.result}</span>}
         {task.status === 'cancelled' && <span className="text-ink-400">✖ {t('cancelled')}</span>}
+        {task.repeatUnit && <span title={t('repeat')}>🔁</span>}
       </div>
 
       {!done && (
@@ -290,7 +292,28 @@ export function NewTaskForm({
           {pending ? tc('loading') : state.ok ? '✅' : tc('save')}
         </button>
       </div>
-      <input name="note" placeholder={t('notePlaceholder')} aria-label={t('note')} className="input" />
+      <div className="flex flex-wrap gap-2">
+        <input
+          name="note"
+          placeholder={t('notePlaceholder')}
+          aria-label={t('note')}
+          className="input min-w-40 flex-1"
+        />
+        {/* Repeating needs a deadline to repeat FROM, so the server refuses a
+            rule without one and the hint says why before it is typed. */}
+        <select
+          name="repeatUnit"
+          defaultValue=""
+          aria-label={t('repeat')}
+          data-testid="task-repeat"
+          className="input !w-40"
+        >
+          <option value="">{t('repeatNever')}</option>
+          <option value="day">{t('repeatDay')}</option>
+          <option value="week">{t('repeatWeek')}</option>
+          <option value="month">{t('repeatMonth')}</option>
+        </select>
+      </div>
       {state.error && (
         <p role="alert" className="text-sm font-semibold text-bad">
           {t(`errors.${state.error}` as 'errors.validation')}

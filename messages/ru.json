@@ -1178,7 +1178,14 @@
       "assignee_inactive": "Сотрудник отключён",
       "already_closed": "Задача уже закрыта",
       "bad_due_date": "Неверный срок",
-      "not_created": "Не удалось создать"
-    }
+      "not_created": "Не удалось создать",
+      "repeat_needs_due": "У повторяющейся задачи должен быть срок"
+    },
+    "repeat": "Повтор",
+    "repeatNever": "без повтора",
+    "repeatDay": "каждый день",
+    "repeatWeek": "каждую неделю",
+    "repeatMonth": "каждый месяц",
+    "showRoad": "Машины на календаре"
   }
 }

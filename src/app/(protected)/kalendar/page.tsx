@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/ui/page';
 import { calendarTasks } from '@/modules/platform/tasks/service';
 import { assignablePeople, toTaskViews } from '@/modules/platform/tasks/view';
 import { TaskList } from '@/components/task-list';
+import { roadEvents } from '@/modules/wms/planning/calendar';
 
 /**
  * The month, as a grid of days with what is due on each.
@@ -23,7 +24,7 @@ import { TaskList } from '@/components/task-list';
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; who?: string; day?: string }>;
+  searchParams: Promise<{ m?: string; who?: string; day?: string; road?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -48,6 +49,16 @@ export default async function CalendarPage({
   const tasks = await toTaskViews(rows);
   const people = await assignablePeople();
 
+  // Trucks and promised cargo, derived from the batches themselves so the
+  // calendar can never disagree with the truck board. Off by default for
+  // people who only ever look at their own work, and remembered in the URL.
+  const showRoad = params.road !== '0';
+  const road = showRoad ? await roadEvents(first, last) : [];
+  const roadByDay = new Map<string, typeof road>();
+  for (const event of road) {
+    roadByDay.set(event.day, [...(roadByDay.get(event.day) ?? []), event]);
+  }
+
   const byDay = new Map<string, typeof tasks>();
   for (const task of tasks) {
     if (!task.dueAt) continue;
@@ -67,10 +78,13 @@ export default async function CalendarPage({
 
   const shift = (delta: number) => {
     const moved = new Date(Date.UTC(year!, mon! - 1 + delta, 1));
-    return `?m=${moved.toISOString().slice(0, 7)}${who !== actor.id ? `&who=${who}` : ''}`;
+    return `?m=${moved.toISOString().slice(0, 7)}${who !== actor.id ? `&who=${who}` : ''}${
+      showRoad ? '' : '&road=0'
+    }`;
   };
   const today = new Date().toISOString().slice(0, 10);
-  const selected = params.day && byDay.has(params.day) ? params.day : null;
+  const selected =
+    params.day && (byDay.has(params.day) || roadByDay.has(params.day)) ? params.day : null;
   const weekdays = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'];
 
   return (
@@ -87,9 +101,18 @@ export default async function CalendarPage({
         <Link href={shift(1)} className="btn-secondary !min-h-9 px-3" data-testid="next-month">
           ›
         </Link>
+        <Link
+          href={`?m=${month}${who !== actor.id ? `&who=${who}` : ''}${showRoad ? '&road=0' : ''}`}
+          data-testid="toggle-road"
+          className={`btn-secondary !min-h-9 px-3 ${showRoad ? '!bg-brand-50 !text-brand-700' : ''}`}
+          title={t('showRoad')}
+        >
+          🚚
+        </Link>
         {canSeeAll && (
           <form method="get" className="ml-auto flex gap-2">
             <input type="hidden" name="m" value={month} />
+            {!showRoad && <input type="hidden" name="road" value="0" />}
             <select name="who" defaultValue={who} className="input !min-h-9 !w-44">
               <option value="all">{t('everyone')}</option>
               {people.map((person) => (
@@ -121,6 +144,7 @@ export default async function CalendarPage({
               <tr key={week}>
                 {cells.slice(week * 7, week * 7 + 7).map((date, index) => {
                   const items = date ? (byDay.get(date) ?? []) : [];
+                  const trips = date ? (roadByDay.get(date) ?? []) : [];
                   const late = items.some(
                     (task) => task.status === 'open' && date! < today,
                   );
@@ -158,6 +182,17 @@ export default async function CalendarPage({
                           {items.length > 3 && (
                             <span className="block text-ink-500">+{items.length - 3}</span>
                           )}
+                          {trips.slice(0, 2).map((event, at) => (
+                            <span
+                              key={`${event.kind}-${at}`}
+                              className="mt-0.5 block truncate rounded bg-brand-50 px-0.5 text-brand-700"
+                            >
+                              {event.icon} {event.label}
+                            </span>
+                          ))}
+                          {trips.length > 2 && (
+                            <span className="block text-ink-500">+{trips.length - 2}</span>
+                          )}
                         </Link>
                       )}
                     </td>
@@ -172,15 +207,26 @@ export default async function CalendarPage({
       {selected && (
         <section className="space-y-2" data-testid="calendar-day">
           <h2 className="section-title">{selected}</h2>
+          {(roadByDay.get(selected) ?? []).map((event, at) => (
+            <Link
+              key={`${event.kind}-${at}`}
+              href={event.href}
+              className="card block !p-2 text-sm hover:bg-surface-sunken"
+            >
+              {event.icon} {event.label}
+            </Link>
+          ))}
           <TaskList
-            tasks={byDay.get(selected)!}
+            tasks={byDay.get(selected) ?? []}
             people={people}
             revalidate={`/kalendar?m=${month}`}
           />
         </section>
       )}
 
-      {tasks.length === 0 && <p className="text-sm text-ink-500">{t('noneThisMonth')}</p>}
+      {tasks.length + road.length === 0 && (
+        <p className="text-sm text-ink-500">{t('noneThisMonth')}</p>
+      )}
 
       <Link href="/bugun" className="btn-secondary block text-center">
         ✅ {t('today')}

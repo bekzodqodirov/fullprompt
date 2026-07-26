@@ -49,6 +49,7 @@ export async function toTaskViews(rows: TaskRow[]): Promise<TaskView[]> {
       status: row.status,
       result: row.result,
       priority: row.priority,
+      repeatUnit: row.repeatUnit,
       aboutHref: route && row.entityId ? route(row.entityId) : null,
       aboutLabel: key ? (labels.get(key) ?? null) : null,
     };

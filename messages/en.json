@@ -1178,7 +1178,14 @@
       "assignee_inactive": "That person is deactivated",
       "already_closed": "Already closed",
       "bad_due_date": "Bad deadline",
-      "not_created": "Could not create"
-    }
+      "not_created": "Could not create",
+      "repeat_needs_due": "A repeating task needs a deadline"
+    },
+    "repeat": "Repeat",
+    "repeatNever": "no repeat",
+    "repeatDay": "every day",
+    "repeatWeek": "every week",
+    "repeatMonth": "every month",
+    "showRoad": "Trucks on the calendar"
   }
 }

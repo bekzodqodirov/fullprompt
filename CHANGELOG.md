@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 3-bosqich davomi: takror, mashinalar kalendarda, rahbarga xabar — 2026-07-26
+
+To'rtta savolimga javobingiz bo'yicha:
+
+**1. Kim kimga vazifa bera oladi — cheklov yo'q.** Hozirgidek qoldi: hamma hammaga.
+
+**2. Mashinalar endi kalendarda.** Har kunda ko'rinadi:
+- 🚚 qaysi partiya **yo'lga chiqdi** (YW → TAS, mashina raqami bilan)
+- 🏁 qaysi biri **yetib keldi**
+- 📦 qaysi mijozdan **yuk kutilmoqda** (va'da qilingan sana bo'yicha)
+
+Bular **alohida saqlanmaydi** — partiyaning o'zidan o'qiladi. Ya'ni partiya kartochkasida sanani tuzatsangiz, kalendarda ham o'sha zahoti to'g'rilanadi; ikkalasi bir-biriga zid bo'lishi mumkin emas. Yuqoridagi 🚚 tugmasi bilan yoqib-o'chiriladi (sotuvchiga kerak emas — u faqat o'z ishini ko'radi).
+
+**3. Takrorlanuvchi vazifa bor** — har kuni / har hafta / har oy. Ikkita muhim jihat:
+- **Keyingisi vazifa yopilganda tug'iladi**, oldindan emas. Ya'ni bir vaqtning o'zida **doim bitta ochiq nusxa** bo'ladi. Aks holda bir oy ta'tildan keyin «har dushanba kassani tekshir» ning 4 ta bajarilmagan nusxasi ekranda turardi — va odam bunday ro'yxatni bir haftada o'qimay qo'yadi.
+- **Muddat asosida sanaladi, bajarilgan vaqtdan emas.** Dushanbaning ishini shanba kuni bajarsangiz — keyingisi **keyingi dushanba**, shanbadan bir hafta keyin emas. Kechikib bajarsangiz — kelajakka suriladi, yana o'tmishga tushmaydi. «Har oyning 31-i» esa fevralda **28-iga** tushadi, mart oyiga sakrab ketmaydi.
+- **To'xtatish — bekor qilish.** Bajarish davom ettiradi, bekor qilish seriyani tugatadi. Qo'shimcha tugma kerak emas, ma'nosi ham to'g'ri: «buni qilmayman» va «bu bizga umuman kerak emas».
+
+**4. Kechikkan vazifa haqida ikkalasiga xabar ketadi** — xodimga ham, **vazifani bergan odamga** ham. «Siz bergan vazifalar kechikdi (3)» degan alohida xabar, kimga berilgani va qancha kechikkani bilan. O'ziga o'zi qo'ygan vazifa ikki marta yuborilmaydi.
+
+Rahbar sifatida vazifani bergan odam olinadi — tizimda «boshliq-xodim» ierarxiyasi yo'q, va uni shu bitta xabar uchun yaratish haqiqiy tuzilma yonida ikkinchi, hech kim yangilamaydigan tuzilma bo'lardi. Ishni siz bergan bo'lsangiz — siz kutyapsiz, demak sizga aytish kerak.
+
+320 test + 37 e2e yashil.
+
 ## 3-bosqich: vazifalar va kalendar — 2026-07-26
 
 Xodimlar bir-biriga ish topshiradigan joy. Ilgari bu Telegramda edi: kim nima qilishi kerakligi yozishmada qolib ketardi, kim bajardi — bilinmasdi.

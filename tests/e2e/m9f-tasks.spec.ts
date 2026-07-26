@@ -81,6 +81,10 @@ test('the day screen shows what is due and closes it with a result', async ({ pa
   await form.getByTestId('task-title').fill(title);
   await form.getByTestId('task-due').fill(new Date().toISOString().slice(0, 10));
   await form.getByTestId('save-task').click();
+  // Wait for the action to answer before navigating: reloading mid-flight
+  // aborts the request and the assertion below measures the state BEFORE the
+  // write committed (DECISIONS #173).
+  await expect(form.getByTestId('save-task')).toHaveText('✅');
 
   await page.goto('/bugun');
   const due = page.getByTestId('day-today');
@@ -93,6 +97,8 @@ test('the day screen shows what is due and closes it with a result', async ({ pa
   await card.locator('[data-testid^="close-"]').click();
   await card.locator('[data-testid^="result-"]').fill('hisoblab berdim');
   await card.locator('[data-testid^="save-close-"]').click();
+  // The card leaves the open list once the close has landed.
+  await expect(card).toHaveCount(0);
 
   await page.goto('/bugun');
   await expect(page.getByTestId('day-today').filter({ hasText: title })).toHaveCount(0);
@@ -118,6 +124,7 @@ test('the calendar shows the month and opens a day', async ({ page }) => {
   await form.getByTestId('task-title').fill(title);
   await form.getByTestId('task-due').fill(today);
   await form.getByTestId('save-task').click();
+  await expect(form.getByTestId('save-task')).toHaveText('✅');
 
   await page.goto('/kalendar');
   await expect(page.getByTestId('calendar-grid')).toBeVisible();

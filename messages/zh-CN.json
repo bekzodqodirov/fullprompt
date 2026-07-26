@@ -1178,7 +1178,14 @@
       "assignee_inactive": "该员工已停用",
       "already_closed": "任务已关闭",
       "bad_due_date": "截止时间无效",
-      "not_created": "创建失败"
-    }
+      "not_created": "创建失败",
+      "repeat_needs_due": "重复任务必须有截止日期"
+    },
+    "repeat": "重复",
+    "repeatNever": "不重复",
+    "repeatDay": "每天",
+    "repeatWeek": "每周",
+    "repeatMonth": "每月",
+    "showRoad": "日历显示车辆"
   }
 }

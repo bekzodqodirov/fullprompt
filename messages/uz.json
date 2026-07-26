@@ -1178,7 +1178,14 @@
       "assignee_inactive": "Xodim o‘chirilgan",
       "already_closed": "Vazifa allaqachon yopilgan",
       "bad_due_date": "Muddat noto‘g‘ri",
-      "not_created": "Yaratib bo‘lmadi"
-    }
+      "not_created": "Yaratib bo‘lmadi",
+      "repeat_needs_due": "Takrorlanuvchi vazifada muddat bo‘lishi shart"
+    },
+    "repeat": "Takror",
+    "repeatNever": "takrorlanmaydi",
+    "repeatDay": "har kuni",
+    "repeatWeek": "har hafta",
+    "repeatMonth": "har oy",
+    "showRoad": "Kalendarda mashinalar"
   }
 }

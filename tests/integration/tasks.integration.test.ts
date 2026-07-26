@@ -6,6 +6,7 @@ import { roles, tasks, userRoles, users } from '@/modules/platform/db/schema';
 import { createClient } from '@/modules/platform/clients/service';
 import {
   TaskError,
+  nextOccurrence,
   aboutLabels,
   calendarTasks,
   cancelTask,
@@ -49,6 +50,8 @@ async function task(over: Record<string, unknown> = {}) {
       priority: 2,
       entityType: null,
       entityId: null,
+      repeatUnit: null,
+      repeatEvery: 1,
       ...over,
     } as Parameters<typeof createTask>[0],
     ctx(),
@@ -262,5 +265,77 @@ describe('when the record goes, its open work goes with it', () => {
     expect(a!.status).toBe('cancelled');
     // A finished job is history, not something to tidy away.
     expect(b!.status).toBe('done');
+  });
+});
+
+describe('a repeating task schedules the next one when this one is closed', () => {
+  it('counts from the DUE date, not from when it was finished', () => {
+    const due = new Date('2026-08-10T23:59:59.999Z'); // a Monday
+    // Finished early, on the Saturday before.
+    const next = nextOccurrence(due, 'week', 1, new Date('2026-08-08T10:00:00Z'));
+    // The following Monday — not the Saturday after.
+    expect(next.toISOString().slice(0, 10)).toBe('2026-08-17');
+  });
+
+  it('rolls forward past every missed occurrence', () => {
+    const due = new Date('2026-08-10T23:59:59.999Z');
+    // Nobody touched it for a month, then closed it.
+    const next = nextOccurrence(due, 'week', 1, new Date('2026-09-09T10:00:00Z'));
+    // Not another date in the past: closing a month of missed Mondays must not
+    // create another missed Monday.
+    expect(next.getTime()).toBeGreaterThan(new Date('2026-09-09T10:00:00Z').getTime());
+    expect(next.toISOString().slice(0, 10)).toBe('2026-09-14');
+  });
+
+  it('clamps a monthly rule to the end of a short month', () => {
+    const due = new Date('2026-01-31T23:59:59.999Z');
+    const next = nextOccurrence(due, 'month', 1, new Date('2026-01-31T23:00:00Z'));
+    // JavaScript's own overflow would give the 3rd of March and quietly skip
+    // February for "the 31st of every month".
+    expect(next.toISOString().slice(0, 10)).toBe('2026-02-28');
+  });
+
+  it('creates the next occurrence on completion and keeps the series together', async () => {
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const first = await task({
+      title: `Har hafta ${SUFFIX}`,
+      dueAt: tomorrow.toISOString().slice(0, 10),
+      repeatUnit: 'week',
+    });
+    expect(first.seriesId).not.toBeNull();
+
+    await completeTask(first.id, 'bajarildi', ctx());
+    const series = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.seriesId, first.seriesId!));
+    expect(series).toHaveLength(2);
+    const open = series.find((row) => row.status === 'open')!;
+    made.push(open.id);
+    expect(open.title).toBe(`Har hafta ${SUFFIX}`);
+    expect(open.dueAt!.getTime()).toBeGreaterThan(first.dueAt!.getTime());
+    // The rule travels with it, or the series would stop after two.
+    expect(open.repeatUnit).toBe('week');
+  });
+
+  it('cancelling ENDS the series — that is how a repeat is stopped', async () => {
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const row = await task({
+      title: `To‘xtaydi ${SUFFIX}`,
+      dueAt: tomorrow.toISOString().slice(0, 10),
+      repeatUnit: 'day',
+    });
+    await cancelTask(row.id, 'kerak emas', ctx());
+    const series = await db.select().from(tasks).where(eq(tasks.seriesId, row.seriesId!));
+    expect(series).toHaveLength(1);
+    expect(series[0]!.status).toBe('cancelled');
+  });
+
+  it('refuses a repeat with nothing to repeat from', async () => {
+    await expect(task({ title: `Muddatsiz ${SUFFIX}`, repeatUnit: 'week' })).rejects.toThrow(
+      'repeat_needs_due',
+    );
   });
 });

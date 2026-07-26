@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { v7 as uuidv7 } from 'uuid';
 import { db, type Db, type Tx } from '../db/client';
 import { taskTypes, tasks, users } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
@@ -24,6 +25,9 @@ export class TaskError extends Error {
   }
 }
 
+export const REPEAT_UNITS = ['day', 'week', 'month'] as const;
+export type RepeatUnit = (typeof REPEAT_UNITS)[number];
+
 export const taskSchema = z.object({
   title: z.string().trim().min(1).max(200),
   note: z.string().trim().max(4000).optional().or(z.literal('')),
@@ -34,6 +38,8 @@ export const taskSchema = z.object({
   priority: z.number().int().min(1).max(3).default(2),
   entityType: z.string().trim().max(40).nullable().default(null),
   entityId: z.string().uuid().nullable().default(null),
+  repeatUnit: z.enum(REPEAT_UNITS).nullable().default(null),
+  repeatEvery: z.number().int().min(1).max(365).default(1),
 });
 export type TaskInput = z.infer<typeof taskSchema>;
 
@@ -56,6 +62,54 @@ export function parseDue(raw: string | undefined | null): { dueAt: Date | null; 
   return { dueAt: parsed, allDay: false };
 }
 
+/**
+ * When the next occurrence of a repeating task falls.
+ *
+ * Counted from the DUE date, never from "now": a Monday task finished on
+ * Saturday must land on the following Monday, not the Saturday after. If the
+ * task was finished LATE the due date is already behind us, so the step is
+ * repeated until it lands in the future — otherwise closing a month of missed
+ * Mondays would create another missed Monday.
+ *
+ * Month steps clamp: the 31st plus one month is the last day of a 30-day
+ * month, not the 1st of the month after. JavaScript's own overflow would turn
+ * "the 31st of every month" into a task that skips February entirely.
+ */
+export function nextOccurrence(
+  dueAt: Date,
+  unit: RepeatUnit,
+  every: number,
+  now: Date,
+): Date {
+  let next = new Date(dueAt);
+  let guard = 0;
+  do {
+    if (unit === 'day') next = addDays(next, every);
+    else if (unit === 'week') next = addDays(next, every * 7);
+    else next = addMonths(next, every);
+    guard += 1;
+  } while (next <= now && guard < 1000);
+  return next;
+}
+
+function addDays(from: Date, days: number): Date {
+  const value = new Date(from);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value;
+}
+
+function addMonths(from: Date, months: number): Date {
+  const day = from.getUTCDate();
+  const value = new Date(from);
+  value.setUTCDate(1);
+  value.setUTCMonth(value.getUTCMonth() + months);
+  const lastDay = new Date(
+    Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  value.setUTCDate(Math.min(day, lastDay));
+  return value;
+}
+
 export interface TaskRow {
   id: string;
   title: string;
@@ -75,6 +129,9 @@ export interface TaskRow {
   entityType: string | null;
   entityId: string | null;
   priority: number;
+  repeatUnit: string | null;
+  repeatEvery: number;
+  seriesId: string | null;
   createdAt: Date;
 }
 
@@ -100,6 +157,9 @@ function selection() {
     entityType: tasks.entityType,
     entityId: tasks.entityId,
     priority: tasks.priority,
+    repeatUnit: tasks.repeatUnit,
+    repeatEvery: tasks.repeatEvery,
+    seriesId: tasks.seriesId,
     createdAt: tasks.createdAt,
   };
 }
@@ -126,6 +186,9 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
   if (!person.active) throw new TaskError('assignee_inactive');
 
   const { dueAt, allDay } = parseDue(input.dueAt);
+  // "Every week" starting when? A rule needs something to repeat from.
+  if (input.repeatUnit && !dueAt) throw new TaskError('repeat_needs_due');
+
   const [row] = await db
     .insert(tasks)
     .values({
@@ -139,6 +202,9 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
       priority: input.priority,
       entityType: input.entityType,
       entityId: input.entityId,
+      repeatUnit: input.repeatUnit,
+      repeatEvery: input.repeatEvery,
+      seriesId: input.repeatUnit ? uuidv7() : null,
     })
     .returning();
   if (!row) throw new TaskError('not_created');
@@ -173,14 +239,15 @@ export async function completeTask(
   if (!before) throw new TaskError('not_found');
   if (before.status !== 'open') throw new TaskError('already_closed');
 
+  const now = new Date();
   await db
     .update(tasks)
     .set({
       status: 'done',
-      doneAt: new Date(),
+      doneAt: now,
       doneBy: ctx.actorId,
       result: result.trim() || null,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(eq(tasks.id, id));
   await writeAudit(db, ctx, {
@@ -190,6 +257,43 @@ export async function completeTask(
     before: { status: before.status },
     after: { status: 'done', result: result.trim() || null },
   });
+
+  // Finishing one occurrence is what schedules the next. Nothing materialises
+  // a queue ahead of time, so a series can never pile up unfinished copies.
+  if (before.repeatUnit && before.dueAt) {
+    const next = nextOccurrence(
+      before.dueAt,
+      before.repeatUnit as RepeatUnit,
+      before.repeatEvery,
+      now,
+    );
+    const [spawned] = await db
+      .insert(tasks)
+      .values({
+        title: before.title,
+        note: before.note,
+        typeId: before.typeId,
+        assigneeId: before.assigneeId,
+        createdBy: before.createdBy,
+        dueAt: next,
+        allDay: before.allDay,
+        priority: before.priority,
+        entityType: before.entityType,
+        entityId: before.entityId,
+        repeatUnit: before.repeatUnit,
+        repeatEvery: before.repeatEvery,
+        seriesId: before.seriesId ?? id,
+      })
+      .returning();
+    if (spawned) {
+      await writeAudit(db, ctx, {
+        entityType: 'task',
+        entityId: spawned.id,
+        action: 'create',
+        after: { repeatOf: id, dueAt: next.toISOString() },
+      });
+    }
+  }
 }
 
 /**
@@ -197,6 +301,10 @@ export async function completeTask(
  *
  * A task somebody was given and then told to drop is a fact about how the work
  * went; deleting it removes the evidence that it was ever asked for.
+ *
+ * Cancelling is also how a REPEATING task is stopped: completing carries the
+ * series on, cancelling ends it. That needs no extra button and the meaning
+ * matches the words — "I am not doing this one" versus "we are done with this".
  */
 export async function cancelTask(id: string, reason: string, ctx: AuditContext): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');

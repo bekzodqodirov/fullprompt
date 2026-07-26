@@ -51,6 +51,8 @@ export async function createTaskAction(
     priority: Number(formData.get('priority')) || 2,
     entityType: str('entityType') || null,
     entityId: str('entityId') || null,
+    repeatUnit: str('repeatUnit') || null,
+    repeatEvery: Number(formData.get('repeatEvery')) || 1,
   });
   if (!parsed.success) return { error: 'validation' };
 

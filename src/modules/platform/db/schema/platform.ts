@@ -583,6 +583,11 @@ export const tasks = pgTable(
     entityType: text('entity_type').references(() => customEntities.code),
     entityId: uuid('entity_id'),
     priority: integer('priority').notNull().default(2),
+    /** 'day' | 'week' | 'month', or null for a one-off. */
+    repeatUnit: text('repeat_unit'),
+    repeatEvery: integer('repeat_every').notNull().default(1),
+    /** Shared by every occurrence of one rule. */
+    seriesId: uuid('series_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -591,6 +596,14 @@ export const tasks = pgTable(
     check('tasks_priority_check', sql`${t.priority} BETWEEN 1 AND 3`),
     check('tasks_entity_check', sql`(${t.entityType} IS NULL) = (${t.entityId} IS NULL)`),
     check('tasks_done_check', sql`(${t.status} = 'done') = (${t.doneAt} IS NOT NULL)`),
+    check(
+      'tasks_repeat_check',
+      sql`${t.repeatUnit} IS NULL OR ${t.repeatUnit} IN ('day', 'week', 'month')`,
+    ),
+    check('tasks_repeat_every_check', sql`${t.repeatEvery} BETWEEN 1 AND 365`),
+    // "Every week" starting when? A rule with no deadline has nothing to
+    // repeat from.
+    check('tasks_repeat_needs_due', sql`${t.repeatUnit} IS NULL OR ${t.dueAt} IS NOT NULL`),
     index('tasks_assignee_idx').on(t.assigneeId, t.status, t.dueAt),
     index('tasks_entity_idx').on(t.entityType, t.entityId),
   ],

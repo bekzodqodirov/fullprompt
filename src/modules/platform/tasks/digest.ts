@@ -85,6 +85,56 @@ export async function sendTaskDigest(now = new Date()): Promise<number> {
     await deliver(userId, `✅ Sizning vazifalaringiz\n\n${parts.join('\n\n')}`);
     sent += 1;
   }
+
+  sent += await notifyAuthorsOfOverdue(overdue);
+  return sent;
+}
+
+/**
+ * Tell the person who ASSIGNED the work that it is late (owner: "ikkalasiga
+ * habar ketsin").
+ *
+ * The author is the manager in this system — there is no reporting hierarchy,
+ * and inventing one to answer this would be a second org chart to maintain
+ * beside the real one. Work you gave somebody is work you are waiting on, so
+ * the person waiting is exactly who wants to know.
+ *
+ * Grouped per author and never sent to yourself: a self-assigned task already
+ * appeared in the message above, and the same list twice is how a channel
+ * stops being read.
+ */
+async function notifyAuthorsOfOverdue(
+  overdue: Map<string, Awaited<ReturnType<typeof overdueByAssignee>> extends Map<string, infer T> ? T : never>,
+): Promise<number> {
+  const byAuthor = new Map<string, { title: string; assigneeName: string | null; dueAt: Date | null }[]>();
+  for (const [assigneeId, rows] of overdue) {
+    for (const row of rows) {
+      if (row.createdBy === assigneeId) continue;
+      byAuthor.set(row.createdBy, [
+        ...(byAuthor.get(row.createdBy) ?? []),
+        { title: row.title, assigneeName: row.assigneeName, dueAt: row.dueAt },
+      ]);
+    }
+  }
+
+  let sent = 0;
+  for (const [authorId, rows] of byAuthor) {
+    const lines = rows
+      .slice(0, 20)
+      .map(
+        (row) =>
+          `🔴 ${row.title} — ${row.assigneeName ?? '?'}${
+            row.dueAt ? ` ⚠️ ${row.dueAt.toISOString().slice(0, 10)}` : ''
+          }`,
+      )
+      .join('\n');
+    const more = rows.length > 20 ? `\n… va yana ${rows.length - 20} ta` : '';
+    await deliver(
+      authorId,
+      `⏰ Siz bergan vazifalar kechikdi (${rows.length})\n\n${lines}${more}`,
+    );
+    sent += 1;
+  }
   return sent;
 }
 
