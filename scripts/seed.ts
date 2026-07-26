@@ -5,6 +5,7 @@
 import 'dotenv/config';
 import { eq, sql } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
+import { syncEntityRegistry } from '../src/modules/platform/fields/service';
 import {
   auditLog,
   clients,
@@ -117,6 +118,12 @@ async function main() {
     // these roles, and somebody has to tick it on the admin screen.
     console.log(`roles left alone (edited by an admin): ${skipped.join(', ')}`);
   }
+
+  // --- Which objects may carry custom fields ---
+  // Insert-and-reactivate from the registry. A code that leaves the registry
+  // is deactivated, never deleted: its fields and every answer to them hang
+  // off it by foreign key.
+  await syncEntityRegistry();
 
   // --- Warehouses (bootstrap only: a deleted one must stay deleted) ---
   if (seedDemo) {

@@ -3,16 +3,17 @@ import { getTranslations } from 'next-intl/server';
 import { Panel } from '@/components/panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listActivities } from '@/modules/wms/crm/service';
-import { fieldValues, listFields } from '@/modules/wms/crm/fields';
 import { personForClient } from '@/modules/wms/crm/people';
 import { ActivityForm } from './activity-form';
-import { ClientFieldsForm } from './client-fields-form';
-import { CustomFieldInputs } from './custom-fields';
 import { MakePersonButton } from './make-person-button';
 
 /**
- * The CRM half of a client card (owner's answer 7): what was said, the fields
- * he added himself, and the other codes the same human being holds.
+ * The CRM half of a client card (owner's answer 7): what was said, and the
+ * other codes the same human being holds.
+ *
+ * The owner's own fields used to live here too, behind `crm.leads`, which
+ * meant a client-manager without CRM rights could not see them. They are now
+ * the platform-wide panel, rendered by the card itself.
  *
  * Rendered from the client page rather than duplicated there, so the sales
  * side of a client lives in one place whoever opens it.
@@ -29,10 +30,8 @@ export async function ClientCrmSections({
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
 
-  const [log, fields, values, person] = await Promise.all([
+  const [log, person] = await Promise.all([
     listActivities('client', clientId, 50),
-    listFields('client'),
-    fieldValues('client', clientId),
     personForClient(clientId),
   ]);
   const today = new Date().toISOString().slice(0, 10);
@@ -55,14 +54,6 @@ export async function ClientCrmSections({
         ))}
         {log.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
       </Panel>
-
-      {fields.length > 0 && (
-        <Panel title={`🧩 ${t('customFields')}`}>
-          <ClientFieldsForm clientId={clientId}>
-            <CustomFieldInputs fields={fields} values={values} />
-          </ClientFieldsForm>
-        </Panel>
-      )}
 
       <Panel
         title={`👥 ${t('person')}`}

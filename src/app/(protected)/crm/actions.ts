@@ -21,7 +21,9 @@ import {
   stageSchema,
   updateLead,
 } from '@/modules/wms/crm/service';
-import { deleteField, fieldSchema, saveField, setFieldValues } from '@/modules/wms/crm/fields';
+import { setFieldValues, validateValues } from '@/modules/platform/fields/service';
+import { customValues } from '@/modules/platform/fields/actions';
+import { FieldError } from '@/modules/platform/fields/types';
 import { attachClient, groupClients, personFromClient } from '@/modules/wms/crm/people';
 
 export interface CrmFormState {
@@ -51,22 +53,14 @@ async function run(
     // Every service error carries a code the screen can translate; anything
     // else is a real fault and must not be swallowed into a red label.
     if (err instanceof CrmError || err instanceof ClientError) return { error: err.code };
+    // A custom field the owner marked required, or a rule it broke, is a
+    // message for the person filling the form — not a crash.
+    if (err instanceof FieldError) return { error: err.code };
     throw err;
   }
 }
 
 const str = (formData: FormData, name: string) => String(formData.get(name) ?? '');
-
-/** Custom answers arrive as `cf_<fieldId>`; multiselect sends several. */
-function customValues(formData: FormData): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const key of new Set(formData.keys())) {
-    if (!key.startsWith('cf_')) continue;
-    const values = formData.getAll(key);
-    out[key.slice(3)] = values.length > 1 ? values : values[0];
-  }
-  return out;
-}
 
 function leadFields(formData: FormData) {
   return leadSchema.safeParse({
@@ -89,10 +83,15 @@ export async function createLeadAction(
   const parsed = leadFields(formData);
   if (!parsed.success) return { error: 'validation' };
   let leadId = '';
+  const custom = await customValues(formData);
   const state = await run('crm.leads', async (ctx) => {
+    // Checked BEFORE the lead exists. The two writes are not one transaction,
+    // so a value the rules reject used to leave a saved lead behind an error
+    // message that read as if nothing had been created.
+    await validateValues('lead', custom);
     const lead = await createLead(parsed.data, ctx);
     leadId = lead.id;
-    await setFieldValues('lead', lead.id, customValues(formData), ctx);
+    await setFieldValues('lead', lead.id, custom, ctx);
   });
   if (!state.ok) return state;
   // Land on the card: the next thing anyone does is log the first call.
@@ -106,9 +105,10 @@ export async function updateLeadAction(
 ): Promise<CrmFormState> {
   const parsed = leadFields(formData);
   if (!parsed.success) return { error: 'validation' };
+  const custom = await customValues(formData);
   return run('crm.leads', async (ctx) => {
     await updateLead(id, parsed.data, ctx);
-    await setFieldValues('lead', id, customValues(formData), ctx);
+    await setFieldValues('lead', id, custom, ctx);
   });
 }
 
@@ -158,19 +158,6 @@ export async function addActivityAction(
   return state;
 }
 
-/** Custom answers on an existing client card. */
-export async function saveClientFieldsAction(
-  clientId: string,
-  _prev: CrmFormState,
-  formData: FormData,
-): Promise<CrmFormState> {
-  const state = await run('crm.leads', (ctx) =>
-    setFieldValues('client', clientId, customValues(formData), ctx),
-  );
-  revalidatePath(`/admin/clients/${clientId}`);
-  return state;
-}
-
 // --- Settings (crm.manage) --------------------------------------------------
 
 export async function saveStageAction(
@@ -209,31 +196,6 @@ export async function saveSourceAction(
   if (!parsed.success) return { error: 'validation' };
   const id = str(formData, 'id') || undefined;
   return run('crm.manage', (ctx) => saveSource({ ...parsed.data, id }, ctx));
-}
-
-export async function saveFieldAction(
-  _prev: CrmFormState,
-  formData: FormData,
-): Promise<CrmFormState> {
-  const parsed = fieldSchema.safeParse({
-    entityType: str(formData, 'entityType'),
-    label: str(formData, 'label'),
-    type: str(formData, 'type'),
-    options: str(formData, 'options')
-      .split(',')
-      .map((option) => option.trim())
-      .filter(Boolean),
-    required: formData.getAll('required').at(-1) === 'on',
-    sortOrder: Number(formData.get('sortOrder')) || 100,
-    active: formData.getAll('active').at(-1) !== 'off',
-  });
-  if (!parsed.success) return { error: 'validation' };
-  const id = str(formData, 'id') || undefined;
-  return run('crm.manage', (ctx) => saveField({ ...parsed.data, id }, ctx));
-}
-
-export async function deleteFieldAction(id: string): Promise<CrmFormState> {
-  return run('crm.manage', (ctx) => deleteField(id, ctx));
 }
 
 // --- People -----------------------------------------------------------------

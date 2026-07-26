@@ -23,6 +23,7 @@ import { LotEditForm } from './lot-edit-form';
 import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
 import { BackLink } from '@/components/back-link';
+import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -280,6 +281,12 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           </button>
         </form>
       )}
+
+      <CustomFieldsPanel
+        entityType="receipt"
+        entityId={id}
+        revalidate={`/receipts/${id}`}
+      />
 
       <section>
         <h2 className="mb-2 text-lg font-bold">{tc('history')}</h2>

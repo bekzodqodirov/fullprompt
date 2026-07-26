@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   inet,
   integer,
@@ -13,6 +14,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar,
@@ -432,5 +434,102 @@ export const attachments = pgTable(
   (t) => [
     check('attachments_kind_check', sql`${t.kind} IN ('photo', 'file', 'generated')`),
     index('attachments_entity_idx').on(t.entityType, t.entityId),
+  ],
+);
+
+/**
+ * Custom fields (owner: "hech qanday biznes-obyekt hard-coded bo'lmasin").
+ *
+ * Which OBJECTS may carry them is a table rather than a CHECK constraint: a
+ * CHECK has to be edited in the SQL, in the drizzle schema, in a zod enum and
+ * in a TypeScript union in lockstep, which is exactly the hard-coding the
+ * owner asked to be rid of. `custom_entities` is synced from the registry in
+ * `platform/fields/registry.ts` by the seed, and a later phase inserts the
+ * owner's own entities straight into it.
+ */
+export const customEntities = pgTable('custom_entities', {
+  code: text('code').primaryKey(),
+  sortOrder: integer('sort_order').notNull().default(100),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+});
+
+/** One field definition. `type` drives the widget, the validation and storage. */
+export const customFields = pgTable(
+  'custom_fields',
+  {
+    id: id(),
+    entityType: text('entity_type')
+      .notNull()
+      .references(() => customEntities.code),
+    label: text('label').notNull(),
+    type: text('type').notNull(),
+    /** Choices for select / multiselect; empty for every other type. */
+    options: jsonb('options').notNull().default([]),
+    /** A hint rendered under the input. */
+    help: text('help'),
+    /** {min,max,minLength,maxLength,pattern} — server-checked, input-mirrored. */
+    rules: jsonb('rules').notNull().default({}),
+    /** {fieldId, values:[…]} — render only when another field answers so. */
+    showIf: jsonb('show_if'),
+    required: boolean('required').notNull().default(false),
+    /** Appears as a column and a filter on the list screen. */
+    onList: boolean('on_list').notNull().default(false),
+    /** For type='lookup': which entity the answer points at. */
+    lookupEntity: text('lookup_entity').references(() => customEntities.code),
+    sortOrder: integer('sort_order').notNull().default(100),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'custom_fields_type_check',
+      sql`${t.type} IN ('text', 'textarea', 'number', 'date', 'select', 'multiselect', 'checkbox', 'phone', 'url', 'money', 'lookup', 'file')`,
+    ),
+    check(
+      'custom_fields_lookup_check',
+      sql`(${t.type} = 'lookup') = (${t.lookupEntity} IS NOT NULL)`,
+    ),
+    uniqueIndex('custom_fields_label_unique').on(t.entityType, sql`lower(${t.label})`),
+    unique('custom_fields_id_entity_uk').on(t.id, t.entityType),
+  ],
+);
+
+/**
+ * One answer per (field, record), in a column of the right TYPE.
+ *
+ * A single jsonb blob sorted numbers as text and could not be indexed for a
+ * range filter — and the owner asked to filter and sort by these fields, so
+ * "5" ordering before "40" is a wrong answer rather than a cosmetic one.
+ * `value_ref` holds a lookup's target row or a file field's attachment group;
+ * it carries no foreign key because its table varies by field.
+ */
+export const customFieldValues = pgTable(
+  'custom_field_values',
+  {
+    fieldId: uuid('field_id').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    valueText: text('value_text'),
+    valueNum: numeric('value_num'),
+    valueDate: date('value_date'),
+    valueBool: boolean('value_bool'),
+    valueList: jsonb('value_list'),
+    valueRef: uuid('value_ref'),
+    valueCcy: varchar('value_ccy', { length: 3 }).references(() => currencies.code),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.fieldId, t.entityId] }),
+    foreignKey({
+      columns: [t.fieldId, t.entityType],
+      foreignColumns: [customFields.id, customFields.entityType],
+      name: 'custom_field_values_field_fk',
+    }).onDelete('cascade'),
+    index('custom_field_values_entity_idx').on(t.entityType, t.entityId),
+    index('custom_field_values_text_idx').on(t.fieldId, t.valueText),
+    index('custom_field_values_num_idx').on(t.fieldId, t.valueNum),
+    index('custom_field_values_date_idx').on(t.fieldId, t.valueDate),
+    index('custom_field_values_ref_idx').on(t.valueRef),
   ],
 );

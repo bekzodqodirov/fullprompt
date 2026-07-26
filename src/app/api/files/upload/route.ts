@@ -9,13 +9,18 @@ import { FileValidationError, saveAttachment } from '@/modules/platform/files/se
  * it becomes both the attachment's identity and the storage key prefix
  * (`${entityType}/${entityId}/…`) — so a caller could invent a type, write
  * objects into a namespace no screen ever lists and no cleanup ever reaches.
- * An allowlist costs nothing and the list is four entries long.
+ * An allowlist costs nothing and the list is five entries long.
+ *
+ * `custom_field` is the odd one: its entityId is not a record but a GROUP id
+ * minted per (file field, record) and stored in that answer's `value_ref`, so
+ * a document attached to a custom field cannot appear in — or be deleted from
+ * — the receipt's own attachment panel.
  *
  * NOT a substitute for per-record authorization: this says WHAT kind of thing
  * may carry a file, not WHICH one this user may touch. That check needs the
  * policy layer and lands with it.
  */
-const ATTACHABLE = ['receipt', 'receipt_lot', 'crate', 'handover'] as const;
+const ATTACHABLE = ['receipt', 'receipt_lot', 'crate', 'handover', 'custom_field'] as const;
 
 const metaSchema = z.object({
   entityType: z.enum(ATTACHABLE),

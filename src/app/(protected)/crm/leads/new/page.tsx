@@ -3,9 +3,9 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { listSources, listStages } from '@/modules/wms/crm/service';
-import { listFields } from '@/modules/wms/crm/fields';
+import { blankFieldsData } from '@/modules/platform/fields/view';
 import { createLeadAction } from '../../actions';
-import { CustomFieldInputs } from '../../custom-fields';
+import { CustomFieldInputs } from '@/components/custom-fields';
 import { LeadForm } from '../lead-form';
 import { PageHeader } from '@/components/ui/page';
 
@@ -19,7 +19,7 @@ export default async function NewLeadPage() {
     listSources(),
     listStages(),
     salesManagerOptions(),
-    listFields('lead'),
+    blankFieldsData('lead'),
   ]);
 
   return (
@@ -43,7 +43,7 @@ export default async function NewLeadPage() {
           nextActionNote: '',
         }}
       >
-        <CustomFieldInputs fields={fields} values={{}} />
+        <CustomFieldInputs {...fields} />
       </LeadForm>
     </div>
   );

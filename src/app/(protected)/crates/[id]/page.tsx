@@ -16,6 +16,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { dissolveCrateAction, updateCrateAction } from '../actions';
 import { BackLink } from '@/components/back-link';
+import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -178,6 +179,12 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           editable={active}
         />
       </div>
+
+      <CustomFieldsPanel
+        entityType="crate"
+        entityId={crate.id}
+        revalidate={`/crates/${crate.id}`}
+      />
     </div>
   );
 }

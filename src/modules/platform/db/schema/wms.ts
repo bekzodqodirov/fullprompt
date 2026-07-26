@@ -995,54 +995,6 @@ export const crmActivities = pgTable(
 );
 
 /**
- * Custom fields (owner: "amoCRM/Bitrix kabi custom bo'lsin"). The owner
- * defines what a lead or a client card asks for; `type` drives both the input
- * widget and the validation.
- */
-export const crmFields = pgTable(
-  'crm_fields',
-  {
-    id: id(),
-    entityType: text('entity_type').notNull(),
-    label: text('label').notNull(),
-    type: text('type').notNull(),
-    /** Choices for select / multiselect; empty for every other type. */
-    options: jsonb('options').notNull().default([]),
-    required: boolean('required').notNull().default(false),
-    sortOrder: integer('sort_order').notNull().default(100),
-    active: boolean('active').notNull().default(true),
-    createdAt: createdAt(),
-  },
-  (t) => [
-    check('crm_fields_entity_check', sql`${t.entityType} IN ('lead', 'client')`),
-    check(
-      'crm_fields_type_check',
-      sql`${t.type} IN ('text', 'textarea', 'number', 'date', 'select', 'multiselect', 'checkbox', 'phone', 'url')`,
-    ),
-    uniqueIndex('crm_fields_label_unique').on(t.entityType, sql`lower(${t.label})`),
-  ],
-);
-
-/** One answer per (field, entity). */
-export const crmFieldValues = pgTable(
-  'crm_field_values',
-  {
-    fieldId: uuid('field_id')
-      .notNull()
-      .references(() => crmFields.id, { onDelete: 'cascade' }),
-    entityType: text('entity_type').notNull(),
-    entityId: uuid('entity_id').notNull(),
-    value: jsonb('value').notNull(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.fieldId, t.entityId] }),
-    check('crm_field_values_entity_check', sql`${t.entityType} IN ('lead', 'client')`),
-    index('crm_field_values_entity_idx').on(t.entityType, t.entityId),
-  ],
-);
-
-/**
  * One human being holding several client codes (owner: "ha birlashtiraylik").
  *
  * A layer ABOVE clients, not a merge: each code keeps its own letters, stock,

@@ -15,6 +15,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { boxLandedCost } from '@/modules/wms/costing/service';
 import { BoxStatusActions } from './status-actions';
 import { BackLink } from '@/components/back-link';
+import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
 export default async function BoxPage({ params }: { params: Promise<{ id: string }> }) {
@@ -122,6 +123,12 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
           ))}
         </ol>
       </section>
+
+      <CustomFieldsPanel
+        entityType="box"
+        entityId={box.id}
+        revalidate={`/boxes/${box.id}`}
+      />
     </div>
   );
 }

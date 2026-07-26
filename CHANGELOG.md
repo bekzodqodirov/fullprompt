@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 2-bosqich: har joyda «o'zim qo'shgan maydonlar» — 2026-07-26
+
+Custom maydonlar mexanizmi bor edi, lekin faqat **ikkita** obyektga: lid va mijoz. Qaysi obyektlar ruxsat etilganini baza darajasida CHECK bog'lab turardi va uni o'zgartirish uchun beshta faylni bir vaqtda tahrirlash kerak edi. Endi bu **platforma qatlami**: prixod, quti, yashik, partiya, yuklash rejasi, ombor, xodim, mashina, xarajat — hammasiga maydon qo'shasiz.
+
+**`Sozlamalar → Maydonlar va obyektlar`** (`/admin/fields`) — bitta ekran, obyektlar bo'yicha guruhlangan:
+
+- **12 xil maydon turi**: matn, uzun matn, son, sana, ro'yxatdan bittasi, ro'yxatdan bir nechtasi, belgi (galochka), telefon, havola, **pul (summa + valyuta)**, **yozuvga havola** (mijoz / xodim / ombor / mashina) va **fayl**.
+- **Tekshiruv qoidalari** — min/maks son, min/maks belgi, shablon (regex). Server ham, telefon ham tekshiradi.
+- **Shartli ko'rinish** — «Hujjat raqami» maydoni faqat «Hujjat turi = Shartnoma» bo'lganda chiqadi. Sahifa qayta yuklanmaydi, darhol ochiladi.
+- **Izoh** — maydon ostida turadigan tushuntirish («Kub — m³ da»).
+- **«Ro'yxatda»** belgisi — maydon mijozlar ro'yxatida **ustun** bo'lib chiqadi, **filtr** paydo bo'ladi va **Excel**ga tushadi.
+
+**Filtr, saralash, Excel** (siz «to'liq kerak» degandingiz):
+- Ro'yxat tepasida har bir maydon uchun filtr. Son uchun `>10`, `<10`, `5..9` yoziladi; sana uchun `2026-01-01..2026-03-01`; matn uchun ichida qidiradi; ro'yxat uchun tayyor tanlov.
+- Ustun sarlavhasini bosib saralaysiz. **Son son bo'lib saralanadi** — bu bejiz emas: eski saqlash usulida «5» «40» dan keyin turardi. Endi har bir javob **o'z turidagi ustunda** yotadi.
+- **⬇ XLSX** tugmasi — ekranda nima ko'rinsa, o'shani yuklab beradi (filtri bilan). Filtrlangan ro'yxat filtrsiz eksport bo'lishi — mijozga noto'g'ri fayl jo'natishning eng oson yo'li.
+
+**Ma'lumot yo'qolishiga qarshi choralar** (bu qismga ko'p vaqt ketdi):
+- **Yashirilgan maydon o'chirilmaydi.** Shart o'zgargani uchun maydon ko'rinmay qolsa, unga yozilgan javob **joyida qoladi**. Aks holda bitta dropdownni o'zgartirish butun bazadagi javoblarni jimgina o'chirib yuborardi.
+- **Boshqa maydon bog'liq bo'lgan maydonni o'chirib bo'lmaydi** — avval bog'liqni oling. Aks holda «ko'rsatilsin, agar…» hech narsaga ishora qilib qolardi va bog'liq maydon hamma kartochkadan yo'qolardi.
+- **Turini o'zgartirib bo'lmaydi** — javoblar boshqa ustunda yotibdi.
+- **Zanjir shart yo'q** (A → B → C) — bu bog'liqlik grafi, birinchi halqa sahifani osib qo'yardi.
+- Maydonni o'chirishdan oldin **nechta javob o'chishi** aytiladi.
+
+**Ko'chirish (migratsiya) haqida.** Jonli bazangizdagi 76 ta javob yangi ustunlarga ko'chiriladi va tekshirildi — nusxada sinab ko'rildi, bitta javob ham yo'qolmadi. Migratsiya bitta tranzaksiyada, ya'ni biror joyda xato chiqsa baza **butunlay eskiday qoladi**.
+
+**Boshqa o'zgarishlar:**
+- Maydonlar `/crm/settings` dan chiqdi (u yerda havola qoldi) — ikkita tahrirlagich bitta jadvalga yozishi, biri eskirib qolishining eng qisqa yo'li.
+- Mijoz kartochkasidagi maydonlar endi CRM huquqiga bog'liq emas: mijozlarni boshqaradigan, lekin CRM'ga kirmaydigan odam ham ko'radi va to'ldiradi. Sotuvchilar ilgarigidek to'ldiraveradi.
+- **Yangi huquq kodi qo'shilmadi** — atayin. Yangi kod faqat seed orqali rollarga yetadi, seed esa siz tahrirlagan rolga tegmaydi (1-bosqich), ya'ni siz `super_admin`ni tahrirlagan bo'lsangiz ekran hech kimga ochilmay qolardi. Shu sababli ishlatilmay turgan `admin.dictionaries.manage` kodi olindi — u hamma bazada `super_admin` va `admin`da allaqachon bor.
+- Lid yaratish shaklidagi custom maydonlar endi **lid saqlanishidan oldin** tekshiriladi: ilgari xato chiqsa lid yaratilib bo'lgan, ekranda esa «xato» yozuvi turardi.
+
+**Bu bosqichda qilinmagani:** formula maydoni (siz sanagan ro'yxatdan) — bu alohida loyiha, va aytgan hisob-kitoblaringiz (tannarx, zichlik, foyda) allaqachon kod bilan sanaladi. Custom **obyekt** (o'zingiz o'ylab topgan yangi ro'yxat) — keyingi bosqichda; buning uchun poydevor solindi (obyektlar ro'yxati endi jadval).
+
+297 test + 32 e2e yashil.
+
 ## 1-bosqich: rollar konstruktori — kim nimani qila olishi endi sozlama — 2026-07-26
 
 Shu paytgacha «kim nimaga ruxsatli» degan savolning javobi **kodda** turardi (`ROLE_MATRIX`) va bazaga faqat bir marta, seed orqali tushardi — faqat **qo'shish** mumkin edi. Rolga bitta huquq qo'shish uchun ham men kerak edim (yangi versiya chiqarish kerak edi), olib tashlashning esa **umuman iloji yo'q edi**.

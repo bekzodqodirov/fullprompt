@@ -5,7 +5,7 @@ import { db, pgClient } from '../src/modules/platform/db/client';
 import { clients, roles, userRoles, users } from '../src/modules/platform/db/schema';
 import { createClient, ClientError } from '../src/modules/platform/clients/service';
 import { markDuplicates, parseTsv, type ParsedClientRow } from '../src/modules/platform/clients/import';
-import { listFields, saveField, setFieldValues } from '../src/modules/wms/crm/fields';
+import { listFields, saveField, setFieldValues } from '../src/modules/platform/fields/service';
 
 /**
  * Bulk import of the owner's client spreadsheet.
@@ -119,6 +119,11 @@ async function main() {
         label: SELLER_FIELD,
         type: 'select',
         options: sellers,
+        help: '',
+        rules: {},
+        showIf: null,
+        onList: false,
+        lookupEntity: null,
         required: false,
         sortOrder: 10,
         active: true,
@@ -136,6 +141,11 @@ async function main() {
         label: SELLER_FIELD,
         type: 'select',
         options: [...knownOptions, ...missingOptions],
+        help: '',
+        rules: {},
+        showIf: null,
+        onList: false,
+        lookupEntity: null,
         required: false,
         sortOrder: sellerField.sortOrder,
         active: true,

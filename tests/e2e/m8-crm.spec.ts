@@ -35,12 +35,16 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   // race ahead while the save was still in flight.
   await expect(addStage.getByText('✅')).toBeVisible();
 
-  const addField = page.locator('details').filter({ has: page.getByTestId('save-field') });
-  await addField.locator('summary').click();
-  await addField.locator('input[name="label"]').fill(`Shahar ${runId}`);
-  await addField.locator('select[name="type"]').selectOption('select');
-  await addField.locator('input[name="options"]').fill('Toshkent, Andijon');
-  await page.getByTestId('save-field').click();
+  // Fields are no longer a CRM setting — they are defined for every object at
+  // /admin/fields (Phase 2).
+  await page.goto('/admin/fields');
+  await page.getByTestId('new-field-panel').click();
+  const addField = page.getByTestId('field-new');
+  await addField.getByTestId('field-label').fill(`Shahar ${runId}`);
+  await addField.getByTestId('field-entity').selectOption('lead');
+  await addField.getByTestId('field-type').selectOption('select');
+  await addField.getByTestId('field-options').fill('Toshkent, Andijon');
+  await addField.getByTestId('save-field').click();
   await expect(addField.getByText('✅')).toBeVisible();
 
   // A new lead, answering the field that did not exist a minute ago.

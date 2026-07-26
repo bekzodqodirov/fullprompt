@@ -6,6 +6,7 @@ import { warehouses } from '@/modules/platform/db/schema';
 import { HistoryTab } from '@/components/history-tab';
 import { toggleWarehouseActiveAction, updateWarehouseAction } from '../actions';
 import { WarehouseForm } from '../warehouse-form';
+import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 
 export default async function WarehouseDetailPage({
   params,
@@ -51,6 +52,12 @@ export default async function WarehouseDetailPage({
           capacityM3: wh.capacityM3 ? String(Number(wh.capacityM3)) : '',
           issuesToClients: wh.issuesToClients,
         }}
+      />
+
+      <CustomFieldsPanel
+        entityType="warehouse"
+        entityId={wh.id}
+        revalidate={`/admin/warehouses/${wh.id}`}
       />
 
       <section>

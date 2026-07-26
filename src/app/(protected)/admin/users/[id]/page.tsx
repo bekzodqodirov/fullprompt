@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { roles, userRoles, users, userWarehouses, warehouses } from '@/modules/platform/db/schema';
+import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { HistoryTab } from '@/components/history-tab';
 import { toggleUserActiveAction, updateUserAction } from '../actions';
 import { roleOptions } from '../role-options';
@@ -60,6 +61,12 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           roleCodes,
           warehouseIds: whIds,
         }}
+      />
+
+      <CustomFieldsPanel
+        entityType="user"
+        entityId={user.id}
+        revalidate={`/admin/users/${user.id}`}
       />
 
       <section>

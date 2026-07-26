@@ -3,10 +3,8 @@
 import { useActionState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import {
-  deleteFieldAction,
   deleteStageAction,
   reorderStagesAction,
-  saveFieldAction,
   saveSourceAction,
   saveStageAction,
   type CrmFormState,
@@ -14,18 +12,6 @@ import {
 import { STAGE_CLASS, stageClass } from '../stage-color';
 
 const COLORS = Object.keys(STAGE_CLASS);
-const TYPES = [
-  'text',
-  'textarea',
-  'number',
-  'date',
-  'select',
-  'multiselect',
-  'checkbox',
-  'phone',
-  'url',
-] as const;
-
 function Feedback({ state }: { state: CrmFormState }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
@@ -242,131 +228,6 @@ export function SourceForm({
         >
           {pending ? tc('loading') : tc('save')}
         </button>
-      </div>
-      <Feedback state={state} />
-    </form>
-  );
-}
-
-export interface FieldRow {
-  id: string;
-  entityType: string;
-  label: string;
-  type: string;
-  options: string[];
-  required: boolean;
-  sortOrder: number;
-  active: boolean;
-  answers: number;
-}
-
-export function FieldForm({ field }: { field?: FieldRow }) {
-  const t = useTranslations('crm');
-  const tc = useTranslations('common');
-  const [state, formAction, pending] = useActionState<CrmFormState, FormData>(saveFieldAction, {});
-  const [deleting, startDelete] = useTransition();
-
-  return (
-    <form action={formAction} className="space-y-2 border-t border-line pt-2 first:border-0">
-      {field && <input type="hidden" name="id" value={field.id} />}
-      <div className="flex flex-wrap gap-2">
-        <input
-          name="label"
-          defaultValue={field?.label}
-          placeholder={t('label')}
-          aria-label={t('label')}
-          data-testid="field-label"
-          className="input min-w-40 flex-1"
-          required
-        />
-        <select
-          name="entityType"
-          defaultValue={field?.entityType ?? 'lead'}
-          aria-label={t('forLead')}
-          className="input !w-32"
-          disabled={Boolean(field)}
-        >
-          <option value="lead">{t('forLead')}</option>
-          <option value="client">{t('forClient')}</option>
-        </select>
-        {/* A disabled select sends nothing; the hidden twin keeps the value. */}
-        {field && <input type="hidden" name="entityType" value={field.entityType} />}
-        <select
-          name="type"
-          defaultValue={field?.type ?? 'text'}
-          aria-label={t('fieldType')}
-          className="input !w-36"
-          disabled={Boolean(field)}
-        >
-          {TYPES.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
-        {field && <input type="hidden" name="type" value={field.type} />}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <input
-          name="options"
-          defaultValue={field?.options.join(', ')}
-          placeholder={t('options')}
-          aria-label={t('options')}
-          className="input min-w-40 flex-1"
-        />
-        <input
-          name="sortOrder"
-          type="number"
-          defaultValue={field?.sortOrder ?? 100}
-          aria-label="#"
-          className="input !w-20"
-        />
-        <label className="flex items-center gap-1 self-center text-sm">
-          <input type="hidden" name="required" value="off" />
-          <input
-            type="checkbox"
-            name="required"
-            value="on"
-            defaultChecked={field?.required ?? false}
-            className="h-4 w-4"
-          />
-          {t('required')}
-        </label>
-        <label className="flex items-center gap-1 self-center text-sm">
-          <input type="hidden" name="active" value="off" />
-          <input
-            type="checkbox"
-            name="active"
-            value="on"
-            defaultChecked={field ? field.active : true}
-            className="h-4 w-4"
-          />
-          {tc('active')}
-        </label>
-        <button
-          type="submit"
-          data-testid={field ? 'update-field' : 'save-field'}
-          className={field ? 'btn-secondary' : 'btn-primary'}
-          disabled={pending}
-        >
-          {pending ? tc('loading') : tc('save')}
-        </button>
-        {field && (
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={() => {
-              // Deleting takes the stored answers with it — say how many.
-              if (!window.confirm(t('answersWillGo', { n: field.answers }))) return;
-              startDelete(async () => {
-                await deleteFieldAction(field.id);
-              });
-            }}
-            className="btn-danger"
-          >
-            {tc('delete')}
-          </button>
-        )}
       </div>
       <Feedback state={state} />
     </form>

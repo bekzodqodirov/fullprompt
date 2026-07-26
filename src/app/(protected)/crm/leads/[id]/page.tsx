@@ -9,10 +9,10 @@ import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { getSetting } from '@/modules/platform/settings/service';
 import { Panel } from '@/components/panel';
 import { listActivities, listSources, listStages } from '@/modules/wms/crm/service';
-import { fieldValues, listFields } from '@/modules/wms/crm/fields';
+import { customFieldsData } from '@/modules/platform/fields/view';
 import { convertLeadAction, updateLeadAction } from '../../actions';
 import { ActivityForm } from '../../activity-form';
-import { CustomFieldInputs } from '../../custom-fields';
+import { CustomFieldInputs } from '@/components/custom-fields';
 import { LeadForm } from '../lead-form';
 import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
@@ -31,12 +31,14 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
 
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
-  const [sources, stages, managers, fields, values, log, codePrefix] = await Promise.all([
+  const [sources, stages, managers, custom, log, codePrefix] = await Promise.all([
     listSources(),
     listStages(),
     salesManagerOptions(),
-    listFields('lead'),
-    fieldValues('lead', id),
+    // The lead card is the one form in the app that carries built-in and
+    // custom inputs in the SAME FormData, so it renders the inputs itself
+    // rather than the standalone panel.
+    customFieldsData('lead', id),
     listActivities('lead', id),
     getSetting('client_code_prefix'),
   ]);
@@ -122,7 +124,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
             nextActionNote: lead.nextActionNote ?? '',
           }}
         >
-          <CustomFieldInputs fields={fields} values={values} />
+          <CustomFieldInputs {...custom} />
         </LeadForm>
       </Panel>
     </div>

@@ -5,6 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { clients, clientTelegramLinks } from '@/modules/platform/db/schema';
 import { getSetting } from '@/modules/platform/settings/service';
 import { getBotUsername } from '@/modules/platform/telegram/bot';
+import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { HistoryTab } from '@/components/history-tab';
 import { CargoSummary } from '@/components/cargo-summary';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -138,8 +139,15 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         <CargoSummary clientId={client.id} money={canSeeMoney} />
       </section>
 
-      {/* Phase 2.3: the sales side of the card — what was said, the owner's
-          own fields, and the other codes the same person holds. */}
+      {/* The fields the owner added to a client, whatever they are. */}
+      <CustomFieldsPanel
+        entityType="client"
+        entityId={client.id}
+        revalidate={`/admin/clients/${client.id}`}
+      />
+
+      {/* Phase 2.3: the sales side of the card — what was said and the other
+          codes the same person holds. */}
       <ClientCrmSections clientId={client.id} clientName={client.name} />
 
       <section>
