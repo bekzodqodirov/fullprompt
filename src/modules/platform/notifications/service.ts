@@ -12,6 +12,7 @@ import {
 } from '../db/schema';
 import { logger } from '../logger';
 import { clientLabels } from '../telegram/client-labels';
+import { cabinetInlineKeyboard } from '../telegram/menu-button';
 import { notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
 
@@ -400,12 +401,22 @@ async function notifyLinkedClients(event: {
   const chats = new Set<bigint>();
   for (const link of links) if (link.telegramChatId) chats.add(link.telegramChatId);
 
+  const app = cabinetInlineKeyboard(process.env.APP_URL, client?.locale);
+
   for (const chatId of chats) {
     try {
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: Number(chatId), text }),
+        // The wide "open my cargo" button rides on the notification itself.
+        // This is the moment a client cares most — their goods just moved —
+        // so it is the one place the app should be a single tap away rather
+        // than an icon they have to go looking for.
+        body: JSON.stringify({
+          chat_id: Number(chatId),
+          text,
+          ...(app ? { reply_markup: app } : {}),
+        }),
       });
       // The answer was never read before, so a client who had BLOCKED the bot
       // looked exactly like a client who received the message — and the whole

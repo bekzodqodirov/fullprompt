@@ -6,12 +6,17 @@ import type { CabinetPayload } from '@/modules/wms/client-cabinet/miniapp';
 
 /**
  * What the customer sees (owner: "kubi kilosi soni rasimi hammasini to'liq
- * ko'rsa yaxshi bo'lar edi … chiroyli interface qilib bersak zor bo'lardi").
+ * ko'rsa yaxshi bo'lar edi … chiroyli interface qilib bersak zor bo'lardi",
+ * then: "web appni o'zida ham UI UX designni maksimal darajada yaxshila").
  *
  * Three tabs over one fetch: a client on a mobile connection in Tashkent pays
  * for one round trip and then swipes instantly. The identity is the signed
  * `initData` blob, sent as a header on every call — never a client id in a
  * URL, which is a client id somebody can change.
+ *
+ * It is built to feel like part of Telegram rather than like a website inside
+ * it: the app's own colours, its haptics, its back button, and a first paint
+ * that already has the shape of the answer.
  *
  * Deliberately absent: where the truck is. The owner asked for that to wait
  * until every client can see their own cargo on a real map.
@@ -24,11 +29,31 @@ interface TelegramWebApp {
   ready: () => void;
   expand: () => void;
   colorScheme?: string;
+  themeParams?: { bg_color?: string; secondary_bg_color?: string };
   initDataUnsafe?: { user?: { language_code?: string } };
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
+  HapticFeedback?: {
+    impactOccurred?: (style: string) => void;
+    selectionChanged?: () => void;
+  };
+  BackButton?: {
+    show?: () => void;
+    hide?: () => void;
+    onClick?: (cb: () => void) => void;
+    offClick?: (cb: () => void) => void;
+  };
 }
 
 function webApp(): TelegramWebApp | null {
   return (globalThis as unknown as { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp ?? null;
+}
+
+/** A light tap on anything the client chose to do. Absent outside Telegram. */
+function tap(kind: 'select' | 'open' = 'select') {
+  const h = webApp()?.HapticFeedback;
+  if (kind === 'select') h?.selectionChanged?.();
+  else h?.impactOccurred?.('light');
 }
 
 /**
@@ -50,6 +75,7 @@ type State =
 export function CabinetApp() {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [tab, setTab] = useState<Tab>('cargo');
+  const [zoom, setZoom] = useState<string | null>(null);
 
   const load = useCallback(async (blob: string, hint?: string) => {
     // No blob at all means the page was opened in an ordinary browser rather
@@ -79,6 +105,15 @@ export function CabinetApp() {
     const app = webApp();
     app?.ready();
     app?.expand();
+    // Telegram paints the strip above the page and the area below it in its
+    // own colours unless told otherwise, which leaves the app floating in a
+    // rectangle of a different shade. Matching them is what makes it read as
+    // one screen rather than an embedded website.
+    const bg = app?.themeParams?.bg_color;
+    if (bg) {
+      app?.setHeaderColor?.(bg);
+      app?.setBackgroundColor?.(bg);
+    }
     // `load` sets state on its first line when there is no blob, which the
     // lint rule sees as a cascading render. It is the case the rule's own
     // escape hatch is for: whether Telegram is here AT ALL is external state
@@ -89,15 +124,38 @@ export function CabinetApp() {
     void load(app?.initData ?? '', app?.initDataUnsafe?.user?.language_code);
   }, [load]);
 
+  /**
+   * An open photograph is closed by Telegram's OWN back button.
+   *
+   * On a phone the gesture for "go back" is the one at the top left, and an
+   * app that puts a close cross somewhere else is an app people close entirely
+   * by mistake.
+   */
+  useEffect(() => {
+    const back = webApp()?.BackButton;
+    if (!back) return;
+    if (!zoom) {
+      back.hide?.();
+      return;
+    }
+    const close = () => setZoom(null);
+    back.onClick?.(close);
+    back.show?.();
+    return () => {
+      back.offClick?.(close);
+      back.hide?.();
+    };
+  }, [zoom]);
+
   // Until the client's own choice arrives with the data, Telegram's own
   // interface language is the best guess at what they read.
   const t = clientLabels(state.kind === 'ready' ? state.data.locale : state.hint);
 
-  if (state.kind === 'outside') return <Notice text={t.openInTelegram} />;
-  if (state.kind === 'loading') return <Notice text={t.loading} />;
+  if (state.kind === 'outside') return <Notice icon="💬" text={t.openInTelegram} />;
+  if (state.kind === 'loading') return <Skeleton />;
   if (state.kind === 'error') {
     return (
-      <Notice text={state.status === 403 ? t.notLinkedApp : t.loadError}>
+      <Notice icon={state.status === 403 ? '🔗' : '⚠️'} text={state.status === 403 ? t.notLinkedApp : t.loadError}>
         {state.status !== 403 && (
           <button
             type="button"
@@ -115,7 +173,10 @@ export function CabinetApp() {
   return (
     <>
       <header className="cab-head">
-        <strong>{t.appTitle}</strong>
+        <div className="cab-title">
+          <span>{t.appTitle}</span>
+          <small>{data.clients.map((c) => c.clientCode).join(' · ')}</small>
+        </div>
         <div className="cab-totals">
           <div className="cab-total">
             <b>{data.totals.boxes}</b>
@@ -145,7 +206,10 @@ export function CabinetApp() {
               aria-selected={tab === key}
               className="cab-tab"
               data-testid={`cab-tab-${key}`}
-              onClick={() => setTab(key)}
+              onClick={() => {
+                tap();
+                setTab(key);
+              }}
             >
               {label}
             </button>
@@ -153,7 +217,7 @@ export function CabinetApp() {
         </div>
       </header>
 
-      <div className="cab-body">
+      <div className="cab-body" key={tab}>
         {data.clients.map((client) => (
           <section key={client.id}>
             {/* Only worth a heading when the person holds more than one code —
@@ -166,10 +230,13 @@ export function CabinetApp() {
 
             {tab === 'cargo' &&
               (client.cargo.length === 0 ? (
-                <p className="cab-empty">{t.noCargo}</p>
+                <p className="cab-empty">
+                  <span className="cab-empty-icon">📦</span>
+                  {t.noCargo}
+                </p>
               ) : (
                 client.cargo.map((lot) => (
-                  <Lot key={lot.lotId} lot={lot} t={t} initData={blob} />
+                  <Lot key={lot.lotId} lot={lot} t={t} initData={blob} onZoom={setZoom} />
                 ))
               ))}
 
@@ -177,7 +244,10 @@ export function CabinetApp() {
 
             {tab === 'history' &&
               (client.history.length === 0 ? (
-                <p className="cab-empty">{t.noHistory}</p>
+                <p className="cab-empty">
+                  <span className="cab-empty-icon">🗄</span>
+                  {t.noHistory}
+                </p>
               ) : (
                 <div className="cab-lot">
                   {client.history.map((row, i) => (
@@ -195,47 +265,105 @@ export function CabinetApp() {
           </section>
         ))}
       </div>
+
+      {zoom && (
+        <button
+          type="button"
+          className="cab-lightbox"
+          aria-label={t.close}
+          data-testid="cab-lightbox"
+          onClick={() => setZoom(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- a blob URL, not a file the optimiser can reach */}
+          <img src={zoom} alt="" />
+        </button>
+      )}
     </>
   );
 }
+
+type CabinetLotView = CabinetPayload['clients'][number]['cargo'][number];
 
 function Lot({
   lot,
   t,
   initData,
+  onZoom,
 }: {
-  lot: CabinetPayload['clients'][number]['cargo'][number];
+  lot: CabinetLotView;
   t: ClientLabels;
   initData: string;
+  onZoom: (url: string) => void;
 }) {
+  const stages = Object.entries(lot.statuses);
   return (
     <article className="cab-lot" data-testid="cab-lot">
       <div className="cab-lot-top">
         <span className="cab-letter">{lot.letter ?? '·'}</span>
         <span className="cab-name">{lot.productNameRu?.trim() || lot.productNameZh}</span>
       </div>
+
       <div className="cab-dims">
-        <span>
-          {lot.total} {t.pieces}
-        </span>
-        <span>
-          {lot.weightKg} {t.kg}
-        </span>
-        <span>
-          {lot.volumeM3} {t.m3}
-        </span>
-        {lot.warehouseCodes.length > 0 && <span>📍 {lot.warehouseCodes.join(', ')}</span>}
+        <div className="cab-dim">
+          <b>{lot.total}</b>
+          <span>{t.pieces}</span>
+        </div>
+        <div className="cab-dim">
+          <b>{lot.weightKg}</b>
+          <span>{t.kg}</span>
+        </div>
+        <div className="cab-dim">
+          <b>{lot.volumeM3}</b>
+          <span>{t.m3}</span>
+        </div>
       </div>
+
+      {lot.warehouseCodes.length > 0 && (
+        <div className="cab-where">📍 {lot.warehouseCodes.join(', ')}</div>
+      )}
+
+      {/* The journey, drawn to scale. Only worth a bar when the boxes are in
+          more than one place — otherwise it is a solid line saying nothing the
+          chip below does not already say. */}
+      {stages.length > 1 && (
+        <div className="cab-bar" data-testid="cab-bar">
+          {stages.map(([status, n]) => (
+            <i
+              key={status}
+              style={{ width: `${(n / lot.total) * 100}%`, background: stageColor(status) }}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="cab-chips">
-        {Object.entries(lot.statuses).map(([status, n]) => (
-          <span className="cab-chip" key={status}>
+        {stages.map(([status, n]) => (
+          <span
+            className="cab-chip"
+            key={status}
+            style={{ '--chip': stageColor(status) } as React.CSSProperties}
+          >
             <b>{n}</b> {statusLabel(status, t)}
           </span>
         ))}
       </div>
-      {lot.photoCount > 0 && <Photos lotId={lot.lotId} count={lot.photoCount} initData={initData} />}
+
+      {lot.photoCount > 0 && (
+        <Photos lotId={lot.lotId} count={lot.photoCount} initData={initData} onZoom={onZoom} />
+      )}
     </article>
   );
+}
+
+/**
+ * A stage's colour, read from the stylesheet rather than repeated here.
+ *
+ * The palette belongs with the rest of the design, and a second copy in the
+ * component is a copy that goes stale — the bar and the chip beside it would
+ * disagree about what "in transit" looks like.
+ */
+function stageColor(status: string): string {
+  return `var(--st-${status}, var(--muted))`;
 }
 
 /**
@@ -246,7 +374,17 @@ function Lot({
  * Fetching each thumbnail as a blob keeps the credential out of every URL, and
  * the object URLs are released on unmount.
  */
-function Photos({ lotId, count, initData }: { lotId: string; count: number; initData: string }) {
+function Photos({
+  lotId,
+  count,
+  initData,
+  onZoom,
+}: {
+  lotId: string;
+  count: number;
+  initData: string;
+  onZoom: (url: string) => void;
+}) {
   const [urls, setUrls] = useState<string[]>([]);
 
   useEffect(() => {
@@ -280,8 +418,17 @@ function Photos({ lotId, count, initData }: { lotId: string; count: number; init
   return (
     <div className="cab-photos" data-testid="cab-photos">
       {urls.map((url) => (
-        // eslint-disable-next-line @next/next/no-img-element -- a blob URL, not a file the optimiser can reach
-        <img key={url} src={url} alt="" loading="lazy" />
+        <button
+          key={url}
+          type="button"
+          onClick={() => {
+            tap('open');
+            onZoom(url);
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- a blob URL, not a file the optimiser can reach */}
+          <img src={url} alt="" loading="lazy" />
+        </button>
       ))}
     </div>
   );
@@ -297,21 +444,20 @@ function Balance({
   const owes = client.balanceUsd > 0.009;
   return (
     <>
-      <div className="cab-balance">
+      <div className="cab-balance" data-owing={owes} data-testid="cab-balance">
         <b>${Math.abs(client.balanceUsd).toFixed(2)}</b>
-        <span>
-          {owes ? t.debtYes : client.balanceUsd < -0.009 ? t.credit : t.debtNo}
-        </span>
+        <span>{owes ? t.debtYes : client.balanceUsd < -0.009 ? t.credit : t.debtNo}</span>
       </div>
       {client.recent.length > 0 && (
         <div className="cab-lot">
           <div className="cab-code">{t.recentMoves}</div>
           {client.recent.map((r, i) => (
-            <div className="cab-row" key={i}>
+            <div className="cab-row" key={i} data-kind={r.type === 'charge' ? 'charge' : 'payment'}>
               <span>
                 {r.txDate} · {r.type === 'charge' ? t.charged : t.paid}
               </span>
               <span>
+                {r.type === 'charge' ? '' : '+'}
                 {r.amount} {r.currency}
               </span>
             </div>
@@ -322,9 +468,41 @@ function Balance({
   );
 }
 
-function Notice({ text, children }: { text: string; children?: React.ReactNode }) {
+/**
+ * The first paint, with the shape of the answer already in it.
+ *
+ * A client opening this is on a phone in a warehouse town; the round trip is
+ * felt. Grey blocks in the layout of the real thing read as "nearly there",
+ * where the word "Loading…" reads as "nothing happened".
+ */
+function Skeleton() {
   return (
-    <div className="cab-body">
+    <div className="cab-body" data-testid="cab-skeleton">
+      <div className="cab-skel cab-skel--head" />
+      <div className="cab-skel" />
+      <div className="cab-skel" />
+    </div>
+  );
+}
+
+function Notice({
+  text,
+  icon,
+  children,
+}: {
+  text: string;
+  icon?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="cab-body cab-notice">
+      {/* The icon sits OUTSIDE the sentence: it is decoration, and a screen
+          reader announcing "link emoji" before the message helps nobody. */}
+      {icon && (
+        <div className="cab-empty-icon" aria-hidden="true">
+          {icon}
+        </div>
+      )}
       <p className="cab-empty" data-testid="cab-notice">
         {text}
       </p>

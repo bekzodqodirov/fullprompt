@@ -11,6 +11,7 @@ import {
   registerClientCabinet,
 } from './client-cabinet';
 import { clientLabels } from './client-labels';
+import { cabinetInlineKeyboard } from './menu-button';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -61,6 +62,10 @@ export function startTelegramBot(): void {
           `${t.yourCodes}: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
           { reply_markup: cabinetKeyboard(locale) },
         );
+        // A client who types /start is looking for their cargo. Offer the app
+        // as a wide button rather than making them find the corner icon.
+        const app = cabinetInlineKeyboard(process.env.APP_URL, locale);
+        if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
         return;
       }
       // This used to be a RUSSIAN sentence about the staff profile screen —

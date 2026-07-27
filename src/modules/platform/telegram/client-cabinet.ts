@@ -24,7 +24,7 @@ import {
   statusLabel,
   type ClientLabels,
 } from './client-labels';
-import { setCabinetMenuButton } from './menu-button';
+import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
 
 /**
  * Client cabinet inside the staff bot (Phase 2.2, owner's spec 3.1/3.2):
@@ -366,6 +366,11 @@ export function registerClientCabinet(bot: Bot): void {
       `✅ ${t.welcome}\n${t.yourCodes}: ${codes}.`,
       { reply_markup: cabinetKeyboard(seeded) },
     );
+    // The corner button is set above; the BIG one is offered straight away.
+    // The first thing a client does after linking is look for their cargo, and
+    // an icon among the chat's furniture is not where they look.
+    const app = cabinetInlineKeyboard(process.env.APP_URL, seeded);
+    if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
   });
 
   bot.hears(allLabelVariants('btnCargo'), async (ctx) => {
@@ -389,7 +394,11 @@ export function registerClientCabinet(bot: Bot): void {
           if (buttons % 4 === 0) kb.row();
         }
       }
-      await ctx.reply(text.slice(0, 4000), buttons ? { reply_markup: kb } : undefined);
+      // The wide button goes on its own last row — under the cargo, where the
+      // thumb already is, and without costing a second message.
+      const app = cabinetInlineKeyboard(process.env.APP_URL, chatLocale(linked));
+      if (app) kb.row().webApp(t.openApp, app.inline_keyboard[0]![0]!.web_app.url);
+      await ctx.reply(text.slice(0, 4000), buttons || app ? { reply_markup: kb } : undefined);
     }
   });
 

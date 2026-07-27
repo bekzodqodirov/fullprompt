@@ -22,22 +22,52 @@ export interface MenuButton {
   web_app: { url: string };
 }
 
+/** An inline keyboard holding one wide `web_app` button. */
+export interface CabinetInlineKeyboard {
+  inline_keyboard: { text: string; web_app: { url: string } }[][];
+}
+
 /**
- * The button payload, or null when it cannot be set.
+ * Where the cabinet lives, or null when it cannot be opened at all.
  *
  * Telegram refuses a Mini App on anything but public HTTPS, so an `APP_URL`
- * that is empty or plain http means the button MUST NOT be sent — sending it
- * fails the API call, and worse, a stale button pointing at a dead URL is a
- * client tapping into nothing.
+ * that is empty or plain http means no button MUST be sent anywhere — the API
+ * call fails, and worse, a stale button pointing at a dead URL is a client
+ * tapping into nothing.
  */
-export function cabinetMenuButton(appUrl: string | undefined, locale?: string | null): MenuButton | null {
+export function cabinetUrl(appUrl: string | undefined): string | null {
   const base = (appUrl ?? '').trim().replace(/\/+$/, '');
-  if (!base.startsWith('https://')) return null;
-  return {
-    type: 'web_app',
-    text: clientLabels(locale).appTitle,
-    web_app: { url: `${base}/cabinet` },
-  };
+  return base.startsWith('https://') ? `${base}/cabinet` : null;
+}
+
+/** The corner button, in one client's language. */
+export function cabinetMenuButton(appUrl: string | undefined, locale?: string | null): MenuButton | null {
+  const url = cabinetUrl(appUrl);
+  return url ? { type: 'web_app', text: clientLabels(locale).appTitle, web_app: { url } } : null;
+}
+
+/**
+ * The BIG button (owner: "buttonga urg'u ber … glavniy katta button bo'lib
+ * ko'rinib tursin").
+ *
+ * The corner menu button is one icon among the chat's furniture and people do
+ * not find it. An inline button sits under a message at full width, which is
+ * where a client's thumb already is — so the cabinet is offered exactly where
+ * the cargo is being discussed: on the arrival message, on the cargo list, and
+ * once at linking.
+ *
+ * INLINE, not a reply-keyboard button. The two look the same and open the same
+ * page, but a reply-keyboard `web_app` button hands the app an empty
+ * `initData` (#275) — every client would be refused, and it would read as a
+ * broken app rather than the wrong kind of button.
+ */
+export function cabinetInlineKeyboard(
+  appUrl: string | undefined,
+  locale?: string | null,
+): CabinetInlineKeyboard | null {
+  const url = cabinetUrl(appUrl);
+  if (!url) return null;
+  return { inline_keyboard: [[{ text: clientLabels(locale).openApp, web_app: { url } }]] };
 }
 
 /**

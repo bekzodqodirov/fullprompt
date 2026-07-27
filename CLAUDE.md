@@ -109,7 +109,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 278 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 281 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
@@ -118,7 +118,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-452 unit/integration + 54 e2e, verified in CI's order on a fresh database.
+456 unit/integration + 57 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -178,6 +178,14 @@ deployed:
   the real `telegram-web-app.js` — which this container cannot reach and the
   runner can. The spec now SERVES the script (`route.fulfill`) instead of
   racing it.
+- **The big button and the design pass** (#279-281, owner: "buttonga urg'u ber
+  … glavniy katta button" + "UI UX designni maksimal darajada yaxshila"): a
+  full-width INLINE `web_app` button on the arrival message, under the cargo
+  list and at linking, with the corner button kept for the client who returns
+  with no message to scroll back to. The screen is drawn as part of Telegram —
+  its theme, its back button, its haptics — with a to-scale stage bar, a
+  per-stage palette that is the one thing NOT taken from the theme, a photo
+  lightbox, and skeletons instead of the word "loading".
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cabinetMenuButton } from '@/modules/platform/telegram/menu-button';
+import { cabinetInlineKeyboard, cabinetMenuButton } from '@/modules/platform/telegram/menu-button';
 
 /**
  * The corner button is the ONLY way into the Mini App that carries a signed
@@ -41,5 +41,50 @@ describe('the button speaks the client’s language', () => {
     expect(text).toBeTruthy();
     // Telegram caps the menu button text; anything longer is rejected outright.
     expect(text!.length).toBeLessThanOrEqual(16);
+  });
+});
+
+/**
+ * The BIG button (owner: "buttonga urg'u ber … glavniy katta button bo'lib
+ * ko'rinib tursin"). Same URL, different placement — under a message, at full
+ * width, where the thumb already is.
+ */
+describe('the wide button under a message', () => {
+  it('points at the same cabinet as the corner button', () => {
+    const wide = cabinetInlineKeyboard('https://gsrwms.uz', 'uz');
+    const corner = cabinetMenuButton('https://gsrwms.uz', 'uz');
+    expect(wide?.inline_keyboard[0]![0]!.web_app.url).toBe(corner?.web_app.url);
+    // Two doors into one room: a client who used the corner yesterday and the
+    // button today must not land on two different screens.
+    expect(wide?.inline_keyboard[0]![0]!.web_app.url).toBe('https://gsrwms.uz/cabinet');
+  });
+
+  it('is one wide button, not a row of small ones', () => {
+    const wide = cabinetInlineKeyboard('https://gsrwms.uz', 'ru');
+    // Telegram divides a row evenly between its buttons — a second button on
+    // this row would halve the one the owner asked to be prominent.
+    expect(wide?.inline_keyboard).toHaveLength(1);
+    expect(wide?.inline_keyboard[0]).toHaveLength(1);
+  });
+
+  it('says what pressing it does, in the client’s language', () => {
+    expect(cabinetInlineKeyboard('https://gsrwms.uz', 'uz')?.inline_keyboard[0]![0]!.text).toContain(
+      'ochish',
+    );
+    expect(cabinetInlineKeyboard('https://gsrwms.uz', 'ru')?.inline_keyboard[0]![0]!.text).toContain(
+      'Открыть',
+    );
+    expect(cabinetInlineKeyboard('https://gsrwms.uz', 'en')?.inline_keyboard[0]![0]!.text).toContain(
+      'Open',
+    );
+  });
+
+  it('is withheld on the same terms as the corner button', () => {
+    // A button Telegram refuses to open is worse than no button: the client
+    // presses it, nothing happens, and they conclude the system is broken.
+    for (const url of [undefined, '', 'http://gsrwms.uz']) {
+      expect(cabinetInlineKeyboard(url, 'uz')).toBeNull();
+      expect(cabinetMenuButton(url, 'uz')).toBeNull();
+    }
   });
 });

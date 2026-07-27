@@ -6,6 +6,11 @@
  * (where it shows a "open me in Telegram" notice rather than data). A cabinet
  * that is dark while the client's Telegram is light reads as a foreign website
  * and is exactly what makes people distrust a link.
+ *
+ * The stage colours are the ONE thing that does not come from the theme. A
+ * client reads this screen for a single answer — where is my cargo — and that
+ * answer has to survive both a light and a dark Telegram, so each stage owns a
+ * hue and the theme decides only how bright it sits.
  */
 .cabinet {
   --bg: var(--tg-theme-bg-color, #ffffff);
@@ -14,7 +19,20 @@
   --card: var(--tg-theme-secondary-bg-color, #f4f4f5);
   --accent: var(--tg-theme-button-color, #b80000);
   --on-accent: var(--tg-theme-button-text-color, #ffffff);
-  --line: color-mix(in srgb, var(--muted) 25%, transparent);
+  --line: color-mix(in srgb, var(--muted) 22%, transparent);
+  --raise: color-mix(in srgb, var(--fg) 5%, var(--card));
+
+  /* One hue per stage of the journey — warehouse, planned, loading, on the
+     road, ready. Deliberately ordered cool → warm → green so the strip below
+     a lot reads as progress even before the words are read. */
+  --st-in_stock: #8e8e93;
+  --st-planned: #3478f6;
+  --st-loading: #f0a020;
+  --st-in_transit: #7d5bed;
+  --st-ready_for_pickup: #23a55a;
+
+  --ok: #23a55a;
+  --warn: #e0483d;
 
   background: var(--bg);
   color: var(--fg);
@@ -22,65 +40,104 @@
   font-family:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
     'PingFang SC', sans-serif;
-  padding-bottom: 2rem;
+  /* Telegram's own gesture area sits below the page on iOS. */
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* ---------------------------------------------------------------- header */
 
 .cab-head {
   position: sticky;
   top: 0;
   z-index: 10;
   background: var(--bg);
-  padding: 12px 16px 8px;
+  padding: 10px 16px 8px;
   border-bottom: 1px solid var(--line);
 }
+.cab-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.cab-title small {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
 
-/* The three numbers a client actually wants: how much, how heavy, how big. */
+/* The three numbers a client actually wants: how many, how heavy, how big. */
 .cab-totals {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .cab-total {
   background: var(--card);
-  border-radius: 12px;
-  padding: 10px 8px;
+  border-radius: 14px;
+  padding: 10px 6px;
   text-align: center;
 }
 .cab-total b {
   display: block;
-  font-size: 1.25rem;
-  line-height: 1.2;
+  font-size: 1.3rem;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 .cab-total span {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--muted);
 }
 
+/* A segmented control, not three separate buttons: one moving pill reads as
+   "you are here" where three filled boxes read as three choices. */
 .cab-tabs {
   display: flex;
-  gap: 6px;
+  gap: 2px;
   margin-top: 10px;
+  background: var(--card);
+  border-radius: 12px;
+  padding: 3px;
 }
 .cab-tab {
   flex: 1;
   border: 0;
-  border-radius: 10px;
-  padding: 9px 4px;
+  border-radius: 9px;
+  padding: 8px 4px;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  background: var(--card);
-  color: var(--fg);
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
 }
 .cab-tab[aria-selected='true'] {
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
 }
 
-.cab-body { padding: 12px 16px; }
+/* ------------------------------------------------------------------ body */
+
+.cab-body {
+  padding: 12px 16px;
+  animation: cab-in 0.18s ease both;
+}
+@keyframes cab-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cab-body { animation: none; }
+  .cab-tab { transition: none; }
+}
+
 .cab-code {
   font-size: 0.75rem;
   font-weight: 700;
@@ -89,84 +146,210 @@
   margin: 14px 0 6px;
 }
 
+/* ------------------------------------------------------------------- lot */
+
 .cab-lot {
   background: var(--card);
-  border-radius: 14px;
-  padding: 12px;
+  border-radius: 16px;
+  padding: 13px;
   margin-bottom: 10px;
 }
-.cab-lot-top { display: flex; align-items: baseline; gap: 8px; }
+.cab-lot-top { display: flex; align-items: center; gap: 10px; }
 .cab-letter {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 50%;
   font-weight: 800;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
-  min-width: 1.4em;
 }
-.cab-name { font-weight: 600; flex: 1; min-width: 0; }
+.cab-name { font-weight: 600; flex: 1; min-width: 0; line-height: 1.25; }
+
+/* Three labelled figures instead of a run-on line: a client checking against
+   a supplier's packing list is comparing numbers, not reading a sentence. */
 .cab-dims {
-  display: flex;
-  gap: 10px;
-  margin-top: 6px;
-  font-size: 0.85rem;
-  color: var(--muted);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 11px;
+}
+.cab-dim {
+  background: var(--raise);
+  border-radius: 10px;
+  padding: 7px 4px;
+  text-align: center;
+}
+.cab-dim b {
+  display: block;
+  font-size: 0.95rem;
   font-variant-numeric: tabular-nums;
 }
+.cab-dim span { font-size: 0.65rem; color: var(--muted); }
 
-/* One chip per status, so "6 in transit, 4 at the warehouse" is readable at a
-   glance rather than as a sentence. */
-.cab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.cab-chip {
-  font-size: 0.78rem;
-  padding: 3px 9px;
+.cab-where {
+  margin-top: 9px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* The journey as a bar: each stage takes the width of the boxes sitting in
+   it, so "most of it has left, four boxes are still in Yiwu" is one look. */
+.cab-bar {
+  display: flex;
+  height: 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  overflow: hidden;
+  margin-top: 11px;
+  background: var(--raise);
+}
+.cab-bar i { display: block; height: 100%; }
+
+.cab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.cab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.77rem;
+  padding: 4px 10px 4px 7px;
+  border-radius: 999px;
+  background: var(--raise);
   color: var(--fg);
 }
+.cab-chip::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chip, var(--muted));
+}
 .cab-chip b { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- photos */
 
 .cab-photos {
   display: flex;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 11px;
   overflow-x: auto;
   scrollbar-width: none;
+  scroll-snap-type: x mandatory;
 }
 .cab-photos::-webkit-scrollbar { display: none; }
-.cab-photos img {
-  width: 78px;
-  height: 78px;
-  object-fit: cover;
-  border-radius: 10px;
+.cab-photos button {
+  border: 0;
+  padding: 0;
+  background: none;
   flex: none;
-  background: var(--line);
+  scroll-snap-align: start;
+  cursor: pointer;
 }
+.cab-photos img {
+  display: block;
+  width: 82px;
+  height: 82px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--raise);
+}
+
+/* Full screen, because a photograph of a damaged box is the whole reason the
+   client opened this. Closed with Telegram's own back button. */
+.cab-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: #000000ee;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+.cab-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* --------------------------------------------------------------- balance */
 
 .cab-balance {
   background: var(--card);
-  border-radius: 14px;
-  padding: 16px;
+  border-radius: 16px;
+  padding: 20px 16px;
   text-align: center;
   margin-bottom: 12px;
 }
-.cab-balance b { display: block; font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+.cab-balance b {
+  display: block;
+  font-size: 2.1rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.cab-balance span { font-size: 0.85rem; color: var(--muted); }
+.cab-balance[data-owing='true'] b { color: var(--warn); }
+.cab-balance[data-owing='false'] b { color: var(--ok); }
+
 .cab-row {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 10px;
-  padding: 9px 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--line);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 .cab-row:last-child { border-bottom: 0; }
-.cab-row span { color: var(--muted); }
+.cab-row > :first-child { color: var(--muted); min-width: 0; }
+.cab-row > :last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cab-row[data-kind='payment'] > :last-child { color: var(--ok); }
 
-.cab-empty { color: var(--muted); text-align: center; padding: 28px 12px; }
+/* ------------------------------------------------- empty, loading, errors */
+
+.cab-empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 30px 16px;
+  line-height: 1.5;
+}
+.cab-empty-icon {
+  display: block;
+  font-size: 2.2rem;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.cab-notice { padding-top: 44px; }
+.cab-notice .cab-empty { padding-top: 4px; }
+
+/* Skeletons rather than the word "loading": the screen a client sees first
+   should already have the shape of the answer. */
+.cab-skel {
+  background: var(--card);
+  border-radius: 16px;
+  margin-bottom: 10px;
+  height: 104px;
+  animation: cab-pulse 1.3s ease-in-out infinite;
+}
+.cab-skel--head { height: 66px; border-radius: 14px; }
+@keyframes cab-pulse {
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cab-skel { animation: none; }
+}
+
 .cab-btn {
   display: block;
   width: 100%;
   border: 0;
   border-radius: 12px;
-  padding: 12px;
+  padding: 13px;
   font: inherit;
   font-weight: 600;
   background: var(--accent);

@@ -127,3 +127,117 @@ test('a tampered blob is refused, whatever the webview claims', async ({ page })
   await assertInsideTelegram(page);
   await expect(page.getByTestId('cab-notice')).toHaveText(clientLabels('ru').loadError);
 });
+
+/**
+ * The screen itself.
+ *
+ * Served a fixed payload rather than a real client, for the same reason the
+ * tests above sign for nobody: this spec must be movable in the run order, and
+ * a linked chat is configuration left behind (#183). What the server returns
+ * is covered by `client-cabinet.integration.test.ts`; what is covered HERE is
+ * that the numbers, the stages and the photographs actually reach the glass.
+ */
+const PAYLOAD = {
+  locale: 'ru',
+  totals: { boxes: 10, weightKg: 68.5, volumeM3: 1.02, balanceUsd: 250 },
+  clients: [
+    {
+      id: 'c1',
+      clientCode: 'GS777',
+      name: 'Test client',
+      cargo: [
+        {
+          lotId: 'lot-1',
+          letter: 'A',
+          productNameZh: '手机壳',
+          productNameRu: 'Чехлы',
+          statuses: { in_stock: 4, in_transit: 6 },
+          total: 10,
+          warehouseCodes: ['YW'],
+          hasPhotos: true,
+          weightKg: 68.5,
+          volumeM3: 1.02,
+          perBoxKg: 6.85,
+          perBoxM3: 0.102,
+          photoCount: 2,
+        },
+      ],
+      balanceUsd: 250,
+      recent: [
+        { type: 'charge', amount: 250, currency: 'USD', amountUsd: 250, txDate: '2026-07-20', voided: false },
+      ],
+      history: [
+        { letter: 'B', productNameZh: '杂货', productNameRu: null, n: 3, lastAt: '2026-06-01T09:00:00Z' },
+      ],
+    },
+  ],
+};
+
+/** A 1×1 PNG — enough to become an object URL and land in the strip. */
+const PIXEL = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+async function cabinetWithData(page: import('@playwright/test').Page) {
+  await telegramScript(page, signedInitData(910_000_777));
+  await page.route('**/api/cabinet/data', (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify(PAYLOAD) }),
+  );
+  await page.route('**/api/cabinet/photo/**', (route) =>
+    route.fulfill({ contentType: 'image/png', body: PIXEL }),
+  );
+  await page.goto('/cabinet');
+  await assertInsideTelegram(page);
+}
+
+test('the cargo screen shows the count, the kilos and the cubes', async ({ page }) => {
+  await cabinetWithData(page);
+
+  // The three figures the owner asked for, in the header and again per lot.
+  const head = page.locator('.cab-totals');
+  await expect(head).toContainText('10');
+  await expect(head).toContainText('68.5');
+  await expect(head).toContainText('1.02');
+
+  const lot = page.getByTestId('cab-lot');
+  await expect(lot).toContainText('Чехлы');
+  await expect(lot).toContainText('YW');
+
+  // Two stages, so the bar is drawn — and drawn to scale: 4 of 10 and 6 of 10.
+  const segments = page.getByTestId('cab-bar').locator('i');
+  await expect(segments).toHaveCount(2);
+  await expect(segments.first()).toHaveAttribute('style', /40%/);
+  await expect(segments.last()).toHaveAttribute('style', /60%/);
+
+  // And said in words too, because a bar alone does not say WHICH stage.
+  await expect(lot).toContainText('на складе');
+  await expect(lot).toContainText('в пути');
+});
+
+test('a photograph opens full screen and closes again', async ({ page }) => {
+  await cabinetWithData(page);
+  const strip = page.getByTestId('cab-photos');
+  await expect(strip.locator('img')).toHaveCount(2);
+
+  await expect(page.getByTestId('cab-lightbox')).toHaveCount(0);
+  await strip.locator('button').first().click();
+  await expect(page.getByTestId('cab-lightbox')).toBeVisible();
+  await page.getByTestId('cab-lightbox').click();
+  await expect(page.getByTestId('cab-lightbox')).toHaveCount(0);
+});
+
+test('the other two tabs carry the money and the history', async ({ page }) => {
+  await cabinetWithData(page);
+
+  await page.getByTestId('cab-tab-balance').click();
+  const balance = page.getByTestId('cab-balance');
+  await expect(balance).toContainText('$250.00');
+  // Owing, and said so — not a bare number the client has to interpret.
+  await expect(balance).toHaveAttribute('data-owing', 'true');
+  await expect(balance).toContainText(clientLabels('ru').debtYes);
+
+  await page.getByTestId('cab-tab-history').click();
+  await expect(page.getByTestId('cab-lot')).toHaveCount(0);
+  await expect(page.locator('.cab-body')).toContainText('杂货');
+});

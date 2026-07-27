@@ -133,6 +133,25 @@ const DICT = {
 
   // --- the Mini App ---
   appTitle: { uz: 'Mening yuklarim', ru: 'Мои грузы', en: 'My cargo' },
+  /**
+   * The big button, as opposed to `appTitle` in the corner.
+   *
+   * The owner asked for the app to be reachable from something that reads as
+   * the main action rather than an icon nobody notices, so this wording is a
+   * verb — it says what happens when you press it.
+   */
+  openApp: {
+    uz: '📱 Yuklarimni ochish',
+    ru: '📱 Открыть мои грузы',
+    en: '📱 Open my cargo',
+  },
+  openAppPrompt: {
+    uz: 'Yuklaringiz, rasmlari va balansingiz — bitta oynada 👇',
+    ru: 'Ваши грузы, фотографии и баланс — в одном окне 👇',
+    en: 'Your cargo, photos and balance — all in one place 👇',
+  },
+  perBox: { uz: 'har quti', ru: 'за коробку', en: 'per box' },
+  close: { uz: 'Yopish', ru: 'Закрыть', en: 'Close' },
   totalBoxes: { uz: 'quti', ru: 'коробок', en: 'boxes' },
   photos: { uz: 'rasm', ru: 'фото', en: 'photos' },
   loading: { uz: 'Yuklanmoqda…', ru: 'Загрузка…', en: 'Loading…' },

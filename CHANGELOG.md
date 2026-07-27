@@ -1,5 +1,52 @@
 # CHANGELOG
 
+## Katta tugma + mijoz ilovasining dizayni — 2026-07-27
+
+Siz aytgan edingiz: *«buttonga urg'u ber web appni ochishi uchun button
+glavniy katta button bo'lib ko'rinib tursin va web appni o'zida ham UI UX
+designni maksimal darajada yaxshila»*.
+
+### 1. Katta tugma
+
+Burchakdagi kichkina belgi — mijoz uni topmaydi. Endi **butun kenglikdagi
+tugma** paydo bo'ladi, uchta joyda:
+
+- **«Yukingiz omborimizga qabul qilindi»** xabarining tagida — mijoz eng
+  qiziqqan daqiqada, bitta bosishda ochiladi
+- **«📦 Yuklarim»** javobining tagida — qo'shimcha xabarsiz
+- **Birinchi ulanganda** — bir marta
+
+Burchakdagi tugma ham qoladi: bir hafta o'tib qaytgan mijozga tepaga
+o'tkazadigan xabar bo'lmasligi mumkin. Ikkalasi bir joyga olib boradi — buni
+test tekshiradi.
+
+### 2. Ilovaning dizayni
+
+**Telegram'ning bir qismidek** ko'rinadi, ichidagi begona sayt kabi emas:
+mijozning o'z rangi (kunduzgi ham, tungi ham), tepasi va pastki chekkasi ham
+o'sha rangda, tanlaganda telefon sekin titraydi, rasm Telegram'ning **o'z
+"orqaga" tugmasi** bilan yopiladi.
+
+Har bir tovar kartasida:
+
+- **Uchta katta raqam** — dona / kg / m³, yonma-yon, o'qishga oson
+- **Yo'l chizig'i** — qutilar qayerdaligi kenglik bo'yicha: «ko'pi yo'lga
+  chiqdi, 4 tasi hali Yiwuda» bitta qarashda ko'rinadi
+- **Rangli belgilar**: kulrang — skladda · ko'k — tayyorlandi · sariq —
+  yuklanmoqda · binafsha — yo'lda · yashil — olib ketishga tayyor
+- **Rasmlar** — bosilsa butun ekranga ochiladi
+
+Balansda summa **rangli**: qarz bo'lsa qizil, bo'lmasa yashil. To'lovlar `+`
+bilan, yashil.
+
+Ochilayotganda «Yuklanmoqda…» degan so'z emas, **javobning shakli** turadi —
+mijoz sekin internetda ham «deyarli keldi» deb ko'radi.
+
+### Tekshiruv
+
+456 test + 57 e2e. Ilovaning ekrani ham test bilan qoplandi: raqamlar, yo'l
+chizig'i kengliklari, rasm ochilishi va uchala bo'lim.
+
 ## Mijoz tomoni, 2-qism: Telegram ichida ochiladigan «Mening yuklarim» — 2026-07-27
 
 Siz so'ragan edingiz: *«kubi kilosi soni rasimi hammasini to'liq ko'rsa yaxshi
