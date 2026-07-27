@@ -200,6 +200,46 @@ describe('load scanning', () => {
     return { lot, batch: batch! };
   }
 
+  /**
+   * A batch whose plan covers a CRATE — the shape the warehouse actually
+   * loads. `withStray` puts one extra box inside the crate that the plan does
+   * not reserve, which is what happens when a box is added to a crate after
+   * the plan was approved.
+   */
+  async function approvedCrateBatch(planCount: number, opts: { withStray?: boolean } = {}) {
+    const lot = await makeLot(planCount + (opts.withStray ? 1 : 0));
+    const inCrate = lot.boxIds.slice(0, planCount);
+    const crateId = uuidv4();
+    const crate = await createCrate(
+      { crateId, warehouseId: originId, boxIds: inCrate, kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+    // A crate plans WHOLE — `crateIds` is how the planner says "this box goes
+    // as one place" (feedback round 5). The stray, if any, is added to the
+    // crate AFTER approval, which is exactly how it happens in the warehouse.
+    const sub = await submitPlan(
+      {
+        originWarehouseId: originId,
+        destWarehouseId: destId,
+        lines: [],
+        crateIds: [crateId],
+      },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+
+    let strayCode: string | undefined;
+    if (opts.withStray) {
+      // Dropped into the crate after the plan was approved — the packer fits
+      // one more box in and the paperwork never hears about it.
+      const leftover = lot.boxIds.filter((id) => !inCrate.includes(id));
+      await db.update(boxes).set({ crateId }).where(inArray(boxes.id, leftover));
+      const rows = await db.select().from(boxes).where(inArray(boxes.id, leftover));
+      strayCode = rows[0]?.shortCode;
+    }
+    return { batch: batch!, lot: { ...lot, crateCode: crate.code }, strayCode };
+  }
+
   it('scan ok → duplicate soft; replay idempotent; finish reverts short-loaded; depart', async () => {
     const { lot, batch } = await approvedBatch(4, 3);
     const plannedCodes = lot.shortCodes.slice(0, 3);
@@ -283,6 +323,61 @@ describe('load scanning', () => {
     // And nothing was recorded against the batch either.
     const events = await db.select().from(scanEvents).where(eq(scanEvents.crateId, crateId));
     expect(events).toHaveLength(0);
+  });
+
+  it('a crate half-loaded by a retry is still on the plan', async () => {
+    /**
+     * The regression the warehouse hit mid-load: "1 scan qilib ketidan
+     * noto'g'ri deyabti va umuman ishlamayabti".
+     *
+     * `onPlan` demanded that EVERY member box still be `planned`. The moment
+     * one of them is `loading` — an outbox retry over warehouse wifi, a second
+     * phone on the same truck, or the operator simply scanning the crate
+     * again — the crate stopped being "on the plan" and came back refused.
+     * Before the loading screen learned to show refusals that was invisible;
+     * once it showed them, the red confirm took over the screen and disabled
+     * the scanner, and loading stopped dead.
+     *
+     * A box already loading on THIS batch is the same box on the same truck.
+     */
+    const { batch, lot } = await approvedCrateBatch(3);
+
+    // One member gets loaded on its own first — exactly what a retry leaves
+    // behind when the first ack never made it back to the phone.
+    const [single] = await ingestLoadScans([scan(batch.id, lot.shortCodes[0]!)], ctx());
+    expect(single!.result).toBe('ok');
+
+    // Now the crate: two planned members, one already loading.
+    const [ack] = await ingestLoadScans([scan(batch.id, lot.crateCode)], ctx());
+    expect(ack!.result).toBe('ok');
+
+    const after = await db.select().from(boxes).where(inArray(boxes.id, lot.boxIds));
+    expect(after.every((b) => b.status === 'loading')).toBe(true);
+    expect(after.every((b) => b.currentBatchId === batch.id)).toBe(true);
+  });
+
+  it('a planned crate holding one stray box still loads its planned boxes', async () => {
+    /**
+     * The second half of the same regression. `crates.boxShortCodes` in the
+     * loading snapshot is every box PHYSICALLY in the crate, and the plan
+     * reserves an exact count — so one box added to the crate after planning,
+     * or a lot the planner did not list, made a legitimately planned crate
+     * unscannable. The crate is one place and it is going on the truck; the
+     * planned boxes must load, and the strays must be reported rather than
+     * silently recorded.
+     */
+    const { batch, lot, strayCode } = await approvedCrateBatch(2, { withStray: true });
+
+    const [ack] = await ingestLoadScans([scan(batch.id, lot.crateCode)], ctx());
+    expect(ack!.result).toBe('ok');
+    // The stray is named, so the screen can offer to add it on the spot.
+    expect(ack!.unplanned).toContain(strayCode);
+
+    const rows = await db.select().from(boxes).where(inArray(boxes.id, lot.boxIds));
+    expect(rows.filter((b) => b.status === 'loading')).toHaveLength(2);
+    // …and the stray is NOT on the truck until somebody says so.
+    const stray = rows.find((b) => b.shortCode === strayCode);
+    expect(stray?.status).not.toBe('loading');
   });
 
   it('crate scan fans out to member boxes with derived uuids', async () => {

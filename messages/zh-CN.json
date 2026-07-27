@@ -618,6 +618,7 @@
     "syncing": "同步中…（{n}）",
     "alreadyScanned": "已扫过：",
     "notOnPlan": "该货物不在计划内 — 请确认追加装车",
+    "notOnPlanInCrate": "箱不在计划内 — 要加入吗？",
     "reasonRequired": "原因（必填）",
     "loadAnyway": "仍然装车",
     "stickerLost": "标签丢失/手动输入",

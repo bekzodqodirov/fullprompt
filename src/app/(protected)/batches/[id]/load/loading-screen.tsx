@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Scanner } from '@/components/scan/scanner';
 import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
 import {
+  boxesForScan,
   enqueueScan,
   flushScans,
   pendingScans,
@@ -130,12 +131,21 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
    */
   const handleAcks = useCallback((acks: SyncAck[]) => {
     const rollback: string[] = [];
+    const leftover: { code: string; boxes: string[] }[] = [];
     let reopen: string | null = null;
 
     for (const ack of acks) {
       const codes = marked.current.get(ack.clientEventUuid) ?? [];
       marked.current.delete(ack.clientEventUuid);
-      if (scanWasRecorded(ack.result)) continue;
+      if (scanWasRecorded(ack.result)) {
+        // The crate went on the truck, but it held boxes this plan does not
+        // cover. They are NOT loaded, and the loader is the only person who
+        // can decide — standing in front of the open crate.
+        if (ack.unplanned?.length && ack.scannedCode) {
+          leftover.push({ code: ack.scannedCode, boxes: ack.unplanned });
+        }
+        continue;
+      }
       rollback.push(...codes);
       if (scanNeedsConfirm(ack.result)) {
         // The scanned code, not the member boxes: the confirm dialog re-sends
@@ -157,6 +167,13 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     }
     if (reopen) {
       setConfirmCode(reopen);
+      setConfirmReason('');
+    }
+    // Only when nothing worse is on screen: a refusal is the louder problem.
+    if (!reopen && leftover.length > 0) {
+      const first = leftover[0]!;
+      setToast(`🧰 ${first.code}: ${first.boxes.length} ${t('notOnPlanInCrate')}`);
+      setConfirmCode(first.code);
       setConfirmReason('');
     }
   }, [t]);
@@ -245,30 +262,44 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
 
   function onCode(code: string, method: 'qr' | 'manual' = 'qr', manualReason?: string) {
     if (!snapshot) return;
-    const crate = snapshot.crates.find((c) => c.code === code);
-    const memberCodes = crate ? crate.boxShortCodes : [code];
-    const planned = new Set(snapshot.boxes.map((b) => b.shortCode));
+    const onTruck = new Set(snapshot.boxes.map((b) => b.shortCode));
     const quick = isQuick(snapshot); // quick batch: no plan, no ceremony
 
-    if (memberCodes.every((c) => loaded.has(c))) {
+    /**
+     * A crate is judged on the boxes of it that belong to THIS truck.
+     *
+     * The snapshot ships every box physically inside the crate, and a crate
+     * collects strays — one more fitted in after the plan was approved, a lot
+     * the planner did not list. Requiring all of them stopped the warehouse
+     * mid-load: the operator was holding a crate the plan asked for and the
+     * phone answered "not on plan", the red confirm covered the screen, and
+     * the scanner under it went dead.
+     *
+     * A crate with SOME of its boxes on the plan is this truck's crate: those
+     * load, and the server names the rest so somebody decides about them. A
+     * crate with NONE is a stranger, and that is what the red screen is for.
+     */
+    const memberCodes = boxesForScan(code, snapshot.crates, onTruck, quick);
+
+    if (memberCodes.length > 0 && memberCodes.every((c) => loaded.has(c))) {
       feedback('dup');
       setToast(`🔁 ${t('alreadyScanned')} ${code}`);
       return;
     }
-    // A CRATE used to be accepted unconditionally here, and that is how a
-    // crate standing at the warehouse but belonging to another truck got the
-    // green tick while the server recorded nothing: the snapshot offers every
-    // crate at the origin, not only the planned ones. A crate now answers the
-    // same question as a loose box — are ALL its boxes on this plan — so a
-    // wrong one reaches the red confirm instead of vanishing.
-    if (quick || memberCodes.every((c) => planned.has(c))) {
+    if (quick || (memberCodes.length > 0 && memberCodes.every((c) => onTruck.has(c)))) {
       void accept(memberCodes, { code, method, manualReason });
       return;
     }
-    // Not on this batch's plan — red confirm flow.
+    // Nothing on this batch's plan — red confirm flow.
     feedback('bad');
     setConfirmCode(code);
     setConfirmReason('');
+  }
+
+  /** Every box the operator would be adding by confirming `code`. */
+  function confirmMembers(code: string): string[] {
+    const crate = snapshot?.crates.find((c) => c.code === code);
+    return crate && crate.boxShortCodes.length > 0 ? crate.boxShortCodes : [code];
   }
 
   if (!snapshot) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
@@ -417,7 +448,11 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
               className="btn-danger w-full disabled:opacity-50"
               disabled={confirmReason.trim().length < 3}
               onClick={() => {
-                void accept([confirmCode], {
+                // A CRATE marks its member boxes, not its own code — nothing
+                // on the counter is keyed by a crate code, so confirming one
+                // used to leave the number standing still while the server
+                // loaded it.
+                void accept(confirmMembers(confirmCode), {
                   code: confirmCode,
                   method: 'qr',
                   addedOnSpot: true,

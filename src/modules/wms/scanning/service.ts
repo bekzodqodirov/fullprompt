@@ -40,6 +40,12 @@ export interface ScanAck {
   scannedCode?: string;
   detail?: string;
   boxes?: { shortCode: string; letter: string | null }[];
+  /**
+   * Boxes found inside a scanned CRATE that this truck's plan does not cover.
+   * They are NOT loaded — the screen names them so somebody decides, instead
+   * of a box riding to Tashkent that the manifest never heard of (#221).
+   */
+  unplanned?: string[];
 }
 
 /**
@@ -112,8 +118,40 @@ export async function ingestLoadScans(
         ['in_stock', 'ready_for_pickup'].includes(b.status) &&
         b.currentWarehouseId === batch.originWarehouseId;
 
+      /**
+       * "On this truck" — which is NOT the same as "still `planned`".
+       *
+       * It used to be `status === 'planned'`, and that stopped a warehouse
+       * mid-load. A box already `loading` on THIS batch is the same box on
+       * the same truck: it gets that status from a first scan, from an outbox
+       * retry over warehouse wifi, or from the second phone working the same
+       * door. Demanding `planned` meant the crate holding it stopped being on
+       * the plan, came back refused, and — once the screen learned to SHOW
+       * refusals — put the red confirm over the scanner and stopped the job.
+       */
+      const onThisBatch = (b: (typeof members)[number]) =>
+        b.currentBatchId === input.batchId && (b.status === 'planned' || b.status === 'loading');
+
+      /**
+       * A crate is judged on the boxes of it that belong to this truck.
+       *
+       * `members` for a crate scan is every box PHYSICALLY inside it, and a
+       * crate collects strays: one more box fitted in after the plan was
+       * approved, a lot the planner did not list. Requiring all of them made a
+       * legitimately planned crate unscannable — the operator is holding a
+       * crate the plan asked for and the phone says "not on plan".
+       *
+       * So the planned boxes load, and the strays are NAMED in the ack rather
+       * than silently recorded, because a box on a truck that the manifest and
+       * the customs invoice know nothing about is the bug this whole area
+       * exists to prevent (#221).
+       */
+      const planned = members.filter(onThisBatch);
+      const unplanned = members.filter((b) => !onThisBatch(b));
       const onPlan = hasPlan
-        ? members.every((b) => b.currentBatchId === input.batchId && b.status === 'planned')
+        ? crateId
+          ? planned.length > 0
+          : members.every(onThisBatch)
         : members.every(looseAtOrigin);
       if (hasPlan && !onPlan && !input.addedOnSpot) {
         // Client shows the red screen and may retry with addedOnSpot=true.
@@ -127,11 +165,16 @@ export async function ingestLoadScans(
           scannedCode: input.code,
         };
       }
-      for (const box of members) {
+
+      // A crate carrying strays loads only its own boxes unless the operator
+      // has already said "load it anyway"; a loose box has nothing to split.
+      const recording =
+        hasPlan && crateId && !input.addedOnSpot && unplanned.length > 0 ? planned : members;
+
+      for (const box of recording) {
         const loadable =
-          (box.currentBatchId === input.batchId && box.status === 'planned') ||
-          ((input.addedOnSpot || !hasPlan) && looseAtOrigin(box));
-        if (!loadable && !(box.status === 'loading' && box.currentBatchId === input.batchId)) {
+          onThisBatch(box) || ((input.addedOnSpot || !hasPlan) && looseAtOrigin(box));
+        if (!loadable) {
           return {
             clientEventUuid: input.clientEventUuid,
             result: 'rejected',
@@ -140,7 +183,7 @@ export async function ingestLoadScans(
         }
       }
 
-      const toLoad = members.filter((b) => b.status !== 'loading');
+      const toLoad = recording.filter((b) => b.status !== 'loading');
       await tx
         .update(boxes)
         .set({
@@ -166,10 +209,10 @@ export async function ingestLoadScans(
       await tx
         .insert(scanEvents)
         .values(
-          members.map((box) => ({
+          recording.map((box) => ({
             // Crate fan-out rows get derived ids; single box keeps the original.
             clientEventUuid:
-              members.length === 1 ? input.clientEventUuid : uuidv5(box.id, input.clientEventUuid),
+              recording.length === 1 ? input.clientEventUuid : uuidv5(box.id, input.clientEventUuid),
             boxId: box.id,
             crateId,
             batchId: input.batchId,
@@ -198,15 +241,22 @@ export async function ingestLoadScans(
             batchCode: batch.code,
             addedOnSpot: true,
             reason: input.addedReason || null,
-            shortCodes: members.map((b) => b.shortCode),
+            shortCodes: recording.map((b) => b.shortCode),
           },
           entityType: 'batch',
           entityId: input.batchId,
           actorId,
         });
       }
-      const letters = await lettersFor(tx, members);
-      return { clientEventUuid: input.clientEventUuid, result: 'ok', boxes: letters };
+      const letters = await lettersFor(tx, recording);
+      return {
+        clientEventUuid: input.clientEventUuid,
+        result: 'ok',
+        boxes: letters,
+        ...(recording.length < members.length
+          ? { unplanned: unplanned.map((b) => b.shortCode), scannedCode: input.code }
+          : {}),
+      };
     });
     acks.push(ack);
   }

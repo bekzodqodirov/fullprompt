@@ -618,6 +618,7 @@
     "syncing": "Sinxronlanmoqda… ({n})",
     "alreadyScanned": "Allaqachon skanlangan:",
     "notOnPlan": "Bu yuk rejada yo‘q — qo‘shishni tasdiqlang",
+    "notOnPlanInCrate": "ta quti rejada yo‘q — qo‘shilsinmi?",
     "reasonRequired": "Sabab (majburiy)",
     "loadAnyway": "Baribir yuklash",
     "stickerLost": "Stiker yo‘qolgan / qo‘lda kiritish",

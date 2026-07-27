@@ -618,6 +618,7 @@
     "syncing": "Syncing… ({n})",
     "alreadyScanned": "Already scanned:",
     "notOnPlan": "Not on this truck’s plan — confirm to add it",
+    "notOnPlanInCrate": "boxes not on the plan — add them?",
     "reasonRequired": "Reason (required)",
     "loadAnyway": "Load it anyway",
     "stickerLost": "Sticker lost / enter by hand",

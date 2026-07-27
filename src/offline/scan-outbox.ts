@@ -31,6 +31,15 @@ export interface SyncAck {
    * that a crate was loaded, and the loader scanned a crate.
    */
   scannedCode?: string;
+  /**
+   * Boxes found inside a scanned CRATE that this truck's plan does not cover.
+   *
+   * The crate loaded — it is this truck's crate — but these particular boxes
+   * did not, so the screen has to say so. Silence here is the failure mode
+   * this whole area exists to prevent: cargo crossing a border that the
+   * manifest and the customs invoice never heard of (#221).
+   */
+  unplanned?: string[];
 }
 
 /**
@@ -131,4 +140,35 @@ export async function flushScans(): Promise<SyncAck[]> {
   const { acks } = (await res.json()) as { acks: SyncAck[] };
   await removeScans(acks.map((a) => a.clientEventUuid));
   return acks;
+}
+
+/**
+ * Which boxes a scanned code puts on THIS truck.
+ *
+ * Extracted from the loading screen because it is the rule that stopped a
+ * warehouse mid-load, and a rule that only exists inside a component is a
+ * rule no test can call (#166).
+ *
+ * A loose box is itself. A crate is the boxes of it that this batch's plan
+ * covers — NOT every box physically inside it. The loading snapshot ships the
+ * crate's real contents, and a crate collects strays: one more fitted in
+ * after the plan was approved, a lot the planner did not list. Demanding all
+ * of them meant the operator held a crate the plan had asked for and the
+ * phone answered "not on plan".
+ *
+ * An empty answer means "nothing here belongs to this truck" — the red
+ * confirm — and is deliberately distinguished from a one-box answer, because
+ * `[].every(...)` is `true` and would have waved the wrong crate straight
+ * through.
+ */
+export function boxesForScan(
+  code: string,
+  crates: { code: string; boxShortCodes: string[] }[],
+  onTruck: ReadonlySet<string>,
+  quick: boolean,
+): string[] {
+  const crate = crates.find((c) => c.code === code);
+  if (!crate) return [code];
+  if (quick) return crate.boxShortCodes;
+  return crate.boxShortCodes.filter((c) => onTruck.has(c));
 }

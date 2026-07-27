@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## Skaner tuzatildi — yuklash yana ishlaydi — 2026-07-27
+
+Siz aytdingiz: «eski versiyasi yaxshi ishlar edi, hozir 1 scan qilib ketidan noto'g'ri deyabti va umuman ishlamayabti, yuklatib bo'mayabti».
+
+**Bu mening xatoim edi. Kechirasiz.**
+
+### Nima bo'lgan
+
+O'tgan safar «scan qilyapti, lekin mashinaga qo'shmayapti» degan xatoni tuzatgandim. O'shanda server yashiklarni **rad qilayotganini ko'rsatadigan qildim** — bu to'g'ri edi.
+
+Lekin serverning **rad qilishi ham noto'g'ri** ekan, men buni ko'rmagandim. Ikkita holatda:
+
+**1. Yashikni ikkinchi marta skanerlash.** Birinchi skandan keyin qutilar «yuklanmoqda» holatiga o'tadi. Server esa «rejada» holatidagilarni kutardi. Natijada — ikkinchi skan, yoki internet uzilib qayta yuborilgan skan, yoki ikkinchi telefondan skan → **«rejada yo'q»**.
+
+**2. Yashikda reja tuzilgandan keyin qo'shilgan quti bo'lsa.** Ombordagi odam yashikka yana bitta quti sig'dirsa, butun yashik «rejada yo'q» bo'lib qolardi.
+
+Ikkalasida ham qizil oyna ekranni yopib, **ostidagi skanerni o'chirib qo'yardi** — shuning uchun «umuman ishlamayabti».
+
+Ilgari bu rad javoblari ekranda **ko'rinmasdi**, shuning uchun bilinmagan. Men ularni ko'rinadigan qildim-u, javobning o'zini tuzatmadim.
+
+### Endi
+
+- **Allaqachon yuklangan quti ham «shu mashinada»** hisoblanadi. Qayta skanerlash, internet uzilishi, ikkinchi telefon — hammasi normal ishlaydi.
+- **Yashik — o'zining rejadagi qutilari bo'yicha baholanadi.** Rejadagilar yuklanadi.
+- **Ortiqcha quti bo'lsa — ekran aytadi**: «🧰 CR-YW26-00001: 1 ta quti rejada yo'q — qo'shilsinmi?» Siz qaror qilasiz. Jimgina yuklab yubormaydi — chegaradan hujjatsiz yuk o'tishi aynan shundan boshlanadi.
+- **«Baribir yukla» tugmasi** endi hisoblagichni darhol harakatga keltiradi (ilgari yashikda 15 soniya turib qolardi).
+
+### Tekshiruv
+
+Avval **xatoni takrorlaydigan 2 ta test** yozdim — ikkalasi ham eski kodda **yiqildi**. Keyin tuzatdim. Endi: lint · typecheck · **402 test** · build · toza bazada **50 e2e** — hammasi yashil.
+
+**Darhol deploy qiling.**
+
 ## Chop etish oynasi — printer va sahifalarni tanlash — 2026-07-27
 
 Siz aytdingiz: «print buttonini bosganda stikerlar ochilyabti, o'sha yerga print qilishni qo'shsa bo'ladimi — qaysi pagelarni qaysi printer deb belgilaydigan oyna borku».
