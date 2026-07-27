@@ -34,18 +34,50 @@ function signedInitData(userId: number, token = E2E_BOT_TOKEN): string {
   return new URLSearchParams({ ...fields, hash }).toString();
 }
 
-/** Pretend to be the Telegram webview, before a single line of app code runs. */
-async function insideTelegram(page: import('@playwright/test').Page, initData: string) {
-  await page.addInitScript((blob: string) => {
-    (window as unknown as { Telegram: unknown }).Telegram = {
-      WebApp: {
-        initData: blob,
-        ready() {},
-        expand() {},
-        initDataUnsafe: { user: { language_code: 'ru' } },
-      },
-    };
-  }, initData);
+/**
+ * Stand in for telegram.org — by SERVING the script, not by racing it.
+ *
+ * The layout loads `telegram-web-app.js` `beforeInteractive`, and that script
+ * ASSIGNS `window.Telegram`. A stand-in installed with `addInitScript` runs
+ * first and is then overwritten by the real one — with an empty `initData`,
+ * because the browser is not really a Telegram webview. It cost a red CI: the
+ * two signed-blob tests passed on a machine with no route to telegram.org and
+ * failed on the runner, which has one.
+ *
+ * Serving it ourselves fixes both halves at once. Nothing can overwrite the
+ * stand-in because it IS the script, and the spec stops depending on the
+ * public internet — a test that needs telegram.org to be reachable is a test
+ * that fails for reasons having nothing to do with this app.
+ *
+ * `initData: null` means "not inside Telegram at all": an empty script, so
+ * `window.Telegram` never exists.
+ */
+async function telegramScript(page: import('@playwright/test').Page, initData: string | null) {
+  const body =
+    initData === null
+      ? '/* an ordinary browser: Telegram never defines itself here */'
+      : `window.Telegram = { WebApp: {
+           initData: ${JSON.stringify(initData)},
+           initDataUnsafe: { user: { language_code: 'ru' } },
+           ready() {}, expand() {},
+         } };`;
+  await page.route('**/telegram-web-app.js', (route) =>
+    route.fulfill({ contentType: 'application/javascript', body }),
+  );
+}
+
+/**
+ * The stand-in really took. Asserted before every signed-blob expectation,
+ * because the failure mode this spec already suffered was SILENT: with no
+ * `initData` the screen falls back to "open me inside Telegram", every
+ * assertion below reads a plausible sentence, and the test looks like a
+ * product bug instead of a broken fixture.
+ */
+async function assertInsideTelegram(page: import('@playwright/test').Page) {
+  const blob = await page.evaluate(
+    () => (window as unknown as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData ?? '',
+  );
+  expect(blob, 'the Telegram stand-in did not survive to the page').not.toBe('');
 }
 
 test('the cabinet API refuses a request carrying no signed blob', async ({ request }) => {
@@ -61,6 +93,7 @@ test('the cabinet API refuses a request carrying no signed blob', async ({ reque
 test('opened in an ordinary browser it explains itself, and does not bounce to the staff login', async ({
   page,
 }) => {
+  await telegramScript(page, null);
   await page.goto('/cabinet');
   // Still on /cabinet: the route group is OUTSIDE (protected). A client who
   // taps the button and lands on an employee login screen is a support call.
@@ -69,8 +102,9 @@ test('opened in an ordinary browser it explains itself, and does not bounce to t
 });
 
 test('a genuine Telegram user who is not a customer is told to ask for a link', async ({ page }) => {
-  await insideTelegram(page, signedInitData(910_000_777));
+  await telegramScript(page, signedInitData(910_000_777));
   await page.goto('/cabinet');
+  await assertInsideTelegram(page);
   // The 403 branch, in the language Telegram reports — distinct from both the
   // generic load error and the "open me inside Telegram" notice. Signed with
   // the server's own token, so this also proves the HMAC agrees end to end.
@@ -88,7 +122,8 @@ test('a tampered blob is refused, whatever the webview claims', async ({ page })
   // — and the client is shown the ordinary failure, not a hint that they were
   // one step away from somebody else's cargo.
   const genuine = signedInitData(910_000_777);
-  await insideTelegram(page, genuine.replace('910000777', '910000778'));
+  await telegramScript(page, genuine.replace('910000777', '910000778'));
   await page.goto('/cabinet');
+  await assertInsideTelegram(page);
   await expect(page.getByTestId('cab-notice')).toHaveText(clientLabels('ru').loadError);
 });

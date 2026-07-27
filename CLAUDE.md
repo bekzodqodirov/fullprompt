@@ -94,6 +94,11 @@ pnpm build && pnpm e2e  # 44 e2e
   **state a spec leaves behind is the next spec's input** (#154). Configuration
   left behind (a field, a role, a stage) is worse than data — it changes what
   every screen renders (#183).
+- **An `addInitScript` stand-in for something the page also loads is a race,
+  not a fixture** — the page's own script assigns over it. Serve the script
+  instead (`page.route(...).fulfill`). This container cannot reach the public
+  internet and the CI runner can, so that race resolves DIFFERENTLY in the two
+  places: green here, red there (#278).
 - **A disabled checkbox posts nothing**, so on a replace-all form it reads as
   "remove". Re-post locked values as hidden inputs (#171).
 - Migrations are hand-written SQL + an entry in `meta/_journal.json`. Drizzle
@@ -104,7 +109,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 277 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 278 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
@@ -168,6 +173,11 @@ deployed:
 - The build step earned its place again: a locale constant dragged
   `next/headers` into the client bundle; typecheck and dev were both happy
   (#276).
+- **The cabinet e2e passed here and failed in CI** (#278): its fake
+  `window.Telegram` was installed with `addInitScript` and then overwritten by
+  the real `telegram-web-app.js` — which this container cannot reach and the
+  runner can. The spec now SERVES the script (`route.fulfill`) instead of
+  racing it.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
