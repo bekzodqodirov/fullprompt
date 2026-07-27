@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
@@ -343,9 +343,16 @@ export async function batchRegister(warehouseIds?: string[]) {
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
     .where(
-      warehouseIds?.length
-        ? sql`(${inArray(batches.originWarehouseId, warehouseIds)} OR ${inArray(batches.destWarehouseId, warehouseIds)})`
-        : undefined,
+      // A cancelled batch is not a trip that happened, and this is an
+      // aggregate: leaving it in means every register and its XLSX carries
+      // rows of zero for ever. The board DIMS a retired record (it is that
+      // record's own list); a report FILTERS it.
+      and(
+        ne(batches.status, 'cancelled'),
+        warehouseIds?.length
+          ? sql`(${inArray(batches.originWarehouseId, warehouseIds)} OR ${inArray(batches.destWarehouseId, warehouseIds)})`
+          : undefined,
+      ),
     )
     .orderBy(desc(batches.createdAt))
     .limit(300);

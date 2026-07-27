@@ -111,9 +111,28 @@ describe('position ingest', () => {
     expect(seen?.lastSeenAt).not.toBeNull();
   });
 
-  it('rejects an unknown or revoked token', async () => {
-    await expect(ingestPositions('nope', { positions: [] as never })).rejects.toBeTruthy();
+  it('rejects a token that was never issued', async () => {
+    await expect(ingestPositions('nope', { positions: [] as never })).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+  });
 
+  it('tells a REVOKED phone the trip is over, rather than refusing it', async () => {
+    /**
+     * This test used to assert `unauthorized`, which is what the code did and
+     * what the phone could not act on.
+     *
+     * The two answers mean different things to the handset: `unauthorized`
+     * becomes a 401, which the Android client reads as a server hiccup — it
+     * keeps its queue and retries every tick, for ever, into a SQLite table
+     * with no ceiling. `trip_finished` becomes a 410, the one answer that
+     * makes it call `clearTrip()` and stop the service.
+     *
+     * A revoked device is not an intruder. It is a phone whose trip is over,
+     * and that is precisely what revoking is for — so the token hash is now
+     * kept on revoke, because a device the ingest cannot find at all is
+     * indistinguishable from a bogus token and cannot be told anything.
+     */
     const device = await createDriverDevice({ batchId }, ctx());
     const { token } = await pairDevice(device.pairCode!);
     await revokeDriverDevice(device.id, ctx());
@@ -121,7 +140,14 @@ describe('position ingest', () => {
       ingestPositions(token, {
         positions: [{ lat: 40, lon: 70, recordedAt: new Date().toISOString() }],
       }),
-    ).rejects.toMatchObject({ code: 'unauthorized' });
+    ).rejects.toMatchObject({ code: 'trip_finished' });
+
+    // Still refused, of course — the revocation is what counts, not the token.
+    const stored = await db.query.driverDevices.findFirst({
+      where: eq(driverDevices.id, device.id),
+    });
+    expect(stored!.revokedAt).not.toBeNull();
+    expect(stored!.pairCode).toBeNull();
   });
 
   it('tells the phone to stop once the trip is finished', async () => {

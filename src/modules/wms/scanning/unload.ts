@@ -16,6 +16,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { cancelTasksFor } from '../../platform/tasks/service';
 import { emitEvent } from '../../platform/events/service';
 import { ScanError } from './service';
 
@@ -555,10 +556,24 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
     // A paired driver phone must stop being able to report against a batch
     // that is over. The token is cleared, so the handset falls silent rather
     // than filing positions nobody reads.
+    // The pair code goes, so a screenshot of it is worthless — but the token
+    // hash STAYS. A device the ingest cannot find at all is indistinguishable
+    // from a bogus token and answers 401, which the Android client treats as a
+    // server hiccup and retries for ever into an uncapped queue. Kept
+    // findable, it answers 410 and the phone stops the service and forgets
+    // the trip, which is what revoking is for.
     await tx
       .update(driverDevices)
-      .set({ revokedAt: new Date(), pairCode: null, tokenHash: null })
+      .set({ revokedAt: new Date(), pairCode: null })
       .where(and(eq(driverDevices.batchId, batchId), isNull(driverDevices.revokedAt)));
+
+    // Open work raised ON this batch goes with it. Without this the task
+    // stays on somebody's day and its link opens a trip that is over — the
+    // step every other retirement in this system takes (`cancelTasksFor`).
+    // Note the spelling: tasks and custom fields use 'batch', while the audit
+    // log and the event stream use the same word but plans differ ('plan' vs
+    // 'load_plan'), so a cleanup that knows one spelling misses half the rows.
+    await cancelTasksFor(tx, 'batch', [batchId]);
 
     const [updated] = await tx
       .update(batches)

@@ -16,6 +16,7 @@ import {
   loadPlanLines,
   loadPlans,
   scanEvents,
+  tasks,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
@@ -35,6 +36,7 @@ import {
   ingestLoadScans,
 } from '@/modules/wms/scanning/service';
 import { cancelBatch } from '@/modules/wms/scanning/unload';
+import { batchRegister } from '@/modules/wms/reports/queries';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
 
 /** M3: plan → verdict loop → batch reservation → scan → finish → depart. */
@@ -691,6 +693,31 @@ describe('cancelling a batch that never left', () => {
     await expect(cancelBatch(batch.id, 'tozalash', ctx())).rejects.toThrowError(
       new ScanError('batch_has_charges'),
     );
+  });
+
+  it('closes the open work raised on it, and drops out of the register report', async () => {
+    const { batch } = await approvedBatchOf(1);
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        title: 'Check this truck',
+        entityType: 'batch',
+        entityId: batch.id,
+        assigneeId: actorId,
+        createdBy: actorId,
+        dueAt: new Date(),
+      })
+      .returning();
+    // The register has no status filter of its own, so a cancelled batch
+    // would sit in it — and its XLSX — for ever, which is exactly the list the
+    // owner was trying to clear.
+    expect((await batchRegister()).some((r) => r.id === batch.id)).toBe(true);
+
+    await cancelBatch(batch.id, 'test partiya', ctx());
+
+    const after = await db.query.tasks.findFirst({ where: eq(tasks.id, task!.id) });
+    expect(after!.status).toBe('cancelled');
+    expect((await batchRegister()).some((r) => r.id === batch.id)).toBe(false);
   });
 
   it('demands a reason, like every other void in this system', async () => {

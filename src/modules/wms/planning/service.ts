@@ -14,6 +14,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { cancelTasksFor } from '../../platform/tasks/service';
 import { emitEvent } from '../../platform/events/service';
 import { nextBatchCode } from '../codes';
 import { mintBatchPairCode } from '../tracking/devices';
@@ -458,6 +459,10 @@ export async function cancelPlan(planId: string, reason: string, ctx: AuditConte
     }
     // Nothing to release: a plan before approval has reserved no boxes — the
     // reservation happens in `recordVerdict` at the moment the batch is made.
+    // 'plan' here, not 'load_plan': the tasks and custom-field registry spells
+    // it one way and the audit log the other, and only one of them addresses
+    // the rows this has to close.
+    await cancelTasksFor(tx, 'plan', [planId]);
     const [updated] = await tx
       .update(loadPlans)
       .set({ status: 'cancelled' })

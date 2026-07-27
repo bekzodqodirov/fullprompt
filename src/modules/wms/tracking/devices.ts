@@ -88,9 +88,11 @@ export async function revokeDriverDevice(deviceId: string, ctx: AuditContext) {
     where: eq(driverDevices.id, deviceId),
   });
   if (!device || device.revokedAt) return;
+  // The pair code goes; the token hash stays so the phone can be TOLD the
+  // trip is over (410) instead of being met with a 401 it retries for ever.
   await db
     .update(driverDevices)
-    .set({ revokedAt: new Date(), pairCode: null, tokenHash: null })
+    .set({ revokedAt: new Date(), pairCode: null })
     .where(eq(driverDevices.id, deviceId));
   await writeAudit(db, ctx, {
     entityType: 'driver_device',
@@ -150,7 +152,13 @@ export async function ingestPositions(
   const device = await db.query.driverDevices.findFirst({
     where: eq(driverDevices.tokenHash, hashToken(token)),
   });
-  if (!device || device.revokedAt) throw new TrackingError('unauthorized');
+  if (!device) throw new TrackingError('unauthorized');
+  // A REVOKED device is not an intruder — it is a phone whose trip is over,
+  // and the difference decides whether it stops or retries for ever. 401 is
+  // read by the Android client as a server hiccup: it keeps its queue and
+  // tries again every tick, into a SQLite table with no ceiling. 410 is the
+  // only answer that makes it call `clearTrip()` and stop the service.
+  if (device.revokedAt) throw new TrackingError('trip_finished');
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, device.batchId) });
   if (!batch || ['closed', 'cancelled'].includes(batch.status)) {
     // The trip is over — tell the phone to stop instead of collecting for ever.

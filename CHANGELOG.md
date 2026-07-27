@@ -38,6 +38,18 @@ o'zgarmaydi.
 xodimi mashinani jo'nata oladi — u mashina yonida turibdi — lekin reysni bekor
 qilish menejerning ishi.
 
+### Yo'l-yo'lakay topilgan uchta narsa
+
+1. **Haydovchi telefoni to'xtamas ekan.** Telefon uzilganda server unga
+   «ruxsat yo'q» deb javob berardi — ilova buni «serverda vaqtinchalik nosozlik»
+   deb tushunib, **abadiy qayta urinaverardi** va navbatini to'plardi. Endi
+   «reys tugadi» deb javob beradi: ilova o'zini to'xtatadi va ma'lumotni
+   tozalaydi. Bu haydovchi ilovasi chiqqanidan beri shunday edi.
+2. **Partiyaga qo'yilgan vazifalar** ochiq qolardi — kimningdir kunida turib,
+   o'chgan reysga havola qilardi. Endi partiya bilan birga yopiladi.
+3. **«Partiyalar» hisoboti** bekor qilinganlarni ham ko'rsatardi — ya'ni siz
+   tozalamoqchi bo'lgan ro'yxatning o'zi. Endi ular hisobotga tushmaydi.
+
 ### Nega «o'chirish» emas, «bekor qilish»
 
 Partiya bazada yolg'iz emas. Sizning bazangizda **10 588 ta quti harakati**
