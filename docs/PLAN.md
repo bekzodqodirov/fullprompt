@@ -4,7 +4,66 @@
 
 ---
 
-## STATUS — 2026-07-25
+## STATUS — 2026-07-27
+
+### Round 9 (2026-07-26 → 27) — shipped on branch `claude/gsr-logistics-wms-phase1-o8h4en`
+
+| What | State |
+|---|---|
+| Phase 0 — six live defects repaired | ✅ |
+| Phase 1 — `/admin/roles`, grants as editable data (migration 0026) | ✅ |
+| Phase 2 — custom fields everywhere (migration 0027) | ✅ |
+| Phase 3 — tasks + calendar (migrations 0028–0029) | ✅ |
+| Access/clutter pass — `MENU_BY_ROLE`, `rbac/scope.ts`, per-page guards | ✅ |
+| Phase 5 — deals / bitim (migrations 0030–0031) | ✅ |
+| Client-area four (owner dropdown, book guard, phone search, honest cap) | ✅ |
+| Loading scanner — refused scans no longer count as loaded | ✅ |
+| Loading scanner — a half-loaded crate is still on the plan | ✅ |
+| Sticker printing — share sheet, then the phone's own print dialog | ✅ |
+| Build-version banner ("your phone is showing yesterday's app") | ✅ |
+| Scan-path speed: no snapshot refetch per scan + 2 indexes (migration 0032) | ✅ |
+| Debt gate — a PAID deferral no longer excuses an unrelated debt | ✅ |
+| pg-boss latch — workers could die silently, taking the backup with them | ✅ |
+| Off-site backup to the owner's Google Drive | ✅ **needs his 15-min setup** |
+
+### Where the risk is now, in order
+
+1. **Photos are not backed up.** The database goes to Drive nightly; the ~1–1.5 GB
+   of receipt and packing photos in MinIO do not. Losing the VPS loses every
+   photograph. Needs an incremental sync (new files only) — a full nightly copy
+   would fill a free 15 GB Drive in ten days. **Agreed with the owner: next.**
+2. **The Drive backup is built but not switched on** — three secrets have to be
+   entered on the server by him (`docs/BACKUP.md`). Until then the only copies
+   are on the VPS.
+3. **Open audit findings not yet fixed:** `scripts/import-clients.ts --update`
+   overwrites corrected data (**do not run it**), voided costs still counted in
+   the P&L, customs documents emptying during unload, receipt void with no state
+   guard, checkbox custom field always saving "no", payments not assignable to a
+   cash box, handover act truncating at 33 boxes, `/pipeline` with no permission
+   check.
+4. **`/api/health` lies** — it claims to check MinIO and pg-boss and only runs
+   `select 1`. The two failures that actually hurt both report `ok`.
+5. **Postgres runs on stock defaults** (`shared_buffers` 128 MB, no tuning).
+
+### Strategy, restated after this round
+
+- **Fix the thing under the thing.** Twice this round a "fix" turned out to be
+  making an older wrong answer visible (the scanner) or to rest on a mechanism
+  that had never run (the restore test). Before shipping a repair, check that
+  what it now surfaces is itself correct.
+- **Measure before optimising, on his data.** The scan-path work moved 40 ms → 1.2 ms
+  because it started with EXPLAIN ANALYZE on the real database, and the one
+  change made on intuition (a 350 ms debounce) was the one the tests rejected.
+- **Nothing on the path between a physical action and "I am done" may wait.**
+- **A flag set before the work is a flag that lies** (pg-boss latch), and a
+  comment describing a design that was never built is worse than no comment
+  (`ops/backup.sh` claimed to ship dumps off-box for months).
+- **Client-facing work is next.** Everything above is staff-side; what the
+  CLIENT sees has had one round (Phase 2.2) and no review since.
+
+---
+
+## STATUS — 2026-07-25 (previous round)
 
 | Milestone | State | Shipped |
 |---|---|---|

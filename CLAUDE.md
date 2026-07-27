@@ -110,53 +110,75 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 
-## State — 2026-07-26
+## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-**Nothing after M6 has been deployed yet** — phases 0/1/2 are on the branch
-waiting for the owner to `git pull` + migrate.
+417 unit/integration + 50 e2e, verified in CI's order on a fresh database.
 
-Done in this round:
-- **Phase 0** — six live defects repaired (settings page crash, CRM digests
-  sending garbage, one bad Telegram chat stalling the queue, a warehouse-scope
-  permission hole, `getActor` memoised, custom fields half-saving).
-- **Phase 1** — `/admin/roles`: grants are editable data with guardrails (you
-  cannot edit the role you hold, cannot grant what you do not hold, cannot
-  remove the last person who can manage roles). Migration 0026.
-- **Phase 2** — custom fields on every object, filter/sort/XLSX, money + lookup
-  + file types, validation rules, conditional visibility. Migration 0027.
-  `/admin/fields`.
+Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
+plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
+per-page guards #198, card scoping #200, `canActOnTask` #201). A 14-subsystem
+audit on 2026-07-26 confirmed 30 defects; its findings are the work queue.
 
-Phase **3** (tasks + calendar) shipped, followed by an access/clutter pass:
-`MENU_BY_ROLE` in `rbac/nav.ts` (what a job NEEDS, distinct from what it may
-open — #194), `rbac/scope.ts` (the warehouse filter, #199), per-page admin
-guards (#198), card-level scoping (#200) and `canActOnTask` (#201).
+Round 9 (this round) — all on the branch, **deployed up to the print sheet**:
+- **Scanner, twice.** A refused scan no longer counts as loaded (#221-223) —
+  and then the refusal ITSELF was wrong: `onPlan` demanded `status='planned'`,
+  so a crate carrying one already-`loading` box came back "not on plan" and the
+  red confirm killed the scanner under it (#244-247). Loading stopped in the
+  warehouse. **Both halves were my own changes.**
+- **Printing.** Share sheet for AirPrint/RawBT (#224-226), then the phone's own
+  print dialog on an HTML sheet (#232-243) — the geometry is now stated once
+  (`labels/geometry.ts`) and drawn twice, which also fixed `#UNKNOWN` printing
+  across the client code on unclaimed cargo (#241).
+- **The build banner** (#229-231): the app tells a phone it is showing
+  yesterday's screen. Three rounds were lost to "deployed or cached?".
+- **Scan-path speed** (#248-250): the snapshot was re-downloaded after EVERY
+  scan (~300 KB on a quick batch); now on the 15 s tick only. Two indexes,
+  migration 0032 — measured on his data: 40 ms → 1.2 ms, and a 9.6 s cold case
+  gone. A 350 ms flush debounce was tried and REJECTED by the e2e (#249).
+- **Money** (#251): a deferral that had been PAID went on excusing an unrelated
+  debt, opening the handover gate with no override and nothing in the audit log.
+- **pg-boss latch** (#252): `bossStarted` was set before the nine worker
+  registrations, so one throwing killed the rest — including the nightly backup
+  — and the retry then RESOLVED, so the error stopped being logged.
+- **Off-site backup to Google Drive** (#253-261): OAuth + `drive.file`, size
+  verified against Google's own answer, prune only after a good upload.
+  **Built, not switched on — needs his 15-minute setup (`docs/BACKUP.md`).**
+  Found on the way: two backup systems that could not see each other, the app's
+  dumps landing in a container thrown away on every deploy, `ops/backup.sh`
+  missing `--no-owner`, and `JOB_SEND_TELEGRAM` with no schedule of its own.
 
-Phase **5 (deals / bitim)** shipped: migrations 0030-0031, `wms/deals/**`,
-`/bitimlar`, price control from `confirmReceipt`, deferral wired into the
-handover gate (#203-#215). Still open inside it: the damage discount form,
-profit per deal, the 50-goods spreadsheet + TNVED grouping.
+**Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
+nothing of it backed up, needs an incremental sync (a full nightly copy fills a
+free 15 GB Drive in ten days). Then: **the client-facing side** — what the
+client actually sees and how they connect (Phase 2.2 shipped it and nobody has
+reviewed it since).
 
-A full 14-subsystem audit ran on 2026-07-26 (30 defects confirmed after
-adversarial review, 4 refuted). Its findings are the work queue. The client-area four are DONE (#216-220:
-the owner dropdown, the client-book guard, phone search, the honest cap).
-Still open, in order: `scripts/import-clients.ts --update` overwriting
-corrected data (do NOT run it), `JOB_SEND_TELEGRAM` never scheduled so every
-digest waits, voided costs still counted in the P&L, customs documents
-emptying during unload, and receipt void with no state guard.
+Explicitly parked by the owner: crate loading is not to be touched further.
 
-Next, in order: **4** record comments with @mentions →
-**6** approval for issuing to a debtor →
-**7** automation rules → **8** custom entities.
-Explicitly cut: formula fields, a visual node editor, an in-app chat, a
-separate projects module, an external web form builder.
+Still queued from the audit: `scripts/import-clients.ts --update` overwriting
+corrected data (do NOT run it), voided costs counted in the P&L, customs
+documents emptying during unload, receipt void with no state guard, checkbox
+custom field always saving "no", payments not assignable to a cash box,
+handover act truncating at 33 boxes, `/pipeline` with no permission check,
+`/api/health` claiming to check MinIO and pg-boss while running only
+`select 1`, Postgres on stock defaults.
+
+Later phases: **4** comments with @mentions → **6** approval for issuing to a
+debtor → **7** automation rules → **8** custom entities. Explicitly cut:
+formula fields, a visual node editor, an in-app chat, a separate projects
+module, an external web form builder. Open inside deals: the damage discount
+form, profit per deal, the 50-goods spreadsheet + TNVED grouping.
 
 ## Owner's outstanding chores
 
-Deploy 0/1/2 · merge PR #1 · create logins for the 17 sellers then re-run
-`pnpm import-clients --apply --update` · 3 rejected rows · ~19 nameless clients ·
-2 truncated phones (GS161, GS252) · opening balances · confirm person groupings ·
-`pnpm demo-users --disable` · `ANTHROPIC_API_KEY` on the server.
+**Deploy the branch** (migration 0032 in this round — back up first) · merge
+PR #1 · **switch on the Drive backup** (`docs/BACKUP.md`, ~15 min — publish the
+app BEFORE minting the token or it dies after 7 days) · create logins for the
+17 sellers then re-run `pnpm import-clients --apply --update` · 3 rejected rows ·
+~19 nameless clients · 2 truncated phones (GS161, GS252) · opening balances ·
+confirm person groupings · `pnpm demo-users --disable` · `ANTHROPIC_API_KEY` ·
+say which printer model he has.
 
 Deferred access work, blocked on the chores above: scoping clients to their
 sales manager (needs the 17 logins first, or it hides nearly every client from
