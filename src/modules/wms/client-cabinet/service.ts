@@ -82,6 +82,21 @@ export interface CabinetLot {
   total: number;
   warehouseCodes: string[];
   hasPhotos: boolean;
+  /**
+   * The client's own cargo in the units they think in (owner: "kubi kilosi
+   * soni rasimi hammasini to'liq ko'rsa").
+   *
+   * Per BOX figures are the lot average — `total / box_count` — because
+   * nothing in this business weighs a box on its own; the house rule, and the
+   * same expression six other screens already use. These are the client's
+   * REMAINING boxes, so a lot half-loaded onto a truck reports the half that
+   * is still theirs to wait for, not the original consignment.
+   */
+  weightKg: number;
+  volumeM3: number;
+  perBoxKg: number;
+  perBoxM3: number;
+  photoCount: number;
 }
 
 const ACTIVE_STATUSES = ['in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup'];
@@ -97,6 +112,11 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
       status: boxes.status,
       warehouseCode: warehouses.code,
       n: sql<number>`count(*)`,
+      // A box has no weight of its own — the lot's total divided by its box
+      // count is what every other screen means by "per box" (#152 area,
+      // finance/client-cargo.ts). Guarded against a zero count.
+      perBoxKg: sql<string>`${receiptLots.totalWeightKg} / nullif(${receiptLots.boxCount}, 0)`,
+      perBoxM3: sql<string>`${receiptLots.totalVolumeM3} / nullif(${receiptLots.boxCount}, 0)`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -108,6 +128,9 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
       receiptLots.letter,
       receiptLots.productNameZh,
       receiptLots.productNameRu,
+      receiptLots.totalWeightKg,
+      receiptLots.boxCount,
+      receiptLots.totalVolumeM3,
       boxes.status,
       warehouses.code,
     )
@@ -126,11 +149,18 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
         total: 0,
         warehouseCodes: [],
         hasPhotos: false,
+        weightKg: 0,
+        volumeM3: 0,
+        perBoxKg: Number(r.perBoxKg ?? 0),
+        perBoxM3: Number(r.perBoxM3 ?? 0),
+        photoCount: 0,
       };
       byLot.set(r.lotId, lot);
     }
     lot.statuses[r.status] = (lot.statuses[r.status] ?? 0) + Number(r.n);
     lot.total += Number(r.n);
+    lot.weightKg += Number(r.n) * Number(r.perBoxKg ?? 0);
+    lot.volumeM3 += Number(r.n) * Number(r.perBoxM3 ?? 0);
     if (r.warehouseCode && !lot.warehouseCodes.includes(r.warehouseCode)) {
       lot.warehouseCodes.push(r.warehouseCode);
     }
@@ -138,7 +168,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   const lots = [...byLot.values()];
   if (lots.length) {
     const withPhotos = await db
-      .selectDistinct({ entityId: attachments.entityId })
+      .select({ entityId: attachments.entityId, n: sql<number>`count(*)` })
       .from(attachments)
       .where(
         and(
@@ -146,9 +176,18 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
           inArray(attachments.entityId, lots.map((l) => l.lotId)),
           eq(attachments.kind, 'photo'),
         ),
-      );
-    const photoSet = new Set(withPhotos.map((r) => r.entityId));
-    for (const lot of lots) lot.hasPhotos = photoSet.has(lot.lotId);
+      )
+      .groupBy(attachments.entityId);
+    const counts = new Map(withPhotos.map((r) => [r.entityId, Number(r.n)]));
+    for (const lot of lots) {
+      lot.photoCount = counts.get(lot.lotId) ?? 0;
+      lot.hasPhotos = lot.photoCount > 0;
+    }
+    // Rounded once, here, so every reader shows the same number.
+    for (const lot of lots) {
+      lot.weightKg = Math.round(lot.weightKg * 100) / 100;
+      lot.volumeM3 = Math.round(lot.volumeM3 * 1000) / 1000;
+    }
   }
   return lots;
 }

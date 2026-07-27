@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE, LOCALES, type Locale } from '../../platform/i18n/request';
+import { DEFAULT_LOCALE, LOCALES, type Locale } from '../../platform/i18n/locales';
 
 /**
  * Column headers and sheet titles for the report exports.

@@ -1,5 +1,73 @@
 # CHANGELOG
 
+## Mijoz tomoni, 2-qism: Telegram ichida ochiladigan «Mening yuklarim» — 2026-07-27
+
+Siz so'ragan edingiz: *«kubi kilosi soni rasimi hammasini to'liq ko'rsa yaxshi
+bo'lar edi… client uchun telegramda web ochiladi shunda ko'rinadgan chiroyli
+interface qilib bersak zo'r bo'lar edi»*.
+
+### Mijoz nima ko'radi
+
+Telegram'da bot chatining pastki chap burchagida **tugma** paydo bo'ladi —
+«Mening yuklarim». Bosadi, chat ichida ilova ochiladi. Chiqmaydi, brauzer
+ochilmaydi, parol so'ralmaydi.
+
+Yuqorida — jami: nechta quti, necha kilo, necha kub. Pastda uchta bo'lim:
+
+- **📦 Yuklarim** — har bir tovar alohida karta: nomi (tarjimasi bilan),
+  nechta quti, necha kilo, necha kub, qaysi omborda, va har bir qutining
+  holati («skladda», «yo'lda 🚛», «olib ketishga tayyor ✅»).
+  **Rasmlar shu yerda** — qabul qilishda tushirilgan suratlar tasma bo'lib
+  chiqadi, bosib kattalashtiradi.
+- **💰 Balans** — qarzi bormi yoki yo'q, va so'nggi amallar (hisoblandi /
+  to'lov).
+- **🗄 Tarix** — allaqachon berilgan yuklari.
+
+Hammasi mijoz tilida: **o'zbek · rus · ingliz**. Til bo'yicha tanlovi
+botdagi 🌐 Til tugmasi bilan bir xil — bir joyda o'zgartirsa, ikkalasida ham
+o'zgaradi, burchakdagi tugmaning yozuvi ham.
+
+### Mijoz **ko'rmaydigan** narsalar
+
+- **Mashina qayerdaligi** — siz aytganingizdek, hozircha yo'q. Keyin har bir
+  mijoz o'z yukini xaritada ko'radigan qilib qo'shamiz.
+- **Tannarx, foyda, biznikiga tushgan puli** — bazada bir qadam narida
+  turadi. Mijoz kabinetiga hech qachon tushmasligi uchun buni **test tekshirib
+  turadi**: kelajakda kimdir e'tiborsizlik bilan qo'shib yuborsa, CI qizil
+  bo'ladi.
+- **Boshqa mijozning yuki** — quyida.
+
+### Xavfsizlik: eng muhim qismi
+
+Telegram ilovasi mijozning telefonida ishlaydi, ya'ni u yuboradigan **har
+qanday ma'lumotni o'zgartirish mumkin**. Agar shunchaki «men falonchiman»
+deganiga ishonilsa, mijoz raqamni almashtirib **boshqa mijozning yuki,
+rasmlari va qarzini** ko'rar edi.
+
+Shuning uchun Telegram har ochilganda **imzo** beradi, imzo esa bot tokeni
+bilan tekshiriladi — token faqat serverda. Har bir so'rovda qayta
+tekshiriladi. Buning uchun **28 ta test** yozilgan: imzoni buzib ko'rish,
+boshqa bot tokeni bilan imzolash, eski imzoni qayta ishlatish, foydalanuvchi
+raqamini almashtirish — hammasi rad etilishi kerak, va rad etilyapti.
+
+Server tokenni yo'qotsa — kabinet **umuman ochilmaydi**. Tekshirmasdan
+ochiladigan kabinetdan ko'ra ochilmagani yaxshi.
+
+### CRM'da o'zgargani
+
+Hech narsa. **Bazadagi mijozlar tegilmagan** — siz aytgan shart bajarildi:
+bu bosqichda birorta mijoz ma'lumoti o'zgartirilmaydi, o'chirilmaydi.
+
+### Sizdan nima talab qilinadi
+
+1. `.env` faylida **`APP_URL=https://gsrwms.uz`** turgani tekshiring (avval
+   `http://…` yoki IP bo'lgan bo'lsa — almashtiring). Telegram ilovani faqat
+   haqiqiy HTTPS manzilda ochadi; `APP_URL` noto'g'ri bo'lsa tugma umuman
+   qo'yilmaydi (bu ataylab: ishlamaydigan tugmadan ko'ra tugmasiz yaxshi).
+2. Deploy qiling. Tugma **o'zi** qo'yiladi: yangi mijoz ulanganda darhol,
+   eskilariga esa botga birinchi marta biror narsa yozganda.
+3. `docs/BACKUP.md` va migratsiyalar bo'yicha oldingi vazifalar o'z kuchida.
+
 ## Mijoz tomoni, 1-qism: «yuk keldi» xabari + 3 til — 2026-07-27
 
 ### 1. Yuk skladga kelganda mijozga xabar ketadi

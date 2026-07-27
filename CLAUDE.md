@@ -104,7 +104,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 183 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 277 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
@@ -113,7 +113,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-417 unit/integration + 50 e2e, verified in CI's order on a fresh database.
+452 unit/integration + 54 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -148,11 +148,30 @@ Round 9 (this round) — all on the branch, **deployed up to the print sheet**:
   dumps landing in a container thrown away on every deploy, `ops/backup.sh`
   missing `--no-owner`, and `JOB_SEND_TELEGRAM` with no schedule of its own.
 
+Round 10 — **the client-facing side**, his six asks, on the branch and NOT yet
+deployed:
+- **"Yuk keldi" the moment it reaches CHINA** (#262-263), three languages
+  (#264-266), the client book first on the home screen (#270). The client's
+  language is a NULLABLE `clients.locale` — additive, because production holds
+  the whole client base and he said not to touch it (#266). Found on the way:
+  one message per LINK ROW instead of per chat (#267), the Telegram response
+  never read so a client who had BLOCKED the bot looked reachable (#268), and
+  two staff RUSSIAN strings on a path only customers reach (#269).
+- **The Mini App** (#271-277) — `/cabinet`, opened from the chat menu button.
+  Cubes, kilos, count, photos, balance, history; three tabs over ONE fetch.
+  The whole of its security is `verifyInitData` (#271-272), the identity is the
+  CHAT and never a client id from the request (#273), photographs are fetched
+  with the signed header rather than by URL (#274). The menu button is set per
+  chat, in the client's language, never as the bot's default (#275).
+  **Deliberately absent: where the truck is** — his instruction, until every
+  client can see their own cargo on a real map.
+- The build step earned its place again: a locale constant dragged
+  `next/headers` into the client bundle; typecheck and dev were both happy
+  (#276).
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
-free 15 GB Drive in ten days). Then: **the client-facing side** — what the
-client actually sees and how they connect (Phase 2.2 shipped it and nobody has
-reviewed it since).
+free 15 GB Drive in ten days).
 
 Explicitly parked by the owner: crate loading is not to be touched further.
 
@@ -172,12 +191,15 @@ form, profit per deal, the 50-goods spreadsheet + TNVED grouping.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migration 0032 in this round — back up first) · merge
+**Deploy the branch** (migrations 0032 and 0033 — back up first) · set
+**`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
+offered on anything but public HTTPS, #275) · **revoke the bot token he pasted
+in chat** and rotate `ANTHROPIC_API_KEY` · merge
 PR #1 · **switch on the Drive backup** (`docs/BACKUP.md`, ~15 min — publish the
 app BEFORE minting the token or it dies after 7 days) · create logins for the
 17 sellers then re-run `pnpm import-clients --apply --update` · 3 rejected rows ·
 ~19 nameless clients · 2 truncated phones (GS161, GS252) · opening balances ·
-confirm person groupings · `pnpm demo-users --disable` · `ANTHROPIC_API_KEY` ·
+confirm person groupings · `pnpm demo-users --disable` ·
 say which printer model he has.
 
 Deferred access work, blocked on the chores above: scoping clients to their

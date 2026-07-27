@@ -24,6 +24,7 @@ import {
   statusLabel,
   type ClientLabels,
 } from './client-labels';
+import { setCabinetMenuButton } from './menu-button';
 
 /**
  * Client cabinet inside the staff bot (Phase 2.2, owner's spec 3.1/3.2):
@@ -278,7 +279,33 @@ async function notifyStaff(userId: string, text: string): Promise<void> {
   }
 }
 
+/** Chats whose menu button this process has already dealt with. */
+const menuButtonDone = new Set<number>();
+
 export function registerClientCabinet(bot: Bot): void {
+  /**
+   * Give already-linked clients the Mini App button too.
+   *
+   * The button is set when a client links — but everyone who linked BEFORE
+   * the Mini App existed would otherwise never get one, and the fix cannot be
+   * a default button: the same bot carries the staff notifications, and every
+   * employee would find a customer's «Mening yuklarim» in the corner of their
+   * chat, opening a cabinet that refuses them.
+   *
+   * So: the first time a chat says anything in this process, if it belongs to
+   * a client, it gets the button. Marked done before the await, so a client
+   * tapping twice does not send it twice.
+   */
+  bot.use(async (ctx, next) => {
+    const chatId = ctx.chat?.id;
+    if (chatId && ctx.chat?.type === 'private' && !menuButtonDone.has(chatId)) {
+      menuButtonDone.add(chatId);
+      const linked = await clientsForChat(BigInt(chatId));
+      if (linked.length) await setCabinetMenuButton(chatId, chatLocale(linked));
+    }
+    await next();
+  });
+
   // Step 2 of linking: the person shares their phone via the contact button.
   bot.on('message:contact', async (ctx) => {
     const pending = pendingByChat.get(ctx.chat.id);
@@ -332,6 +359,9 @@ export function registerClientCabinet(bot: Bot): void {
         .where(and(inArray(clients.id, allIds), isNull(clients.locale)));
     }
     const t = clientLabels(seeded);
+    // The Mini App button goes up the moment the chat becomes a client's, in
+    // the language just seeded from their phone.
+    await setCabinetMenuButton(ctx.chat.id, seeded);
     await ctx.reply(
       `✅ ${t.welcome}\n${t.yourCodes}: ${codes}.`,
       { reply_markup: cabinetKeyboard(seeded) },
@@ -443,6 +473,9 @@ export function registerClientCabinet(bot: Bot): void {
       .set({ locale: picked })
       .where(inArray(clients.id, linked.map((c) => c.id)));
     const t = clientLabels(picked);
+    // The corner button carries a word too, and leaving it in the old language
+    // is the one bit of the cabinet a language switch would visibly miss.
+    await setCabinetMenuButton(ctx.chat!.id, picked);
     await ctx.answerCallbackQuery(t.languageSet);
     await ctx.reply(t.languageSet, { reply_markup: cabinetKeyboard(picked) });
   });

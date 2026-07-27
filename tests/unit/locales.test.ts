@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LOCALES } from '@/modules/platform/i18n/request';
+import { LOCALES } from '@/modules/platform/i18n/locales';
 import { SETTING_DEFAULTS } from '@/modules/platform/settings/service';
 import en from '../../messages/en.json';
 import ru from '../../messages/ru.json';

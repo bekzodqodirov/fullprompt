@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE, type Locale } from '../i18n/request';
+import { DEFAULT_LOCALE, type Locale } from '../i18n/locales';
 
 /**
  * What the CLIENT reads.
@@ -130,6 +130,29 @@ const DICT = {
     ru: 'Подробнее: 📦 Мои грузы',
     en: 'Details: 📦 My cargo',
   },
+
+  // --- the Mini App ---
+  appTitle: { uz: 'Mening yuklarim', ru: 'Мои грузы', en: 'My cargo' },
+  totalBoxes: { uz: 'quti', ru: 'коробок', en: 'boxes' },
+  photos: { uz: 'rasm', ru: 'фото', en: 'photos' },
+  loading: { uz: 'Yuklanmoqda…', ru: 'Загрузка…', en: 'Loading…' },
+  openInTelegram: {
+    uz: 'Bu sahifa Telegram ilovasi ichida ochiladi.',
+    ru: 'Эта страница открывается внутри Telegram.',
+    en: 'This page opens inside Telegram.',
+  },
+  notLinkedApp: {
+    uz: 'Bu chat hech qanday mijoz kodiga ulanmagan. Menejeringizdan havola so‘rang.',
+    ru: 'Этот чат не подключён ни к одному коду клиента. Попросите ссылку у менеджера.',
+    en: 'This chat is not linked to any client code. Ask your manager for a link.',
+  },
+  loadError: {
+    uz: 'Ma’lumot yuklanmadi. Qayta urinib ko‘ring.',
+    ru: 'Не удалось загрузить данные. Попробуйте ещё раз.',
+    en: 'Could not load your data. Please try again.',
+  },
+  retry: { uz: 'Qayta urinish', ru: 'Повторить', en: 'Try again' },
+  nothingHere: { uz: 'Bo‘sh', ru: 'Пусто', en: 'Nothing here' },
 
   // --- language switch ---
   chooseLanguage: { uz: 'Tilni tanlang:', ru: 'Выберите язык:', en: 'Choose a language:' },

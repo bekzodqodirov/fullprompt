@@ -1,10 +1,10 @@
 import { getRequestConfig } from 'next-intl/server';
 import { cookies } from 'next/headers';
 import { getSessionUser } from '../auth/session';
-
-export const LOCALES = ['ru', 'uz', 'zh-CN', 'en'] as const;
-export type Locale = (typeof LOCALES)[number];
-export const DEFAULT_LOCALE: Locale = 'ru';
+// The constants live in `locales.ts`, deliberately NOT re-exported from here:
+// this file pulls in `next/headers`, so a client component that imported a
+// locale constant through it would fail the production build.
+import { DEFAULT_LOCALE, LOCALES } from './locales';
 
 /**
  * Locale resolution (no locale URLs — the app lives behind a login):

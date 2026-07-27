@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE, LOCALES, type Locale } from '../i18n/request';
+import { DEFAULT_LOCALE, LOCALES, type Locale } from '../i18n/locales';
 
 /**
  * Staff Telegram message wording.

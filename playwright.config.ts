@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
+import { E2E_BOT_TOKEN } from './tests/e2e/bot-token';
 
 // Some dev environments pre-install a Chromium at a fixed path; use it when
 // present instead of downloading a version-pinned browser.
@@ -50,6 +51,15 @@ export default defineConfig({
     // Must be the standalone server: `next start` + output:'standalone' can
     // serve a broken client manifest for route-group pages (CI failure mode).
     command: 'pnpm start',
+    env: {
+      // The cabinet spec signs its own `initData`; the server has to check it
+      // with the same token, so the run pins one instead of inheriting
+      // whatever a developer has in `.env`. Polling OFF — a fake token must
+      // not go knocking on api.telegram.org from a test run, and only one
+      // process may hold a real token's getUpdates lock.
+      TELEGRAM_BOT_TOKEN: E2E_BOT_TOKEN,
+      TELEGRAM_POLLING: '0',
+    },
     url: 'http://localhost:3000/api/health',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

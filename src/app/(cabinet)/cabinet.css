@@ -1,0 +1,176 @@
+/**
+ * The client cabinet, dressed as Telegram.
+ *
+ * Every colour is a `--tg-theme-*` variable that Telegram sets from the user's
+ * own theme, with a fallback for the case the page is opened outside Telegram
+ * (where it shows a "open me in Telegram" notice rather than data). A cabinet
+ * that is dark while the client's Telegram is light reads as a foreign website
+ * and is exactly what makes people distrust a link.
+ */
+.cabinet {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --fg: var(--tg-theme-text-color, #111111);
+  --muted: var(--tg-theme-hint-color, #7d7d7d);
+  --card: var(--tg-theme-secondary-bg-color, #f4f4f5);
+  --accent: var(--tg-theme-button-color, #b80000);
+  --on-accent: var(--tg-theme-button-text-color, #ffffff);
+  --line: color-mix(in srgb, var(--muted) 25%, transparent);
+
+  background: var(--bg);
+  color: var(--fg);
+  min-height: 100dvh;
+  font-family:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
+    'PingFang SC', sans-serif;
+  padding-bottom: 2rem;
+}
+
+.cab-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* The three numbers a client actually wants: how much, how heavy, how big. */
+.cab-totals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+.cab-total {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 10px 8px;
+  text-align: center;
+}
+.cab-total b {
+  display: block;
+  font-size: 1.25rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.cab-total span {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.cab-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.cab-tab {
+  flex: 1;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 4px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+}
+.cab-tab[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.cab-body { padding: 12px 16px; }
+.cab-code {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  margin: 14px 0 6px;
+}
+
+.cab-lot {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.cab-lot-top { display: flex; align-items: baseline; gap: 8px; }
+.cab-letter {
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--accent);
+  min-width: 1.4em;
+}
+.cab-name { font-weight: 600; flex: 1; min-width: 0; }
+.cab-dims {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One chip per status, so "6 in transit, 4 at the warehouse" is readable at a
+   glance rather than as a sentence. */
+.cab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.cab-chip {
+  font-size: 0.78rem;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+}
+.cab-chip b { font-variant-numeric: tabular-nums; }
+
+.cab-photos {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cab-photos::-webkit-scrollbar { display: none; }
+.cab-photos img {
+  width: 78px;
+  height: 78px;
+  object-fit: cover;
+  border-radius: 10px;
+  flex: none;
+  background: var(--line);
+}
+
+.cab-balance {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.cab-balance b { display: block; font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+.cab-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.cab-row:last-child { border-bottom: 0; }
+.cab-row span { color: var(--muted); }
+
+.cab-empty { color: var(--muted); text-align: center; padding: 28px 12px; }
+.cab-btn {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px;
+  font: inherit;
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--on-accent);
+  margin-top: 12px;
+  cursor: pointer;
+}
