@@ -520,8 +520,12 @@
       "insufficient_stock": "Недостаточно свободных коробок",
       "same_warehouse": "Склады совпадают",
       "validation": "Проверьте данные",
-      "crate_not_available": "Ящик не на этом складе или занят"
-    }
+      "crate_not_available": "Ящик не на этом складе или занят",
+      "plan_has_batch": "План уже утверждён — отменяйте партию",
+      "plan_not_cancellable": "Этот план нельзя отменить",
+      "reason_required": "Укажите причину"
+    },
+    "cancelPlan": "Отменить план"
   },
   "costing": {
     "fxTitle": "Курсы валют",
@@ -577,7 +581,12 @@
     "errors": {
       "finish_loading_first": "Сначала завершите погрузку",
       "nothing_loaded": "Ничего не погружено",
-      "batch_not_loading": "Партия не в погрузке"
+      "batch_not_loading": "Партия не в погрузке",
+      "batch_already_departed": "Партия уже отправлена — отменить нельзя",
+      "batch_has_costs": "На партию заведены расходы",
+      "batch_has_charges": "Клиенту уже выставлен счёт по этой партии",
+      "batch_has_moved_boxes": "Коробки уже ушли дальше",
+      "reason_required": "Укажите причину"
     },
     "startUnloading": "Выгрузка (скан)",
     "transitReport": "В пути",
@@ -610,7 +619,12 @@
     "archiveEmpty": "Ничего не найдено",
     "codeTaken": "Такой код уже занят",
     "vehicleTitle": "Машина и водитель",
-    "pairCodeLabel": "Код для приложения водителя"
+    "pairCodeLabel": "Код для приложения водителя",
+    "cancelBatch": "Отменить партию",
+    "cancelBatchHint": "Партия отменяется, коробки возвращаются на склад",
+    "cancelReason": "Причина",
+    "cancelConfirm": "Отменить партию? Коробки вернутся на склад.",
+    "cancelled": "Партия отменена, коробок возвращено: {n}"
   },
   "loading": {
     "title": "Погрузка",

@@ -233,7 +233,14 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               /api/batches/[id]/manifest still exists if it is ever wanted. */}
         </div>
         {['forming', 'loading'].includes(batch.status) && (
-          <BatchActions batchId={batch.id} canDepart={canDepart} />
+          <BatchActions
+            batchId={batch.id}
+            canDepart={canDepart}
+            // Giving the cargo back and retiring the trip is a manager's call,
+            // not the loader's — unlike departure, which the person standing
+            // at the truck may do.
+            canCancel={actor.permissions.has('batches.depart_close')}
+          />
         )}
         {(['in_transit', 'arrived', 'unloaded'].includes(batch.status) || missingRows.length > 0) && (
           <UnloadActions

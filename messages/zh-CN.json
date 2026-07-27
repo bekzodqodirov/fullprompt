@@ -520,8 +520,12 @@
       "insufficient_stock": "可用箱数不足",
       "same_warehouse": "仓库相同",
       "validation": "请检查数据",
-      "crate_not_available": "木箱不在此仓库或已被占用"
-    }
+      "crate_not_available": "木箱不在此仓库或已被占用",
+      "plan_has_batch": "计划已批准，请取消其批次",
+      "plan_not_cancellable": "此计划无法取消",
+      "reason_required": "请填写原因"
+    },
+    "cancelPlan": "取消计划"
   },
   "costing": {
     "fxTitle": "汇率",
@@ -577,7 +581,12 @@
     "errors": {
       "finish_loading_first": "请先结束装车",
       "nothing_loaded": "未装任何货",
-      "batch_not_loading": "车次不在装车状态"
+      "batch_not_loading": "车次不在装车状态",
+      "batch_already_departed": "批次已发车，无法取消",
+      "batch_has_costs": "该批次已录入费用",
+      "batch_has_charges": "该批次已向客户计费",
+      "batch_has_moved_boxes": "箱子已进入下一环节",
+      "reason_required": "请填写原因"
     },
     "startUnloading": "卸货（扫码）",
     "transitReport": "在途",
@@ -610,7 +619,12 @@
     "archiveEmpty": "未找到",
     "codeTaken": "该代码已被占用",
     "vehicleTitle": "车辆与司机",
-    "pairCodeLabel": "司机应用代码"
+    "pairCodeLabel": "司机应用代码",
+    "cancelBatch": "取消批次",
+    "cancelBatchHint": "批次将被取消，箱子退回仓库",
+    "cancelReason": "原因",
+    "cancelConfirm": "确定取消此批次？箱子将退回仓库。",
+    "cancelled": "批次已取消，退回箱数：{n}"
   },
   "loading": {
     "title": "装车",

@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
@@ -6,6 +6,10 @@ import {
   batches,
   boxes,
   boxMovements,
+  clientTransactions,
+  costEntries,
+  driverDevices,
+  loadPlans,
   receiptLots,
   receipts,
   scanEvents,
@@ -449,5 +453,125 @@ export async function closeBatch(batchId: string, ctx: AuditContext) {
       after: { status: 'closed' },
     });
     return updated!;
+  });
+}
+
+/**
+ * Cancel a batch that never went anywhere, and give its cargo back.
+ *
+ * The owner's problem, in his words: "dev payitida productionga partiyalar
+ * planlar yaratib qo'ygandim … endi shularni o'chira olmayabman." Test batches
+ * from before go-live sit on the board next to real trucks, and there was no
+ * way to get rid of them — every other state had an action and this one had
+ * none.
+ *
+ * `cancelled` is NOT a new idea: it has been in the batch CHECK constraint
+ * since M3, the board already files it under the archive drawer, the batch
+ * card already hides its controls, and the tracking service already refuses a
+ * cancelled batch. The state was understood everywhere and simply unreachable
+ * — this is the missing door, not a new room.
+ *
+ * A SOFT cancel, deliberately, and the house pattern (receipt void, box void,
+ * cost void): the row stays, with a reason and an audit trail. A hard DELETE
+ * would take the batch out from under `box_movements` rows that describe what
+ * really happened to real boxes — those reference a batch by `ref_id` with no
+ * foreign key, so nothing would stop it and nothing would complain, and the
+ * history of a box would point at a batch that no longer exists.
+ *
+ * Refused for anything that has left, carries money, or holds a box that is
+ * not simply waiting — see the guards. What it is FOR is a batch that was
+ * created and then abandoned.
+ */
+export async function cancelBatch(batchId: string, reason: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new ScanError('unauthenticated');
+  const actorId = ctx.actorId;
+  const why = reason.trim();
+  // A reason, like every other void in this system: six months from now the
+  // only question anyone asks about a cancelled batch is why.
+  if (why.length < 3) throw new ScanError('reason_required');
+
+  return db.transaction(async (tx) => {
+    const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
+    if (!batch) throw new ScanError('batch_not_found');
+    // Once the truck has left, the batch is a real journey: its code is on the
+    // customs papers and its boxes are somewhere between two countries.
+    if (!['forming', 'loading'].includes(batch.status)) throw new ScanError('batch_already_departed');
+
+    // Money first, because money is the guard that cannot be undone by giving
+    // the boxes back. A batch with a live cost or a charge raised against it
+    // is one somebody has already accounted for.
+    const [costs] = await tx
+      .select({ n: sql<number>`count(*)` })
+      .from(costEntries)
+      .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)));
+    if (Number(costs!.n) > 0) throw new ScanError('batch_has_costs');
+    const [charges] = await tx
+      .select({ n: sql<number>`count(*)` })
+      .from(clientTransactions)
+      .where(and(eq(clientTransactions.batchId, batchId), isNull(clientTransactions.voidedAt)));
+    if (Number(charges!.n) > 0) throw new ScanError('batch_has_charges');
+
+    const memberBoxes = await tx
+      .select()
+      .from(boxes)
+      .where(eq(boxes.currentBatchId, batchId))
+      .for('update');
+    // Before departure a member box is `planned` or `loading` and nothing
+    // else. Anything further along means this batch is not what it looks
+    // like, and giving those boxes back to stock would be a lie about where
+    // they are — refuse rather than guess.
+    const stuck = memberBoxes.filter((b) => !['planned', 'loading'].includes(b.status));
+    if (stuck.length > 0) throw new ScanError('batch_has_moved_boxes');
+
+    if (memberBoxes.length > 0) {
+      await tx
+        .update(boxes)
+        .set({ status: 'in_stock', currentBatchId: null })
+        .where(inArray(boxes.id, memberBoxes.map((b) => b.id)));
+      // The same shape `finishLoading` writes for a short-loaded box: the
+      // cargo goes back to the shelf it never left, and the movement says why.
+      await tx.insert(boxMovements).values(
+        memberBoxes.map((box) => ({
+          boxId: box.id,
+          fromWarehouseId: box.currentWarehouseId,
+          toWarehouseId: box.currentWarehouseId,
+          fromStatus: box.status,
+          toStatus: 'in_stock',
+          cause: 'batch_cancelled',
+          refType: 'batch',
+          refId: batchId,
+          actorId,
+        })),
+      );
+    }
+
+    // The plan that produced this batch goes with it — leaving it `approved`
+    // would leave a plan claiming a batch that no longer forms.
+    await tx
+      .update(loadPlans)
+      .set({ status: 'cancelled' })
+      .where(eq(loadPlans.batchId, batchId));
+
+    // A paired driver phone must stop being able to report against a batch
+    // that is over. The token is cleared, so the handset falls silent rather
+    // than filing positions nobody reads.
+    await tx
+      .update(driverDevices)
+      .set({ revokedAt: new Date(), pairCode: null, tokenHash: null })
+      .where(and(eq(driverDevices.batchId, batchId), isNull(driverDevices.revokedAt)));
+
+    const [updated] = await tx
+      .update(batches)
+      .set({ status: 'cancelled' })
+      .where(eq(batches.id, batchId))
+      .returning();
+    await writeAudit(tx, { ...ctx, warehouseId: batch.originWarehouseId }, {
+      entityType: 'batch',
+      entityId: batchId,
+      action: 'status_change',
+      before: { status: batch.status },
+      after: { status: 'cancelled', reason: why, boxesReleased: memberBoxes.length },
+    });
+    return { batch: updated!, boxesReleased: memberBoxes.length };
   });
 }

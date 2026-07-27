@@ -520,8 +520,12 @@
       "insufficient_stock": "Bo‘sh karobkalar yetarli emas",
       "same_warehouse": "Skladlar bir xil",
       "validation": "Ma’lumotlarni tekshiring",
-      "crate_not_available": "Yashik bu skladda emas yoki band"
-    }
+      "crate_not_available": "Yashik bu skladda emas yoki band",
+      "plan_has_batch": "Plan tasdiqlangan — partiyani bekor qiling",
+      "plan_not_cancellable": "Bu planni bekor qilib bo‘lmaydi",
+      "reason_required": "Sababni yozing"
+    },
+    "cancelPlan": "Planni bekor qilish"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",
@@ -577,7 +581,12 @@
     "errors": {
       "finish_loading_first": "Avval pogruzkani yakunlang",
       "nothing_loaded": "Hech narsa yuklanmagan",
-      "batch_not_loading": "Partiya pogruzkada emas"
+      "batch_not_loading": "Partiya pogruzkada emas",
+      "batch_already_departed": "Partiya jo‘natilgan — bekor qilib bo‘lmaydi",
+      "batch_has_costs": "Partiyaga xarajat kiritilgan",
+      "batch_has_charges": "Bu partiya bo‘yicha mijozga hisob qo‘yilgan",
+      "batch_has_moved_boxes": "Qutilar allaqachon oldinga ketgan",
+      "reason_required": "Sababni yozing"
     },
     "startUnloading": "Razgruzka (skan)",
     "transitReport": "Yo‘lda",
@@ -610,7 +619,12 @@
     "archiveEmpty": "Topilmadi",
     "codeTaken": "Bunday kod band",
     "vehicleTitle": "Mashina va haydovchi",
-    "pairCodeLabel": "Haydovchi ilovasi uchun kod"
+    "pairCodeLabel": "Haydovchi ilovasi uchun kod",
+    "cancelBatch": "Partiyani bekor qilish",
+    "cancelBatchHint": "Partiya bekor qilinadi, qutilar skladga qaytadi",
+    "cancelReason": "Sabab",
+    "cancelConfirm": "Partiya bekor qilinsinmi? Qutilar skladga qaytadi.",
+    "cancelled": "Partiya bekor qilindi, qaytarilgan quti: {n}"
   },
   "loading": {
     "title": "Pogruzka",

@@ -17,6 +17,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { VerdictForm } from './verdict-form';
+import { CancelPlan } from './cancel-plan';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
@@ -107,6 +108,11 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
             </Link>
           )}
         </div>
+        {/* A plan that never became a batch can be retired. After approval the
+            way out is cancelling the batch, which also gives its boxes back. */}
+        {['draft', 'pending_agent', 'changes_requested'].includes(plan.status) && !plan.batchId && (
+          <CancelPlan planId={plan.id} />
+        )}
       </div>
 
       {plan.status === 'pending_agent' && current && <VerdictForm versionId={current.id} />}

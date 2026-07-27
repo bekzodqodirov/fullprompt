@@ -1,13 +1,20 @@
 import 'dotenv/config';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
+  batches,
   boxes,
+  boxMovements,
   clients,
+  clientTransactions,
+  costEntries,
+  costTypes,
+  driverDevices,
   loadPlanLines,
+  loadPlans,
   scanEvents,
   users,
   warehouses,
@@ -16,11 +23,18 @@ import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { createCrate } from '@/modules/wms/crates/service';
 import {
   PlanError,
+  cancelPlan,
   recordVerdict,
   renameBatch,
   submitPlan,
 } from '@/modules/wms/planning/service';
-import { departBatch, finishLoading, ingestLoadScans } from '@/modules/wms/scanning/service';
+import {
+  ScanError,
+  departBatch,
+  finishLoading,
+  ingestLoadScans,
+} from '@/modules/wms/scanning/service';
+import { cancelBatch } from '@/modules/wms/scanning/unload';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
 
 /** M3: plan → verdict loop → batch reservation → scan → finish → depart. */
@@ -563,5 +577,183 @@ describe('customs documents still generate', () => {
       isXlsx(await buildAgentXlsx(sub.plan.id, sub.version.versionNo)),
       'agent file',
     ).toBe(true);
+  });
+});
+
+/**
+ * Getting rid of a batch that never went anywhere.
+ *
+ * The owner's clear-out: "dev payitida productionga partiyalar planlar
+ * yaratib qo'ygandim … endi shularni o'chira olmayabman." What matters here is
+ * not that cancelling works — it is that everything it must refuse, it does,
+ * because this button sits next to real trucks on the same board.
+ */
+describe('cancelling a batch that never left', () => {
+  async function approvedBatchOf(boxCount: number) {
+    const lot = await makeLot(boxCount);
+    const sub = await submitPlan(
+      { originWarehouseId: originId, destWarehouseId: destId, lines: [{ lotId: lot.lotId, boxCount }] },
+      ctx(),
+    );
+    const approved = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    return { lot, planId: sub.plan.id, batch: approved.batch! };
+  }
+
+  it('gives every reserved box back to stock and takes the plan down with it', async () => {
+    const { lot, planId, batch } = await approvedBatchOf(4);
+
+    const result = await cancelBatch(batch.id, 'test partiya', ctx());
+    expect(result.boxesReleased).toBe(4);
+    expect(result.batch.status).toBe('cancelled');
+
+    // The cargo is back on the shelf it never left — reserved boxes that stay
+    // reserved against a dead batch are boxes nobody can plan again, and the
+    // stock screen would go on showing them as spoken for.
+    const after = await db.select().from(boxes).where(inArray(boxes.id, lot.boxIds));
+    expect(after.every((b) => b.status === 'in_stock')).toBe(true);
+    expect(after.every((b) => b.currentBatchId === null)).toBe(true);
+
+    // Each release says why, in the same shape a short-loaded box gets.
+    const moves = await db
+      .select()
+      .from(boxMovements)
+      .where(and(eq(boxMovements.refId, batch.id), eq(boxMovements.cause, 'batch_cancelled')));
+    expect(moves).toHaveLength(4);
+
+    // The plan cannot go on claiming a batch that no longer forms.
+    const plan = await db.query.loadPlans.findFirst({ where: eq(loadPlans.id, planId) });
+    expect(plan!.status).toBe('cancelled');
+
+    // And the driver's phone stops being able to report against it.
+    const devices = await db
+      .select()
+      .from(driverDevices)
+      .where(eq(driverDevices.batchId, batch.id));
+    expect(devices.every((d) => d.revokedAt !== null)).toBe(true);
+    expect(devices.every((d) => d.pairCode === null)).toBe(true);
+  });
+
+  it('refuses a batch that has already departed', async () => {
+    // The one that matters most. Past this point the code is on the customs
+    // papers and the boxes are between two countries — "give them back to
+    // stock" would be a lie about where the cargo is.
+    const { lot, batch } = await approvedBatchOf(2);
+    await ingestLoadScans(
+      lot.shortCodes.map((code) => scan(batch.id, code)),
+      ctx(),
+    );
+    await finishLoading(batch.id, ctx());
+    await departBatch(batch.id, ctx());
+
+    await expect(cancelBatch(batch.id, 'peshmonlik', ctx())).rejects.toThrowError(
+      new ScanError('batch_already_departed'),
+    );
+    // Nothing moved.
+    const after = await db.select().from(boxes).where(inArray(boxes.id, lot.boxIds));
+    expect(after.every((b) => b.status === 'in_transit')).toBe(true);
+  });
+
+  it('refuses a batch somebody has already put a cost on', async () => {
+    const { batch } = await approvedBatchOf(2);
+    const [costType] = await db.select().from(costTypes).limit(1);
+    await db.insert(costEntries).values({
+      scope: 'batch',
+      batchId: batch.id,
+      costTypeId: costType!.id,
+      amount: '250.00',
+      currency: 'USD',
+      costDate: '2026-07-27',
+      enteredBy: actorId,
+    });
+
+    await expect(cancelBatch(batch.id, 'tozalash', ctx())).rejects.toThrowError(
+      new ScanError('batch_has_costs'),
+    );
+    // Still forming, still holding its boxes: a refusal must change nothing.
+    const still = await db.query.batches.findFirst({ where: eq(batches.id, batch.id) });
+    expect(still!.status).toBe('forming');
+  });
+
+  it('refuses a batch a client has already been charged for', async () => {
+    const { batch } = await approvedBatchOf(2);
+    await db.insert(clientTransactions).values({
+      clientId,
+      type: 'charge',
+      amount: '100.00',
+      currency: 'USD',
+      rateToUsd: '1',
+      amountUsd: '100.00',
+      txDate: '2026-07-27',
+      batchId: batch.id,
+      createdBy: actorId,
+    });
+
+    await expect(cancelBatch(batch.id, 'tozalash', ctx())).rejects.toThrowError(
+      new ScanError('batch_has_charges'),
+    );
+  });
+
+  it('demands a reason, like every other void in this system', async () => {
+    const { batch } = await approvedBatchOf(1);
+    await expect(cancelBatch(batch.id, '  ', ctx())).rejects.toThrowError(
+      new ScanError('reason_required'),
+    );
+  });
+
+  it('a voided cost does not keep a test batch alive for ever', async () => {
+    // The mirror of the guard above: money that was itself cancelled must not
+    // go on blocking, or one mistaken cost entry would pin a junk batch to the
+    // board permanently.
+    const { batch } = await approvedBatchOf(1);
+    const [costType] = await db.select().from(costTypes).limit(1);
+    await db.insert(costEntries).values({
+      scope: 'batch',
+      batchId: batch.id,
+      costTypeId: costType!.id,
+      amount: '10.00',
+      currency: 'USD',
+      costDate: '2026-07-27',
+      enteredBy: actorId,
+      voidedAt: new Date(),
+      voidedBy: actorId,
+      voidReason: 'wrong batch',
+    });
+    const result = await cancelBatch(batch.id, 'test partiya', ctx());
+    expect(result.batch.status).toBe('cancelled');
+  });
+});
+
+describe('cancelling a plan that never became a batch', () => {
+  it('retires a draft the agent sent back and nobody picked up', async () => {
+    const lot = await makeLot(2);
+    const sub = await submitPlan(
+      { originWarehouseId: originId, destWarehouseId: destId, lines: [{ lotId: lot.lotId, boxCount: 2 }] },
+      ctx(),
+    );
+    await recordVerdict(
+      { versionId: sub.version.id, verdict: 'changes_requested', comment: 'no' },
+      ctx(),
+    );
+    const cancelled = await cancelPlan(sub.plan.id, 'test plan', ctx());
+    expect(cancelled.status).toBe('cancelled');
+
+    // Nothing was reserved before approval, so nothing had to be given back —
+    // and the boxes must still be free to plan again.
+    const after = await db.select().from(boxes).where(inArray(boxes.id, lot.boxIds));
+    expect(after.every((b) => b.status === 'in_stock')).toBe(true);
+  });
+
+  it('refuses an approved plan — that is the batch’s job', async () => {
+    // Two doors into the same room would be two chances to leave the boxes
+    // reserved against a plan that no longer exists.
+    const lot = await makeLot(2);
+    const sub = await submitPlan(
+      { originWarehouseId: originId, destWarehouseId: destId, lines: [{ lotId: lot.lotId, boxCount: 2 }] },
+      ctx(),
+    );
+    await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    await expect(cancelPlan(sub.plan.id, 'test', ctx())).rejects.toThrowError(
+      new PlanError('plan_has_batch'),
+    );
   });
 });

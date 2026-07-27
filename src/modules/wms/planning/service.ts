@@ -429,3 +429,47 @@ export async function renameBatch(batchId: string, rawCode: string, ctx: AuditCo
     return updated!;
   });
 }
+
+/**
+ * Cancel a plan that never became a batch.
+ *
+ * The other half of the owner's clear-out ("dev payitida productionga
+ * partiyalar planlar yaratib qo'ygandim"): a draft nobody submitted, or one
+ * the agent sent back and nobody picked up again, sits on the plan list for
+ * ever with no way to retire it.
+ *
+ * Only BEFORE approval. Once a plan is approved it owns a batch and has
+ * reserved real boxes; retiring it then is `cancelBatch`'s job, which gives
+ * the cargo back and takes the plan down with it. Two doors into the same
+ * room would be two chances to leave the boxes reserved against a plan that
+ * no longer exists.
+ */
+export async function cancelPlan(planId: string, reason: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new PlanError('unauthenticated');
+  const why = reason.trim();
+  if (why.length < 3) throw new PlanError('reason_required');
+
+  return db.transaction(async (tx) => {
+    const plan = await tx.query.loadPlans.findFirst({ where: eq(loadPlans.id, planId) });
+    if (!plan) throw new PlanError('plan_not_found');
+    if (plan.batchId) throw new PlanError('plan_has_batch');
+    if (!['draft', 'pending_agent', 'changes_requested'].includes(plan.status)) {
+      throw new PlanError('plan_not_cancellable');
+    }
+    // Nothing to release: a plan before approval has reserved no boxes — the
+    // reservation happens in `recordVerdict` at the moment the batch is made.
+    const [updated] = await tx
+      .update(loadPlans)
+      .set({ status: 'cancelled' })
+      .where(eq(loadPlans.id, planId))
+      .returning();
+    await writeAudit(tx, { ...ctx, warehouseId: plan.originWarehouseId }, {
+      entityType: 'load_plan',
+      entityId: planId,
+      action: 'status_change',
+      before: { status: plan.status },
+      after: { status: 'cancelled', reason: why },
+    });
+    return updated!;
+  });
+}

@@ -9,6 +9,7 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_PROCESS_EVENTS, JOB_RECOMPUTE_COSTS } from '@/modules/platform/jobs/boss';
 import {
   PlanError,
+  cancelPlan,
   recordVerdict,
   renameBatch,
   submitPlan,
@@ -16,6 +17,7 @@ import {
   verdictSchema,
 } from '@/modules/wms/planning/service';
 import { departBatch, finishLoading, ScanError } from '@/modules/wms/scanning/service';
+import { cancelBatch } from '@/modules/wms/scanning/unload';
 import { z } from 'zod';
 
 export async function submitPlanAction(
@@ -179,6 +181,53 @@ export async function renameBatchAction(
     return { ok: true, code: updated.code };
   } catch (err) {
     if (err instanceof PlanError) return { error: err.code };
+    throw err;
+  }
+}
+
+/**
+ * Cancel a batch that never left (owner: test batches created in production
+ * during development that there was no way to remove).
+ *
+ * Gated on `batches.depart_close` and NOT on the loader's `scan.load` — unlike
+ * departure, which the origin loader may do because he is the one standing at
+ * the truck. Giving the cargo back and retiring the trip is a manager's call.
+ */
+export async function cancelBatchAction(
+  batchId: string,
+  reason: string,
+): Promise<{ ok: boolean; released?: number; error?: string }> {
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return { ok: false, error: 'batch_not_found' };
+  const actor = await authorize('batches.depart_close', { warehouseId: batch.originWarehouseId });
+  const meta = await requestMeta();
+  try {
+    const result = await cancelBatch(batchId, reason, { actorId: actor.id, ...meta });
+    revalidatePath(`/batches/${batchId}`);
+    revalidatePath('/batches');
+    return { ok: true, released: result.boxesReleased };
+  } catch (err) {
+    if (err instanceof ScanError) return { ok: false, error: err.code };
+    throw err;
+  }
+}
+
+/** Retire a plan that never became a batch. Same permission that submits one. */
+export async function cancelPlanAction(
+  planId: string,
+  reason: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const plan = await db.query.loadPlans.findFirst({ where: eq(loadPlans.id, planId) });
+  if (!plan) return { ok: false, error: 'plan_not_found' };
+  const actor = await authorize('plans.manage', { warehouseId: plan.originWarehouseId });
+  const meta = await requestMeta();
+  try {
+    await cancelPlan(planId, reason, { actorId: actor.id, ...meta });
+    revalidatePath(`/plans/${planId}`);
+    revalidatePath('/plans');
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof PlanError) return { ok: false, error: err.code };
     throw err;
   }
 }

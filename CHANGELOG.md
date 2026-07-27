@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## Partiya va planni bekor qilish — 2026-07-27
+
+Siz aytgan edingiz: *«dev payitida tekshirish uchun batch mashinalar ochib
+tashlagan edim endi shularni o'chira olmayabman … productionga partiyalar
+planlar yaratib qo'ygandim»*.
+
+### Endi qanday
+
+Partiya kartasida — hali yo'lga chiqmagan bo'lsa — pastda **«✖ Partiyani bekor
+qilish»** yozuvi bor. Bosasiz, **sababini** yozasiz, tasdiqlaysiz. Shundan
+keyin:
+
+- partiya **doskadan yo'qoladi** (arxivda qoladi, kerak bo'lsa topiladi)
+- undagi **qutilar skladga qaytadi** — yana rejaga qo'shsa bo'ladi
+- **plan ham** birga bekor bo'ladi
+- haydovchi telefoni **uziladi** — o'chgan reysga joylashuv yubormaydi
+
+Plan hali tasdiqlanmagan bo'lsa (qoralama yoki agent qaytargan), plan
+sahifasida **«✖ Planni bekor qilish»** bor.
+
+### Nimalarni bekor qilib **bo'lmaydi**
+
+Bu tugma haqiqiy mashinalar bilan bitta doskada turadi, shuning uchun qattiq
+qoidalar bor. Bekor qilinmaydi, agar:
+
+- partiya **jo'natilgan** bo'lsa — kodi bojxona hujjatlarida, yuk ikki davlat
+  orasida
+- partiyaga **xarajat** kiritilgan bo'lsa
+- shu partiya bo'yicha mijozga **hisob qo'yilgan** bo'lsa
+- qutilardan biri allaqachon **oldinga ketgan** bo'lsa
+
+Har birida ekranda nima uchun bo'lmasligi yozilib chiqadi va hech narsa
+o'zgarmaydi.
+
+**Bekor qilish faqat menejerga ochiq** (`batches.depart_close` huquqi). Sklad
+xodimi mashinani jo'nata oladi — u mashina yonida turibdi — lekin reysni bekor
+qilish menejerning ishi.
+
+### Nega «o'chirish» emas, «bekor qilish»
+
+Partiya bazada yolg'iz emas. Sizning bazangizda **10 588 ta quti harakati**
+partiyaga ishora qiladi, ustiga 2 130 audit va 2 305 hodisa yozuvi. Bazada
+bularni ushlab turadigan bog'lanish yo'q — ya'ni partiyani chindan o'chirsa,
+o'sha yozuvlar **jimgina yetim qoladi**: qutining tarixi endi mavjud bo'lmagan
+partiyaga qaraydi va hech kim buni sezmaydi.
+
+Shuning uchun qator o'chirilmaydi — u **«bekor qilingan»** deb belgilanadi,
+sababi va kim qilgani bilan. Bu sistemada kvitansiya, quti va xarajat ham
+xuddi shunday: o'chirilmaydi, bekor qilinadi.
+
+Qiziq tomoni: «bekor qilingan» holati bazada M3 dan beri bor edi, doska ham,
+xarita ham, hisobotlar ham uni to'g'ri tushunardi — faqat unga **olib
+boradigan tugma yo'q edi**. Ya'ni bu yangi imkoniyat emas, yetishmayotgan eshik.
+
 ## Haydovchi ilovasi: nega o'chdi va endi havoladan yuklab olinadi — 2026-07-27
 
 ### Nega ishlamay qoldi

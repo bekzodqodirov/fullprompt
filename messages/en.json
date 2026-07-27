@@ -520,8 +520,12 @@
       "insufficient_stock": "Not enough free boxes",
       "same_warehouse": "The warehouses are the same",
       "validation": "Check the data",
-      "crate_not_available": "The crate is in another warehouse or already taken"
-    }
+      "crate_not_available": "The crate is in another warehouse or already taken",
+      "plan_has_batch": "The plan is approved — cancel its batch instead",
+      "plan_not_cancellable": "This plan cannot be cancelled",
+      "reason_required": "Give a reason"
+    },
+    "cancelPlan": "Cancel plan"
   },
   "costing": {
     "fxTitle": "Exchange rates",
@@ -577,7 +581,12 @@
     "errors": {
       "finish_loading_first": "Finish loading first",
       "nothing_loaded": "Nothing has been loaded",
-      "batch_not_loading": "This batch is not being loaded"
+      "batch_not_loading": "This batch is not being loaded",
+      "batch_already_departed": "The batch has departed — it cannot be cancelled",
+      "batch_has_costs": "Costs are attached to this batch",
+      "batch_has_charges": "A client has already been charged for this batch",
+      "batch_has_moved_boxes": "Its boxes have already moved on",
+      "reason_required": "Give a reason"
     },
     "startUnloading": "Unloading (scan)",
     "transitReport": "In transit",
@@ -610,7 +619,12 @@
     "archiveEmpty": "Nothing found",
     "codeTaken": "This code is already taken",
     "vehicleTitle": "Truck and driver",
-    "pairCodeLabel": "Driver app code"
+    "pairCodeLabel": "Driver app code",
+    "cancelBatch": "Cancel batch",
+    "cancelBatchHint": "The batch is cancelled and its boxes go back to stock",
+    "cancelReason": "Reason",
+    "cancelConfirm": "Cancel this batch? Its boxes go back to stock.",
+    "cancelled": "Batch cancelled, boxes released: {n}"
   },
   "loading": {
     "title": "Loading",

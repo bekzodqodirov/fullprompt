@@ -109,7 +109,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 284 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 288 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
@@ -118,7 +118,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-465 unit/integration + 61 e2e, verified in CI's order on a fresh database.
+473 unit/integration + 63 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -195,6 +195,15 @@ deployed:
   domain move needs. The APK is now handed out at **public `/driver`** with a
   QR, published from **Admin → Haydovchi ilovasi**; storage is the record, and
   the upload is validated by content (ZIP magic), not by filename.
+
+- **Cancelling a batch / plan** (#285-288, owner's test batches left in
+  production): `cancelled` was in the schema since M3 and understood by the
+  board, the map and every report — it simply had no action that could reach
+  it. Soft, never a hard delete: **10,588 `box_movements` rows** point at a
+  batch through `ref_type`/`ref_id` with NO foreign key, so a delete would
+  orphan them in silence. Refused once departed, or with a live cost or charge,
+  or with a box that has moved on; boxes go back to stock with a movement row,
+  the plan goes with the batch, the driver's phone is revoked.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
