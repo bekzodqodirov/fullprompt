@@ -6,10 +6,11 @@ import { logger } from '../logger';
 import { clientsForChat } from '../../wms/client-cabinet/service';
 import {
   beginClientLink,
-  CABINET_KEYBOARD,
-  PHONE_KEYBOARD,
+  cabinetKeyboard,
+  phoneKeyboard,
   registerClientCabinet,
 } from './client-cabinet';
+import { clientLabels } from './client-labels';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -54,13 +55,18 @@ export function startTelegramBot(): void {
       // A linked client without a code gets the cabinet menu back.
       const linkedClients = await clientsForChat(BigInt(ctx.chat.id));
       if (linkedClients.length) {
+        const locale = linkedClients.find((c) => c.locale)?.locale ?? null;
+        const t = clientLabels(locale);
         await ctx.reply(
-          `Assalomu alaykum! Kabinet: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
-          { reply_markup: CABINET_KEYBOARD },
+          `${t.yourCodes}: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
+          { reply_markup: cabinetKeyboard(locale) },
         );
         return;
       }
-      await ctx.reply('GSR LOGISTICS. Профиль → «Подключить Telegram» — ссылка оттуда.');
+      // This used to be a RUSSIAN sentence about the staff profile screen —
+      // shown to a customer who simply opened the bot, in a language the
+      // cabinet does not even use.
+      await ctx.reply(clientLabels(ctx.from?.language_code).notLinked);
       return;
     }
     const link = await db.query.telegramLinks.findFirst({
@@ -71,20 +77,16 @@ export function startTelegramBot(): void {
       // is verified by phone BEFORE anything is linked or shown (owner's
       // incident: a link sent to the wrong person exposed another client).
       const step = await beginClientLink(code, ctx.chat.id);
+      const tg = ctx.from?.language_code;
       if (step === 'ask_phone') {
-        await ctx.reply(
-          'Assalomu alaykum! Xavfsizlik uchun telefon raqamingizni tasdiqlang — pastdagi «📱 Telefon raqamimni yuborish» tugmasini bosing.',
-          { reply_markup: PHONE_KEYBOARD },
-        );
+        await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
         return;
       }
       if (step === 'no_phone') {
-        await ctx.reply(
-          'Bu havolani tasdiqlab bo‘lmadi — menejeringizga murojaat qiling.',
-        );
+        await ctx.reply(clientLabels(tg).linkUnverifiable);
         return;
       }
-      await ctx.reply('Код не найден или устарел. Откройте профиль и попробуйте снова.');
+      await ctx.reply(clientLabels(tg).linkExpired);
       return;
     }
     await db

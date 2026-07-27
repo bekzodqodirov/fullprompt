@@ -232,6 +232,13 @@
       "when": 1785190000001,
       "tag": "0032_scan_path_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785190000002,
+      "tag": "0033_client_locale",
+      "breakpoints": true
     }
   ]
 }

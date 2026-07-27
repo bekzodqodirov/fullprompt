@@ -228,12 +228,22 @@ export const clients = pgTable(
      * platform never imports wms (ARCHITECTURE §0).
      */
     personId: uuid('person_id'),
+    /**
+     * The language this client reads their cabinet in (migration 0033).
+     *
+     * NULL means nobody has asked yet — different from "they chose Uzbek" —
+     * so the bot may seed it once from Telegram's own language_code and stop
+     * guessing the moment the client picks for themselves. Three values, not
+     * the staff four: no customer here reads Chinese.
+     */
+    locale: text('locale'),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex('clients_code_unique').on(t.clientCode),
+    check('clients_locale_check', sql`${t.locale} IS NULL OR ${t.locale} IN ('uz', 'ru', 'en')`),
     check('clients_code_upper_check', sql`${t.clientCode} = upper(${t.clientCode})`),
     index('clients_sales_manager_idx').on(t.salesManagerId),
     index('clients_next_action_idx').on(t.nextActionAt),

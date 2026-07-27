@@ -1,5 +1,5 @@
 import { Bot, InlineKeyboard, InputFile, Keyboard } from 'grammy';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../db/client';
 import { clients, clientTelegramLinks, telegramLinks } from '../db/schema';
 import { getStorage } from '../files/storage';
@@ -15,6 +15,15 @@ import {
   phonesOverlap,
   type CabinetLot,
 } from '../../wms/client-cabinet/service';
+import {
+  CLIENT_LOCALES,
+  allLabelVariants,
+  clientLabels,
+  isClientLocale,
+  localeFromTelegram,
+  statusLabel,
+  type ClientLabels,
+} from './client-labels';
 
 /**
  * Client cabinet inside the staff bot (Phase 2.2, owner's spec 3.1/3.2):
@@ -23,30 +32,49 @@ import {
  * immediately.
  */
 
-const BTN_CARGO = '📦 Yuklarim';
-const BTN_BALANCE = '💰 Balans';
-const BTN_HISTORY = '🗄 Tarix';
+/**
+ * The cabinet keyboard, in one client's language.
+ *
+ * Built per chat rather than once at module load, because the labels are now
+ * translated and a keyboard is bound to the person looking at it.
+ */
+export function cabinetKeyboard(locale?: string | null): Keyboard {
+  const t = clientLabels(locale);
+  return new Keyboard()
+    .text(t.btnCargo)
+    .text(t.btnBalance)
+    .row()
+    .text(t.btnHistory)
+    .text(t.btnLanguage)
+    .resized()
+    .persistent();
+}
 
-export const CABINET_KEYBOARD = new Keyboard()
-  .text(BTN_CARGO)
-  .text(BTN_BALANCE)
-  .row()
-  .text(BTN_HISTORY)
-  .resized()
-  .persistent();
-
-const STATUS_LABELS: Record<string, string> = {
-  in_stock: 'skladda',
-  planned: 'jo‘natishga rejalashtirilgan',
-  loading: 'yuklanmoqda',
-  in_transit: 'yo‘lda 🚛',
-  ready_for_pickup: 'olib ketishga tayyor ✅',
+/**
+ * The language of the chat, taken from its linked clients.
+ *
+ * One person holds several codes in one chat (the owner's reality: 777, 555,
+ * 444…), so the FIRST answer wins rather than rendering one reply in two
+ * languages. NULL — nobody asked yet — falls back inside `clientLabels`.
+ */
+/** Each language written in itself — nobody looks for "Uzbek" in Russian. */
+const LANGUAGE_NAMES: Record<(typeof CLIENT_LOCALES)[number], string> = {
+  uz: "🇺🇿 O'zbekcha",
+  ru: '🇷🇺 Русский',
+  en: '🇬🇧 English',
 };
 
-function lotLine(lot: CabinetLot): string {
-  const name = lot.productNameZh + (lot.productNameRu ? ` (${lot.productNameRu})` : '');
+function chatLocale(linked: { locale: string | null }[]): string | null {
+  return linked.find((c) => c.locale)?.locale ?? null;
+}
+
+function lotLine(lot: CabinetLot, t: ClientLabels): string {
+  // The translated name first: the client asked for their goods in a language
+  // they read, and the Chinese original is only useful when there is nothing
+  // else. (The staff screens keep zh-first — a Yiwu operator needs it.)
+  const name = lot.productNameRu?.trim() || lot.productNameZh;
   const statuses = Object.entries(lot.statuses)
-    .map(([s, n]) => `${n} dona ${STATUS_LABELS[s] ?? s}`)
+    .map(([s, n]) => `${n} ${t.pieces} ${statusLabel(s, t)}`)
     .join(', ');
   const wh = lot.warehouseCodes.length ? ` · 📍 ${lot.warehouseCodes.join(', ')}` : '';
   return `${lot.letter ?? '·'} — ${name}\n   ${statuses}${wh}`;
@@ -66,10 +94,9 @@ interface PendingLink {
 }
 const pendingByChat = new Map<number, PendingLink>();
 
-export const PHONE_KEYBOARD = new Keyboard()
-  .requestContact('📱 Telefon raqamimni yuborish')
-  .resized()
-  .oneTime();
+export function phoneKeyboard(locale?: string | null): Keyboard {
+  return new Keyboard().requestContact(clientLabels(locale).sharePhone).resized().oneTime();
+}
 
 /**
  * Step 1: /start <code>. Returns what the bot should do next:
@@ -204,7 +231,7 @@ export async function autoLinkClientToVerifiedChats(
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             chat_id: Number(chatId),
-            text: `🔗 Kabinetingizga yangi kod qo‘shildi: ${client.clientCode}`,
+            text: `${clientLabels(client.locale).codeAdded}: ${client.clientCode}`,
           }),
         });
       } catch (err) {
@@ -257,6 +284,9 @@ export function registerClientCabinet(bot: Bot): void {
     const pending = pendingByChat.get(ctx.chat.id);
     if (!pending) return;
     pendingByChat.delete(ctx.chat.id);
+    // Nothing is linked yet, so there is no stored language to read — the
+    // only clue at this moment is the phone's own.
+    const tgLocale = ctx.from?.language_code ?? null;
     const contact = ctx.message.contact;
     // The button always sends the sender's OWN number; a manually forwarded
     // contact card (someone else's number) has a different user_id — treat
@@ -267,10 +297,9 @@ export function registerClientCabinet(bot: Bot): void {
       : null;
     if (!client || !phoneBelongsToClient(contact.phone_number, client.phones)) {
       await failClientLink(pending.linkId);
-      await ctx.reply(
-        '❌ Telefon raqamingiz bu havolaga mos kelmadi. Havola bekor qilindi — menejeringizga murojaat qiling.',
-        { reply_markup: { remove_keyboard: true } },
-      );
+      await ctx.reply(clientLabels(tgLocale).phoneMismatch, {
+        reply_markup: { remove_keyboard: true },
+      });
       return;
     }
     const linkRow = await db.query.clientTelegramLinks.findFirst({
@@ -278,7 +307,7 @@ export function registerClientCabinet(bot: Bot): void {
     });
     const linked = await completeClientLink(pending.linkId, ctx.chat.id);
     if (!linked) {
-      await ctx.reply('Havola eskirgan. Menejeringizdan yangisini so‘rang.', {
+      await ctx.reply(clientLabels(tgLocale).linkExpired, {
         reply_markup: { remove_keyboard: true },
       });
       return;
@@ -291,25 +320,36 @@ export function registerClientCabinet(bot: Bot): void {
         )
       : [{ clientCode: linked.clientCode, name: linked.name }];
     const codes = all.map((c) => c.clientCode).join(', ');
+    const allIds = (await clientsForChat(BigInt(ctx.chat.id))).map((c) => c.id);
+    // Seed the language from Telegram's own — once, and only for clients who
+    // have never been asked. A client who later picks for themselves is never
+    // overridden by the phone they happen to be holding.
+    const seeded = localeFromTelegram(tgLocale);
+    if (seeded) {
+      await db
+        .update(clients)
+        .set({ locale: seeded })
+        .where(and(inArray(clients.id, allIds), isNull(clients.locale)));
+    }
+    const t = clientLabels(seeded);
     await ctx.reply(
-      `✅ Assalomu alaykum, ${linked.name}!\n` +
-        `Ulangan kodlaringiz: ${codes}.\n` +
-        `Bu yerda yuklaringiz holati, rasmlari va balansingizni ko‘rasiz.`,
-      { reply_markup: CABINET_KEYBOARD },
+      `✅ ${t.welcome}\n${t.yourCodes}: ${codes}.`,
+      { reply_markup: cabinetKeyboard(seeded) },
     );
   });
 
-  bot.hears(BTN_CARGO, async (ctx) => {
+  bot.hears(allLabelVariants('btnCargo'), async (ctx) => {
     const linked = await clientsForChat(BigInt(ctx.chat.id));
     if (!linked.length) return;
+    const t = clientLabels(chatLocale(linked));
     for (const client of linked) {
       const lots = await cargoOverview(client.id);
       if (!lots.length) {
-        await ctx.reply(`${client.clientCode} — hozir yo‘lda yoki skladda yukingiz yo‘q.`);
+        await ctx.reply(`${client.clientCode} — ${t.noCargo}`);
         continue;
       }
       const header = `📦 ${client.clientCode} — ${client.name}\n\n`;
-      const text = header + lots.map(lotLine).join('\n\n');
+      const text = header + lots.map((lot) => lotLine(lot, t)).join('\n\n');
       const kb = new InlineKeyboard();
       let buttons = 0;
       for (const lot of lots) {
@@ -323,47 +363,88 @@ export function registerClientCabinet(bot: Bot): void {
     }
   });
 
-  bot.hears(BTN_BALANCE, async (ctx) => {
+  bot.hears(allLabelVariants('btnBalance'), async (ctx) => {
     const linked = await clientsForChat(BigInt(ctx.chat.id));
     if (!linked.length) return;
+    const t = clientLabels(chatLocale(linked));
     for (const client of linked) {
       const debt = await debtSummary(client.id);
       const lines = debt.recent
         .filter((r) => !r.voided)
         .map(
           (r) =>
-            `${r.txDate} — ${r.type === 'charge' ? '🧾 hisoblandi' : '➕ to‘lov'}: ${r.amount} ${r.currency}` +
+            `${r.txDate} — ${r.type === 'charge' ? t.charged : t.paid}: ${r.amount} ${r.currency}` +
             (r.currency !== 'USD' ? ` (≈ $${r.amountUsd.toFixed(2)})` : ''),
         )
         .join('\n');
       const head =
         debt.balanceUsd > 0.009
-          ? `💰 ${client.clientCode} — qarzingiz: $${debt.balanceUsd.toFixed(2)}`
-          : `✅ ${client.clientCode} — qarzingiz yo‘q` +
-            (debt.balanceUsd < -0.009 ? ` (hisobingizda ortiqcha $${(-debt.balanceUsd).toFixed(2)} bor)` : '');
-      await ctx.reply(head + (lines ? `\n\nSo‘nggi amallar:\n${lines}` : ''));
+          ? `💰 ${client.clientCode} — ${t.debtYes}: $${debt.balanceUsd.toFixed(2)}`
+          : `✅ ${client.clientCode} — ${t.debtNo}` +
+            (debt.balanceUsd < -0.009
+              ? ` (${t.credit} $${(-debt.balanceUsd).toFixed(2)})`
+              : '');
+      await ctx.reply(head + (lines ? `\n\n${t.recentMoves}:\n${lines}` : ''));
     }
   });
 
-  bot.hears(BTN_HISTORY, async (ctx) => {
+  bot.hears(allLabelVariants('btnHistory'), async (ctx) => {
     const linked = await clientsForChat(BigInt(ctx.chat.id));
     if (!linked.length) return;
+    const t = clientLabels(chatLocale(linked));
+    const dateLocale = chatLocale(linked) === 'en' ? 'en-GB' : chatLocale(linked) === 'ru' ? 'ru-RU' : 'uz-UZ';
     for (const client of linked) {
       const rows = await issuedHistory(client.id);
       if (!rows.length) {
-        await ctx.reply(`${client.clientCode} — hali berilgan yuklar yo‘q.`);
+        await ctx.reply(`${client.clientCode} — ${t.noHistory}`);
         continue;
       }
       const text =
-        `🗄 ${client.clientCode} — berilgan yuklar:\n\n` +
+        `🗄 ${client.clientCode} — ${t.issued}:\n\n` +
         rows
           .map(
             (r) =>
-              `${r.letter ?? '·'} — ${r.productNameZh}${r.productNameRu ? ` (${r.productNameRu})` : ''}: ${r.n} dona · ${new Date(r.lastAt).toLocaleDateString('uz-UZ')}`,
+              `${r.letter ?? '·'} — ${r.productNameRu?.trim() || r.productNameZh}: ${r.n} ${t.pieces} · ${new Date(r.lastAt).toLocaleDateString(dateLocale)}`,
           )
           .join('\n');
       await ctx.reply(text.slice(0, 4000));
     }
+  });
+
+  /**
+   * 🌐 Language.
+   *
+   * The client picks for themselves, and that choice sticks: the Telegram
+   * seed only ever fills a NULL. A person holding several codes in one chat
+   * has all of them set together, or the next reply would come back in two
+   * languages.
+   */
+  bot.hears(allLabelVariants('btnLanguage'), async (ctx) => {
+    const linked = await clientsForChat(BigInt(ctx.chat.id));
+    if (!linked.length) return;
+    const kb = new InlineKeyboard();
+    for (const locale of CLIENT_LOCALES) kb.text(LANGUAGE_NAMES[locale], `lang:${locale}`);
+    await ctx.reply(clientLabels(chatLocale(linked)).chooseLanguage, { reply_markup: kb });
+  });
+
+  bot.callbackQuery(/^lang:(.+)$/, async (ctx) => {
+    const picked = ctx.match[1]!;
+    if (!isClientLocale(picked)) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    const linked = await clientsForChat(BigInt(ctx.chat!.id));
+    if (!linked.length) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    await db
+      .update(clients)
+      .set({ locale: picked })
+      .where(inArray(clients.id, linked.map((c) => c.id)));
+    const t = clientLabels(picked);
+    await ctx.answerCallbackQuery(t.languageSet);
+    await ctx.reply(t.languageSet, { reply_markup: cabinetKeyboard(picked) });
   });
 
   bot.callbackQuery(/^ph:(.+)$/, async (ctx) => {
@@ -372,7 +453,7 @@ export function registerClientCabinet(bot: Bot): void {
     const photos = await lotPhotoKeys(lotId, linked.map((c) => c.id));
     await ctx.answerCallbackQuery();
     if (!photos.length) {
-      await ctx.reply('Bu yuk uchun rasm topilmadi.');
+      await ctx.reply(clientLabels(chatLocale(linked)).noPhotos);
       return;
     }
     const storage = getStorage();
@@ -391,7 +472,7 @@ export function registerClientCabinet(bot: Bot): void {
       }
     } catch (err) {
       logger.error({ err, lotId }, 'cabinet photo send failed');
-      await ctx.reply('Rasm yuborishda xatolik. Birozdan so‘ng qayta urinib ko‘ring.');
+      await ctx.reply(clientLabels(chatLocale(linked)).photoError);
     }
   });
 }

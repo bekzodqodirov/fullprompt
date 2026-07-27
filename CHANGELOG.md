@@ -1,5 +1,74 @@
 # CHANGELOG
 
+## Mijoz tomoni, 1-qism: «yuk keldi» xabari + 3 til — 2026-07-27
+
+### 1. Yuk skladga kelganda mijozga xabar ketadi
+
+Ilgari mijoz **faqat Toshkentga yetganda** xabar olardi. Ya'ni yo'lning butun
+birinchi yarmi — «tovarim yetdimi?» degan savol kuniga necha marta so'raladigan
+qism — **jim** edi.
+
+Endi Xitoy omboriga qabul qilinishi bilan:
+
+> 📥 **Yukingiz omborimizga qabul qilindi**
+> GS777 · YW-IN-260727-006
+> Ombor: YW
+>
+> · A Чехлы — 6 dona
+> · B 杂货 — 4 dona
+>
+> Jami: 10 dona · 68.5 kg · 1 m³
+
+**Mahsulot nomi endi tarjimasi bilan chiqadi.** Ilgari xitoycha nom
+saqlanardi va mijozga `手机壳` ko'rinardi — endi ruscha/o'zbekcha nomi
+ustuvor, xitoycha faqat tarjima yo'q bo'lsa.
+
+### 2. Uch til: o'zbek · rus · ingliz
+
+Mijoz kabinetida endi **🌐 Til** tugmasi bor. Bosadi — o'zi tanlaydi.
+
+Birinchi ulanganda til **Telegram'ining tilidan** avtomatik olinadi, lekin
+faqat bir marta: mijoz o'zi tanlagandan keyin hech narsa uni o'zgartirmaydi.
+
+Bitta odam bir nechta kod tutsa (777, 555, 444) — hammasi birga o'zgaradi.
+
+### 3. Mijozlar ro'yxati bosh ekranga chiqdi
+
+Ilgari u **eng oxirgi** bo'limda edi — mashina shablonlari va sozlamalardan
+ham pastda, ya'ni yiliga ikki marta ochiladigan ekranlar orasida. Endi
+**«Sotuv» bo'limining eng tepasida**, CRM va bitimlar yonida.
+
+### Yo'l-yo'lakay topilgan 4 ta xato
+
+1. **Mijozga ruscha xodim xabari chiqardi.** Botni shunchaki ochgan mijoz
+   «Профиль → Подключить Telegram» degan yozuvni ko'rardi — noto'g'ri odamga,
+   noto'g'ri tilda, mijoz ocholmaydigan ekran haqida.
+2. **Bitta xabar ikki marta ketishi mumkin edi.** Bazada bitta mijoz-chat
+   juftligi uchun ikkita yozuv bo'lsa, mijoz har xabarni ikki marta olardi.
+3. **Botni bloklagan mijoz «xabar yetdi» deb hisoblanardi** — Telegram'ning
+   javobi umuman o'qilmasdi.
+4. **Tugmalar tarjima qilinsa kabinet o'lardi.** Tugma yozuvi ayni paytda
+   botning «yo'naltiruvchisi» ham — rus tiliga o'tgan mijozning tugmalari
+   umuman ishlamay qolardi. Endi hamma til birdan tanilади.
+
+### Production ma'lumotiga tegilmadi
+
+Sizning talabingiz bo'yicha tekshirdim: **migratsiya bironta mavjud mijoz
+qatoriga tegmaydi.** `locale` ustuni **bo'sh (NULL) qilib** qo'shildi —
+PostgreSQL bunda jadvalni qayta yozmaydi, 1700 qator ham, 100 000 qator ham
+bir xil tez.
+
+⚠️ Va eslatma: **`pnpm import-clients --apply --update` ni HECH QACHON
+ishlatmang** — u 300 ga yaqin mijozning ismi, telefoni va sotuvchisini qayta
+yozadi.
+
+### Tekshiruv
+
+Lint · typecheck · **428 test** (11 tasi yangi) · build · toza bazada
+**50 e2e** — yashil.
+
+**Migratsiya bor (0033).** Deploy oldidan backup oling.
+
 ## Backup Google Drive'ga chiqadi — 2026-07-27
 
 Siz «Google Drive eng yaxshisi» dedingiz. Qilindi.

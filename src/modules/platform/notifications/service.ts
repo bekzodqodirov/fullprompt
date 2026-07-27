@@ -11,6 +11,7 @@ import {
   users,
 } from '../db/schema';
 import { logger } from '../logger';
+import { clientLabels } from '../telegram/client-labels';
 import { notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
 
@@ -290,6 +291,21 @@ export function renderTelegramText(
   }
 }
 
+/** The per-lot summary `confirmReceipt` puts on a ReceiptConfirmed event. */
+interface ArrivedLot {
+  letter: string | null;
+  productNameZh: string;
+  productNameRu: string | null;
+  boxCount: number;
+  totalWeightKg: string | number | null;
+  totalVolumeM3: string | number | null;
+}
+
+/** Two decimals, without a trailing `.00` on a whole number. */
+function round(value: number): string {
+  return String(Math.round(value * 100) / 100);
+}
+
 /**
  * Direct message to the client's own linked Telegram chats (Phase 2.2
  * cabinet). Best-effort: a send failure is logged and never blocks the event
@@ -298,8 +314,40 @@ export function renderTelegramText(
 export function renderClientCabinetText(
   type: string,
   payload: Record<string, unknown>,
+  locale?: string | null,
 ): string | null {
+  const t = clientLabels(locale);
   switch (type) {
+    /**
+     * Cargo reached the CHINESE warehouse — the owner's first ask, and the
+     * message a client wants most: "did my goods arrive?" is the question the
+     * office answers by telephone all day. Until now the only client-facing
+     * events were arrival in Uzbekistan and handover, so the whole first half
+     * of the journey was silent.
+     */
+    case 'ReceiptConfirmed': {
+      const lots = Array.isArray(payload.lots) ? (payload.lots as ArrivedLot[]) : [];
+      if (lots.length === 0) return null;
+      const boxes = lots.reduce((sum, lot) => sum + Number(lot.boxCount ?? 0), 0);
+      const kg = lots.reduce((sum, lot) => sum + Number(lot.totalWeightKg ?? 0), 0);
+      const m3 = lots.reduce((sum, lot) => sum + Number(lot.totalVolumeM3 ?? 0), 0);
+      const lines = lots.map((lot) => {
+        // The product name is Chinese with a NULLABLE Russian translation, so
+        // a client reading Uzbek would be shown 手机壳 unless the fallback is
+        // deliberate: prefer the translated name, keep the Chinese beside it
+        // only when there is nothing else.
+        const name = lot.productNameRu?.trim() || lot.productNameZh;
+        return `· ${lot.letter ?? ''} ${name} — ${lot.boxCount} ${t.pieces}`;
+      });
+      return (
+        `${t.arrivedTitle}\n` +
+        `${payload.clientCode} · ${payload.number}\n` +
+        `${t.arrivedWarehouse}: ${payload.warehouseCode}\n\n` +
+        `${lines.join('\n')}\n\n` +
+        `${t.arrivedTotal}: ${boxes} ${t.pieces} · ${round(kg)} ${t.kg} · ${round(m3)} ${t.m3}\n` +
+        t.seeDetails
+      );
+    }
     case 'ReadyForPickup':
       // Owner's Q5 wording: arrived, being cleared — pickup after paperwork.
       return (
@@ -326,10 +374,13 @@ async function notifyLinkedClients(event: {
   const clientId = event.payload.clientId as string | null;
   if (!clientId) return;
   const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
-  const text = renderClientCabinetText(event.type, {
-    ...event.payload,
-    clientCode: client?.clientCode ?? '',
-  });
+  // In the CLIENT's language, not the office's (migration 0033). NULL means
+  // nobody has asked them yet, and `clientLabels` falls back.
+  const text = renderClientCabinetText(
+    event.type,
+    { ...event.payload, clientCode: client?.clientCode ?? '' },
+    client?.locale,
+  );
   if (!text) return;
   const links = await db
     .select()
@@ -337,14 +388,32 @@ async function notifyLinkedClients(event: {
     .where(
       and(eq(clientTelegramLinks.clientId, clientId), eq(clientTelegramLinks.status, 'linked')),
     );
-  for (const link of links) {
-    if (!link.telegramChatId) continue;
+  /**
+   * One message per CHAT, not per link row.
+   *
+   * `client_telegram_links` has no unique constraint on (client_id, chat_id),
+   * and two paths can insert a second 'linked' row for the same pair — the
+   * phone verification and `autoLinkClientToVerifiedChats`. Every duplicate
+   * row would have sent the client another copy of the same sentence, and a
+   * cabinet that says the same thing twice is one people stop reading.
+   */
+  const chats = new Set<bigint>();
+  for (const link of links) if (link.telegramChatId) chats.add(link.telegramChatId);
+
+  for (const chatId of chats) {
     try {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: Number(link.telegramChatId), text }),
+        body: JSON.stringify({ chat_id: Number(chatId), text }),
       });
+      // The answer was never read before, so a client who had BLOCKED the bot
+      // looked exactly like a client who received the message — and the whole
+      // point of these is knowing they went out.
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        logger.warn({ clientId, status: res.status, detail: detail.slice(0, 200) }, 'client notify rejected');
+      }
     } catch (err) {
       logger.warn({ err, clientId }, 'client cabinet notify failed');
     }

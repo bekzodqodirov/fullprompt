@@ -150,6 +150,24 @@ export const NAV: NavGroupSpec[] = [
     titleKey: 'sectionSales',
     items: [
       {
+        /**
+         * The client book, moved out of Management (owner: "clientlarni
+         * ro'yxatiga glavniy ekrandan kira olinsa yaxshi bo'lardi").
+         *
+         * It sat in the LAST group, below the truck presets and the field
+         * editor — settings screens opened twice a year — so on the home
+         * screen the list of every client the company has was the last tile
+         * on the page. It belongs at the top of Sales, beside the funnel and
+         * the deals that are about those same clients.
+         */
+        href: '/admin/clients',
+        shortKey: 'clients',
+        labelKey: 'title',
+        namespace: 'clients',
+        icon: 'users',
+        permissions: ['clients.manage'],
+      },
+      {
         // The deal board, above the funnel on purpose: a lead is worked once,
         // a deal is an existing client's job and repeats, and "which of my
         // jobs is stuck" is the question the sales side opens the app to
@@ -232,13 +250,6 @@ export const NAV: NavGroupSpec[] = [
         namespace: 'plans',
         icon: 'settings',
         permissions: ['plans.manage'],
-      },
-      {
-        href: '/admin/clients',
-        labelKey: 'title',
-        namespace: 'clients',
-        icon: 'users',
-        permissions: ['clients.manage'],
       },
       {
         href: '/admin/fields',
