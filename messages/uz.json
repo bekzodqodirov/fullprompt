@@ -402,7 +402,8 @@
       "box_in_crate": "Avval bu prixodning yashiklarini buzing",
       "same_warehouse": "Bu o‘sha sklad",
       "validation": "Ma’lumotlarni tekshiring"
-    }
+    },
+    "openInBrowser": "Brauzerda ochish (chop etish ketmasa)"
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",

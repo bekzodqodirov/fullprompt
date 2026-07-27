@@ -402,7 +402,8 @@
       "box_in_crate": "请先拆掉该入库单的木箱",
       "same_warehouse": "是同一个仓库",
       "validation": "请检查数据"
-    }
+    },
+    "openInBrowser": "在浏览器中打开（如果无法打印）"
   },
   "stock": {
     "title": "库存",

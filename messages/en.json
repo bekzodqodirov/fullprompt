@@ -402,7 +402,8 @@
       "box_in_crate": "Dissolve the crates of this receipt first",
       "same_warehouse": "That is the same warehouse",
       "validation": "Check the data"
-    }
+    },
+    "openInBrowser": "Open in the browser (if printing did not start)"
   },
   "stock": {
     "title": "Warehouse stock",

@@ -76,8 +76,14 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
     page.locator('li', { hasText: '灯具' }).locator('span.font-mono').first(),
   ).toHaveText(/^[A-Z]{1,2}$/);
 
-  // Labels PDF endpoint responds with a PDF
-  const href = await page.getByRole('link', { name: /🖨/ }).getAttribute('href');
+  // Printing offers BOTH routes, because a phone may only have one of them:
+  // the share sheet (the only way out of an installed PWA on an iPhone) and
+  // the plain link (RawBT on Android, and the escape hatch into Safari).
+  await expect(page.getByTestId('print-labels').first()).toBeVisible();
+  const href = await page
+    .getByTestId('print-labels-browser')
+    .first()
+    .getAttribute('href');
   const res = await page.request.get(href!);
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('application/pdf');

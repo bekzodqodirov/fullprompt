@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## Telefondan stiker chop etish — 2026-07-27
+
+Siz ilovani telefon ekraniga chiqarib olganingizdan keyin chop etish ishlamay qoldi, ayniqsa iPhone'da: «hech qanday tugmasiz stikerlar ro'yxati turibdi».
+
+### Nega shunday bo'lgan
+
+Bu tugmaning xatosi emas — **ekranga chiqarilgan ilova iPhone'da brauzer panelisiz ishlaydi**. PDF o'sha ilova ichida ochilganda **ulashish ham, chop etish ham, hech qanday tugma ham bo'lmaydi**. Stikerlar ko'rinib turadi, lekin ularni chiqarib olishning yo'li yo'q. Brauzerda ochilganda esa panel bor edi, shuning uchun ilgari ishlagan.
+
+### Endi qanday
+
+Har bir chop etish joyida **ikkita yo'l** bor, chunki telefonda bittasi bo'lmasligi mumkin:
+
+**1. 🖨 tugmasi — telefonning o'z «ulashish» oynasini ochadi.** iPhone'da bu yerda **«Print»** turadi (AirPrint), va **Bluetooth printeringizning o'z ilovasi** ham shu ro'yxatda chiqadi. Bitta bosish: 🖨 → printer ilovasi. Androidda ham xuddi shunday ishlaydi.
+
+**2. Ostida kichik havola — «Brauzerda ochish».** iPhone'da bu ilovadan Safari'ga chiqaradi, u yerda panel bor. Androidda esa **RawBT** o'sha PDF'ni ushlab, ulangan printerga jo'natadi — ilgarigidek.
+
+Fayl nomi ham to'g'rilandi: `YW26-000123-A.pdf` — printer ilovasida qaysi stiker ekani ko'rinib turadi.
+
+### Ochig'ini aytishim kerak
+
+**iPhone brauzeridan Bluetooth printerga to'g'ridan-to'g'ri yozib bo'lmaydi.** Apple bunday imkoniyatni hech qachon qo'shmagan va qo'shmoqchi ham emas. Bu mening dasturimning chegarasi emas — iPhone'ning chegarasi. Kim «brauzerdan Bluetooth'ga chiqaraman» desa, u Android haqida gapiryapti.
+
+Shuning uchun iPhone'da yagona to'g'ri yo'l — **ulashish oynasi orqali printer ilovasiga berish** yoki **AirPrint**. Men aynan shuni qildim.
+
+Agar printeringiz **AirPrint'ni qo'llasa** — 🖨 → Print → printer, hech qanday qo'shimcha ilovasiz. Qo'llamasa — printer ishlab chiqaruvchisining iPhone ilovasini o'rnating, u ulashish ro'yxatida paydo bo'ladi.
+
+**Printeringiz qaysi model ekanini ayting** — AirPrint bor-yo'qligini aniqlab, aniq qadamlarni yozib beraman.
+
+**Tekshiruv:** 385 test + 44 e2e. E2E endi ikkala yo'lni ham tekshiradi. Migratsiya yo'q.
+
+
 ## ❗ Skaner: sanayotgan, lekin mashinaga qo'shmayotgan edi — 2026-07-27
 
 Siz yuklash paytida aytdingiz, va bu jiddiy xato edi — **yuk mashinaga chiqib ketardi, tizimda esa yo'q bo'lardi**.

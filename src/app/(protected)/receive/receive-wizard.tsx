@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { computeLotTotals, densityBand } from '@/modules/wms/receipts/math';
 import { LightboxImg } from '@/components/lightbox-img';
+import { PrintLabels } from '@/components/print-labels';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
 
 /**
@@ -510,24 +511,21 @@ export function ReceiveWizard({
             </li>
           ))}
         </ul>
-        <a
+        <PrintLabels
           href={`/api/receipts/${result.receiptId}/labels`}
-          target="_blank"
-          className="btn-primary w-full"
-        >
-          🖨 {t('printLabels')}
-        </a>
+          label={t('printLabels')}
+          fileName={`${result.number}.pdf`}
+        />
         {(result.lots?.length ?? 0) > 1 && (
-          <div className="flex flex-wrap justify-center gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {result.lots?.map((lot) => (
-              <a
+              <PrintLabels
                 key={lot.lotId}
+                variant="secondary"
                 href={`/api/receipts/${result.receiptId}/labels?lotId=${lot.lotId}`}
-                target="_blank"
-                className="btn-secondary !min-h-10 px-3 font-mono text-sm font-extrabold"
-              >
-                🖨 {lot.letter}
-              </a>
+                label={lot.letter}
+                fileName={`${result.number}-${lot.letter}.pdf`}
+              />
             ))}
           </div>
         )}

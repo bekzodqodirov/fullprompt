@@ -24,6 +24,7 @@ import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
+import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 
@@ -122,9 +123,13 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           {t(`statuses.${receipt.status}`)}
         </span>
         {canPrint && receipt.status === 'confirmed' && (
-          <a href={`/api/receipts/${id}/labels`} target="_blank" className="btn-primary ml-auto">
-            🖨 {t('reprint')}
-          </a>
+          <div className="ml-auto w-44">
+            <PrintLabels
+              href={`/api/receipts/${id}/labels`}
+              label={t('reprint')}
+              fileName={`${receipt.number}.pdf`}
+            />
+          </div>
         )}
       </div>
 
@@ -171,13 +176,14 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 )}
               </span>
               {canPrint && receipt.status === 'confirmed' && (
-                <a
-                  href={`/api/receipts/${id}/labels?lotId=${lot.id}`}
-                  target="_blank"
-                  className="btn-secondary !min-h-9 ml-auto px-2 text-sm"
-                >
-                  🖨
-                </a>
+                <div className="ml-auto w-28">
+                  <PrintLabels
+                    variant="secondary"
+                    href={`/api/receipts/${id}/labels?lotId=${lot.id}`}
+                    label={lot.letter ?? ''}
+                    fileName={`${receipt.number}-${lot.letter ?? ''}.pdf`}
+                  />
+                </div>
               )}
             </div>
             <p className="mt-1 text-sm text-ink-700">
