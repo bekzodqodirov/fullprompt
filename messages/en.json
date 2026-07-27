@@ -268,7 +268,8 @@
       "ved_customs_post": "Customs post and code (for example: Andijan customs / 03011)",
       "crm_dormant_days": "Days of silence before a client counts as gone quiet (appears in the Monday CRM digest)",
       "deal_deviation_threshold_pct": "How far the cargo may differ from the quote before the manager is alerted. Never blocks loading."
-    }
+    },
+    "driverApp": "Driver app"
   },
   "audit": {
     "title": "Audit log",

@@ -11,11 +11,20 @@ android {
     applicationId = "uz.gsr.driver"
     minSdk = 24
     targetSdk = 35
-    versionCode = 2
-    versionName = "1.1"
-    // The app ships pointed at the production server; the pairing screen
-    // lets the warehouse worker change it (domain move, test server).
-    buildConfigField("String", "DEFAULT_SERVER", "\"https://169-58-65-23.sslip.io\"")
+    versionCode = 3
+    versionName = "1.2"
+    /**
+     * The app ships pointed at the production server; the pairing screen lets
+     * the warehouse worker change it (domain move, test server).
+     *
+     * This is a COMPILE-TIME constant living on phones we do not control, and
+     * on 2026-07-27 that cost a fleet: the server moved to its own domain, the
+     * old `sslip.io` host stopped being served, and every already-paired phone
+     * went silent at once with nothing to tell the driver. A domain move now
+     * means all three of — keep serving the OLD name for a transition period,
+     * publish a new APK, and only then retire the old name.
+     */
+    buildConfigField("String", "DEFAULT_SERVER", "\"https://gsrwms.uz\"")
     // Shown on the app's own screen. Two builds look identical on a phone,
     // and "did the new APK actually install?" has to be answerable without
     // guessing — CI passes the commit, a local build says "dev".

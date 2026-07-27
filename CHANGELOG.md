@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## Haydovchi ilovasi: nega o'chdi va endi havoladan yuklab olinadi — 2026-07-27
+
+### Nega ishlamay qoldi
+
+Ilova server manzilini **ichiga yozilgan holda** olib yuradi. U eski manzilga
+(`169-58-65-23.sslip.io`) qaragan edi. Biz domenni `gsrwms.uz` ga
+ko'chirganimizda eski manzil xizmat qilishdan to'xtadi — va **ulangan hamma
+telefon bir vaqtda jim bo'ldi**. Haydovchi ekranida buni bildiradigan hech
+narsa yo'q, shuning uchun birinchi belgi — mashina xaritada qimirlamay
+qolishi.
+
+**Darhol tuzatish (telefonga tegmasdan):** `.env` da eski nomni ham qoldiring —
+
+```
+DOMAIN=gsrwms.uz, www.gsrwms.uz, 169-58-65-23.sslip.io
+```
+
+va `docker compose --profile https up -d --force-recreate caddy`. Telefonlar
+o'sha zahoti qayta ishlaydi.
+
+**Bitta telefonni qo'lda tuzatish:** ilovadagi **Server manzili** maydonini
+`https://gsrwms.uz` ga o'zgartirish yetarli — qayta ulash shart emas.
+
+Ilovaning yangi versiyasi (1.2) endi to'g'ri domenga qaraydi. Kelajakda domen
+o'zgarsa **uchalasi ham** kerak: eski nomni bir muddat qoldirish → yangi APK
+chiqarish → hamma yangilangach eski nomni olib tashlash. Bu README'ga
+yozib qo'yildi.
+
+### Endi bitta havola
+
+Ilgari APK'ni GitHub'dan olish kerak edi: akkaunt, Actions, zip, keyin faylni
+telefonga o'tkazish. Haydovchi bularning birortasini qila olmaydi.
+
+Endi:
+
+```
+https://gsrwms.uz/driver
+```
+
+**Login talab qilinmaydi.** Sahifada: yuklab olish tugmasi, versiya, o'rnatish
+yo'riqnomasi (o'zbekcha va ruscha), va **QR kod** — sklad xodimi sahifani
+ekranda ochadi, haydovchi kamerasi bilan skanerlaydi. Havola hech qachon
+o'zgarmaydi.
+
+**Yangi versiya chiqarish:** GitHub Actions'dan APK'ni oling → saytda
+**Admin → Haydovchi ilovasi** → versiya nomini yozing, faylni tanlang,
+**Chiqarish**. Shu zahoti havola yangi faylni beradi.
+
+Xavfsizlik: yuklanayotgan fayl **haqiqatan APK ekanligi** ichidan tekshiriladi
+— nomiga qarab emas. Bu ilovani biz haydovchilarga "noma'lum manbadan
+o'rnating" deb aytamiz, ya'ni bu sistema tarqatadigan eng ishonchli fayl.
+Chiqarish faqat administratorga ochiq va audit jurnaliga yoziladi.
+
 ## Katta tugma + mijoz ilovasining dizayni — 2026-07-27
 
 Siz aytgan edingiz: *«buttonga urg'u ber web appni ochishi uchun button

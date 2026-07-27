@@ -268,7 +268,8 @@
       "ved_customs_post": "海关关口及代码（例如：Андижон ВЭД / 03011）",
       "crm_dormant_days": "客户多少天未发货即视为「沉寂」（出现在周一的 CRM 摘要中）",
       "deal_deviation_threshold_pct": "货物与报价相差多少百分比时向负责人发送提醒。不会阻止装车。"
-    }
+    },
+    "driverApp": "司机应用"
   },
   "audit": {
     "title": "审计日志",

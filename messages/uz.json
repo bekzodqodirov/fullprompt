@@ -268,7 +268,8 @@
       "ved_customs_post": "Bojxona posti nomi va kodi (masalan: Андижон ВЭД / 03011)",
       "crm_dormant_days": "Mijoz necha kun yuk yubormasa «jim qolgan» hisoblanadi (CRM dushanba digestida chiqadi)",
       "deal_deviation_threshold_pct": "Yuk hisob-kitobdan necha foizga farq qilsa, menejerga xabar ketadi. Yuklashni to‘xtatmaydi."
-    }
+    },
+    "driverApp": "Haydovchi ilovasi"
   },
   "audit": {
     "title": "Audit jurnali",

@@ -109,7 +109,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 281 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 284 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
@@ -118,7 +118,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-456 unit/integration + 57 e2e, verified in CI's order on a fresh database.
+465 unit/integration + 61 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -186,6 +186,15 @@ deployed:
   its theme, its back button, its haptics — with a to-scale stage bar, a
   per-stage palette that is the one thing NOT taken from the theme, a photo
   lightbox, and skeletons instead of the word "loading".
+
+- **The driver fleet went silent on the domain move** (#282-284): the APK
+  carried the old `sslip.io` host as a COMPILE-TIME constant, so every paired
+  phone lost the server at once, with nothing on the driver's screen to say so.
+  Fixed forward (APK 1.2 → `gsrwms.uz`) and the recovery that needs no phones
+  touched is keeping the old name served — README states all three steps a
+  domain move needs. The APK is now handed out at **public `/driver`** with a
+  QR, published from **Admin → Haydovchi ilovasi**; storage is the record, and
+  the upload is validated by content (ZIP magic), not by filename.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

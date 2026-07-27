@@ -6,13 +6,25 @@ o'zi beradi — haydovchidan hech narsa talab qilinmaydi.
 
 ## APK'ni qayerdan olaman
 
-GitHub har o'zgarishdan keyin APK'ni o'zi yig'adi:
+**Haydovchi uchun — bitta havola:**
 
-1. GitHub'da reponi oching → yuqoridagi **Actions** → **driver-apk**.
-2. Oxirgi ✅ yashil ishni bosing.
-3. Pastdagi **Artifacts** bo'limidan `GSRDriver-apk` ni yuklab oling (zip).
-4. Zip ichidagi `.apk` faylni haydovchi telefoniga o'tkazing (Telegram, USB,
-   yoki telefondan to'g'ridan-to'g'ri yuklab oling).
+```
+https://gsrwms.uz/driver
+```
+
+Login talab qilinmaydi. Sahifada yuklab olish tugmasi, o'rnatish yo'riqnomasi
+va QR kod bor — sklad xodimi sahifani ekranda ochadi, haydovchi kamerasi bilan
+skanerlaydi.
+
+**Yangi versiyani chiqarish (egasi yoki administrator):**
+
+1. GitHub → **Actions** → **driver-apk** → oxirgi ✅ yashil ish → **Artifacts**
+   dan `GSRDriver-apk` ni yuklab oling, zipdan `.apk` ni chiqaring.
+2. Saytda **Admin → Haydovchi ilovasi** ni oching.
+3. Versiya nomini yozing (masalan `1.2`), APK faylni tanlang, **Chiqarish**.
+
+Shu zahoti `https://gsrwms.uz/driver` yangi faylni beradi. Havola o'zgarmaydi —
+haydovchilarga har safar yangi manzil yuborish kerak emas.
 
 O'rnatishda Android "noma'lum manbadan" deb ogohlantiradi — bu normal, ilova
 do'konda emas, o'zimizniki. "Baribir o'rnatish" ni tanlang.
@@ -22,6 +34,22 @@ do'konda emas, o'zimizniki. "Baribir o'rnatish" ni tanlang.
 > eskisining ustiga o'rnatilmaydi ("imzo mos kelmadi"). Ustiga-ustma
 > yangilash kerak bo'lsa, doimiy imzo kalitini GitHub secret sifatida qo'shish
 > kerak.
+
+## Domen o'zgarsa — diqqat
+
+Ilova server manzilini **yig'ilish paytida** ichiga oladi
+(`DEFAULT_SERVER`). 2026-07-27 da server o'z domeniga ko'chganda eski manzil
+xizmat qilishdan to'xtadi va **ulangan hamma telefon bir vaqtda jim bo'lib
+qoldi** — haydovchida buni bildiradigan hech narsa yo'q.
+
+Shuning uchun domen ko'chirishda **uchalasi ham** kerak:
+
+1. Caddy'da **eski nomni ham** xizmat qilishda qoldiring (o'tish davri uchun);
+2. yangi APK chiqaring (`DEFAULT_SERVER` yangilangan holda);
+3. hamma telefon yangilangandan keyingina eski nomni olib tashlang.
+
+Ulangan telefonni qo'lda ham tuzatish mumkin: ilovadagi **Server manzili**
+maydonini yangi domenga o'zgartirish yetarli, qayta ulash shart emas.
 
 ## Telefonni sozlash (sklad xodimi, 1 daqiqa)
 

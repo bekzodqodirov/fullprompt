@@ -266,6 +266,15 @@ export const NAV: NavGroupSpec[] = [
         permissions: ['platform.roles.manage'],
       },
       {
+        // Where a new build of the driver app is published. The link it hands
+        // out is public — a driver has no login and never will.
+        href: '/admin/driver-app',
+        labelKey: 'driverApp',
+        namespace: 'settings',
+        icon: 'truck',
+        permissions: ['admin.settings.manage'],
+      },
+      {
         href: '/admin/warehouses',
         labelKey: 'adminPanel',
         namespace: 'home',
