@@ -99,6 +99,8 @@ pnpm build && pnpm e2e  # 44 e2e
   instead (`page.route(...).fulfill`). This container cannot reach the public
   internet and the CI runner can, so that race resolves DIFFERENTLY in the two
   places: green here, red there (#278).
+- **A server action's request body is capped at 1 MB** by default. Anything
+  file-shaped needs a route handler, not an action (#291).
 - **A disabled checkbox posts nothing**, so on a replace-all form it reads as
   "remove". Re-post locked values as hidden inputs (#171).
 - Migrations are hand-written SQL + an entry in `meta/_journal.json`. Drizzle
@@ -109,7 +111,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 290 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 291 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
@@ -118,7 +120,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-475 unit/integration + 63 e2e, verified in CI's order on a fresh database.
+475 unit/integration + 64 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,

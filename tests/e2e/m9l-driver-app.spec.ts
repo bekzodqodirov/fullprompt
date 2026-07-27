@@ -44,6 +44,19 @@ test('the download answers 404 rather than an empty file', async ({ request }) =
   expect(res.status()).toBe(404);
 });
 
+test('the publish endpoint refuses a caller with no session', async ({ request }) => {
+  // The upload is a route handler rather than a server action — server actions
+  // cap the body at 1 MB and an APK is megabytes — so it carries its own gate
+  // instead of inheriting the admin layout's.
+  const res = await request.post('/api/driver-app', {
+    multipart: {
+      version: '9.9',
+      apk: { name: 'x.apk', mimeType: 'application/octet-stream', buffer: Buffer.from('PK\x03\x04') },
+    },
+  });
+  expect(res.status()).toBe(403);
+});
+
 test('publishing a build is not open to the whole warehouse', async ({ page }) => {
   await page.context().clearCookies();
   await page.goto('/login');

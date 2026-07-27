@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { currentDriverApk } from '@/modules/wms/tracking/driver-apk';
-import { publishDriverApkAction } from './actions';
+import { PublishForm } from './publish-form';
 
 /**
  * Where the owner puts a new build of the driver app.
@@ -50,42 +50,7 @@ export default async function DriverAppPage() {
         )}
       </div>
 
-      <form action={publishDriverApkAction} className="card space-y-3">
-        <h2 className="font-semibold">Yangi versiya chiqarish</h2>
-        <p className="text-xs text-ink-500">
-          APK GitHub Actions → <b>driver-apk</b> ishidan yuklab olinadi, so&apos;ng shu yerga
-          qo&apos;yiladi. Chiqarilgan zahoti havola yangi faylni beradi.
-        </p>
-        <div>
-          <label className="label" htmlFor="driver-version">
-            Versiya nomi
-          </label>
-          <input
-            id="driver-version"
-            name="version"
-            className="input"
-            placeholder="1.2"
-            required
-            maxLength={40}
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="driver-apk-file">
-            APK fayl
-          </label>
-          <input
-            id="driver-apk-file"
-            name="apk"
-            type="file"
-            accept=".apk,application/vnd.android.package-archive"
-            className="input"
-            required
-          />
-        </div>
-        <button type="submit" className="btn btn-primary">
-          Chiqarish
-        </button>
-      </form>
+      <PublishForm />
     </div>
   );
 }

@@ -16,6 +16,18 @@ import { logger } from '@/modules/platform/logger';
  * remember it is a second place to disagree.
  */
 
+/**
+ * The audit row's `entity_id`.
+ *
+ * `audit_log.entity_id` is a `uuid` column, and there is only ever ONE
+ * published build — so it has no id of its own to point at. A literal
+ * `'current'` is what the first upload actually tried, and Postgres refused
+ * it (`invalid input syntax for type uuid`) AFTER the APK had already been
+ * written to storage: the file published, the screen showed an error, and the
+ * two disagreed. A fixed uuid keeps every publish on one auditable timeline.
+ */
+export const DRIVER_APP_AUDIT_ID = 'd0f7a1e2-6c34-5b8a-9e10-0a1b2c3d4e5f';
+
 const APK_KEY = 'driver-app/current.apk';
 const META_KEY = 'driver-app/current.json';
 
