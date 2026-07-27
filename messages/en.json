@@ -406,7 +406,8 @@
       "validation": "Check the data"
     },
     "openInBrowser": "Open in the browser (if printing did not start)",
-    "openInBrowserShort": "in browser ↗"
+    "printDialog": "Print",
+    "shareToPrinter": "Send to printer"
   },
   "stock": {
     "title": "Warehouse stock",

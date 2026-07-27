@@ -76,21 +76,20 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
     page.locator('li', { hasText: '灯具' }).locator('span.font-mono').first(),
   ).toHaveText(/^[A-Z]{1,2}$/);
 
-  // Printing offers BOTH routes, because a phone may only have one of them:
-  // the share sheet (the only way out of an installed PWA on an iPhone) and
-  // the plain link (RawBT on Android, and the escape hatch into Safari).
-  await expect(page.getByTestId('print-labels').first()).toBeVisible();
-  const href = await page
-    .getByTestId('print-labels-browser')
-    .first()
-    .getAttribute('href');
-  const res = await page.request.get(href!);
+  // Printing leads to the sheet, which is where all three routes to a printer
+  // now live: the phone's own print dialog, the share sheet for AirPrint, and
+  // the PDF that RawBT picks up on Android (m9j covers the sheet itself).
+  const printHref = await page.getByTestId('print-labels').first().getAttribute('href');
+  expect(printHref).toMatch(/^\/print\/receipts\//);
+  const receiptId = printHref!.match(/\/print\/receipts\/([^/?]+)/)![1];
+
+  // The PDF is still generated and is still a PDF — RawBT depends on it.
+  const res = await page.request.get(`/api/receipts/${receiptId}/labels`);
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('application/pdf');
   expect((await res.body()).subarray(0, 4).toString()).toBe('%PDF');
 
   // Receipt detail shows the single "other"-type cost and the general photo
-  const receiptId = href!.match(/\/api\/receipts\/([^/]+)\/labels/)![1];
   await page.goto(`/receipts/${receiptId}`);
   await expect(page.getByText(/120(\.\d+)?\s+CNY/)).toBeVisible();
   await expect(page.locator('img[src*="/api/attachments/"]').first()).toBeVisible({

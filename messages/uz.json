@@ -406,7 +406,8 @@
       "validation": "Ma’lumotlarni tekshiring"
     },
     "openInBrowser": "Brauzerda ochish (chop etish ketmasa)",
-    "openInBrowserShort": "brauzerda ↗"
+    "printDialog": "Chop etish",
+    "shareToPrinter": "Printerga yuborish"
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",

@@ -16,6 +16,7 @@ import { boxLandedCost } from '@/modules/wms/costing/service';
 import { BoxStatusActions } from './status-actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
+import { PrintLabels } from '@/components/print-labels';
 import { inScope } from '@/modules/platform/rbac/scope';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
@@ -27,6 +28,7 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
   const box = await db.query.boxes.findFirst({ where: eq(boxes.id, id) });
   if (!box) notFound();
   const t = await getTranslations('stock');
+  const tReceipts = await getTranslations('receipts');
   const format = await getFormatter();
 
   const lot = (await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, box.lotId) }))!;
@@ -86,6 +88,18 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
             ` · 🖨 ${format.dateTime(box.labelPrintedAt, { dateStyle: 'short', timeStyle: 'short' })}`}
         </p>
       </div>
+
+      {/* One sticker, for the one box whose sticker came off. The endpoint has
+          always accepted a single box and nothing ever sent it, so the only
+          way to replace one label was to reprint the whole lot (SPEC §7:
+          "reprint anytime from receipt/lot/box screens"). */}
+      {actor.permissions.has('receipts.create') && (
+        <PrintLabels
+          variant="secondary"
+          href={`/print/receipts/${receipt.id}?boxId=${box.id}`}
+          label={tReceipts('reprint')}
+        />
+      )}
 
       {actor.permissions.has('receipts.void') && (
         <BoxStatusActions boxId={box.id} status={box.status} inCrate={box.crateId !== null} />

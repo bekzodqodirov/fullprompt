@@ -4,7 +4,6 @@ import { db } from '@/modules/platform/db/client';
 import { receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
-import { labelRenderer } from '@/modules/wms/labels/renderer';
 import { labelsForReceipt, recordLabelPrint } from '@/modules/wms/labels/sheet';
 
 const querySchema = z.object({
@@ -13,16 +12,19 @@ const querySchema = z.object({
 });
 
 /**
- * The 100×100 mm label PDF for a receipt / lot / single box.
+ * "The operator asked to print these stickers."
  *
- * Still here, and still the right answer for two cases: Android's RawBT picks
- * a PDF up and drives the paired thermal printer with it, and the iOS share
- * sheet hands a FILE to AirPrint or to the printer's own app. The HTML sheet
- * at `/print/receipts/[id]` is the other route — it opens the phone's own
- * printer-and-page dialog — and both build their label list from the same
- * function, so the two can never disagree about what belongs on a box.
+ * The PDF route records a print as a side effect of generating the file, so
+ * merely opening a sheet to look at it stamps every box and adds a row to
+ * `/reports/label-prints`. The HTML sheet is a screen — it would be read far
+ * more often than it is printed — so the record is a separate, deliberate
+ * call made when the print dialog is opened, and the report keeps meaning
+ * what a manager reads it to mean.
+ *
+ * A POST because it writes, and gated exactly as the PDF is: nobody records a
+ * print they could not have produced.
  */
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, id) });
@@ -46,8 +48,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const sheet = await labelsForReceipt(id, query.data);
   if (!sheet) return new Response('Not found', { status: 404 });
 
-  const pdf = await labelRenderer.render(sheet.labels);
-
   const meta = await requestMeta();
   await recordLabelPrint(
     { actorId: actor.id, ...meta },
@@ -55,10 +55,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     sheet.labels.map((l) => l.shortCode),
   );
 
-  return new Response(new Uint8Array(pdf), {
-    headers: {
-      'content-type': 'application/pdf',
-      'content-disposition': `inline; filename="labels-${sheet.receiptNumber}.pdf"`,
-    },
-  });
+  return new Response(null, { status: 204 });
 }

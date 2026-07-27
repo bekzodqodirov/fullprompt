@@ -406,7 +406,8 @@
       "validation": "Проверьте данные"
     },
     "openInBrowser": "Открыть в браузере (если печать не пошла)",
-    "openInBrowserShort": "в браузере ↗"
+    "printDialog": "Печать",
+    "shareToPrinter": "Отправить на принтер"
   },
   "stock": {
     "title": "Склад (остатки)",

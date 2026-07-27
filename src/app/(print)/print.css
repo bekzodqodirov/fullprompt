@@ -1,0 +1,107 @@
+/**
+ * The label sheet, on screen and on paper.
+ *
+ * Imported by the (print) layout ONLY. `@page` is a document-level rule with
+ * no selector to scope it — loading this anywhere else would silently reset
+ * every other printable screen in the app to a 100 mm square, so it must not
+ * be reachable from the shared stylesheet.
+ */
+
+.print-sheet {
+  /* Always light. The app has a dark theme and a sticker printed white on
+     black is a wasted label and a wasted ribbon. */
+  background: #fff;
+  color: #000;
+  min-height: 100dvh;
+}
+
+.label-svg {
+  display: block;
+  width: 100mm;
+  height: 100mm;
+  background: #fff;
+  color: #000;
+  /* System stack only — no webfont to download, and nothing that fails behind
+     the GFW. PingFang SC on iOS and Noto Sans CJK on Android carry the Chinese
+     product names; the PDF has to embed a subset, HTML does not. */
+  font-family:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
+    'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.label-svg text {
+  fill: #000;
+}
+
+/* On screen the sheet is a preview: scaled to the phone, with a cut line so
+   the operator can see one sticker from the next before spending a roll. */
+.label-frame {
+  border: 1px solid #d4d4d8;
+  margin: 0 auto 8px;
+  width: max-content;
+  max-width: 100%;
+}
+
+@media screen and (max-width: 440px) {
+  .label-svg {
+    width: 88vw;
+    height: 88vw;
+  }
+}
+
+@media print {
+  /* The 100×100 mm thermal label (spec §7). Chrome honours this; Safari takes
+     the size from the printer chosen in the iOS print panel, which is the
+     dialog this whole page exists to open — so on iPhone the operator picks
+     the printer and the printer decides the paper. */
+  @page {
+    size: 100mm 100mm;
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: #fff;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* The app shell, the toolbar, the back link: none of it goes on a sticker. */
+  .no-print {
+    display: none !important;
+  }
+
+  .print-sheet {
+    min-height: 0;
+  }
+
+  .label-frame {
+    border: 0;
+    margin: 0;
+    max-width: none;
+    /* One sticker per page. `break-after` is the modern spelling and
+       `page-break-after` is what older WebKit reads; both are cheap. */
+    break-after: page;
+    page-break-after: always;
+  }
+
+  /* Without this the last sticker is followed by a blank label — a wasted
+     one every single print, which on a hundred-box receipt nobody notices
+     and on a three-box one is a third of the job. */
+  .label-frame:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .label-svg {
+    width: 100mm;
+    height: 100mm;
+  }
+
+  /* The QR is the whole point of the sticker; a browser "saving ink" by
+     dropping backgrounds would print a box that cannot be scanned. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

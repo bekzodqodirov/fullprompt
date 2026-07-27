@@ -40,8 +40,13 @@ test('crate lifecycle: build from GS777 boxes, label, dissolve', async ({ page }
   // Crate detail: code + label PDF
   await expect(page).toHaveURL(/\/crates\/[0-9a-f-]+/, { timeout: 15_000 });
   await expect(page.getByText(/CR-YW\d{2}-\d{5}/)).toBeVisible();
-  const labelHref = await page.getByRole('link', { name: /🖨/ }).getAttribute('href');
-  const labelRes = await page.request.get(labelHref!);
+  // The crate label was the last link still going straight at the PDF — in an
+  // installed app that is the viewer with no buttons (#224). It goes to the
+  // print sheet now, like the box labels; the PDF stays behind it for RawBT.
+  const labelHref = await page.getByTestId('print-labels').getAttribute('href');
+  expect(labelHref).toMatch(/^\/print\/crates\//);
+  const crateId = labelHref!.match(/\/print\/crates\/([^/?]+)/)![1];
+  const labelRes = await page.request.get(`/api/crates/${crateId}/label`);
   expect(labelRes.status()).toBe(200);
   expect(labelRes.headers()['content-type']).toContain('application/pdf');
   expect((await labelRes.body()).subarray(0, 4).toString()).toBe('%PDF');

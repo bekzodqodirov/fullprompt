@@ -16,6 +16,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { dissolveCrateAction, updateCrateAction } from '../actions';
 import { BackLink } from '@/components/back-link';
+import { PrintLabels } from '@/components/print-labels';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
@@ -110,13 +111,9 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
         ))}
         {active && (
           <div className="flex flex-wrap gap-2 pt-1">
-            <a
-              href={`/api/crates/${crate.id}/label`}
-              target="_blank"
-              className="btn-primary flex-1 whitespace-nowrap px-4"
-            >
-              🖨 {t('printLabel')}
-            </a>
+            <div className="flex-1">
+              <PrintLabels href={`/print/crates/${crate.id}`} label={t('printLabel')} />
+            </div>
             <form
               action={dissolveCrateAction}
               className="flex-1"

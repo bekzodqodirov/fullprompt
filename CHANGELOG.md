@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## Chop etish oynasi — printer va sahifalarni tanlash — 2026-07-27
+
+Siz aytdingiz: «print buttonini bosganda stikerlar ochilyabti, o'sha yerga print qilishni qo'shsa bo'ladimi — qaysi pagelarni qaysi printer deb belgilaydigan oyna borku».
+
+**To'g'ri aytdingiz, va shu qilindi.**
+
+### Nega ilgari bo'lmagan
+
+Men sizga **PDF fayl** berayotgan edim. PDF — bu fayl, uni telefon ko'rsatib turadi, xolos. Chop etish oynasi PDF'da yo'q, ayniqsa ekranga chiqarilgan ilovada.
+
+Siz so'ragan oyna — **telefonning o'zining chop etish oynasi**. U faqat oddiy sahifadan ochiladi, fayldan emas.
+
+### Endi qanday ishlaydi
+
+«🖨 Stiker chiqarish» tugmasini bosasiz →
+
+**Stikerlar sahifa bo'lib ochiladi va chop etish oynasi o'zi chiqadi.** O'sha oynada:
+- **qaysi printer** — ro'yxatdan tanlaysiz
+- **qaysi sahifalar** — masalan «5–12» deb faqat kerakli stikerlarni
+- nechta nusxa
+
+Agar oynani tasodifan yopib yuborsangiz — yuqoridagi **«🖨 Chop etish»** tugmasi uni qayta ochadi.
+
+### Bir ekranda uchta yo'l
+
+Har xil telefonda har xili ishlaydi, shuning uchun uchalasi ham ko'rinib turadi — endi men sizga telefon orqali «u yerni bosing» deb tushuntirishim shart emas:
+
+1. **🖨 Chop etish** — telefonning o'z oynasi (printer + sahifalar). Asosiy yo'l.
+2. **📤 Printerga yuborish** — ulashish oynasi: AirPrint yoki printeringizning o'z ilovasi.
+3. **Brauzerda ochish** — PDF. Androidda RawBT shuni ushlab printerga yuboradi.
+
+### Ochig'ini aytaman
+
+iPhone'da ekranga chiqarilgan ilovada chop etish oynasi ba'zi iOS versiyalarida ochilmasligi haqida xabarlar bor — **men buni tekshira olmadim**, chunki menda iPhone yo'q. Shuning uchun **📤 Printerga yuborish** tugmasini yashirmadim, o'sha yerda katta qilib qo'ydim. Agar birinchisi ishlamasa — ikkinchisi ishlaydi, va u ko'rinib turibdi.
+
+**Telefoningizda sinab ko'ring va qaysi biri ishlaganini ayting.**
+
+### Yo'l-yo'lakay topilgan haqiqiy xato — stikerda
+
+Stikerlarning o'lchamlarini tekshirayotib **egasi noma'lum yuk stikerida xato** topdim.
+
+Qutiga yozilgan belgi (masalan `444-A`) katta qilib bosiladi, va uning **ustiga** `#UNKNOWN` yozuvi tushib qolgan edi — 2 mm joyda ikkalasi ustma-ust. Aynan o'sha stiker odam «bu kimniki?» deb qaraydigan stiker.
+
+Tuzatildi: `#UNKNOWN` endi belgidan **yuqorida** turadi, aralashmaydi. Bu ham PDF'da, ham yangi sahifada.
+
+### Yana ikkita
+
+- **Yashik (karkas) stikeri** — u hali ham eski usulda, tugmasiz oynada ochilardi. Endi u ham xuddi quti stikerlari kabi ishlaydi.
+- **Bitta quti stikeri** — bitta qutining stikeri yirtilsa, ilgari butun lotni qayta bosishga to'g'ri kelardi. Endi quti kartasida «Stiker chiqarish» tugmasi bor.
+
+### Tekshirildi
+
+Lint · 396 test · build · toza bazada 50 e2e — hammasi yashil. Stikerni PDF va yangi sahifada yonma-yon chizib solishtirdim: bir xil.
+
 ## «Yangi versiya bor» tasmasi + iPhone'da chop etish tugmasi — 2026-07-27
 
 Siz «deploy qildim lekin tugma chiqmadi» dedingiz. Tekshirdim: **tugma o'z joyida edi**. iPhone o'lchamidagi ekranda ochib ko'rdim — «🖨 Stikerlarni chop etish» tugmasi prixod kartasida ham, har bir lot yonida ham chiqib turibdi.

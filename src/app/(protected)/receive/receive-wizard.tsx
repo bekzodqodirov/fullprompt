@@ -511,20 +511,15 @@ export function ReceiveWizard({
             </li>
           ))}
         </ul>
-        <PrintLabels
-          href={`/api/receipts/${result.receiptId}/labels`}
-          label={t('printLabels')}
-          fileName={`${result.number}.pdf`}
-        />
+        <PrintLabels href={`/print/receipts/${result.receiptId}`} label={t('printLabels')} />
         {(result.lots?.length ?? 0) > 1 && (
           <div className="grid grid-cols-3 gap-2">
             {result.lots?.map((lot) => (
               <PrintLabels
                 key={lot.lotId}
                 variant="secondary"
-                href={`/api/receipts/${result.receiptId}/labels?lotId=${lot.lotId}`}
+                href={`/print/receipts/${result.receiptId}?lotId=${lot.lotId}`}
                 label={lot.letter}
-                fileName={`${result.number}-${lot.letter}.pdf`}
               />
             ))}
           </div>

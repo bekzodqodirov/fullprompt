@@ -124,11 +124,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         </span>
         {canPrint && receipt.status === 'confirmed' && (
           <div className="ml-auto w-44">
-            <PrintLabels
-              href={`/api/receipts/${id}/labels`}
-              label={t('reprint')}
-              fileName={`${receipt.number}.pdf`}
-            />
+            <PrintLabels href={`/print/receipts/${id}`} label={t('reprint')} />
           </div>
         )}
       </div>
@@ -179,9 +175,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 <div className="ml-auto w-28">
                   <PrintLabels
                     variant="secondary"
-                    href={`/api/receipts/${id}/labels?lotId=${lot.id}`}
+                    href={`/print/receipts/${id}?lotId=${lot.id}`}
                     label={lot.letter ?? ''}
-                    fileName={`${receipt.number}-${lot.letter ?? ''}.pdf`}
                   />
                 </div>
               )}
