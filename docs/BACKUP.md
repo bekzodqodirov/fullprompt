@@ -1,0 +1,157 @@
+# Zaxira nusxa (backup) — Google Drive
+
+Bu hujjat egasi uchun. Bir marta sozlanadi, keyin har kecha o'zi ishlaydi.
+
+## Nima uchun
+
+Bugungacha bazaning **hamma nusxasi bitta diskda** turgan: tungi dump o'zi
+himoya qilayotgan baza bilan bir mashinada. Server yo'qolsa — baza ham, nusxasi
+ham ketadi.
+
+Endi har kecha nusxa **sizning Google Drive'ingizga** ham chiqadi.
+
+## ⚠️ Eng muhim qoida
+
+**Ilovani «Publish» qilib, ANDAN KEYIN token oling.**
+
+Google'da ilova «Testing» holatida turganda berilgan token **7 kundan keyin
+o'ladi**. Soat ruxsat berilgan paytdan boshlanadi — keyin «Publish» qilsangiz
+ham eski tokenni tiriltirmaydi. Backup bir hafta ishlaydi, keyin jimgina
+to'xtaydi, va buni faqat tiklash kerak bo'lgan kuni bilasiz.
+
+Shuning uchun quyidagi tartibni **buzmang**.
+
+---
+
+## 1-qadam. Google Cloud loyihasi
+
+1. <https://console.cloud.google.com> ga kiring (gsr uchun ishlatadigan Gmail bilan).
+2. Yuqorida **loyiha tanlash → NEW PROJECT** → nomi: `GSR Backup` → **CREATE**.
+
+## 2-qadam. Drive API'ni yoqish
+
+1. Chapdagi menyu → **APIs & Services → Library**.
+2. Qidiruvga `Google Drive API` → ustiga bosing → **ENABLE**.
+
+## 3-qadam. Ruxsat ekrani (Google Auth Platform)
+
+1. Chapdagi menyu → **Google Auth Platform** → **Branding**.
+2. **App name**: `GSR Backup`. **User support email**: o'zingizniki.
+   **Logotip QO'YMANG** — logotip qo'yilsa Google tekshiruvga qo'yishi mumkin.
+3. **Developer contact**: o'z pochtangiz → saqlang.
+
+## 4-qadam. 🔴 PUBLISH — token olishdan OLDIN
+
+1. **Google Auth Platform → Audience**.
+2. **PUBLISH APP** tugmasini bosing → tasdiqlang.
+3. Holat **«In production»** bo'lishi kerak. **«Testing» bo'lib qolmasin.**
+
+Tekshiruv (verification) so'ralmaydi — biz eng tor ruxsatni ishlatamiz
+(`drive.file`: ilova faqat **o'zi yaratgan** fayllarni ko'radi, sizning
+boshqa fayllaringizga tegmaydi).
+
+## 5-qadam. Klient yaratish
+
+1. **Google Auth Platform → Clients → CREATE CLIENT**.
+2. **Application type: Desktop app**. Nomi: `GSR server`. → **CREATE**.
+3. **Client ID** va **Client secret** chiqadi — ularni yopmang, keyingi qadamda kerak.
+
+## 6-qadam. Token olish (kompyuteringizda, bir marta)
+
+Loyiha papkasida:
+
+```bash
+pnpm gdrive-auth
+```
+
+Skript so'raydi → Client ID va Client secret'ni qo'ying → bergan havolani
+brauzerda oching → ruxsat bering → Google bergan kodni skriptga qaytaring.
+
+Oxirida **3 qator** chiqadi.
+
+## 7-qadam. Serverga qo'yish
+
+O'sha 3 qatorni serverdagi `.env` fayliga qo'shing:
+
+```bash
+cd ~/gsr
+nano .env          # 3 qatorni oxiriga qo'ying, saqlang (Ctrl+O, Enter, Ctrl+X)
+docker compose up -d app
+```
+
+> ⚠️ Bu qatorlar **parol**. Hech kimga yubormang, menga ham. Ular faqat
+> serverdagi `.env` da turadi — u git'ga tushmaydi.
+
+## 8-qadam. Ishlayotganini tekshirish
+
+Backup har kecha soat **02:00** (Toshkent) da ishlaydi. Kutmasdan tekshirish:
+
+```bash
+docker compose logs app --tail 100 | grep -i "backup\|offsite"
+```
+
+Ko'rinishi kerak: `db backup ok` va `offsite ok`.
+
+Va Google Drive'ingizda **«GSR LOGISTICS backup»** papkasi paydo bo'ladi —
+ichida `gsr-2026-07-27.dump` kabi fayllar.
+
+---
+
+## Nima saqlanadi, nima yo'q
+
+| | Drive'ga chiqadimi |
+|---|---|
+| Butun baza: mijozlar, prixodlar, qutilar, pul, hujjatlar | ✅ ha |
+| **Suratlar** (prixod fotolari, qadoqlash suratlari) | ❌ **yo'q** |
+| `.env` (parollar) | ❌ yo'q — ataylab |
+
+**Suratlar hali chiqmaydi.** Ular MinIO'da turadi va hajmi ~1–1.5 GB —
+bazadan yuz barobar katta. Buni alohida qilish kerak (faqat yangi
+suratlarni yuborish), chunki har kecha 1.5 GB yuborilsa bepul 15 GB
+Drive 10 kunda to'ladi. **Ayting — keyingi navbatda qilaman.**
+
+## Nechta nusxa saqlanadi
+
+Drive'da oxirgi **30 tasi**. Eskisi o'chiriladi — lekin **faqat yangisi
+muvaffaqiyatli yuklangandan keyin**. Yuklanmagan kechada hech narsa
+o'chirilmaydi.
+
+Serverda ham 30 kunlik nusxa qoladi (ikkita mustaqil mexanizm: biri ilova
+ichida, biri alohida konteynerda — ilova o'chib qolsa ham dump olinadi).
+
+## Xato bo'lsa nima bo'ladi
+
+Backup yoki yuklash xato bersa — Telegram'ga xabar keladi (`admin` rolidagi
+xodimlarga). Buning ishlashi uchun Profil → ✈️ orqali Telegram ulangan
+bo'lishi kerak.
+
+Eng ko'p uchraydigan xato — **token o'lgan** (`invalid_grant`). Sabab: 4-qadam
+(Publish) bajarilmagan yoki tokendan keyin bajarilgan. Yechim: 4-qadamni
+tekshiring, so'ng 6–7-qadamlarni qaytadan bajaring.
+
+---
+
+## Tiklash (restore)
+
+Server yo'qolgan holatda:
+
+1. Yangi serverda `docs/DEPLOY.md` bo'yicha tizimni ko'taring.
+2. Google Drive'dan eng oxirgi `gsr-*.dump` faylni yuklab oling.
+3. Serverga tashlang va tiklang:
+
+```bash
+# Ilovani TO'XTATING — jonli ulanishlar bilan tiklash yarim qolishi mumkin
+docker compose stop app
+
+docker compose cp gsr-2026-07-27.dump postgres:/tmp/restore.dump
+docker compose exec -T postgres pg_restore -U gsr -d gsr --clean --if-exists /tmp/restore.dump
+
+docker compose start app
+```
+
+> `--no-owner` bilan olingan dump har qanday postgres'ga tushadi — `gsr`
+> roli bo'lmagan mashinaga ham.
+
+Har yakshanba tizim o'zi **tiklash mashqi** o'tkazadi: oxirgi dump'ni
+alohida bazaga tiklab, jadvallarni tekshiradi. Xato bo'lsa Telegram'ga
+yozadi.

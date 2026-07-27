@@ -33,8 +33,14 @@ export async function runRestoreTest(): Promise<RestoreTestResult> {
 
   let latest: string | null = null;
   try {
+    // BOTH naming schemes: the app writes gsr-YYYY-MM-DD.dump and the
+    // independent compose container writes gsr-YYYYMMDD-HHMMSS.dump. They now
+    // share a volume, and this used to match only the first — so on the VPS,
+    // where the compose container is the one that actually runs, the weekly
+    // fire drill found nothing to restore and reported a missing backup while
+    // dumps were sitting right there.
     const dumps = readdirSync(dir)
-      .filter((n) => /^gsr-\d{4}-\d{2}-\d{2}\.dump$/.test(n))
+      .filter((n) => /^gsr-[\d-]+\.dump$/.test(n))
       .sort();
     latest = dumps.at(-1) ?? null;
   } catch {

@@ -26,4 +26,14 @@ export async function registerNotificationWorkers(boss: PgBoss): Promise<void> {
   });
 
   await boss.schedule(JOB_PROCESS_EVENTS, '* * * * *', {}, {});
+  /**
+   * Delivery had NO schedule of its own — it was sent only when the event
+   * fan-out happened to create something. Anything that writes a `pending`
+   * notification directly rather than through an event therefore waited for
+   * an unrelated receipt to be confirmed before it went anywhere: the daily
+   * digests, the task reminders, and — worst — the "your backups cannot be
+   * restored" alarm. The one message you cannot afford to have delayed was
+   * among the most likely to be.
+   */
+  await boss.schedule(JOB_SEND_TELEGRAM, '* * * * *', {}, {});
 }

@@ -1,5 +1,73 @@
 # CHANGELOG
 
+## Backup Google Drive'ga chiqadi — 2026-07-27
+
+Siz «Google Drive eng yaxshisi» dedingiz. Qilindi.
+
+Bugungacha bazaning **hamma nusxasi bitta diskda** edi — tungi nusxa o'zi
+himoya qilayotgan baza bilan bir mashinada. Server yo'qolsa ikkalasi ham
+ketardi.
+
+### Endi
+
+Har kecha soat 02:00 da: baza nusxasi olinadi → **sizning Google
+Drive'ingizga** yuklanadi → **hajmi tekshiriladi** → eskilari tozalanadi.
+
+Drive'da **«GSR LOGISTICS backup»** papkasi o'zi yaratiladi. Oxirgi 30 ta
+nusxa saqlanadi.
+
+### Sozlash — bir marta, 15 daqiqa
+
+Batafsil qo'llanma: **`docs/BACKUP.md`** (o'zbekcha, qadamma-qadam).
+
+**🔴 Eng muhim qoida:** Google'da ilovani avval **«Publish»** qiling,
+**keyin** token oling. Aks holda token **7 kundan keyin o'ladi** — backup bir
+hafta ishlaydi, keyin jimgina to'xtaydi, va buni faqat tiklash kerak bo'lgan
+kuni bilasiz. Qo'llanmada Publish 4-qadam, token esa 6-qadam — shu sababdan.
+
+Token olish: `pnpm gdrive-auth` — skript hammasini so'raydi va oxirida `.env`
+ga qo'yiladigan 3 qatorni beradi.
+
+> Bu qatorlar parol. **Menga ham yubormang** — ular faqat serverdagi `.env`
+> da turadi.
+
+### Nima chiqadi, nima yo'q
+
+| | Drive'ga |
+|---|---|
+| Butun baza: mijozlar, prixodlar, qutilar, pul, hujjatlar | ✅ |
+| **Suratlar** | ❌ hali yo'q |
+
+**Suratlar (~1–1.5 GB) hali chiqmaydi** — bazadan yuz barobar katta. Har
+kecha 1.5 GB yuborilsa bepul 15 GB Drive 10 kunda to'ladi, shuning uchun
+faqat yangi suratlarni yuboradigan alohida mexanizm kerak. **Ayting — keyingi
+navbatda qilaman.**
+
+### Yo'l-yo'lakay topilgan 3 ta xato
+
+**1. Ikkita backup tizimi bir-birini ko'rmasdi.** Alohida konteyner nusxani
+`backups` diskiga yozardi; ilovaning o'z nusxasi esa **konteyner ichiga**
+tushardi va har deploy'da o'chib ketardi. Haftalik «tiklash mashqi» esa
+o'sha o'chib ketadigan joyga qarardi — ya'ni **serverda hech qachon hech
+narsa tekshirilmagan**. Endi ikkalasi bitta joyga yozadi.
+
+**2. Alohida konteyner nusxasi `--no-owner`siz olinardi** — bunday nusxa
+faqat aynan o'sha serverga tushadi. Boshqa kompyuterga yoki yangi provayderga
+tiklamoqchi bo'lsangiz — har bir jadvalda xato berardi. Ya'ni aynan backup
+kerak bo'ladigan holatda ishlamasdi.
+
+**3. Telegram xabarlari o'z jadvaliga ega emasdi.** «Pending» yozilgan xabar
+(digestlar, eslatmalar, va eng muhimi **«backup tiklanmayapti» ogohlantirishi**)
+boshqa biror prixod tasdiqlanishini kutib turardi. Eng kechiktirib bo'lmaydigan
+xabar eng kechikadiganlardan biri edi. Endi har daqiqada yuboriladi.
+
+### Tekshiruv
+
+Lint · typecheck · **417 test** (13 tasi yangi) · build · toza bazada
+**50 e2e** — yashil. Google hisobisiz tekshirildi: o'lgan token, yarim
+yuklangan fayl, tozalash qoidasi — hammasi test bilan qopланган. Eng muhim
+test: **yuklash xato bergan kechada eski nusxa o'chirilmaydi.**
+
 ## Skanerlash tezligi + 3 ta jiddiy xato tuzatildi — 2026-07-27
 
 ### Skaner nega sekin edi
