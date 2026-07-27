@@ -252,6 +252,39 @@ describe('load scanning', () => {
     expect(flagged.some((e) => e.addedOnSpot)).toBe(true);
   });
 
+  it('refuses a crate that is not on this plan, and writes NOTHING', async () => {
+    /**
+     * The owner's live report: "scann qilganda sanayabti lekin mashinaga
+     * qoshmayabti". A crate standing at the origin but belonging to another
+     * truck was offered by the loading snapshot, accepted unconditionally by
+     * the phone, refused here — and the refusal had no handler on screen, so
+     * the box was counted, the outbox dropped the scan, and a re-scan said
+     * "already scanned". The server half is asserted here: the verdict is
+     * `not_on_plan` and the boxes must be untouched, so the phone's rollback
+     * has something true to roll back TO.
+     */
+    const { batch } = await approvedBatch(2, 2);
+    const stray = await makeLot(2);
+    const crateId = uuidv4();
+    const crate = await createCrate(
+      { crateId, warehouseId: originId, boxIds: stray.boxIds, kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+
+    const before = await db.select().from(boxes).where(inArray(boxes.id, stray.boxIds));
+    const [ack] = await ingestLoadScans([scan(batch.id, crate.code)], ctx());
+    expect(ack!.result).toBe('not_on_plan');
+    // The phone needs the code back as a CRATE to re-open its confirm dialog.
+    expect(ack!.scannedCode).toBe(crate.code);
+
+    const after = await db.select().from(boxes).where(inArray(boxes.id, stray.boxIds));
+    expect(after.map((b) => b.status)).toEqual(before.map((b) => b.status));
+    expect(after.every((b) => b.currentBatchId === null)).toBe(true);
+    // And nothing was recorded against the batch either.
+    const events = await db.select().from(scanEvents).where(eq(scanEvents.crateId, crateId));
+    expect(events).toHaveLength(0);
+  });
+
   it('crate scan fans out to member boxes with derived uuids', async () => {
     const { lot, batch } = await approvedBatch(3, 3);
     const crateId = uuidv4();

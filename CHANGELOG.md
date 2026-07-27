@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## ❗ Skaner: sanayotgan, lekin mashinaga qo'shmayotgan edi — 2026-07-27
+
+Siz yuklash paytida aytdingiz, va bu jiddiy xato edi — **yuk mashinaga chiqib ketardi, tizimda esa yo'q bo'lardi**.
+
+### Nima bo'lgan edi
+
+1. Skladchi **yashikni** skanerlaydi.
+2. Ekran darhol sanaydi, **yashil chaqnaydi va «ok» deb signal beradi**.
+3. Skanerlash serverga ketadi.
+4. Server: «bu yashik bu mashinaning rejasida yo'q» deb **rad etadi va hech narsa yozmaydi**.
+5. **Ekranda bu rad javobiga hech qanday ishlov yo'q edi** — hech narsa ko'rinmasdi.
+6. Navbat esa javob kelgani uchun yozuvni **o'chirib yuborardi**.
+7. Qayta skanerlansa — «🔁 allaqachon skanerlangan» derdi.
+
+Ya'ni: **sanoq oshdi, signal yashil, yuk mashinaga chiqdi — lekin manifestda, bojxona invoysida va tannarx hisobida u yo'q.** Va skladchi buni tuzata olmasdi.
+
+### Nega yashik bilan sodir bo'lgan
+
+Yuklash ekrani skladdagi **hamma yashiklarni** taklif qiladi, faqat shu mashinaga rejalashtirilganini emas. Kod esa yashikni **tekshirmasdan** qabul qilardi — «yashik bo'lsa bo'ldi» degan qisqa yo'l bor edi. Alohida karobkada bunday emas: u rejada bo'lmasa **qizil tasdiq ekrani** chiqadi. Yashik o'sha qizil ekranga umuman yetib bormasdi.
+
+### Endi qanday
+
+- **Yashik ham karobka bilan bir xil savolga javob beradi**: hamma karobkalari shu rejadami? Yo'q bo'lsa — **qizil tasdiq ekrani** chiqadi, skladchi sababini yozib ataylab qo'shadi. Bu ekran allaqachon bor edi, unga yo'l yo'q edi.
+- **Server rad etsa — sanoq orqaga qaytadi**, ekran qizil chaqnaydi va sabab yoziladi. Ilgari faqat 2 xil rad javobi ko'rsatilardi, 6 tadan.
+- Qoida kodga yozib qo'yildi: **serverga so'ramasdan ekranda ko'rsatilgan har qanday natija, javob boshqacha kelsa, orqaga qaytarilishi shart.**
+
+### Nima qilish kerak
+
+**Deploydan oldin:** yuklanayotgan mashinalarni tekshiring. Skaner yashil deganiga qaramay tizim yozmagan karobkalar bo'lishi mumkin — partiya kartochkasidagi son bilan mashinadagi haqiqiy sonni solishtiring. Farq bo'lsa, o'sha karobkalarni **qizil tasdiq orqali** qayta qo'shish kerak (deploydan keyin).
+
+**Tekshiruv:** 385 test (5 tasi yangi) + 44 e2e. Xatoni ko'rsatadigan test yozildi va **tuzatishsiz yiqilishi** isbotlandi. Migratsiya yo'q.
+
+
 ## Mijoz bo'limi: to'rtta tuzatish — 2026-07-27
 
 Auditda topilgan, hammasi mijoz bo'limiga tegishli.

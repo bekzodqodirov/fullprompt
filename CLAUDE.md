@@ -53,7 +53,7 @@ next-intl · Tailwind (CSS-variable tokens) · pg-boss · Playwright + Vitest.
 ```
 pnpm db:migrate         # hand-written SQL migrations
 pnpm db:seed            # idempotent; reference data, demo only on a fresh db
-pnpm lint && pnpm test  # 380 tests
+pnpm lint && pnpm test  # 385 tests
 pnpm build && pnpm e2e  # 44 e2e
 ```
 

@@ -612,7 +612,7 @@
     "offline": "离线——队列中{n}次扫码",
     "syncing": "同步中…（{n}）",
     "alreadyScanned": "已扫过：",
-    "notOnPlan": "货物不在计划内！",
+    "notOnPlan": "该货物不在计划内 — 请确认追加装车",
     "reasonRequired": "原因（必填）",
     "loadAnyway": "仍然装车",
     "stickerLost": "标签丢失/手动输入",

@@ -36,6 +36,8 @@ export type LoadScanInput = z.infer<typeof loadScanSchema>;
 export interface ScanAck {
   clientEventUuid: string;
   result: 'ok' | 'duplicate' | 'not_on_plan' | 'unknown_code' | 'rejected';
+  /** The code as scanned; a crate stays a crate (see the not_on_plan branch). */
+  scannedCode?: string;
   detail?: string;
   boxes?: { shortCode: string; letter: string | null }[];
 }
@@ -120,6 +122,9 @@ export async function ingestLoadScans(
           clientEventUuid: input.clientEventUuid,
           result: 'not_on_plan',
           boxes: letters,
+          // Echoed so the phone can re-open its confirm dialog for the thing
+          // that was actually scanned — a crate code must go back as a crate.
+          scannedCode: input.code,
         };
       }
       for (const box of members) {

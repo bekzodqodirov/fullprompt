@@ -612,7 +612,7 @@
     "offline": "Offline — {n} scan(s) queued",
     "syncing": "Syncing… ({n})",
     "alreadyScanned": "Already scanned:",
-    "notOnPlan": "THIS CARGO IS NOT ON THE PLAN!",
+    "notOnPlan": "Not on this truck’s plan — confirm to add it",
     "reasonRequired": "Reason (required)",
     "loadAnyway": "Load it anyway",
     "stickerLost": "Sticker lost / enter by hand",

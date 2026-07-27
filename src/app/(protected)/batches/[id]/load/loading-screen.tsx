@@ -9,6 +9,8 @@ import {
   enqueueScan,
   flushScans,
   pendingScans,
+  scanNeedsConfirm,
+  scanWasRecorded,
   type SyncAck,
 } from '@/offline/scan-outbox';
 
@@ -65,6 +67,15 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   const [manualCode, setManualCode] = useState('');
   const [manualQuery, setManualQuery] = useState('');
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Which codes each queued scan marked on screen.
+   *
+   * The counter moves the instant a box is scanned — that responsiveness is
+   * the point of the screen — but the SERVER decides whether anything was
+   * recorded. Without this map a refusal cannot be undone, and the loader is
+   * left looking at a number that says the box is on the truck when it is not.
+   */
+  const marked = useRef<Map<string, string[]>>(new Map());
 
   const cacheKey = `gsr-load-${batchId}`;
 
@@ -102,13 +113,53 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     setPending((await pendingScans()).length);
   }, []);
 
+  /**
+   * What the server actually did with each scan.
+   *
+   * `not_on_plan` had no branch here at all, and that was the whole bug the
+   * warehouse hit: the box was counted on screen, beeped green, queued,
+   * refused by the server, dropped from the outbox — and re-scanning answered
+   * "already scanned", so the loader could not even retry. Boxes went onto the
+   * truck that the manifest, the customs invoice and the cost allocation knew
+   * nothing about.
+   *
+   * The rule now: anything that is not `ok` / `duplicate` / `auto_transfer`
+   * recorded NOTHING, so its marks come back off the counter, the screen goes
+   * red, and `not_on_plan` re-opens the confirm dialog — which is the door
+   * that was already built for exactly this case and could never be reached.
+   */
   const handleAcks = useCallback((acks: SyncAck[]) => {
+    const rollback: string[] = [];
+    let reopen: string | null = null;
+
     for (const ack of acks) {
-      if (ack.result === 'unknown_code' || ack.result === 'rejected') {
+      const codes = marked.current.get(ack.clientEventUuid) ?? [];
+      marked.current.delete(ack.clientEventUuid);
+      if (scanWasRecorded(ack.result)) continue;
+      rollback.push(...codes);
+      if (scanNeedsConfirm(ack.result)) {
+        // The scanned code, not the member boxes: the confirm dialog re-sends
+        // the same scan with addedOnSpot, and a crate must go back as a crate.
+        reopen = ack.scannedCode ?? codes[0] ?? null;
+        setToast(`⚠️ ${t('notOnPlan')}`);
+      } else {
         setToast(`❌ ${ack.detail ?? ack.result}`);
       }
     }
-  }, []);
+
+    if (rollback.length > 0) {
+      setLoaded((prev) => {
+        const next = new Set(prev);
+        for (const code of rollback) next.delete(code);
+        return next;
+      });
+      feedback('bad');
+    }
+    if (reopen) {
+      setConfirmCode(reopen);
+      setConfirmReason('');
+    }
+  }, [t]);
 
   const flush = useCallback(async () => {
     try {
@@ -176,8 +227,10 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       return next;
     });
     feedback('ok');
+    const clientEventUuid = uuidv4();
+    marked.current.set(clientEventUuid, codes);
     await enqueueScan({
-      clientEventUuid: uuidv4(),
+      clientEventUuid,
       batchId,
       code: scan.code,
       method: scan.method,
@@ -202,7 +255,13 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       setToast(`🔁 ${t('alreadyScanned')} ${code}`);
       return;
     }
-    if (quick || crate || memberCodes.every((c) => planned.has(c))) {
+    // A CRATE used to be accepted unconditionally here, and that is how a
+    // crate standing at the warehouse but belonging to another truck got the
+    // green tick while the server recorded nothing: the snapshot offers every
+    // crate at the origin, not only the planned ones. A crate now answers the
+    // same question as a loose box — are ALL its boxes on this plan — so a
+    // wrong one reaches the red confirm instead of vanishing.
+    if (quick || memberCodes.every((c) => planned.has(c))) {
       void accept(memberCodes, { code, method, manualReason });
       return;
     }
