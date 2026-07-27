@@ -1,5 +1,69 @@
 # CHANGELOG
 
+## Skanerlash tezligi + 3 ta jiddiy xato tuzatildi — 2026-07-27
+
+### Skaner nega sekin edi
+
+Har bir skandan keyin telefon **butun mashinani serverdan qaytadan yuklab olardi**. Rejali partiyada — hamma qutilar; tez partiyada esa yana ombordagi butun qoldiq ham (1500 tagacha, **~300 KB**). Har bir quti uchun. Yivudagi ombor wi-fi'sida.
+
+Buning keragi yo'q edi: skanning **javobi** serverdan allaqachon kelayapti. Qaytadan yuklash faqat **boshqa telefonlar** nima skanerlaganini qo'shardi — va buni o'sha soniyada bilish shart emas.
+
+**Endi:** skan — faqat skanni yuboradi. To'liq yangilanish **15 soniyada bir marta**.
+
+**Nimadan voz kechdik:** ikkinchi yuklovchining ishi ekraningizda 15 soniyagacha kechroq chiqadi. Hisoblagich ilgari ham shunday ishlardi.
+
+### Bazada yetishmayotgan indeks
+
+«Bu quti shu mashinadami?» degan savol — yuklash ekrani, partiya taxtasi, mashinalar xaritasi, narx qo'yish va tannarx hisobi — hammasi shuni so'raydi. Bazada bu ustunga **indeks yo'q edi**, shuning uchun har safar butun jadval varaqlanardi.
+
+Sizning haqiqiy ma'lumotingizda o'lchadim (10 920 quti, 26 180 harakat):
+
+| | Ilgari | Endi |
+|---|---|---|
+| Iliq | 40 ms | **1.2 ms** |
+| Sovuq | 380 ms | ~0 |
+| Eng yomon holat | **9.6 soniya** | yo'qoldi |
+
+**Nimadan voz kechdik:** ikkita indeks disk oladi (bir necha MB) va yozishni juda oz sekinlashtiradi. Migratsiya paytida jadval bir lahzaga qulflanadi — hozir 10 ming qatorda bu **millisekundlar**. 200 ming qutida esa bir necha soniya bo'lardi. **Shuning uchun hozir qilish arzon.**
+
+### Sinab ko'rgan, lekin QAYTARIB olgan narsam
+
+Skanlarni 350 ms to'plab, bittada yuborish — arzon foyda ko'rinardi. **Testlar xatoni tutdi:** yuklovchi oxirgi qutini skanerlab, o'sha soniyada «yuklashni tugatish»ni bosadi — va skan hali yo'lda. **Quti mashinada, ro'yxatda yo'q.**
+
+Kechikishsiz qildim: skan darhol ketadi, faqat yo'lda turgan so'rov bo'lsa keyingilar bittaga qo'shiladi. Foyda bor, xavf yo'q.
+
+---
+
+## Uchta jiddiy xato tuzatildi
+
+### 1. 💰 To'langan bitim qarzni yashirardi
+
+Mijoz bitimni kechiktirdi (masalan 1000 $), keyin **to'ladi**. Lekin tizim hali ham «1000 $ kechiktirilgan» deb hisoblardi. Eshik esa qarzdan kechiktirilganni ayiradi.
+
+Natija: mijozning **boshqa, eski 500 $ qarzi** bor bo'lsa ham — 500 − 1000 = manfiy → **eshik ochilardi**. Ombor yukni berardi, hech kim «ruxsat» bosmagan, jurnalda ham hech narsa yo'q.
+
+Tuzatildi: kechiktirilgan deb **o'sha ish bo'yicha hali qarzdor bo'lgan summa** hisoblanadi. Ortiqcha to'lov ham boshqa qarzni yopmaydi.
+
+### 2. ⚙️ Fon vazifalari jimgina o'lishi mumkin edi
+
+Server ko'tarilganda 9 ta fon vazifasi ro'yxatdan o'tadi (**tungi backup**, backup tekshiruvi, tannarx qayta hisobi, digestlar). «Ishga tushdi» bayrog'i **ro'yxatdan o'tishdan oldin** qo'yilardi.
+
+Bittasi xato bersa: qayta urinish «allaqachon ishga tushgan» deb hech narsani ro'yxatdan o'tkazmasdi — **va xato ham chiqmay qo'yardi**. Server sog'lom ko'rinardi, backup esa olinmasdi.
+
+Tuzatildi: bayroq eng oxirida qo'yiladi.
+
+### 3. 🧰 (o'tgan safar) Yashik skaneri
+
+Yuqorida yozilgan.
+
+---
+
+### Tekshiruv
+
+Lint · typecheck · **404 test** · build · toza bazada **50 e2e** — yashil. Pul xatosining testi eski kodda **yiqildi** (0 o'rniga 1000 chiqardi). Indeks o'lchovi sizning haqiqiy bazangizda, qaytariladigan tranzaksiya ichida qilindi — ma'lumotingizga tegilmadi.
+
+**Migratsiya bor (0032).** Deploy qilishdan oldin backup oling.
+
 ## Skaner tuzatildi — yuklash yana ishlaydi — 2026-07-27
 
 Siz aytdingiz: «eski versiyasi yaxshi ishlar edi, hozir 1 scan qilib ketidan noto'g'ri deyabti va umuman ishlamayabti, yuklatib bo'mayabti».

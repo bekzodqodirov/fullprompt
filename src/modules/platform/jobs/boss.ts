@@ -22,7 +22,6 @@ export async function startBoss(): Promise<PgBoss> {
   const boss = getBoss();
   if (!globalForBoss.bossStarted) {
     await boss.start();
-    globalForBoss.bossStarted = true;
     // Worker registration lives next to each job's implementation.
     const { registerThumbnailWorker } = await import('./thumbnails');
     await registerThumbnailWorker(boss);
@@ -42,6 +41,23 @@ export async function startBoss(): Promise<PgBoss> {
     await registerTaskWorkers(boss);
     const { registerDealWorkers } = await import('../../wms/deals/jobs');
     await registerDealWorkers(boss);
+    /**
+     * LAST, not first.
+     *
+     * This latch used to be set immediately after `boss.start()`, before the
+     * nine registrations below it. One of them throwing left the latch set:
+     * the boot retry called `startBoss()` again, took the early return, and
+     * registered NOTHING — while `enqueue()` (which also calls `startBoss()`)
+     * went on filling queues nobody was working. Worse, the retry then
+     * RESOLVED, so the error stopped being logged and the boot looked healed
+     * while the nightly backup, the restore test, cost recompute and every
+     * digest were quietly dead.
+     *
+     * Setting it after the registrations means a failure is retried properly
+     * and stays loud. Registration is idempotent, so a retry that re-runs
+     * some of them is safe.
+     */
+    globalForBoss.bossStarted = true;
     logger.info('pg-boss started');
   }
   return boss;

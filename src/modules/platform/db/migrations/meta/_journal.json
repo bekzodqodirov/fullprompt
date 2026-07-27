@@ -225,6 +225,13 @@
       "when": 1785190000000,
       "tag": "0031_deal_charges",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785190000001,
+      "tag": "0032_scan_path_indexes",
+      "breakpoints": true
     }
   ]
 }

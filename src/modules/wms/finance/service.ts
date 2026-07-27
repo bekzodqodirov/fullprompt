@@ -121,21 +121,34 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
  * still presses the override, and the reason goes back to being a Telegram
  * message nobody can find later.
  *
- * Only charges raised ON a deferred deal count. A charge posted from batch
- * pricing carries no deal, so an old unrelated debt keeps blocking exactly as
- * it should: the deferral was granted for one job, not for the client.
+ * Only movements ON a deferred deal count. A charge posted from batch pricing
+ * carries no deal, so an old unrelated debt keeps blocking exactly as it
+ * should: the deferral was granted for one job, not for the client.
+ *
+ * What is deferred is what is still OWED on that job — charges MINUS payments
+ * against it. Summing the charges alone was a hole in the direction that
+ * costs money: a client who deferred a $1000 job and then PAID it kept the
+ * full $1000 deferred, and the gate subtracts this from the balance, so an
+ * unrelated $500 that really was outstanding came out negative and the
+ * warehouse handed over the cargo — no override pressed, nothing in the audit
+ * trail saying anybody decided to.
+ *
+ * Clamped at zero PER DEAL, not over the sum: overpaying one job by $200 must
+ * not hand out $200 of forgiveness on another.
  */
 export async function deferredBalanceUsd(clientId: string): Promise<number> {
-  const [row] = await db
+  const owedPerDeal = db
     .select({
-      total: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
+      owed: sql<string>`greatest(
+        coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
+                          THEN ${clientTransactions.amountUsd}
+                          ELSE -${clientTransactions.amountUsd} END), 0), 0)`.as('owed'),
     })
     .from(clientTransactions)
     .innerJoin(deals, eq(clientTransactions.dealId, deals.id))
     .where(
       and(
         eq(clientTransactions.clientId, clientId),
-        eq(clientTransactions.type, 'charge'),
         isNull(clientTransactions.voidedAt),
         sql`${deals.deferredAt} IS NOT NULL`,
         isNull(deals.deferralEndedAt),
@@ -144,7 +157,13 @@ export async function deferredBalanceUsd(clientId: string): Promise<number> {
         // the meantime.
         sql`(${deals.deferUntilAllArrived} OR ${deals.deferUntilDate} >= CURRENT_DATE)`,
       ),
-    );
+    )
+    .groupBy(clientTransactions.dealId)
+    .as('owed_per_deal');
+
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${owedPerDeal.owed}), 0)` })
+    .from(owedPerDeal);
   return Math.round(Number(row?.total ?? 0) * 100) / 100;
 }
 

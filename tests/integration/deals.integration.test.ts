@@ -477,6 +477,70 @@ describe('"I will pay when it is all here"', () => {
     expect(await deferredBalanceUsd(who)).toBeCloseTo(200, 2);
   });
 
+  it('a deferral that was already PAID stops excusing anything', async () => {
+    /**
+     * The hole the audit found, and it is the expensive direction.
+     *
+     * `deferredBalanceUsd` summed the CHARGES on deferred deals and ignored
+     * payments, while `clientBalanceUsd` nets both. So a client who deferred a
+     * job, then paid it, kept the full deferred figure — and the gate
+     * subtracts one from the other. A large paid-off deferral could cover an
+     * unrelated debt that is genuinely outstanding, and the warehouse would
+     * hand over cargo to a debtor with no override pressed and nothing in the
+     * audit trail saying anyone decided to.
+     */
+    const who = await freshClient();
+    const dealId = await newDeal({ clientId: who });
+    await receiveCargo(1, 100, 4, dealId, who);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const charge = await addTransaction(
+      { clientId: who, dealId, type: 'charge', amount: 1000, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    // An unrelated older debt, from batch pricing, tied to no job.
+    const oldDebt = await addTransaction(
+      { clientId: who, type: 'charge', amount: 500, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    await deferPayment(dealId, { reason: 'yuk to‘liq emas', untilAllArrived: true }, ctx());
+
+    // …and then the client pays the deferred job in full.
+    const paid = await addTransaction(
+      { clientId: who, dealId, type: 'payment', amount: 1000, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    madeTransactions.push(charge.id, oldDebt.id, paid.id);
+
+    // 500 is genuinely still owed…
+    expect(await clientBalanceUsd(who)).toBeCloseTo(500, 2);
+    // …and nothing at all is deferred any more: the job it was granted for is
+    // settled. Before the fix this answered 1000, and 500 - 1000 < 0 opened
+    // the gate.
+    expect(await deferredBalanceUsd(who)).toBeCloseTo(0, 2);
+  });
+
+  it('never lets an OVERpayment on one job excuse another', async () => {
+    // Guard on the fix itself: netting per deal must clamp at zero, or paying
+    // 1200 against a 1000 job would hand out 200 of forgiveness elsewhere.
+    const who = await freshClient();
+    const dealId = await newDeal({ clientId: who });
+    await receiveCargo(1, 100, 4, dealId, who);
+    const today = new Date().toISOString().slice(0, 10);
+    const charge = await addTransaction(
+      { clientId: who, dealId, type: 'charge', amount: 1000, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    await deferPayment(dealId, { reason: 'kutamiz', untilAllArrived: true }, ctx());
+    const over = await addTransaction(
+      { clientId: who, dealId, type: 'payment', amount: 1200, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    madeTransactions.push(charge.id, over.id);
+
+    expect(await deferredBalanceUsd(who)).toBeCloseTo(0, 2);
+  });
+
   it('expires a dated deferral the day after its date', async () => {
     const who = await freshClient();
     const id = await newDeal({ clientId: who });

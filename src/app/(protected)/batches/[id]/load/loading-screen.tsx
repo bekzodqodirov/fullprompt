@@ -178,48 +178,106 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     }
   }, [t]);
 
-  const flush = useCallback(async () => {
-    try {
-      const acks = await flushScans();
-      handleAcks(acks);
-      setOnline(true);
-      // Pull the server's view so scans from OTHER phones/sessions count
-      // without a page refresh; local not-yet-synced scans are kept (union).
+  /**
+   * The snapshot is the whole truck, and it was being re-downloaded after
+   * EVERY scan.
+   *
+   * On a planned batch that is every member box; on a quick batch it also
+   * carries the origin warehouse's loadable stock — 1,500 rows, ~300 KB, over
+   * warehouse wifi in Yiwu, once per box. The scan's own ack already says
+   * what the server did, so the only thing the refresh adds is OTHER phones'
+   * work, which nobody needs within the same second.
+   *
+   * So it runs on the 15-second tick and not on the scan. `sync` is the tick
+   * asking for it; a scan-driven flush passes false and sends only the queue.
+   */
+  const flush = useCallback(
+    async ({ sync = false }: { sync?: boolean } = {}) => {
       try {
-        const res = await fetch(`/api/batches/${batchId}/planned`);
-        if (res.ok) {
-          const data = (await res.json()) as Snapshot;
-          localStorage.setItem(cacheKey, JSON.stringify(data));
-          setSnapshot(data);
-          setLoaded((prev) => {
-            const next = new Set(prev);
-            for (const b of data.boxes) {
-              if (b.status === 'loading' || b.status === 'in_transit') next.add(b.shortCode);
+        const acks = await flushScans();
+        handleAcks(acks);
+        setOnline(true);
+        if (sync) {
+          try {
+            const res = await fetch(`/api/batches/${batchId}/planned`);
+            if (res.ok) {
+              const data = (await res.json()) as Snapshot;
+              localStorage.setItem(cacheKey, JSON.stringify(data));
+              setSnapshot(data);
+              setLoaded((prev) => {
+                const next = new Set(prev);
+                for (const b of data.boxes) {
+                  if (b.status === 'loading' || b.status === 'in_transit') next.add(b.shortCode);
+                }
+                return next;
+              });
             }
-            return next;
-          });
+          } catch {
+            /* snapshot refresh is best-effort */
+          }
         }
       } catch {
-        /* snapshot refresh is best-effort */
+        setOnline(false);
       }
-    } catch {
-      setOnline(false);
+      await refreshPending();
+    },
+    [handleAcks, refreshPending, batchId, cacheKey],
+  );
+
+  /**
+   * One flush in flight at a time, with a short trailing window.
+   *
+   * A loader working a pallet scans three boxes a second and each one fired
+   * its own POST. The outbox is a QUEUE — one request carries whatever has
+   * accumulated — so coalescing costs nothing but a few hundred milliseconds
+   * before the server confirms, and the screen has been optimistic-with-
+   * rollback since #223 precisely so it does not have to wait for that.
+   */
+  /**
+   * Coalesced, NOT delayed.
+   *
+   * A timed debounce was the obvious version and it was wrong: the loader
+   * scans the last box and taps "finish loading" in the same second, and a
+   * scan still sitting in the outbox is a box left off the truck. Three e2e
+   * specs caught it — m3 departed a batch whose final scan had not landed,
+   * and m4/m5/m9 then had nothing to unload, price or hand over.
+   *
+   * So a scan sends immediately when nothing is in flight, and scans that
+   * arrive DURING a request ride one follow-up instead of each starting their
+   * own. All of the burst saving, none of the latency.
+   */
+  const flushing = useRef(false);
+  /** Set while a flush is in flight and more scans arrived behind it. */
+  const again = useRef(false);
+  const flushSoon = useCallback(() => {
+    if (flushing.current) {
+      again.current = true;
+      return;
     }
-    await refreshPending();
-  }, [handleAcks, refreshPending, batchId, cacheKey]);
+    flushing.current = true;
+    void flush().finally(() => {
+      flushing.current = false;
+      // Scans queued while that request was in the air ride one follow-up
+      // rather than each having started a request of their own.
+      if (again.current) {
+        again.current = false;
+        flushSoon();
+      }
+    });
+  }, [flush]);
 
   useEffect(() => {
     const up = () => {
       setOnline(true);
-      void flush();
+      void flush({ sync: true });
     };
     const down = () => setOnline(false);
     window.addEventListener('online', up);
     window.addEventListener('offline', down);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOnline(navigator.onLine);
-    void flush();
-    const interval = setInterval(() => void flush(), 15_000);
+    void flush({ sync: true });
+    const interval = setInterval(() => void flush({ sync: true }), 15_000);
     return () => {
       window.removeEventListener('online', up);
       window.removeEventListener('offline', down);
@@ -257,7 +315,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       scannedAt: new Date().toISOString(),
     });
     await refreshPending();
-    void flush();
+    flushSoon();
   }
 
   function onCode(code: string, method: 'qr' | 'manual' = 'qr', manualReason?: string) {

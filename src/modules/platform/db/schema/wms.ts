@@ -166,6 +166,9 @@ export const boxes = pgTable(
     index('boxes_wh_status_idx').on(t.currentWarehouseId, t.status),
     index('boxes_lot_idx').on(t.lotId),
     index('boxes_crate_idx').on(t.crateId),
+    // The other half of "is this box on batch X" (migration 0032). Partial:
+    // most boxes sit in a warehouse belonging to no truck at all.
+    index('boxes_current_batch_idx').on(t.currentBatchId).where(sql`current_batch_id IS NOT NULL`),
   ],
 );
 
@@ -272,7 +275,13 @@ export const boxMovements = pgTable(
     actorId: uuid('actor_id').references(() => users.id),
     createdAt: createdAt(),
   },
-  (t) => [index('box_movements_box_idx').on(t.boxId, t.createdAt)],
+  (t) => [
+    index('box_movements_box_idx').on(t.boxId, t.createdAt),
+    // "Is this box on batch X" — the question the loading snapshot, the batch
+    // board, the truck map and the cost allocator all ask. Without it, a
+    // sequential scan of this table per candidate box (migration 0032).
+    index('box_movements_ref_idx').on(t.refType, t.refId, t.cause),
+  ],
 );
 
 // ---------------------------------------------------------------------------
