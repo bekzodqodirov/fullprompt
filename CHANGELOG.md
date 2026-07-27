@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## Mijoz bo'limi: to'rtta tuzatish — 2026-07-27
+
+Auditda topilgan, hammasi mijoz bo'limiga tegishli.
+
+**1. Kartochkani saqlash sotuvchini o'chirmaydi endi.**
+
+Bu eng jiddiysi edi. Sotuvchi ro'yxatiga faqat «sotuv manageri» roli borlar tushardi. Agar mijozning sotuvchisi **siz**, **logist** yoki o'zingiz o'ylab topgan boshqa rolda bo'lsa — u ro'yxatda yo'q edi, brauzer bo'sh variantni tanlardi, va telefon raqamini to'g'rilash uchun bosilgan **«Saqlash» biriktiruvni o'chirib yuborardi**. Lid kartochkasida ham xuddi shunday.
+
+Sizning haqiqiy ma'lumotingizda o'lchadim: **269 ta biriktirilgan mijoz**, ulardan **2 xil sotuvchi** ro'yxatga umuman tushmasdi.
+
+Endi ro'yxat **rol nomiga emas, huquqqa** qarab yig'iladi — ya'ni siz `/admin/roles` da yangi rol o'ylab topsangiz ham u avtomat ishlaydi. Va **hozir biriktirilgan odam har doim ro'yxatda turadi**, hatto u ishdan chiqqan bo'lsa ham. Qoida oddiy: **forma ko'rsata olmaydigan qiymatni forma o'chirib yuboradi.**
+
+**2. Mijozlar ro'yxati logistga ochiladi.**
+
+Logist mijoz yaratadi, kartochkasini tahrirlaydi, Telegram havolasi beradi — lekin ro'yxatning o'zi «omborlarni boshqarish» huquqini so'rardi, u esa logistda yo'q. Menyuda «Mijozlar» yozuvi turardi, bosardi — bosh sahifaga qaytarardi. Excel ham xuddi shunday.
+
+Uchtasi ham endi bir xil huquqni so'raydi. Yo'l-yo'lakay o'zim qilgan xatoni ham topdim: menyuni tozalaganimda logistdan mijozlarni olib tashlab qo'ygan ekanman — qaytardim.
+
+**3. Telefon bo'yicha mijoz topiladi.**
+
+Mijoz qo'ng'iroq qilganda menejer qo'lida raqam bo'ladi — lekin qidiruv faqat kod va ismni bilardi. Endi telefon ham. Raqamni **qanday yozsangiz ham** topadi: `+998 90 175 78 00`, `998901757800`, `901757800`, hatto oxirgi 7 ta raqam. Bu Telegram kabinetdagi tekshiruv qoidasi bilan bir xil — **oxirgi 9 raqam**, chunki mamlakat kodini taxmin qilish bir odamni boshqasining yukiga bog'lab qo'yishi mumkin.
+
+Qisqa raqam (5 tadan kam) telefon qidiruvini **ishga tushirmaydi** — aks holda `444` degan haqiqiy mijoz kodini qidirganingizda yarim kitob chiqib kelardi.
+
+**4. Ro'yxat «200 ta» deb yolg'on gapirmaydi.**
+
+Ekran 200 tada to'xtardi va tepasida «200» deb yozardi — ya'ni sizga mijozlaringiz 200 ta deb aytardi. Endi **«313 tadan 200 tasi»** deb yozadi va «qidiruvni aniqlashtiring» deb ogohlantiradi. Excel ham xuddi shu chegara bilan ishlaydi.
+
+**Tekshiruv:** 380 test (10 tasi yangi) + 44 e2e (1 tasi yangi), toza bazada CI tartibida. Har bir tuzatish uchun test bor va **tuzatishsiz yiqilishini** ko'rsatdim.
+
+
 ## Bitim (deal) — kelishilgan narx bilan haqiqat yonma-yon — 2026-07-26
 
 Siz 26-iyulda men bilan to'liq kelishib olgan, lekin hali qurilmagan eng katta narsa shu edi. Endi bor.

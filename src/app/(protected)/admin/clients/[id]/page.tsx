@@ -38,7 +38,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     actor.permissions.has('finance.view') || actor.permissions.has('finance.manage');
   // Only the admin half of the card needs these — a sales manager reading a
   // card should not cost a settings read and a call to Telegram.
-  const managers = canEdit ? await salesManagerOptions() : [];
+  const managers = canEdit ? await salesManagerOptions(client.salesManagerId) : [];
   const codePrefix = canEdit ? await getSetting('client_code_prefix') : '';
   const cabinetLinks = canEdit
     ? await db

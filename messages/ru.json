@@ -209,7 +209,9 @@
     "cabinetLinked": "Подключён",
     "cabinetPending": "Ожидает код",
     "cabinetRevoke": "Отключить",
-    "cabinetNewCode": "Создать ссылку"
+    "cabinetNewCode": "Создать ссылку",
+    "shownOf": "{shown} из {total}",
+    "refineSearch": "показаны не все — уточните поиск"
   },
   "users": {
     "title": "Сотрудники",

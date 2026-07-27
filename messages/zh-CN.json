@@ -209,7 +209,9 @@
     "cabinetLinked": "已连接",
     "cabinetPending": "等待验证码",
     "cabinetRevoke": "断开",
-    "cabinetNewCode": "生成链接"
+    "cabinetNewCode": "生成链接",
+    "shownOf": "{total} 中的 {shown}",
+    "refineSearch": "未显示全部 — 请细化搜索"
   },
   "users": {
     "title": "员工",

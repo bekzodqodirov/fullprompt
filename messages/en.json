@@ -209,7 +209,9 @@
     "cabinetLinked": "Connected",
     "cabinetPending": "Waiting for the code",
     "cabinetRevoke": "Disconnect",
-    "cabinetNewCode": "Create link"
+    "cabinetNewCode": "Create link",
+    "shownOf": "{shown} of {total}",
+    "refineSearch": "not all shown — narrow the search"
   },
   "users": {
     "title": "Employees",

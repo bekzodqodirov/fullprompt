@@ -35,7 +35,9 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   const [sources, stages, managers, custom, log, codePrefix] = await Promise.all([
     listSources(),
     listStages(),
-    salesManagerOptions(),
+    // The lead's current owner too: the same bare <select> that erased
+    // client managers erases lead owners the same way.
+    salesManagerOptions(lead.ownerId),
     // The lead card is the one form in the app that carries built-in and
     // custom inputs in the SAME FormData, so it renders the inputs itself
     // rather than the standalone panel.

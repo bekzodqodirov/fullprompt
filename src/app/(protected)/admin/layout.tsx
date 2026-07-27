@@ -35,7 +35,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // links straight here. The card checks its own permission; this gate is
   // cosmetic (spec 4.2).
   const canClients =
-    actor.permissions.has('clients.view_own') || actor.permissions.has('crm.leads');
+    actor.permissions.has('clients.manage') ||
+    actor.permissions.has('clients.view_own') ||
+    actor.permissions.has('crm.leads');
   if (!canManage && !canAudit && !canFx && !canClients && !canRoles && !canFields) redirect('/');
 
   const links: SubNavItem[] = [

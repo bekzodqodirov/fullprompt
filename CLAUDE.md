@@ -53,8 +53,8 @@ next-intl · Tailwind (CSS-variable tokens) · pg-boss · Playwright + Vitest.
 ```
 pnpm db:migrate         # hand-written SQL migrations
 pnpm db:seed            # idempotent; reference data, demo only on a fresh db
-pnpm lint && pnpm test  # 370 tests
-pnpm build && pnpm e2e  # 43 e2e
+pnpm lint && pnpm test  # 380 tests
+pnpm build && pnpm e2e  # 44 e2e
 ```
 
 ## Verification ritual (follow it, it catches real bugs)
@@ -138,11 +138,12 @@ handover gate (#203-#215). Still open inside it: the damage discount form,
 profit per deal, the 50-goods spreadsheet + TNVED grouping.
 
 A full 14-subsystem audit ran on 2026-07-26 (30 defects confirmed after
-adversarial review, 4 refuted). Its findings are the work queue — start with
-`scripts/import-clients.ts --update` overwriting corrected data, the
-sales-manager dropdown deleting assignments on save, receipt void with no
-state guard, customs documents emptying during unload, voided costs still
-counted in the P&L, and `JOB_SEND_TELEGRAM` never being scheduled.
+adversarial review, 4 refuted). Its findings are the work queue. The client-area four are DONE (#216-220:
+the owner dropdown, the client-book guard, phone search, the honest cap).
+Still open, in order: `scripts/import-clients.ts --update` overwriting
+corrected data (do NOT run it), `JOB_SEND_TELEGRAM` never scheduled so every
+digest waits, voided costs still counted in the P&L, customs documents
+emptying during unload, and receipt void with no state guard.
 
 Next, in order: **4** record comments with @mentions →
 **6** approval for issuing to a debtor →

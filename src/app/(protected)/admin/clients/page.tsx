@@ -14,6 +14,8 @@ import {
 } from '@/modules/platform/fields/filter';
 import { sortRows, SortTh } from '@/components/sort-th';
 import { CustomFilters } from './custom-filters';
+import { phoneNeedle } from '@/modules/platform/clients/phone';
+import { CLIENT_LIST_CAP } from '@/modules/platform/clients/list';
 
 /**
  * The client book, filterable and sortable by the owner's own fields.
@@ -29,10 +31,13 @@ export default async function ClientsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  // Own gate, not just the layout's: the section is now reachable by roles
-  // that only hold FX or audit rights.
+  // The CLIENT permission, not the warehouse one. This page asked for
+  // `admin.warehouses.manage` while the menu entry, the create page and all
+  // three mutations ask for `clients.manage` — so the logist could create a
+  // client, edit the card and mint a cabinet link, and could not open the
+  // list at all: the menu showed «Mijozlar» and the page bounced him home.
   const actor = await getActor();
-  if (!actor?.permissions.has('admin.warehouses.manage')) redirect('/');
+  if (!actor?.permissions.has('clients.manage')) redirect('/');
   const t = await getTranslations('clients');
   const tf = await getTranslations('fields');
   const tc = await getTranslations('common');
@@ -47,21 +52,40 @@ export default async function ClientsPage({
 
   const conditions: SQL[] = [];
   if (q) {
-    // Trigram-accelerated fuzzy match on code and name (spec §12 groundwork).
+    // Code, name — and the PHONE, because the commonest reason to search the
+    // book is that the client is on the line. Last nine digits, formatting
+    // stripped on both sides, exactly as the cabinet check does (#111).
+    const needle = phoneNeedle(q);
+    const byPhone = needle
+      ? sql` OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(${clients.phones}) AS p
+          WHERE right(regexp_replace(p, '[^0-9]', '', 'g'), 9) LIKE ${'%' + needle + '%'}
+        )`
+      : sql``;
     conditions.push(
-      sql`(${clients.clientCode} ILIKE ${'%' + q + '%'} OR ${clients.name} ILIKE ${'%' + q + '%'})`,
+      sql`(${clients.clientCode} ILIKE ${'%' + q + '%'} OR ${clients.name} ILIKE ${'%' + q + '%'}${byPhone})`,
     );
   }
   const custom = fieldFilterSql('client', clients.id, fields, filters);
   if (custom) conditions.push(custom);
 
+  const where = conditions.length ? and(...conditions) : undefined;
   const found = await db
     .select({ client: clients, managerName: users.fullName })
     .from(clients)
     .leftJoin(users, eq(clients.salesManagerId, users.id))
-    .where(conditions.length ? and(...conditions) : undefined)
+    .where(where)
     .orderBy(asc(clients.clientCode))
-    .limit(200);
+    .limit(CLIENT_LIST_CAP);
+
+  // The list stops at CLIENT_LIST_CAP and used to print that number as the total, so
+  // the screen told the owner he had 200 clients. A cap that does not say it
+  // is a cap is a screen quietly lying about the size of the business.
+  const [totals] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(clients)
+    .where(where);
+  const total = Number(totals?.n ?? 0);
 
   const decorated = await decorateRows(
     'client',
@@ -114,7 +138,12 @@ export default async function ClientsPage({
       </form>
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="num font-semibold">{rows.length}</span>
+        <span className="num font-semibold">
+          {rows.length < total ? t('shownOf', { shown: rows.length, total }) : total}
+        </span>
+        {rows.length < total && (
+          <span className="text-xs text-warn">{t('refineSearch')}</span>
+        )}
         <a
           href={`/api/clients/xlsx?${exportQuery.toString()}`}
           data-testid="clients-xlsx"

@@ -338,10 +338,13 @@ const MENU_BY_ROLE: Record<string, string[]> = {
     '/', '/receive', '/arrivals', '/batches', '/issue', '/crates', '/stock', '/receipts',
     '/unclaimed', '/dashboard', '/reports',
   ],
-  // Plans and trucks. A logist does not receive cargo, but does chase it.
+  // Plans and trucks. A logist does not receive cargo, but does chase it —
+  // and does hold `clients.manage`: he creates client cards and mints their
+  // cabinet links, so the client book belongs in his menu. Leaving it out was
+  // a curation mistake, caught by the e2e that opens the page as him.
   logist: [
-    '/', '/bugun', '/kalendar', '/plans', '/batches', '/arrivals', '/trucks', '/map',
-    '/stock', '/receipts', '/admin/trucks', '/dashboard', '/reports',
+    '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
+    '/map', '/stock', '/receipts', '/admin/clients', '/admin/trucks', '/dashboard', '/reports',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
   // is here because recalculating a job the client was mis-quoted for is a VED

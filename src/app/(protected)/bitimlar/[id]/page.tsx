@@ -47,7 +47,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
   const [{ reality, deviation }, stages, managers, threshold, unlinked] = await Promise.all([
     dealDeviation(id),
     listStages(),
-    salesManagerOptions(),
+    salesManagerOptions(row.deal.ownerId),
     deviationThreshold(),
     unlinkedReceipts(row.deal.clientId),
   ]);

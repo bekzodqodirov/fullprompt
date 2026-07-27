@@ -209,7 +209,9 @@
     "cabinetLinked": "Ulangan",
     "cabinetPending": "Kod kutilmoqda",
     "cabinetRevoke": "Uzish",
-    "cabinetNewCode": "Yangi havola yaratish"
+    "cabinetNewCode": "Yangi havola yaratish",
+    "shownOf": "{total} tadan {shown} tasi",
+    "refineSearch": "hammasi emas — qidiruvni aniqlashtiring"
   },
   "users": {
     "title": "Xodimlar",

@@ -20,6 +20,7 @@ import { expect, test } from '@playwright/test';
 const OWNER = '+998900000001';
 const YW_OPERATOR = '+998900000006';
 const GZ_OPERATOR = '+998900000007';
+const LOGIST = '+998900000003';
 const PASSWORD = 'demo1234';
 const runId = String(Date.now()).slice(-6);
 
@@ -104,6 +105,23 @@ test('the admin pages that had no gate now have one', async ({ page }) => {
     await page.goto(url);
     await expect(page).toHaveURL('/');
   }
+});
+
+test('the client book opens for everyone the menu offers it to', async ({ page }) => {
+  // The logist holds `clients.manage`: he creates clients, edits their cards
+  // and mints their cabinet links. The page asked for the WAREHOUSE admin
+  // right instead, so the menu showed him «Mijozlar» and the page bounced him
+  // straight home — a dead entry in a working menu.
+  await login(page, LOGIST);
+  await expect(page.locator('main a[href="/admin/clients"]').first()).toBeVisible();
+  await page.goto('/admin/clients');
+  await expect(page).toHaveURL('/admin/clients');
+  await expect(page.getByTestId('clients-xlsx')).toBeVisible();
+
+  // …and the warehouse operator, who holds neither, still cannot.
+  await login(page, YW_OPERATOR);
+  await page.goto('/admin/clients');
+  await expect(page).toHaveURL('/');
 });
 
 test('a warehouse card obeys the same scope as the warehouse list', async ({ page }) => {

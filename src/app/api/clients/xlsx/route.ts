@@ -6,6 +6,8 @@ import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { listFields } from '@/modules/platform/fields/service';
+import { CLIENT_EXPORT_CAP } from '@/modules/platform/clients/list';
+import { phoneNeedle } from '@/modules/platform/clients/phone';
 import {
   decorateRows,
   fieldFilterSql,
@@ -24,7 +26,9 @@ import {
 export async function GET(request: Request) {
   let actor;
   try {
-    actor = await authorize('admin.warehouses.manage');
+    // Same gate as the screen it downloads: an export that asks for a
+    // different permission is either a hole or a dead button.
+    actor = await authorize('clients.manage');
   } catch (err) {
     if (err instanceof AuthError) return new Response('Forbidden', { status: 403 });
     throw err;
@@ -40,8 +44,18 @@ export async function GET(request: Request) {
 
   const conditions: SQL[] = [];
   if (q) {
+    // The same three-way match as the screen — code, name, phone. A download
+    // that searches differently from the page above it is a file nobody can
+    // explain.
+    const needle = phoneNeedle(q);
+    const byPhone = needle
+      ? sql` OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(${clients.phones}) AS p
+          WHERE right(regexp_replace(p, '[^0-9]', '', 'g'), 9) LIKE ${'%' + needle + '%'}
+        )`
+      : sql``;
     conditions.push(
-      sql`(${clients.clientCode} ILIKE ${'%' + q + '%'} OR ${clients.name} ILIKE ${'%' + q + '%'})`,
+      sql`(${clients.clientCode} ILIKE ${'%' + q + '%'} OR ${clients.name} ILIKE ${'%' + q + '%'}${byPhone})`,
     );
   }
   const custom = fieldFilterSql('client', clients.id, fields, filters);
@@ -53,7 +67,7 @@ export async function GET(request: Request) {
     .leftJoin(users, eq(clients.salesManagerId, users.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(asc(clients.clientCode))
-    .limit(5000);
+    .limit(CLIENT_EXPORT_CAP);
 
   const rows = await decorateRows(
     'client',
