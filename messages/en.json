@@ -27,7 +27,9 @@
     "goHome": "Go to home",
     "notFoundTitle": "Page not found",
     "notFoundBody": "This page does not exist or has been removed.",
-    "empty": "Nothing here yet"
+    "empty": "Nothing here yet",
+    "updateAvailable": "A newer version is available",
+    "updateNow": "Update"
   },
   "login": {
     "title": "Sign in",
@@ -403,7 +405,8 @@
       "same_warehouse": "That is the same warehouse",
       "validation": "Check the data"
     },
-    "openInBrowser": "Open in the browser (if printing did not start)"
+    "openInBrowser": "Open in the browser (if printing did not start)",
+    "openInBrowserShort": "in browser ↗"
   },
   "stock": {
     "title": "Warehouse stock",

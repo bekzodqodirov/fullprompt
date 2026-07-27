@@ -7,6 +7,7 @@ import { LocaleSwitcher } from '@/components/locale-switcher';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { readTheme } from '@/modules/platform/theme/theme';
 import { Icon } from '@/components/ui/icon';
+import { UpdateBanner } from '@/components/update-banner';
 import { MobileNav, Sidebar, type NavGroup, type NavItem } from '@/components/ui/nav';
 import { menuItems, NAV, primaryItems } from '@/modules/platform/rbac/nav';
 
@@ -98,6 +99,9 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           </form>
         </div>
       </header>
+
+      {/* The phone can be showing yesterday's app; only the app can notice. */}
+      <UpdateBanner />
 
       <div className="mx-auto flex w-full max-w-6xl">
         <Sidebar groups={groups} />

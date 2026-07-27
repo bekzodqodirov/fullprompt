@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 /**
@@ -48,37 +48,58 @@ export function PrintLabels({
   const tc = useTranslations('common');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The PDF, fetched the moment the finger goes DOWN.
+   *
+   * Safari only allows `navigator.share()` while the tap is still "fresh" —
+   * transient user activation. Fetching the file inside the click handler
+   * spends that freshness waiting for the server (a hundred-box sheet is not
+   * instant), and the share sheet then refuses to open with NotAllowedError:
+   * the operator taps the button and nothing whatsoever happens, which is
+   * exactly what it looked like. Starting on pointerdown means the file is
+   * usually already in hand when the click arrives.
+   */
+  const pending = useRef<Promise<File> | null>(null);
+
+  const load = useCallback(() => {
+    pending.current ??= (async () => {
+      const res = await fetch(href);
+      if (!res.ok) throw new Error(String(res.status));
+      return new File([await res.blob()], fileName, { type: 'application/pdf' });
+    })();
+    return pending.current;
+  }, [href, fileName]);
 
   async function share() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(href);
-      if (!res.ok) throw new Error(String(res.status));
-      const file = new File([await res.blob()], fileName, { type: 'application/pdf' });
+      const file = await load();
 
-      // canShare must be asked about THIS file: iOS answers false for files
-      // on some versions, and a share() that throws leaves the operator with
-      // a dead button and no explanation.
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: fileName });
         return;
       }
-
-      // No file sharing: hand the PDF to the browser as a download. On
-      // Android this is what RawBT intercepts; on a desktop it just opens.
-      const url = URL.createObjectURL(file);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      throw new Error('cannot_share');
     } catch (err) {
-      // AbortError = the person closed the share sheet. That is not a failure
-      // and must not paint the screen red.
-      if ((err as Error)?.name !== 'AbortError') setError(tc('error'));
+      const name = (err as Error)?.name;
+      // The person closed the sheet. Not a failure, and it must not paint the
+      // screen red or bounce them into a PDF viewer they did not ask for.
+      if (name === 'AbortError') return;
+
+      /**
+       * No share sheet on this phone, or the activation was spent anyway.
+       * Open the PDF in a NEW TAB rather than "downloading" it: iOS ignores
+       * the download attribute and renders the blob inline — inside the
+       * installed app, which is the chromeless viewer with no buttons this
+       * whole change exists to escape. A new tab at least lands somewhere
+       * with a share control.
+       */
+      window.open(href, '_blank', 'noopener');
     } finally {
       setBusy(false);
+      // A fresh sheet next time: the labels may have been reprinted since.
+      pending.current = null;
     }
   }
 
@@ -86,6 +107,8 @@ export function PrintLabels({
     <div className="space-y-1">
       <button
         type="button"
+        // Start fetching while the finger is still down — see `pending`.
+        onPointerDown={() => void load().catch(() => {})}
         onClick={() => void share()}
         disabled={busy}
         data-testid="print-labels"
@@ -102,7 +125,9 @@ export function PrintLabels({
         data-testid="print-labels-browser"
         className="block text-center text-xs text-ink-500 underline"
       >
-        {t('openInBrowser')}
+        {/* The per-lot buttons are a hundred pixels wide and the full
+            sentence wrapped over four lines under each one. */}
+        {variant === 'primary' ? t('openInBrowser') : t('openInBrowserShort')}
       </a>
       {error && (
         <p role="alert" className="text-center text-sm font-semibold text-bad">

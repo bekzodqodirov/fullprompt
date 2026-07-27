@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## «Yangi versiya bor» tasmasi + iPhone'da chop etish tugmasi — 2026-07-27
+
+Siz «deploy qildim lekin tugma chiqmadi» dedingiz. Tekshirdim: **tugma o'z joyida edi**. iPhone o'lchamidagi ekranda ochib ko'rdim — «🖨 Stikerlarni chop etish» tugmasi prixod kartasida ham, har bir lot yonida ham chiqib turibdi.
+
+Ya'ni serverda yangi kod bor edi, **telefoningiz esa kechagi sahifani ko'rsatib turgan**.
+
+### Nega shunday bo'ladi
+
+Ilovani ekranga chiqarib olganingizda telefon uni **o'z xotirasiga saqlab qo'yadi** — internetsiz ham ishlashi uchun. Siz serverni yangilaganingizda telefon buni bilmaydi va eski sahifani ko'rsatishda davom etadi. Tugma serverda bor, telefonda yo'q.
+
+Eng yomoni: **buni telefonni ushlab turgan odam bilib bo'lmaydi.** Bir haftada uch marta shu bo'ldi — ish bajarilgan, siz esa «ishlamadi» deb yozdingiz, va biz ikkalamiz ham deploy tushdimi yoki telefon eskimi — ajrata olmadik.
+
+### Endi ilova buni o'zi aytadi
+
+Serverda yangi versiya chiqsa, ekranning tepasida sariq tasma paydo bo'ladi:
+
+> 🔄 **Ilovaning yangi versiyasi bor** — [Yangilash]
+
+**«Yangilash» tugmasini bosasiz, tamom.** Ilova o'zi eski xotirani tozalaydi va yangisini yuklaydi. Endi hech kimga telefon orqali «sozlamalarga kiring, keshni tozalang» deb tushuntirish kerak emas — bu ishni tugma qiladi.
+
+Tasma faqat haqiqatan eskirganda chiqadi, bekorga bezovta qilmaydi. Telefon cho'ntakda yotganda emas — **ekran yoqilgan payt** tekshiradi, chunki ombordagi telefon kun bo'yi cho'ntakda yotadi.
+
+Bu hamma xodimga tegishli: skladchi ham, sotuvchi ham endi eski ekran bilan ishlab qolmaydi.
+
+### Bundan tashqari — iPhone'da chop etish tugmasi haqiqatan ishlamayotgan edi
+
+Bu mening xatoim edi, siz «ohwamadi» deganingizda topdim.
+
+iPhone'da ulashish oynasi faqat **barmoq tekkan zahoti** ochiladi. Men esa avval PDF'ni serverdan yuklab, keyin oynani ochmoqchi bo'lganman — 100 ta stiker yuklanguncha iPhone «kech bo'ldi» deb oynani ochmay qo'yadi. **Tugmani bosasiz, hech narsa bo'lmaydi.** Aynan siz aytgan holat.
+
+Tuzatildi: endi PDF **barmoq tushgan zahoti** yuklana boshlaydi, bosib bo'lgunicha tayyor turadi. Ulashish oynasi ochiladi.
+
+Ikkinchi tuzatish: «brauzerda ochish» havolasi iPhone'da fayl yuklab olardi — va o'sha faylni yana **o'sha tugmasiz oynada** ochardi. Endi yangi oynada ochadi, u yerda panel bor.
+
+### Sizdan hali javob kutayapman
+
+1. **Printeringiz qaysi model?** AirPrint borligini aniqlab, aniq qadamlarni yozib beraman.
+2. Server bazasida quyidagini ishlatib, natijasini yuboring — mendagi nusxa bilan farq bor:
+   `docker compose exec db psql -U gsr -d gsr -c "SELECT count(*) jami, count(sales_manager_id) sotuvchili FROM clients;"`
+
 ## Telefondan stiker chop etish — 2026-07-27
 
 Siz ilovani telefon ekraniga chiqarib olganingizdan keyin chop etish ishlamay qoldi, ayniqsa iPhone'da: «hech qanday tugmasiz stikerlar ro'yxati turibdi».
