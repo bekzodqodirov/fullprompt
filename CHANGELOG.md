@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## Deploy paytida yo'qolayotgan xabarlar + «bu chatni olmang» — 2026-07-28
+
+### 1. Har deploy'da xabarlar yo'qolar edi ⚠
+
+Kodimda «Telegram qayta ulanganda oxirgi xabarlarni o'zi qaytaradi» deb
+yozilgan edi. **Bunday emas ekan** — kutubxonada o'sha funksiya butunlay bo'sh
+(`catchUp() { // TODO }`).
+
+Ya'ni: `docker compose up -d --build` qilganingizda tinglovchi 1–2 daqiqaga
+o'chadi. O'sha oraliqda mijoz yozgan xabar **hech qachon, hech qayerga
+tushmaydi**. Yomoni — «javob kutyapti» belgisi ham chiqmaydi, ya'ni ekran
+«hech kim kutmayapti» deb turadi.
+
+Endi tinglovchi ishga tushganda har bir chatni **o'zi to'xtagan joyidan**
+davom ettiradi. Log'da ko'rasiz: `uzilish davridagi N ta xabar olindi`.
+
+### 2. «Bu chatni olmang» — yetishmayotgan yarmi
+
+O'tgan safar «Qaysi chatlar» ni qilganimda **faqat yarmi ishlagan ekan**:
+raqami bazada yo'q chatni **qo'shish** mumkin edi, lekin raqami bazada **bor**
+chatni **rad etish** mumkin emas edi. Skan faqat mos kelmagan chatlarni
+so'rardi, mos kelganlari esa ro'yxatga umuman tushmasdi.
+
+Endi rad etish **chatning o'zidan** qilinadi — mijoz kartochkasida yoki
+«Suhbatlar»da, javob oynasi ostidagi kichik havoladan. Bu yaxshiroq ham:
+ismga qarab emas, **yozishmani ko'rib turib** qaror qilasiz.
+
+Faqat kelgusi xabarlarga ta'sir qiladi — eski xabarlar o'chmaydi. Bosishdan
+oldin shu yozib qo'yiladi.
+
+Tekshirildi: 625 ta test + 73 ta ekran testi — hammasi yashil.
+
 ## Javob yozish oynasi endi kartochkalarda ham — 2026-07-28
 
 Siz aytdingiz: «crm kartochkalarda, bitim kartochkalarda va chatda sms

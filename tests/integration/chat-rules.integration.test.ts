@@ -6,6 +6,7 @@ import { auditLog, clients, tgChatRules, users } from '@/modules/platform/db/sch
 import {
   ChatRuleError,
   decideChat,
+  excludeChatForClient,
   listCandidates,
   pendingCount,
   recordCandidates,
@@ -173,5 +174,53 @@ describe('who sees which questions', () => {
     expect(mine).toBeLessThanOrEqual(everybody);
     const rows = await listCandidates({ managerUserId: managerId });
     expect(rows.every((r) => r.managerUserId === managerId)).toBe(true);
+  });
+});
+
+describe('stopping a chat the phone rule DOES match', () => {
+  /**
+   * The half of the owner's ask that was unreachable. `scanVerdict` returns
+   * 'auto' for anything the automatic rule already keeps, the scan records
+   * only 'ask' verdicts, and `recordCandidates` was the sole writer of
+   * tg_chat_rules — so a matched chat could never be given an exclude.
+   */
+  const PEER_C = BigInt(STAMP + 2);
+
+  it('writes an exclude where no rule existed at all', async () => {
+    await excludeChatForClient(
+      { clientId, managerUserId: managerId, peerId: PEER_C },
+      ctx(),
+    );
+    const rules = await rulesFor(managerId);
+    expect(rules.get(PEER_C)?.decision).toBe('exclude');
+    // And the decision now actually bites: the same function the import and
+    // the listener call refuses it, whatever the phone says.
+    expect(
+      classifyWithRules(
+        { id: PEER_C, phone: '+998907776655', isPrivate: true, isBot: false },
+        [{ id: clientId, clientCode, phones: ['+998907776655'] }],
+        rules,
+      ),
+    ).toEqual({ keep: false, reason: 'excluded' });
+  });
+
+  it('overrides an include somebody is changing their mind about', async () => {
+    await excludeChatForClient({ clientId, managerUserId: managerId, peerId: PEER_A }, ctx());
+    const rules = await rulesFor(managerId);
+    expect(rules.get(PEER_A)?.decision).toBe('exclude');
+    // The client goes with it: an excluded row must not keep pointing at
+    // somebody, or a later undo would restore a half-answer.
+    expect(rules.get(PEER_A)?.clientId).toBeNull();
+  });
+
+  it('is future-only — it does not delete what is already stored', async () => {
+    // Deleting a client's conversation is a separate decision with its own
+    // consequences, and this button must not quietly be the one that takes it.
+    const before = await db.select().from(tgChatRules).where(eq(tgChatRules.peerId, PEER_C));
+    expect(before).toHaveLength(1);
+    await excludeChatForClient({ clientId, managerUserId: managerId, peerId: PEER_C }, ctx());
+    const after = await db.select().from(tgChatRules).where(eq(tgChatRules.peerId, PEER_C));
+    // Repeatable, and still one row.
+    expect(after).toHaveLength(1);
   });
 });

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { db, pgClient } from '../../platform/db/client';
 import { clients, tgAccounts, tgMessages, users } from '../../platform/db/schema';
 import { openSession, sealSession, sessionKey, sessionOpens } from './telegram-session';
@@ -187,6 +187,37 @@ export async function clientBook(): Promise<ClientPhones[]> {
     .select({ id: clients.id, clientCode: clients.clientCode, phones: clients.phones })
     .from(clients)
     .orderBy(asc(clients.clientCode));
+}
+
+export interface ResumePoint {
+  peerId: bigint;
+  /** The highest Telegram message id already stored for this chat. */
+  lastMessageId: bigint;
+}
+
+/**
+ * Where to pick each conversation back up after the listener was away.
+ *
+ * There is no other source for this. GramJS's `catchUp()` is an empty stub
+ * (`client/updates.js:65` — literally `{ // TODO }`) and the package makes no
+ * `updates.GetDifference` call at all, so a reconnect resumes from wherever
+ * the new session happens to start and everything sent in between is never
+ * delivered to anybody. Nothing was written down on this side either:
+ * `storeIncoming` was fire-and-forget and no high-water mark was read back.
+ *
+ * The mark is per PEER, because Telegram message ids are per conversation and
+ * one global number would be meaningless across chats. It costs a single
+ * grouped query at startup.
+ */
+export async function resumePoints(managerUserId: string): Promise<ResumePoint[]> {
+  const rows = await db.execute<{ peer_id: string; last_id: string }>(sql`
+    SELECT peer_id, max(tg_message_id) AS last_id
+    FROM tg_messages
+    WHERE manager_user_id = ${managerUserId}
+    GROUP BY peer_id
+  `);
+  // Through strings: a Telegram id does not survive Number().
+  return rows.map((r) => ({ peerId: BigInt(r.peer_id), lastMessageId: BigInt(r.last_id) }));
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   loadAccount,
   markAccount,
   saveAccount,
+  resumePoints,
   storeIncoming,
   takeListenerLock,
 } from '@/modules/wms/crm/telegram-accounts';
@@ -186,5 +187,61 @@ describe('what the status screen is told', () => {
     const status = (await accountStatuses()).find((a) => a.id === accountId);
     expect(status?.keyOpens).toBe(false);
     process.env.TG_SESSION_KEY = KEY;
+  });
+});
+
+describe('picking a conversation back up after the listener was away', () => {
+  /**
+   * GramJS does not do this: `catchUp()` is an empty stub and the package
+   * never calls `updates.GetDifference`, so everything sent while the
+   * listener was down is delivered to nobody, ever. A `docker compose up -d
+   * --build` takes it down for a minute, and this company deploys.
+   *
+   * What can be proved here is the part that decides where to resume.
+   */
+  it('remembers the newest message id per chat, not one number for everything', async () => {
+    const other = BigInt(STAMP + 500);
+    await db.insert(tgMessages).values([
+      {
+        clientId,
+        managerUserId: managerId,
+        peerId: PEER,
+        tgMessageId: 9000n,
+        direction: 'in',
+        body: 'a',
+        sentAt: new Date(),
+      },
+      {
+        clientId,
+        managerUserId: managerId,
+        peerId: other,
+        tgMessageId: 42n,
+        direction: 'in',
+        body: 'b',
+        sentAt: new Date(),
+      },
+    ]);
+
+    const points = await resumePoints(managerId);
+    const mine = new Map(points.map((p) => [p.peerId, p.lastMessageId]));
+    // Telegram ids are per conversation — one global cursor would be
+    // meaningless across chats, and would silently skip the quieter ones.
+    expect(mine.get(PEER)).toBe(9000n);
+    expect(mine.get(other)).toBe(42n);
+  });
+
+  it('returns ids as bigint, because a Telegram id does not survive Number()', async () => {
+    const huge = BigInt('7100000000000000123');
+    await db.insert(tgMessages).values({
+      clientId,
+      managerUserId: managerId,
+      peerId: BigInt(STAMP + 501),
+      tgMessageId: huge,
+      direction: 'in',
+      body: 'c',
+      sentAt: new Date(),
+    });
+    const point = (await resumePoints(managerId)).find((p) => p.peerId === BigInt(STAMP + 501));
+    expect(point?.lastMessageId).toBe(huge);
   });
 });

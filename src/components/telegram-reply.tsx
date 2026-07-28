@@ -3,6 +3,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
 import { TelegramReplyBox } from './telegram-reply-box';
+import { TelegramStopTaking } from './telegram-stop-taking';
 
 /**
  * The compose box, wherever a conversation is shown.
@@ -76,15 +77,30 @@ export async function TelegramReply({
   }
 
   return (
-    <TelegramReplyBox
-      clientId={clientId}
-      compact={compact}
-      labels={{
-        placeholder: t('replyPlaceholder'),
-        send: t('replySend'),
-        sending: t('replySending'),
-        errors: reasons,
-      }}
-    />
+    <div className="shrink-0 space-y-1">
+      <TelegramReplyBox
+        clientId={clientId}
+        compact={compact}
+        labels={{
+          placeholder: t('replyPlaceholder'),
+          send: t('replySend'),
+          sending: t('replySending'),
+          errors: reasons,
+        }}
+      />
+      {/* The other half of "which chats": stop taking one the phone rule
+          matches. Only offered where a conversation is actually visible, and
+          only on your own account — the same rule as replying. */}
+      <div className="text-center">
+        <TelegramStopTaking
+          clientId={clientId}
+          labels={{
+            stop: t('chatStopTaking'),
+            hint: t('chatStopTakingHint'),
+            cancel: t('chatCancel'),
+          }}
+        />
+      </div>
+    </div>
   );
 }

@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
-import { cancelQueued, OutboxError, queueReply, replyAccountFor } from '@/modules/wms/crm/outbox';
+import { cancelQueued, OutboxError, queueReply, replyAccountFor } from './outbox';
+import { excludeChatForClient } from './chat-rules';
 
 /**
  * Queue a reply to a client — phase 4.
@@ -76,5 +77,34 @@ export async function cancelReplyAction(_prev: ReplyState, form: FormData): Prom
     throw err;
   }
   revalidatePath(`/suhbatlar/${clientId}`);
+  return { ok: true };
+}
+
+/**
+ * "Stop taking this conversation" — the exclude half, from the chat itself.
+ *
+ * On the same account rule as replying: you may only decide about a
+ * conversation that is in your OWN Telegram. Somebody else's chat is theirs
+ * to keep or drop, and the message would have been stored under their name.
+ */
+export async function excludeChatAction(_prev: ReplyState, form: FormData): Promise<ReplyState> {
+  let who;
+  try {
+    who = await authorize('crm.leads');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const clientId = String(form.get('clientId') ?? '');
+  const account = await replyAccountFor(clientId, who.id);
+  if (!account) return { error: 'not_your_conversation' };
+
+  const meta = await requestMeta();
+  await excludeChatForClient(
+    { clientId, managerUserId: account.managerUserId, peerId: account.peerId },
+    { actorId: who.id, ...meta },
+  );
+  revalidatePath(`/suhbatlar/${clientId}`);
+  revalidatePath('/suhbatlar', 'layout');
   return { ok: true };
 }

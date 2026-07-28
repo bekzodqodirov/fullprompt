@@ -23,6 +23,7 @@ import {
   loadAccount,
   markAccount,
   markAccountActive,
+  resumePoints,
   storeIncoming,
   takeListenerLock,
 } from '../src/modules/wms/crm/telegram-accounts';
@@ -56,6 +57,13 @@ import { peerFromChat, type DialogPeer } from '../src/modules/wms/crm/telegram-i
  * governs when a message may go is in `crm/telegram-send.ts`, pure and tested;
  * this file obeys them, one message per tick and never a batch.
  */
+
+/**
+ * How far back one chat is caught up on a restart. Two hundred messages is
+ * far more than any gap a deploy makes, and it bounds a chat that has been
+ * talking all week so startup cannot turn into a full re-import.
+ */
+const CATCHUP_PER_CHAT = 200;
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -252,6 +260,59 @@ async function main() {
     });
   }, 3000);
 
+  /* ---------------------------------------------------------------- *
+   * Catch-up. Everything sent while this listener was down.
+   * ---------------------------------------------------------------- */
+
+  /**
+   * GramJS does NOT do this for us. `catchUp()` in the pinned version is an
+   * empty stub (`client/updates.js:65`) and the package never calls
+   * `updates.GetDifference`, so a reconnect simply resumes from wherever the
+   * new session starts — every message sent in between is delivered to
+   * nobody, ever. A `docker compose up -d --build` takes the listener down
+   * for a minute or two, and this company deploys.
+   *
+   * So each conversation is picked back up from the highest message id
+   * already stored for it, through the SAME decide-and-store path a live
+   * message takes. The unique index makes it idempotent, which is what lets
+   * this run on every start without bookkeeping of its own.
+   */
+  const catchUp = async () => {
+    const points = await resumePoints(account.managerUserId);
+    if (points.length === 0) return;
+    let recovered = 0;
+    for (const point of points) {
+      try {
+        for await (const msg of client.iterMessages(
+          helpers.returnBigInt(point.peerId.toString()),
+          // Strictly newer than what we hold. `limit` bounds a chat that has
+          // been busy for a week; anything older than that gap is history and
+          // belongs to `pnpm tg-import`, not to a restart.
+          { minId: Number(point.lastMessageId), limit: CATCHUP_PER_CHAT },
+        )) {
+          const peer = peerFromChat((await msg.getChat?.()) as never);
+          const verdict = decideIncoming(peer, msg, book.clients, rules);
+          if (!verdict.store) continue;
+          const written = await storeIncoming({
+            clientId: verdict.clientId,
+            managerUserId: account.managerUserId,
+            row: verdict.row,
+          });
+          if (written) recovered += 1;
+        }
+      } catch (err) {
+        // One unreachable chat must not stop the rest catching up.
+        console.error('catch-up:', err instanceof Error ? err.message : err);
+      }
+    }
+    if (recovered > 0) console.log(`uzilish davridagi ${recovered} ta xabar olindi`);
+  };
+  await catchUp().catch((err) => {
+    // Never fatal: a bridge that refuses to start because it could not
+    // backfill is worse than one that starts and is a little behind.
+    console.error('catch-up umuman ishlamadi:', err instanceof Error ? err.message : err);
+  });
+
   const beat = setInterval(() => {
     // Only while the LINK is up. Writing it unconditionally would prove the
     // process is alive, which is not the question anybody is asking: a
@@ -281,8 +342,6 @@ async function main() {
   process.on('SIGINT', () => void stop('SIGINT'));
   process.on('SIGTERM', () => void stop('SIGTERM'));
 
-  // Telegram replays a little history on reconnect. The unique index absorbs
-  // it, which is why nothing here tracks "where did I get to".
 }
 
 main().catch(async (err) => {

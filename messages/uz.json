@@ -1015,7 +1015,9 @@
     "replyRateLimited": "Juda tez-tez. Bir daqiqa kuting.",
     "replyNotYours": "Bu yozishma boshqa menejerning akkauntida — faqat o‘zi javob bera oladi.",
     "replyTooLong": "Xabar juda uzun.",
-    "replyEmpty": "Bo‘sh xabar."
+    "replyEmpty": "Bo‘sh xabar.",
+    "chatStopTaking": "Bu chatni olmang",
+    "chatStopTakingHint": "Bu yozishma boshqa saqlanmaydi. Eski xabarlar qoladi."
   },
   "navShort": {
     "home": "Bosh",

@@ -1015,7 +1015,9 @@
     "replyRateLimited": "Too fast. Wait a minute.",
     "replyNotYours": "This conversation is on another manager’s account — only they can reply.",
     "replyTooLong": "Message is too long.",
-    "replyEmpty": "Empty message."
+    "replyEmpty": "Empty message.",
+    "chatStopTaking": "Stop taking this chat",
+    "chatStopTakingHint": "Stop storing this conversation. Existing messages stay."
   },
   "navShort": {
     "home": "Home",

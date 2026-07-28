@@ -205,6 +205,58 @@ export async function decideChat(
   });
 }
 
+/**
+ * Stop taking a conversation that the phone rule DOES match.
+ *
+ * The other half of the owner's ask, and it was unreachable: `scanVerdict`
+ * returns `'auto'` for anything the automatic rule already keeps, the scan
+ * only records `'ask'` verdicts, and `recordCandidates` is the sole writer of
+ * `tg_chat_rules` — so there was no route by which a matched chat could ever
+ * be given an `exclude`. «Qo'shish» worked; «qo'shmaslik» did not.
+ *
+ * It is reachable from the conversation itself rather than from the list, and
+ * that is the better place anyway: you are looking at the chat you are
+ * deciding about, instead of judging a name on a page.
+ *
+ * Future only. It stops new messages being stored; what is already in
+ * `tg_messages` stays, because deleting a client's conversation is a separate
+ * decision with its own consequences — and this button must not quietly be
+ * the one that takes it.
+ */
+export async function excludeChatForClient(
+  input: { clientId: string; managerUserId: string; peerId: bigint },
+  ctx: AuditContext,
+): Promise<void> {
+  const [row] = await db
+    .insert(tgChatRules)
+    .values({
+      managerUserId: input.managerUserId,
+      peerId: input.peerId,
+      decision: 'exclude',
+      decidedBy: ctx.actorId,
+      decidedAt: new Date(),
+    })
+    // A chat can already have a rule — most usefully a `pending` one from a
+    // scan, or an `include` somebody is changing their mind about.
+    .onConflictDoUpdate({
+      target: [tgChatRules.managerUserId, tgChatRules.peerId],
+      set: {
+        decision: 'exclude',
+        clientId: null,
+        decidedBy: ctx.actorId,
+        decidedAt: new Date(),
+      },
+    })
+    .returning({ id: tgChatRules.id });
+
+  await writeAudit(db, ctx, {
+    entityType: 'tg_chat_rule',
+    entityId: row!.id,
+    action: 'update',
+    after: { decision: 'exclude', clientId: input.clientId, reason: 'excluded_from_conversation' },
+  });
+}
+
 /** How many chats are still waiting — for the badge on the screen. */
 export async function pendingCount(managerUserId?: string): Promise<number> {
   const rows = await listCandidates({ managerUserId, decision: 'pending' });
