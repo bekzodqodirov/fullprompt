@@ -138,10 +138,20 @@ export async function clientFeed(
 
       UNION ALL
 
-      -- What somebody wrote down: a call, a meeting, a note.
+      -- What somebody wrote down: a call, a meeting, a note — and the files
+      -- pinned to it (owner: "zametkaga fayllar qo'shish").
       SELECT
         'ac-' || a.id::text, 'note', a.happened_at, u.full_name, a.note,
-        jsonb_build_object('kind', a.kind)
+        jsonb_build_object(
+          'kind', a.kind,
+          'files', (
+            SELECT coalesce(jsonb_agg(jsonb_build_object(
+              'id', att.id, 'name', att.file_name, 'image', att.content_type LIKE 'image/%'
+            ) ORDER BY att.created_at), '[]'::jsonb)
+            FROM attachments att
+            WHERE att.entity_type = 'crm_activity' AND att.entity_id = a.id
+          )
+        )
       FROM crm_activities a
       JOIN users u ON u.id = a.created_by
       WHERE (

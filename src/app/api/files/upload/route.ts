@@ -20,7 +20,10 @@ import { FileValidationError, saveAttachment } from '@/modules/platform/files/se
  * may carry a file, not WHICH one this user may touch. That check needs the
  * policy layer and lands with it.
  */
-const ATTACHABLE = ['receipt', 'receipt_lot', 'crate', 'handover', 'custom_field'] as const;
+// 'crm_activity': files on an internal note (owner: "zametkaga fayllar
+// qo'shish") — uploaded against a client-generated note id before the note
+// exists, the same pre-binding the receipt wizard uses for lot photos.
+const ATTACHABLE = ['receipt', 'receipt_lot', 'crate', 'handover', 'custom_field', 'crm_activity'] as const;
 
 const metaSchema = z.object({
   entityType: z.enum(ATTACHABLE),

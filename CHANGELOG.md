@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 3-to'plam (2-qism): chat va vazifalar — har sahifadan — 2026-07-28
+
+Siz so'ragan «chat butun sistemadan kirsa bo'ladigan joyda» — tayyor:
+
+- **Tepadagi 💬 tugma — har sahifada.** Bosilsa o'ngdan panel ochiladi
+  (telefonda pastdan). Ikki bo'lim: **«Suhbatlar»** — mijozlar yozganlari,
+  «javob kutilmoqda» belgisi bilan, o'sha yerda o'qib, o'sha yerda javob
+  yozasiz (Enter — yuborish); **«Mening kunim»** — bugungi va kechikkan
+  vazifalar, bir bosishda «bajarildi».
+- **Karta ustida tursangiz — panel o'sha mijozning chatini ochadi**: bitim,
+  mijoz yoki lid kartasida 💬 bosilsa, ro'yxat qidirmasdan to'g'ri shu
+  suhbatga tushasiz.
+- Skladchi va boshqa suhbatga huquqi yo'q hodimlarga panel faqat
+  vazifalarni ko'rsatadi.
+- **Zametkaga fayl** (siz so'ragancha): lentadagi izoh oynasida 📎 —
+  rasm yoki hujjat biriktiriladi, lentada rasm ko'rinadi, hujjat nomi
+  bilan yuklab olinadi.
+- **«Записать контакт» yon panelga ko'chdi** — lid kartasida yig'ma bo'lib
+  turadi, ochsangiz avvalgidek qo'ng'iroq/uchrashuv va keyingi qadam
+  sanasi yoziladi.
+- Kartada Telegram holati endi rostini aytadi: suhbat umuman ulanmagan
+  bo'lsa — «hali ulanmagan» va qanday ulanishi; boshqa menejernikida
+  bo'lsa — kim javob bera olishi, nomi bilan.
+
+Tekshirildi: 660 unit/integration + 83 e2e yashil. Migratsiya yo'q.
+
 ## Fikr-mulohaza raundi, 3-to'plam (1-qism): karta va voronka — 2026-07-28
 
 Siz so'ragan amoCRM ko'rinishi (3-band):

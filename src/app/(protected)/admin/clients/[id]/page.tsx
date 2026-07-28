@@ -56,6 +56,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
   return (
     <div className="space-y-6">
+      {/* The dock opens straight into this client's conversation from here. */}
+      <span data-dock-client={client.id} hidden />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">
           <span className="font-mono text-brand-700">{client.clientCode}</span> — {client.name}

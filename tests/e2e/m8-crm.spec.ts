@@ -56,6 +56,9 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await expect(page).toHaveURL(/\/crm\/leads\/[0-9a-f-]+$/);
 
   // A call, with the next one booked for today so it lands on the call list.
+  // The contact log lives folded in the card's rail now (owner, 2026-07-28)
+  // — open it the way a finger would.
+  await page.getByTestId('activity-panel').click();
   const today = new Date().toISOString().slice(0, 10);
   const activity = page.locator('form').filter({ has: page.getByTestId('save-activity') });
   await page.getByTestId('activity-note').fill('narx aytdim');

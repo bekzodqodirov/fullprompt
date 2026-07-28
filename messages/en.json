@@ -1054,7 +1054,8 @@
     "feedDebtOverride": "released with a debt",
     "openDeal": "Open a deal",
     "replyNoChat": "Telegram chat not linked yet",
-    "replyNoChatHint": "As soon as the client writes to a connected manager Telegram, the conversation appears here by itself. Connect: Profile → ✈️"
+    "replyNoChatHint": "As soon as the client writes to a connected manager Telegram, the conversation appears here by itself. Connect: Profile → ✈️",
+    "feedNoteAttach": "Attach a file"
   },
   "navShort": {
     "home": "Home",

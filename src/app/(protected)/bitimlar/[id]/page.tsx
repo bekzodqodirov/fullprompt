@@ -74,6 +74,10 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="space-y-4">
+      {/* The dock reads this: opening it on THIS card lands in THIS client's
+          conversation, not a list to search (owner: "chat butun sistemadan
+          kirsa bo'ladigan joyda"). */}
+      <span data-dock-client={row.deal.clientId} hidden />
       <PageHeader
         icon="handshake"
         back={{ href: '/bitimlar', label: t('title') }}

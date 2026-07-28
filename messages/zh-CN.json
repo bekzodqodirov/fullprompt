@@ -1054,7 +1054,8 @@
     "feedDebtOverride": "带欠款放行",
     "openDeal": "开单",
     "replyNoChat": "尚未关联 Telegram 对话",
-    "replyNoChatHint": "客户给已连接的经理 Telegram 发消息后，对话会自动出现在这里。连接方式：个人资料 → ✈️"
+    "replyNoChatHint": "客户给已连接的经理 Telegram 发消息后，对话会自动出现在这里。连接方式：个人资料 → ✈️",
+    "feedNoteAttach": "附加文件"
   },
   "navShort": {
     "home": "首页",

@@ -135,9 +135,14 @@ export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Prom
   if (entityType !== 'client' && entityType !== 'lead' && entityType !== 'deal') {
     return { error: 'forbidden' };
   }
+  // Set when the box uploaded files first: the note takes THAT id, so the
+  // attachments pre-bound to it become the note's own (owner: "zametkaga
+  // fayllar qo'shish").
+  const rawActivityId = String(form.get('activityId') ?? '');
+  const activityId = /^[0-9a-f-]{36}$/i.test(rawActivityId) ? rawActivityId : undefined;
 
   await addActivity(
-    { entityType, entityId, kind: 'note', note },
+    { id: activityId, entityType, entityId, kind: 'note', note },
     { actorId: who.id, ...(await requestMeta()) },
   );
   // The Telegram half of the internal chat. After the save and never blocking

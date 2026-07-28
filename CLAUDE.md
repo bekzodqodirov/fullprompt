@@ -259,9 +259,19 @@ Batch 3 part 1 SHIPPED (#354): `CardCols` gives deal/lead/client cards the
 amoCRM shape — lenta wide+tall on the left, sticky self-scrolling 24rem
 facts rail on the right, phone keeps facts-first stacking from the same
 DOM; the kanban desktop board owns the viewport with full-height sunken
-columns that scroll internally (no page scrollbar). Still open in batch 3
-(task #79): right dock for tasks+card chat (5+7), in-map popups (12),
-cabinet linking via request_contact (13), chat photos + composer (15).
+columns that scroll internally (no page scrollbar).
+
+Batch 3 part 2 SHIPPED (#355-356): the DOCK — an app-bar 💬 on every page
+opening a right drawer (bottom sheet on phones) with the conversations
+list+thread (reply in place, Enter-send) and the /bugun tasks (one-tap
+finish); cards declare their client via a hidden `data-dock-client` marker
+so the drawer opens straight into that thread; portal to body because the
+header's backdrop-filter traps fixed descendants. Notes take FILES
+(pre-bound to a client-minted crm_activity id, rendered on the lenta);
+the lead card's contact log folded into a rail Panel; cards now state the
+honest Telegram status (not-linked vs somebody-else's, named). Still open
+in batch 3 (task #79): in-map popups (12), cabinet linking via
+request_contact (13), incoming chat photos (15).
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

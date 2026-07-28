@@ -393,6 +393,8 @@ export async function listLeads(filters: {
 // --- Contact history --------------------------------------------------------
 
 export const activitySchema = z.object({
+  /** Client-generated when files were attached BEFORE saving (pre-binding). */
+  id: z.string().uuid().optional(),
   entityType: z.enum(['lead', 'client', 'deal']),
   entityId: z.string().uuid(),
   kind: z.enum(['call', 'meeting', 'message', 'note']),
@@ -408,6 +410,7 @@ export async function addActivity(input: z.infer<typeof activitySchema>, ctx: Au
   const [row] = await db
     .insert(crmActivities)
     .values({
+      ...(input.id ? { id: input.id } : {}),
       entityType: input.entityType,
       entityId: input.entityId,
       kind: input.kind,

@@ -1054,7 +1054,8 @@
     "feedDebtOverride": "qarz bilan berildi",
     "openDeal": "Bitim ochish",
     "replyNoChat": "Telegram suhbati hali ulanmagan",
-    "replyNoChatHint": "Mijoz menejerning ulangan Telegramiga yozishi bilan suhbat shu yerda o'zi paydo bo'ladi. Ulanish: Profil → ✈️"
+    "replyNoChatHint": "Mijoz menejerning ulangan Telegramiga yozishi bilan suhbat shu yerda o'zi paydo bo'ladi. Ulanish: Profil → ✈️",
+    "feedNoteAttach": "Fayl biriktirish"
   },
   "navShort": {
     "home": "Bosh",

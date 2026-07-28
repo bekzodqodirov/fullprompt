@@ -15,10 +15,13 @@ export function ActivityForm({
   entityType,
   entityId,
   today,
+  bare = false,
 }: {
   entityType: 'lead' | 'client';
   entityId: string;
   today: string;
+  /** Inside a collapsible Panel the panel owns the card and the title. */
+  bare?: boolean;
 }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
@@ -30,8 +33,8 @@ export function ActivityForm({
   const kinds = ['call', 'message', 'meeting', 'note'] as const;
 
   return (
-    <form action={formAction} className="card space-y-2">
-      <h2 className="text-sm font-bold uppercase text-ink-500">📝 {t('addActivity')}</h2>
+    <form action={formAction} className={bare ? 'space-y-2' : 'card space-y-2'}>
+      {!bare && <h2 className="text-sm font-bold uppercase text-ink-500">📝 {t('addActivity')}</h2>}
       <input type="hidden" name="entityType" value={entityType} />
       <input type="hidden" name="entityId" value={entityId} />
       <div className="flex flex-wrap gap-2">

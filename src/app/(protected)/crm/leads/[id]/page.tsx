@@ -51,6 +51,9 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   const today = new Date().toISOString().slice(0, 10);
   const update = updateLeadAction.bind(null, id);
   const convert = convertLeadAction.bind(null, id);
+  // The conversation this lead belongs to, when there is one — shared by the
+  // lenta and the dock's card marker.
+  const dockClientId = await conversationClientForLead(lead);
 
   return (
     // Wide like the funnel it came from: the amoCRM card shape (owner,
@@ -61,6 +64,8 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         ← {t('funnel')}
       </Link>
       <h1 className="text-xl font-bold [overflow-wrap:anywhere]">{lead.name}</h1>
+      {/* The dock opens straight into this lead's conversation, if any. */}
+      {dockClientId && <span data-dock-client={dockClientId} hidden />}
 
       <StageMover
         leadId={id}
@@ -78,29 +83,21 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
 
       <CardCols
         main={
-          <>
-            {/* A lead who is already a client — converted, or an existing
-                customer asking about another job — brings their conversation
-                with them. A brand new prospect has none, and the panel simply
-                does not render. */}
-            <ClientFeed
-              clientId={await conversationClientForLead(lead)}
-              leadId={lead.id}
-              limit={60}
-              tall
-            />
-
-            {/* The activity FORM stays — its kind and «keyingi qadam» date
-                are what feed /crm/today, and the lenta's quick note box has
-                neither. The LIST it used to sit above is gone: those same
-                activities render on the lenta, and two copies of every note
-                on one card is how the owner's "qachon nima bo'lgani 1 joyda"
-                turns back into two places. */}
-            <ActivityForm entityType="lead" entityId={id} today={today} />
-          </>
+          /* A lead who is already a client — converted, or an existing
+             customer asking about another job — brings their conversation
+             with them. A brand new prospect has none, and the panel simply
+             does not render. */
+          <ClientFeed clientId={dockClientId} leadId={lead.id} limit={60} tall />
         }
         rail={
           <>
+      {/* The contact log, in the rail and folded (owner: "Записать контакт
+          lentaning pastida emas, yon tarafdagi menyuda tursin, collapsible
+          bo'lib"). Its kind and «keyingi qadam» date are what feed
+          /crm/today — the lenta's quick note box has neither. */}
+      <Panel title={`📞 ${t('addActivity')}`} testId="activity-panel">
+        <ActivityForm entityType="lead" entityId={id} today={today} bare />
+      </Panel>
       {lead.clientId ? (
         <div className="flex gap-2">
           <Link

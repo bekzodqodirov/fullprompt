@@ -3,6 +3,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed';
 import { TelegramReply } from './telegram-reply';
 import { FeedNoteBox } from './client-feed-note';
+import { LightboxImg } from './lightbox-img';
 
 /**
  * The «lenta» — one client, everything that happened, in one column.
@@ -151,6 +152,7 @@ export async function ClientFeed({
             placeholder: t('feedNotePlaceholder'),
             save: t('feedNoteSave'),
             saving: t('feedNoteSaving'),
+            attach: t('feedNoteAttach'),
           }}
         />
       </div>
@@ -240,6 +242,31 @@ function FeedRow({
       ) : item.meta.hasMedia === true ? (
         <p className="text-ink-500">📎 {t('telegramMedia')}</p>
       ) : null}
+      {/* Files pinned to a note: pictures open in the lightbox, the rest
+          download by name. */}
+      {Array.isArray(item.meta.files) && item.meta.files.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {(item.meta.files as { id: string; name: string; image: boolean }[]).map((file) =>
+            file.image ? (
+              <LightboxImg
+                key={file.id}
+                attachmentId={file.id}
+                className="h-16 w-16 rounded-lg object-cover"
+              />
+            ) : (
+              <a
+                key={file.id}
+                href={`/api/attachments/${file.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="max-w-48 truncate rounded-lg bg-surface-raised px-2 py-1 text-xs font-semibold hover:underline"
+              >
+                📎 {file.name}
+              </a>
+            ),
+          )}
+        </div>
+      )}
       {item.kind === 'tg_pending' && item.meta.error ? (
         <p className="mt-1 text-xs text-bad">{String(item.meta.error)}</p>
       ) : null}
