@@ -61,3 +61,51 @@ test('a warehouse operator cannot read what clients told sales', async ({ page }
   await page.goto('/suhbatlar');
   await expect(page).toHaveURL('/');
 });
+
+/**
+ * The trade-off the owner asked about, made explicit.
+ *
+ * He wanted the chat on the deal card too. A deal card is open to the VED
+ * manager as well as sales (`DEAL_WRITE_PERMISSIONS` = crm.leads · ved.docs ·
+ * clients.manage), so putting an ungated panel there would have quietly handed
+ * the customs manager every private sales conversation in the company.
+ *
+ * The panel gates itself, which means the same card shows different things to
+ * different people — deliberately. That is the behaviour worth pinning, in the
+ * one place it can actually be observed.
+ */
+const VED = '+998900000004';
+const SALES = '+998900000009';
+
+test('a deal card shows the conversation to sales and hides it from VED', async ({ page }) => {
+  await login(page, OWNER);
+  // `?scope=all`: the board opens on MINE, and the deal the earlier spec left
+  // belongs to somebody else — without this the board is empty and the test
+  // skips itself, which is worse than failing because it looks like coverage.
+  await page.goto('/bitimlar?scope=all');
+  // The board's own card, not any link starting with /bitimlar — that also
+  // matches the "new deal" button, which goes somewhere else entirely.
+  const deal = page.getByTestId('deal-card').first();
+  await expect(deal).toBeVisible();
+  await deal.click();
+  await expect(page).toHaveURL(/\/bitimlar\/[0-9a-f-]{36}$/);
+  const url = page.url();
+  // Whether THIS deal's client has an imported conversation depends on the
+  // run, so the owner's view is the reference: whatever he sees, VED must not.
+  const ownerSees = await page.getByTestId('tg-thread').count();
+
+  await login(page, VED);
+  await page.goto(url);
+  await expect(page.getByRole('heading').first()).toBeVisible();
+  // He still does his job on the card — the customs papers are his.
+  await expect(page).toHaveURL(url);
+  await expect(page.getByTestId('tg-thread')).toHaveCount(0);
+
+  if (ownerSees > 0) {
+    await login(page, SALES);
+    await page.goto(url);
+    // Sales may be scoped out of another manager's deal; only assert the
+    // panel when the card itself opened.
+    if (page.url() === url) await expect(page.getByTestId('tg-thread')).toHaveCount(ownerSees);
+  }
+});

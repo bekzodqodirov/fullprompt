@@ -111,7 +111,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 298 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 301 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-493 unit/integration + 67 e2e, verified in CI's order on a fresh database.
+497 unit/integration + 68 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -225,7 +225,10 @@ deployed:
   `clients.manage` with its own per-page check. Ran on his own account: 394
   dialogs, 13 clients, 5,191 messages — the 122 "no phone" were his PERSONAL
   chats, correctly left out, so the filter did its job. Phases 3-4 (live
-  receive, reply) not started; Siroj deliberately not connected yet.
+  receive, reply) not started; Siroj deliberately not connected yet. The panel
+  is also on the DEAL and LEAD cards (#299-301) and gates ITSELF — a deal card
+  is open to `ved.docs`, so an ungated panel there would have handed the customs
+  manager every sales conversation.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

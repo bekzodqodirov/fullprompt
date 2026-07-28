@@ -12,6 +12,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import {
+  conversationClientForLead,
   conversationFor,
   listConversations,
 } from '@/modules/wms/crm/conversations';
@@ -677,5 +678,56 @@ describe('the conversation list', () => {
     // reference — "what did we last say" — and is newest first for that reason.
     expect(thread.map((m) => m.body)).toEqual(['bir', 'ikki', null]);
     expect(thread[2]!.hasMedia).toBe(true);
+  });
+});
+
+/**
+ * Which conversation belongs on a LEAD's card.
+ *
+ * A lead is not a client, so most of them have none — and that is correct.
+ * The two cases that DO are the owner's reality, and the refusal in the middle
+ * is the one that matters: a lead's phone is typed in a hurry, and showing the
+ * wrong person's private conversation is worse than showing none.
+ */
+describe('the conversation on a lead card', () => {
+  it('follows the link once the lead has become a client', async () => {
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: `LC${String(Date.now()).slice(-5)}`, name: 'Converted' })
+      .returning();
+    expect(await conversationClientForLead({ clientId: client!.id, phone: null })).toBe(client!.id);
+  });
+
+  it('finds an EXISTING client typed into the funnel as a fresh lead', async () => {
+    // Not an edge case — a customer asking about another job is how most of
+    // this funnel fills up.
+    const phone = `+99890${String(Date.now()).slice(-7)}`;
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: `LP${String(Date.now()).slice(-5)}`, name: 'Returning', phones: [phone] })
+      .returning();
+    // Matched through the same helper the cabinet uses, so "same person,
+    // different formatting" behaves identically everywhere.
+    const spaced = phone.replace('+998', '998 ').replace(/(\d{3})(\d{2})(\d{2})$/, '$1 $2 $3');
+    expect(await conversationClientForLead({ clientId: null, phone: spaced })).toBe(client!.id);
+  });
+
+  it('shows NOTHING when the number could be either of two clients', async () => {
+    // One phone, several codes is normal here (777, 555, 444 in one pair of
+    // hands). On a client card that is fine — you opened a specific code. On a
+    // LEAD it is a guess, and a wrong guess opens somebody's private chat.
+    const phone = `+99891${String(Date.now()).slice(-7)}`;
+    const suffix = String(Date.now()).slice(-5);
+    await db.insert(clients).values([
+      { clientCode: `LA${suffix}`, name: 'Same person A', phones: [phone] },
+      { clientCode: `LB${suffix}`, name: 'Same person B', phones: [phone] },
+    ]);
+    expect(await conversationClientForLead({ clientId: null, phone })).toBeNull();
+  });
+
+  it('shows nothing for a brand new prospect', async () => {
+    expect(await conversationClientForLead({ clientId: null, phone: null })).toBeNull();
+    expect(await conversationClientForLead({ clientId: null, phone: '   ' })).toBeNull();
+    expect(await conversationClientForLead({ clientId: null, phone: '+998900000000000' })).toBeNull();
   });
 });

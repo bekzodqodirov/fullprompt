@@ -1,6 +1,7 @@
 import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, tgMessages, users } from '../../platform/db/schema';
+import { activeClientsByPhone } from '../client-cabinet/service';
 
 /**
  * The conversation list and one conversation — phase 2 of bringing the
@@ -124,4 +125,34 @@ export async function conversationCount(): Promise<number> {
     .select({ n: sql<number>`count(DISTINCT ${tgMessages.clientId})` })
     .from(tgMessages);
   return Number(row?.n ?? 0);
+}
+
+/**
+ * Which client's conversation belongs on a LEAD's card.
+ *
+ * A lead is not a client, and `tg_messages.client_id` is NOT NULL — so a brand
+ * new prospect has no thread here, and that is correct: their chat was never
+ * imported, because the import only ever keeps conversations that match the
+ * client book.
+ *
+ * But two common cases DO have one, and both are worth showing:
+ *  - the lead has already been converted (`clientId` is set), and
+ *  - the lead is an EXISTING client asking about another job, typed into the
+ *    funnel as a fresh lead. That is the owner's reality, not an edge case.
+ *
+ * Resolved by phone through the same helper the cabinet uses, so "same person,
+ * different formatting" behaves the same way everywhere. Deliberately only
+ * when the number resolves to exactly ONE client: a lead's phone is typed in a
+ * hurry, and showing the wrong person's private conversation is a worse
+ * failure than showing none.
+ */
+export async function conversationClientForLead(lead: {
+  clientId: string | null;
+  phone: string | null;
+}): Promise<string | null> {
+  if (lead.clientId) return lead.clientId;
+  const phone = (lead.phone ?? '').trim();
+  if (!phone) return null;
+  const matches = await activeClientsByPhone(phone);
+  return matches.length === 1 ? matches[0]!.id : null;
 }
