@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## Zaxira ogohlantirishi ishlamayotgan ekan — 2026-07-28
+
+Rasmlarni zaxiralashni loyihalash uchun mavjud kodni surishtirdim va **haftalar
+davomida ishlamay turgan** narsani topdim.
+
+### Kechasi zaxira olinmasa, sizga nima kelardi
+
+Faqat shu:
+
+```
+BackupFailed
+https://gsrwms.uz
+```
+
+Xolos. **Nima buzilgani yozilmasdi** — disk to'ldimi, Drive rad etdimi,
+parol eskirdimi — hech biri. Kodda `RestoreTestFailed` uchun matn bor edi,
+`BackupFailed` uchun esa yo'q, shuning uchun u «nomini aytib qo'yish» degan
+zaxira yo'lga tushib ketardi.
+
+Endi shunday keladi:
+
+```
+🆘 KECHASI ZAXIRA OLINMADI!
+Google Drive: hajm mos kelmadi: diskda 41231872 bayt, Drive'da 0 bayt
+Baza bugun saqlanmadi. Ertaga emas, hozir tekshiring.
+```
+
+Bunday xabarlar **faqat yomon kunda** keladi — aynan shuning uchun ular
+ishlamay turganini hech kim sezmaydi. Endi **har bir ogohlantirish** to'rt
+tilda tekshiriladi: nomining o'zi emasligi va sababni olib kelishi shart.
+
+### Rasmlarni zaxiralash — poydevor
+
+Google Drive tomonining ikki qismi tayyor: **xotiradan yuklash** (rasm MinIO'dan
+keladi, diskka yozilmaydi) va **bo'sh joyni o'lchash**.
+
+Ikkinchisi eng muhimi: Google'dagi 15 GB'ni sizning Gmail'ingiz va shaxsiy
+rasmlaringiz ham bo'lishadi. Faqat o'z papkasiga qaraydigan zaxira oxirgi
+gigabaytni yeb qo'yib, **baza zaxirasini o'ldirishi** mumkin edi. Endi u
+butun akkauntning bo'sh joyini o'qiydi.
+
+Tekshirildi: 626 ta test + 73 ta ekran testi.
+
 ## Deploy paytida yo'qolayotgan xabarlar + «bu chatni olmang» — 2026-07-28
 
 ### 1. Har deploy'da xabarlar yo'qolar edi ⚠

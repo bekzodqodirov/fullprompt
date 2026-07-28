@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { LOCALES } from '@/modules/platform/i18n/locales';
 import { SETTING_DEFAULTS } from '@/modules/platform/settings/service';
 import { BRIDGE_LABELS } from '@/components/telegram-bridge-status';
@@ -145,6 +145,32 @@ describe('staff Telegram messages', () => {
       expect(renderTelegramText(type, payload, null), type).not.toContain('undefined');
     }
   });
+
+  /**
+   * Every alert this system raises must say something. The fall-through at the
+   * end of `renderTelegramText` returns the bare event NAME and a URL, which
+   * is a reasonable last resort for a notification nobody has written yet —
+   * and a terrible one for the alarms.
+   *
+   * `BackupFailed` fell through for months: a nightly backup that did not
+   * happen reached the owner's phone as the literal word "BackupFailed" and a
+   * link, with `payload.error` — the one thing that says WHAT broke — dropped.
+   * These are the messages that only ever arrive on a bad day, which is
+   * exactly why nobody notices they are useless.
+   */
+  const ALARMS = ['BackupFailed', 'RestoreTestFailed'];
+
+  it('every alarm says what happened, in every language', () => {
+    for (const type of ALARMS) {
+      for (const locale of [...Object.keys(BUNDLES), 'xx', null]) {
+        const text = renderTelegramTextSync(type, { error: 'disk full' }, locale);
+        // Not the bare event name, and carrying the reason.
+        expect(text, `${type} / ${locale}`).not.toBe(type);
+        expect(text, `${type} / ${locale}`).toContain('disk full');
+        expect(text, `${type} / ${locale}`).not.toContain('undefined');
+      }
+    }
+  });
 });
 
 /**
@@ -156,6 +182,19 @@ describe('staff Telegram messages', () => {
  * missing from all four bundles equally, so they matched each other perfectly
  * while /admin/settings threw on every visit for weeks.
  */
+/** Imported once for the alarm test below; the suite is otherwise async. */
+let renderTelegramTextSync: (
+  type: string,
+  payload: Record<string, unknown>,
+  locale: string | null,
+) => string;
+
+beforeAll(async () => {
+  ({ renderTelegramText: renderTelegramTextSync } = await import(
+    '@/modules/platform/notifications/service'
+  ));
+});
+
 describe('every setting can be described', () => {
   for (const locale of Object.keys(BUNDLES)) {
     it(`${locale} describes all ${Object.keys(SETTING_DEFAULTS).length} settings`, () => {

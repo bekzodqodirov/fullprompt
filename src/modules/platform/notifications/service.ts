@@ -284,6 +284,13 @@ export function renderTelegramText(
       );
     case 'RestoreTestFailed':
       return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;
+    // Without this case the most important alert in the system fell to the
+    // default below and reached the owner's phone as the literal word
+    // "BackupFailed" and a URL — with `payload.error`, the one thing that
+    // says WHAT broke, dropped on the floor. A nightly backup that did not
+    // happen is not something to find out about from a bare event name.
+    case 'BackupFailed':
+      return `🆘 ${L.backupFailed}\n${payload.error ?? ''}\n${L.backupCheck}`;
     default:
       // No case and no pre-rendered text. Say what happened and point at the
       // app — never at `/receipts/undefined`, which is what this branch used

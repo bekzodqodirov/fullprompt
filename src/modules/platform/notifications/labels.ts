@@ -113,6 +113,18 @@ const DICT = {
     'zh-CN': '备份恢复测试未通过！',
     en: 'The backup restore test FAILED!',
   },
+  backupFailed: {
+    ru: 'НОЧНОЙ БЭКАП НЕ СДЕЛАН!',
+    uz: 'KECHASI ZAXIRA OLINMADI!',
+    'zh-CN': '夜间备份未完成！',
+    en: 'THE NIGHTLY BACKUP DID NOT HAPPEN!',
+  },
+  backupCheck: {
+    ru: 'База сегодня НЕ сохранена. Разберитесь сейчас, а не завтра.',
+    uz: 'Baza bugun saqlanmadi. Ertaga emas, hozir tekshiring.',
+    'zh-CN': '数据库今天没有备份。请立即处理，不要拖到明天。',
+    en: 'The database was NOT saved today. Deal with it now, not tomorrow.',
+  },
   restoreCheck: {
     ru: 'Проверьте бэкапы на сервере (BACKUP_DIR).',
     uz: 'Serverdagi zaxiralarni tekshiring (BACKUP_DIR).',
