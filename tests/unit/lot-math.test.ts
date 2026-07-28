@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { computeLotTotals, densityBand } from '@/modules/wms/receipts/math';
 
-const THRESHOLDS = { light: 200, medium: 300, heavy: 400 };
+// The owner's bands (2026-07-28): green to 150, yellow to 250, light red to
+// 450, dark red above — light cargo is the GOOD case in this business, so it
+// must never wear the danger colour.
+const THRESHOLDS = { light: 150, medium: 250, heavy: 450 };
 
 describe('computeLotTotals (spec acceptance test 5)', () => {
-  it('uniform: 10 boxes 50×50×50 @25 kg ⇒ 1.25 m³, 250 kg, density 200 → green', () => {
+  it('uniform: 10 boxes 50×50×50 @25 kg ⇒ 1.25 m³, 250 kg, density 200 → yellow', () => {
     const totals = computeLotTotals(
       {
         dimsMode: 'uniform',
@@ -19,7 +22,7 @@ describe('computeLotTotals (spec acceptance test 5)', () => {
     expect(totals.totalVolumeM3).toBe(1.25);
     expect(totals.totalWeightKg).toBe(250);
     expect(totals.densityKgM3).toBe(200);
-    expect(densityBand(totals.densityKgM3, THRESHOLDS)).toBe('green');
+    expect(densityBand(totals.densityKgM3, THRESHOLDS)).toBe('yellow');
   });
 
   it('chargeable weight = max(actual, volume × factor)', () => {
@@ -59,13 +62,13 @@ describe('computeLotTotals (spec acceptance test 5)', () => {
     expect(totals.totalWeightKg).toBe(480);
     expect(totals.totalVolumeM3).toBe(1.2);
     expect(totals.densityKgM3).toBe(400);
-    expect(densityBand(totals.densityKgM3, THRESHOLDS)).toBe('heavy');
+    expect(densityBand(totals.densityKgM3, THRESHOLDS)).toBe('red');
   });
 
   it('density bands are lower-bound inclusive', () => {
-    expect(densityBand(199.9, THRESHOLDS)).toBe('light');
-    expect(densityBand(200, THRESHOLDS)).toBe('green');
-    expect(densityBand(300, THRESHOLDS)).toBe('orange');
-    expect(densityBand(400, THRESHOLDS)).toBe('heavy');
+    expect(densityBand(149.9, THRESHOLDS)).toBe('green');
+    expect(densityBand(150, THRESHOLDS)).toBe('yellow');
+    expect(densityBand(250, THRESHOLDS)).toBe('red');
+    expect(densityBand(450, THRESHOLDS)).toBe('darkred');
   });
 });

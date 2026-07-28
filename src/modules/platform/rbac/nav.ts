@@ -286,7 +286,11 @@ export const NAV: NavGroupSpec[] = [
         permissions: ['admin.settings.manage'],
       },
       {
-        href: '/admin/warehouses',
+        // The HUB, not the warehouse list: entering administration used to
+        // land on /admin/warehouses with the other sections hidden in a strip
+        // that scrolls off a phone (owner, 2026-07-28). /admin is a page of
+        // big buttons now, one per section the viewer may open.
+        href: '/admin',
         labelKey: 'adminPanel',
         namespace: 'home',
         icon: 'settings',

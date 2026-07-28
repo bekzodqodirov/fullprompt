@@ -59,7 +59,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       ? ([{ href: '/admin/fx', label: tCosting('fxTitle'), icon: 'exchange' }] as SubNavItem[])
       : []),
     ...(canFields
-      ? ([{ href: '/admin/fields', label: tFields('title'), icon: 'clipboard' }] as SubNavItem[])
+      ? ([
+          { href: '/admin/fields', label: tFields('title'), icon: 'clipboard' },
+          // Truck expense TYPES (yashik, tushirish…) — data, not code, and
+          // now with a door: the owner asked whether he could add his own.
+          { href: '/admin/cost-types', label: tCosting('typesTitle'), icon: 'wallet' },
+        ] as SubNavItem[])
       : []),
     ...(canRoles
       ? ([{ href: '/admin/roles', label: tRoles('title'), icon: 'shield' }] as SubNavItem[])

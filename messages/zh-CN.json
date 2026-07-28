@@ -559,7 +559,13 @@
       "chargeable": "按计费重量",
       "boxes": "按箱数",
       "direct_to_client": "直接归客户"
-    }
+    },
+    "typesTitle": "费用类型",
+    "typeName": "类型名称",
+    "addType": "添加类型",
+    "typeHidden": "已隐藏",
+    "typeHide": "隐藏",
+    "typeShow": "恢复"
   },
   "batches": {
     "title": "车次",
@@ -1045,7 +1051,8 @@
     "feedLost": "箱子丢失",
     "feedHandover": "已交付客户",
     "feedReady": "可提货",
-    "feedDebtOverride": "带欠款放行"
+    "feedDebtOverride": "带欠款放行",
+    "openDeal": "开单"
   },
   "navShort": {
     "home": "首页",

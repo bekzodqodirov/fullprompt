@@ -10,6 +10,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { getSetting } from '@/modules/platform/settings/service';
 import { PlanEditor } from './plan-editor';
 
 export default async function NewPlanPage({
@@ -78,6 +79,7 @@ export default async function NewPlanPage({
           maxKg: Number(p.maxKg),
           maxM3: Number(p.maxM3),
         }))}
+        densityThresholds={await getSetting('density_thresholds')}
         resubmit={resubmit}
       />
     </div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
+import { DensityBadge } from '@/components/density-badge';
 import { submitPlanAction } from '../actions';
 
 interface WarehouseOption {
@@ -49,6 +50,7 @@ export function PlanEditor({
   warehouses,
   destinations,
   presets,
+  densityThresholds,
   resubmit,
 }: {
   /** Where this planner may load FROM — their own warehouses. */
@@ -56,6 +58,8 @@ export function PlanEditor({
   /** Where cargo may be sent — everywhere. */
   destinations: WarehouseOption[];
   presets: PresetOption[];
+  /** From admin settings — the owner's numbers, not a constant of ours. */
+  densityThresholds: { light: number; medium: number; heavy: number };
   resubmit?: {
     planId: string;
     originWarehouseId: string;
@@ -324,16 +328,6 @@ export function PlanEditor({
                 const kg = lot.perBoxKg * shown;
                 const m3 = lot.perBoxM3 * shown;
                 const density = lot.perBoxM3 > 0 ? lot.perBoxKg / lot.perBoxM3 : null;
-                const densityClass =
-                  density === null
-                    ? ''
-                    : density >= 400
-                      ? 'bg-bad/15 text-bad'
-                      : density >= 300
-                        ? 'bg-warn/15 text-warn'
-                        : density >= 200
-                          ? 'bg-good/15 text-good'
-                          : 'bg-brand-100 text-brand-700';
                 return (
                   <tr
                     key={lot.lotId}
@@ -375,11 +369,7 @@ export function PlanEditor({
                       {Math.round(m3 * 100) / 100}
                     </td>
                     <td className="p-2 text-right">
-                      {density !== null && (
-                        <span className={`rounded px-1.5 py-0.5 font-semibold ${densityClass}`}>
-                          {Math.round(density)}
-                        </span>
-                      )}
+                      <DensityBadge density={density} thresholds={densityThresholds} />
                     </td>
                     <td className="p-2 text-right text-ink-500">{lot.daysInStock}</td>
                     <td className="p-1.5 text-center">

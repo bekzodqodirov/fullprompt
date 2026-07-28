@@ -42,18 +42,25 @@ export function computeLotTotals(lot: LotInput, chargeableFactor: number): LotTo
   return { totalWeightKg, totalVolumeM3, densityKgM3, chargeableKg };
 }
 
-export type DensityBand = 'light' | 'green' | 'orange' | 'heavy';
+/**
+ * The colour IS the meaning, and the meaning is the owner's (2026-07-28):
+ * "yengili yaxshi, o'rtasi sariq, og'iri qizil" — light cargo is the good
+ * case in this business, so it is green, and the heavier it gets the redder.
+ * The old scheme gave the lightest band the BRAND colour, and the brand is
+ * red: a light lot wore the danger colour on every screen.
+ */
+export type DensityBand = 'green' | 'yellow' | 'red' | 'darkred';
 
-/** Density badge bands, lower-bound inclusive (DECISIONS #17). */
+/** Density badge bands, lower-bound inclusive (DECISIONS #17, recoloured #347). */
 export function densityBand(
   density: number | null,
   thresholds: { light: number; medium: number; heavy: number },
 ): DensityBand | null {
   if (density === null) return null;
-  if (density >= thresholds.heavy) return 'heavy';
-  if (density >= thresholds.medium) return 'orange';
-  if (density >= thresholds.light) return 'green';
-  return 'light';
+  if (density >= thresholds.heavy) return 'darkred';
+  if (density >= thresholds.medium) return 'red';
+  if (density >= thresholds.light) return 'yellow';
+  return 'green';
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;

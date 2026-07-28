@@ -236,6 +236,20 @@ receive as the hero, then arrivals / loading / handover rows with live scoped
 counts (`wms/home/flow.ts`, #346); everyone else keeps the tiles. Next role
 to be agreed with the owner.
 
+Round 12 — the owner's 15-point feedback list (his message with four
+screenshots; all decisions answered). Batch 1 SHIPPED (#347-352): density
+recoloured to his scale (150/250/450, migration 0040 — the light band wore
+the brand red), `/admin` hub of buttons, collapsible sidebar, ••• sheet
+closes on route change, scanner asks 1080p + torch (iPhone Safari was
+decoding a 640×480 stream — the German server was innocent), cost-types
+CRUD, funnel cross-doors + «Bitim ochish» on won leads. Batches queued as
+tasks #78 (item 9: arrivals kub/kg + prefill + deterministic auto-close +
+diff notify to the arrival's author) and #79 (the big redesign: amoCRM-style
+card with sticky right info panel + full-height kanban (3), global right
+dock for tasks+card chat (5+7), in-map popups with unified markers (12),
+cabinet linking via Telegram request_contact (13), chat with photos +
+Enter-send composer (15)).
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days).

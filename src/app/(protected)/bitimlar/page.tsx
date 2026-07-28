@@ -30,6 +30,7 @@ export default async function DealsPage({
   if (!actor) redirect('/login');
   if (!canWriteDeal(actor.permissions)) redirect('/');
   const t = await getTranslations('deals');
+  const tc = await getTranslations('crm');
   const params = await searchParams;
 
   const seesAll = actor.permissions.has('crm.leads.view_all');
@@ -69,10 +70,20 @@ export default async function DealsPage({
         icon="handshake"
         title={t('title')}
         actions={
-          <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal">
-            <Icon name="plus" className="h-4 w-4" />
-            {t('newDeal')}
-          </Link>
+          <>
+            {/* The other half of the sales story — see /crm's header. Only
+                for somebody the lead funnel would actually let in. */}
+            {actor.permissions.has('crm.leads') && (
+              <Link href="/crm" className="btn-secondary px-3" data-testid="to-leads">
+                <Icon name="target" className="h-4 w-4" />
+                {tc('funnel')}
+              </Link>
+            )}
+            <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal">
+              <Icon name="plus" className="h-4 w-4" />
+              {t('newDeal')}
+            </Link>
+          </>
         }
       />
 

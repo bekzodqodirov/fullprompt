@@ -559,7 +559,13 @@
       "chargeable": "by chargeable weight",
       "boxes": "by number of boxes",
       "direct_to_client": "directly to the client"
-    }
+    },
+    "typesTitle": "Expense types",
+    "typeName": "Type name",
+    "addType": "Add type",
+    "typeHidden": "hidden",
+    "typeHide": "Hide",
+    "typeShow": "Restore"
   },
   "batches": {
     "title": "Batches",
@@ -1045,7 +1051,8 @@
     "feedLost": "A box was lost",
     "feedHandover": "Handed to the client",
     "feedReady": "ready to collect",
-    "feedDebtOverride": "released with a debt"
+    "feedDebtOverride": "released with a debt",
+    "openDeal": "Open a deal"
   },
   "navShort": {
     "home": "Home",

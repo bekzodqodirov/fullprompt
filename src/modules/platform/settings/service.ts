@@ -10,7 +10,10 @@ export const SETTING_DEFAULTS = {
   letter_scope: 'warehouse' as 'warehouse' | 'global',
   exclude_ambiguous_letters: false,
   chargeable_weight_factor: 167,
-  density_thresholds: { light: 200, medium: 300, heavy: 400 },
+  // The owner's numbers (2026-07-28): green to 150, yellow to 250, light red
+  // to 450, dark red above. Migration 0040 moves a stored row off the old
+  // 200/300/400 default; anything else there is his own edit and stays.
+  density_thresholds: { light: 150, medium: 250, heavy: 450 },
   unclaimed_aging_days: 7,
   stale_stock_days: 30,
   /** Days of silence before a client counts as gone quiet (owner: 60). */

@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { costTypes, currencies, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { getSetting } from '@/modules/platform/settings/service';
 import { ReceiveWizard } from './receive-wizard';
 
 export default async function ReceivePage() {
@@ -55,6 +56,7 @@ export default async function ReceivePage() {
         warehouses={whs}
         costTypes={types}
         currencies={currencyRows.map((c) => c.code)}
+        densityThresholds={await getSetting('density_thresholds')}
       />
     </div>
   );

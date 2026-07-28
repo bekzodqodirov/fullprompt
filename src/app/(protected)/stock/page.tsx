@@ -11,6 +11,8 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { getSetting } from '@/modules/platform/settings/service';
+import { DensityBadge } from '@/components/density-badge';
 import { LightboxImg } from '@/components/lightbox-img';
 import { SortTh, sortRows } from '@/components/sort-th';
 import { warehouseScope } from '@/modules/platform/rbac/scope';
@@ -194,6 +196,7 @@ export default async function StockPage({
     .select({ id: warehouses.id, code: warehouses.code })
     .from(warehouses)
     .orderBy(asc(warehouses.code));
+  const densityThresholds = await getSetting('density_thresholds');
 
   // Flatten first: the numbers the owner sorts by (Σ kg, m³, density) are
   // derived per row, so they have to exist before sortRows can order them.
@@ -279,16 +282,6 @@ export default async function StockPage({
           <tbody>
             {sorted.map((row) => {
               const { line, perBoxKg, stockKg, stockM3, density } = row;
-              const densityClass =
-                density === null
-                  ? ''
-                  : density >= 400
-                    ? 'bg-bad/15 text-bad'
-                    : density >= 300
-                      ? 'bg-orange-100 text-orange-800'
-                      : density >= 200
-                        ? 'bg-good/15 text-good'
-                        : 'bg-brand-100 text-brand-700';
               return (
                 <tr key={line.lot.id} className="border-b border-line hover:bg-surface-sunken">
                   <td className="p-1.5">
@@ -328,11 +321,7 @@ export default async function StockPage({
                   <td className="p-2 text-right font-semibold">{Math.round(stockKg)}</td>
                   <td className="p-2 text-right">{Math.round(stockM3 * 100) / 100}</td>
                   <td className="p-2 text-right">
-                    {density !== null && (
-                      <span className={`rounded px-1.5 py-0.5 font-semibold ${densityClass}`}>
-                        {Math.round(density)}
-                      </span>
-                    )}
+                    <DensityBadge density={density} thresholds={densityThresholds} />
                   </td>
                   <td className="max-w-32 truncate p-2 text-xs text-ink-500" title={line.lot.note ?? ''}>
                     {line.lot.note ?? ''}

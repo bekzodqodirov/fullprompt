@@ -73,9 +73,24 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       )}
 
       {lead.clientId ? (
-        <Link href={`/admin/clients/${lead.clientId}`} className="card block text-sm font-semibold text-good">
-          ✅ {t('alreadyClient')} →
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href={`/admin/clients/${lead.clientId}`}
+            className="card block min-w-0 flex-1 text-sm font-semibold text-good"
+          >
+            ✅ {t('alreadyClient')} →
+          </Link>
+          {/* The lead is won and coded — the next thing a salesperson does is
+              open the JOB (owner: "lead voronkadan bitim voronkaga oson
+              o'tilishi kerak"). One tap, client pre-picked. */}
+          <Link
+            href={`/bitimlar/new?client=${lead.clientId}`}
+            data-testid="lead-to-deal"
+            className="card flex items-center text-sm font-bold text-brand-700"
+          >
+            🤝 {t('openDeal')}
+          </Link>
+        </div>
       ) : (
         // Open once the lead reaches a won stage: at that moment minting the
         // client card is the only thing left to do, and hiding it behind a

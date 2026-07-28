@@ -559,7 +559,13 @@
       "chargeable": "по расчётному весу",
       "boxes": "по числу коробок",
       "direct_to_client": "напрямую клиенту"
-    }
+    },
+    "typesTitle": "Типы расходов",
+    "typeName": "Название типа",
+    "addType": "Добавить тип",
+    "typeHidden": "скрыт",
+    "typeHide": "Скрыть",
+    "typeShow": "Вернуть"
   },
   "batches": {
     "title": "Партии",
@@ -1045,7 +1051,8 @@
     "feedLost": "Коробка потеряна",
     "feedHandover": "Выдан клиенту",
     "feedReady": "можно забирать",
-    "feedDebtOverride": "выдано с долгом"
+    "feedDebtOverride": "выдано с долгом",
+    "openDeal": "Открыть сделку"
   },
   "navShort": {
     "home": "Главная",

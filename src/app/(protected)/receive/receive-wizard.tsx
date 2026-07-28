@@ -4,7 +4,8 @@ import imageCompression from 'browser-image-compression';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
-import { computeLotTotals, densityBand } from '@/modules/wms/receipts/math';
+import { computeLotTotals } from '@/modules/wms/receipts/math';
+import { DensityBadge } from '@/components/density-badge';
 import { LightboxImg } from '@/components/lightbox-img';
 import { PrintLabels } from '@/components/print-labels';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
@@ -78,13 +79,6 @@ interface Draft {
   generalPhotoIds: string[];
 }
 
-const DENSITY_COLORS: Record<string, string> = {
-  light: 'bg-brand-100 text-brand-700',
-  green: 'bg-good/15 text-good',
-  orange: 'bg-orange-100 text-orange-800',
-  heavy: 'bg-bad/15 text-bad',
-};
-const THRESHOLDS = { light: 200, medium: 300, heavy: 400 };
 const DRAFT_KEY = 'gsr-receipt-draft';
 
 function newLot(): LotDraft {
@@ -150,10 +144,13 @@ export function ReceiveWizard({
   warehouses,
   costTypes,
   currencies,
+  densityThresholds,
 }: {
   warehouses: WarehouseOption[];
   costTypes: CostTypeOption[];
   currencies: string[];
+  /** From admin settings — the owner's numbers, not a constant of ours. */
+  densityThresholds: { light: number; medium: number; heavy: number };
 }) {
   const t = useTranslations('receive');
   const tc = useTranslations('common');
@@ -598,16 +595,11 @@ export function ReceiveWizard({
   function totalsBadge(lot: LotDraft) {
     const totals = lotTotals(lot);
     if (!totals) return <span className="text-xs text-gray-300">—</span>;
-    const band = densityBand(totals.densityKgM3, THRESHOLDS);
     return (
       <span className="flex items-center justify-end gap-1.5 whitespace-nowrap font-mono text-xs">
         <b>{totals.totalWeightKg}kg</b>
         <b>{totals.totalVolumeM3}m³</b>
-        {band && totals.densityKgM3 !== null && (
-          <span className={`rounded px-1.5 py-0.5 font-sans font-semibold ${DENSITY_COLORS[band]}`}>
-            {Math.round(totals.densityKgM3)}
-          </span>
-        )}
+        <DensityBadge density={totals.densityKgM3} thresholds={densityThresholds} />
       </span>
     );
   }

@@ -26,6 +26,7 @@ export default async function LeadsPage({
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crm.leads')) redirect('/');
   const t = await getTranslations('crm');
+  const td = await getTranslations('deals');
   const params = await searchParams;
 
   const seesAll = actor.permissions.has('crm.leads.view_all');
@@ -44,10 +45,19 @@ export default async function LeadsPage({
         icon="target"
         title={t('funnel')}
         actions={
-          <Link href="/crm/leads/new" className="btn-primary">
-            <Icon name="plus" className="h-4 w-4" />
-            {t('newLead')}
-          </Link>
+          <>
+            {/* The two funnels are one sales story (owner: "bir-biriga
+                chambarchas") — a lead is worked HERE and its jobs live THERE,
+                so each board carries the door to the other. */}
+            <Link href="/bitimlar" className="btn-secondary px-3" data-testid="to-deals">
+              <Icon name="handshake" className="h-4 w-4" />
+              {td('title')}
+            </Link>
+            <Link href="/crm/leads/new" className="btn-primary">
+              <Icon name="plus" className="h-4 w-4" />
+              {t('newLead')}
+            </Link>
+          </>
         }
       />
 

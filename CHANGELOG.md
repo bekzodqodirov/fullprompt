@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## Fikr-mulohaza raundi, 1-to'plam: tez tuzatishlar — 2026-07-28
+
+Sizning 15 bandlik ro'yxatingizdan kelishilgan tartibda birinchi to'plam:
+
+- **Zichlik ranglari — sizning shkalangiz** (11-band): 150 gacha yashil,
+  250 gacha sariq, 450 gacha och qizil, undan yuqorisi to'q qizil. Xato
+  topildi ham: yengil toifaga «firma rangi» berilgan ekan, firmamiz rangi
+  esa qizil — shu uchun yengil yuk xavfli ko'rinardi. Endi rang bitta
+  joydan chiqadi (qabul, plan, sklad — uchchalasida bir xil), chegaralarni
+  esa Sozlamalardan o'zgartirsa bo'ladi.
+- **«Boshqaruv» — tugmalar sahifasi** (6-band): kirganda endi to'g'ri
+  sklad ro'yxatiga tushmaysiz — har bir bo'lim (Skladlar, Hodimlar,
+  Mijozlar, Sozlamalar, Rollar, Maydonlar, Xarajat turlari, Valyuta,
+  Furalar, Haydovchi ilovasi, Audit, Bildirishnomalar) katta tugma bo'lib
+  bitta ekranda turadi. Har kimga faqat o'z huquqidagisi ko'rinadi.
+- **Yon menyu yig'iladi** (1-band): chetidagi «⟨» bosilsa faqat
+  ikonkalar qoladi, jadval va voronkaga keng joy. Tanlov eslab qolinadi.
+- **Mobil «•••» menyusi endi o'zi yopiladi** (8-band): sahifa almashgan
+  zahoti yopiladi — ikkinchi bosishni kutmaydi.
+- **Skaner** (10-band): sabab serverda emas edi — QR'ni telefonning o'zi
+  taniydi. iPhone Safari kameradan past sifatli (640×480) tasvir berar
+  ekan; endi yuqori aniqlik so'raladi va telefon chirog'i (🔦) tugmasi
+  qo'shildi (qorong'i skladda katta yordam). Xitoydagi skladchi yangilangan
+  versiyada sinab ko'rsin — natijani ayting.
+- **Xarajat turlari** (14-band): ular boshidan bazada ma'lumot edi, faqat
+  eshigi yo'q edi. Endi Boshqaruv → «Xarajat turlari»da o'zingiz tur
+  qo'shasiz, nomini o'zgartirasiz, keraksizini yashirasiz (tarix saqlanadi).
+- **Lid ↔ Bitim** (4-band): ikkala voronka tepasida bir-biriga o'tish
+  tugmasi; mijozga aylangan lid kartasida «🤝 Bitim ochish» — bir bosishda
+  mijoz tanlangan holda yangi bitim.
+
+Tekshirildi: 654 unit/integration + 79 e2e yashil, yangi bazada CI
+tartibida. Bitta yangi migratsiya bor — **0040** (rang chegaralari) —
+deploy'dan avval odatdagidek zaxira nusxa oling.
+
+Navbatda (kelishilganidek): 9-band (kutilayotgan yuk — kub/kilo, bir
+bosishda qabul, farq haqida xabar), keyin katta dizayn to'plami (karta,
+voronka, o'ng panel, karta ichida map, bot ulash, chat).
+
 ## Skladchi bosh ekrani — ish tartibi bo'yicha — 2026-07-28
 
 Siz aytgan yo'nalishning birinchi qadami: "har bir hodim qiladigan ishiga

@@ -281,6 +281,13 @@
       "when": 1785190000008,
       "tag": "0039_deal_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1785190000009,
+      "tag": "0040_density_thresholds",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon, type IconName } from './icon';
@@ -54,6 +54,16 @@ function isActive(pathname: string, href: string) {
 export function MobileNav({ primary, groups }: { primary: NavItem[]; groups: NavGroup[] }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  // The sheet lives in the LAYOUT, which survives navigation — so a tap that
+  // navigated some way other than the link's own onClick (the admin tab bar,
+  // a back gesture) left it standing over the new page until a second tap
+  // (owner, 2026-07-28). The route changing IS the close signal.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOpen(false);
+  }, [pathname]);
+
   if (isFocusMode(pathname)) return null;
 
   return (
@@ -133,15 +143,50 @@ export function MobileNav({ primary, groups }: { primary: NavItem[]; groups: Nav
   );
 }
 
-/** The same links as a desktop sidebar, where everything fits at once. */
+/**
+ * The same links as a desktop sidebar, where everything fits at once —
+ * and collapsible to an icon rail (owner, 2026-07-28: "sidemenu collapsable
+ * bo'lishi kerak"): the funnel, the stock table and the map all want the
+ * width more than the menu does. The choice is remembered per browser;
+ * hovering a collapsed icon still names the screen via `title`.
+ */
 export function Sidebar({ groups }: { groups: NavGroup[] }) {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  // localStorage is read after mount on purpose: the server render cannot
+  // know it, and a mismatched first frame is a hydration error.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCollapsed(localStorage.getItem('gsr-sidebar-collapsed') === '1');
+  }, []);
+  const toggle = () =>
+    setCollapsed((value) => {
+      localStorage.setItem('gsr-sidebar-collapsed', value ? '0' : '1');
+      return !value;
+    });
+
   return (
-    <nav className="hidden w-56 shrink-0 border-r border-line bg-surface-raised md:block">
-      <div className="sticky top-14 space-y-5 p-3">
+    <nav
+      data-testid="sidebar"
+      className={`hidden shrink-0 border-r border-line bg-surface-raised md:block ${
+        collapsed ? 'w-14' : 'w-56'
+      }`}
+    >
+      <div className={`sticky top-14 space-y-5 ${collapsed ? 'p-1.5' : 'p-3'}`}>
+        <button
+          type="button"
+          onClick={toggle}
+          data-testid="sidebar-toggle"
+          aria-expanded={!collapsed}
+          className={`flex w-full items-center rounded-xl py-1.5 text-ink-500 hover:bg-surface-sunken ${
+            collapsed ? 'justify-center' : 'justify-end px-2'
+          }`}
+        >
+          <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} className="h-5 w-5" />
+        </button>
         {groups.map((group) => (
           <div key={group.title} className="space-y-1">
-            <p className="section-title px-2">{group.title}</p>
+            {!collapsed && <p className="section-title px-2">{group.title}</p>}
             {group.items.map((item) => {
               const active = isActive(pathname, item.href);
               return (
@@ -149,14 +194,17 @@ export function Sidebar({ groups }: { groups: NavGroup[] }) {
                   key={item.href}
                   href={item.href}
                   aria-current={active ? 'page' : undefined}
-                  className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-semibold ${
+                  title={item.label}
+                  className={`flex items-center rounded-xl text-sm font-semibold ${
+                    collapsed ? 'justify-center py-2' : 'gap-2.5 px-2.5 py-2'
+                  } ${
                     active
                       ? 'bg-brand-50 text-brand-800'
                       : 'text-ink-700 hover:bg-surface-sunken'
                   }`}
                 >
-                  <Icon name={item.icon} className="h-5 w-5" />
-                  <span className="truncate">{item.label}</span>
+                  <Icon name={item.icon} className="h-5 w-5 shrink-0" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
                 </Link>
               );
             })}
