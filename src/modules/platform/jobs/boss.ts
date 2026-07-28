@@ -18,6 +18,17 @@ export function getBoss(): PgBoss {
   return globalForBoss.boss;
 }
 
+/**
+ * Observe the latch without touching it — the health probe's view. True only
+ * after boss.start() AND every worker registration succeeded in THIS process
+ * (#252 made the latch honest). A probe must never call startBoss(): a
+ * health check that boots the worker fleet is a health check that lies the
+ * other way.
+ */
+export function isBossStarted(): boolean {
+  return globalForBoss.bossStarted === true;
+}
+
 export async function startBoss(): Promise<PgBoss> {
   const boss = getBoss();
   if (!globalForBoss.bossStarted) {

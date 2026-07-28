@@ -767,6 +767,7 @@
     "methodCash": "Cash",
     "methodCard": "Card",
     "methodTransfer": "Bank transfer",
+    "account": "Cash box / account",
     "date": "Date",
     "note": "Comment",
     "fxMissing": "There is no rate for this currency — add one under Exchange rates first",

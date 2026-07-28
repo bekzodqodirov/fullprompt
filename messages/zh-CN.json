@@ -767,6 +767,7 @@
     "methodCash": "现金",
     "methodCard": "银行卡",
     "methodTransfer": "转账（对公账户）",
+    "account": "现金/账户",
     "date": "日期",
     "note": "备注",
     "fxMissing": "该货币尚无汇率——请先在汇率页录入",

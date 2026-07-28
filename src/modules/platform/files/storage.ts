@@ -22,6 +22,8 @@ export interface StorageDriver {
   delete(key: string): Promise<void>;
   /** URL the browser can fetch for a limited time. */
   signedUrl(key: string, expiresSeconds?: number): Promise<string>;
+  /** Is the store actually reachable RIGHT NOW — for /api/health. */
+  ping(): Promise<void>;
 }
 
 class S3Driver implements StorageDriver {
@@ -54,6 +56,17 @@ class S3Driver implements StorageDriver {
       await this.client.send(new CreateBucketCommand({ Bucket: this.bucket })).catch(() => {});
     }
     this.ensured = true;
+  }
+
+  /**
+   * Deliberately NOT via ensureBucket(): its once-only latch would make
+   * every ping after the first a no-op, and the health endpoint would go
+   * straight back to lying — the very thing it is being fixed for.
+   */
+  async ping(): Promise<void> {
+    await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }), {
+      abortSignal: AbortSignal.timeout(1500),
+    });
   }
 
   async put(key: string, body: Buffer, contentType: string): Promise<void> {
@@ -94,6 +107,10 @@ class LocalDriver implements StorageDriver {
 
   sign(key: string, expiresAt: number): string {
     return createHmac('sha256', this.secret).update(`${key}:${expiresAt}`).digest('base64url');
+  }
+
+  async ping(): Promise<void> {
+    await mkdir(this.dir, { recursive: true });
   }
 
   async put(key: string, body: Buffer): Promise<void> {

@@ -11,6 +11,7 @@ import {
   receipts,
   warehouses,
 } from '../../platform/db/schema';
+import { batchMemberFilter } from '../scanning/unload';
 
 /**
  * Actual manifest XLSX (W4/spec 6.4): what really departed — per-box list with
@@ -38,7 +39,9 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .leftJoin(crates, eq(boxes.crateId, crates.id))
-    .where(eq(boxes.currentBatchId, batchId))
+    // "What really departed" — which the live pointer cannot say once
+    // unloading starts clearing it box by box (same fix as ved-xlsx.ts).
+    .where(batchMemberFilter(batchId))
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
 
   const workbook = new ExcelJS.Workbook();

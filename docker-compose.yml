@@ -168,6 +168,28 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    # Tuned for a ~4 GB VPS shared with the app and MinIO: the stock image
+    # runs shared_buffers=128MB and prices the SSD like a spinning disk
+    # (random_page_cost=4), the planner bias behind the #152 class of scans.
+    # On a 2 GB box halve the first four values (256MB/768MB/8MB/64MB).
+    # `command` REPLACES the image CMD, so the first token must be `postgres`.
+    shm_size: '256mb'
+    command:
+      - 'postgres'
+      - '-c'
+      - 'shared_buffers=512MB'
+      - '-c'
+      - 'effective_cache_size=1536MB'
+      - '-c'
+      - 'work_mem=16MB'
+      - '-c'
+      - 'maintenance_work_mem=128MB'
+      - '-c'
+      - 'min_wal_size=256MB'
+      - '-c'
+      - 'max_wal_size=2GB'
+      - '-c'
+      - 'random_page_cost=1.1'
     environment:
       POSTGRES_USER: gsr
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

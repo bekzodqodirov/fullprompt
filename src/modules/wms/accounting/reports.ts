@@ -100,7 +100,16 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
       sum: sql<string>`sum(coalesce(${costEntries.amountUsd}, 0))`,
     })
     .from(costEntries)
-    .where(and(gte(costEntries.costDate, from), lte(costEntries.costDate, to)))
+    // A voided cost HAPPENED and then was undone — the revenue and opex
+    // sides of this report already exclude their voided rows; direct costs
+    // silently did not, and every voided entry went on shrinking the profit.
+    .where(
+      and(
+        isNull(costEntries.voidedAt),
+        gte(costEntries.costDate, from),
+        lte(costEntries.costDate, to),
+      ),
+    )
     .groupBy(
       sql`to_char(${costEntries.costDate}, 'YYYY-MM')`,
       sql`(SELECT name FROM cost_types ct WHERE ct.id = ${costEntries}.cost_type_id)`,
@@ -260,7 +269,13 @@ export async function cashFlow(from: string, to: string) {
   const [cargoCosts] = await db
     .select({ sum: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)` })
     .from(costEntries)
-    .where(and(gte(costEntries.costDate, from), lte(costEntries.costDate, to)));
+    .where(
+      and(
+        isNull(costEntries.voidedAt),
+        gte(costEntries.costDate, from),
+        lte(costEntries.costDate, to),
+      ),
+    );
 
   const [transfers] = await db
     .select({ n: sql<number>`count(*)` })
@@ -387,7 +402,7 @@ export async function profitByBatch(from: string, to: string) {
       ), 0)`,
       costUsd: sql<string>`coalesce((
         SELECT sum(coalesce(ce.amount_usd, 0)) FROM cost_entries ce
-        WHERE ce.batch_id = ${batches}.id
+        WHERE ce.batch_id = ${batches}.id AND ce.voided_at IS NULL
       ), 0)`,
       boxCount: sql<number>`coalesce((
         SELECT count(*) FROM box_movements bm
@@ -473,7 +488,16 @@ export async function profitByClient(from: string, to: string) {
     })
     .from(costAllocations)
     .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
-    .where(and(gte(costEntries.costDate, from), lte(costEntries.costDate, to)))
+    // Belt and braces: voiding deletes the entry's allocations, but that
+    // update+delete pair is not one transaction — an allocation orphaned by
+    // a crash between them must not be counted for ever.
+    .where(
+      and(
+        isNull(costEntries.voidedAt),
+        gte(costEntries.costDate, from),
+        lte(costEntries.costDate, to),
+      ),
+    )
     .groupBy(costAllocations.clientId);
   const costByClient = new Map(costRows.map((row) => [row.clientId, money(row.costUsd)]));
 

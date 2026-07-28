@@ -7,7 +7,7 @@ import { db } from '@/modules/platform/db/client';
 import { receipts } from '@/modules/platform/db/schema';
 import { authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
-import { voidReceipt } from '@/modules/wms/receipts/service';
+import { VoidError, voidReceipt } from '@/modules/wms/receipts/service';
 import { MoveError, moveReceipt } from '@/modules/wms/receipts/move';
 import {
   ReturnError,
@@ -34,7 +34,14 @@ export async function voidReceiptAction(formData: FormData): Promise<void> {
 
   const actor = await authorize('receipts.void', { warehouseId: receipt.warehouseId });
   const meta = await requestMeta();
-  await voidReceipt(parsed.data.receiptId, parsed.data.reason, { actorId: actor.id, ...meta });
+  try {
+    await voidReceipt(parsed.data.receiptId, parsed.data.reason, { actorId: actor.id, ...meta });
+  } catch (err) {
+    // A refusal, not a crash: the transaction rolled back and the receipt is
+    // exactly as it was — a box of this receipt has already left the shelf.
+    if (err instanceof VoidError) return;
+    throw err;
+  }
   revalidatePath(`/receipts/${parsed.data.receiptId}`);
 }
 

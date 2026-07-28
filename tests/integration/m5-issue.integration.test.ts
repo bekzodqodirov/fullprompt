@@ -18,7 +18,9 @@ import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
 import { ingestUnloadScans } from '@/modules/wms/scanning/unload';
 import { issueBoxes } from '@/modules/wms/issue/service';
+import { buildHandoverAct } from '@/modules/wms/documents/handover-act';
 import { nextBatchCode } from '@/modules/wms/codes';
+import { PDFDocument } from 'pdf-lib';
 
 /** M5: ready_for_pickup at customs unload, issue-to-client, quick batch. */
 
@@ -166,6 +168,34 @@ describe('UZ side', () => {
     expect(saved?.debtOk).toBe(true);
     expect(saved?.clientId).toBe(clientId);
   });
+
+  /**
+   * The act was drawn on exactly one A4 page: every row past ~33 was silently
+   * discarded, and both sides signed an incomplete list. 50 rows × 17pt
+   * physically exceed one page's row space, so a correct renderer MUST emit a
+   * second page — page count is the decisive observable (pdf-lib cannot
+   * extract text back).
+   */
+  it('the handover act paginates instead of truncating at one page', async () => {
+    const lot = await makeLot(50);
+    const handoverId = uuidv4();
+    await issueBoxes(
+      {
+        handoverId,
+        clientId,
+        warehouseId: originId,
+        boxIds: lot.boxIds,
+        personName: 'Katta Oluvchi',
+        personPhone: '+998901112233',
+        debtOk: true,
+      },
+      ctx(),
+    );
+
+    const pdf = await buildHandoverAct(handoverId);
+    const parsed = await PDFDocument.load(pdf!);
+    expect(parsed.getPageCount()).toBeGreaterThanOrEqual(2);
+  }, 30_000);
 
   it('quick batch loads loose boxes without the not-on-plan ceremony', async () => {
     const lot = await makeLot(1);

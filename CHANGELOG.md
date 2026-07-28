@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## Audit nuqsonlari: 10 tasi ham tuzatildi — 2026-07-28
+
+26-iyul auditida tasdiqlangan nuqsonlardan navbatdagi 10 tasi (siz «ha
+tekshir» degan band):
+
+- **Foyda hisobotlari**: bekor qilingan xarajat endi P&L, pul oqimi va
+  partiya foydasidan chiqadi. Avval bekor qilingan xarajat ham foydani
+  kamaytiraverardi. **Diqqat: hisobot raqamlari aynan bekor qilingan
+  summalarga o'zgaradi — bu xato emas, to'g'rilanish.**
+- **To'lov endi kassaga bog'lanadi**: mijoz to'lovini kiritganda qaysi
+  kassa/hisobga tushganini tanlaysiz; pul oqimi sahifasida kassa qoldig'ida
+  ko'rinadi. Eski to'lovlar «hali joylashtirilmagan» bo'lib qoladi — ularni
+  o'zgartirmadik.
+- **Topshirish dalolatnomasi**: 33 karobkada kesilib qolmaydi — karobka
+  nechta bo'lsa, sahifa shuncha. Avval 50 karobkalik topshiruvda 17 tasi
+  qog'ozga tushmay qolardi va ikki tomon ham to'liq emas ro'yxatga imzo
+  chekardi.
+- **Bojxona hujjatlari**: mashina tushirilgandan keyin invoys/upakovka/
+  manifestni qayta yuklab olsangiz endi bo'sh chiqmaydi.
+- **Prixodni bekor qilish**: yuk allaqachon mashinada yoki mijozga berilgan
+  bo'lsa, prixodni bekor qilib bo'lmaydi — avval bekor qilinar va yuk
+  qog'ozda «yo'q bo'lib» qolardi.
+- **Checkbox maxsus maydon**: belgilangan katakcha endi «ha» bo'lib
+  saqlanadi (avval doim «yo'q» saqlanardi).
+- **/pipeline sahifasi**: endi faqat tegishli ruxsati borlarga ochiladi —
+  avval istalgan xodim mijozma-mijoz yuk sonini ko'ra olardi.
+- **/api/health endi rostini aytadi**: baza, fayl ombori (MinIO) va fon
+  ishlari (zaxira, xabarlar) — uchchalasi alohida tekshiriladi. Avval
+  «hammasi joyida» deb turib, aslida faqat bazani tekshirardi.
+- **Postgres sozlamalari**: server endi 2005-yil zavod sozlamasida emas —
+  xotira va SSD uchun to'g'ri qiymatlar docker-compose ichida. Deploy'da
+  postgres konteyneri qayta ko'tariladi (5-15 soniya) — ish vaqtidan
+  tashqarida qiling, avval zaxira.
+- **Fayllarga ruxsat (1-bosqich, faqat kuzatuv)**: kim qaysi faylni ochishi
+  MUMKIN EMASligi endi jurnalga yoziladi (`[attachment-authz]`), lekin
+  hozircha hech narsa taqilmaydi — jurnal o'qilgach, keyingi bosqichda
+  yopiladi. Shuning uchun hech kimning ishi to'xtamaydi.
+
+Tekshirildi: yangi bazada 688 unit/integration + 83 e2e yashil, CI
+tartibida. **Migratsiya YO'Q** — lekin deploy'dan avval zaxira (qoida).
+
 ## 3-to'plam yakuni: map, botga raqam bilan ulanish, chatda rasmlar — 2026-07-28
 
 15 bandlik ro'yxatingizning oxirgi uch bandi:

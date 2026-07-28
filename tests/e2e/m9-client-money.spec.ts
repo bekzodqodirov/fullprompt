@@ -10,7 +10,9 @@ import { expect, test } from '@playwright/test';
 const LOGIST = '+998900000003';
 const VED = '+998900000004';
 const SALES = '+998900000009';
+const ACCOUNTANT = '+998900000010';
 const PASSWORD = 'demo1234';
+const runId = Date.now().toString().slice(-6);
 
 async function login(page: import('@playwright/test').Page, phone: string) {
   // This test changes hands three times in one context — /login redirects a
@@ -85,7 +87,20 @@ test('cost → price → margin, and the client card knows which trip', async ({
   const priced = page.locator('.card').filter({ hasText: clientCode });
   await expect(priced.getByText('$150.00').first()).toBeVisible();
 
+  // --- The accountant mints the cash box the payment will land in ---
+  await login(page, ACCOUNTANT);
+  await page.goto('/accounting/accounts');
+  const accountForm = page.locator('form').filter({ has: page.getByTestId('save-account') });
+  await page.getByTestId('account-name').first().fill(`M9 kassa ${runId}`);
+  // The form's currency select has no default for a new account — pin USD so
+  // the ledger option label below is deterministic.
+  await accountForm.locator('select[name="currency"]').selectOption('USD');
+  await accountForm.locator('input[name="openingBalance"]').fill('0');
+  await page.getByTestId('save-account').click();
+  await expect(page.getByText(`M9 kassa ${runId}`).first()).toBeVisible();
+
   // --- The ledger says which trip the debt is from ---
+  await login(page, VED);
   await page.goto('/finance');
   await page.getByRole('link', { name: new RegExp(clientCode) }).first().click();
   await expect(page).toHaveURL(/\/finance\/[0-9a-f-]+$/);
@@ -101,12 +116,23 @@ test('cost → price → margin, and the client card knows which trip', async ({
   const ledgerForm = page.locator('form').filter({ has: page.locator('input[name="txDate"]') });
   await ledgerForm.locator('input[name="amount"]').fill('150');
   await ledgerForm.locator('select[name="currency"]').selectOption('USD');
+  // The audit defect: a payment could not say WHICH cash box it landed in —
+  // the ledger form simply had no way to pick one.
+  await ledgerForm
+    .locator('select[name="accountId"]')
+    .selectOption({ label: `M9 kassa ${runId} (USD)` });
   await ledgerForm.locator('button[type="submit"]').click();
   await expect(ledgerForm.getByText('✅')).toBeVisible({ timeout: 15_000 });
   await page.reload();
   // The trip still shows what it was priced at — what changed is that none
   // of it is outstanding, so the balance is zero.
   await expect(page.getByText('$0.00').first()).toBeVisible();
+
+  // …and the money now sits in the named cash box, visible to the accountant.
+  await login(page, ACCOUNTANT);
+  await page.goto('/accounting/cashflow');
+  const boxRow = page.locator('div.items-baseline').filter({ hasText: `M9 kassa ${runId}` });
+  await expect(boxRow).toContainText('150 USD');
 });
 
 test('a sales manager opens their own client book', async ({ page }) => {

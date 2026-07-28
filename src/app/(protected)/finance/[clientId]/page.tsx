@@ -5,6 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { clients, currencies } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientBalanceUsd, clientLedger } from '@/modules/wms/finance/service';
+import { listAccounts } from '@/modules/wms/accounting/service';
 import { BackLink } from '@/components/back-link';
 import { CargoSummary } from '@/components/cargo-summary';
 import { TxForm } from './tx-form';
@@ -28,10 +29,11 @@ export default async function ClientLedgerPage({
   const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
   if (!client) notFound();
 
-  const [balance, ledger, currencyRows] = await Promise.all([
+  const [balance, ledger, currencyRows, accounts] = await Promise.all([
     clientBalanceUsd(clientId),
     clientLedger(clientId),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
+    listAccounts(),
   ]);
 
   return (
@@ -55,6 +57,7 @@ export default async function ClientLedgerPage({
         <TxForm
           clientId={clientId}
           currencies={currencyRows.map((c) => c.code)}
+          accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
           today={new Date().toISOString().slice(0, 10)}
         />
       )}

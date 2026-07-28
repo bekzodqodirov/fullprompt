@@ -13,6 +13,7 @@ import {
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
 import { productKey, tnvedFor } from '../tnved/service';
+import { batchMemberFilter } from '../scanning/unload';
 
 async function batchLines(batchId: string) {
   return db
@@ -27,7 +28,11 @@ async function batchLines(batchId: string) {
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .leftJoin(crates, eq(boxes.crateId, crates.id))
-    .where(eq(boxes.currentBatchId, batchId))
+    // Membership by what DEPARTED, not by the live pointer: unloading clears
+    // `current_batch_id` box by box, so a customs document regenerated after
+    // the truck reached the border came out EMPTY — and these are the papers
+    // the export agent works from. Same predicate as costing (#121, #152).
+    .where(batchMemberFilter(batchId))
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
 }
 

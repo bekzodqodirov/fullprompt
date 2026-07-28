@@ -28,6 +28,7 @@ export async function addTransactionAction(
     method: formData.get('method') || undefined,
     txDate: formData.get('txDate'),
     batchId: formData.get('batchId') || undefined,
+    accountId: formData.get('accountId') || undefined,
     note: String(formData.get('note') ?? ''),
   });
   if (!parsed.success) return { error: 'validation' };

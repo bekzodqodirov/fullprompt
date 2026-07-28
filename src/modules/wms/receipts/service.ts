@@ -392,6 +392,12 @@ async function confirmedLotSummaries(receiptId: string): Promise<ConfirmedLotSum
 }
 
 /** Void a receipt (nothing is deleted; letters are NOT returned, spec 5.3). */
+export class VoidError extends Error {
+  constructor(public readonly code: 'box_not_in_stock') {
+    super(code);
+  }
+}
+
 export async function voidReceipt(
   receiptId: string,
   reason: string,
@@ -415,7 +421,17 @@ export async function voidReceipt(
       const boxRows = await tx
         .select({ id: boxes.id, status: boxes.status })
         .from(boxes)
-        .where(inArray(boxes.lotId, lotIds));
+        .where(inArray(boxes.lotId, lotIds))
+        .for('update');
+      // A receipt may be voided only while every box is still ON THE SHELF.
+      // The old code voided whatever state the boxes were in: cargo on a
+      // departed truck became unscannable at unload (void is rejected
+      // there), and cargo already HANDED TO THE CLIENT was un-happened on
+      // paper. Anything that left in_stock is resolved by the load/unload/
+      // issue machinery, not by void — same rule as moveReceipt.
+      for (const box of boxRows) {
+        if (box.status !== 'in_stock') throw new VoidError('box_not_in_stock');
+      }
       await tx
         .update(boxes)
         .set({ status: 'void', statusReason: `receipt voided: ${reason}` })

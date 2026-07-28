@@ -767,6 +767,7 @@
     "methodCash": "Naqd",
     "methodCard": "Karta",
     "methodTransfer": "O‘tkazma (hisob raqamga)",
+    "account": "Kassa/hisob",
     "date": "Sana",
     "note": "Izoh",
     "fxMissing": "Bu valyuta uchun kurs kiritilmagan — avval Kurslar bo‘limida kurs kiriting",

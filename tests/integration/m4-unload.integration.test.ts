@@ -1,12 +1,24 @@
 import 'dotenv/config';
 import { eq } from 'drizzle-orm';
+import ExcelJS from 'exceljs';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { attachments, batches, boxes, clients, users, warehouses } from '@/modules/platform/db/schema';
-import { confirmReceipt } from '@/modules/wms/receipts/service';
+import {
+  attachments,
+  batches,
+  boxes,
+  clients,
+  receiptLots,
+  receipts,
+  users,
+  warehouses,
+} from '@/modules/platform/db/schema';
+import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
+import { buildManifestXlsx } from '@/modules/wms/documents/manifest-xlsx';
+import { buildPackingXlsx } from '@/modules/wms/documents/ved-xlsx';
 import {
   batchMemberFilter,
   closeBatch,
@@ -266,5 +278,75 @@ describe('accepting cargo at a distribution destination (owner bug round)', () =
     await unloadRemaining(batch.id, ctx());
     await finishUnload(batch.id, ctx());
     await expect(unloadRemaining(batch.id, ctx())).rejects.toThrow('batch_not_unloading');
+  });
+});
+
+/**
+ * The customs papers are regenerated at the border and after arrival —
+ * exactly when unloading has already cleared `current_batch_id` box by box.
+ * Documents that read the live pointer came out EMPTY at the one moment the
+ * export agent needed them; membership must be what DEPARTED.
+ */
+describe('customs documents after unload (audit defect)', () => {
+  it('the manifest and packing list still list every box after a full unload', async () => {
+    const lot = await makeLot(2);
+    const batch = await departedBatch(2, lot, distId);
+    await unloadRemaining(batch.id, ctx());
+    await finishUnload(batch.id, ctx());
+    // The state the documents are regenerated in: no live pointers left.
+    expect(await db.select().from(boxes).where(eq(boxes.currentBatchId, batch.id))).toHaveLength(0);
+
+    const open = async (buffer: Buffer) => {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+      return workbook;
+    };
+
+    const manifest = await open((await buildManifestXlsx(batch.id))!);
+    const detailTexts: string[] = [];
+    manifest.worksheets[1]!.eachRow((row) => detailTexts.push(JSON.stringify(row.values)));
+    for (const code of lot.shortCodes) {
+      expect(detailTexts.join('\n')).toContain(code);
+    }
+
+    const packing = (await open((await buildPackingXlsx(batch.id))!)).worksheets[0]!;
+    // Last row is the totals row; column 5 is the box count.
+    expect(Number(packing.getRow(packing.rowCount).getCell(5).value)).toBe(2);
+  });
+});
+
+/**
+ * Voiding a receipt used to void its boxes in WHATEVER state they were:
+ * cargo on a departed truck became unscannable at unload, and cargo already
+ * handed to the client was un-happened on paper.
+ */
+describe('receipt void guard (audit defect)', () => {
+  it('refuses to void a receipt whose cargo already left the shelf', async () => {
+    const lot = await makeLot(1);
+    await departedBatch(1, lot);
+    const [lotRow] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.lotId));
+
+    await expect(voidReceipt(lotRow!.receiptId, 'kech qoldik', ctx())).rejects.toThrow(
+      'box_not_in_stock',
+    );
+
+    // The throw rolls the whole transaction back: receipt and box untouched.
+    const receipt = await db.query.receipts.findFirst({
+      where: eq(receipts.id, lotRow!.receiptId),
+    });
+    expect(receipt!.voidedAt).toBeNull();
+    expect(receipt!.status).not.toBe('voided');
+    expect((await db.select().from(boxes).where(eq(boxes.id, lot.boxIds[0]!)))[0]!.status).toBe(
+      'in_transit',
+    );
+  });
+
+  it('still voids a receipt whose boxes are all on the shelf', async () => {
+    const good = await makeLot(1);
+    const [goodLot] = await db.select().from(receiptLots).where(eq(receiptLots.id, good.lotId));
+    await voidReceipt(goodLot!.receiptId, 'xato kiritilgan', ctx());
+    expect((await db.select().from(boxes).where(eq(boxes.id, good.boxIds[0]!)))[0]!.status).toBe(
+      'void',
+    );
   });
 });

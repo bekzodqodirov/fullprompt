@@ -118,10 +118,10 @@ pnpm build && pnpm e2e  # 44 e2e
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 
-## State — 2026-07-27
+## State — 2026-07-28
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-497 unit/integration + 68 e2e, verified in CI's order on a fresh database.
+688 unit/integration + 83 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -282,19 +282,38 @@ backfill, sending photos (outbox is body-only by CHECK). The activity form
 also moved into a folded rail Panel and notes take files (owner's mid-round
 asks).
 
+Round 13 — the audit-defect round (#360-369), owner's order «2 ha tekshir»
+(photos-to-Drive is ON HOLD by his «1 tohtab tur»). All ten remaining audit
+defects fixed, each with a test SHOWN to fail without its fix: voided costs
+out of P&L/cash-flow/profit (deltas, plus the crash-orphaned-allocation case),
+payments name their cash box (form only — `account_id` existed since 0020,
+historical NULLs stay "not yet placed"), handover act paginates (50-box act =
+2 pages, rows verified ON page 2), customs docs read `batchMemberFilter` not
+the live pointer, receipt void refused once any box left the shelf (FOR
+UPDATE + `VoidError`), checkbox field parses the real `['off','on']` wire
+shape, `/pipeline` gated on `reports.own_clients`, `/api/health` really
+probes db+storage+jobs (`ping()` NOT via the ensureBucket latch; the probe
+never calls `startBoss`), Postgres tuned via compose `command:` flags (unit
+tripwire pins the block incl. the `postgres` first token; applies on
+container RECREATE — off-hours, backup first, halve values on a 2 GB box),
+and attachment reads get `decideAttachmentRead` in LOG-ONLY mode
+(`wms/attachments/access.ts`, `[attachment-authz]` lines in docker logs;
+the flip to 404 is a separate owner-approved change AFTER reading the logs).
+No migration in this round. NOT yet demonstrated: a route-level spy test on
+the warn line itself — the predicate is unit-tested and the serve-path is
+exercised by the whole e2e suite.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
-free 15 GB Drive in ten days).
+free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
+tur»).** His agreed order after that: (3) mobile-friendly CRM/kanban +
+Telegram/CRM leftovers, (4) remaining role homes + batch card redesign,
+(5) phases 4/6/7/8 + open deal items.
 
 Explicitly parked by the owner: crate loading is not to be touched further.
 
 Still queued from the audit: `scripts/import-clients.ts --update` overwriting
-corrected data (do NOT run it), voided costs counted in the P&L, customs
-documents emptying during unload, receipt void with no state guard, checkbox
-custom field always saving "no", payments not assignable to a cash box,
-handover act truncating at 33 boxes, `/pipeline` with no permission check,
-`/api/health` claiming to check MinIO and pg-boss while running only
-`select 1`, Postgres on stock defaults.
+corrected data (do NOT run it — blocked on the 17 seller logins).
 
 Later phases: **4** comments with @mentions → **6** approval for issuing to a
 debtor → **7** automation rules → **8** custom entities. Explicitly cut:
@@ -304,7 +323,9 @@ form, profit per deal, the 50-goods spreadsheet + TNVED grouping.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations 0032 and 0033 — back up first) · set
+**Deploy the branch** (migrations up to 0042 — back up first; the compose
+change recreates the postgres container, ~5-15 s outage: off-hours, run
+`free -h` first and halve the tuned values on a 2 GB box) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
 offered on anything but public HTTPS, #275) · **revoke the bot token he pasted
 in chat** and rotate `ANTHROPIC_API_KEY` · merge

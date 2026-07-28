@@ -49,9 +49,15 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
   ]);
   const font = await doc.embedFont(cjkBytes, { subset: false });
 
-  const page = doc.addPage([595, 842]); // A4 portrait, pt
+  // Mutable on purpose: `line` and the signature block must draw on whichever
+  // page is current, so a new page swaps the binding they close over.
+  let page = doc.addPage([595, 842]); // A4 portrait, pt
   const black = rgb(0, 0, 0);
   let y = 800;
+  const newPage = () => {
+    page = doc.addPage([595, 842]);
+    y = 800;
+  };
   const line = (text: string, size = 11, indent = 50) => {
     page.drawText(text, { x: indent, y, size, font, color: black });
     y -= size + 7;
@@ -67,16 +73,20 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
   y -= 8;
   line(`Передано коробок: ${boxRows.length}`, 12);
   y -= 4;
-  for (const row of boxRows.slice(0, 45)) {
+  // Every box, every act. This loop used to stop at one page's worth (~33
+  // rows) and silently drop the rest — a 50-box handover printed 33 rows and
+  // both sides signed an incomplete list. 137 = the 120pt signature floor
+  // plus one 17pt row, so a row never invades the signature zone.
+  for (const row of boxRows) {
+    if (y < 137) newPage();
     line(
       `${row.box.shortCode}   ${client?.clientCode ?? ''}-${row.letter ?? ''}   ${row.productNameZh}${row.productNameRu ? ` (${row.productNameRu})` : ''}`,
       10,
       60,
     );
-    if (y < 120) break;
   }
-  if (boxRows.length > 45) line(`… и ещё ${boxRows.length - 45}`, 10, 60);
 
+  if (y < 120) newPage();
   y = Math.min(y, 110);
   page.drawText(DOC.handedBy, { x: 50, y, size: 11, font, color: black });
   page.drawText(DOC.receivedBy, { x: 330, y, size: 11, font, color: black });

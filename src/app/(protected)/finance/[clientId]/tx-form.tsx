@@ -12,10 +12,12 @@ import { addTransactionAction, type TxFormState } from '../actions';
 export function TxForm({
   clientId,
   currencies,
+  accounts,
   today,
 }: {
   clientId: string;
   currencies: string[];
+  accounts: { id: string; name: string; currency: string }[];
   today: string;
 }) {
   const t = useTranslations('finance');
@@ -71,6 +73,19 @@ export function TxForm({
         )}
         <input name="txDate" aria-label={t('date')} type="date" className="input flex-1" defaultValue={today} required />
       </div>
+      {/* Optional on purpose: rows entered before accounts existed have none,
+          and cash flow treats an unassigned payment as received but not yet
+          placed — history is not rewritten by a new required field. */}
+      {type === 'payment' && accounts.length > 0 && (
+        <select name="accountId" aria-label={t('account')} className="input" defaultValue="">
+          <option value="">— {t('account')}</option>
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} ({a.currency})
+            </option>
+          ))}
+        </select>
+      )}
       <input name="note" className="input" placeholder={t('note')} maxLength={2000} />
       {state.error && (
         <p role="alert" className="text-sm font-semibold text-bad">

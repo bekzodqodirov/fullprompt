@@ -121,8 +121,10 @@ export function CustomFieldInputs({
               </select>
             ) : field.type === 'checkbox' ? (
               <span className="flex items-center gap-2">
-                {/* Paired hidden input: a browser sends nothing when unticked. */}
-                <input type="hidden" name={name} value="off" />
+                {/* Paired hidden input: a browser sends nothing when unticked.
+                    Disabled together with the checkbox — a read-only render
+                    inside a submitting form must not post a lone "off" (#171). */}
+                <input type="hidden" name={name} value="off" disabled={!editable} />
                 <input
                   type="checkbox"
                   name={name}

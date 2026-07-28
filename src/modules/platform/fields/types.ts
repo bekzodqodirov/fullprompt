@@ -174,9 +174,15 @@ export function coerceValue(field: FieldDef, raw: unknown): StoredValue | null {
   const type = field.type as FieldType;
 
   switch (type) {
-    case 'checkbox':
-      // An unticked box is a real "no", not a missing answer.
-      return { kind: 'bool', bool: raw === true || raw === 'on' || raw === 'true' };
+    case 'checkbox': {
+      // An unticked box is a real "no", not a missing answer. The widget
+      // posts a hidden 'off' FIRST and the tick appends 'on', so a ticked
+      // box arrives as ['off','on'] — the LAST value is the real answer
+      // (forms/checkbox.ts, the idiom this engine never adopted; without it
+      // BOTH states coerced to false and every tick vanished on save).
+      const last = Array.isArray(raw) ? raw[raw.length - 1] : raw;
+      return { kind: 'bool', bool: last === true || last === 'on' || last === 'true' };
+    }
 
     case 'number':
     case 'money': {

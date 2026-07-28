@@ -13,6 +13,11 @@ import { PageHeader } from '@/components/ui/page';
 export default async function PipelinePage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
+  // The menu showed this only to sales, but the URL was open to everyone —
+  // client-by-client cargo and stages included. Gated on the permission the
+  // dashboard already treats as the ticket here, so the grant stays editable
+  // data rather than a hard-coded role.
+  if (!actor.permissions.has('reports.own_clients')) redirect('/');
   const t = await getTranslations('pipeline');
   const tc = await getTranslations('common');
   const isManagerScoped = actor.roles.includes('sales_manager') && !actor.permissions.has('admin.users.manage');

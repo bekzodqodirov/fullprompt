@@ -167,12 +167,19 @@ describe('answers are stored in a column of the right type', () => {
     expect((await fieldValues('client', clientA))[n.id]).toBe(12.5);
   });
 
-  it('a checkbox left unticked is a real "no", not a missing answer', async () => {
+  it('a checkbox saves what the wire ACTUALLY sends, both states', async () => {
     const flag = await field({ label: `VIP ${SUFFIX}`, type: 'checkbox' });
-    await setFieldValues('client', clientA, { [flag.id]: undefined }, ctx());
+    // The real form shapes: the widget posts a hidden 'off' first, and a
+    // tick APPENDS 'on' — so ticked arrives as the array. The old test fed
+    // a bare 'on' the wire never produces, and stayed green for weeks over
+    // a widget that saved "no" for BOTH states (#166's trap, again).
+    await setFieldValues('client', clientA, { [flag.id]: 'off' }, ctx());
     expect((await fieldValues('client', clientA))[flag.id]).toBe(false);
-    await setFieldValues('client', clientA, { [flag.id]: 'on' }, ctx());
+    await setFieldValues('client', clientA, { [flag.id]: ['off', 'on'] }, ctx());
     expect((await fieldValues('client', clientA))[flag.id]).toBe(true);
+    // Unticking after a tick really lands as "no" again.
+    await setFieldValues('client', clientA, { [flag.id]: 'off' }, ctx());
+    expect((await fieldValues('client', clientA))[flag.id]).toBe(false);
   });
 
   it('clearing an answer removes the row rather than storing an empty string', async () => {

@@ -17,7 +17,7 @@ import {
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
-import { addCostEntry } from '@/modules/wms/costing/service';
+import { addCostEntry, voidCostEntry } from '@/modules/wms/costing/service';
 import {
   accountBalances,
   addExpense,
@@ -402,6 +402,10 @@ describe('recurring fixed costs', () => {
 });
 
 describe('profitability', () => {
+  // Assigned by the per-batch test; the void tests below reuse the same batch.
+  let profitBatchId: string;
+  let profitCostTypeId: string;
+
   /**
    * Per batch: the report reads revenue, cost and box count through correlated
    * subqueries, and drizzle renders a column unqualified in a single-table
@@ -494,11 +498,13 @@ describe('profitability', () => {
       .insert(fxRates)
       .values({ currency: 'USD', rateToUsd: '1', effectiveDate: today, enteredBy: actorId })
       .onConflictDoNothing();
+    profitBatchId = batch!.id;
+    profitCostTypeId = (await db.select().from(costTypes).limit(1))[0]!.id;
     await addCostEntry(
       {
         scope: 'batch',
         batchId: batch!.id,
-        costTypeId: (await db.select().from(costTypes).limit(1))[0]!.id,
+        costTypeId: profitCostTypeId,
         amount: 400,
         currency: 'USD',
         costDate: today,
@@ -553,6 +559,87 @@ describe('profitability', () => {
     expect(row.marginPct).toBe(
       Math.round((row.profitUsd / row.revenueUsd) * 1000) / 10,
     );
+  });
+
+  /**
+   * A voided cargo cost went on shrinking the profit for ever: the revenue
+   * and opex sides of every report excluded their voided rows, direct costs
+   * did not. Deltas rather than absolutes, because today's month is shared
+   * with whatever else lives in the database.
+   */
+  it('a voided cargo cost drops out of the P&L, the cash flow and the batch profit', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const round = (value: number) => Math.round(value * 100) / 100;
+    const snapshot = async () => ({
+      direct: (await profitAndLoss(today, today)).directTotal.total,
+      cargo: (await cashFlow(today, today)).rows.find((row) => row.label === 'cargoCosts')!
+        .amountUsd,
+      batchCost: (await profitByBatch(today, today)).find(
+        (row) => row.batchId === profitBatchId,
+      )!.costUsd,
+    });
+
+    const before = await snapshot();
+    const entry = await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: profitBatchId,
+        costTypeId: profitCostTypeId,
+        amount: 111,
+        currency: 'USD',
+        costDate: today,
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+    const live = await snapshot();
+    expect(live.direct).toBe(round(before.direct + 111));
+    expect(live.cargo).toBe(round(before.cargo + 111));
+    expect(live.batchCost).toBe(round(before.batchCost + 111));
+
+    await voidCostEntry(entry.id, 'ikki marta kiritilgan', ctx());
+    const after = await snapshot();
+    expect(after.direct).toBe(before.direct);
+    expect(after.cargo).toBe(before.cargo);
+    expect(after.batchCost).toBe(before.batchCost);
+  });
+
+  /**
+   * Voiding updates the entry and deletes its allocations in two statements,
+   * not one transaction — an allocation orphaned by a crash between them must
+   * still not be counted (the per-client report joins through the entry).
+   */
+  it('an allocation orphaned by a crash mid-void is not counted per client', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const entry = await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: profitBatchId,
+        costTypeId: profitCostTypeId,
+        amount: 77,
+        currency: 'USD',
+        costDate: today,
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+    const withCost = (await profitByClient(today, today)).find(
+      (row) => row.clientId === clientId,
+    )!;
+
+    // The crash window: the entry is voided, its allocations survive.
+    await db.execute(
+      sql`UPDATE cost_entries SET voided_at = now(), voided_by = ${actorId}, void_reason = 'crash test' WHERE id = ${entry.id}`,
+    );
+    const orphans = await db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM cost_allocations WHERE cost_entry_id = ${entry.id}`,
+    );
+    expect(Number(orphans[0]!.n)).toBeGreaterThan(0);
+
+    const after = (await profitByClient(today, today)).find(
+      (row) => row.clientId === clientId,
+    )!;
+    expect(after.costUsd).toBe(Math.round((withCost.costUsd - 77) * 100) / 100);
   });
 });
 

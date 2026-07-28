@@ -5,6 +5,7 @@ import { attachments } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { AttachmentDeleteError, deleteAttachment } from '@/modules/platform/files/service';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
+import { decideAttachmentRead } from '@/modules/wms/attachments/access';
 
 const variantSchema = z.enum(['original', 'thumb200', 'thumb800']).default('original');
 
@@ -14,8 +15,9 @@ const variantSchema = z.enum(['original', 'thumb200', 'thumb800']).default('orig
  * often unreachable from the viewer's browser).
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  let actor;
   try {
-    await requireActor();
+    actor = await requireActor();
   } catch (err) {
     if (err instanceof AuthError) return Response.json({ error: 'unauthorized' }, { status: 401 });
     throw err;
@@ -28,6 +30,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const attachment = await db.query.attachments.findFirst({ where: eq(attachments.id, id) });
   if (!attachment) return new Response('Not found', { status: 404 });
+
+  // LOG-ONLY for now: the decision is computed and a would-deny is written to
+  // stdout ([attachment-authz] — greppable in docker logs), but the bytes are
+  // still served. The flip to enforcing 404 comes only after the logs have
+  // been read on real traffic — a wrong mapping here would blank screens
+  // people use daily. Deliberately not writeAudit: one card view can fetch
+  // thirty photos, and the audit log is the immutable business record.
+  const decision = await decideAttachmentRead(actor, attachment);
+  if (!decision.allow) {
+    console.warn(
+      `[attachment-authz] WOULD DENY user=${actor.id} attachment=${attachment.id} entity=${attachment.entityType}/${attachment.entityId} rule=${decision.rule}`,
+    );
+  }
 
   const key =
     variant === 'thumb200'
