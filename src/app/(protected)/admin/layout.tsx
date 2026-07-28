@@ -1,28 +1,25 @@
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { SubNav, type SubNavItem } from '@/components/ui/sub-nav';
+import { AdminBack } from './admin-back';
 
 /**
- * The admin section, with its own nav.
+ * The admin section.
  *
- * That nav used to live in the protected layout, so "warehouses / clients /
- * employees" greeted an admin on the home screen and on every operational
- * page (owner: it should appear only after opening the admin panel).
+ * Navigation here is the HUB at /admin and a way back to it — the tab strip
+ * this layout used to render duplicated the hub's buttons and scrolled off a
+ * phone (owner, 2026-07-28: "tepadagi menyu turibdi, u kerak emas").
  *
  * The entry gate accepts any admin-section permission rather than
  * `admin.warehouses.manage` alone: the accountant holds `costs.fx.manage`,
- * the home screen offers them the FX tile, and the old single-permission
- * gate bounced them straight back off their own exchange-rate page. Each
- * page still checks its own permission — this is a cosmetic gate (spec 4.2).
+ * the menu offers them the door, and a single-permission gate would bounce
+ * them off their own exchange-rate page. Each page still checks its own
+ * permission — this is a cosmetic gate (spec 4.2).
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  const t = await getTranslations('nav');
-  const tCosting = await getTranslations('costing');
-  const tRoles = await getTranslations('roles');
-  const tFields = await getTranslations('fields');
+  const tHome = await getTranslations('home');
 
   const canManage = actor.permissions.has('admin.warehouses.manage');
   const canAudit = actor.permissions.has('admin.audit.browse');
@@ -40,42 +37,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     actor.permissions.has('crm.leads');
   if (!canManage && !canAudit && !canFx && !canClients && !canRoles && !canFields) redirect('/');
 
-  const links: SubNavItem[] = [
-    ...(canManage
-      ? ([
-          { href: '/admin/warehouses', label: t('warehouses'), icon: 'crate' },
-          { href: '/admin/clients', label: t('clients'), icon: 'users' },
-          { href: '/admin/users', label: t('users'), icon: 'user' },
-          { href: '/admin/settings', label: t('settings'), icon: 'settings' },
-        ] as SubNavItem[])
-      : []),
-    ...(canAudit
-      ? ([
-          { href: '/admin/audit', label: t('audit'), icon: 'clipboard' },
-          { href: '/admin/notifications', label: t('notifications'), icon: 'alert' },
-        ] as SubNavItem[])
-      : []),
-    ...(canFx
-      ? ([{ href: '/admin/fx', label: tCosting('fxTitle'), icon: 'exchange' }] as SubNavItem[])
-      : []),
-    ...(canFields
-      ? ([
-          { href: '/admin/fields', label: tFields('title'), icon: 'clipboard' },
-          // Truck expense TYPES (yashik, tushirish…) — data, not code, and
-          // now with a door: the owner asked whether he could add his own.
-          { href: '/admin/cost-types', label: tCosting('typesTitle'), icon: 'wallet' },
-        ] as SubNavItem[])
-      : []),
-    ...(canRoles
-      ? ([{ href: '/admin/roles', label: tRoles('title'), icon: 'shield' }] as SubNavItem[])
-      : []),
-  ];
+  // The way back to the hub — only for somebody the hub would actually let
+  // in. A salesperson passing through to a client card holds none of these,
+  // and a door that bounces is worse than no door.
+  const hasHub =
+    canManage ||
+    canAudit ||
+    canFx ||
+    canRoles ||
+    canFields ||
+    actor.permissions.has('plans.manage') ||
+    actor.permissions.has('admin.settings.manage');
 
   return (
     <>
-      {/* Someone who is only here for a client card gets no admin tabs — an
-          empty strip is a bar of nothing at the top of every card. */}
-      {links.length > 0 && <SubNav items={links} />}
+      {hasHub && <AdminBack label={tHome('adminPanel')} />}
       {children}
     </>
   );

@@ -226,6 +226,18 @@ export const NAV: NavGroupSpec[] = [
         primary: 4,
       },
       {
+        // Beside the client money rather than among the admin screens
+        // (owner, 2026-07-28: "upravlenskiy schet prodajada turgani yaxshi")
+        // — the P&L is read in the same sitting as the receivables.
+        href: '/accounting',
+        shortKey: 'accounting',
+        labelKey: 'title',
+        namespace: 'accounting',
+        icon: 'briefcase',
+        permissions: ['finance.reports', 'finance.expenses'],
+        primary: 3,
+      },
+      {
         href: '/pipeline',
         labelKey: 'title',
         namespace: 'pipeline',
@@ -238,63 +250,27 @@ export const NAV: NavGroupSpec[] = [
     titleKey: 'sectionManagement',
     items: [
       {
-        href: '/accounting',
-        shortKey: 'accounting',
-        labelKey: 'title',
-        namespace: 'accounting',
-        icon: 'briefcase',
-        permissions: ['finance.reports', 'finance.expenses'],
-        primary: 3,
-      },
-      {
-        href: '/admin/fx',
-        labelKey: 'fxTitle',
-        namespace: 'costing',
-        icon: 'exchange',
-        permissions: ['costs.fx.manage'],
-      },
-      {
-        // The truck PRESETS — a settings screen opened twice a year. Where
-        // the trucks actually are lives at /trucks, in the info section.
-        href: '/admin/trucks',
-        labelKey: 'trucksTitle',
-        namespace: 'plans',
-        icon: 'settings',
-        permissions: ['plans.manage'],
-      },
-      {
-        href: '/admin/fields',
-        labelKey: 'title',
-        namespace: 'fields',
-        icon: 'clipboard',
-        permissions: ['admin.dictionaries.manage'],
-      },
-      {
-        href: '/admin/roles',
-        labelKey: 'title',
-        namespace: 'roles',
-        icon: 'shield',
-        permissions: ['platform.roles.manage'],
-      },
-      {
-        // Where a new build of the driver app is published. The link it hands
-        // out is public — a driver has no login and never will.
-        href: '/admin/driver-app',
-        labelKey: 'driverApp',
-        namespace: 'settings',
-        icon: 'truck',
-        permissions: ['admin.settings.manage'],
-      },
-      {
-        // The HUB, not the warehouse list: entering administration used to
-        // land on /admin/warehouses with the other sections hidden in a strip
-        // that scrolls off a phone (owner, 2026-07-28). /admin is a page of
-        // big buttons now, one per section the viewer may open.
+        // ONE door to administration (owner, 2026-07-28: "administrativniyda
+        // turgan buttonlar glavniy ekranda bo'lishi shart emas"). The hub at
+        // /admin is a page of big buttons, one per section the viewer may
+        // open — FX, roles, fields, truck presets, the driver app and the
+        // rest all live behind it and nowhere else. The permission list is
+        // the union of the hub's tiles, so everyone with SOME admin job gets
+        // the door — and the hub walks a one-tile visitor (the accountant,
+        // whose only section is FX) straight through it.
         href: '/admin',
         labelKey: 'adminPanel',
         namespace: 'home',
         icon: 'settings',
-        permissions: ['admin.warehouses.manage'],
+        permissions: [
+          'admin.warehouses.manage',
+          'platform.roles.manage',
+          'admin.dictionaries.manage',
+          'costs.fx.manage',
+          'admin.settings.manage',
+          'admin.audit.browse',
+          'plans.manage',
+        ],
       },
     ],
   },
@@ -379,7 +355,7 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   // a curation mistake, caught by the e2e that opens the page as him.
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
-    '/map', '/stock', '/receipts', '/admin/clients', '/admin/trucks', '/dashboard', '/reports',
+    '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
     '/suhbatlar',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
@@ -397,7 +373,7 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/reports', '/dashboard',
-    '/admin/fx', '/receipts', '/stock',
+    '/admin', '/receipts', '/stock',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

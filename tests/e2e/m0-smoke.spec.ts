@@ -30,12 +30,13 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(360);
 
-  // The admin nav belongs to the admin section, not to every screen — an
-  // admin used to meet "warehouses / clients / employees" on the home page.
-  // (The app's own tab bar is a <nav> too, hence the section-specific id.)
+  // Admin navigation is the HUB at /admin plus a way back to it — the tab
+  // strip that used to duplicate the hub's buttons is gone (owner,
+  // 2026-07-28: "tepadagi menyu turibdi, u kerak emas").
   await expect(page.getByTestId('sub-nav')).toHaveCount(0);
   await page.goto('/admin/warehouses');
-  await expect(page.getByTestId('sub-nav')).toHaveCount(1);
+  await expect(page.getByTestId('sub-nav')).toHaveCount(0);
+  await expect(page.getByTestId('admin-back')).toBeVisible();
 
   // Create a warehouse
   await page.goto('/admin/warehouses/new');
