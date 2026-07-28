@@ -971,7 +971,14 @@
     "fieldsMoved": "переехали в «Поля и объекты»",
     "telegramThread": "Переписка в Telegram",
     "telegramClient": "Клиент",
-    "telegramMedia": "вложение"
+    "telegramMedia": "вложение",
+    "conversations": "Переписки",
+    "conversationsSearch": "Клиент или код…",
+    "conversationsEmpty": "Переписок пока нет.",
+    "waitingOnUs": "ждёт ответа",
+    "openCard": "Карточка",
+    "minsAgo": "{n} мин",
+    "hoursAgo": "{n} ч"
   },
   "navShort": {
     "home": "Главная",
@@ -992,7 +999,8 @@
     "arrivals": "Ожидаем",
     "trucks": "Машины",
     "myDay": "Мой день",
-    "deals": "Сделки"
+    "deals": "Сделки",
+    "conversations": "Переписки"
   },
   "cargo": {
     "title": "Груз",

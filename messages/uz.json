@@ -971,7 +971,14 @@
     "fieldsMoved": "«Maydonlar va obyektlar»ga ko‘chdi",
     "telegramThread": "Telegram yozishmalari",
     "telegramClient": "Mijoz",
-    "telegramMedia": "ilova"
+    "telegramMedia": "ilova",
+    "conversations": "Suhbatlar",
+    "conversationsSearch": "Mijoz yoki kod…",
+    "conversationsEmpty": "Hozircha yozishmalar yo‘q.",
+    "waitingOnUs": "javob kutyapti",
+    "openCard": "Kartochka",
+    "minsAgo": "{n} daq",
+    "hoursAgo": "{n} soat"
   },
   "navShort": {
     "home": "Bosh",
@@ -992,7 +999,8 @@
     "arrivals": "Kelayotgan",
     "trucks": "Mashina",
     "myDay": "Kunim",
-    "deals": "Bitimlar"
+    "deals": "Bitimlar",
+    "conversations": "Suhbatlar"
   },
   "cargo": {
     "title": "Yuk",

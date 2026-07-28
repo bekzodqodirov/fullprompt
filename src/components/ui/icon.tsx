@@ -48,6 +48,7 @@ export type IconName =
   | 'shield'
   | 'exchange'
   | 'maximize'
+  | 'chat'
   | 'doc';
 
 const PATHS: Record<IconName, React.ReactNode> = {
@@ -158,6 +159,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="12" cy="12" r="3.5" />
     </>
   ),
+  // A speech bubble with a tail, for the client conversations screen.
+  chat: <path d="M20 12.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 3v-4.4A7.5 7.5 0 0 1 12.5 5 7.5 7.5 0 0 1 20 12.5z" />,
   sleep: <path d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5z" />,
   settings: (
     <>

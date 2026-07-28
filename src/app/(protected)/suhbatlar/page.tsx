@@ -1,0 +1,101 @@
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
+import { getActor } from '@/modules/platform/rbac/authorize';
+import { listConversations } from '@/modules/wms/crm/conversations';
+import { PageHeader } from '@/components/ui/page';
+
+/**
+ * Who has been talking to us — phase 2 of the client chat in the CRM.
+ *
+ * The client card answers "what did we say to THIS client". This answers the
+ * question a sales manager actually starts the day with: who wrote, and who
+ * is still waiting for an answer.
+ *
+ * Sorted by most recent, with the ones where the CLIENT spoke last marked.
+ * That mark is the whole point of the screen — an unanswered customer is the
+ * one thing on it that costs money.
+ */
+export const dynamic = 'force-dynamic';
+
+function ago(date: Date, t: (k: string, v?: Record<string, unknown>) => string): string {
+  const mins = Math.round((Date.now() - date.getTime()) / 60000);
+  if (mins < 60) return t('minsAgo', { n: Math.max(mins, 1) });
+  if (mins < 60 * 24) return t('hoursAgo', { n: Math.round(mins / 60) });
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+export default async function ConversationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const actor = await getActor();
+  if (!actor) redirect('/login');
+  // Own gate, not the layout's (#198). Reading a client's conversation is
+  // reading what they told us in confidence.
+  if (!actor.permissions.has('crm.leads') && !actor.permissions.has('clients.manage')) {
+    redirect('/');
+  }
+  const t = await getTranslations('crm');
+  const { q } = await searchParams;
+  const rows = await listConversations(q);
+
+  return (
+    <div className="space-y-3">
+      <PageHeader title={`✈️ ${t('conversations')}`} />
+
+      <form className="card !p-2">
+        <input
+          type="search"
+          name="q"
+          defaultValue={q ?? ''}
+          placeholder={t('conversationsSearch')}
+          className="input"
+          data-testid="conversation-search"
+        />
+      </form>
+
+      {rows.length === 0 ? (
+        <p className="card text-center text-sm text-ink-500" data-testid="conversations-empty">
+          {t('conversationsEmpty')}
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((row) => (
+            <Link
+              key={row.clientId}
+              href={`/suhbatlar/${row.clientId}`}
+              className="card flex items-baseline gap-2 !py-2.5"
+              data-testid="conversation-row"
+            >
+              <span className="font-mono text-sm font-extrabold text-brand-700">
+                {row.clientCode}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{row.clientName}</span>
+                <span className="block truncate text-sm text-ink-500">
+                  {row.lastBody ?? `📎 ${t('telegramMedia')}`}
+                </span>
+              </span>
+              <span className="shrink-0 text-right">
+                {/* The client spoke last and nobody answered. */}
+                {row.waitingOnUs && (
+                  <span
+                    className="mb-0.5 block rounded-full bg-warn/15 px-2 text-xs font-bold text-warn"
+                    data-testid="waiting-on-us"
+                  >
+                    {t('waitingOnUs')}
+                  </span>
+                )}
+                <span className="block whitespace-nowrap text-xs text-ink-500">
+                  {ago(row.lastAt, t as never)}
+                </span>
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

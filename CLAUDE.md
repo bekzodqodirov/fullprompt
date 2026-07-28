@@ -111,7 +111,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 295 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 298 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-488 unit/integration + 64 e2e, verified in CI's order on a fresh database.
+493 unit/integration + 67 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -219,7 +219,13 @@ deployed:
   path that sends. Only chats matching the client book are kept, enforced by
   `tg_messages.client_id NOT NULL`. Everything it decides is pure and unit
   tested; the gramjs glue is a thin shell. Test accounts: Bekzod, Siroj.
-  Phases 2-4 (chat screen, live receive, reply) not started.
+  **Phase 2 shipped** (#296-298): `/suhbatlar` — one row per client, last
+  message, and a "waiting on us" mark when the client spoke last; the thread
+  reads forwards, the card panel stays newest-first. Gated on `crm.leads` /
+  `clients.manage` with its own per-page check. Ran on his own account: 394
+  dialogs, 13 clients, 5,191 messages — the 122 "no phone" were his PERSONAL
+  chats, correctly left out, so the filter did its job. Phases 3-4 (live
+  receive, reply) not started; Siroj deliberately not connected yet.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

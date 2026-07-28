@@ -971,7 +971,14 @@
     "fieldsMoved": "已迁移至「字段与对象」",
     "telegramThread": "Telegram 对话",
     "telegramClient": "客户",
-    "telegramMedia": "附件"
+    "telegramMedia": "附件",
+    "conversations": "对话",
+    "conversationsSearch": "客户或编号…",
+    "conversationsEmpty": "暂无对话。",
+    "waitingOnUs": "等待回复",
+    "openCard": "客户卡",
+    "minsAgo": "{n} 分钟",
+    "hoursAgo": "{n} 小时"
   },
   "navShort": {
     "home": "首页",
@@ -992,7 +999,8 @@
     "arrivals": "待收",
     "trucks": "车辆",
     "myDay": "我的一天",
-    "deals": "交易"
+    "deals": "交易",
+    "conversations": "对话"
   },
   "cargo": {
     "title": "货物",

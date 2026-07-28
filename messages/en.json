@@ -971,7 +971,14 @@
     "fieldsMoved": "moved to Fields and objects",
     "telegramThread": "Telegram conversation",
     "telegramClient": "Client",
-    "telegramMedia": "attachment"
+    "telegramMedia": "attachment",
+    "conversations": "Conversations",
+    "conversationsSearch": "Client or code…",
+    "conversationsEmpty": "No conversations yet.",
+    "waitingOnUs": "awaiting reply",
+    "openCard": "Card",
+    "minsAgo": "{n} min",
+    "hoursAgo": "{n} h"
   },
   "navShort": {
     "home": "Home",
@@ -992,7 +999,8 @@
     "arrivals": "Incoming",
     "trucks": "Trucks",
     "myDay": "My day",
-    "deals": "Deals"
+    "deals": "Deals",
+    "conversations": "Chats"
   },
   "cargo": {
     "title": "Cargo",

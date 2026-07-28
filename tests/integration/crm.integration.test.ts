@@ -12,6 +12,10 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import {
+  conversationFor,
+  listConversations,
+} from '@/modules/wms/crm/conversations';
+import {
   addActivity,
   convertLead,
   createLead,
@@ -480,10 +484,14 @@ describe('telegram conversations on the client card', () => {
       .values({ clientCode: `TG${String(Date.now()).slice(-6)}`, name: 'Telegram client' })
       .returning();
 
+    // Unique per RUN. Hard-coded ids passed on a fresh database and then made
+    // the SECOND run fail on its own leftovers — this suite shares a database
+    // with itself as much as with the other specs (#154).
+    const stamp = BigInt(Date.now());
     const row = {
       clientId: client!.id,
       managerUserId: actorId,
-      peerId: 555_000_111n,
+      peerId: stamp,
       tgMessageId: 42n,
       direction: 'in' as const,
       body: 'Yuk qachon keladi?',
@@ -522,11 +530,12 @@ describe('telegram conversations on the client card', () => {
       .insert(clients)
       .values({ clientCode: `TH${String(Date.now()).slice(-6)}`, name: 'Thread client' })
       .returning();
+    const peer = BigInt(Date.now());
     await db.insert(tgMessages).values([
       {
         clientId: client!.id,
         managerUserId: actorId,
-        peerId: 1n,
+        peerId: peer,
         tgMessageId: 1n,
         direction: 'in',
         body: 'birinchi',
@@ -535,7 +544,7 @@ describe('telegram conversations on the client card', () => {
       {
         clientId: client!.id,
         managerUserId: actorId,
-        peerId: 1n,
+        peerId: peer,
         tgMessageId: 2n,
         direction: 'out',
         body: 'javob',
@@ -552,5 +561,121 @@ describe('telegram conversations on the client card', () => {
     // and the question is almost always "what did we last say to them".
     expect(thread.map((r) => r.body)).toEqual(['javob', 'birinchi']);
     expect(thread[0]!.direction).toBe('out');
+  });
+});
+
+/**
+ * The conversations screen — phase 2.
+ *
+ * The list is the only place with real logic: one row per client, the LAST
+ * message in it, and a mark when the client spoke last. That mark is the
+ * point of the screen — an unanswered customer is the one thing on it that
+ * costs money — so it is asserted directly rather than left to the eye.
+ */
+describe('the conversation list', () => {
+  // Each fixture client is a DIFFERENT Telegram peer. Deriving the peer from
+  // the code's length gave every client the same one, and since the message
+  // ids restart per client the unique index refused the second insert — the
+  // index catching a test's own mistake, which is the index working.
+  let peerSeq = 0;
+
+  async function clientWith(
+    code: string,
+    msgs: { dir: 'in' | 'out'; body: string | null; at: string; media?: boolean }[],
+  ) {
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: code, name: `Client ${code}` })
+      .returning();
+    // Unique per RUN as well as per client: this suite runs repeatedly against
+    // the same database, and a counter starting at zero each time collides
+    // with the rows the last run left — the same trap the rest of this file
+    // avoids with a timestamp suffix.
+    const peer = BigInt(Date.now()) * 1000n + BigInt((peerSeq += 1));
+    let n = 0;
+    await db.insert(tgMessages).values(
+      msgs.map((m) => ({
+        clientId: client!.id,
+        managerUserId: actorId,
+        peerId: peer,
+        tgMessageId: BigInt((n += 1)),
+        direction: m.dir,
+        body: m.body,
+        hasMedia: m.media ?? false,
+        sentAt: new Date(m.at),
+      })),
+    );
+    return client!;
+  }
+
+  it('gives one row per client, carrying the LAST message', async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const quiet = await clientWith(`CQ${suffix}`, [
+      { dir: 'in', body: 'birinchi', at: '2026-05-01T09:00:00Z' },
+      { dir: 'out', body: 'oxirgi javob', at: '2026-05-02T09:00:00Z' },
+    ]);
+
+    const rows = await listConversations();
+    const mine = rows.filter((r) => r.clientId === quiet.id);
+    // One row, not one per message — the whole reason for DISTINCT ON.
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.lastBody).toBe('oxirgi javob');
+    expect(mine[0]!.messages).toBe(2);
+    // We answered last, so nothing is waiting on us.
+    expect(mine[0]!.waitingOnUs).toBe(false);
+  });
+
+  it('marks the client who spoke last and got no answer', async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const waiting = await clientWith(`CW${suffix}`, [
+      { dir: 'out', body: 'salom', at: '2026-06-01T09:00:00Z' },
+      { dir: 'in', body: 'yuk qachon keladi?', at: '2026-06-02T09:00:00Z' },
+    ]);
+    const row = (await listConversations()).find((r) => r.clientId === waiting.id)!;
+    expect(row.waitingOnUs).toBe(true);
+  });
+
+  it('puts the most recently active conversation first', async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const older = await clientWith(`CO${suffix}`, [
+      { dir: 'in', body: 'eski', at: '2026-01-05T09:00:00Z' },
+    ]);
+    const newer = await clientWith(`CN${suffix}`, [
+      { dir: 'in', body: 'yangi', at: '2027-01-05T09:00:00Z' },
+    ]);
+    const rows = await listConversations();
+    const positions = rows.map((r) => r.clientId);
+    // Relative, never "is it first in the whole list": a previous run of this
+    // same suite leaves conversations behind, and one of them may legitimately
+    // be more recent. The claim being tested is the ordering, and the ordering
+    // is what this asserts — `DISTINCT ON` has to sort by the grouping column,
+    // so the useful order is applied afterwards, and a pair proves it happened.
+    expect(positions.indexOf(newer.id)).toBeLessThan(positions.indexOf(older.id));
+  });
+
+  it('finds a conversation by client name or code', async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const found = await clientWith(`CS${suffix}`, [
+      { dir: 'in', body: 'qidiruv', at: '2026-06-03T09:00:00Z' },
+    ]);
+    expect((await listConversations(`CS${suffix}`)).map((r) => r.clientId)).toContain(found.id);
+    expect((await listConversations(`Client CS${suffix}`)).map((r) => r.clientId)).toContain(
+      found.id,
+    );
+    expect(await listConversations('zzz-nothing-matches-zzz')).toHaveLength(0);
+  });
+
+  it('reads a thread oldest-first, unlike the card panel', async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const client = await clientWith(`CT${suffix}`, [
+      { dir: 'in', body: 'bir', at: '2026-04-01T09:00:00Z' },
+      { dir: 'out', body: 'ikki', at: '2026-04-02T09:00:00Z' },
+      { dir: 'in', body: null, at: '2026-04-03T09:00:00Z', media: true },
+    ]);
+    const thread = await conversationFor(client.id);
+    // Forwards: this screen IS the conversation. The client card's panel is a
+    // reference — "what did we last say" — and is newest first for that reason.
+    expect(thread.map((m) => m.body)).toEqual(['bir', 'ikki', null]);
+    expect(thread[2]!.hasMedia).toBe(true);
   });
 });

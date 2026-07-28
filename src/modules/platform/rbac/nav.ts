@@ -190,6 +190,17 @@ export const NAV: NavGroupSpec[] = [
         primary: 2,
       },
       {
+        // What clients are actually saying to us. Beside the funnel because
+        // it is the same job: the funnel is where a deal stands, this is what
+        // was said about it.
+        href: '/suhbatlar',
+        shortKey: 'conversations',
+        labelKey: 'conversations',
+        namespace: 'crm',
+        icon: 'chat',
+        permissions: ['crm.leads', 'clients.manage'],
+      },
+      {
         href: '/crm/today',
         shortKey: 'today',
         labelKey: 'today',
@@ -365,6 +376,7 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
     '/map', '/stock', '/receipts', '/admin/clients', '/admin/trucks', '/dashboard', '/reports',
+    '/suhbatlar',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
   // is here because recalculating a job the client was mis-quoted for is a VED
@@ -376,8 +388,8 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.
   sales_manager: [
-    '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/crm/today', '/my-clients', '/finance',
-    '/pipeline', '/arrivals',
+    '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/crm/today', '/suhbatlar', '/my-clients',
+    '/finance', '/pipeline', '/arrivals',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/reports', '/dashboard',

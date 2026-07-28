@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## «Suhbatlar» ekrani — 2-bosqich — 2026-07-28
+
+1-bosqich yozishmalarni bazaga oldi va mijoz kartasida ko'rsatdi. Bu esa
+menejer kuni boshida beradigan savolga javob beradi: **kim yozgan va kim
+javob kutyapti**.
+
+### Yangi bo'lim: ✈️ Suhbatlar
+
+Menyuda, CRM yonida. Ichida — yozishmasi bor mijozlar ro'yxati:
+
+- eng oxirgi yozishgan **tepada**
+- har qatorda: mijoz kodi, ismi, **oxirgi xabar** va qachonligi
+- **«javob kutyapti»** belgisi — oxirgi so'zni mijoz aytgan va hech kim
+  javob bermagan
+
+Oxirgisi shu ekranning asosiy ma'nosi: javobsiz qolgan mijoz — bu yerdagi
+yagona pul turadigan narsa.
+
+Qatorni bosasiz — butun yozishma ochiladi, boshidan oxirigacha (kartadagi
+panel esa teskari: u «oxirgi nima dedik» uchun). Yon tomonda **«Kartochka»**
+tugmasi — yuki, balansi, bitimlariga bir bosishda o'tasiz.
+
+Mijoz yoki kod bo'yicha **qidiruv** bor.
+
+### Ruxsat
+
+Bu ekranni **faqat sotuvchilar va rahbariyat** ochadi. Sklad xodimi ochsa —
+bosh sahifaga qaytariladi. Bu shunchaki menyudan yashirish emas: mijoz o'z
+menejeriga ishonib aytgan gaplar, va sahifaning o'zida qo'riq turadi.
+
+### Hozircha o'qish uchun
+
+Javob yozish — 4-bosqich. Ekran o'zini boshqacha ko'rsatmaydi: yozish oynasi
+yo'q.
+
+### Yo'l-yo'lakay
+
+1-bosqichda yozgan uchta testim **faqat toza bazada** ishlar ekan — ikkinchi
+marta ishga tushirilsa yiqilardi. CI har safar toza baza bilan ishlaydi,
+shuning uchun ular yashil turaverib, xato bo'lib qolaverardi. Tuzatildi va
+uch marta ketma-ket sinab ko'rildi.
+
 ## Mijoz yozishmalari CRM'ga — 1-bosqich — 2026-07-27
 
 Siz aytdingiz: mijozlar bilan **95 % Telegram orqali** gaplashiladi, menejerning
