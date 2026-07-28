@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Javob yozish oynasi endi kartochkalarda ham — 2026-07-28
+
+Siz aytdingiz: «crm kartochkalarda, bitim kartochkalarda va chatda sms
+jo'natish ko'rinmayapti».
+
+**Ikkita sabab bor edi, biri meniki.**
+
+### 1. Kartochkalarda oyna umuman yo'q edi — mening kamchiligim
+
+Javob oynasini faqat **«Suhbatlar»** ekraniga qo'ygan ekanman. Mijoz, bitim va
+lid kartochkalarida esa faqat **o'qish** paneli turardi.
+
+Endi uchalasida ham bor. Yuborilmagan javob kartochkada ham «navbatda» bo'lib
+ko'rinadi — aks holda javob yozgandan keyin panel avvalgidek turaverardi.
+
+### 2. Yuborish sozlamada o'chiq turadi
+
+Bu ataylab: kodni yangilashning o'zi hech kimning akkauntini yuborishga
+majburlamasligi kerak.
+
+**Yoqish:** ⚙️ Sozlamalar → «Telegram orqali yuborish» → yoqing.
+
+### Ko'rinmasa — endi sababini yozadi
+
+Ilgari oyna shunchaki yo'q edi. Endi o'rnida sabab turadi:
+
+| Yozuv | Nima qilish |
+|---|---|
+| «Yuborish o'chirilgan» | Sozlamalardan yoqing |
+| «Telegram ulanmagan» | `docker start tg-listen-bekzod` |
+| «Mijoz sizga hali yozmagan» | Birinchi bo'lib yozib bo'lmaydi — bu qoida |
+| «Boshqa menejerning akkauntida» | O'sha menejer javob beradi |
+| «Juda tez-tez» | Bir daqiqa kuting |
+
+Tekshirildi: 620 ta test + 73 ta ekran testi — hammasi yashil.
+
 ## Telegram bo'limiga qattiq tekshiruv — 5 ta jiddiy xato tuzatildi — 2026-07-28
 
 1–4-bosqichlarni yozib bo'lib, ustidan **adversarial tekshiruv** o'tkazdim —

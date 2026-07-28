@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useRef } from 'react';
-import { sendReplyAction, type ReplyState } from './reply-actions';
+import { sendReplyAction, type ReplyState } from '@/modules/wms/crm/reply-actions';
 
 /**
  * The compose box — the first thing in this system that speaks to a customer
@@ -13,12 +13,15 @@ import { sendReplyAction, type ReplyState } from './reply-actions';
  * reason — never by a disabled box with no explanation, because "why can't I
  * type" is a question somebody will answer by restarting a server.
  */
-export function ReplyBox({
+export function TelegramReplyBox({
   clientId,
   labels,
+  compact = false,
 }: {
   clientId: string;
   labels: { placeholder: string; send: string; sending: string; errors: Record<string, string> };
+  /** On a card the box sits inside a panel and needs no card frame of its own. */
+  compact?: boolean;
 }) {
   const [state, submit, pending] = useActionState<ReplyState, FormData>(sendReplyAction, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -33,7 +36,11 @@ export function ReplyBox({
         // what somebody typed.
         formRef.current?.reset();
       }}
-      className="card flex shrink-0 items-end gap-2 !p-2"
+      className={
+        compact
+          ? 'flex shrink-0 items-end gap-2 pt-1'
+          : 'card flex shrink-0 items-end gap-2 !p-2'
+      }
       data-testid="reply-box"
     >
       <input type="hidden" name="clientId" value={clientId} />

@@ -4,7 +4,9 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { tgMessages, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { pendingFor } from '@/modules/wms/crm/outbox';
 import { TelegramBubble } from './telegram-bubble';
+import { TelegramReply } from './telegram-reply';
 
 /**
  * The Telegram conversation with this client, as a panel on a card.
@@ -19,6 +21,12 @@ import { TelegramBubble } from './telegram-bubble';
  * hand the customs manager every private sales conversation in the company.
  * A component meant to sit on any card has to be safe on any card, so the
  * check travels with it instead of living in whichever page remembers.
+ *
+ * It can also be answered from, since phase 4 — the owner asked for the send
+ * box on the client, deal and lead cards, not only on the «Suhbatlar» screen,
+ * and he is right: somebody reading a client's chat here wants to reply here.
+ * `TelegramReply` carries its own checks, so the panel does not have to know
+ * when a reply is allowed.
  *
  * Read in the order it happened, and opening on the LAST message. The first
  * cut showed it newest-first, on the theory that a card is a reference rather
@@ -63,6 +71,11 @@ export async function TelegramThread({
   // box on every card in the system.
   if (rows.length === 0) return null;
 
+  // Replies that have not gone yet. Shown here too, because a manager who
+  // answered from this very panel must see that the answer is still waiting —
+  // otherwise the panel looks exactly as it did before they typed.
+  const queued = await pendingFor(clientId);
+
   return (
     <section className="card space-y-2" data-testid="tg-thread">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -73,6 +86,20 @@ export async function TelegramThread({
         </Link>
       </div>
       <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
+        {[...queued].reverse().map((row) => (
+          <div
+            key={row.id}
+            className={`ml-auto max-w-[85%] rounded-xl border border-dashed px-3 py-2 text-sm ${
+              row.status === 'failed' ? 'border-bad text-bad' : 'border-line-strong text-ink-500'
+            }`}
+            data-testid={`outbox-${row.status}`}
+          >
+            <div className="mb-0.5 text-xs font-semibold">
+              {row.status === 'failed' ? `✕ ${t('replyFailed')}` : `◷ ${t('replyQueued')}`}
+            </div>
+            <p className="whitespace-pre-wrap break-words">{row.body}</p>
+          </div>
+        ))}
         {rows.map((row) => (
           <TelegramBubble
             key={row.id}
@@ -82,6 +109,9 @@ export async function TelegramThread({
           />
         ))}
       </div>
+
+      {/* Owner: the send box must be here too, not only on «Suhbatlar». */}
+      <TelegramReply clientId={clientId} compact />
     </section>
   );
 }

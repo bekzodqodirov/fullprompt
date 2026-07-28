@@ -62,6 +62,27 @@ test('no bridge banner before anybody has connected an account', async ({ page }
   await expect(page.getByTestId('tg-bridge')).toHaveCount(0);
 });
 
+/**
+ * Phase 4's compose box, and the thing that matters more than the box: when a
+ * reply CANNOT go, the screen says why.
+ *
+ * Nothing is configured in CI — no stored Telegram account, sending switched
+ * off — so what is asserted here is the honest refusal. A screen that simply
+ * omitted the box would leave a manager asking "why can't I type", and the
+ * answer they reach for is restarting a server.
+ */
+test('a thread with no bridge says why it cannot be replied to', async ({ page }) => {
+  await login(page, OWNER);
+  await page.goto('/suhbatlar');
+  const rows = page.getByTestId('conversation-row');
+  if ((await rows.count()) === 0) return;
+  await rows.first().click();
+  await expect(page.getByTestId('conversation-thread')).toBeVisible();
+  // Not a disabled box, and not silence: a sentence.
+  await expect(page.getByTestId('reply-blocked')).toBeVisible();
+  await expect(page.getByTestId('reply-box')).toHaveCount(0);
+});
+
 test('search narrows the list, and a miss says so', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/suhbatlar?q=zzz-no-such-client-zzz');

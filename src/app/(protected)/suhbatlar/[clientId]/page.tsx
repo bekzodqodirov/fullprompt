@@ -3,10 +3,9 @@ import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { conversationClient, conversationFor } from '@/modules/wms/crm/conversations';
-import { pendingFor, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
-import { canQueue } from '@/modules/wms/crm/telegram-send';
+import { pendingFor } from '@/modules/wms/crm/outbox';
 import { TelegramBubble } from '@/components/telegram-bubble';
-import { ReplyBox } from './reply-box';
+import { TelegramReply } from '@/components/telegram-reply';
 
 /**
  * One client's conversation, read the way it happened — and opened where it
@@ -43,40 +42,14 @@ export default async function ConversationPage({
     redirect('/');
   }
   const { clientId } = await params;
-  const [client, messages, queued, account] = await Promise.all([
+  const [client, messages, queued] = await Promise.all([
     conversationClient(clientId),
     conversationFor(clientId),
     pendingFor(clientId),
-    replyAccountFor(clientId, actor.id),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');
 
-  // Why the box is or is not there. `canQueue` is the same function the action
-  // re-runs, so the screen can never offer something the door would refuse.
-  const reply = account
-    ? canQueue(
-        'x',
-        await sendContextFor({
-          clientId,
-          managerUserId: account.managerUserId,
-          peerId: account.peerId,
-        }),
-      )
-    : ({ ok: false, reason: 'not_your_conversation' } as const);
-
-  const REPLY_ERRORS: Record<string, string> = {
-    sending_disabled: t('replyDisabled'),
-    never_wrote_first: t('replyNeverWrote'),
-    bridge_down: t('replyBridgeDown'),
-    rate_minute: t('replyRateLimited'),
-    rate_day: t('replyRateLimited'),
-    rate_chat: t('replyRateLimited'),
-    flood_wait: t('replyRateLimited'),
-    not_your_conversation: t('replyNotYours'),
-    too_long: t('replyTooLong'),
-    empty: t('replyEmpty'),
-  };
 
   return (
     // Capped and centred: on a wide screen an 85 % bubble against each edge
@@ -136,23 +109,9 @@ export default async function ConversationPage({
         </div>
       )}
 
-      {reply.ok ? (
-        <ReplyBox
-          clientId={clientId}
-          labels={{
-            placeholder: t('replyPlaceholder'),
-            send: t('replySend'),
-            sending: t('replySending'),
-            errors: REPLY_ERRORS,
-          }}
-        />
-      ) : (
-        // Never a disabled box with no explanation: "why can't I type" is a
-        // question somebody answers by restarting a server.
-        <p className="shrink-0 text-center text-xs text-ink-500" data-testid="reply-blocked">
-          {REPLY_ERRORS[reply.reason] ?? reply.reason}
-        </p>
-      )}
+      {/* Shows the box, or says why it cannot. Same component as on the cards,
+          so the two can never drift apart on who may speak. */}
+      <TelegramReply clientId={clientId} />
     </div>
   );
 }
