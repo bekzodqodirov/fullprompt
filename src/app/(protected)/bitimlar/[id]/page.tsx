@@ -7,7 +7,7 @@ import { Panel } from '@/components/panel';
 import { HistoryTab } from '@/components/history-tab';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
-import { TelegramThread } from '@/components/telegram-thread';
+import { ClientFeed } from '@/components/client-feed';
 import { stageClass } from '../../crm/stage-color';
 import {
   canWriteDeal,
@@ -260,7 +260,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
       {/* What was actually said about this job. The panel gates itself: this
           card is open to the VED manager too, and a client's conversation is
           not his to read. */}
-      <TelegramThread clientId={row.deal.clientId} limit={30} />
+      <ClientFeed clientId={row.deal.clientId} limit={40} />
 
       <TasksPanel entityType="deal" entityId={row.deal.id} revalidate={`/bitimlar/${row.deal.id}`} />
 

@@ -15,7 +15,7 @@ import { createClientCabinetCodeAction, revokeClientCabinetLinkAction } from '..
 import { ClientForm } from '../client-form';
 import { ClientCrmSections } from '../../../crm/client-crm';
 import { TasksPanel } from '@/components/tasks-panel';
-import { TelegramThread } from '@/components/telegram-thread';
+import { ClientFeed } from '@/components/client-feed';
 import { ClientDeals } from '@/components/client-deals';
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -164,7 +164,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
       {/* What was actually said, in the place it was actually said. Renders
           nothing until a manager's Telegram has been imported. */}
-      <TelegramThread clientId={client.id} />
+      <ClientFeed clientId={client.id} />
 
       <section>
         <h2 className="mb-2 text-lg font-bold">{tc('history')}</h2>

@@ -1017,7 +1017,21 @@
     "replyTooLong": "Xabar juda uzun.",
     "replyEmpty": "Bo‘sh xabar.",
     "chatStopTaking": "Bu chatni olmang",
-    "chatStopTakingHint": "Bu yozishma boshqa saqlanmaydi. Eski xabarlar qoladi."
+    "chatStopTakingHint": "Bu yozishma boshqa saqlanmaydi. Eski xabarlar qoladi.",
+    "feedTitle": "Lenta",
+    "feedEmpty": "Hozircha hech nima bo‘lmagan.",
+    "feedClientWrote": "Mijoz yozdi",
+    "feedWeAnswered": "Biz javob berdik",
+    "feedQueued": "Navbatda — hali yuborilmadi",
+    "feedNote": "Izoh",
+    "feedCargo": "Yuk qabul qilindi",
+    "feedCharge": "Hisob",
+    "feedPayment": "To‘lov",
+    "feedVoided": "bekor qilingan",
+    "feedBoxes": "quti",
+    "feedNotePlaceholder": "Ichki izoh (mijoz KO‘RMAYDI)…",
+    "feedNoteSave": "Izoh",
+    "feedNoteSaving": "Saqlanmoqda…"
   },
   "navShort": {
     "home": "Bosh",

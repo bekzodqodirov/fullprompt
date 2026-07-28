@@ -5,6 +5,7 @@ import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { cancelQueued, OutboxError, queueReply, replyAccountFor } from './outbox';
 import { excludeChatForClient } from './chat-rules';
+import { addActivity } from './service';
 
 /**
  * Queue a reply to a client — phase 4.
@@ -106,5 +107,34 @@ export async function excludeChatAction(_prev: ReplyState, form: FormData): Prom
   );
   revalidatePath(`/suhbatlar/${clientId}`);
   revalidatePath('/suhbatlar', 'layout');
+  return { ok: true };
+}
+
+/**
+ * An internal note on the client's timeline.
+ *
+ * Goes to `crm_activities`, which is where notes already live — the timeline
+ * reads that table rather than inventing a second one, so a note left on the
+ * old contact-history panel and one left here are the same note.
+ */
+export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Promise<ReplyState> {
+  let who;
+  try {
+    who = await authorize('crm.leads');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const clientId = String(form.get('clientId') ?? '');
+  const note = String(form.get('note') ?? '').trim();
+  if (!note) return { error: 'empty' };
+
+  await addActivity(
+    { entityType: 'client', entityId: clientId, kind: 'note', note },
+    { actorId: who.id, ...(await requestMeta()) },
+  );
+  revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath('/bitimlar', 'layout');
+  revalidatePath('/crm', 'layout');
   return { ok: true };
 }

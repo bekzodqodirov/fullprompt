@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { LOCALES } from '@/modules/platform/i18n/locales';
 import { SETTING_DEFAULTS } from '@/modules/platform/settings/service';
 import { BRIDGE_LABELS } from '@/components/telegram-bridge-status';
+import { FEED_LABELS } from '@/components/client-feed';
 import en from '../../messages/en.json';
 import ru from '../../messages/ru.json';
 import uz from '../../messages/uz.json';
@@ -223,6 +224,22 @@ describe('every bridge state has something to say', () => {
       const crm = ((BUNDLES[locale] as Tree).crm as Tree | undefined) ?? {};
       const missing = Object.values(BRIDGE_LABELS).filter((key) => typeof crm[key] !== 'string');
       expect(missing, `${locale} is missing bridge status strings`).toEqual([]);
+    });
+  }
+});
+
+/**
+ * Third instance of the same trap. The timeline picks one of seven strings
+ * from a row's KIND at render time, so no bundle-to-bundle comparison can see
+ * one missing from all four — and the row that would break is whichever kind
+ * happens to be rare in the data somebody tested with.
+ */
+describe('every timeline row has a name', () => {
+  for (const locale of Object.keys(BUNDLES)) {
+    it(`${locale} names all ${Object.keys(FEED_LABELS).length} feed kinds`, () => {
+      const crm = ((BUNDLES[locale] as Tree).crm as Tree | undefined) ?? {};
+      const missing = Object.values(FEED_LABELS).filter((key) => typeof crm[key] !== 'string');
+      expect(missing, `${locale} is missing feed labels`).toEqual([]);
     });
   }
 });

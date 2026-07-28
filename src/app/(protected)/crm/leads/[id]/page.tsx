@@ -17,7 +17,7 @@ import { LeadForm } from '../lead-form';
 import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
 import { TasksPanel } from '@/components/tasks-panel';
-import { TelegramThread } from '@/components/telegram-thread';
+import { ClientFeed } from '@/components/client-feed';
 import { conversationClientForLead } from '@/modules/wms/crm/conversations';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
@@ -97,7 +97,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       {/* A lead who is already a client — converted, or an existing customer
           asking about another job — brings their conversation with them. A
           brand new prospect has none, and the panel simply does not render. */}
-      <TelegramThread clientId={await conversationClientForLead(lead)} limit={30} />
+      <ClientFeed clientId={await conversationClientForLead(lead)} limit={40} />
 
       <ActivityForm entityType="lead" entityId={id} today={today} />
 

@@ -1017,7 +1017,21 @@
     "replyTooLong": "消息过长。",
     "replyEmpty": "消息为空。",
     "chatStopTaking": "不再收录此聊天",
-    "chatStopTakingHint": "不再保存此会话。旧消息保留。"
+    "chatStopTakingHint": "不再保存此会话。旧消息保留。",
+    "feedTitle": "动态",
+    "feedEmpty": "暂无任何记录。",
+    "feedClientWrote": "客户来信",
+    "feedWeAnswered": "我们已回复",
+    "feedQueued": "排队中 — 尚未发送",
+    "feedNote": "备注",
+    "feedCargo": "货物已接收",
+    "feedCharge": "应收",
+    "feedPayment": "付款",
+    "feedVoided": "已作废",
+    "feedBoxes": "箱",
+    "feedNotePlaceholder": "内部备注（客户看不到）…",
+    "feedNoteSave": "备注",
+    "feedNoteSaving": "保存中…"
   },
   "navShort": {
     "home": "首页",

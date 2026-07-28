@@ -28,7 +28,8 @@
     "tg-import": "tsx scripts/tg-import.ts",
     "tg-scan": "tsx scripts/tg-scan.ts",
     "tg-login": "tsx scripts/tg-login.ts",
-    "tg-listen": "tsx scripts/tg-listen.ts"
+    "tg-listen": "tsx scripts/tg-listen.ts",
+    "tg-doctor": "tsx scripts/tg-doctor.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.114.0",

@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## 🕘 «Lenta» — mijozning butun tarixi bitta ustunda — 2026-07-28
+
+Siz aytgan narsa: *«amocrm bitrixlardek katta polyada ketma-ketlikda ko'rinib
+tursa yaxshi edi … chatga o'xshab qachon nima bo'lgani 1 joyda ko'rinar edi»*.
+
+Endi mijoz, **bitim** va lid kartochkasida shu bor.
+
+### Nima ko'rinadi
+
+Bitta ustun, chatdek — tepada eskisi, pastda yangisi:
+
+| | |
+|---|---|
+| 💬 | mijoz yozdi |
+| ↩️ | biz javob berdik |
+| ◷ | navbatda — hali yuborilmadi |
+| 📦 | yuk qabul qilindi (qaysi ombor, nechta quti) |
+| 🧾 | hisob |
+| 💵 | to'lov |
+| 📝 | izoh |
+
+Bekor qilingan hisob **yo'qolmaydi** — xiralashib «bekor qilingan» deb turadi.
+Bo'lgan ish bo'lgan, keyin uni kimdir bekor qilgan — ikkalasi ham tarix.
+
+### Ostida ikkita yozish oynasi
+
+- **mijozga** — Telegramga ketadi;
+- **ichki izoh** — mijoz **ko'rmaydi**.
+
+Ataylab **ikkita alohida oyna**. amoCRM'da bitta oyna va o'tkazgich bo'ladi —
+va o'shanda odam mijoz haqidagi ichki gapni **mijozga** yuborib qo'yadi. Ikkita
+alohida oyna bunday xato qila olmaydi.
+
+### «Bitimda chat yo'q» — endi savol yo'qoladi
+
+Chat paneli yozishmasi yo'q mijozda **umuman ko'rinmasdi**. Lenta esa doim
+to'la — yuk ham, pul ham mijoz yozmasa ham bo'lib turadi.
+
+### Yuborish nega ko'rinmasligini aniqlaydigan buyruq
+
+```bash
+docker compose run --rm migrate sh -c "pnpm tg-doctor"
+```
+
+Ettita sababni bittalab tekshirib, qaysi biri ekanini aytadi. Sizning
+holatingizda ehtimol: **Sozlamalar → «Telegram orqali yuborish» o'chiq**.
+
+Tekshirildi: 630 ta test + 73 ta ekran testi.
+
 ## Zaxira ogohlantirishi ishlamayotgan ekan — 2026-07-28
 
 Rasmlarni zaxiralashni loyihalash uchun mavjud kodni surishtirdim va **haftalar

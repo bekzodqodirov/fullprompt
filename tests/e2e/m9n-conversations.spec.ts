@@ -114,7 +114,7 @@ test('a warehouse operator cannot read what clients told sales', async ({ page }
 const VED = '+998900000004';
 const SALES = '+998900000009';
 
-test('a deal card shows the conversation to sales and hides it from VED', async ({ page }) => {
+test('a deal card shows the TIMELINE to sales and hides it from VED', async ({ page }) => {
   await login(page, OWNER);
   // `?scope=all`: the board opens on MINE, and the deal the earlier spec left
   // belongs to somebody else — without this the board is empty and the test
@@ -127,23 +127,34 @@ test('a deal card shows the conversation to sales and hides it from VED', async 
   await deal.click();
   await expect(page).toHaveURL(/\/bitimlar\/[0-9a-f-]{36}$/);
   const url = page.url();
-  // Whether THIS deal's client has an imported conversation depends on the
-  // run, so the owner's view is the reference: whatever he sees, VED must not.
-  const ownerSees = await page.getByTestId('tg-thread').count();
+  // The timeline replaced the read-only chat panel here. It is asserted on
+  // `client-feed`, and that matters: this spec kept passing after the swap
+  // while asserting on a testid the page no longer renders — both counts were
+  // zero and the gate was proved by nothing at all.
+  //
+  // The owner's view is the reference, because whether THIS deal's client has
+  // anything on their timeline depends on what earlier specs left. What must
+  // hold is the RELATION: whatever he can see, VED cannot.
+  const ownerSees = await page.getByTestId('client-feed').count();
+  // And the timeline is not conditional on a conversation existing — a client
+  // with cargo has one — so on a seeded deal it must actually be there.
+  expect(ownerSees, 'the owner must see a timeline on a deal card').toBeGreaterThan(0);
 
   await login(page, VED);
   await page.goto(url);
   await expect(page.getByRole('heading').first()).toBeVisible();
   // He still does his job on the card — the customs papers are his.
   await expect(page).toHaveURL(url);
-  await expect(page.getByTestId('tg-thread')).toHaveCount(0);
+  // A deal card is open to `ved.docs`, so an ungated timeline here would hand
+  // the customs manager every private sales conversation AND every note.
+  await expect(page.getByTestId('client-feed')).toHaveCount(0);
 
-  if (ownerSees > 0) {
-    await login(page, SALES);
-    await page.goto(url);
-    // Sales may be scoped out of another manager's deal; only assert the
-    // panel when the card itself opened.
-    if (page.url() === url) await expect(page.getByTestId('tg-thread')).toHaveCount(ownerSees);
+  await login(page, SALES);
+  await page.goto(url);
+  // Sales may be scoped out of another manager's deal; only assert the panel
+  // when the card itself opened.
+  if (page.url() === url) {
+    await expect(page.getByTestId('client-feed')).toHaveCount(ownerSees);
   }
 });
 

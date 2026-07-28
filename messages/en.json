@@ -1017,7 +1017,21 @@
     "replyTooLong": "Message is too long.",
     "replyEmpty": "Empty message.",
     "chatStopTaking": "Stop taking this chat",
-    "chatStopTakingHint": "Stop storing this conversation. Existing messages stay."
+    "chatStopTakingHint": "Stop storing this conversation. Existing messages stay.",
+    "feedTitle": "Timeline",
+    "feedEmpty": "Nothing has happened yet.",
+    "feedClientWrote": "The client wrote",
+    "feedWeAnswered": "We answered",
+    "feedQueued": "Queued — not sent yet",
+    "feedNote": "Note",
+    "feedCargo": "Cargo received",
+    "feedCharge": "Charge",
+    "feedPayment": "Payment",
+    "feedVoided": "voided",
+    "feedBoxes": "boxes",
+    "feedNotePlaceholder": "Internal note (the client will NOT see it)…",
+    "feedNoteSave": "Note",
+    "feedNoteSaving": "Saving…"
   },
   "navShort": {
     "home": "Home",

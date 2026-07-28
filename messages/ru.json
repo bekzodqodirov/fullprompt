@@ -1017,7 +1017,21 @@
     "replyTooLong": "Слишком длинное сообщение.",
     "replyEmpty": "Пустое сообщение.",
     "chatStopTaking": "Не брать этот чат",
-    "chatStopTakingHint": "Больше не сохранять эту переписку. Старые сообщения останутся."
+    "chatStopTakingHint": "Больше не сохранять эту переписку. Старые сообщения останутся.",
+    "feedTitle": "Лента",
+    "feedEmpty": "Пока ничего не происходило.",
+    "feedClientWrote": "Клиент написал",
+    "feedWeAnswered": "Мы ответили",
+    "feedQueued": "В очереди — ещё не отправлено",
+    "feedNote": "Заметка",
+    "feedCargo": "Груз принят",
+    "feedCharge": "Начисление",
+    "feedPayment": "Оплата",
+    "feedVoided": "отменено",
+    "feedBoxes": "кор.",
+    "feedNotePlaceholder": "Внутренняя заметка (клиент НЕ увидит)…",
+    "feedNoteSave": "Заметка",
+    "feedNoteSaving": "Сохраняю…"
   },
   "navShort": {
     "home": "Главная",
