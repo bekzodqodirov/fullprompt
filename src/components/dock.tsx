@@ -60,6 +60,7 @@ interface DockThread {
     hasMedia: boolean;
     sentAt: string;
     manager: string;
+    photos: { id: string }[];
   }[];
 }
 

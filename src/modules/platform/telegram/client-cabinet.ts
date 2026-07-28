@@ -166,7 +166,8 @@ export async function completeClientLink(linkId: string, chatId: number) {
 export async function linkAllClientsForPhone(
   phone: string,
   chatId: number,
-  createdBy: string,
+  /** NULL = the client linked themselves by sharing their number (item 13). */
+  createdBy: string | null,
 ): Promise<{ clientCode: string; name: string }[]> {
   const owners = await activeClientsByPhone(phone);
   const already = new Set((await clientsForChat(BigInt(chatId))).map((c) => c.id));
@@ -261,7 +262,10 @@ export async function failClientLink(linkId: string): Promise<void> {
 }
 
 /** Best-effort Telegram ping to the staff user who minted the link. */
-async function notifyStaff(userId: string, text: string): Promise<void> {
+async function notifyStaff(userId: string | null, text: string): Promise<void> {
+  // NULL author = a self-service link (item 13) — there is no minting staff
+  // member to warn, and both callers are on the staff-minted code path.
+  if (!userId) return;
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
   const staff = await db.query.telegramLinks.findFirst({
@@ -309,7 +313,48 @@ export function registerClientCabinet(bot: Bot): void {
   // Step 2 of linking: the person shares their phone via the contact button.
   bot.on('message:contact', async (ctx) => {
     const pending = pendingByChat.get(ctx.chat.id);
-    if (!pending) return;
+    if (!pending) {
+      // No staff-minted code in flight: the SELF-SERVICE door (owner, item
+      // 13 — "nomerni o'zini kiritib ko'rsa bo'ladigan qilsak"). Telegram
+      // itself has verified the number belongs to the sender — that is the
+      // whole security model, and it is stronger than any typed code: a
+      // stranger can only ever test their own number. The same forwarded-
+      // contact guard as the code flow; the fallback names NO client.
+      const tgLocale = ctx.from?.language_code ?? null;
+      const contact = ctx.message.contact;
+      if (contact.user_id !== ctx.from?.id) {
+        await ctx.reply(clientLabels(tgLocale).phoneMismatch, {
+          reply_markup: { remove_keyboard: true },
+        });
+        return;
+      }
+      const all = await linkAllClientsForPhone(contact.phone_number, ctx.chat.id, null).catch(
+        () => [] as { clientCode: string; name: string }[],
+      );
+      if (all.length === 0) {
+        await ctx.reply(clientLabels(tgLocale).phoneNotFound, {
+          reply_markup: { remove_keyboard: true },
+        });
+        return;
+      }
+      const allIds = (await clientsForChat(BigInt(ctx.chat.id))).map((c) => c.id);
+      const seeded = localeFromTelegram(tgLocale);
+      if (seeded) {
+        await db
+          .update(clients)
+          .set({ locale: seeded })
+          .where(and(inArray(clients.id, allIds), isNull(clients.locale)));
+      }
+      const t = clientLabels(seeded);
+      await setCabinetMenuButton(ctx.chat.id, seeded);
+      await ctx.reply(
+        `✅ ${t.welcome}\n${t.yourCodes}: ${all.map((c) => c.clientCode).join(', ')}.`,
+        { reply_markup: cabinetKeyboard(seeded) },
+      );
+      const app = cabinetInlineKeyboard(process.env.APP_URL, seeded);
+      if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
+      return;
+    }
     pendingByChat.delete(ctx.chat.id);
     // Nothing is linked yet, so there is no stored language to read — the
     // only clue at this moment is the phone's own.

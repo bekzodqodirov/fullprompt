@@ -269,9 +269,18 @@ so the drawer opens straight into that thread; portal to body because the
 header's backdrop-filter traps fixed descendants. Notes take FILES
 (pre-bound to a client-minted crm_activity id, rendered on the lenta);
 the lead card's contact log folded into a rail Panel; cards now state the
-honest Telegram status (not-linked vs somebody-else's, named). Still open
-in batch 3 (task #79): in-map popups (12), cabinet linking via
-request_contact (13), incoming chat photos (15).
+honest Telegram status (not-linked vs somebody-else's, named).
+
+Batch 3 COMPLETE (#357-359): in-map popups shared by both renderers +
+unified Leaflet badge (12); cabinet self-links via request_contact — the
+Telegram-verified own-number, created_by nullable (migration 0042), staff
+link flow kept as fallback (13); incoming chat PHOTOS downloaded by the
+listener (photos-only, 10 MiB pre-checked cap, inline sharp thumbnails —
+enqueue() would start the worker fleet in the listener container) and
+rendered in thread/lenta/dock (15). Deferred by design: tg-import media
+backfill, sending photos (outbox is body-only by CHECK). The activity form
+also moved into a folded rail Panel and notes take files (owner's mid-round
+asks).
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

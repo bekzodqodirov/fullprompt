@@ -35,7 +35,9 @@ import {
   HEARTBEAT_MS,
   type BookState,
 } from '../src/modules/wms/crm/telegram-live';
-import { peerFromChat, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
+import { peerFromChat, tgPhotoPlan, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
+import { saveAttachment } from '../src/modules/platform/files/service';
+import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
 
 /**
  * The live bridge: a client's message reaches the CRM within seconds.
@@ -64,6 +66,39 @@ import { peerFromChat, type DialogPeer } from '../src/modules/wms/crm/telegram-i
  * talking all week so startup cannot turn into a full re-import.
  */
 const CATCHUP_PER_CHAT = 200;
+
+/**
+ * Download an incoming photo and pin it to its message row (owner, item 15:
+ * "rasimlarni ko'radigan bo'lsa ham yaxshi edi").
+ *
+ * Photos only, size stated up front, and only for a NEW row (the caller
+ * checks) — a replay never re-downloads. Thumbnails are made INLINE with
+ * sharp: `enqueue()` would start the full pg-boss worker fleet — nine
+ * groups, nightly backup included — inside this container, which is the
+ * two-backup-systems bug (#253-261) all over again.
+ */
+async function savePhotoFor(
+  messageRowId: string,
+  msg: { id: number; media?: unknown; downloadMedia?: () => Promise<unknown> },
+  managerUserId: string,
+): Promise<void> {
+  const plan = tgPhotoPlan(msg.media);
+  if (!plan.download || typeof msg.downloadMedia !== 'function') return;
+  const bytes = await msg.downloadMedia();
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0) return;
+  const { id } = await saveAttachment(
+    {
+      entityType: 'tg_message',
+      entityId: messageRowId,
+      fileName: `photo_${msg.id}.jpg`,
+      contentType: 'image/jpeg',
+      body: bytes,
+      uploadedBy: managerUserId,
+    },
+    { thumbnails: 'skip' },
+  );
+  await generateThumbnails(id).catch(() => {});
+}
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -170,6 +205,12 @@ async function main() {
       if (written) {
         stored += 1;
         console.log(`  ${verdict.clientCode} ← ${verdict.row.direction}`);
+        // The photograph itself (owner, item 15) — only for a NEW row, so a
+        // reconnect replay never re-downloads. A failure here is a missing
+        // picture, never a downed bridge.
+        await savePhotoFor(written, msg, account.managerUserId).catch((err: unknown) => {
+          console.error('rasm olinmadi:', err instanceof Error ? err.message : err);
+        });
       }
     } catch (err) {
       // One bad event must not take the bridge down: it would stop receiving
@@ -298,7 +339,10 @@ async function main() {
             managerUserId: account.managerUserId,
             row: verdict.row,
           });
-          if (written) recovered += 1;
+          if (written) {
+            recovered += 1;
+            await savePhotoFor(written, msg, account.managerUserId).catch(() => {});
+          }
         }
       } catch (err) {
         // One unreachable chat must not stop the rest catching up.

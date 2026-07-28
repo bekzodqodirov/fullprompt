@@ -5,6 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { tgMessages, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { pendingFor } from '@/modules/wms/crm/outbox';
+import { attachPhotos } from '@/modules/wms/crm/conversations';
 import { TelegramBubble } from './telegram-bubble';
 import { TelegramReply } from './telegram-reply';
 
@@ -52,20 +53,22 @@ export async function TelegramThread({
   }
 
   const t = await getTranslations('crm');
-  const rows = await db
-    .select({
-      id: tgMessages.id,
-      direction: tgMessages.direction,
-      body: tgMessages.body,
-      hasMedia: tgMessages.hasMedia,
-      sentAt: tgMessages.sentAt,
-      manager: users.fullName,
-    })
-    .from(tgMessages)
-    .innerJoin(users, eq(tgMessages.managerUserId, users.id))
-    .where(eq(tgMessages.clientId, clientId))
-    .orderBy(desc(tgMessages.sentAt))
-    .limit(limit);
+  const rows = await attachPhotos(
+    await db
+      .select({
+        id: tgMessages.id,
+        direction: tgMessages.direction,
+        body: tgMessages.body,
+        hasMedia: tgMessages.hasMedia,
+        sentAt: tgMessages.sentAt,
+        manager: users.fullName,
+      })
+      .from(tgMessages)
+      .innerJoin(users, eq(tgMessages.managerUserId, users.id))
+      .where(eq(tgMessages.clientId, clientId))
+      .orderBy(desc(tgMessages.sentAt))
+      .limit(limit),
+  );
 
   // Nothing imported for this client — say nothing rather than show an empty
   // box on every card in the system.

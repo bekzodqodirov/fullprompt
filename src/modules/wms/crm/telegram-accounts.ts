@@ -225,14 +225,15 @@ export async function resumePoints(managerUserId: string): Promise<ResumePoint[]
  *
  * `onConflictDoNothing` against the same unique index the import uses, so a
  * reconnect that replays recent history — which Telegram does — costs nothing
- * and duplicates nothing. Returns whether the row was new, which is the only
- * thing the listener's counters need.
+ * and duplicates nothing. Returns the NEW row's id, or null for a replay —
+ * which is both the listener's counter and the key a downloaded photo binds
+ * to, and the null is what makes a replay never re-download.
  */
 export async function storeIncoming(input: {
   clientId: string;
   managerUserId: string;
   row: MessageRow;
-}): Promise<boolean> {
+}): Promise<string | null> {
   const written = await db
     .insert(tgMessages)
     .values({
@@ -247,7 +248,7 @@ export async function storeIncoming(input: {
     })
     .onConflictDoNothing()
     .returning({ id: tgMessages.id });
-  return written.length > 0;
+  return written[0]?.id ?? null;
 }
 
 /**

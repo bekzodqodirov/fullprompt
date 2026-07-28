@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 3-to'plam yakuni: map, botga raqam bilan ulanish, chatda rasmlar — 2026-07-28
+
+15 bandlik ro'yxatingizning oxirgi uch bandi:
+
+- **Map (12)**: sklad yoki mashinaga bossangiz, ma'lumot endi **mapning o'z
+  ichida** ochiladi — qaysi mijozning nechta karobkasi, mashinada esa jonli
+  nuqta/taxmin, muddat, yuk ro'yxati va to'liq sahifaga havola. To'liq ekran
+  rejimida ham ishlaydi (avval kartalar map ostida qolib, to'liq ekran ularni
+  yopib qo'yardi). Sklad belgisi va son endi bitta butun.
+- **Botga ulanish (13)**: klient botga kirsa «📱 Raqamimni yuborish» tugmasi
+  chiqadi — kod ham, havola ham kerak emas. Telegram raqamni **o'zi
+  tasdiqlaydi** (faqat egasining raqami yuboriladi, soxtalashtirib
+  bo'lmaydi); raqam bazada bo'lsa, bitta bosishda hamma kodi ulanadi.
+  Topilmasa — hech kimning nomini aytmasdan «menejeringizga murojaat
+  qiling». Eski havola usuli zaxira bo'lib qoladi. Migratsiya 0043 emas —
+  **0042**.
+- **Chatda rasmlar (15)**: mijoz yuborgan **rasmning o'zi** endi suhbatda,
+  kartadagi lentada va 💬 panelda ko'rinadi (bosilsa kattarayadi) — avval
+  faqat «📎 media» yozuvi turardi. Faqat rasmlar, 10 MB gacha, yangi kelgan
+  xabarlarniki (eski tarixni ortga yuklab olish — alohida qaror, akkauntga
+  yuk bo'lmasligi uchun). CRMdan rasm YUBORISH keyingi bosqichda.
+
+Eslatma: chat rasmlari ham hozircha zaxirasi yo'q MinIO'ga tushadi — shuning
+uchun keyingi katta ish o'sha **rasmlar zaxirasi** bo'ladi, kelishilganidek.
+
+Tekshirildi: 671 unit/integration + 83 e2e yashil. Migratsiya **0042**
+(faqat bitta ustunni yumshatish) — deploy'dan avval zaxira nusxa.
+
 ## 3-to'plam (2-qism): chat va vazifalar — har sahifadan — 2026-07-28
 
 Siz so'ragan «chat butun sistemadan kirsa bo'ladigan joyda» — tayyor:

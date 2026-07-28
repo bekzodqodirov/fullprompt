@@ -240,6 +240,38 @@ export interface MessageRow {
  * An empty body is kept as null rather than '': a photo with no caption is a
  * real message and must still appear in the thread, in its right place.
  */
+/**
+ * Should this message's media be downloaded, and how big is it?
+ *
+ * PHOTOS ONLY, and only when Telegram states the size up front. `hasMedia`
+ * is true for link previews, stickers, voice notes and arbitrary documents —
+ * a naive "download when media" pulls all of it onto an account the business
+ * depends on. The size is read from the message object BEFORE any network
+ * I/O (Photo.sizes carries it), so an oversized photo is never
+ * download-then-refused; unknown size refuses too — pulling blind is how a
+ * 2 GB "photo sent as file" ends up in the pipe. Pure and unit-tested;
+ * structural rather than instanceof so the test needs no gramjs objects.
+ */
+export const MAX_TG_PHOTO_BYTES = 10 * 1024 * 1024;
+
+export function tgPhotoPlan(
+  media: unknown,
+  maxBytes = MAX_TG_PHOTO_BYTES,
+): { download: boolean; approxBytes: number } {
+  const m = media as { className?: string; photo?: { sizes?: unknown[] } } | null | undefined;
+  if (!m || m.className !== 'MessageMediaPhoto') return { download: false, approxBytes: 0 };
+  let biggest = 0;
+  for (const raw of m.photo?.sizes ?? []) {
+    const size = raw as { size?: unknown; sizes?: unknown[] };
+    if (typeof size.size === 'number') biggest = Math.max(biggest, size.size);
+    if (Array.isArray(size.sizes)) {
+      for (const n of size.sizes) if (typeof n === 'number') biggest = Math.max(biggest, n);
+    }
+  }
+  if (biggest <= 0) return { download: false, approxBytes: 0 };
+  return { download: biggest <= maxBytes, approxBytes: biggest };
+}
+
 export function toMessageRow(peerId: bigint, msg: RawMessage): MessageRow {
   const body = (msg.message ?? '').trim();
   return {

@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  attachments,
   clients,
   clientTransactions,
   crmActivities,
@@ -14,6 +15,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { clientFeed, clientFeedHasAnything } from '@/modules/wms/crm/feed';
+import { conversationFor } from '@/modules/wms/crm/conversations';
 
 /**
  * The «lenta» against a real database.
@@ -32,6 +34,7 @@ let managerId: string;
 let clientId: string;
 let leadId: string;
 let dealId: string;
+let tgMessageId: string;
 
 beforeAll(async () => {
   const [staff] = await db.select().from(users).limit(1);
@@ -51,14 +54,29 @@ beforeAll(async () => {
   leadId = l!.id;
 
   // Three different sources for the client, in a KNOWN time order.
-  await db.insert(tgMessages).values({
-    clientId,
-    managerUserId: managerId,
-    peerId: BigInt(STAMP),
-    tgMessageId: 1n,
-    direction: 'in',
-    body: 'salom',
-    sentAt: at(30),
+  const [tgRow] = await db
+    .insert(tgMessages)
+    .values({
+      clientId,
+      managerUserId: managerId,
+      peerId: BigInt(STAMP),
+      tgMessageId: 1n,
+      direction: 'in',
+      body: 'salom',
+      sentAt: at(30),
+    })
+    .returning({ id: tgMessages.id });
+  tgMessageId = tgRow!.id;
+  // A downloaded photo pinned to that message (item 15).
+  await db.insert(attachments).values({
+    entityType: 'tg_message',
+    entityId: tgMessageId,
+    kind: 'photo',
+    storageKey: `feedtest/${tgMessageId}`,
+    fileName: 'photo_1.jpg',
+    contentType: 'image/jpeg',
+    sizeBytes: 1,
+    uploadedBy: managerId,
   });
   await db.insert(crmActivities).values({
     entityType: 'client',
@@ -111,6 +129,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.delete(attachments).where(eq(attachments.entityId, tgMessageId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
   await db.delete(deals).where(eq(deals.id, dealId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, clientId));
@@ -167,6 +186,21 @@ describe('a lead that is not a client yet — the case the owner caught', () => 
     // A wrong id must yield an empty feed, not somebody else's notes.
     const items = await clientFeed(null, { leadId: clientId });
     expect(items).toHaveLength(0);
+  });
+});
+
+describe('a photographed message shows its photograph (item 15)', () => {
+  it('the lenta carries the file pinned to the telegram row', async () => {
+    const items = await clientFeed(clientId);
+    const tg = items.find((i) => i.kind === 'tg_in');
+    const files = tg!.meta.files as { id: string; image: boolean }[];
+    expect(files).toHaveLength(1);
+    expect(files[0]!.image).toBe(true);
+  });
+
+  it('the thread does too, one query for the whole page', async () => {
+    const messages = await conversationFor(clientId);
+    expect(messages[0]!.photos).toHaveLength(1);
   });
 });
 

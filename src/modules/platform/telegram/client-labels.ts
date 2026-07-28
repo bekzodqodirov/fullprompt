@@ -91,6 +91,17 @@ const DICT = {
     ru: 'GSR LOGISTICS. Чтобы подключить кабинет, попросите ссылку у вашего менеджера.',
     en: 'GSR LOGISTICS. To connect your cabinet, ask your manager for a link.',
   },
+  /** The self-service door (item 13): no link needed if the number matches. */
+  linkByPhone: {
+    uz: 'Yoki pastdagi tugma bilan raqamingizni yuboring — kod kerak emas: raqamingiz bizda bo‘lsa, kabinet o‘zi ulanadi.',
+    ru: 'Или отправьте свой номер кнопкой ниже — код не нужен: если номер есть у нас, кабинет подключится сам.',
+    en: 'Or share your number with the button below — no code needed: if we have your number, the cabinet connects by itself.',
+  },
+  phoneNotFound: {
+    uz: 'Bu raqam bazamizda topilmadi. Menejeringizga murojaat qiling — raqamingizni kartangizga qo‘shib, sizni ulab qo‘yadi.',
+    ru: 'Этот номер у нас не найден. Обратитесь к вашему менеджеру — он добавит номер в вашу карточку и подключит вас.',
+    en: 'We could not find this number. Please contact your manager — they will add it to your card and connect you.',
+  },
 
   // --- the three screens ---
   noCargo: {

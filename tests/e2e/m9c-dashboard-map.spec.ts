@@ -62,4 +62,14 @@ test('the map fills the screen and says which mark is which', async ({ page }) =
 
   await toggle.click();
   await expect(page.locator('.fixed.inset-0')).toHaveCount(0);
+
+  // Tapping a warehouse answers INSIDE the map (owner, item 12): the popup
+  // is a child of the canvas, so it also survives fullscreen — the old cards
+  // below the map were exactly what fullscreen buried.
+  await page.getByTestId('map-warehouse').first().click();
+  const popup = page.getByTestId('map-popup');
+  await expect(popup).toBeVisible();
+  await expect(popup.locator('a[href^="/stock"]')).toBeVisible();
+  await popup.getByRole('button', { name: 'close' }).click();
+  await expect(page.getByTestId('map-popup')).toHaveCount(0);
 });

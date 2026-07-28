@@ -131,6 +131,111 @@ export function TrackingMap({
         <Icon name={full ? 'x' : 'maximize'} className="h-5 w-5" />
       </button>
 
+      {/* The tapped thing answers WHERE IT WAS TAPPED (owner, item 12:
+          "mapni ichida ko'rinsa yaxshi bo'lar edi, bosgan joyni o'zida") —
+          one overlay panel inside the canvas, both renderers, fullscreen
+          included, instead of cards below the map that fullscreen covered. */}
+      {selWh && (
+        <div
+          data-testid="map-popup"
+          className="absolute left-2 top-2 z-[600] max-h-[75%] w-72 max-w-[85%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
+        >
+          <div className="flex items-baseline gap-2">
+            <h2 className="min-w-0 flex-1 truncate text-base font-bold">
+              <span className="mr-1.5 inline-block h-3 w-3 rounded-[3px] bg-brand-700 align-middle" />
+              <span className="font-mono">{selWh.code}</span> — {selWh.name}
+            </h2>
+            <span className="num shrink-0 text-sm font-semibold">{selWh.totalBoxes} 📦</span>
+            <button
+              type="button"
+              className="flex h-8 w-8 shrink-0 items-center justify-center"
+              aria-label="close"
+              onClick={() => setSelected(null)}
+            >
+              ✕
+            </button>
+          </div>
+          {selWh.stock.length === 0 && <p className="text-sm text-ink-500">{t('emptyWh')}</p>}
+          <div className="flex flex-wrap gap-1.5">
+            {selWh.stock.map((s) => (
+              <span
+                key={s.clientCode}
+                className="rounded-lg bg-brand-50 px-2 py-1 font-mono text-xs font-bold text-brand-700"
+              >
+                {s.clientCode} · {s.n}
+              </span>
+            ))}
+          </div>
+          <Link
+            href={`/stock?warehouse=${selWh.code}`}
+            className="text-sm font-semibold text-brand-700 underline"
+          >
+            {t('openStock')} →
+          </Link>
+        </div>
+      )}
+
+      {selTruck && (
+        <div
+          data-testid="map-popup"
+          className="absolute left-2 top-2 z-[600] max-h-[75%] w-72 max-w-[85%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
+        >
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-base font-bold">
+              <span className="mr-1.5 inline-block h-3 w-3 rounded-full bg-warn align-middle" />
+              <span className="font-mono">{selTruck.code}</span>
+            </h2>
+            <span className="font-mono text-xs font-semibold">
+              {selTruck.originCode} → {selTruck.destCode}
+            </span>
+            {selTruck.vehiclePlate && (
+              <span className="font-mono text-xs">{selTruck.vehiclePlate}</span>
+            )}
+            <button
+              type="button"
+              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center"
+              aria-label="close"
+              onClick={() => setSelected(null)}
+            >
+              ✕
+            </button>
+          </div>
+          <p className="text-xs font-semibold">
+            {selTruck.live
+              ? `🟢 ${t('liveFix', { ago: ago(selTruck.fixAgeMinutes ?? 0) })}`
+              : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { ago: ago(selTruck.fixAgeMinutes) })}` : ''}`}
+          </p>
+          <p className={`text-xs font-semibold ${selTruck.overdue ? 'text-bad' : ''}`}>
+            📍 {t(`seg_${selTruck.segKey}`)}
+            {selTruck.overdue
+              ? ` — ${t('overdue')}`
+              : ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}`}
+          </p>
+          <div className="h-2 overflow-hidden rounded bg-surface-sunken">
+            <div
+              className="h-full rounded bg-brand-600"
+              style={{ width: `${Math.round(selTruck.progress * 100)}%` }}
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {selTruck.contents.map((c) => (
+              <span
+                key={c.clientCode}
+                className="rounded-lg bg-warn/10 px-2 py-1 font-mono text-xs font-bold text-warn"
+              >
+                {c.clientCode} · {c.n}
+              </span>
+            ))}
+          </div>
+          <Link
+            href={`/batches/${selTruck.batchId}`}
+            className="text-sm font-semibold text-brand-700 underline"
+          >
+            {t('openBatch')} →
+          </Link>
+        </div>
+      )}
+
       {/* Which mark is which — the owner could not tell a warehouse from a
           truck at a glance, so the key says it in the same shapes. */}
       <div
@@ -156,93 +261,6 @@ export function TrackingMap({
         <div className="card h-[420px] overflow-hidden !p-0 md:h-[560px]">{canvas}</div>
       )}
       {!basemap && !full && <p className="text-[11px] text-ink-400">{t('basemapMissing')}</p>}
-
-      {selWh && (
-        <div className="card space-y-1.5">
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-lg font-bold">
-              <span className="mr-1.5 inline-block h-3 w-3 rounded-[3px] bg-brand-700 align-middle" />
-              <span className="font-mono">{selWh.code}</span> — {selWh.name}
-            </h2>
-            <span className="text-sm font-semibold">{selWh.totalBoxes} 📦</span>
-            <button
-              type="button"
-              className="ml-auto flex h-9 w-9 items-center justify-center"
-              aria-label="close"
-              onClick={() => setSelected(null)}
-            >
-              ✕
-            </button>
-          </div>
-          {selWh.stock.length === 0 && <p className="text-sm text-ink-500">{t('emptyWh')}</p>}
-          <div className="flex flex-wrap gap-1.5">
-            {selWh.stock.map((s) => (
-              <span
-                key={s.clientCode}
-                className="rounded-lg bg-brand-50 px-2 py-1 font-mono text-sm font-bold text-brand-700"
-              >
-                {s.clientCode} · {s.n}
-              </span>
-            ))}
-          </div>
-          <Link href={`/stock?warehouse=${selWh.code}`} className="text-sm font-semibold text-brand-700 underline">
-            {t('openStock')} →
-          </Link>
-        </div>
-      )}
-
-      {selTruck && (
-        <div className="card space-y-1.5">
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-lg font-bold">
-              <span className="mr-1.5 inline-block h-3 w-3 rounded-full bg-warn align-middle" />
-              <span className="font-mono">{selTruck.code}</span>
-            </h2>
-            <span className="font-mono text-sm font-semibold">
-              {selTruck.originCode} → {selTruck.destCode}
-            </span>
-            {selTruck.vehiclePlate && <span className="font-mono text-sm">{selTruck.vehiclePlate}</span>}
-            <button
-              type="button"
-              className="ml-auto flex h-9 w-9 items-center justify-center"
-              aria-label="close"
-              onClick={() => setSelected(null)}
-            >
-              ✕
-            </button>
-          </div>
-          <p className="text-sm font-semibold">
-            {selTruck.live
-              ? `🟢 ${t('liveFix', { ago: ago(selTruck.fixAgeMinutes ?? 0) })}`
-              : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { ago: ago(selTruck.fixAgeMinutes) })}` : ''}`}
-          </p>
-          <p className={`text-sm font-semibold ${selTruck.overdue ? 'text-bad' : ''}`}>
-            📍 {t(`seg_${selTruck.segKey}`)}
-            {selTruck.overdue
-              ? ` — ${t('overdue')}`
-              : ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}`}
-          </p>
-          <div className="h-2 overflow-hidden rounded bg-surface-sunken">
-            <div
-              className="h-full rounded bg-brand-600"
-              style={{ width: `${Math.round(selTruck.progress * 100)}%` }}
-            />
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {selTruck.contents.map((c) => (
-              <span
-                key={c.clientCode}
-                className="rounded-lg bg-warn/10 px-2 py-1 font-mono text-sm font-bold text-warn"
-              >
-                {c.clientCode} · {c.n}
-              </span>
-            ))}
-          </div>
-          <Link href={`/batches/${selTruck.batchId}`} className="text-sm font-semibold text-brand-700 underline">
-            {t('openBatch')} →
-          </Link>
-        </div>
-      )}
 
       {trucks.length === 0 && !full && <p className="text-sm text-ink-500">{t('noTrucks')}</p>}
     </div>

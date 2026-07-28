@@ -111,14 +111,25 @@ export async function clientFeed(
 
   const rows = await db.execute<Row>(sql`
     SELECT * FROM (
-      -- What was said, both directions.
+      -- What was said, both directions — with the photographs we hold
+      -- (item 15), the same shape the note branch uses so the renderer is
+      -- one block for both.
       SELECT
         'tg-' || m.id::text                       AS id,
         CASE WHEN m.direction = 'out' THEN 'tg_out' ELSE 'tg_in' END AS kind,
         m.sent_at                                 AS at,
         CASE WHEN m.direction = 'out' THEN u.full_name ELSE NULL END AS actor,
         m.body                                    AS body,
-        jsonb_build_object('hasMedia', m.has_media) AS meta
+        jsonb_build_object(
+          'hasMedia', m.has_media,
+          'files', (
+            SELECT coalesce(jsonb_agg(jsonb_build_object(
+              'id', att.id, 'name', att.file_name, 'image', att.content_type LIKE 'image/%'
+            ) ORDER BY att.created_at), '[]'::jsonb)
+            FROM attachments att
+            WHERE att.entity_type = 'tg_message' AND att.entity_id = m.id
+          )
+        ) AS meta
       FROM tg_messages m
       JOIN users u ON u.id = m.manager_user_id
       WHERE m.client_id = ${clientId} AND m.sent_at < ${cutoff}

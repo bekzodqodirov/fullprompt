@@ -239,7 +239,9 @@ function FeedRow({
       )}
       {item.body ? (
         <p className="whitespace-pre-wrap break-words">{item.body}</p>
-      ) : item.meta.hasMedia === true ? (
+      ) : item.meta.hasMedia === true &&
+        !(Array.isArray(item.meta.files) && item.meta.files.length > 0) ? (
+        // Media we did NOT download — the paperclip stays honest about it.
         <p className="text-ink-500">📎 {t('telegramMedia')}</p>
       ) : null}
       {/* Files pinned to a note: pictures open in the lightbox, the rest

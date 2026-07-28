@@ -81,9 +81,13 @@ export function LeafletCorridor({
     }
 
     for (const w of warehouses) {
+      // The count sits ON the icon's shoulder, not floating in the 72px
+      // label wrapper (owner, item 12: "icon va karobka sonlari birga, bir
+      // butun"). The wrapper is 72px wide for the code label; the icon is a
+      // centred 26px — its right shoulder is at 50% + 13px.
       const badge =
         w.totalBoxes > 0
-          ? `<span style="position:absolute;top:-6px;right:8px;background:#1e3a8a;color:#fff;border:1.5px solid #fff;border-radius:10px;padding:0 5px;font-size:10px;font-weight:700;line-height:15px">${w.totalBoxes}</span>`
+          ? `<span style="position:absolute;top:-7px;left:calc(50% + 6px);background:#1e3a8a;color:#fff;border:1.5px solid #fff;border-radius:10px;padding:0 5px;font-size:10px;font-weight:700;line-height:15px">${w.totalBoxes}</span>`
           : '';
       const icon = L.divIcon({
         className: '',

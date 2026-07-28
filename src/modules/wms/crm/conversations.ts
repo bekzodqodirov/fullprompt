@@ -1,6 +1,6 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { clients, tgMessages, users } from '../../platform/db/schema';
+import { attachments, clients, tgMessages, users } from '../../platform/db/schema';
 import { activeClientsByPhone } from '../client-cabinet/service';
 
 /**
@@ -88,6 +88,8 @@ export interface ConversationMessage {
   hasMedia: boolean;
   sentAt: Date;
   manager: string;
+  /** Downloaded photos pinned to this message (item 15) — often empty. */
+  photos: { id: string }[];
 }
 
 /**
@@ -120,7 +122,35 @@ export async function conversationFor(
     .limit(limit);
   // The newest `limit` rows, in that order. Taking the OLDEST n would push the
   // recent end — the only part anyone reads — off a long history entirely.
-  return rows;
+  return attachPhotos(rows);
+}
+
+/**
+ * Pin each message's downloaded photos on (item 15). ONE query over the page
+ * of ids, not one per row — `attachments_entity_idx` covers it, and most
+ * messages have none.
+ */
+export async function attachPhotos<
+  T extends { id: string },
+>(rows: T[]): Promise<(T & { photos: { id: string }[] })[]> {
+  if (rows.length === 0) return [];
+  const photoRows = await db
+    .select({ id: attachments.id, entityId: attachments.entityId })
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.entityType, 'tg_message'),
+        inArray(attachments.entityId, rows.map((r) => r.id)),
+      ),
+    )
+    .orderBy(attachments.createdAt);
+  const byMessage = new Map<string, { id: string }[]>();
+  for (const photo of photoRows) {
+    const list = byMessage.get(photo.entityId) ?? [];
+    list.push({ id: photo.id });
+    byMessage.set(photo.entityId, list);
+  }
+  return rows.map((row) => ({ ...row, photos: byMessage.get(row.id) ?? [] }));
 }
 
 /** The client behind a conversation, for the thread's header. */

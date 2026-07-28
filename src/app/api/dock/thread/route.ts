@@ -57,6 +57,7 @@ export async function GET(request: Request) {
       hasMedia: m.hasMedia,
       sentAt: m.sentAt.toISOString(),
       manager: m.manager,
+      photos: m.photos,
     })),
   });
 }

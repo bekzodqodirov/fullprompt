@@ -73,14 +73,26 @@ export class FileValidationError extends Error {
   }
 }
 
-export async function saveAttachment(input: {
-  entityType: string;
-  entityId: string;
-  fileName: string;
-  contentType: string;
-  body: Buffer;
-  uploadedBy: string;
-}): Promise<{ id: string }> {
+export async function saveAttachment(
+  input: {
+    entityType: string;
+    entityId: string;
+    fileName: string;
+    contentType: string;
+    body: Buffer;
+    uploadedBy: string;
+  },
+  opts: {
+    /**
+     * 'skip' for callers OUTSIDE the app process (the tg listener): enqueue()
+     * starts the FULL pg-boss worker fleet in the calling process — nine
+     * groups including the nightly backup — which is exactly the
+     * two-backup-systems bug of #253-261. Such a caller makes its own
+     * thumbnails inline.
+     */
+    thumbnails?: 'enqueue' | 'skip';
+  } = {},
+): Promise<{ id: string }> {
   const contentType = resolveContentType(input.fileName, input.contentType);
   const isPhoto = PHOTO_TYPES.has(contentType);
   if (!isPhoto && !DOC_TYPES.has(contentType) && !VIDEO_TYPES.has(contentType)) {
@@ -113,7 +125,7 @@ export async function saveAttachment(input: {
     })
     .returning({ id: attachments.id });
 
-  if (isPhoto && row) {
+  if (isPhoto && row && opts.thumbnails !== 'skip') {
     await enqueue(JOB_THUMBNAILS, { attachmentId: row.id });
   }
   return { id: row!.id };

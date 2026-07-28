@@ -404,9 +404,8 @@ export const clientTelegramLinks = pgTable(
     linkCode: text('link_code').unique(),
     status: text('status').notNull().default('pending'),
     linkedAt: timestamp('linked_at', { withTimezone: true }),
-    createdBy: uuid('created_by')
-      .notNull()
-      .references(() => users.id),
+    /** NULL = the client linked THEMSELVES by sharing their number (item 13). */
+    createdBy: uuid('created_by').references(() => users.id),
     createdAt: createdAt(),
   },
   (t) => [

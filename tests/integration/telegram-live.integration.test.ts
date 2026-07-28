@@ -123,14 +123,16 @@ describe('what the bridge writes', () => {
     if (!verdict.store) throw new Error('unreachable');
     expect(verdict.clientId).toBe(clientId);
 
+    // A NEW row answers with its id — the key a downloaded photo binds to.
     expect(
       await storeIncoming({ clientId: verdict.clientId, managerUserId: managerId, row: verdict.row }),
-    ).toBe(true);
+    ).toMatch(/^[0-9a-f-]{36}$/);
     // Telegram replays recent history on reconnect. The unique index is what
-    // makes that free, which is why the listener keeps no position of its own.
+    // makes that free, which is why the listener keeps no position of its own
+    // — and the null is what stops a replay re-downloading the photo.
     expect(
       await storeIncoming({ clientId: verdict.clientId, managerUserId: managerId, row: verdict.row }),
-    ).toBe(false);
+    ).toBeNull();
 
     const rows = await db.select().from(tgMessages).where(eq(tgMessages.clientId, clientId));
     expect(rows).toHaveLength(1);

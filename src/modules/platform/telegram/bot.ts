@@ -70,8 +70,12 @@ export function startTelegramBot(): void {
       }
       // This used to be a RUSSIAN sentence about the staff profile screen —
       // shown to a customer who simply opened the bot, in a language the
-      // cabinet does not even use.
-      await ctx.reply(clientLabels(ctx.from?.language_code).notLinked);
+      // cabinet does not even use. Now it also OFFERS the way in (item 13):
+      // sharing your own Telegram-verified number needs no code at all.
+      const t = clientLabels(ctx.from?.language_code);
+      await ctx.reply(`${t.notLinked}\n\n${t.linkByPhone}`, {
+        reply_markup: phoneKeyboard(ctx.from?.language_code),
+      });
       return;
     }
     const link = await db.query.telegramLinks.findFirst({

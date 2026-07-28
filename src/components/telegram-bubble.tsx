@@ -1,3 +1,5 @@
+import { LightboxImg } from './lightbox-img';
+
 /**
  * One Telegram message, drawn the same way on both screens that show one.
  *
@@ -19,6 +21,8 @@ export interface BubbleMessage {
   hasMedia: boolean;
   sentAt: Date;
   manager: string;
+  /** Downloaded photos pinned to this message (item 15). */
+  photos?: { id: string }[];
 }
 
 export function TelegramBubble({
@@ -50,9 +54,22 @@ export function TelegramBubble({
           })}
         </span>
       </div>
+      {/* The photograph ITSELF where we hold it (owner, item 15) — the
+          paperclip line remains only for media we did not download. */}
+      {(message.photos?.length ?? 0) > 0 && (
+        <div className="mb-1 flex flex-wrap gap-1.5">
+          {message.photos!.map((photo) => (
+            <LightboxImg
+              key={photo.id}
+              attachmentId={photo.id}
+              className="h-32 w-32 rounded-lg object-cover"
+            />
+          ))}
+        </div>
+      )}
       {message.body ? (
         <p className="whitespace-pre-wrap break-words">{message.body}</p>
-      ) : (
+      ) : (message.photos?.length ?? 0) > 0 ? null : (
         <p className="text-ink-500">📎 {mediaLabel}</p>
       )}
     </div>
