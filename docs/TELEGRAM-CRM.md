@@ -200,14 +200,32 @@ cd ~/gsr
 docker compose run --rm migrate sh -c "pnpm tg-login --user +998901757800"
 ```
 
-Keyin tinglovchini yoqasiz — u doim ishlab turadi:
+Keyin tinglovchini yoqasiz. **`docker compose run` bilan emas** — u qayta
+ishga tushmaydi, ya'ni server o'chsa yoki jarayon yiqilsa tinglovchi jimgina
+o'ladi. Alohida servis bor:
 
 ```bash
-docker compose run -d --name tg-listen-bekzod migrate \
-  sh -c "pnpm tg-listen --tg +998901757800"
+# .env ga qo'shing:
+TG_LISTEN_PHONE=+998901757800
+
+docker compose --profile telegram up -d
+docker compose --profile telegram logs -f tg-listen
 ```
 
-To'xtatish: `docker stop tg-listen-bekzod`. Qayta yoqish: `docker start ...`.
+Birinchi qator shunday bo'lishi kerak:
+
+```
+tinglayapman: Bekzod (Super admin) · +998901757800 · 20 mijoz · 0 qoida
+```
+
+To'xtatish: `docker compose --profile telegram stop tg-listen`.
+Qayta yoqish: `docker compose --profile telegram up -d`.
+
+**Ishlamayotganini bilish uchun:**
+
+```bash
+docker compose run --rm migrate sh -c "pnpm tg-doctor"
+```
 
 ## Ishlayaptimi?
 

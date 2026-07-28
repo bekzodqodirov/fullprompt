@@ -92,6 +92,39 @@ services:
       minio:
         condition: service_started
 
+  # The Telegram bridge — the manager's own account, receiving and replying.
+  #
+  # A SERVICE and not `docker compose run`, and that is the whole point of this
+  # block: a `run` container has no restart policy, so the VPS rebooting or the
+  # process falling over left the bridge silently dead — which `pnpm tg-doctor`
+  # reports as «hech qachon», because it never wrote a single heartbeat. Since
+  # a listener that is down loses every message sent while it is away (it
+  # catches up on start, but only if it starts), "it comes back by itself" is
+  # not a nicety here.
+  #
+  # One account per container. A second manager is a second block with its own
+  # phone — never two listeners on one Telegram account (the advisory lock
+  # refuses it anyway, and would refuse it noisily).
+  #
+  #   .env:  TG_LISTEN_PHONE=+998901757800
+  #   docker compose --profile telegram up -d
+  #   docker compose --profile telegram logs -f tg-listen
+  tg-listen:
+    build:
+      context: .
+      target: build
+    profiles: ['telegram']
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
+      S3_ENDPOINT: http://minio:9000
+      STORAGE_DRIVER: s3
+    command: sh -c "pnpm tg-listen --tg $${TG_LISTEN_PHONE}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # LAN HTTPS with a self-signed cert (no domain needed) — for office/trial
   # runs where phones need the camera scanner. Browsers warn once; tap
   # "Advanced → proceed". Enable with:

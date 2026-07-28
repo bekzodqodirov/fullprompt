@@ -344,8 +344,22 @@ async function main() {
 
 }
 
+/**
+ * Terminal failures back off before exiting.
+ *
+ * The container runs under `restart: unless-stopped`, which is right for a
+ * bridge that must come back after a reboot — and wrong for a session
+ * Telegram has ended, or a lock another listener holds, because docker would
+ * restart it instantly, for ever. Thirty seconds turns a spin into a slow
+ * knock, which is what those conditions deserve: they need a person, not a
+ * retry.
+ */
+const BACKOFF_MS = 30_000;
+
 main().catch(async (err) => {
-  console.error(err instanceof Error ? err.message : err);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(message);
   await pgClient.end();
+  await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS));
   process.exit(1);
 });

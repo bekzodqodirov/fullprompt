@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## Tinglovchi endi o'zi qayta ishga tushadi — 2026-07-28
+
+`pnpm tg-doctor` aniq ko'rsatdi: hammasi joyida, faqat akkaunt yonida
+**«hech qachon»** — ya'ni tinglovchi bir marta ham yurak urishi yozmagan.
+
+**Sabab:** uni `docker compose run` bilan ishga tushirgan edik. Bunday
+konteyner **bir martalik** — server o'chsa yoki jarayon yiqilsa, u qaytib
+kelmaydi. Va hech qayerda xato chiqmaydi.
+
+Bu oddiy xizmatga qaraganda jiddiyroq: tinglovchi o'chiq turgan paytda kelgan
+xabarlar **yo'qoladi**. To'g'ri, ishga tushganda o'zi qidirib oladi — lekin
+**ishga tushsagina**.
+
+### Endi alohida servis
+
+`.env` ga bitta qator:
+
+```
+TG_LISTEN_PHONE=+998901757800
+```
+
+Keyin:
+
+```bash
+docker compose --profile telegram up -d
+docker compose --profile telegram logs -f tg-listen
+```
+
+Birinchi qator shunday bo'lishi kerak:
+
+```
+tinglayapman: Bekzod (Super admin) · +998901757800 · 20 mijoz · 0 qoida
+```
+
+Endi **server qayta yuklansa ham o'zi ko'tariladi**.
+
+Seans o'lgan bo'lsa (Telegram chiqarib yuborgan bo'lsa) — 30 soniya kutib
+chiqadi, ya'ni cheksiz aylanib Telegramni bezovta qilmaydi. Bunday holat
+odamni talab qiladi, qayta urinishni emas.
+
+Tekshirildi: 632 ta test + 73 ta ekran testi.
+
 ## Lentaga yukning butun yo'li qo'shildi — 2026-07-28
 
 Lentaning birinchi variantida yuk **kelishi** bor edi-yu, keyin to'g'ridan-to'g'ri

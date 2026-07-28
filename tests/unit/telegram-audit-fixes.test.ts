@@ -161,3 +161,31 @@ describe('the client book is read in a defined order', () => {
     expect(book.slice(0, 400)).toMatch(/orderBy\(asc\(clients\.clientCode\)\)/);
   });
 });
+
+describe('the bridge is a service, not a one-shot container', () => {
+  /**
+   * `docker compose run` has no restart policy. Started that way, the listener
+   * died with the VPS and stayed dead — which `pnpm tg-doctor` reports as
+   * «hech qachon», because it never wrote a heartbeat, and which nobody
+   * notices because no screen breaks.
+   *
+   * It matters more than it looks: a listener that is down loses every
+   * message sent while it is away. It catches up on start (#327) — but only
+   * if it starts.
+   */
+  const compose = readFileSync(join(ROOT, 'docker-compose.yml'), 'utf8');
+
+  it('declares tg-listen as a restarting service', () => {
+    const block = compose.slice(compose.indexOf('  tg-listen:'));
+    expect(block).toContain('restart: unless-stopped');
+    expect(block.slice(0, 600)).toContain("profiles: ['telegram']");
+  });
+
+  it('backs off before exiting, so a dead session cannot spin', () => {
+    // Under `unless-stopped`, a signed-out session or a held lock would
+    // otherwise be restarted instantly, for ever. Those need a person.
+    const src = readFileSync(join(ROOT, 'scripts/tg-listen.ts'), 'utf8');
+    expect(src).toMatch(/BACKOFF_MS/);
+    expect(src).toMatch(/setTimeout\(resolve, BACKOFF_MS\)/);
+  });
+});
