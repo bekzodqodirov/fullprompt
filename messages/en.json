@@ -64,7 +64,13 @@
     "sectionOperations": "Operations",
     "sectionInfo": "Information",
     "sectionManagement": "Management",
-    "sectionSales": "Sales"
+    "sectionSales": "Sales",
+    "flowTitle": "Today's work",
+    "flowTrucks": "on the way: {n}",
+    "flowExpected": "expected: {n}",
+    "flowLate": "late: {n}",
+    "flowLoading": "loading: {n}",
+    "flowReady": "ready to issue: {n}"
   },
   "dashboard": {
     "title": "Dashboard",

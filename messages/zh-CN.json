@@ -64,7 +64,13 @@
     "sectionOperations": "日常操作",
     "sectionInfo": "信息",
     "sectionManagement": "管理",
-    "sectionSales": "销售"
+    "sectionSales": "销售",
+    "flowTitle": "今日工作",
+    "flowTrucks": "在途：{n}",
+    "flowExpected": "待到货：{n}",
+    "flowLate": "已逾期：{n}",
+    "flowLoading": "装车中：{n}",
+    "flowReady": "待交付：{n} 箱"
   },
   "dashboard": {
     "title": "仪表盘",

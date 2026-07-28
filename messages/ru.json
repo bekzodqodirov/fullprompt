@@ -64,7 +64,13 @@
     "sectionOperations": "Рабочие процессы",
     "sectionInfo": "Информация",
     "sectionManagement": "Управление",
-    "sectionSales": "Продажи"
+    "sectionSales": "Продажи",
+    "flowTitle": "Работа на сегодня",
+    "flowTrucks": "в пути: {n}",
+    "flowExpected": "ожидается: {n}",
+    "flowLate": "опаздывает: {n}",
+    "flowLoading": "грузится: {n}",
+    "flowReady": "к выдаче: {n} кор."
   },
   "dashboard": {
     "title": "Дашборд",

@@ -64,7 +64,13 @@
     "sectionOperations": "Ish jarayonlari",
     "sectionInfo": "Ma’lumot",
     "sectionManagement": "Boshqaruv",
-    "sectionSales": "Sotuv"
+    "sectionSales": "Sotuv",
+    "flowTitle": "Bugungi ish",
+    "flowTrucks": "yo'lda: {n}",
+    "flowExpected": "kutilmoqda: {n}",
+    "flowLate": "kechikkan: {n}",
+    "flowLoading": "yuklanmoqda: {n}",
+    "flowReady": "topshirishga tayyor: {n} quti"
   },
   "dashboard": {
     "title": "Dashboard",

@@ -230,6 +230,12 @@ deployed:
   is open to `ved.docs`, so an ungated panel there would have handed the customs
   manager every sales conversation.
 
+Round 11 — the per-role home pass, started where the owner said ("skladchi
+ekranidan boshla"): any warehouse-scoped actor now gets a workflow home —
+receive as the hero, then arrivals / loading / handover rows with live scoped
+counts (`wms/home/flow.ts`, #346); everyone else keeps the tiles. Next role
+to be agreed with the owner.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days).

@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## Skladchi bosh ekrani — ish tartibi bo'yicha — 2026-07-28
+
+Siz aytgan yo'nalishning birinchi qadami: "har bir hodim qiladigan ishiga
+qarab layout tuz — skladchi ekranidan boshla".
+
+Endi sklad hodimi ilovani ochsa, **menyu emas, kun tartibini** ko'radi:
+
+- **Qabul** — katta rangli tugma, avvalgidek eng tepada (kunning asosiy ishi);
+- ostida qolgan qadamlar ish tartibida, har birida **jonli son**:
+  - **Kutilayotgan** — necha mashina yo'lda, necha va'da ochiq, nechtasi
+    kechikkan (⚠ bilan);
+  - **Yuklash** — hozir nechta partiya yig'ilyapti/yuklanyapti;
+  - **Topshirish** — mijoz olib ketishi mumkin bo'lgan nechta quti tayyor.
+
+«Yuklash · 2» — bu buyruq: kirish kerakmi-yo'qmi, ochmasdan ko'rinadi. Son
+nol bo'lsa, belgi umuman chiqmaydi — har qatorda «0» tursa, ko'z belgilarga
+qarashni tashlab qo'yadi.
+
+Sonlar **faqat o'z skladiniki**: Yiwu hodimi Yiwu raqamlarini ko'radi,
+Toshkentniki — Toshkentnikini. Sklad biriktirilmagan hodimga esa nol
+ko'rinadi, butun kompaniya emas — bu eski qoidamiz, shu yerda ham amal
+qiladi.
+
+Boshqa rollarga (sotuv, buxgalter, siz) hech narsa o'zgargani yo'q — ular
+avvalgi ekranda qoladi. Keyingi rolni siz bilan kelishib olamiz.
+
+Tekshirildi: 654 unit/integration + 75 e2e yashil; testlardan biri sonning
+haqiqatan HARAKATLANISHINI isbotlaydi — va'da yozilsa +1, bekor qilinsa
+yana joyiga qaytadi.
+
 ## Ichki chat — Telegramda. Tasklar — Telegramda, havola bilan — 2026-07-28
 
 Siz belgilagan yo'l: yozuv kartada qoladi, gap Telegramda bo'ladi.
