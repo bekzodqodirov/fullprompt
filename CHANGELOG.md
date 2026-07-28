@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## Jonli qabul — 3-bosqich — 2026-07-28
+
+Mijoz xabar yozdi — u **bir necha soniyada** CRM'da. Endi «Suhbatlar»
+ro'yxatini qo'lda yangilash kerak emas: yozishma o'zi kelib turadi.
+
+### Nima o'zgarmadi — eng muhimi
+
+Kimning xabari saqlanishi **o'zgarmadi**. Baribir faqat **mijozlar bazasida
+raqami bor** odamning xabari yoziladi. Kechqurun oilangiz yozgan xabar shu
+koddan o'tadi, rad etiladi va **hech qayerga yozilmaydi** — nomi ham,
+raqami ham. Buni 1-bosqichdagi **aynan bitta funksiya** hal qiladi, ikkinchi
+qoida yozilmadi.
+
+### Nima o'zgardi
+
+Server endi menejerning Telegram seansini **saqlaydi** (1-bosqich saqlamas
+edi). Shuning uchun:
+
+- seans **shifrlangan** holda yotadi, kalit `.env` da — `TG_SESSION_KEY`;
+- seans **egasiga bog'langan**: bir menejerning qatorini boshqasiga ko'chirsangiz
+  ochilmaydi;
+- **yuborish kodi yo'q** — bu bosqichda ham faqat o'qiydi.
+
+### Ishlayotganini ko'rib turasiz
+
+«Suhbatlar» tepasida holat yozuvi paydo bo'ldi: **ulangan / javob bermayapti /
+to'xtatilgan / akkauntdan chiqdi**. Bu bekorga emas — tinglovchi to'xtasa hech
+qayerda xato chiqmaydi, ro'yxat shunchaki o'smay qo'yadi, va buni birinchi
+bo'lib «nega javob bermadingiz» degan mijoz aytadi.
+
+Bitta akkauntga **ikkinchi tinglovchi ulanmaydi** — bazada qulf bor. Bitta
+shaxsiy akkauntga ikkita ulanish akkauntni bloklatadigan asosiy sabab.
+
+### Sizdan kerak bo'ladigan 3 ta buyruq
+
+Serverda, `docs/TELEGRAM-CRM.md` da to'liq yozilgan:
+
+```bash
+openssl rand -base64 32          # → .env ga TG_SESSION_KEY= qilib qo'ying
+docker compose run --rm migrate sh -c "pnpm tg-login --user +998901757800"
+docker compose run -d --name tg-listen-bekzod migrate \
+  sh -c "pnpm tg-listen --tg +998901757800"
+```
+
+Migratsiya: **0035**. Bazadagi hech nima o'zgarmaydi — bitta yangi jadval
+qo'shiladi, xolos.
+
+Tekshirildi: 540 ta test + 69 ta ekran testi — hammasi yashil, CI tartibida,
+toza bazada.
+
 ## Chat tuzatildi: to'g'ri tartib va oxirgi xabarga fokus — 2026-07-28
 
 Siz aytgan ikkala kamchilik ham tuzatildi.

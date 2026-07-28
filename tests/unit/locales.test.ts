@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LOCALES } from '@/modules/platform/i18n/locales';
 import { SETTING_DEFAULTS } from '@/modules/platform/settings/service';
+import { BRIDGE_LABELS } from '@/components/telegram-bridge-status';
 import en from '../../messages/en.json';
 import ru from '../../messages/ru.json';
 import uz from '../../messages/uz.json';
@@ -164,6 +165,25 @@ describe('every setting can be described', () => {
         (key) => typeof (descriptions as Tree)[key] !== 'string',
       );
       expect(missing, `${locale} is missing setting descriptions`).toEqual([]);
+    });
+  }
+});
+
+/**
+ * Same trap, second instance: the bridge status renders one of five strings
+ * chosen at RUNTIME from the connection's state, so no bundle-to-bundle
+ * comparison can notice one missing from all four — and the one that is
+ * missing is the one that only appears when something has already gone wrong.
+ *
+ * `BRIDGE_LABELS` is the source of truth outside the bundles (#163), which is
+ * why the component exports a map instead of building the key from the state.
+ */
+describe('every bridge state has something to say', () => {
+  for (const locale of Object.keys(BUNDLES)) {
+    it(`${locale} names all ${Object.keys(BRIDGE_LABELS).length} bridge states`, () => {
+      const crm = ((BUNDLES[locale] as Tree).crm as Tree | undefined) ?? {};
+      const missing = Object.values(BRIDGE_LABELS).filter((key) => typeof crm[key] !== 'string');
+      expect(missing, `${locale} is missing bridge status strings`).toEqual([]);
     });
   }
 });

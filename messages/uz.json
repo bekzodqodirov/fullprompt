@@ -978,7 +978,14 @@
     "waitingOnUs": "javob kutyapti",
     "openCard": "Kartochka",
     "minsAgo": "{n} daq",
-    "hoursAgo": "{n} soat"
+    "hoursAgo": "{n} soat",
+    "bridgeLive": "Telegram ulangan",
+    "bridgeStale": "Telegram javob bermayapti",
+    "bridgeNever": "Telegram hali ishga tushmagan",
+    "bridgeStopped": "Telegram to‘xtatilgan",
+    "bridgeSignedOut": "Telegram akkauntdan chiqdi — qaytadan kiring",
+    "bridgeSeconds": "{n} s oldin",
+    "bridgeKeyBroken": "kalit mos kelmadi"
   },
   "navShort": {
     "home": "Bosh",

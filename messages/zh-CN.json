@@ -978,7 +978,14 @@
     "waitingOnUs": "等待回复",
     "openCard": "客户卡",
     "minsAgo": "{n} 分钟",
-    "hoursAgo": "{n} 小时"
+    "hoursAgo": "{n} 小时",
+    "bridgeLive": "Telegram 已连接",
+    "bridgeStale": "Telegram 无响应",
+    "bridgeNever": "Telegram 尚未启动",
+    "bridgeStopped": "Telegram 已停止",
+    "bridgeSignedOut": "Telegram 已退出登录 — 请重新登录",
+    "bridgeSeconds": "{n} 秒前",
+    "bridgeKeyBroken": "密钥不匹配"
   },
   "navShort": {
     "home": "首页",

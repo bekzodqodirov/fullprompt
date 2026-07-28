@@ -978,7 +978,14 @@
     "waitingOnUs": "awaiting reply",
     "openCard": "Card",
     "minsAgo": "{n} min",
-    "hoursAgo": "{n} h"
+    "hoursAgo": "{n} h",
+    "bridgeLive": "Telegram connected",
+    "bridgeStale": "Telegram not responding",
+    "bridgeNever": "Telegram has not started yet",
+    "bridgeStopped": "Telegram stopped",
+    "bridgeSignedOut": "Telegram signed out — log in again",
+    "bridgeSeconds": "{n} s ago",
+    "bridgeKeyBroken": "key does not fit"
   },
   "navShort": {
     "home": "Home",

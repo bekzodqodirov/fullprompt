@@ -1252,3 +1252,38 @@ export const tgMessages = pgTable(
     index('tg_messages_client_idx').on(t.clientId, t.sentAt),
   ],
 );
+
+/**
+ * A manager's stored Telegram login, for live receiving.
+ *
+ * One row per manager and the row IS the record: there is exactly one current
+ * session per account, and logging in again replaces it. Two live connections
+ * on one personal account is what gets that account flagged, so the unique
+ * constraint is a safety rule, not tidiness.
+ *
+ * `sessionEnc` is never a session string in the clear — see
+ * `crm/telegram-session.ts` for what is done to it and why this one secret is
+ * encrypted where every other credential here is hashed.
+ */
+export const tgAccounts = pgTable(
+  'tg_accounts',
+  {
+    id: id(),
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .unique()
+      .references(() => users.id),
+    /** The Telegram phone, which need not be their login phone in this system. */
+    tgPhone: text('tg_phone').notNull(),
+    sessionEnc: text('session_enc').notNull(),
+    status: text('status').notNull().default('active'),
+    /** Heartbeat: a row is not a live connection, and the screen must tell them apart. */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('tg_accounts_status_check', sql`${t.status} IN ('active', 'stopped', 'signed_out')`),
+  ],
+);

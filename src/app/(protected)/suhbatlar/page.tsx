@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listConversations } from '@/modules/wms/crm/conversations';
 import { PageHeader } from '@/components/ui/page';
+import { TelegramBridgeStatus } from '@/components/telegram-bridge-status';
 
 /**
  * Who has been talking to us — phase 2 of the client chat in the CRM.
@@ -44,6 +45,10 @@ export default async function ConversationsPage({
   return (
     <div className="space-y-3">
       <PageHeader title={`✈️ ${t('conversations')}`} />
+
+      {/* Are messages actually arriving? The list growing is the only other
+          evidence, and "nobody wrote today" looks identical to a dead bridge. */}
+      <TelegramBridgeStatus />
 
       <form className="card !p-2">
         <input

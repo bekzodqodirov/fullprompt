@@ -46,6 +46,22 @@ test('the conversation list opens and leads into a thread', async ({ page }) => 
   await expect(page.locator('textarea')).toHaveCount(0);
 });
 
+/**
+ * Phase 3's one piece of screen. It renders only when a manager has actually
+ * logged in, which on a CI database nobody has — so what is worth pinning here
+ * is the ABSENCE: a feature nobody has set up must not put a permanent grey
+ * box on a screen that is read every morning (#183's spirit).
+ *
+ * That the banner says the right thing when a bridge IS configured is proved
+ * in `telegram-live.integration.test.ts`, against a real row, where the state
+ * can be driven through all five of its values.
+ */
+test('no bridge banner before anybody has connected an account', async ({ page }) => {
+  await login(page, OWNER);
+  await page.goto('/suhbatlar');
+  await expect(page.getByTestId('tg-bridge')).toHaveCount(0);
+});
+
 test('search narrows the list, and a miss says so', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/suhbatlar?q=zzz-no-such-client-zzz');

@@ -978,7 +978,14 @@
     "waitingOnUs": "ждёт ответа",
     "openCard": "Карточка",
     "minsAgo": "{n} мин",
-    "hoursAgo": "{n} ч"
+    "hoursAgo": "{n} ч",
+    "bridgeLive": "Telegram подключён",
+    "bridgeStale": "Telegram не отвечает",
+    "bridgeNever": "Telegram ещё не запускался",
+    "bridgeStopped": "Telegram остановлен",
+    "bridgeSignedOut": "Telegram вышел из аккаунта — войдите заново",
+    "bridgeSeconds": "{n} с назад",
+    "bridgeKeyBroken": "ключ не подходит"
   },
   "navShort": {
     "home": "Главная",
