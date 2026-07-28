@@ -16,6 +16,15 @@ export const SETTING_DEFAULTS = {
   /** Days of silence before a client counts as gone quiet (owner: 60). */
   crm_dormant_days: 60,
   /**
+   * Whether the CRM may SEND on a manager's personal Telegram (phase 4).
+   *
+   * Default OFF, and that is the point of it being a setting: deploying the
+   * code must not, by itself, make anybody's own account start sending. It is
+   * also the switch to reach for first if an account is ever flagged — one
+   * change, every manager, immediately.
+   */
+  tg_sending_enabled: false,
+  /**
    * How far the cargo may differ from the quote before anyone is told
    * (docs/DEALS.md answer 1: "notify above 10 %, never block loading").
    * A setting rather than a constant because the owner asked for it to be one.

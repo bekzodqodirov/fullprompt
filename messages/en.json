@@ -267,7 +267,8 @@
       "ved_delivery_terms": "Delivery terms (for example: CIP Andijan)",
       "ved_customs_post": "Customs post and code (for example: Andijan customs / 03011)",
       "crm_dormant_days": "Days of silence before a client counts as gone quiet (appears in the Monday CRM digest)",
-      "deal_deviation_threshold_pct": "How far the cargo may differ from the quote before the manager is alerted. Never blocks loading."
+      "deal_deviation_threshold_pct": "How far the cargo may differ from the quote before the manager is alerted. Never blocks loading.",
+      "tg_sending_enabled": "Allow the CRM to send messages to clients through a manager’s personal Telegram (off by default)"
     },
     "driverApp": "Driver app"
   },
@@ -1002,7 +1003,19 @@
     "chatExcluded": "Not kept",
     "chatNoName": "No name",
     "whichChatsPendingBadge": "{n} chats waiting",
-    "chatFindClient": "Find a client"
+    "chatFindClient": "Find a client",
+    "replyPlaceholder": "Reply to the client…",
+    "replySend": "Send",
+    "replySending": "Sending…",
+    "replyQueued": "Queued — not sent yet",
+    "replyFailed": "Not sent",
+    "replyDisabled": "Sending is switched off. Turn it on in settings.",
+    "replyNeverWrote": "This client has not written to you — you may not message first.",
+    "replyBridgeDown": "Telegram is not connected — the message will not go.",
+    "replyRateLimited": "Too fast. Wait a minute.",
+    "replyNotYours": "This conversation is on another manager’s account — only they can reply.",
+    "replyTooLong": "Message is too long.",
+    "replyEmpty": "Empty message."
   },
   "navShort": {
     "home": "Home",

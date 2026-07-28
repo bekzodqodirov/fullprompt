@@ -7,6 +7,7 @@ import { rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   classifyWithRules,
   countVerdict,
+  peerFromChat,
   emptySummary,
   isWorthKeeping,
   toMessageRow,
@@ -97,7 +98,6 @@ async function main() {
   // package and nothing else in this repo should pull it in by accident.
   const { TelegramClient } = await import('telegram');
   const { StringSession } = await import('telegram/sessions');
-  const { Api } = await import('telegram');
 
   // An EMPTY session, never saved. The account is unlocked for this process
   // and forgotten when it exits.
@@ -118,17 +118,9 @@ async function main() {
   const summary = emptySummary();
 
   for await (const dialog of client.iterDialogs({})) {
-    const entity = dialog.entity;
-    // Read through a narrow shape rather than gramjs's own classes: the only
-    // four facts that decide anything are here, and `classifyDialog` — which
-    // is what the tests exercise — never sees a Telegram type at all.
-    const user = entity instanceof Api.User ? entity : null;
-    const peer: DialogPeer = {
-      id: BigInt(entity?.id?.toString() ?? '0'),
-      phone: user?.phone ?? null,
-      isPrivate: Boolean(dialog.isUser) && user !== null,
-      isBot: Boolean(user?.bot),
-    };
+    // Reduced by the SAME function the live listener uses, so a conversation
+    // cannot be judged one way when imported and another way when it arrives.
+    const peer: DialogPeer = peerFromChat(dialog.entity as never);
     const verdict = classifyWithRules(peer, book, rules);
     countVerdict(summary, verdict);
     // A conversation that is not a client's is passed over in silence — not

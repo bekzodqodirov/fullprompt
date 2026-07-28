@@ -267,7 +267,8 @@
       "ved_delivery_terms": "交货条件（例如：CIP 安集延）",
       "ved_customs_post": "海关关口及代码（例如：Андижон ВЭД / 03011）",
       "crm_dormant_days": "客户多少天未发货即视为「沉寂」（出现在周一的 CRM 摘要中）",
-      "deal_deviation_threshold_pct": "货物与报价相差多少百分比时向负责人发送提醒。不会阻止装车。"
+      "deal_deviation_threshold_pct": "货物与报价相差多少百分比时向负责人发送提醒。不会阻止装车。",
+      "tg_sending_enabled": "允许 CRM 通过经理的个人 Telegram 向客户发送消息（默认关闭）"
     },
     "driverApp": "司机应用"
   },
@@ -1002,7 +1003,19 @@
     "chatExcluded": "不收录",
     "chatNoName": "无姓名",
     "whichChatsPendingBadge": "{n} 个聊天待处理",
-    "chatFindClient": "查找客户"
+    "chatFindClient": "查找客户",
+    "replyPlaceholder": "回复客户…",
+    "replySend": "发送",
+    "replySending": "发送中…",
+    "replyQueued": "排队中 — 尚未发送",
+    "replyFailed": "未发送",
+    "replyDisabled": "发送已关闭。请在设置中开启。",
+    "replyNeverWrote": "客户尚未联系您 — 不能主动发起。",
+    "replyBridgeDown": "Telegram 未连接 — 消息不会发出。",
+    "replyRateLimited": "太频繁了。请等待一分钟。",
+    "replyNotYours": "该会话在其他经理的账号中 — 只有本人可以回复。",
+    "replyTooLong": "消息过长。",
+    "replyEmpty": "消息为空。"
   },
   "navShort": {
     "home": "首页",

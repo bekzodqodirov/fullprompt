@@ -1,6 +1,22 @@
 import 'dotenv/config';
 import { pgClient } from '../src/modules/platform/db/client';
+import { getSetting } from '../src/modules/platform/settings/service';
 import { rulesFor } from '../src/modules/wms/crm/chat-rules';
+import {
+  claimNext,
+  clientHasWritten,
+  markAttemptFailed,
+  markSent,
+  recoverInFlight,
+  releaseClaim,
+  sentCounts,
+} from '../src/modules/wms/crm/outbox';
+import {
+  canSendNow,
+  floodWaitUntil as computeFloodWait,
+  isPermanentSendError,
+  MAX_ATTEMPTS,
+} from '../src/modules/wms/crm/telegram-send';
 import {
   clientBook,
   heartbeat,
@@ -17,7 +33,7 @@ import {
   HEARTBEAT_MS,
   type BookState,
 } from '../src/modules/wms/crm/telegram-live';
-import type { DialogPeer } from '../src/modules/wms/crm/telegram-import';
+import { peerFromChat, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
 
 /**
  * The live bridge: a client's message reaches the CRM within seconds.
@@ -33,8 +49,11 @@ import type { DialogPeer } from '../src/modules/wms/crm/telegram-import';
  *
  *   docker compose run -d --name tg-listen migrate sh -c "pnpm tg-listen --tg +998901757800"
  *
- * It only ever READS. There is no code path here that sends a message —
- * replying from the CRM is phase 4 and a separate decision.
+ * From phase 4 it also SENDS — the one thing phases 1-3 could promise it never
+ * did. Replies queued on the «Suhbatlar» screen go out from here, because this
+ * is the only process holding a connection to the account. Every rule that
+ * governs when a message may go is in `crm/telegram-send.ts`, pure and tested;
+ * this file obeys them, one message per tick and never a batch.
  */
 
 async function main() {
@@ -57,7 +76,7 @@ async function main() {
     throw new Error(`another listener already holds ${tgPhone} — refusing to connect twice`);
   }
 
-  const { TelegramClient, Api } = await import('telegram');
+  const { TelegramClient, helpers } = await import('telegram');
   const { StringSession } = await import('telegram/sessions');
   const { NewMessage } = await import('telegram/events');
 
@@ -88,18 +107,15 @@ async function main() {
         message?: string | null;
         date: number;
         media?: unknown;
-        getSender?: () => Promise<unknown>;
+        getChat?: () => Promise<unknown>;
       };
-      const sender = (await msg.getSender?.()) ?? null;
-      const user = sender instanceof Api.User ? sender : null;
-      // The same four facts the import reduces a dialog to, so the same
-      // function decides. A live message must not be judged by a second rule.
-      const peer: DialogPeer = {
-        id: BigInt(user?.id?.toString() ?? '0'),
-        phone: user?.phone ?? null,
-        isPrivate: user !== null,
-        isBot: Boolean(user?.bot),
-      };
+      // The CHAT, not the sender. An outgoing private message has no sender at
+      // all in GramJS, so reading the sender drops every reply we send while
+      // the client's half keeps arriving — see `peerFromChat` and
+      // `telegram-peer.test.ts`. The chat is the same person either way, and
+      // it is what the import iterates, so both paths reduce a conversation
+      // identically.
+      const peer: DialogPeer = peerFromChat((await msg.getChat?.()) as never);
 
       const now = Date.now();
       if (bookIsStale(book, now)) {
@@ -137,6 +153,88 @@ async function main() {
     }
   }, new NewMessage({}));
 
+  /* ---------------------------------------------------------------- *
+   * The sender — phase 4. Replies queued on the screen go out here,
+   * because this is the only process holding a connection to the account.
+   * ---------------------------------------------------------------- */
+
+  const recovered = await recoverInFlight(account.managerUserId);
+  if (recovered > 0) {
+    console.log(`⚠ ${recovered} ta xabar yuborilayotganda uzilib qolgan — tekshiring`);
+  }
+
+  // Held in this process rather than in the database: it is a fact about THIS
+  // connection's conversation with Telegram, it expires by itself, and a
+  // restart is exactly when it should be forgotten.
+  let floodWaitUntil: Date | null = null;
+  let sent = 0;
+
+  const pump = async () => {
+    // Cheap enough to ask every tick, and the switch has to be able to stop
+    // sending WITHOUT anybody restarting a process on a server.
+    if ((await getSetting('tg_sending_enabled')) !== true) return;
+    if (floodWaitUntil && floodWaitUntil.getTime() > Date.now()) return;
+
+    const job = await claimNext(account.managerUserId);
+    if (!job) return;
+    try {
+      const [counts, wroteFirst] = await Promise.all([
+        sentCounts(account.managerUserId, job.peerId),
+        clientHasWritten(job.clientId, account.managerUserId),
+      ]);
+      const verdict = canSendNow({
+        ...counts,
+        clientHasWrittenFirst: wroteFirst,
+        sendingEnabled: true,
+        floodWaitUntil,
+        bridgeLive: true,
+      });
+      if (!verdict.ok) {
+        // A limit is "not yet", not "never" — except the two that ARE never,
+        // and those must not sit in the queue pretending they will go.
+        if (verdict.reason === 'never_wrote_first') {
+          await markAttemptFailed(job.id, 'never_wrote_first', true, MAX_ATTEMPTS);
+        } else {
+          await releaseClaim(job.id);
+        }
+        return;
+      }
+
+      // Through the library's own big-integer type: a JS `bigint` is not an
+      // `EntityLike`, and `Number()` on a Telegram id is a silent wrong
+      // recipient. The id resolves out of the entity cache this connection has
+      // already filled from the conversation itself.
+      const target = helpers.returnBigInt(job.peerId.toString());
+      const result = await client.sendMessage(target, { message: job.body });
+      await markSent(job.id, result?.id ? BigInt(result.id) : null);
+      sent += 1;
+      console.log(`  → ${job.clientId.slice(0, 8)} yuborildi`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Telegram's own instruction, and obeying it is not optional: carrying
+      // on through a FLOOD_WAIT is the fastest way to lose the account.
+      const seconds = (err as { seconds?: number })?.seconds;
+      if (typeof seconds === 'number') {
+        floodWaitUntil = computeFloodWait(seconds);
+        console.error(`FLOOD_WAIT ${seconds}s — ${floodWaitUntil.toISOString()} gacha to‘xtadim`);
+        await releaseClaim(job.id);
+        return;
+      }
+      const permanent = isPermanentSendError(message);
+      await markAttemptFailed(job.id, message, permanent, MAX_ATTEMPTS);
+      console.error(`yuborilmadi (${permanent ? 'qaytarilmaydi' : 'qayta urinaman'}):`, message);
+    }
+  };
+
+  // One message per tick, deliberately. Not a batch loop: a queue that drains
+  // as fast as it can is exactly the burst that gets an account flagged, and
+  // at three seconds a message the human on the other end cannot tell.
+  const sender = setInterval(() => {
+    void pump().catch((err) => {
+      console.error('navbat:', err instanceof Error ? err.message : err);
+    });
+  }, 3000);
+
   const beat = setInterval(() => {
     void heartbeat(account.id).catch(() => {
       // A heartbeat that cannot be written is not a reason to drop the
@@ -147,9 +245,12 @@ async function main() {
 
   const stop = async (why: string) => {
     clearInterval(beat);
+    clearInterval(sender);
     await markAccount(account.id, 'stopped', why);
     await releaseLock();
-    console.log(`\nto‘xtadi (${why}) · yozildi: ${stored} · o‘tkazildi: ${passed}`);
+    console.log(
+      `\nto‘xtadi (${why}) · yozildi: ${stored} · o‘tkazildi: ${passed} · yuborildi: ${sent}`,
+    );
     await client.disconnect();
     await client.destroy();
     await pgClient.end();

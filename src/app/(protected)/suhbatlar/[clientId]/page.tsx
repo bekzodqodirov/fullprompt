@@ -3,7 +3,10 @@ import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { conversationClient, conversationFor } from '@/modules/wms/crm/conversations';
+import { pendingFor, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
+import { canQueue } from '@/modules/wms/crm/telegram-send';
 import { TelegramBubble } from '@/components/telegram-bubble';
+import { ReplyBox } from './reply-box';
 
 /**
  * One client's conversation, read the way it happened — and opened where it
@@ -23,8 +26,9 @@ import { TelegramBubble } from '@/components/telegram-bubble';
  * padding that clears the tab bar (`pb-28` = 7rem on a phone, `md:pb-8` = 2rem
  * on a desktop).
  *
- * Read-only in phase 2. Replying from here is phase 4, and until then the
- * screen must not pretend otherwise: there is no message box.
+ * Replying is phase 4 and lives at the bottom — but only when a reply can
+ * really go out. Everything about when that is true is in `telegram-send.ts`;
+ * this screen asks and then either shows the box or says why not.
  */
 export const dynamic = 'force-dynamic';
 
@@ -39,12 +43,40 @@ export default async function ConversationPage({
     redirect('/');
   }
   const { clientId } = await params;
-  const [client, messages] = await Promise.all([
+  const [client, messages, queued, account] = await Promise.all([
     conversationClient(clientId),
     conversationFor(clientId),
+    pendingFor(clientId),
+    replyAccountFor(clientId, actor.id),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');
+
+  // Why the box is or is not there. `canQueue` is the same function the action
+  // re-runs, so the screen can never offer something the door would refuse.
+  const reply = account
+    ? canQueue(
+        'x',
+        await sendContextFor({
+          clientId,
+          managerUserId: account.managerUserId,
+          peerId: account.peerId,
+        }),
+      )
+    : ({ ok: false, reason: 'not_your_conversation' } as const);
+
+  const REPLY_ERRORS: Record<string, string> = {
+    sending_disabled: t('replyDisabled'),
+    never_wrote_first: t('replyNeverWrote'),
+    bridge_down: t('replyBridgeDown'),
+    rate_minute: t('replyRateLimited'),
+    rate_day: t('replyRateLimited'),
+    rate_chat: t('replyRateLimited'),
+    flood_wait: t('replyRateLimited'),
+    not_your_conversation: t('replyNotYours'),
+    too_long: t('replyTooLong'),
+    empty: t('replyEmpty'),
+  };
 
   return (
     // Capped and centred: on a wide screen an 85 % bubble against each edge
@@ -63,7 +95,7 @@ export default async function ConversationPage({
         </Link>
       </div>
 
-      {messages.length === 0 ? (
+      {messages.length === 0 && queued.length === 0 ? (
         <p className="card text-center text-sm text-ink-500">{t('conversationsEmpty')}</p>
       ) : (
         // `min-h-0` is what lets it shrink: a flex item will not go below its
@@ -72,6 +104,27 @@ export default async function ConversationPage({
           className="card flex min-h-0 flex-1 flex-col-reverse gap-1.5 overflow-y-auto"
           data-testid="conversation-thread"
         >
+          {/* Not yet sent, so BELOW the newest real message in reading order —
+              which in a reversed box means first. Drawn differently on
+              purpose: a queued reply is not a delivered one, and a client
+              waiting on an answer nobody sent is the worst thing this feature
+              can produce. */}
+          {[...queued].reverse().map((row) => (
+            <div
+              key={row.id}
+              className={`ml-auto max-w-[85%] rounded-xl border border-dashed px-3 py-2 text-sm ${
+                row.status === 'failed' ? 'border-bad text-bad' : 'border-line-strong text-ink-500'
+              }`}
+              data-testid={`outbox-${row.status}`}
+            >
+              <div className="mb-0.5 text-xs font-semibold">
+                {row.status === 'failed' ? `✕ ${t('replyFailed')}` : `◷ ${t('replyQueued')}`}
+              </div>
+              <p className="whitespace-pre-wrap break-words">{row.body}</p>
+              {row.lastError && <p className="mt-1 text-xs">{row.lastError}</p>}
+            </div>
+          ))}
+
           {messages.map((msg) => (
             <TelegramBubble
               key={msg.id}
@@ -81,6 +134,24 @@ export default async function ConversationPage({
             />
           ))}
         </div>
+      )}
+
+      {reply.ok ? (
+        <ReplyBox
+          clientId={clientId}
+          labels={{
+            placeholder: t('replyPlaceholder'),
+            send: t('replySend'),
+            sending: t('replySending'),
+            errors: REPLY_ERRORS,
+          }}
+        />
+      ) : (
+        // Never a disabled box with no explanation: "why can't I type" is a
+        // question somebody answers by restarting a server.
+        <p className="shrink-0 text-center text-xs text-ink-500" data-testid="reply-blocked">
+          {REPLY_ERRORS[reply.reason] ?? reply.reason}
+        </p>
       )}
     </div>
   );

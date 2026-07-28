@@ -1,5 +1,63 @@
 # CHANGELOG
 
+## CRM'dan javob yozish (4-bosqich) + jonli qabuldagi jiddiy tuzatish — 2026-07-28
+
+### ⚠ Avval tuzatish — bu muhim
+
+Kechagi jonli tinglovchida xato bor edi va uni Telegram kutubxonasining
+o'zida tekshirib tasdiqladim:
+
+**Shaxsiy chatda o'zingiz yozgan xabarning "jo'natuvchisi" bo'lmaydi.** Men esa
+aynan jo'natuvchidan mijozni aniqlayotgan edim. Natijasi:
+
+- mijozning xabarlari **tushaveradi**,
+- sizning javoblaringiz **jimgina yo'qoladi**.
+
+Ekranda «ulangan» deb turadi, xabarlar kelib turadi — buni faqat bir necha
+hafta o'tib, «biz nima deb javob bergan edik?» deb qaraganda sezgan bo'lardingiz.
+
+Endi mijoz **chatdan** aniqlanadi (u ikkala yo'nalishda ham bir xil odam), va
+import ham, tinglovchi ham **bitta funksiyadan** foydalanadi.
+
+### 4-bosqich: mijozga CRM'dan javob yozish
+
+«Suhbatlar» ichida chat ostida **javob yozish oynasi** paydo bo'ldi.
+
+**Nega bu jiddiy:** 1–3-bosqichlar «hech qachon yubormaydi» degan kafolatga
+tayangan edi — akkaunt bloklanishining asosiy sababi aynan yuborish. Endi bu
+kafolat yo'q, shuning uchun uning o'rniga **qoidalar** qo'ydim:
+
+- **birinchi bo'lib yozib bo'lmaydi.** Mijoz sizga yozmagan bo'lsa — javob
+  oynasi umuman chiqmaydi. Bu eng muhim qoida;
+- **umumiy tugma**, sozlamalarda, **odatda o'chiq**. Kodni deploy qilishning
+  o'zi hech kimning akkauntini yuborishga majburlamaydi. Akkauntda muammo
+  chiqsa — bitta joydan hammasini to'xtatasiz;
+- **daqiqasiga 12 ta, kuniga 200 ta, bitta chatga daqiqasiga 4 ta.** Odam bu
+  chegaraga yeta olmaydi — bu chegaralar **dastur xatosi** uchun (aylanib
+  qolgan sikl, to'xtamaydigan qayta urinish);
+- Telegram «kuting» desa — **kutamiz**. Buni mensimaslik akkauntni yo'qotishning
+  eng tez yo'li.
+
+**Yuborilmagan xabar — yuborilgan xabar emas.** Navbatdagi javob chatda
+punktir ramka bilan «navbatda» deb turadi. Tinglovchi o'chiq bo'lsa, javob
+oynasi ochilmaydi va sababi yoziladi — chunki eng yomon holat bu mijozning
+hech kim yubormagan javobni kutib o'tirishi.
+
+**Faqat o'z akkauntingizdan.** Xabar menejerning shaxsiy Telegramidan, uning
+ismi va rasmi bilan chiqadi. Shuning uchun boshqa menejerning yozishmasiga
+javob yozib bo'lmaydi — o'qish mumkin, yozish yo'q. Bu sizga ham tegishli.
+
+### Sizdan
+
+Migratsiya **0037**. Yuborishni yoqish uchun: **Sozlamalar →
+«Telegram orqali yuborish»** ni yoqasiz (hozir o'chiq).
+
+Tekshirildi: 609 ta test + 72 ta ekran testi — hammasi yashil, CI tartibida,
+toza bazada.
+
+**Sinab ko'ra olmaganim:** haqiqiy yuborish. Bu kompyuterda Telegramga chiqish
+yo'q. Birinchi javobni o'zingiz yozib ko'ring va telefoningizdan tekshiring.
+
 ## «Qaysi chatlar» — endi siz tanlaysiz — 2026-07-28
 
 Siz so'ragan narsa: **qaysi chat CRM'ga tushsin, qaysi biri yo'q — o'zingiz

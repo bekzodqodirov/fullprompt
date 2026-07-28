@@ -139,6 +139,50 @@ export function scanVerdict(
   return 'ask';
 }
 
+/**
+ * The other party of a conversation, from the CHAT rather than from the sender.
+ *
+ * Which end you read is not a style choice, and getting it wrong is silent.
+ * GramJS sets a message's `senderId` only when `post || (!out && peerId
+ * instanceof PeerUser)` (`tl/custom/message.js`), so an OUTGOING private
+ * message — no `fromId`, `out: true` — has no sender at all. A listener that
+ * asks for the sender gets `null`, cannot tell the chat is private, and drops
+ * the message. The bridge keeps saying "connected", the client's half of every
+ * conversation keeps arriving, and only OUR half quietly stops.
+ *
+ * `peerId`, which is what `getChat()`/`chatId` resolve, is the other party on
+ * an incoming message and the recipient on an outgoing one — the same person
+ * either way. It is the dialog, which is exactly what the import iterates, so
+ * both paths now reduce a conversation the same way.
+ *
+ * `telegram-peer.test.ts` pins this against the real library.
+ */
+export function peerFromChat(
+  chat: {
+    id?: { toString(): string };
+    phone?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    username?: string | null;
+    bot?: boolean;
+    className?: string;
+  } | null
+  | undefined,
+): DialogPeer {
+  // `getChat()` can return undefined for a chat Telegram will not resolve.
+  // That must be an ordinary refusal, not a throw inside the event handler.
+  const isUser = chat?.className === 'User';
+  return {
+    id: BigInt(chat?.id?.toString() ?? '0'),
+    phone: isUser ? (chat?.phone ?? null) : null,
+    firstName: chat?.firstName ?? null,
+    lastName: chat?.lastName ?? null,
+    username: chat?.username ?? null,
+    isPrivate: isUser,
+    isBot: Boolean(chat?.bot),
+  };
+}
+
 /** A name for the screen, from the pieces Telegram gives separately. */
 export function peerTitle(peer: DialogPeer): string {
   const name = [peer.firstName, peer.lastName].filter(Boolean).join(' ').trim();

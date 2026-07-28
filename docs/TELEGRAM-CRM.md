@@ -12,6 +12,7 @@ Bu hujjat uch bosqich haqida:
 | 2 | «Suhbatlar» ekrani — kim yozgan, kim javob kutyapti | — |
 | 3 | **Jonli qabul**: yangi xabar bir necha soniyada CRM'da | `pnpm tg-login` + `pnpm tg-listen` |
 | — | **Qaysi chatlar**: qaysi birini olish, qaysi birini olmaslik — o'zingiz | `pnpm tg-scan` + ekran |
+| 4 | **Javob yozish**: CRM'dan mijozga javob | sozlamadagi tugma |
 
 ## Nima olinadi, nima olinmaydi
 
@@ -226,3 +227,47 @@ To'xtatish: `docker stop tg-listen-bekzod`. Qayta yoqish: `docker start ...`.
 Bitta akkauntga **ikkinchi tinglovchi ulanmaydi**: bazada qulf bor va ikkinchisi
 «another listener already holds …» deb chiqib ketadi. Bitta shaxsiy akkauntga
 ikkita ulanish — akkauntni bloklatadigan asosiy sabab.
+
+
+---
+
+# 4-bosqich: CRM'dan javob yozish
+
+«Suhbatlar» ichida, chat ostida javob yozish oynasi.
+
+## Nega bu boshqa bosqichlardan jiddiyroq
+
+1–3-bosqichlar bitta jumlaga tayangan edi: **«yuboradigan kod yo'q»**. Akkauntni
+bloklatadigan asosiy sabab aynan yuborish. Endi u jumla yo'q, o'rniga qoidalar:
+
+| Qoida | Nega |
+|---|---|
+| **Birinchi bo'lib yozib bo'lmaydi** | Mijoz sizga yozmagan bo'lsa, javob oynasi chiqmaydi. So'ralmagan xabar — «spam» tugmasi aynan shu uchun |
+| **Umumiy tugma, odatda o'chiq** | Deploy qilishning o'zi hech kimni yuborishga majburlamaydi. Muammo chiqsa — bitta joydan hammasi to'xtaydi |
+| **12/daqiqa · 200/kun · 4 ta bitta chatga/daqiqa** | Odam yeta olmaydi. Bu chegara **dastur xatosi** uchun |
+| **Telegram «kuting» desa — kutamiz** | Mensimaslik akkauntni yo'qotishning eng tez yo'li |
+| **Faqat o'z akkauntingizdan** | Xabar menejerning ismi va rasmi bilan chiqadi |
+
+## Yoqish
+
+**Sozlamalar → «Telegram orqali yuborish»** ni yoqing. Tinglovchi ishlab
+turishi shart — o'chiq bo'lsa javob oynasi ochilmaydi.
+
+## Navbatdagi xabar — yuborilgan xabar emas
+
+Javob avval **navbatga** tushadi (chatda punktir ramka bilan «navbatda» deb
+turadi), tinglovchi uni oladi va yuboradi. Yuborilgach oddiy xabarga aylanadi.
+
+- **«Yuborilmadi»** (qizil) — sabab yoziladi. Mijoz sizni bloklagan bo'lsa
+  qayta urinilmaydi (qayta urinish — aynan spam xatti-harakati).
+- **«yuborilayotganda uzilib qolgan»** — tinglovchi xabar yo'ldayotganda
+  o'chgan. Telegram uni oldimi-yo'qmi — bu yerdan bilib bo'lmaydi, shuning
+  uchun **taxmin qilinmaydi**: o'z Telegramingizdan qarab, kerak bo'lsa qayta
+  yuborasiz.
+
+## Nima qilinmadi — ataylab
+
+- **Rasm/fayl yuborish** — hozircha faqat matn.
+- **Ommaviy tarqatma** — yo'q va bo'lmaydi. Bir xil matnni ko'p odamga yuborish
+  akkauntni bloklatadigan uchinchi sabab.
+- **Avtomatik javob** — hech qanday robot mijozga o'zi yozmaydi.

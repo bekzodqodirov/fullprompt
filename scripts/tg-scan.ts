@@ -5,6 +5,7 @@ import { db, pgClient } from '../src/modules/platform/db/client';
 import { clients, users } from '../src/modules/platform/db/schema';
 import { recordCandidates, rulesFor, type CandidateInput } from '../src/modules/wms/crm/chat-rules';
 import {
+  peerFromChat,
   peerTitle,
   scanVerdict,
   type ClientPhones,
@@ -64,7 +65,7 @@ async function main() {
     .from(clients);
   const rules = await rulesFor(manager.id);
 
-  const { TelegramClient, Api } = await import('telegram');
+  const { TelegramClient } = await import('telegram');
   const { StringSession } = await import('telegram/sessions');
 
   // An empty session, never saved — the same choice as the import. Scanning is
@@ -85,17 +86,7 @@ async function main() {
   let skipped = 0;
 
   for await (const dialog of client.iterDialogs({})) {
-    const entity = dialog.entity;
-    const user = entity instanceof Api.User ? entity : null;
-    const peer: DialogPeer = {
-      id: BigInt(entity?.id?.toString() ?? '0'),
-      phone: user?.phone ?? null,
-      firstName: user?.firstName ?? null,
-      lastName: user?.lastName ?? null,
-      username: user?.username ?? null,
-      isPrivate: Boolean(dialog.isUser) && user !== null,
-      isBot: Boolean(user?.bot),
-    };
+    const peer: DialogPeer = peerFromChat(dialog.entity as never);
     const verdict = scanVerdict(peer, book, rules);
     if (verdict === 'auto') auto += 1;
     else if (verdict === 'answered') answered += 1;

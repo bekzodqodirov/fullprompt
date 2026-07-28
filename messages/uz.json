@@ -267,7 +267,8 @@
       "ved_delivery_terms": "Yetkazib berish sharti (masalan: CIP Андижан)",
       "ved_customs_post": "Bojxona posti nomi va kodi (masalan: Андижон ВЭД / 03011)",
       "crm_dormant_days": "Mijoz necha kun yuk yubormasa «jim qolgan» hisoblanadi (CRM dushanba digestida chiqadi)",
-      "deal_deviation_threshold_pct": "Yuk hisob-kitobdan necha foizga farq qilsa, menejerga xabar ketadi. Yuklashni to‘xtatmaydi."
+      "deal_deviation_threshold_pct": "Yuk hisob-kitobdan necha foizga farq qilsa, menejerga xabar ketadi. Yuklashni to‘xtatmaydi.",
+      "tg_sending_enabled": "CRM menejerning shaxsiy Telegramidan mijozga xabar yuborishi mumkinmi (odatda o‘chirilgan)"
     },
     "driverApp": "Haydovchi ilovasi"
   },
@@ -1002,7 +1003,19 @@
     "chatExcluded": "Olinmaydi",
     "chatNoName": "Ismsiz",
     "whichChatsPendingBadge": "{n} ta chat javob kutyapti",
-    "chatFindClient": "Mijozni qidirish"
+    "chatFindClient": "Mijozni qidirish",
+    "replyPlaceholder": "Mijozga javob…",
+    "replySend": "Yuborish",
+    "replySending": "Yuborilmoqda…",
+    "replyQueued": "Navbatda — hali yuborilmadi",
+    "replyFailed": "Yuborilmadi",
+    "replyDisabled": "Yuborish o‘chirilgan. Sozlamalardan yoqing.",
+    "replyNeverWrote": "Mijoz sizga hali yozmagan — birinchi bo‘lib yozib bo‘lmaydi.",
+    "replyBridgeDown": "Telegram ulanmagan — xabar ketmaydi.",
+    "replyRateLimited": "Juda tez-tez. Bir daqiqa kuting.",
+    "replyNotYours": "Bu yozishma boshqa menejerning akkauntida — faqat o‘zi javob bera oladi.",
+    "replyTooLong": "Xabar juda uzun.",
+    "replyEmpty": "Bo‘sh xabar."
   },
   "navShort": {
     "home": "Bosh",

@@ -1328,3 +1328,49 @@ export const tgChatRules = pgTable(
     index('tg_chat_rules_pending_idx').on(t.managerUserId, t.decision),
   ],
 );
+
+/**
+ * A reply waiting to go out through a manager's Telegram — phase 4.
+ *
+ * A queue rather than a direct send, because only ONE process may hold a
+ * connection to an account and that process is the listener. The web app
+ * writes here; the listener applies the rate limits and sends.
+ *
+ * `status` is explicit and the screens must respect it: a queued row is not a
+ * delivered message, and if the bridge is down the client is still waiting.
+ */
+export const tgOutbox = pgTable(
+  'tg_outbox',
+  {
+    id: id(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    /** Whose account it goes out from — whose name the client sees on it. */
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    body: text('body').notNull(),
+    status: text('status').notNull().default('queued'),
+    queuedBy: uuid('queued_by')
+      .notNull()
+      .references(() => users.id),
+    queuedAt: timestamp('queued_at', { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    /** Telegram's id once it exists, to reconcile with the echoed copy. */
+    tgMessageId: bigint('tg_message_id', { mode: 'bigint' }),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+  },
+  (t) => [
+    check(
+      'tg_outbox_status_check',
+      sql`${t.status} IN ('queued', 'sending', 'sent', 'failed', 'cancelled')`,
+    ),
+    // A blank send would still cost a rate-limit slot on a personal account.
+    check('tg_outbox_body_check', sql`length(btrim(${t.body})) > 0`),
+    index('tg_outbox_queue_idx').on(t.managerUserId, t.status, t.queuedAt),
+    index('tg_outbox_client_idx').on(t.clientId, t.queuedAt),
+  ],
+);
