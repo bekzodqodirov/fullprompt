@@ -121,6 +121,8 @@ describe('a task reaches its assignee in Telegram, with the link', () => {
         priority: 2,
         entityType: 'deal',
         entityId: dealId,
+        repeatUnit: null,
+        repeatEvery: 1,
       },
       { actorId: author, ip: null, userAgent: null },
     );
@@ -152,6 +154,8 @@ describe('a task reaches its assignee in Telegram, with the link', () => {
         priority: 2,
         entityType: null,
         entityId: null,
+        repeatUnit: null,
+        repeatEvery: 1,
       },
       { actorId: author, ip: null, userAgent: null },
     );
