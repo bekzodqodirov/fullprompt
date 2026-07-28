@@ -253,7 +253,15 @@ Enter-send composer (15)).
 Batch 2 SHIPPED (#353): promises carry kg/m³ (migration 0041), «Qabul
 qilish» on a promise opens /receive prefilled and the confirm closes exactly
 that promise; a difference (any box delta, >5 % kg/m³) tells the promise's
-author in Telegram, never the receiver. Batch 3 (task #79) is next.
+author in Telegram, never the receiver.
+
+Batch 3 part 1 SHIPPED (#354): `CardCols` gives deal/lead/client cards the
+amoCRM shape — lenta wide+tall on the left, sticky self-scrolling 24rem
+facts rail on the right, phone keeps facts-first stacking from the same
+DOM; the kanban desktop board owns the viewport with full-height sunken
+columns that scroll internally (no page scrollbar). Still open in batch 3
+(task #79): right dock for tasks+card chat (5+7), in-map popups (12),
+cabinet linking via request_contact (13), chat photos + composer (15).
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

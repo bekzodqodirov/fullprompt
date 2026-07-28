@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Fikr-mulohaza raundi, 3-to'plam (1-qism): karta va voronka — 2026-07-28
+
+Siz so'ragan amoCRM ko'rinishi (3-band):
+
+- **Karta endi ikki ustun** (bitim, lid va mijoz kartalari, kompyuterda):
+  chapda — **lenta** butun bo'yiga: chat, izohlar, yuk, pul — hammasi vaqt
+  tartibida, pastida yozish oynasi; o'ngda — **ma'lumot ustuni**: kelishuv
+  va fakt taqqoslash, tahrirlash, pozitsiyalar, prixodlar, hisob, vazifalar,
+  maydonlar, tarix. O'ng ustun scroll qilganda joyida turadi, o'zi ichida
+  aylanadi. VED, logist, sotuv — bitta kartada birga ishlashga mo'ljallangan.
+  Telefonda avvalgidek ustma-ust qoladi (avval ma'lumot, keyin lenta).
+- **Voronka ustunlari ekran pastigacha**: sahifaning pastki scroll'i
+  yo'qoldi — uzun ustun o'z ichida aylanadi, ustun sarlavhasi joyida
+  turadi, bo'sh ustun ham pastgacha ko'rinib turadi.
+
+Tekshirildi: 660 unit/integration + 80 e2e yashil (kartani sudrash testi
+ham yangi ustunlarda o'zgarishsiz o'tdi). Migratsiya yo'q — faqat ekran.
+
+Qolgan qismlar navbatda: o'ng tomondagi vazifa+chat paneli (5+7), mapda
+bosganda yuk map ichida (12), botga nomer orqali ulanish (13), chatda
+rasmlar va Telegramdek yozish (15).
+
 ## Fikr-mulohaza raundi, 2-to'plam: kutilayotgan yuk oqimi — 2026-07-28
 
 9-band, siz aytgandek, to'liq:

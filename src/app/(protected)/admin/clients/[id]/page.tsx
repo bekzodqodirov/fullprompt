@@ -5,6 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { clients, clientTelegramLinks } from '@/modules/platform/db/schema';
 import { getSetting } from '@/modules/platform/settings/service';
 import { getBotUsername } from '@/modules/platform/telegram/bot';
+import { CardCols } from '@/components/card-cols';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { HistoryTab } from '@/components/history-tab';
 import { CargoSummary } from '@/components/cargo-summary';
@@ -68,6 +69,23 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         )}
       </div>
 
+      <CardCols
+        main={
+          <>
+            {/* Owner: the card has to answer "where is this client's cargo
+                and what do they owe" without a trip to two other screens. */}
+            <section className="card space-y-2">
+              <h2 className="text-lg font-bold">📦 {tcargo('title')}</h2>
+              <CargoSummary clientId={client.id} money={canSeeMoney} />
+            </section>
+
+            {/* What was actually said, in the place it was actually said —
+                the working surface of the card (owner: the amoCRM shape). */}
+            <ClientFeed clientId={client.id} tall />
+          </>
+        }
+        rail={
+          <>
       {canEdit ? (
         <ClientForm
           action={update}
@@ -135,13 +153,6 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       </section>
       )}
 
-      {/* Owner: the card has to answer "where is this client's cargo and what
-          do they owe" without a trip to two other screens. */}
-      <section className="card space-y-2">
-        <h2 className="text-lg font-bold">📦 {tcargo('title')}</h2>
-        <CargoSummary clientId={client.id} money={canSeeMoney} />
-      </section>
-
       {/* The jobs we are doing for them, and which of those has gone wrong. */}
       <ClientDeals clientId={client.id} />
 
@@ -162,14 +173,13 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           codes the same person holds. */}
       <ClientCrmSections clientId={client.id} clientName={client.name} />
 
-      {/* What was actually said, in the place it was actually said. Renders
-          nothing until a manager's Telegram has been imported. */}
-      <ClientFeed clientId={client.id} />
-
       <section>
         <h2 className="mb-2 text-lg font-bold">{tc('history')}</h2>
         <HistoryTab entityType="client" entityId={client.id} />
       </section>
+          </>
+        }
+      />
     </div>
   );
 }

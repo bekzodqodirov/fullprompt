@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader, Section } from '@/components/ui/page';
 import { Panel } from '@/components/panel';
+import { CardCols } from '@/components/card-cols';
 import { HistoryTab } from '@/components/history-tab';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
@@ -98,6 +99,16 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
         }
       />
 
+      <CardCols
+        main={
+          /* The working surface: what was said and what happened, full height
+             (owner: the amoCRM shape — the card IS its timeline). Gates
+             itself: this card is open to the VED manager too, and a client's
+             conversation is not his to read. */
+          <ClientFeed clientId={row.deal.clientId} dealId={row.deal.id} limit={60} tall />
+        }
+        rail={
+          <>
       {/* ---- the two columns the whole feature exists for ---- */}
       <section className="card space-y-3" data-testid="deal-compare">
         <div className="grid grid-cols-2 gap-3">
@@ -257,11 +268,6 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
         </Panel>
       )}
 
-      {/* What was actually said about this job. The panel gates itself: this
-          card is open to the VED manager too, and a client's conversation is
-          not his to read. */}
-      <ClientFeed clientId={row.deal.clientId} dealId={row.deal.id} limit={40} />
-
       <TasksPanel entityType="deal" entityId={row.deal.id} revalidate={`/bitimlar/${row.deal.id}`} />
 
       <CustomFieldsPanel
@@ -273,6 +279,9 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
       <Section title={tc('history')}>
         <HistoryTab entityType="deal" entityId={row.deal.id} />
       </Section>
+          </>
+        }
+      />
     </div>
   );
 }

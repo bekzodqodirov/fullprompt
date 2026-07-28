@@ -458,13 +458,18 @@ function DragBoard<T extends KanbanItem>({
       <p className="text-xs text-ink-500">✋ {labels.dragHint}</p>
       <div
         ref={boardRef}
-        className="-mx-4 overflow-x-auto px-4 pb-2"
+        // The board owns the rest of the viewport and the COLUMNS scroll,
+        // not the page (owner: "har bir kanban column pastgacha davom etardi,
+        // pastidan scroll chiqib qolmasdi" — the amoCRM shape). The page
+        // never grows below the board, so its scrollbar disappears; a long
+        // column scrolls inside itself with the header staying put.
+        className="-mx-4 h-[calc(100dvh-17.5rem)] min-h-[20rem] overflow-x-auto px-4"
         // While a card is in the air the board must not pan under it: the
         // pointer is already down, so the browser would otherwise treat the
         // same gesture as a scroll.
         style={{ touchAction: dragId ? 'none' : undefined }}
       >
-        <div className="flex gap-3">
+        <div className="flex h-full gap-3">
           {stages.map((stage) => {
             const inStage = items.filter((item) => stageOf(item) === stage.id);
             const isTarget = dragId !== null && overStage === stage.id;
@@ -473,19 +478,19 @@ function DragBoard<T extends KanbanItem>({
                 key={stage.id}
                 data-stage-id={stage.id}
                 data-testid={`column-${stage.kind}`}
-                className={`w-64 shrink-0 rounded-lg ${
-                  isTarget ? 'bg-brand-50 ring-2 ring-brand-500' : ''
+                className={`flex h-full w-64 shrink-0 flex-col rounded-lg bg-surface-sunken ${
+                  isTarget ? '!bg-brand-50 ring-2 ring-brand-500' : ''
                 }`}
               >
                 <header
-                  className={`sticky top-0 rounded-lg border px-3 py-2 text-sm font-bold ${stageClass(
+                  className={`rounded-lg border px-3 py-2 text-sm font-bold ${stageClass(
                     stage.color,
                   )}`}
                 >
                   {stage.name}
                   <span className="ml-2 opacity-70">{counts[stage.id]}</span>
                 </header>
-                <div className="mt-2 min-h-16 space-y-2">
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
                   {inStage.map((item) => (
                     <Link
                       key={item.id}

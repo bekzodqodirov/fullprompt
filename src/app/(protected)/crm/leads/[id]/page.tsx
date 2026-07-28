@@ -18,6 +18,7 @@ import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
 import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
+import { CardCols } from '@/components/card-cols';
 import { conversationClientForLead } from '@/modules/wms/crm/conversations';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
@@ -52,7 +53,10 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   const convert = convertLeadAction.bind(null, id);
 
   return (
-    <div className="mx-auto max-w-lg space-y-3">
+    // Wide like the funnel it came from: the amoCRM card shape (owner,
+    // 2026-07-28) is timeline on the left, facts in a rail on the right —
+    // a max-w-lg column has no room for either.
+    <div className="mx-auto max-w-lg space-y-3 md:max-w-none">
       <Link href="/crm" className="text-sm font-semibold text-brand-700">
         ← {t('funnel')}
       </Link>
@@ -72,6 +76,31 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         <p className="card !py-2 text-sm text-bad">✖ {lead.lostReason}</p>
       )}
 
+      <CardCols
+        main={
+          <>
+            {/* A lead who is already a client — converted, or an existing
+                customer asking about another job — brings their conversation
+                with them. A brand new prospect has none, and the panel simply
+                does not render. */}
+            <ClientFeed
+              clientId={await conversationClientForLead(lead)}
+              leadId={lead.id}
+              limit={60}
+              tall
+            />
+
+            {/* The activity FORM stays — its kind and «keyingi qadam» date
+                are what feed /crm/today, and the lenta's quick note box has
+                neither. The LIST it used to sit above is gone: those same
+                activities render on the lenta, and two copies of every note
+                on one card is how the owner's "qachon nima bo'lgani 1 joyda"
+                turns back into two places. */}
+            <ActivityForm entityType="lead" entityId={id} today={today} />
+          </>
+        }
+        rail={
+          <>
       {lead.clientId ? (
         <div className="flex gap-2">
           <Link
@@ -107,19 +136,6 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         </Panel>
       )}
 
-      {/* A lead who is already a client — converted, or an existing customer
-          asking about another job — brings their conversation with them. A
-          brand new prospect has none, and the panel simply does not render. */}
-      <ClientFeed clientId={await conversationClientForLead(lead)} leadId={lead.id} limit={40} />
-
-      {/* The activity FORM stays — its kind and «keyingi qadam» date are what
-          feed /crm/today, and the lenta's quick note box has neither. The LIST
-          it used to sit above is gone: those same activities now render on the
-          lenta, and two copies of every note on one card is how the owner's
-          "qachon nima bo'lgani 1 joyda" turns back into two places. Caught by
-          the funnel e2e, whose strict locator found the note twice. */}
-      <ActivityForm entityType="lead" entityId={id} today={today} />
-
       <Panel title={`✏️ ${tc('edit')}`}>
         <LeadForm
           action={update}
@@ -146,6 +162,9 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         entityType="lead"
         entityId={id}
         revalidate={`/crm/leads/${id}`}
+      />
+          </>
+        }
       />
     </div>
   );
