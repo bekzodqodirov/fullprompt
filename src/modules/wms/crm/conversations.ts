@@ -90,7 +90,16 @@ export interface ConversationMessage {
   manager: string;
 }
 
-/** One client's thread, oldest first — read as a conversation, not a log. */
+/**
+ * One client's thread, NEWEST first.
+ *
+ * Both screens then render it inside a `flex-col-reverse` scroll box, which
+ * flips it back to reading order AND opens it already scrolled to the newest
+ * message — the way every chat app behaves, and what the owner asked for
+ * ("chatlar ro'yxatidan chatni tanlab ko'rsang focus bugunga qaratilmagan").
+ * Doing it in CSS rather than by scrolling after paint means there is no jump:
+ * the first frame is already at the bottom.
+ */
 export async function conversationFor(
   clientId: string,
   limit = 500,
@@ -109,9 +118,9 @@ export async function conversationFor(
     .where(eq(tgMessages.clientId, clientId))
     .orderBy(desc(tgMessages.sentAt))
     .limit(limit);
-  // Newest `limit` rows, then flipped: a long history must not push the RECENT
-  // end off the page, which is what taking the oldest N would do.
-  return rows.reverse();
+  // The newest `limit` rows, in that order. Taking the OLDEST n would push the
+  // recent end — the only part anyone reads — off a long history entirely.
+  return rows;
 }
 
 /** The client behind a conversation, for the thread's header. */

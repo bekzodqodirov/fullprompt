@@ -8,5 +8,8 @@ import '../globals.css';
  * screen — which is precisely the wall this group exists to avoid.
  */
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-dvh bg-surface-100 text-ink-900">{children}</div>;
+  // Plain `bg-surface`. This asked for a `surface-100`, which the theme does
+  // not define — the scale is DEFAULT / raised / sunken — so the class compiled
+  // to nothing and the page had been taking the body's colour by accident.
+  return <div className="min-h-dvh bg-surface text-ink-900">{children}</div>;
 }

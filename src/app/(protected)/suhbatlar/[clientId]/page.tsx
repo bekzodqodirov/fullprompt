@@ -3,14 +3,25 @@ import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { conversationClient, conversationFor } from '@/modules/wms/crm/conversations';
+import { TelegramBubble } from '@/components/telegram-bubble';
 
 /**
- * One client's conversation, read the way it happened.
+ * One client's conversation, read the way it happened — and opened where it
+ * left off.
  *
- * Oldest first here, unlike the panel on the client card: this screen is the
- * conversation itself, and a conversation is read forwards. The card's panel
- * is a reference — "what did we last say" — and is newest first for that
- * reason.
+ * A fixed-height box in `flex-col-reverse`, so the newest message is at the
+ * bottom and the first painted frame is already there: scrolling up is
+ * history, exactly as in Telegram itself. The owner's report was that opening
+ * a chat from the list dropped him at the beginning of a year of messages
+ * ("focus bugunga qaratilmagan"), which is true of any long thread rendered
+ * top-down.
+ *
+ * The height is spelled out from the shell rather than guessed, because a box
+ * that is one nav bar too tall hides the newest message under the tab bar —
+ * which looks exactly like the bug it was meant to fix. The terms are the
+ * layout's own: header `h-14` (3.5rem) + `main` `p-4` top (1rem) + the bottom
+ * padding that clears the tab bar (`pb-28` = 7rem on a phone, `md:pb-8` = 2rem
+ * on a desktop).
  *
  * Read-only in phase 2. Replying from here is phase 4, and until then the
  * screen must not pretend otherwise: there is no message box.
@@ -36,7 +47,9 @@ export default async function ConversationPage({
   const t = await getTranslations('crm');
 
   return (
-    <div className="space-y-3">
+    // Capped and centred: on a wide screen an 85 % bubble against each edge
+    // reads as two columns of unrelated text rather than as one conversation.
+    <div className="mx-auto flex h-[calc(100dvh-11.5rem)] w-full max-w-3xl flex-col gap-3 md:h-[calc(100dvh-6.5rem)]">
       <div className="flex flex-wrap items-baseline gap-2">
         <Link href="/suhbatlar" className="text-sm text-ink-500 underline">
           ← {t('conversations')}
@@ -53,29 +66,19 @@ export default async function ConversationPage({
       {messages.length === 0 ? (
         <p className="card text-center text-sm text-ink-500">{t('conversationsEmpty')}</p>
       ) : (
-        <div className="space-y-1.5" data-testid="conversation-thread">
+        // `min-h-0` is what lets it shrink: a flex item will not go below its
+        // content height without it, and the box would grow past the screen.
+        <div
+          className="card flex min-h-0 flex-1 flex-col-reverse gap-1.5 overflow-y-auto"
+          data-testid="conversation-thread"
+        >
           {messages.map((msg) => (
-            <div
+            <TelegramBubble
               key={msg.id}
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                msg.direction === 'out' ? 'ml-auto bg-brand-50' : 'bg-surface-200'
-              }`}
-            >
-              <div className="mb-0.5 flex justify-between gap-3 text-xs text-ink-500">
-                <span>{msg.direction === 'out' ? msg.manager : t('telegramClient')}</span>
-                <span className="whitespace-nowrap">
-                  {new Date(msg.sentAt).toLocaleString('ru-RU', {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  })}
-                </span>
-              </div>
-              {msg.body ? (
-                <p className="whitespace-pre-wrap break-words">{msg.body}</p>
-              ) : (
-                <p className="text-ink-500">📎 {t('telegramMedia')}</p>
-              )}
-            </div>
+              message={msg}
+              clientLabel={t('telegramClient')}
+              mediaLabel={t('telegramMedia')}
+            />
           ))}
         </div>
       )}

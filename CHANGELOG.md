@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Chat tuzatildi: to'g'ri tartib va oxirgi xabarga fokus — 2026-07-28
+
+Siz aytgan ikkala kamchilik ham tuzatildi.
+
+### 1. Mijoz kartochkasidagi chat teskari edi
+
+Endi hamma joyda **bir xil**: yuqorida eski xabar, pastda eng yangisi —
+Telegramning o'zidagidek.
+
+### 2. Chatni ochganda fokus bugunga qaratilmagan edi
+
+Endi chat **darhol eng oxirgi xabarda ochiladi**. Sakrash yo'q: ekran
+birinchi chizilganidayoq pastda turadi. Yuqoriga surasiz — tarix.
+
+To'liq chat ekranida oyna balandligi ham to'g'irlandi: avval u pastdagi
+menyu ostiga bir oz kirib ketardi va eng oxirgi xabar ko'rinmay qolardi.
+
+### Yo'l-yo'lakay topilgan 3 ta ko'rinmas xato
+
+Chatni tekshirayotib, ranglar bilan bog'liq bir muammo chiqdi. Dasturda
+mavjud bo'lmagan rang nomi yozilsa, hech qayerda xato chiqmaydi — shunchaki
+rang **umuman chizilmaydi**. Shuning uchun:
+
+- **mijozning xabarlari fon rangisiz** chiqayotgan ekan (bizniki rangli
+  edi, mijozniki oq) — endi ikkalasi ham o'z fonida;
+- **kartadagi mashina yo'li** (xaritadagi punktir chiziq) umuman
+  chizilmayotgan ekan;
+- **haydovchi ilovasi sahifasi** foni ham shunday edi.
+
+Endi bunday xato **testda ushlanadi**: har bir rang nomi dizayn ro'yxatida
+bor-yo'qligi avtomatik tekshiriladi. Test yozilishi bilanoq xaritadagi
+xatoni o'zi topdi.
+
+Tekshirildi: 499 ta test + 68 ta ekran testi — hammasi yashil, CI
+tartibida, toza bazada.
+
 ## «Suhbatlar» ekrani — 2-bosqich — 2026-07-28
 
 1-bosqich yozishmalarni bazaga oldi va mijoz kartasida ko'rsatdi. Bu esa

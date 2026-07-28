@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { tgMessages, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { TelegramBubble } from './telegram-bubble';
 
 /**
  * The Telegram conversation with this client, as a panel on a card.
@@ -19,9 +20,12 @@ import { getActor } from '@/modules/platform/rbac/authorize';
  * A component meant to sit on any card has to be safe on any card, so the
  * check travels with it instead of living in whichever page remembers.
  *
- * Newest FIRST, unlike the `/suhbatlar` thread. This is not a conversation
- * being had; it is a record glanced at beside the cargo and the money, and the
- * question is almost always "what did we last say to them".
+ * Read in the order it happened, and opening on the LAST message. The first
+ * cut showed it newest-first, on the theory that a card is a reference rather
+ * than a conversation; the owner read it as simply upside-down, and he is
+ * right — nobody reads a chat backwards. `flex-col-reverse` over a
+ * newest-first list gives both: reading order on screen, and a scroll box
+ * whose first painted frame is already at the bottom, with no jump.
  */
 export async function TelegramThread({
   clientId,
@@ -68,29 +72,14 @@ export async function TelegramThread({
           {t('conversations')} →
         </Link>
       </div>
-      <div className="max-h-96 space-y-1.5 overflow-y-auto">
+      <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
         {rows.map((row) => (
-          <div
+          <TelegramBubble
             key={row.id}
-            className={`rounded-lg px-3 py-2 text-sm ${
-              row.direction === 'out' ? 'ml-8 bg-brand-50' : 'mr-8 bg-surface-200'
-            }`}
-          >
-            <div className="mb-0.5 flex justify-between gap-2 text-xs text-ink-500">
-              <span>{row.direction === 'out' ? row.manager : t('telegramClient')}</span>
-              <span className="whitespace-nowrap">
-                {new Date(row.sentAt).toLocaleString('ru-RU', {
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                })}
-              </span>
-            </div>
-            {row.body ? (
-              <p className="whitespace-pre-wrap break-words">{row.body}</p>
-            ) : (
-              <p className="text-ink-500">📎 {t('telegramMedia')}</p>
-            )}
-          </div>
+            message={row}
+            clientLabel={t('telegramClient')}
+            mediaLabel={t('telegramMedia')}
+          />
         ))}
       </div>
     </section>

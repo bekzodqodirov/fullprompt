@@ -674,10 +674,17 @@ describe('the conversation list', () => {
       { dir: 'in', body: null, at: '2026-04-03T09:00:00Z', media: true },
     ]);
     const thread = await conversationFor(client.id);
-    // Forwards: this screen IS the conversation. The client card's panel is a
-    // reference — "what did we last say" — and is newest first for that reason.
-    expect(thread.map((m) => m.body)).toEqual(['bir', 'ikki', null]);
-    expect(thread[2]!.hasMedia).toBe(true);
+    /**
+     * NEWEST first — and that is the order both screens depend on.
+     *
+     * They render it inside a `flex-col-reverse` scroll box, which flips it
+     * back to reading order AND opens already scrolled to the last message.
+     * Taking the OLDEST n instead would push the recent end — the only part
+     * anyone reads — off a long history entirely, which is the bug the owner
+     * reported as "focus bugunga qaratilmagan".
+     */
+    expect(thread.map((m) => m.body)).toEqual([null, 'ikki', 'bir']);
+    expect(thread[0]!.hasMedia).toBe(true);
   });
 });
 

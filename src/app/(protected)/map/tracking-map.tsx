@@ -310,7 +310,10 @@ function SvgCorridor({
             })
             .join(' ')}
           fill="none"
-          className="stroke-brand-400"
+          // brand-500, because there is no brand-400: the scale is
+          // 50/100/200/500/600/700/800, and the missing shade left this
+          // polyline with no stroke at all — the route line never drew.
+          className="stroke-brand-500"
           strokeWidth={3}
           strokeDasharray="8 6"
           strokeLinecap="round"
