@@ -87,22 +87,30 @@ function money(meta: Record<string, unknown>): string {
 
 export async function ClientFeed({
   clientId,
+  leadId = null,
   limit = 60,
   /** On a card the box is short; on a dedicated screen it fills the height. */
   tall = false,
 }: {
   clientId: string | null;
+  /** Set on a lead card: the lenta then lives even before there is a client. */
+  leadId?: string | null;
   limit?: number;
   tall?: boolean;
 }) {
-  if (!clientId) return null;
+  // The first cut returned null here whenever the client was unresolved —
+  // which on the CRM card meant no timeline AND no internal chat for most
+  // leads, since a lead usually is not a client yet. The owner read that as
+  // "it was never added", and from where he sat it hadn't been: a panel that
+  // renders nothing did not ship in any sense that matters.
+  if (!clientId && !leadId) return null;
   const actor = await getActor();
   if (!actor?.permissions.has('crm.leads') && !actor?.permissions.has('clients.manage')) {
     return null;
   }
 
   const t = await getTranslations('crm');
-  const items = await clientFeed(clientId, { limit });
+  const items = await clientFeed(clientId, { limit, leadId });
 
   return (
     <section className="card space-y-2" data-testid="client-feed">
@@ -126,9 +134,12 @@ export async function ClientFeed({
       {/* Two ways to say something, the way every CRM does it: a word to the
           client, or a word to your colleagues. */}
       <div className="space-y-2 border-t border-line pt-2">
+        {/* Telegram needs a real client conversation; the internal chat does
+            not, and must not vanish with it — it is the staff's half. */}
         <TelegramReply clientId={clientId} compact />
         <FeedNoteBox
-          clientId={clientId}
+          entityType={clientId ? 'client' : 'lead'}
+          entityId={clientId ?? leadId!}
           labels={{
             placeholder: t('feedNotePlaceholder'),
             save: t('feedNoteSave'),
@@ -149,6 +160,12 @@ function FeedRow({
 }) {
   const label = t(FEED_LABELS[item.kind] as 'feedNote');
   const voided = item.meta.voided === true;
+  // An activity is not always a note: the lead form records calls, meetings
+  // and messages too, and each kept its icon on the old panel. The label
+  // stays one word; the mark says which kind it was.
+  const ACTIVITY_MARK: Record<string, string> = { call: '📞', meeting: '🤝', message: '💬' };
+  const mark =
+    item.kind === 'note' ? (ACTIVITY_MARK[String(item.meta.kind)] ?? MARK.note) : MARK[item.kind];
 
   return (
     <div
@@ -159,7 +176,7 @@ function FeedRow({
     >
       <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-ink-500">
         <span className="font-semibold">
-          {MARK[item.kind]} {label}
+          {mark} {label}
           {/* A voided entry stays on the timeline: it happened, and then
               somebody undid it, and both are part of the story. */}
           {voided && ` · ${t('feedVoided')}`}

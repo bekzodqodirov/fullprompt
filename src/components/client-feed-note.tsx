@@ -12,10 +12,13 @@ import { addFeedNoteAction, type ReplyState } from '@/modules/wms/crm/reply-acti
  * TO the client. Two boxes, each labelled, cannot make that mistake.
  */
 export function FeedNoteBox({
-  clientId,
+  entityType,
+  entityId,
   labels,
 }: {
-  clientId: string;
+  /** Where the note lands: the client, or — before one exists — the lead. */
+  entityType: 'client' | 'lead';
+  entityId: string;
   labels: { placeholder: string; save: string; saving: string };
 }) {
   const [state, submit, pending] = useActionState<ReplyState, FormData>(addFeedNoteAction, {});
@@ -31,7 +34,8 @@ export function FeedNoteBox({
       className="flex items-end gap-2"
       data-testid="feed-note-box"
     >
-      <input type="hidden" name="clientId" value={clientId} />
+      <input type="hidden" name="entityType" value={entityType} />
+      <input type="hidden" name="entityId" value={entityId} />
       <textarea
         name="note"
         rows={1}

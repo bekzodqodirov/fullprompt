@@ -91,10 +91,17 @@ interface Row extends Record<string, unknown> {
  * and a first painted frame already at the bottom.
  */
 export async function clientFeed(
-  clientId: string,
-  opts: { limit?: number; before?: Date } = {},
+  clientId: string | null,
+  opts: { limit?: number; before?: Date; leadId?: string | null } = {},
 ): Promise<FeedItem[]> {
   const limit = Math.min(Math.max(opts.limit ?? 60, 1), 200);
+  // A LEAD is not a client, and most leads never become one — but the sales
+  // work on them (calls, notes) is exactly what a timeline is for. When a
+  // lead id is given, its own activities join the feed; when `clientId` is
+  // null every client-keyed branch compares against NULL and yields nothing,
+  // which is the correct answer rather than a special case: the lead's card
+  // still gets a living lenta instead of a blank.
+  const leadId = opts.leadId ?? null;
   // A bound every branch can use, so the union never sorts more than it must.
   const before = opts.before ?? null;
   const cutoff = before ? sql`${before.toISOString()}::timestamptz` : sql`'infinity'::timestamptz`;
@@ -134,7 +141,10 @@ export async function clientFeed(
         jsonb_build_object('kind', a.kind)
       FROM crm_activities a
       JOIN users u ON u.id = a.created_by
-      WHERE a.entity_type = 'client' AND a.entity_id = ${clientId}
+      WHERE (
+          (a.entity_type = 'client' AND a.entity_id = ${clientId})
+          OR (a.entity_type = 'lead' AND a.entity_id = ${leadId})
+        )
         AND a.happened_at < ${cutoff}
 
       UNION ALL

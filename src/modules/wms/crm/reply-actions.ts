@@ -125,15 +125,20 @@ export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Prom
     if (err instanceof AuthError) return { error: 'forbidden' };
     throw err;
   }
-  const clientId = String(form.get('clientId') ?? '');
+  const entityType = String(form.get('entityType') ?? 'client');
+  const entityId = String(form.get('entityId') ?? '');
   const note = String(form.get('note') ?? '').trim();
   if (!note) return { error: 'empty' };
+  // Only the two places a timeline lives. Anything else posted here is a
+  // forged form, and the answer to a forged form is a refusal.
+  if (entityType !== 'client' && entityType !== 'lead') return { error: 'forbidden' };
 
   await addActivity(
-    { entityType: 'client', entityId: clientId, kind: 'note', note },
+    { entityType, entityId, kind: 'note', note },
     { actorId: who.id, ...(await requestMeta()) },
   );
-  revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath(`/admin/clients/${entityId}`);
+  revalidatePath(`/crm/leads/${entityId}`);
   revalidatePath('/bitimlar', 'layout');
   revalidatePath('/crm', 'layout');
   return { ok: true };

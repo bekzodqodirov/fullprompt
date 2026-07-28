@@ -8,7 +8,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { getSetting } from '@/modules/platform/settings/service';
 import { Panel } from '@/components/panel';
-import { listActivities, listSources, listStages } from '@/modules/wms/crm/service';
+import { listSources, listStages } from '@/modules/wms/crm/service';
 import { customFieldsData } from '@/modules/platform/fields/view';
 import { convertLeadAction, updateLeadAction } from '../../actions';
 import { ActivityForm } from '../../activity-form';
@@ -34,7 +34,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
 
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
-  const [sources, stages, managers, custom, log, codePrefix] = await Promise.all([
+  const [sources, stages, managers, custom, codePrefix] = await Promise.all([
     listSources(),
     listStages(),
     // The lead's current owner too: the same bare <select> that erased
@@ -44,14 +44,12 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     // custom inputs in the SAME FormData, so it renders the inputs itself
     // rather than the standalone panel.
     customFieldsData('lead', id),
-    listActivities('lead', id),
     getSetting('client_code_prefix'),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
   const update = updateLeadAction.bind(null, id);
   const convert = convertLeadAction.bind(null, id);
-  const icon: Record<string, string> = { call: '📞', meeting: '🤝', message: '💬', note: '📝' };
 
   return (
     <div className="mx-auto max-w-lg space-y-3">
@@ -97,24 +95,15 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       {/* A lead who is already a client — converted, or an existing customer
           asking about another job — brings their conversation with them. A
           brand new prospect has none, and the panel simply does not render. */}
-      <ClientFeed clientId={await conversationClientForLead(lead)} limit={40} />
+      <ClientFeed clientId={await conversationClientForLead(lead)} leadId={lead.id} limit={40} />
 
+      {/* The activity FORM stays — its kind and «keyingi qadam» date are what
+          feed /crm/today, and the lenta's quick note box has neither. The LIST
+          it used to sit above is gone: those same activities now render on the
+          lenta, and two copies of every note on one card is how the owner's
+          "qachon nima bo'lgani 1 joyda" turns back into two places. Caught by
+          the funnel e2e, whose strict locator found the note twice. */}
       <ActivityForm entityType="lead" entityId={id} today={today} />
-
-      <div className="card space-y-2">
-        <h2 className="text-sm font-bold uppercase text-ink-500">🕘 {t('history')}</h2>
-        {log.map(({ activity, authorName }) => (
-          <div key={activity.id} className="border-b border-line pb-2 last:border-0 last:pb-0">
-            <div className="flex items-baseline gap-2 text-xs text-ink-500">
-              <span>{icon[activity.kind] ?? '📝'}</span>
-              <span>{activity.happenedAt.toISOString().slice(0, 10)}</span>
-              {authorName && <span className="ml-auto">{authorName}</span>}
-            </div>
-            <p className="text-sm [overflow-wrap:anywhere]">{activity.note}</p>
-          </div>
-        ))}
-        {log.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
-      </div>
 
       <Panel title={`✏️ ${tc('edit')}`}>
         <LeadForm

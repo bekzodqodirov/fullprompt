@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## Lenta endi lid kartochkasida ham jonli + ichki chat hamma joyda — 2026-07-28
+
+Siz ikkita kamchilik aytdingiz. Ikkalasining ildizi bitta chiqdi.
+
+### Sabab
+
+Lenta «mijoz topilmasa — hech nima chizma» deb yozilgan edi. Lidlarning ko'pi
+esa **hali mijoz emas** — shu bois CRM (lid) kartochkasida na lenta, na ichki
+chat ko'rinardi. Siz «qo'shilmadi» dedingiz — va siz turgan joydan bu to'g'ri
+edi: hech nima chizmaydigan panel qo'shilgan hisoblanmaydi.
+
+### Endi
+
+- **Lid kartochkasida lenta doim bor** — mijozsiz lidda ham. Unda lidning o'z
+  yozuvlari (qo'ng'iroq 📞, uchrashuv 🤝, xabar 💬, izoh 📝) ko'rinadi va
+  **ichki izoh oynasi** ishlaydi.
+- Lid mijozga aylanganda (yoki raqami mavjud mijozga tegsa) — butun tarix
+  bitta ustunga qo'shiladi: yozishma, yuk, pul, izohlar.
+- **Bitim kartochkasida** lenta allaqachon bor edi (bitim doim mijozga
+  bog'liq) — yangilab (`git pull`) ko'ring.
+
+### Yo'l-yo'lakay: izohlar ikki marta chiqib qolgan edi
+
+Lid yozuvlari lentaga tushgach, eski «tarix» ro'yxati bilan **ikki nusxa**
+bo'lib qoldi — buni testning o'zi ushladi. Eski ro'yxat olib tashlandi;
+**forma qoldi** (unda «keyingi qadam» sanasi bor — u «Bugungi qo'ng'iroqlar»
+ro'yxatini boqadi).
+
+Tekshirildi: 638 ta test + 73 ta ekran testi. Mijozsiz lidda izoh haqiqiy
+forma orqali yozib, lentada chiqishi brauzerda ko'rildi.
+
 ## Tinglovchi endi o'zi qayta ishga tushadi — 2026-07-28
 
 `pnpm tg-doctor` aniq ko'rsatdi: hammasi joyida, faqat akkaunt yonida
