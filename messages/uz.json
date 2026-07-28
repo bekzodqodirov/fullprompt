@@ -1031,7 +1031,15 @@
     "feedBoxes": "quti",
     "feedNotePlaceholder": "Ichki izoh (mijoz KO‘RMAYDI)…",
     "feedNoteSave": "Izoh",
-    "feedNoteSaving": "Saqlanmoqda…"
+    "feedNoteSaving": "Saqlanmoqda…",
+    "feedCrate": "Yashik yig‘ildi",
+    "feedDeparted": "Mashina yo‘lga chiqdi",
+    "feedArrived": "O‘zbekistonga yetib keldi",
+    "feedCancelled": "Partiya bekor qilindi — yuk qaytdi",
+    "feedLost": "Karobka yo‘qoldi",
+    "feedHandover": "Mijozga topshirildi",
+    "feedReady": "olib ketsa bo‘ladi",
+    "feedDebtOverride": "qarz bilan berildi"
   },
   "navShort": {
     "home": "Bosh",

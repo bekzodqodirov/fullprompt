@@ -1031,7 +1031,15 @@
     "feedBoxes": "箱",
     "feedNotePlaceholder": "内部备注（客户看不到）…",
     "feedNoteSave": "备注",
-    "feedNoteSaving": "保存中…"
+    "feedNoteSaving": "保存中…",
+    "feedCrate": "木箱已打包",
+    "feedDeparted": "车辆已发出",
+    "feedArrived": "已抵达乌兹别克斯坦",
+    "feedCancelled": "批次已取消 — 货物退回",
+    "feedLost": "箱子丢失",
+    "feedHandover": "已交付客户",
+    "feedReady": "可提货",
+    "feedDebtOverride": "带欠款放行"
   },
   "navShort": {
     "home": "首页",

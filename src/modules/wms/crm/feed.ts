@@ -26,11 +26,19 @@ import { db } from '../../platform/db/client';
  *   receipts            (client_id)               cargo received
  *   client_transactions (client_id, created_at)   money
  *
- * Deliberately NOT box_movements: 10,588 rows carrying ref_type/ref_id with no
- * foreign key, reachable from a client only through boxes → lots → receipts.
- * Every box of every consignment would be a feed row, which is not a timeline,
- * it is a log — and it would need a join nothing indexes. Cargo enters the
- * feed at the moment a person cares about, which is the receipt.
+ * The journey itself comes from `box_movements`, GROUPED. That table is a log
+ * — 10,920 rows for 4,401 consignments, one per box — and rendering it raw
+ * would be one feed line per carton, which is not a timeline. Grouping by the
+ * batch (`ref_id`) collapses 2,082 departure rows to 1,198: one line per truck
+ * per client, which is the thing a person actually remembers. The three-hop
+ * path to a client (receipts → lots → boxes → movements) has no index of its
+ * own but walks three that exist; measured on the owner's busiest client
+ * (1,834 movement rows) it is 4.3 ms warm.
+ *
+ * A LOSS is grouped by DAY instead, because `marked_lost` and
+ * `inventory_missing` are written with `ref_id` NULL — grouping those by
+ * `ref_id` would collapse every box a client ever lost into a single row
+ * dated whenever the last one happened.
  *
  * One `UNION ALL` of narrow selects rather than five round trips: postgres
  * sorts the union once, the LIMIT applies to the whole thing, and paging by a
@@ -44,6 +52,12 @@ export type FeedKind =
   | 'tg_pending'
   | 'note'
   | 'cargo'
+  | 'crate'
+  | 'departed'
+  | 'arrived'
+  | 'cancelled'
+  | 'lost'
+  | 'handover'
   | 'charge'
   | 'payment';
 
@@ -155,6 +169,80 @@ export async function clientFeed(
       FROM client_transactions t
       JOIN users u ON u.id = t.created_by
       WHERE t.client_id = ${clientId} AND t.created_at < ${cutoff}
+
+      UNION ALL
+
+      -- Handed over. The end of the job, and the only source that names the
+      -- human being who actually carried the cargo away.
+      SELECT
+        'hv-' || h.id::text, 'handover', h.created_at, u.full_name, h.note,
+        jsonb_build_object(
+          'person', h.person_name, 'phone', h.person_phone,
+          'warehouse', w.code, 'debtOverride', h.debt_ok
+        )
+      FROM handovers h
+      JOIN warehouses w ON w.id = h.warehouse_id
+      JOIN users u ON u.id = h.created_by
+      WHERE h.client_id = ${clientId} AND h.kind = 'issued_to_client'
+        AND h.created_at < ${cutoff}
+
+      UNION ALL
+
+      -- A crate is a service the client PAYS for, so it belongs beside the
+      -- money rather than among the box scans.
+      SELECT
+        'cr-' || cr.id::text, 'crate', cr.created_at, NULL, NULL,
+        jsonb_build_object('code', cr.code, 'kind', cr.kind, 'warehouse', w.code)
+      FROM crates cr
+      JOIN warehouses w ON w.id = cr.warehouse_id
+      WHERE cr.client_id = ${clientId} AND cr.created_at < ${cutoff}
+
+      UNION ALL
+
+      -- The journey, one line per truck rather than one per carton.
+      SELECT
+        'bm-' || mv.cause || '-' || coalesce(mv.ref_id::text, mv.day::text) AS id,
+        CASE mv.cause
+          WHEN 'batch_departed' THEN 'departed'
+          WHEN 'batch_cancelled' THEN 'cancelled'
+          WHEN 'marked_lost' THEN 'lost'
+          WHEN 'inventory_missing' THEN 'lost'
+          ELSE 'arrived'
+        END,
+        mv.at, NULL, NULL,
+        jsonb_build_object(
+          'boxes', mv.boxes,
+          'batch', b.code,
+          'plate', b.vehicle_plate,
+          'warehouse', w.code,
+          'ready', mv.ready
+        )
+      FROM (
+        SELECT
+          bm.cause,
+          bm.ref_id,
+          date_trunc('day', bm.created_at) AS day,
+          max(bm.created_at) AS at,
+          count(*) AS boxes,
+          max(bm.to_warehouse_id::text) AS to_wh,
+          bool_or(bm.to_status = 'ready_for_pickup') AS ready
+        FROM box_movements bm
+        JOIN boxes bx ON bx.id = bm.box_id
+        JOIN receipt_lots rl ON rl.id = bx.lot_id
+        JOIN receipts rr ON rr.id = rl.receipt_id
+        WHERE rr.client_id = ${clientId}
+          AND bm.created_at < ${cutoff}
+          AND bm.cause IN (
+            'batch_departed', 'unload_scan', 'undocumented_transfer',
+            'batch_cancelled', 'marked_lost', 'inventory_missing'
+          )
+        -- By batch where there is one; by DAY where there is not, because a
+        -- loss carries ref_id NULL and would otherwise collapse a client's
+        -- entire history of losses into one row.
+        GROUP BY bm.cause, bm.ref_id, date_trunc('day', bm.created_at)
+      ) mv
+      LEFT JOIN batches b ON b.id = mv.ref_id
+      LEFT JOIN warehouses w ON w.id::text = mv.to_wh
     ) feed
     ORDER BY at DESC
     LIMIT ${limit}

@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Lentaga yukning butun yo'li qo'shildi — 2026-07-28
+
+Lentaning birinchi variantida yuk **kelishi** bor edi-yu, keyin to'g'ridan-to'g'ri
+pulga o'tib ketardi. Kargo kompaniyasi uchun esa asosiy voqea aynan orada:
+
+**keldi → yashik → yo'lga chiqdi → yetib keldi → topshirildi**
+
+Endi hammasi bor:
+
+| | |
+|---|---|
+| 📥 | yuk omborga keldi |
+| 🧰 | yashik yig'ildi |
+| 🚚 | **mashina yo'lga chiqdi** (partiya kodi, nechta quti) |
+| 📍 | **O'zbekistonga yetib keldi** — «olib ketsa bo'ladi» belgisi bilan |
+| ✅ | **mijozga topshirildi** — kim olib ketgani, telefoni bilan |
+| ⚠️ | karobka yo'qoldi |
+| ↩️ | partiya bekor qilindi — yuk qaytdi |
+
+Qarz bilan berilgan bo'lsa, topshirish qatorida **«qarz bilan berildi»** deb
+turadi — buni endi audit jurnalidan qidirish shart emas.
+
+### Bitta quti emas, bitta mashina
+
+Bazada har bir **qutining** har bir harakati alohida yozilади — 10 920 qator.
+Uni shundayligicha chiqarsa, bir kunlik yuklashdan 341 qator chiqib ketardi.
+Shuning uchun **partiya bo'yicha birlashtirildi**: 2 082 qator → 1 198 qator,
+ya'ni **bitta mashina — bitta qator**. Odam ham shunday eslaydi.
+
+Yo'qolgan qutilar esa **kun bo'yicha** birlashtiriladi — ular partiyaga
+bog'lanmagan, partiya bo'yicha birlashtirsa mijozning butun tarixidagi barcha
+yo'qotish bitta qatorga yopishib qolar edi.
+
+Tekshirildi: 630 ta test + 73 ta ekran testi. Eng band mijozda o'lchandi —
+1 834 ta harakat qatori, lenta 4 ms da yig'ildi.
+
 ## 🕘 «Lenta» — mijozning butun tarixi bitta ustunda — 2026-07-28
 
 Siz aytgan narsa: *«amocrm bitrixlardek katta polyada ketma-ketlikda ko'rinib

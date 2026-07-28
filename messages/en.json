@@ -1031,7 +1031,15 @@
     "feedBoxes": "boxes",
     "feedNotePlaceholder": "Internal note (the client will NOT see it)…",
     "feedNoteSave": "Note",
-    "feedNoteSaving": "Saving…"
+    "feedNoteSaving": "Saving…",
+    "feedCrate": "Crate packed",
+    "feedDeparted": "The truck left",
+    "feedArrived": "Arrived in Uzbekistan",
+    "feedCancelled": "Batch cancelled — cargo returned",
+    "feedLost": "A box was lost",
+    "feedHandover": "Handed to the client",
+    "feedReady": "ready to collect",
+    "feedDebtOverride": "released with a debt"
   },
   "navShort": {
     "home": "Home",

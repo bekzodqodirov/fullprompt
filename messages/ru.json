@@ -1031,7 +1031,15 @@
     "feedBoxes": "кор.",
     "feedNotePlaceholder": "Внутренняя заметка (клиент НЕ увидит)…",
     "feedNoteSave": "Заметка",
-    "feedNoteSaving": "Сохраняю…"
+    "feedNoteSaving": "Сохраняю…",
+    "feedCrate": "Ящик собран",
+    "feedDeparted": "Машина выехала",
+    "feedArrived": "Прибыл в Узбекистан",
+    "feedCancelled": "Партия отменена — груз вернулся",
+    "feedLost": "Коробка потеряна",
+    "feedHandover": "Выдан клиенту",
+    "feedReady": "можно забирать",
+    "feedDebtOverride": "выдано с долгом"
   },
   "navShort": {
     "home": "Главная",

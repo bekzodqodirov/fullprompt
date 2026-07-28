@@ -31,7 +31,13 @@ const MARK: Record<FeedKind, string> = {
   tg_out: '↩️',
   tg_pending: '◷',
   note: '📝',
-  cargo: '📦',
+  cargo: '📥',
+  crate: '🧰',
+  departed: '🚚',
+  arrived: '📍',
+  cancelled: '↩️',
+  lost: '⚠️',
+  handover: '✅',
   charge: '🧾',
   payment: '💵',
 };
@@ -42,6 +48,12 @@ const TONE: Record<FeedKind, string> = {
   tg_pending: 'ml-auto border border-dashed border-line-strong text-ink-500',
   note: 'bg-warn/10',
   cargo: 'bg-good/10',
+  crate: 'bg-surface-sunken',
+  departed: 'bg-brand-50',
+  arrived: 'bg-good/10',
+  cancelled: 'bg-warn/10',
+  lost: 'bg-bad/10 text-bad',
+  handover: 'bg-good/10',
   charge: 'bg-surface-sunken',
   payment: 'bg-good/10',
 };
@@ -57,6 +69,12 @@ export const FEED_LABELS: Record<FeedKind, string> = {
   tg_pending: 'feedQueued',
   note: 'feedNote',
   cargo: 'feedCargo',
+  crate: 'feedCrate',
+  departed: 'feedDeparted',
+  arrived: 'feedArrived',
+  cancelled: 'feedCancelled',
+  lost: 'feedLost',
+  handover: 'feedHandover',
   charge: 'feedCharge',
   payment: 'feedPayment',
 };
@@ -156,6 +174,38 @@ function FeedRow({
         <p className="font-semibold">
           {String(item.meta.number ?? '')} · {String(item.meta.warehouse ?? '')} ·{' '}
           {String(item.meta.boxes ?? 0)} {t('feedBoxes')}
+        </p>
+      )}
+      {(item.kind === 'departed' ||
+        item.kind === 'arrived' ||
+        item.kind === 'cancelled' ||
+        item.kind === 'lost') && (
+        <p className="font-semibold">
+          {[
+            item.meta.batch ? String(item.meta.batch) : null,
+            item.meta.plate ? String(item.meta.plate) : null,
+            item.meta.warehouse ? String(item.meta.warehouse) : null,
+            `${String(item.meta.boxes ?? 0)} ${t('feedBoxes')}`,
+            // Only the arrival distinguishes "ready to collect" from "here":
+            // `unload.ts` decides that per warehouse, so it is read, not assumed.
+            item.kind === 'arrived' && item.meta.ready === true ? t('feedReady') : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      )}
+      {item.kind === 'crate' && (
+        <p className="font-semibold">
+          {String(item.meta.code ?? '')} · {String(item.meta.warehouse ?? '')}
+        </p>
+      )}
+      {item.kind === 'handover' && (
+        <p className="font-semibold">
+          {String(item.meta.person ?? '')} {String(item.meta.phone ?? '')} ·{' '}
+          {String(item.meta.warehouse ?? '')}
+          {/* A manager overrode the debt gate to let this cargo go. Exactly the
+              kind of thing the owner wants visible in one place. */}
+          {item.meta.debtOverride === true && ` · ⚠ ${t('feedDebtOverride')}`}
         </p>
       )}
       {(item.kind === 'charge' || item.kind === 'payment') && (
