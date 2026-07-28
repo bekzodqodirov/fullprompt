@@ -6,6 +6,7 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import { cancelQueued, OutboxError, queueReply, replyAccountFor } from './outbox';
 import { excludeChatForClient } from './chat-rules';
 import { addActivity } from './service';
+import { announceNote } from './internal-chat';
 
 /**
  * Queue a reply to a client — phase 4.
@@ -129,16 +130,23 @@ export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Prom
   const entityId = String(form.get('entityId') ?? '');
   const note = String(form.get('note') ?? '').trim();
   if (!note) return { error: 'empty' };
-  // Only the two places a timeline lives. Anything else posted here is a
-  // forged form, and the answer to a forged form is a refusal.
-  if (entityType !== 'client' && entityType !== 'lead') return { error: 'forbidden' };
+  // Only the places a timeline lives. Anything else posted here is a forged
+  // form, and the answer to a forged form is a refusal.
+  if (entityType !== 'client' && entityType !== 'lead' && entityType !== 'deal') {
+    return { error: 'forbidden' };
+  }
 
   await addActivity(
     { entityType, entityId, kind: 'note', note },
     { actorId: who.id, ...(await requestMeta()) },
   );
+  // The Telegram half of the internal chat. After the save and never blocking
+  // it: a note that saved but did not ping is a small failure, the reverse
+  // would be a large one.
+  await announceNote({ entityType, entityId, note, authorId: who.id }).catch(() => {});
   revalidatePath(`/admin/clients/${entityId}`);
   revalidatePath(`/crm/leads/${entityId}`);
+  revalidatePath(`/bitimlar/${entityId}`);
   revalidatePath('/bitimlar', 'layout');
   revalidatePath('/crm', 'layout');
   return { ok: true };

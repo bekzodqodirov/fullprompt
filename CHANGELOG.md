@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## Ichki chat — Telegramda. Tasklar — Telegramda, havola bilan — 2026-07-28
+
+Siz belgilagan yo'l: yozuv kartada qoladi, gap Telegramda bo'ladi.
+
+### 📝 Izoh yozdingiz — kerakli hodimga Telegram keladi
+
+Mijoz, lid yoki **bitim** kartasida izoh qoldirsangiz, Telegramga shunday
+xabar boradi:
+
+```
+📝 Bekzod · B-000123 Guangzhou partiya
+Narxni qayta ko'ramiz, mijoz 10% so'rayapti
+🔗 https://gsrwms.uz/bitimlar/…
+```
+
+**Kimga borishi** o'ylab qo'yilgan:
+
+- kartani **olib borayotgan** hodimga (lid/bitim egasi);
+- shu kartada **avval yozgan** har kimga — suhbatga yozib qo'shilasiz;
+- **o'zingizga emas** — o'z izohingiz haqida xabar kelsa, hamma bu turdagi
+  xabarni o'chirib qo'yadi.
+
+Ataylab **rol bo'yicha hammaga** emas: «butun sotuvga har izoh» — bir haftada
+o'chirib qo'yiladigan kanal.
+
+### 🧾 Bitimning O'Z chati
+
+Bitim kartasidagi izoh **shu bitimga** yoziladi, mijozga emas. Bitta mijozning
+ikkita bitimi — ikkita alohida suhbat: biri haqidagi narx bahsi ikkinchisida
+chiqmaydi. (Migratsiya **0039**, faqat qo'shimcha.)
+
+### 🆕 Task berdingiz — hodimga darhol Telegram, havola bilan
+
+- Yangi vazifa yoki qayta topshirilganda — **bajaruvchiga**;
+- bajarilganda — **bergan odamga**, natija matni bilan;
+- har xabarda **kartaga to'g'ri havola** (bitim, mijoz, partiya…);
+- o'zingizga yozgan vazifa haqida xabar kelmaydi.
+
+Ertalabki ro'yxat ham qoladi — bu «ertaga sakkizda bilasiz» bilan «hozir
+bilasiz» orasidagi farq.
+
+### Rol bo'yicha joylashuv haqida
+
+Tekshirdim: bu qism allaqachon qurilgan ekan — har rolning o'z 4 ta pastki
+tugmasi (skladchiga priyomka, sotuvchiga CRM, buxgalterga pul) va o'z menyusi
+bor. Yetishmagani — hech nima **o'zi kelib aytmasligi** edi. Endi ish
+Telegramdan keladi, havolasi bilan; ekranlar esa bajarish joyi.
+
+Tekshirildi: 650 ta test + 73 ta ekran testi.
+
 ## Lenta endi lid kartochkasida ham jonli + ichki chat hamma joyda — 2026-07-28
 
 Siz ikkita kamchilik aytdingiz. Ikkalasining ildizi bitta chiqdi.

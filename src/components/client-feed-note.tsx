@@ -16,8 +16,8 @@ export function FeedNoteBox({
   entityId,
   labels,
 }: {
-  /** Where the note lands: the client, or — before one exists — the lead. */
-  entityType: 'client' | 'lead';
+  /** Where the note lands: the deal on a deal card, else the client, else the lead. */
+  entityType: 'client' | 'lead' | 'deal';
   entityId: string;
   labels: { placeholder: string; save: string; saving: string };
 }) {

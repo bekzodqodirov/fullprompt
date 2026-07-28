@@ -274,6 +274,13 @@
       "when": 1785190000007,
       "tag": "0038_tg_phone_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785190000008,
+      "tag": "0039_deal_chat",
+      "breakpoints": true
     }
   ]
 }

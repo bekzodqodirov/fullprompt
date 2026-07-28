@@ -393,7 +393,7 @@ export async function listLeads(filters: {
 // --- Contact history --------------------------------------------------------
 
 export const activitySchema = z.object({
-  entityType: z.enum(['lead', 'client']),
+  entityType: z.enum(['lead', 'client', 'deal']),
   entityId: z.string().uuid(),
   kind: z.enum(['call', 'meeting', 'message', 'note']),
   note: z.string().trim().min(1).max(4000),

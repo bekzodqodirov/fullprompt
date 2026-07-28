@@ -6,6 +6,8 @@ import {
   clients,
   clientTransactions,
   crmActivities,
+  dealStages,
+  deals,
   leads,
   leadStages,
   tgMessages,
@@ -29,6 +31,7 @@ const at = (minutesAgo: number) => new Date(STAMP - minutesAgo * 60_000);
 let managerId: string;
 let clientId: string;
 let leadId: string;
+let dealId: string;
 
 beforeAll(async () => {
   const [staff] = await db.select().from(users).limit(1);
@@ -76,6 +79,26 @@ beforeAll(async () => {
     createdBy: managerId,
     createdAt: at(10),
   });
+  const [dstage] = await db.select().from(dealStages).limit(1);
+  const [d] = await db
+    .insert(deals)
+    .values({
+      code: `B-FD${STAMP}`.slice(0, 14),
+      clientId,
+      stageId: dstage!.id,
+      createdBy: managerId,
+    })
+    .returning({ id: deals.id });
+  dealId = d!.id;
+  await db.insert(crmActivities).values({
+    entityType: 'deal',
+    entityId: dealId,
+    kind: 'note',
+    note: 'bitim bo‘yicha izoh',
+    happenedAt: at(3),
+    createdBy: managerId,
+  });
+
   // And one note on the LEAD — the case that used to vanish.
   await db.insert(crmActivities).values({
     entityType: 'lead',
@@ -88,6 +111,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
+  await db.delete(deals).where(eq(deals.id, dealId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, clientId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
   await db.delete(tgMessages).where(eq(tgMessages.clientId, clientId));
@@ -142,5 +167,19 @@ describe('a lead that is not a client yet — the case the owner caught', () => 
     // A wrong id must yield an empty feed, not somebody else's notes.
     const items = await clientFeed(null, { leadId: clientId });
     expect(items).toHaveLength(0);
+  });
+});
+
+describe('the deal’s own chat — per job, not per client', () => {
+  it('shows on the deal card, merged with the client history', async () => {
+    const items = await clientFeed(clientId, { dealId });
+    expect(items[0]!.body).toBe('bitim bo‘yicha izoh');
+  });
+
+  it('does NOT leak onto the plain client card', async () => {
+    // Two deals with one client are two conversations; a price argument about
+    // one must not surface everywhere the client appears.
+    const items = await clientFeed(clientId);
+    expect(items.map((i) => i.body)).not.toContain('bitim bo‘yicha izoh');
   });
 });

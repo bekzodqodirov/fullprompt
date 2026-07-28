@@ -13,7 +13,9 @@ export const MUTE_GROUPS = {
   // warehouse summary is not saying "stop telling me about the work I was
   // personally given", and that is the one message nobody should lose by
   // accident.
-  tasks: ['TasksDue'],
+  // TaskAssigned/TaskDone are the instant halves of the same story the
+  // morning digest tells; someone silencing one means all of it.
+  tasks: ['TasksDue', 'TaskAssigned', 'TaskDone'],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo
   // that arrived at a different size to the one the client was quoted is not,
@@ -34,6 +36,8 @@ export const MUTE_GROUPS = {
     'PlanApproved',
     'PlanChangesRequested',
     'InventoryCompleted',
+    // A colleague wrote on a card you are involved in.
+    'InternalNote',
   ],
 } as const;
 

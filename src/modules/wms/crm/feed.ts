@@ -92,7 +92,7 @@ interface Row extends Record<string, unknown> {
  */
 export async function clientFeed(
   clientId: string | null,
-  opts: { limit?: number; before?: Date; leadId?: string | null } = {},
+  opts: { limit?: number; before?: Date; leadId?: string | null; dealId?: string | null } = {},
 ): Promise<FeedItem[]> {
   const limit = Math.min(Math.max(opts.limit ?? 60, 1), 200);
   // A LEAD is not a client, and most leads never become one — but the sales
@@ -102,6 +102,9 @@ export async function clientFeed(
   // which is the correct answer rather than a special case: the lead's card
   // still gets a living lenta instead of a blank.
   const leadId = opts.leadId ?? null;
+  // The deal's own chat (owner: "BITIM uchun chatlar bo'lishi kerak ichki
+  // hodimlar bilan"). Same NULL trick as the lead: absent, the branch is inert.
+  const dealId = opts.dealId ?? null;
   // A bound every branch can use, so the union never sorts more than it must.
   const before = opts.before ?? null;
   const cutoff = before ? sql`${before.toISOString()}::timestamptz` : sql`'infinity'::timestamptz`;
@@ -144,6 +147,7 @@ export async function clientFeed(
       WHERE (
           (a.entity_type = 'client' AND a.entity_id = ${clientId})
           OR (a.entity_type = 'lead' AND a.entity_id = ${leadId})
+          OR (a.entity_type = 'deal' AND a.entity_id = ${dealId})
         )
         AND a.happened_at < ${cutoff}
 

@@ -1011,7 +1011,7 @@ export const crmActivities = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client')`),
+    check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client', 'deal')`),
     check('crm_activities_kind_check', sql`${t.kind} IN ('call', 'meeting', 'message', 'note')`),
     index('crm_activities_entity_idx').on(t.entityType, t.entityId, t.happenedAt),
   ],

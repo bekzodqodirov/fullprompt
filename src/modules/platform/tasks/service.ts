@@ -5,6 +5,8 @@ import { db, type Db, type Tx } from '../db/client';
 import { taskTypes, tasks, users } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { entitySpec } from '../fields/registry';
+import { taskLink } from '../notifications/links';
+import { notifyStaffTelegram, userName } from '../notifications/staff';
 
 /**
  * Work one person gives another (owner: "tasklar calendarlar").
@@ -231,6 +233,30 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
       about: input.entityType ? `${input.entityType}:${input.entityId}` : null,
     },
   });
+
+  // Straight to the assignee's Telegram, with the link (owner: "tasklarni
+  // telegramdan jo'natadigan qil, task linklari bilan"). The morning digest
+  // still runs; this is the difference between "you will find out tomorrow at
+  // eight" and "you know now" — which for a warehouse task is the difference
+  // between today's truck and the next one. Never to yourself: a task you
+  // just typed is not news.
+  if (input.assigneeId !== ctx.actorId) {
+    const created = (await byId(row.id))!;
+    const label = created.entityType
+      ? ((await aboutLabels([created])).get(`${created.entityType}:${created.entityId}`) ?? null)
+      : null;
+    await notifyStaffTelegram({
+      userIds: [input.assigneeId],
+      type: 'TaskAssigned',
+      text:
+        `🆕 Yangi vazifa: ${input.title}` +
+        (dueAt ? `\n📅 ${dueAt.toISOString().slice(0, 10)}` : '') +
+        (label ? `\n📌 ${label}` : '') +
+        `\n👤 ${await userName(ctx.actorId)}` +
+        `\n🔗 ${taskLink(created.entityType, created.entityId)}`,
+    }).catch(() => {});
+    return created;
+  }
   return (await byId(row.id))!;
 }
 
@@ -269,6 +295,20 @@ export async function completeTask(
     before: { status: before.status },
     after: { status: 'done', result: result.trim() || null },
   });
+
+  // The person who ASKED finds out it is done — with what was done, because
+  // "bajarildi" with no result is a message that starts a phone call.
+  if (before.createdBy && before.createdBy !== ctx.actorId) {
+    await notifyStaffTelegram({
+      userIds: [before.createdBy],
+      type: 'TaskDone',
+      text:
+        `✅ Bajarildi: ${before.title}` +
+        (result.trim() ? `\n${result.trim().slice(0, 300)}` : '') +
+        `\n👤 ${await userName(ctx.actorId)}` +
+        `\n🔗 ${taskLink(before.entityType, before.entityId)}`,
+    }).catch(() => {});
+  }
 
   // Finishing one occurrence is what schedules the next. Nothing materialises
   // a queue ahead of time, so a series can never pile up unfinished copies.
@@ -359,6 +399,19 @@ export async function reassignTask(
     before: { assigneeId: before.assigneeId },
     after: { assigneeId },
   });
+
+  // Handed to somebody new: they find out the same way a fresh assignment
+  // lands, not tomorrow morning.
+  if (assigneeId !== ctx.actorId) {
+    await notifyStaffTelegram({
+      userIds: [assigneeId],
+      type: 'TaskAssigned',
+      text:
+        `🆕 Sizga vazifa o'tkazildi: ${before.title}` +
+        `\n👤 ${await userName(ctx.actorId)}` +
+        `\n🔗 ${taskLink(before.entityType, before.entityId)}`,
+    }).catch(() => {});
+  }
 }
 
 export async function updateTask(

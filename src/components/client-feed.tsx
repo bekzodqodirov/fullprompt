@@ -88,6 +88,7 @@ function money(meta: Record<string, unknown>): string {
 export async function ClientFeed({
   clientId,
   leadId = null,
+  dealId = null,
   limit = 60,
   /** On a card the box is short; on a dedicated screen it fills the height. */
   tall = false,
@@ -95,6 +96,9 @@ export async function ClientFeed({
   clientId: string | null;
   /** Set on a lead card: the lenta then lives even before there is a client. */
   leadId?: string | null;
+  /** Set on a deal card: notes written here belong to THIS job, and the deal's
+      own chat shows alongside the client's history. */
+  dealId?: string | null;
   limit?: number;
   tall?: boolean;
 }) {
@@ -103,14 +107,14 @@ export async function ClientFeed({
   // leads, since a lead usually is not a client yet. The owner read that as
   // "it was never added", and from where he sat it hadn't been: a panel that
   // renders nothing did not ship in any sense that matters.
-  if (!clientId && !leadId) return null;
+  if (!clientId && !leadId && !dealId) return null;
   const actor = await getActor();
   if (!actor?.permissions.has('crm.leads') && !actor?.permissions.has('clients.manage')) {
     return null;
   }
 
   const t = await getTranslations('crm');
-  const items = await clientFeed(clientId, { limit, leadId });
+  const items = await clientFeed(clientId, { limit, leadId, dealId });
 
   return (
     <section className="card space-y-2" data-testid="client-feed">
@@ -138,8 +142,11 @@ export async function ClientFeed({
             not, and must not vanish with it — it is the staff's half. */}
         <TelegramReply clientId={clientId} compact />
         <FeedNoteBox
-          entityType={clientId ? 'client' : 'lead'}
-          entityId={clientId ?? leadId!}
+          // On a deal card the note belongs to THIS job: two deals with one
+          // client are two conversations, and a price argument about one must
+          // not surface on the other. Elsewhere: the client, then the lead.
+          entityType={dealId ? 'deal' : clientId ? 'client' : 'lead'}
+          entityId={dealId ?? clientId ?? leadId!}
           labels={{
             placeholder: t('feedNotePlaceholder'),
             save: t('feedNoteSave'),
