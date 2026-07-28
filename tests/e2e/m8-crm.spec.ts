@@ -99,11 +99,25 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await page.getByTestId('stage-tab').first().click();
   await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
 
+  // ...and it really landed, not just on screen. The board moves a card the
+  // moment it is tapped and reconciles afterwards, so the assertion above is
+  // satisfied by optimistic placement alone — a reload is what asks the
+  // SERVER. Skipping it let the next navigation race the write: green here,
+  // red on a slower runner (#154 family, but timing rather than leftovers).
+  await page.reload();
+  await page.getByTestId('stage-tab').first().click();
+  await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
+
   // Won → convert. The convert panel opens by itself on a won stage, so the
   // last step of a deal is never a tap away from being forgotten.
   // Both funnel shapes are in the DOM (CSS decides which one is on screen),
   // so a click has to say which one it means.
   await page.goto('/crm?scope=all');
+  // Say which stage, rather than trusting the one the funnel opens on: that
+  // default is "the first stage that has anything in it", which depends on
+  // what every other lead in the database is doing — and under `scope=all`
+  // that includes leads this test never created.
+  await page.getByTestId('stage-tab').first().click();
   await page.getByTestId('funnel-mobile').getByText(`Sinov mijoz ${runId}`).click();
   await expect(page.getByLabel(`Shahar ${runId}`)).toHaveValue('Andijon');
   await page.getByTestId('stage-won').click();
