@@ -968,7 +968,10 @@
     "cancelMove": "Bekor qilish",
     "prevStage": "Oldingi bosqich",
     "nextStage": "Keyingi bosqich",
-    "fieldsMoved": "«Maydonlar va obyektlar»ga ko‘chdi"
+    "fieldsMoved": "«Maydonlar va obyektlar»ga ko‘chdi",
+    "telegramThread": "Telegram yozishmalari",
+    "telegramClient": "Mijoz",
+    "telegramMedia": "ilova"
   },
   "navShort": {
     "home": "Bosh",

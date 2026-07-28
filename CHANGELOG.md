@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## Mijoz yozishmalari CRM'ga — 1-bosqich — 2026-07-27
+
+Siz aytdingiz: mijozlar bilan **95 % Telegram orqali** gaplashiladi, menejerning
+shaxsiy telefonida. Menejer ketsa — kim nima va'da qilgani, qanday narx
+aytilgani u bilan ketadi.
+
+### Nima qilindi
+
+Bir martalik ko'chirish: menejer bir marta kiradi, dastur **mijozlar bilan
+yozishmalarni** o'qib CRM'ga yozadi va chiqadi.
+
+Natijasi mijoz kartasida — **«✈️ Telegram yozishmalari»** bo'limida, yuki va
+balansi yonida. Yangisi tepada, chunki savol odatda «oxirgi marta nima
+degandik».
+
+### Xavfsizlik — bu yerda eng muhimi
+
+- **Serverda hech kimning Telegram kaliti qolmaydi.** Seans faqat dastur
+  ishlagan vaqtda, xotirada turadi va tugashi bilan yo'qoladi.
+- **Faqat o'qiydi.** Xabar yuboradigan kod yo'q — akkauntni aynan yuborish
+  bloklaydi.
+- **Faqat mijozlar bilan suhbat olinadi.** Oila, do'stlar, boshqa ishlar,
+  guruhlar, botlar — o'qib o'tiladi va saqlanmaydi, sanalmaydi, nomi bilan
+  jurnalga yozilmaydi.
+
+Oxirgisi shunchaki va'da emas: jadvalda **mijozsiz xabarni qo'yadigan joy
+yo'q**. Ya'ni kelajakda kimdir e'tiborsizlik qilsa ham, baza qabul qilmaydi.
+
+### Sizdan
+
+1. `.env` ga `TELEGRAM_API_ID` va `TELEGRAM_API_HASH` (bir marta, butun
+   kompaniya uchun)
+2. **Menejerlarga ayting: mijozlarni telefon kitobiga kontakt qilib saqlasin.**
+   Telegram raqamni faqat kontaktlarga ko'rsatadi — saqlanmagani bog'lanmaydi.
+3. Bekzod va Siroj yonida turib bir martadan ishga tushirasiz
+
+To'liq yo'riqnoma: `docs/TELEGRAM-CRM.md`.
+
+### Keyingi bosqichlar
+
+2 — «Suhbatlar» ekrani · 3 — jonli qabul · 4 — CRM'dan javob berish.
+
 ## Partiya va planni bekor qilish — 2026-07-27
 
 Siz aytgan edingiz: *«dev payitida tekshirish uchun batch mashinalar ochib

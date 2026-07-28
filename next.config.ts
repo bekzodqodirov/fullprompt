@@ -23,6 +23,9 @@ const NODE_ONLY_PACKAGES = [
   'pg',
   'pg-native',
   'grammy',
+  // MTProto client for the CRM chat import — a large node-only package that
+  // must never be reachable from a browser bundle.
+  'telegram',
   // Loads a wasm binary (harfbuzz) — webpack must not try to parse it.
   'subset-font',
   'harfbuzzjs',

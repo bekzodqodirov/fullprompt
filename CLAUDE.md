@@ -111,16 +111,17 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 291 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 294 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
+| Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 
 ## State — 2026-07-27
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-475 unit/integration + 64 e2e, verified in CI's order on a fresh database.
+488 unit/integration + 64 e2e, verified in CI's order on a fresh database.
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -210,6 +211,15 @@ deployed:
   answered 401 and so retried for ever (410 is the only answer that stops it —
   latent since the driver app shipped), open tasks on the batch stayed open,
   and `batchRegister` had no status filter at all.
+
+- **Client conversations into the CRM, phase 1** (#292-294, owner: "95 foiz
+  telegramda gaplashamiz"). He chose the user-account route with the risks
+  stated. History import only: `pnpm tg-import` logs in with a code the manager
+  types, reads, exits — **no session is stored anywhere** and there is no code
+  path that sends. Only chats matching the client book are kept, enforced by
+  `tg_messages.client_id NOT NULL`. Everything it decides is pure and unit
+  tested; the gramjs glue is a thin shell. Test accounts: Bekzod, Siroj.
+  Phases 2-4 (chat screen, live receive, reply) not started.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

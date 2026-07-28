@@ -1,9 +1,16 @@
 import 'dotenv/config';
-import { eq, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { attachments, clients, leads, users, warehouses } from '@/modules/platform/db/schema';
+import {
+  attachments,
+  clients,
+  leads,
+  tgMessages,
+  users,
+  warehouses,
+} from '@/modules/platform/db/schema';
 import {
   addActivity,
   convertLead,
@@ -454,5 +461,96 @@ describe('the follow-up digest reaches the phone intact', () => {
     expect(text).not.toBe('CrmFollowUps');
     expect(text).not.toContain('undefined');
     expect(text).toContain('📞');
+  });
+});
+
+/**
+ * The manager's Telegram, in the CRM.
+ *
+ * The script that talks to Telegram cannot be tested without an account, so
+ * everything it DECIDES lives in `telegram-import.ts` and is unit-tested. What
+ * is proved here is the other half: that a row written by that script is
+ * readable as one client's thread, and that running the import twice cannot
+ * double it.
+ */
+describe('telegram conversations on the client card', () => {
+  it('re-running the import writes nothing the second time', async () => {
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: `TG${String(Date.now()).slice(-6)}`, name: 'Telegram client' })
+      .returning();
+
+    const row = {
+      clientId: client!.id,
+      managerUserId: actorId,
+      peerId: 555_000_111n,
+      tgMessageId: 42n,
+      direction: 'in' as const,
+      body: 'Yuk qachon keladi?',
+      sentAt: new Date('2026-07-20T10:00:00Z'),
+    };
+
+    const first = await db.insert(tgMessages).values(row).onConflictDoNothing().returning();
+    expect(first).toHaveLength(1);
+
+    // The same message, seen again on a second run. The unique index is what
+    // makes the import safe to repeat — not a "have I done this" flag that
+    // somebody has to remember to set.
+    const second = await db.insert(tgMessages).values(row).onConflictDoNothing().returning();
+    expect(second).toHaveLength(0);
+
+    // ...but the SAME conversation read from a different manager's account is
+    // a different thread, and both are worth keeping.
+    const other = await db
+      .insert(users)
+      .values({
+        phone: `+99890${String(Date.now()).slice(-7)}`,
+        fullName: 'Other manager',
+        passwordHash: 'x',
+      })
+      .returning();
+    const third = await db
+      .insert(tgMessages)
+      .values({ ...row, managerUserId: other[0]!.id })
+      .onConflictDoNothing()
+      .returning();
+    expect(third).toHaveLength(1);
+  });
+
+  it('reads back as one client’s thread, newest first', async () => {
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: `TH${String(Date.now()).slice(-6)}`, name: 'Thread client' })
+      .returning();
+    await db.insert(tgMessages).values([
+      {
+        clientId: client!.id,
+        managerUserId: actorId,
+        peerId: 1n,
+        tgMessageId: 1n,
+        direction: 'in',
+        body: 'birinchi',
+        sentAt: new Date('2026-07-01T09:00:00Z'),
+      },
+      {
+        clientId: client!.id,
+        managerUserId: actorId,
+        peerId: 1n,
+        tgMessageId: 2n,
+        direction: 'out',
+        body: 'javob',
+        sentAt: new Date('2026-07-02T09:00:00Z'),
+      },
+    ]);
+
+    const thread = await db
+      .select()
+      .from(tgMessages)
+      .where(eq(tgMessages.clientId, client!.id))
+      .orderBy(desc(tgMessages.sentAt));
+    // Newest first: this is a record being consulted, not a chat being had,
+    // and the question is almost always "what did we last say to them".
+    expect(thread.map((r) => r.body)).toEqual(['javob', 'birinchi']);
+    expect(thread[0]!.direction).toBe('out');
   });
 });

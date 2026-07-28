@@ -968,7 +968,10 @@
     "cancelMove": "Отмена",
     "prevStage": "Предыдущий этап",
     "nextStage": "Следующий этап",
-    "fieldsMoved": "переехали в «Поля и объекты»"
+    "fieldsMoved": "переехали в «Поля и объекты»",
+    "telegramThread": "Переписка в Telegram",
+    "telegramClient": "Клиент",
+    "telegramMedia": "вложение"
   },
   "navShort": {
     "home": "Главная",

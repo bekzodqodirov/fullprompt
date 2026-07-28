@@ -239,6 +239,13 @@
       "when": 1785190000002,
       "tag": "0033_client_locale",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785190000003,
+      "tag": "0034_tg_messages",
+      "breakpoints": true
     }
   ]
 }

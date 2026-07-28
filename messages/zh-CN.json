@@ -968,7 +968,10 @@
     "cancelMove": "取消",
     "prevStage": "上一阶段",
     "nextStage": "下一阶段",
-    "fieldsMoved": "已迁移至「字段与对象」"
+    "fieldsMoved": "已迁移至「字段与对象」",
+    "telegramThread": "Telegram 对话",
+    "telegramClient": "客户",
+    "telegramMedia": "附件"
   },
   "navShort": {
     "home": "首页",

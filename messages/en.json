@@ -968,7 +968,10 @@
     "cancelMove": "Cancel",
     "prevStage": "Previous stage",
     "nextStage": "Next stage",
-    "fieldsMoved": "moved to Fields and objects"
+    "fieldsMoved": "moved to Fields and objects",
+    "telegramThread": "Telegram conversation",
+    "telegramClient": "Client",
+    "telegramMedia": "attachment"
   },
   "navShort": {
     "home": "Home",

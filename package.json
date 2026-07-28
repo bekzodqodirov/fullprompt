@@ -2,7 +2,7 @@
   "name": "gsr-erp",
   "version": "0.1.0",
   "private": true,
-  "description": "GSR LOGISTICS ERP \u2014 Phase 1: WMS",
+  "description": "GSR LOGISTICS ERP — Phase 1: WMS",
   "scripts": {
     "dev": "node scripts/heal-storage.mjs && next dev",
     "build": "node scripts/heal-storage.mjs && next build",
@@ -24,7 +24,8 @@
     "start:https": "node scripts/start-https.mjs",
     "dev:https": "node scripts/heal-storage.mjs && next dev --experimental-https",
     "demo-users": "tsx scripts/demo-users.ts",
-    "import-clients": "tsx scripts/import-clients.ts"
+    "import-clients": "tsx scripts/import-clients.ts",
+    "tg-import": "tsx scripts/tg-import.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.114.0",
@@ -53,6 +54,7 @@
     "selfsigned": "^5.5.0",
     "sharp": "^0.33.5",
     "subset-font": "^2.5.0",
+    "telegram": "2.26.22",
     "uuid": "^11.0.5",
     "zod": "^3.24.1"
   },

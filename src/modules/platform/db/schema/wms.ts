@@ -1212,3 +1212,43 @@ export const expectedArrivals = pgTable(
     index('expected_arrivals_client_idx').on(t.clientId),
   ],
 );
+
+/**
+ * The manager's Telegram conversation with a client, inside the CRM.
+ *
+ * The owner's reality: "biz clientlarimiz bn 95 foiz telegramda gaplashamiz."
+ * Until now that conversation lived on one person's phone — when a manager
+ * left, every promise, price and agreement went with them.
+ *
+ * Only conversations that MATCH THE CLIENT BOOK are ever written here. A
+ * manager's family, friends and other business are read past and dropped, and
+ * the schema helps keep that promise: `client_id` is NOT NULL, so there is
+ * nowhere to put a message that belongs to nobody.
+ */
+export const tgMessages = pgTable(
+  'tg_messages',
+  {
+    id: id(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    /** Whose account it was read from — two managers are two conversations. */
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    tgMessageId: bigint('tg_message_id', { mode: 'bigint' }).notNull(),
+    direction: text('direction').notNull(),
+    body: text('body'),
+    hasMedia: boolean('has_media').notNull().default(false),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
+    importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('tg_messages_direction_check', sql`${t.direction} IN ('in', 'out')`),
+    // Re-running the import adds nothing. Per MANAGER, because the same client
+    // may talk to two of them and both threads are worth keeping.
+    uniqueIndex('tg_messages_unique_idx').on(t.managerUserId, t.peerId, t.tgMessageId),
+    index('tg_messages_client_idx').on(t.clientId, t.sentAt),
+  ],
+);
