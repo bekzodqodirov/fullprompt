@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
+import { conversationManagers, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
 import { TelegramReplyBox } from './telegram-reply-box';
 import { TelegramStopTaking } from './telegram-stop-taking';
@@ -39,6 +39,29 @@ export async function TelegramReply({
 
   const t = await getTranslations('crm');
   const account = await replyAccountFor(clientId, actor.id);
+
+  // No conversation with ANYBODY is a different fact from "somebody else's
+  // conversation", and the card was stating the second when the truth was
+  // the first (owner: "crm kartalarda eng asosiysi telegram yo'q") — a line
+  // about another manager, where the honest answer is "not linked yet, and
+  // here is how it links".
+  if (!account) {
+    const managers = await conversationManagers(clientId);
+    if (managers.length === 0) {
+      return (
+        <div className="shrink-0 text-center" data-testid="reply-blocked">
+          <p className="text-xs font-semibold text-ink-700">💬 {t('replyNoChat')}</p>
+          <p className="text-xs text-ink-500">{t('replyNoChatHint')}</p>
+        </div>
+      );
+    }
+    return (
+      <p className="shrink-0 text-center text-xs text-ink-500" data-testid="reply-blocked">
+        {t('replyNotYours')} · {managers.join(', ')}
+      </p>
+    );
+  }
+
   const verdict = account
     ? canQueue(
         // A single character, only to get past the empty check: this asks

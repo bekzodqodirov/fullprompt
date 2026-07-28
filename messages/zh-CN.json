@@ -1052,7 +1052,9 @@
     "feedHandover": "已交付客户",
     "feedReady": "可提货",
     "feedDebtOverride": "带欠款放行",
-    "openDeal": "开单"
+    "openDeal": "开单",
+    "replyNoChat": "尚未关联 Telegram 对话",
+    "replyNoChatHint": "客户给已连接的经理 Telegram 发消息后，对话会自动出现在这里。连接方式：个人资料 → ✈️"
   },
   "navShort": {
     "home": "首页",

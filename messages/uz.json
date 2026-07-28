@@ -1052,7 +1052,9 @@
     "feedHandover": "Mijozga topshirildi",
     "feedReady": "olib ketsa bo‘ladi",
     "feedDebtOverride": "qarz bilan berildi",
-    "openDeal": "Bitim ochish"
+    "openDeal": "Bitim ochish",
+    "replyNoChat": "Telegram suhbati hali ulanmagan",
+    "replyNoChatHint": "Mijoz menejerning ulangan Telegramiga yozishi bilan suhbat shu yerda o'zi paydo bo'ladi. Ulanish: Profil → ✈️"
   },
   "navShort": {
     "home": "Bosh",
