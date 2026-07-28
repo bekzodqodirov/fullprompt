@@ -3,8 +3,9 @@ import { createInterface } from 'node:readline/promises';
 import { eq } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
 import { clients, tgMessages, users } from '../src/modules/platform/db/schema';
+import { rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
-  classifyDialog,
+  classifyWithRules,
   countVerdict,
   emptySummary,
   isWorthKeeping,
@@ -84,7 +85,13 @@ async function main() {
   const book: ClientPhones[] = await db
     .select({ id: clients.id, clientCode: clients.clientCode, phones: clients.phones })
     .from(clients);
-  console.log(`client book: ${book.length} codes · manager: ${manager.fullName}`);
+  // What a person decided on the «Qaysi chatlar» screen, which beats the
+  // automatic match both ways. Read once: the import is a single pass and a
+  // decision taken while it runs belongs to the next run.
+  const rules = await rulesFor(manager.id);
+  console.log(
+    `client book: ${book.length} codes · rules: ${rules.size} · manager: ${manager.fullName}`,
+  );
 
   // Imported here rather than at the top: `telegram` is a large, node-only
   // package and nothing else in this repo should pull it in by accident.
@@ -122,7 +129,7 @@ async function main() {
       isPrivate: Boolean(dialog.isUser) && user !== null,
       isBot: Boolean(user?.bot),
     };
-    const verdict = classifyDialog(peer, book);
+    const verdict = classifyWithRules(peer, book, rules);
     countVerdict(summary, verdict);
     // A conversation that is not a client's is passed over in silence — not
     // logged by name, not counted by name, not stored.
@@ -174,6 +181,7 @@ async function main() {
   console.log(`mijoz deb topildi:       ${summary.matched}`);
   console.log(`raqami ko‘rinmadi:       ${summary.skippedNoPhone}  ← kontaktga saqlansa topiladi`);
   console.log(`mijoz emas (o‘tkazildi): ${summary.skippedNotClient}`);
+  console.log(`siz rad etgansiz:        ${summary.skippedExcluded}`);
   console.log(`guruh/bot (o‘tkazildi):  ${summary.skippedOther}`);
   console.log(`yangi xabar yozildi:     ${summary.messagesImported}`);
   console.log(`allaqachon bor edi:      ${summary.messagesAlreadyThere}`);

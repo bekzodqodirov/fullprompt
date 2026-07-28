@@ -1,7 +1,8 @@
 import {
-  classifyDialog,
+  classifyWithRules,
   isWorthKeeping,
   toMessageRow,
+  type ChatRule,
   type ClientPhones,
   type DialogPeer,
   type MessageRow,
@@ -18,11 +19,12 @@ import {
  * have to be testable without an account, a phone or a network.
  *
  * The privacy rule does not change and is not weakened by being live: a
- * message is stored only when the sender's number is already in the client
- * book. A manager's family writing to them at nine in the evening reaches this
- * code, is refused, and is not stored, counted by name or logged. It is the
- * same `classifyDialog` the import uses, deliberately — one rule, one place,
- * so a change to who counts as a client cannot apply to one path and not the
+ * message is stored only when the sender is a client — by the automatic phone
+ * match, or because somebody wrote down that this chat is theirs. A manager's
+ * family writing to them at nine in the evening reaches this code, is refused,
+ * and is not stored, counted by name or logged. It is the same
+ * `classifyWithRules` the import uses, deliberately — one rule, one place, so
+ * a change to who counts as a client cannot apply to one path and not the
  * other.
  */
 
@@ -84,7 +86,10 @@ export type LiveVerdict =
    * who wrote — no id, no name, no number. The caller may count them; it may
    * not identify them.
    */
-  | { store: false; reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' | 'empty' };
+  | {
+      store: false;
+      reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' | 'excluded' | 'empty';
+    };
 
 /**
  * One incoming message, decided.
@@ -98,8 +103,9 @@ export function decideIncoming(
   peer: DialogPeer,
   msg: RawMessage,
   clients: ClientPhones[],
+  rules: Map<bigint, ChatRule> = new Map(),
 ): LiveVerdict {
-  const verdict = classifyDialog(peer, clients);
+  const verdict = classifyWithRules(peer, clients, rules);
   if (!verdict.keep) return { store: false, reason: verdict.reason };
   const row = toMessageRow(peer.id, msg);
   if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };

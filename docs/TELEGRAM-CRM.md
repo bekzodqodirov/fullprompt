@@ -11,6 +11,7 @@ Bu hujjat uch bosqich haqida:
 | 1 | Eski yozishmalarni **bir marta** ko'chiradi | `pnpm tg-import` |
 | 2 | «Suhbatlar» ekrani — kim yozgan, kim javob kutyapti | — |
 | 3 | **Jonli qabul**: yangi xabar bir necha soniyada CRM'da | `pnpm tg-login` + `pnpm tg-listen` |
+| — | **Qaysi chatlar**: qaysi birini olish, qaysi birini olmaslik — o'zingiz | `pnpm tg-scan` + ekran |
 
 ## Nima olinadi, nima olinmaydi
 
@@ -80,6 +81,63 @@ allaqachon bor edi:        0
 **«raqami ko'rinmadi»** katta son bo'lsa — menejer mijozlarni kontaktga
 saqlamagan. Saqlatib, skriptni qayta ishga tushiring: takroriy ishga tushirish
 **xavfsiz**, hech narsa ikkilanmaydi.
+
+Yoki — kontaktga saqlamasdan — **«Qaysi chatlar»** ekranidan qo'lda
+belgilaysiz. Pastga qarang.
+
+---
+
+# Qaysi chatlarni olish, qaysinisini olmaslik
+
+Avtomatik qoida sodda: **raqami mijozlar bazasida bo'lsa — olinadi.** U to'g'ri,
+lekin ikki narsani bilolmaydi:
+
+1. Telegram raqamni **faqat kontaktlarga** ko'rsatadi. Kontaktga saqlanmagan
+   haqiqiy mijoz avtomatik qoida uchun ko'rinmaydi — birinchi importda
+   **122 ta** shunday chat bo'lgan edi.
+2. Bazada raqami bor odamning chati ham **kerak bo'lmasligi** mumkin.
+
+Shuning uchun endi **siz** javob berasiz, va sizning javobingiz avtomatik
+qoidadan **kuchliroq** — ikkala tomonga ham.
+
+## Qanday ishlaydi
+
+**1-qadam.** Menejer o'z akkauntida ro'yxatni yig'adi:
+
+```bash
+docker compose run --rm migrate sh -c "pnpm tg-scan --user +998901757800"
+```
+
+Bu skript **xabarlarni o'qimaydi** — o'qiy olmaydi ham. U faqat avtomatik
+qoidaga tushmagan chatlarning **ismini, raqamini (ko'rinsa) va id sini** yozib
+qo'yadi. Guruhlar va botlar hech qachon so'ralmaydi.
+
+**2-qadam.** Ilovada: **Suhbatlar → «Qaysi chatlar»**. Har qatorda ikki tugma:
+
+- **«Bu mijoz»** → mijozni tanlaysiz → o'sha chat endi olinadi;
+- **«Hech qachon»** → boshqa so'ralmaydi va olinmaydi.
+
+Har qanday javobni **bir bosishda o'zgartirsa bo'ladi** — bu ism bo'yicha
+qilingan taxmin, xato bo'lishi tabiiy.
+
+**3-qadam.** Import va jonli tinglovchi bu qoidalarni o'zi o'qiydi. Tinglovchi
+uchun qayta ishga tushirish shart emas — 10 daqiqada o'zi biladi.
+
+## Kim ko'radi
+
+| Kim | Nima ko'radi |
+|---|---|
+| Menejer (`clients.manage`) | **faqat o'zining** chatlari |
+| Egasi (`admin.settings.manage`) | hammasi |
+| Sotuv menejeri (`crm.leads`) | **ko'rmaydi** — u yozishmani o'qiy oladi, lekin nima saqlanishini hal qilmaydi |
+
+Bu ataylab shunday: ro'yxatda menejerning **oilasi va do'stlari** ismi turadi —
+aynan shularni «hech qachon» deb belgilash uchun. Uni butun kompaniya ko'rmasin.
+
+## Nima yozilmaydi
+
+Bu jadvalda **birorta ham xabar yo'q va bo'lolmaydi**. Faqat ism, raqam va id.
+Siz «ha» demagan chatning gapi hech qayerga tushmaydi.
 
 ## Qayerda ko'rinadi
 

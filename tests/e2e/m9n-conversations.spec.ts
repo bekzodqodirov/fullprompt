@@ -125,3 +125,48 @@ test('a deal card shows the conversation to sales and hides it from VED', async 
     if (page.url() === url) await expect(page.getByTestId('tg-thread')).toHaveCount(ownerSees);
   }
 });
+
+/**
+ * «Qaysi chatlar» — the owner's ask that a person, not only the phone match,
+ * decides what goes into the CRM.
+ *
+ * The decision flow itself runs against real rows in
+ * `chat-rules.integration.test.ts`; filling this screen needs a Telegram scan,
+ * which no test can perform. What only an e2e can prove is the ACCESS, and
+ * that is the part worth pinning here, because this screen is gated TIGHTER
+ * than the conversations it belongs to: reading a client's thread is a sales
+ * job, deciding what the company starts keeping about a person is not.
+ *
+ * It also creates nothing, so it stays movable in the run order (#154, #183).
+ */
+const LOGIST = '+998900000003';
+
+test('a sales manager may read conversations but not decide which are kept', async ({ page }) => {
+  await login(page, SALES);
+  // He is allowed in here — this is his job.
+  await page.goto('/suhbatlar');
+  await expect(page).toHaveURL(/\/suhbatlar$/);
+  // And not here: `crm.leads` without `clients.manage`.
+  await page.goto('/suhbatlar/qaysi');
+  await expect(page).toHaveURL('/');
+});
+
+test('a warehouse operator reaches neither', async ({ page }) => {
+  await login(page, OPERATOR);
+  await page.goto('/suhbatlar/qaysi');
+  await expect(page).toHaveURL('/');
+});
+
+test('somebody who may decide gets the screen, and it says when there is nothing', async ({
+  page,
+}) => {
+  await login(page, LOGIST);
+  await page.goto('/suhbatlar/qaysi');
+  await expect(page).toHaveURL(/\/suhbatlar\/qaysi$/);
+  // Nothing has been scanned in CI, so the screen must SAY so rather than
+  // render an empty page that looks broken.
+  await expect(page.getByTestId('which-chats-empty')).toBeVisible();
+  // And the conversations screen must not advertise a list with nothing on it.
+  await page.goto('/suhbatlar');
+  await expect(page.getByTestId('which-chats-link')).toHaveCount(0);
+});

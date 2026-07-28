@@ -26,6 +26,7 @@
     "demo-users": "tsx scripts/demo-users.ts",
     "import-clients": "tsx scripts/import-clients.ts",
     "tg-import": "tsx scripts/tg-import.ts",
+    "tg-scan": "tsx scripts/tg-scan.ts",
     "tg-login": "tsx scripts/tg-login.ts",
     "tg-listen": "tsx scripts/tg-listen.ts"
   },

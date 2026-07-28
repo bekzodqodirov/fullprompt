@@ -1287,3 +1287,44 @@ export const tgAccounts = pgTable(
     check('tg_accounts_status_check', sql`${t.status} IN ('active', 'stopped', 'signed_out')`),
   ],
 );
+
+/**
+ * Which chats belong in the CRM, when the automatic rule is not the answer.
+ *
+ * Per MANAGER: the same Telegram user can be a client in one person's phone
+ * and a friend in another's, and neither of them answers for the other.
+ *
+ * It holds the narrowest thing a decision can be made from — an id, a display
+ * name, a number if Telegram shows one — and never a message. A chat nobody
+ * has said "yes" to must leave no trace of what was said in it.
+ */
+export const tgChatRules = pgTable(
+  'tg_chat_rules',
+  {
+    id: id(),
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    /** pending (a scan found it) · include (store it) · exclude (never ask again). */
+    decision: text('decision').notNull().default('pending'),
+    clientId: uuid('client_id').references(() => clients.id),
+    /** A snapshot for the screen, refreshed by a scan — not kept in step. */
+    peerTitle: text('peer_title'),
+    peerPhone: text('peer_phone'),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('tg_chat_rules_decision_check', sql`${t.decision} IN ('pending', 'include', 'exclude')`),
+    // An included chat must name a client: `tg_messages.client_id` is NOT NULL,
+    // so without this a rule could promise a message a home it does not have.
+    check(
+      'tg_chat_rules_include_check',
+      sql`${t.decision} <> 'include' OR ${t.clientId} IS NOT NULL`,
+    ),
+    uniqueIndex('tg_chat_rules_unique_idx').on(t.managerUserId, t.peerId),
+    index('tg_chat_rules_pending_idx').on(t.managerUserId, t.decision),
+  ],
+);

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { pgClient } from '../src/modules/platform/db/client';
+import { rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   clientBook,
   heartbeat,
@@ -70,9 +71,14 @@ async function main() {
   }
 
   let book: BookState = newBook(await clientBook(), Date.now());
+  // Re-read on the same tick as the book, so a decision taken on the screen
+  // takes effect within ten minutes without touching the connection.
+  let rules = await rulesFor(account.managerUserId);
   let stored = 0;
   let passed = 0;
-  console.log(`tinglayapman: ${account.managerName} · ${tgPhone} · ${book.clients.length} mijoz`);
+  console.log(
+    `tinglayapman: ${account.managerName} · ${tgPhone} · ${book.clients.length} mijoz · ${rules.size} qoida`,
+  );
 
   client.addEventHandler(async (event: { message?: unknown }) => {
     try {
@@ -96,14 +102,18 @@ async function main() {
       };
 
       const now = Date.now();
-      if (bookIsStale(book, now)) book = newBook(await clientBook(), now);
+      if (bookIsStale(book, now)) {
+        book = newBook(await clientBook(), now);
+        rules = await rulesFor(account.managerUserId);
+      }
 
-      let verdict = decideIncoming(peer, msg, book.clients);
+      let verdict = decideIncoming(peer, msg, book.clients, rules);
       // A number we do not know MIGHT be a client added since the book was
       // read. Ask once, rate-limited, before concluding they are a stranger.
       if (!verdict.store && verdict.reason === 'not_a_client' && shouldRefreshOnMiss(book, now)) {
         book = { ...newBook(await clientBook(), now), missRefreshedAt: now };
-        verdict = decideIncoming(peer, msg, book.clients);
+        rules = await rulesFor(account.managerUserId);
+        verdict = decideIncoming(peer, msg, book.clients, rules);
       }
 
       if (!verdict.store) {

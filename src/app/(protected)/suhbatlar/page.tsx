@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listConversations } from '@/modules/wms/crm/conversations';
+import { pendingCount } from '@/modules/wms/crm/chat-rules';
 import { PageHeader } from '@/components/ui/page';
 import { TelegramBridgeStatus } from '@/components/telegram-bridge-status';
 
@@ -42,6 +43,13 @@ export default async function ConversationsPage({
   const { q } = await searchParams;
   const rows = await listConversations(q);
 
+  // Answering is gated tighter than reading (`clients.manage`), and a manager
+  // counts only their OWN waiting chats — the owner counts everybody's.
+  const canDecide = actor.permissions.has('clients.manage');
+  const waiting = canDecide
+    ? await pendingCount(actor.permissions.has('admin.settings.manage') ? undefined : actor.id)
+    : 0;
+
   return (
     <div className="space-y-3">
       <PageHeader title={`✈️ ${t('conversations')}`} />
@@ -49,6 +57,22 @@ export default async function ConversationsPage({
       {/* Are messages actually arriving? The list growing is the only other
           evidence, and "nobody wrote today" looks identical to a dead bridge. */}
       <TelegramBridgeStatus />
+
+      {/* Only offered to the people who may answer, and only when there is
+          something to answer — an empty link here is a permanent invitation
+          to a screen with nothing on it. */}
+      {canDecide && waiting > 0 && (
+        <Link
+          href="/suhbatlar/qaysi"
+          className="card flex items-center justify-between !py-2.5 text-sm font-semibold"
+          data-testid="which-chats-link"
+        >
+          <span>✈️ {t('whichChats')}</span>
+          <span className="rounded-full bg-warn/15 px-2 text-warn">
+            {t('whichChatsPendingBadge', { n: waiting })}
+          </span>
+        </Link>
+      )}
 
       <form className="card !p-2">
         <input

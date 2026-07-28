@@ -43,7 +43,49 @@ export interface ClientPhones {
 
 export type DialogVerdict =
   | { keep: true; clientId: string; clientCode: string }
-  | { keep: false; reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' };
+  | { keep: false; reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' | 'excluded' };
+
+/**
+ * A decision a person wrote down about one chat, which outranks the automatic
+ * rule. One per peer, per manager. `pending` is a question, not an answer, and
+ * decides nothing.
+ */
+export interface ChatRule {
+  peerId: bigint;
+  decision: 'pending' | 'include' | 'exclude';
+  /** Always set when `include` — the schema refuses the row otherwise. */
+  clientId: string | null;
+  clientCode: string | null;
+}
+
+/**
+ * The automatic rule, with a person's answer on top of it.
+ *
+ * Owner: "qaysi chatlarni qo'shish kerak va qaysini qo'shmaslik." The phone
+ * match is right and it is not enough — Telegram reveals a number only to
+ * CONTACTS, so a real client the manager never saved is invisible to it (122
+ * of them in the first import), and a client writing from a second number is a
+ * stranger to it. In the other direction, a chat the rule DOES match may still
+ * be one nobody wants in the CRM.
+ *
+ * So an explicit rule wins BOTH ways, and it is checked first — including
+ * before `isPrivate` and `isBot`, because those are refusals the automatic
+ * rule makes on a guess about what a peer is, and a person who has looked at
+ * the chat knows better. `pending` deliberately decides nothing: a question
+ * nobody has answered must not quietly become a yes.
+ */
+export function classifyWithRules(
+  peer: DialogPeer,
+  clients: ClientPhones[],
+  rules: Map<bigint, ChatRule>,
+): DialogVerdict {
+  const rule = rules.get(peer.id);
+  if (rule?.decision === 'exclude') return { keep: false, reason: 'excluded' };
+  if (rule?.decision === 'include' && rule.clientId) {
+    return { keep: true, clientId: rule.clientId, clientCode: rule.clientCode ?? '' };
+  }
+  return classifyDialog(peer, clients);
+}
 
 /**
  * Is this conversation the company's business?
@@ -67,6 +109,44 @@ export function classifyDialog(peer: DialogPeer, clients: ClientPhones[]): Dialo
   const match = clients.find((c) => phoneBelongsToClient(phone, c.phones));
   if (!match) return { keep: false, reason: 'not_a_client' };
   return { keep: true, clientId: match.id, clientCode: match.clientCode };
+}
+
+/**
+ * What a scan should do with one dialog.
+ *
+ * `ask` is the only outcome that writes anything about a chat nobody has
+ * approved, and it writes three fields: an id, a display name, a number if
+ * Telegram shows one. Never a message.
+ *
+ * Groups, channels and bots are `skip`, not `ask`, and that is a deliberate
+ * limit rather than an oversight: a group holds people who never agreed to
+ * anything, so storing one would take in messages from strangers on the say-so
+ * of a person who does not speak for them.
+ */
+export type ScanVerdict = 'auto' | 'ask' | 'answered' | 'skip';
+
+export function scanVerdict(
+  peer: DialogPeer,
+  clients: ClientPhones[],
+  rules: Map<bigint, ChatRule>,
+): ScanVerdict {
+  const decision = rules.get(peer.id)?.decision;
+  if (decision === 'include' || decision === 'exclude') return 'answered';
+  if (!peer.isPrivate || peer.isBot) return 'skip';
+  // Already coming in on its own — asking would be noise on a list whose only
+  // job is to be short enough that somebody actually goes through it.
+  if (classifyDialog(peer, clients).keep) return 'auto';
+  return 'ask';
+}
+
+/** A name for the screen, from the pieces Telegram gives separately. */
+export function peerTitle(peer: DialogPeer): string {
+  const name = [peer.firstName, peer.lastName].filter(Boolean).join(' ').trim();
+  if (name) return name;
+  if (peer.username) return `@${peer.username}`;
+  // No name, no username, no number: the id is all there is, and a blank row
+  // is undecidable — better an ugly label than an empty one.
+  return `#${peer.id}`;
 }
 
 /** What Telegram gives us about one message. */
@@ -128,6 +208,8 @@ export interface ImportSummary {
   matched: number;
   skippedNoPhone: number;
   skippedNotClient: number;
+  /** Refused by a rule somebody wrote, not by the automatic match. */
+  skippedExcluded: number;
   skippedOther: number;
   messagesImported: number;
   messagesAlreadyThere: number;
@@ -139,6 +221,7 @@ export function emptySummary(): ImportSummary {
     matched: 0,
     skippedNoPhone: 0,
     skippedNotClient: 0,
+    skippedExcluded: 0,
     skippedOther: 0,
     messagesImported: 0,
     messagesAlreadyThere: 0,
@@ -154,5 +237,6 @@ export function countVerdict(summary: ImportSummary, verdict: DialogVerdict): vo
   }
   if (verdict.reason === 'no_phone') summary.skippedNoPhone += 1;
   else if (verdict.reason === 'not_a_client') summary.skippedNotClient += 1;
+  else if (verdict.reason === 'excluded') summary.skippedExcluded += 1;
   else summary.skippedOther += 1;
 }

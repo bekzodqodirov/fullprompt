@@ -1,0 +1,118 @@
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { asc, eq } from 'drizzle-orm';
+import { getTranslations } from 'next-intl/server';
+import { db } from '@/modules/platform/db/client';
+import { clients } from '@/modules/platform/db/schema';
+import { getActor } from '@/modules/platform/rbac/authorize';
+import { listCandidates } from '@/modules/wms/crm/chat-rules';
+import { PageHeader } from '@/components/ui/page';
+import { ChatDecision } from './chat-decision';
+
+/**
+ * Which chats belong in the CRM — the owner's ask, answered by a person.
+ *
+ * The automatic rule (a phone number in the client book) stays and does most
+ * of the work. This screen is for the two things it cannot know: a client
+ * Telegram will not show a number for — 122 of them in the first real import,
+ * because Telegram reveals a phone only to CONTACTS — and a chat it DOES match
+ * that nobody wants kept.
+ *
+ * Two access rules, and they are the design rather than a detail:
+ *
+ *  - it is gated on `clients.manage`, TIGHTER than the conversation screens
+ *    (`crm.leads` OR `clients.manage`). Reading a client's thread is a sales
+ *    job; deciding what the company starts keeping about somebody is not.
+ *  - a manager sees only THEIR OWN chats. This list is the display names of
+ *    the conversations the rule did not match, which for most managers is
+ *    mostly their family and their friends. Only the owner
+ *    (`admin.settings.manage`) sees everybody's, because somebody has to be
+ *    able to finish the job.
+ */
+export const dynamic = 'force-dynamic';
+
+export default async function WhichChatsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ show?: string }>;
+}) {
+  const actor = await getActor();
+  if (!actor) redirect('/login');
+  if (!actor.permissions.has('clients.manage')) redirect('/');
+
+  const t = await getTranslations('crm');
+  const { show } = await searchParams;
+  const seeAll = actor.permissions.has('admin.settings.manage');
+
+  const decision = show === 'done' ? undefined : ('pending' as const);
+  const rows = (await listCandidates({
+    managerUserId: seeAll ? undefined : actor.id,
+    decision,
+  })).filter((row) => (show === 'done' ? row.decision !== 'pending' : true));
+
+  // The client list for the picker. Active only: a chat is being attached to
+  // somebody the company still works with, and a closed code is a wrong answer
+  // that would be found much later.
+  const book = await db
+    .select({ id: clients.id, clientCode: clients.clientCode, name: clients.name })
+    .from(clients)
+    .where(eq(clients.active, true))
+    .orderBy(asc(clients.clientCode));
+
+  return (
+    <div className="space-y-3">
+      <PageHeader title={`✈️ ${t('whichChats')}`} />
+
+      <p className="card text-sm text-ink-500">{t('whichChatsHint')}</p>
+
+      <div className="flex gap-2">
+        <Link
+          href="/suhbatlar/qaysi"
+          className={show === 'done' ? 'btn-secondary !min-h-9 flex-1' : 'btn-primary !min-h-9 flex-1'}
+        >
+          {t('whichChatsPending')}
+        </Link>
+        <Link
+          href="/suhbatlar/qaysi?show=done"
+          className={show === 'done' ? 'btn-primary !min-h-9 flex-1' : 'btn-secondary !min-h-9 flex-1'}
+          data-testid="show-decided"
+        >
+          {t('whichChatsDecided')}
+        </Link>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="card text-center text-sm text-ink-500" data-testid="which-chats-empty">
+          {show === 'done' ? t('whichChatsNoneDecided') : t('whichChatsNonePending')}
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((row) => (
+            <ChatDecision
+              key={row.id}
+              row={row}
+              clients={book}
+              showManager={seeAll}
+              labels={{
+                add: t('chatAdd'),
+                never: t('chatNever'),
+                undo: t('chatUndo'),
+                cancel: t('chatCancel'),
+                pickClient: t('chatPickClient'),
+                findClient: t('chatFindClient'),
+                save: t('chatSave'),
+                included: t('chatIncluded'),
+                excluded: t('chatExcluded'),
+                noName: t('chatNoName'),
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      <Link href="/suhbatlar" className="block text-center text-sm text-ink-500 underline">
+        ← {t('conversations')}
+      </Link>
+    </div>
+  );
+}

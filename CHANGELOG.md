@@ -1,5 +1,61 @@
 # CHANGELOG
 
+## «Qaysi chatlar» — endi siz tanlaysiz — 2026-07-28
+
+Siz so'ragan narsa: **qaysi chat CRM'ga tushsin, qaysi biri yo'q — o'zingiz
+belgilaysiz.**
+
+### Nega kerak edi
+
+Avtomatik qoida sodda: raqami mijozlar bazasida bo'lsa — olinadi. U to'g'ri,
+lekin ikki narsani bilolmaydi:
+
+1. Telegram raqamni **faqat kontaktlarga** ko'rsatadi. Kontaktga saqlanmagan
+   haqiqiy mijoz ko'rinmaydi — birinchi importda **122 ta** shunday chat bor edi;
+2. bazada raqami bor odamning chati ham kerak bo'lmasligi mumkin.
+
+Endi sizning javobingiz avtomatik qoidadan **kuchliroq** — ikkala tomonga ham.
+
+### Qanday ishlaydi
+
+**1.** Serverda ro'yxatni yig'asiz:
+
+```bash
+docker compose run --rm migrate sh -c "pnpm tg-scan --user +998901757800"
+```
+
+Bu skript **xabarlarni o'qimaydi**. Faqat avtomatik qoidaga tushmagan
+chatlarning ismi, raqami (ko'rinsa) va id sini yozib qo'yadi. Guruh va botlar
+hech qachon so'ralmaydi.
+
+**2.** Ilovada: **Suhbatlar → «Qaysi chatlar»**. Har qatorda ikki tugma —
+**«Bu mijoz»** (mijozni tanlaysiz) yoki **«Hech qachon»**. Har qanday javobni
+bir bosishda o'zgartirsa bo'ladi.
+
+**3.** Import va jonli tinglovchi qoidalarni o'zi o'qiydi. Tinglovchini qayta
+yoqish shart emas — 10 daqiqada biladi.
+
+### Kim ko'radi
+
+- **Menejer** — faqat **o'zining** chatlarini;
+- **siz** — hammasini;
+- **sotuv menejeri** — **ko'rmaydi**: u yozishmani o'qiy oladi, lekin nima
+  saqlanishini hal qilmaydi.
+
+Bu ataylab: ro'yxatda menejerning oilasi va do'stlari ismi turadi — aynan
+shularni «hech qachon» deb belgilash uchun. Uni butun kompaniya ko'rmasin.
+
+### Nima yozilmaydi
+
+Bu jadvalda **birorta ham xabar yo'q va bo'lolmaydi**. Siz «ha» demagan
+chatning gapi hech qayerga tushmaydi.
+
+Migratsiya: **0036** — bitta yangi jadval, mavjud ma'lumotga tegilmaydi.
+
+Tekshirildi: 564 ta test + 72 ta ekran testi — hammasi yashil, CI tartibida,
+toza bazada. Qo'shish / rad etish / qaytarish brauzerda haqiqiy bosib
+ko'rilgan.
+
 ## Jonli qabul — 3-bosqich — 2026-07-28
 
 Mijoz xabar yozdi — u **bir necha soniyada** CRM'da. Endi «Suhbatlar»
