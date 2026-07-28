@@ -88,7 +88,14 @@ export type LiveVerdict =
    */
   | {
       store: false;
-      reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' | 'excluded' | 'empty';
+      reason:
+        | 'not_private'
+        | 'is_bot'
+        | 'no_phone'
+        | 'not_a_client'
+        | 'excluded'
+        | 'self'
+        | 'empty';
     };
 
 /**

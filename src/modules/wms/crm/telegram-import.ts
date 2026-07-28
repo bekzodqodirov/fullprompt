@@ -32,6 +32,8 @@ export interface DialogPeer {
   /** True for groups, channels and bots — none of which are a client chat. */
   isPrivate: boolean;
   isBot?: boolean;
+  /** The manager's chat with THEMSELVES (Saved Messages). Never a client. */
+  isSelf?: boolean;
 }
 
 /** The client book, reduced to what the match needs. */
@@ -43,7 +45,10 @@ export interface ClientPhones {
 
 export type DialogVerdict =
   | { keep: true; clientId: string; clientCode: string }
-  | { keep: false; reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' | 'excluded' };
+  | {
+      keep: false;
+      reason: 'not_private' | 'is_bot' | 'no_phone' | 'not_a_client' | 'excluded' | 'self';
+    };
 
 /**
  * A decision a person wrote down about one chat, which outranks the automatic
@@ -79,6 +84,9 @@ export function classifyWithRules(
   clients: ClientPhones[],
   rules: Map<bigint, ChatRule>,
 ): DialogVerdict {
+  // Ahead of the rule, and deliberately: a chat with yourself is not a
+  // conversation with a customer under any decision anybody could write down.
+  if (peer.isSelf) return { keep: false, reason: 'self' };
   const rule = rules.get(peer.id);
   if (rule?.decision === 'exclude') return { keep: false, reason: 'excluded' };
   if (rule?.decision === 'include' && rule.clientId) {
@@ -104,6 +112,13 @@ export function classifyWithRules(
 export function classifyDialog(peer: DialogPeer, clients: ClientPhones[]): DialogVerdict {
   if (!peer.isPrivate) return { keep: false, reason: 'not_private' };
   if (peer.isBot) return { keep: false, reason: 'is_bot' };
+  // Saved Messages — the manager's chat with themselves. It carries their OWN
+  // number, so if that number is anywhere in the client book (and an owner's
+  // usually is) their private notes would be filed as a client's conversation
+  // and shown to whoever can read that client. Refused before the book is
+  // consulted at all, and refused even by an explicit rule: nobody should be
+  // able to opt into it by accident.
+  if (peer.isSelf) return { keep: false, reason: 'self' };
   const phone = (peer.phone ?? '').trim();
   if (!phone) return { keep: false, reason: 'no_phone' };
   const match = clients.find((c) => phoneBelongsToClient(phone, c.phones));
@@ -132,7 +147,7 @@ export function scanVerdict(
 ): ScanVerdict {
   const decision = rules.get(peer.id)?.decision;
   if (decision === 'include' || decision === 'exclude') return 'answered';
-  if (!peer.isPrivate || peer.isBot) return 'skip';
+  if (!peer.isPrivate || peer.isBot || peer.isSelf) return 'skip';
   // Already coming in on its own — asking would be noise on a list whose only
   // job is to be short enough that somebody actually goes through it.
   if (classifyDialog(peer, clients).keep) return 'auto';
@@ -165,6 +180,7 @@ export function peerFromChat(
     lastName?: string | null;
     username?: string | null;
     bot?: boolean;
+    self?: boolean;
     className?: string;
   } | null
   | undefined,
@@ -180,6 +196,7 @@ export function peerFromChat(
     username: chat?.username ?? null,
     isPrivate: isUser,
     isBot: Boolean(chat?.bot),
+    isSelf: Boolean(chat?.self),
   };
 }
 

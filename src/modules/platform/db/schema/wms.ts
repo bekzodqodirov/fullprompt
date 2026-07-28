@@ -1273,8 +1273,13 @@ export const tgAccounts = pgTable(
       .notNull()
       .unique()
       .references(() => users.id),
-    /** The Telegram phone, which need not be their login phone in this system. */
-    tgPhone: text('tg_phone').notNull(),
+    /**
+     * The Telegram phone, which need not be their login phone in this system.
+     * UNIQUE (migration 0038): the invariant is one listener per TELEGRAM
+     * ACCOUNT, and this is the key the listener looks itself up by. Two rows
+     * for one number would be two locks and two connections.
+     */
+    tgPhone: text('tg_phone').notNull().unique(),
     sessionEnc: text('session_enc').notNull(),
     status: text('status').notNull().default('active'),
     /** Heartbeat: a row is not a live connection, and the screen must tell them apart. */

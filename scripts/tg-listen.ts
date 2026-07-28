@@ -22,6 +22,7 @@ import {
   heartbeat,
   loadAccount,
   markAccount,
+  markAccountActive,
   storeIncoming,
   takeListenerLock,
 } from '../src/modules/wms/crm/telegram-accounts';
@@ -81,13 +82,29 @@ async function main() {
   const { NewMessage } = await import('telegram/events');
 
   const client = new TelegramClient(new StringSession(account.session), apiId, apiHash, {
-    connectionRetries: -1, // reconnect for ever; a warehouse loses its link often
+    // Infinity, NOT -1. GramJS uses this as a loop bound
+    // (`for (attempt = 0; attempt < retries; …)` in MTProtoSender), so -1
+    // means ZERO attempts: `connect()` returns false in a few milliseconds
+    // and no socket is ever opened. Infinity is the library's own default and
+    // is what "reconnect for ever" actually spells — a warehouse link drops.
+    connectionRetries: Infinity,
   });
-  await client.connect();
+  // `connect()` reports failure by returning false rather than by throwing,
+  // so ignoring its result is how a listener ends up cheerfully doing nothing.
+  const connected = await client.connect();
+  if (connected === false) {
+    throw new Error(`${tgPhone}: Telegram'ga ulanib bo‘lmadi`);
+  }
   if (!(await client.checkAuthorization())) {
     await markAccount(account.id, 'signed_out', 'Telegram ended the session — log in again');
     throw new Error(`${tgPhone}: Telegram has ended this session. Run pnpm tg-login again.`);
   }
+
+  // Back to 'active'. A graceful stop writes 'stopped', and nothing else ever
+  // wrote 'active' again except a fresh login — so one clean restart left the
+  // bridge reading "stopped" for ever, which also made every reply
+  // unsendable, because queueing refuses when the bridge is not live.
+  await markAccountActive(account.id);
 
   let book: BookState = newBook(await clientBook(), Date.now());
   // Re-read on the same tick as the book, so a decision taken on the screen
@@ -236,6 +253,11 @@ async function main() {
   }, 3000);
 
   const beat = setInterval(() => {
+    // Only while the LINK is up. Writing it unconditionally would prove the
+    // process is alive, which is not the question anybody is asking: a
+    // listener sitting there with a dead socket would read as "connected" and
+    // the messages would simply stop.
+    if (client.connected === false) return;
     void heartbeat(account.id).catch(() => {
       // A heartbeat that cannot be written is not a reason to drop the
       // connection; the screen will say "stale" and that is the correct story.

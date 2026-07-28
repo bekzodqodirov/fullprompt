@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## Telegram bo'limiga qattiq tekshiruv — 5 ta jiddiy xato tuzatildi — 2026-07-28
+
+1–4-bosqichlarni yozib bo'lib, ustidan **adversarial tekshiruv** o'tkazdim —
+ya'ni maqsadi maqtash emas, buzish bo'lgan tekshiruv. 19 ta muammo tasdiqlandi.
+Eng jiddiy 5 tasi tuzatildi.
+
+### 1. Tinglovchi umuman ulanmas edi ⚠
+
+Eng yomoni. `connectionRetries: -1` deb yozgan edim — «cheksiz qayta urin»
+degan ma'noda. Kutubxonada esa bu **sikl chegarasi**: `-1` bo'lsa sikl
+**umuman ishlamaydi**. Ulanish `false` qaytaradi, xato tashlamaydi — men esa
+javobini tekshirmagan edim.
+
+Natija bo'lardi: ekranda «ulangan», hech qanday xato yo'q, **birorta xabar
+kelmaydi**. Yaxshiyamki siz hali ishga tushirmagansiz.
+
+### 2. Bir marta o'chirib-yoqsangiz, javob yozish butunlay ishlamay qolardi
+
+To'xtatganda holat «to'xtatilgan» bo'lib yozilardi, «ishlayapti» ga esa faqat
+qaytadan login qilganda qaytardi. Ya'ni bir marta restart — va javob yozish
+oynasi boshqa ochilmasdi (u tinglovchi tirik bo'lishini talab qiladi).
+
+Yonidagi yarmi: yurak urishi **jarayon tirik**ligini isbotlardi, **ulanish**
+tirikligini emas. Uzilgan aloqa ham «ulangan» bo'lib ko'rinardi.
+
+### 3. «Saved Messages» mijoz yozishmasi bo'lib tushishi mumkin edi
+
+O'zingizga yozgan chatingizda **o'zingizning raqamingiz** turadi. Sizning
+raqamingiz esa mijozlar bazasida bor. Ya'ni shaxsiy eslatmalaringiz o'sha
+mijozning yozishmasi bo'lib saqlanib, uni ko'ra oladigan hammaga ko'rinardi.
+
+Endi u mijozlar bazasiga qaramasdanoq rad etiladi — va **qo'lda ham qo'shib
+bo'lmaydi**.
+
+### 4. Bitta Telegram raqamiga ikkita tinglovchi ulanishi mumkin edi
+
+Cheklov «bir odamga bitta login» edi, kerak bo'lgani esa «bitta Telegram
+akkauntga bitta tinglovchi». Migratsiya **0038** shuni qo'yadi.
+
+### 5. Bitta raqamda bir necha kod bo'lsa, yozishma har safar boshqasiga tushardi
+
+Sizda bu odatiy hol (777, 555, 444 bitta odamda). Baza tartibsiz o'qilardi,
+shuning uchun bugun 777 ga, ertaga 444 ga tushishi mumkin edi. Endi tartib
+qat'iy — noto'g'ri bo'lsa ham **barqaror**, ya'ni qo'lda tuzatsa bo'ladi.
+
+### Qolgan 14 tasi
+
+Ro'yxatga olindi, keyingi navbatda. Ular orasida: aloqa uzilganda o'sha
+paytdagi xabarlar yo'qoladi (keyin qidirib olinmaydi), «hech qachon» degan
+chatning eski xabarlari o'chmaydi, tahrirlangan xabar yangilanmaydi,
+suhbatlar ro'yxati katta bazada sekinlashadi.
+
+Tekshirildi: 620 ta test + 72 ta ekran testi — hammasi yashil.
+
 ## CRM'dan javob yozish (4-bosqich) + jonli qabuldagi jiddiy tuzatish — 2026-07-28
 
 ### ⚠ Avval tuzatish — bu muhim

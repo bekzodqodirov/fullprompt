@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { db, pgClient } from '../../platform/db/client';
 import { clients, tgAccounts, tgMessages, users } from '../../platform/db/schema';
 import { openSession, sealSession, sessionKey, sessionOpens } from './telegram-session';
@@ -130,6 +130,22 @@ export async function accountStatuses(now = new Date()): Promise<AccountStatus[]
   }));
 }
 
+/**
+ * The listener has started and the link is up.
+ *
+ * Without this, `status` was a one-way street: a graceful stop wrote
+ * 'stopped' and only a fresh `pnpm tg-login` ever wrote 'active' again. One
+ * ordinary restart therefore left the bridge reading "stopped" for ever —
+ * and because queueing a reply refuses when the bridge is not live, it also
+ * made the whole of phase 4 unusable until somebody logged in again.
+ */
+export async function markAccountActive(accountId: string): Promise<void> {
+  await db
+    .update(tgAccounts)
+    .set({ status: 'active', lastError: null, lastSeenAt: new Date(), updatedAt: new Date() })
+    .where(eq(tgAccounts.id, accountId));
+}
+
 /** The listener is alive. Called on a timer, not per message. */
 export async function heartbeat(accountId: string): Promise<void> {
   await db
@@ -156,11 +172,21 @@ export async function markAccount(
     .where(eq(tgAccounts.id, accountId));
 }
 
-/** The client book, in the shape the decision functions want. */
+/**
+ * The client book, in the shape the decision functions want.
+ *
+ * ORDERED, and that is not tidiness. One person here routinely holds several
+ * codes on one phone number (777, 555, 444 in one pair of hands), and
+ * `classifyDialog` takes the FIRST match — so without an order the same
+ * conversation lands under a different code depending on what postgres felt
+ * like returning. By client code means the same chat always files under the
+ * same one, and a wrong-but-stable answer can at least be corrected.
+ */
 export async function clientBook(): Promise<ClientPhones[]> {
   return db
     .select({ id: clients.id, clientCode: clients.clientCode, phones: clients.phones })
-    .from(clients);
+    .from(clients)
+    .orderBy(asc(clients.clientCode));
 }
 
 /**

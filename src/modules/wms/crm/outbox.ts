@@ -178,6 +178,9 @@ export async function queueReply(
 ): Promise<{ id: string }> {
   const body = input.body.trim();
   if (bodyTooLong(body)) throw new OutboxError('too_long');
+  // Not a `!`: a null actor here would reach postgres as a NOT NULL violation
+  // — a 500 where the honest answer is "you are not signed in".
+  if (!ctx.actorId) throw new OutboxError('no_actor');
 
   const peerId = await peerForClient(input.clientId, input.managerUserId);
   if (peerId === null) throw new OutboxError('never_wrote_first');
@@ -198,7 +201,7 @@ export async function queueReply(
       peerId,
       body,
       status: 'queued',
-      queuedBy: ctx.actorId!,
+      queuedBy: ctx.actorId,
     })
     .returning({ id: tgOutbox.id });
 

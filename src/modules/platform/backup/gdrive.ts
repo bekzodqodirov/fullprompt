@@ -189,7 +189,37 @@ export async function uploadDump(
 ): Promise<DriveFile> {
   const bytes = statSync(filePath).size;
   const name = path.basename(filePath);
+  const stream = Readable.toWeb(createReadStream(filePath)) as ReadableStream<Uint8Array>;
+  return uploadStream(token, folderId, name, bytes, stream, fetcher);
+}
 
+/**
+ * The same upload, for something already in memory.
+ *
+ * Photographs come back from MinIO as a Buffer, not as a path on disk, and
+ * writing them to a temporary file first would mean a disk that can run out
+ * standing between the object store and the backup. Everything else — the
+ * resumable session, the size Google reports back — is identical, which is
+ * the point of sharing the body of it.
+ */
+export async function uploadBuffer(
+  token: string,
+  folderId: string,
+  name: string,
+  body: Buffer,
+  fetcher: Fetcher = fetch,
+): Promise<DriveFile> {
+  return uploadStream(token, folderId, name, body.length, body, fetcher);
+}
+
+async function uploadStream(
+  token: string,
+  folderId: string,
+  name: string,
+  bytes: number,
+  body: ReadableStream<Uint8Array> | Buffer,
+  fetcher: Fetcher = fetch,
+): Promise<DriveFile> {
   const init = await api(
     token,
     `${UPLOAD}?uploadType=resumable&fields=id,name,size,createdTime`,
@@ -207,12 +237,11 @@ export async function uploadDump(
   const session = init.headers.get('location');
   if (!session) throw new DriveError('resumable sessiya URI qaytmadi');
 
-  const stream = Readable.toWeb(createReadStream(filePath)) as ReadableStream<Uint8Array>;
   const put = await fetcher(session, {
     method: 'PUT',
     headers: { 'content-length': String(bytes), 'content-type': 'application/octet-stream' },
-    body: stream,
-    // Node requires this when the body is a stream.
+    body: body as BodyInit,
+    // Node requires this when the body is a stream. Harmless for a Buffer.
     duplex: 'half',
   } as RequestInit & { duplex: 'half' });
   if (!put.ok) {
@@ -225,6 +254,36 @@ export async function uploadDump(
     name: file.name,
     size: Number(file.size ?? 0),
     createdTime: file.createdTime,
+  };
+}
+
+export interface DriveQuota {
+  /** Total bytes the account has. 0 when Google reports it as unlimited. */
+  limit: number;
+  /** Bytes used across the whole account — Drive, Gmail and Photos together. */
+  usage: number;
+}
+
+/**
+ * How much room is left, which is the fact photographs must never be allowed
+ * to ignore.
+ *
+ * `usage` is the WHOLE account, not just this app's folder, and that is the
+ * number that matters: the owner's own Gmail and photographs share the same
+ * 15 GB. A sync that measured only its own folder would happily fill the last
+ * gigabyte the database dump needs, and the failure would arrive as a backup
+ * that silently stopped working — the thing this whole subsystem exists to
+ * prevent.
+ *
+ * `limit` comes back absent on an unlimited account, which is reported here as
+ * 0 rather than as Infinity so the caller has to decide what it means.
+ */
+export async function driveQuota(token: string, fetcher: Fetcher = fetch): Promise<DriveQuota> {
+  const res = await api(token, `${API}/about?fields=storageQuota`, {}, fetcher);
+  const body = (await res.json()) as { storageQuota?: { limit?: string; usage?: string } };
+  return {
+    limit: Number(body.storageQuota?.limit ?? 0),
+    usage: Number(body.storageQuota?.usage ?? 0),
   };
 }
 
