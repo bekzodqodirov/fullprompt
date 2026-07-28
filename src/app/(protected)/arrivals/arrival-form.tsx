@@ -119,6 +119,25 @@ export function ArrivalForm({
         />
       </div>
 
+      {/* The two numbers the price is made of (owner: "kubi kilosi ham
+          muhim") — optional, like everything else about a promise. */}
+      <div className="flex gap-2">
+        <input
+          name="weightKg"
+          aria-label={t('weightKg')}
+          className="input min-w-0 flex-1 text-center"
+          inputMode="decimal"
+          placeholder="⚖️ kg"
+        />
+        <input
+          name="volumeM3"
+          aria-label={t('volumeM3')}
+          className="input min-w-0 flex-1 text-center"
+          inputMode="decimal"
+          placeholder="📐 m³"
+        />
+      </div>
+
       <input name="note" aria-label={t('note')} className="input" placeholder={t('note')} maxLength={2000} />
 
       {state.error && (

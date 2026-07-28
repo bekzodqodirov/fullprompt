@@ -37,6 +37,9 @@ export const expectedArrivalSchema = z
     clientId: z.string().uuid().optional().or(z.literal('')),
     marking: z.string().trim().max(200).optional().or(z.literal('')),
     boxCount: z.number().int().positive().max(100_000).optional(),
+    // The two numbers the price is made of (owner: "kubi kilosi ham muhim").
+    weightKg: z.number().positive().max(1_000_000).optional(),
+    volumeM3: z.number().positive().max(100_000).optional(),
     expectedOn: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -60,6 +63,8 @@ export async function createExpectedArrival(
       clientId: input.clientId || null,
       marking: input.marking || null,
       boxCount: input.boxCount ?? null,
+      weightKg: input.weightKg !== undefined ? String(input.weightKg) : null,
+      volumeM3: input.volumeM3 !== undefined ? String(input.volumeM3) : null,
       expectedOn: input.expectedOn || null,
       note: input.note || null,
       createdBy: ctx.actorId,
@@ -73,6 +78,8 @@ export async function createExpectedArrival(
       clientId: input.clientId || null,
       marking: input.marking || null,
       boxCount: input.boxCount ?? null,
+      weightKg: input.weightKg ?? null,
+      volumeM3: input.volumeM3 ?? null,
       expectedOn: input.expectedOn || null,
     },
   });
@@ -156,6 +163,8 @@ export interface ExpectedRow {
   clientName: string | null;
   marking: string | null;
   boxCount: number | null;
+  weightKg: number | null;
+  volumeM3: number | null;
   expectedOn: string | null;
   note: string | null;
   createdByName: string | null;
@@ -174,6 +183,8 @@ export async function listExpected(warehouseIds?: string[]): Promise<ExpectedRow
       clientName: clients.name,
       marking: expectedArrivals.marking,
       boxCount: expectedArrivals.boxCount,
+      weightKg: expectedArrivals.weightKg,
+      volumeM3: expectedArrivals.volumeM3,
       expectedOn: expectedArrivals.expectedOn,
       note: expectedArrivals.note,
     })
@@ -189,7 +200,12 @@ export async function listExpected(warehouseIds?: string[]): Promise<ExpectedRow
     // A row with no date is not urgent; a dated one is, in date order.
     .orderBy(asc(expectedArrivals.expectedOn), asc(expectedArrivals.createdAt))
     .limit(500);
-  return rows.map((row) => ({ ...row, createdByName: null }));
+  return rows.map((row) => ({
+    ...row,
+    weightKg: row.weightKg === null ? null : Number(row.weightKg),
+    volumeM3: row.volumeM3 === null ? null : Number(row.volumeM3),
+    createdByName: null,
+  }));
 }
 
 export interface IncomingTruck {
@@ -268,6 +284,114 @@ export async function incomingTrucks(warehouseIds?: string[]): Promise<IncomingT
     kg: Math.round(Number(row.kg) * 10) / 10,
     remaining: Number(row.remaining),
   }));
+}
+
+/**
+ * What the receipt actually brought, next to what the promise said.
+ * Pure and unit-tested — the interesting decisions live here, not in the glue.
+ */
+export interface ArrivalMeasures {
+  boxes: number | null;
+  kg: number | null;
+  m3: number | null;
+}
+
+/**
+ * Is the difference worth a message?
+ *
+ * Boxes are counted, so ANY difference is real. Weight and volume are the
+ * client's estimates against a warehouse scale — hairline drift is the normal
+ * case, and messaging every 2 % would teach the manager to mute the type
+ * (the same law as #342). 5 % is where an estimate stops being one.
+ */
+export function arrivalMismatch(expected: ArrivalMeasures, actual: ArrivalMeasures): boolean {
+  if (expected.boxes !== null && actual.boxes !== null && expected.boxes !== actual.boxes) {
+    return true;
+  }
+  for (const key of ['kg', 'm3'] as const) {
+    const want = expected[key];
+    const got = actual[key];
+    if (want !== null && want > 0 && got !== null && Math.abs(got - want) / want > 0.05) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Close EXACTLY the promise the operator tapped «Qabul qilish» on.
+ *
+ * The heuristic in `closeExpectedOnReceipt` gives up when a client has two
+ * open promises — correctly, it cannot know which one landed — and the
+ * operator then had to walk back to /arrivals and press "arrived" by hand
+ * (owner: "bu juda noqulay"). When the receipt CARRIES the promise id there
+ * is nothing to guess. Refuses quietly on anything not waiting or at another
+ * warehouse: a planning aid must never fail a receipt.
+ */
+export async function closeExpectedById(
+  dbOrTx: Db | Tx,
+  input: { arrivalId: string; warehouseId: string; receiptId: string },
+): Promise<typeof expectedArrivals.$inferSelect | null> {
+  const [row] = await dbOrTx
+    .select()
+    .from(expectedArrivals)
+    .where(eq(expectedArrivals.id, input.arrivalId))
+    .limit(1);
+  if (!row || row.status !== 'waiting' || row.warehouseId !== input.warehouseId) return null;
+  await dbOrTx
+    .update(expectedArrivals)
+    .set({ status: 'arrived', arrivedAt: new Date(), receiptId: input.receiptId })
+    .where(eq(expectedArrivals.id, row.id));
+  return row;
+}
+
+/**
+ * Tell the promise's author what actually landed, when it differs
+ * (owner: "kutilayotgan yukni farqi … managerga xabar bo'lib borishi",
+ * "kubi va kilosida farq bo'lsa ham xabar kelsin").
+ *
+ * Straight to the person who wrote the promise — they made it to the client
+ * and they will be answering for the difference. Never to the receiver:
+ * they are looking at the boxes.
+ */
+export async function announceArrivalDiff(input: {
+  arrival: typeof expectedArrivals.$inferSelect;
+  actual: ArrivalMeasures;
+  receiptId: string;
+  receiptNumber: string;
+  actorId: string | null;
+}): Promise<void> {
+  const { notifyStaffTelegram } = await import('../../platform/notifications/staff');
+  const { cardLink } = await import('../../platform/notifications/links');
+  const expected: ArrivalMeasures = {
+    boxes: input.arrival.boxCount,
+    kg: input.arrival.weightKg === null ? null : Number(input.arrival.weightKg),
+    m3: input.arrival.volumeM3 === null ? null : Number(input.arrival.volumeM3),
+  };
+  if (!arrivalMismatch(expected, input.actual)) return;
+
+  const who = input.arrival.clientId
+    ? ((await db.query.clients.findFirst({ where: eq(clients.id, input.arrival.clientId) }))
+        ?.clientCode ?? '')
+    : (input.arrival.marking ?? '');
+  const line = (m: ArrivalMeasures) =>
+    [
+      m.boxes !== null ? `${m.boxes} 📦` : null,
+      m.kg !== null ? `${Math.round(m.kg * 10) / 10} kg` : null,
+      m.m3 !== null ? `${Math.round(m.m3 * 100) / 100} m³` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || '—';
+  await notifyStaffTelegram({
+    userIds: [input.arrival.createdBy],
+    type: 'ArrivalDiff',
+    text:
+      `⚠️ Kutilgan yuk farq bilan keldi: ${who}\n` +
+      `Kutilgan: ${line(expected)}\n` +
+      `Qabul (${input.receiptNumber}): ${line(input.actual)}\n` +
+      `🔗 ${cardLink('receipt', input.receiptId)}`,
+    exceptUserId: input.actorId,
+  });
 }
 
 /** Warehouses where a client actually collects cargo (owner: TAS and AND). */

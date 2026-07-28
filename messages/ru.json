@@ -1124,7 +1124,9 @@
     "status": {
       "in_transit": "в пути",
       "arrived": "прибыла"
-    }
+    },
+    "weightKg": "Вес (кг)",
+    "volumeM3": "Объём (м³)"
   },
   "trucks": {
     "title": "Где машины",

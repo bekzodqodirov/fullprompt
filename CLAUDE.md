@@ -250,6 +250,11 @@ dock for tasks+card chat (5+7), in-map popups with unified markers (12),
 cabinet linking via Telegram request_contact (13), chat with photos +
 Enter-send composer (15)).
 
+Batch 2 SHIPPED (#353): promises carry kg/m³ (migration 0041), «Qabul
+qilish» on a promise opens /receive prefilled and the confirm closes exactly
+that promise; a difference (any box delta, >5 % kg/m³) tells the promise's
+author in Telegram, never the receiver. Batch 3 (task #79) is next.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days).

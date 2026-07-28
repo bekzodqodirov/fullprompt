@@ -1124,7 +1124,9 @@
     "status": {
       "in_transit": "yo‘lda",
       "arrived": "yetib keldi"
-    }
+    },
+    "weightKg": "Og'irlik (kg)",
+    "volumeM3": "Hajm (m³)"
   },
   "trucks": {
     "title": "Mashinalar qayerda",

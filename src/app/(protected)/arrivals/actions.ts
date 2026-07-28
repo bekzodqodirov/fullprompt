@@ -34,12 +34,17 @@ export async function createArrivalAction(
   formData: FormData,
 ): Promise<ArrivalFormState> {
   const actor = await actorForWrite();
-  const rawCount = String(formData.get('boxCount') ?? '').trim();
+  const num = (name: string) => {
+    const raw = String(formData.get(name) ?? '').trim().replace(',', '.');
+    return raw ? Number(raw) : undefined;
+  };
   const parsed = expectedArrivalSchema.safeParse({
     warehouseId: String(formData.get('warehouseId') ?? ''),
     clientId: String(formData.get('clientId') ?? ''),
     marking: String(formData.get('marking') ?? ''),
-    boxCount: rawCount ? Number(rawCount) : undefined,
+    boxCount: num('boxCount'),
+    weightKg: num('weightKg'),
+    volumeM3: num('volumeM3'),
     expectedOn: String(formData.get('expectedOn') ?? ''),
     note: String(formData.get('note') ?? ''),
   });

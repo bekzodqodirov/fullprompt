@@ -27,6 +27,8 @@ export const MUTE_GROUPS = {
     'UnquotedCargo',
     'DealDeviation',
     'DealDeferralEnded',
+    // A promise landed at a different size to the one the client stated.
+    'ArrivalDiff',
   ],
   operations: [
     'ReceiptConfirmed',

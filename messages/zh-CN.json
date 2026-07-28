@@ -1124,7 +1124,9 @@
     "status": {
       "in_transit": "在途",
       "arrived": "已到"
-    }
+    },
+    "weightKg": "重量（kg）",
+    "volumeM3": "体积（m³）"
   },
   "trucks": {
     "title": "车辆位置",

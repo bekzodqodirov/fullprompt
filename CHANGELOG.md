@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## Fikr-mulohaza raundi, 2-to'plam: kutilayotgan yuk oqimi — 2026-07-28
+
+9-band, siz aytgandek, to'liq:
+
+- **Va'dada endi kub va kilo bor**: kutilayotgan yuk yozilayotganda karobka
+  soni yoniga og'irlik (kg) va hajm (m³) ham kiritiladi, ro'yxatda ko'rinadi.
+- **Bir bosishda qabul**: va'da qatoridagi «Qabul qilish» bosilsa, qabul
+  oynasi mijoz tanlangan, karobka/kg/m³ to'ldirilgan holda ochiladi —
+  skladchi faqat haqiqiy kelgan narsani to'g'rilaydi.
+- **Qaytib borish yo'q**: qabul tasdiqlangan zahoti aynan o'sha va'da o'zi
+  yopiladi — «qabul qilindi»ni qo'lda bosish endi kerak emas.
+- **Farq — managerga xabar**: kelgan yuk va'dadan farq qilsa (karobka
+  sonida har qanday farq; kg yoki m³da 5 %dan ortiq), va'dani yozgan
+  hodimga Telegramga xabar boradi: nima kutilgan edi, nima keldi, prixodga
+  havola bilan. Qabul qilgan hodimning o'ziga esa yuborilmaydi.
+
+Tekshirildi: 660 unit/integration + 80 e2e yashil. Yangi migratsiya —
+**0041** (va'daga kg/m³ ustunlari, faqat qo'shimcha). Deploy'dan avval
+odatdagidek zaxira nusxa.
+
 ## Fikr-mulohaza raundi, 1-to'plam: tez tuzatishlar — 2026-07-28
 
 Sizning 15 bandlik ro'yxatingizdan kelishilgan tartibda birinchi to'plam:

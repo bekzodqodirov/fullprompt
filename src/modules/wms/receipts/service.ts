@@ -17,7 +17,11 @@ import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import { assignLetters } from '../sequencer';
 import { nextBoxCodes, nextReceiptNumber } from '../codes';
-import { closeExpectedOnReceipt } from '../arrivals/service';
+import {
+  announceArrivalDiff,
+  closeExpectedById,
+  closeExpectedOnReceipt,
+} from '../arrivals/service';
 import { priceControlOnReceipt } from '../deals/service';
 import { computeLotTotals } from './math';
 
@@ -69,6 +73,12 @@ export const confirmReceiptSchema = z.object({
    * that case is exactly what the price-control alert shouts about.
    */
   dealId: z.string().uuid().nullable().optional(),
+  /**
+   * Set when the operator tapped «Qabul qilish» on a specific promise: that
+   * exact expected arrival is closed by this receipt — no guessing — and its
+   * author is told when the numbers differ.
+   */
+  expectedArrivalId: z.string().uuid().nullable().optional(),
 });
 
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
@@ -140,6 +150,11 @@ export async function confirmReceipt(
   }
 
   const chargeableFactor = await getSetting('chargeable_weight_factor');
+
+  // The promise this receipt answers, when it names one — read inside the
+  // transaction, told about OUTSIDE it: a Telegram row must not be able to
+  // roll back a warehouse's receipt, nor exist for one that rolled back.
+  let closedArrival: Awaited<ReturnType<typeof closeExpectedById>> = null;
 
   const result = await db.transaction(async (tx) => {
     const number = await nextReceiptNumber(tx, warehouse);
@@ -287,13 +302,23 @@ export async function confirmReceipt(
     });
 
     // The cargo the sales side promised has landed — close the promise so the
-    // warehouse's "incoming" list does not keep asking for it. Only fires on
-    // an unambiguous match and never throws (arrivals/service.ts).
-    await closeExpectedOnReceipt(tx, {
-      warehouseId: warehouse.id,
-      clientId: input.clientId ?? null,
-      receiptId: receipt!.id,
-    });
+    // warehouse's "incoming" list does not keep asking for it. With the
+    // promise id on board (the operator tapped «Qabul qilish» on it), close
+    // EXACTLY that one; otherwise the old heuristic — unambiguous match only.
+    // Neither path can throw (arrivals/service.ts).
+    if (input.expectedArrivalId) {
+      closedArrival = await closeExpectedById(tx, {
+        arrivalId: input.expectedArrivalId,
+        warehouseId: warehouse.id,
+        receiptId: receipt!.id,
+      });
+    } else {
+      await closeExpectedOnReceipt(tx, {
+        warehouseId: warehouse.id,
+        clientId: input.clientId ?? null,
+        receiptId: receipt!.id,
+      });
+    }
 
     await emitEvent(tx, {
       type: input.clientId ? 'ReceiptConfirmed' : 'UnknownCargoReceived',
@@ -329,6 +354,22 @@ export async function confirmReceipt(
 
     return { receiptId: receipt!.id, number: number, lots: summaries };
   });
+
+  if (closedArrival) {
+    // The promise's author learns the numbers differ; a failure here is a
+    // missing message, never a failed receipt.
+    await announceArrivalDiff({
+      arrival: closedArrival,
+      actual: {
+        boxes: result.lots.reduce((sum, s) => sum + s.boxCount, 0),
+        kg: result.lots.reduce((sum, s) => sum + s.totalWeightKg, 0),
+        m3: result.lots.reduce((sum, s) => sum + s.totalVolumeM3, 0),
+      },
+      receiptId: result.receiptId,
+      receiptNumber: result.number,
+      actorId: ctx.actorId ?? null,
+    }).catch(() => {});
+  }
 
   return { ...result, alreadyConfirmed: false };
 }

@@ -77,6 +77,20 @@ interface Draft {
   files: { id: string; fileName: string; contentType: string; kind: string }[];
   /** Receipt-level photos of the overall boxes (owner's request). */
   generalPhotoIds: string[];
+  /** The promise this receipt answers, when it was opened from one. */
+  expectedArrivalId: string | null;
+}
+
+/** Everything a tapped promise already knows — the operator types the rest. */
+export interface ArrivalPrefill {
+  arrivalId: string;
+  warehouseId: string;
+  clientId: string | null;
+  clientLabel: string;
+  marking: string;
+  boxCount: number | null;
+  weightKg: number | null;
+  volumeM3: number | null;
 }
 
 const DRAFT_KEY = 'gsr-receipt-draft';
@@ -112,6 +126,7 @@ function newDraft(warehouseId: string): Draft {
     costs: [],
     files: [],
     generalPhotoIds: [],
+    expectedArrivalId: null,
   };
 }
 
@@ -145,12 +160,15 @@ export function ReceiveWizard({
   costTypes,
   currencies,
   densityThresholds,
+  prefill = null,
 }: {
   warehouses: WarehouseOption[];
   costTypes: CostTypeOption[];
   currencies: string[];
   /** From admin settings — the owner's numbers, not a constant of ours. */
   densityThresholds: { light: number; medium: number; heavy: number };
+  /** Set when opened from a promise's «Qabul qilish» button. */
+  prefill?: ArrivalPrefill | null;
 }) {
   const t = useTranslations('receive');
   const tc = useTranslations('common');
@@ -169,6 +187,30 @@ export function ReceiveWizard({
 
   // Draft restore — localStorage is client-only, hence the mount effect.
   useEffect(() => {
+    // Opened from a promise's «Qabul qilish»: the tap IS the intent, so the
+    // promise wins over whatever half-draft the browser was holding. Client,
+    // count and measures arrive filled; the totals land as a 'mixed' lot the
+    // operator corrects against the real boxes.
+    if (prefill) {
+      const lot = newLot();
+      if (prefill.boxCount) lot.boxCount = String(prefill.boxCount);
+      if (prefill.weightKg !== null || prefill.volumeM3 !== null) {
+        lot.dimsMode = 'mixed';
+        lot.totalWeightKg = prefill.weightKg !== null ? String(prefill.weightKg) : '';
+        lot.totalVolumeM3 = prefill.volumeM3 !== null ? String(prefill.volumeM3) : '';
+      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDraft({
+        ...newDraft(prefill.warehouseId),
+        clientId: prefill.clientId,
+        clientLabel: prefill.clientLabel,
+        unclaimed: !prefill.clientId,
+        unclaimedMarking: prefill.clientId ? '' : prefill.marking,
+        lots: [lot],
+        expectedArrivalId: prefill.arrivalId,
+      });
+      return;
+    }
     const saved = localStorage.getItem(DRAFT_KEY);
     if (saved) {
       try {
@@ -188,9 +230,9 @@ export function ReceiveWizard({
             costs: parsed.costs ?? [],
             files: parsed.files ?? [],
             generalPhotoIds: parsed.generalPhotoIds ?? [],
+            expectedArrivalId: parsed.expectedArrivalId ?? null,
             lots: parsed.lots.map((lot) => ({ ...newLot(), ...lot })),
           } as Draft;
-          // eslint-disable-next-line react-hooks/set-state-in-effect
           setDraft(backfilled);
           return;
         }
@@ -200,7 +242,7 @@ export function ReceiveWizard({
     }
      
     setDraft(newDraft(warehouses[0]?.id ?? ''));
-  }, [warehouses]);
+  }, [warehouses, prefill]);
 
   useEffect(() => {
     if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
@@ -454,6 +496,7 @@ export function ReceiveWizard({
         dealId: draft!.unclaimed ? null : draft!.dealId,
         sourceNote: draft!.sourceNote,
         unclaimedMarking: draft!.unclaimedMarking,
+        expectedArrivalId: draft!.expectedArrivalId ?? null,
         lots: draft!.lots.map((lot) => ({
           id: lot.id,
           productNameZh: lot.zh.trim(),

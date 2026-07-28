@@ -149,14 +149,22 @@ export default async function ArrivalsPage() {
               </div>
               <div className="flex flex-wrap items-baseline gap-2 text-sm text-ink-500">
                 {row.boxCount !== null && <span className="num">≈ {row.boxCount} 📦</span>}
+                {row.weightKg !== null && <span className="num">⚖️ {row.weightKg} kg</span>}
+                {row.volumeM3 !== null && <span className="num">📐 {row.volumeM3} m³</span>}
                 {row.clientId && row.marking && <span className="num">{row.marking}</span>}
                 {row.note && <span className="min-w-0 flex-1 truncate">{row.note}</span>}
               </div>
               {canReceive && (
                 <div className="flex flex-wrap gap-2 border-t border-line pt-2">
-                  {/* The normal path: receive the cargo, and the promise
-                      closes itself when the receipt is confirmed. */}
-                  <Link href="/receive" className="btn-primary min-w-0 flex-1">
+                  {/* The normal path: receive the cargo. The promise id rides
+                      along, so the receiving screen opens pre-filled and the
+                      confirm closes THIS promise — no walking back here to
+                      press "arrived" (owner: "bu juda noqulay"). */}
+                  <Link
+                    href={`/receive?arrival=${row.id}`}
+                    data-testid="receive-expected"
+                    className="btn-primary min-w-0 flex-1"
+                  >
                     <Icon name="inbox" className="h-4 w-4" />
                     {t('receiveIt')}
                   </Link>

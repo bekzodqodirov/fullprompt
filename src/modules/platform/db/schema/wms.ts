@@ -1188,6 +1188,9 @@ export const expectedArrivals = pgTable(
     marking: text('marking'),
     /** The client's own count — the receipt is what corrects it. */
     boxCount: integer('box_count'),
+    /** …and the two numbers the price is made of, when the client knows them. */
+    weightKg: numeric('weight_kg', { precision: 12, scale: 3 }),
+    volumeM3: numeric('volume_m3', { precision: 12, scale: 4 }),
     expectedOn: date('expected_on'),
     note: text('note'),
     status: text('status').notNull().default('waiting'),

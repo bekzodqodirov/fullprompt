@@ -1124,7 +1124,9 @@
     "status": {
       "in_transit": "in transit",
       "arrived": "arrived"
-    }
+    },
+    "weightKg": "Weight (kg)",
+    "volumeM3": "Volume (m³)"
   },
   "trucks": {
     "title": "Where the trucks are",
