@@ -5,7 +5,7 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { listCandidates } from '@/modules/wms/crm/chat-rules';
+import { excludedLeftovers, listCandidates } from '@/modules/wms/crm/chat-rules';
 import { PageHeader } from '@/components/ui/page';
 import { ChatDecision } from './chat-decision';
 
@@ -50,6 +50,14 @@ export default async function WhichChatsPage({
     decision,
   })).filter((row) => (show === 'done' ? row.decision !== 'pending' : true));
 
+  // What still stands behind each EXCLUDED chat, so the purge button can
+  // carry its number and vanish once there is nothing left to delete.
+  const leftovers = await excludedLeftovers(
+    rows
+      .filter((row) => row.decision === 'exclude')
+      .map((row) => ({ id: row.id, managerUserId: row.managerUserId, peerId: BigInt(row.peerId) })),
+  );
+
   // The client list for the picker. Active only: a chat is being attached to
   // somebody the company still works with, and a closed code is a wrong answer
   // that would be found much later.
@@ -93,6 +101,7 @@ export default async function WhichChatsPage({
               row={row}
               clients={book}
               showManager={seeAll}
+              leftovers={leftovers.get(row.id) ?? 0}
               labels={{
                 add: t('chatAdd'),
                 never: t('chatNever'),
@@ -104,6 +113,8 @@ export default async function WhichChatsPage({
                 included: t('chatIncluded'),
                 excluded: t('chatExcluded'),
                 noName: t('chatNoName'),
+                purge: t('chatPurge'),
+                purgeConfirm: t('chatPurgeConfirm'),
               }}
             />
           ))}

@@ -1,14 +1,24 @@
 import 'dotenv/config';
 import { and, desc, eq } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { auditLog, clients, tgChatRules, users } from '@/modules/platform/db/schema';
+import {
+  attachments,
+  auditLog,
+  clients,
+  tgChatRules,
+  tgMessages,
+  users,
+} from '@/modules/platform/db/schema';
 import {
   ChatRuleError,
   decideChat,
   excludeChatForClient,
+  excludedLeftovers,
   listCandidates,
   pendingCount,
+  purgeExcludedChat,
   recordCandidates,
   rulesFor,
 } from '@/modules/wms/crm/chat-rules';
@@ -222,5 +232,108 @@ describe('stopping a chat the phone rule DOES match', () => {
     const after = await db.select().from(tgChatRules).where(eq(tgChatRules.peerId, PEER_C));
     // Repeatable, and still one row.
     expect(after).toHaveLength(1);
+  });
+});
+
+/**
+ * …and THIS is that separate decision (round 22): the explicit purge of what
+ * an excluded chat left behind — messages and their photographs, counted,
+ * audited, refused for anything not excluded.
+ */
+describe('purging an excluded chat', () => {
+  const PEER_P = BigInt(STAMP + 100);
+
+  it('deletes the stored rows and their photos, and writes the counts to the audit', async () => {
+    // Two stored messages, one carrying a "photo" (rows only — storage keys
+    // that never existed delete as a no-op, which is the best-effort design).
+    const [m1] = await db
+      .insert(tgMessages)
+      .values({
+        clientId,
+        managerUserId: managerId,
+        peerId: PEER_P,
+        tgMessageId: 1n,
+        direction: 'in',
+        body: 'maxfiy',
+        hasMedia: true,
+        sentAt: new Date(),
+      })
+      .returning({ id: tgMessages.id });
+    await db.insert(tgMessages).values({
+      clientId,
+      managerUserId: managerId,
+      peerId: PEER_P,
+      tgMessageId: 2n,
+      direction: 'out',
+      body: 'javob',
+      sentAt: new Date(),
+    });
+    await db.insert(attachments).values({
+      entityType: 'tg_message',
+      entityId: m1!.id,
+      kind: 'photo',
+      storageKey: `purgetest/${m1!.id}`,
+      fileName: 'photo_1.jpg',
+      contentType: 'image/jpeg',
+      sizeBytes: 1,
+      uploadedBy: managerId,
+    });
+
+    await excludeChatForClient({ clientId, managerUserId: managerId, peerId: PEER_P }, ctx());
+    const [rule] = await db
+      .select()
+      .from(tgChatRules)
+      .where(and(eq(tgChatRules.managerUserId, managerId), eq(tgChatRules.peerId, PEER_P)));
+
+    // The screen's number: what still stands behind the exclude.
+    const counts = await excludedLeftovers([
+      { id: rule!.id, managerUserId: managerId, peerId: PEER_P },
+    ]);
+    expect(counts.get(rule!.id)).toBe(2);
+
+    const result = await purgeExcludedChat(rule!.id, ctx());
+    expect(result).toEqual({ messages: 2, photos: 1 });
+
+    expect(
+      await db
+        .select()
+        .from(tgMessages)
+        .where(and(eq(tgMessages.managerUserId, managerId), eq(tgMessages.peerId, PEER_P))),
+    ).toHaveLength(0);
+    expect(
+      await db.select().from(attachments).where(eq(attachments.entityId, m1!.id)),
+    ).toHaveLength(0);
+
+    // Who deleted a conversation and when — the audit's whole purpose.
+    const trail = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.entityId, rule!.id))
+      .orderBy(desc(auditLog.createdAt));
+    const purged = trail.find((r) => (r.after as { purged?: boolean })?.purged === true);
+    expect(purged).toBeDefined();
+    expect((purged!.after as { messages: number }).messages).toBe(2);
+
+    // Nothing left → the screen stops offering the button.
+    expect(
+      (
+        await excludedLeftovers([{ id: rule!.id, managerUserId: managerId, peerId: PEER_P }])
+      ).size,
+    ).toBe(0);
+  });
+
+  it('refuses anything that is not an excluded chat', async () => {
+    // A rule made UNCONDITIONALLY here, not found lying around — the first
+    // cut looked one up and skipped itself when none existed, which proved
+    // nothing (the round-19 lesson about tests that can quietly pass).
+    const PEER_I = BigInt(STAMP + 101);
+    await recordCandidates(managerId, [{ peerId: PEER_I, title: 'Mijoz', phone: null }]);
+    const rule = (await listCandidates({ managerUserId: managerId })).find(
+      (r) => r.peerId === PEER_I.toString(),
+    )!;
+    await decideChat({ id: rule.id, decision: 'include', clientId }, ctx());
+    // Purging a KEPT client conversation is a different act — refused.
+    await expect(purgeExcludedChat(rule.id, ctx())).rejects.toThrow('not_excluded');
+    await expect(purgeExcludedChat(uuidv4(), ctx())).rejects.toThrow('chat_rule_not_found');
   });
 });

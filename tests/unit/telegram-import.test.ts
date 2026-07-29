@@ -7,6 +7,7 @@ import {
   toMessageRow,
   type ClientPhones,
   type DialogPeer,
+  mediaBackfillPlan,
 } from '@/modules/wms/crm/telegram-import';
 
 /**
@@ -143,5 +144,34 @@ describe('what the operator is told afterwards', () => {
       skippedNotClient: 1,
       skippedOther: 1,
     });
+  });
+});
+
+/**
+ * The `--media` backfill's one decision (round 22): which stored rows still
+ * owe their photograph. Pure, because the cap is a storage promise — MinIO
+ * holds ~1.5 GB with no off-site copy yet, and an uncapped backfill is a
+ * storage incident, not a feature.
+ */
+describe('which photographs a --media run may fetch', () => {
+  const row = (minutesAgo: number, hasMedia: boolean, hasPhoto: boolean) => ({
+    hasMedia,
+    hasPhoto,
+    sentAt: new Date(1_700_000_000_000 - minutesAgo * 60_000),
+  });
+
+  it('takes only media rows that lack their photo, newest first, capped', () => {
+    const plan = mediaBackfillPlan(
+      [row(30, true, false), row(10, true, false), row(20, true, true), row(5, false, false)],
+      1,
+    );
+    expect(plan).toHaveLength(1);
+    // The newest photo-less media row wins the single slot.
+    expect(plan[0]!.sentAt.getTime()).toBe(1_700_000_000_000 - 10 * 60_000);
+  });
+
+  it('an already-fetched photo is never fetched twice, and zero cap fetches nothing', () => {
+    expect(mediaBackfillPlan([row(1, true, true)], 50)).toHaveLength(0);
+    expect(mediaBackfillPlan([row(1, true, false)], 0)).toHaveLength(0);
   });
 });

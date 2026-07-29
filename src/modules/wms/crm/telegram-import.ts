@@ -20,6 +20,24 @@ import { phoneBelongsToClient } from '../client-cabinet/service';
  * as anything, or written to a log.
  */
 
+/**
+ * Which stored rows still owe us their photograph — the `--media` backfill's
+ * one decision, pure so it is provable: media-carrying, not yet holding an
+ * attachment, newest first, capped. The cap is the point: the owner's MinIO
+ * holds ~1.5 GB with no off-site copy yet (photos-to-Drive is his held
+ * decision), so a backfill that swallows a year of photos in one run is a
+ * storage incident, not a feature.
+ */
+export function mediaBackfillPlan<T extends { hasMedia: boolean; hasPhoto: boolean; sentAt: Date }>(
+  rows: T[],
+  capPerChat: number,
+): T[] {
+  return rows
+    .filter((row) => row.hasMedia && !row.hasPhoto)
+    .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
+    .slice(0, Math.max(0, capPerChat));
+}
+
 /** What Telegram gives us about the other side of a private chat. */
 export interface DialogPeer {
   /** Telegram's user id for the peer. */
@@ -306,6 +324,8 @@ export interface ImportSummary {
   skippedOther: number;
   messagesImported: number;
   messagesAlreadyThere: number;
+  /** Photographs fetched by `--media` — absent on a text-only run. */
+  photosFetched?: number;
 }
 
 export function emptySummary(): ImportSummary {

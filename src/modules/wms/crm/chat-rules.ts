@@ -1,7 +1,8 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { clients, tgChatRules, users } from '../../platform/db/schema';
+import { attachments, clients, tgChatRules, tgMessages, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { getStorage } from '../../platform/files/storage';
 import type { ChatRule } from './telegram-import';
 
 /**
@@ -261,4 +262,104 @@ export async function excludeChatForClient(
 export async function pendingCount(managerUserId?: string): Promise<number> {
   const rows = await listCandidates({ managerUserId, decision: 'pending' });
   return rows.length;
+}
+
+/**
+ * Stored rows still standing behind each EXCLUDED chat — so the screen can
+ * offer the purge only where there is something to purge, with the number
+ * on the button. One grouped query for the whole list.
+ */
+export async function excludedLeftovers(
+  rules: { id: string; managerUserId: string; peerId: bigint }[],
+): Promise<Map<string, number>> {
+  if (rules.length === 0) return new Map();
+  const out = new Map<string, number>();
+  for (const rule of rules) {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(tgMessages)
+      .where(
+        and(eq(tgMessages.managerUserId, rule.managerUserId), eq(tgMessages.peerId, rule.peerId)),
+      );
+    const n = Number(row?.n ?? 0);
+    if (n > 0) out.set(rule.id, n);
+  }
+  return out;
+}
+
+/**
+ * The SEPARATE decision `excludeChatForClient` refused to take quietly:
+ * delete what was already stored for an excluded chat — the messages and
+ * the photographs that came with them.
+ *
+ * Explicit, per chat, and only AFTER the exclude: the rule row is the
+ * proof somebody decided this conversation is not the company's to keep,
+ * and this second press is them saying the past of it is not either.
+ * Audited with the counts, because "who deleted a conversation and when"
+ * is exactly the question the audit log exists for. Deliberately NOT
+ * touched: `tg_outbox` — those are replies the COMPANY sent through its
+ * own screens, a record of our side's actions, not of the excluded chat.
+ */
+export async function purgeExcludedChat(
+  ruleId: string,
+  ctx: AuditContext,
+): Promise<{ messages: number; photos: number }> {
+  const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+  if (!rule) throw new ChatRuleError('chat_rule_not_found');
+  // Only an excluded chat: purging an INCLUDED client's conversation is a
+  // different (and refused) act — exclude it first, on the same screen.
+  if (rule.decision !== 'exclude') throw new ChatRuleError('not_excluded');
+
+  const rows = await db
+    .select({ id: tgMessages.id })
+    .from(tgMessages)
+    .where(
+      and(eq(tgMessages.managerUserId, rule.managerUserId), eq(tgMessages.peerId, rule.peerId)),
+    );
+  if (rows.length === 0) return { messages: 0, photos: 0 };
+  const messageIds = rows.map((r) => r.id);
+
+  // The photographs first: rows, then bytes. Storage deletion is
+  // best-effort AFTER the rows are gone — an orphaned object in MinIO is
+  // waste; a database row pointing at deleted bytes is a broken screen.
+  const photoRows = await db
+    .select({
+      id: attachments.id,
+      storageKey: attachments.storageKey,
+      thumb200Key: attachments.thumb200Key,
+      thumb800Key: attachments.thumb800Key,
+    })
+    .from(attachments)
+    .where(
+      and(eq(attachments.entityType, 'tg_message'), inArray(attachments.entityId, messageIds)),
+    );
+  if (photoRows.length > 0) {
+    await db.delete(attachments).where(
+      inArray(
+        attachments.id,
+        photoRows.map((p) => p.id),
+      ),
+    );
+  }
+  await db.delete(tgMessages).where(inArray(tgMessages.id, messageIds));
+
+  const storage = getStorage();
+  for (const photo of photoRows) {
+    for (const key of [photo.storageKey, photo.thumb200Key, photo.thumb800Key]) {
+      if (!key) continue;
+      await storage.delete(key).catch(() => {});
+    }
+  }
+
+  await writeAudit(db, ctx, {
+    entityType: 'tg_chat_rule',
+    entityId: ruleId,
+    action: 'update',
+    after: {
+      purged: true,
+      messages: messageIds.length,
+      photos: photoRows.length,
+    },
+  });
+  return { messages: messageIds.length, photos: photoRows.length };
 }

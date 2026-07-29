@@ -1297,6 +1297,8 @@ export const tgMessages = pgTable(
     // may talk to two of them and both threads are worth keeping.
     uniqueIndex('tg_messages_unique_idx').on(t.managerUserId, t.peerId, t.tgMessageId),
     index('tg_messages_client_idx').on(t.clientId, t.sentAt),
+    // The round-20 scoped reads lead with the manager (migration 0048).
+    index('tg_messages_manager_idx').on(t.managerUserId, t.clientId, t.sentAt),
   ],
 );
 

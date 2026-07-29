@@ -1093,7 +1093,9 @@
       "expired": "Timed out. Request a new code.",
       "forbidden": "Not enough rights.",
       "failed": "It did not work. Try again."
-    }
+    },
+    "chatPurge": "Delete stored messages",
+    "chatPurgeConfirm": "Delete this chat's stored messages (and photos) for good? The action is logged."
   },
   "navShort": {
     "home": "Home",

@@ -21,6 +21,7 @@ import {
   MAX_ATTEMPTS,
 } from '../src/modules/wms/crm/telegram-send';
 import {
+  applyEdit,
   clientBook,
   heartbeat,
   listListenablePhones,
@@ -122,6 +123,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   const { TelegramClient, helpers } = await import('telegram');
   const { StringSession } = await import('telegram/sessions');
   const { NewMessage } = await import('telegram/events');
+  const { EditedMessage } = await import('telegram/events/EditedMessage');
 
   const client = new TelegramClient(new StringSession(account.session), apiId, apiHash, {
     // Infinity, NOT -1. GramJS uses this as a loop bound
@@ -225,6 +227,31 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       console.error('xabar ishlanmadi:', err instanceof Error ? err.message : err);
     }
   }, new NewMessage({}));
+
+  // Edits. A client who fixes a price in an earlier message has CHANGED the
+  // record the manager acts on — the stored copy must follow. UPDATE-only in
+  // `applyEdit`, so an edit in a chat we never kept touches nothing, which
+  // also means no book lookup is needed here at all.
+  client.addEventHandler(async (event: { message?: unknown }) => {
+    try {
+      const msg = event.message as {
+        id: number;
+        message?: string | null;
+        getChat?: () => Promise<unknown>;
+      };
+      const peer: DialogPeer = peerFromChat((await msg.getChat?.()) as never);
+      if (!peer.id) return;
+      const applied = await applyEdit({
+        managerUserId: account.managerUserId,
+        peerId: peer.id,
+        tgMessageId: BigInt(msg.id),
+        body: msg.message?.trim() ? msg.message : null,
+      });
+      if (applied) console.log('  ✎ tahrir qabul qilindi');
+    } catch (err) {
+      console.error('tahrir ishlanmadi:', err instanceof Error ? err.message : err);
+    }
+  }, new EditedMessage({}));
 
   /* ---------------------------------------------------------------- *
    * The sender — phase 4. Replies queued on the screen go out here,

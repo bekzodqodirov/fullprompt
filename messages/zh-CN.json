@@ -1093,7 +1093,9 @@
       "expired": "已超时，请重新获取验证码。",
       "forbidden": "权限不足。",
       "failed": "未成功，请重试。"
-    }
+    },
+    "chatPurge": "删除聊天记录",
+    "chatPurgeConfirm": "永久删除该聊天已保存的消息（及其照片）？此操作将记入日志。"
   },
   "navShort": {
     "home": "首页",

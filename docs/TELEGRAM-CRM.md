@@ -58,6 +58,8 @@ Har bir menejer uchun bir martadan, uning yonida turib:
 ```bash
 cd ~/gsr
 docker compose run --rm migrate sh -c "pnpm tg-import --user +998901757800"
+# rasmlar ham kerak bo'lsa (har chatdan eng yangi 50 tasi; --media 100 = ko'proq):
+docker compose run --rm migrate sh -c "pnpm tg-import --user +998901757800 --media"
 ```
 
 - `--user` — menejerning **shu sistemadagi** login raqami

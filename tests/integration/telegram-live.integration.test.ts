@@ -12,6 +12,7 @@ import {
   markAccount,
   saveAccount,
   resumePoints,
+  applyEdit,
   storeIncoming,
   takeListenerLock,
 } from '@/modules/wms/crm/telegram-accounts';
@@ -148,6 +149,35 @@ describe('what the bridge writes', () => {
     // to twelve people about their private conversations.
     const after = await db.select().from(tgMessages).where(eq(tgMessages.clientId, clientId));
     expect(after).toHaveLength(before.length);
+  });
+
+  it('follows a sender’s EDIT on a stored row, and never creates one (round 22)', async () => {
+    // The message stored above, edited by its sender: the record must say
+    // what it says NOW — a corrected price acted on from the old text is a
+    // real mistake with real money in it.
+    expect(
+      await applyEdit({
+        managerUserId: managerId,
+        peerId: PEER,
+        tgMessageId: 5001n,
+        body: 'Yuk ERTAGA jo‘naydi',
+      }),
+    ).toBe(true);
+    const [row] = await db.select().from(tgMessages).where(eq(tgMessages.clientId, clientId));
+    expect(row!.body).toBe('Yuk ERTAGA jo‘naydi');
+
+    // An edit in a chat we never kept touches nothing — UPDATE-only is the
+    // privacy half, and "no new rows" is the whole proof.
+    const before = await db.select().from(tgMessages);
+    expect(
+      await applyEdit({
+        managerUserId: managerId,
+        peerId: PEER + 999n,
+        tgMessageId: 1n,
+        body: 'begona chat',
+      }),
+    ).toBe(false);
+    expect((await db.select().from(tgMessages)).length).toBe(before.length);
   });
 });
 

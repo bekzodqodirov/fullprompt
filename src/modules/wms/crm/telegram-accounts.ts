@@ -207,6 +207,35 @@ export async function clientBook(): Promise<ClientPhones[]> {
     .orderBy(asc(clients.clientCode));
 }
 
+/**
+ * A message the sender EDITED after we stored it — the thread must show what
+ * it says NOW, not what it said first (queued follow-up from phase 3).
+ *
+ * UPDATE-only, never an insert, and that is the privacy half: an edit in a
+ * chat we never kept must leave no trace, and the cheapest way to guarantee
+ * that is to only ever touch rows that already exist. Media flips are folded
+ * to true-only: Telegram lets a caption change but not the photo itself, so
+ * a stored `has_media` never becomes false by edit. Returns whether a row
+ * was actually there.
+ */
+export async function applyEdit(input: {
+  managerUserId: string;
+  peerId: bigint;
+  tgMessageId: bigint;
+  body: string | null;
+}): Promise<boolean> {
+  const rows = await db
+    .update(tgMessages)
+    .set({ body: input.body })
+    .where(
+      sql`${tgMessages.managerUserId} = ${input.managerUserId}
+        AND ${tgMessages.peerId} = ${input.peerId}
+        AND ${tgMessages.tgMessageId} = ${input.tgMessageId}`,
+    )
+    .returning({ id: tgMessages.id });
+  return rows.length > 0;
+}
+
 export interface ResumePoint {
   peerId: bigint;
   /** The highest Telegram message id already stored for this chat. */

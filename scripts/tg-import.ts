@@ -1,19 +1,23 @@
 import 'dotenv/config';
 import { createInterface } from 'node:readline/promises';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
-import { clients, tgMessages, users } from '../src/modules/platform/db/schema';
+import { attachments, clients, tgMessages, users } from '../src/modules/platform/db/schema';
 import { rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   classifyWithRules,
   countVerdict,
+  mediaBackfillPlan,
   peerFromChat,
   emptySummary,
   isWorthKeeping,
   toMessageRow,
+  tgPhotoPlan,
   type ClientPhones,
   type DialogPeer,
 } from '../src/modules/wms/crm/telegram-import';
+import { saveAttachment } from '../src/modules/platform/files/service';
+import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
 
 /**
  * One-off: bring a manager's existing Telegram conversations into the CRM.
@@ -47,6 +51,8 @@ interface Args {
   userPhone: string;
   tgPhone: string;
   months: number;
+  /** Photos per chat to (back)fill; 0 = the old text-only behaviour. */
+  media: number;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -55,11 +61,18 @@ function parseArgs(argv: string[]): Args {
     return i >= 0 ? argv[i + 1] : undefined;
   };
   const userPhone = get('user');
-  if (!userPhone) throw new Error('usage: pnpm tg-import --user +998... [--tg +998...] [--months 12]');
+  if (!userPhone)
+    throw new Error(
+      'usage: pnpm tg-import --user +998... [--tg +998...] [--months 12] [--media 50]',
+    );
+  const mediaFlag = process.argv.includes('--media');
   return {
     userPhone,
     tgPhone: get('tg') ?? userPhone,
     months: Number(get('months') ?? 12),
+    // `--media` alone means the default cap; `--media 100` raises it. Absent
+    // means what the import always did: text only.
+    media: mediaFlag ? Number(get('media')) || 50 : 0,
   };
 }
 
@@ -128,6 +141,15 @@ async function main() {
     if (!verdict.keep) continue;
 
     let importedHere = 0;
+    // The photograph carriers seen in THIS chat, kept so `--media` can pick
+    // which of them still owe their picture — the message object holds the
+    // download handle, so the choice must be made while it is in hand.
+    const mediaSeen: {
+      tgMessageId: bigint;
+      sentAt: Date;
+      hasMedia: boolean;
+      msg: { id: number; media?: unknown; downloadMedia?: () => Promise<unknown> };
+    }[] = [];
     for await (const msg of client.iterMessages(dialog.id, { limit: 5000 })) {
       const row = toMessageRow(peer.id, {
         id: msg.id,
@@ -161,6 +183,76 @@ async function main() {
       } else {
         summary.messagesAlreadyThere += 1;
       }
+      if (args.media > 0 && row.hasMedia && tgPhotoPlan(msg.media).download) {
+        mediaSeen.push({
+          tgMessageId: row.tgMessageId,
+          sentAt: row.sentAt,
+          hasMedia: row.hasMedia,
+          msg: msg as never,
+        });
+      }
+    }
+
+    // `--media`: fetch the photographs the stored rows still owe — newest
+    // first, capped per chat, replay-safe (a row that already holds its
+    // photo is skipped, so re-running downloads nothing twice).
+    if (args.media > 0 && mediaSeen.length > 0) {
+      const stored = await db
+        .select({ id: tgMessages.id, tgMessageId: tgMessages.tgMessageId })
+        .from(tgMessages)
+        .where(
+          and(
+            eq(tgMessages.managerUserId, manager.id),
+            eq(tgMessages.peerId, peer.id),
+            inArray(tgMessages.tgMessageId, mediaSeen.map((m) => m.tgMessageId)),
+          ),
+        );
+      const rowIdByTg = new Map(stored.map((r) => [r.tgMessageId, r.id]));
+      const withPhoto = new Set(
+        stored.length === 0
+          ? []
+          : (
+              await db
+                .select({ entityId: attachments.entityId })
+                .from(attachments)
+                .where(
+                  and(
+                    eq(attachments.entityType, 'tg_message'),
+                    inArray(attachments.entityId, stored.map((r) => r.id)),
+                  ),
+                )
+            ).map((a) => a.entityId),
+      );
+      const plan = mediaBackfillPlan(
+        mediaSeen
+          .filter((m) => rowIdByTg.has(m.tgMessageId))
+          .map((m) => ({
+            ...m,
+            hasPhoto: withPhoto.has(rowIdByTg.get(m.tgMessageId)!),
+          })),
+        args.media,
+      );
+      for (const item of plan) {
+        try {
+          const bytes = await item.msg.downloadMedia?.();
+          if (!Buffer.isBuffer(bytes) || bytes.length === 0) continue;
+          const { id } = await saveAttachment(
+            {
+              entityType: 'tg_message',
+              entityId: rowIdByTg.get(item.tgMessageId)!,
+              fileName: `photo_${item.msg.id}.jpg`,
+              contentType: 'image/jpeg',
+              body: bytes,
+              uploadedBy: manager.id,
+            },
+            { thumbnails: 'skip' },
+          );
+          await generateThumbnails(id).catch(() => {});
+          summary.photosFetched = (summary.photosFetched ?? 0) + 1;
+        } catch (err) {
+          console.error('  rasm olinmadi:', err instanceof Error ? err.message : err);
+        }
+      }
     }
     console.log(`  ${verdict.clientCode}: +${importedHere}`);
   }
@@ -177,6 +269,7 @@ async function main() {
   console.log(`guruh/bot (o‘tkazildi):  ${summary.skippedOther}`);
   console.log(`yangi xabar yozildi:     ${summary.messagesImported}`);
   console.log(`allaqachon bor edi:      ${summary.messagesAlreadyThere}`);
+  if (args.media > 0) console.log(`rasm olindi:             ${summary.photosFetched ?? 0}`);
 }
 
 main()

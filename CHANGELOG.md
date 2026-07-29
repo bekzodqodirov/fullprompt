@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Telegram mayda ishlar: chiqarilgan chatni tozalash, tahrirlar, import rasmlari, tezlik — 2026-07-29
+
+Navbatda turgan to'rt ish yopildi:
+
+- **«Hech qachon» degan chatning eskisini ham o'chirish.** Chatni chiqarib
+  tashlash avvalgidek faqat kelajakka ishlar edi; endi «Qaysi chatlar»
+  ekranida chiqarilgan chat yonida «Yozuvlarini o'chirish (soni)» tugmasi
+  bor — bosilsa, saqlangan xabarlar va rasmlar butunlay o'chadi. Ataylab
+  ALOHIDA tugma va tasdiq bilan: nimadir o'chirish hech qachon boshqa
+  tugmaning yon ta'siri bo'lmasligi kerak. Kim, qachon, nechta o'chirgani
+  jurnalga yoziladi. Mijozga ulangan (saqlanayotgan) chatni bu tugma
+  o'chira olmaydi.
+- **Tahrirlangan xabarlar.** Mijoz eski xabarini tahrirlasa (masalan,
+  narxni to'g'irlasa), tizimdagi nusxa ham yangilanadi — menejer eski
+  matnga qarab ish qilib qo'ymaydi. Saqlanmaydigan chatlardagi tahrir esa
+  hech narsa yozmaydi (yozuv YO'Q joyga tahrir ham yo'q — maxfiylik).
+- **Import endi rasmlarni ham oladi.** `pnpm tg-import --media` — eski
+  yozishmalardagi rasmlar ham tushadi, lekin har chatdan eng yangi 50 tasi
+  (xohlasangiz `--media 100`). Chegara ataylab: MinIO'da ~1.5 GB rasm bor
+  va hali Drive'ga nusxa yo'q — chegarasiz yuklab olish omborni to'ldirib
+  qo'yar edi. Qayta yurgizish xavfsiz: rasmi bor xabar qayta yuklanmaydi.
+- **Tezlik.** Suhbatlar ro'yxati uchun yangi indeks (migratsiya 0048) —
+  yozishmalar ko'paygan sari ro'yxat sekinlashmasin deb.
+
+Tekshirildi: yangi bazada 764 unit/integration + 92 e2e yashil (purge'ning
+«faqat chiqarilgan chat» himoyasi ataylab olib tashlab QIZIL ko'rsatildi —
+birinchi urinishda test o'zini jim o'tkazib yuborayotgan ekan, u ham
+tuzatildi). Migratsiya: **0048** (faqat indeks qo'shadi, xavfsiz).
+
 ## Rahbar ko'rinishi · lenta va chat alohida · Telegram ulash ekrandan — 2026-07-29
 
 Uchala aytganingiz ham qilindi:

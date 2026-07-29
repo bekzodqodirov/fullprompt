@@ -1093,7 +1093,9 @@
       "expired": "Vaqt tugadi. Kodni qaytadan so'rang.",
       "forbidden": "Ruxsat yetarli emas.",
       "failed": "Bo'lmadi. Yana urinib ko'ring."
-    }
+    },
+    "chatPurge": "Yozuvlarini o'chirish",
+    "chatPurgeConfirm": "Bu chatning saqlangan xabarlari (va rasmlari) butunlay o'chirilsinmi? Bu amal jurnalga yoziladi."
   },
   "navShort": {
     "home": "Bosh",

@@ -337,6 +337,13 @@
       "when": 1785190000016,
       "tag": "0047_custom_entities_live",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1785190000017,
+      "tag": "0048_tg_messages_manager_idx",
+      "breakpoints": true
     }
   ]
 }

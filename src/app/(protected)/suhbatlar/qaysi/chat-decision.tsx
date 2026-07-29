@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { decideChatAction, type ChatRuleState } from './actions';
+import { decideChatAction, purgeChatAction, type ChatRuleState } from './actions';
 
 export interface ClientOption {
   id: string;
@@ -25,6 +25,7 @@ export function ChatDecision({
   clients,
   labels,
   showManager,
+  leftovers = 0,
 }: {
   row: {
     id: string;
@@ -43,6 +44,8 @@ export function ChatDecision({
    * that actually helps them decide.
    */
   showManager: boolean;
+  /** Rows still stored for an EXCLUDED chat — 0 hides the purge button. */
+  leftovers?: number;
   labels: {
     add: string;
     never: string;
@@ -54,9 +57,15 @@ export function ChatDecision({
     included: string;
     excluded: string;
     noName: string;
+    purge: string;
+    purgeConfirm: string;
   };
 }) {
   const [state, submit, pending] = useActionState<ChatRuleState, FormData>(decideChatAction, {});
+  const [purgeState, purge, purging] = useActionState<ChatRuleState, FormData>(
+    purgeChatAction,
+    {},
+  );
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -87,9 +96,32 @@ export function ChatDecision({
         </p>
       )}
       {row.decision === 'exclude' && (
-        <p className="text-sm text-ink-500" data-testid="chat-excluded">
-          ✕ {labels.excluded}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-ink-500" data-testid="chat-excluded">
+            ✕ {labels.excluded}
+          </p>
+          {/* The SEPARATE second decision (#388): what was stored before the
+              exclude does not vanish with it — deleting the past takes its
+              own press, its own confirm, and leaves an audit row. */}
+          {leftovers > 0 && (
+            <form
+              action={purge}
+              onSubmit={(e) => {
+                if (!window.confirm(labels.purgeConfirm)) e.preventDefault();
+              }}
+            >
+              <input type="hidden" name="id" value={row.id} />
+              <button
+                type="submit"
+                className="btn-ghost !min-h-8 text-xs text-bad"
+                disabled={purging}
+                data-testid="chat-purge"
+              >
+                🗑 {labels.purge} ({leftovers})
+              </button>
+            </form>
+          )}
+        </div>
       )}
 
       {picking ? (
@@ -169,7 +201,9 @@ export function ChatDecision({
         </div>
       )}
 
-      {state.error && <p className="text-sm font-semibold text-bad">{state.error}</p>}
+      {(state.error ?? purgeState.error) && (
+        <p className="text-sm font-semibold text-bad">{state.error ?? purgeState.error}</p>
+      )}
     </div>
   );
 }

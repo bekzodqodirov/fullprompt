@@ -121,8 +121,8 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-759 unit/integration + 92 e2e, verified in CI's order on a fresh database.
-Latest migration: **0047** (`custom_entities_live`).
+764 unit/integration + 92 e2e, verified in CI's order on a fresh database.
+Latest migration: **0048** (`tg_messages_manager_idx`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -486,16 +486,31 @@ honest not_configured refusal (CI has no TELEGRAM_API_ID). NOT live-tested
 against Telegram (no network here): watch the first real connect in
 docker logs.
 
+Round 22 — the queued Telegram leftovers (#388). Migration 0048
+(manager-led index for the round-20 scoped reads). PURGE of an excluded
+chat's stored rows+photos: `purgeExcludedChat` (exclude-only, audited
+counts, storage best-effort after db rows; tg_outbox deliberately kept),
+«chat-purge» button with confirm on /suhbatlar/qaysi excluded rows via
+`excludedLeftovers` counts. TEST LESSON: the refusal test first looked up
+an included rule and skipped itself when none existed — a conditional
+test proves nothing; mint the fixture unconditionally. EDITS: listener
+EditedMessage → `applyEdit` (UPDATE-only = the privacy proof: an edit in
+an unkept chat cannot create a row). `tg-import --media [n]`: photos for
+kept history via pure `mediaBackfillPlan` (media, no attachment, newest
+first, cap default 50/chat — capped BECAUSE photos-to-Drive is still on
+hold and MinIO has no off-site copy). Deferred: purge has no e2e (the
+predicate+action are integration-proven; a browser press needs seeded tg
+config, #183).
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
 tur»).** His agreed order after that: (5) «mukammal» — phases 4 and 6
 SHIPPED (round 16), deal open items SHIPPED (round 17), phase 7 SHIPPED
 (round 18), phase 8 SHIPPED (round 19) — **the «mukammal» list is
-COMPLETE**. Telegram/CRM still queued: tg-import media backfill,
-edited-message updates, deleting excluded chats' old rows,
-`listConversations` index, Siroj's account (self-served now via
-/suhbatlar/ulash — owner tells him when).
+COMPLETE**. Telegram/CRM queue CLEARED in round 22 (media backfill,
+edited messages, excluded-chat purge, listConversations index); left:
+Siroj's account (self-served via /suhbatlar/ulash — owner tells him when).
 
 Explicitly parked by the owner: crate loading is not to be touched further.
 
