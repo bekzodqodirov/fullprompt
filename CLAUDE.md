@@ -121,8 +121,8 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-768 unit/integration + 92 e2e, verified in CI's order on a fresh database.
-Latest migration: **0049** (`roles_warehouse_scoped`).
+778 unit/integration + 92 e2e, verified in CI's order on a fresh database.
+Latest migration: **0050** (`deal_stage_cargo_trigger`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -526,8 +526,32 @@ now purges too (excludeAndPurgeChat; confirm states it); `AutoRefresh`
 stale «navbatda» bubble and shows incoming live; `codesSharingPhones` in
 the thread header (all active codes on shared phones, own first);
 `chatBadges(viewer)` puts 💬/💬! on lead+deal kanban cards, viewer-scoped
-per #383. Items 5 (PWA web-push) and 6 (deal auto-stage from linked
-cargo) are agreed as the next two rounds.
+per #383. Item 5 (PWA web-push) was then PARKED by the owner («hozircha
+telegram ham tursin» — Telegram stays, per-user mutes already exist);
+item 6 became round 26.
+
+Round 26 — the owner's item 6 (#392-394, «6 ha zor bo'lardi»): a deal
+follows its linked cargo through the funnel. `deal_stages.cargo_trigger`
+(migration 0050, nullable/additive; seeded stages carry none) names one of
+FIVE states = the five warehouse events: received/departed/arrived/ready/
+handed. Engine: `deals/auto-stage.ts` resolves event→deals (receiptId
+directly; batch+handover through `box_movements` per #152; ReadyForPickup
+client-filtered) and `applyCargoTrigger` (in service.ts) moves FORWARD only
+(sortOrder), open deals only, never into lost (a lost needs a person's
+written reason), always THROUGH `moveDeal` — audit + DealStageChanged +
+phase-7 rules hear it. `linkReceipt` of a confirmed receipt counts as
+'received' (linking is where the owner starts). Platform hook: dynamic
+`await import` in `processEventBatch` beside `runAutomationRules`, own
+try/catch (the boss.ts crossing pattern). **BatchUnloaded was declared
+since M4 + offered as a rule trigger since round 18 and emitted NOWHERE**
+— `finishUnload` now emits it; owner told any existing rule on it goes
+live. First deal-stage EDITOR: `/bitimlar/etaplar` (⚙ on the board), gate
+`crm.manage` (#170), mirrors the lead editor incl. in-tx needs_open/
+needs_won; refuses trigger-on-lost. e2e: none that creates stages (#183 —
+integration-proven through the same functions). Red-proofs ×3 (#166):
+forward-only strip, kind-guard strip, hook stub (5 event tests red, link
+test green). Test file drains pending events BEFORE minting trigger
+stages — its stages are CONFIGURATION while they exist.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
@@ -555,7 +579,7 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations up to 0047 — back up first; the compose
+**Deploy the branch** (migrations up to 0050 — back up first; the compose
 change recreates the postgres container, ~5-15 s outage: off-hours, run
 `free -h` first and halve the tuned values on a 2 GB box) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not

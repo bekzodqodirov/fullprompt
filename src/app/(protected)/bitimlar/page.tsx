@@ -83,6 +83,18 @@ export default async function DealsPage({
                 {tc('funnel')}
               </Link>
             )}
+            {/* The funnel's own settings — cargo triggers live there. Gated
+                like the lead settings: reshaping columns is crm.manage. */}
+            {actor.permissions.has('crm.manage') && (
+              <Link
+                href="/bitimlar/etaplar"
+                className="btn-secondary px-3"
+                data-testid="deal-stage-settings"
+                aria-label={t('stageSettings')}
+              >
+                <Icon name="settings" className="h-4 w-4" />
+              </Link>
+            )}
             <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal">
               <Icon name="plus" className="h-4 w-4" />
               {t('newDeal')}

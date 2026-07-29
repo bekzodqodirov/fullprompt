@@ -1449,7 +1449,17 @@
     "importDutyTotal": "Duty estimate: ~{amount}",
     "importDutyNote": "a rough AI hint, not the official rate",
     "importReplaceWarn": "Confirming REPLACES the deal's current lines.",
-    "importConfirm": "Confirm and write"
+    "importConfirm": "Confirm and write",
+    "stageSettings": "Deal stages",
+    "cargoTrigger": "Cargo auto-move",
+    "cargoTriggerHint": "Give a stage a cargo state and the deal moves there by itself as soon as its cargo reaches it — forward only; won and lost deals are left alone.",
+    "triggerNone": "No auto-move",
+    "triggerReceived": "Received in China",
+    "triggerDeparted": "Truck departed",
+    "triggerArrived": "Unloaded at destination",
+    "triggerReady": "Ready for pickup",
+    "triggerHanded": "Handed to client",
+    "triggerOnLost": "A lost stage cannot have an auto-move"
   },
   "automation": {
     "title": "Automation rules",

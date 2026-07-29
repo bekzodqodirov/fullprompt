@@ -1101,6 +1101,12 @@ export const dealStages = pgTable(
     color: text('color').notNull().default('gray'),
     sortOrder: integer('sort_order').notNull().default(100),
     active: boolean('active').notNull().default(true),
+    /**
+     * Round 26 (owner's item 6): the cargo state that pulls a deal INTO this
+     * stage by itself — forward only, open deals only. Null = the stage is
+     * moved to by hand alone, which is how every stage shipped.
+     */
+    cargoTrigger: text('cargo_trigger'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -1108,6 +1114,10 @@ export const dealStages = pgTable(
     check(
       'deal_stages_color_check',
       sql`${t.color} IN ('gray', 'blue', 'green', 'amber', 'red', 'purple', 'teal')`,
+    ),
+    check(
+      'deal_stages_cargo_trigger_check',
+      sql`${t.cargoTrigger} IS NULL OR ${t.cargoTrigger} IN ('received', 'departed', 'arrived', 'ready', 'handed')`,
     ),
   ],
 );

@@ -11,8 +11,10 @@ import {
   deferPayment,
   dealLineSchema,
   dealSchema,
+  dealStageSchema,
   linkReceipt,
   moveDeal,
+  saveDealStage,
   saveLines,
   setDealDiscount,
   updateDeal,
@@ -110,6 +112,38 @@ export async function moveDealAction(
   reason: string,
 ): Promise<DealFormState> {
   return run((ctx) => moveDeal(id, stageId, ctx, reason));
+}
+
+/**
+ * Reshaping the deal funnel is the same power as reshaping the lead funnel,
+ * so it wears the same gate — `crm.manage`, not the deal-write list: working
+ * a deal and redefining what the columns MEAN are different jobs.
+ */
+export async function saveDealStageAction(
+  _prev: DealFormState,
+  form: FormData,
+): Promise<DealFormState> {
+  const actor = await getActor();
+  if (!actor?.permissions.has('crm.manage')) return { error: 'forbidden' };
+  const parsed = dealStageSchema.safeParse({
+    name: String(form.get('name') ?? ''),
+    kind: String(form.get('kind') ?? '') || 'open',
+    color: String(form.get('color') ?? '') || 'gray',
+    sortOrder: Number(form.get('sortOrder')) || 100,
+    active: form.getAll('active').at(-1) !== 'off',
+    cargoTrigger: String(form.get('cargoTrigger') ?? '') || null,
+  });
+  if (!parsed.success) return { error: 'validation' };
+  const id = String(form.get('id') ?? '') || undefined;
+  const meta = await requestMeta();
+  try {
+    await saveDealStage({ ...parsed.data, id }, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof DealError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/bitimlar', 'layout');
+  return { ok: true };
 }
 
 export async function saveLinesAction(

@@ -1449,7 +1449,17 @@
     "importDutyTotal": "关税估算：~{amount}",
     "importDutyNote": "AI 粗略提示，非官方税率",
     "importReplaceWarn": "确认将替换交易现有明细行。",
-    "importConfirm": "确认写入"
+    "importConfirm": "确认写入",
+    "stageSettings": "交易阶段",
+    "cargoTrigger": "按货物自动流转",
+    "cargoTriggerHint": "为阶段指定货物状态后，交易的货物一到该状态，交易就会自动进入此阶段——只向前流转；已赢单和已输单的交易不受影响。",
+    "triggerNone": "不自动流转",
+    "triggerReceived": "中国仓已收货",
+    "triggerDeparted": "车辆已发出",
+    "triggerArrived": "已到达卸货",
+    "triggerReady": "可提货",
+    "triggerHanded": "已交付客户",
+    "triggerOnLost": "失败阶段不能设置自动流转"
   },
   "automation": {
     "title": "自动化规则",

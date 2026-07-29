@@ -565,6 +565,22 @@ async function processEventBatch(): Promise<{ created: number; full: boolean }> 
     } catch (err) {
       logger.error({ err, eventId: String(event.id) }, 'automation run failed');
     }
+    // Round 26: linked cargo drives the deal funnel. The wms engine is
+    // reached the way startBoss reaches wms workers — a dynamic import,
+    // because platform never imports wms statically. Fenced the same as the
+    // rules: a stuck funnel must not block the fan-out.
+    try {
+      const { runDealAutoStage } = await import('../../wms/deals/auto-stage');
+      await runDealAutoStage({
+        type: event.type,
+        payload: event.payload as Record<string, unknown>,
+        entityType: event.entityType,
+        entityId: event.entityId,
+        actorId: event.actorId,
+      });
+    } catch (err) {
+      logger.error({ err, eventId: String(event.id) }, 'deal auto-stage failed');
+    }
     await db.update(events).set({ processedAt: new Date() }).where(eq(events.id, event.id));
   }
   return { created, full: pending.length === 50 };

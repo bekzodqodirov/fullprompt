@@ -351,6 +351,13 @@
       "when": 1785190000018,
       "tag": "0049_roles_warehouse_scoped",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1785190000019,
+      "tag": "0050_deal_stage_cargo_trigger",
+      "breakpoints": true
     }
   ]
 }

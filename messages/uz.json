@@ -1449,7 +1449,17 @@
     "importDutyTotal": "Boj taxmini: ~{amount}",
     "importDutyNote": "AI ning qoralama taxmini, rasmiy stavka emas",
     "importReplaceWarn": "Tasdiqlash bitimning hozirgi qatorlarini ALMASHTIRADI.",
-    "importConfirm": "Tasdiqlab yozish"
+    "importConfirm": "Tasdiqlab yozish",
+    "stageSettings": "Bitim etaplari",
+    "cargoTrigger": "Yuk bo'yicha avto-o'tish",
+    "cargoTriggerHint": "Etapga yuk holati belgilansa, bitimning yuki shu holatga yetishi bilan bitim o'zi shu etapga o'tadi — faqat oldinga; yutilgan va yo'qotilgan bitimlarga tegilmaydi.",
+    "triggerNone": "Avto-o'tish yo'q",
+    "triggerReceived": "Yuk Xitoyda qabul qilindi",
+    "triggerDeparted": "Mashina jo'nadi",
+    "triggerArrived": "Mashina tushirildi",
+    "triggerReady": "Topshirishga tayyor",
+    "triggerHanded": "Mijozga topshirildi",
+    "triggerOnLost": "Yo'qotilgan etapga avto-o'tish qo'yib bo'lmaydi"
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

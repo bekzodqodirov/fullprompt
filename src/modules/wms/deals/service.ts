@@ -19,7 +19,9 @@ import type { Db, Tx } from '@/modules/platform/db/client';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { emitEvent } from '@/modules/platform/events/service';
 import { getSetting } from '@/modules/platform/settings/service';
+import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
+import { STAGE_COLORS } from '../crm/service';
 import {
   ARRIVED_BOX_STATUSES,
   SETTLED_BOX_STATUSES,
@@ -304,6 +306,135 @@ export async function linkReceipt(
       after: { deal: dealId },
     });
   });
+  // Round 26: «sdelkaga qaysi yukligini ulaganimdan keyin…» — linking is where
+  // the owner starts, and by then the cargo is usually already sitting in the
+  // Chinese warehouse. A confirmed receipt IS received cargo, so the link
+  // itself counts as the first trigger; the later states catch up on their own
+  // events. Fenced: a funnel that refuses to move must never fail the link.
+  if (dealId && receipt.status === 'confirmed') {
+    try {
+      await applyCargoTrigger([dealId], 'received', ctx);
+    } catch (err) {
+      logger.error({ err, dealId }, 'deal auto-stage on link failed');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deal stages: the owner's editor, and the cargo that moves the funnel
+// (round 26, owner's item 6)
+// ---------------------------------------------------------------------------
+
+/**
+ * The cargo states a stage may follow — exactly the five moments the
+ * warehouse already announces as events, in the order cargo lives them.
+ * The migration's CHECK constraint repeats this list.
+ */
+export const CARGO_TRIGGERS = ['received', 'departed', 'arrived', 'ready', 'handed'] as const;
+export type CargoTrigger = (typeof CARGO_TRIGGERS)[number];
+
+export const dealStageSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  kind: z.enum(['open', 'won', 'lost']).default('open'),
+  color: z.enum(STAGE_COLORS).default('gray'),
+  sortOrder: z.number().int().min(0).max(10_000).default(100),
+  active: z.boolean().default(true),
+  cargoTrigger: z.enum(CARGO_TRIGGERS).nullable().default(null),
+});
+
+export async function saveDealStage(
+  input: z.infer<typeof dealStageSchema> & { id?: string },
+  ctx: AuditContext,
+) {
+  if (!ctx.actorId) throw new DealError('unauthenticated');
+  // Cargo may win a deal, only a person may lose one: a lost stage needs a
+  // written-down reason (see moveDeal), which an automatic move cannot give.
+  if (input.cargoTrigger && input.kind === 'lost') throw new DealError('trigger_on_lost');
+  const values = {
+    name: input.name,
+    kind: input.kind,
+    color: input.color,
+    sortOrder: input.sortOrder,
+    active: input.active,
+    cargoTrigger: input.cargoTrigger,
+  };
+  const row = await db.transaction(async (tx) => {
+    const [saved] = input.id
+      ? await tx.update(dealStages).set(values).where(eq(dealStages.id, input.id)).returning()
+      : await tx.insert(dealStages).values(values).returning();
+    if (!saved) throw new DealError('not_found');
+    // The lead editor's funnel law, checked INSIDE the transaction so a
+    // refusal rolls the change back: no won stage silently breaks winning,
+    // no open stage leaves a new deal nowhere to start.
+    const remaining = await tx.select().from(dealStages).where(eq(dealStages.active, true));
+    for (const required of ['open', 'won'] as const) {
+      if (!remaining.some((stage) => stage.kind === required)) {
+        throw new DealError(`needs_${required}`);
+      }
+    }
+    return saved;
+  });
+  await writeAudit(db, ctx, {
+    entityType: 'deal_stage',
+    entityId: row.id,
+    action: input.id ? 'update' : 'create',
+    after: values,
+  });
+  return row;
+}
+
+/** How many deals sit in each stage — shown beside the editor. */
+export async function dealStageUsage(): Promise<Record<string, number>> {
+  const rows = await db
+    .select({ stageId: deals.stageId, n: sql<number>`count(*)` })
+    .from(deals)
+    .groupBy(deals.stageId);
+  return Object.fromEntries(rows.map((row) => [row.stageId, Number(row.n)]));
+}
+
+/**
+ * Move every open deal in `dealIds` forward to the stage that follows this
+ * cargo state — the whole of the owner's item 6 in one function.
+ *
+ * Forward ONLY: a second truck departing must never drag a deal that is
+ * already «tayyor» back to «yo'lda» — with several receipts on one job the
+ * SAME state arrives many times, and the furthest point reached is the truth.
+ * Won and lost deals are settled and stay where the person put them. The move
+ * itself goes through `moveDeal`, so the audit row, the DealStageChanged
+ * event and the owner's phase-7 rules all see an automatic move exactly as
+ * they see a drag on the board.
+ */
+export async function applyCargoTrigger(
+  dealIds: string[],
+  trigger: CargoTrigger,
+  ctx: AuditContext,
+): Promise<number> {
+  if (dealIds.length === 0) return 0;
+  const all = await listStages(true);
+  // First matching active column left to right; a lost stage never qualifies
+  // (the editor refuses it, and this guard holds even against hand-edited
+  // rows).
+  const target = all.find(
+    (stage) => stage.active && stage.cargoTrigger === trigger && stage.kind !== 'lost',
+  );
+  if (!target) return 0;
+  const byId = new Map(all.map((stage) => [stage.id, stage]));
+  let moved = 0;
+  for (const dealId of dealIds) {
+    // Fenced per deal: one refused move must not strand the rest of the truck.
+    try {
+      const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+      if (!deal) continue;
+      const current = byId.get(deal.stageId);
+      if (!current || current.kind !== 'open') continue;
+      if (target.sortOrder <= current.sortOrder) continue;
+      await moveDeal(dealId, target.id, ctx);
+      moved += 1;
+    } catch (err) {
+      logger.error({ err, dealId, trigger }, 'deal auto-stage move failed');
+    }
+  }
+  return moved;
 }
 
 export interface DealReality {

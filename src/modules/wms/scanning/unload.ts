@@ -356,6 +356,22 @@ export async function finishUnload(batchId: string, ctx: AuditContext) {
       .set({ status: 'unloaded', arrivedAt: batch.arrivedAt ?? new Date() })
       .where(eq(batches.id, batchId))
       .returning();
+    // Declared in the event list (and offered as a rule trigger) since M4,
+    // but never actually emitted until round 26 needed «mashina tushirildi»
+    // to move the deal funnel. Any automation rule the owner had already
+    // pointed at BatchUnloaded starts firing with this line.
+    await emitEvent(tx, {
+      type: 'BatchUnloaded',
+      payload: {
+        batchId,
+        batchCode: batch.code,
+        warehouseId: batch.destWarehouseId,
+        missing: missing.length,
+      },
+      entityType: 'batch',
+      entityId: batchId,
+      actorId,
+    });
     await writeAudit(tx, { ...ctx, warehouseId: batch.destWarehouseId }, {
       entityType: 'batch',
       entityId: batchId,

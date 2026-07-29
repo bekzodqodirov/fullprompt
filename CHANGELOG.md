@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## Bitim varonkasi yukka ergashadi: yuk holati o'zgarsa bitim etapga o'zi o'tadi — 2026-07-29
+
+Ro'yxatingizdagi 6-band («ha zor bo'lardi» degansiz):
+
+- **Etapga yuk holatini bog'laysiz.** Bitimlar doskasida yangi ⚙ tugma →
+  «Bitim etaplari» ekrani. Har bir etapga beshta holatdan birini
+  tanlashingiz mumkin: yuk Xitoyda qabul qilindi · mashina jo'nadi ·
+  mashina tushirildi · topshirishga tayyor · mijozga topshirildi. Holat
+  tanlanmagan etap avvalgidek faqat qo'lda ko'chiriladi.
+- **Bitim o'zi ko'chadi.** Bitimga ulangan yuk shu holatga yetishi bilan
+  bitim o'sha etapga o'zi o'tadi — prixod tasdiqlanganda, mashina
+  jo'naganda, tushirilganda, yuk tayyor bo'lganda, topshirilganda.
+  Yukni bitimga KEYIN ulasangiz ham hisobga olinadi: ulashning o'zi
+  «qabul qilindi» sanaladi.
+- **Faqat oldinga.** Ikkinchi prixod kelsa yoki ikkinchi mashina jo'nasa,
+  bitim ortga qaytmaydi — eng uzoq yetgan nuqta haqiqat. Yutilgan va
+  yo'qotilgan bitimlarga tegilmaydi, va «yo'qotildi» etapiga avto-o'tish
+  qo'yib bo'lmaydi: bitimni faqat odam, sabab yozib yo'qotadi.
+- **Hammasi izli.** Avtomatik o'tish ham jurnalga yoziladi va
+  avtomatlashtirish qoidalaringiz uni xuddi qo'lda ko'chirishdek eshitadi.
+  Yo'l-yo'lakay topilgan kamchilik ham tuzatildi: «mashina tushirildi»
+  hodisasi qoidalar ro'yxatida taklif qilinar, lekin aslida hech qachon
+  yuz bermas edi — endi haqiqiy. Shu hodisaga qoida qo'ygan bo'lsangiz,
+  endi ishlay boshlaydi.
+
+Tekshirildi: 778 unit/integration + 92 e2e yashil. Migratsiya: 0050
+(qo'shimcha ustun, mavjud ma'lumotga tegilmaydi).
+
+5-band («appning o'zidan xabarnoma») siz aytganday hozircha to'xtab
+turadi — Telegram qoladi; hodim o'ziga nima kelishini Profil →
+xabarnomalar belgilarida o'zi boshqaradi.
+
 ## Chat tuzatishlari: «qo'shma» endi butunlay o'chiradi, jonli yangilanish, hamma GS kodlar, varonkada 💬 — 2026-07-29
 
 Ro'yxatingizdagi 1–4 bandlar:
