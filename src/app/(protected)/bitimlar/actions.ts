@@ -18,6 +18,7 @@ import {
   updateDeal,
 } from '@/modules/wms/deals/service';
 import { FinanceError, addTransaction } from '@/modules/wms/finance/service';
+import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
 
 export interface DealFormState {
   ok?: boolean;
@@ -42,6 +43,10 @@ async function run(work: (ctx: { actorId: string }) => Promise<unknown>): Promis
   const meta = await requestMeta();
   try {
     await work({ actorId: actor.id, ...meta });
+    // Phase 7: a stage move emits an event a rule may be waiting on — kick
+    // the worker so the rule fires now, not on the minute sweep. Failure to
+    // kick must never fail the save.
+    enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
     revalidatePath('/bitimlar', 'layout');
     return { ok: true };
   } catch (err) {

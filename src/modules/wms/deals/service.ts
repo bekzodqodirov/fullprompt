@@ -176,6 +176,36 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
       after: { amount: num(input.quotedAmount), volume: num(input.quotedVolumeM3) },
     });
   });
+  const newStageId = input.stageId ?? before.stageId;
+  if (newStageId !== before.stageId) await announceDealStage(before, newStageId, ctx);
+}
+
+/**
+ * Phase 7's ear on the deal funnel — announced from BOTH stage write paths
+ * (the board's move and the edit form), or a rule would fire only for the
+ * button that happened to be pressed.
+ */
+async function announceDealStage(
+  deal: { id: string; code: string; clientId: string; ownerId: string | null },
+  stageId: string,
+  ctx: AuditContext,
+): Promise<void> {
+  const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.id, stageId) });
+  await emitEvent(db, {
+    type: 'DealStageChanged',
+    payload: {
+      dealId: deal.id,
+      dealCode: deal.code,
+      clientId: deal.clientId,
+      stageId,
+      stageName: stage?.name ?? '',
+      stageKind: stage?.kind ?? 'open',
+      ownerId: deal.ownerId,
+    },
+    entityType: 'deal',
+    entityId: deal.id,
+    actorId: ctx.actorId,
+  });
 }
 
 /** Board drag, and the only way a deal changes column. */
@@ -206,6 +236,7 @@ export async function moveDeal(
       after: { stage: stageId, lostReason: lostReason ?? null },
     });
   });
+  if (stageId !== before.stageId) await announceDealStage(before, stageId, ctx);
 }
 
 /** Replace the deal's lines wholesale — the form posts the whole set. */

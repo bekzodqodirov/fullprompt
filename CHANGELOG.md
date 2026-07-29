@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## 7-bosqich: avtomatlashtirish qoidalari — «X bo'lganda, Y qil» — 2026-07-29
+
+Sizning 5-bandingiz davomi (7-bosqich). Boshqaruv → «Avtomatlashtirish
+qoidalari» — endi qoidani formada o'zingiz yozasiz:
+
+- **Qachon**: lid yoki bitim tanlangan bosqichga o'tganda, YOKI sklad
+  hodisasi bo'lganda (yuk qabul qilindi, partiya jo'nadi/tushirildi,
+  berishga tayyor, mijozga berildi, egasiz yuk, narxsiz yuk, hisobdan
+  farq, kechiktirish tugadi, kamomad — 10 ta tanlov).
+- **Nima qilsin**: **vazifa ochsin** (matni, kimga — yozuvning mas'uliga /
+  kim qilgan bo'lsa o'shanga / tanlangan xodimga, muddati, muhimligi;
+  vazifa qoidani ishlatgan kartaga bog'lanadi) yoki **Telegramga xabar**
+  yuborsin (tanlangan xodimlarga, karta havolasi bilan).
+- Har qoida ro'yxatda gap kabi ko'rinadi va **necha marta ishlaganini**
+  ko'rsatadi — hech ishlamagan qoida xato yozilgan bo'ladi, buni darrov
+  ko'rasiz. Pauza/yoqish va o'chirish bir tugma.
+- Intizom: qoida ishlatgan vazifaning muallifi — qoidani YOZGAN odam
+  (tarixda shunday ko'rinadi); xabar oluvchining profildagi «ovozsiz»
+  sozlamalari qoidadan ustun; bir qoida boshqasini qo'zg'ata olmaydi
+  (aylanib qolish strukturaviy mumkin emas).
+- Yo'lda topilgan va tuzatilgan: hodisalar navbati 50 tadan ortiq yig'ilib
+  qolsa, xabarlar daqiqasiga 50 tadan sudralib borar edi — endi navbat har
+  ishga tushganda oxirigacha tozalanadi.
+
+Keyingi turga qoldirilgani (aytib qo'yaman): «bosqichda N kun qotib
+qoldi» kabi VAQT triggerlari, qo'shimcha shartlar (masalan «summa X dan
+katta bo'lsa») va matn ichida {mijoz} kabi o'rinbosarlar.
+
+Tekshirildi: yangi bazada 747 unit/integration + 89 e2e yashil (10 ta
+yangi test: moslik jadvali, forma sharti, to'liq zanjir — qoida → bosqich
+ko'chishi → vazifa; brauzer testi qoidani yozib, bitimni ko'chirib,
+vazifani ko'rib, qoidani O'CHIRIB ketadi). Migratsiya: **0046** (faqat
+yangi jadval qo'shadi).
+
 ## Bitim ichi to'ldi: shikast chegirmasi, bitimdan foyda, 50 tovar fayli + AI guruhlash — 2026-07-29
 
 Sizning 5-bandingiz davomi (bitim ichidagi ochiq ishlar; «rastamojkani

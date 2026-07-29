@@ -183,6 +183,13 @@ describe('queued outgoing photos mirror the same gate', () => {
       allow: false,
       rule: 'orphan',
     });
+
+    // A QUEUED outbox row for the primary manager is not inert leftovers —
+    // the outbox spec's claimNext would pick it up as a real job (#154). It
+    // only ever survived because the file ordering happened to run outbox
+    // first; clean it here where it was made.
+    await db.delete(tgOutbox).where(eq(tgOutbox.id, queued!.id));
+    await db.delete(clients).where(eq(clients.id, client!.id));
   });
 });
 

@@ -10,7 +10,36 @@ import {
   users,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
+
+/**
+ * Phase 7 hears the funnel through this one door. Every path that changes a
+ * lead's stage announces it — the board's move, the edit form, conversion —
+ * or a rule watching «entered stage X» would fire on some moves and sleep
+ * through others depending on WHICH button did it.
+ */
+async function announceLeadStage(
+  lead: { id: string; name: string; ownerId: string | null },
+  stageId: string,
+  ctx: AuditContext,
+): Promise<void> {
+  const stage = await db.query.leadStages.findFirst({ where: eq(leadStages.id, stageId) });
+  await emitEvent(db, {
+    type: 'LeadStageChanged',
+    payload: {
+      leadId: lead.id,
+      leadName: lead.name,
+      stageId,
+      stageName: stage?.name ?? '',
+      stageKind: stage?.kind ?? 'open',
+      ownerId: lead.ownerId,
+    },
+    entityType: 'lead',
+    entityId: lead.id,
+    actorId: ctx.actorId,
+  });
+}
 
 /**
  * CRM (Phase 2.3) — the sales job BEFORE a client code exists, and the record
@@ -267,6 +296,7 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     before: { name: before.name, stageId: before.stageId, ownerId: before.ownerId },
     after: { name: values.name, stageId: values.stageId, ownerId: values.ownerId },
   });
+  if (values.stageId !== before.stageId) await announceLeadStage(row!, values.stageId, ctx);
   return row!;
 }
 
@@ -305,6 +335,7 @@ export async function moveLead(
     before: { stageId: lead.stageId },
     after: { stageId, lostReason: stage.kind === 'lost' ? reason.trim() : null },
   });
+  if (stageId !== lead.stageId) await announceLeadStage(lead, stageId, ctx);
 }
 
 /**
@@ -357,6 +388,7 @@ export async function convertLead(
     action: 'update',
     after: { convertedTo: client.id, clientCode: client.clientCode },
   });
+  if (won && won.id !== lead.stageId) await announceLeadStage(lead, won.id, ctx);
   return client;
 }
 

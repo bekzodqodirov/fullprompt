@@ -121,10 +121,10 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-737 unit/integration + 88 e2e, verified in CI's order on a fresh database.
-Latest migration: **0045** (`client_transactions_deal_idx`).
+747 unit/integration + 89 e2e, verified in CI's order on a fresh database.
+Latest migration: **0046** (`automation_rules`).
 
-Phases **0/1/2/3/4/5/6** shipped (roles, custom fields, tasks+calendar, deals),
+Phases **0/1/2/3/4/5/6/7** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
 per-page guards #198, card scoping #200, `canActOnTask` #201). A 14-subsystem
 audit on 2026-07-26 confirmed 30 defects; its findings are the work queue.
@@ -396,12 +396,34 @@ confirms into the existing replace-all saveLines; LinesForm keyed by
 content so the server-side replace shows. First live grouping should be
 watched in docker logs (needs server ANTHROPIC_API_KEY).
 
+Round 18 — phase 7 automation rules (#379-380). No elaborated spec existed
+(the two words in the plan were the whole agreement) — v1 designed and
+STATED to the owner as reversible: rule = trigger (lead/deal ENTERS stage,
+or 1 of 10 curated events — audit-only types not offered) → action
+(create_task with assignee STRATEGY owner/actor/fixed + dueDays +
+priority, entity-linked; or notify userIds with card link).
+`LeadStageChanged`/`DealStageChanged` emitted from EVERY stage write path
+(move/edit/convert — the edit forms were silent second paths); engine runs
+in processPendingEvents per event, per-rule try/catch, structurally cannot
+cascade (actions emit no events); task author = rule author; AutomationRule
+respects mutes (operations group); gate `admin.settings.manage` (no new
+permission — #170 seed-skip); stage ids un-FK'd; fire_count on the list.
+Migration 0046. /admin/rules + hub tile. crm+bitimlar action run() helpers
+now kick JOB_PROCESS_EVENTS. Deferred, stated: time triggers, conditions,
+{placeholders}. Found on the way (#380): processPendingEvents drained only
+50 events/minute (now bounded batch-drain 40×50); attachment-access had
+left a QUEUED tg_outbox row since round 13 that outbox's claimNext would
+claim — latent because vitest orders files by DURATION CACHE, so adding
+any file can reshuffle; cleaned at source. VITEST RULE: leftover state in
+integration files is worse than in Playwright — the order is not even
+lexical. e2e m9v deletes its rule (a rule is CONFIGURATION, #183).
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
 tur»).** His agreed order after that: (5) — phases 4 and 6 SHIPPED (round
-16), deal open items SHIPPED (round 17); remaining: phases 7/8 —
-«mukammal». Telegram/CRM still queued: tg-import media backfill,
+16), deal open items SHIPPED (round 17), phase 7 SHIPPED (round 18);
+remaining: phase 8 — «mukammal». Telegram/CRM still queued: tg-import media backfill,
 edited-message updates, deleting excluded chats' old rows,
 `listConversations` index, Siroj's account (owner decides when).
 
@@ -410,8 +432,9 @@ Explicitly parked by the owner: crate loading is not to be touched further.
 Still queued from the audit: `scripts/import-clients.ts --update` overwriting
 corrected data (do NOT run it — blocked on the 17 seller logins).
 
-Later phases: **7** automation rules → **8** custom entities (**4** mentions
-and **6** debtor-issue approval shipped in round 16). Explicitly cut:
+Later phases: **8** custom entities (**7** automation rules shipped in
+round 18 — deferred inside it: time triggers, rule conditions,
+{placeholders} in texts). Explicitly cut:
 formula fields, a visual node editor, an in-app chat, a separate projects
 module, an external web form builder. The deal open items (damage discount
 form, profit per deal, 50-goods spreadsheet + AI TNVED grouping) shipped in
@@ -419,7 +442,7 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations up to 0045 — back up first; the compose
+**Deploy the branch** (migrations up to 0046 — back up first; the compose
 change recreates the postgres container, ~5-15 s outage: off-hours, run
 `free -h` first and halve the tuned values on a 2 GB box) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not

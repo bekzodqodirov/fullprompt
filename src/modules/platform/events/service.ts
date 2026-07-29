@@ -33,7 +33,11 @@ export type DomainEventType =
   | 'DealDeferralEnded'
   // Phase 6: issuing to a debtor goes through a recorded request/decision.
   | 'DebtApprovalRequested'
-  | 'DebtApprovalDecided';
+  | 'DebtApprovalDecided'
+  // Phase 7: funnel movement becomes an event, so automation rules can hear
+  // it. Emitted from EVERY stage write path, not just the board's move.
+  | 'LeadStageChanged'
+  | 'DealStageChanged';
 
 /**
  * Persist a domain event in the same transaction as the mutation that caused

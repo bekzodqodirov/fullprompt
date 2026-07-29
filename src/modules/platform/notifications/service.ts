@@ -13,6 +13,7 @@ import {
   users,
 } from '../db/schema';
 import { logger } from '../logger';
+import { runAutomationRules } from '../automation/service';
 import { clientLabels } from '../telegram/client-labels';
 import { cabinetInlineKeyboard } from '../telegram/menu-button';
 import { notificationLabels } from './labels';
@@ -483,8 +484,23 @@ async function notifyLinkedClients(event: {
   }
 }
 
-/** Fan out unprocessed events into notification rows. Called by the events worker. */
+/**
+ * Fan out unprocessed events into notification rows. Called by the events
+ * worker. Drains in batches until the backlog is empty (bounded), because a
+ * backlog deeper than one batch used to advance only 50 events per MINUTE —
+ * an hour of silence after any burst.
+ */
 export async function processPendingEvents(): Promise<number> {
+  let created = 0;
+  for (let batch = 0; batch < 40; batch++) {
+    const processed = await processEventBatch();
+    created += processed.created;
+    if (!processed.full) break;
+  }
+  return created;
+}
+
+async function processEventBatch(): Promise<{ created: number; full: boolean }> {
   const pending = await db
     .select()
     .from(events)
@@ -536,9 +552,22 @@ export async function processPendingEvents(): Promise<number> {
       type: event.type,
       payload: event.payload as Record<string, unknown>,
     });
+    // Phase 7: the owner's rules hear the same event, fenced so a broken
+    // rule can neither kill the fan-out nor leave the event unprocessed.
+    try {
+      await runAutomationRules({
+        type: event.type,
+        payload: event.payload as Record<string, unknown>,
+        entityType: event.entityType,
+        entityId: event.entityId,
+        actorId: event.actorId,
+      });
+    } catch (err) {
+      logger.error({ err, eventId: String(event.id) }, 'automation run failed');
+    }
     await db.update(events).set({ processedAt: new Date() }).where(eq(events.id, event.id));
   }
-  return created;
+  return { created, full: pending.length === 50 };
 }
 
 /** Send all pending Telegram notifications. Called by the telegram worker. */

@@ -617,3 +617,44 @@ export const tasks = pgTable(
     index('tasks_entity_idx').on(t.entityType, t.entityId),
   ],
 );
+
+/**
+ * Phase 7: automation rules — «when X, do Y» rows the owner writes on a
+ * form. The trigger is either a funnel stage (lead or deal entering it) or
+ * a curated domain event; the action's varying shape lives in jsonb the
+ * service validates with zod on write and again on read.
+ */
+export const automationRules = pgTable(
+  'automation_rules',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    active: boolean('active').notNull().default(true),
+    triggerType: text('trigger_type').notNull(),
+    /** Un-FK'd on purpose: lead OR deal stage by trigger_type, and a deleted
+     * stage should orphan the rule, not survive because of it. */
+    triggerStageId: uuid('trigger_stage_id'),
+    triggerEvent: text('trigger_event'),
+    actionType: text('action_type').notNull(),
+    actionConfig: jsonb('action_config').notNull().default({}),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    fireCount: integer('fire_count').notNull().default(0),
+    lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check(
+      'automation_rules_trigger_check',
+      sql`${t.triggerType} IN ('lead_stage', 'deal_stage', 'event')`,
+    ),
+    check(
+      'automation_rules_trigger_target_check',
+      sql`(${t.triggerType} IN ('lead_stage', 'deal_stage') AND ${t.triggerStageId} IS NOT NULL) OR (${t.triggerType} = 'event' AND ${t.triggerEvent} IS NOT NULL)`,
+    ),
+    check('automation_rules_action_check', sql`${t.actionType} IN ('create_task', 'notify')`),
+    index('automation_rules_trigger_idx').on(t.triggerType, t.active),
+  ],
+);

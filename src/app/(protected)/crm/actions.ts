@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
+import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
 import { ClientError } from '@/modules/platform/clients/service';
 import {
   activitySchema,
@@ -48,6 +49,11 @@ async function run(
   const meta = await requestMeta();
   try {
     await work({ actorId: who.id, ...meta });
+    // A stage move is an event now (phase 7); the per-minute sweep would get
+    // there, but a rule that opens a task a minute after the drag feels
+    // broken — kick the worker. Fire-and-forget: automation lateness must
+    // never fail the user's save.
+    enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
     revalidatePath('/crm', 'layout');
     return { ok: true };
   } catch (err) {

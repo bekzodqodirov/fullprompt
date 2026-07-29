@@ -46,6 +46,9 @@ export const MUTE_GROUPS = {
     'InternalNote',
     // The personal half of the same message: a colleague named YOU with @.
     'MentionedInNote',
+    // Phase 7: a rule somebody wrote pinged you — mutable like any other
+    // routine workflow message; the rule's author is not above your mutes.
+    'AutomationRule',
   ],
 } as const;
 
