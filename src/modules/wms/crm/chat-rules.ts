@@ -288,6 +288,31 @@ export async function excludedLeftovers(
 }
 
 /**
+ * «Qo'shma» from the conversation itself, as the OWNER expects it to work
+ * (his report, 2026-07-29: «qo'shma desa hali ham sistemada turibti»):
+ * exclude the chat AND delete what was already stored, in one press. The
+ * confirm on the button states both consequences before the press — the
+ * two-step design (#388) survives on the «Qaysi chatlar» screen for rules
+ * that were excluded without this button.
+ */
+export async function excludeAndPurgeChat(
+  input: { clientId: string; managerUserId: string; peerId: bigint },
+  ctx: AuditContext,
+): Promise<{ messages: number; photos: number }> {
+  await excludeChatForClient(input, ctx);
+  const [rule] = await db
+    .select({ id: tgChatRules.id })
+    .from(tgChatRules)
+    .where(
+      and(
+        eq(tgChatRules.managerUserId, input.managerUserId),
+        eq(tgChatRules.peerId, input.peerId),
+      ),
+    );
+  return purgeExcludedChat(rule!.id, ctx);
+}
+
+/**
  * The SEPARATE decision `excludeChatForClient` refused to take quietly:
  * delete what was already stored for an excluded chat — the messages and
  * the photographs that came with them.

@@ -217,6 +217,45 @@ export async function conversationClient(clientId: string) {
   return db.query.clients.findFirst({ where: eq(clients.id, clientId) });
 }
 
+/**
+ * Which clients the viewer holds a chat with, and whether the client spoke
+ * last — one query for a whole kanban board (owner, round 25: «varonkadagi
+ * kartochkalarda ham chat ko'rinsa»). A Map so a card asks by client id.
+ */
+export async function chatBadges(viewer: TgViewer): Promise<Map<string, 'waiting' | 'yes'>> {
+  const mine = viewer.all ? sql`true` : sql`manager_user_id = ${viewer.id}`;
+  const rows = await db.execute<{ client_id: string; direction: string }>(sql`
+    SELECT DISTINCT ON (client_id) client_id, direction
+    FROM tg_messages
+    WHERE ${mine}
+    ORDER BY client_id, sent_at DESC
+  `);
+  return new Map(rows.map((r) => [r.client_id, r.direction === 'in' ? 'waiting' : 'yes']));
+}
+
+/**
+ * Every ACTIVE code this client's phone numbers answer to — the owner's
+ * reality of one person holding several GS codes on one number (round 25:
+ * «1 nomerda ko'p gs code bo'lsa hammasini ko'rsatsin»). The client's own
+ * code comes first, the rest alphabetically.
+ */
+export async function codesSharingPhones(clientId: string): Promise<string[]> {
+  const client = await conversationClient(clientId);
+  if (!client) return [];
+  const phones = Array.isArray(client.phones) ? (client.phones as string[]) : [];
+  const seen = new Map<string, string>([[client.id, client.clientCode]]);
+  for (const phone of phones) {
+    for (const match of await activeClientsByPhone(phone)) {
+      seen.set(match.id, match.clientCode);
+    }
+  }
+  const others = [...seen.entries()]
+    .filter(([id]) => id !== client.id)
+    .map(([, code]) => code)
+    .sort();
+  return [client.clientCode, ...others];
+}
+
 /** How many clients THE VIEWER holds a conversation with — the menu badge. */
 export async function conversationCount(viewer: TgViewer): Promise<number> {
   const [row] = await db

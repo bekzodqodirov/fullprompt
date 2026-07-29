@@ -16,6 +16,8 @@ export interface KanbanLead {
   ownerName: string | null;
   clientCode: string | null;
   nextActionAt: string | null;
+  /** The viewer holds a Telegram chat with this client; 'waiting' = client spoke last. */
+  chat: 'waiting' | 'yes' | null;
 }
 
 /**
@@ -62,6 +64,12 @@ export function KanbanBoard({ stages, leads }: { stages: KanbanStage[]; leads: K
             {lead.ownerName && <span>{lead.ownerName}</span>}
             {lead.clientCode && (
               <span className="font-mono font-bold text-good">{lead.clientCode}</span>
+            )}
+            {/* The chat, on the card (owner, round 25) — and whether it waits on us. */}
+            {lead.chat && (
+              <span className={lead.chat === 'waiting' ? 'font-semibold text-warn' : ''}>
+                💬{lead.chat === 'waiting' && ' !'}
+              </span>
             )}
           </div>
           {lead.nextActionAt && (

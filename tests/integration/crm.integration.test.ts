@@ -12,6 +12,8 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import {
+  chatBadges,
+  codesSharingPhones,
   conversationClientForLead,
   conversationFor,
   listConversations,
@@ -634,6 +636,29 @@ describe('the conversation list', () => {
     ]);
     const row = (await listConversations({ id: actorId })).find((r) => r.clientId === waiting.id)!;
     expect(row.waitingOnUs).toBe(true);
+
+    // The same fact, in the shape a kanban card asks for (round 25) — and
+    // scoped to the viewer like every other chat read (#383).
+    const badges = await chatBadges({ id: actorId });
+    expect(badges.get(waiting.id)).toBe('waiting');
+    if (managerId !== actorId) {
+      expect((await chatBadges({ id: managerId })).has(waiting.id)).toBe(false);
+    }
+  });
+
+  it('names EVERY code a shared phone answers to, own first (round 25)', async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const phone = `+9989055${String(Date.now()).slice(-5)}`;
+    const [a] = await db
+      .insert(clients)
+      .values({ clientCode: `PA${suffix}`, name: `Bir odam A ${suffix}`, phones: [phone] })
+      .returning();
+    const [b] = await db
+      .insert(clients)
+      .values({ clientCode: `PB${suffix}`, name: `Bir odam B ${suffix}`, phones: [phone] })
+      .returning();
+    expect(await codesSharingPhones(a!.id)).toEqual([`PA${suffix}`, `PB${suffix}`]);
+    expect(await codesSharingPhones(b!.id)).toEqual([`PB${suffix}`, `PA${suffix}`]);
   });
 
   it('puts the most recently active conversation first', async () => {

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
 import {
@@ -39,10 +40,12 @@ export default async function DealsPage({
   const mine = !seesAll || params.scope !== 'all';
   const scope = mine ? actor.id : undefined;
 
-  const [stages, rows, attention] = await Promise.all([
+  const [stages, rows, attention, badges] = await Promise.all([
     listStages(),
     listDeals({ ownerId: scope }),
     dealsNeedingAttention(scope),
+    // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
+    chatBadges(tgViewerFor(actor)),
   ]);
 
   const flags = new Map(attention.map((row) => [row.id, row]));
@@ -61,6 +64,7 @@ export default async function DealsPage({
       deferred: row.deferred,
       flag: (flag?.reason as 'deviation' | 'unpriced' | undefined) ?? null,
       flagPct: flag?.pct ?? null,
+      chat: badges.get(row.clientId) ?? null,
     };
   });
 

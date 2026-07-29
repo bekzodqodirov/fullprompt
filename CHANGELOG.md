@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Chat tuzatishlari: «qo'shma» endi butunlay o'chiradi, jonli yangilanish, hamma GS kodlar, varonkada 💬 — 2026-07-29
+
+Ro'yxatingizdagi 1–4 bandlar:
+
+- **1. «Qo'shma» endi ishlaydi.** Chatdan «bu chatni olmang» desangiz, u
+  ENDI ham kelajak uchun yopiladi, ham eski yozuvlari (rasmlari bilan)
+  o'chadi — bitta bosishda. Tugma bosishdan oldin buni aytadi, amal
+  jurnalga yoziladi. Mijozga ulangan chatni bu tugma o'chira olmaydi.
+- **2. «Navbatda» yolg'oni tuzatildi.** Xabar Telegramga ketib bo'lgach,
+  ekran «◷ navbatda» deb turaverar edi — sabab: sahifa o'zini
+  yangilamas edi. Endi chat ekrani har 10 soniyada o'zini yangilaydi
+  (faqat ochiq turganda): yuborilgan xabar darhol oddiy ko'rinishga
+  o'tadi, mijozdan kelgan yangi xabar ham o'zi paydo bo'ladi. Yozayotgan
+  matningiz yo'qolmaydi.
+- **3. Bitta raqamda bir nechta GS kod.** Chat sarlavhasida endi shu
+  raqamga tegishli HAMMA faol kodlar ko'rinadi (GS777 · GS555 · …) —
+  avval faqat bittasi chiqar edi.
+- **4. Varonka kartochkalarida chat belgisi.** Lid va bitim
+  kartochkalarida 💬 — bu mijoz bilan yozishma bor degani; mijoz oxirgi
+  yozgan (javob kutmoqda) bo'lsa — sariq «💬 !». Kim ko'rishi chat
+  qoidalariga bo'ysunadi: har kim faqat o'zi ochadigan chatning belgisini
+  ko'radi (sizga hammasi).
+
+Tekshirildi: 768 unit/integration + 92 e2e yashil. Migratsiya yo'q.
+
+Qolgan 2 band — «shu appning o'zidan xabarnoma kelsin» (5) va «yuk holati
+o'zgarsa bitim varonkada o'zi ko'chsin» (6) — ikkalasi ham BO'LADI,
+navbatdagi ikki bosqichda qilaman.
+
 ## Bosh ekran: yakka katta tugmalar olib tashlandi, iconkalar tushunarli — 2026-07-29
 
 Fikringiz bo'yicha («1 qatorda 1 button turgan narsalar o'xshamabti»):

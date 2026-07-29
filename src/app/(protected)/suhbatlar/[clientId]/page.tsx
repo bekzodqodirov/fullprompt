@@ -2,8 +2,14 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { conversationClient, conversationFor, tgViewerFor } from '@/modules/wms/crm/conversations';
+import {
+  codesSharingPhones,
+  conversationClient,
+  conversationFor,
+  tgViewerFor,
+} from '@/modules/wms/crm/conversations';
 import { pendingFor } from '@/modules/wms/crm/outbox';
+import { AutoRefresh } from '@/components/auto-refresh';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { TelegramReply } from '@/components/telegram-reply';
 
@@ -43,10 +49,11 @@ export default async function ConversationPage({
   }
   const { clientId } = await params;
   const viewer = tgViewerFor(actor);
-  const [client, messages, queued] = await Promise.all([
+  const [client, messages, queued, codes] = await Promise.all([
     conversationClient(clientId),
     conversationFor(clientId, viewer),
     pendingFor(clientId, viewer),
+    codesSharingPhones(clientId),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');
@@ -61,7 +68,11 @@ export default async function ConversationPage({
           ← {t('conversations')}
         </Link>
         <h1 className="flex-1 text-xl font-bold">
-          <span className="font-mono text-brand-700">{client.clientCode}</span> {client.name}
+          {/* One person, several codes on one number — ALL of them (round 25). */}
+          <span className="font-mono text-brand-700" data-testid="thread-codes">
+            {(codes.length > 0 ? codes : [client.clientCode]).join(' · ')}
+          </span>{' '}
+          {client.name}
         </h1>
         {/* Straight to the cargo, the balance and the deals. */}
         <Link href={`/admin/clients/${client.id}`} className="btn-secondary !py-1 text-sm">
@@ -116,6 +127,10 @@ export default async function ConversationPage({
       {/* Shows the box, or says why it cannot. Same component as on the cards,
           so the two can never drift apart on who may speak. */}
       <TelegramReply clientId={clientId} />
+
+      {/* A sent reply must stop reading «navbatda», and a client's new
+          message must appear, without anybody pulling to refresh. */}
+      <AutoRefresh ms={10_000} />
     </div>
   );
 }

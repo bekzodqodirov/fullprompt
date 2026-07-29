@@ -18,6 +18,8 @@ export interface BoardDeal {
   /** Set when the cargo landed outside the threshold, or landed unpriced. */
   flag: 'deviation' | 'unpriced' | null;
   flagPct: number | null;
+  /** The viewer holds a Telegram chat with this client; 'waiting' = client spoke last. */
+  chat: 'waiting' | 'yes' | null;
 }
 
 /**
@@ -68,6 +70,12 @@ export function DealBoard({ stages, deals }: { stages: KanbanStage[]; deals: Boa
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-ink-500">
             <span className="num font-bold text-good">{deal.clientCode}</span>
             {deal.ownerName && <span>{deal.ownerName}</span>}
+            {/* The chat, on the card (owner, round 25). */}
+            {deal.chat && (
+              <span className={deal.chat === 'waiting' ? 'font-semibold text-warn' : ''}>
+                💬{deal.chat === 'waiting' && ' !'}
+              </span>
+            )}
           </div>
           {/* The one line the board exists to surface. */}
           {deal.flag === 'deviation' && (

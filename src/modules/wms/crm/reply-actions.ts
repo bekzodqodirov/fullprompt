@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { cancelQueued, OutboxError, queueReply, replyAccountFor } from './outbox';
-import { excludeChatForClient } from './chat-rules';
+import { excludeAndPurgeChat } from './chat-rules';
 import { addActivity } from './service';
 import { announceNote } from './internal-chat';
 
@@ -92,6 +92,9 @@ export async function cancelReplyAction(_prev: ReplyState, form: FormData): Prom
  * On the same account rule as replying: you may only decide about a
  * conversation that is in your OWN Telegram. Somebody else's chat is theirs
  * to keep or drop, and the message would have been stored under their name.
+ * Since round 25 it also DELETES what was stored — the owner's expectation
+ * of «qo'shma» is that the chat leaves the system, and the button's confirm
+ * says exactly that before the press.
  */
 export async function excludeChatAction(_prev: ReplyState, form: FormData): Promise<ReplyState> {
   let who;
@@ -106,7 +109,7 @@ export async function excludeChatAction(_prev: ReplyState, form: FormData): Prom
   if (!account) return { error: 'not_your_conversation' };
 
   const meta = await requestMeta();
-  await excludeChatForClient(
+  await excludeAndPurgeChat(
     { clientId, managerUserId: account.managerUserId, peerId: account.peerId },
     { actorId: who.id, ...meta },
   );

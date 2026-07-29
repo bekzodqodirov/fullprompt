@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { listLeads, listStages } from '@/modules/wms/crm/service';
 import { KanbanBoard } from './leads/kanban';
 import { Icon } from '@/components/ui/icon';
@@ -35,7 +36,12 @@ export default async function LeadsPage({
   const mine = !seesAll || params.scope !== 'all';
   const scope = mine ? actor.id : undefined;
 
-  const [stages, rows] = await Promise.all([listStages(), listLeads({ ownerId: scope })]);
+  const [stages, rows, badges] = await Promise.all([
+    listStages(),
+    listLeads({ ownerId: scope }),
+    // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
+    chatBadges(tgViewerFor(actor)),
+  ]);
   // The board counts its own columns: a card dropped into another stage must
   // update the header immediately, before the server has revalidated.
 
@@ -97,6 +103,7 @@ export default async function LeadsPage({
           ownerName,
           clientCode,
           nextActionAt: lead.nextActionAt,
+          chat: (lead.clientId && badges.get(lead.clientId)) || null,
         }))}
       />
 

@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-766 unit/integration + 92 e2e, verified in CI's order on a fresh database.
+768 unit/integration + 92 e2e, verified in CI's order on a fresh database.
 Latest migration: **0049** (`roles_warehouse_scoped`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -519,6 +519,15 @@ strip deliberately stays (alert, not a door). Icon pass = kill in-screen
 duplicates: arrivals→clock, approvals→check, my-clients→user, /o→menu,
 pipeline→report; flow rows transit→map, debtors/receivables/costs→wallet,
 recurring→calendar. No migration.
+
+Round 25 — the owner's 6-item list, items 1-4 (#391): exclude-from-chat
+now purges too (excludeAndPurgeChat; confirm states it); `AutoRefresh`
+(router.refresh, 10 s, visible-tab only) on the thread screen kills the
+stale «navbatda» bubble and shows incoming live; `codesSharingPhones` in
+the thread header (all active codes on shared phones, own first);
+`chatBadges(viewer)` puts 💬/💬! on lead+deal kanban cards, viewer-scoped
+per #383. Items 5 (PWA web-push) and 6 (deal auto-stage from linked
+cargo) are agreed as the next two rounds.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

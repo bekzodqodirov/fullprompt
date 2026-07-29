@@ -14,6 +14,7 @@ import {
 import {
   ChatRuleError,
   decideChat,
+  excludeAndPurgeChat,
   excludeChatForClient,
   excludedLeftovers,
   listCandidates,
@@ -320,6 +321,34 @@ describe('purging an excluded chat', () => {
         await excludedLeftovers([{ id: rule!.id, managerUserId: managerId, peerId: PEER_P }])
       ).size,
     ).toBe(0);
+  });
+
+  it('«qo\'shma» from the chat excludes AND deletes, in one press (round 25)', async () => {
+    const PEER_Q = BigInt(STAMP + 102);
+    await db.insert(tgMessages).values({
+      clientId,
+      managerUserId: managerId,
+      peerId: PEER_Q,
+      tgMessageId: 1n,
+      direction: 'in',
+      body: 'olib tashlanadigan chat',
+      sentAt: new Date(),
+    });
+    const result = await excludeAndPurgeChat(
+      { clientId, managerUserId: managerId, peerId: PEER_Q },
+      ctx(),
+    );
+    expect(result.messages).toBe(1);
+    // Excluded for the future AND empty for the past — «sistemada turibti»
+    // can no longer be true of it.
+    const rules = await rulesFor(managerId);
+    expect(rules.get(PEER_Q)?.decision).toBe('exclude');
+    expect(
+      await db
+        .select()
+        .from(tgMessages)
+        .where(and(eq(tgMessages.managerUserId, managerId), eq(tgMessages.peerId, PEER_Q))),
+    ).toHaveLength(0);
   });
 
   it('refuses anything that is not an excluded chat', async () => {
