@@ -9,6 +9,7 @@ import { HistoryTab } from '@/components/history-tab';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
+import { TelegramThread } from '@/components/telegram-thread';
 import { stageClass } from '../../crm/stage-color';
 import {
   canWriteDeal,
@@ -125,7 +126,11 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
              (owner: the amoCRM shape — the card IS its timeline). Gates
              itself: this card is open to the VED manager too, and a client's
              conversation is not his to read. */
-          <ClientFeed clientId={row.deal.clientId} dealId={row.deal.id} limit={60} tall />
+          <>
+            <ClientFeed clientId={row.deal.clientId} dealId={row.deal.id} limit={60} tall />
+            {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
+            <TelegramThread clientId={row.deal.clientId} />
+          </>
         }
         rail={
           <>

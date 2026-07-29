@@ -2,7 +2,6 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
-import { TelegramReply } from './telegram-reply';
 import { FeedNoteBox } from './client-feed-note';
 import { LightboxImg } from './lightbox-img';
 
@@ -14,11 +13,15 @@ import { LightboxImg } from './lightbox-img';
  *
  * The shape of this screen is the whole point, so it is worth saying what it
  * is NOT: not eight panels you scroll between looking for the thing you half
- * remember. A Telegram message, a consignment arriving, a payment landing and
- * a note somebody left are the same kind of thing — something that happened,
- * at a time, done by a person — and the moment you draw them that way the
- * question "what is going on with this client" has one answer instead of
- * five places to look.
+ * remember. A consignment arriving, a payment landing and a note somebody
+ * left are the same kind of thing — something that happened, at a time, done
+ * by a person — and the moment you draw them that way the question "what is
+ * going on with this client" has one answer instead of five places to look.
+ *
+ * The TELEGRAM chat is deliberately NOT one of those things since round 21
+ * (owner: «lenta va chatlar alohida tursin») — a two-way conversation woven
+ * between cargo lines read as neither; it stands beside this panel as
+ * `TelegramThread`, private to its account per #383.
  *
  * Read like a chat: oldest above, newest at the bottom, composer under it.
  * `flex-col-reverse` over a newest-first list gives reading order AND a first
@@ -29,9 +32,6 @@ import { LightboxImg } from './lightbox-img';
 
 /** Each kind owns a mark and a tone. Lookup maps — Tailwind cannot see a built class. */
 const MARK: Record<FeedKind, string> = {
-  tg_in: '💬',
-  tg_out: '↩️',
-  tg_pending: '◷',
   note: '📝',
   cargo: '📥',
   crate: '🧰',
@@ -45,9 +45,6 @@ const MARK: Record<FeedKind, string> = {
 };
 
 const TONE: Record<FeedKind, string> = {
-  tg_in: 'bg-surface-sunken',
-  tg_out: 'ml-auto bg-brand-50',
-  tg_pending: 'ml-auto border border-dashed border-line-strong text-ink-500',
   note: 'bg-warn/10',
   cargo: 'bg-good/10',
   crate: 'bg-surface-sunken',
@@ -66,9 +63,6 @@ const TONE: Record<FeedKind, string> = {
  * assembled at runtime is invisible to the locale test (#163, #310).
  */
 export const FEED_LABELS: Record<FeedKind, string> = {
-  tg_in: 'feedClientWrote',
-  tg_out: 'feedWeAnswered',
-  tg_pending: 'feedQueued',
   note: 'feedNote',
   cargo: 'feedCargo',
   crate: 'feedCrate',
@@ -116,8 +110,7 @@ export async function ClientFeed({
   }
 
   const t = await getTranslations('crm');
-  // The actor's eyes: shared record in full, Telegram lines own-account only.
-  const items = await clientFeed(clientId, actor.id, { limit, leadId, dealId });
+  const items = await clientFeed(clientId, { limit, leadId, dealId });
 
   return (
     <section className="card space-y-2" data-testid="client-feed">
@@ -138,12 +131,11 @@ export async function ClientFeed({
         </div>
       )}
 
-      {/* Two ways to say something, the way every CRM does it: a word to the
-          client, or a word to your colleagues. */}
+      {/* The lenta's composer is the INTERNAL note — a word to colleagues.
+          The word to the CLIENT lives in the chat panel beside this one,
+          because the two are different acts with different audiences
+          (owner, round 21: «lenta va chatlar alohida tursin»). */}
       <div className="space-y-2 border-t border-line pt-2">
-        {/* Telegram needs a real client conversation; the internal chat does
-            not, and must not vanish with it — it is the staff's half. */}
-        <TelegramReply clientId={clientId} compact />
         <FeedNoteBox
           // On a deal card the note belongs to THIS job: two deals with one
           // client are two conversations, and a price argument about one must
@@ -240,13 +232,7 @@ function FeedRow({
       {(item.kind === 'charge' || item.kind === 'payment') && (
         <p className="font-semibold">{money(item.meta)}</p>
       )}
-      {item.body ? (
-        <p className="whitespace-pre-wrap break-words">{item.body}</p>
-      ) : item.meta.hasMedia === true &&
-        !(Array.isArray(item.meta.files) && item.meta.files.length > 0) ? (
-        // Media we did NOT download — the paperclip stays honest about it.
-        <p className="text-ink-500">📎 {t('telegramMedia')}</p>
-      ) : null}
+      {item.body && <p className="whitespace-pre-wrap break-words">{item.body}</p>}
       {/* Files pinned to a note: pictures open in the lightbox, the rest
           download by name. */}
       {Array.isArray(item.meta.files) && item.meta.files.length > 0 && (
@@ -272,9 +258,6 @@ function FeedRow({
           )}
         </div>
       )}
-      {item.kind === 'tg_pending' && item.meta.error ? (
-        <p className="mt-1 text-xs text-bad">{String(item.meta.error)}</p>
-      ) : null}
     </div>
   );
 }

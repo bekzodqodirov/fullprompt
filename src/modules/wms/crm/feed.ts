@@ -8,20 +8,20 @@ import { db } from '../../platform/db/client';
  * yaxshi edi ... chatga o'xshab qachon nima bo'lgani 1 joyda ko'rinar edi."
  * He is describing the one screen every CRM is actually used through: not a
  * card with eight panels you scroll between, but a single column you read
- * downwards, where the Telegram message, the cargo that arrived, the money
- * that came in and the note somebody left are the same kind of thing —
- * something that happened, at a time, done by a person.
+ * downwards, where the cargo that arrived, the money that came in and the
+ * note somebody left are the same kind of thing — something that happened,
+ * at a time, done by a person.
  *
- * It replaces the question "why is there no chat on this deal" rather than
- * answering it: a conversation panel is empty for most clients and so renders
- * nothing, while a timeline always has content, because cargo and money
- * happen even when nobody writes.
+ * The TELEGRAM conversation left this column in round 21, on the owner's
+ * words: «lenta va chatlar alohida tursin, birbirini ichida tushunarsiz
+ * ko'rinishda turibti». Interleaving a two-way chat with cargo lines made
+ * both unreadable — and after #383 the chat is per-account private while
+ * the lenta is the company's shared record, so they no longer even share an
+ * audience. The chat is its own panel (`TelegramThread`) beside the lenta.
  *
- * FIVE SOURCES, chosen because each carries `client_id` DIRECTLY and each has
- * an index that makes its slice cheap:
+ * THREE SOURCES, chosen because each carries `client_id` DIRECTLY and each
+ * has an index that makes its slice cheap:
  *
- *   tg_messages         (client_id, sent_at)      what was said
- *   tg_outbox           (client_id, queued_at)    what we are still sending
  *   crm_activities      (entity_id, happened_at)  what we wrote down
  *   receipts            (client_id)               cargo received
  *   client_transactions (client_id, created_at)   money
@@ -40,16 +40,14 @@ import { db } from '../../platform/db/client';
  * `ref_id` would collapse every box a client ever lost into a single row
  * dated whenever the last one happened.
  *
- * One `UNION ALL` of narrow selects rather than five round trips: postgres
- * sorts the union once, the LIMIT applies to the whole thing, and paging by a
- * timestamp works across all of them without any source needing to know about
- * the others.
+ * One `UNION ALL` of narrow selects rather than a round trip per source:
+ * postgres
+ * sorts the union once, the LIMIT applies to the whole thing, and paging
+ * by a timestamp works across all of them without any source needing to
+ * know about the others.
  */
 
 export type FeedKind =
-  | 'tg_in'
-  | 'tg_out'
-  | 'tg_pending'
   | 'note'
   | 'cargo'
   | 'crate'
@@ -92,13 +90,6 @@ interface Row extends Record<string, unknown> {
  */
 export async function clientFeed(
   clientId: string | null,
-  /**
-   * Whose eyes. Cargo, money and notes are the company's shared record; the
-   * two TELEGRAM branches are a manager's personal account and show only to
-   * the manager they belong to (owner, 2026-07-29). A required parameter
-   * rather than an option, so no caller can forget whose lenta it is drawing.
-   */
-  viewerId: string,
   opts: { limit?: number; before?: Date; leadId?: string | null; dealId?: string | null } = {},
 ): Promise<FeedItem[]> {
   const limit = Math.min(Math.max(opts.limit ?? 60, 1), 200);
@@ -118,49 +109,18 @@ export async function clientFeed(
 
   const rows = await db.execute<Row>(sql`
     SELECT * FROM (
-      -- What was said, both directions — with the photographs we hold
-      -- (item 15), the same shape the note branch uses so the renderer is
-      -- one block for both.
-      SELECT
-        'tg-' || m.id::text                       AS id,
-        CASE WHEN m.direction = 'out' THEN 'tg_out' ELSE 'tg_in' END AS kind,
-        m.sent_at                                 AS at,
-        CASE WHEN m.direction = 'out' THEN u.full_name ELSE NULL END AS actor,
-        m.body                                    AS body,
-        jsonb_build_object(
-          'hasMedia', m.has_media,
-          'files', (
-            SELECT coalesce(jsonb_agg(jsonb_build_object(
-              'id', att.id, 'name', att.file_name, 'image', att.content_type LIKE 'image/%'
-            ) ORDER BY att.created_at), '[]'::jsonb)
-            FROM attachments att
-            WHERE att.entity_type = 'tg_message' AND att.entity_id = m.id
-          )
-        ) AS meta
-      FROM tg_messages m
-      JOIN users u ON u.id = m.manager_user_id
-      WHERE m.client_id = ${clientId} AND m.manager_user_id = ${viewerId}
-        AND m.sent_at < ${cutoff}
-
-      UNION ALL
-
-      -- Replies that have not gone yet. On the timeline for the same reason
-      -- they are in the thread: a queued answer is not a delivered one.
-      SELECT
-        'ob-' || o.id::text, 'tg_pending', o.queued_at, u.full_name, o.body,
-        jsonb_build_object('status', o.status, 'error', o.last_error)
-      FROM tg_outbox o
-      JOIN users u ON u.id = o.manager_user_id
-      WHERE o.client_id = ${clientId} AND o.manager_user_id = ${viewerId}
-        AND o.status IN ('queued', 'sending', 'failed')
-        AND o.queued_at < ${cutoff}
-
-      UNION ALL
-
       -- What somebody wrote down: a call, a meeting, a note — and the files
-      -- pinned to it (owner: "zametkaga fayllar qo'shish").
+      -- pinned to it (owner: "zametkaga fayllar qo'shish"). The TELEGRAM
+      -- conversation is deliberately NOT here since round 21 — the owner:
+      -- «lenta va chatlar alohida tursin, birbirini ichida tushunarsiz» —
+      -- it lives in its own panel beside the lenta, with its own per-account
+      -- privacy rule (#383).
       SELECT
-        'ac-' || a.id::text, 'note', a.happened_at, u.full_name, a.note,
+        'ac-' || a.id::text                       AS id,
+        'note'                                    AS kind,
+        a.happened_at                             AS at,
+        u.full_name                               AS actor,
+        a.note                                    AS body,
         jsonb_build_object(
           'kind', a.kind,
           'files', (
@@ -170,7 +130,7 @@ export async function clientFeed(
             FROM attachments att
             WHERE att.entity_type = 'crm_activity' AND att.entity_id = a.id
           )
-        )
+        )                                         AS meta
       FROM crm_activities a
       JOIN users u ON u.id = a.created_by
       WHERE (
@@ -311,8 +271,7 @@ export async function clientFeed(
 export async function clientFeedHasAnything(clientId: string): Promise<boolean> {
   const [row] = await db.execute<{ n: number }>(sql`
     SELECT 1 AS n WHERE EXISTS (
-      SELECT 1 FROM tg_messages WHERE client_id = ${clientId}
-      UNION ALL SELECT 1 FROM crm_activities WHERE entity_type = 'client' AND entity_id = ${clientId}
+      SELECT 1 FROM crm_activities WHERE entity_type = 'client' AND entity_id = ${clientId}
       UNION ALL SELECT 1 FROM receipts WHERE client_id = ${clientId} AND confirmed_at IS NOT NULL
       UNION ALL SELECT 1 FROM client_transactions WHERE client_id = ${clientId}
     )

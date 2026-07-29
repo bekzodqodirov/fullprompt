@@ -17,6 +17,7 @@ import { ClientForm } from '../client-form';
 import { ClientCrmSections } from '../../../crm/client-crm';
 import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
+import { TelegramThread } from '@/components/telegram-thread';
 import { ClientDeals } from '@/components/client-deals';
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -86,6 +87,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             {/* What was actually said, in the place it was actually said —
                 the working surface of the card (owner: the amoCRM shape). */}
             <ClientFeed clientId={client.id} tall />
+            <TelegramThread clientId={client.id} />
           </>
         }
         rail={

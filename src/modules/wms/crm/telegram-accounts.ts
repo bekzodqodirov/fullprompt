@@ -14,7 +14,7 @@ import type { ClientPhones, MessageRow } from './telegram-import';
  * column read by a screen, never in a log line.
  */
 
-/** Save (or replace) a manager's login. Called only by `pnpm tg-login`. */
+/** Save (or replace) a manager's login — `pnpm tg-login` or the «ulash» screen. */
 export async function saveAccount(input: {
   managerUserId: string;
   tgPhone: string;
@@ -78,8 +78,25 @@ export async function loadAccount(tgPhone: string): Promise<LoadedAccount | null
   };
 }
 
+/**
+ * Every account the supervisor should be listening to. `signed_out` is
+ * excluded — Telegram has ended that session, and knocking on it once a
+ * minute until somebody logs in again is exactly the pattern that gets an
+ * account flagged. A fresh login writes 'active' and the next scan picks
+ * it up (round 21: connect from the screen, no container restarts).
+ */
+export async function listListenablePhones(): Promise<string[]> {
+  const rows = await db
+    .select({ tgPhone: tgAccounts.tgPhone })
+    .from(tgAccounts)
+    .where(sql`${tgAccounts.status} <> 'signed_out'`)
+    .orderBy(asc(tgAccounts.createdAt));
+  return rows.map((r) => r.tgPhone);
+}
+
 export interface AccountStatus {
   id: string;
+  managerUserId: string;
   managerName: string;
   tgPhone: string;
   state: BridgeState;
@@ -121,6 +138,7 @@ export async function accountStatuses(now = new Date()): Promise<AccountStatus[]
 
   return rows.map((r) => ({
     id: r.id,
+    managerUserId: r.managerUserId,
     managerName: r.managerName,
     tgPhone: r.tgPhone,
     state: bridgeState({ status: r.status, lastSeenAt: r.lastSeenAt }, now),

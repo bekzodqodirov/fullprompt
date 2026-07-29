@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { conversationClient, conversationFor } from '@/modules/wms/crm/conversations';
+import { conversationClient, conversationFor, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { pendingFor } from '@/modules/wms/crm/outbox';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { TelegramReply } from '@/components/telegram-reply';
@@ -42,10 +42,11 @@ export default async function ConversationPage({
     redirect('/');
   }
   const { clientId } = await params;
+  const viewer = tgViewerFor(actor);
   const [client, messages, queued] = await Promise.all([
     conversationClient(clientId),
-    conversationFor(clientId, actor.id),
-    pendingFor(clientId, actor.id),
+    conversationFor(clientId, viewer),
+    pendingFor(clientId, viewer),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');

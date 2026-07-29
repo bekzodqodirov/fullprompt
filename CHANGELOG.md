@@ -1,5 +1,42 @@
 # CHANGELOG
 
+## Rahbar ko'rinishi · lenta va chat alohida · Telegram ulash ekrandan — 2026-07-29
+
+Uchala aytganingiz ham qilindi:
+
+**1. Sizga hamma yozishmalar ko'rinadi.** Super admin sifatida «Suhbatlar»da
+butun firmaning chatlarini ko'rasiz — har bir qatorda QAYSI xodimning
+akkauntida ekani yozib turadi, chat ichida ham har bir javobda xodim ismi
+bor. Rasmlar ham ochiladi. Oddiy xodimlar esa avvalgidek faqat o'zinikini
+ko'radi. Javob yozish o'zgargani yo'q: siz ham faqat O'Z akkauntingizdan
+yozasiz — birovning nomidan yozish bo'lmaydi.
+
+**2. Lenta va chat endi ALOHIDA.** Mijoz/lid/bitim kartasida ikkita
+alohida panel: **Lenta** — yuk, pul, izohlar (firma tarixi, hammaga) va
+uning ostida **Telegram chat** — yozishma (faqat egasiga, sizga hammasi).
+Mijozga yozish tugmasi ham chat panelida; lentadagi yozuv joyi endi faqat
+ichki izoh (hodimlarga, @ism bilan). Chati yo'q mijozda chat paneli
+umuman ko'rinmaydi — bo'sh quti turmaydi.
+
+**3. Akkaunt ulash — ekrandan, 1 daqiqada.** «Suhbatlar → Telegram
+ulash»: xodim o'z raqamini yozadi → Telegram ilovasiga kod keladi → kodni
+kiritadi (ikki bosqichli parol bo'lsa, uni ham) — bo'ldi. Server yangi
+akkauntni bir daqiqa ichida o'zi olib, tinglay boshlaydi — docker'ga,
+terminalga tegish shart emas. Siroj (va keyingilar) endi shu yo'l bilan
+ulanadi. Xavfsizlik avvalgidek: sessiya shifrlangan holda saqlanadi,
+har kim faqat O'Z akkauntini ulaydi.
+
+Tekshirildi: yangi bazada 759 unit/integration + 92 e2e yashil (rahbar
+ko'rinishi himoyasini ataylab o'chirib QIZIL bo'lishi ko'rsatildi; yangi
+brauzer testi ulash ekranini ochib, sozlanmagan serverda halol rad javobini
+ko'radi). Migratsiya YO'Q.
+
+Deploy eslatmasi: `.env` da `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`,
+`TG_SESSION_KEY` turgan bo'lsa (sizda bor), ulash ekrani ishlaydi;
+tg-listen konteyneri endi BITTA o'zi hamma akkauntni tinglaydi
+(`TG_LISTEN_PHONE` endi kerak emas). Birinchi jonli ulanishni docker
+loglarida kuzatamiz.
+
 ## MUHIM tuzatish: Telegram yozishmalari endi FAQAT egasiga ko'rinadi — 2026-07-29
 
 Siz topgan jiddiy xato («nega superadmindan ulangan telegram account

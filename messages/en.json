@@ -1071,7 +1071,29 @@
     "openDeal": "Open a deal",
     "replyNoChat": "Telegram chat not linked yet",
     "replyNoChatHint": "As soon as the client writes to a connected manager Telegram, the conversation appears here by itself. Connect: Profile → ✈️",
-    "feedNoteAttach": "Attach a file"
+    "feedNoteAttach": "Attach a file",
+    "connectTitle": "Connect Telegram",
+    "connectIntro": "Connect YOUR OWN Telegram — client conversations will be kept in the system and you can reply from here. Three steps, same as Telegram itself.",
+    "connectPhone": "Telegram number",
+    "connectPhoneHint": "The number you talk to clients on. Telegram sends the code to the app.",
+    "connectSendCode": "Send code",
+    "connectCode": "Code from Telegram",
+    "connectCodeHint": "The code arrived in your Telegram app (not SMS).",
+    "connectPassword": "Two-step password",
+    "connectPasswordHint": "This account has two-step verification — enter its password.",
+    "connectFinish": "Connect",
+    "connectDone": "Telegram connected",
+    "connectDoneHint": "Receiving switches on within a minute — the server picks the account up itself.",
+    "connectErrors": {
+      "not_configured": "The server is not set up for Telegram logins — ask the administrator.",
+      "phone_invalid": "That does not look like a phone number. Format: +998901234567.",
+      "code_invalid": "The code did not match. Check and try again.",
+      "password_invalid": "The password did not match. Try again.",
+      "flood_wait": "Telegram asks to wait — too many attempts. Try later.",
+      "expired": "Timed out. Request a new code.",
+      "forbidden": "Not enough rights.",
+      "failed": "It did not work. Try again."
+    }
   },
   "navShort": {
     "home": "Home",

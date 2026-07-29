@@ -23,6 +23,7 @@ import {
 import {
   clientBook,
   heartbeat,
+  listListenablePhones,
   loadAccount,
   markAccount,
   markAccountActive,
@@ -103,12 +104,7 @@ async function savePhotoFor(
   await generateThumbnails(id).catch(() => {});
 }
 
-async function main() {
-  const argv = process.argv.slice(2);
-  const i = argv.indexOf('--tg');
-  const tgPhone = i >= 0 ? argv[i + 1] : undefined;
-  if (!tgPhone) throw new Error('usage: pnpm tg-listen --tg +998...');
-
+async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<void>> {
   const apiId = Number(process.env.TELEGRAM_API_ID);
   const apiHash = process.env.TELEGRAM_API_HASH;
   if (!apiId || !apiHash) throw new Error('TELEGRAM_API_ID / TELEGRAM_API_HASH are not set');
@@ -417,16 +413,80 @@ async function main() {
     await markAccount(account.id, 'stopped', why);
     await releaseLock();
     console.log(
-      `\nto‘xtadi (${why}) · yozildi: ${stored} · o‘tkazildi: ${passed} · yuborildi: ${sent}`,
+      `\n${tgPhone} to‘xtadi (${why}) · yozildi: ${stored} · o‘tkazildi: ${passed} · yuborildi: ${sent}`,
     );
     await client.disconnect();
     await client.destroy();
+  };
+  return stop;
+}
+
+/**
+ * How the bridge runs since round 21: ONE process, EVERY stored account.
+ *
+ * `--tg +998...` still pins a single account (the shape the old compose
+ * block used). Without it, the supervisor scans `tg_accounts` once a
+ * minute and starts a listener for any account it is not already holding
+ * — which is what lets a manager connect their Telegram from the app
+ * («ulash» screen) and start receiving without anybody touching docker.
+ * `signed_out` accounts are skipped entirely: Telegram ended those, and a
+ * knock a minute on a dead session is how accounts get flagged. A failed
+ * start backs off five minutes so a broken account cannot turn the scan
+ * into a hammer.
+ */
+const SCAN_MS = 60_000;
+const START_BACKOFF_MS = 5 * 60_000;
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const i = argv.indexOf('--tg');
+  const pinned = i >= 0 ? argv[i + 1] : undefined;
+
+  const running = new Map<string, (why: string) => Promise<void>>();
+  const nextTryAt = new Map<string, number>();
+
+  const startOne = async (phone: string) => {
+    try {
+      running.set(phone, await listenAccount(phone));
+    } catch (err) {
+      running.delete(phone);
+      nextTryAt.set(phone, Date.now() + START_BACKOFF_MS);
+      console.error(`${phone}:`, err instanceof Error ? err.message : err);
+    }
+  };
+
+  const scan = async () => {
+    const phones = pinned ? [pinned] : await listListenablePhones();
+    for (const phone of phones) {
+      if (running.has(phone)) continue;
+      if ((nextTryAt.get(phone) ?? 0) > Date.now()) continue;
+      await startOne(phone);
+    }
+  };
+
+  await scan();
+  if (pinned && !running.has(pinned)) {
+    // The old single-account contract: a pinned phone that cannot start is
+    // a fatal error the container's restart policy (and its backoff below)
+    // should see — not something to idle on for ever.
+    throw new Error(`${pinned}: ishga tushmadi — yuqoridagi xatoni ko‘ring`);
+  }
+  const rescans = setInterval(() => {
+    void scan().catch((err) => {
+      console.error('scan:', err instanceof Error ? err.message : err);
+    });
+  }, SCAN_MS);
+
+  const stopAll = async (why: string) => {
+    clearInterval(rescans);
+    for (const stop of running.values()) {
+      await stop(why).catch(() => {});
+    }
     await pgClient.end();
     process.exit(0);
   };
-  process.on('SIGINT', () => void stop('SIGINT'));
-  process.on('SIGTERM', () => void stop('SIGTERM'));
-
+  process.on('SIGINT', () => void stopAll('SIGINT'));
+  process.on('SIGTERM', () => void stopAll('SIGTERM'));
 }
 
 /**

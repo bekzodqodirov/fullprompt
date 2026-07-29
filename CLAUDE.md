@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-754 unit/integration + 90 e2e, verified in CI's order on a fresh database.
+759 unit/integration + 92 e2e, verified in CI's order on a fresh database.
 Latest migration: **0047** (`custom_entities_live`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -464,6 +464,28 @@ No migration. E2E note: m9n/m9r tolerate scoping because integration
 leftovers carry manager = first seeded user (the owner) and m9n already
 asserts the empty state when rows vanish.
 
+Round 21 — the owner's three follow-ups the same day (#385-387). (1)
+SUPERVISION: `tgViewerFor(actor)` → `{id, all}`, `all` = super_admin ROLE
+(not a permission — #170); every tg read takes the viewer (list names each
+row's managers via array_agg; thread/dock/pendingFor/photo-authz widen the
+same way; `seesAllTgChats` in access.ts); replying stays own-account only.
+Red-proof: `all` branch stripped → supervision asserts red. (2) SPLIT:
+clientFeed dropped its two tg branches AND the viewer param (lenta =
+shared record again: notes/cargo/money); `TelegramThread` (was dead code)
+resurrected on client/deal/lead cards under the lenta, rewired onto
+conversationFor(viewer); TelegramReply moved out of the lenta into the
+chat panel; feed tests pin the ABSENCE (client with a tg row whose lenta
+must not show it). (3) CONNECT: `crm/telegram-connect.ts` — in-memory
+pending gramjs login per user (TTL 10 min, config checked BEFORE a code
+is wasted, always actor's own account), `/suhbatlar/ulash` (phone → code
+→ 2FA password; controlled inputs), `pnpm tg-listen` with no arg is now a
+SUPERVISOR: scans tg_accounts every 60 s, starts listeners for accounts
+it isn't holding, skips signed_out, 5-min backoff on failed starts;
+compose command dropped `--tg $TG_LISTEN_PHONE`. e2e m9x proves the
+honest not_configured refusal (CI has no TELEGRAM_API_ID). NOT live-tested
+against Telegram (no network here): watch the first real connect in
+docker logs.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
@@ -472,7 +494,8 @@ SHIPPED (round 16), deal open items SHIPPED (round 17), phase 7 SHIPPED
 (round 18), phase 8 SHIPPED (round 19) — **the «mukammal» list is
 COMPLETE**. Telegram/CRM still queued: tg-import media backfill,
 edited-message updates, deleting excluded chats' old rows,
-`listConversations` index, Siroj's account (owner decides when).
+`listConversations` index, Siroj's account (self-served now via
+/suhbatlar/ulash — owner tells him when).
 
 Explicitly parked by the owner: crate loading is not to be touched further.
 

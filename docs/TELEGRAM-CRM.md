@@ -200,14 +200,19 @@ cd ~/gsr
 docker compose run --rm migrate sh -c "pnpm tg-login --user +998901757800"
 ```
 
+**Osonroq yo'l (round 21):** har bir menejer o'z akkauntini ILOVANING
+O'ZIDAN ulaydi — «Suhbatlar → Telegram ulash» ekrani (telefon → kod →
+kerak bo'lsa ikki bosqichli parol). Server `.env` da `TELEGRAM_API_ID`,
+`TELEGRAM_API_HASH` va `TG_SESSION_KEY` turgan bo'lsa yetadi; `tg-login`
+skripti zaxira yo'l sifatida qoladi.
+
 Keyin tinglovchini yoqasiz. **`docker compose run` bilan emas** — u qayta
 ishga tushmaydi, ya'ni server o'chsa yoki jarayon yiqilsa tinglovchi jimgina
-o'ladi. Alohida servis bor:
+o'ladi. Alohida servis bor — va u BITTA konteynerda BARCHA ulangan
+akkauntlarni tinglaydi: yangi ulangan akkauntni bir daqiqa ichida o'zi
+oladi, docker'ga tegish shart emas:
 
 ```bash
-# .env ga qo'shing:
-TG_LISTEN_PHONE=+998901757800
-
 docker compose --profile telegram up -d
 docker compose --profile telegram logs -f tg-listen
 ```

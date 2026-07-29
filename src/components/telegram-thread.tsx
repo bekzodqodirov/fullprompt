@@ -1,11 +1,8 @@
 import Link from 'next/link';
-import { and, desc, eq } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
-import { db } from '@/modules/platform/db/client';
-import { tgMessages, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { pendingFor } from '@/modules/wms/crm/outbox';
-import { attachPhotos } from '@/modules/wms/crm/conversations';
+import { conversationFor, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { TelegramBubble } from './telegram-bubble';
 import { TelegramReply } from './telegram-reply';
 
@@ -53,24 +50,10 @@ export async function TelegramThread({
   }
 
   const t = await getTranslations('crm');
-  const rows = await attachPhotos(
-    await db
-      .select({
-        id: tgMessages.id,
-        direction: tgMessages.direction,
-        body: tgMessages.body,
-        hasMedia: tgMessages.hasMedia,
-        sentAt: tgMessages.sentAt,
-        manager: users.fullName,
-      })
-      .from(tgMessages)
-      .innerJoin(users, eq(tgMessages.managerUserId, users.id))
-      // Own account only (owner, 2026-07-29): the panel shows the viewer's
-      // conversation with this client, never a colleague's.
-      .where(and(eq(tgMessages.clientId, clientId), eq(tgMessages.managerUserId, actor.id)))
-      .orderBy(desc(tgMessages.sentAt))
-      .limit(limit),
-  );
+  // The same read the «Suhbatlar» screen makes — own account only, or the
+  // whole company for the owner's supervision view (#383, round 21).
+  const viewer = tgViewerFor(actor);
+  const rows = await conversationFor(clientId, viewer, limit);
 
   // Nothing imported for this client — say nothing rather than show an empty
   // box on every card in the system.
@@ -79,7 +62,7 @@ export async function TelegramThread({
   // Replies that have not gone yet. Shown here too, because a manager who
   // answered from this very panel must see that the answer is still waiting —
   // otherwise the panel looks exactly as it did before they typed.
-  const queued = await pendingFor(clientId, actor.id);
+  const queued = await pendingFor(clientId, viewer);
 
   return (
     <section className="card space-y-2" data-testid="tg-thread">

@@ -143,9 +143,9 @@ afterAll(async () => {
 
 describe('one client, several sources, one order', () => {
   it('merges the sources newest-first', async () => {
-    const items = await clientFeed(clientId, managerId);
+    const items = await clientFeed(clientId);
     const kinds = items.map((i) => i.kind);
-    expect(kinds).toEqual(['charge', 'note', 'tg_in']);
+    expect(kinds).toEqual(['charge', 'note']);
     // Newest first is the contract the flex-col-reverse rendering relies on.
     for (let i = 1; i < items.length; i++) {
       expect(items[i - 1]!.at.getTime()).toBeGreaterThanOrEqual(items[i]!.at.getTime());
@@ -153,10 +153,10 @@ describe('one client, several sources, one order', () => {
   });
 
   it('pages by timestamp across sources, without duplication', async () => {
-    const first = await clientFeed(clientId, managerId, { limit: 1 });
+    const first = await clientFeed(clientId, { limit: 1 });
     expect(first).toHaveLength(1);
-    const rest = await clientFeed(clientId, managerId, { before: first[0]!.at });
-    expect(rest.map((i) => i.kind)).toEqual(['note', 'tg_in']);
+    const rest = await clientFeed(clientId, { before: first[0]!.at });
+    expect(rest.map((i) => i.kind)).toEqual(['note']);
     // No row appears on both pages — the cutoff is strict.
     expect(rest.map((i) => i.id)).not.toContain(first[0]!.id);
   });
@@ -166,18 +166,16 @@ describe('one client, several sources, one order', () => {
   });
 
   /**
-   * The 2026-07-29 rule on the lenta: cargo, money and notes are the
-   * company's shared record — a colleague sees them all — but the Telegram
-   * lines are the manager's personal account and show only to their owner.
+   * Round 21, the owner: «lenta va chatlar alohida tursin». The client HAS a
+   * telegram message (inserted above) and the lenta still must not carry it
+   * — the chat lives in its own panel with its own per-account rule (#383).
    */
-  it("shows a colleague the shared record WITHOUT the manager's telegram lines", async () => {
-    const [, second] = await db.select().from(users).limit(2);
-    if (!second || second.id === managerId) return;
-    const items = await clientFeed(clientId, second.id);
-    const kinds = items.map((i) => i.kind);
+  it('never carries telegram lines — the chat is a separate panel now', async () => {
+    const kinds = (await clientFeed(clientId)).map((i) => String(i.kind));
     expect(kinds).toContain('charge');
     expect(kinds).toContain('note');
     expect(kinds).not.toContain('tg_in');
+    expect(kinds).not.toContain('tg_out');
     expect(kinds).not.toContain('tg_pending');
   });
 });
@@ -186,7 +184,7 @@ describe('a lead that is not a client yet — the case the owner caught', () => 
   it('still has a living lenta', async () => {
     // No client at all: every client-keyed branch compares against NULL and
     // yields nothing, and the lead's own notes are what remains.
-    const items = await clientFeed(null, managerId, { leadId });
+    const items = await clientFeed(null, { leadId });
     expect(items).toHaveLength(1);
     expect(items[0]!.kind).toBe('note');
     expect(items[0]!.body).toBe('lid bilan gaplashdik');
@@ -194,42 +192,34 @@ describe('a lead that is not a client yet — the case the owner caught', () => 
 
   it('merges the lead notes into the client feed once the lead is linked', async () => {
     // The converted-lead case: both halves of the history, one column.
-    const items = await clientFeed(clientId, managerId, { leadId });
-    expect(items.map((i) => i.kind)).toEqual(['note', 'charge', 'note', 'tg_in']);
+    const items = await clientFeed(clientId, { leadId });
+    expect(items.map((i) => i.kind)).toEqual(['note', 'charge', 'note']);
   });
 
   it('shows another lead nothing that is not its own', async () => {
     // A wrong id must yield an empty feed, not somebody else's notes.
-    const items = await clientFeed(null, managerId, { leadId: clientId });
+    const items = await clientFeed(null, { leadId: clientId });
     expect(items).toHaveLength(0);
   });
 });
 
 describe('a photographed message shows its photograph (item 15)', () => {
-  it('the lenta carries the file pinned to the telegram row', async () => {
-    const items = await clientFeed(clientId, managerId);
-    const tg = items.find((i) => i.kind === 'tg_in');
-    const files = tg!.meta.files as { id: string; image: boolean }[];
-    expect(files).toHaveLength(1);
-    expect(files[0]!.image).toBe(true);
-  });
-
-  it('the thread does too, one query for the whole page', async () => {
-    const messages = await conversationFor(clientId, managerId);
+  it('the thread carries it, one query for the whole page', async () => {
+    const messages = await conversationFor(clientId, { id: managerId });
     expect(messages[0]!.photos).toHaveLength(1);
   });
 });
 
 describe('the deal’s own chat — per job, not per client', () => {
   it('shows on the deal card, merged with the client history', async () => {
-    const items = await clientFeed(clientId, managerId, { dealId });
+    const items = await clientFeed(clientId, { dealId });
     expect(items[0]!.body).toBe('bitim bo‘yicha izoh');
   });
 
   it('does NOT leak onto the plain client card', async () => {
     // Two deals with one client are two conversations; a price argument about
     // one must not surface everywhere the client appears.
-    const items = await clientFeed(clientId, managerId);
+    const items = await clientFeed(clientId);
     expect(items.map((i) => i.body)).not.toContain('bitim bo‘yicha izoh');
   });
 });

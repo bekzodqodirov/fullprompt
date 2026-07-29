@@ -102,11 +102,15 @@ services:
   # catches up on start, but only if it starts), "it comes back by itself" is
   # not a nicety here.
   #
-  # One account per container. A second manager is a second block with its own
-  # phone — never two listeners on one Telegram account (the advisory lock
-  # refuses it anyway, and would refuse it noisily).
+  # ONE container, EVERY stored account (round 21). The supervisor inside
+  # `pnpm tg-listen` scans tg_accounts once a minute and starts a listener
+  # for each active account — so a manager connecting their Telegram on the
+  # «ulash» screen starts receiving within a minute, with nobody touching
+  # docker. Per-account exclusivity is still the advisory lock: two
+  # listeners on one Telegram account refuse each other noisily.
+  # (`pnpm tg-listen --tg +998...` still pins a single account if ever
+  # needed; TG_LISTEN_PHONE in .env is no longer read.)
   #
-  #   .env:  TG_LISTEN_PHONE=+998901757800
   #   docker compose --profile telegram up -d
   #   docker compose --profile telegram logs -f tg-listen
   tg-listen:
@@ -120,7 +124,7 @@ services:
       DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
       S3_ENDPOINT: http://minio:9000
       STORAGE_DRIVER: s3
-    command: sh -c "pnpm tg-listen --tg $${TG_LISTEN_PHONE}"
+    command: sh -c "pnpm tg-listen"
     depends_on:
       postgres:
         condition: service_healthy

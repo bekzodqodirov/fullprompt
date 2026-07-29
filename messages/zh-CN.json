@@ -1071,7 +1071,29 @@
     "openDeal": "开单",
     "replyNoChat": "尚未关联 Telegram 对话",
     "replyNoChatHint": "客户给已连接的经理 Telegram 发消息后，对话会自动出现在这里。连接方式：个人资料 → ✈️",
-    "feedNoteAttach": "附加文件"
+    "feedNoteAttach": "附加文件",
+    "connectTitle": "连接 Telegram",
+    "connectIntro": "连接您自己的 Telegram——与客户的对话将保存在系统中，并可直接在这里回复。与 Telegram 本身一样的三个步骤。",
+    "connectPhone": "Telegram 号码",
+    "connectPhoneHint": "您与客户联系用的号码。Telegram 会把验证码发送到应用内。",
+    "connectSendCode": "发送验证码",
+    "connectCode": "Telegram 验证码",
+    "connectCodeHint": "验证码已发送到您的 Telegram 应用（不是短信）。",
+    "connectPassword": "两步验证密码",
+    "connectPasswordHint": "该账号开启了两步验证——请输入其密码。",
+    "connectFinish": "连接",
+    "connectDone": "Telegram 已连接",
+    "connectDoneHint": "消息接收将在一分钟内开启——服务器会自动接管该账号。",
+    "connectErrors": {
+      "not_configured": "服务器尚未配置 Telegram 连接——请联系管理员。",
+      "phone_invalid": "号码格式不正确。格式：+998901234567。",
+      "code_invalid": "验证码不正确，请重新输入。",
+      "password_invalid": "密码不正确，请重试。",
+      "flood_wait": "Telegram 要求稍候——尝试次数过多，请稍后再试。",
+      "expired": "已超时，请重新获取验证码。",
+      "forbidden": "权限不足。",
+      "failed": "未成功，请重试。"
+    }
   },
   "navShort": {
     "home": "首页",

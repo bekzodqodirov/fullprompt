@@ -616,7 +616,7 @@ describe('the conversation list', () => {
       { dir: 'out', body: 'oxirgi javob', at: '2026-05-02T09:00:00Z' },
     ]);
 
-    const rows = await listConversations(actorId);
+    const rows = await listConversations({ id: actorId });
     const mine = rows.filter((r) => r.clientId === quiet.id);
     // One row, not one per message — the whole reason for DISTINCT ON.
     expect(mine).toHaveLength(1);
@@ -632,7 +632,7 @@ describe('the conversation list', () => {
       { dir: 'out', body: 'salom', at: '2026-06-01T09:00:00Z' },
       { dir: 'in', body: 'yuk qachon keladi?', at: '2026-06-02T09:00:00Z' },
     ]);
-    const row = (await listConversations(actorId)).find((r) => r.clientId === waiting.id)!;
+    const row = (await listConversations({ id: actorId })).find((r) => r.clientId === waiting.id)!;
     expect(row.waitingOnUs).toBe(true);
   });
 
@@ -644,7 +644,7 @@ describe('the conversation list', () => {
     const newer = await clientWith(`CN${suffix}`, [
       { dir: 'in', body: 'yangi', at: '2027-01-05T09:00:00Z' },
     ]);
-    const rows = await listConversations(actorId);
+    const rows = await listConversations({ id: actorId });
     const positions = rows.map((r) => r.clientId);
     // Relative, never "is it first in the whole list": a previous run of this
     // same suite leaves conversations behind, and one of them may legitimately
@@ -659,11 +659,11 @@ describe('the conversation list', () => {
     const found = await clientWith(`CS${suffix}`, [
       { dir: 'in', body: 'qidiruv', at: '2026-06-03T09:00:00Z' },
     ]);
-    expect((await listConversations(actorId, `CS${suffix}`)).map((r) => r.clientId)).toContain(found.id);
-    expect((await listConversations(actorId, `Client CS${suffix}`)).map((r) => r.clientId)).toContain(
+    expect((await listConversations({ id: actorId }, `CS${suffix}`)).map((r) => r.clientId)).toContain(found.id);
+    expect((await listConversations({ id: actorId }, `Client CS${suffix}`)).map((r) => r.clientId)).toContain(
       found.id,
     );
-    expect(await listConversations(actorId, 'zzz-nothing-matches-zzz')).toHaveLength(0);
+    expect(await listConversations({ id: actorId }, 'zzz-nothing-matches-zzz')).toHaveLength(0);
   });
 
   it('reads a thread oldest-first, unlike the card panel', async () => {
@@ -673,7 +673,7 @@ describe('the conversation list', () => {
       { dir: 'out', body: 'ikki', at: '2026-04-02T09:00:00Z' },
       { dir: 'in', body: null, at: '2026-04-03T09:00:00Z', media: true },
     ]);
-    const thread = await conversationFor(client.id, actorId);
+    const thread = await conversationFor(client.id, { id: actorId });
     /**
      * NEWEST first — and that is the order both screens depend on.
      *
@@ -702,18 +702,27 @@ describe('the conversation list', () => {
     ]);
 
     // The owner (actorId) sees his own thread…
-    expect((await listConversations(actorId)).map((r) => r.clientId)).toContain(secret.id);
-    expect(await conversationFor(secret.id, actorId)).toHaveLength(1);
+    expect((await listConversations({ id: actorId })).map((r) => r.clientId)).toContain(secret.id);
+    expect(await conversationFor(secret.id, { id: actorId })).toHaveLength(1);
 
     // …and a colleague sees NOTHING of it: not on the list, not as a thread,
     // not even when searching the client by code.
     const colleague = managerId === actorId ? null : managerId;
     if (colleague) {
-      expect((await listConversations(colleague)).map((r) => r.clientId)).not.toContain(secret.id);
-      expect(await conversationFor(secret.id, colleague)).toHaveLength(0);
-      expect((await listConversations(colleague, `CP${suffix}`)).map((r) => r.clientId)).not.toContain(
+      expect((await listConversations({ id: colleague })).map((r) => r.clientId)).not.toContain(secret.id);
+      expect(await conversationFor(secret.id, { id: colleague })).toHaveLength(0);
+      expect((await listConversations({ id: colleague }, `CP${suffix}`)).map((r) => r.clientId)).not.toContain(
         secret.id,
       );
+
+      // …unless they are THE BOSS (round 21: «rahbar sifatida hamma
+      // yozishmalar korinsin»): the supervision view reads the whole
+      // company, and each row names whose account the thread lives on.
+      const bossRows = await listConversations({ id: colleague, all: true });
+      const bossRow = bossRows.find((r) => r.clientId === secret.id);
+      expect(bossRow).toBeDefined();
+      expect(bossRow!.managers.length).toBeGreaterThan(0);
+      expect(await conversationFor(secret.id, { id: colleague, all: true })).toHaveLength(1);
     }
   });
 });

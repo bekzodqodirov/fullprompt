@@ -159,6 +159,14 @@ describe("telegram chat photos follow the thread's own-account rule (2026-07-29)
       tgAtt(tgMessageId),
     );
     expect(own).toEqual({ allow: true, rule: 'tg-own-thread' });
+
+    // And the BOSS reads everyone's (round 21): the super_admin role is the
+    // supervision view, same rule as the screens' tgViewerFor.
+    const boss = await decideAttachmentRead(
+      { ...actor(['crm.leads']), roles: ['super_admin'] },
+      tgAtt(tgMessageId),
+    );
+    expect(boss).toEqual({ allow: true, rule: 'tg-own-thread' });
   });
 
   it('a message row that does not exist is an orphan, not a pass', async () => {

@@ -18,6 +18,7 @@ import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
 import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
+import { TelegramThread } from '@/components/telegram-thread';
 import { CardCols } from '@/components/card-cols';
 import { conversationClientForLead } from '@/modules/wms/crm/conversations';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
@@ -88,7 +89,11 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
              customer asking about another job — brings their conversation
              with them. A brand new prospect has none, and the panel simply
              does not render. */
-          <ClientFeed clientId={dockClientId} leadId={lead.id} limit={60} tall />
+          <>
+            <ClientFeed clientId={dockClientId} leadId={lead.id} limit={60} tall />
+            {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
+            <TelegramThread clientId={dockClientId} />
+          </>
         }
         rail={
           <>

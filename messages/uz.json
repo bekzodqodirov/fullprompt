@@ -1071,7 +1071,29 @@
     "openDeal": "Bitim ochish",
     "replyNoChat": "Telegram suhbati hali ulanmagan",
     "replyNoChatHint": "Mijoz menejerning ulangan Telegramiga yozishi bilan suhbat shu yerda o'zi paydo bo'ladi. Ulanish: Profil → ✈️",
-    "feedNoteAttach": "Fayl biriktirish"
+    "feedNoteAttach": "Fayl biriktirish",
+    "connectTitle": "Telegram ulash",
+    "connectIntro": "O'ZINGIZNING Telegramingizni ulang — mijozlar bilan yozishmalar tizimda saqlanadi va shu yerdan javob yozish mumkin bo'ladi. Telegramning o'zidagidek uch qadam.",
+    "connectPhone": "Telegram raqami",
+    "connectPhoneHint": "Mijozlar bilan yozishadigan raqamingiz. Telegram ilovaga kod yuboradi.",
+    "connectSendCode": "Kod yuborish",
+    "connectCode": "Telegramdan kelgan kod",
+    "connectCodeHint": "Kod Telegram ilovangizga keldi (SMS emas).",
+    "connectPassword": "Ikki bosqichli parol",
+    "connectPasswordHint": "Akkauntda ikki bosqichli himoya yoqilgan — o'sha parolni kiriting.",
+    "connectFinish": "Ulash",
+    "connectDone": "Telegram ulandi",
+    "connectDoneHint": "Xabarlar qabul qilish bir daqiqa ichida yoqiladi — server akkauntni o'zi oladi.",
+    "connectErrors": {
+      "not_configured": "Server Telegram ulash uchun sozlanmagan — administratorga ayting.",
+      "phone_invalid": "Raqam telefon raqamiga o'xshamaydi. Format: +998901234567.",
+      "code_invalid": "Kod to'g'ri kelmadi. Tekshirib qayta kiriting.",
+      "password_invalid": "Parol to'g'ri kelmadi. Yana urinib ko'ring.",
+      "flood_wait": "Telegram kutishni so'rayapti — urinishlar ko'p bo'ldi. Keyinroq urining.",
+      "expired": "Vaqt tugadi. Kodni qaytadan so'rang.",
+      "forbidden": "Ruxsat yetarli emas.",
+      "failed": "Bo'lmadi. Yana urinib ko'ring."
+    }
   },
   "navShort": {
     "home": "Bosh",

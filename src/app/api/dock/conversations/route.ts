@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { listConversations } from '@/modules/wms/crm/conversations';
+import { listConversations, tgViewerFor } from '@/modules/wms/crm/conversations';
 
 /** The dock's conversation list — same gate as /suhbatlar (#296). */
 export async function GET() {
@@ -9,7 +9,7 @@ export async function GET() {
   if (!actor.permissions.has('crm.leads') && !actor.permissions.has('clients.manage')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
-  const rows = await listConversations(actor.id);
+  const rows = await listConversations(tgViewerFor(actor));
   return NextResponse.json({
     conversations: rows.slice(0, 100).map((row) => ({
       clientId: row.clientId,

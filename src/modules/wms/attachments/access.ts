@@ -38,7 +38,15 @@ export type AttachmentAccessDecision = {
   enforce?: boolean;
 };
 
-type ReadActor = ScopedActor & { id: string; permissions: Set<string> };
+type ReadActor = ScopedActor & {
+  id: string;
+  permissions: Set<string>;
+  /** Present when the route passes a full Actor; absent in older callers. */
+  roles?: readonly string[];
+};
+
+/** The owner's supervision view (round 21) — same rule as `tgViewerFor`. */
+const seesAllTgChats = (actor: ReadActor) => actor.roles?.includes('super_admin') === true;
 
 type AttachmentRow = { id: string; entityType: string; entityId: string; uploadedBy: string };
 
@@ -124,7 +132,7 @@ export async function decideAttachmentRead(
       if (!row) return { allow: false, rule: 'orphan', enforce: true };
       if (!has('crm.leads', 'clients.manage'))
         return { allow: false, rule: 'tg-no-permission', enforce: true };
-      return row.managerUserId === actor.id || row.queuedBy === actor.id
+      return row.managerUserId === actor.id || row.queuedBy === actor.id || seesAllTgChats(actor)
         ? { allow: true, rule: 'tg-own-outbox' }
         : { allow: false, rule: 'tg-not-own-account', enforce: true };
     }
@@ -142,7 +150,7 @@ export async function decideAttachmentRead(
       if (!row) return { allow: false, rule: 'orphan', enforce: true };
       if (!has('crm.leads', 'clients.manage'))
         return { allow: false, rule: 'tg-no-permission', enforce: true };
-      return row.managerUserId === actor.id
+      return row.managerUserId === actor.id || seesAllTgChats(actor)
         ? { allow: true, rule: 'tg-own-thread' }
         : { allow: false, rule: 'tg-not-own-account', enforce: true };
     }

@@ -262,7 +262,10 @@ export async function queueReply(
  * listener as an ordinary outgoing message and belongs in the conversation
  * itself; showing it from here too would double it.
  */
-export async function pendingFor(clientId: string, viewerId: string): Promise<QueuedReply[]> {
+export async function pendingFor(
+  clientId: string,
+  viewer: { id: string; all?: boolean },
+): Promise<QueuedReply[]> {
   const rows = await db
     .select({
       id: tgOutbox.id,
@@ -283,7 +286,7 @@ export async function pendingFor(clientId: string, viewerId: string): Promise<Qu
     .where(
       and(
         eq(tgOutbox.clientId, clientId),
-        eq(tgOutbox.managerUserId, viewerId),
+        viewer.all ? undefined : eq(tgOutbox.managerUserId, viewer.id),
         sql`${tgOutbox.status} IN ('queued', 'sending', 'failed')`,
       ),
     )

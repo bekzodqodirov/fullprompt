@@ -13,6 +13,22 @@ import { activeClientsByPhone } from '../client-cabinet/service';
  * talking to us, and who is still waiting".
  */
 
+/**
+ * Whose eyes a Telegram read is for.
+ *
+ * `all` is the owner's supervision view (his instruction, 2026-07-29: «menga
+ * rahbar sifatida hamma yozishmalar korinsin») — computed from the ROLE, in
+ * one place, so widening or narrowing it later is a one-line decision.
+ */
+export interface TgViewer {
+  id: string;
+  all?: boolean;
+}
+
+export function tgViewerFor(actor: { id: string; roles: readonly string[] }): TgViewer {
+  return { id: actor.id, all: actor.roles.includes('super_admin') };
+}
+
 export interface ConversationRow {
   clientId: string;
   clientCode: string;
@@ -23,6 +39,8 @@ export interface ConversationRow {
   /** True when the client spoke last — i.e. the ball is on our side. */
   waitingOnUs: boolean;
   messages: number;
+  /** Who holds the chat(s) — filled only on the supervision view. */
+  managers: string[];
 }
 
 /**
@@ -43,10 +61,14 @@ export interface ConversationRow {
  * table (#152, same lesson).
  */
 export async function listConversations(
-  viewerId: string,
+  viewer: TgViewer,
   search?: string,
 ): Promise<ConversationRow[]> {
   const q = (search ?? '').trim();
+  // One fragment, used identically in the top row and the count, so the two
+  // can never disagree about whose messages a row is describing.
+  const mine = viewer.all ? sql`true` : sql`m.manager_user_id = ${viewer.id}`;
+  const mineN = viewer.all ? sql`true` : sql`n.manager_user_id = ${viewer.id}`;
   const rows = await db.execute<{
     client_id: string;
     client_code: string;
@@ -66,13 +88,28 @@ export async function listConversations(
       m.has_media,
       m.direction,
       (SELECT count(*) FROM tg_messages n
-        WHERE n.client_id = m.client_id AND n.manager_user_id = ${viewerId}) AS messages
+        WHERE n.client_id = m.client_id AND ${mineN}) AS messages
     FROM tg_messages m
     JOIN clients c ON c.id = m.client_id
-    WHERE m.manager_user_id = ${viewerId}
+    WHERE ${mine}
     ${q ? sql`AND (c.name ILIKE ${'%' + q + '%'} OR c.client_code ILIKE ${'%' + q + '%'})` : sql``}
     ORDER BY m.client_id, m.sent_at DESC
   `);
+
+  // The supervision view names whose account each conversation lives on —
+  // the boss reads a company of threads, and a row without its manager's
+  // name is exactly the «tushunarsiz» he complained about.
+  const managersByClient = new Map<string, string[]>();
+  if (viewer.all && rows.length > 0) {
+    const nameRows = await db.execute<{ client_id: string; names: string[] }>(sql`
+      SELECT m.client_id, array_agg(DISTINCT u.full_name) AS names
+      FROM tg_messages m
+      JOIN users u ON u.id = m.manager_user_id
+      WHERE m.client_id IN (${sql.join(rows.map((r) => sql`${r.client_id}`), sql`, `)})
+      GROUP BY m.client_id
+    `);
+    for (const row of nameRows) managersByClient.set(row.client_id, row.names);
+  }
 
   return rows
     .map((r) => ({
@@ -87,6 +124,7 @@ export async function listConversations(
       // left for the eye to work out from a name.
       waitingOnUs: r.direction === 'in',
       messages: Number(r.messages),
+      managers: managersByClient.get(r.client_id) ?? [],
     }))
     // `DISTINCT ON` must sort by the grouping column first, so the useful
     // order is applied afterwards — on at most one row per client.
@@ -116,7 +154,7 @@ export interface ConversationMessage {
  */
 export async function conversationFor(
   clientId: string,
-  viewerId: string,
+  viewer: TgViewer,
   limit = 500,
 ): Promise<ConversationMessage[]> {
   const rows = await db
@@ -132,7 +170,13 @@ export async function conversationFor(
     .innerJoin(users, eq(tgMessages.managerUserId, users.id))
     // The viewer's own account only — a colleague's thread with the same
     // client is that colleague's personal Telegram, not a shared record.
-    .where(and(eq(tgMessages.clientId, clientId), eq(tgMessages.managerUserId, viewerId)))
+    // The one exception is the owner's supervision view (`all`), where every
+    // bubble already names its manager.
+    .where(
+      viewer.all
+        ? eq(tgMessages.clientId, clientId)
+        : and(eq(tgMessages.clientId, clientId), eq(tgMessages.managerUserId, viewer.id)),
+    )
     .orderBy(desc(tgMessages.sentAt))
     .limit(limit);
   // The newest `limit` rows, in that order. Taking the OLDEST n would push the
@@ -174,11 +218,11 @@ export async function conversationClient(clientId: string) {
 }
 
 /** How many clients THE VIEWER holds a conversation with — the menu badge. */
-export async function conversationCount(viewerId: string): Promise<number> {
+export async function conversationCount(viewer: TgViewer): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(DISTINCT ${tgMessages.clientId})` })
     .from(tgMessages)
-    .where(eq(tgMessages.managerUserId, viewerId));
+    .where(viewer.all ? undefined : eq(tgMessages.managerUserId, viewer.id));
   return Number(row?.n ?? 0);
 }
 

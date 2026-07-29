@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { conversationClient, conversationFor } from '@/modules/wms/crm/conversations';
+import { conversationClient, conversationFor, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { conversationManagers, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
 
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
   const [client, messages, account, managers] = await Promise.all([
     conversationClient(clientId),
-    conversationFor(clientId, actor.id, 80),
+    conversationFor(clientId, tgViewerFor(actor), 80),
     replyAccountFor(clientId, actor.id),
     conversationManagers(clientId),
   ]);

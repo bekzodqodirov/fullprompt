@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { listConversations } from '@/modules/wms/crm/conversations';
+import { listConversations, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { pendingCount } from '@/modules/wms/crm/chat-rules';
 import { PageHeader } from '@/components/ui/page';
 import { TelegramBridgeStatus } from '@/components/telegram-bridge-status';
@@ -41,9 +41,10 @@ export default async function ConversationsPage({
   }
   const t = await getTranslations('crm');
   const { q } = await searchParams;
-  // Own account only: this list is "MY chats", never the company's (owner,
-  // 2026-07-29 — each manager talks to clients from their own Telegram).
-  const rows = await listConversations(actor.id, q);
+  // Own account only — except the owner's supervision view: as super_admin
+  // he reads the whole company's threads, each row naming its manager
+  // (his instruction, round 21: «rahbar sifatida hamma yozishmalar korinsin»).
+  const rows = await listConversations(tgViewerFor(actor), q);
 
   // Answering is gated tighter than reading (`clients.manage`), and a manager
   // counts only their OWN waiting chats — the owner counts everybody's.
@@ -54,7 +55,16 @@ export default async function ConversationsPage({
 
   return (
     <div className="space-y-3">
-      <PageHeader title={`✈️ ${t('conversations')}`} />
+      <PageHeader
+        title={`✈️ ${t('conversations')}`}
+        actions={
+          // Their own account, connected from the screen (round 21). The
+          // person allowed to read chats is the person who may hold one.
+          <Link href="/suhbatlar/ulash" className="btn-secondary" data-testid="connect-link">
+            {t('connectTitle')}
+          </Link>
+        }
+      />
 
       {/* Are messages actually arriving? The list growing is the only other
           evidence, and "nobody wrote today" looks identical to a dead bridge. */}
@@ -104,7 +114,15 @@ export default async function ConversationsPage({
                 {row.clientCode}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold">{row.clientName}</span>
+                <span className="block truncate font-semibold">
+                  {row.clientName}
+                  {/* Supervision view only: whose Telegram this thread lives on. */}
+                  {row.managers.length > 0 && (
+                    <span className="ml-1.5 text-xs font-normal text-ink-500">
+                      · {row.managers.join(', ')}
+                    </span>
+                  )}
+                </span>
                 <span className="block truncate text-sm text-ink-500">
                   {row.lastBody ?? `📎 ${t('telegramMedia')}`}
                 </span>
