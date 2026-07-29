@@ -58,13 +58,13 @@ describe('a half-finished login expires', () => {
 
 describe('the server must be set up before anybody types a code', () => {
   it('refuses without the API pair — checked FIRST, wasting nobody`s code', () => {
-    expect(connectConfig({} as NodeJS.ProcessEnv)).toBeNull();
-    expect(connectConfig({ TELEGRAM_API_ID: '123' } as NodeJS.ProcessEnv)).toBeNull();
+    expect(connectConfig({})).toBeNull();
+    expect(connectConfig({ TELEGRAM_API_ID: '123' })).toBeNull();
     expect(
       // The API pair alone is still not enough: without TG_SESSION_KEY the
       // finished login could not be stored, and finding that out AFTER the
       // code is typed is the tg-login mistake this guards against.
-      connectConfig({ TELEGRAM_API_ID: '123', TELEGRAM_API_HASH: 'abc' } as NodeJS.ProcessEnv),
+      connectConfig({ TELEGRAM_API_ID: '123', TELEGRAM_API_HASH: 'abc' }),
     ).toBeNull();
   });
 });

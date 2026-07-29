@@ -59,7 +59,9 @@ export interface ConnectConfig {
 }
 
 /** Null when the server is not set up for Telegram logins at all. */
-export function connectConfig(env: NodeJS.ProcessEnv = process.env): ConnectConfig | null {
+export function connectConfig(
+  env: Record<string, string | undefined> = process.env,
+): ConnectConfig | null {
   const apiId = Number(env.TELEGRAM_API_ID);
   const apiHash = env.TELEGRAM_API_HASH;
   if (!apiId || !apiHash) return null;
