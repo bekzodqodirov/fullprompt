@@ -12,8 +12,10 @@ import {
   listRoles,
   renameRole,
   setRoleGrants,
+  setRoleScoped,
   someoneCanStillManageRoles,
 } from '@/modules/platform/rbac/roles';
+import { loadUserRoles } from '@/modules/platform/rbac/authorize';
 import { PERMISSION_CODES } from '@/modules/platform/rbac/catalog';
 
 /**
@@ -56,6 +58,63 @@ describe('roles are data the owner edits', () => {
     expect(salesRole.grants).toContain('crm.leads');
     expect(salesRole.isSystem).toBe(true);
     expect(salesRole.userCount).toBeGreaterThanOrEqual(0);
+  });
+
+  /**
+   * Warehouse scoping is a COLUMN since 0049, and the actor reads it — a
+   * role that exists only as a database row can scope its holder, which is
+   * exactly the case the compiled role-name list used to get wrong: an
+   * invented warehouse role was born seeing every warehouse.
+   */
+  it('an INVENTED role can be warehouse-scoped, and the actor load honours it', async () => {
+    // The seed stamped the shipped roles' flags on insert.
+    const list = await listRoles();
+    expect(list.find((r) => r.code === 'warehouse_operator')!.warehouseScoped).toBe(true);
+    expect(list.find((r) => r.code === 'warehouse_manager')!.warehouseScoped).toBe(true);
+    expect(list.find((r) => r.code === 'sales_manager')!.warehouseScoped).toBe(false);
+
+    const role = await createRole(
+      { code: `brigadir_${SUFFIX}`, name: `Brigadir ${SUFFIX}`, description: '' },
+      owner(),
+      ctx(),
+    );
+    // Born UNscoped by default — the flag is a decision, not a guess…
+    expect((await listRoles()).find((r) => r.id === role.id)!.warehouseScoped).toBe(false);
+    await setRoleScoped(role.id, true, owner(), ctx());
+    expect((await listRoles()).find((r) => r.id === role.id)!.warehouseScoped).toBe(true);
+
+    // …and a person holding it is scoped, through the SAME loader getActor
+    // uses — the whole point of the column.
+    const [holder] = await db
+      .insert(users)
+      .values({
+        phone: `+99893${String(Date.now()).slice(-7)}`,
+        fullName: `Brigadir ${SUFFIX}`,
+        passwordHash: 'x',
+      })
+      .returning({ id: users.id });
+    await db.insert(userRoles).values({ userId: holder!.id, roleId: role.id });
+    const rows = await loadUserRoles(holder!.id);
+    expect(rows.some((r) => r.warehouseScoped)).toBe(true);
+
+    // The audit says who tied it and both directions are recorded.
+    await setRoleScoped(role.id, false, owner(), ctx());
+    expect((await loadUserRoles(holder!.id)).some((r) => r.warehouseScoped)).toBe(false);
+
+    await db.delete(userRoles).where(eq(userRoles.userId, holder!.id));
+    await db.delete(users).where(eq(users.id, holder!.id));
+    await deleteRole(role.id, ctx());
+  });
+
+  it('refuses to change the scoping of a role the editor holds', async () => {
+    // Unticking your OWN role's scope is self-widening — the same act the
+    // grants editor refuses, refused at the same door.
+    const list = await listRoles();
+    const opRole = list.find((r) => r.code === 'warehouse_operator')!;
+    const editor = { id: actorId, permissions: ownerPerms, roles: ['warehouse_operator'] };
+    await expect(setRoleScoped(opRole.id, false, editor, ctx())).rejects.toThrow('own_role');
+    // Untouched.
+    expect((await listRoles()).find((r) => r.id === opRole.id)!.warehouseScoped).toBe(true);
   });
 
   it('creates, renames and deletes a role of its own', async () => {

@@ -109,6 +109,14 @@ export const roles = pgTable('roles', {
    * every permission the owner had just taken away.
    */
   grantsCustomised: boolean('grants_customised').notNull().default(false),
+  /**
+   * Grants apply only within the holder's assigned warehouses. A COLUMN
+   * rather than the compiled role-name list (migration 0049), so a role
+   * invented on /admin/roles can be born scoped instead of silently seeing
+   * every warehouse. The screen owns it after birth; the seed only sets it
+   * when INSERTING a shipped role.
+   */
+  warehouseScoped: boolean('warehouse_scoped').notNull().default(false),
   createdAt: createdAt(),
 });
 

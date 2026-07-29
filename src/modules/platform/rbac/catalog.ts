@@ -93,8 +93,11 @@ export const ROLE_NAMES: Record<RoleCode, string> = {
 const ALL = [...PERMISSION_CODES] as PermissionCode[];
 
 /**
- * Roles whose grants apply only within the user's assigned warehouses
- * (user_warehouses). authorize() enforces the scope for these.
+ * The SHIPPED roles whose grants apply only within the user's assigned
+ * warehouses. Since migration 0049 the runtime truth is the
+ * `roles.warehouse_scoped` COLUMN (so a role invented on /admin/roles can be
+ * born scoped); this array is what the seed stamps onto these codes when it
+ * INSERTS them on a fresh database, and what the tripwire test pins.
  */
 export const WAREHOUSE_SCOPED_ROLES: RoleCode[] = ['warehouse_manager', 'warehouse_operator'];
 

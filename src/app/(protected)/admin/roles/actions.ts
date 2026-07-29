@@ -10,6 +10,7 @@ import {
   renameRole,
   roleSchema,
   setRoleGrants,
+  setRoleScoped,
 } from '@/modules/platform/rbac/roles';
 
 export interface RoleFormState {
@@ -72,6 +73,23 @@ export async function createRoleAction(
   }
   revalidatePath('/admin/roles');
   return { ok: true };
+}
+
+/**
+ * Tie or untie a role's powers to the holder's own warehouses (0049). Same
+ * door, same guardrails as the grants — the service refuses an own-role
+ * edit for the same self-widening reason.
+ */
+export async function setRoleScopedAction(formData: FormData): Promise<void> {
+  const roleId = String(formData.get('roleId') ?? '');
+  const scoped = String(formData.get('scoped') ?? '') === 'true';
+  const { actor, editor: who, meta } = await editor();
+  try {
+    await setRoleScoped(roleId, scoped, who, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (!(err instanceof RoleError)) throw err;
+  }
+  revalidatePath('/admin/roles');
 }
 
 export async function renameRoleAction(formData: FormData): Promise<void> {

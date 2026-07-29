@@ -344,6 +344,13 @@
       "when": 1785190000017,
       "tag": "0048_tg_messages_manager_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1785190000018,
+      "tag": "0049_roles_warehouse_scoped",
+      "breakpoints": true
     }
   ]
 }

@@ -1211,7 +1211,9 @@
       "role_in_use": "Somebody holds this role — remove it from them first",
       "not_found": "Role not found",
       "validation": "Incomplete data"
-    }
+    },
+    "scoped": "Warehouse-scoped",
+    "scopedHint": "Grants apply only within the holder's assigned warehouses. Unticked, the role sees every warehouse."
   },
   "fields": {
     "title": "Fields and objects",

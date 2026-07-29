@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { deleteRoleAction, saveGrantsAction, type RoleFormState } from './actions';
+import { deleteRoleAction, saveGrantsAction, setRoleScopedAction, type RoleFormState } from './actions';
 
 export interface RoleCardProps {
   id: string;
@@ -11,6 +11,7 @@ export interface RoleCardProps {
   description: string | null;
   isSystem: boolean;
   grantsCustomised: boolean;
+  warehouseScoped: boolean;
   userCount: number;
   grants: string[];
   /** Areas and their permission codes, already grouped by the server. */
@@ -60,6 +61,11 @@ export function RoleCard(props: RoleCardProps) {
           {t('grantCount', { n: props.grants.length })}
         </span>
         {props.grantsCustomised && <span className="text-warn">✏️ {t('edited')}</span>}
+        {props.warehouseScoped && (
+          <span className="chip-neutral" data-testid={`scoped-${props.code}`}>
+            🏠 {t('scoped')}
+          </span>
+        )}
         <button
           type="button"
           data-testid={`toggle-${props.code}`}
@@ -79,6 +85,30 @@ export function RoleCard(props: RoleCardProps) {
       {open && (
         <form action={formAction} className="space-y-3 border-t border-line pt-3">
           <input type="hidden" name="roleId" value={props.id} />
+
+          {/* Whether the role's powers stop at the holder's own warehouses
+              (migration 0049). Its own small form: it must not ride the
+              grants submit, whose replace-all semantics have nothing to do
+              with it. Own-role locked like everything else here. */}
+          <label className={`flex items-start gap-2 text-sm ${locked ? 'opacity-50' : ''}`}>
+            <input
+              type="checkbox"
+              checked={props.warehouseScoped}
+              disabled={locked}
+              data-testid={`scope-toggle-${props.code}`}
+              onChange={(e) => {
+                const form = new FormData();
+                form.set('roleId', props.id);
+                form.set('scoped', e.target.checked ? 'true' : 'false');
+                void setRoleScopedAction(form);
+              }}
+              className="mt-0.5 h-5 w-5 shrink-0"
+            />
+            <span>
+              <span className="font-semibold">{t('scoped')}</span>
+              <span className="block text-xs text-ink-500">{t('scopedHint')}</span>
+            </span>
+          </label>
           {props.groups.map((group) => (
             <fieldset key={group.area} className="space-y-1">
               <legend className="section-title">{group.area}</legend>

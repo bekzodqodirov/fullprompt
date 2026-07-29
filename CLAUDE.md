@@ -121,8 +121,8 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-764 unit/integration + 92 e2e, verified in CI's order on a fresh database.
-Latest migration: **0048** (`tg_messages_manager_idx`).
+766 unit/integration + 92 e2e, verified in CI's order on a fresh database.
+Latest migration: **0049** (`roles_warehouse_scoped`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -502,6 +502,15 @@ hold and MinIO has no off-site copy). Deferred: purge has no e2e (the
 predicate+action are integration-proven; a browser press needs seeded tg
 config, #183).
 
+Round 23 — warehouse scoping as a roles COLUMN (#389), the deferred
+access item that was never blocked on the seller logins. Migration 0049;
+`getActor` reads the column via exported `loadUserRoles`; seed stamps the
+flag ONLY on INSERT of shipped roles (screen owns it after birth — the
+grants_customised lesson); /admin/roles checkbox through `setRoleScoped`
+with the own-role guardrail (unticking your own role's scope =
+self-widening); WAREHOUSE_SCOPED_ROLES stays as the seed bootstrap +
+tripwire anchor. Red-proof: column read stripped → invented-role test red.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
@@ -543,9 +552,10 @@ say which printer model he has.
 
 Deferred access work, blocked on the chores above: scoping clients to their
 sales manager (needs the 17 logins first, or it hides nearly every client from
-sales) · warehouse scoping as a `roles` COLUMN rather than two hard-coded role
-names, so an invented warehouse role is not born unscoped · attachment
-authorization (log-only mode first) · lead-mutation ownership.
+sales) · attachment authorization flip to enforce (log-only running; tg
+branches already enforce per #384 — the rest awaits his read of the logs) ·
+lead-mutation ownership. (Warehouse scoping as a roles column SHIPPED in
+round 23.)
 
 ## How to work here
 

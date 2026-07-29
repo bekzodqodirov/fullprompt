@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## Yangi rol ham skladga bog'lana oladi — xavfsizlik kemtigi yopildi — 2026-07-29
+
+Rol konstruktoridagi yashirin kemtik: «sklad bilan chegaralanish» dasturda
+ikkita rol NOMIga qotirilgan edi (skladchi va sklad boshlig'i). Siz
+/admin/roles da yangi rol yaratsangiz (masalan «Brigadir»), unga sklad
+huquqlarini bersangiz — u chegarasiz tug'ilar edi: HAMMA skladni ko'rardi,
+jimgina.
+
+Endi bu rolning o'zida belgilanadi:
+
+- Rol kartasida yangi katak: **«Sklad bilan chegaralangan»** — belgilansa,
+  rol egasi faqat unga biriktirilgan skladlarda ishlaydi.
+- Skladchi va sklad boshlig'i avtomatik belgilangan holda keladi — hech
+  narsa o'zgarmaydi, hozirgi xodimlar avvalgidek ishlayveradi.
+- O'Z rolingizning katagini o'zgartirib bo'lmaydi (huquq berish
+  ekranidagi qoida bu yerda ham): o'zini kengaytirish yo'li yopiq.
+  Har o'zgarish jurnalga yoziladi.
+
+Tekshirildi: yangi bazada 766 unit/integration + 92 e2e yashil (yangi rol
+egasi chegaralangani ustun o'qishni ataylab o'chirib QIZIL ko'rsatildi).
+Migratsiya: **0049** (faqat qo'shadi; ishlab turgan bazada ikkala sklad
+roliga belgini o'zi qo'yadi — deploy'da qo'shimcha ish yo'q).
+
 ## Telegram mayda ishlar: chiqarilgan chatni tozalash, tahrirlar, import rasmlari, tezlik — 2026-07-29
 
 Navbatda turgan to'rt ish yopildi:

@@ -43,6 +43,7 @@ export interface RoleView {
   description: string | null;
   isSystem: boolean;
   grantsCustomised: boolean;
+  warehouseScoped: boolean;
   userCount: number;
   grants: string[];
 }
@@ -57,6 +58,7 @@ export async function listRoles(): Promise<RoleView[]> {
       description: roles.description,
       isSystem: roles.isSystem,
       grantsCustomised: roles.grantsCustomised,
+      warehouseScoped: roles.warehouseScoped,
       userCount: sql<number>`(SELECT count(*) FROM user_roles ur WHERE ur.role_id = ${roles}.id)`,
     })
     .from(roles)
@@ -224,6 +226,33 @@ export async function createRole(
     after: { code: input.code, name: input.name, by: editor.id },
   });
   return row!;
+}
+
+/**
+ * Tie (or untie) a role's grants to the holder's assigned warehouses.
+ *
+ * The rule an invented warehouse role was missing (migration 0049). Same
+ * own-role guard as grants: UNTICKING the flag on a role you hold widens
+ * your own reach over every warehouse in the company — the exact
+ * self-promotion the grants editor refuses. Audited both ways.
+ */
+export async function setRoleScoped(
+  roleId: string,
+  scoped: boolean,
+  editor: Editor,
+  ctx: AuditContext,
+): Promise<void> {
+  const role = await loadRole(roleId);
+  if (editor.roles.includes(role.code)) throw new RoleError('own_role');
+  if (role.warehouseScoped === scoped) return;
+  await db.update(roles).set({ warehouseScoped: scoped }).where(eq(roles.id, roleId));
+  await writeAudit(db, ctx, {
+    entityType: 'role',
+    entityId: roleId,
+    action: 'update',
+    before: { warehouseScoped: role.warehouseScoped },
+    after: { warehouseScoped: scoped },
+  });
 }
 
 export async function renameRole(

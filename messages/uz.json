@@ -1211,7 +1211,9 @@
       "role_in_use": "Bu rol kimdadir bor — avval olib tashlang",
       "not_found": "Rol topilmadi",
       "validation": "Ma'lumot to'liq emas"
-    }
+    },
+    "scoped": "Sklad bilan chegaralangan",
+    "scopedHint": "Huquqlar faqat xodimga biriktirilgan skladlarda amal qiladi. Belgisiz rol hamma skladni ko'radi."
   },
   "fields": {
     "title": "Maydonlar va obyektlar",

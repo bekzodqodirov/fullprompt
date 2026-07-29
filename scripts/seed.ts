@@ -27,6 +27,7 @@ import {
   ROLE_MATRIX,
   ROLE_NAMES,
   ROLE_CODES,
+  isWarehouseScoped,
   type RoleCode,
 } from '../src/modules/platform/rbac/catalog';
 import { SETTING_DEFAULTS } from '../src/modules/platform/settings/service';
@@ -94,7 +95,14 @@ async function main() {
     await db.insert(permissions).values({ code }).onConflictDoNothing();
   }
   for (const code of ROLE_CODES) {
-    await db.insert(roles).values({ code, name: ROLE_NAMES[code] }).onConflictDoNothing();
+    // The scoping flag rides the INSERT only: after birth the /admin/roles
+    // screen owns it, and a seed that re-asserted it would betray an owner
+    // who deliberately unticked a shipped role (the grants_customised
+    // lesson, applied to one boolean).
+    await db
+      .insert(roles)
+      .values({ code, name: ROLE_NAMES[code], warehouseScoped: isWarehouseScoped([code]) })
+      .onConflictDoNothing();
   }
   const roleRows = await db.select().from(roles);
   const roleIds = new Map(roleRows.map((r) => [r.code as RoleCode, r.id] as const));

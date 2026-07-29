@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { permissions, rolePermissions, roles, userRoles, userWarehouses } from '../db/schema';
 import { getSessionUser, type SessionUser } from '../auth/session';
-import { isWarehouseScoped, type PermissionCode, type RoleCode } from './catalog';
+import type { PermissionCode, RoleCode } from './catalog';
 
 export class AuthError extends Error {
   constructor(
@@ -32,15 +32,27 @@ export interface Actor extends SessionUser {
  * none) and is discarded when the request ends, so there is no cross-request
  * leak: two users cannot see each other's actor.
  */
+/**
+ * One user's roles with the scoping flag, exported so the rule "any scoped
+ * role scopes the user" can be proved against real rows — including a role
+ * that exists only as a database row, which is exactly the case the
+ * compiled list used to get wrong.
+ */
+export async function loadUserRoles(
+  userId: string,
+): Promise<{ code: string; warehouseScoped: boolean }[]> {
+  return db
+    .select({ code: roles.code, warehouseScoped: roles.warehouseScoped })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(userRoles.userId, userId));
+}
+
 export const getActor = cache(async function getActor(): Promise<Actor | null> {
   const user = await getSessionUser();
   if (!user) return null;
 
-  const roleRows = await db
-    .select({ code: roles.code })
-    .from(userRoles)
-    .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(eq(userRoles.userId, user.id));
+  const roleRows = await loadUserRoles(user.id);
   const roleCodes = roleRows.map((r) => r.code as RoleCode);
 
   const permRows = await db
@@ -55,7 +67,11 @@ export const getActor = cache(async function getActor(): Promise<Actor | null> {
     .from(userWarehouses)
     .where(eq(userWarehouses.userId, user.id));
 
-  const warehouseScoped = isWarehouseScoped(roleCodes);
+  // From the COLUMN, not the compiled role-name list (migration 0049): a
+  // role invented on /admin/roles carries its own answer. ANY scoped role
+  // scopes the user — permissions union (widest wins), scope intersects
+  // (narrowest wins), the rule #199 established.
+  const warehouseScoped = roleRows.some((r) => r.warehouseScoped);
 
   return {
     ...user,
