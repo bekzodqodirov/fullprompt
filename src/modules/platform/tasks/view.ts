@@ -14,6 +14,7 @@ import { aboutLabels, listTaskTypes, openCounts, type TaskRow } from './service'
 const ROUTES: Record<string, (id: string) => string> = {
   client: (id) => `/admin/clients/${id}`,
   lead: (id) => `/crm/leads/${id}`,
+  deal: (id) => `/bitimlar/${id}`,
   receipt: (id) => `/receipts/${id}`,
   box: (id) => `/boxes/${id}`,
   crate: (id) => `/crates/${id}`,

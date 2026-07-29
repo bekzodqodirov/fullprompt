@@ -50,12 +50,19 @@ export async function createTaskAction(
   if (!me) return { error: 'unauthenticated' };
 
   const str = (name: string) => String(formData.get(name) ?? '').trim();
+  // A date plus an optional clock time (round 28): the two inputs join into
+  // the `YYYY-MM-DDTHH:mm` shape parseDue reads, and the hidden offset says
+  // whose wall clock the time was typed on.
+  const dueDate = str('dueAt');
+  const dueTime = str('dueTime');
+  const tzRaw = str('tzOffset');
   const parsed = taskSchema.safeParse({
     title: str('title'),
     note: str('note'),
     typeId: str('typeId') || null,
     assigneeId: str('assigneeId') || me.actor.id,
-    dueAt: str('dueAt'),
+    dueAt: dueDate && dueTime ? `${dueDate}T${dueTime}` : dueDate,
+    tzOffsetMin: tzRaw === '' ? null : Number(tzRaw),
     priority: Number(formData.get('priority')) || 2,
     entityType: str('entityType') || null,
     entityId: str('entityId') || null,
@@ -131,6 +138,9 @@ export async function updateTaskAction(
   const me = await who();
   if (!me) return { error: 'unauthenticated' };
   const str = (name: string) => String(formData.get(name) ?? '').trim();
+  const dueDate = str('dueAt');
+  const dueTime = str('dueTime');
+  const tzRaw = str('tzOffset');
   try {
     await updateTask(
       id,
@@ -138,7 +148,8 @@ export async function updateTaskAction(
         title: str('title'),
         note: str('note'),
         typeId: str('typeId') || null,
-        dueAt: str('dueAt'),
+        dueAt: dueDate && dueTime ? `${dueDate}T${dueTime}` : dueDate,
+        tzOffsetMin: tzRaw === '' ? null : Number(tzRaw),
         priority: Number(formData.get('priority')) || 2,
       },
       me.ctx,

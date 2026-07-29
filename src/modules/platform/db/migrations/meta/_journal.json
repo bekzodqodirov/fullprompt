@@ -365,6 +365,13 @@
       "when": 1785190000020,
       "tag": "0051_deal_stage_partial_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1785190000021,
+      "tag": "0052_calc_requests",
+      "breakpoints": true
     }
   ]
 }

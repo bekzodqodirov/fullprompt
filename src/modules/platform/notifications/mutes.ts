@@ -33,6 +33,9 @@ export const MUTE_GROUPS = {
     // only worth anything while they are still standing there.
     'DebtApprovalRequested',
     'DebtApprovalDecided',
+    // A calculation blew its 30–120 minute deadline (round 28) — told to the
+    // waiting salesperson and the owner while chasing it still helps.
+    'CalcOverdue',
   ],
   operations: [
     'ReceiptConfirmed',

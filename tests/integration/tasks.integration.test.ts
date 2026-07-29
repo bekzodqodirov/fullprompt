@@ -108,6 +108,18 @@ describe('a deadline is a day unless someone named a time', () => {
     expect(parseDue(undefined)).toEqual({ dueAt: null, allDay: true });
     expect(() => parseDue('ertaga')).toThrow('bad_due_date');
   });
+
+  it('a typed time carries whose wall clock it was (round 28)', () => {
+    // 14:00 typed in Tashkent (offset −300) is 09:00 UTC. Without the offset
+    // the server, sitting in UTC, would store the instant five hours late —
+    // and a 30-minute hisoblash deadline five hours late is no deadline.
+    const { dueAt, allDay } = parseDue('2026-08-14T14:00', -300);
+    expect(allDay).toBe(false);
+    expect(dueAt!.toISOString()).toBe('2026-08-14T09:00:00.000Z');
+    // A date alone ignores the offset: the whole day is the whole UTC day,
+    // exactly as it always was.
+    expect(parseDue('2026-08-14', -300).dueAt!.toISOString()).toBe('2026-08-14T23:59:59.999Z');
+  });
 });
 
 describe('a task cannot be given somewhere it will not be seen', () => {

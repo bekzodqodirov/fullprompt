@@ -44,10 +44,14 @@ export interface TaskType {
   icon: string | null;
 }
 
-/** Red when it is late, amber when it is today, plain otherwise. */
-function dueClass(dueAt: string | null, status: string): string {
+/** Red when it is late, amber when it is today, plain otherwise. A TIMED
+ * deadline is late from its minute (round 28), not from tomorrow morning —
+ * that difference is the whole reason the clock exists. */
+function dueClass(dueAt: string | null, allDay: boolean, status: string): string {
   if (!dueAt || status !== 'open') return 'text-ink-500';
   const due = new Date(dueAt);
+  const now = new Date();
+  if (!allDay && due < now) return 'text-bad font-semibold';
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
   if (due < new Date(new Date().setHours(0, 0, 0, 0))) return 'text-bad font-semibold';
@@ -58,9 +62,14 @@ function dueClass(dueAt: string | null, status: string): string {
 function dueText(dueAt: string | null, allDay: boolean): string {
   if (!dueAt) return '';
   const due = new Date(dueAt);
-  const date = due.toISOString().slice(0, 10);
-  if (allDay) return date;
-  return `${date} ${due.toISOString().slice(11, 16)}`;
+  // An all-day deadline is stored at the END of its UTC day, so its DATE must
+  // be read in UTC — the local calendar would name tomorrow. A timed one is a
+  // real instant and is shown on the reader's own clock.
+  if (allDay) return due.toISOString().slice(0, 10);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${due.getFullYear()}-${pad(due.getMonth() + 1)}-${pad(due.getDate())} ${pad(
+    due.getHours(),
+  )}:${pad(due.getMinutes())}`;
 }
 
 /**
@@ -102,7 +111,7 @@ function TaskCard({
         </span>
         {task.priority === 1 && <span className="chip-bad">🔥</span>}
         {task.dueAt && (
-          <span className={`num text-xs ${dueClass(task.dueAt, task.status)}`}>
+          <span className={`num text-xs ${dueClass(task.dueAt, task.allDay, task.status)}`}>
             {dueText(task.dueAt, task.allDay)}
           </span>
         )}
@@ -267,6 +276,23 @@ export function NewTaskForm({
           aria-label={t('due')}
           data-testid="task-due"
           className="input !w-40"
+        />
+        {/* Optional (round 28: «kunga emas, soatlargacha»): a date alone
+            still means the whole day — nobody is forced to invent 09:00. */}
+        <input
+          name="dueTime"
+          type="time"
+          aria-label={t('dueTime')}
+          data-testid="task-due-time"
+          className="input !w-28"
+        />
+        {/* Whose wall clock the time above was typed on — the server is in
+            UTC and must not guess (Tashkent and Yiwu both use this form). */}
+        <input
+          type="hidden"
+          name="tzOffset"
+          value={String(new Date().getTimezoneOffset())}
+          suppressHydrationWarning
         />
       </div>
       <div className="flex flex-wrap gap-2">

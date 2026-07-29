@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## Hisoblash: VEDga soatli zadacha, kechikkani qizil, tezlik hisoboti — 2026-07-29
+
+So'raganingiz bo'yicha:
+
+- **Zadachalar endi soat-daqiqagacha** — butun sistemada. Zadacha ochganda
+  sana yoniga soat ham qo'yish mumkin (majburiy emas — faqat sana qo'ysangiz
+  avvalgidek «kun oxirigacha» sanaladi). Soatli zadacha o'z daqiqasidan
+  o'tsa darhol qizil bo'ladi, Telegramga ham soati bilan boradi.
+- **«Hisoblashga berish»** — bitim va lid kartalarida yangi bo'lim.
+  Sotuvchi VED xodimini O'ZI tanlaydi (ro'yxatda kimda nechta hisoblash
+  turgani ko'rinadi) va tovar sonini yozadi. Muddat siz aytgan o'lchovda:
+  1 ta tovar — 30 daqiqa, 2 ta — 1 soat, 3 ta — 1,5 soat, undan ko'pi —
+  maksimum 2 soat. VED xodimiga darhol Telegram + zadacha tushadi.
+- **Soat tugmani emas, ISHNI kutadi.** Bitimda VED tovar qatorlarini
+  saqlashi bilan hisoblash o'z-o'zidan «bajarildi» bo'ladi — zadachani
+  qo'lda yopish shart emas. Lidda (qatorlar yo'q) zadachani yopish
+  hisoblashni yakunlaydi.
+- **Kechikkanini darhol bilasiz.** Muddatidan o'tgan hisoblash 5 daqiqa
+  ichida sizga va kutayotgan sotuvchiga Telegramda qizil xabar bo'lib
+  boradi — har bir hisoblash uchun bir marta, spam yo'q.
+- **«Hisoblash tezligi» hisoboti** (Hisobotlar → 🧮): davr tanlab, har bir
+  VED xodimi bo'yicha — nechta bajargan, o'rtacha necha daqiqada, eng
+  uzogi, muddatida ulushi, hozir navbatda nechta va kim qancha kutyapti.
+  Kechikkanlari qizil.
+
+Bir kartada bir vaqtda bitta ochiq hisoblash bo'ladi — ikkinchisini
+berib bo'lmaydi, avvalgisi tugashi kerak.
+
+Tekshirildi: 788 unit/integration + 92 e2e yashil. Migratsiya: 0052
+(yangi jadval, mavjud ma'lumotga tegilmaydi).
+
 ## «Qisman topshirildi»: bo'linib kelgan yukda bitim oxirgi karobkani kutadi — 2026-07-29
 
 Sizning taklifingiz bo'yicha («topshirildidan oldin qisman topshirildi

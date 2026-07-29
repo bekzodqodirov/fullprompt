@@ -176,7 +176,8 @@
     "when": "When",
     "who": "Who",
     "receipt": "Receipt",
-    "labels": "Labels"
+    "labels": "Labels",
+    "calcSpeed": "Calculation speed"
   },
   "warehouses": {
     "title": "Warehouses",
@@ -1347,7 +1348,8 @@
     "repeatDay": "every day",
     "repeatWeek": "every week",
     "repeatMonth": "every month",
-    "showRoad": "Trucks on the calendar"
+    "showRoad": "Trucks on the calendar",
+    "dueTime": "Time"
   },
   "deals": {
     "title": "Deals",
@@ -1553,5 +1555,35 @@
       "forbidden": "No access",
       "not_found": "Not found"
     }
+  },
+  "calc": {
+    "title": "Calculation",
+    "noVed": "No VED staff found",
+    "assignee": "VED person",
+    "items": "Items",
+    "send": "Send for calculation",
+    "sent": "Sent — task created",
+    "deadlineHint": "Deadline scales with items: 1 = 30 min, more = longer, 2 h max.",
+    "alreadyOpen": "This card already has an open calculation",
+    "notVed": "The chosen person is not VED staff",
+    "inQueue": "{n} in queue",
+    "late": "Late",
+    "inProgress": "In progress",
+    "askedAt": "Asked",
+    "dueBy": "Due",
+    "reports": "Reports",
+    "reportTitle": "Calculation speed",
+    "lastDays": "{n} days",
+    "employee": "Employee",
+    "doneCol": "Done",
+    "avgCol": "Avg",
+    "maxCol": "Max",
+    "onTimeCol": "On time",
+    "openCol": "Open",
+    "minutes": "{n} min",
+    "noData": "No data yet",
+    "queueTitle": "Waiting now",
+    "lateBy": "{n} min late",
+    "leftMin": "{n} min left"
   }
 }

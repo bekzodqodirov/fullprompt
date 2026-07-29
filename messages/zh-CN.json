@@ -176,7 +176,8 @@
     "when": "时间",
     "who": "谁",
     "receipt": "收货单",
-    "labels": "标签数"
+    "labels": "标签数",
+    "calcSpeed": "核算速度"
   },
   "warehouses": {
     "title": "仓库",
@@ -1347,7 +1348,8 @@
     "repeatDay": "每天",
     "repeatWeek": "每周",
     "repeatMonth": "每月",
-    "showRoad": "日历显示车辆"
+    "showRoad": "日历显示车辆",
+    "dueTime": "时间"
   },
   "deals": {
     "title": "交易",
@@ -1553,5 +1555,35 @@
       "forbidden": "无权限",
       "not_found": "未找到"
     }
+  },
+  "calc": {
+    "title": "核算",
+    "noVed": "没有报关员",
+    "assignee": "报关员",
+    "items": "商品数",
+    "send": "交给核算",
+    "sent": "已发送——任务已创建",
+    "deadlineHint": "期限按商品数：1 项 30 分钟，越多越长，最多 2 小时。",
+    "alreadyOpen": "该卡片已有进行中的核算",
+    "notVed": "所选员工不是报关员",
+    "inQueue": "队列 {n}",
+    "late": "已超时",
+    "inProgress": "核算中",
+    "askedAt": "提交",
+    "dueBy": "期限",
+    "reports": "报表",
+    "reportTitle": "核算速度",
+    "lastDays": "{n} 天",
+    "employee": "员工",
+    "doneCol": "完成",
+    "avgCol": "平均",
+    "maxCol": "最长",
+    "onTimeCol": "按时",
+    "openCol": "待办",
+    "minutes": "{n} 分",
+    "noData": "暂无数据",
+    "queueTitle": "当前队列",
+    "lateBy": "超时 {n} 分",
+    "leftMin": "剩 {n} 分"
   }
 }

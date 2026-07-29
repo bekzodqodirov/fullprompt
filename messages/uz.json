@@ -176,7 +176,8 @@
     "when": "Qachon",
     "who": "Kim",
     "receipt": "Qabul",
-    "labels": "Stikerlar"
+    "labels": "Stikerlar",
+    "calcSpeed": "Hisoblash tezligi"
   },
   "warehouses": {
     "title": "Skladlar",
@@ -1347,7 +1348,8 @@
     "repeatDay": "har kuni",
     "repeatWeek": "har hafta",
     "repeatMonth": "har oy",
-    "showRoad": "Kalendarda mashinalar"
+    "showRoad": "Kalendarda mashinalar",
+    "dueTime": "Soat"
   },
   "deals": {
     "title": "Bitimlar",
@@ -1553,5 +1555,35 @@
       "forbidden": "Ruxsat yo'q",
       "not_found": "Topilmadi"
     }
+  },
+  "calc": {
+    "title": "Hisoblash",
+    "noVed": "VED xodimi topilmadi",
+    "assignee": "VED xodimi",
+    "items": "Tovar soni",
+    "send": "Hisoblashga berish",
+    "sent": "Berildi — zadacha ochildi",
+    "deadlineHint": "Muddat tovar soniga qarab: 1 ta — 30 daqiqa, ko'proq bo'lsa ko'proq, maksimum 2 soat.",
+    "alreadyOpen": "Bu kartada ochiq hisoblash bor",
+    "notVed": "Tanlangan xodim VED emas",
+    "inQueue": "navbatda {n}",
+    "late": "Kechikdi",
+    "inProgress": "Hisoblanmoqda",
+    "askedAt": "Berildi",
+    "dueBy": "Muddat",
+    "reports": "Hisobotlar",
+    "reportTitle": "Hisoblash tezligi",
+    "lastDays": "{n} kun",
+    "employee": "Xodim",
+    "doneCol": "Bajarildi",
+    "avgCol": "O'rtacha",
+    "maxCol": "Eng uzoq",
+    "onTimeCol": "Muddatida",
+    "openCol": "Navbatda",
+    "minutes": "{n} daq",
+    "noData": "Hozircha ma'lumot yo'q",
+    "queueTitle": "Hozir navbatda",
+    "lateBy": "{n} daq kechikdi",
+    "leftMin": "{n} daq qoldi"
   }
 }

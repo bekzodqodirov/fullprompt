@@ -121,8 +121,8 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-779 unit/integration + 92 e2e, verified in CI's order on a fresh database.
-Latest migration: **0051** (`deal_stage_partial_trigger`).
+788 unit/integration + 92 e2e, verified in CI's order on a fresh database.
+Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -566,6 +566,31 @@ no partial stage configured = deal waits at its column. Red-proof: split
 stripped → partial test red. i18n: triggerHandedPartial ×4, triggerHanded
 re-worded «to'liq».
 
+Round 28 — the owner's hisoblash SLA (#396-397, his three answers: measure
+request→SAVED, sotuvchi picks the VED person, deadline by item count).
+(A) Hour-level tasks NEEDED NO MIGRATION — due_at was timestamptz + all_day
+since phase 3; the form gained an optional time input + hidden
+`getTimezoneOffset` field, `parseDue(raw, tzOffsetMin)` converts the
+typist's WALL CLOCK to the instant (Tashkent −300 → 14:00 = 09:00Z; the
+UTC server alone would store timed deadlines 5 h late); timed tasks render
+on the reader's clock and go red at their minute; Telegram prints
+Asia/Tashkent; all-day convention untouched; dock route sends formatDue.
+(B) `calc_requests` (migration 0052; one open per card via partial unique
+index): `requestCalc` (assignee must hold ved.docs from editable grants,
+refuses duplicates) opens a priority-1 TIMED task via createTask
+(`calcDueMinutes` = min(30×items, 120)); the clock stops when the WORK
+lands — `saveLines` → completeCalcForDeal (dyn import, fenced) closes
+request+task; leads close via completeTask → completeCalcForTask (platform
+→wms dyn import); 5-min sweep `registerCalcWorker` flags lateness ONCE
+(`overdue_notified_at`) to requester+super_admins, never the assignee;
+'CalcOverdue' in MUTE_GROUPS.alerts. UI: CalcPanel on deal+lead cards
+(banner when open, red when late), `/reports/hisoblash` (gate
+reports.all_warehouses, per-VED done/avg/max/on-time/open + live queue).
+ROUTES gained `deal:` (task about-links). e2e note: task form kept
+testid task-due as type=date; new task-due-time beside it. Red-proof:
+saveLines hook stripped → clock-stop test red. m3 e2e flaked once on the
+first full run, green alone and on the full re-run.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
@@ -592,7 +617,7 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations up to 0051 — back up first; the compose
+**Deploy the branch** (migrations up to 0052 — back up first; the compose
 change recreates the postgres container, ~5-15 s outage: off-hours, run
 `free -h` first and halve the tuned values on a 2 GB box) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not

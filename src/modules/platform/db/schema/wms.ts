@@ -18,7 +18,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
-import { attachments, clients, currencies, users, warehouses } from './platform';
+import { attachments, clients, currencies, tasks, users, warehouses } from './platform';
 
 const id = () =>
   uuid('id')
@@ -1439,5 +1439,56 @@ export const tgOutbox = pgTable(
     check('tg_outbox_body_check', sql`length(btrim(${t.body})) > 0 OR ${t.attachmentId} IS NOT NULL`),
     index('tg_outbox_queue_idx').on(t.managerUserId, t.status, t.queuedAt),
     index('tg_outbox_client_idx').on(t.clientId, t.queuedAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Hisoblash (round 28) — a calculation handed to a VED person, with a clock
+//
+// The owner's ask in one line: «VED xodimlarim qanchada hisoblab
+// berayotganini bilishim kerak». A request records who asked, who got it and
+// how big the job is; the deadline scales with item_count (30 min per line,
+// capped at two hours) and the speed report is the difference between
+// requested_at and completed_at. completed_via says HOW the clock stopped:
+// 'lines' = the calculation was actually saved on the deal (the honest end),
+// 'task' = the task was closed by hand (the only end a lead has).
+// ---------------------------------------------------------------------------
+
+export const calcRequests = pgTable(
+  'calc_requests',
+  {
+    id: id(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    assigneeId: uuid('assignee_id')
+      .notNull()
+      .references(() => users.id),
+    itemCount: integer('item_count').notNull(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    completedBy: uuid('completed_by').references(() => users.id),
+    completedVia: text('completed_via'),
+    /** Stamped by the sweep so a late calculation is announced exactly once. */
+    overdueNotifiedAt: timestamp('overdue_notified_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('calc_requests_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
+    check('calc_requests_items_check', sql`${t.itemCount} BETWEEN 1 AND 500`),
+    check(
+      'calc_requests_via_check',
+      sql`${t.completedVia} IS NULL OR ${t.completedVia} IN ('lines', 'task')`,
+    ),
+    // One live request per card, held even against two simultaneous presses.
+    uniqueIndex('calc_requests_open_entity_idx')
+      .on(t.entityType, t.entityId)
+      .where(sql`${t.completedAt} IS NULL`),
+    index('calc_requests_assignee_idx').on(t.assigneeId, t.requestedAt),
   ],
 );

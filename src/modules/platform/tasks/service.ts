@@ -8,6 +8,7 @@ import { entitySpec } from '../fields/registry';
 import { recordNames, resolveEntity } from '../entities/service';
 import { taskLink } from '../notifications/links';
 import { notifyStaffTelegram, userName } from '../notifications/staff';
+import { logger } from '../logger';
 
 /**
  * Work one person gives another (owner: "tasklar calendarlar").
@@ -49,6 +50,13 @@ export const taskSchema = z.object({
   assigneeId: z.string().uuid(),
   /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`; empty = no deadline. */
   dueAt: z.string().trim().max(40).optional().or(z.literal('')),
+  /**
+   * The typist's `Date.getTimezoneOffset()`, carried by a hidden input.
+   * A timed deadline is typed as a WALL CLOCK — 14:00 means 14:00 where the
+   * typist sits, Tashkent or Yiwu — and without knowing whose wall it was,
+   * the server (UTC) would store it five hours late (round 28).
+   */
+  tzOffsetMin: z.number().int().min(-840).max(840).nullable().optional(),
   priority: z.number().int().min(1).max(3).default(2),
   entityType: z.string().trim().max(40).nullable().default(null),
   entityId: z.string().uuid().nullable().default(null),
@@ -64,16 +72,45 @@ export type TaskInput = z.infer<typeof taskSchema>;
  * print "09:00" for a deadline nobody set, and "is it due today" has to compare
  * days rather than instants or every all-day task looks overdue from midnight.
  */
-export function parseDue(raw: string | undefined | null): { dueAt: Date | null; allDay: boolean } {
+export function parseDue(
+  raw: string | undefined | null,
+  tzOffsetMin?: number | null,
+): { dueAt: Date | null; allDay: boolean } {
   const value = (raw ?? '').trim();
   if (!value) return { dueAt: null, allDay: true };
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     // End of that day: a task due "Friday" is not late at 00:01 on Friday.
     return { dueAt: new Date(`${value}T23:59:59.999Z`), allDay: true };
   }
+  // The browser's naive wall clock plus whose wall it was: 14:00 typed in
+  // Tashkent (offset −300) is 09:00 UTC. Without the offset the string is
+  // parsed in the SERVER's zone, which made every timed deadline five hours
+  // late the moment the server and the typist stopped sharing a clock.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) && tzOffsetMin != null) {
+    const naive = Date.parse(`${value}:00.000Z`);
+    if (Number.isNaN(naive)) throw new TaskError('bad_due_date');
+    return { dueAt: new Date(naive + tzOffsetMin * 60_000), allDay: false };
+  }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) throw new TaskError('bad_due_date');
   return { dueAt: parsed, allDay: false };
+}
+
+/**
+ * A deadline as a Telegram line: the date alone for an all-day task, and the
+ * company's home clock (Asia/Tashkent) when an hour was named — a message has
+ * no way to ask its reader where they sit, and the staff who live on these
+ * messages do sit there.
+ */
+export function formatDue(dueAt: Date, allDay: boolean): string {
+  if (allDay) return dueAt.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Asia/Tashkent',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(dueAt);
 }
 
 /**
@@ -202,7 +239,7 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
   // it on a screen they no longer open.
   if (!person.active) throw new TaskError('assignee_inactive');
 
-  const { dueAt, allDay } = parseDue(input.dueAt);
+  const { dueAt, allDay } = parseDue(input.dueAt, input.tzOffsetMin);
   // "Every week" starting when? A rule needs something to repeat from.
   if (input.repeatUnit && !dueAt) throw new TaskError('repeat_needs_due');
 
@@ -254,7 +291,7 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
       type: 'TaskAssigned',
       text:
         `🆕 Yangi vazifa: ${input.title}` +
-        (dueAt ? `\n📅 ${dueAt.toISOString().slice(0, 10)}` : '') +
+        (dueAt ? `\n📅 ${formatDue(dueAt, allDay)}` : '') +
         (label ? `\n📌 ${label}` : '') +
         `\n👤 ${await userName(ctx.actorId)}` +
         `\n🔗 ${taskLink(created.entityType, created.entityId)}`,
@@ -299,6 +336,17 @@ export async function completeTask(
     before: { status: before.status },
     after: { status: 'done', result: result.trim() || null },
   });
+
+  // Round 28: if this task carries a hisoblash clock, closing it stops the
+  // clock. Reached by dynamic import — platform never imports wms statically
+  // (the startBoss crossing) — and fenced so a report row can never refuse a
+  // task being finished.
+  try {
+    const { completeCalcForTask } = await import('../../wms/calc/service');
+    await completeCalcForTask(id, ctx.actorId);
+  } catch (err) {
+    logger.error({ err, taskId: id }, 'calc clock stop on task close failed');
+  }
 
   // The person who ASKED finds out it is done — with what was done, because
   // "bajarildi" with no result is a message that starts a phone call.
@@ -420,7 +468,7 @@ export async function reassignTask(
 
 export async function updateTask(
   id: string,
-  input: Pick<TaskInput, 'title' | 'note' | 'typeId' | 'dueAt' | 'priority'>,
+  input: Pick<TaskInput, 'title' | 'note' | 'typeId' | 'dueAt' | 'priority' | 'tzOffsetMin'>,
   ctx: TaskContext,
 ): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
@@ -428,7 +476,7 @@ export async function updateTask(
   if (!before) throw new TaskError('not_found');
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
-  const { dueAt, allDay } = parseDue(input.dueAt);
+  const { dueAt, allDay } = parseDue(input.dueAt, input.tzOffsetMin);
   await db
     .update(tasks)
     .set({
