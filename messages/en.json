@@ -1396,11 +1396,32 @@
       "end_required": "Say until when",
       "forbidden": "No access",
       "validation": "Check the fields",
-      "fx_missing": "No exchange rate for that currency"
+      "fx_missing": "No exchange rate for that currency",
+      "discount_reason_required": "A discount needs a reason"
     },
     "postCharge": "Post to the client’s account",
     "charge": "Charge the client",
     "chargeHint": "A deferral only covers an amount posted here, against the deal.",
-    "charged": "Posted"
+    "charged": "Posted",
+    "discountTitle": "Discount (damage)",
+    "discountAmount": "Discount amount",
+    "discountHint": "Damaged cargo = a discount on the deal, with a reason. 0 removes the discount. An already-posted charge is adjusted by finance.",
+    "discountNet": "Payable after discount",
+    "profitTitle": "Deal profit",
+    "profitRevenue": "Charged",
+    "profitCost": "Landed cost",
+    "profitNet": "Profit",
+    "profitUnlinked": "Another {amount} $ was charged through batch pricing without a deal link — not in the figure above.",
+    "importFile": "Upload goods file (.xlsx)",
+    "importHint": "The client's goods file: we parse it, the AI proposes a TNVED grouping, you confirm.",
+    "importFailed": "Could not read the file. Check it is an .xlsx with a goods list.",
+    "importGrouped": "The AI proposed {lines} positions — check the codes and confirm",
+    "importManual": "Parsed {lines} goods — group by hand",
+    "importNoAi": "AI unavailable: every good became its own line, codes from memory.",
+    "importDuty": "duty",
+    "importDutyTotal": "Duty estimate: ~{amount}",
+    "importDutyNote": "a rough AI hint, not the official rate",
+    "importReplaceWarn": "Confirming REPLACES the deal's current lines.",
+    "importConfirm": "Confirm and write"
   }
 }

@@ -14,6 +14,7 @@ import {
   linkReceipt,
   moveDeal,
   saveLines,
+  setDealDiscount,
   updateDeal,
 } from '@/modules/wms/deals/service';
 import { FinanceError, addTransaction } from '@/modules/wms/finance/service';
@@ -130,6 +131,24 @@ export async function saveLinesAction(
   const parsed = dealLineSchema.array().safeParse(lines);
   if (!parsed.success) return { error: 'validation' };
   return run((ctx) => saveLines(dealId, parsed.data, ctx));
+}
+
+/**
+ * Damage → a discount ON THE DEAL (DEALS.md answer 3), gated like re-pricing
+ * rather than like posting money: it changes what this job SHOULD cost, and
+ * both sides of the business that set that number (sales, VED) may record it.
+ * Actually collecting less still runs through finance and its own gate.
+ */
+export async function setDiscountAction(
+  dealId: string,
+  _prev: DealFormState,
+  form: FormData,
+): Promise<DealFormState> {
+  const amount = optionalNumber(form.get('amount'));
+  if (amount === undefined || amount === null || amount < 0) return { error: 'validation' };
+  return run((ctx) =>
+    setDealDiscount(dealId, { amount, reason: String(form.get('reason') ?? '') }, ctx),
+  );
 }
 
 export async function linkReceiptAction(

@@ -2,9 +2,12 @@ import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-or
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import {
+  boxMovements,
   boxes,
   clientTransactions,
   clients,
+  costAllocations,
+  costEntries,
   dealLines,
   dealStages,
   deals,
@@ -859,4 +862,155 @@ export async function dealCharged(dealId: string): Promise<number> {
       ),
     );
   return Math.round(Number(row?.total ?? 0) * 100) / 100;
+}
+
+/**
+ * Damage is a DISCOUNT on the deal (DEALS.md answer 3): the deal amount goes
+ * down, with a reason and an author, and profit follows — never a separate
+ * compensation expense that would let the deal's profit keep lying.
+ *
+ * The record is the WHY; the ledger keeps its own truth. A charge already
+ * posted at the old figure is adjusted through finance (void + re-post, both
+ * audited) — this function never touches money that already moved.
+ */
+export async function setDealDiscount(
+  dealId: string,
+  input: { amount: number; reason?: string },
+  ctx: AuditContext,
+): Promise<void> {
+  const before = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+  if (!before) throw new DealError('not_found');
+  if (input.amount < 0) throw new DealError('validation');
+  // Amount 0 = "the discount was a mistake, remove it" — allowed, audited.
+  const clearing = input.amount <= 0.009;
+  if (!clearing && !input.reason?.trim()) throw new DealError('discount_reason_required');
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(deals)
+      .set({
+        discountAmount: clearing ? '0' : input.amount.toFixed(2),
+        discountReason: clearing ? null : input.reason!.trim(),
+        discountBy: clearing ? null : ctx.actorId,
+        discountAt: clearing ? null : new Date(),
+      })
+      .where(eq(deals.id, dealId));
+    await writeAudit(tx, ctx, {
+      entityType: 'deal',
+      entityId: dealId,
+      action: 'update',
+      before: { discount: before.discountAmount, discountReason: before.discountReason },
+      after: {
+        discount: clearing ? '0' : input.amount.toFixed(2),
+        discountReason: clearing ? null : input.reason!.trim(),
+      },
+    });
+  });
+}
+
+export interface DealProfit {
+  /** Non-void charges carrying this deal, in USD — what was actually billed. */
+  revenueUsd: number;
+  /** Landed cost of the deal's boxes: the per-box allocation shares summed. */
+  costUsd: number;
+  profitUsd: number;
+  marginPct: number | null;
+  /**
+   * Money the client paid through BATCH pricing on trucks that carried this
+   * deal's boxes — posted without a deal, so it is not in revenueUsd. Shown,
+   * not guessed at: pro-rating somebody's batch invoice across deals would
+   * put invented numbers in front of an accountant.
+   */
+  unlinkedBatchUsd: number;
+}
+
+/**
+ * Profit per deal, never per line (DEALS.md answer 7).
+ *
+ * Revenue is what was CHARGED, not the quote minus the discount — the
+ * discount explains why a charge is lower than the quote, and subtracting it
+ * again would count it twice. Costs come through cost_allocations, so a
+ * shared truck's cost lands on this deal exactly as fairly as profitByClient
+ * splits it. Voided rows are out on both sides.
+ */
+export async function dealProfit(dealId: string): Promise<DealProfit> {
+  const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+  if (!deal) throw new DealError('not_found');
+
+  const revenueUsd = await dealCharged(dealId);
+
+  const [costRow] = await db
+    .select({ total: sql<string>`coalesce(sum(${costAllocations.amountUsd}), 0)` })
+    .from(costAllocations)
+    .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
+    .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(
+      and(
+        eq(receipts.dealId, dealId),
+        isNull(receipts.voidedAt),
+        // Belt and braces (#360): a void that crashed between the update and
+        // the allocation delete must not resurrect as cost.
+        isNull(costEntries.voidedAt),
+      ),
+    );
+  const costUsd = Math.round(Number(costRow?.total ?? 0) * 100) / 100;
+
+  // The batches this deal's boxes actually rode (departed movements, plus a
+  // batch still forming) — membership through box_movements, never a
+  // subquery in a join predicate (#152).
+  const ridden = await db
+    .selectDistinct({ batchId: boxMovements.refId })
+    .from(boxMovements)
+    .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(
+      and(
+        eq(receipts.dealId, dealId),
+        isNull(receipts.voidedAt),
+        eq(boxMovements.refType, 'batch'),
+        eq(boxMovements.cause, 'batch_departed'),
+      ),
+    );
+  const current = await db
+    .selectDistinct({ batchId: boxes.currentBatchId })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(and(eq(receipts.dealId, dealId), isNull(receipts.voidedAt)));
+  const batchIds = [
+    ...new Set(
+      [...ridden.map((r) => r.batchId), ...current.map((r) => r.batchId)].filter(
+        (id): id is string => Boolean(id),
+      ),
+    ),
+  ];
+
+  let unlinkedBatchUsd = 0;
+  if (batchIds.length > 0) {
+    const [row] = await db
+      .select({ total: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+      .from(clientTransactions)
+      .where(
+        and(
+          eq(clientTransactions.clientId, deal.clientId),
+          inArray(clientTransactions.batchId, batchIds),
+          isNull(clientTransactions.dealId),
+          eq(clientTransactions.type, 'charge'),
+          isNull(clientTransactions.voidedAt),
+        ),
+      );
+    unlinkedBatchUsd = Math.round(Number(row?.total ?? 0) * 100) / 100;
+  }
+
+  const profitUsd = Math.round((revenueUsd - costUsd) * 100) / 100;
+  return {
+    revenueUsd,
+    costUsd,
+    profitUsd,
+    marginPct: revenueUsd > 0 ? Math.round((profitUsd / revenueUsd) * 1000) / 10 : null,
+    unlinkedBatchUsd,
+  };
 }

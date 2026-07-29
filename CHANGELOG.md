@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## Bitim ichi to'ldi: shikast chegirmasi, bitimdan foyda, 50 tovar fayli + AI guruhlash — 2026-07-29
+
+Sizning 5-bandingiz davomi (bitim ichidagi ochiq ishlar; «rastamojkani
+hisoblash guruxlash uchun AI ishlatsang boladi» — qildik):
+
+- **Shikast chegirmasi endi yoziladi**: bitim kartasida «Chegirma (shikast)»
+  paneli — summa va MAJBURIY sabab bilan. Kim, qachon, nima uchun bergani
+  tarixda qoladi; 0 yozsangiz xato chegirma olib tashlanadi (bu ham
+  tarixda). Hisob yozish oynasi endi taklif summasini chegirmani ayirib
+  ko'rsatadi. Oldin yozilgan hisobni esa moliyachi bekor qilib qayta
+  yozadi — ikkalasi ham avvaldan tarixli.
+- **Har bitimdan foyda**: kartada «Bitimdan foyda» paneli — yozilgan
+  hisoblar minus shu bitim karobkalarining tannarxi (umumiy fura xarajati
+  har karobkaga adolatli taqsimlangan holda), foiz bilan. Bekor qilingan
+  hisob ham, bekor qilingan xarajat ham hisobga kirmaydi. Halol eslatma:
+  bitimga bog'lanmasdan partiya orqali yozilgan pul alohida qatorda
+  ko'rsatiladi — uni taxmin bilan bo'lib o'tirmaymiz. Panel faqat moliya
+  hisobotlarini ko'ra oladiganlarga ochiladi.
+- **50 tovar fayli**: bitim qatorlari panelida «Tovarlar faylini yuklash»
+  — mijoz yuborgan .xlsx ni o'zimiz o'qiymiz (sarlavhani rus/o'zbek/xitoy/
+  ingliz tilida o'zi topadi, «Итого» qatorini tashlab yuboradi), avval
+  TNVED xotirasidan kodlarni qo'yadi, keyin **AI ~50 tovarni TNVED
+  pozitsiyalariga guruhlab beradi** — har guruhga kod, nom, ishonch
+  darajasi va **taxminiy boj foizi** (qoralama, rasmiy stavka emas).
+  Deklarant ko'rib, kodlarni to'g'irlab, TASDIQLAGANDAN keyingina
+  qatorlarga yoziladi. AI ishlamasa ham fayl o'qiladi — har tovar alohida
+  qator, guruhlash qo'lda.
+
+Tekshirildi: yangi bazada 737 unit/integration + 88 e2e yashil (9 ta yangi
+test: fayl o'qish qoidalari, chegirma sababsiz o'tmasligi, foyda hisobida
+bekor qilingan qatorlar chiqib ketishi — filtrsiz qizil bo'lishi
+isbotlangan; 1 ta yangi brauzer testi). Migratsiya: **0045** (faqat indeks
+qo'shadi). AI guruhlash serverdagi ANTHROPIC_API_KEY bilan ishlaydi —
+birinchi jonli guruhlashni birga kuzatamiz.
+
 ## Xodimni @ bilan chaqirish + qarzdorga berishga yozma ruxsat — 2026-07-29
 
 Sizning 5-bandingiz («mukammal») boshlanishi: 4-bosqich (@chaqiruv) va

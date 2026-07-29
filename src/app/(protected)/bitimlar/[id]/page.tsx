@@ -14,6 +14,7 @@ import {
   canWriteDeal,
   dealById,
   dealDeviation,
+  dealProfit,
   deviationThreshold,
   listStages,
   unlinkedReceipts,
@@ -22,9 +23,11 @@ import {
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { DealForm } from '../deal-form';
 import { LinesForm } from '../lines-form';
+import { ImportLines } from '../import-lines';
 import { LinkReceipt } from '../link-receipt';
 import { DeferForm } from '../defer-form';
 import { ChargeForm } from '../charge-form';
+import { DiscountForm } from '../discount-form';
 
 /**
  * The deal card: the quote and the reality, side by side.
@@ -58,6 +61,19 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
   const discount = Number(row.deal.discountAmount);
   const deferred = Boolean(row.deal.deferredAt) && !row.deal.deferralEndedAt;
   const charged = await dealCharged(id);
+  // Profit is tannarx territory: same gate as the accounting reports.
+  const profit = actor.permissions.has('finance.reports') ? await dealProfit(id) : null;
+  // The number a person is most likely about to charge: the re-priced figure
+  // when the cargo came out different, the quote otherwise — minus the
+  // recorded damage discount either way.
+  const baseSuggested =
+    deviation.exceeds && deviation.suggestedAmount !== null
+      ? deviation.suggestedAmount
+      : quotedAmount;
+  const netSuggested =
+    baseSuggested === null
+      ? null
+      : String(Math.max(0, Math.round((baseSuggested - discount) * 100) / 100));
 
   // Three states, and the wording has to be honest about which one it is:
   // nothing arrived yet, nothing to compare against, or a real gap.
@@ -216,7 +232,34 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
         badge={row.lines.length || undefined}
         testId="deal-lines-panel"
       >
-        <LinesForm dealId={row.deal.id} lines={row.lines} />
+        <ImportLines dealId={row.deal.id} existingCount={row.lines.length} />
+        {/* Keyed by content: an import replaces the lines server-side, and the
+            form's local row state must follow rather than show the old set. */}
+        <LinesForm
+          key={row.lines.map((l) => l.id).join(',')}
+          dealId={row.deal.id}
+          lines={row.lines}
+        />
+      </Panel>
+
+      <Panel
+        title={`🏷 ${t('discountTitle')}`}
+        badge={discount > 0 ? `−${discount}` : undefined}
+        testId="deal-discount-panel"
+      >
+        {quotedAmount !== null && discount > 0 && (
+          <p className="mb-2 text-sm">
+            {t('discountNet')}:{' '}
+            <span className="num font-bold">
+              {Math.round((quotedAmount - discount) * 100) / 100} {row.deal.quotedCurrency ?? ''}
+            </span>
+          </p>
+        )}
+        <DiscountForm
+          dealId={row.deal.id}
+          amount={row.deal.discountAmount}
+          reason={row.deal.discountReason}
+        />
       </Panel>
 
       <Section title={t('receipts')}>
@@ -253,17 +296,43 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
           <ChargeForm
             dealId={row.deal.id}
             clientId={row.deal.clientId}
-            // The re-priced figure when the cargo came out different, the
-            // original quote otherwise — the number a person is most likely
-            // to be about to type either way.
-            suggested={
-              deviation.exceeds && deviation.suggestedAmount !== null
-                ? String(deviation.suggestedAmount)
-                : row.deal.quotedAmount
-            }
+            suggested={netSuggested}
             currency={row.deal.quotedCurrency}
           />
         </Panel>
+      )}
+
+      {/* Per deal, never per line (DEALS.md answer 7). Revenue is what was
+          CHARGED — the discount already flowed into the lower charge, so
+          subtracting it here would count it twice. */}
+      {profit && (
+        <section className="card space-y-1 text-sm" data-testid="deal-profit-panel">
+          <p className="section-title">💰 {t('profitTitle')}</p>
+          <div className="flex justify-between">
+            <span className="text-ink-500">{t('profitRevenue')}</span>
+            <span className="num">{profit.revenueUsd.toFixed(2)} $</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-ink-500">{t('profitCost')}</span>
+            <span className="num">{profit.costUsd.toFixed(2)} $</span>
+          </div>
+          <div className="flex justify-between border-t border-line pt-1 font-bold">
+            <span>{t('profitNet')}</span>
+            <span className={`num ${profit.profitUsd >= 0 ? 'text-good' : 'text-bad'}`}>
+              {profit.profitUsd.toFixed(2)} $
+              {profit.marginPct !== null && (
+                <span className="ml-1 text-xs font-normal text-ink-500">
+                  ({profit.marginPct} %)
+                </span>
+              )}
+            </span>
+          </div>
+          {profit.unlinkedBatchUsd > 0 && (
+            <p className="rounded-xl border border-warn/30 bg-warn/10 p-2 text-xs">
+              {t('profitUnlinked', { amount: profit.unlinkedBatchUsd.toFixed(2) })}
+            </p>
+          )}
+        </section>
       )}
 
       {actor.permissions.has('finance.debt_override') && (

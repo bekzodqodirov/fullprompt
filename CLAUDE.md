@@ -121,8 +121,8 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-728 unit/integration + 87 e2e, verified in CI's order on a fresh database.
-Latest migration: **0044** (`issue_approvals`).
+737 unit/integration + 88 e2e, verified in CI's order on a fresh database.
+Latest migration: **0045** (`client_transactions_deal_idx`).
 
 Phases **0/1/2/3/4/5/6** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -372,11 +372,36 @@ mutes tripwire reads `buildRecipients` itself. e2e m9t (mentions dropdown
 in the browser); the approvals browser half deliberately has no e2e —
 integration-proven through the same functions the buttons call.
 
+Round 17 — the deal open items (#377-378), owner OK'd AI for the customs
+side («rastamojkani hisoblash guruxlash uchun AI ishlatsang boladi»).
+**Discount form** finally writes the 0030-era columns: mandatory reason,
+audited, 0 clears (audited), controlled inputs (React resets a form when
+its action returns — the refused save must not eat the amount), gate =
+deal-write list (re-pricing's power, not finance.manage), charge prefill
+subtracts it, ledger untouched (void+re-post is finance's corrected path).
+**dealProfit** (per deal, never per line): non-void deal charges − the
+boxes' cost_allocations shares (costEntries.voidedAt belt-and-braces per
+#360, proven red without it); batch-priced money on the deal's trucks is a
+LABELLED separate line, never pro-rated; panel gated `finance.reports`;
+migration 0045 = client_transactions.deal_id partial index. **50-goods
+import**: pure header-detection (`deals/goods-import.ts`, ru/uz/zh/en
+keys, volume claimed before weight, line TOTAL beats unit price, «Итого»
+dropped, headerless → first-text-cell rows); route handler (#291), 5 MB /
+500 rows, content-validated; memory-first codes, then
+`proposeGoodsGrouping` (claude-opus-5, structured output) proposes groups
+with confidence + ESTIMATED duty % (advisory, never persisted); one bad
+code is blanked+demoted, not fatal; no key/refusal → manual mode (what CI
+e2e m9u proves — no key there); nothing writes until the VED manager
+confirms into the existing replace-all saveLines; LinesForm keyed by
+content so the server-side replace shows. First live grouping should be
+watched in docker logs (needs server ANTHROPIC_API_KEY).
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
 tur»).** His agreed order after that: (5) — phases 4 and 6 SHIPPED (round
-16); remaining: open deal items, then phases 7/8 — «mukammal». Telegram/CRM still queued: tg-import media backfill,
+16), deal open items SHIPPED (round 17); remaining: phases 7/8 —
+«mukammal». Telegram/CRM still queued: tg-import media backfill,
 edited-message updates, deleting excluded chats' old rows,
 `listConversations` index, Siroj's account (owner decides when).
 
@@ -388,12 +413,13 @@ corrected data (do NOT run it — blocked on the 17 seller logins).
 Later phases: **7** automation rules → **8** custom entities (**4** mentions
 and **6** debtor-issue approval shipped in round 16). Explicitly cut:
 formula fields, a visual node editor, an in-app chat, a separate projects
-module, an external web form builder. Open inside deals: the damage discount
-form, profit per deal, the 50-goods spreadsheet + TNVED grouping.
+module, an external web form builder. The deal open items (damage discount
+form, profit per deal, 50-goods spreadsheet + AI TNVED grouping) shipped in
+round 17.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations up to 0044 — back up first; the compose
+**Deploy the branch** (migrations up to 0045 — back up first; the compose
 change recreates the postgres container, ~5-15 s outage: off-hours, run
 `free -h` first and halve the tuned values on a 2 GB box) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not

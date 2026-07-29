@@ -153,3 +153,109 @@ export async function suggestTnved(input: {
     throw new TnvedError('ai_failed');
   }
 }
+
+const groupingSchema = z.object({
+  groups: z.array(
+    z.object({
+      tnved_code: z.string(),
+      name_ru: z.string(),
+      item_indexes: z.array(z.number().int().nonnegative()),
+      confidence: z.enum(['high', 'medium', 'low']),
+      reasoning: z.string(),
+      duty_rate_pct: z.number().nullable(),
+    }),
+  ),
+});
+export type TnvedGrouping = z.infer<typeof groupingSchema>;
+
+const GROUPING_SYSTEM = `Ты — эксперт по классификации товаров по ТН ВЭД Республики Узбекистан.
+Тебе дают список товаров из инвойса клиента (обычно 20-100 позиций). Сгруппируй их в позиции ТН ВЭД для таможенной декларации.
+Правила:
+- Каждая группа: один 10-значный код ТН ВЭД + краткое русское торговое название группы (name_ru).
+- Код обязан ЗАЩИТИМО соответствовать каждому товару группы. Среди честно подходящих кодов выбирай оптимальный по ставке пошлины. Никогда не объединяй товары под код, которому один из них не соответствует.
+- Меньше групп лучше, но честность важнее компактности.
+- item_indexes: индексы товаров из входного списка (с нуля). Каждый товар ровно в одной группе.
+- duty_rate_pct: ОЦЕНКА ставки импортной пошлины Узбекистана для этого кода в процентах, или null если не уверен. Это черновая подсказка для менеджера, не официальная ставка.
+- reasoning: одно короткое предложение на русском.
+- Если товар непонятен, дай ему отдельную группу с confidence low.`;
+
+/**
+ * DEALS.md answer 6: the assistant proposes the ~50-goods → ~30-lines
+ * grouping, the VED manager confirms. NOT saved anywhere — the caller shows
+ * it, a human decides. Degrades cleanly: no key (or a refusal) surfaces as a
+ * TnvedError and the file simply stays ungrouped for hand work.
+ */
+export async function proposeGoodsGrouping(
+  goods: { name: string; quantity: number | null; unit: string | null }[],
+): Promise<TnvedGrouping> {
+  if (!process.env.ANTHROPIC_API_KEY) throw new TnvedError('ai_not_configured');
+  if (goods.length === 0 || goods.length > 200) throw new TnvedError('ai_failed');
+  const client = new Anthropic();
+
+  const listing = goods
+    .map((g, i) => `${i}. ${g.name}${g.quantity ? ` — ${g.quantity} ${g.unit ?? 'шт'}` : ''}`)
+    .join('\n');
+
+  try {
+    const response = await client.messages.create({
+      model: 'claude-opus-5',
+      max_tokens: 8192,
+      system: GROUPING_SYSTEM,
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: {
+              groups: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    tnved_code: { type: 'string', description: '10-значный код ТН ВЭД' },
+                    name_ru: { type: 'string' },
+                    item_indexes: { type: 'array', items: { type: 'integer' } },
+                    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+                    reasoning: { type: 'string' },
+                    duty_rate_pct: { type: ['number', 'null'] },
+                  },
+                  required: [
+                    'tnved_code',
+                    'name_ru',
+                    'item_indexes',
+                    'confidence',
+                    'reasoning',
+                    'duty_rate_pct',
+                  ],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['groups'],
+            additionalProperties: false,
+          },
+        },
+      },
+      messages: [{ role: 'user', content: `Товары:\n${listing}` }],
+    });
+    if (response.stop_reason === 'refusal') throw new TnvedError('ai_failed');
+    const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+    const parsed = groupingSchema.parse(JSON.parse(text));
+    // A bad code does not sink the other twenty-nine groups: it is blanked
+    // and demoted, and the VED manager types the right one in the review.
+    const groups = parsed.groups
+      .map((g) =>
+        isValidTnved(g.tnved_code) ? g : { ...g, tnved_code: '', confidence: 'low' as const },
+      )
+      .map((g) => ({
+        ...g,
+        item_indexes: g.item_indexes.filter((i) => i < goods.length),
+      }))
+      .filter((g) => g.item_indexes.length > 0);
+    if (groups.length === 0) throw new TnvedError('ai_failed');
+    return { groups };
+  } catch (err) {
+    if (err instanceof TnvedError) throw err;
+    throw new TnvedError('ai_failed');
+  }
+}

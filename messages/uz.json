@@ -1396,11 +1396,32 @@
       "end_required": "Qachongacha ekanini ko‘rsating",
       "forbidden": "Ruxsat yo‘q",
       "validation": "Maydonlarni tekshiring",
-      "fx_missing": "Bu valyutaga kurs yo‘q"
+      "fx_missing": "Bu valyutaga kurs yo‘q",
+      "discount_reason_required": "Chegirma uchun sabab kerak"
     },
     "postCharge": "Mijoz hisobiga yozish",
     "charge": "Mijozga hisob",
     "chargeHint": "Kechiktirish faqat shu yerda, bitim bo‘yicha yozilgan summaga ishlaydi.",
-    "charged": "Yozilgan"
+    "charged": "Yozilgan",
+    "discountTitle": "Chegirma (shikast)",
+    "discountAmount": "Chegirma summasi",
+    "discountHint": "Yuk shikastlansa — bitimga chegirma, sababi bilan. 0 — chegirmani olib tashlash. Yozilgan hisobni moliyachi to'g'irlaydi.",
+    "discountNet": "Chegirmadan keyin to'lanadigan",
+    "profitTitle": "Bitimdan foyda",
+    "profitRevenue": "Hisob yozilgan",
+    "profitCost": "Tannarx",
+    "profitNet": "Foyda",
+    "profitUnlinked": "Yana {amount} $ partiya narxlashuvi orqali yozilgan, bitimga bog'lanmagan — yuqoridagi raqamda yo'q.",
+    "importFile": "Tovarlar faylini yuklash (.xlsx)",
+    "importHint": "Mijozning tovarlar fayli: o'qiymiz, AI TNVED bo'yicha guruhlab beradi, siz tasdiqlaysiz.",
+    "importFailed": "Fayl o'qilmadi. Tovarlar ro'yxati bor .xlsx ekanini tekshiring.",
+    "importGrouped": "AI {lines} ta pozitsiya taklif qildi — kodlarni tekshirib tasdiqlang",
+    "importManual": "{lines} ta tovar o'qildi — guruhlash qo'lda",
+    "importNoAi": "AI mavjud emas: har tovar alohida qator bo'ldi, kodlar xotiradan.",
+    "importDuty": "boj",
+    "importDutyTotal": "Boj taxmini: ~{amount}",
+    "importDutyNote": "AI ning qoralama taxmini, rasmiy stavka emas",
+    "importReplaceWarn": "Tasdiqlash bitimning hozirgi qatorlarini ALMASHTIRADI.",
+    "importConfirm": "Tasdiqlab yozish"
   }
 }

@@ -1396,11 +1396,32 @@
       "end_required": "请指明期限",
       "forbidden": "无权限",
       "validation": "请检查字段",
-      "fx_missing": "该货币没有汇率"
+      "fx_missing": "该货币没有汇率",
+      "discount_reason_required": "折扣需要填写原因"
     },
     "postCharge": "记入客户账户",
     "charge": "客户账单",
     "chargeHint": "延期仅适用于此处按交易记入的金额。",
-    "charged": "已记入"
+    "charged": "已记入",
+    "discountTitle": "折扣（货损）",
+    "discountAmount": "折扣金额",
+    "discountHint": "货物受损=交易折扣，须注明原因。填 0 取消折扣。已开账单由财务调整。",
+    "discountNet": "折后应付",
+    "profitTitle": "交易利润",
+    "profitRevenue": "已开账",
+    "profitCost": "成本",
+    "profitNet": "利润",
+    "profitUnlinked": "另有 {amount} $ 通过批次计价开账、未关联本交易——不在上方数字内。",
+    "importFile": "上传货物文件 (.xlsx)",
+    "importHint": "客户的货物清单：解析后 AI 按海关编码建议分组，由您确认。",
+    "importFailed": "文件无法解析。请确认是含货物清单的 .xlsx。",
+    "importGrouped": "AI 建议 {lines} 个税号组——请核对编码后确认",
+    "importManual": "已解析 {lines} 项货物——手动分组",
+    "importNoAi": "AI 不可用：每项货物单独成行，编码取自记忆库。",
+    "importDuty": "关税",
+    "importDutyTotal": "关税估算：~{amount}",
+    "importDutyNote": "AI 粗略提示，非官方税率",
+    "importReplaceWarn": "确认将替换交易现有明细行。",
+    "importConfirm": "确认写入"
   }
 }
