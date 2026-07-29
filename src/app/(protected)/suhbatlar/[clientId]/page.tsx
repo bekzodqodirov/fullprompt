@@ -93,7 +93,10 @@ export default async function ConversationPage({
               <div className="mb-0.5 text-xs font-semibold">
                 {row.status === 'failed' ? `✕ ${t('replyFailed')}` : `◷ ${t('replyQueued')}`}
               </div>
-              <p className="whitespace-pre-wrap break-words">{row.body}</p>
+              <p className="whitespace-pre-wrap break-words">
+                {row.attachmentId && '🖼 '}
+                {row.body}
+              </p>
               {row.lastError && <p className="mt-1 text-xs">{row.lastError}</p>}
             </div>
           ))}

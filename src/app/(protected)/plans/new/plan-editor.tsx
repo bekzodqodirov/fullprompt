@@ -414,7 +414,7 @@ export function PlanEditor({
         </p>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+      <div className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
         <div className="mx-auto max-w-4xl space-y-2 px-4 py-2.5">
           <div className="flex items-center gap-4">
             <span className="whitespace-nowrap text-sm font-bold">

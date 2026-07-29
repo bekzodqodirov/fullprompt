@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
+import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { entityHref } from '@/modules/platform/notifications/links';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
@@ -84,6 +85,9 @@ export function Dock({ canChat }: { canChat: boolean }) {
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<{ id: string; name: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const coarse = useCoarsePointer();
 
   // Navigating away closes the drawer — it lives in the layout, which
   // survives navigation (the ••• sheet's lesson).
@@ -134,20 +138,40 @@ export function Dock({ canChat }: { canChat: boolean }) {
   }
 
   async function send() {
-    if (!threadFor || !body.trim() || sending) return;
+    if (!threadFor || (!body.trim() && !photo) || sending) return;
     setSending(true);
     setSendError(null);
     const form = new FormData();
     form.set('clientId', threadFor);
     form.set('body', body);
+    if (photo) form.set('attachmentId', photo.id);
     const result = await sendReplyAction({}, form);
     setSending(false);
     if (result.ok) {
       setBody('');
+      setPhoto(null);
       void loadThread(threadFor);
     } else {
       setSendError(result.error ?? 'error');
     }
+  }
+
+  // Same pre-binding as the thread composer: uploaded against a minted
+  // tg_outbox group id; queueReply claims it onto the queue row.
+  async function attachPhoto(list: FileList | null) {
+    const file = list?.[0];
+    if (!file) return;
+    setUploading(true);
+    const data = new FormData();
+    data.set('file', file);
+    data.set('entityType', 'tg_outbox');
+    data.set('entityId', crypto.randomUUID());
+    const res = await fetch('/api/files/upload', { method: 'POST', body: data });
+    if (res.ok) {
+      const { id } = (await res.json()) as { id: string };
+      setPhoto({ id, name: file.name });
+    }
+    setUploading(false);
   }
 
   async function finishTask(id: string) {
@@ -197,6 +221,10 @@ export function Dock({ canChat }: { canChat: boolean }) {
             data-testid="dock-panel"
             className="pb-safe absolute inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-2xl bg-surface-raised shadow-pop md:inset-x-auto md:inset-y-0 md:right-0 md:max-h-none md:w-[26rem] md:rounded-none"
           >
+            {/* The same handle the ••• sheet wears, so the two bottom sheets
+                read as one control. Phone only — the desktop drawer is not
+                a sheet. */}
+            <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-line-strong md:hidden" />
             <div className="flex items-center gap-1 border-b border-line p-2">
               {canChat && (
                 <button
@@ -282,18 +310,46 @@ export function Dock({ canChat }: { canChat: boolean }) {
                     </div>
                     <div className="border-t border-line p-2">
                       {thread.canReply ? (
-                        <div className="flex items-end gap-2">
+                        <div className="space-y-1">
+                          {photo && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="max-w-48 truncate rounded-lg bg-surface-sunken px-2 py-1 text-xs font-semibold">
+                                🖼 {photo.name}
+                              </span>
+                              <button
+                                type="button"
+                                aria-label="✕"
+                                onClick={() => setPhoto(null)}
+                                className="btn-ghost btn-icon !min-h-7 text-xs"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          )}
+                          <div className="flex items-end gap-2">
+                          <label
+                            className={`btn-secondary btn-icon shrink-0 cursor-pointer ${
+                              uploading || photo ? 'pointer-events-none opacity-50' : ''
+                            }`}
+                            aria-label={t('replyAttach')}
+                            title={t('replyAttach')}
+                            data-testid="dock-attach"
+                          >
+                            {uploading ? '…' : '📎'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              hidden
+                              onChange={(event) => void attachPhoto(event.target.files)}
+                            />
+                          </label>
                           <textarea
                             value={body}
-                            onChange={(event) => setBody(event.target.value)}
-                            onKeyDown={(event) => {
-                              // Enter sends, Shift+Enter breaks the line —
-                              // the Telegram habit these fingers already have.
-                              if (event.key === 'Enter' && !event.shiftKey) {
-                                event.preventDefault();
-                                void send();
-                              }
+                            onChange={(event) => {
+                              setBody(event.target.value);
+                              autogrow(event.target);
                             }}
+                            onKeyDown={(event) => sendOnEnter(event, coarse, () => void send())}
                             placeholder={t('replyPlaceholder')}
                             rows={1}
                             data-testid="dock-reply"
@@ -302,12 +358,13 @@ export function Dock({ canChat }: { canChat: boolean }) {
                           <button
                             type="button"
                             onClick={() => void send()}
-                            disabled={sending || !body.trim()}
+                            disabled={sending || uploading || (!body.trim() && !photo)}
                             data-testid="dock-send"
                             className="btn-primary shrink-0 px-3 disabled:opacity-50"
                           >
                             {sending ? t('replySending') : t('replySend')}
                           </button>
+                          </div>
                         </div>
                       ) : (
                         <p className="text-center text-xs text-ink-500">

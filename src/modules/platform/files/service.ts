@@ -132,7 +132,7 @@ export async function saveAttachment(
 }
 
 export class AttachmentDeleteError extends Error {
-  constructor(public readonly code: 'not_found' | 'forbidden') {
+  constructor(public readonly code: 'not_found' | 'forbidden' | 'in_use') {
     super(code);
   }
 }
@@ -152,7 +152,17 @@ export async function deleteAttachment(
     throw new AttachmentDeleteError('forbidden');
   }
 
-  await db.delete(attachments).where(eq(attachments.id, id));
+  try {
+    await db.delete(attachments).where(eq(attachments.id, id));
+  } catch (err) {
+    // A row something still points at (a queued Telegram reply's photo, via
+    // its FK) must refuse politely, not 500 — the record wins over the tidy-up.
+    const pg = err as { code?: string; cause?: { code?: string } };
+    if (pg?.code === '23503' || pg?.cause?.code === '23503') {
+      throw new AttachmentDeleteError('in_use');
+    }
+    throw err;
+  }
   await writeAudit(db, { actorId: actor.id }, {
     entityType: attachment.entityType,
     entityId: attachment.entityId,

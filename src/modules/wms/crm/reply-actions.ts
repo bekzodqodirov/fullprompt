@@ -40,13 +40,17 @@ export async function sendReplyAction(_prev: ReplyState, form: FormData): Promis
 
   const clientId = String(form.get('clientId') ?? '');
   const body = String(form.get('body') ?? '');
+  // The photo the composer pre-uploaded, if any. queueReply verifies it is
+  // the sender's own tg_outbox upload — the id alone proves nothing.
+  const rawAttachment = String(form.get('attachmentId') ?? '');
+  const attachmentId = /^[0-9a-f-]{36}$/i.test(rawAttachment) ? rawAttachment : null;
   const account = await replyAccountFor(clientId, who.id);
   if (!account) return { error: 'not_your_conversation' };
 
   const meta = await requestMeta();
   try {
     await queueReply(
-      { clientId, managerUserId: account.managerUserId, body },
+      { clientId, managerUserId: account.managerUserId, body, attachmentId },
       { actorId: who.id, ...meta },
     );
   } catch (err) {

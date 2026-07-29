@@ -5,11 +5,14 @@ import { rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   claimNext,
   clientHasWritten,
+  loadOutboxPhoto,
   markAttemptFailed,
   markSent,
+  recordSentPhoto,
   recoverInFlight,
   releaseClaim,
   sentCounts,
+  wasSentWithPhoto,
 } from '../src/modules/wms/crm/outbox';
 import {
   canSendNow,
@@ -206,11 +209,19 @@ async function main() {
         stored += 1;
         console.log(`  ${verdict.clientCode} ← ${verdict.row.direction}`);
         // The photograph itself (owner, item 15) — only for a NEW row, so a
-        // reconnect replay never re-downloads. A failure here is a missing
+        // reconnect replay never re-downloads. An outgoing echo whose photo
+        // WE uploaded is skipped too: the bytes are already in storage,
+        // claimed onto the row by the sender. A failure here is a missing
         // picture, never a downed bridge.
-        await savePhotoFor(written, msg, account.managerUserId).catch((err: unknown) => {
-          console.error('rasm olinmadi:', err instanceof Error ? err.message : err);
-        });
+        const ownUpload =
+          verdict.row.direction === 'out' &&
+          verdict.row.hasMedia &&
+          (await wasSentWithPhoto(account.managerUserId, verdict.row.peerId, verdict.row.tgMessageId));
+        if (!ownUpload) {
+          await savePhotoFor(written, msg, account.managerUserId).catch((err: unknown) => {
+            console.error('rasm olinmadi:', err instanceof Error ? err.message : err);
+          });
+        }
       }
     } catch (err) {
       // One bad event must not take the bridge down: it would stop receiving
@@ -271,8 +282,38 @@ async function main() {
       // recipient. The id resolves out of the entity cache this connection has
       // already filled from the conversation itself.
       const target = helpers.returnBigInt(job.peerId.toString());
-      const result = await client.sendMessage(target, { message: job.body });
+      let result: { id?: number; date?: number } | undefined;
+      if (job.attachmentId) {
+        const photo = await loadOutboxPhoto(job.attachmentId);
+        if (!photo) {
+          // The bytes are gone (or the row is); no retry can conjure them.
+          await markAttemptFailed(job.id, 'photo_missing', true, MAX_ATTEMPTS);
+          return;
+        }
+        const { CustomFile } = await import('telegram/client/uploads');
+        result = (await client.sendFile(target, {
+          file: new CustomFile(photo.fileName, photo.bytes.length, '', photo.bytes),
+          caption: job.body || undefined,
+        })) as { id?: number; date?: number };
+      } else {
+        result = await client.sendMessage(target, { message: job.body });
+      }
       await markSent(job.id, result?.id ? BigInt(result.id) : null);
+      // The echo is written HERE, so the thread shows the photo we uploaded
+      // instead of downloading a second copy when Telegram echoes it back.
+      if (job.attachmentId && result?.id) {
+        await recordSentPhoto({
+          clientId: job.clientId,
+          managerUserId: account.managerUserId,
+          peerId: job.peerId,
+          tgMessageId: BigInt(result.id),
+          body: job.body,
+          attachmentId: job.attachmentId,
+          sentAt: new Date((result.date ?? Math.floor(Date.now() / 1000)) * 1000),
+        }).catch((err: unknown) => {
+          console.error('rasm yozilmadi:', err instanceof Error ? err.message : err);
+        });
+      }
       sent += 1;
       console.log(`  → ${job.clientId.slice(0, 8)} yuborildi`);
     } catch (err) {

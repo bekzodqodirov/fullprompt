@@ -1,23 +1,35 @@
 import 'dotenv/config';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { clients, tgAccounts, tgMessages, tgOutbox, users } from '@/modules/platform/db/schema';
+import {
+  attachments,
+  clients,
+  tgAccounts,
+  tgMessages,
+  tgOutbox,
+  users,
+} from '@/modules/platform/db/schema';
 import { setSetting } from '@/modules/platform/settings/service';
+import { deleteAttachment, saveAttachment } from '@/modules/platform/files/service';
 import {
   cancelQueued,
   claimNext,
   clientHasWritten,
+  loadOutboxPhoto,
   markAttemptFailed,
   markSent,
   OutboxError,
   peerForClient,
   pendingFor,
   queueReply,
+  recordSentPhoto,
   recoverInFlight,
   releaseClaim,
   replyAccountFor,
   sendContextFor,
+  wasSentWithPhoto,
 } from '@/modules/wms/crm/outbox';
 import { MAX_ATTEMPTS } from '@/modules/wms/crm/telegram-send';
 
@@ -72,9 +84,12 @@ beforeAll(async () => {
   await setSetting('tg_sending_enabled', true, managerId);
 });
 
+const madePhotos: string[] = [];
+
 afterAll(async () => {
   await setSetting('tg_sending_enabled', false, managerId);
   await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+  if (madePhotos.length) await db.delete(attachments).where(inArray(attachments.id, madePhotos));
   await db.delete(tgMessages).where(eq(tgMessages.clientId, clientId));
   await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
   await db.delete(clients).where(eq(clients.id, clientId));
@@ -240,6 +255,169 @@ describe('when sending goes wrong', () => {
     // waiting for. Neither is safe to do silently, so a person is told.
     expect(row!.status).toBe('failed');
     expect(row!.lastError).toContain('listener restarted');
+  });
+});
+
+describe('a photo rides along (item 15, the sending half)', () => {
+  /** A pre-bound upload row, exactly as /api/files/upload writes it. */
+  const photoRow = async (over: Partial<typeof attachments.$inferInsert> = {}) => {
+    const [row] = await db
+      .insert(attachments)
+      .values({
+        entityType: 'tg_outbox',
+        entityId: uuidv4(),
+        kind: 'photo',
+        storageKey: `tg_outbox/test/${uuidv4()}`,
+        fileName: 'p.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: 100,
+        uploadedBy: managerId,
+        ...over,
+      })
+      .returning();
+    madePhotos.push(row!.id);
+    return row!;
+  };
+
+  it('queues a photo with no caption at all — the relaxed CHECK allows it', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const file = await photoRow();
+    // Fails on the 0037 schema twice over: the body CHECK refuses '' and the
+    // column does not exist — this insert IS the proof of migration 0043.
+    const { id } = await queueReply(
+      { clientId, managerUserId: managerId, body: '', attachmentId: file.id },
+      ctx(),
+    );
+    const [row] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(row!.attachmentId).toBe(file.id);
+    // The minted group id gave way to the queue row itself (pre-binding).
+    const [claimed] = await db.select().from(attachments).where(eq(attachments.id, file.id));
+    expect(claimed!.entityId).toBe(id);
+    // …and the thread can show what is about to go out.
+    expect((await pendingFor(clientId)).find((r) => r.id === id)?.attachmentId).toBe(file.id);
+  });
+
+  it('refuses a stranger’s upload, a non-photo, and an oversized photo', async () => {
+    const foreign = await photoRow({ uploadedBy: otherId });
+    await expect(
+      queueReply(
+        { clientId, managerUserId: managerId, body: 'x', attachmentId: foreign.id },
+        ctx(),
+      ),
+    ).rejects.toThrow('bad_attachment');
+    const doc = await photoRow({ kind: 'file' });
+    await expect(
+      queueReply({ clientId, managerUserId: managerId, body: 'x', attachmentId: doc.id }, ctx()),
+    ).rejects.toThrow('bad_attachment');
+    const fat = await photoRow({ sizeBytes: 10 * 1024 * 1024 + 1 });
+    await expect(
+      queueReply({ clientId, managerUserId: managerId, body: 'x', attachmentId: fat.id }, ctx()),
+    ).rejects.toThrow('photo_too_big');
+  });
+
+  it('refuses a caption past Telegram’s own photo cap instead of truncating', async () => {
+    const file = await photoRow();
+    await expect(
+      queueReply(
+        { clientId, managerUserId: managerId, body: 'x'.repeat(1025), attachmentId: file.id },
+        ctx(),
+      ),
+    ).rejects.toThrow('too_long');
+    // The same text WITHOUT a photo is an ordinary message and goes through.
+    const { id } = await queueReply(
+      { clientId, managerUserId: managerId, body: 'x'.repeat(1025) },
+      ctx(),
+    );
+    await cancelQueued(id, ctx());
+  });
+
+  it('hands the photo to the claimed job; missing bytes are a permanent fact', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const file = await photoRow(); // a row whose bytes were never stored
+    await queueReply(
+      { clientId, managerUserId: managerId, body: 'rasm', attachmentId: file.id },
+      ctx(),
+    );
+    const job = await claimNext(managerId);
+    expect(job?.attachmentId).toBe(file.id);
+    // No bytes → null → the listener marks photo_missing, permanently.
+    expect(await loadOutboxPhoto(file.id)).toBeNull();
+  });
+
+  it('returns real bytes for the sender', async () => {
+    const { id } = await saveAttachment(
+      {
+        entityType: 'tg_outbox',
+        entityId: uuidv4(),
+        fileName: 'real.jpg',
+        contentType: 'image/jpeg',
+        body: Buffer.from('real-jpeg-bytes'),
+        uploadedBy: managerId,
+      },
+      { thumbnails: 'skip' },
+    );
+    madePhotos.push(id);
+    const photo = await loadOutboxPhoto(id);
+    expect(photo?.bytes.toString()).toBe('real-jpeg-bytes');
+    expect(photo?.fileName).toBe('real.jpg');
+  });
+
+  it('after the send the echo row owns the photo, and a replay changes nothing', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const file = await photoRow();
+    await queueReply(
+      { clientId, managerUserId: managerId, body: 'mana rasm', attachmentId: file.id },
+      ctx(),
+    );
+    const job = await claimNext(managerId);
+    await markSent(job!.id, 555000111n);
+    const echoInput = {
+      clientId,
+      managerUserId: managerId,
+      peerId: PEER,
+      tgMessageId: 555000111n,
+      body: 'mana rasm',
+      attachmentId: file.id,
+      sentAt: new Date(),
+    };
+    await recordSentPhoto(echoInput);
+    const echoes = await db
+      .select()
+      .from(tgMessages)
+      .where(and(eq(tgMessages.clientId, clientId), eq(tgMessages.tgMessageId, 555000111n)));
+    expect(echoes).toHaveLength(1);
+    expect(echoes[0]!.direction).toBe('out');
+    expect(echoes[0]!.hasMedia).toBe(true);
+    const [claimed] = await db.select().from(attachments).where(eq(attachments.id, file.id));
+    expect(claimed!.entityType).toBe('tg_message');
+    expect(claimed!.entityId).toBe(echoes[0]!.id);
+    // The listener can tell this echo's photo is its own upload…
+    expect(await wasSentWithPhoto(managerId, PEER, 555000111n)).toBe(true);
+    // …and Telegram's own echo arriving later is a no-op replay.
+    await recordSentPhoto(echoInput);
+    expect(
+      await db
+        .select()
+        .from(tgMessages)
+        .where(and(eq(tgMessages.clientId, clientId), eq(tgMessages.tgMessageId, 555000111n))),
+    ).toHaveLength(1);
+  });
+
+  it('cancelling keeps the photo row, but the queue’s photo cannot be deleted from under it', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const file = await photoRow();
+    const { id } = await queueReply(
+      { clientId, managerUserId: managerId, body: '', attachmentId: file.id },
+      ctx(),
+    );
+    // The FK refuses politely while the queue row points at it.
+    await expect(
+      deleteAttachment(file.id, { id: managerId, permissions: new Set() }),
+    ).rejects.toThrow('in_use');
+    await cancelQueued(id, ctx());
+    // Cancelled keeps the record — the audit-friendly orphan every
+    // pre-binding flow already pays for.
+    expect(await db.select().from(attachments).where(eq(attachments.id, file.id))).toHaveLength(1);
   });
 });
 

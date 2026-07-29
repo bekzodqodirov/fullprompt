@@ -8,6 +8,7 @@ import {
   receiptLots,
   receipts,
   tgMessages,
+  tgOutbox,
 } from '../../platform/db/schema';
 import { entitySpec } from '../../platform/fields/registry';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
@@ -101,6 +102,19 @@ export async function decideAttachmentRead(
       return allowed
         ? { allow: true, rule: 'crm-activity' }
         : { allow: false, rule: 'crm-no-permission' };
+    }
+    // A photo QUEUED to go out — same audience as the thread it will land in.
+    // A pre-bound upload not yet queued has no row and falls to the uploader
+    // rule above; once sent, the sender re-binds it to 'tg_message'.
+    case 'tg_outbox': {
+      const row = await db.query.tgOutbox.findFirst({
+        where: eq(tgOutbox.id, attachment.entityId),
+        columns: { id: true },
+      });
+      if (!row) return { allow: false, rule: 'orphan' };
+      return has('crm.leads', 'clients.manage')
+        ? { allow: true, rule: 'tg-crm' }
+        : { allow: false, rule: 'tg-no-permission' };
     }
     // Telegram chat photos — mirror /suhbatlar's own gate.
     case 'tg_message': {

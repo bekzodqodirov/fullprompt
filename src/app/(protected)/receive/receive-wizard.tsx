@@ -1187,7 +1187,7 @@ export function ReceiveWizard({
       )}
 
       {/* ===== Sticky totals + confirm ===== */}
-      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+      <div className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
         {(!clientChosen || !lotsValid()) && (
           <p className="mx-auto max-w-4xl px-4 pt-1.5 text-xs font-semibold text-warn">
             ⚠️ {firstProblem()}

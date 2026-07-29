@@ -100,7 +100,10 @@ export async function TelegramThread({
             <div className="mb-0.5 text-xs font-semibold">
               {row.status === 'failed' ? `✕ ${t('replyFailed')}` : `◷ ${t('replyQueued')}`}
             </div>
-            <p className="whitespace-pre-wrap break-words">{row.body}</p>
+            <p className="whitespace-pre-wrap break-words">
+              {row.attachmentId && '🖼 '}
+              {row.body}
+            </p>
           </div>
         ))}
         {rows.map((row) => (

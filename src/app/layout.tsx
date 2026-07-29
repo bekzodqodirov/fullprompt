@@ -19,6 +19,10 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   themeColor: '#b80000',
+  // Without this, an installed-PWA iPhone reports safe-area-inset-bottom as 0
+  // and every `pb-safe` (tab bar, sheets, the fixed action bars) falls back
+  // to its 0.5rem floor — the composer sits ON the home indicator.
+  viewportFit: 'cover',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

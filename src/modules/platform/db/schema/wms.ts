@@ -18,7 +18,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
-import { clients, currencies, users, warehouses } from './platform';
+import { attachments, clients, currencies, users, warehouses } from './platform';
 
 const id = () =>
   uuid('id')
@@ -1368,6 +1368,8 @@ export const tgOutbox = pgTable(
     sentAt: timestamp('sent_at', { withTimezone: true }),
     /** Telegram's id once it exists, to reconcile with the echoed copy. */
     tgMessageId: bigint('tg_message_id', { mode: 'bigint' }),
+    /** One photo per message; body doubles as its caption (may be empty then). */
+    attachmentId: uuid('attachment_id').references(() => attachments.id),
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
   },
@@ -1376,8 +1378,9 @@ export const tgOutbox = pgTable(
       'tg_outbox_status_check',
       sql`${t.status} IN ('queued', 'sending', 'sent', 'failed', 'cancelled')`,
     ),
-    // A blank send would still cost a rate-limit slot on a personal account.
-    check('tg_outbox_body_check', sql`length(btrim(${t.body})) > 0`),
+    // A blank send would still cost a rate-limit slot on a personal account;
+    // a photo with no caption is a real message.
+    check('tg_outbox_body_check', sql`length(btrim(${t.body})) > 0 OR ${t.attachmentId} IS NOT NULL`),
     index('tg_outbox_queue_idx').on(t.managerUserId, t.status, t.queuedAt),
     index('tg_outbox_client_idx').on(t.clientId, t.queuedAt),
   ],

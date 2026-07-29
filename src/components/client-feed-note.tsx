@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { autogrow } from '@/components/composer';
 import { addFeedNoteAction, type ReplyState } from '@/modules/wms/crm/reply-actions';
 
 /**
@@ -117,7 +118,10 @@ export function FeedNoteBox({
           rows={1}
           required
           placeholder={labels.placeholder}
-          className="input-sm max-h-32 min-h-9 flex-1 resize-y py-2"
+          // No Enter-send here on purpose: a note is multi-line prose, and
+          // Enter-send would fragment it. The box just follows the text.
+          onChange={(event) => autogrow(event.target)}
+          className="input-sm max-h-32 min-h-9 flex-1 resize-none py-2"
           data-testid="feed-note-body"
         />
         <button

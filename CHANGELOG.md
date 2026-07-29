@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Telefonda CRM: suriladigan kanban, qulay yozish, chatdan rasm yuborish — 2026-07-29
+
+Sizning 3-bandingiz («mobile friendly crm qilib ber kanban viewlarni» +
+Telegram qoldiqlari):
+
+- **Kanban endi suriladi (amoCRM kabi)**: telefonda har bir bosqich to'liq
+  ekran — barmoq bilan yonga surib keyingi bosqichga o'tasiz, tepadagi
+  bosqich tugmalari (soni bilan) ekrandan ketmay turadi, karobkalar ustun
+  ichida aylanadi. «Keyingi bosqich» tugmasi va ⋯ ro'yxati joyida qoldi —
+  kartani ko'chirish baribir bir bosish. Voronka ham, bitimlar doskasi ham.
+  Kompyuterdagi sudrab-tashlash o'zgargani yo'q.
+- **Yozish oynalari birxillashdi**: klaviaturada Enter — yuborish
+  (Shift+Enter — yangi qator), telefonda Enter — yangi qator, yuborish
+  faqat tugmadan (Telegramning o'zidagidek; avval telefonda ko'p qatorli
+  xabar yozib bo'lmasdi va Enter chala xabarni jo'natib yuborardi). Oynalar
+  matnga qarab o'zi kattaradi.
+- **Chatdan RASM yuborish**: suhbatda va 💬 panelda 📎 tugmasi — bitta rasm
+  (10 MB gacha), xohlasangiz izoh bilan, xohlasangiz izohsiz. Navbatda 🖼
+  belgisi bilan ko'rinadi; yuborilgach suhbatda rasmning o'zi turadi.
+  Himoya qoidalari o'zgarmagan: faqat o'z suhbatingizda, faqat mijoz avval
+  yozgan bo'lsa, kunlik/daqiqalik cheklovlar bilan — rasm ham xuddi matn
+  kabi bitta «slot» sarflaydi. Albom yo'q — ataylab, akkauntlar xavfsizligi
+  uchun. **Migratsiya 0043** (faqat qo'shimcha ustun).
+- Mayda-chuyda: iPhone'da pastki tugmalar «home» chizig'i ustiga chiqmaydi,
+  💬 panelda tortish dastagi, mijoz kartasida uzun ism tugmani siqmaydi.
+
+Tekshirildi: yangi bazada 703 unit/integration + 83 e2e yashil, CI
+tartibida. Deploy'dan avval zaxira (qoida); migratsiya 0043 yengil.
+
 ## Audit nuqsonlari: 10 tasi ham tuzatildi — 2026-07-28
 
 26-iyul auditida tasdiqlangan nuqsonlardan navbatdagi 10 tasi (siz «ha

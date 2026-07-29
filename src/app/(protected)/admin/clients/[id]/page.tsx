@@ -58,8 +58,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     <div className="space-y-6">
       {/* The dock opens straight into this client's conversation from here. */}
       <span data-dock-client={client.id} hidden />
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">
+      {/* flex-wrap + min-w-0: a long client name and the deactivate button
+          must coexist on a 360 px screen instead of squeezing each other. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="min-w-0 text-xl font-bold [overflow-wrap:anywhere]">
           <span className="font-mono text-brand-700">{client.clientCode}</span> — {client.name}
         </h1>
         {canEdit && (

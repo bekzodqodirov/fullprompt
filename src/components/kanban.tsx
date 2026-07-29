@@ -44,13 +44,9 @@ export interface KanbanLabels {
   lostReason: string;
   moveTo: string;
   cancelMove: string;
-  prevStage: string;
-  nextStage: string;
   dragHint: string;
   empty: string;
   error: string;
-  /** Plural noun for the "· 4 leads" counter under the stage strip. */
-  itemsWord: string;
 }
 
 /** Below this the gesture is a scroll or a tap, not a drag. */
@@ -159,11 +155,14 @@ interface ViewProps<T extends KanbanItem> {
 }
 
 /**
- * The phone's board: one stage, full width.
+ * The phone's board: one full-width column per screen, swiped sideways.
  *
  * The strip along the top IS the funnel — every stage and its count at a
- * glance, which is the thing a board is opened for, and a tap to switch
- * instead of a long sideways drag.
+ * glance, which is the thing a board is opened for. A swipe moves between
+ * columns the way the thumb expects (owner's ask: the amoCRM feel), a chip
+ * tap jumps straight to a far stage, and each column keeps the desktop
+ * board's sunken full-height shape: the CARDS scroll inside the column, the
+ * strip never leaves the top of the screen.
  */
 function StageView<T extends KanbanItem>({
   stages,
@@ -183,11 +182,14 @@ function StageView<T extends KanbanItem>({
   );
   const [sheetFor, setSheetFor] = useState<T | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  // A chip tap starts a smooth scroll that fires the same onScroll the thumb
+  // does; without this guard the mid-flight positions would fight the tap for
+  // ownership of the active chip.
+  const settling = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A stage deleted or reordered under us must not leave the screen blank.
   const active = stages.find((stage) => stage.id === activeId) ?? stages[0];
-  const activeIndex = active ? stages.indexOf(active) : -1;
-  const inStage = active ? items.filter((item) => stageOf(item) === active.id) : [];
 
   // Keep the chosen stage on screen — with eight stages the one you are
   // looking at is often off the end of the strip.
@@ -197,14 +199,58 @@ function StageView<T extends KanbanItem>({
       ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }, [activeId]);
 
-  const step = (delta: number) => {
-    const next = stages[activeIndex + delta];
-    if (next) setActiveId(next.id);
+  // Land on the opening stage without an animation on the first frame.
+  useEffect(() => {
+    const track = trackRef.current;
+    const index = stages.findIndex((stage) => stage.id === activeId);
+    const column = track?.children[index] as HTMLElement | undefined;
+    if (track && column && index > 0) track.scrollLeft = column.offsetLeft - track.offsetLeft;
+    // Mount only: afterwards the scroll position is the truth, not the state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const goTo = (stageId: string) => {
+    const track = trackRef.current;
+    const index = stages.findIndex((stage) => stage.id === stageId);
+    const column = track?.children[index] as HTMLElement | undefined;
+    if (!track || !column) return;
+    setActiveId(stageId);
+    if (settling.current) clearTimeout(settling.current);
+    settling.current = setTimeout(() => {
+      settling.current = null;
+    }, 600);
+    track.scrollTo({ left: column.offsetLeft - track.offsetLeft, behavior: 'smooth' });
+  };
+
+  // The scroll position is the truth for which stage is active: whichever
+  // column's centre sits nearest the viewport centre owns the chip.
+  const onTrackScroll = () => {
+    if (settling.current) return;
+    const track = trackRef.current;
+    if (!track) return;
+    const mid = track.scrollLeft + track.clientWidth / 2;
+    let best = -1;
+    let bestDistance = Infinity;
+    Array.from(track.children).forEach((child, index) => {
+      const el = child as HTMLElement;
+      const distance = Math.abs(el.offsetLeft - track.offsetLeft + el.offsetWidth / 2 - mid);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    });
+    const stage = stages[best];
+    if (stage && stage.id !== activeId) setActiveId(stage.id);
   };
 
   return (
     <div className="space-y-2">
-      <div ref={stripRef} className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+      {/* Sticky under the app bar (h-14), so the funnel survives a long
+          column: the cards scroll, the map of the stages does not. */}
+      <div
+        ref={stripRef}
+        className="sticky top-14 z-10 -mx-4 flex gap-1.5 overflow-x-auto bg-surface px-4 py-1.5"
+      >
         {stages.map((stage) => {
           const on = stage.id === active?.id;
           return (
@@ -213,7 +259,7 @@ function StageView<T extends KanbanItem>({
               type="button"
               data-testid="stage-tab"
               data-active={on}
-              onClick={() => setActiveId(stage.id)}
+              onClick={() => goTo(stage.id)}
               className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold ${
                 on ? `${stageClass(stage.color)} ring-2 ring-brand-500` : 'border-line text-ink-700'
               }`}
@@ -225,72 +271,68 @@ function StageView<T extends KanbanItem>({
         })}
       </div>
 
-      {/* Stepping through the funnel without hunting in the strip. */}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          aria-label={labels.prevStage}
-          disabled={activeIndex <= 0}
-          onClick={() => step(-1)}
-          className="btn-secondary btn-icon disabled:opacity-30"
-        >
-          <Icon name="chevronLeft" className="h-5 w-5" />
-        </button>
-        <p className="min-w-0 flex-1 truncate text-center text-sm font-bold">
-          {active?.name}{' '}
-          <span className="text-ink-500">
-            · {inStage.length} {labels.itemsWord.toLowerCase()}
-          </span>
-        </p>
-        <button
-          type="button"
-          aria-label={labels.nextStage}
-          disabled={activeIndex < 0 || activeIndex >= stages.length - 1}
-          onClick={() => step(1)}
-          className="btn-secondary btn-icon disabled:opacity-30"
-        >
-          <Icon name="chevronRight" className="h-5 w-5" />
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {inStage.map((item) => {
-          const next = stages[stages.indexOf(active!) + 1];
+      <div
+        ref={trackRef}
+        onScroll={onTrackScroll}
+        data-testid="stage-track"
+        className="-mx-4 flex h-[calc(100dvh-19rem)] min-h-[18rem] snap-x snap-mandatory gap-3 overflow-x-auto px-4"
+      >
+        {stages.map((stage) => {
+          const inStage = items.filter((item) => stageOf(item) === stage.id);
+          const nextStage = stages[stages.indexOf(stage) + 1];
           return (
-            <div key={item.id} data-testid={cardTestId} className="card !p-3">
-              <Link href={hrefOf(item)} className="block">
-                {renderCard(item)}
-              </Link>
-              <div className="mt-2 flex gap-2 border-t border-line pt-2">
-                {/* One tap for the move that happens ten times a day; the
-                    sheet for everything else. */}
-                {next && (
-                  <button
-                    type="button"
-                    data-testid="move-next"
-                    onClick={() => void move(item, next.id)}
-                    className="btn-secondary min-w-0 flex-1 !justify-start"
-                  >
-                    <Icon name="chevronRight" className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{next.name}</span>
-                  </button>
+            <section
+              key={stage.id}
+              data-stage-id={stage.id}
+              className="flex h-full w-full shrink-0 snap-center flex-col rounded-lg bg-surface-sunken"
+            >
+              <header
+                className={`rounded-lg border px-3 py-2 text-sm font-bold ${stageClass(
+                  stage.color,
+                )}`}
+              >
+                {stage.name}
+                <span className="ml-2 opacity-70">{counts[stage.id]}</span>
+              </header>
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+                {inStage.map((item) => (
+                  <div key={item.id} data-testid={cardTestId} className="card !p-3">
+                    <Link href={hrefOf(item)} className="block">
+                      {renderCard(item)}
+                    </Link>
+                    <div className="mt-2 flex gap-2 border-t border-line pt-2">
+                      {/* One tap for the move that happens ten times a day;
+                          the sheet for everything else. */}
+                      {nextStage && (
+                        <button
+                          type="button"
+                          data-testid="move-next"
+                          onClick={() => void move(item, nextStage.id)}
+                          className="btn-secondary min-w-0 flex-1 !justify-start"
+                        >
+                          <Icon name="chevronRight" className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{nextStage.name}</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        data-testid="move-other"
+                        aria-label={labels.moveTo}
+                        onClick={() => setSheetFor(item)}
+                        className="btn-secondary btn-icon shrink-0"
+                      >
+                        ⋯
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {inStage.length === 0 && (
+                  <p className="px-1 pt-1 text-center text-sm text-ink-500">{labels.empty}</p>
                 )}
-                <button
-                  type="button"
-                  data-testid="move-other"
-                  aria-label={labels.moveTo}
-                  onClick={() => setSheetFor(item)}
-                  className="btn-secondary btn-icon shrink-0"
-                >
-                  ⋯
-                </button>
               </div>
-            </div>
+            </section>
           );
         })}
-        {inStage.length === 0 && (
-          <p className="card text-center text-sm text-ink-500">{labels.empty}</p>
-        )}
       </div>
 
       {sheetFor && (

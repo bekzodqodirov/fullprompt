@@ -80,10 +80,27 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   const card = board.getByTestId('lead-card').filter({ hasText: `Sinov mijoz ${runId}` });
   await expect(card).toBeVisible();
 
+  // The board is a swipe carousel now: a programmatic scroll stands in for
+  // the thumb (fresh load, so no chip-tap guard is in flight). The active
+  // chip must follow the column under the viewport, both ways.
+  const track = board.getByTestId('stage-track');
+  await track.evaluate((el) => el.scrollTo({ left: el.scrollWidth - el.clientWidth }));
+  await expect(page.getByTestId('stage-tab').last()).toHaveAttribute('data-active', 'true');
+  await page.getByTestId('stage-tab').first().click();
+  await expect(page.getByTestId('stage-tab').first()).toHaveAttribute('data-active', 'true');
+
   // One tap moves it a stage forward — the move that happens ten times a day
-  // should not be a drag across columns that are off the screen.
+  // should not be a drag across columns that are off the screen. Since the
+  // board became a swipe carousel every column is in the DOM, so "it moved"
+  // is asked of the COLUMNS: gone from the first, present in the second.
   await card.getByTestId('move-next').click();
-  await expect(card).toHaveCount(0);
+  const mobileColumns = board.locator('[data-stage-id]');
+  await expect(
+    mobileColumns.first().getByText(`Sinov mijoz ${runId}`),
+  ).toHaveCount(0);
+  await expect(
+    mobileColumns.nth(1).getByText(`Sinov mijoz ${runId}`),
+  ).toBeVisible();
 
   // It really is in the next stage, and it survives a reload.
   await page.getByTestId('stage-tab').nth(1).click();

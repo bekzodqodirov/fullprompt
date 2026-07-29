@@ -10,6 +10,7 @@ import {
   receiptLots,
   receipts,
   tgMessages,
+  tgOutbox,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
@@ -149,6 +150,39 @@ describe('telegram chat photos mirror the /suhbatlar gate', () => {
       att('tg_message', uuidv4()),
     );
     expect(decision).toEqual({ allow: false, rule: 'orphan' });
+  });
+});
+
+describe('queued outgoing photos mirror the same gate', () => {
+  it('a viewer is refused, crm reads it, a missing queue row is an orphan', async () => {
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: `AO${STAMP}`.slice(0, 12), name: `Access out ${STAMP}` })
+      .returning();
+    const [queued] = await db
+      .insert(tgOutbox)
+      .values({
+        clientId: client!.id,
+        managerUserId: uploaderId,
+        peerId: BigInt(STAMP + 1),
+        body: 'rasm ketmoqda',
+        status: 'queued',
+        queuedBy: uploaderId,
+      })
+      .returning();
+    expect(
+      await decideAttachmentRead(
+        actor(['reports.all_warehouses']),
+        att('tg_outbox', queued!.id),
+      ),
+    ).toEqual({ allow: false, rule: 'tg-no-permission' });
+    expect(
+      (await decideAttachmentRead(actor(['crm.leads']), att('tg_outbox', queued!.id))).allow,
+    ).toBe(true);
+    expect(await decideAttachmentRead(actor(['crm.leads']), att('tg_outbox', uuidv4()))).toEqual({
+      allow: false,
+      rule: 'orphan',
+    });
   });
 });
 

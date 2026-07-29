@@ -46,12 +46,9 @@ export function DealBoard({ stages, deals }: { stages: KanbanStage[]; deals: Boa
         lostReason: t('lostReason'),
         moveTo: t('moveTo'),
         cancelMove: t('cancelMove'),
-        prevStage: t('prevStage'),
-        nextStage: t('nextStage'),
         dragHint: t('dragHint'),
         empty: t('empty'),
         error: tc('error'),
-        itemsWord: t('deals'),
       }}
       renderCard={(deal) => (
         <>

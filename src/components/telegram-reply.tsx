@@ -87,6 +87,8 @@ export async function TelegramReply({
     too_long: t('replyTooLong'),
     empty: t('replyEmpty'),
     no_actor: t('replyNotYours'),
+    bad_attachment: t('replyBadPhoto'),
+    photo_too_big: t('replyPhotoTooBig'),
   };
 
   if (!verdict.ok) {
@@ -108,6 +110,7 @@ export async function TelegramReply({
           placeholder: t('replyPlaceholder'),
           send: t('replySend'),
           sending: t('replySending'),
+          attach: t('replyAttach'),
           errors: reasons,
         }}
       />

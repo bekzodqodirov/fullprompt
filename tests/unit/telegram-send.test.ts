@@ -3,10 +3,12 @@ import {
   bodyTooLong,
   canQueue,
   canSendNow,
+  captionTooLong,
   DEFAULT_LIMITS,
   floodWaitUntil,
   isPermanentSendError,
   MAX_BODY_CHARS,
+  MAX_CAPTION_CHARS,
   MAX_FLOOD_WAIT_S,
   type SendContext,
 } from '@/modules/wms/crm/telegram-send';
@@ -201,5 +203,35 @@ describe('the size of a message', () => {
     const emoji = '📦'.repeat(MAX_BODY_CHARS);
     expect(emoji.length).toBe(MAX_BODY_CHARS * 2);
     expect(bodyTooLong(emoji)).toBe(false);
+  });
+});
+
+describe('a message that carries a photo', () => {
+  it('may have no text at all — the photo IS the message', () => {
+    expect(canQueue('', ok(), DEFAULT_LIMITS, true)).toEqual({ ok: true });
+    // Without a photo an empty body stays a refusal — nothing else relaxed.
+    expect(canQueue('', ok(), DEFAULT_LIMITS, false)).toEqual({ ok: false, reason: 'empty' });
+  });
+
+  it('relaxes nothing else: the switch, the first-write rule, the limits all hold', () => {
+    expect(canQueue('', ok({ sendingEnabled: false }), DEFAULT_LIMITS, true)).toEqual({
+      ok: false,
+      reason: 'sending_disabled',
+    });
+    expect(canQueue('', ok({ clientHasWrittenFirst: false }), DEFAULT_LIMITS, true)).toEqual({
+      ok: false,
+      reason: 'never_wrote_first',
+    });
+    expect(
+      canQueue('', ok({ sentLastMinute: DEFAULT_LIMITS.perMinute }), DEFAULT_LIMITS, true),
+    ).toEqual({ ok: false, reason: 'rate_minute' });
+  });
+
+  it('caps the caption at Telegram’s own photo ceiling, in code points', () => {
+    expect(captionTooLong('a'.repeat(MAX_CAPTION_CHARS))).toBe(false);
+    expect(captionTooLong('a'.repeat(MAX_CAPTION_CHARS + 1))).toBe(true);
+    const emoji = '📦'.repeat(MAX_CAPTION_CHARS);
+    expect(emoji.length).toBe(MAX_CAPTION_CHARS * 2);
+    expect(captionTooLong(emoji)).toBe(false);
   });
 });

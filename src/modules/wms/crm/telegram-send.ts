@@ -85,8 +85,15 @@ export type SendVerdict = { ok: true } | { ok: false; reason: SendRefusal };
  * "whenever" might be tomorrow, and a manager who typed an answer and saw it
  * accepted believes the client has it. Better to refuse and say why.
  */
-export function canQueue(body: string, ctx: SendContext, limits = DEFAULT_LIMITS): SendVerdict {
-  if (body.trim().length === 0) return { ok: false, reason: 'empty' };
+export function canQueue(
+  body: string,
+  ctx: SendContext,
+  limits = DEFAULT_LIMITS,
+  // A photo makes an empty body legitimate (the body is then a caption) —
+  // but it never relaxes anything else: a photo costs the same rate slot.
+  hasAttachment = false,
+): SendVerdict {
+  if (!hasAttachment && body.trim().length === 0) return { ok: false, reason: 'empty' };
   if (!ctx.sendingEnabled) return { ok: false, reason: 'sending_disabled' };
   // The single most important rule. Unsolicited outbound to somebody who never
   // messaged you is what "report spam" is for, and a few reports is all it
@@ -173,4 +180,15 @@ export function bodyTooLong(body: string): boolean {
   // characters, and a message of emoji would otherwise be refused by us while
   // being perfectly acceptable to it.
   return [...body.trim()].length > MAX_BODY_CHARS;
+}
+
+/**
+ * A photo's caption has its own, much lower ceiling. Refused at queue time
+ * rather than truncated or split: a silent cut loses words a customer was
+ * meant to read, and a second send is a second rate-limit slot.
+ */
+export const MAX_CAPTION_CHARS = 1024;
+
+export function captionTooLong(body: string): boolean {
+  return [...body.trim()].length > MAX_CAPTION_CHARS;
 }

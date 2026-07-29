@@ -1,12 +1,16 @@
 import { and, asc, desc, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { tgAccounts, tgMessages, tgOutbox, users } from '../../platform/db/schema';
+import { attachments, tgAccounts, tgMessages, tgOutbox, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
+import { getStorage } from '../../platform/files/storage';
 import { bridgeState } from './telegram-live';
+import { storeIncoming } from './telegram-accounts';
+import { MAX_TG_PHOTO_BYTES } from './telegram-import';
 import {
   bodyTooLong,
   canQueue,
+  captionTooLong,
   DEFAULT_LIMITS,
   type SendContext,
   type SendVerdict,
@@ -163,6 +167,8 @@ export interface QueuedReply {
   sentAt: Date | null;
   lastError: string | null;
   manager: string;
+  /** The queued photo, so the thread can show what is about to go out. */
+  attachmentId: string | null;
 }
 
 /**
@@ -173,14 +179,35 @@ export interface QueuedReply {
  * must be impossible to get around by posting a form.
  */
 export async function queueReply(
-  input: { clientId: string; managerUserId: string; body: string },
+  input: { clientId: string; managerUserId: string; body: string; attachmentId?: string | null },
   ctx: AuditContext,
 ): Promise<{ id: string }> {
   const body = input.body.trim();
+  const attachmentId = input.attachmentId || null;
   if (bodyTooLong(body)) throw new OutboxError('too_long');
+  // A caption rides ON the photo and Telegram caps it far below a text
+  // message — refused here, never truncated.
+  if (attachmentId && captionTooLong(body)) throw new OutboxError('too_long');
   // Not a `!`: a null actor here would reach postgres as a NOT NULL violation
   // — a 500 where the honest answer is "you are not signed in".
   if (!ctx.actorId) throw new OutboxError('no_actor');
+
+  // The photo must be the sender's OWN pre-bound upload — an arbitrary
+  // attachment uuid pasted into the form must not leave the building on a
+  // customer's phone. Same ceiling as incoming photos (10 MiB), so what we
+  // send is never bigger than what we accept.
+  if (attachmentId) {
+    const [file] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
+    if (
+      !file ||
+      file.uploadedBy !== ctx.actorId ||
+      file.entityType !== 'tg_outbox' ||
+      file.kind !== 'photo'
+    ) {
+      throw new OutboxError('bad_attachment');
+    }
+    if (file.sizeBytes > MAX_TG_PHOTO_BYTES) throw new OutboxError('photo_too_big');
+  }
 
   const peerId = await peerForClient(input.clientId, input.managerUserId);
   if (peerId === null) throw new OutboxError('never_wrote_first');
@@ -190,7 +217,7 @@ export async function queueReply(
     managerUserId: input.managerUserId,
     peerId,
   });
-  const verdict = canQueue(body, sendCtx);
+  const verdict = canQueue(body, sendCtx, DEFAULT_LIMITS, attachmentId !== null);
   if (!verdict.ok) throw new OutboxError(verdict.reason);
 
   const [row] = await db
@@ -202,8 +229,15 @@ export async function queueReply(
       body,
       status: 'queued',
       queuedBy: ctx.actorId,
+      attachmentId,
     })
     .returning({ id: tgOutbox.id });
+
+  // Complete the pre-binding: the group uuid the composer minted gives way to
+  // the queue row the photo now belongs to (server-chosen, never the client's).
+  if (attachmentId) {
+    await db.update(attachments).set({ entityId: row!.id }).where(eq(attachments.id, attachmentId));
+  }
 
   await writeAudit(db, ctx, {
     entityType: 'tg_outbox',
@@ -211,7 +245,12 @@ export async function queueReply(
     action: 'create',
     // The text is in the row and in the conversation; the audit entry records
     // the decision, not a second copy of what was said.
-    after: { clientId: input.clientId, managerUserId: input.managerUserId, chars: body.length },
+    after: {
+      clientId: input.clientId,
+      managerUserId: input.managerUserId,
+      chars: body.length,
+      photo: attachmentId !== null,
+    },
   });
   return { id: row!.id };
 }
@@ -234,6 +273,7 @@ export async function pendingFor(clientId: string): Promise<QueuedReply[]> {
       sentAt: tgOutbox.sentAt,
       lastError: tgOutbox.lastError,
       manager: users.fullName,
+      attachmentId: tgOutbox.attachmentId,
     })
     .from(tgOutbox)
     .innerJoin(users, eq(tgOutbox.managerUserId, users.id))
@@ -279,6 +319,7 @@ export interface OutboxJob {
   peerId: bigint;
   body: string;
   attempts: number;
+  attachmentId: string | null;
 }
 
 /**
@@ -302,6 +343,7 @@ export async function claimNext(managerUserId: string): Promise<OutboxJob | null
     peer_id: string;
     body: string;
     attempts: number;
+    attachment_id: string | null;
   }>(sql`
     UPDATE tg_outbox SET status = 'sending', attempts = attempts + 1
     WHERE id = (
@@ -311,7 +353,7 @@ export async function claimNext(managerUserId: string): Promise<OutboxJob | null
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING id, client_id, peer_id, body, attempts
+    RETURNING id, client_id, peer_id, body, attempts, attachment_id
   `);
   const row = rows[0];
   if (!row) return null;
@@ -323,6 +365,7 @@ export async function claimNext(managerUserId: string): Promise<OutboxJob | null
     peerId: BigInt(row.peer_id),
     body: row.body,
     attempts: row.attempts,
+    attachmentId: row.attachment_id,
   };
 }
 
@@ -412,6 +455,102 @@ export async function sentCounts(
     count(minuteAgo(now), peerId),
   ]);
   return { sentLastMinute, sentLastDay, sentToChatLastMinute };
+}
+
+/**
+ * The queued photo's bytes, for the one process that will hand them to
+ * Telegram. Null is a PERMANENT failure at the call site: a file that has
+ * been deleted (or grew past the cap somehow) cannot be conjured by retrying.
+ */
+export async function loadOutboxPhoto(
+  attachmentId: string,
+): Promise<{ fileName: string; bytes: Buffer } | null> {
+  const [file] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
+  if (!file) return null;
+  try {
+    const bytes = await getStorage().get(file.storageKey);
+    if (bytes.length === 0 || bytes.length > MAX_TG_PHOTO_BYTES) return null;
+    return { fileName: file.fileName, bytes };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * After a photo went out: write the echo row OURSELVES and hand the photo to
+ * it. Telegram will deliver the same message back through the NewMessage
+ * event; the unique (manager, peer, tg_message_id) index makes that a no-op
+ * replay — and because the attachment is already claimed onto the row, the
+ * thread shows the photo we uploaded instead of downloading a second copy.
+ */
+export async function recordSentPhoto(input: {
+  clientId: string;
+  managerUserId: string;
+  peerId: bigint;
+  tgMessageId: bigint;
+  body: string;
+  attachmentId: string;
+  sentAt: Date;
+}): Promise<void> {
+  const echoId = await storeIncoming({
+    clientId: input.clientId,
+    managerUserId: input.managerUserId,
+    row: {
+      peerId: input.peerId,
+      tgMessageId: input.tgMessageId,
+      direction: 'out',
+      body: input.body.trim() || null,
+      hasMedia: true,
+      sentAt: input.sentAt,
+    },
+  });
+  // Null = the event handler won the race and wrote the row first; the claim
+  // then lands on that row instead.
+  const rowId =
+    echoId ??
+    (
+      await db
+        .select({ id: tgMessages.id })
+        .from(tgMessages)
+        .where(
+          and(
+            eq(tgMessages.managerUserId, input.managerUserId),
+            eq(tgMessages.peerId, input.peerId),
+            eq(tgMessages.tgMessageId, input.tgMessageId),
+          ),
+        )
+        .limit(1)
+    )[0]?.id;
+  if (!rowId) return;
+  await db
+    .update(attachments)
+    .set({ entityType: 'tg_message', entityId: rowId })
+    .where(eq(attachments.id, input.attachmentId));
+}
+
+/**
+ * Did WE send this outgoing message, photo attached? The listener asks before
+ * downloading an outgoing echo's media — pulling back the photo it itself
+ * just uploaded would store the same bytes twice.
+ */
+export async function wasSentWithPhoto(
+  managerUserId: string,
+  peerId: bigint,
+  tgMessageId: bigint,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: tgOutbox.id })
+    .from(tgOutbox)
+    .where(
+      and(
+        eq(tgOutbox.managerUserId, managerUserId),
+        eq(tgOutbox.peerId, peerId),
+        eq(tgOutbox.tgMessageId, tgMessageId),
+        sql`${tgOutbox.attachmentId} IS NOT NULL`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 /** Has this client written to this manager? Re-asked at send time. */

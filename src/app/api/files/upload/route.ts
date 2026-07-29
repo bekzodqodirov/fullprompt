@@ -23,7 +23,18 @@ import { FileValidationError, saveAttachment } from '@/modules/platform/files/se
 // 'crm_activity': files on an internal note (owner: "zametkaga fayllar
 // qo'shish") — uploaded against a client-generated note id before the note
 // exists, the same pre-binding the receipt wizard uses for lot photos.
-const ATTACHABLE = ['receipt', 'receipt_lot', 'crate', 'handover', 'custom_field', 'crm_activity'] as const;
+// 'tg_outbox': the photo of an outgoing Telegram reply, pre-bound the same
+// way; queueReply claims it onto the queue row, the sender re-binds it to
+// the echoed tg_message once it is really out.
+const ATTACHABLE = [
+  'receipt',
+  'receipt_lot',
+  'crate',
+  'handover',
+  'custom_field',
+  'crm_activity',
+  'tg_outbox',
+] as const;
 
 const metaSchema = z.object({
   entityType: z.enum(ATTACHABLE),

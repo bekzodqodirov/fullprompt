@@ -118,10 +118,11 @@ pnpm build && pnpm e2e  # 44 e2e
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 
-## State — 2026-07-28
+## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-688 unit/integration + 83 e2e, verified in CI's order on a fresh database.
+703 unit/integration + 83 e2e, verified in CI's order on a fresh database.
+Latest migration: **0043** (`tg_outbox.attachment_id` + relaxed body CHECK).
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -303,12 +304,40 @@ No migration in this round. NOT yet demonstrated: a route-level spy test on
 the warn line itself — the predicate is unit-tested and the serve-path is
 exercised by the whole e2e suite.
 
+Round 14 — the owner's item 3 (#370-372, «davom et va iloji bolsa mobile
+friendly crm qilib ber kanban viewparni»). The phone board is a snap-swipe
+carousel: full-width sunken columns (cards scroll inside, page does not),
+sticky chip strip under the h-14 app bar, scroll position owns the active
+chip (600 ms guard while a chip tap's smooth scroll is in flight); move
+buttons stay — touch drag refused again. One file (`components/kanban.tsx`),
+both boards inherit; the m8 e2e now asks the COLUMNS whether a card moved
+(all stages are in the DOM). Composers unified in `components/composer.ts`:
+fine pointer Enter=send / Shift+Enter=newline, coarse pointer newline-only
+(button sends) via `(pointer: coarse)` + `useSyncExternalStore`; all three
+autogrow, resize-none; note box deliberately keeps no-Enter-send. E2E RULE:
+mobile project emulates touch — specs must press the send button, never
+type Enter. `viewportFit: 'cover'` + `pb-safe` on the four focus-mode
+action bars. PHOTO SEND (item 15's second half, migration 0043): composer
+📎 pre-binds ONE photo (≤10 MiB, the incoming cap) to a minted `tg_outbox`
+group id; `queueReply` verifies own-upload/kind/size and caption ≤1024
+(refused, never truncated); the listener `sendFile`s, writes the echo row
+ITSELF and claims the photo onto it (`recordSentPhoto`; Telegram's echo =
+no-op replay; `wasSentWithPhoto` stops re-downloading own bytes); missing
+bytes → permanent 'photo_missing'; `deleteAttachment` maps the new FK to
+'in_use'; cancel keeps the photo row. The `tg_outbox` authz branch shipped
+in the same commit as the allowlist entry. No albums by design. NOT tested
+live against Telegram (no network here): the send path's gramjs call is
+covered by rules-tests + the queue/claim/echo integration suite, and the
+first real photo send should be watched in docker logs.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
-tur»).** His agreed order after that: (3) mobile-friendly CRM/kanban +
-Telegram/CRM leftovers, (4) remaining role homes + batch card redesign,
-(5) phases 4/6/7/8 + open deal items.
+tur»).** His agreed order after that: (4) remaining role homes (sotuvchi,
+logist, buxgalter) + batch card redesign, (5) phases 4/6/7/8 + open deal
+items. Telegram/CRM still queued: tg-import media backfill, edited-message
+updates, deleting excluded chats' old rows, `listConversations` index,
+Siroj's account (owner decides when).
 
 Explicitly parked by the owner: crate loading is not to be touched further.
 
@@ -323,7 +352,7 @@ form, profit per deal, the 50-goods spreadsheet + TNVED grouping.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations up to 0042 — back up first; the compose
+**Deploy the branch** (migrations up to 0043 — back up first; the compose
 change recreates the postgres container, ~5-15 s outage: off-hours, run
 `free -h` first and halve the tuned values on a 2 GB box) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
