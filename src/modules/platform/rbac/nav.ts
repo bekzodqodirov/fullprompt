@@ -137,6 +137,9 @@ export const NAV: NavGroupSpec[] = [
       { href: '/unclaimed', labelKey: 'unclaimedTitle', namespace: 'receipts', icon: 'alert' },
       { href: '/trucks', shortKey: 'trucks', labelKey: 'title', namespace: 'trucks', icon: 'truck' },
       { href: '/map', labelKey: 'title', namespace: 'map', icon: 'map' },
+      // Phase 8: the owner's own lists. Everyone may READ them — they are the
+      // reference lists staff keep current; writing is gated per list.
+      { href: '/o', labelKey: 'customLists', namespace: 'nav', icon: 'boxes' },
       {
         href: '/dashboard',
         labelKey: 'title',
@@ -315,7 +318,7 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
   // `primary` number among the ten screens they may open, and the generic
   // fallback can only pick from those. Naming their four makes half the phone
   // screen useful again.
-  viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
+  viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports', '/o'],
   // The owner watches the money and the funnel; the operational screens are
   // one tap away behind •••.
   super_admin: ['/', '/bugun', '/accounting', '/crm', '/stock'],
@@ -350,12 +353,12 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
 const MENU_BY_ROLE: Record<string, string[]> = {
   // Receive, load, unload, hand over. Nothing else is their job.
   warehouse_operator: [
-    '/', '/receive', '/arrivals', '/batches', '/issue', '/crates', '/stock', '/receipts',
+    '/', '/receive', '/arrivals', '/batches', '/issue', '/crates', '/stock', '/receipts', '/o',
   ],
   // The same, plus the two screens a manager answers questions from.
   warehouse_manager: [
     '/', '/receive', '/arrivals', '/batches', '/issue', '/crates', '/stock', '/receipts',
-    '/unclaimed', '/dashboard', '/reports',
+    '/unclaimed', '/dashboard', '/reports', '/o',
   ],
   // Plans and trucks. A logist does not receive cargo, but does chase it —
   // and does hold `clients.manage`: he creates client cards and mints their
@@ -364,24 +367,24 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
     '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
-    '/suhbatlar', '/approvals',
+    '/suhbatlar', '/approvals', '/o',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
   // is here because recalculating a job the client was mis-quoted for is a VED
   // manager's work as much as a salesperson's (DEALS.md answer 2).
   ved_manager: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/batches', '/stock', '/receipts', '/reports',
-    '/finance',
+    '/finance', '/o',
   ],
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.
   sales_manager: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/crm/today', '/suhbatlar', '/my-clients',
-    '/finance', '/pipeline', '/arrivals', '/approvals',
+    '/finance', '/pipeline', '/arrivals', '/approvals', '/o',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/reports', '/dashboard',
-    '/admin', '/receipts', '/stock', '/approvals',
+    '/admin', '/receipts', '/stock', '/approvals', '/o',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

@@ -34,7 +34,13 @@ export async function toTaskViews(rows: TaskRow[]): Promise<TaskView[]> {
   const labels = await aboutLabels(rows);
   return rows.map((row) => {
     const key = row.entityType && row.entityId ? `${row.entityType}:${row.entityId}` : null;
-    const route = row.entityType ? ROUTES[row.entityType] : undefined;
+    // Owner-invented objects (phase 8) all live at the generic card.
+    const route = row.entityType
+      ? (ROUTES[row.entityType] ??
+        (row.entityType.startsWith('x_')
+          ? (id: string) => `/o/${row.entityType}/${id}`
+          : undefined))
+      : undefined;
     return {
       id: row.id,
       title: row.title,

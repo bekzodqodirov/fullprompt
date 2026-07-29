@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getActor } from '../rbac/authorize';
 import { requestMeta } from '../auth/session';
-import { entitySpec } from './registry';
+import { canWriteEntity, resolveEntity } from '../entities/service';
 import { setFieldValues } from './service';
 import { FieldError } from './types';
 
@@ -47,11 +47,11 @@ export async function saveCustomFieldsAction(
   _prev: FieldsFormState,
   formData: FormData,
 ): Promise<FieldsFormState> {
-  const spec = entitySpec(entityType);
+  const spec = await resolveEntity(entityType);
   if (!spec) return { error: 'unknown_entity' };
   const actor = await getActor();
   if (!actor) return { error: 'unauthenticated' };
-  if (!spec.writePermissions.some((code) => actor.permissions.has(code))) {
+  if (!canWriteEntity(spec, actor.permissions)) {
     return { error: 'forbidden' };
   }
 

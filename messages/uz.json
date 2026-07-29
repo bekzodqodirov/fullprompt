@@ -51,7 +51,8 @@
     "profile": "Profil",
     "logout": "Chiqish",
     "notifications": "Xabarlar",
-    "homeTile": "Bosh sahifa"
+    "homeTile": "Bosh sahifa",
+    "customLists": "O'z ro'yxatlarim"
   },
   "home": {
     "receiving": "Qabul",
@@ -1476,6 +1477,44 @@
       "DealDeviation": "Yuk hisobdan farq qildi",
       "DealDeferralEnded": "To'lov kechiktirish tugadi",
       "MissingInTransit": "Tushirishda kamomad"
+    }
+  },
+  "objects": {
+    "title": "O'z ro'yxatlarim",
+    "define": "Sozlash",
+    "empty": "Hozircha o'z ro'yxatlaringiz yo'q.",
+    "emptyHint": "Boshqaruv → O'z obyektlarim bo'limida obyekt yarating — ro'yxat, karta va maydonlar o'zi paydo bo'ladi.",
+    "adminTitle": "O'z obyektlarim",
+    "backToAdmin": "Boshqaruv",
+    "adminIntro": "Obyekt o'ylab toping — «Yetkazuvchilar», «Shartnomalar», xohlaganingiz. Unga darhol ro'yxat, karta, o'z maydonlari (Boshqaruv → Maydonlar), vazifalar va tarix beriladi.",
+    "newType": "Yangi obyekt",
+    "typesTitle": "Obyektlar",
+    "noTypes": "Hozircha obyekt yo'q.",
+    "typeName": "Nomi (masalan: Yetkazuvchilar)",
+    "whoEdits": "Kim tahrirlashi mumkin",
+    "choice": {
+      "everyone": "Hamma xodimlar",
+      "sales": "Sotuv bo'limi",
+      "finance": "Moliya",
+      "admins": "Faqat adminlar"
+    },
+    "rename": "Nomini / ruxsatini o'zgartirish",
+    "deactivate": "Yashirish",
+    "activate": "Yoqish",
+    "addFieldsHint": "Bu obyektga maydon qo'shish →",
+    "search": "Nomi bo‘yicha qidirish",
+    "name": "Nomi",
+    "note": "Izoh",
+    "add": "Qo'shish",
+    "newRecordName": "Yangi yozuv nomi",
+    "noRecords": "Hozircha yozuv yo'q.",
+    "noRecordsHint": "Birinchi yozuvni yuqoridagi maydonda qo'shing.",
+    "inactive": "Yashirilgan",
+    "activeFlag": "Faol",
+    "errors": {
+      "validation": "Nomini to'ldiring",
+      "forbidden": "Ruxsat yo'q",
+      "not_found": "Topilmadi"
     }
   }
 }

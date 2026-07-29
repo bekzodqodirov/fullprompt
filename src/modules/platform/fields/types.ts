@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { ENTITY_CODES } from './registry';
 
 /**
  * What a custom field can be, and what an answer to it looks like.
@@ -77,7 +76,10 @@ export const showIfSchema = z.object({
 export type ShowIf = z.infer<typeof showIfSchema>;
 
 export const fieldSchema = z.object({
-  entityType: z.enum(ENTITY_CODES as [string, ...string[]]),
+  // Free text since phase 8: the owner's own entity codes are db rows the
+  // build has never heard of — the REAL check is resolveEntity in saveField,
+  // exactly where the registry check used to be (#174's table wins).
+  entityType: z.string().trim().min(1).max(40),
   label: z.string().trim().min(1).max(120),
   type: z.enum(FIELD_TYPES as [FieldType, ...FieldType[]]),
   options: z.array(z.string().trim().min(1).max(120)).max(200).default([]),

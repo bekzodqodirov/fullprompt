@@ -26,6 +26,7 @@ export default async function AdminHubPage() {
   const tPlans = await getTranslations('plans');
   const tSettings = await getTranslations('settings');
   const tAutomation = await getTranslations('automation');
+  const tObjects = await getTranslations('objects');
 
   const has = (code: string) => actor.permissions.has(code);
   const all: { href: string; label: string; icon: IconName; show: boolean }[] = [
@@ -35,6 +36,7 @@ export default async function AdminHubPage() {
     { href: '/admin/settings', label: t('settings'), icon: 'settings', show: has('admin.settings.manage') || has('admin.warehouses.manage') },
     { href: '/admin/roles', label: tRoles('title'), icon: 'shield', show: has('platform.roles.manage') },
     { href: '/admin/fields', label: tFields('title'), icon: 'clipboard', show: has('admin.dictionaries.manage') },
+    { href: '/admin/entities', label: tObjects('adminTitle'), icon: 'boxes', show: has('admin.dictionaries.manage') },
     { href: '/admin/cost-types', label: tCosting('typesTitle'), icon: 'wallet', show: has('admin.dictionaries.manage') },
     { href: '/admin/fx', label: tCosting('fxTitle'), icon: 'exchange', show: has('costs.fx.manage') },
     { href: '/admin/trucks', label: tPlans('trucksTitle'), icon: 'truck', show: has('plans.manage') },

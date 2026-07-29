@@ -3,11 +3,8 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
 import { PageHeader } from '@/components/ui/page';
-import {
-  ENTITY_SPECS,
-  FIELDS_ADMIN_PERMISSION,
-  LOOKUP_SPECS,
-} from '@/modules/platform/fields/registry';
+import { FIELDS_ADMIN_PERMISSION, LOOKUP_SPECS } from '@/modules/platform/fields/registry';
+import { entityChoices } from '@/modules/platform/entities/service';
 import { allFields, countFieldAnswers } from '@/modules/platform/fields/service';
 import { options, rulesOf, showIfOf } from '@/modules/platform/fields/types';
 import { FieldForm, type FieldRow } from './field-form';
@@ -29,9 +26,12 @@ export default async function FieldsAdminPage() {
   const t = await getTranslations('fields');
   const fields = await allFields();
 
-  const entities = ENTITY_SPECS.map((spec) => ({
-    code: spec.code,
-    label: t(`entities.${spec.labelKey}` as 'entities.client'),
+  // Shipped objects speak i18n; the owner's own carry their label with them.
+  const entities = (await entityChoices()).map((choice) => ({
+    code: choice.code,
+    label: choice.labelKey
+      ? t(`entities.${choice.labelKey}` as 'entities.client')
+      : (choice.label ?? choice.code),
   }));
   const lookupEntities = LOOKUP_SPECS.map((spec) => ({
     code: spec.code,

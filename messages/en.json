@@ -51,7 +51,8 @@
     "profile": "Profile",
     "logout": "Sign out",
     "notifications": "Notifications",
-    "homeTile": "Home"
+    "homeTile": "Home",
+    "customLists": "Custom lists"
   },
   "home": {
     "receiving": "Receiving",
@@ -1476,6 +1477,44 @@
       "DealDeviation": "Cargo differs from quote",
       "DealDeferralEnded": "Payment deferral ended",
       "MissingInTransit": "Shortage at unload"
+    }
+  },
+  "objects": {
+    "title": "Custom lists",
+    "define": "Configure",
+    "empty": "No custom lists yet.",
+    "emptyHint": "Create an object in Administration → Custom objects — the list, card and fields appear by themselves.",
+    "adminTitle": "Custom objects",
+    "backToAdmin": "Administration",
+    "adminIntro": "Invent an object — “Suppliers”, “Contracts”, anything. It immediately gets a list, a card, its own fields (Administration → Fields), tasks and history.",
+    "newType": "New object",
+    "typesTitle": "Objects",
+    "noTypes": "No objects yet.",
+    "typeName": "Name (e.g. Suppliers)",
+    "whoEdits": "Who may edit",
+    "choice": {
+      "everyone": "All staff",
+      "sales": "Sales",
+      "finance": "Finance",
+      "admins": "Admins only"
+    },
+    "rename": "Rename / access",
+    "deactivate": "Hide",
+    "activate": "Enable",
+    "addFieldsHint": "Add fields to this object →",
+    "search": "Search by name",
+    "name": "Name",
+    "note": "Note",
+    "add": "Add",
+    "newRecordName": "New record name",
+    "noRecords": "No records yet.",
+    "noRecordsHint": "Add the first record in the box above.",
+    "inactive": "Hidden",
+    "activeFlag": "Active",
+    "errors": {
+      "validation": "Fill in the name",
+      "forbidden": "No access",
+      "not_found": "Not found"
     }
   }
 }

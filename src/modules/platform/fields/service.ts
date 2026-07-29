@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../db/client';
 import { customEntities, customFields, customFieldValues } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
+import { resolveEntity } from '../entities/service';
 import { ENTITY_SPECS, entitySpec } from './registry';
 import {
   CHOICE_TYPES,
@@ -53,7 +54,8 @@ export async function saveField(
   ctx: AuditContext,
 ): Promise<FieldDef> {
   if (!ctx.actorId) throw new FieldError('unauthenticated');
-  const spec = entitySpec(input.entityType);
+  // Registry object or the owner's own — one resolver, no second list (#186).
+  const spec = await resolveEntity(input.entityType);
   if (!spec) throw new FieldError('unknown_entity');
 
   const choice = CHOICE_TYPES.includes(input.type);
@@ -383,5 +385,12 @@ export async function syncEntityRegistry(): Promise<void> {
   await db
     .update(customEntities)
     .set({ active: false })
-    .where(notInArray(customEntities.code, ENTITY_SPECS.map((spec) => spec.code)));
+    .where(
+      and(
+        notInArray(customEntities.code, ENTITY_SPECS.map((spec) => spec.code)),
+        // The owner's own objects (phase 8) were never in the registry —
+        // deactivating them on every deploy would kill his lists nightly.
+        eq(customEntities.isCustom, false),
+      ),
+    );
 }

@@ -330,6 +330,13 @@
       "when": 1785190000015,
       "tag": "0046_automation_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1785190000016,
+      "tag": "0047_custom_entities_live",
+      "breakpoints": true
     }
   ]
 }

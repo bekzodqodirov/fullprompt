@@ -5,6 +5,7 @@ import { db, type Db, type Tx } from '../db/client';
 import { taskTypes, tasks, users } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { entitySpec } from '../fields/registry';
+import { recordNames, resolveEntity } from '../entities/service';
 import { taskLink } from '../notifications/links';
 import { notifyStaffTelegram, userName } from '../notifications/staff';
 
@@ -187,7 +188,10 @@ function base() {
 
 export async function createTask(input: TaskInput, ctx: AuditContext): Promise<TaskRow> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
-  if (input.entityType && !entitySpec(input.entityType)) throw new TaskError('unknown_entity');
+  // Registry object or an owner-invented one — one resolver (#186).
+  if (input.entityType && !(await resolveEntity(input.entityType))) {
+    throw new TaskError('unknown_entity');
+  }
   // A pointer is whole or absent; the database says so too, but a caller
   // deserves a coded error rather than a constraint violation.
   if (Boolean(input.entityType) !== Boolean(input.entityId)) throw new TaskError('half_pointer');
@@ -604,6 +608,12 @@ export async function aboutLabels(rows: TaskRow[]): Promise<Map<string, string>>
     byType.set(row.entityType, [...(byType.get(row.entityType) ?? []), row.entityId]);
   }
   for (const [type, ids] of byType) {
+    // The owner's own records all live in one table, named by their NAME.
+    if (type.startsWith('x_')) {
+      const names = await recordNames([...new Set(ids)]);
+      for (const [id, name] of names) out.set(`${type}:${id}`, name);
+      continue;
+    }
     const spec = entitySpec(type)?.lookup;
     if (!spec) continue;
     const found = await db.execute<{ id: string; label: string | null; secondary: string | null }>(

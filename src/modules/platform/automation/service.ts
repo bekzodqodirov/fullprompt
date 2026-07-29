@@ -6,7 +6,7 @@ import { writeAudit, type AuditContext } from '../audit/service';
 import { createTask, TaskError } from '../tasks/service';
 import { notifyStaffTelegram } from '../notifications/staff';
 import { cardLink } from '../notifications/links';
-import { entitySpec } from '../fields/registry';
+import { resolveEntity } from '../entities/service';
 import { logger } from '../logger';
 
 /**
@@ -193,8 +193,8 @@ async function resolveAssignee(
 }
 
 /** Only entity types the task registry knows may be linked; others carry no card. */
-function linkableEntity(entityType: string | null): boolean {
-  return Boolean(entityType && entitySpec(entityType));
+async function linkableEntity(entityType: string | null): Promise<boolean> {
+  return Boolean(entityType && (await resolveEntity(entityType)));
 }
 
 /**
@@ -225,7 +225,7 @@ export async function runAutomationRules(event: {
           logger.warn({ ruleId: rule.id }, 'automation rule found no assignee, skipped');
           continue;
         }
-        const linked = linkableEntity(event.entityType);
+        const linked = await linkableEntity(event.entityType);
         await createTask(
           {
             title: config.title,
@@ -248,7 +248,7 @@ export async function runAutomationRules(event: {
       } else {
         const config = notifyConfigSchema.parse(rule.actionConfig);
         const link =
-          event.entityType && event.entityId && linkableEntity(event.entityType)
+          event.entityType && event.entityId && (await linkableEntity(event.entityType))
             ? cardLink(event.entityType, event.entityId)
             : null;
         await notifyStaffTelegram({

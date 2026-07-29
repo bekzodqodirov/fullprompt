@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { Panel } from '@/components/panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { entitySpec } from '@/modules/platform/fields/registry';
+import { resolveEntity } from '@/modules/platform/entities/service';
 import { tasksFor } from '@/modules/platform/tasks/service';
 import { assignablePeople, taskTypeOptions, toTaskViews } from '@/modules/platform/tasks/view';
 import { NewTaskForm, TaskList } from './task-list';
@@ -23,7 +23,7 @@ export async function TasksPanel({
   entityId: string;
   revalidate: string;
 }) {
-  if (!entitySpec(entityType)) return null;
+  if (!(await resolveEntity(entityType))) return null;
   const actor = await getActor();
   if (!actor) return null;
 

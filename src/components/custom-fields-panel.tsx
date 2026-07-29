@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { Panel } from '@/components/panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { entitySpec } from '@/modules/platform/fields/registry';
+import { canWriteEntity, resolveEntity } from '@/modules/platform/entities/service';
 import { customFieldsData } from '@/modules/platform/fields/view';
 import { CustomFieldsForm } from './custom-fields-form';
 
@@ -25,16 +25,14 @@ export async function CustomFieldsPanel({
   revalidate: string;
   open?: boolean;
 }) {
-  const spec = entitySpec(entityType);
+  const spec = await resolveEntity(entityType);
   if (!spec) return null;
 
   const data = await customFieldsData(entityType, entityId);
   if (data.fields.length === 0) return null;
 
   const actor = await getActor();
-  const editable = Boolean(
-    actor && spec.writePermissions.some((code) => actor.permissions.has(code)),
-  );
+  const editable = Boolean(actor && canWriteEntity(spec, actor.permissions));
   const t = await getTranslations('fields');
 
   return (

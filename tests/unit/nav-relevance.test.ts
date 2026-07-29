@@ -43,9 +43,10 @@ describe('menu relevance', () => {
   it('leaves warehouse staff a short, warehouse-shaped menu', () => {
     // A regression fence, not a spec: these numbers went 15 → 8 / 11, and a
     // future nav entry that quietly lands back in the warehouse menu should
-    // have to say so here.
-    expect(menuFor('warehouse_operator')).toHaveLength(8);
-    expect(menuFor('warehouse_manager')).toHaveLength(11);
+    // have to say so here. Phase 8 says so: /o (the owner's own reference
+    // lists) is FOR everyone, warehouse included — 8 → 9, 11 → 12.
+    expect(menuFor('warehouse_operator')).toHaveLength(9);
+    expect(menuFor('warehouse_manager')).toHaveLength(12);
     for (const href of menuFor('warehouse_operator')) {
       expect(href).not.toMatch(/^\/(crm|pipeline|accounting|admin|map)/);
     }

@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 8-bosqich: o'z obyektlaringiz — «hech narsa hard-coded bo'lmasin»ning oxirgi bekati — 2026-07-29
+
+Sizning 5-bandingiz («mukammal») ro'yxatidagi OXIRGI ish. Endi tizimga
+yangi ro'yxat turini o'zingiz o'ylab topasiz — dasturchisiz:
+
+- **Boshqaruv → «Obyektlar»**: nom yozasiz (masalan «Yetkazuvchilar»,
+  «Xitoy fabrikalari», «Transport firmalari») va KIM tahrirlashini
+  tanlaysiz — hamma / sotuv / moliya / faqat adminlar. Bitta tugma — tayyor.
+- Shu zahoti menyuda **«Ro'yxatlar»** bo'limida chiqadi: qidiruv, filtr,
+  saralash — mijozlar kitobidagidek. Yozuv qo'shish bitta qadam: nomini
+  yozdingiz — kartasi ochildi.
+- Har yozuvning **kartasi** bor: nomi, izoh, **qo'shimcha maydonlar**
+  (Boshqaruv → «Maydonlar»da o'zingiz qo'shasiz — telefon, narx, sana,
+  nima kerak bo'lsa), **vazifalar** (mas'ul, muddat — kalendarga tushadi)
+  va **tarix** (kim nimani o'zgartirgani).
+- O'qish hammaga ochiq — bu umumiy ma'lumotnoma; yozish esa tur
+  yaratilganda tanlangan doiraga. O'chirish yo'q — **yashirish** bor:
+  yozuvlar, javoblar va vazifalar hech qachon yo'qolmaydi.
+- Intizom: har o'zgarish auditda; turni yashirsangiz ro'yxat menyudan
+  yo'qoladi, qaytarsangiz hammasi joyida.
+
+Ataylab qilinmadi (aytib qo'yaman): boshqa kartadan bu ro'yxatga
+ko'rsatuvchi maydon, Telegramdan to'g'ri havola, yozuv ichida chat —
+kerak bo'lsa keyingi turda.
+
+Tekshirildi: yangi bazada 752 unit/integration + 90 e2e yashil (5 ta yangi
+integratsiya testi — shu jumladan seed egangiz yaratgan turni o'chirib
+yubormasligi ATAYLAB buzib ko'rsatildi; brauzer testi tur yaratib, yozuv
+ochib, kartada tahrirlab, oxirida turni yashirib ketadi). Migratsiya:
+**0047** (faqat qo'shadi: 2 jadval ustuni + 1 yangi jadval).
+
+Bu bilan 5-band («mukammal») ro'yxati TUGADI: 4-bosqich (eslatmalarda
+@ism), 6-bosqich (qarzdorga berishga ruxsat zanjiri), bitim ichidagi
+ochiq ishlar, 7-bosqich (avtomatlashtirish qoidalari) va 8-bosqich (o'z
+obyektlaringiz) — hammasi shu haftada chiqdi.
+
 ## 7-bosqich: avtomatlashtirish qoidalari — «X bo'lganda, Y qil» — 2026-07-29
 
 Sizning 5-bandingiz davomi (7-bosqich). Boshqaruv → «Avtomatlashtirish

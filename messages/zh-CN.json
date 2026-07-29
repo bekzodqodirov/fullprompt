@@ -51,7 +51,8 @@
     "profile": "个人资料",
     "logout": "退出",
     "notifications": "通知",
-    "homeTile": "首页"
+    "homeTile": "首页",
+    "customLists": "自定义列表"
   },
   "home": {
     "receiving": "收货",
@@ -1476,6 +1477,44 @@
       "DealDeviation": "货物与报价不符",
       "DealDeferralEnded": "付款延期已到期",
       "MissingInTransit": "卸货短缺"
+    }
+  },
+  "objects": {
+    "title": "自定义列表",
+    "define": "设置",
+    "empty": "暂无自定义列表。",
+    "emptyHint": "在 管理 → 自定义对象 中创建对象——列表、卡片和字段会自动生成。",
+    "adminTitle": "自定义对象",
+    "backToAdmin": "管理",
+    "adminIntro": "创建自己的对象——「供应商」「合同」皆可。它立即拥有列表、卡片、自定义字段（管理 → 字段）、任务与历史。",
+    "newType": "新对象",
+    "typesTitle": "对象",
+    "noTypes": "暂无对象。",
+    "typeName": "名称（如：供应商）",
+    "whoEdits": "谁可编辑",
+    "choice": {
+      "everyone": "全体员工",
+      "sales": "销售部",
+      "finance": "财务",
+      "admins": "仅管理员"
+    },
+    "rename": "重命名 / 权限",
+    "deactivate": "隐藏",
+    "activate": "启用",
+    "addFieldsHint": "为该对象添加字段 →",
+    "search": "按名称搜索",
+    "name": "名称",
+    "note": "备注",
+    "add": "添加",
+    "newRecordName": "新记录名称",
+    "noRecords": "暂无记录。",
+    "noRecordsHint": "在上方输入框添加第一条记录。",
+    "inactive": "已隐藏",
+    "activeFlag": "启用",
+    "errors": {
+      "validation": "请填写名称",
+      "forbidden": "无权限",
+      "not_found": "未找到"
     }
   }
 }

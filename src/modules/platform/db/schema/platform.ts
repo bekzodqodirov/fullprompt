@@ -460,8 +460,39 @@ export const customEntities = pgTable('custom_entities', {
   code: text('code').primaryKey(),
   sortOrder: integer('sort_order').notNull().default(100),
   active: boolean('active').notNull().default(true),
+  /** Owner-born rows carry their own label; registry rows keep i18n keys. */
+  label: text('label'),
+  /** True = the owner invented it (phase 8); the seed must never touch it. */
+  isCustom: boolean('is_custom').notNull().default(false),
+  /** ANY-of write list for records+fields; [] = all staff; NULL = registry. */
+  writePermissions: jsonb('write_permissions'),
   createdAt: createdAt(),
 });
+
+/**
+ * Phase 8: the records of an owner-invented object. Thin on purpose — a
+ * NAME the row is recognised by, and everything else is custom fields,
+ * which is the whole point of the phase. Deactivated, never deleted: tasks
+ * and field answers hang off the id.
+ */
+export const customRecords = pgTable(
+  'custom_records',
+  {
+    id: id(),
+    entityCode: text('entity_code')
+      .notNull()
+      .references(() => customEntities.code),
+    name: text('name').notNull(),
+    note: text('note'),
+    active: boolean('active').notNull().default(true),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('custom_records_entity_idx').on(t.entityCode, t.active, t.name)],
+);
 
 /** One field definition. `type` drives the widget, the validation and storage. */
 export const customFields = pgTable(

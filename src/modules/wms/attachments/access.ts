@@ -10,7 +10,7 @@ import {
   tgMessages,
   tgOutbox,
 } from '../../platform/db/schema';
-import { entitySpec } from '../../platform/fields/registry';
+import { resolveEntity } from '../../platform/entities/service';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 
 /**
@@ -137,9 +137,11 @@ export async function decideAttachmentRead(
         .where(eq(customFieldValues.valueRef, attachment.entityId))
         .limit(1);
       if (!row) return { allow: false, rule: 'custom_field-unbound' };
-      const spec = entitySpec(row.entityType);
+      const spec = await resolveEntity(row.entityType);
       if (!spec) return { allow: false, rule: 'custom_field-unknown-entity' };
-      return has(...spec.writePermissions)
+      // An owner-born object with an "everyone" write list reads for
+      // everyone too — the file is part of a record any staff may edit.
+      return spec.writePermissions.length === 0 || has(...spec.writePermissions)
         ? { allow: true, rule: 'custom-field' }
         : { allow: false, rule: 'custom_field-no-permission' };
     }
