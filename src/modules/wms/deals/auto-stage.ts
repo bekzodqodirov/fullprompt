@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { receipts } from '@/modules/platform/db/schema';
-import { applyCargoTrigger, type CargoTrigger } from './service';
+import { applyCargoTrigger, dealFullyIssued, type CargoTrigger } from './service';
 
 /**
  * The ear that lets cargo move the deal funnel (round 26, owner's item 6:
@@ -87,6 +87,10 @@ async function dealsForEvent(
       if (typeof handoverId !== 'string' || !handoverId) return [];
       return dealsForMovementRef('handover', 'issued', handoverId);
     }
+    // No event announces a PARTIAL handover — it is only ever a target,
+    // chosen per deal from a BoxIssued event by `dealFullyIssued`.
+    case 'handed_partial':
+      return [];
   }
 }
 
@@ -109,9 +113,26 @@ export async function runDealAutoStage(event: {
   if (dealIds.length === 0) return 0;
   // The mover is whoever caused the cargo event — the scanner, the receiver —
   // or nobody, exactly as the deferral sweep records its own closures.
-  return applyCargoTrigger(dealIds, trigger, {
-    actorId: event.actorId ?? null,
-    ip: null,
-    userAgent: null,
-  });
+  const ctx = { actorId: event.actorId ?? null, ip: null, userAgent: null };
+
+  // Round 27, the owner's split-shipment rule: «topshirildidan oldin 'qisman
+  // topshirildi' bo'lsa, o'sha yerda turadi hammasi topshirilgungacha». A
+  // handover of PART of the job parks the deal at handed_partial; `handed`
+  // means every box is in the client's hands. A single-shipment deal is fully
+  // issued by its one handover, so it skips the partial stop entirely — and a
+  // funnel with no partial stage simply waits at its current column until the
+  // last box goes out.
+  if (trigger === 'handed') {
+    const fully: string[] = [];
+    const partly: string[] = [];
+    for (const dealId of dealIds) {
+      ((await dealFullyIssued(dealId)) ? fully : partly).push(dealId);
+    }
+    let moved = 0;
+    if (partly.length > 0) moved += await applyCargoTrigger(partly, 'handed_partial', ctx);
+    if (fully.length > 0) moved += await applyCargoTrigger(fully, 'handed', ctx);
+    return moved;
+  }
+
+  return applyCargoTrigger(dealIds, trigger, ctx);
 }

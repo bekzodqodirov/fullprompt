@@ -59,17 +59,20 @@ const ctx = () => ({ actorId });
 let stReceived: { id: string; sortOrder: number };
 let stDeparted: { id: string; sortOrder: number };
 let stReady: { id: string; sortOrder: number };
+let stPartial: { id: string; sortOrder: number };
 let stHanded: { id: string; sortOrder: number };
 const madeStages: string[] = [];
 const madeDeals: string[] = [];
 const madeReceipts: string[] = [];
 const madeBatches: string[] = [];
 
-/** The truck and the handover this file pretends happened — `ref_id` carries
+/** The truck and the handovers this file pretends happened — `ref_id` carries
  * no foreign key (the movement log outlives its batches), so a minted uuid
  * behaves exactly like a real one. */
 const fakeBatchId = uuidv4();
 const fakeHandoverId = uuidv4();
+const fakeHandover2Id = uuidv4();
+const fakeHandover3Id = uuidv4();
 
 async function stageOf(dealId: string): Promise<string> {
   const row = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
@@ -142,6 +145,13 @@ async function movement(boxId: string, cause: string, refType: string, refId: st
   });
 }
 
+/** What the real issue path does: the movement row AND the box's own status —
+ * `dealFullyIssued` reads the status, the resolver reads the movement. */
+async function issueBox(boxId: string, handoverId: string) {
+  await movement(boxId, 'issued', 'handover', handoverId);
+  await db.update(boxes).set({ status: 'issued' }).where(eq(boxes.id, boxId));
+}
+
 beforeAll(async () => {
   const staff = await db
     .select({ id: users.id, code: roles.code })
@@ -190,6 +200,7 @@ beforeAll(async () => {
   stReceived = await mk('AS-qabul', 9100, 'received');
   stDeparted = await mk("AS-jo'nadi", 9200, 'departed');
   stReady = await mk('AS-tayyor', 9250, 'ready');
+  stPartial = await mk('AS-qisman', 9280, 'handed_partial');
   stHanded = await mk('AS-topshirildi', 9300, 'handed');
 });
 
@@ -197,7 +208,16 @@ afterAll(async () => {
   // Everything this file processed grew notification rows, and events hold
   // the FK they hang from — so notifications go first, then the events, then
   // the records, then the CONFIGURATION (stages last: deals point at them).
-  const entityIds = [...madeReceipts, ...madeDeals, ...madeBatches];
+  // The fake batch and the clients carried events too (ReadyForPickup rides
+  // on the batch, BoxIssued on the client).
+  const entityIds = [
+    ...madeReceipts,
+    ...madeDeals,
+    ...madeBatches,
+    fakeBatchId,
+    clientId,
+    otherClientId,
+  ].filter(Boolean);
   if (entityIds.length > 0) {
     const eventRows = await db
       .select({ id: events.id })
@@ -278,20 +298,23 @@ describe('the stage editor guards the funnel', () => {
 describe('cargo walks a deal through the funnel', () => {
   let dealId: string;
   let otherDealId: string;
+  let receipt1: string;
+  let receipt2: string;
+  let otherReceipt: string;
 
   it('a confirmed receipt on the deal moves it to the received stage', async () => {
     dealId = await createDeal({ clientId, title: `AS ${STAMP}` }, ctx());
     madeDeals.push(dealId);
-    const receiptId = await receiveCargo(dealId);
+    receipt1 = await receiveCargo(dealId);
     await processPendingEvents();
     expect(await stageOf(dealId)).toBe(stReceived.id);
 
     // The second client's deal on the SAME truck, for the per-client tests.
     otherDealId = await createDeal({ clientId: otherClientId, title: `AS-x ${STAMP}` }, ctx());
     madeDeals.push(otherDealId);
-    const otherReceiptId = await receiveCargo(otherDealId, otherClientId);
-    await movement(await boxOf(receiptId), 'batch_departed', 'batch', fakeBatchId);
-    await movement(await boxOf(otherReceiptId), 'batch_departed', 'batch', fakeBatchId);
+    otherReceipt = await receiveCargo(otherDealId, otherClientId);
+    await movement(await boxOf(receipt1), 'batch_departed', 'batch', fakeBatchId);
+    await movement(await boxOf(otherReceipt), 'batch_departed', 'batch', fakeBatchId);
     await processPendingEvents();
   });
 
@@ -312,7 +335,7 @@ describe('cargo walks a deal through the funnel', () => {
     // A second receipt lands on the job after the first truck left — the
     // owner's split-shipment reality, and exactly the case that would yo-yo
     // the funnel without the guard.
-    await receiveCargo(dealId);
+    receipt2 = await receiveCargo(dealId);
     await processPendingEvents();
     expect(await stageOf(dealId)).toBe(stDeparted.id);
   });
@@ -331,9 +354,11 @@ describe('cargo walks a deal through the funnel', () => {
     expect(await stageOf(otherDealId)).toBe(stDeparted.id);
   });
 
-  it('a handover moves only what was actually issued', async () => {
-    const [receiptId] = [...madeReceipts];
-    await movement(await boxOf(receiptId!), 'issued', 'handover', fakeHandoverId);
+  it('the first handover of a split job parks the deal at «qisman topshirildi»', async () => {
+    // One of the deal's two boxes goes out; the other is still in the
+    // warehouse — the owner's rule: «o'sha yerda turadi hammasi
+    // topshirilgungacha».
+    await issueBox(await boxOf(receipt1), fakeHandoverId);
     await emitEvent(db, {
       type: 'BoxIssued',
       payload: { handoverId: fakeHandoverId, clientId, boxCount: 1 },
@@ -342,8 +367,35 @@ describe('cargo walks a deal through the funnel', () => {
       actorId,
     });
     await processPendingEvents();
-    expect(await stageOf(dealId)).toBe(stHanded.id);
+    expect(await stageOf(dealId)).toBe(stPartial.id);
+    // A handover moves only what was actually issued: the other client's
+    // deal saw none and stays put.
     expect(await stageOf(otherDealId)).toBe(stDeparted.id);
+  });
+
+  it('the LAST box hands the deal fully; a single-shipment deal skips the partial stop', async () => {
+    await issueBox(await boxOf(receipt2), fakeHandover2Id);
+    await emitEvent(db, {
+      type: 'BoxIssued',
+      payload: { handoverId: fakeHandover2Id, clientId, boxCount: 1 },
+      entityType: 'client',
+      entityId: clientId,
+      actorId,
+    });
+    // The other client's ONE box goes out in one handover — everything is
+    // issued at once, so the deal jumps straight past ready AND the partial
+    // stop, from «jo'nadi» to «topshirildi».
+    await issueBox(await boxOf(otherReceipt), fakeHandover3Id);
+    await emitEvent(db, {
+      type: 'BoxIssued',
+      payload: { handoverId: fakeHandover3Id, clientId: otherClientId, boxCount: 1 },
+      entityType: 'client',
+      entityId: otherClientId,
+      actorId,
+    });
+    await processPendingEvents();
+    expect(await stageOf(dealId)).toBe(stHanded.id);
+    expect(await stageOf(otherDealId)).toBe(stHanded.id);
   });
 
   it('a won deal is settled — cargo does not reopen it', async () => {

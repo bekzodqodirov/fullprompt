@@ -1458,8 +1458,9 @@
     "triggerDeparted": "Машина выехала",
     "triggerArrived": "Машина разгружена",
     "triggerReady": "Готов к выдаче",
-    "triggerHanded": "Выдан клиенту",
-    "triggerOnLost": "На проигранный этап автопереход не ставится"
+    "triggerHanded": "Выдан клиенту полностью",
+    "triggerOnLost": "На проигранный этап автопереход не ставится",
+    "triggerHandedPartial": "Частично выдан клиенту"
   },
   "automation": {
     "title": "Правила автоматизации",

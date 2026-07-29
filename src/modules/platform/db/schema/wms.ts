@@ -1117,7 +1117,7 @@ export const dealStages = pgTable(
     ),
     check(
       'deal_stages_cargo_trigger_check',
-      sql`${t.cargoTrigger} IS NULL OR ${t.cargoTrigger} IN ('received', 'departed', 'arrived', 'ready', 'handed')`,
+      sql`${t.cargoTrigger} IS NULL OR ${t.cargoTrigger} IN ('received', 'departed', 'arrived', 'ready', 'handed_partial', 'handed')`,
     ),
   ],
 );

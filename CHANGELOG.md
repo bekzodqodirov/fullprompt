@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## «Qisman topshirildi»: bo'linib kelgan yukda bitim oxirgi karobkani kutadi — 2026-07-29
+
+Sizning taklifingiz bo'yicha («topshirildidan oldin qisman topshirildi
+degan joy bo'lsa, o'sha yerda turadi hammasi topshirilgungacha»):
+
+- Etap sozlamasida yangi holat bor: **«Qisman topshirildi»**. Shu holatli
+  etap ochsangiz (masalan, «Topshirildi»dan oldin), bo'linib kelgan yukning
+  birinchi qismi mijozga berilganda bitim o'sha yerga o'tadi va turadi.
+- **«Mijozga to'liq topshirildi»** endi aniq ma'noda: bitimning HAMMA
+  karobkasi mijoz qo'liga tekkandagina yonadi. Yo'qolgan yoki bekor
+  qilingan karobka hisobga olinmaydi — u hech qachon topshirilmaydi, va
+  bitimni abadiy «qisman»da ushlab turmasligi kerak.
+- Bo'linmagan oddiy yuk bitta topshiruvda to'liq chiqadi — bunday bitim
+  «qisman»ga kirmasdan to'g'ri «topshirildi»ga sakraydi.
+- Qolgan etaplar avvalgidek birinchi qism bo'yicha yuradi: birinchi prixod
+  «qabul qilindi»ni, birinchi mashina «jo'nadi»ni yoqadi.
+
+Tekshirildi: 779 unit/integration + 92 e2e yashil. Migratsiya: 0051
+(faqat ruxsat ro'yxatiga bitta qiymat qo'shadi, ma'lumotga tegilmaydi).
+
 ## Bitim varonkasi yukka ergashadi: yuk holati o'zgarsa bitim etapga o'zi o'tadi — 2026-07-29
 
 Ro'yxatingizdagi 6-band («ha zor bo'lardi» degansiz):

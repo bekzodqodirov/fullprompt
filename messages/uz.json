@@ -1458,8 +1458,9 @@
     "triggerDeparted": "Mashina jo'nadi",
     "triggerArrived": "Mashina tushirildi",
     "triggerReady": "Topshirishga tayyor",
-    "triggerHanded": "Mijozga topshirildi",
-    "triggerOnLost": "Yo'qotilgan etapga avto-o'tish qo'yib bo'lmaydi"
+    "triggerHanded": "Mijozga to'liq topshirildi",
+    "triggerOnLost": "Yo'qotilgan etapga avto-o'tish qo'yib bo'lmaydi",
+    "triggerHandedPartial": "Qisman topshirildi"
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

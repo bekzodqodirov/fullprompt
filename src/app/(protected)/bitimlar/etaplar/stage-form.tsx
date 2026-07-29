@@ -113,6 +113,7 @@ export function DealStageForm({ stage }: { stage?: DealStageRow }) {
           <option value="departed">{td('triggerDeparted')}</option>
           <option value="arrived">{td('triggerArrived')}</option>
           <option value="ready">{td('triggerReady')}</option>
+          <option value="handed_partial">{td('triggerHandedPartial')}</option>
           <option value="handed">{td('triggerHanded')}</option>
         </select>
         <button

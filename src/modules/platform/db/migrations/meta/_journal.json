@@ -358,6 +358,13 @@
       "when": 1785190000019,
       "tag": "0050_deal_stage_cargo_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1785190000020,
+      "tag": "0051_deal_stage_partial_trigger",
+      "breakpoints": true
     }
   ]
 }

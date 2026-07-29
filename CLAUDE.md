@@ -121,8 +121,8 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-778 unit/integration + 92 e2e, verified in CI's order on a fresh database.
-Latest migration: **0050** (`deal_stage_cargo_trigger`).
+779 unit/integration + 92 e2e, verified in CI's order on a fresh database.
+Latest migration: **0051** (`deal_stage_partial_trigger`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -553,6 +553,19 @@ forward-only strip, kind-guard strip, hook stub (5 event tests red, link
 test green). Test file drains pending events BEFORE minting trigger
 stages — its stages are CONFIGURATION while they exist.
 
+Round 27 — the owner's split-shipment rule (#395), his design verbatim:
+first part drives the early stages, and before «topshirildi» the deal
+parks at a **«qisman topshirildi»** stage until everything is handed.
+`handed` REDEFINED = every box of the deal's cargo issued (safe: round 26
+never deployed, no trigger configured anywhere); new trigger value
+`handed_partial` (migration 0051 widens the CHECK) is only ever a TARGET
+— on BoxIssued, `dealFullyIssued(dealId)` (lost/void out of the
+denominator, ≥1 real issue required — the deferral's lesson) splits deals
+between the two targets. Single-shipment deals skip the partial stop;
+no partial stage configured = deal waits at its column. Red-proof: split
+stripped → partial test red. i18n: triggerHandedPartial ×4, triggerHanded
+re-worded «to'liq».
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
@@ -579,7 +592,7 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations up to 0050 — back up first; the compose
+**Deploy the branch** (migrations up to 0051 — back up first; the compose
 change recreates the postgres container, ~5-15 s outage: off-hours, run
 `free -h` first and halve the tuned values on a 2 GB box) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not

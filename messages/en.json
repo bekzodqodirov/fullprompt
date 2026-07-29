@@ -1458,8 +1458,9 @@
     "triggerDeparted": "Truck departed",
     "triggerArrived": "Unloaded at destination",
     "triggerReady": "Ready for pickup",
-    "triggerHanded": "Handed to client",
-    "triggerOnLost": "A lost stage cannot have an auto-move"
+    "triggerHanded": "Fully handed to client",
+    "triggerOnLost": "A lost stage cannot have an auto-move",
+    "triggerHandedPartial": "Partially handed to client"
   },
   "automation": {
     "title": "Automation rules",

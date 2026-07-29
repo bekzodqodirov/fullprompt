@@ -326,12 +326,43 @@ export async function linkReceipt(
 // ---------------------------------------------------------------------------
 
 /**
- * The cargo states a stage may follow — exactly the five moments the
- * warehouse already announces as events, in the order cargo lives them.
- * The migration's CHECK constraint repeats this list.
+ * The cargo states a stage may follow, in the order cargo lives them. Five
+ * are the moments the warehouse announces as events; `handed_partial` is the
+ * owner's round-27 addition for split shipments — the first handover parks
+ * the deal there, and `handed` fires only once EVERYTHING is in the client's
+ * hands. The migration's CHECK constraint repeats this list.
  */
-export const CARGO_TRIGGERS = ['received', 'departed', 'arrived', 'ready', 'handed'] as const;
+export const CARGO_TRIGGERS = [
+  'received',
+  'departed',
+  'arrived',
+  'ready',
+  'handed_partial',
+  'handed',
+] as const;
 export type CargoTrigger = (typeof CARGO_TRIGGERS)[number];
+
+/**
+ * Is every box of the deal's linked cargo in the client's hands?
+ *
+ * The denominator excludes lost and void boxes — they will never be issued,
+ * and counting them would park the deal at «qisman topshirildi» for ever,
+ * which is the deferral's lesson retold (deviation.ts). At least one box must
+ * actually be issued: a deal whose entire cargo was voided is not "handed".
+ */
+export async function dealFullyIssued(dealId: string): Promise<boolean> {
+  const outstanding = notInArray(boxes.status, ['issued', 'lost', 'void']);
+  const [row] = await db
+    .select({
+      issued: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'issued')`,
+      outstanding: sql<number>`count(*) FILTER (WHERE ${outstanding})`,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(and(eq(receipts.dealId, dealId), isNull(receipts.voidedAt)));
+  return Number(row?.issued ?? 0) > 0 && Number(row?.outstanding ?? 0) === 0;
+}
 
 export const dealStageSchema = z.object({
   name: z.string().trim().min(2).max(120),

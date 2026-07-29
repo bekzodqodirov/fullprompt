@@ -1458,8 +1458,9 @@
     "triggerDeparted": "车辆已发出",
     "triggerArrived": "已到达卸货",
     "triggerReady": "可提货",
-    "triggerHanded": "已交付客户",
-    "triggerOnLost": "失败阶段不能设置自动流转"
+    "triggerHanded": "已全部交付客户",
+    "triggerOnLost": "失败阶段不能设置自动流转",
+    "triggerHandedPartial": "部分已交付客户"
   },
   "automation": {
     "title": "自动化规则",
