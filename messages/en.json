@@ -70,7 +70,10 @@
     "flowExpected": "expected: {n}",
     "flowLate": "late: {n}",
     "flowLoading": "loading: {n}",
-    "flowReady": "ready to issue: {n}"
+    "flowReady": "ready to issue: {n}",
+    "flowPlansPending": "awaiting a verdict: {n}",
+    "flowUnassignedPayments": "Payments without a cash box (this month)",
+    "flowRecurringDue": "Recurring costs not posted"
   },
   "dashboard": {
     "title": "Dashboard",

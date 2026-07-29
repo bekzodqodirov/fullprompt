@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Har bir rolga o'z bosh ekrani + partiya kartasi yangi tartibda — 2026-07-29
+
+Sizning 4-bandingiz («buni ham qil»):
+
+- **Sotuvchi** endi ilovani ochsa: katta tugma — **bugungi qo'ng'iroqlar**
+  (soni bilan, kechikkanlari ogohlantirish bilan), ostida voronka (ochiq
+  lidlar soni), **javob kutayotgan suhbatlar**, qarzdor mijozlari va ochiq
+  bitimlari — hammasi jonli son bilan, bir bosishda ochiladi.
+- **Logist**: katta tugma — **tasdiq kutayotgan planlar**, ostida yuklanayotgan
+  partiyalar, kutilayotgan yuklar (kechikkanlari bilan), yo'ldagi mashinalar
+  va xarajati kiritilmagan partiyalar.
+- **Buxgalter**: katta tugma — boshqaruv hisobi (oy raqamlari bilan), ostida
+  qarzdorlar (jami summa, 60 kundan oshgani ogohlantirish bilan), **shu oyda
+  kassaga joylashtirilmagan to'lovlar**, kiritilmagan doimiy xarajatlar va
+  xarajatsiz partiyalar.
+- Kim qaysi ekranni olishi bitta qoidada: tor kasb yutadi (skladchi >
+  logist > sotuvchi > buxgalter); siz (rahbar) atayin plitkali umumiy
+  ko'rinishda qolasiz.
+- **Partiya kartasi** endi bitim kartasidek: tepada kod, holat (rangli),
+  asosiy amal tugmalari; keng ustunda yuk tarkibi va xarajatlar jadvali;
+  yon panelda mashina, haydovchi telefoni, bojxona hujjatlari, narxlash,
+  kuzatuv — kompyuterda yon panel yopishib turadi, telefonda tartib
+  avvalgidek qulay. Hech bir amal joyidan ham, ruxsatidan ham o'zgargani
+  yo'q.
+
+Tekshirildi: yangi bazada 708 unit/integration + 86 e2e yashil (3 tasi
+yangi rol-ekran testlari); partiya kartasining barcha eski testlari
+o'zgarishsiz o'tdi. Migratsiya YO'Q.
+
 ## Telefonda CRM: suriladigan kanban, qulay yozish, chatdan rasm yuborish — 2026-07-29
 
 Sizning 3-bandingiz («mobile friendly crm qilib ber kanban viewlarni» +

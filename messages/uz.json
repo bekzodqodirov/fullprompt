@@ -70,7 +70,10 @@
     "flowExpected": "kutilmoqda: {n}",
     "flowLate": "kechikkan: {n}",
     "flowLoading": "yuklanmoqda: {n}",
-    "flowReady": "topshirishga tayyor: {n} quti"
+    "flowReady": "topshirishga tayyor: {n} quti",
+    "flowPlansPending": "qaror kutyapti: {n}",
+    "flowUnassignedPayments": "Kassaga joylashtirilmagan to‘lovlar (shu oy)",
+    "flowRecurringDue": "Doimiy xarajatlar kiritilmagan"
   },
   "dashboard": {
     "title": "Dashboard",

@@ -70,7 +70,10 @@
     "flowExpected": "ожидается: {n}",
     "flowLate": "опаздывает: {n}",
     "flowLoading": "грузится: {n}",
-    "flowReady": "к выдаче: {n} кор."
+    "flowReady": "к выдаче: {n} кор.",
+    "flowPlansPending": "решения ждут: {n}",
+    "flowUnassignedPayments": "Платежи без кассы (за месяц)",
+    "flowRecurringDue": "Постоянные расходы не проведены"
   },
   "dashboard": {
     "title": "Дашборд",

@@ -31,9 +31,25 @@ import { BatchCodeForm } from './batch-code-form';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
 import { BackLink } from '@/components/back-link';
+import { CardCols } from '@/components/card-cols';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
+
+/**
+ * The status chip wears the stage's colour so the card answers "where is
+ * this trip" before a word is read. A lookup of full literal classes —
+ * Tailwind cannot see a class built at runtime.
+ */
+const STATUS_CLASS: Record<string, string> = {
+  forming: 'bg-surface-sunken text-ink-700',
+  loading: 'bg-warn/10 text-warn',
+  in_transit: 'bg-brand-50 text-brand-700',
+  arrived: 'bg-good/10 text-good',
+  unloaded: 'bg-good/10 text-good',
+  closed: 'bg-surface-sunken text-ink-500',
+  cancelled: 'bg-bad/10 text-bad',
+};
 
 export default async function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -160,7 +176,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         .orderBy(asc(receiptLots.letter), asc(boxes.shortCode));
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
+    // Full width like the other redesigned cards: the header block (code,
+    // status, THE stage action) stays above the grid — CardCols renders its
+    // rail first on a phone, and the loading button must never sit under six
+    // folded panels.
+    <div className="space-y-4">
       <BackLink href="/batches" label={t('title')} />
       <div className="card space-y-2">
         <div className="flex flex-wrap items-baseline gap-2">
@@ -175,7 +195,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <span className="font-mono font-bold">
             {originCode} → {destCode}
           </span>
-          <span className="rounded bg-surface-sunken px-2 py-0.5 text-sm font-semibold">
+          <span
+            className={`rounded px-2 py-0.5 text-sm font-semibold ${
+              STATUS_CLASS[batch.status] ?? 'bg-surface-sunken text-ink-700'
+            }`}
+          >
             {t(`statuses.${batch.status}`)}
           </span>
           <span className="ml-auto text-xs text-ink-500">
@@ -259,6 +283,92 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         )}
       </div>
 
+      <CardCols
+        main={
+          <>
+      <div className="card space-y-1">
+        <h2 className="text-lg font-bold">{t('contents')}</h2>
+        {lots.map((lot) => (
+          <div key={lot.lotId} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
+            <span className="font-mono font-extrabold text-brand-700">
+              {lot.clientCode ?? lot.marking ?? '?'}-{lot.letter}
+            </span>
+            <span className="min-w-0 flex-1 truncate">{lot.productNameZh}</span>
+            <span className="font-semibold">
+              {lot.loaded}/{Number(lot.loaded) + Number(lot.planned)} 📦
+            </span>
+          </div>
+        ))}
+        {lots.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
+      </div>
+
+      {loadedBoxes.length > 0 && (
+        <details className="card">
+          <summary className="cursor-pointer text-lg font-bold">
+            🧾 {t('loadedBoxes')} ({loadedBoxes.length})
+          </summary>
+          <div className="mt-2 space-y-1 text-sm">
+            {[...loadedBoxes
+              .reduce((acc, b) => {
+                const label = `${b.clientCode ?? b.marking ?? '?'}-${b.letter}`;
+                acc.set(label, [...(acc.get(label) ?? []), b.shortCode]);
+                return acc;
+              }, new Map<string, string[]>())
+              .entries()].map(([label, codes]) => (
+              <p key={label} className="border-b border-line py-1 last:border-0">
+                <span className="font-mono font-extrabold text-brand-700">{label}</span>{' '}
+                <span className="font-mono text-xs text-ink-700">{codes.join(', ')}</span>
+              </p>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {costSheet && costMeta && (
+        <div className="card space-y-2">
+          <h2 className="text-lg font-bold">💰 {t('costs')}</h2>
+          <CostPanel
+            scope="batch"
+            targetId={batch.id}
+            entries={costSheet.entries.map(({ entry, typeName, clientCode }) => ({
+              id: entry.id,
+              typeName,
+              amount: entry.amount,
+              currency: entry.currency,
+              amountUsd: entry.amountUsd,
+              costDate: entry.costDate,
+              allocationBasis: entry.allocationBasis,
+              note: entry.note,
+              clientCode,
+            }))}
+            costTypes={costMeta.types}
+            currencies={costMeta.currencies}
+            clientOptions={costMeta.clients}
+            defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
+            canEdit={canEnterCosts}
+          />
+          {costSheet.entries.length > 0 && (
+            <p className="border-t border-line pt-2 text-sm">
+              <b>Σ ${costSheet.totalUsd}</b>
+              {costSheet.usdPerKg !== null && (
+                <span className="text-ink-700">
+                  {' '}· ${costSheet.usdPerKg}/kg · ${costSheet.usdPerM3}/m³ ({costSheet.boxCount} 📦,{' '}
+                  {costSheet.kg} kg, {costSheet.m3} m³)
+                </span>
+              )}
+              {costSheet.unconverted > 0 && (
+                <span className="ml-2 rounded bg-orange-100 px-1.5 text-xs font-semibold text-orange-800">
+                  ⚠️ {costSheet.unconverted}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+          </>
+        }
+        rail={
+          <>
       {(actor.permissions.has('ved.docs') || actor.permissions.has('plans.manage')) && (
         <Panel title={`📑 ${t('vedDocs')}`}>
           <div className="flex flex-wrap gap-2">
@@ -419,87 +529,6 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         </Link>
       )}
 
-
-      {costSheet && costMeta && (
-        <div className="card space-y-2">
-          <h2 className="text-lg font-bold">💰 {t('costs')}</h2>
-          <CostPanel
-            scope="batch"
-            targetId={batch.id}
-            entries={costSheet.entries.map(({ entry, typeName, clientCode }) => ({
-              id: entry.id,
-              typeName,
-              amount: entry.amount,
-              currency: entry.currency,
-              amountUsd: entry.amountUsd,
-              costDate: entry.costDate,
-              allocationBasis: entry.allocationBasis,
-              note: entry.note,
-              clientCode,
-            }))}
-            costTypes={costMeta.types}
-            currencies={costMeta.currencies}
-            clientOptions={costMeta.clients}
-            defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
-            canEdit={canEnterCosts}
-          />
-          {costSheet.entries.length > 0 && (
-            <p className="border-t border-line pt-2 text-sm">
-              <b>Σ ${costSheet.totalUsd}</b>
-              {costSheet.usdPerKg !== null && (
-                <span className="text-ink-700">
-                  {' '}· ${costSheet.usdPerKg}/kg · ${costSheet.usdPerM3}/m³ ({costSheet.boxCount} 📦,{' '}
-                  {costSheet.kg} kg, {costSheet.m3} m³)
-                </span>
-              )}
-              {costSheet.unconverted > 0 && (
-                <span className="ml-2 rounded bg-orange-100 px-1.5 text-xs font-semibold text-orange-800">
-                  ⚠️ {costSheet.unconverted}
-                </span>
-              )}
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="card space-y-1">
-        <h2 className="text-lg font-bold">{t('contents')}</h2>
-        {lots.map((lot) => (
-          <div key={lot.lotId} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
-            <span className="font-mono font-extrabold text-brand-700">
-              {lot.clientCode ?? lot.marking ?? '?'}-{lot.letter}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{lot.productNameZh}</span>
-            <span className="font-semibold">
-              {lot.loaded}/{Number(lot.loaded) + Number(lot.planned)} 📦
-            </span>
-          </div>
-        ))}
-        {lots.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
-      </div>
-
-      {loadedBoxes.length > 0 && (
-        <details className="card">
-          <summary className="cursor-pointer text-lg font-bold">
-            🧾 {t('loadedBoxes')} ({loadedBoxes.length})
-          </summary>
-          <div className="mt-2 space-y-1 text-sm">
-            {[...loadedBoxes
-              .reduce((acc, b) => {
-                const label = `${b.clientCode ?? b.marking ?? '?'}-${b.letter}`;
-                acc.set(label, [...(acc.get(label) ?? []), b.shortCode]);
-                return acc;
-              }, new Map<string, string[]>())
-              .entries()].map(([label, codes]) => (
-              <p key={label} className="border-b border-line py-1 last:border-0">
-                <span className="font-mono font-extrabold text-brand-700">{label}</span>{' '}
-                <span className="font-mono text-xs text-ink-700">{codes.join(', ')}</span>
-              </p>
-            ))}
-          </div>
-        </details>
-      )}
-
       <TasksPanel
         entityType="batch"
         entityId={batch.id}
@@ -510,6 +539,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         entityType="batch"
         entityId={batch.id}
         revalidate={`/batches/${batch.id}`}
+      />
+          </>
+        }
       />
     </div>
   );

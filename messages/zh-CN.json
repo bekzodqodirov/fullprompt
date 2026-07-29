@@ -70,7 +70,10 @@
     "flowExpected": "待到货：{n}",
     "flowLate": "已逾期：{n}",
     "flowLoading": "装车中：{n}",
-    "flowReady": "待交付：{n} 箱"
+    "flowReady": "待交付：{n} 箱",
+    "flowPlansPending": "待审核：{n}",
+    "flowUnassignedPayments": "未指定账户的收款（本月）",
+    "flowRecurringDue": "固定支出未登记"
   },
   "dashboard": {
     "title": "仪表盘",

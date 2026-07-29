@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-703 unit/integration + 83 e2e, verified in CI's order on a fresh database.
+708 unit/integration + 86 e2e, verified in CI's order on a fresh database.
 Latest migration: **0043** (`tg_outbox.attachment_id` + relaxed body CHECK).
 
 Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
@@ -330,14 +330,33 @@ live against Telegram (no network here): the send path's gramjs call is
 covered by rules-tests + the queue/claim/echo integration suite, and the
 first real photo send should be watched in docker logs.
 
+Round 15 — the owner's item 4 (#373-374, «buni ham qil»). All four working
+roles now wake to a workflow home: ONE resolver (`wms/home/role-flows.ts`
+`buildHomeFlow`, narrowest job wins, warehouse scope beats all, admin/
+super_admin deliberately keep tiles — m9o's tripwire). Sales = calls hero
+(followUps) + funnel/waiting-chats/debtors/open-deals; logist = verdict
+queue hero + warehouseFlowCounts reused UNSCOPED + /transit + cost-missing;
+accountant = /accounting hero + receivables (warn >60d) + THIS-month
+unplaced payments (month-bounded on purpose) + recurring-due (mirrors
+generateRecurring's idempotence predicate; a VOIDED posting counts as due
+again — tested) + cost-missing via /dashboard (his /batches gate bounces).
+Suppressed-tile list rides on the flow (`flow.hrefs`). New testids
+`{logist,sales,acc}-flow-*`; e2e m9s (3 tests, m9o's discipline: digits +
+testids, arrival-promise count moved and moved back). Batch card adopted
+CardCols: header block (h1 FIRST — m9m reads `h1.first()`; STATUS_CLASS
+literal colour map; pair code; stage actions) stays ABOVE the grid (rail
+renders first on phones), main = contents/loaded-boxes/costs, rail =
+VED/vehicle/driver/tracking/pricing/tasks/fields. Zero testid changes —
+every m3/m4/m5/m9/m9m batch-card assertion passed untouched. New i18n keys
+×4: home.flowPlansPending/flowUnassignedPayments/flowRecurringDue.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
-tur»).** His agreed order after that: (4) remaining role homes (sotuvchi,
-logist, buxgalter) + batch card redesign, (5) phases 4/6/7/8 + open deal
-items. Telegram/CRM still queued: tg-import media backfill, edited-message
-updates, deleting excluded chats' old rows, `listConversations` index,
-Siroj's account (owner decides when).
+tur»).** His agreed order after that: (5) phases 4/6/7/8 + open deal
+items — «mukammal». Telegram/CRM still queued: tg-import media backfill,
+edited-message updates, deleting excluded chats' old rows,
+`listConversations` index, Siroj's account (owner decides when).
 
 Explicitly parked by the owner: crate loading is not to be touched further.
 
