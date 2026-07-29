@@ -86,7 +86,7 @@ export const NAV: NavGroupSpec[] = [
         shortKey: 'arrivals',
         labelKey: 'title',
         namespace: 'arrivals',
-        icon: 'inbox',
+        icon: 'clock',
         permissions: ['receipts.create', 'scan.unload', 'crm.leads'],
       },
       {
@@ -112,7 +112,7 @@ export const NAV: NavGroupSpec[] = [
         href: '/approvals',
         labelKey: 'approvalsTitle',
         namespace: 'issue',
-        icon: 'handshake',
+        icon: 'check',
         permissions: ['finance.debt_override'],
       },
       {
@@ -139,7 +139,7 @@ export const NAV: NavGroupSpec[] = [
       { href: '/map', labelKey: 'title', namespace: 'map', icon: 'map' },
       // Phase 8: the owner's own lists. Everyone may READ them — they are the
       // reference lists staff keep current; writing is gated per list.
-      { href: '/o', labelKey: 'customLists', namespace: 'nav', icon: 'boxes' },
+      { href: '/o', labelKey: 'customLists', namespace: 'nav', icon: 'menu' },
       {
         href: '/dashboard',
         labelKey: 'title',
@@ -224,7 +224,7 @@ export const NAV: NavGroupSpec[] = [
         shortKey: 'myClients',
         labelKey: 'myClients',
         namespace: 'cargo',
-        icon: 'users',
+        icon: 'user',
         permissions: ['crm.leads', 'clients.manage'],
       },
       {
@@ -252,7 +252,7 @@ export const NAV: NavGroupSpec[] = [
         href: '/pipeline',
         labelKey: 'title',
         namespace: 'pipeline',
-        icon: 'chart',
+        icon: 'report',
         roles: ['sales_manager'],
       },
     ],

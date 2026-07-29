@@ -61,9 +61,6 @@ export default async function HomePage() {
       groups.push({ title: t(group.titleKey as 'sectionInfo'), items });
   }
 
-  const [first, ...rest] = groups[0]?.items ?? [];
-  const firstGroupTitle = groups[0]?.title;
-
   // Work somebody gave THIS person, on the screen everyone opens.
   //
   // Load-bearing rather than decorative: warehouse staff no longer carry
@@ -115,33 +112,9 @@ export default async function HomePage() {
         ) : (
           <AccountantFlow flow={flow.counts} />
         )
-      ) : (
-        first && (
-          <Section title={firstGroupTitle}>
-            {/* The primary action gets the width and the colour; the rest of
-                the group sits under it at half size. */}
-            <Link
-              href={first.href}
-              className="flex items-center gap-3 rounded-2xl bg-brand-600 p-4 text-white shadow-card transition-transform duration-100 active:scale-[0.99]"
-            >
-              <span className="grid h-12 w-12 place-items-center rounded-xl bg-surface-raised/15">
-                <Icon name={first.icon} className="h-6 w-6" strokeWidth={2} />
-              </span>
-              <span className="text-lg font-bold">{first.label}</span>
-              <Icon name="chevronRight" className="ml-auto h-5 w-5 opacity-70" />
-            </Link>
-            {rest.length > 0 && (
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-                {rest.map((item) => (
-                  <Tile key={item.href} {...item} />
-                ))}
-              </div>
-            )}
-          </Section>
-        )
-      )}
+      ) : null}
 
-      {(flow ? groups : groups.slice(1)).map((group) => (
+      {groups.map((group) => (
         <Section key={group.title} title={group.title}>
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
             {group.items.map((item) => (
@@ -174,22 +147,18 @@ async function WarehouseFlow({ flow }: { flow: WarehouseFlowCounts }) {
 
   return (
     <Section title={t('flowTitle')}>
-      <Link
-        href="/receive"
-        data-testid="flow-receive"
-        className="flex items-center gap-3 rounded-2xl bg-brand-600 p-4 text-white shadow-card transition-transform duration-100 active:scale-[0.99]"
-      >
-        <span className="grid h-12 w-12 place-items-center rounded-xl bg-surface-raised/15">
-          <Icon name="inbox" className="h-6 w-6" strokeWidth={2} />
-        </span>
-        <span className="text-lg font-bold">{t('receiving')}</span>
-        <Icon name="chevronRight" className="ml-auto h-5 w-5 opacity-70" />
-      </Link>
-
       <div className="space-y-2">
         <FlowRow
-          href="/arrivals"
+          href="/receive"
           icon="inbox"
+          testid="flow-receive"
+          label={t('receiving')}
+          count={0}
+          sub={null}
+        />
+        <FlowRow
+          href="/arrivals"
+          icon="clock"
           testid="flow-arrivals"
           label={ta('title')}
           count={incoming}
@@ -251,15 +220,15 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
 
   return (
     <Section title={t('flowTitle')}>
-      <FlowHero
-        href="/plans"
-        icon="clipboard"
-        testid="logist-flow-hero"
-        label={tp('title')}
-        count={flow.plansPending}
-        sub={flow.plansPending > 0 ? t('flowPlansPending', { n: flow.plansPending }) : null}
-      />
       <div className="space-y-2">
+        <FlowRow
+          href="/plans"
+          icon="clipboard"
+          testid="logist-flow-hero"
+        label={tp('title')}
+          count={flow.plansPending}
+          sub={flow.plansPending > 0 ? t('flowPlansPending', { n: flow.plansPending }) : null}
+        />
         <FlowRow
           href="/batches"
           icon="truck"
@@ -270,7 +239,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
         />
         <FlowRow
           href="/arrivals"
-          icon="inbox"
+          icon="clock"
           testid="logist-flow-arrivals"
           label={ta('title')}
           count={incoming}
@@ -290,7 +259,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
         />
         <FlowRow
           href="/transit"
-          icon="truck"
+          icon="map"
           testid="logist-flow-transit"
           label={tb('transitReport')}
           count={wh.trucksIncoming}
@@ -298,7 +267,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
         />
         <FlowRow
           href="/dashboard"
-          icon="chart"
+          icon="wallet"
           testid="logist-flow-costs"
           label={td('costMissing')}
           count={flow.costMissing}
@@ -323,15 +292,16 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
 
   return (
     <Section title={t('flowTitle')}>
-      <FlowHero
-        href="/crm/today"
-        icon="phone"
-        testid="sales-flow-hero"
-        label={tc('today')}
-        count={flow.callsDue}
-        sub={flow.callsOverdue > 0 ? `⚠ ${tt('overdue')} · ${flow.callsOverdue}` : null}
-      />
       <div className="space-y-2">
+        <FlowRow
+          href="/crm/today"
+          icon="phone"
+          testid="sales-flow-hero"
+          label={tc('today')}
+          count={flow.callsDue}
+          warn={flow.callsOverdue > 0}
+          sub={flow.callsOverdue > 0 ? `⚠ ${tt('overdue')} · ${flow.callsOverdue}` : null}
+        />
         <FlowRow
           href="/crm"
           icon="target"
@@ -351,7 +321,7 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
         />
         <FlowRow
           href="/my-clients?filter=debt"
-          icon="users"
+          icon="wallet"
           testid="sales-flow-debtors"
           label={tg('withDebt')}
           count={flow.debtors}
@@ -384,18 +354,18 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
 
   return (
     <Section title={t('flowTitle')}>
-      <FlowHero
-        href="/accounting"
-        icon="briefcase"
-        testid="acc-flow-hero"
-        label={tacc('title')}
-        count={0}
-        sub={`${td('monthCharged')} ${usd(flow.snapshot.revenueMonth)} · ${td('monthPaid')} ${usd(flow.snapshot.paidMonth)}`}
-      />
       <div className="space-y-2">
         <FlowRow
+          href="/accounting"
+          icon="briefcase"
+          testid="acc-flow-hero"
+          label={tacc('title')}
+          count={0}
+          sub={`${td('monthCharged')} ${usd(flow.snapshot.revenueMonth)} · ${td('monthPaid')} ${usd(flow.snapshot.paidMonth)}`}
+        />
+        <FlowRow
           href="/accounting/receivables"
-          icon="clock"
+          icon="wallet"
           testid="acc-flow-receivables"
           label={tacc('receivables')}
           count={flow.snapshot.debtors}
@@ -424,7 +394,7 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
         />
         <FlowRow
           href="/accounting/expenses"
-          icon="doc"
+          icon="calendar"
           testid="acc-flow-recurring"
           label={t('flowRecurringDue')}
           count={flow.recurringDue}
@@ -441,48 +411,6 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
         />
       </div>
     </Section>
-  );
-}
-
-/** The big brand button every flow leads with — the day's one main door. */
-function FlowHero({
-  href,
-  icon,
-  label,
-  sub,
-  count,
-  testid,
-}: {
-  href: string;
-  icon: IconName;
-  label: string;
-  sub: React.ReactNode;
-  count: number;
-  testid: string;
-}) {
-  return (
-    <Link
-      href={href}
-      data-testid={testid}
-      className="flex items-center gap-3 rounded-2xl bg-brand-600 p-4 text-white shadow-card transition-transform duration-100 active:scale-[0.99]"
-    >
-      <span className="grid h-12 w-12 place-items-center rounded-xl bg-surface-raised/15">
-        <Icon name={icon} className="h-6 w-6" strokeWidth={2} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-lg font-bold leading-tight">{label}</span>
-        {sub && <span className="block text-xs text-white/80">{sub}</span>}
-      </span>
-      {count > 0 && (
-        <span
-          data-testid={`${testid}-count`}
-          className="num rounded-full bg-white/20 px-2.5 py-0.5 text-sm font-extrabold"
-        >
-          {count}
-        </span>
-      )}
-      <Icon name="chevronRight" className="h-5 w-5 shrink-0 opacity-70" />
-    </Link>
   );
 }
 

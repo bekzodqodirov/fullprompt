@@ -511,6 +511,15 @@ with the own-role guardrail (unticking your own role's scope =
 self-widening); WAREHOUSE_SCOPED_ROLES stays as the seed bootstrap +
 tripwire anchor. Red-proof: column read stripped → invented-role test red.
 
+Round 24 — home feedback (#390): «1 qatorda 1 button o'xshamabti».
+FlowHero deleted; every hero (warehouse receive, logist plans, sales
+today, accountant money, tile-home first action) is now an ordinary
+FlowRow/Tile with the SAME testid (m9o/m9s untouched). The /bugun task
+strip deliberately stays (alert, not a door). Icon pass = kill in-screen
+duplicates: arrivals→clock, approvals→check, my-clients→user, /o→menu,
+pipeline→report; flow rows transit→map, debtors/receivables/costs→wallet,
+recurring→calendar. No migration.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab

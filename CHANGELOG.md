@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Bosh ekran: yakka katta tugmalar olib tashlandi, iconkalar tushunarli — 2026-07-29
+
+Fikringiz bo'yicha («1 qatorda 1 button turgan narsalar o'xshamabti»):
+
+- Butun enni egallagan yakka katta tugmalar yo'q endi — skladchidagi katta
+  «Qabul qilish», sotuvchidagi «Bugungi qo'ng'iroqlar», logist va
+  buxgalterdagi kattalar, sizning ekrandagi birinchi katta tugma — hammasi
+  qolganlari bilan bir xil oddiy qator/katakcha bo'ldi. Tartib va sonlar
+  (raqamli belgilar) joyida.
+- «Bugun» ogohlantirish tasmasi qoldi — u tugma emas, faqat muddati kelgan
+  vazifa BORIDA chiqadi.
+- Iconkalar tushunarli qilindi. Asosiy muammo — bitta ekranda BIR XIL
+  iconka ikki xil eshikni anglatishi edi: «Qabul» va «Kutilayotganlar»
+  ikkalasi lotokcha edi (endi kutish — soat), «Berish», «Ruxsatlar» va
+  «Bitimlar» uchtasi qo'l siqish edi (ruxsat — belgi ✓), «Mening
+  mijozlarim» butun mijozlar kitobi iconkasida edi (endi bitta odam),
+  qarzdorlar/pul qatorlari — hamyon, tranzit — xarita, har oylik
+  xarajatlar — kalendar.
+
+Tekshirildi: 766 unit/integration + 92 e2e yashil. Migratsiya yo'q —
+deploy'da faqat yangi build.
+
 ## Yangi rol ham skladga bog'lana oladi — xavfsizlik kemtigi yopildi — 2026-07-29
 
 Rol konstruktoridagi yashirin kemtik: «sklad bilan chegaralanish» dasturda
