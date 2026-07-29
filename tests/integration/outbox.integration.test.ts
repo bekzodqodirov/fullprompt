@@ -147,7 +147,7 @@ describe('once the client has written', () => {
       { clientId, managerUserId: managerId, body: 'Ertaga jo‘naydi' },
       ctx(),
     );
-    const shown = await pendingFor(clientId);
+    const shown = await pendingFor(clientId, managerId);
     expect(shown.map((r) => r.id)).toContain(id);
     expect(shown.find((r) => r.id === id)?.status).toBe('queued');
   });
@@ -215,7 +215,7 @@ describe('the listener taking a job', () => {
     expect(after!.tgMessageId).toBe(987654321n);
     // A sent message belongs in the conversation, which the listener writes
     // when the copy echoes back. Showing it from the queue too would double it.
-    expect(await pendingFor(clientId)).toHaveLength(0);
+    expect(await pendingFor(clientId, managerId)).toHaveLength(0);
   });
 });
 
@@ -241,7 +241,7 @@ describe('when sending goes wrong', () => {
     const [row] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
     expect(row!.status).toBe('failed');
     // And the failure is on the thread, where a person will see it.
-    expect((await pendingFor(clientId)).find((r) => r.id === id)?.status).toBe('failed');
+    expect((await pendingFor(clientId, managerId)).find((r) => r.id === id)?.status).toBe('failed');
   });
 
   it('never guesses about a message that was in flight when the process died', async () => {
@@ -294,7 +294,7 @@ describe('a photo rides along (item 15, the sending half)', () => {
     const [claimed] = await db.select().from(attachments).where(eq(attachments.id, file.id));
     expect(claimed!.entityId).toBe(id);
     // …and the thread can show what is about to go out.
-    expect((await pendingFor(clientId)).find((r) => r.id === id)?.attachmentId).toBe(file.id);
+    expect((await pendingFor(clientId, managerId)).find((r) => r.id === id)?.attachmentId).toBe(file.id);
   });
 
   it('refuses a stranger’s upload, a non-photo, and an oversized photo', async () => {
@@ -426,7 +426,7 @@ describe('changing your mind', () => {
     await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
     const { id } = await queueReply({ clientId, managerUserId: managerId, body: 'bekor' }, ctx());
     await cancelQueued(id, ctx());
-    expect(await pendingFor(clientId)).toHaveLength(0);
+    expect(await pendingFor(clientId, managerId)).toHaveLength(0);
   });
 
   it('cannot recall one that is already on somebody’s phone', async () => {

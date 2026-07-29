@@ -41,7 +41,9 @@ export default async function ConversationsPage({
   }
   const t = await getTranslations('crm');
   const { q } = await searchParams;
-  const rows = await listConversations(q);
+  // Own account only: this list is "MY chats", never the company's (owner,
+  // 2026-07-29 — each manager talks to clients from their own Telegram).
+  const rows = await listConversations(actor.id, q);
 
   // Answering is gated tighter than reading (`clients.manage`), and a manager
   // counts only their OWN waiting chats — the owner counts everybody's.

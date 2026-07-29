@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { tgMessages, users } from '@/modules/platform/db/schema';
@@ -65,7 +65,9 @@ export async function TelegramThread({
       })
       .from(tgMessages)
       .innerJoin(users, eq(tgMessages.managerUserId, users.id))
-      .where(eq(tgMessages.clientId, clientId))
+      // Own account only (owner, 2026-07-29): the panel shows the viewer's
+      // conversation with this client, never a colleague's.
+      .where(and(eq(tgMessages.clientId, clientId), eq(tgMessages.managerUserId, actor.id)))
       .orderBy(desc(tgMessages.sentAt))
       .limit(limit),
   );
@@ -77,7 +79,7 @@ export async function TelegramThread({
   // Replies that have not gone yet. Shown here too, because a manager who
   // answered from this very panel must see that the answer is still waiting —
   // otherwise the panel looks exactly as it did before they typed.
-  const queued = await pendingFor(clientId);
+  const queued = await pendingFor(clientId, actor.id);
 
   return (
     <section className="card space-y-2" data-testid="tg-thread">

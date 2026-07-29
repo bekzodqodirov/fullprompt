@@ -9,7 +9,7 @@ export async function GET() {
   if (!actor.permissions.has('crm.leads') && !actor.permissions.has('clients.manage')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
-  const rows = await listConversations();
+  const rows = await listConversations(actor.id);
   return NextResponse.json({
     conversations: rows.slice(0, 100).map((row) => ({
       clientId: row.clientId,

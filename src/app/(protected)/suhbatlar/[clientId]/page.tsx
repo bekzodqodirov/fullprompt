@@ -44,8 +44,8 @@ export default async function ConversationPage({
   const { clientId } = await params;
   const [client, messages, queued] = await Promise.all([
     conversationClient(clientId),
-    conversationFor(clientId),
-    pendingFor(clientId),
+    conversationFor(clientId, actor.id),
+    pendingFor(clientId, actor.id),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');

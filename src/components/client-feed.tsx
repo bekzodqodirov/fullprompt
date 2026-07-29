@@ -116,7 +116,8 @@ export async function ClientFeed({
   }
 
   const t = await getTranslations('crm');
-  const items = await clientFeed(clientId, { limit, leadId, dealId });
+  // The actor's eyes: shared record in full, Telegram lines own-account only.
+  const items = await clientFeed(clientId, actor.id, { limit, leadId, dealId });
 
   return (
     <section className="card space-y-2" data-testid="client-feed">

@@ -31,17 +31,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const attachment = await db.query.attachments.findFirst({ where: eq(attachments.id, id) });
   if (!attachment) return new Response('Not found', { status: 404 });
 
-  // LOG-ONLY for now: the decision is computed and a would-deny is written to
-  // stdout ([attachment-authz] — greppable in docker logs), but the bytes are
-  // still served. The flip to enforcing 404 comes only after the logs have
-  // been read on real traffic — a wrong mapping here would blank screens
-  // people use daily. Deliberately not writeAudit: one card view can fetch
-  // thirty photos, and the audit log is the immutable business record.
+  // LOG-ONLY for most types: the decision is computed and a would-deny is
+  // written to stdout ([attachment-authz] — greppable in docker logs), but
+  // the bytes are still served. The general flip to enforcing 404 comes only
+  // after the logs have been read on real traffic — a wrong mapping here
+  // would blank screens people use daily. The exception is the TELEGRAM
+  // branches, which set `enforce` and are refused for real: the owner's
+  // direct instruction (2026-07-29) that one manager's chats are not
+  // another's to read, and a photo URL must not out-read the thread.
+  // Deliberately not writeAudit: one card view can fetch thirty photos, and
+  // the audit log is the immutable business record.
   const decision = await decideAttachmentRead(actor, attachment);
   if (!decision.allow) {
     console.warn(
-      `[attachment-authz] WOULD DENY user=${actor.id} attachment=${attachment.id} entity=${attachment.entityType}/${attachment.entityId} rule=${decision.rule}`,
+      `[attachment-authz] ${decision.enforce ? 'DENY' : 'WOULD DENY'} user=${actor.id} attachment=${attachment.id} entity=${attachment.entityType}/${attachment.entityId} rule=${decision.rule}`,
     );
+    if (decision.enforce) return new Response('Not found', { status: 404 });
   }
 
   const key =

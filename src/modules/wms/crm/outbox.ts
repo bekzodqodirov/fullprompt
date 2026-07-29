@@ -262,7 +262,7 @@ export async function queueReply(
  * listener as an ordinary outgoing message and belongs in the conversation
  * itself; showing it from here too would double it.
  */
-export async function pendingFor(clientId: string): Promise<QueuedReply[]> {
+export async function pendingFor(clientId: string, viewerId: string): Promise<QueuedReply[]> {
   const rows = await db
     .select({
       id: tgOutbox.id,
@@ -278,10 +278,12 @@ export async function pendingFor(clientId: string): Promise<QueuedReply[]> {
     .from(tgOutbox)
     .innerJoin(users, eq(tgOutbox.managerUserId, users.id))
     // 'sending' too: a message in flight is not yet a message, and the thread
-    // must not show it as one.
+    // must not show it as one. Scoped like the thread itself: a queued reply
+    // belongs to the account it will leave from.
     .where(
       and(
         eq(tgOutbox.clientId, clientId),
+        eq(tgOutbox.managerUserId, viewerId),
         sql`${tgOutbox.status} IN ('queued', 'sending', 'failed')`,
       ),
     )

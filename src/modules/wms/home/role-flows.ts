@@ -44,12 +44,14 @@ export async function salesFlowCounts(actorId: string, today: string): Promise<S
     followUps(today, actorId),
     openLeadCount(actorId),
     // The same DISTINCT ON walk `listConversations` does, reduced to one
-    // number: how many threads end with the client's word, company-wide —
-    // the same audience the /suhbatlar screen itself shows.
+    // number: how many of THIS manager's own threads end with the client's
+    // word — the same rows their /suhbatlar screen shows, and no one else's
+    // (a colleague's personal Telegram is not this person's morning list).
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM (
         SELECT DISTINCT ON (client_id) direction
         FROM tg_messages
+        WHERE manager_user_id = ${actorId}
         ORDER BY client_id, sent_at DESC
       ) t WHERE t.direction = 'in'
     `),

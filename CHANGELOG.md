@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## MUHIM tuzatish: Telegram yozishmalari endi FAQAT egasiga ko'rinadi — 2026-07-29
+
+Siz topgan jiddiy xato («nega superadmindan ulangan telegram account
+chatlari hamma accountga korinyabti») yopildi:
+
+- **Nima bo'lgan edi:** baza har bir xabarni «qaysi menejerning
+  akkauntidan» deb TO'G'RI saqlar edi, JAVOB YOZISH ham faqat o'z
+  akkauntidan edi — lekin O'QISH ekranlari buni so'ramas edi. Natijada
+  sizning akkauntingizdan kirgan yozishmalar suhbatlar ro'yxatida,
+  mijoz/lid/bitim kartalaridagi lentada va yon paneldagi chatda
+  ruxsati bor HAR BIR xodimga ko'rinib turgan.
+- **Endi:** suhbat — egasiniki. «Suhbatlar» ro'yxati, chat oynasi,
+  kartadagi lentaning telegram qatorlari, yon panel, bosh ekrandagi
+  «javob kutmoqda» soni, hattoki chatdagi RASMLAR ham — faqat o'sha
+  akkauntni ulagan xodimga. Yuk, pul va izohlar lentada hammaga
+  qoladi — ular firma tarixi, chat esa shaxsiy yozishma.
+- Hech kimga istisno yo'q — sizga ham: siz o'z akkauntingiznikini
+  ko'rasiz, xodimlarnikini emas. **Agar rahbar sifatida hammasini
+  ko'rishni istasangiz — ayting**, buni alohida, ongli qaror sifatida
+  bir qadamda ochamiz (teskarisi ham shunday oson).
+- Kim mijoz bilan gaplashishi (ismi) ko'rinadi — NIMA deyilgani emas.
+  Bu ataylab: «bu mijoz Siroj bilan gaplashadi» degan fakt ishga
+  kerak, yozishmaning mazmuni esa emas.
+- Chat rasmlari uchun himoya endi haqiqiy rad etish (boshqa fayl
+  turlarida hali kuzatuv rejimi — u sizning alohida qaroringizga
+  qoldirilgan, o'zgargani yo'q).
+
+Tekshirildi: yangi bazada 754 unit/integration + 90 e2e yashil. Uchta
+yangi «leak» testi yozildi va har biri himoyani ataylab olib tashlab
+QIZIL bo'lishi ko'rsatildi: ro'yxat/chat, lenta, rasm ruxsati.
+Migratsiya YO'Q — faqat so'rovlar tuzatildi, deploy oddiy (backup +
+yangi build).
+
 ## 8-bosqich: o'z obyektlaringiz — «hech narsa hard-coded bo'lmasin»ning oxirgi bekati — 2026-07-29
 
 Sizning 5-bandingiz («mukammal») ro'yxatidagi OXIRGI ish. Endi tizimga

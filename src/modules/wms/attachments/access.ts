@@ -26,7 +26,17 @@ import { inScope, type ScopedActor } from '../../platform/rbac/scope';
  * Lives in wms, not platform/files: it queries receipts, crates, handovers,
  * crm_activities and tg_messages, and platform must never import wms.
  */
-export type AttachmentAccessDecision = { allow: boolean; rule: string };
+export type AttachmentAccessDecision = {
+  allow: boolean;
+  rule: string;
+  /**
+   * When set on a deny, the route refuses the bytes instead of only logging.
+   * The general flip to enforcement is still the owner's separate decision
+   * (#369); the TELEGRAM branches enforce now on his direct instruction
+   * (2026-07-29): a colleague's chat photo is private, not a log line.
+   */
+  enforce?: boolean;
+};
 
 type ReadActor = ScopedActor & { id: string; permissions: Set<string> };
 
@@ -103,29 +113,38 @@ export async function decideAttachmentRead(
         ? { allow: true, rule: 'crm-activity' }
         : { allow: false, rule: 'crm-no-permission' };
     }
-    // A photo QUEUED to go out — same audience as the thread it will land in.
+    // A photo QUEUED to go out — the audience is the account it leaves from.
     // A pre-bound upload not yet queued has no row and falls to the uploader
     // rule above; once sent, the sender re-binds it to 'tg_message'.
     case 'tg_outbox': {
       const row = await db.query.tgOutbox.findFirst({
         where: eq(tgOutbox.id, attachment.entityId),
-        columns: { id: true },
+        columns: { managerUserId: true, queuedBy: true },
       });
-      if (!row) return { allow: false, rule: 'orphan' };
-      return has('crm.leads', 'clients.manage')
-        ? { allow: true, rule: 'tg-crm' }
-        : { allow: false, rule: 'tg-no-permission' };
+      if (!row) return { allow: false, rule: 'orphan', enforce: true };
+      if (!has('crm.leads', 'clients.manage'))
+        return { allow: false, rule: 'tg-no-permission', enforce: true };
+      return row.managerUserId === actor.id || row.queuedBy === actor.id
+        ? { allow: true, rule: 'tg-own-outbox' }
+        : { allow: false, rule: 'tg-not-own-account', enforce: true };
     }
-    // Telegram chat photos — mirror /suhbatlar's own gate.
+    // Telegram chat photos — the thread's own rule (owner, 2026-07-29): a
+    // conversation lives on ONE manager's personal account, and only that
+    // manager reads it. Permission alone stopped being enough the day the
+    // screens were scoped — a photo URL must not out-read the screen it came
+    // from. These two branches ENFORCE (the rest of the file stays log-only
+    // until the owner flips it, #369).
     case 'tg_message': {
       const row = await db.query.tgMessages.findFirst({
         where: eq(tgMessages.id, attachment.entityId),
-        columns: { id: true },
+        columns: { managerUserId: true },
       });
-      if (!row) return { allow: false, rule: 'orphan' };
-      return has('crm.leads', 'clients.manage')
-        ? { allow: true, rule: 'tg-crm' }
-        : { allow: false, rule: 'tg-no-permission' };
+      if (!row) return { allow: false, rule: 'orphan', enforce: true };
+      if (!has('crm.leads', 'clients.manage'))
+        return { allow: false, rule: 'tg-no-permission', enforce: true };
+      return row.managerUserId === actor.id
+        ? { allow: true, rule: 'tg-own-thread' }
+        : { allow: false, rule: 'tg-not-own-account', enforce: true };
     }
     // entity_id is a file-GROUP uuid stored in custom_field_values.value_ref
     // (#180); the record it hangs on decides who may read it. A group with no

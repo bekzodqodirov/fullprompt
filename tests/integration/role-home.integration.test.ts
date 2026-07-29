@@ -180,6 +180,10 @@ describe('the sales home', () => {
     });
     expect((await salesFlowCounts(managerId, TODAY)).waitingChats).toBe(before.waitingChats + 1);
 
+    // The waiting chat is on THIS manager's own Telegram — a colleague's
+    // morning screen must not count it (the 2026-07-29 rule).
+    expect((await salesFlowCounts(clientId, TODAY)).waitingChats).toBe(0);
+
     // The reply flips the thread out of the waiting count.
     await db.insert(tgMessages).values({
       clientId,

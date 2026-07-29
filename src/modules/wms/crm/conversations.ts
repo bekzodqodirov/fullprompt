@@ -26,7 +26,14 @@ export interface ConversationRow {
 }
 
 /**
- * Every client we hold a conversation with, most recently active first.
+ * Every client THE VIEWER holds a conversation with, most recently active
+ * first.
+ *
+ * Scoped to the viewer's own Telegram account (owner, 2026-07-29: each
+ * manager connects their OWN account and talks to clients there — reading a
+ * colleague's personal chats was never the agreement). The schema said this
+ * from birth — «two managers are two conversations» — and the write side
+ * always enforced it; this read simply forgot to ask whose thread it was.
  *
  * `DISTINCT ON` rather than a window function or a subquery per row: postgres
  * walks `tg_messages_client_idx` (client_id, sent_at) once and takes the top
@@ -35,7 +42,10 @@ export interface ConversationRow {
  * obvious way is the difference between an index scan and a sort of the whole
  * table (#152, same lesson).
  */
-export async function listConversations(search?: string): Promise<ConversationRow[]> {
+export async function listConversations(
+  viewerId: string,
+  search?: string,
+): Promise<ConversationRow[]> {
   const q = (search ?? '').trim();
   const rows = await db.execute<{
     client_id: string;
@@ -55,10 +65,12 @@ export async function listConversations(search?: string): Promise<ConversationRo
       m.body,
       m.has_media,
       m.direction,
-      (SELECT count(*) FROM tg_messages n WHERE n.client_id = m.client_id) AS messages
+      (SELECT count(*) FROM tg_messages n
+        WHERE n.client_id = m.client_id AND n.manager_user_id = ${viewerId}) AS messages
     FROM tg_messages m
     JOIN clients c ON c.id = m.client_id
-    ${q ? sql`WHERE c.name ILIKE ${'%' + q + '%'} OR c.client_code ILIKE ${'%' + q + '%'}` : sql``}
+    WHERE m.manager_user_id = ${viewerId}
+    ${q ? sql`AND (c.name ILIKE ${'%' + q + '%'} OR c.client_code ILIKE ${'%' + q + '%'})` : sql``}
     ORDER BY m.client_id, m.sent_at DESC
   `);
 
@@ -104,6 +116,7 @@ export interface ConversationMessage {
  */
 export async function conversationFor(
   clientId: string,
+  viewerId: string,
   limit = 500,
 ): Promise<ConversationMessage[]> {
   const rows = await db
@@ -117,7 +130,9 @@ export async function conversationFor(
     })
     .from(tgMessages)
     .innerJoin(users, eq(tgMessages.managerUserId, users.id))
-    .where(eq(tgMessages.clientId, clientId))
+    // The viewer's own account only — a colleague's thread with the same
+    // client is that colleague's personal Telegram, not a shared record.
+    .where(and(eq(tgMessages.clientId, clientId), eq(tgMessages.managerUserId, viewerId)))
     .orderBy(desc(tgMessages.sentAt))
     .limit(limit);
   // The newest `limit` rows, in that order. Taking the OLDEST n would push the
@@ -158,11 +173,12 @@ export async function conversationClient(clientId: string) {
   return db.query.clients.findFirst({ where: eq(clients.id, clientId) });
 }
 
-/** How many clients we hold a conversation with — for the menu badge. */
-export async function conversationCount(): Promise<number> {
+/** How many clients THE VIEWER holds a conversation with — the menu badge. */
+export async function conversationCount(viewerId: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(DISTINCT ${tgMessages.clientId})` })
-    .from(tgMessages);
+    .from(tgMessages)
+    .where(eq(tgMessages.managerUserId, viewerId));
   return Number(row?.n ?? 0);
 }
 

@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-752 unit/integration + 90 e2e, verified in CI's order on a fresh database.
+754 unit/integration + 90 e2e, verified in CI's order on a fresh database.
 Latest migration: **0047** (`custom_entities_live`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -441,6 +441,28 @@ kill the row (#166). Tasks route x_ codes to `/o/<code>/<id>`. e2e m9w
 deactivates its type at the end (a type is CONFIGURATION, #183). Cut from
 v1, stated: lookup fields AT custom entities, Telegram deep links to
 records, per-record chat.
+
+Round 20 — the owner's leak report (#383-384, «nega superadmindan ulangan
+telegram account chatlari hamma accountga korinyabti»). The schema and the
+WRITE path were per-account from birth (`manager_user_id NOT NULL`,
+replyAccountFor = own account only); every READ ignored the column. Now a
+Telegram conversation is PRIVATE to the manager whose account holds it —
+`listConversations(viewerId,…)`, `conversationFor(clientId, viewerId,…)`,
+`conversationCount(viewerId)`, `pendingFor(clientId, viewerId)`, the
+lenta's two tg branches (`clientFeed(clientId, viewerId, opts)` — viewer
+REQUIRED, not an option, so no caller can forget), both dock routes, the
+sales home waiting-chats count, and the card thread panel. Shared lenta
+sources (cargo/money/notes) stay company-wide; `conversationManagers`
+names deliberately stay (who talks ≠ what was said). NOBODY exempt incl.
+super_admin — a supervision view is a stated, reversible widening away.
+Attachment authz: `enforce` flag on `AttachmentAccessDecision`; ONLY the
+tg_message/tg_outbox branches set it (permission AND own-account; outbox
+also queuedBy) and the route 404s on it — everything else stays log-only
+per #369. Three leak tests (crm list/thread, feed, photo authz) each
+SHOWN red with its guard stripped (#166, string-edit never git checkout).
+No migration. E2E note: m9n/m9r tolerate scoping because integration
+leftovers carry manager = first seeded user (the owner) and m9n already
+asserts the empty state when rows vanish.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

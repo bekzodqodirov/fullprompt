@@ -616,7 +616,7 @@ describe('the conversation list', () => {
       { dir: 'out', body: 'oxirgi javob', at: '2026-05-02T09:00:00Z' },
     ]);
 
-    const rows = await listConversations();
+    const rows = await listConversations(actorId);
     const mine = rows.filter((r) => r.clientId === quiet.id);
     // One row, not one per message — the whole reason for DISTINCT ON.
     expect(mine).toHaveLength(1);
@@ -632,7 +632,7 @@ describe('the conversation list', () => {
       { dir: 'out', body: 'salom', at: '2026-06-01T09:00:00Z' },
       { dir: 'in', body: 'yuk qachon keladi?', at: '2026-06-02T09:00:00Z' },
     ]);
-    const row = (await listConversations()).find((r) => r.clientId === waiting.id)!;
+    const row = (await listConversations(actorId)).find((r) => r.clientId === waiting.id)!;
     expect(row.waitingOnUs).toBe(true);
   });
 
@@ -644,7 +644,7 @@ describe('the conversation list', () => {
     const newer = await clientWith(`CN${suffix}`, [
       { dir: 'in', body: 'yangi', at: '2027-01-05T09:00:00Z' },
     ]);
-    const rows = await listConversations();
+    const rows = await listConversations(actorId);
     const positions = rows.map((r) => r.clientId);
     // Relative, never "is it first in the whole list": a previous run of this
     // same suite leaves conversations behind, and one of them may legitimately
@@ -659,11 +659,11 @@ describe('the conversation list', () => {
     const found = await clientWith(`CS${suffix}`, [
       { dir: 'in', body: 'qidiruv', at: '2026-06-03T09:00:00Z' },
     ]);
-    expect((await listConversations(`CS${suffix}`)).map((r) => r.clientId)).toContain(found.id);
-    expect((await listConversations(`Client CS${suffix}`)).map((r) => r.clientId)).toContain(
+    expect((await listConversations(actorId, `CS${suffix}`)).map((r) => r.clientId)).toContain(found.id);
+    expect((await listConversations(actorId, `Client CS${suffix}`)).map((r) => r.clientId)).toContain(
       found.id,
     );
-    expect(await listConversations('zzz-nothing-matches-zzz')).toHaveLength(0);
+    expect(await listConversations(actorId, 'zzz-nothing-matches-zzz')).toHaveLength(0);
   });
 
   it('reads a thread oldest-first, unlike the card panel', async () => {
@@ -673,7 +673,7 @@ describe('the conversation list', () => {
       { dir: 'out', body: 'ikki', at: '2026-04-02T09:00:00Z' },
       { dir: 'in', body: null, at: '2026-04-03T09:00:00Z', media: true },
     ]);
-    const thread = await conversationFor(client.id);
+    const thread = await conversationFor(client.id, actorId);
     /**
      * NEWEST first — and that is the order both screens depend on.
      *
@@ -685,6 +685,36 @@ describe('the conversation list', () => {
      */
     expect(thread.map((m) => m.body)).toEqual([null, 'ikki', 'bir']);
     expect(thread[0]!.hasMedia).toBe(true);
+  });
+
+  /**
+   * The owner's bug report, 2026-07-29, replayed exactly: his account's chats
+   * were on every colleague's /suhbatlar. A conversation lives on ONE
+   * manager's personal Telegram, and only that manager reads it — the agreed
+   * model was always each-their-own-account; the schema said so
+   * (`manager_user_id NOT NULL`, «two managers are two conversations») and
+   * the reply path enforced it, but every READ merged the accounts.
+   */
+  it("NEVER shows one manager's chats to another — the 2026-07-29 leak", async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const secret = await clientWith(`CP${suffix}`, [
+      { dir: 'in', body: 'maxfiy narx kelishuvi', at: '2026-07-01T09:00:00Z' },
+    ]);
+
+    // The owner (actorId) sees his own thread…
+    expect((await listConversations(actorId)).map((r) => r.clientId)).toContain(secret.id);
+    expect(await conversationFor(secret.id, actorId)).toHaveLength(1);
+
+    // …and a colleague sees NOTHING of it: not on the list, not as a thread,
+    // not even when searching the client by code.
+    const colleague = managerId === actorId ? null : managerId;
+    if (colleague) {
+      expect((await listConversations(colleague)).map((r) => r.clientId)).not.toContain(secret.id);
+      expect(await conversationFor(secret.id, colleague)).toHaveLength(0);
+      expect((await listConversations(colleague, `CP${suffix}`)).map((r) => r.clientId)).not.toContain(
+        secret.id,
+      );
+    }
   });
 });
 

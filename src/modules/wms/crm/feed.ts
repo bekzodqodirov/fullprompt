@@ -92,6 +92,13 @@ interface Row extends Record<string, unknown> {
  */
 export async function clientFeed(
   clientId: string | null,
+  /**
+   * Whose eyes. Cargo, money and notes are the company's shared record; the
+   * two TELEGRAM branches are a manager's personal account and show only to
+   * the manager they belong to (owner, 2026-07-29). A required parameter
+   * rather than an option, so no caller can forget whose lenta it is drawing.
+   */
+  viewerId: string,
   opts: { limit?: number; before?: Date; leadId?: string | null; dealId?: string | null } = {},
 ): Promise<FeedItem[]> {
   const limit = Math.min(Math.max(opts.limit ?? 60, 1), 200);
@@ -132,7 +139,8 @@ export async function clientFeed(
         ) AS meta
       FROM tg_messages m
       JOIN users u ON u.id = m.manager_user_id
-      WHERE m.client_id = ${clientId} AND m.sent_at < ${cutoff}
+      WHERE m.client_id = ${clientId} AND m.manager_user_id = ${viewerId}
+        AND m.sent_at < ${cutoff}
 
       UNION ALL
 
@@ -143,7 +151,7 @@ export async function clientFeed(
         jsonb_build_object('status', o.status, 'error', o.last_error)
       FROM tg_outbox o
       JOIN users u ON u.id = o.manager_user_id
-      WHERE o.client_id = ${clientId}
+      WHERE o.client_id = ${clientId} AND o.manager_user_id = ${viewerId}
         AND o.status IN ('queued', 'sending', 'failed')
         AND o.queued_at < ${cutoff}
 

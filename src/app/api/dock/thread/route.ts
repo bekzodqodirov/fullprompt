@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
   const [client, messages, account, managers] = await Promise.all([
     conversationClient(clientId),
-    conversationFor(clientId, 80),
+    conversationFor(clientId, actor.id, 80),
     replyAccountFor(clientId, actor.id),
     conversationManagers(clientId),
   ]);

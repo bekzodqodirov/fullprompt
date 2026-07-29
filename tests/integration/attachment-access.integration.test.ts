@@ -125,31 +125,45 @@ afterAll(async () => {
   await pgClient.end();
 });
 
-describe('telegram chat photos mirror the /suhbatlar gate', () => {
-  it('a viewer holding only report permissions is refused', async () => {
-    const decision = await decideAttachmentRead(
-      actor(['reports.all_warehouses']),
-      att('tg_message', tgMessageId),
-    );
-    expect(decision).toEqual({ allow: false, rule: 'tg-no-permission' });
+describe("telegram chat photos follow the thread's own-account rule (2026-07-29)", () => {
+  // The uploader short-circuit would mask the branch under test, so the file
+  // is "uploaded" by a third party (the listener writes these rows anyway).
+  const tgAtt = (entityId: string) => ({
+    id: uuidv4(),
+    entityType: 'tg_message',
+    entityId,
+    uploadedBy: uuidv4(),
   });
 
-  it('crm.leads reads them, clients.manage reads them', async () => {
+  it('a viewer holding only report permissions is refused, for real', async () => {
+    const decision = await decideAttachmentRead(
+      actor(['reports.all_warehouses']),
+      tgAtt(tgMessageId),
+    );
+    expect(decision).toEqual({ allow: false, rule: 'tg-no-permission', enforce: true });
+  });
+
+  it("permission alone no longer opens a colleague's chat photo — the leak the owner reported", async () => {
+    // crm.leads or clients.manage used to be enough; now the photo reads only
+    // for the manager whose Telegram the message lives in.
     expect(
-      (await decideAttachmentRead(actor(['crm.leads']), att('tg_message', tgMessageId))).allow,
-    ).toBe(true);
+      await decideAttachmentRead(actor(['crm.leads']), tgAtt(tgMessageId)),
+    ).toEqual({ allow: false, rule: 'tg-not-own-account', enforce: true });
     expect(
-      (await decideAttachmentRead(actor(['clients.manage']), att('tg_message', tgMessageId)))
-        .allow,
-    ).toBe(true);
+      await decideAttachmentRead(actor(['clients.manage']), tgAtt(tgMessageId)),
+    ).toEqual({ allow: false, rule: 'tg-not-own-account', enforce: true });
+
+    // The manager themselves still reads their own thread's photo.
+    const own = await decideAttachmentRead(
+      actor(['crm.leads'], { id: uploaderId }),
+      tgAtt(tgMessageId),
+    );
+    expect(own).toEqual({ allow: true, rule: 'tg-own-thread' });
   });
 
   it('a message row that does not exist is an orphan, not a pass', async () => {
-    const decision = await decideAttachmentRead(
-      actor(['crm.leads']),
-      att('tg_message', uuidv4()),
-    );
-    expect(decision).toEqual({ allow: false, rule: 'orphan' });
+    const decision = await decideAttachmentRead(actor(['crm.leads']), tgAtt(uuidv4()));
+    expect(decision).toEqual({ allow: false, rule: 'orphan', enforce: true });
   });
 });
 
@@ -170,18 +184,32 @@ describe('queued outgoing photos mirror the same gate', () => {
         queuedBy: uploaderId,
       })
       .returning();
+    // Same third-party uploader trick as the tg_message describe: the branch,
+    // not the uploader short-circuit, must decide.
+    const outAtt = (entityId: string) => ({
+      id: uuidv4(),
+      entityType: 'tg_outbox',
+      entityId,
+      uploadedBy: uuidv4(),
+    });
     expect(
-      await decideAttachmentRead(
-        actor(['reports.all_warehouses']),
-        att('tg_outbox', queued!.id),
-      ),
-    ).toEqual({ allow: false, rule: 'tg-no-permission' });
+      await decideAttachmentRead(actor(['reports.all_warehouses']), outAtt(queued!.id)),
+    ).toEqual({ allow: false, rule: 'tg-no-permission', enforce: true });
+    // A colleague with the permission is still not the account it leaves from.
+    expect(await decideAttachmentRead(actor(['crm.leads']), outAtt(queued!.id))).toEqual({
+      allow: false,
+      rule: 'tg-not-own-account',
+      enforce: true,
+    });
+    // The manager it goes out from reads it.
     expect(
-      (await decideAttachmentRead(actor(['crm.leads']), att('tg_outbox', queued!.id))).allow,
+      (await decideAttachmentRead(actor(['crm.leads'], { id: uploaderId }), outAtt(queued!.id)))
+        .allow,
     ).toBe(true);
-    expect(await decideAttachmentRead(actor(['crm.leads']), att('tg_outbox', uuidv4()))).toEqual({
+    expect(await decideAttachmentRead(actor(['crm.leads']), outAtt(uuidv4()))).toEqual({
       allow: false,
       rule: 'orphan',
+      enforce: true,
     });
 
     // A QUEUED outbox row for the primary manager is not inert leftovers —
