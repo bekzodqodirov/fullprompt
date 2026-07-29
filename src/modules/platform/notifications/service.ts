@@ -5,6 +5,8 @@ import {
   clientTelegramLinks,
   events,
   notifications,
+  permissions,
+  rolePermissions,
   roles,
   telegramLinks,
   userRoles,
@@ -41,6 +43,21 @@ async function usersWithRoles(roleCodes: string[]): Promise<string[]> {
     .from(userRoles)
     .innerJoin(roles, eq(userRoles.roleId, roles.id))
     .where(inArray(roles.code, roleCodes));
+  return [...new Set(rows.map((r) => r.userId))];
+}
+
+/**
+ * Everyone whose CURRENT grants include a permission. Resolved from
+ * role_permissions, never from the seed matrix: grants have been editable
+ * data since Phase 1, and a role the owner invented must be reachable too.
+ */
+async function usersWithPermission(code: string): Promise<string[]> {
+  const rows = await db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
+    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+    .where(eq(permissions.code, code));
   return [...new Set(rows.map((r) => r.userId))];
 }
 
@@ -131,6 +148,17 @@ async function buildRecipients(event: {
       if (!event.payload.addedOnSpot) return [];
       const userIds = await usersWithRoles(['logist', 'admin', 'super_admin']);
       return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
+    }
+    // Phase 6: the request reaches everyone who may decide it; the decision
+    // reaches exactly the person who asked.
+    case 'DebtApprovalRequested': {
+      const userIds = await usersWithPermission('finance.debt_override');
+      return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
+    }
+    case 'DebtApprovalDecided': {
+      const requestedBy = event.payload.requestedBy as string | null;
+      if (!requestedBy) return [];
+      return [{ userId: requestedBy, type: event.type, payload: event.payload }];
     }
     default:
       return [];
@@ -281,6 +309,23 @@ export function renderTelegramText(
         `🤝 ${L.issuedTo} ${payload.clientCode} (${payload.clientName}): ${payload.boxCount} ${L.boxesShort} · ${L.warehouse} ${payload.warehouseCode}\n` +
         `${L.receivedBy}: ${payload.personName}${payload.personPhone ? ` (${payload.personPhone})` : ''}` +
         (payload.remaining ? `\n${L.leftInStock}: ${payload.remaining} ${L.boxesShort}` : '')
+      );
+    case 'DebtApprovalRequested':
+      return (
+        `🔐 ${L.debtApprovalRequested}\n` +
+        `${L.client}: ${payload.clientCode} (${payload.clientName}) · ${L.warehouse} ${payload.warehouseCode}\n` +
+        `${L.debtLine}: $${payload.blockingDebtUsd}\n` +
+        `${L.requestedByWord}: ${payload.requestedByName}` +
+        (payload.note ? `\n${L.comment}: ${payload.note}` : '') +
+        `\n\n${appUrl}/approvals`
+      );
+    case 'DebtApprovalDecided':
+      return (
+        `${payload.verdict === 'approved' ? `✅ ${L.debtApprovalYes}` : `⛔ ${L.debtApprovalNo}`}\n` +
+        `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        `${L.decidedByWord}: ${payload.decidedByName}` +
+        (payload.note ? `\n${L.comment}: ${payload.note}` : '') +
+        `\n\n${appUrl}/issue`
       );
     case 'RestoreTestFailed':
       return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;

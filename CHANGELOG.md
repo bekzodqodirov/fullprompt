@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Xodimni @ bilan chaqirish + qarzdorga berishga yozma ruxsat — 2026-07-29
+
+Sizning 5-bandingiz («mukammal») boshlanishi: 4-bosqich (@chaqiruv) va
+6-bosqich (qarzdorga berishga ruxsat zanjiri).
+
+- **Endi izohda xodimni @ bilan chaqirasiz**: mijoz, lid yoki bitim
+  kartasidagi izoh oynasida `@` yozsangiz, hamkasblar ro'yxati chiqadi —
+  tanlaganingiz ismi to'liq qo'yiladi va o'sha odamga Telegramda alohida
+  xabar boradi: kim yozdi, qaysi kartada, nima dedi, havola bilan. Izoh
+  boshqa qatnashchilarga avvalgidek boradi, chaqirilgan odamga esa bitta —
+  shaxsiy — xabar ketadi (ikki marta bezovta qilmaydi). O'ziga o'zi
+  @yozgan odamga xabar ketmaydi. Hamma hammani chaqira oladi (topshiriqlar
+  qoidasi bilan bir xil). Muhim eslatma: xabar faqat Telegramini ulagan
+  xodimga yetadi — ulamagan odam matnda chaqirilgan, lekin xabar olmaydi.
+- **Qarzdorga yuk berish endi yozma ruxsat bilan**: skladchi qarzdor
+  mijozga yuk bermoqchi bo'lsa, ekranda «Ruxsat so'rash» tugmasi chiqadi.
+  So'rov moliya ruxsati bor rahbarlarga Telegramda boradi (mijoz, qarz
+  summasi, kim so'ragani, izohi bilan) va yangi **«Berishga ruxsatlar»**
+  ekranida turadi — u yerda rahbar bir bosishda ruxsat beradi yoki rad
+  etadi, xohlasa izoh bilan. Javob so'ragan odamga darhol qaytadi.
+- Ruxsatning intizomi qat'iy: **24 soat amal qiladi** (sozlamalardan
+  o'zgartirsa bo'ladi), **bitta berishga yaraydi** (ishlatilgach yana
+  so'raladi), va **summa bilan bog'langan** — ruxsatdan keyin qarz yana
+  o'ssa, eski ruxsat o'tmaydi, chunki rahbar u summani ko'rmagan. Kim
+  so'ragani, kim ruxsat bergani, qachon va qaysi berishga sarflangani —
+  hammasi tarixda qoladi.
+- Rahbarning o'zi skladda tursa, avvalgi to'g'ridan-to'g'ri belgilash
+  ("qarzdorga berishga rozi") joyida qoladi — ruxsati bor odam o'zidan
+  o'zi so'rab o'tirmaydi.
+
+Tekshirildi: yangi bazada 728 unit/integration + 87 e2e yashil (20 ta
+yangi test: chaqiruv qoidalari, ruxsat zanjirining har bir sharti —
+muddati o'tgani, summasi oshgani, ikki marta ishlatishga urinish;
+1 ta yangi brauzer testi). Migratsiya: **0044** (faqat qo'shadi, hech
+narsani o'zgartirmaydi).
+
 ## Har bir rolga o'z bosh ekrani + partiya kartasi yangi tartibda — 2026-07-29
 
 Sizning 4-bandingiz («buni ham qil»):

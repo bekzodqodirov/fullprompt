@@ -10,7 +10,12 @@ import {
   notifications,
   users,
 } from '@/modules/platform/db/schema';
-import { announceNote, cardLabel, noteRecipients } from '@/modules/wms/crm/internal-chat';
+import {
+  announceMentions,
+  announceNote,
+  cardLabel,
+  noteRecipients,
+} from '@/modules/wms/crm/internal-chat';
 import { createTask, listTaskTypes } from '@/modules/platform/tasks/service';
 
 /**
@@ -25,6 +30,7 @@ const STAMP = Date.now();
 
 let author: string;
 let colleague: string;
+let bystander: string;
 let clientId: string;
 let dealId: string;
 
@@ -33,6 +39,18 @@ beforeAll(async () => {
   const staff = await db.select().from(users).where(eq(users.active, true)).limit(2);
   author = staff[0]!.id;
   colleague = (staff[1] ?? staff[0])!.id;
+
+  // Somebody OUTSIDE the thread — the person a mention exists to reach.
+  const [extra] = await db
+    .insert(users)
+    .values({
+      phone: `+99894${String(STAMP).slice(-7)}`,
+      fullName: `Chetdagi Hamkasb ${STAMP}`,
+      passwordHash: 'x',
+      active: true,
+    })
+    .returning({ id: users.id });
+  bystander = extra!.id;
 
   const [c] = await db
     .insert(clients)
@@ -55,7 +73,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.delete(notifications).where(inArray(notifications.type, ['InternalNote', 'TaskAssigned', 'TaskDone']));
+  await db
+    .delete(notifications)
+    .where(
+      inArray(notifications.type, ['InternalNote', 'MentionedInNote', 'TaskAssigned', 'TaskDone']),
+    );
+  await db.delete(users).where(eq(users.id, bystander));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
   await db.delete(deals).where(eq(deals.id, dealId));
   await db.delete(clients).where(eq(clients.id, clientId));
@@ -105,6 +128,95 @@ describe('what lands in Telegram', () => {
     expect(mine.map((r) => r.userId)).toEqual([colleague]);
     const text = (mine[0]!.payload as { text: string }).text;
     expect(text).toContain(`https://test.gsrwms.uz/bitimlar/${dealId}`);
+  });
+});
+
+describe('a mention reaches the person named — phase 4', () => {
+  it('a NON-participant colleague named in a note gets the 📣 ping, not the thread copy', async () => {
+    await announceNote({
+      entityType: 'deal',
+      entityId: dealId,
+      note: `@Chetdagi Hamkasb ${STAMP} shu narxni ko‘rib bering`,
+      authorId: author,
+    });
+    const mentionRows = await db
+      .select()
+      .from(notifications)
+      .where(
+        and(eq(notifications.type, 'MentionedInNote'), eq(notifications.userId, bystander)),
+      );
+    expect(
+      mentionRows.filter((r) => (r.payload as { text?: string })?.text?.includes('shu narxni')),
+    ).toHaveLength(1);
+    // …and NOT the thread broadcast — one note, one message per person.
+    const threadRows = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.type, 'InternalNote'), eq(notifications.userId, bystander)));
+    expect(
+      threadRows.filter((r) => (r.payload as { text?: string })?.text?.includes('shu narxni')),
+    ).toHaveLength(0);
+  });
+
+  it('a mentioned PARTICIPANT gets exactly one message — the mention one', async () => {
+    await announceNote({
+      entityType: 'deal',
+      entityId: dealId,
+      // colleague is the deal owner (a thread participant) AND mentioned.
+      note: `@${(await db.select().from(users).where(eq(users.id, colleague)))[0]!.fullName} bir qarang`,
+      authorId: author,
+    });
+    const all = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, colleague));
+    const about = all.filter((r) => (r.payload as { text?: string })?.text?.includes('bir qarang'));
+    expect(about).toHaveLength(1);
+    expect(about[0]!.type).toBe('MentionedInNote');
+  });
+
+  it('a self-mention is silently dropped', async () => {
+    const me = (await db.select().from(users).where(eq(users.id, author)))[0]!.fullName;
+    await announceMentions({
+      entityType: 'deal',
+      entityId: dealId,
+      note: `@${me} o‘zimga eslatma`,
+      authorId: author,
+    });
+    const rows = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.type, 'MentionedInNote'), eq(notifications.userId, author)));
+    expect(
+      rows.filter((r) => (r.payload as { text?: string })?.text?.includes('o‘zimga eslatma')),
+    ).toHaveLength(0);
+  });
+
+  it('the contact-log path pings ONLY the mentioned, never the thread', async () => {
+    await announceMentions({
+      entityType: 'client',
+      entityId: clientId,
+      note: `@Chetdagi Hamkasb ${STAMP} qo‘ng‘iroq qiling`,
+      authorId: author,
+    });
+    const mentioned = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.type, 'MentionedInNote'), eq(notifications.userId, bystander)));
+    expect(
+      mentioned.filter((r) =>
+        (r.payload as { text?: string })?.text?.includes('qo‘ng‘iroq qiling'),
+      ),
+    ).toHaveLength(1);
+    const broadcast = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.type, 'InternalNote'));
+    expect(
+      broadcast.filter((r) =>
+        (r.payload as { text?: string })?.text?.includes('qo‘ng‘iroq qiling'),
+      ),
+    ).toHaveLength(0);
   });
 });
 

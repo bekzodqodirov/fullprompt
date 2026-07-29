@@ -30,7 +30,10 @@ export type DomainEventType =
   // "then send it back".
   | 'UnquotedCargo'
   | 'DealDeviation'
-  | 'DealDeferralEnded';
+  | 'DealDeferralEnded'
+  // Phase 6: issuing to a debtor goes through a recorded request/decision.
+  | 'DebtApprovalRequested'
+  | 'DebtApprovalDecided';
 
 /**
  * Persist a domain event in the same transaction as the mutation that caused

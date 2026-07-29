@@ -2,6 +2,8 @@
 
 import { useActionState } from 'react';
 import { useTranslations } from 'next-intl';
+import { MentionTextarea } from '@/components/mention-textarea';
+import type { MentionPerson } from '@/modules/wms/crm/mentions';
 import { addActivityAction, type CrmFormState } from './actions';
 
 /**
@@ -16,12 +18,15 @@ export function ActivityForm({
   entityId,
   today,
   bare = false,
+  people = [],
 }: {
   entityType: 'lead' | 'client';
   entityId: string;
   today: string;
   /** Inside a collapsible Panel the panel owns the card and the title. */
   bare?: boolean;
+  /** Colleagues an @ can name (phase 4). */
+  people?: MentionPerson[];
 }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
@@ -53,13 +58,11 @@ export function ActivityForm({
           className="input !w-40"
         />
       </div>
-      <textarea
+      <MentionTextarea
         name="note"
-        data-testid="activity-note"
+        testid="activity-note"
         placeholder={t('what')}
-        aria-label={t('what')}
-        rows={2}
-        className="input"
+        people={people}
         required
       />
       <div className="flex flex-wrap gap-2">

@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { Panel } from '@/components/panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listActivities } from '@/modules/wms/crm/service';
+import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 import { personForClient } from '@/modules/wms/crm/people';
 import { ActivityForm } from './activity-form';
 import { MakePersonButton } from './make-person-button';
@@ -39,7 +40,7 @@ export async function ClientCrmSections({
 
   return (
     <div className="space-y-3">
-      <ActivityForm entityType="client" entityId={clientId} today={today} />
+      <ActivityForm entityType="client" entityId={clientId} today={today} people={await mentionablePeople()} />
 
       <Panel title={`🕘 ${t('history')}`} badge={log.length || undefined} open={log.length > 0}>
         {log.map(({ activity, authorName }) => (

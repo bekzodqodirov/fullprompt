@@ -121,10 +121,10 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-708 unit/integration + 86 e2e, verified in CI's order on a fresh database.
-Latest migration: **0043** (`tg_outbox.attachment_id` + relaxed body CHECK).
+728 unit/integration + 87 e2e, verified in CI's order on a fresh database.
+Latest migration: **0044** (`issue_approvals`).
 
-Phases **0/1/2/3/5** shipped (roles, custom fields, tasks+calendar, deals),
+Phases **0/1/2/3/4/5/6** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
 per-page guards #198, card scoping #200, `canActOnTask` #201). A 14-subsystem
 audit on 2026-07-26 confirmed 30 defects; its findings are the work queue.
@@ -350,11 +350,33 @@ VED/vehicle/driver/tracking/pricing/tasks/fields. Zero testid changes —
 every m3/m4/m5/m9/m9m batch-card assertion passed untouched. New i18n keys
 ×4: home.flowPlansPending/flowUnassignedPayments/flowRecurringDue.
 
+Round 16 — stage 5 begins (#375-376): **phase 4 mentions** — notes stay
+plain text; `MentionTextarea` dropdown inserts the CANONICAL full name and
+the server re-finds names (`crm/mentions.ts`, longest-name-first spans,
+word boundaries, duplicate names → both); the named person gets
+`MentionedInNote` INSTEAD of the thread copy (one message); contact-log
+path pings only mentions; hand-typed partials match nobody; self-mentions
+dropped; delivery is Telegram-only — stated to the owner, no in-app bell.
+**Phase 6 approvals** — `issue_approvals` (migration 0044, additive):
+who asked / who decided / why / until when + the debt SNAPSHOT as a
+CEILING; the gate demands approved AND unexpired AND amount-covered in one
+`FOR UPDATE SKIP LOCKED` select, consumes AFTER the handover insert (FK,
+same tx — the one-step draft was refused by the FK itself, caught by the
+new test); one live request per (client, warehouse); single-shot decision;
+TTL setting `debt_approval_ttl_hours` (24) read at decision time;
+deciders = `usersWithPermission('finance.debt_override')` from the
+editable grants; debtOk checkbox STAYS for holders; `/approvals` screen +
+issue-screen banner (ask button / pending / granted-until). Both new event
+types in MUTE_GROUPS.alerts, MentionedInNote beside InternalNote — the
+mutes tripwire reads `buildRecipients` itself. e2e m9t (mentions dropdown
+in the browser); the approvals browser half deliberately has no e2e —
+integration-proven through the same functions the buttons call.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
-tur»).** His agreed order after that: (5) phases 4/6/7/8 + open deal
-items — «mukammal». Telegram/CRM still queued: tg-import media backfill,
+tur»).** His agreed order after that: (5) — phases 4 and 6 SHIPPED (round
+16); remaining: open deal items, then phases 7/8 — «mukammal». Telegram/CRM still queued: tg-import media backfill,
 edited-message updates, deleting excluded chats' old rows,
 `listConversations` index, Siroj's account (owner decides when).
 
@@ -363,15 +385,15 @@ Explicitly parked by the owner: crate loading is not to be touched further.
 Still queued from the audit: `scripts/import-clients.ts --update` overwriting
 corrected data (do NOT run it — blocked on the 17 seller logins).
 
-Later phases: **4** comments with @mentions → **6** approval for issuing to a
-debtor → **7** automation rules → **8** custom entities. Explicitly cut:
+Later phases: **7** automation rules → **8** custom entities (**4** mentions
+and **6** debtor-issue approval shipped in round 16). Explicitly cut:
 formula fields, a visual node editor, an in-app chat, a separate projects
 module, an external web form builder. Open inside deals: the damage discount
 form, profit per deal, the 50-goods spreadsheet + TNVED grouping.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations up to 0043 — back up first; the compose
+**Deploy the branch** (migrations up to 0044 — back up first; the compose
 change recreates the postgres container, ~5-15 s outage: off-hours, run
 `free -h` first and halve the tuned values on a 2 GB box) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not

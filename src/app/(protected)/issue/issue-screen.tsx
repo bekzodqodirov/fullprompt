@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { Scanner } from '@/components/scan/scanner';
 import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
-import { issueBoxesAction } from './actions';
+import { issueBoxesAction, requestIssueApprovalAction } from './actions';
 
 interface WarehouseOption {
   id: string;
@@ -53,6 +53,14 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
    */
   const blockingDebt = debtUsd - deferredUsd;
   const [canOverrideDebt, setCanOverrideDebt] = useState(false);
+  /** Phase 6: the live request/approval for this client at this warehouse. */
+  const [approval, setApproval] = useState<{
+    id: string;
+    status: string;
+    expiresAt: string | null;
+  } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneHandover, setDoneHandover] = useState<string | null>(null);
@@ -91,11 +99,13 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
             debtUsd: number;
             deferredUsd: number;
             canOverrideDebt: boolean;
+            approval: { id: string; status: string; expiresAt: string | null } | null;
           };
           setList(data.boxes);
           setDebtUsd(data.debtUsd);
           setDeferredUsd(data.deferredUsd ?? 0);
           setCanOverrideDebt(data.canOverrideDebt);
+          setApproval(data.approval ?? null);
           setSelected(new Set());
           setDebtOk(false);
         }
@@ -104,7 +114,16 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       }
     })();
     return () => controller.abort();
-  }, [client, warehouseId, doneHandover]);
+  }, [client, warehouseId, doneHandover, refreshTick]);
+
+  async function askApproval() {
+    if (!client || asking) return;
+    setAsking(true);
+    const result = await requestIssueApprovalAction({ clientId: client.id, warehouseId });
+    setAsking(false);
+    if (!result.ok && result.error !== 'already_requested') setError(result.error ?? 'error');
+    setRefreshTick((n) => n + 1);
+  }
 
   function toggle(boxId: string) {
     setSelected((prev) => {
@@ -257,8 +276,42 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
               ⏳ {t('debtDeferred', { amount: deferredUsd.toFixed(2) })}
             </p>
           )}
+          {/* Phase 6: the escalation lives ON the screen, not in a phone
+              call. Ask → the deciders' Telegram buzzes → the answer shows
+              here, with its expiry. */}
           {blockingDebt > 0.009 && !canOverrideDebt && (
-            <p className="mt-1 text-bad">{t('debtNeedsManager')}</p>
+            approval?.status === 'approved' ? (
+              <p className="mt-1 font-semibold text-good" data-testid="approval-granted">
+                ✅{' '}
+                {t('debtApprovalGranted', {
+                  until: approval.expiresAt
+                    ? new Date(approval.expiresAt).toLocaleString('en-GB', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '—',
+                })}
+              </p>
+            ) : approval?.status === 'pending' ? (
+              <p className="mt-1 font-semibold text-warn" data-testid="approval-pending">
+                ⏳ {t('debtApprovalPending')}
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 text-bad">{t('debtNeedsManager')}</p>
+                <button
+                  type="button"
+                  data-testid="ask-approval"
+                  onClick={() => void askApproval()}
+                  disabled={asking}
+                  className="btn-secondary mt-2 w-full disabled:opacity-50"
+                >
+                  {asking ? tc('loading') : `🔐 ${t('debtAskApproval')}`}
+                </button>
+              </>
+            )
           )}
         </div>
       )}
@@ -363,7 +416,9 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                 selected.size === 0 ||
                 personName.trim().length < 2 ||
                 personPhone.trim().length < 5 ||
-                (blockingDebt > 0.009 && !debtOk)
+                // An approved request opens the gate without the checkbox;
+                // the server re-checks and CONSUMES it on confirm.
+                (blockingDebt > 0.009 && !debtOk && approval?.status !== 'approved')
               }
               onClick={submit}
             >

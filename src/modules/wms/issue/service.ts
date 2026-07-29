@@ -14,6 +14,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
+import { lockLiveApproval, markApprovalConsumed } from './approvals';
 
 export class IssueError extends Error {
   constructor(public readonly code: string) {
@@ -52,12 +53,27 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
   // reduced, and only by charges raised on a deal that is deferred right now.
   const balance = await clientBalanceUsd(input.clientId);
   const deferred = await deferredBalanceUsd(input.clientId);
-  if (balance - deferred > 0.009 && !input.debtOk) throw new IssueError('debt_block');
+  const blockingDebt = Math.round((balance - deferred) * 100) / 100;
   return db.transaction(async (tx) => {
     const existing = await tx.query.handovers.findFirst({
       where: eq(handovers.id, input.handoverId),
     });
     if (existing) return existing;
+
+    // Phase 6: an operator without the override may still issue when a
+    // RECORDED approval covers this client at this warehouse — live,
+    // unexpired, and at least as large as today's debt. Locked here (FOR
+    // UPDATE, so two phones cannot spend one permission) and marked consumed
+    // once the handover row exists; one transaction makes the pair atomic.
+    let approvalId: string | null = null;
+    if (blockingDebt > 0.009 && !input.debtOk) {
+      approvalId = await lockLiveApproval(tx, {
+        clientId: input.clientId,
+        warehouseId: input.warehouseId,
+        blockingDebtUsd: blockingDebt,
+      });
+      if (!approvalId) throw new IssueError('debt_block');
+    }
 
     const rows = await tx
       .select({ box: boxes, clientId: receipts.clientId })
@@ -89,6 +105,8 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
         createdBy: actorId,
       })
       .returning();
+
+    if (approvalId) await markApprovalConsumed(tx, approvalId, handover!.id);
 
     await tx
       .update(boxes)
@@ -145,6 +163,9 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
         boxCount: rows.length,
         personName: input.personName,
         debtOk: input.debtOk,
+        // Both halves of a debtor issue are in the log: the decision on the
+        // approval row, and here WHICH approval this handover spent.
+        ...(approvalId ? { approvalId } : {}),
       },
     });
     await emitEvent(tx, {

@@ -1,8 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { clients, crmActivities, deals, leads } from '../../platform/db/schema';
+import { clients, crmActivities, deals, leads, users } from '../../platform/db/schema';
 import { cardLink } from '../../platform/notifications/links';
 import { notifyStaffTelegram, userName } from '../../platform/notifications/staff';
+import { extractMentions, type MentionPerson } from './mentions';
 
 /**
  * The internal conversation, carried by Telegram.
@@ -63,18 +64,66 @@ export async function cardLabel(
 }
 
 /**
+ * Everyone a mention can name. One source of truth for the composer's
+ * dropdown and the save-time parser, so what the dropdown offers is exactly
+ * what the parser will find.
+ */
+export async function mentionablePeople(): Promise<MentionPerson[]> {
+  return db
+    .select({ id: users.id, name: users.fullName })
+    .from(users)
+    .where(eq(users.active, true))
+    .orderBy(asc(users.fullName));
+}
+
+interface NoteInput {
+  entityType: 'client' | 'lead' | 'deal';
+  entityId: string;
+  note: string;
+  authorId: string;
+}
+
+/**
+ * Tell the people NAMED in a note — and only them.
+ *
+ * Its own function because the contact-log path deliberately broadcasts to
+ * nobody: a phone-call record is a record, not a conversation. A mention in
+ * it is different — it is the author explicitly calling a colleague over,
+ * which is the one thing that must always get through. Its own notification
+ * type, so a person can mute the thread chatter and still hear their name.
+ */
+export async function announceMentions(input: NoteInput): Promise<string[]> {
+  const mentioned = extractMentions(input.note, await mentionablePeople());
+  if (mentioned.length === 0) return [];
+  const [label, author] = await Promise.all([
+    cardLabel(input.entityType, input.entityId),
+    userName(input.authorId),
+  ]);
+  const link = cardLink(input.entityType, input.entityId);
+  await notifyStaffTelegram({
+    userIds: mentioned,
+    exceptUserId: input.authorId,
+    type: 'MentionedInNote',
+    text:
+      `📣 ${author} · ${label}\n` +
+      `${input.note.slice(0, 400)}${input.note.length > 400 ? '…' : ''}` +
+      (link ? `\n🔗 ${link}` : ''),
+  });
+  return mentioned;
+}
+
+/**
  * A note landed — tell the thread.
  *
  * Fire-and-forget from the caller's point of view: a note that saved but did
  * not ping is a small failure, a note that refused to save because Telegram
  * hiccuped would be a large one.
+ *
+ * A mentioned colleague gets the 📣 mention ping INSTEAD of the thread copy,
+ * never both — one note, one message per person.
  */
-export async function announceNote(input: {
-  entityType: 'client' | 'lead' | 'deal';
-  entityId: string;
-  note: string;
-  authorId: string;
-}): Promise<void> {
+export async function announceNote(input: NoteInput): Promise<void> {
+  const mentioned = await announceMentions(input);
   const [recipients, label, author] = await Promise.all([
     noteRecipients(input.entityType, input.entityId),
     cardLabel(input.entityType, input.entityId),
@@ -82,7 +131,7 @@ export async function announceNote(input: {
   ]);
   const link = cardLink(input.entityType, input.entityId);
   await notifyStaffTelegram({
-    userIds: recipients,
+    userIds: recipients.filter((id) => !mentioned.includes(id)),
     exceptUserId: input.authorId,
     type: 'InternalNote',
     text:

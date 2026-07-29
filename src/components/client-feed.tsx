@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed';
+import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 import { TelegramReply } from './telegram-reply';
 import { FeedNoteBox } from './client-feed-note';
 import { LightboxImg } from './lightbox-img';
@@ -148,6 +149,7 @@ export async function ClientFeed({
           // not surface on the other. Elsewhere: the client, then the lead.
           entityType={dealId ? 'deal' : clientId ? 'client' : 'lead'}
           entityId={dealId ?? clientId ?? leadId!}
+          people={await mentionablePeople()}
           labels={{
             placeholder: t('feedNotePlaceholder'),
             save: t('feedNoteSave'),

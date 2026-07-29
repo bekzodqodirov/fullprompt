@@ -33,6 +33,12 @@ export const SETTING_DEFAULTS = {
    * A setting rather than a constant because the owner asked for it to be one.
    */
   deal_deviation_threshold_pct: 10,
+  /**
+   * How long an approved "issue to this debtor" stays usable (phase 6).
+   * Long enough for the client to reach the warehouse the same day; short
+   * enough that last week's permission never opens today's bigger debt.
+   */
+  debt_approval_ttl_hours: 24,
   costing_base_currency: 'USD',
   client_code_prefix: 'GS',
   label_size: '100x100',

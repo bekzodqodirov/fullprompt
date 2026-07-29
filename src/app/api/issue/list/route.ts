@@ -4,6 +4,7 @@ import { db } from '@/modules/platform/db/client';
 import { boxes, receiptLots, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { clientBalanceUsd, deferredBalanceUsd } from '@/modules/wms/finance/service';
+import { approvalStateFor } from '@/modules/wms/issue/approvals';
 
 const querySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -57,6 +58,9 @@ export async function GET(request: Request) {
   // office (docs/DEALS.md).
   const debtUsd = await clientBalanceUsd(query.data.clientId);
   const deferredUsd = await deferredBalanceUsd(query.data.clientId);
+  // Phase 6: the live request/approval for this pair, so the screen can say
+  // "asked, waiting" or "approved until HH:MM" instead of a dead end.
+  const approval = await approvalStateFor(query.data.clientId, query.data.warehouseId);
 
-  return Response.json({ boxes: rows, debtUsd, deferredUsd, canOverrideDebt });
+  return Response.json({ boxes: rows, debtUsd, deferredUsd, canOverrideDebt, approval });
 }

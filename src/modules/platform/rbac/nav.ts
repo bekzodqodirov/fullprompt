@@ -108,6 +108,14 @@ export const NAV: NavGroupSpec[] = [
         primary: 5,
       },
       {
+        // Phase 6: the deciders' queue for "may I issue to this debtor".
+        href: '/approvals',
+        labelKey: 'approvalsTitle',
+        namespace: 'issue',
+        icon: 'handshake',
+        permissions: ['finance.debt_override'],
+      },
+      {
         href: '/crates',
         labelKey: 'title',
         namespace: 'crates',
@@ -356,7 +364,7 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
     '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
-    '/suhbatlar',
+    '/suhbatlar', '/approvals',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
   // is here because recalculating a job the client was mis-quoted for is a VED
@@ -369,11 +377,11 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   // margin.
   sales_manager: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/crm/today', '/suhbatlar', '/my-clients',
-    '/finance', '/pipeline', '/arrivals',
+    '/finance', '/pipeline', '/arrivals', '/approvals',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/reports', '/dashboard',
-    '/admin', '/receipts', '/stock',
+    '/admin', '/receipts', '/stock', '/approvals',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

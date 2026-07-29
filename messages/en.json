@@ -277,7 +277,8 @@
       "ved_customs_post": "Customs post and code (for example: Andijan customs / 03011)",
       "crm_dormant_days": "Days of silence before a client counts as gone quiet (appears in the Monday CRM digest)",
       "deal_deviation_threshold_pct": "How far the cargo may differ from the quote before the manager is alerted. Never blocks loading.",
-      "tg_sending_enabled": "Allow the CRM to send messages to clients through a manager’s personal Telegram (off by default)"
+      "tg_sending_enabled": "Allow the CRM to send messages to clients through a manager’s personal Telegram (off by default)",
+      "debt_approval_ttl_hours": "How many hours an approved permission to issue cargo to a debtor stays valid"
     },
     "driverApp": "Driver app"
   },
@@ -706,7 +707,14 @@
     "debtNeedsManager": "Cargo goes to a debtor only with the manager's approval",
     "debtBlocked": "The client is in debt — handover is blocked (the manager must approve)",
     "noIssuingWarehouse": "None of your warehouses hand cargo to clients. This is a warehouse setting.",
-    "debtDeferred": "{amount} $ of it is deferred on a deal — it does not block the handover"
+    "debtDeferred": "{amount} $ of it is deferred on a deal — it does not block the handover",
+    "debtAskApproval": "Request permission",
+    "debtApprovalPending": "Request sent — awaiting a manager’s decision",
+    "debtApprovalGranted": "Approved (until {until}) — you may issue",
+    "approvalsTitle": "Issue approvals",
+    "approvalNote": "Comment (optional)",
+    "approve": "Approve",
+    "refuse": "Refuse"
   },
   "pipeline": {
     "title": "My clients",

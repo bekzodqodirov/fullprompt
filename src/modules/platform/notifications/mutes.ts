@@ -29,6 +29,10 @@ export const MUTE_GROUPS = {
     'DealDeferralEnded',
     // A promise landed at a different size to the one the client stated.
     'ArrivalDiff',
+    // A debtor is standing at the counter: the ask and the answer are both
+    // only worth anything while they are still standing there.
+    'DebtApprovalRequested',
+    'DebtApprovalDecided',
   ],
   operations: [
     'ReceiptConfirmed',
@@ -40,6 +44,8 @@ export const MUTE_GROUPS = {
     'InventoryCompleted',
     // A colleague wrote on a card you are involved in.
     'InternalNote',
+    // The personal half of the same message: a colleague named YOU with @.
+    'MentionedInNote',
   ],
 } as const;
 

@@ -258,6 +258,50 @@ export const handovers = pgTable(
   ],
 );
 
+/**
+ * Phase 6: permission to issue to a debtor, as a record instead of a phone
+ * call. The snapshot is the approved CEILING — a debt that grew past it is a
+ * different debt, and the gate refuses. Validity (status, expiry, amount) is
+ * re-checked at read time, like the deal deferral.
+ */
+export const issueApprovals = pgTable(
+  'issue_approvals',
+  {
+    id: id(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    blockingDebtUsd: numeric('blocking_debt_usd', { precision: 14, scale: 2 }).notNull(),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    requestNote: text('request_note'),
+    status: text('status').notNull().default('pending'),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionNote: text('decision_note'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    consumedHandoverId: uuid('consumed_handover_id').references(() => handovers.id),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'issue_approvals_status_check',
+      sql`${t.status} IN ('pending', 'approved', 'refused', 'consumed')`,
+    ),
+    check('issue_approvals_decided_check', sql`(${t.status} = 'pending') = (${t.decidedBy} IS NULL)`),
+    check(
+      'issue_approvals_consumed_check',
+      sql`(${t.status} = 'consumed') = (${t.consumedHandoverId} IS NOT NULL)`,
+    ),
+    index('issue_approvals_gate_idx').on(t.clientId, t.warehouseId, t.status),
+  ],
+);
+
 export const boxMovements = pgTable(
   'box_movements',
   {

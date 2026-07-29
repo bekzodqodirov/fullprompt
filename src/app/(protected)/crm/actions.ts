@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { ClientError } from '@/modules/platform/clients/service';
 import {
@@ -25,6 +25,7 @@ import { setFieldValues, validateValues } from '@/modules/platform/fields/servic
 import { customValues } from '@/modules/platform/fields/actions';
 import { FieldError } from '@/modules/platform/fields/types';
 import { attachClient, groupClients, personFromClient } from '@/modules/wms/crm/people';
+import { announceMentions } from '@/modules/wms/crm/internal-chat';
 
 export interface CrmFormState {
   ok?: boolean;
@@ -153,6 +154,20 @@ export async function addActivityAction(
   });
   if (!parsed.success) return { error: 'validation' };
   const state = await run('crm.leads', (ctx) => addActivity(parsed.data, ctx));
+  // The contact log broadcasts to nobody (a record, not a conversation) —
+  // but a colleague NAMED in it must still hear their name. After the save
+  // and never blocking it, like every announce here.
+  if (state.ok) {
+    const who = await getActor();
+    if (who) {
+      await announceMentions({
+        entityType: parsed.data.entityType as 'client' | 'lead' | 'deal',
+        entityId: parsed.data.entityId,
+        note: parsed.data.note,
+        authorId: who.id,
+      }).catch(() => {});
+    }
+  }
   // The client card lives outside /crm, so it needs its own refresh.
   if (parsed.data.entityType === 'client') revalidatePath(`/admin/clients/${parsed.data.entityId}`);
   return state;

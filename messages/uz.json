@@ -277,7 +277,8 @@
       "ved_customs_post": "Bojxona posti nomi va kodi (masalan: Андижон ВЭД / 03011)",
       "crm_dormant_days": "Mijoz necha kun yuk yubormasa «jim qolgan» hisoblanadi (CRM dushanba digestida chiqadi)",
       "deal_deviation_threshold_pct": "Yuk hisob-kitobdan necha foizga farq qilsa, menejerga xabar ketadi. Yuklashni to‘xtatmaydi.",
-      "tg_sending_enabled": "CRM menejerning shaxsiy Telegramidan mijozga xabar yuborishi mumkinmi (odatda o‘chirilgan)"
+      "tg_sending_enabled": "CRM menejerning shaxsiy Telegramidan mijozga xabar yuborishi mumkinmi (odatda o‘chirilgan)",
+      "debt_approval_ttl_hours": "Qarzdorga yuk berish ruxsati tasdiqlangach necha soat amal qiladi"
     },
     "driverApp": "Haydovchi ilovasi"
   },
@@ -706,7 +707,14 @@
     "debtNeedsManager": "Qarzdor klientga yuk faqat menejer ruxsati bilan beriladi",
     "debtBlocked": "Klient qarzdor — berish bloklangan (menejer ruxsati kerak)",
     "noIssuingWarehouse": "Sizning omborlaringizda mijozga yuk berilmaydi. Buni sozlamalardan yoqish mumkin.",
-    "debtDeferred": "Shundan {amount} $ bitim bo‘yicha kechiktirilgan — berishni to‘xtatmaydi"
+    "debtDeferred": "Shundan {amount} $ bitim bo‘yicha kechiktirilgan — berishni to‘xtatmaydi",
+    "debtAskApproval": "Ruxsat so‘rash",
+    "debtApprovalPending": "So‘rov yuborildi — rahbar javobi kutilmoqda",
+    "debtApprovalGranted": "Ruxsat berildi ({until} gacha) — berish mumkin",
+    "approvalsTitle": "Berishga ruxsatlar",
+    "approvalNote": "Izoh (ixtiyoriy)",
+    "approve": "Ruxsat berish",
+    "refuse": "Rad etish"
   },
   "pipeline": {
     "title": "Mening klientlarim",

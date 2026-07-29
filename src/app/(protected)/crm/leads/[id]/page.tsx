@@ -20,6 +20,7 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { CardCols } from '@/components/card-cols';
 import { conversationClientForLead } from '@/modules/wms/crm/conversations';
+import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
 export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
@@ -96,7 +97,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
           bo'lib"). Its kind and «keyingi qadam» date are what feed
           /crm/today — the lenta's quick note box has neither. */}
       <Panel title={`📞 ${t('addActivity')}`} testId="activity-panel">
-        <ActivityForm entityType="lead" entityId={id} today={today} bare />
+        <ActivityForm entityType="lead" entityId={id} today={today} bare people={await mentionablePeople()} />
       </Panel>
       {lead.clientId ? (
         <div className="flex gap-2">

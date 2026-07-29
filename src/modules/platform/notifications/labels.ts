@@ -100,6 +100,28 @@ const DICT = {
     en: 'Handed over to client',
   },
   receivedBy: { ru: 'Получил', uz: 'Oldi', 'zh-CN': '领取人', en: 'Received by' },
+  // Phase 6: the debtor-issue approval chain.
+  debtApprovalRequested: {
+    ru: 'Запрос: выдать груз должнику',
+    uz: 'So‘rov: qarzdorga yuk berish',
+    'zh-CN': '请求：向欠款客户放货',
+    en: 'Request: issue cargo to a debtor',
+  },
+  debtLine: { ru: 'Долг', uz: 'Qarz', 'zh-CN': '欠款', en: 'Debt' },
+  requestedByWord: { ru: 'Просит', uz: 'So‘ramoqda', 'zh-CN': '请求人', en: 'Requested by' },
+  debtApprovalYes: {
+    ru: 'Выдача должнику РАЗРЕШЕНА',
+    uz: 'Qarzdorga berishga RUXSAT berildi',
+    'zh-CN': '已批准向欠款客户放货',
+    en: 'Issuing to the debtor was APPROVED',
+  },
+  debtApprovalNo: {
+    ru: 'Выдача должнику ОТКЛОНЕНА',
+    uz: 'Qarzdorga berish RAD etildi',
+    'zh-CN': '已拒绝向欠款客户放货',
+    en: 'Issuing to the debtor was REFUSED',
+  },
+  decidedByWord: { ru: 'Решил(а)', uz: 'Qaror qildi', 'zh-CN': '决定人', en: 'Decided by' },
   leftInStock: {
     ru: 'Осталось на складе',
     uz: 'Skladda qoldi',
