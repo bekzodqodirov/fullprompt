@@ -52,6 +52,10 @@ test('the owner adds his own expense type — it was never hard-coded, now it ha
   // OUR row keeps later specs' dropdowns free of test data (#154). The form
   // queries only `active` types, so the chip is the visible proof.
   const row = page.locator('.card').filter({ hasText: name }).first();
+  // Centre the row first: the dictionary outgrew one phone screen (round 29
+  // seeded the grid columns), and Playwright's own scroll-into-view parks a
+  // bottom row's buttons exactly under the fixed tab bar.
+  await row.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await row.locator('form button[type="submit"]').click();
   await expect(page.locator('.card').filter({ hasText: name }).first()).toHaveClass(/opacity-60/);
 });

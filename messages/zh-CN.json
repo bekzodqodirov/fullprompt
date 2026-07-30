@@ -573,7 +573,9 @@
     "typeHide": "隐藏",
     "typeShow": "恢复",
     "gridReceipt": "入库单",
-    "gridRowTotal": "合计"
+    "gridRowTotal": "合计",
+    "gridEntered": "已录入 (USD)",
+    "gridNow": "本次录入"
   },
   "batches": {
     "title": "车次",
@@ -811,7 +813,9 @@
     "noAccount": "无账户",
     "noPayments": "该期间无收款",
     "clientBalance": "客户余额（总）",
-    "openLedger": "客户账页"
+    "openLedger": "客户账页",
+    "prevLegs": "本车次之前",
+    "costDetail": "成本明细"
   },
   "map": {
     "title": "地图",

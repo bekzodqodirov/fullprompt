@@ -573,7 +573,9 @@
     "typeHide": "Yashirish",
     "typeShow": "Qaytarish",
     "gridReceipt": "Prixod",
-    "gridRowTotal": "Jami"
+    "gridRowTotal": "Jami",
+    "gridEntered": "Yozilgan (USD)",
+    "gridNow": "Hozir kiritilmoqda"
   },
   "batches": {
     "title": "Partiyalar",
@@ -811,7 +813,9 @@
     "noAccount": "kassasiz",
     "noPayments": "Bu davrda to'lov yo'q",
     "clientBalance": "Mijoz balansi (umumiy)",
-    "openLedger": "mijoz kassasi"
+    "openLedger": "mijoz kassasi",
+    "prevLegs": "shu reysgacha (Xitoy ichida)",
+    "costDetail": "tarkibi"
   },
   "map": {
     "title": "Xarita",

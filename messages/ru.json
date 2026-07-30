@@ -573,7 +573,9 @@
     "typeHide": "Скрыть",
     "typeShow": "Вернуть",
     "gridReceipt": "Приход",
-    "gridRowTotal": "Итого"
+    "gridRowTotal": "Итого",
+    "gridEntered": "Уже записано (USD)",
+    "gridNow": "Сейчас вводится"
   },
   "batches": {
     "title": "Партии",
@@ -811,7 +813,9 @@
     "noAccount": "без кассы",
     "noPayments": "Оплат за период нет",
     "clientBalance": "Баланс клиента (общий)",
-    "openLedger": "касса клиента"
+    "openLedger": "касса клиента",
+    "prevLegs": "до этого рейса",
+    "costDetail": "из чего складывается"
   },
   "map": {
     "title": "Карта",

@@ -612,6 +612,21 @@ gate finance.view NOT finance.reports: who paid ≠ margin), acc-flow row
 ledger (search → card). METHOD told to owner: internal legs' freight goes
 on the ORIGIN batch (YW 30$/kub on YW-001), never blended onto the export
 batch; shared customs costs on the export batch basis 'weight'.
+Same-day follow-ups (#400): per-client «prevLegs» split (totalUsd −
+batchUsd) + `batchClientCostBreakdown` details element (press, not hover)
+on the batch-money screen; grid columns seeded by fixed code
+(customs/zatamojka/cct/freight — screen owns after birth); grid restyled
+Excel-wise (borders, zebra, per-column totals ×2). THE FIND: the seeded
+«Растаможка / Rastamojka» name overflowed the 360px viewport on
+/admin/cost-types → mobile Chrome ZOOMED THE WHOLE PAGE OUT → every click
+coordinate shifted → m9p 60s-intercept loop; diagnosed by
+elementsFromPoint probe (innerWidth 373 ≠ viewport 360), fixed with
+flex-wrap on the card header + add-button moved above the list. LESSON:
+any row wider than the mobile viewport rescales the entire screen —
+Playwright coordinate mismatch = suspect page zoom first. Also: a stale
+`pgboss.version.maintained_on` (>10 min, no server running) makes
+/api/health 503 and Playwright's webServer time out — local-only state;
+fresh db or `UPDATE pgboss.version SET maintained_on = now()` clears it.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

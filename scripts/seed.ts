@@ -270,6 +270,13 @@ async function seedM1(whIds: Map<string, string>, seedDemo: boolean) {
     { code: 'crating', name: 'Ящик / Yashik' },
     { code: 'unload', name: 'Разгрузка / Tushirish' },
     { code: 'other', name: 'Прочее / Boshqa' },
+    // The owner's grid columns (round 29: «columnlarni rastamojka,
+    // zatamojka, CCT va boshqa deb belgilab ber»). Idempotent by code; the
+    // admin screen owns names/active after birth.
+    { code: 'customs', name: 'Растаможка / Rastamojka' },
+    { code: 'zatamojka', name: 'Затаможка / Zatamojka' },
+    { code: 'cct', name: 'CCT' },
+    { code: 'freight', name: "Дорога / Yo'lkira" },
   ]) {
     await db.insert(costTypes).values(type).onConflictDoNothing();
   }

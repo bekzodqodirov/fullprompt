@@ -573,7 +573,9 @@
     "typeHide": "Hide",
     "typeShow": "Restore",
     "gridReceipt": "Receipt",
-    "gridRowTotal": "Total"
+    "gridRowTotal": "Total",
+    "gridEntered": "Already entered (USD)",
+    "gridNow": "Being entered now"
   },
   "batches": {
     "title": "Batches",
@@ -811,7 +813,9 @@
     "noAccount": "no account",
     "noPayments": "No payments in this period",
     "clientBalance": "Client balance (overall)",
-    "openLedger": "client ledger"
+    "openLedger": "client ledger",
+    "prevLegs": "before this trip",
+    "costDetail": "breakdown"
   },
   "map": {
     "title": "Map",

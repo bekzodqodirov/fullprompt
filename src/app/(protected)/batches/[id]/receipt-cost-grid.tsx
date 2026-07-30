@@ -61,6 +61,11 @@ export function ReceiptCostGrid({
   const rowTotal = (receiptId: string) =>
     types.reduce((sum, type) => sum + (parsed(`${receiptId}:${type.id}`) ?? 0), 0);
   const grand = rows.reduce((sum, row) => sum + rowTotal(row.receiptId), 0);
+  const colTyped = (typeId: string) =>
+    rows.reduce((sum, row) => sum + (parsed(`${row.receiptId}:${typeId}`) ?? 0), 0);
+  const colDone = (typeId: string) =>
+    rows.reduce((sum, row) => sum + (existing[`${row.receiptId}:${typeId}`] ?? 0), 0);
+  const doneGrand = types.reduce((sum, type) => sum + colDone(type.id), 0);
 
   const save = () => {
     const payload: { receiptId: string; costTypeId: string; amount: number }[] = [];
@@ -93,22 +98,25 @@ export function ReceiptCostGrid({
 
   return (
     <div className="space-y-2" data-testid="receipt-cost-grid">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
+      <div className="overflow-x-auto rounded-lg border border-line">
+        <table className="w-full min-w-[560px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
               <th className="p-2">{t('gridReceipt')}</th>
               {types.map((type) => (
-                <th key={type.id} className="p-2 text-right">
+                <th key={type.id} className="border-l border-line p-2 text-right">
                   {type.name}
                 </th>
               ))}
-              <th className="p-2 text-right">{t('gridRowTotal')}</th>
+              <th className="border-l border-line-strong p-2 text-right">{t('gridRowTotal')}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.receiptId} className="border-b border-line align-top last:border-0">
+              <tr
+                key={row.receiptId}
+                className="border-b border-line align-top odd:bg-surface-sunken/40 last:border-0"
+              >
                 <td className="p-2">
                   <span className="num font-bold text-good">{row.clientCode ?? '—'}</span>{' '}
                   <span className="num text-xs text-ink-500">{row.number}</span>
@@ -120,7 +128,7 @@ export function ReceiptCostGrid({
                   const key = `${row.receiptId}:${type.id}`;
                   const done = existing[key];
                   return (
-                    <td key={type.id} className="p-1 text-right">
+                    <td key={type.id} className="border-l border-line p-1 text-right">
                       {canEdit ? (
                         <input
                           inputMode="decimal"
@@ -129,7 +137,7 @@ export function ReceiptCostGrid({
                             setCells((prev) => ({ ...prev, [key]: event.target.value }))
                           }
                           aria-label={`${row.number} ${type.name}`}
-                          className="input !min-h-8 !w-24 text-right"
+                          className="input !min-h-8 w-full min-w-20 text-right"
                         />
                       ) : null}
                       {done !== undefined && (
@@ -140,12 +148,42 @@ export function ReceiptCostGrid({
                     </td>
                   );
                 })}
-                <td className="num p-2 text-right font-semibold">
+                <td className="num border-l border-line-strong p-2 text-right font-semibold">
                   {rowTotal(row.receiptId) > 0 ? rowTotal(row.receiptId).toFixed(2) : '—'}
                 </td>
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            {/* The Excel «jami» row: what is already written per column… */}
+            {doneGrand > 0 && (
+              <tr className="border-t border-line bg-surface-sunken text-xs text-ink-500">
+                <td className="p-2">{t('gridEntered')}</td>
+                {types.map((type) => (
+                  <td key={type.id} className="num border-l border-line p-2 text-right">
+                    {colDone(type.id) > 0 ? colDone(type.id).toFixed(2) : '—'}
+                  </td>
+                ))}
+                <td className="num border-l border-line-strong p-2 text-right font-semibold">
+                  {doneGrand.toFixed(2)}
+                </td>
+              </tr>
+            )}
+            {/* …and what this save is about to add. */}
+            {grand > 0 && (
+              <tr className="border-t border-line-strong bg-surface-sunken font-semibold">
+                <td className="p-2 text-xs uppercase text-ink-500">{t('gridNow')}</td>
+                {types.map((type) => (
+                  <td key={type.id} className="num border-l border-line p-2 text-right">
+                    {colTyped(type.id) > 0 ? colTyped(type.id).toFixed(2) : '—'}
+                  </td>
+                ))}
+                <td className="num border-l border-line-strong p-2 text-right">
+                  {grand.toFixed(2)}
+                </td>
+              </tr>
+            )}
+          </tfoot>
         </table>
       </div>
 

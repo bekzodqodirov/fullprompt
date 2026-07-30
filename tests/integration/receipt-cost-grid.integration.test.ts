@@ -21,6 +21,8 @@ import { createClient } from '@/modules/platform/clients/service';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import {
   addReceiptCostsBulk,
+  batchClientCostBreakdown,
+  batchLandedCostByClient,
   batchReceiptRows,
   boxLandedCost,
   receiptCostMatrix,
@@ -197,6 +199,21 @@ describe("the accountant's grid writes ordinary cost entries", () => {
     expect(matrix.get(`${receipt1}:${type1}`)).toBe(100);
     expect(matrix.get(`${receipt1}:${type2}`)).toBe(50);
     expect(matrix.get(`${receipt2}:${type1}`)).toBe(200);
+
+    // The «shu reysgacha» split the batch-money screen prints: everything
+    // here is receipt-scope (came WITH the cargo), nothing on the truck
+    // itself yet — so the whole journey is "before this trip".
+    const perClient = await batchLandedCostByClient(fakeBatchId);
+    const mine = perClient.get(clientId)!;
+    expect(mine.totalUsd).toBe(350);
+    expect(mine.batchUsd).toBe(0);
+
+    // And the tannarx opened up (the owner's «nimalar o'tirganini ko'rsam»):
+    // each part named by its source, the parts summing to the whole.
+    const parts = (await batchClientCostBreakdown(fakeBatchId)).get(clientId)!;
+    expect(parts.length).toBe(3);
+    expect(Math.round(parts.reduce((sum, part) => sum + part.usd, 0))).toBe(350);
+    expect(parts.every((part) => part.source && part.source !== '—')).toBe(true);
   });
 
   it("a receipt that is NOT on the batch cannot be hung with the batch's bill", async () => {

@@ -537,3 +537,64 @@ export async function addReceiptCostsBulk(
   }
   return input.cells.length;
 }
+
+export interface ClientCostPart {
+  /** Where the money was written: a batch code, a prixod number, a crate. */
+  source: string;
+  typeName: string;
+  usd: number;
+}
+
+/**
+ * WHAT a client's tannarx on this batch is made of (round 29, owner:
+ * «GS500 tannarxi ustida nimalar o'tirganini ko'rsam») — every cost entry
+ * whose allocation landed on the client's boxes aboard, grouped by its
+ * source and type: «YW-001 · yo'lkira — $60», «prixod · rastamojka — $45».
+ * The same rows `boxLandedCost` prints per box, folded per client.
+ */
+export async function batchClientCostBreakdown(
+  batchId: string,
+): Promise<Map<string, ClientCostPart[]>> {
+  const rows = await db
+    .select({
+      clientId: costAllocations.clientId,
+      typeName: costTypes.name,
+      batchCode: batches.code,
+      receiptNumber: receipts.number,
+      crateCode: crates.code,
+      usd: sql<string>`sum(${costAllocations.amountUsd})`,
+    })
+    .from(costAllocations)
+    .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
+    .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
+    .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
+    .leftJoin(batches, eq(costEntries.batchId, batches.id))
+    .leftJoin(receipts, eq(costEntries.receiptId, receipts.id))
+    .leftJoin(crates, eq(costEntries.crateId, crates.id))
+    .where(
+      and(
+        batchMemberFilter(batchId),
+        isNull(costEntries.voidedAt),
+        sql`${costAllocations.clientId} IS NOT NULL`,
+      ),
+    )
+    .groupBy(
+      costAllocations.clientId,
+      costTypes.name,
+      batches.code,
+      receipts.number,
+      crates.code,
+    );
+  const out = new Map<string, ClientCostPart[]>();
+  for (const row of rows) {
+    const list = out.get(row.clientId!) ?? [];
+    list.push({
+      source: row.batchCode ?? row.receiptNumber ?? row.crateCode ?? '—',
+      typeName: row.typeName,
+      usd: Math.round(Number(row.usd) * 100) / 100,
+    });
+    out.set(row.clientId!, list);
+  }
+  for (const list of out.values()) list.sort((a, b) => b.usd - a.usd);
+  return out;
+}

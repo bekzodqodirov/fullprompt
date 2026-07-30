@@ -28,6 +28,20 @@ o'rtacha qiladi. Tannarx har karobkaga barcha bosqichlardan o'zi yig'iladi.
 Inspektor/customs sklad kabi umumiy xarajatni KA-001 ga «og'irlik
 bo'yicha» asos bilan kiriting — kg ga proportsional bo'linadi.
 
+Keyingi so'rovlaringiz ham shu kunda qo'shildi:
+
+- **Tannarx «tarkibi»**: partiya moliyasida har mijoz tannarxi ostidagi
+  «tarkibi» bosilsa — qatorlab ochiladi: qaysi reys/prixoddan, qaysi
+  xarajat turi, qancha ulush («YW-001 · yo'lkira — $60»). «Shu reysgacha»
+  jami ham alohida ko'rinadi.
+- **Jadval ustunlari tayyor**: Rastamojka, Zatamojka, CCT, Yo'lkira
+  (va avvalgi Boshqa) — deploy bilan o'zi paydo bo'ladi, Admin →
+  Xarajat turlarida o'zgartirasiz. Jadval Excel ko'rinishiga keltirildi:
+  katak chiziqlari, qator ranglari, pastda ustun jamilari (yozilgani va
+  hozir kiritilayotgani alohida).
+- Yo'l-yo'lakay topilgan xato: uzun xarajat nomi telefon ekranidan
+  toshib, BUTUN sahifani kichraytirib yuborar ekan — tuzatildi.
+
 Tekshirildi: 793 unit/integration + 92 e2e yashil. Migratsiya yo'q.
 
 ## Hisoblash: VEDga soatli zadacha, kechikkani qizil, tezlik hisoboti — 2026-07-29

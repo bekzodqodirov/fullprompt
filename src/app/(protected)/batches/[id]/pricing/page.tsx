@@ -15,7 +15,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { batchCharges } from '@/modules/wms/finance/service';
-import { batchLandedCostByClient } from '@/modules/wms/costing/service';
+import { batchClientCostBreakdown, batchLandedCostByClient } from '@/modules/wms/costing/service';
 import { BackLink } from '@/components/back-link';
 import { PricingForm } from './pricing-form';
 import { PageHeader } from '@/components/ui/page';
@@ -80,10 +80,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     .filter((r) => r.clientId)
     .sort((a, b) => (a.clientCode ?? '').localeCompare(b.clientCode ?? ''));
 
-  const [charges, currencyRows, landed] = await Promise.all([
+  const [charges, currencyRows, landed, breakdown] = await Promise.all([
     batchCharges(id),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
     batchLandedCostByClient(id),
+    batchClientCostBreakdown(id),
   ]);
   const chargedByClient = new Map<string, number>();
   for (const { tx } of charges) {
@@ -117,6 +118,13 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   // Batch totals, so the header answers "did this truck earn money?" before
   // anyone scrolls through twenty clients.
   const totalCost = clientRows.reduce((a, r) => a + (landed.get(r.clientId!)?.totalUsd ?? 0), 0);
+  // The owner's ask: on the export truck, the cost accumulated BEFORE it —
+  // the Chinese internal legs, the receipt costs — visible, not blended
+  // away. The engine has always known both halves; this line just says so.
+  const totalPrev = clientRows.reduce((a, r) => {
+    const cost = landed.get(r.clientId!);
+    return a + (cost ? cost.totalUsd - cost.batchUsd : 0);
+  }, 0);
   const totalCharged = clientRows.reduce((a, r) => a + (chargedByClient.get(r.clientId!) ?? 0), 0);
   const priced = clientRows.filter((r) => (chargedByClient.get(r.clientId!) ?? 0) > 0).length;
   const money = (value: number) => `$${value.toFixed(2)}`;
@@ -149,6 +157,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
           </div>
           <p className="col-span-3 text-xs text-ink-500">
             {t('pricedOf', { priced, total: clientRows.length })}
+            {totalPrev > 0.009 && (
+              <span className="num">
+                {' '}· {t('prevLegs')}: {money(Math.round(totalPrev * 100) / 100)}
+              </span>
+            )}
           </p>
         </div>
       )}
@@ -189,6 +202,33 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                     {(costUsd / kg).toFixed(2)}/kg
                     {m3 > 0 && ` · ${(costUsd / m3).toFixed(0)}/m³`}
                   </p>
+                )}
+                {/* The share this cargo brought WITH it — internal legs and
+                    receipt costs before this truck. */}
+                {cost && cost.totalUsd - cost.batchUsd > 0.009 && (
+                  <p className="num text-xs text-ink-500">
+                    {t('prevLegs')}: {money(Math.round((cost.totalUsd - cost.batchUsd) * 100) / 100)}
+                  </p>
+                )}
+                {/* «Nimalar o'tirganini ko'rsam» — the tannarx opened up:
+                    every source and type that landed on this client's boxes.
+                    A press, not a hover — phones have no hover. */}
+                {(breakdown.get(row.clientId!) ?? []).length > 0 && (
+                  <details className="mt-1 text-left" data-testid="cost-breakdown">
+                    <summary className="cursor-pointer text-xs text-brand-700">
+                      {t('costDetail')}
+                    </summary>
+                    <ul className="mt-1 space-y-0.5 text-xs">
+                      {breakdown.get(row.clientId!)!.map((part, index) => (
+                        <li key={index} className="flex justify-between gap-2">
+                          <span className="min-w-0 truncate text-ink-700">
+                            {part.source} · {part.typeName}
+                          </span>
+                          <span className="num shrink-0">${part.usd.toFixed(2)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
               </div>
               <div>

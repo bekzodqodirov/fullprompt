@@ -23,10 +23,37 @@ export function CostTypeList({ types }: { types: CostTypeRow[] }) {
 
   return (
     <div className="space-y-3">
+      {/* Add FIRST, list after — the crm-settings shape. Also load-bearing on
+          a phone: at the list's end the button slid under the fixed tab bar
+          the moment the dictionary grew past a screenful (found by m9p when
+          round 29 seeded the grid columns). */}
+      {adding ? (
+        <CostTypeForm onDone={() => setAdding(false)} />
+      ) : (
+        <button
+          type="button"
+          data-testid="add-cost-type"
+          className="btn-primary w-full"
+          onClick={() => setAdding(true)}
+        >
+          ＋ {t('addType')}
+        </button>
+      )}
+
       {types.map((type) => (
-        <div key={type.id} className={`card space-y-2 !p-3 ${type.active ? '' : 'opacity-60'}`}>
-          <div className="flex items-baseline gap-2">
-            <span className="font-bold">💰 {type.name}</span>
+        // scroll-mb clears the fixed tab bar: an auto-scroll that aligns a
+        // bottom card with the viewport edge parks its buttons under the bar
+        // (found by m9p the moment the dictionary grew past a screenful).
+        <div
+          key={type.id}
+          className={`card scroll-mb-28 space-y-2 !p-3 ${type.active ? '' : 'opacity-60'}`}
+        >
+          {/* flex-wrap is load-bearing: a long type name plus two buttons
+              overflowed the 360px viewport, and mobile Chrome answered by
+              zooming the WHOLE page out — which silently shifted every
+              click coordinate on the screen (found via m9p, round 29). */}
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="min-w-0 font-bold [overflow-wrap:anywhere]">💰 {type.name}</span>
             {!type.active && (
               <span className="rounded bg-surface-sunken px-1.5 text-xs">{t('typeHidden')}</span>
             )}
@@ -52,19 +79,6 @@ export function CostTypeList({ types }: { types: CostTypeRow[] }) {
           )}
         </div>
       ))}
-
-      {adding ? (
-        <CostTypeForm onDone={() => setAdding(false)} />
-      ) : (
-        <button
-          type="button"
-          data-testid="add-cost-type"
-          className="btn-primary w-full"
-          onClick={() => setAdding(true)}
-        >
-          ＋ {t('addType')}
-        </button>
-      )}
     </div>
   );
 }
