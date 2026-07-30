@@ -9,8 +9,10 @@ import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
   addCostEntry,
+  addReceiptCostsBulk,
   CostError,
   costEntrySchema,
+  receiptCostGridSchema,
   voidCostEntry,
 } from '@/modules/wms/costing/service';
 
@@ -54,6 +56,36 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
     throw err;
   }
   revalidatePath(path);
+  return { ok: true };
+}
+
+/**
+ * The receipt-cost grid's one save (round 29). Gated like the batch costs
+ * panel — the person doing customs at the batch — and the service re-proves
+ * every receipt's membership before a single entry is written.
+ */
+export async function saveReceiptCostGridAction(input: unknown): Promise<CostActionResult> {
+  const parsed = receiptCostGridSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
+  if (!batch) return { ok: false, error: 'not_found' };
+  let actor;
+  try {
+    actor = await authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+
+  const meta = await requestMeta();
+  try {
+    await addReceiptCostsBulk(parsed.data, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof CostError) return { ok: false, error: err.code };
+    throw err;
+  }
+  revalidatePath(`/batches/${batch.id}`);
   return { ok: true };
 }
 

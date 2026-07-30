@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## Buxgalteriya: rastamojka jadval bo'lib kiritiladi, partiya moliyasi bir ekranda, to'lovlar reestri — 2026-07-30
+
+Buxgalter og'riqlari bo'yicha:
+
+- **Rastamojka endi jadval.** Partiya kartasida yangi «Prixodlar xarajati
+  (jadval)» bo'limi: qator — prixod, ustun — xarajat turi (rastamojka,
+  usluga, yo'lkira, sertifikat — Admin → Xarajat turlari ro'yxatingiz).
+  Excel'dagidek summalarni to'ldirib BIR marta saqlaysiz — har katak
+  prixodning oddiy xarajati bo'lib yoziladi va tannarxga o'zi taqsimlanadi.
+  Avval yozilgan summalar kataklar ostida ko'rinib turadi — ikki marta
+  yozib yuborilmaydi. Boshqa partiyaning prixodiga yozib bo'lmaydi —
+  sistema tekshiradi.
+- **«Partiya moliyasi» bir ekranda.** Partiyadagi narx qo'yish ekrani endi
+  har mijoz bo'yicha: tannarx (ichki reyslardan yig'ilgani bilan) → narx →
+  foyda → **mijoz balansi** (qarzi qizil) → kassasiga o'tish havolasi.
+  Tepada partiya jami: xarajat, qo'yilgan narx, foyda.
+- **To'lovlar reestri** — Moliya → «To'lovlar reestri» (buxgalter bosh
+  ekranida ham). Davr tanlab: kim, qachon, qancha, qaysi valyutada, qaysi
+  kassaga, kim yozgani — jami bilan, XLSX yuklab olinadi. To'lov yozish
+  avvalgidek: mijozni topasiz → uning kartasida forma.
+
+**Ish tartibi bo'yicha kelishuv (muhim!):** ichki reys xarajati O'Z
+partiyasiga yozilsin — YW-001 ning 30$/kubini YW-001 ga, GZ-001 ning
+35$/kubini GZ-001 ga. Ikkalasini KA-001 ga yozsangiz sistema aralashtirib
+o'rtacha qiladi. Tannarx har karobkaga barcha bosqichlardan o'zi yig'iladi.
+Inspektor/customs sklad kabi umumiy xarajatni KA-001 ga «og'irlik
+bo'yicha» asos bilan kiriting — kg ga proportsional bo'linadi.
+
+Tekshirildi: 793 unit/integration + 92 e2e yashil. Migratsiya yo'q.
+
 ## Hisoblash: VEDga soatli zadacha, kechikkani qizil, tezlik hisoboti — 2026-07-29
 
 So'raganingiz bo'yicha:

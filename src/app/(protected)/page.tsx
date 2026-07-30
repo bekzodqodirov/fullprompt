@@ -348,6 +348,7 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
   const t = await getTranslations('home');
   const tacc = await getTranslations('accounting');
   const td = await getTranslations('dashboard');
+  const tfin = await getTranslations('finance');
 
   const usd = (value: number) =>
     `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -391,6 +392,16 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           count={flow.unassignedPayments}
           warn={flow.unassignedPayments > 0}
           sub={null}
+        />
+        {/* Round 29: who paid what, row for row — the read half of «kimdan
+            qancha pul oldim»; the write half stays on the client's ledger. */}
+        <FlowRow
+          href="/finance/reestr"
+          icon="report"
+          testid="acc-flow-payments"
+          label={tfin('paymentsRegister')}
+          count={0}
+          sub={`${td('monthPaid')} ${usd(flow.snapshot.paidMonth)}`}
         />
         <FlowRow
           href="/accounting/expenses"

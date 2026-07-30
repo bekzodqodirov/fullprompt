@@ -571,7 +571,9 @@
     "addType": "Tur qo'shish",
     "typeHidden": "yashirilgan",
     "typeHide": "Yashirish",
-    "typeShow": "Qaytarish"
+    "typeShow": "Qaytarish",
+    "gridReceipt": "Prixod",
+    "gridRowTotal": "Jami"
   },
   "batches": {
     "title": "Partiyalar",
@@ -621,7 +623,7 @@
     "loadedBoxes": "Yuklangan korobkalar",
     "departConfirm": "Mashinani jo'natishni tasdiqlaysizmi? Bundan keyin yuk ro'yxati qulflanadi.",
     "packingPhotos": "Packing (rasmlar)",
-    "pricing": "Narx belgilash (moliya)",
+    "pricing": "Partiya moliyasi (narxlar)",
     "whereIsTruck": "Mashina qayerda?",
     "cpBorder": "Chegarada turibdi",
     "cpKg": "Qirg‘izistonda",
@@ -643,7 +645,9 @@
     "cancelBatchHint": "Partiya bekor qilinadi, qutilar skladga qaytadi",
     "cancelReason": "Sabab",
     "cancelConfirm": "Partiya bekor qilinsinmi? Qutilar skladga qaytadi.",
-    "cancelled": "Partiya bekor qilindi, qaytarilgan quti: {n}"
+    "cancelled": "Partiya bekor qilindi, qaytarilgan quti: {n}",
+    "receiptGridTitle": "Prixodlar xarajati (jadval)",
+    "receiptGridHint": "Qator — prixod, ustun — xarajat turi (rastamojka, usluga, yo'lkira…). Summalarni to'ldirib bir marta saqlang — har katak prixodning oddiy xarajati bo'lib yoziladi. Avval yozilganlari kataklar ostida ko'rinadi."
   },
   "loading": {
     "title": "Pogruzka",
@@ -789,15 +793,25 @@
     "void": "Bekor qilish",
     "voidReason": "Bekor qilish sababi?",
     "voided": "Bekor qilingan",
-    "pricingTitle": "Partiya narxlarini belgilash",
-    "pricingHint": "Rastamojkadan keyin har bir klient uchun kelishilgan narxni kiriting — u klient hisobiga qarz sifatida yoziladi.",
+    "pricingTitle": "Partiya moliyasi",
+    "pricingHint": "Shu partiyadagi har bir mijoz bo'yicha tannarx, narx, foyda va balans. Narx mijoz balansiga hisob bo'lib yoziladi.",
     "setPrice": "Narx belgilash",
     "alreadyCharged": "Hisoblangan",
     "costLabel": "Tannarx",
     "priceLabel": "Narx",
     "marginLabel": "Foyda",
     "pricedOf": "{priced} / {total} klientga narx qo‘yildi",
-    "noCostsYet": "Bu klient yuki bo‘yicha hali xarajat kiritilmagan — tannarx 0 ko‘rinmoqda"
+    "noCostsYet": "Bu klient yuki bo‘yicha hali xarajat kiritilmagan — tannarx 0 ko‘rinmoqda",
+    "paymentsRegister": "To'lovlar reestri",
+    "registerAddHint": "To'lov yozish: mijozni toping — forma uning kartasida",
+    "fromDate": "Dan",
+    "toDate": "Gacha",
+    "applyPeriod": "Ko'rsatish",
+    "enteredBy": "Kim yozdi",
+    "noAccount": "kassasiz",
+    "noPayments": "Bu davrda to'lov yo'q",
+    "clientBalance": "Mijoz balansi (umumiy)",
+    "openLedger": "mijoz kassasi"
   },
   "map": {
     "title": "Xarita",

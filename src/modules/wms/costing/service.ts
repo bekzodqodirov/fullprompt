@@ -407,3 +407,133 @@ export async function batchCostSheet(batchId: string) {
     usdPerM3: m3 > 0 ? Math.round((totalUsd / m3) * 100) / 100 : null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// The receipt-cost grid (round 29) — the accountant's Excel, kept
+//
+// Her sheet had a row per prixod and a column per expense: rastamojka,
+// firma uslugasi, yo'lkira, sertifikat, jami. Entering those one form at a
+// time is why «rastamojkani yozishga uspet qilmayman». The grid puts the
+// same table on the batch card; one save turns every filled cell into an
+// ordinary receipt-scope cost entry — audited, FX-converted and allocated
+// by the same engine as everything else, so the landed cost cannot tell a
+// grid entry from a form entry.
+// ---------------------------------------------------------------------------
+
+export interface BatchReceiptRow {
+  receiptId: string;
+  number: string | null;
+  clientCode: string | null;
+  clientName: string | null;
+  boxCount: number;
+  kg: number;
+  m3: number;
+}
+
+/** The batch's receipts, one grid row each — membership through the
+ * movement rows (#152), same ground truth as the cost engine itself. */
+export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow[]> {
+  const rows = await db
+    .select({
+      receiptId: receipts.id,
+      number: receipts.number,
+      clientCode: clients.clientCode,
+      clientName: clients.name,
+      boxCount: sql<number>`count(distinct ${boxes.id})`,
+      kg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount}), 0)`,
+      m3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}), 0)`,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .where(batchMemberFilter(batchId))
+    .groupBy(receipts.id, receipts.number, clients.clientCode, clients.name)
+    .orderBy(asc(clients.clientCode), asc(receipts.number));
+  return rows.map((row) => ({
+    receiptId: row.receiptId,
+    number: row.number,
+    clientCode: row.clientCode,
+    clientName: row.clientName,
+    boxCount: Number(row.boxCount),
+    kg: Math.round(Number(row.kg) * 10) / 10,
+    m3: Math.round(Number(row.m3) * 1000) / 1000,
+  }));
+}
+
+/**
+ * What is ALREADY written per receipt per type (USD, non-void) — shown under
+ * the grid's inputs so a second session never double-enters blind. Keyed
+ * `receiptId:costTypeId`.
+ */
+export async function receiptCostMatrix(receiptIds: string[]): Promise<Map<string, number>> {
+  if (receiptIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      receiptId: costEntries.receiptId,
+      costTypeId: costEntries.costTypeId,
+      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+    })
+    .from(costEntries)
+    .where(
+      and(
+        eq(costEntries.scope, 'receipt'),
+        inArray(costEntries.receiptId, receiptIds),
+        isNull(costEntries.voidedAt),
+      ),
+    )
+    .groupBy(costEntries.receiptId, costEntries.costTypeId);
+  return new Map(
+    rows.map((row) => [`${row.receiptId}:${row.costTypeId}`, Math.round(Number(row.usd) * 100) / 100]),
+  );
+}
+
+export const receiptCostGridSchema = z.object({
+  batchId: z.string().uuid(),
+  currency: z.string().trim().length(3).toUpperCase(),
+  costDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  cells: z
+    .array(
+      z.object({
+        receiptId: z.string().uuid(),
+        costTypeId: z.string().uuid(),
+        amount: z.number().positive().max(1_000_000_000),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+export type ReceiptCostGridInput = z.infer<typeof receiptCostGridSchema>;
+
+/**
+ * One save, many entries. Every cell must name a receipt that is actually ON
+ * this batch — the grid only offers those, but a stale tab or a hand-built
+ * request must not be able to hang somebody else's prixod with our customs
+ * bill, so the membership is re-proved here, not trusted from the form.
+ */
+export async function addReceiptCostsBulk(
+  input: ReceiptCostGridInput,
+  ctx: AuditContext,
+): Promise<number> {
+  const allowed = new Set((await batchReceiptRows(input.batchId)).map((row) => row.receiptId));
+  for (const cell of input.cells) {
+    if (!allowed.has(cell.receiptId)) throw new CostError('receipt_not_on_batch');
+  }
+  for (const cell of input.cells) {
+    await addCostEntry(
+      {
+        scope: 'receipt',
+        receiptId: cell.receiptId,
+        costTypeId: cell.costTypeId,
+        amount: cell.amount,
+        currency: input.currency,
+        costDate: input.costDate,
+        // Within one receipt the split lands on one client either way;
+        // weight is the house default the rest of the engine uses.
+        allocationBasis: 'weight',
+      },
+      ctx,
+    );
+  }
+  return input.cells.length;
+}

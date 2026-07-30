@@ -23,7 +23,15 @@ export default async function FinancePage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
-      <PageHeader icon="wallet" title={t('title')} />
+      <PageHeader
+        icon="wallet"
+        title={t('title')}
+        actions={
+          <Link href="/finance/reestr" className="btn-secondary px-3 text-sm">
+            📒 {t('paymentsRegister')}
+          </Link>
+        }
+      />
       {actor.permissions.has('finance.manage') && <FinanceClientSearch />}
       <div className="card flex items-baseline gap-2">
         <span className="text-sm text-ink-700">{t('totalDebt')}:</span>

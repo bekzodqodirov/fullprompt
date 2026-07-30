@@ -14,9 +14,10 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { batchCostSheet } from '@/modules/wms/costing/service';
+import { batchCostSheet, batchReceiptRows, receiptCostMatrix } from '@/modules/wms/costing/service';
 import { costTypes, currencies } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
+import { ReceiptCostGrid } from './receipt-cost-grid';
 import { VehicleForm } from './vehicle-form';
 import {
   createDriverDeviceAction,
@@ -121,6 +122,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // moment a phone claims it — a burnt code on a header teaches nothing.
   const pairCode = devices.find((device) => device.pairCode)?.pairCode ?? null;
   const costSheet = canSeeCosts ? await batchCostSheet(id) : null;
+  // Round 29: the accountant's Excel as a grid — a row per prixod on this
+  // truck, a column per expense type. Reads what is already written so a
+  // second session never double-enters blind.
+  const gridRows = canSeeCosts ? await batchReceiptRows(id) : [];
+  const gridExisting = canSeeCosts
+    ? Object.fromEntries(await receiptCostMatrix(gridRows.map((row) => row.receiptId)))
+    : {};
   const costMeta = canSeeCosts
     ? {
         types: await db
@@ -363,6 +371,32 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               )}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Round 29: rastamojka/usluga/yo'lkira per prixod, entered as the
+          table it always was in the accountant's Excel — one save, ordinary
+          receipt-scope entries underneath. */}
+      {costMeta && gridRows.length > 0 && (
+        <div className="card space-y-2">
+          <h2 className="text-lg font-bold">🧾 {t('receiptGridTitle')}</h2>
+          <p className="text-xs text-ink-500">{t('receiptGridHint')}</p>
+          <ReceiptCostGrid
+            batchId={batch.id}
+            rows={gridRows.map((row) => ({
+              receiptId: row.receiptId,
+              number: row.number,
+              clientCode: row.clientCode,
+              kg: row.kg,
+              m3: row.m3,
+            }))}
+            types={costMeta.types}
+            existing={gridExisting}
+            currencies={costMeta.currencies}
+            defaultCurrency="USD"
+            today={new Date().toISOString().slice(0, 10)}
+            canEdit={canEnterCosts}
+          />
         </div>
       )}
           </>

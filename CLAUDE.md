@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-788 unit/integration + 92 e2e, verified in CI's order on a fresh database.
+793 unit/integration + 92 e2e, verified in CI's order on a fresh database.
 Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -590,6 +590,28 @@ ROUTES gained `deal:` (task about-links). e2e note: task form kept
 testid task-due as type=date; new task-due-time beside it. Red-proof:
 saveLines hook stripped → clock-stop test red. m3 e2e flaked once on the
 first full run, green alone and on the full re-run.
+
+Round 29 — the accountant's pains (#398-399, owner's answers: rastamojka
+per PRIXOD in Excel columns, batch-money screen = the 4 things, no cash
+shifts). NO migration. (1) **Receipt-cost GRID** on the batch card
+(`receipt-cost-grid.tsx`, main column under costs): rows = the batch's
+receipts (`batchReceiptRows` via batchMemberFilter #152), columns = the
+owner's active cost types; one save → `addReceiptCostsBulk` → ordinary
+scope-receipt `addCostEntry` per cell (audited/FX/allocated — engine can't
+tell grid from form); membership RE-PROVED server-side (red-proof:
+strip → foreign-receipt test red); already-entered sums under cells via
+`receiptCostMatrix`. LESSON: grid's currency select briefly shared
+`aria-label="currency"` with CostPanel — m9's strict locator refused; an
+aria-label is an API (now "grid currency"). (2) **Pricing page = partiya
+moliyasi**: + per-client OVERALL balance (labelled honestly — payments are
+account money, not truck money) + ledger links; pricingTitle re-worded ×4.
+(3) **Payments register** `/finance/reestr` (`paymentsRegister`, period
+filter, kassa column, `buildPaymentsXlsx` via /api/accounting/payments —
+gate finance.view NOT finance.reports: who paid ≠ margin), acc-flow row
+`acc-flow-payments`, /finance header link; writing stays on the client
+ledger (search → card). METHOD told to owner: internal legs' freight goes
+on the ORIGIN batch (YW 30$/kub on YW-001), never blended onto the export
+batch; shared customs costs on the export batch basis 'weight'.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

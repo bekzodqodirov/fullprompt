@@ -1,7 +1,7 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
-import { batches, clients, clientTransactions, deals, users } from '../../platform/db/schema';
+import { batches, clients, clientTransactions, deals, moneyAccounts, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
 
@@ -223,4 +223,65 @@ export async function batchCharges(batchId: string) {
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
     .where(and(eq(clientTransactions.batchId, batchId), isNull(clientTransactions.voidedAt)))
     .orderBy(desc(clientTransactions.createdAt));
+}
+
+// ---------------------------------------------------------------------------
+// The payments register (round 29) — «kimdan qancha pul olganimni qanday
+// yozaman?» answered as a screen: every incoming payment in a period, with
+// the client, the cash box it landed in and who recorded it. Writing stays
+// where it always was (the client's ledger form); this is the READ the
+// accountant was keeping in a notebook.
+// ---------------------------------------------------------------------------
+
+export interface PaymentRegisterRow {
+  id: string;
+  txDate: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  amount: string;
+  currency: string;
+  amountUsd: string;
+  method: string | null;
+  accountName: string | null;
+  note: string | null;
+  enteredBy: string | null;
+}
+
+export async function paymentsRegister(
+  from: string,
+  to: string,
+): Promise<{ rows: PaymentRegisterRow[]; totalUsd: number; count: number }> {
+  const rows = await db
+    .select({
+      id: clientTransactions.id,
+      txDate: clientTransactions.txDate,
+      clientId: clientTransactions.clientId,
+      clientCode: clients.clientCode,
+      clientName: clients.name,
+      amount: clientTransactions.amount,
+      currency: clientTransactions.currency,
+      amountUsd: clientTransactions.amountUsd,
+      method: clientTransactions.method,
+      accountName: moneyAccounts.name,
+      note: clientTransactions.note,
+      enteredBy: users.fullName,
+    })
+    .from(clientTransactions)
+    .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
+    .leftJoin(moneyAccounts, eq(clientTransactions.accountId, moneyAccounts.id))
+    .leftJoin(users, eq(clientTransactions.createdBy, users.id))
+    .where(
+      and(
+        eq(clientTransactions.type, 'payment'),
+        isNull(clientTransactions.voidedAt),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
+      ),
+    )
+    .orderBy(desc(clientTransactions.txDate), desc(clientTransactions.createdAt))
+    .limit(2000);
+  const totalUsd =
+    Math.round(rows.reduce((sum, row) => sum + Number(row.amountUsd), 0) * 100) / 100;
+  return { rows, totalUsd, count: rows.length };
 }

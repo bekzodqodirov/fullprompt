@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { reportLabels } from '../reports/labels';
 import { listExpenses } from './service';
+import { paymentsRegister } from '../finance/service';
 import { toUzs, uzsRate } from './period';
 import {
   arAging,
@@ -226,6 +227,42 @@ export async function buildExpensesXlsx(
     L.total, '', '', '',
     Math.round(rows.reduce((acc, row) => acc + Number(row.expense.amountUsd), 0) * 100) / 100,
   ]);
+  total.font = { bold: true };
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/**
+ * The payments register (round 29): every incoming payment of the period,
+ * row for row — the file the accountant used to keep by hand.
+ */
+export async function buildPaymentsXlsx(from: string, to: string, locale?: string): Promise<Buffer> {
+  const L = reportLabels(locale);
+  const { rows, totalUsd } = await paymentsRegister(from, to);
+  const workbook = new ExcelJS.Workbook();
+  const sheet = sheetSetup(workbook, 'Payments', `${L.clientPayments} · ${period(from, to)}`);
+
+  const head = sheet.addRow([
+    L.date, L.client, '', L.amount, L.currency, 'USD', L.account, L.employee, L.note,
+  ]);
+  head.font = { bold: true };
+  sheet.columns = [
+    { width: 12 }, { width: 12 }, { width: 26 }, { width: 14 }, { width: 10 },
+    { width: 14 }, { width: 20 }, { width: 22 }, { width: 40 },
+  ];
+  for (const row of rows) {
+    sheet.addRow([
+      row.txDate,
+      row.clientCode,
+      row.clientName,
+      Number(row.amount),
+      row.currency,
+      Number(row.amountUsd),
+      row.accountName ?? '',
+      row.enteredBy ?? '',
+      row.note ?? '',
+    ]);
+  }
+  const total = sheet.addRow([L.total, '', '', '', '', totalUsd]);
   total.font = { bold: true };
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

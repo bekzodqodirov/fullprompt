@@ -571,7 +571,9 @@
     "addType": "添加类型",
     "typeHidden": "已隐藏",
     "typeHide": "隐藏",
-    "typeShow": "恢复"
+    "typeShow": "恢复",
+    "gridReceipt": "入库单",
+    "gridRowTotal": "合计"
   },
   "batches": {
     "title": "车次",
@@ -621,7 +623,7 @@
     "loadedBoxes": "已装箱明细",
     "departConfirm": "确认发车？发车后装载清单将锁定。",
     "packingPhotos": "装箱单（带照片）",
-    "pricing": "定价（财务）",
+    "pricing": "车次财务（定价）",
     "whereIsTruck": "车在哪里？",
     "cpBorder": "停在口岸",
     "cpKg": "在吉尔吉斯斯坦",
@@ -643,7 +645,9 @@
     "cancelBatchHint": "批次将被取消，箱子退回仓库",
     "cancelReason": "原因",
     "cancelConfirm": "确定取消此批次？箱子将退回仓库。",
-    "cancelled": "批次已取消，退回箱数：{n}"
+    "cancelled": "批次已取消，退回箱数：{n}",
+    "receiptGridTitle": "按入库单费用（表格）",
+    "receiptGridHint": "行＝入库单，列＝费用类型（清关、服务费、运费…）。填好金额一次保存——每格都会成为该入库单的普通费用。已录入的金额显示在格下。"
   },
   "loading": {
     "title": "装车",
@@ -789,15 +793,25 @@
     "void": "作废",
     "voidReason": "作废原因？",
     "voided": "已作废",
-    "pricingTitle": "批次定价",
-    "pricingHint": "清关后为每位客户录入协商价格——将作为应收记入客户账。",
+    "pricingTitle": "车次财务",
+    "pricingHint": "本车次每位客户的成本、价格、利润与余额。价格将作为应收记入客户余额。",
     "setPrice": "定价",
     "alreadyCharged": "已计费",
     "costLabel": "成本",
     "priceLabel": "价格",
     "marginLabel": "利润",
     "pricedOf": "已为 {total} 位客户中的 {priced} 位定价",
-    "noCostsYet": "该客户货物尚未录入费用——成本显示为 0"
+    "noCostsYet": "该客户货物尚未录入费用——成本显示为 0",
+    "paymentsRegister": "收款登记表",
+    "registerAddHint": "记录收款：搜索客户——表单在其卡片上",
+    "fromDate": "从",
+    "toDate": "至",
+    "applyPeriod": "显示",
+    "enteredBy": "录入人",
+    "noAccount": "无账户",
+    "noPayments": "该期间无收款",
+    "clientBalance": "客户余额（总）",
+    "openLedger": "客户账页"
   },
   "map": {
     "title": "地图",

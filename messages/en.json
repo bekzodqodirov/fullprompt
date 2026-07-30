@@ -571,7 +571,9 @@
     "addType": "Add type",
     "typeHidden": "hidden",
     "typeHide": "Hide",
-    "typeShow": "Restore"
+    "typeShow": "Restore",
+    "gridReceipt": "Receipt",
+    "gridRowTotal": "Total"
   },
   "batches": {
     "title": "Batches",
@@ -621,7 +623,7 @@
     "loadedBoxes": "Loaded boxes",
     "departConfirm": "Send the truck off? The cargo list is locked after this.",
     "packingPhotos": "Packing (photos)",
-    "pricing": "Set prices (finance)",
+    "pricing": "Batch money (pricing)",
     "whereIsTruck": "Where is the truck?",
     "cpBorder": "Waiting at the border",
     "cpKg": "In Kyrgyzstan",
@@ -643,7 +645,9 @@
     "cancelBatchHint": "The batch is cancelled and its boxes go back to stock",
     "cancelReason": "Reason",
     "cancelConfirm": "Cancel this batch? Its boxes go back to stock.",
-    "cancelled": "Batch cancelled, boxes released: {n}"
+    "cancelled": "Batch cancelled, boxes released: {n}",
+    "receiptGridTitle": "Costs per receipt (grid)",
+    "receiptGridHint": "Row = receipt, column = cost type (customs, service, freight…). Fill the amounts and save once — every cell becomes an ordinary receipt cost. Already-entered sums show under the cells."
   },
   "loading": {
     "title": "Loading",
@@ -789,15 +793,25 @@
     "void": "Void",
     "voidReason": "Reason for voiding?",
     "voided": "Voided",
-    "pricingTitle": "Set prices for the batch",
-    "pricingHint": "After customs clearance, enter the agreed price for each client — it goes onto their balance as a charge.",
+    "pricingTitle": "Batch money",
+    "pricingHint": "Cost, price, margin and balance per client of this batch. A price posts to the client's balance as a charge.",
     "setPrice": "Set the price",
     "alreadyCharged": "Charged",
     "costLabel": "Cost",
     "priceLabel": "Price",
     "marginLabel": "Margin",
     "pricedOf": "{priced} of {total} clients priced",
-    "noCostsYet": "No costs entered for this client's cargo yet — the cost reads as 0"
+    "noCostsYet": "No costs entered for this client's cargo yet — the cost reads as 0",
+    "paymentsRegister": "Payments register",
+    "registerAddHint": "Record a payment: find the client — the form is on their card",
+    "fromDate": "From",
+    "toDate": "To",
+    "applyPeriod": "Show",
+    "enteredBy": "Entered by",
+    "noAccount": "no account",
+    "noPayments": "No payments in this period",
+    "clientBalance": "Client balance (overall)",
+    "openLedger": "client ledger"
   },
   "map": {
     "title": "Map",

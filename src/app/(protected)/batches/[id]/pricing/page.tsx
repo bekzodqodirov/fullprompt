@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
@@ -8,6 +8,7 @@ import {
   boxes,
   boxMovements,
   clients,
+  clientTransactions,
   currencies,
   receiptLots,
   receipts,
@@ -89,6 +90,29 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     chargedByClient.set(tx.clientId, (chargedByClient.get(tx.clientId) ?? 0) + Number(tx.amountUsd));
   }
   const today = new Date().toISOString().slice(0, 10);
+
+  // «Kim qancha to'ladi» on the same screen (round 29): the client's OVERALL
+  // balance — payments are money on the account, not on a truck, so this is
+  // honestly labelled the general balance, not this batch's.
+  const clientIds = clientRows.map((row) => row.clientId!).filter(Boolean);
+  const balanceRows = clientIds.length
+    ? await db
+        .select({
+          clientId: clientTransactions.clientId,
+          balance: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END), 0)`,
+        })
+        .from(clientTransactions)
+        .where(
+          and(
+            inArray(clientTransactions.clientId, clientIds),
+            isNull(clientTransactions.voidedAt),
+          ),
+        )
+        .groupBy(clientTransactions.clientId)
+    : [];
+  const balanceByClient = new Map(
+    balanceRows.map((row) => [row.clientId, Math.round(Number(row.balance) * 100) / 100]),
+  );
 
   // Batch totals, so the header answers "did this truck earn money?" before
   // anyone scrolls through twenty clients.
@@ -188,6 +212,22 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             </div>
             {costUsd === 0 && (
               <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>
+            )}
+
+            {balanceByClient.has(row.clientId!) && (
+              <p className="text-sm">
+                {t('clientBalance')}:{' '}
+                <span
+                  className={`num font-bold ${
+                    balanceByClient.get(row.clientId!)! > 0.009 ? 'text-bad' : 'text-good'
+                  }`}
+                >
+                  {money(balanceByClient.get(row.clientId!)!)}
+                </span>
+                <Link href={`/finance/${row.clientId}`} className="ml-2 text-xs text-brand-700 underline">
+                  {t('openLedger')} →
+                </Link>
+              </p>
             )}
 
             <PricingForm

@@ -7,12 +7,13 @@ import { resolvePeriod } from '@/modules/wms/accounting/period';
 import {
   buildCashFlowXlsx,
   buildExpensesXlsx,
+  buildPaymentsXlsx,
   buildPnlXlsx,
   buildProfitXlsx,
   buildReceivablesXlsx,
 } from '@/modules/wms/accounting/xlsx';
 
-const kindSchema = z.enum(['pnl', 'cashflow', 'receivables', 'profit', 'expenses']);
+const kindSchema = z.enum(['pnl', 'cashflow', 'receivables', 'profit', 'expenses', 'payments']);
 
 /**
  * Accounting XLSX exports.
@@ -30,8 +31,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   try {
     const actor = await getActor();
     if (!actor) throw new AuthError('Not authenticated', 'unauthenticated');
-    const needed = kind.data === 'expenses' ? 'finance.expenses' : 'finance.reports';
-    if (!actor.permissions.has(needed)) throw new AuthError('Missing permission', 'forbidden');
+    // The payments register shows who paid, not the company's margin — the
+    // same facts the /finance screens already show to finance.view.
+    if (kind.data === 'payments') {
+      if (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) {
+        throw new AuthError('Missing permission', 'forbidden');
+      }
+    } else {
+      const needed = kind.data === 'expenses' ? 'finance.expenses' : 'finance.reports';
+      if (!actor.permissions.has(needed)) throw new AuthError('Missing permission', 'forbidden');
+    }
 
     const url = new URL(request.url);
     const { from, to } = resolvePeriod({
@@ -59,6 +68,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
         break;
       case 'profit':
         xlsx = await buildProfitXlsx(view, from, to, locale);
+        break;
+      case 'payments':
+        xlsx = await buildPaymentsXlsx(from, to, locale);
         break;
       case 'expenses':
         xlsx = await buildExpensesXlsx(
