@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -9,14 +9,16 @@ import {
   batches,
   boxes,
   clients,
+  crates,
   receiptLots,
   receipts,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
 import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
+import { createCrate, dissolveCrate } from '@/modules/wms/crates/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
-import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
+import { departBatch, finishLoading, ingestLoadScans } from '@/modules/wms/scanning/service';
 import { buildManifestXlsx } from '@/modules/wms/documents/manifest-xlsx';
 import { buildPackingXlsx } from '@/modules/wms/documents/ved-xlsx';
 import {
@@ -347,6 +349,94 @@ describe('receipt void guard (audit defect)', () => {
     await voidReceipt(goodLot!.receiptId, 'xato kiritilgan', ctx());
     expect((await db.select().from(boxes).where(eq(boxes.id, good.boxIds[0]!)))[0]!.status).toBe(
       'void',
+    );
+  });
+});
+
+describe('a crate arrives (round 31)', () => {
+  it('the crate’s warehouse follows its boxes, and journey flags retire on landing', async () => {
+    /**
+     * crates.warehouse_id was written once at packing and never again, so an
+     * arrived yashik could neither be planned onward from where it really
+     * stands nor counted at inventory there — and the origin's count sheet
+     * went on listing it. The box flags are the same story: added_on_spot
+     * describes ONE trip, and a box that kept it was printing last truck's
+     * deviation on the next truck's manifest.
+     */
+    const lot = await makeLot(2);
+    const crateId = uuidv4();
+    const crate = await createCrate(
+      { crateId, warehouseId: originId, boxIds: lot.boxIds, kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+    const sub = await submitPlan(
+      { originWarehouseId: originId, destWarehouseId: destId, lines: [], crateIds: [crateId] },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    const [loadAck] = await ingestLoadScans(
+      [{ ...scan(batch!.id, crate.code), addedOnSpot: false }],
+      ctx(),
+    );
+    expect(loadAck!.result).toBe('ok');
+    await departBatch(batch!.id, ctx());
+    // A leftover journey flag rides in — landing must retire it.
+    await db.update(boxes).set({ flags: ['added_on_spot'] }).where(eq(boxes.id, lot.boxIds[0]!));
+
+    const [ack] = await ingestUnloadScans([scan(batch!.id, crate.code)], ctx());
+    expect(ack!.result).toBe('ok');
+
+    const after = (await db.query.crates.findFirst({ where: eq(crates.id, crateId) }))!;
+    expect(after.warehouseId).toBe(destId);
+    const landed = await db.select().from(boxes).where(eq(boxes.id, lot.boxIds[0]!));
+    expect(landed[0]!.flags).toEqual([]);
+    // …and the crate can now be dissolved WHERE IT IS.
+    const { boxCount } = await dissolveCrate(crateId, ctx());
+    expect(boxCount).toBe(2);
+  });
+
+  it('a member left at the origin is NOT teleported by the crate scan (round 31)', async () => {
+    /**
+     * The audit's unload-side twin of #221. C is damaged at the door, so A
+     * and B are scanned individually and finish-loading short-loads C back to
+     * the shelf — WITH its crateId, because no per-box un-crate exists. The
+     * crate scan at the destination used to "reality-wins" C here: the client
+     * was told three boxes arrived while C is physically in China, Yiwu stock
+     * lost it, and C was immediately issuable at Tashkent. The crate label
+     * vouches for the crate, not for boxes nobody saw.
+     */
+    const lot = await makeLot(3);
+    const crateId = uuidv4();
+    const crate = await createCrate(
+      { crateId, warehouseId: originId, boxIds: lot.boxIds, kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+    const sub = await submitPlan(
+      { originWarehouseId: originId, destWarehouseId: destId, lines: [], crateIds: [crateId] },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    for (const code of lot.shortCodes.slice(0, 2)) {
+      const [a] = await ingestLoadScans([{ ...scan(batch!.id, code), addedOnSpot: false }], ctx());
+      expect(a!.result).toBe('ok');
+    }
+    await finishLoading(batch!.id, ctx());
+    await departBatch(batch!.id, ctx());
+
+    const [ack] = await ingestUnloadScans([scan(batch!.id, crate.code)], ctx());
+    expect(ack!.result).toBe('ok');
+    expect(ack!.boxes).toHaveLength(2);
+    // The shortage is NAMED, so the screen can say "2 of 3, C stayed behind".
+    expect(ack!.notArrived).toEqual([lot.shortCodes[2]!]);
+
+    // C is still on the Yiwu shelf — not moved, not announced to the client.
+    const c = (await db.select().from(boxes).where(eq(boxes.id, lot.boxIds[2]!)))[0]!;
+    expect(c.status).toBe('in_stock');
+    expect(c.currentWarehouseId).toBe(originId);
+    // The pair that really rode the truck landed normally.
+    const landed = await db.select().from(boxes).where(inArray(boxes.id, lot.boxIds.slice(0, 2)));
+    expect(landed.every((b) => b.status === 'in_stock' && b.currentWarehouseId === destId)).toBe(
+      true,
     );
   });
 });

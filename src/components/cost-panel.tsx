@@ -31,8 +31,9 @@ const BASES = ['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client'] as
 
 /**
  * W9 cost capture (spec 6.9) — shared by the batch card (freight, agent fee,
- * customs…) and the receipt page (local handling). Lists entries with their
- * USD conversion, adds new ones, voids with a reason.
+ * customs…), the receipt page (local handling) and the crate card (the yashik
+ * fee, correctable since round 31). Lists entries with their USD conversion,
+ * adds new ones, voids with a reason.
  */
 export function CostPanel({
   scope,
@@ -44,7 +45,7 @@ export function CostPanel({
   defaultCurrency,
   canEdit,
 }: {
-  scope: 'batch' | 'receipt';
+  scope: 'batch' | 'receipt' | 'crate';
   targetId: string;
   entries: CostEntryView[];
   costTypes: CostTypeOption[];
@@ -76,6 +77,7 @@ export function CostPanel({
         scope,
         batchId: scope === 'batch' ? targetId : undefined,
         receiptId: scope === 'receipt' ? targetId : undefined,
+        crateId: scope === 'crate' ? targetId : undefined,
         costTypeId: typeId,
         amount: Number(amount.replace(',', '.')),
         currency,

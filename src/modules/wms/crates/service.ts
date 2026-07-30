@@ -14,6 +14,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { recomputeEntry } from '../costing/service';
 import { nextCrateCode } from '../codes';
 
 export class CrateError extends Error {
@@ -51,10 +52,10 @@ export type CreateCrateInput = z.infer<typeof createCrateSchema>;
 export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new CrateError('unauthenticated');
   const actorId = ctx.actorId;
-  return db.transaction(async (tx) => {
+  const { crate, cratingEntryId } = await db.transaction(async (tx) => {
     // Idempotent by client-generated id (double-tap safe).
     const existing = await tx.query.crates.findFirst({ where: eq(crates.id, input.crateId) });
-    if (existing) return existing;
+    if (existing) return { crate: existing, cratingEntryId: null };
 
     const warehouse = await tx.query.warehouses.findFirst({
       where: eq(warehouses.id, input.warehouseId),
@@ -99,21 +100,26 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
       })
       .returning();
 
+    let cratingEntryId: string | null = null;
     if (input.cratingCost) {
       const cratingType = await tx.query.costTypes.findFirst({
         where: eq(costTypes.code, 'crating'),
       });
       if (!cratingType) throw new CrateError('crating_cost_type_missing');
-      await tx.insert(costEntries).values({
-        scope: 'crate',
-        crateId: crate!.id,
-        clientId,
-        costTypeId: cratingType.id,
-        amount: input.cratingCost.amount.toString(),
-        currency: input.cratingCost.currency,
-        costDate: new Date().toISOString().slice(0, 10),
-        enteredBy: actorId,
-      });
+      const [entry] = await tx
+        .insert(costEntries)
+        .values({
+          scope: 'crate',
+          crateId: crate!.id,
+          clientId,
+          costTypeId: cratingType.id,
+          amount: input.cratingCost.amount.toString(),
+          currency: input.cratingCost.currency,
+          costDate: new Date().toISOString().slice(0, 10),
+          enteredBy: actorId,
+        })
+        .returning({ id: costEntries.id });
+      cratingEntryId = entry!.id;
     }
 
     await tx.update(boxes).set({ crateId: crate!.id }).where(inArray(boxes.id, input.boxIds));
@@ -143,8 +149,13 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
       entityId: crate!.id,
       actorId: ctx.actorId,
     });
-    return crate!;
+    return { crate: crate!, cratingEntryId };
   });
+  // FX-convert and split across the members the moment the entry is born,
+  // like every cost the forms enter. Until this ran, the yashik fee sat with
+  // amount_usd NULL — in no tannarx, no client share, no P&L.
+  if (cratingEntryId) await recomputeEntry(cratingEntryId);
+  return crate;
 }
 
 /** Update measured dims/weight/note after packing (spec: "measured after packing"). */
@@ -202,19 +213,23 @@ export async function dissolveCrate(crateId: string, ctx: AuditContext) {
       .update(crates)
       .set({ status: 'dissolved', dissolvedAt: new Date(), dissolvedBy: actorId })
       .where(eq(crates.id, crateId));
-    await tx.insert(boxMovements).values(
-      members.map((box) => ({
-        boxId: box.id,
-        fromWarehouseId: box.currentWarehouseId,
-        toWarehouseId: box.currentWarehouseId,
-        fromStatus: box.status,
-        toStatus: box.status,
-        cause: 'crate_dissolved',
-        refType: 'crate',
-        refId: crateId,
-        actorId: ctx.actorId,
-      })),
-    );
+    // A crate can be EMPTY by now (every member voided with its receipt) —
+    // an empty values() throws, and the memberless crate stayed undissolvable.
+    if (members.length) {
+      await tx.insert(boxMovements).values(
+        members.map((box) => ({
+          boxId: box.id,
+          fromWarehouseId: box.currentWarehouseId,
+          toWarehouseId: box.currentWarehouseId,
+          fromStatus: box.status,
+          toStatus: box.status,
+          cause: 'crate_dissolved',
+          refType: 'crate',
+          refId: crateId,
+          actorId: ctx.actorId,
+        })),
+      );
+    }
     await writeAudit(tx, { ...ctx, warehouseId: crate.warehouseId }, {
       entityType: 'crate',
       entityId: crateId,

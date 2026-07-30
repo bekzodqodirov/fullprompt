@@ -1,5 +1,5 @@
 import { DOC } from './labels';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
 import {
@@ -9,6 +9,7 @@ import {
   crates,
   receiptLots,
   receipts,
+  scanEvents,
   warehouses,
 } from '../../platform/db/schema';
 import { batchMemberFilter } from '../scanning/unload';
@@ -43,6 +44,22 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
     // unloading starts clearing it box by box (same fix as ved-xlsx.ts).
     .where(batchMemberFilter(batchId))
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
+
+  // Crate membership and the on-spot mark come from THIS batch's load scans,
+  // not from live box state: issue clears crate_id (the crate column went
+  // blank on a reprint after handover) and the added_on_spot flag describes
+  // one journey, not the box for ever (a re-planned box was printing last
+  // truck's ⚠ on the next truck's manifest).
+  const loadEvents = await db
+    .select({ boxId: scanEvents.boxId, crateId: scanEvents.crateId, addedOnSpot: scanEvents.addedOnSpot })
+    .from(scanEvents)
+    .where(and(eq(scanEvents.batchId, batchId), eq(scanEvents.type, 'load')));
+  const eventByBox = new Map(loadEvents.map((e) => [e.boxId, e]));
+  const eventCrateIds = [...new Set(loadEvents.map((e) => e.crateId).filter((id): id is string => !!id))];
+  const eventCrates = eventCrateIds.length
+    ? await db.select({ id: crates.id, code: crates.code }).from(crates).where(inArray(crates.id, eventCrateIds))
+    : [];
+  const crateCodeById = new Map(eventCrates.map((c) => [c.id, c.code]));
 
   const workbook = new ExcelJS.Workbook();
   const summary = workbook.addWorksheet(DOC.sheetSummary);
@@ -79,13 +96,16 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
     n += 1;
     const code = `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`;
     const product = `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`;
+    const event = eventByBox.get(box.id);
     detail.addRow({
       n,
       shortCode: box.shortCode,
       code,
       product,
-      crate: crateCode ?? '',
-      onSpot: box.flags && Array.isArray(box.flags) && box.flags.includes('added_on_spot') ? '⚠' : '',
+      // Live pointer while the box still carries it (planned, not yet
+      // scanned), the load event once life moved on.
+      crate: crateCode ?? (event?.crateId ? crateCodeById.get(event.crateId) ?? '' : ''),
+      onSpot: event?.addedOnSpot ? '⚠' : '',
     });
     const agg = byLot.get(lot.id) ?? { code, product, boxCount: 0, kg: 0, m3: 0 };
     agg.boxCount += 1;

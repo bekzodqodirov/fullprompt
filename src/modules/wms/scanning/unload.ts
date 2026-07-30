@@ -8,6 +8,7 @@ import {
   boxMovements,
   clientTransactions,
   costEntries,
+  crates,
   driverDevices,
   loadPlans,
   receiptLots,
@@ -35,6 +36,13 @@ export interface UnloadAck {
   result: 'ok' | 'auto_transfer' | 'duplicate' | 'unknown_code' | 'rejected';
   detail?: string;
   boxes?: { shortCode: string; letter: string | null }[];
+  /**
+   * Crate members the record lists but this batch never carried (a member
+   * short-loaded at the origin keeps its crateId). They are NOT accepted —
+   * the crate label vouches for the crate, not for boxes nobody saw (#221's
+   * asymmetry, closed on the unload side in round 31).
+   */
+  notArrived?: string[];
 }
 
 /**
@@ -106,11 +114,39 @@ export async function ingestUnloadScans(
         ? 'ready_for_pickup'
         : 'in_stock';
 
+      // A crate scan vouches for the CRATE, not for every box its record
+      // lists: a member short-loaded at the origin keeps its crateId, and the
+      // fan-out used to "reality-wins" it here — the client was told cargo
+      // arrived that is physically on a shelf in China, and Yiwu stock lost
+      // the box. Reality-wins stays for a box somebody physically scanned by
+      // its own label; left-behind members are NAMED, never moved.
+      let notArrived: string[] = [];
+      if (crateId) {
+        const cameHere = (b: (typeof boxes.$inferSelect)) =>
+          (b.currentBatchId === input.batchId && b.status === 'in_transit') ||
+          (b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId);
+        notArrived = members.filter((b) => !cameHere(b)).map((b) => b.shortCode);
+        members = members.filter(cameHere);
+        if (members.length === 0) {
+          return {
+            clientEventUuid: input.clientEventUuid,
+            result: 'rejected',
+            detail: 'crate_not_on_batch',
+          };
+        }
+      }
+
       // Business duplicate: everything already landed at this destination.
       const allDone = members.every(
         (b) => b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId,
       );
-      if (allDone) return { clientEventUuid: input.clientEventUuid, result: 'duplicate' };
+      if (allDone) {
+        return {
+          clientEventUuid: input.clientEventUuid,
+          result: 'duplicate',
+          ...(notArrived.length ? { notArrived } : {}),
+        };
+      }
 
       for (const box of members) {
         if (['issued', 'void'].includes(box.status)) {
@@ -130,6 +166,9 @@ export async function ingestUnloadScans(
       );
       // Reality wins: everything scanned here IS here now. Rogue boxes keep
       // no stale crate link (their crate stayed wherever it really is).
+      // Landing also retires the JOURNEY flags — added_on_spot and
+      // missing_in_transit describe one trip, and a box that kept them was
+      // printing last truck's deviations on the next truck's manifest.
       for (const box of toMove) {
         const isRogue = rogue.includes(box);
         await tx
@@ -141,7 +180,7 @@ export async function ingestUnloadScans(
             statusReason: null,
             ...(isRogue
               ? { crateId: crateId ?? null, flags: ['undocumented_transfer'] }
-              : {}),
+              : { flags: [] }),
           })
           .where(eq(boxes.id, box.id));
       }
@@ -158,6 +197,19 @@ export async function ingestUnloadScans(
           actorId,
         })),
       );
+
+      // The crate row's warehouse follows its landed boxes. Frozen at the
+      // origin, an arrived yashik could neither be planned onward from here
+      // nor counted at inventory where it really stands.
+      const landedCrateIds = [
+        ...new Set([...toMove.map((b) => b.crateId), crateId].filter((id): id is string => !!id)),
+      ];
+      if (landedCrateIds.length) {
+        await tx
+          .update(crates)
+          .set({ warehouseId: batch.destWarehouseId })
+          .where(and(inArray(crates.id, landedCrateIds), eq(crates.status, 'active')));
+      }
 
       // Client arrival summary (spec 6.6): emit per client so sales managers
       // get the ready-for-pickup draft message.
@@ -227,6 +279,7 @@ export async function ingestUnloadScans(
         clientEventUuid: input.clientEventUuid,
         result: onManifest ? 'ok' : 'auto_transfer',
         boxes: letters,
+        ...(notArrived.length ? { notArrived } : {}),
       };
     });
     acks.push(ack);
@@ -543,7 +596,9 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
     if (memberBoxes.length > 0) {
       await tx
         .update(boxes)
-        .set({ status: 'in_stock', currentBatchId: null })
+        // The journey is over: an on-spot flag picked up on this batch must
+        // not ride into the box's next life on the shelf.
+        .set({ status: 'in_stock', currentBatchId: null, flags: [] })
         .where(inArray(boxes.id, memberBoxes.map((b) => b.id)));
       // The same shape `finishLoading` writes for a short-loaded box: the
       // cargo goes back to the shelf it never left, and the movement says why.

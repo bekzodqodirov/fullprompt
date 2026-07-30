@@ -399,6 +399,7 @@
     "assignClient": "Attach to a client",
     "changeClient": "Change the client",
     "assignConfirm": "Attach",
+    "assignCrated": "Cargo is packed in a crate — dissolve the crate first, then change the client.",
     "labelsToPrint": "print {n} new labels",
     "labelsToDestroy": "destroy these labels: {codes}",
     "editWindowClosed": "Editing is only open on the day of receiving (after that — manager/logistics)",
@@ -536,6 +537,7 @@
       "same_warehouse": "The warehouses are the same",
       "validation": "Check the data",
       "crate_not_available": "The crate is in another warehouse or already taken",
+      "crate_on_another_plan": "The crate is already on another open plan",
       "plan_has_batch": "The plan is approved — cancel its batch instead",
       "plan_not_cancellable": "This plan cannot be cancelled",
       "reason_required": "Give a reason"

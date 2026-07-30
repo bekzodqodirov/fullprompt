@@ -432,9 +432,11 @@ export async function voidReceipt(
       for (const box of boxRows) {
         if (box.status !== 'in_stock') throw new VoidError('box_not_in_stock');
       }
+      // crateId goes with the void: a crate holding a voided member could
+      // neither be dissolved nor scanned again (both refuse non-in_stock).
       await tx
         .update(boxes)
-        .set({ status: 'void', statusReason: `receipt voided: ${reason}` })
+        .set({ status: 'void', statusReason: `receipt voided: ${reason}`, crateId: null })
         .where(inArray(boxes.lotId, lotIds));
       await tx.insert(boxMovements).values(
         boxRows.map((b) => ({

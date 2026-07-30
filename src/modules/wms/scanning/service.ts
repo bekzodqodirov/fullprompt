@@ -184,15 +184,43 @@ export async function ingestLoadScans(
       }
 
       const toLoad = recording.filter((b) => b.status !== 'loading');
-      await tx
-        .update(boxes)
-        .set({
-          status: 'loading',
-          currentBatchId: input.batchId,
-          // The manifest marks on-spot boxes from this flag.
-          ...(input.addedOnSpot ? { flags: ['added_on_spot'] } : {}),
-        })
-        .where(inArray(boxes.id, toLoad.map((b) => b.id)));
+      // Nothing left to move: a re-scan of a crate whose planned boxes are
+      // already aboard (its strays, if any, still named). Without this early
+      // answer the empty inserts below THREW, the sync route answered 500,
+      // and the phone's outbox retried the same event for ever.
+      if (toLoad.length === 0) {
+        return {
+          clientEventUuid: input.clientEventUuid,
+          result: 'duplicate',
+          ...(unplanned.length > 0
+            ? { unplanned: unplanned.map((b) => b.shortCode), scannedCode: input.code }
+            : {}),
+        };
+      }
+      // "Added on spot" is a fact about a BOX, not about the scan: confirming
+      // a crate that carries strays must not smear the flag over its planned
+      // members — the deviation numbers the logist and the batch register
+      // read come from these rows.
+      const isSpot = (b: (typeof members)[number]) => input.addedOnSpot && !onThisBatch(b);
+      const spotLoaded = toLoad.filter(isSpot);
+      const plainLoaded = toLoad.filter((b) => !isSpot(b));
+      if (plainLoaded.length) {
+        await tx
+          .update(boxes)
+          .set({ status: 'loading', currentBatchId: input.batchId })
+          .where(inArray(boxes.id, plainLoaded.map((b) => b.id)));
+      }
+      if (spotLoaded.length) {
+        await tx
+          .update(boxes)
+          .set({
+            status: 'loading',
+            currentBatchId: input.batchId,
+            // The manifest marks on-spot boxes from this flag.
+            flags: ['added_on_spot'],
+          })
+          .where(inArray(boxes.id, spotLoaded.map((b) => b.id)));
+      }
       await tx.insert(boxMovements).values(
         toLoad.map((box) => ({
           boxId: box.id,
@@ -200,7 +228,7 @@ export async function ingestLoadScans(
           toWarehouseId: box.currentWarehouseId,
           fromStatus: box.status,
           toStatus: 'loading',
-          cause: input.addedOnSpot ? 'loaded_on_spot' : 'load_scan',
+          cause: isSpot(box) ? 'loaded_on_spot' : 'load_scan',
           refType: 'batch',
           refId: input.batchId,
           actorId,
@@ -209,17 +237,20 @@ export async function ingestLoadScans(
       await tx
         .insert(scanEvents)
         .values(
-          recording.map((box) => ({
+          // Only the boxes this scan actually put on the truck — recording a
+          // row per crate member on every re-scan made the register's counts
+          // grow without any box moving.
+          toLoad.map((box) => ({
             // Crate fan-out rows get derived ids; single box keeps the original.
             clientEventUuid:
-              recording.length === 1 ? input.clientEventUuid : uuidv5(box.id, input.clientEventUuid),
+              toLoad.length === 1 ? input.clientEventUuid : uuidv5(box.id, input.clientEventUuid),
             boxId: box.id,
             crateId,
             batchId: input.batchId,
             type: 'load',
             method: crateId ? 'crate' : input.method,
             manualReason: input.method === 'manual' ? input.manualReason || 'manual' : null,
-            addedOnSpot: input.addedOnSpot,
+            addedOnSpot: isSpot(box),
             scannedBy: actorId,
             scannedAt: new Date(input.scannedAt),
           })),
@@ -233,7 +264,7 @@ export async function ingestLoadScans(
           .set({ status: 'loading' })
           .where(and(eq(loadPlans.batchId, input.batchId), eq(loadPlans.status, 'approved')));
       }
-      if (input.addedOnSpot) {
+      if (spotLoaded.length > 0) {
         await emitEvent(tx, {
           type: 'BoxScannedOnLoad',
           payload: {
@@ -241,7 +272,9 @@ export async function ingestLoadScans(
             batchCode: batch.code,
             addedOnSpot: true,
             reason: input.addedReason || null,
-            shortCodes: recording.map((b) => b.shortCode),
+            // Only the boxes that really joined off-plan — the logist's alert
+            // must not list the crate's planned members as deviations.
+            shortCodes: spotLoaded.map((b) => b.shortCode),
           },
           entityType: 'batch',
           entityId: input.batchId,

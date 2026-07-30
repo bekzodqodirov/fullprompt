@@ -399,6 +399,7 @@
     "assignClient": "绑定客户",
     "changeClient": "更换客户",
     "assignConfirm": "绑定",
+    "assignCrated": "货物已装入木箱——请先解散木箱，再更换客户。",
     "labelsToPrint": "需打印{n}张新标签",
     "labelsToDestroy": "需销毁标签：{codes}",
     "editWindowClosed": "仅收货当天可编辑（之后由主管/物流经理）",
@@ -536,6 +537,7 @@
       "same_warehouse": "仓库相同",
       "validation": "请检查数据",
       "crate_not_available": "木箱不在此仓库或已被占用",
+      "crate_on_another_plan": "木箱已在另一份未结计划中",
       "plan_has_batch": "计划已批准，请取消其批次",
       "plan_not_cancellable": "此计划无法取消",
       "reason_required": "请填写原因"

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -9,11 +9,13 @@ import {
   costEntries,
   costTypes,
   crates,
+  currencies,
   receiptLots,
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { AttachmentsPanel } from '@/components/attachments-panel';
+import { CostPanel } from '@/components/cost-panel';
 import { dissolveCrateAction, updateCrateAction } from '../actions';
 import { BackLink } from '@/components/back-link';
 import { PrintLabels } from '@/components/print-labels';
@@ -73,7 +75,22 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
     .select({ entry: costEntries, typeName: costTypes.name })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
-    .where(eq(costEntries.crateId, id));
+    .where(and(eq(costEntries.crateId, id), isNull(costEntries.voidedAt)));
+
+  // A wrong yashik fee needs the same correction path as every other cost:
+  // void with a reason, enter again. Gated like receipt-side local handling.
+  const canEditCosts = actor.permissions.has('costs.enter_receipt');
+  const costMeta = canEditCosts
+    ? {
+        types: await db
+          .select({ id: costTypes.id, code: costTypes.code, name: costTypes.name })
+          .from(costTypes)
+          .where(eq(costTypes.active, true)),
+        currencies: (
+          await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true))
+        ).map((c) => c.code),
+      }
+    : null;
 
   const active = crate.status === 'active';
 
@@ -101,14 +118,25 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           <span className="ml-2 font-semibold">{members.length} 📦</span>
         </p>
         {crate.note && <p className="text-sm text-ink-700">📝 {crate.note}</p>}
-        {costs.map(({ entry, typeName }) => (
-          <p key={entry.id} className="text-sm">
-            💰 {typeName}:{' '}
-            <span className="font-semibold">
-              {entry.amount} {entry.currency}
-            </span>
-          </p>
-        ))}
+        <CostPanel
+          scope="crate"
+          targetId={crate.id}
+          entries={costs.map(({ entry, typeName }) => ({
+            id: entry.id,
+            typeName,
+            amount: entry.amount,
+            currency: entry.currency,
+            amountUsd: entry.amountUsd,
+            costDate: entry.costDate,
+            allocationBasis: entry.allocationBasis,
+            note: entry.note,
+          }))}
+          costTypes={costMeta?.types ?? []}
+          currencies={costMeta?.currencies ?? []}
+          clientOptions={[{ id: crate.clientId, clientCode }]}
+          defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
+          canEdit={canEditCosts}
+        />
         {active && (
           <div className="flex flex-wrap gap-2 pt-1">
             <div className="flex-1">

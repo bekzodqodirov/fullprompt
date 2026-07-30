@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-794 unit/integration + 93 e2e, verified in CI's order on a fresh database.
+802 unit/integration + 93 e2e, verified in CI's order on a fresh database.
 Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -642,7 +642,40 @@ refusal tests red. (c) Deal-stage editor completed: `reorderDealStages` +
 /bitimlar/etaplar, testid delete-deal-stage; editor test restores order
 (#154 — the funnel's order is CONFIGURATION). Yashik parking LIFTED by
 the owner («unda shu yashikni ham tuzat») — adversarial crate audit
-launched (load/lifecycle/money lenses), findings to be fixed next.
+launched (load/lifecycle/money lenses), findings fixed in round 31.
+
+Round 31 — the yashik audit round (#402-406). 20 candidates → 11 CONFIRMED
+by per-finding adversarial verify; ALL fixed, each red-proven by string-
+strip (#166). MONEY: createCrate now recomputes the crating entry after
+commit (was amount_usd NULL + zero allocations for ever — unanimous find);
+crate scope reads `crate_packed` movements, NOT live crate_id (dissolve/
+issue erased allocations on the next sweep); crate costs correctable
+(costEntrySchema scope 'crate', CostPanel on crate card, gate
+costs.enter_receipt at crate wh, void branch + revalidate in costs
+actions). SCAN: stray-crate re-scan crashed on `values([])` (empty toLoad
+→ 500 → outbox jammed FOR EVER, #221's failure mode reintroduced) — now
+'duplicate' with strays still named; scan_events written only for boxes
+the scan MOVED; addedOnSpot is per-BOX (`isSpot`) — flags/cause/event/
+alert only for real strays; same empty-values crash found by the new test
+in dissolveCrate (memberless crate — receipt-void emptied it). RULE: any
+values(list.map(…)) behind a filter needs the empty guard. UNLOAD: crate
+fan-out accepts ONLY members that rode THIS batch (short-loaded member
+kept crateId and was TELEPORTED to dest — client told cargo arrived that
+sat in Yiwu, immediately issuable); left-behind NAMED in ack.notArrived;
+reality-wins stays for single-box scans; crates.warehouseId follows landed
+boxes (frozen-at-origin crate was unplannable/undissolvable at dest);
+landing retires journey flags (added_on_spot/missing rode onto later
+manifests); manifest reads THIS batch's load events (crate column + ⚠
+survive reprint after handover); origin inventory lists only present-here
+members, drops empty crates. GUARDS: crate on a second open plan refused
+at submit (`crate_on_another_plan` + i18n ×4; the old failure killed the
+agent's VERDICT with bare insufficient_stock); receipt-void and lot-edit
+shrink clear crateId (void ghost jammed the crate for ever); client change
+on crated cargo refused (`boxes_crated`, assign form → useActionState +
+receipts.assignCrated ×4). 8 new tests (m2×3, m3×3 — the confirm-scan
+test loads planned+stray in ONE scan or isSpot doesn't bite, m4×2). No
+migration. Verify rejections worth keeping: crate dims label-only and
+«1 place» plan-granularity are DESIGN, not defects.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
@@ -653,8 +686,6 @@ SHIPPED (round 16), deal open items SHIPPED (round 17), phase 7 SHIPPED
 COMPLETE**. Telegram/CRM queue CLEARED in round 22 (media backfill,
 edited messages, excluded-chat purge, listConversations index); left:
 Siroj's account (self-served via /suhbatlar/ulash — owner tells him when).
-
-Explicitly parked by the owner: crate loading is not to be touched further.
 
 Still queued from the audit: `scripts/import-clients.ts --update` overwriting
 corrected data (do NOT run it — blocked on the 17 seller logins).

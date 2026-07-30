@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
-import { batches, costEntries, receipts } from '@/modules/platform/db/schema';
+import { batches, costEntries, crates, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
@@ -35,6 +35,15 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       if (!batch) return { ok: false, error: 'not_found' };
       actor = await authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
       path = `/batches/${batch.id}`;
+    } else if (parsed.data.scope === 'crate') {
+      // Same gate as the receipt-side local handling — packing money is
+      // origin-warehouse money.
+      const crate = await db.query.crates.findFirst({
+        where: eq(crates.id, parsed.data.crateId!),
+      });
+      if (!crate) return { ok: false, error: 'not_found' };
+      actor = await authorize('costs.enter_receipt', { warehouseId: crate.warehouseId });
+      path = `/crates/${crate.id}`;
     } else {
       const receipt = await db.query.receipts.findFirst({
         where: eq(receipts.id, parsed.data.receiptId!),
@@ -108,6 +117,9 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
     if (entry.scope === 'batch' && entry.batchId) {
       const batch = await db.query.batches.findFirst({ where: eq(batches.id, entry.batchId) });
       actor = await authorize('costs.enter_batch', { warehouseId: batch?.originWarehouseId });
+    } else if (entry.scope === 'crate' && entry.crateId) {
+      const crate = await db.query.crates.findFirst({ where: eq(crates.id, entry.crateId) });
+      actor = await authorize('costs.enter_receipt', { warehouseId: crate?.warehouseId });
     } else {
       const receipt = entry.receiptId
         ? await db.query.receipts.findFirst({ where: eq(receipts.id, entry.receiptId) })
@@ -128,5 +140,6 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   }
   if (entry.batchId) revalidatePath(`/batches/${entry.batchId}`);
   if (entry.receiptId) revalidatePath(`/receipts/${entry.receiptId}`);
+  if (entry.crateId) revalidatePath(`/crates/${entry.crateId}`);
   return { ok: true };
 }

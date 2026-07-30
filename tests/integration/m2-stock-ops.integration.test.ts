@@ -7,6 +7,7 @@ import {
   attachments,
   boxes,
   clients,
+  costAllocations,
   costEntries,
   costTypes,
   notifications,
@@ -14,8 +15,11 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { sendDailyDigest } from '@/modules/platform/jobs/digest';
-import { confirmReceipt } from '@/modules/wms/receipts/service';
+import type { Actor } from '@/modules/platform/rbac/authorize';
+import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
+import { editLot } from '@/modules/wms/receipts/edit';
 import { moveReceipt, MoveError } from '@/modules/wms/receipts/move';
+import { recomputeEntry } from '@/modules/wms/costing/service';
 import { createCrate, dissolveCrate, resolveCrate, CrateError } from '@/modules/wms/crates/service';
 import { setBoxStatus, BoxStatusError } from '@/modules/wms/boxes/status';
 import { returnUnclaimedToSender } from '@/modules/wms/unclaimed/return';
@@ -157,6 +161,111 @@ describe('crates', () => {
     expect(rows[0]!.scope).toBe('crate');
     expect(Number(rows[0]!.amount)).toBe(150);
     expect(rows[0]!.clientId).toBe(clientAId);
+  });
+
+  it('FX-converts and allocates the crating cost the moment the crate is born (round 31)', async () => {
+    /**
+     * The audit's unanimous find: the entry was inserted and then NOTHING ran
+     * — amount_usd stayed NULL, no allocation rows, so the yashik fee reached
+     * no tannarx, no client share and no P&L, ever.
+     */
+    await db.insert(costTypes).values({ code: 'crating', name: 'Ящик / Yashik' }).onConflictDoNothing();
+    const { boxIds } = await makeReceipt({ clientId: clientAId, boxCount: 2 });
+    const crateId = uuidv4();
+    await createCrate(
+      {
+        crateId,
+        warehouseId: whAId,
+        boxIds,
+        kind: 'yashik',
+        logistApproved: true,
+        cratingCost: { amount: 100, currency: 'USD' },
+      },
+      ctx(),
+    );
+    const [entry] = await db.select().from(costEntries).where(eq(costEntries.crateId, crateId));
+    // USD needs no rate row, so the conversion has no excuse to be missing.
+    expect(Number(entry!.amountUsd)).toBe(100);
+    const shares = await db
+      .select()
+      .from(costAllocations)
+      .where(eq(costAllocations.costEntryId, entry!.id));
+    expect(shares).toHaveLength(2);
+    expect(shares.reduce((a, s) => a + Number(s.amountUsd), 0)).toBeCloseTo(100, 2);
+    expect(shares.every((s) => s.clientId === clientAId)).toBe(true);
+  });
+
+  it('the allocations survive the crate’s death (round 31)', async () => {
+    /**
+     * Recompute used to read the LIVE crate_id pointer, which dissolve/issue
+     * clear — so the first FX sweep after the crate's life ended deleted the
+     * shares and rebuilt them from an empty membership: money gone, silently.
+     * The movement log (`crate_packed`) is what the fee was actually paid for.
+     */
+    await db.insert(costTypes).values({ code: 'crating', name: 'Ящик / Yashik' }).onConflictDoNothing();
+    const { boxIds } = await makeReceipt({ clientId: clientAId, boxCount: 2 });
+    const crateId = uuidv4();
+    await createCrate(
+      {
+        crateId,
+        warehouseId: whAId,
+        boxIds,
+        kind: 'yashik',
+        logistApproved: true,
+        cratingCost: { amount: 80, currency: 'USD' },
+      },
+      ctx(),
+    );
+    const [entry] = await db.select().from(costEntries).where(eq(costEntries.crateId, crateId));
+    await dissolveCrate(crateId, ctx());
+    await recomputeEntry(entry!.id);
+    const shares = await db
+      .select()
+      .from(costAllocations)
+      .where(eq(costAllocations.costEntryId, entry!.id));
+    expect(shares).toHaveLength(2);
+  });
+
+  it('voiding boxes lets go of the crate — receipt void and lot-edit shrink (round 31)', async () => {
+    // Receipt void: a crate holding a void ghost member could neither be
+    // dissolved nor scanned (both walk members and refuse non-in_stock).
+    const a = await makeReceipt({ clientId: clientAId, boxCount: 2 });
+    const crateA = uuidv4();
+    await createCrate(
+      { crateId: crateA, warehouseId: whAId, boxIds: a.boxIds, kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+    await voidReceipt(a.receiptId, 'sinov uchun', ctx());
+    const aBoxes = await db.select().from(boxes).where(inArray(boxes.id, a.boxIds));
+    expect(aBoxes.every((b) => b.status === 'void' && b.crateId === null)).toBe(true);
+    await expect(dissolveCrate(crateA, ctx())).resolves.toMatchObject({ boxCount: 0 });
+
+    // Lot-edit shrink: the voided surplus box must leave the crate the same way.
+    const b = await makeReceipt({ clientId: clientAId, boxCount: 3 });
+    const crateB = uuidv4();
+    await createCrate(
+      { crateId: crateB, warehouseId: whAId, boxIds: b.boxIds, kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+    const manager = { id: actorId, permissions: new Set(['receipts.void']) } as unknown as Actor;
+    await editLot(
+      {
+        lotId: b.lotId,
+        productNameZh: '测试货',
+        boxCount: 2,
+        boxLengthCm: 40,
+        boxWidthCm: 30,
+        boxHeightCm: 20,
+        boxWeightKg: 5,
+      },
+      manager,
+      ctx(),
+    );
+    const bBoxes = await db.select().from(boxes).where(inArray(boxes.id, b.boxIds));
+    const ghost = bBoxes.find((x) => x.status === 'void')!;
+    expect(ghost.crateId).toBeNull();
+    const { boxCount } = await dissolveCrate(crateB, ctx());
+    expect(boxCount).toBe(2);
   });
 
   it('rejects cross-client and unclaimed boxes', async () => {

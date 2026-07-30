@@ -396,6 +396,62 @@ describe('load scanning', () => {
     expect(stray?.status).not.toBe('loading');
   });
 
+  it('a stray-carrying crate scanned twice answers duplicate, not a crash (round 31)', async () => {
+    /**
+     * The audit's worst find. The first scan loads the planned members and
+     * names the stray; a second press — the operator's habit, or the offline
+     * outbox replaying over warehouse wifi — left `toLoad` empty, and the
+     * empty movement insert THREW. The sync route answered 500 and the outbox
+     * retried the same event for ever: loading stood still.
+     */
+    const { batch, lot, strayCode } = await approvedCrateBatch(2, { withStray: true });
+    const [first] = await ingestLoadScans([scan(batch.id, lot.crateCode)], ctx());
+    expect(first!.result).toBe('ok');
+    const before = await db.select().from(scanEvents).where(eq(scanEvents.batchId, batch.id));
+
+    const [again] = await ingestLoadScans([scan(batch.id, lot.crateCode)], ctx());
+    expect(again!.result).toBe('duplicate');
+    // The stray is still named, so the screen can still offer the confirm…
+    expect(again!.unplanned).toContain(strayCode);
+    // …and nothing was recorded twice.
+    const after = await db.select().from(scanEvents).where(eq(scanEvents.batchId, batch.id));
+    expect(after).toHaveLength(before.length);
+  });
+
+  it('a confirmed crate scan marks ONLY the strays as added on spot (round 31)', async () => {
+    /**
+     * "Added on spot" is a fact about a box, not about the scan. A confirmed
+     * scan that loads planned members and strays TOGETHER — the outbox
+     * delivering a confirm after the plain scan was lost, or a second phone —
+     * used to smear the flag over the planned members too, so an 8-planned +
+     * 2-stray crate reported 10 deviations: the numbers the logist and the
+     * batch register read to judge a load became fiction.
+     */
+    const { batch, lot, strayCode } = await approvedCrateBatch(2, { withStray: true });
+    const [confirmed] = await ingestLoadScans(
+      [scan(batch.id, lot.crateCode, { addedOnSpot: true, addedReason: 'boss said load it' })],
+      ctx(),
+    );
+    expect(confirmed!.result).toBe('ok');
+
+    const rows = await db.select().from(boxes).where(inArray(boxes.id, lot.boxIds));
+    expect(rows.every((b) => b.status === 'loading')).toBe(true);
+
+    // The deviation is exactly ONE box, in the events and on the boxes.
+    const added = await db
+      .select()
+      .from(scanEvents)
+      .where(and(eq(scanEvents.batchId, batch.id), eq(scanEvents.addedOnSpot, true)));
+    expect(added).toHaveLength(1);
+    expect(added[0]!.boxId).toBe(rows.find((b) => b.shortCode === strayCode)!.id);
+    const stray = rows.find((b) => b.shortCode === strayCode)!;
+    expect(stray.flags).toEqual(['added_on_spot']);
+    const planned = rows.filter((b) => b.shortCode !== strayCode);
+    expect(
+      planned.every((b) => !((b.flags as string[] | null) ?? []).includes('added_on_spot')),
+    ).toBe(true);
+  });
+
   it('crate scan fans out to member boxes with derived uuids', async () => {
     const { lot, batch } = await approvedBatch(3, 3);
     const crateId = uuidv4();
@@ -470,6 +526,31 @@ describe('crate = one place (owner feedback round 5)', () => {
     expect(planned.filter((b) => b.crateId === crateId)).toHaveLength(4);
     expect(batch).not.toBeNull();
     void crate;
+  });
+
+  it('a crate already promised to a live plan cannot go into a second plan (round 31)', async () => {
+    /**
+     * Before approval the crate's boxes are still in_stock, which is exactly
+     * why the old code let the second plan through — and the second VERDICT
+     * then died mid-transaction on a bare insufficient_stock, taking the
+     * agent's recorded approval down with it.
+     */
+    const lot = await makeLot(2);
+    const crateId = uuidv4();
+    await createCrate(
+      { crateId, warehouseId: originId, boxIds: lot.boxIds, kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+    await submitPlan(
+      { originWarehouseId: originId, destWarehouseId: destId, lines: [], crateIds: [crateId] },
+      ctx(),
+    );
+    await expect(
+      submitPlan(
+        { originWarehouseId: originId, destWarehouseId: destId, lines: [], crateIds: [crateId] },
+        ctx(),
+      ),
+    ).rejects.toThrowError(new PlanError('crate_on_another_plan'));
   });
 
   it('a crate at another warehouse or already planned is rejected', async () => {

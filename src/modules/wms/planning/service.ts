@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -123,6 +123,28 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
           throw new PlanError('crate_not_available', crateRows.find((c) => c.id === crateId)?.code);
         }
       }
+
+      // A crate promised to another live plan cannot be promised twice: the
+      // first approval reserves its boxes, and the second plan's verdict then
+      // died mid-transaction on a bare insufficient_stock — the agent's
+      // recorded approval rolled back for a reason the screen could not name.
+      // Refuse at submit, where the planner can still pick another crate.
+      const taken = await tx
+        .select({ code: crates.code })
+        .from(loadPlanLines)
+        .innerJoin(loadPlanVersions, eq(loadPlanLines.versionId, loadPlanVersions.id))
+        .innerJoin(loadPlans, eq(loadPlanVersions.planId, loadPlans.id))
+        .innerJoin(crates, eq(loadPlanLines.crateId, crates.id))
+        .where(
+          and(
+            inArray(loadPlanLines.crateId, crateIds),
+            eq(loadPlans.currentVersionNo, loadPlanVersions.versionNo),
+            inArray(loadPlans.status, ['pending_agent', 'approved', 'loading']),
+            input.planId ? ne(loadPlans.id, input.planId) : undefined,
+          ),
+        )
+        .limit(1);
+      if (taken.length) throw new PlanError('crate_on_another_plan', taken[0]!.code);
     }
 
     const lotIds = [...new Set([...input.lines, ...crateLines].map((l) => l.lotId))];

@@ -88,9 +88,12 @@ export async function rateFor(currency: string, costDate: string): Promise<numbe
 // ---------------------------------------------------------------------------
 
 export const costEntrySchema = z.object({
-  scope: z.enum(['receipt', 'batch']),
+  // 'crate' joined in round 31: the yashik fee could only ever be typed at
+  // crate creation — a wrong amount had no void and no second entry.
+  scope: z.enum(['receipt', 'batch', 'crate']),
   receiptId: z.string().uuid().optional(),
   batchId: z.string().uuid().optional(),
+  crateId: z.string().uuid().optional(),
   costTypeId: z.string().uuid(),
   amount: z.number().positive().max(1_000_000_000),
   currency: z.string().length(3).toUpperCase(),
@@ -104,6 +107,7 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
   if (!ctx.actorId) throw new CostError('unauthenticated');
   if (input.scope === 'receipt' && !input.receiptId) throw new CostError('validation');
   if (input.scope === 'batch' && !input.batchId) throw new CostError('validation');
+  if (input.scope === 'crate' && !input.crateId) throw new CostError('validation');
   if (input.allocationBasis === 'direct_to_client' && !input.clientId) {
     throw new CostError('client_required');
   }
@@ -114,6 +118,7 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
       scope: input.scope,
       receiptId: input.receiptId ?? null,
       batchId: input.batchId ?? null,
+      crateId: input.crateId ?? null,
       costTypeId: input.costTypeId,
       amount: String(input.amount),
       currency: input.currency,
@@ -197,8 +202,23 @@ async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promise<stri
     return rows.map((r) => r.id);
   }
   if (entry.scope === 'crate' && entry.crateId) {
-    const rows = await db.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, entry.crateId));
-    return rows.map((r) => r.id);
+    // Membership is written once at packing, and issue/dissolve/lost CLEAR
+    // the live pointer — money must not follow it out: the crating fee was
+    // paid for exactly the boxes that were packed, and a recompute after the
+    // crate's life ended used to erase the allocations for good.
+    const packed = await db
+      .selectDistinct({ id: boxMovements.boxId })
+      .from(boxMovements)
+      .where(
+        and(
+          eq(boxMovements.refType, 'crate'),
+          eq(boxMovements.refId, entry.crateId),
+          eq(boxMovements.cause, 'crate_packed'),
+        ),
+      );
+    if (packed.length) return packed.map((r) => r.id);
+    const live = await db.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, entry.crateId));
+    return live.map((r) => r.id);
   }
   if (entry.scope === 'batch' && entry.batchId) {
     // Departed boxes are the ground truth; before departure fall back to the

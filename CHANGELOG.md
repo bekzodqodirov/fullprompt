@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## Yashik yo'li to'liq tekshirildi va tuzatildi — 2026-07-30
+
+«Unda shu yashikni ham tuzat» buyrug'ingiz bo'yicha yashikning butun yo'li
+(yig'ish → plan → yuklash → yo'l → tushirish → topshirish → pul) chuqur
+tekshiruvdan o'tkazildi: 20 ta shubhali joydan 11 tasi HAQIQIY xato bo'lib
+chiqdi va hammasi tuzatildi. Eng muhimlari:
+
+- **Yashik puli tannarxga umuman tushmas edi.** Yashik yig'ishda yozilgan
+  haq (masalan 150 yuan) hech qachon dollarga o'girilmay, hech bir mijoz
+  karobkasiga taqsimlanmay yotardi — foyda hisobingiz shunchaga yuqori
+  ko'rinardi. Endi yozilgan zahoti tannarxga tushadi. Ustiga: yashik
+  tarqatilgach yoki topshirilgach o'sha pul hisobdan BUTUNLAY o'chib
+  ketardi — endi pul «kim uchun to'langan» ro'yxatga bog'lanadi va yashik
+  hayoti tugagach ham joyida qoladi. Xato yozilgan haqni endi tuzatish ham
+  mumkin: yashik kartasida xarajatni sabab bilan bekor qilib, qaytadan
+  kiritasiz.
+- **Skaner yana to'xtab qolishi mumkin edi.** Ichida ortiqcha karobkasi
+  bor yashik IKKI marta skan qilinsa (odat, ikkinchi telefon yoki sekin
+  vay-fay), server yiqilardi va telefon o'sha skanni abadiy qayta yuborib
+  turardi — undan keyingi hamma skan ekranda yashil, lekin sistemaga
+  yozilmagan. Endi ikkinchi skan xotirjam «allaqachon yuklangan» deb
+  javob beradi (ortiqcha karobkalar baribir nomlanadi).
+- **Kelmagan yuk «keldi» bo'lib qolardi.** Yuklashda ortda qolgan yashik
+  a'zosi (masalan shikastlangani) Toshkentda yashik skan qilinganda
+  «yetib keldi» bo'lib yozilardi: mijozga 3 ta karobka keldi deyilardi,
+  bittasi Xitoyda turgan bo'lsa ham, va uni Toshkentda topshirish ham
+  mumkin edi. Endi yashik skani faqat SHU mashinada kelgan karobkalarni
+  qabul qiladi, kelmaganlari nomlab ko'rsatiladi.
+- **Yashik manzili yuk bilan ko'chadi.** Avval yashik qatori abadiy
+  Xitoyda «turardi»: kelgan yashikni Toshkentdan boshqa mashinaga planlab
+  ham, o'sha yerda tarqatib ham bo'lmasdi; Xitoy inventarizatsiyasi esa
+  ketgan yashikni sanashda ko'rsataverar edi. Endi tushirilgan yashik
+  qayerda bo'lsa — o'sha skladniki.
+- **«Qo'shib yuklandi» belgisi endi faqat haqiqatan qo'shilganda.**
+  Ortiqchasi bilan tasdiqlangan yashikda avval HAMMA karobka «qo'shildi»
+  deb yozilardi (8 rejali + 2 ortiqcha = 10 ta chetlanish!) va belgi
+  keyingi reyslarga ham yopishib qolardi. Endi faqat rostdan qo'shilgani
+  belgilanadi, yetib kelganda belgi o'chadi, manifest esa o'sha reysning
+  o'zini o'qiydi (topshirilgandan keyin qayta chop etilsa ham to'g'ri).
+- **Mayda qo'riqchilar:** bitta yashikni ikki ochiq planga qo'yib
+  bo'lmaydi (avval ikkinchisining tasdig'i tushunarsiz xato bilan
+  yonardi); prixod bekor qilinsa yoki karobka soni kamaytirilsa karobka
+  yashikdan ham chiqadi (avval «o'lik» a'zo yashikni abadiy qulflab
+  qo'yardi); yashikdagi yukning mijozini almashtirish rad etiladi —
+  avval yashikni tarqating.
+
+Har bir tuzatish uchun test yozildi va tuzatishsiz YIQILISHI ko'rsatildi.
+Tekshirildi: 802 unit/integration + 93 e2e yashil. Migratsiya yo'q —
+serverni yangilash xavfsiz.
+
+
 ## VED bosh ekrani, fayl-ruxsat qattiq rejimda, bitim etaplarini tartiblash — 2026-07-30
 
 3-bo'lim ishlaringiz:

@@ -55,11 +55,21 @@ export async function inventorySnapshot(warehouseId: string) {
     .select({ id: crates.id, code: crates.code })
     .from(crates)
     .where(and(eq(crates.warehouseId, warehouseId), eq(crates.status, 'active')));
+  // Only members that should be HERE: a crate whose boxes departed on a truck
+  // must not offer its whole in-transit load to a crate scan at the origin —
+  // one code entry would count cargo that is between two countries as
+  // standing on this floor.
   const crateBoxes = crateRows.length
     ? await db
         .select({ crateId: boxes.crateId, shortCode: boxes.shortCode })
         .from(boxes)
-        .where(inArray(boxes.crateId, crateRows.map((c) => c.id)))
+        .where(
+          and(
+            inArray(boxes.crateId, crateRows.map((c) => c.id)),
+            inArray(boxes.status, [...PRESENT_STATUSES]),
+            eq(boxes.currentWarehouseId, warehouseId),
+          ),
+        )
     : [];
   const byCrate = new Map<string, string[]>();
   for (const row of crateBoxes) {
@@ -69,7 +79,11 @@ export async function inventorySnapshot(warehouseId: string) {
 
   return {
     boxes: rows,
-    crates: crateRows.map((c) => ({ code: c.code, boxShortCodes: byCrate.get(c.id) ?? [] })),
+    // An active crate with nothing present (all members riding a batch) is
+    // not countable stock at this warehouse.
+    crates: crateRows
+      .map((c) => ({ code: c.code, boxShortCodes: byCrate.get(c.id) ?? [] }))
+      .filter((c) => c.boxShortCodes.length > 0),
   };
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useTranslations } from 'next-intl';
 import { assignClientAction } from './edit-actions';
@@ -27,6 +27,7 @@ export function AssignClient({ receiptId, current }: { receiptId: string; curren
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<ClientHit[]>([]);
   const [selected, setSelected] = useState<ClientHit | null>(null);
+  const [state, formAction] = useActionState(assignClientAction, {});
 
   useEffect(() => {
     if (!query.trim()) {
@@ -44,8 +45,11 @@ export function AssignClient({ receiptId, current }: { receiptId: string; curren
   return (
     <div className="card space-y-2 !p-3">
       <p className="font-semibold">{current ? t('changeClient') : t('assignClient')}</p>
+      {state.error === 'boxes_crated' && (
+        <p className="text-sm font-semibold text-bad">{t('assignCrated')}</p>
+      )}
       {selected ? (
-        <form action={assignClientAction} className="flex items-center gap-2">
+        <form action={formAction} className="flex items-center gap-2">
           <input type="hidden" name="receiptId" value={receiptId} />
           <input type="hidden" name="clientId" value={selected.id} />
           <span className="font-mono font-extrabold text-brand-700">{selected.clientCode}</span>

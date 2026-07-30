@@ -5,6 +5,7 @@ import {
   boxes,
   boxMovements,
   clients,
+  crates,
   receiptLots,
   receipts,
   warehouses,
@@ -38,7 +39,8 @@ export class EditError extends Error {
       | 'not_found'
       | 'edit_window_closed'
       | 'structural_locked'
-      | 'boxes_not_editable',
+      | 'boxes_not_editable'
+      | 'boxes_crated',
   ) {
     super(code);
   }
@@ -202,9 +204,12 @@ export async function editLot(
       const toVoid = activeBoxes.slice(delta); // highest seq_in_lot last
       for (const box of toVoid) {
         if (box.status !== 'in_stock') throw new EditError('boxes_not_editable');
+        // A voided box leaves its crate too: a void member made the crate
+        // permanently undissolvable and unscannable (both walk the members
+        // and refuse anything not in_stock).
         await tx
           .update(boxes)
-          .set({ status: 'void', statusReason: 'lot edit: box count reduced' })
+          .set({ status: 'void', statusReason: 'lot edit: box count reduced', crateId: null })
           .where(eq(boxes.id, box.id));
         await tx.insert(boxMovements).values({
           boxId: box.id,
@@ -253,6 +258,21 @@ export async function assignReceiptClient(
   const beforeClient = receipt.clientId
     ? await db.query.clients.findFirst({ where: eq(clients.id, receipt.clientId) })
     : null;
+
+  // CHANGING the client of crated cargo would silently break the one-client
+  // rule the crate was packed under — the crate row would go on naming the
+  // old client while its boxes answer to the new one. Dissolve first, then
+  // reassign. (Unclaimed cargo cannot be crated, so first assignment passes.)
+  if (receipt.clientId && receipt.clientId !== clientId) {
+    const [crated] = await db
+      .select({ id: boxes.id })
+      .from(boxes)
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .innerJoin(crates, eq(boxes.crateId, crates.id))
+      .where(and(eq(receiptLots.receiptId, receiptId), eq(crates.status, 'active')))
+      .limit(1);
+    if (crated) throw new EditError('boxes_crated');
+  }
 
   await db.transaction(async (tx) => {
     await tx

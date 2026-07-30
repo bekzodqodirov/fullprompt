@@ -72,26 +72,41 @@ const assignSchema = z.object({
   clientId: z.string().uuid(),
 });
 
-export async function assignClientAction(formData: FormData): Promise<void> {
+export interface AssignClientState {
+  error?: string;
+}
+
+export async function assignClientAction(
+  _prev: AssignClientState,
+  formData: FormData,
+): Promise<AssignClientState> {
   const parsed = assignSchema.safeParse({
     receiptId: formData.get('receiptId'),
     clientId: formData.get('clientId'),
   });
-  if (!parsed.success) return;
+  if (!parsed.success) return {};
 
   const receipt = await db.query.receipts.findFirst({
     where: eq(receipts.id, parsed.data.receiptId),
   });
-  if (!receipt) return;
+  if (!receipt) return {};
 
   const actor = await authorize('receipts.unclaimed.resolve', {
     warehouseId: receipt.warehouseId,
   });
   const meta = await requestMeta();
-  await assignReceiptClient(parsed.data.receiptId, parsed.data.clientId, {
-    actorId: actor.id,
-    ...meta,
-  });
+  try {
+    await assignReceiptClient(parsed.data.receiptId, parsed.data.clientId, {
+      actorId: actor.id,
+      ...meta,
+    });
+  } catch (err) {
+    // The crated-cargo refusal must reach the screen — a silent no-op here
+    // reads as "changed" to the person pressing the button.
+    if (err instanceof EditError) return { error: err.code };
+    throw err;
+  }
   await enqueue(JOB_PROCESS_EVENTS, {});
   revalidatePath(`/receipts/${parsed.data.receiptId}`);
+  return {};
 }

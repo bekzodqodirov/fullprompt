@@ -399,6 +399,7 @@
     "assignClient": "Mijozga biriktirish",
     "changeClient": "Mijozni o'zgartirish",
     "assignConfirm": "Biriktirish",
+    "assignCrated": "Yuk yashikka joylangan — avval yashikni tarqating, keyin mijozni almashtiring.",
     "labelsToPrint": "{n} ta yangi stiker chiqaring",
     "labelsToDestroy": "stikerlarni yo'q qiling: {codes}",
     "editWindowClosed": "Tahrirlash faqat qabul kunida (keyin — mudir/logist)",
@@ -536,6 +537,7 @@
       "same_warehouse": "Skladlar bir xil",
       "validation": "Ma’lumotlarni tekshiring",
       "crate_not_available": "Yashik bu skladda emas yoki band",
+      "crate_on_another_plan": "Yashik boshqa ochiq planda turibdi",
       "plan_has_batch": "Plan tasdiqlangan — partiyani bekor qiling",
       "plan_not_cancellable": "Bu planni bekor qilib bo‘lmaydi",
       "reason_required": "Sababni yozing"
