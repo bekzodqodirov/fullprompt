@@ -74,7 +74,9 @@
     "flowReady": "topshirishga tayyor: {n} quti",
     "flowPlansPending": "qaror kutyapti: {n}",
     "flowUnassignedPayments": "Kassaga joylashtirilmagan to‘lovlar (shu oy)",
-    "flowRecurringDue": "Doimiy xarajatlar kiritilmagan"
+    "flowRecurringDue": "Doimiy xarajatlar kiritilmagan",
+    "flowDocsPending": "Agentga hujjati ketmagan partiyalar",
+    "flowTnvedMissing": "TNVED kodsiz tovarlar"
   },
   "dashboard": {
     "title": "Dashboard",

@@ -13,6 +13,7 @@ import {
   type LogistFlowCounts,
   type MoneyFlowCounts,
   type SalesFlowCounts,
+  type VedFlowCounts,
 } from '@/modules/wms/home/role-flows';
 
 /**
@@ -109,6 +110,8 @@ export default async function HomePage() {
           <LogistFlow flow={flow.counts} />
         ) : flow.kind === 'sales' ? (
           <SalesFlow flow={flow.counts} />
+        ) : flow.kind === 'ved' ? (
+          <VedFlow flow={flow.counts} />
         ) : (
           <AccountantFlow flow={flow.counts} />
         )
@@ -333,6 +336,50 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
           testid="sales-flow-deals"
           label={tdl('title')}
           count={flow.openDeals}
+          sub={null}
+        />
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * The VED manager's day (round 30, the last working role without a home):
+ * the hisoblash clock first — it is the only queue with MINUTES on it —
+ * then the paperwork the departed trucks are waiting on, then the goods
+ * still without a code.
+ */
+async function VedFlow({ flow }: { flow: VedFlowCounts }) {
+  const t = await getTranslations('home');
+  const tc = await getTranslations('calc');
+
+  return (
+    <Section title={t('flowTitle')}>
+      <div className="space-y-2">
+        <FlowRow
+          href="/bugun"
+          icon="check"
+          testid="ved-flow-hero"
+          label={tc('title')}
+          count={flow.calcOpen}
+          warn={flow.calcLate > 0}
+          sub={flow.calcLate > 0 ? `🔴 ${tc('late')}: ${flow.calcLate}` : null}
+        />
+        <FlowRow
+          href="/batches"
+          icon="inbox"
+          testid="ved-flow-docs"
+          label={t('flowDocsPending')}
+          count={flow.docsPending}
+          warn={flow.docsPending > 0}
+          sub={null}
+        />
+        <FlowRow
+          href="/bitimlar"
+          icon="report"
+          testid="ved-flow-tnved"
+          label={t('flowTnvedMissing')}
+          count={flow.tnvedMissing}
           sub={null}
         />
       </div>

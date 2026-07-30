@@ -74,7 +74,9 @@
     "flowReady": "ready to issue: {n}",
     "flowPlansPending": "awaiting a verdict: {n}",
     "flowUnassignedPayments": "Payments without a cash box (this month)",
-    "flowRecurringDue": "Recurring costs not posted"
+    "flowRecurringDue": "Recurring costs not posted",
+    "flowDocsPending": "Batches without agent docs",
+    "flowTnvedMissing": "Goods without TNVED code"
   },
   "dashboard": {
     "title": "Dashboard",

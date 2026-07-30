@@ -12,8 +12,10 @@ import {
   dealLineSchema,
   dealSchema,
   dealStageSchema,
+  deleteDealStage,
   linkReceipt,
   moveDeal,
+  reorderDealStages,
   saveDealStage,
   saveLines,
   setDealDiscount,
@@ -138,6 +140,38 @@ export async function saveDealStageAction(
   const meta = await requestMeta();
   try {
     await saveDealStage({ ...parsed.data, id }, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof DealError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/bitimlar', 'layout');
+  return { ok: true };
+}
+
+/** The editor's other two moves (round 30), same `crm.manage` gate. */
+export async function reorderDealStagesAction(ids: string[]): Promise<DealFormState> {
+  const actor = await getActor();
+  if (!actor?.permissions.has('crm.manage')) return { error: 'forbidden' };
+  const meta = await requestMeta();
+  try {
+    await reorderDealStages(ids, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof DealError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/bitimlar', 'layout');
+  return { ok: true };
+}
+
+export async function deleteDealStageAction(
+  id: string,
+  moveToId: string,
+): Promise<DealFormState> {
+  const actor = await getActor();
+  if (!actor?.permissions.has('crm.manage')) return { error: 'forbidden' };
+  const meta = await requestMeta();
+  try {
+    await deleteDealStage(id, moveToId, { actorId: actor.id, ...meta });
   } catch (err) {
     if (err instanceof DealError) return { error: err.code };
     throw err;

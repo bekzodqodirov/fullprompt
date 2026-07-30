@@ -425,6 +425,64 @@ export async function saveDealStage(
   return row;
 }
 
+/**
+ * Reorder the deal funnel in one go — the lead editor's move, verbatim: the
+ * ids arrive in the order the owner arranged and `sort_order` is rewritten
+ * from that, so two stages can never share a position. Order is load-bearing
+ * here twice over: the board's columns AND the cargo engine's forward-only
+ * rule both read it.
+ */
+export async function reorderDealStages(ids: string[], ctx: AuditContext): Promise<void> {
+  if (!ctx.actorId) throw new DealError('unauthenticated');
+  await db.transaction(async (tx) => {
+    for (const [index, stageId] of ids.entries()) {
+      await tx
+        .update(dealStages)
+        .set({ sortOrder: (index + 1) * 10 })
+        .where(eq(dealStages.id, stageId));
+    }
+  });
+  await writeAudit(db, ctx, {
+    entityType: 'deal_stage',
+    entityId: ids[0] ?? '00000000-0000-0000-0000-000000000000',
+    action: 'update',
+    after: { order: ids },
+  });
+}
+
+/**
+ * Remove a stage, moving its deals somewhere else first — orphaning a deal
+ * off the board is how a job disappears. The funnel law holds inside the
+ * transaction, same as the save.
+ */
+export async function deleteDealStage(
+  id: string,
+  moveToId: string,
+  ctx: AuditContext,
+): Promise<void> {
+  if (!ctx.actorId) throw new DealError('unauthenticated');
+  if (id === moveToId) throw new DealError('same_stage');
+  const target = await db.query.dealStages.findFirst({ where: eq(dealStages.id, moveToId) });
+  if (!target) throw new DealError('stage_not_found');
+
+  await db.transaction(async (tx) => {
+    await tx.update(deals).set({ stageId: moveToId }).where(eq(deals.stageId, id));
+    await tx.delete(dealStages).where(eq(dealStages.id, id));
+    const remaining = await tx.select().from(dealStages).where(eq(dealStages.active, true));
+    for (const required of ['open', 'won'] as const) {
+      if (!remaining.some((stage) => stage.kind === required)) {
+        throw new DealError(`needs_${required}`);
+      }
+    }
+  });
+  await writeAudit(db, ctx, {
+    entityType: 'deal_stage',
+    entityId: id,
+    action: 'delete',
+    after: { movedTo: moveToId },
+  });
+}
+
 /** How many deals sit in each stage — shown beside the editor. */
 export async function dealStageUsage(): Promise<Record<string, number>> {
   const rows = await db

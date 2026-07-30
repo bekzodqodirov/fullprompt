@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-793 unit/integration + 92 e2e, verified in CI's order on a fresh database.
+794 unit/integration + 93 e2e, verified in CI's order on a fresh database.
 Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -628,6 +628,22 @@ Playwright coordinate mismatch = suspect page zoom first. Also: a stale
 /api/health 503 and Playwright's webServer time out — local-only state;
 fresh db or `UPDATE pgboss.version SET maintained_on = now()` clears it.
 
+Round 30 — the owner's «3 dagi ishlarni boshlaymiz» (#401). (a) VED home
+flow: `vedFlowCounts` (own open calc requests + late count; departed
+batches with `sent_to_agent_at IS NULL`; TNVED-less lines on open deals);
+`kind: 'ved'` in buildHomeFlow AFTER sales (both-hats person lives the
+funnel); testids ved-flow-{hero,docs,tnved}; m9s 4th test (user 0004);
+i18n home.flowDocsPending/flowTnvedMissing ×4. (b) Attachment ENFORCE
+flip: `decideAttachmentRead` wrapper stamps enforce on every coded deny;
+`unmapped` deliberately stays log-only (legacy free-form types = old real
+files; warn line is their inventory); red-proof: stamp stripped → 3
+refusal tests red. (c) Deal-stage editor completed: `reorderDealStages` +
+`deleteDealStage` (move-first, in-tx open/won law), DealStageTools on
+/bitimlar/etaplar, testid delete-deal-stage; editor test restores order
+(#154 — the funnel's order is CONFIGURATION). Yashik parking LIFTED by
+the owner («unda shu yashikni ham tuzat») — adversarial crate audit
+launched (load/lifecycle/money lenses), findings to be fixed next.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab
@@ -669,10 +685,9 @@ say which printer model he has.
 
 Deferred access work, blocked on the chores above: scoping clients to their
 sales manager (needs the 17 logins first, or it hides nearly every client from
-sales) · attachment authorization flip to enforce (log-only running; tg
-branches already enforce per #384 — the rest awaits his read of the logs) ·
-lead-mutation ownership. (Warehouse scoping as a roles column SHIPPED in
-round 23.)
+sales) · lead-mutation ownership. (Warehouse scoping as a roles column
+SHIPPED in round 23; attachment enforce flip SHIPPED in round 30 —
+`unmapped` stays log-only by design.)
 
 ## How to work here
 

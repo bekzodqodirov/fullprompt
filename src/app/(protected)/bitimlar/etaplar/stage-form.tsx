@@ -1,8 +1,13 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { saveDealStageAction, type DealFormState } from '../actions';
+import {
+  deleteDealStageAction,
+  reorderDealStagesAction,
+  saveDealStageAction,
+  type DealFormState,
+} from '../actions';
 import { STAGE_CLASS, stageClass } from '../../crm/stage-color';
 
 const COLORS = Object.keys(STAGE_CLASS);
@@ -32,6 +37,89 @@ function Feedback({ state }: { state: DealFormState }) {
           ? td('triggerOnLost')
           : tc('error');
   return <p className="text-sm font-semibold text-bad">{message}</p>;
+}
+
+/**
+ * Reorder and remove (round 30) — the lead editor's StageTools, on the deal
+ * funnel. Order is load-bearing twice here: the board's columns AND the
+ * cargo engine's forward-only rule both read `sort_order`.
+ */
+export function DealStageTools({
+  stages,
+  usage,
+}: {
+  stages: DealStageRow[];
+  usage: Record<string, number>;
+}) {
+  const t = useTranslations('crm');
+  const tc = useTranslations('common');
+  const [pending, start] = useTransition();
+
+  const move = (index: number, delta: number) => {
+    const next = [...stages];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    start(async () => {
+      await reorderDealStagesAction(next.map((stage) => stage.id));
+    });
+  };
+
+  return (
+    <div className="space-y-1">
+      {stages.map((stage, index) => (
+        <div
+          key={stage.id}
+          className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm ${stageClass(
+            stage.color,
+          )}`}
+        >
+          <span className="min-w-0 flex-1 truncate font-semibold">{stage.name}</span>
+          <span className="text-xs opacity-70">{usage[stage.id] ?? 0}</span>
+          <button
+            type="button"
+            aria-label={t('up')}
+            disabled={pending || index === 0}
+            onClick={() => move(index, -1)}
+            className="px-1.5 disabled:opacity-30"
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            aria-label={t('down')}
+            disabled={pending || index === stages.length - 1}
+            onClick={() => move(index, 1)}
+            className="px-1.5 disabled:opacity-30"
+          >
+            ▼
+          </button>
+          <button
+            type="button"
+            data-testid="delete-deal-stage"
+            disabled={pending || stages.length < 2}
+            onClick={() => {
+              // Deals in the stage have to go somewhere; the operator picks.
+              const others = stages.filter((other) => other.id !== stage.id);
+              const target = window.prompt(
+                `${t('moveTo')}:\n${others.map((other, i) => `${i + 1}. ${other.name}`).join('\n')}`,
+                '1',
+              );
+              const picked = Number(target) - 1;
+              if (!others[picked]) return;
+              start(async () => {
+                await deleteDealStageAction(stage.id, others[picked]!.id);
+              });
+            }}
+            className="px-1.5 text-bad disabled:opacity-30"
+            title={tc('delete')}
+          >
+            ✖
+          </button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**

@@ -31,9 +31,12 @@ export type AttachmentAccessDecision = {
   rule: string;
   /**
    * When set on a deny, the route refuses the bytes instead of only logging.
-   * The general flip to enforcement is still the owner's separate decision
-   * (#369); the TELEGRAM branches enforce now on his direct instruction
-   * (2026-07-29): a colleague's chat photo is private, not a log line.
+   * Since round 30 (owner's go-ahead, 2026-07-30) EVERY coded deny enforces —
+   * the wrapper below stamps it — with ONE exception: `unmapped`, the legacy
+   * free-form entity types from before the upload allowlist. Those are old
+   * real files whose branch simply is not written, not private chats, and
+   * 404ing them would break history for no security gain; the warn line
+   * stays their inventory (#369).
    */
   enforce?: boolean;
 };
@@ -51,6 +54,20 @@ const seesAllTgChats = (actor: ReadActor) => actor.roles?.includes('super_admin'
 type AttachmentRow = { id: string; entityType: string; entityId: string; uploadedBy: string };
 
 export async function decideAttachmentRead(
+  actor: ReadActor,
+  attachment: AttachmentRow,
+): Promise<AttachmentAccessDecision> {
+  const decision = await decide(actor, attachment);
+  // The round-13 log-only period ended in round 30: months of [attachment-
+  // authz] lines and the whole e2e suite exercising the serve path stand
+  // behind every coded branch, so a deny is now a refusal, not a diary entry.
+  if (!decision.allow && decision.rule !== 'unmapped') {
+    return { ...decision, enforce: true };
+  }
+  return decision;
+}
+
+async function decide(
   actor: ReadActor,
   attachment: AttachmentRow,
 ): Promise<AttachmentAccessDecision> {

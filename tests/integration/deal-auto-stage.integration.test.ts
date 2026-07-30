@@ -27,9 +27,11 @@ import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { finishUnload } from '@/modules/wms/scanning/unload';
 import {
   createDeal,
+  deleteDealStage,
   linkReceipt,
   listStages,
   moveDeal,
+  reorderDealStages,
   saveDealStage,
 } from '@/modules/wms/deals/service';
 
@@ -415,6 +417,58 @@ describe('cargo walks a deal through the funnel', () => {
     // No event processing: the LINK itself is the trigger.
     await linkReceipt(receiptId, lateDealId, ctx());
     expect(await stageOf(lateDealId)).toBe(stReceived.id);
+  });
+});
+
+describe('the editor reorders and removes (round 30)', () => {
+  it('reorder rewrites the order; delete moves the deals somewhere first', async () => {
+    const mk = async (name: string, sortOrder: number) => {
+      const row = await saveDealStage(
+        {
+          name: `${name} ${STAMP}`,
+          kind: 'open',
+          color: 'gray',
+          sortOrder,
+          active: true,
+          cargoTrigger: null,
+        } as Parameters<typeof saveDealStage>[0],
+        ctx(),
+      );
+      madeStages.push(row.id);
+      return row;
+    };
+    const a = await mk('AS-ra', 9500);
+    const b = await mk('AS-rb', 9600);
+
+    // Exactly what the screen posts: the FULL list, with the two swapped.
+    const before = await listStages(true);
+    const ids = before.map((stage) => stage.id);
+    const ia = ids.indexOf(a.id);
+    const ib = ids.indexOf(b.id);
+    [ids[ia], ids[ib]] = [ids[ib]!, ids[ia]!];
+    await reorderDealStages(ids, ctx());
+    const after = await listStages(true);
+    expect(after.findIndex((s) => s.id === b.id)).toBeLessThan(
+      after.findIndex((s) => s.id === a.id),
+    );
+    // Moved numbers moved BACK (#154): the funnel's order is CONFIGURATION.
+    await reorderDealStages(before.map((stage) => stage.id), ctx());
+
+    // Delete refuses nonsense, then moves the stage's deals before removing.
+    const dealId = await createDeal({ clientId, title: `AS-del ${STAMP}` }, ctx());
+    madeDeals.push(dealId);
+    await moveDeal(dealId, a.id, ctx());
+    await expect(deleteDealStage(a.id, a.id, ctx())).rejects.toThrow('same_stage');
+    await deleteDealStage(a.id, b.id, ctx());
+    expect(await stageOf(dealId)).toBe(b.id);
+
+    // And B goes too — a deleted stage's deals land on a real column, and no
+    // throwaway configuration outlives the test.
+    const home = (await listStages()).find(
+      (stage) => stage.kind === 'open' && !madeStages.includes(stage.id),
+    )!;
+    await deleteDealStage(b.id, home.id, ctx());
+    expect(await stageOf(dealId)).toBe(home.id);
   });
 });
 

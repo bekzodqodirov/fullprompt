@@ -74,7 +74,9 @@
     "flowReady": "к выдаче: {n} кор.",
     "flowPlansPending": "решения ждут: {n}",
     "flowUnassignedPayments": "Платежи без кассы (за месяц)",
-    "flowRecurringDue": "Постоянные расходы не проведены"
+    "flowRecurringDue": "Постоянные расходы не проведены",
+    "flowDocsPending": "Партии без документов агенту",
+    "flowTnvedMissing": "Товары без кода ТНВЭД"
   },
   "dashboard": {
     "title": "Дашборд",

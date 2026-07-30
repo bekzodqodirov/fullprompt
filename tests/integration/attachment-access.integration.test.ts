@@ -235,7 +235,8 @@ describe('receipt photos follow the warehouse scope, nothing more', () => {
       actor(['receipts.create'], { scoped: true, warehouses: [twId] }),
       att('receipt_lot', lotId),
     );
-    expect(decision).toEqual({ allow: false, rule: 'out-of-scope' });
+    // Round 30: a coded deny REFUSES now — the log-only period is over.
+    expect(decision).toEqual({ allow: false, rule: 'out-of-scope', enforce: true });
   });
 
   it('an operator scoped to the receipt warehouse reads it', async () => {
@@ -259,7 +260,7 @@ describe('custom-field file groups follow the record they hang on', () => {
     ).toBe(true);
     expect(
       await decideAttachmentRead(actor(['scan.load']), att('custom_field', boundGroupId)),
-    ).toEqual({ allow: false, rule: 'custom_field-no-permission' });
+    ).toEqual({ allow: false, rule: 'custom_field-no-permission', enforce: true });
   });
 
   it('a group not yet bound to any record is uploader-only', async () => {
@@ -267,6 +268,7 @@ describe('custom-field file groups follow the record they hang on', () => {
     expect(await decideAttachmentRead(actor(['crm.leads']), unbound)).toEqual({
       allow: false,
       rule: 'custom_field-unbound',
+      enforce: true,
     });
     expect(
       (await decideAttachmentRead(actor([], { id: uploaderId }), unbound)).rule,
@@ -275,8 +277,12 @@ describe('custom-field file groups follow the record they hang on', () => {
 });
 
 describe('everything else', () => {
-  it('a legacy entity type is refused and named, uploader still reads it', async () => {
+  it('a legacy entity type logs but does NOT enforce — old real files, not private chats', async () => {
     const legacy = att('something_legacy', uuidv4());
+    // Deliberately no `enforce`: these are the free-form entity types from
+    // before the upload allowlist. The warn line stays their inventory, and
+    // 404ing history the code never learned to name would break real files
+    // for no security gain (round 30's one stated exception).
     expect(await decideAttachmentRead(actor(['admin.users.manage']), legacy)).toEqual({
       allow: false,
       rule: 'unmapped',

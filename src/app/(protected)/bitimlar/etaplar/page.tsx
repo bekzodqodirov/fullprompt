@@ -5,7 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
 import { PageHeader } from '@/components/ui/page';
 import { dealStageUsage, listStages } from '@/modules/wms/deals/service';
-import { DealStageForm } from './stage-form';
+import { DealStageForm, DealStageTools } from './stage-form';
 
 /**
  * The deal funnel's editor — born in round 26, because until the cargo
@@ -42,6 +42,13 @@ export default async function DealStagesPage() {
       </Link>
       <PageHeader icon="settings" title={t('stageSettings')} />
       <p className="text-sm text-ink-500">{t('cargoTriggerHint')}</p>
+
+      {/* Reorder and remove (round 30) — order feeds the board AND the cargo
+          engine's forward-only rule. */}
+      <div className="card space-y-2">
+        <h2 className="text-sm font-bold uppercase text-ink-500">🎯 {tc('stages')}</h2>
+        <DealStageTools stages={rows} usage={usage} />
+      </div>
 
       <Panel title={`➕ ${tc('addStage')}`}>
         <DealStageForm />

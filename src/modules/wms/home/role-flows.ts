@@ -1,6 +1,8 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
+  batches,
+  calcRequests,
   clientTransactions,
   dealStages,
   deals,
@@ -151,10 +153,51 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
   };
 }
 
+export interface VedFlowCounts {
+  /** Open hisoblash requests sitting on THIS person — the round-28 clock. */
+  calcOpen: number;
+  /** …of which already past their deadline. */
+  calcLate: number;
+  /** Departed export paperwork not yet sent to the agent. */
+  docsPending: number;
+  /** Goods lines on OPEN deals with no TNVED code — the classification queue. */
+  tnvedMissing: number;
+}
+
+export async function vedFlowCounts(actorId: string): Promise<VedFlowCounts> {
+  const now = new Date();
+  const [calcRows, docs, tnved] = await Promise.all([
+    db
+      .select({ dueAt: calcRequests.dueAt })
+      .from(calcRequests)
+      .where(and(eq(calcRequests.assigneeId, actorId), isNull(calcRequests.completedAt))),
+    // A truck that left without its papers reaching the agent is the thing
+    // this person gets phoned about; unloaded means customs is behind it.
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(batches)
+      .where(and(inArray(batches.status, ['in_transit', 'arrived']), isNull(batches.sentToAgentAt))),
+    db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n
+      FROM deal_lines dl
+      JOIN deals d ON d.id = dl.deal_id
+      JOIN deal_stages s ON s.id = d.stage_id
+      WHERE s.kind = 'open' AND (dl.tnved_code IS NULL OR btrim(dl.tnved_code) = '')
+    `),
+  ]);
+  return {
+    calcOpen: calcRows.length,
+    calcLate: calcRows.filter((row) => row.dueAt < now).length,
+    docsPending: Number(docs[0]?.n ?? 0),
+    tnvedMissing: Number(tnved[0]?.n ?? 0),
+  };
+}
+
 export type HomeFlow =
   | { kind: 'warehouse'; hrefs: string[]; counts: WarehouseFlowCounts }
   | { kind: 'logist'; hrefs: string[]; counts: LogistFlowCounts }
   | { kind: 'sales'; hrefs: string[]; counts: SalesFlowCounts }
+  | { kind: 'ved'; hrefs: string[]; counts: VedFlowCounts }
   | { kind: 'accountant'; hrefs: string[]; counts: MoneyFlowCounts };
 
 /**
@@ -186,6 +229,16 @@ export async function buildHomeFlow(
       kind: 'sales',
       hrefs: ['/crm/today', '/crm', '/suhbatlar', '/my-clients', '/bitimlar'],
       counts: await salesFlowCounts(actor.id, today),
+    };
+  }
+  // Round 30 — the last working role without a workflow home. After sales:
+  // a person wearing both hats lives the funnel's day; the calc queue still
+  // reaches them through /bugun.
+  if (actor.roles.includes('ved_manager')) {
+    return {
+      kind: 'ved',
+      hrefs: ['/bugun', '/batches', '/bitimlar'],
+      counts: await vedFlowCounts(actor.id),
     };
   }
   if (actor.roles.includes('accountant')) {

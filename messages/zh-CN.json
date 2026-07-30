@@ -74,7 +74,9 @@
     "flowReady": "待交付：{n} 箱",
     "flowPlansPending": "待审核：{n}",
     "flowUnassignedPayments": "未指定账户的收款（本月）",
-    "flowRecurringDue": "固定支出未登记"
+    "flowRecurringDue": "固定支出未登记",
+    "flowDocsPending": "未发单证给代理的车次",
+    "flowTnvedMissing": "无 HS 编码的商品"
   },
   "dashboard": {
     "title": "仪表盘",

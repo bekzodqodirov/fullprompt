@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## VED bosh ekrani, fayl-ruxsat qattiq rejimda, bitim etaplarini tartiblash — 2026-07-30
+
+3-bo'lim ishlaringiz:
+
+- **VED xodimi ham endi ish tartibi bilan uyg'onadi**: bosh o'rinda —
+  hisoblash navbati (nechta turibdi, kechikkani qizil, bosilsa «Mening
+  kunim»ga olib boradi), keyin agentga hujjati ketmagan (yo'lda/yetib
+  kelgan) partiyalar, keyin TNVED kodsiz tovarli ochiq bitimlar.
+- **Fayl-ruxsat endi qattiq**: ruxsati yo'q xodim fayl havolasi bilan ham
+  rasm/hujjatni ocholmaydi — sistema rad etadi (avval faqat jurnalga
+  yozardi). Bitta istisno: eski, turi noma'lum fayllar — ular jurnal
+  rejimida qoldi, tarixdagi haqiqiy fayllarni buzmaslik uchun.
+- **Bitim etaplarini** endi tepadagi ro'yxatda ▲▼ bilan tartiblash va ✖
+  bilan o'chirish mumkin (o'chirishda ichidagi bitimlar siz tanlagan
+  etapga ko'chadi; tartib doskaga ham, yukka ergashish qoidasiga ham
+  ta'sir qiladi).
+- **Yashik yuklash** bo'yicha buyrug'ingiz qabul qilindi — butun yashik
+  yo'li bo'yicha chuqur tekshiruv ketyapti, natijasi alohida xabar
+  qilinadi.
+
+Tekshirildi: 794 unit/integration + 93 e2e yashil. Migratsiya yo'q.
+
 ## Buxgalteriya: rastamojka jadval bo'lib kiritiladi, partiya moliyasi bir ekranda, to'lovlar reestri — 2026-07-30
 
 Buxgalter og'riqlari bo'yicha:

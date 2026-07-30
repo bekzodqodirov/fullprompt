@@ -10,6 +10,7 @@ import { expect, test } from '@playwright/test';
 
 const LOGIST = '+998900000003';
 const SALES = '+998900000009';
+const VED = '+998900000004';
 const ACCOUNTANT = '+998900000010';
 const PASSWORD = 'demo1234';
 const runId = Date.now().toString().slice(-6);
@@ -83,6 +84,20 @@ test('the sales manager wakes up to the call list', async ({ page }) => {
   // The hero opens the morning screen itself.
   await page.getByTestId('sales-flow-hero').click();
   await expect(page).toHaveURL('/crm/today');
+});
+
+test('the VED manager wakes up to the calc queue (round 30)', async ({ page }) => {
+  await login(page, VED);
+
+  await expect(page.getByTestId('ved-flow-hero')).toBeVisible();
+  await expect(page.getByTestId('ved-flow-docs')).toBeVisible();
+  await expect(page.getByTestId('ved-flow-tnved')).toBeVisible();
+  await expect(page.getByTestId('sales-flow-hero')).toHaveCount(0);
+  await expect(page.getByTestId('flow-receive')).toHaveCount(0);
+
+  // The hero opens the day screen where the timed calc tasks live.
+  await page.getByTestId('ved-flow-hero').click();
+  await expect(page).toHaveURL('/bugun');
 });
 
 test('the accountant wakes up to the money', async ({ page }) => {
