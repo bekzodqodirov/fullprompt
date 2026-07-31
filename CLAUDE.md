@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-806 unit/integration + 93 e2e, verified in CI's order on a fresh database.
+813 unit/integration + 93 e2e, verified in CI's order on a fresh database.
 Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -718,6 +718,25 @@ yo'lkira: from-city/to-city/kub/kg/tovar checked, accepted with a
 confirmation; bot entry = separate STAFF and CLIENT buttons. Clarifying
 questions sent (podklyuch scope, freight tariff table, who may use
 hisoblatish, client-button scope); batches to build on his answers.
+
+Round 35 (batch A) — his four answers (podklyuch = rastamojka+yo'lkira
+combined; the bot COLLECTS, staff quote; hisoblatish for all staff;
+client button = cabinet only) → staff bot batch A SHIPPED (#410):
+`telegram/staff-bot.ts` (decisions, integration-tested) +
+`staff-handlers.ts` (grammy shell, registered BEFORE the cabinet, next()
+for foreign chats). Two-door /start (entry buttons e:s/e:c); staff
+phone-link via verified contact vs ACTIVE users (staffPhonesMatch —
+platform-local restatement, no wms import), chat_taken refusal;
+TaskAssigned carries «✅ Bajarildi» (buttonsFor at SEND time in
+sendPendingTelegram; notifyStaffTelegram grew `extra` → taskId), two-step
+result capture (in-memory TTL pendings), completeTask under the chat's
+honest actor; DebtApprovalRequested carries Ruxsat/Yo'q — permission
+checked IN the bot (chat id ≠ session); «📋 Bugun» button serves
+composeMyDayText (extracted from the tasks digest — push and pull say
+the same words). Red-proofs: permission gate + chat_taken stripped →
+tests red. NOT live-tested against Telegram (watch first real press in
+docker logs). Batches B (lookup, unanswered reminder, load summary) and
+C (hisoblatish AI intake) next.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

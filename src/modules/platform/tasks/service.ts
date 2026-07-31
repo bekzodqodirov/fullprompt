@@ -295,6 +295,8 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
         (label ? `\n📌 ${label}` : '') +
         `\n👤 ${await userName(ctx.actorId)}` +
         `\n🔗 ${taskLink(created.entityType, created.entityId)}`,
+      // Lets the send worker attach the «Bajarildi» button (staff bot).
+      extra: { taskId: created.id },
     }).catch(() => {});
     return created;
   }

@@ -12,6 +12,8 @@ import {
 } from './client-cabinet';
 import { clientLabels } from './client-labels';
 import { cabinetInlineKeyboard } from './menu-button';
+import { staffForChat } from './staff-bot';
+import { entryKeyboard, registerStaffBot, staffKeyboard } from './staff-handlers';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -53,6 +55,12 @@ export function startTelegramBot(): void {
   bot.command('start', async (ctx) => {
     const code = ctx.match?.trim();
     if (!code) {
+      // A linked member of STAFF gets the staff menu (round 35).
+      const staff = await staffForChat(BigInt(ctx.chat.id));
+      if (staff) {
+        await ctx.reply(`👋 ${staff.fullName}`, { reply_markup: staffKeyboard() });
+        return;
+      }
       // A linked client without a code gets the cabinet menu back.
       const linkedClients = await clientsForChat(BigInt(ctx.chat.id));
       if (linkedClients.length) {
@@ -68,13 +76,13 @@ export function startTelegramBot(): void {
         if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
         return;
       }
-      // This used to be a RUSSIAN sentence about the staff profile screen —
-      // shown to a customer who simply opened the bot, in a language the
-      // cabinet does not even use. Now it also OFFERS the way in (item 13):
-      // sharing your own Telegram-verified number needs no code at all.
+      // An unknown chat is offered the two doors (owner: «hodim yoki mijoz
+      // alohida kirish bo'lsin buttonlar bilan»). The client door is the
+      // cabinet's phone flow; the staff door matches the shared number
+      // against the employee list.
       const t = clientLabels(ctx.from?.language_code);
-      await ctx.reply(`${t.notLinked}\n\n${t.linkByPhone}`, {
-        reply_markup: phoneKeyboard(ctx.from?.language_code),
+      await ctx.reply(`${t.notLinked}\n\nKim sifatida kirasiz? / Кто вы?`, {
+        reply_markup: entryKeyboard(),
       });
       return;
     }
@@ -111,6 +119,10 @@ export function startTelegramBot(): void {
     await ctx.reply(`✅ Telegram подключён: ${user?.fullName ?? ''}. Уведомления будут приходить сюда.`);
   });
 
+  // Staff first: its handlers only act for staff-linked chats (or explicit
+  // «Hodim» intent) and call next() otherwise, so a customer's contact and
+  // texts fall through to the cabinet exactly as before.
+  registerStaffBot(bot);
   registerClientCabinet(bot);
 
   bot.catch((err) => logger.error({ err: err.error }, 'telegram bot error'));

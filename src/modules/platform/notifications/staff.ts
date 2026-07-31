@@ -28,6 +28,11 @@ export async function notifyStaffTelegram(input: {
   text: string;
   /** Excluded from delivery — normally the person who did the thing. */
   exceptUserId?: string | null;
+  /**
+   * Extra payload fields beside the text — e.g. the taskId that lets the
+   * send worker attach the «Bajarildi» button (round 35 staff bot).
+   */
+  extra?: Record<string, unknown>;
 }): Promise<number> {
   const ids = [...new Set(input.userIds)].filter((id) => id && id !== input.exceptUserId);
   if (ids.length === 0) return 0;
@@ -45,7 +50,7 @@ export async function notifyStaffTelegram(input: {
       userId: person.id,
       channel: 'telegram',
       type: input.type,
-      payload: { text: input.text },
+      payload: { ...(input.extra ?? {}), text: input.text },
       status: muted ? 'muted' : 'pending',
       error: muted ? 'muted by user' : null,
     });

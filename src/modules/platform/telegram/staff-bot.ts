@@ -1,0 +1,268 @@
+import { and, eq } from 'drizzle-orm';
+import { db } from '../db/client';
+import {
+  permissions,
+  rolePermissions,
+  telegramLinks,
+  userRoles,
+  users,
+} from '../db/schema';
+import { writeAudit } from '../audit/service';
+import { completeTask, TaskError } from '../tasks/service';
+
+/**
+ * The cabinet's phone rule, restated here because platform must never import
+ * wms: digits only, compare the last 9 — "+998 90…" and "90…" are the same
+ * person, and anything under 7 digits is too short to trust.
+ */
+export function staffPhonesMatch(a: string, b: string): boolean {
+  const da = a.replace(/\D/g, '');
+  const db2 = b.replace(/\D/g, '');
+  if (da.length < 7 || db2.length < 7) return false;
+  const n = Math.min(9, da.length, db2.length);
+  return da.slice(-n) === db2.slice(-n);
+}
+
+/**
+ * The STAFF side of the bot (owner's round: «endi telegram botni mukammal
+ * qilishimiz kerak hodimlar ishlashi uchun»).
+ *
+ * Everything the bot DECIDES lives here and is integration-tested; the
+ * grammy handlers in bot.ts are a thin shell that cannot be exercised
+ * without a live Telegram (same split as the tg-import/listener scripts).
+ *
+ * One bot serves both audiences: a chat linked in `telegram_links` is a
+ * member of staff, a chat in `client_telegram_links` is a customer, and an
+ * unknown chat is offered the two doors («Hodim» / «Mijoz») — his answer 4:
+ * the client door opens the existing cabinet, nothing more.
+ */
+
+export interface StaffChat {
+  id: string;
+  fullName: string;
+  locale: string | null;
+}
+
+/** The staff member behind a chat — linked and still employed, or nobody. */
+export async function staffForChat(chatId: bigint): Promise<StaffChat | null> {
+  const [row] = await db
+    .select({ id: users.id, fullName: users.fullName, locale: users.locale, active: users.active })
+    .from(telegramLinks)
+    .innerJoin(users, eq(telegramLinks.userId, users.id))
+    .where(and(eq(telegramLinks.telegramChatId, chatId), eq(telegramLinks.status, 'linked')))
+    .limit(1);
+  if (!row || !row.active) return null;
+  return { id: row.id, fullName: row.fullName, locale: row.locale };
+}
+
+/**
+ * The ACTIVE staff member a Telegram-shared phone belongs to. The contact
+ * button shares the sender's OWN verified number (the cabinet's spoof-proof
+ * rule), so matching it against the login phone is the same trust the client
+ * link already runs on.
+ */
+export async function staffByPhone(phone: string): Promise<StaffChat | null> {
+  const rows = await db
+    .select({ id: users.id, fullName: users.fullName, locale: users.locale, phone: users.phone })
+    .from(users)
+    .where(eq(users.active, true));
+  const hit = rows.find((u) => staffPhonesMatch(phone, u.phone));
+  return hit ? { id: hit.id, fullName: hit.fullName, locale: hit.locale } : null;
+}
+
+/**
+ * Bind a chat to a staff member. Refuses a chat that already belongs to a
+ * DIFFERENT colleague — two people cannot share one Telegram, and silently
+ * re-pointing the row would move every future notification.
+ */
+export async function linkStaffChat(
+  userId: string,
+  chatId: bigint,
+): Promise<'linked' | 'chat_taken'> {
+  const holder = await db.query.telegramLinks.findFirst({
+    where: eq(telegramLinks.telegramChatId, chatId),
+  });
+  if (holder && holder.userId !== userId) return 'chat_taken';
+
+  const own = await db.query.telegramLinks.findFirst({
+    where: eq(telegramLinks.userId, userId),
+  });
+  if (own) {
+    await db
+      .update(telegramLinks)
+      .set({ telegramChatId: chatId, status: 'linked', linkedAt: new Date(), linkCode: null })
+      .where(eq(telegramLinks.id, own.id));
+  } else {
+    await db
+      .insert(telegramLinks)
+      .values({ userId, telegramChatId: chatId, status: 'linked', linkedAt: new Date() });
+  }
+  await writeAudit(db, { actorId: userId }, {
+    entityType: 'user',
+    entityId: userId,
+    action: 'update',
+    after: { telegram: 'linked_by_phone' },
+  });
+  return 'linked';
+}
+
+// ---------------------------------------------------------------------------
+// Callback data — kept tiny (Telegram caps callback_data at 64 bytes).
+// ---------------------------------------------------------------------------
+
+export type BotCallback =
+  | { kind: 'task_done'; taskId: string }
+  | { kind: 'approval'; approvalId: string; verdict: 'approved' | 'refused' }
+  | { kind: 'entry'; who: 'staff' | 'client' };
+
+export function parseCallback(data: string): BotCallback | null {
+  if (data === 'e:s') return { kind: 'entry', who: 'staff' };
+  if (data === 'e:c') return { kind: 'entry', who: 'client' };
+  const task = /^t:([0-9a-f-]{36})$/.exec(data);
+  if (task) return { kind: 'task_done', taskId: task[1]! };
+  const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
+  if (approval) {
+    return {
+      kind: 'approval',
+      approvalId: approval[2]!,
+      verdict: approval[1] === '1' ? 'approved' : 'refused',
+    };
+  }
+  return null;
+}
+
+/**
+ * Inline buttons a pending Telegram notification carries, by type. Attached
+ * at SEND time so the notification rows stay plain data and a bot-less
+ * deployment (no token) changes nothing.
+ */
+export function buttonsFor(
+  type: string,
+  payload: Record<string, unknown>,
+): { text: string; callback_data: string }[][] | null {
+  if (type === 'TaskAssigned' && typeof payload.taskId === 'string') {
+    return [[{ text: '✅ Bajarildi', callback_data: `t:${payload.taskId}` }]];
+  }
+  if (type === 'DebtApprovalRequested' && typeof payload.approvalId === 'string') {
+    return [
+      [
+        { text: '✅ Ruxsat', callback_data: `a:1:${payload.approvalId}` },
+        { text: '⛔ Yo‘q', callback_data: `a:0:${payload.approvalId}` },
+      ],
+    ];
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Two-step task completion: the button asks for the result, the next text
+// message delivers it. In-memory with a TTL — single-process polling, same
+// as the web connect flow's pending logins.
+// ---------------------------------------------------------------------------
+
+const PENDING_TTL_MS = 10 * 60_000;
+const pendingResults = new Map<string, { taskId: string; expires: number }>();
+/** Chats that pressed «Hodim» and were asked for their phone. */
+const staffEntryIntents = new Map<string, number>();
+
+export function noteTaskPending(chatId: bigint, taskId: string): void {
+  pendingResults.set(String(chatId), { taskId, expires: Date.now() + PENDING_TTL_MS });
+}
+
+export function takeTaskPending(chatId: bigint): string | null {
+  const key = String(chatId);
+  const entry = pendingResults.get(key);
+  if (!entry) return null;
+  pendingResults.delete(key);
+  return entry.expires > Date.now() ? entry.taskId : null;
+}
+
+export function noteStaffEntry(chatId: bigint): void {
+  staffEntryIntents.set(String(chatId), Date.now() + PENDING_TTL_MS);
+}
+
+export function takeStaffEntry(chatId: bigint): boolean {
+  const key = String(chatId);
+  const expires = staffEntryIntents.get(key);
+  if (expires === undefined) return false;
+  staffEntryIntents.delete(key);
+  return expires > Date.now();
+}
+
+async function permissionsOf(userId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ code: permissions.code })
+    .from(userRoles)
+    .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
+    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+    .where(eq(userRoles.userId, userId));
+  return new Set(rows.map((r) => r.code));
+}
+
+export type BotTaskResult = 'done' | 'not_linked' | 'not_yours' | 'already_closed' | 'not_found';
+
+/**
+ * Close a task from the bot, as the person the CHAT belongs to. The service
+ * enforces whose task it is (`canActOnTask`) — the bot only supplies an
+ * honestly-identified actor, never a synthetic admin.
+ */
+export async function completeTaskFromBot(
+  chatId: bigint,
+  taskId: string,
+  result: string,
+): Promise<BotTaskResult> {
+  const staff = await staffForChat(chatId);
+  if (!staff) return 'not_linked';
+  try {
+    await completeTask(taskId, result, {
+      actorId: staff.id,
+      actor: { id: staff.id, permissions: await permissionsOf(staff.id) },
+    });
+    return 'done';
+  } catch (err) {
+    if (err instanceof TaskError) {
+      if (err.code === 'not_yours') return 'not_yours';
+      if (err.code === 'already_closed') return 'already_closed';
+      if (err.code === 'not_found') return 'not_found';
+    }
+    throw err;
+  }
+}
+
+export type BotApprovalResult =
+  | 'decided'
+  | 'not_linked'
+  | 'forbidden'
+  | 'already_decided'
+  | 'not_found';
+
+/**
+ * Decide a debtor-issue request from the button. The permission is checked
+ * HERE because the service trusts its callers to have authorized (the web
+ * action does) — a chat id is not a session, so the bot must ask the grants
+ * itself before lending the chat a decision.
+ */
+export async function decideApprovalFromBot(
+  chatId: bigint,
+  approvalId: string,
+  verdict: 'approved' | 'refused',
+): Promise<BotApprovalResult> {
+  const staff = await staffForChat(chatId);
+  if (!staff) return 'not_linked';
+  const grants = await permissionsOf(staff.id);
+  if (!grants.has('finance.debt_override')) return 'forbidden';
+  const { decideIssueApproval, ApprovalError } = await import('../../wms/issue/approvals');
+  try {
+    await decideIssueApproval(
+      { approvalId, verdict, note: 'Telegram bot orqali' },
+      { actorId: staff.id },
+    );
+    return 'decided';
+  } catch (err) {
+    if (err instanceof ApprovalError) {
+      if (err.code === 'already_decided') return 'already_decided';
+      if (err.code === 'not_found') return 'not_found';
+    }
+    throw err;
+  }
+}

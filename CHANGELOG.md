@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## Xodimlar boti — birinchi bo'lak — 2026-07-31
+
+Javoblaringiz bo'yicha (podklyuch = rastamojka + yo'lkira qo'shilgan narx;
+narxni hodim aytadi; hisoblatish hammaga; mijozga hozirgi kabinet) botning
+birinchi bo'lagi tayyor:
+
+- **Ikkita eshik.** Botga notanish odam kirsa: «👨‍💼 Hodim» / «📦 Mijoz»
+  tugmalari. Hodim — telefonini yuboradi (Telegram tasdiqlagan o'z
+  raqami), sistema xodimlar ro'yxatidan topib ulaydi. Mijoz — avvalgidek
+  kabinet. Bitta Telegram ikki xodimga ulanmaydi.
+- **Zadachani botdan yopish.** Yangi vazifa xabari ostida «✅ Bajarildi»
+  tugmasi: bosasiz → natijani yozasiz → vazifa yopiladi, so'ragan odamga
+  natija bilan xabar ketadi. Begonaning vazifasini yopib bo'lmaydi —
+  ekrandagi qoidalar botda ham amal qiladi.
+- **Qarzdorga ruxsat — telefonda bir bosishda.** So'rov sizga «✅ Ruxsat /
+  ⛔ Yo'q» tugmalari bilan keladi; huquq (finance.debt_override) botda ham
+  tekshiriladi.
+- **«📋 Bugun» tugmasi.** Xodim istalgan payt bosib, ertalabki ro'yxatning
+  o'zini oladi (kechikkan + bugungi vazifalar). Ertalabki avtomatik xabar
+  avvaldan bor edi — endi tugma bilan ham o'sha.
+
+Eslatma: Telegramga jonli ulanib sinash bu yerda mumkin emas — birinchi
+real tugma bosilishini serverda kuzatamiz. Qidiruv, javobsiz mijoz
+eslatmasi, yuklash svodkasi va Hisoblatish AI — keyingi bo'laklarda.
+
+Tekshirildi: 813 unit/integration + 93 e2e yashil. Migratsiya yo'q.
+
+
 ## Kartada «kim yozishgan» ro'yxati — tanlab o'qish — 2026-07-31
 
 1-javobingiz bo'yicha:

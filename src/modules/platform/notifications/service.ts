@@ -16,6 +16,7 @@ import { logger } from '../logger';
 import { runAutomationRules } from '../automation/service';
 import { clientLabels } from '../telegram/client-labels';
 import { cabinetInlineKeyboard } from '../telegram/menu-button';
+import { buttonsFor } from '../telegram/staff-bot';
 import { notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
 
@@ -628,6 +629,12 @@ export async function sendPendingTelegram(): Promise<void> {
       continue;
     }
     try {
+      // Inline buttons ride on the send, by type (staff bot, round 35): a
+      // task lands with «Bajarildi», a debtor request with «Ruxsat / Yo‘q».
+      const buttons = buttonsFor(
+        notification.type,
+        notification.payload as Record<string, unknown>,
+      );
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -638,6 +645,7 @@ export async function sendPendingTelegram(): Promise<void> {
             notification.payload as Record<string, unknown>,
             recipient?.locale,
           ),
+          ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
         }),
       });
       const body = (await res.json()) as { ok: boolean; description?: string };

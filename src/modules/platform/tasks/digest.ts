@@ -40,10 +40,44 @@ function line(task: { typeIcon: string | null; title: string; dueAt: Date | null
   );
 }
 
-export async function sendTaskDigest(now = new Date()): Promise<number> {
+/**
+ * One person's day as a Telegram text — the morning digest's body, ALSO
+ * served on demand by the staff bot's «Bugun» button (round 35): the same
+ * words in the push and the pull, so nobody wonders which one is right.
+ * Null when there is nothing due — an empty list is not a message.
+ */
+export async function composeMyDayText(userId: string, now = new Date()): Promise<string | null> {
   const endOfToday = new Date(now);
   endOfToday.setUTCHours(23, 59, 59, 999);
+  const day = await myDay(userId, endOfToday);
+  const late = day.overdue;
+  const today = day.today;
+  if (late.length + today.length === 0) return null;
 
+  const labels = await aboutLabels([...late, ...today]);
+  const about = (task: (typeof late)[number]) => {
+    const key = task.entityType && task.entityId ? `${task.entityType}:${task.entityId}` : null;
+    const label = key ? labels.get(key) : null;
+    return label ? `\n   ${label}` : '';
+  };
+
+  const parts: string[] = [];
+  if (late.length) {
+    parts.push(
+      `🔴 Kechikkan (${late.length})\n` +
+        late.slice(0, 15).map((task) => line(task, true) + about(task)).join('\n'),
+    );
+  }
+  if (today.length) {
+    parts.push(
+      `🟡 Bugunga (${today.length})\n` +
+        today.slice(0, 15).map((task) => line(task, false) + about(task)).join('\n'),
+    );
+  }
+  return `✅ Sizning vazifalaringiz\n\n${parts.join('\n\n')}`;
+}
+
+export async function sendTaskDigest(now = new Date()): Promise<number> {
   // One pass over the overdue rows tells us WHO has anything at all, so a
   // company of twenty does not become twenty queries for twenty empty days.
   const overdue = await overdueByAssignee(now);
@@ -57,32 +91,9 @@ export async function sendTaskDigest(now = new Date()): Promise<number> {
 
   let sent = 0;
   for (const userId of candidates) {
-    const day = await myDay(userId, endOfToday);
-    const late = day.overdue;
-    const now_ = day.today;
-    if (late.length + now_.length === 0) continue;
-
-    const labels = await aboutLabels([...late, ...now_]);
-    const about = (task: (typeof late)[number]) => {
-      const key = task.entityType && task.entityId ? `${task.entityType}:${task.entityId}` : null;
-      const label = key ? labels.get(key) : null;
-      return label ? `\n   ${label}` : '';
-    };
-
-    const parts: string[] = [];
-    if (late.length) {
-      parts.push(
-        `🔴 Kechikkan (${late.length})\n` +
-          late.slice(0, 15).map((task) => line(task, true) + about(task)).join('\n'),
-      );
-    }
-    if (now_.length) {
-      parts.push(
-        `🟡 Bugunga (${now_.length})\n` +
-          now_.slice(0, 15).map((task) => line(task, false) + about(task)).join('\n'),
-      );
-    }
-    await deliver(userId, `✅ Sizning vazifalaringiz\n\n${parts.join('\n\n')}`);
+    const text = await composeMyDayText(userId, now);
+    if (!text) continue;
+    await deliver(userId, text);
     sent += 1;
   }
 
