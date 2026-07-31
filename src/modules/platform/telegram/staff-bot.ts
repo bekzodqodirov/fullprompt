@@ -115,11 +115,18 @@ export async function linkStaffChat(
 export type BotCallback =
   | { kind: 'task_done'; taskId: string }
   | { kind: 'approval'; approvalId: string; verdict: 'approved' | 'refused' }
-  | { kind: 'entry'; who: 'staff' | 'client' };
+  | { kind: 'entry'; who: 'staff' | 'client' }
+  | { kind: 'calc'; step: 'yolkira' | 'rastamojka' | 'podklyuch' | 'done' | 'save' | 'more' | 'cancel' };
+
+const CALC_STEPS = ['yolkira', 'rastamojka', 'podklyuch', 'done', 'save', 'more', 'cancel'] as const;
 
 export function parseCallback(data: string): BotCallback | null {
   if (data === 'e:s') return { kind: 'entry', who: 'staff' };
   if (data === 'e:c') return { kind: 'entry', who: 'client' };
+  const calc = /^c:(\w+)$/.exec(data);
+  if (calc && (CALC_STEPS as readonly string[]).includes(calc[1]!)) {
+    return { kind: 'calc', step: calc[1] as (typeof CALC_STEPS)[number] };
+  }
   const task = /^t:([0-9a-f-]{36})$/.exec(data);
   if (task) return { kind: 'task_done', taskId: task[1]! };
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
@@ -239,6 +246,40 @@ export async function lookupFromBot(chatId: bigint, query: string): Promise<stri
   if (!actor) return null;
   const { botLookup } = await import('../../wms/bot/lookup');
   return botLookup(actor, query);
+}
+
+/**
+ * Land a confirmed «Hisoblatish» on a card. Everything it decides — which
+ * client the typed hint names, deal or lead, what the note says — lives in
+ * wms and is tested there; this is the crossing.
+ */
+export async function landCollectedIntake(
+  chatId: bigint,
+  staffId: string,
+  staffName: string,
+): Promise<{ kind: 'deal' | 'lead'; id: string; label: string } | null> {
+  const { activeIntake } = await import('./calc-intake');
+  const state = activeIntake(chatId);
+  if (!state) return null;
+  const { parseClientHint } = await import('../../wms/calc/intake');
+  const { landIntake, resolveIntakeClient } = await import('../../wms/calc/intake-land');
+
+  const hint = parseClientHint(state.clientHintRaw);
+  const client = hint ? await resolveIntakeClient(hint) : null;
+  return landIntake({
+    noteId: state.noteId,
+    section: state.section,
+    facts: state.facts,
+    steps: state.steps,
+    fileCount: state.fileCount,
+    collectedBy: staffId,
+    collectedByName: staffName,
+    client,
+    // A prospect's card is named by whatever staff typed; the phone, when
+    // one was typed, is what a second request will find it by.
+    leadName: state.clientHintRaw.trim() || 'Hisoblatish (nomsiz)',
+    leadPhone: hint?.phone ?? null,
+  });
 }
 
 export type BotTaskResult = 'done' | 'not_linked' | 'not_yours' | 'already_closed' | 'not_found';

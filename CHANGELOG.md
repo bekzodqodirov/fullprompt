@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Xodimlar boti — «Hisoblatish» — 2026-07-31
+
+Botning uchinchi va oxirgi bo'lagi — siz o'ylab topgan tartibda:
+
+- Xodim botda **«🧮 Hisoblatish»** ni bosadi → **bo'limni tanlaydi**
+  (🚚 Yo'lkira / 🛃 Rastamojka / 🔑 Podklyuch) → **mijozni yozadi** (kodi,
+  telefoni yoki ismi) → **hamma narsani tashlaydi**: tovar ro'yxati,
+  fayllar, rasmlar, kub/kg, yo'nalish → **«Bo'ldi»**.
+- **AI tahlil qiladi va to'liqligini tekshiradi.** Yo'lkirada: qaysi
+  shahardan qaysi shaharga, kub, kg, tovar nomi. Rastamojkada: kg, kub,
+  tovar nomi (yo'nalish so'ralmaydi — bojxonaga farqi yo'q). Podklyuch —
+  ikkisi qo'shilgani, shuning uchun hammasini so'raydi. Yetishmagani
+  ro'yxat bo'lib chiqadi; xodim qo'shib yuboradi yoki shundayligicha
+  tasdiqlaydi.
+- **Tasdiqlagach kartochka ochiladi**: kodi bor mijozga — **bitim**
+  (ochiq bitimi bo'lsa o'shanga qo'shiladi), kodi yo'qqa — **lead**.
+  Bir odam ikki marta so'rasa, ikkinchi so'rov o'sha kartaga tushadi.
+  Kartaning **lentasida AI nima qilganini yozib qo'yadi**: qanday
+  guruhlagan, qaysi TNVED kodni qo'ygan, nimasi ziddiyatli. Yuborilgan
+  fayl-rasmlar o'sha yozuvga biriktiriladi.
+- **Narxni bot aytmaydi** — siz aytganingizdek, narxni xodim aytadi.
+  Hisoblashga berish (VED xodimini tanlash) ham kartaning o'zida —
+  avvalgi soatli tartib bilan.
+- **AI ishlamasa ham to'xtamaydi:** xodim yozgan «250 kg», «5 kub»,
+  «Yiwu → Toshkent» kabi ma'lumotlar baribir o'qiladi. Xodim yozgan
+  raqam AI o'qiganidan ustun turadi.
+
+Eslatma: Telegramga jonli ulanib sinash bu yerda mumkin emas — birinchi
+real «Hisoblatish» ni serverda birga kuzatamiz. AI ishlashi uchun
+serverda `ANTHROPIC_API_KEY` bo'lishi kerak.
+
+Migratsiya yo'q. Tekshirildi: 828 unit/integration + 93 e2e yashil.
+
+
 ## Xodimlar boti — ikkinchi bo'lak — 2026-07-31
 
 - **Botdan qidiruv.** Xodim botga mijoz kodini (GS777), karobka kodini

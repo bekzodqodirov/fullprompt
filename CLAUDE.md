@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-819 unit/integration + 93 e2e, verified in CI's order on a fresh database.
+828 unit/integration + 93 e2e, verified in CI's order on a fresh database.
 Latest migration: **0053** (`tg_reminded_at`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -755,6 +755,25 @@ finishUnload → notifyStaffTelegram to `usersWithPermission('plans.manage')`
 the presser; 'LoadFinished'/'UnloadFinished' in MUTE_GROUPS.operations
 (routine news, not alarms). Red-proofs ×3: money gate, box scope check,
 reminded_at filter. Batch C (hisoblatish AI intake) next.
+
+Round 37 (batch C) — «Hisoblatish», the last approved bot item (#412).
+Flow: 🧮 button → section (yolkira/rastamojka/podklyuch) → client hint →
+material (text + photos/documents) → «Bo'ldi» → analyse → review →
+«Tasdiqlash». `wms/calc/intake.ts` holds the PURE decisions
+(REQUIRED_FIELDS per section — rastamojka wants no route, podklyuch =
+both; zero counts as missing; summary + lenta-note text; parseClientHint);
+`intake-manual.ts` reads typed kg/kub/route and WINS over the model;
+`intake-ai.ts` = claude-opus-5 structured output, extracts + explains,
+never prices, returns null on no-key/refusal; `intake-land.ts` lands it
+— coded client → newest OPEN deal (or a new one), stranger → lead,
+second request from the same phone joins the first card, ambiguous phone
+refuses. Collection state = in-memory 30-min TTL (`telegram/calc-intake.ts`),
+files stored on arrival pre-bound to the minted crm_activity note id
+(#180); a bot restart mid-collection loses the typed text — stated.
+Calc clock NOT started here: the VED picker lives on the card (round 28).
+Red-proofs ×2: rastamojka route requirement, ambiguous-phone resolve.
+LESSON: JS `\b` is ASCII-only, so «120кг» never matched — negative
+lookahead + `u` flag (caught by the test, not by reading).
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
