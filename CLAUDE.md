@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-803 unit/integration + 93 e2e, verified in CI's order on a fresh database.
+804 unit/integration + 93 e2e, verified in CI's order on a fresh database.
 Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -689,6 +689,20 @@ Red-proof: sibling branch stripped → crm sibling test red. NEXT AGREED:
 the staff-side Telegram bot round («endi telegram botni mukammal
 qilishimiz kerak hodimlar ishlashi uchun») — proposals sent, his picks
 awaited.
+
+Round 33 (part 1) — his answers arrived (#408): rank-and-file stays
+own-account; SUPERVISION widened to `seesAllTg` = super_admin | admin
+role | ved.docs GRANT (editable, #170 — reason: calc files land in
+whichever manager's chat). Every tg door asks ONE predicate: `canReadTg`
+on thread panel + /suhbatlar pages + dock routes + app-bar 💬;
+/suhbatlar in ved menu + nav item permissions += ved.docs; photo authz
+seesAllTgChats = alias of seesAllTg. Replying stays own-account.
+Red-proof: both new clauses stripped → predicate + photo tests red.
+APPROVED for next batches: all 6 staff-bot items (task-complete buttons,
+bot lookup, morning plan, approval buttons, unanswered-client reminder,
+load/unload summary) + AI calc intake (client sends files/photos/texts →
+AI analyzes + completeness verdict → manager confirms → lands in the
+lead's hisoblash section). Design sent; batches to build next.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

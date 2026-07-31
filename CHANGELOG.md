@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## Vedchi va admin — barcha chatlarni ko'radi — 2026-07-31
+
+Javoblaringiz bo'yicha 1-band tayyor:
+
+- **Oddiy xodimlarda o'zgarish yo'q**: har kim faqat o'z akkauntidagi
+  chatlarni ko'radi (telefon raqami bilan o'zi gaplashgan bo'lsa — o'sha).
+- **Vedchi va admin endi HAMMANING chatini ko'radi** — /suhbatlar
+  ro'yxatida har suhbat kimning akkauntida ekani yozilgan, ichida esa har
+  xabar kim yozganini ko'rsatadi («qaysi hodim qanday gaplashgani»).
+  Vedchiga bu hisoblash uchun: mijoz fayl-rasmlarni qaysi sotuvchining
+  chatiga tashlasa ham, vedchi o'sha yerdan o'qiy oladi. /suhbatlar
+  vedchining menyusiga ham qo'shildi, rasmlar ham xuddi shu qoidada
+  ochiladi.
+- **Javob yozish** hammaga faqat o'z akkauntidan — kuzatuv ko'z, og'iz
+  emas.
+
+Bot va AI-hisoblash bo'yicha javob alohida xabarda.
+
+Tekshirildi: 804 unit/integration + 93 e2e yashil. Migratsiya yo'q.
+
+
 ## Kartadagi Telegram chat — telefondosh kodni ham topadi — 2026-07-31
 
 «Bitimda ham, leadda ham chat ko'rinmayabti» xabaringizning sababi topildi:

@@ -12,6 +12,7 @@ import {
 } from '../../platform/db/schema';
 import { resolveEntity } from '../../platform/entities/service';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
+import { seesAllTg } from '../crm/conversations';
 
 /**
  * Per-record read authorization for GET /api/attachments/[id].
@@ -48,8 +49,10 @@ type ReadActor = ScopedActor & {
   roles?: readonly string[];
 };
 
-/** The owner's supervision view (round 21) — same rule as `tgViewerFor`. */
-const seesAllTgChats = (actor: ReadActor) => actor.roles?.includes('super_admin') === true;
+/** The owner's supervision view — THE shared rule (`seesAllTg`): super_admin,
+ * admin, and VED-grant holders since round 33. A photo URL must widen exactly
+ * as far as the screens do, and no further. */
+const seesAllTgChats = (actor: ReadActor) => seesAllTg(actor);
 
 type AttachmentRow = { id: string; entityType: string; entityId: string; uploadedBy: string };
 
@@ -147,7 +150,10 @@ async function decide(
         columns: { managerUserId: true, queuedBy: true },
       });
       if (!row) return { allow: false, rule: 'orphan', enforce: true };
-      if (!has('crm.leads', 'clients.manage'))
+      // The supervision view holds neither CRM grant (a vedchi's whole point
+      // is reading the calc chat without owning the funnel) — it passes here
+      // and is checked as the account line below, same as the screens.
+      if (!has('crm.leads', 'clients.manage') && !seesAllTgChats(actor))
         return { allow: false, rule: 'tg-no-permission', enforce: true };
       return row.managerUserId === actor.id || row.queuedBy === actor.id || seesAllTgChats(actor)
         ? { allow: true, rule: 'tg-own-outbox' }
@@ -165,7 +171,7 @@ async function decide(
         columns: { managerUserId: true },
       });
       if (!row) return { allow: false, rule: 'orphan', enforce: true };
-      if (!has('crm.leads', 'clients.manage'))
+      if (!has('crm.leads', 'clients.manage') && !seesAllTgChats(actor))
         return { allow: false, rule: 'tg-no-permission', enforce: true };
       return row.managerUserId === actor.id || seesAllTgChats(actor)
         ? { allow: true, rule: 'tg-own-thread' }

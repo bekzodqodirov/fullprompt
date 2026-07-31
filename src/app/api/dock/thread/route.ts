@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { conversationClient, conversationFor, tgViewerFor } from '@/modules/wms/crm/conversations';
+import { canReadTg, conversationClient, conversationFor, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { conversationManagers, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
 
@@ -14,7 +14,7 @@ import { canQueue } from '@/modules/wms/crm/telegram-send';
 export async function GET(request: Request) {
   const actor = await getActor();
   if (!actor) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
-  if (!actor.permissions.has('crm.leads') && !actor.permissions.has('clients.manage')) {
+  if (!canReadTg(actor)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
   const clientId = new URL(request.url).searchParams.get('client') ?? '';

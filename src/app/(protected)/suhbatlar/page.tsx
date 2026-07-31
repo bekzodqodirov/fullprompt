@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { listConversations, tgViewerFor } from '@/modules/wms/crm/conversations';
+import { canReadTg, listConversations, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { pendingCount } from '@/modules/wms/crm/chat-rules';
 import { PageHeader } from '@/components/ui/page';
 import { TelegramBridgeStatus } from '@/components/telegram-bridge-status';
@@ -36,7 +36,8 @@ export default async function ConversationsPage({
   if (!actor) redirect('/login');
   // Own gate, not the layout's (#198). Reading a client's conversation is
   // reading what they told us in confidence.
-  if (!actor.permissions.has('crm.leads') && !actor.permissions.has('clients.manage')) {
+  // CRM grants or the supervision view (round 33: vedchi/admin read all).
+  if (!canReadTg(actor)) {
     redirect('/');
   }
   const t = await getTranslations('crm');

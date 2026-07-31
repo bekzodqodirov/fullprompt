@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import {
+  canReadTg,
   codesSharingPhones,
   conversationClient,
   conversationFor,
@@ -44,7 +45,8 @@ export default async function ConversationPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('crm.leads') && !actor.permissions.has('clients.manage')) {
+  // CRM grants or the supervision view (round 33: vedchi/admin read all).
+  if (!canReadTg(actor)) {
     redirect('/');
   }
   const { clientId } = await params;

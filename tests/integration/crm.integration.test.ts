@@ -12,11 +12,13 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import {
+  canReadTg,
   chatBadges,
   codesSharingPhones,
   conversationClientForLead,
   conversationFor,
   listConversations,
+  tgViewerFor,
   threadClientFor,
 } from '@/modules/wms/crm/conversations';
 import {
@@ -796,6 +798,34 @@ describe('the conversation list', () => {
       expect(bossRow!.managers.length).toBeGreaterThan(0);
       expect(await conversationFor(secret.id, { id: colleague, all: true })).toHaveLength(1);
     }
+  });
+
+  it('the supervision view belongs to super_admin, admin and the VED grant (round 33)', async () => {
+    /**
+     * The owner's widening, 2026-07-31: «vedchi va adminga hammaniki
+     * ko'rinsin — qaysi hodim qanday gaplashgani». The vedchi qualifies by
+     * the EDITABLE ved.docs grant (#170), not a compiled role name — an
+     * invented "customs" role earns the view the moment it gets the grant.
+     * Everyone else stays own-account, and canReadTg must open the screens
+     * for the vedchi even though they hold neither CRM permission.
+     */
+    const viewer = (roles: string[], perms: string[]) =>
+      tgViewerFor({ id: actorId, roles, permissions: new Set(perms) });
+
+    expect(viewer(['super_admin'], []).all).toBe(true);
+    expect(viewer(['admin'], []).all).toBe(true);
+    expect(viewer(['ved_manager'], ['ved.docs']).all).toBe(true);
+    // The grant decides, not the role name.
+    expect(viewer(['sales_manager'], ['ved.docs']).all).toBe(true);
+    expect(viewer(['sales_manager'], ['crm.leads']).all).toBe(false);
+    expect(viewer(['warehouse_manager'], ['crates.manage']).all).toBe(false);
+
+    // The screens' door: CRM grants or the supervision view — nothing else.
+    expect(canReadTg({ roles: ['ved_manager'], permissions: new Set(['ved.docs']) })).toBe(true);
+    expect(canReadTg({ roles: ['sales_manager'], permissions: new Set(['crm.leads']) })).toBe(true);
+    expect(canReadTg({ roles: ['warehouse_manager'], permissions: new Set(['scan.load']) })).toBe(
+      false,
+    );
   });
 });
 

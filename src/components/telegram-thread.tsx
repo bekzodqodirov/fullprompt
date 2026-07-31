@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { pendingFor } from '@/modules/wms/crm/outbox';
 import {
+  canReadTg,
   conversationClient,
   conversationFor,
   tgViewerFor,
@@ -50,9 +51,10 @@ export async function TelegramThread({
   if (!clientId) return null;
 
   const actor = await getActor();
-  if (!actor?.permissions.has('crm.leads') && !actor?.permissions.has('clients.manage')) {
-    return null;
-  }
+  // The CRM grants, or the supervision view (round 33: vedchi and admin read
+  // every chat — the calc files arrive in whichever manager's chat the
+  // client uses).
+  if (!actor || !canReadTg(actor)) return null;
 
   const t = await getTranslations('crm');
   // The same read the «Suhbatlar» screen makes — own account only, or the

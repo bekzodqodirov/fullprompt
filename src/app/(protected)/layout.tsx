@@ -10,6 +10,7 @@ import { Icon } from '@/components/ui/icon';
 import { UpdateBanner } from '@/components/update-banner';
 import { MobileNav, Sidebar, type NavGroup, type NavItem } from '@/components/ui/nav';
 import { Dock } from '@/components/dock';
+import { canReadTg } from '@/modules/wms/crm/conversations';
 import { menuItems, NAV, primaryItems } from '@/modules/platform/rbac/nav';
 
 /**
@@ -86,11 +87,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           </Link>
           {/* Chat and tasks from ANY page (owner, items 5+7). The chat tab
               follows the conversation gate; tasks belong to everyone. */}
-          <Dock
-            canChat={
-              actor.permissions.has('crm.leads') || actor.permissions.has('clients.manage')
-            }
-          />
+          <Dock canChat={canReadTg(actor)} />
           <ThemeToggle current={theme} />
           <LocaleSwitcher current={actor.locale} />
           <Link href="/profile" aria-label={t('profile')} className="btn-ghost btn-icon text-ink-700">

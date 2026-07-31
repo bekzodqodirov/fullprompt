@@ -169,6 +169,28 @@ describe("telegram chat photos follow the thread's own-account rule (2026-07-29)
     expect(boss).toEqual({ allow: true, rule: 'tg-own-thread' });
   });
 
+  it('the widened supervision view reads too — vedchi and admin (round 33)', async () => {
+    // The vedchi holds NEITHER CRM grant, and that is the point: the calc
+    // files arrive in whichever manager's chat the client uses, and a photo
+    // URL must open exactly as far as the screens do.
+    const ved = await decideAttachmentRead(
+      { ...actor(['ved.docs']), roles: ['ved_manager'] },
+      tgAtt(tgMessageId),
+    );
+    expect(ved).toEqual({ allow: true, rule: 'tg-own-thread' });
+
+    const admin = await decideAttachmentRead(
+      { ...actor([]), roles: ['admin'] },
+      tgAtt(tgMessageId),
+    );
+    expect(admin).toEqual({ allow: true, rule: 'tg-own-thread' });
+
+    // A warehouse actor with an invented role gains nothing.
+    expect(
+      await decideAttachmentRead({ ...actor(['scan.load']), roles: ['x_custom'] }, tgAtt(tgMessageId)),
+    ).toEqual({ allow: false, rule: 'tg-no-permission', enforce: true });
+  });
+
   it('a message row that does not exist is an orphan, not a pass', async () => {
     const decision = await decideAttachmentRead(actor(['crm.leads']), tgAtt(uuidv4()));
     expect(decision).toEqual({ allow: false, rule: 'orphan', enforce: true });

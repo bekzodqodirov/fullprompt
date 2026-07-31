@@ -25,8 +25,46 @@ export interface TgViewer {
   all?: boolean;
 }
 
-export function tgViewerFor(actor: { id: string; roles: readonly string[] }): TgViewer {
-  return { id: actor.id, all: actor.roles.includes('super_admin') };
+/**
+ * Who reads the WHOLE company's Telegram (owner, 2026-07-31: «vedchi va
+ * adminga hammaniki ko'rinsin — qaysi hodim qanday gaplashgani») — the
+ * super_admin/admin roles, plus whoever's EDITABLE grants say they do VED
+ * work (#170): the calc files and photos arrive in whichever manager's chat
+ * the client uses, and the vedchi must read them where they landed.
+ * Everyone else stays own-account only, and REPLYING stays own-account for
+ * everybody — supervision is eyes, not a mouth.
+ */
+export function seesAllTg(actor: {
+  roles?: readonly string[];
+  permissions?: ReadonlySet<string>;
+}): boolean {
+  return (
+    actor.roles?.includes('super_admin') === true ||
+    actor.roles?.includes('admin') === true ||
+    actor.permissions?.has('ved.docs') === true
+  );
+}
+
+export function tgViewerFor(actor: {
+  id: string;
+  roles: readonly string[];
+  permissions?: ReadonlySet<string>;
+}): TgViewer {
+  return { id: actor.id, all: seesAllTg(actor) };
+}
+
+/** May this actor open the Telegram screens at all? The CRM permissions, or
+ * the supervision view — a vedchi holds neither CRM grant, yet the whole
+ * point of their widened view is reading the calc conversation. */
+export function canReadTg(actor: {
+  roles?: readonly string[];
+  permissions: ReadonlySet<string>;
+}): boolean {
+  return (
+    actor.permissions.has('crm.leads') ||
+    actor.permissions.has('clients.manage') ||
+    seesAllTg(actor)
+  );
 }
 
 export interface ConversationRow {

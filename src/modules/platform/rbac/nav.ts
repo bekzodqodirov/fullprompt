@@ -209,7 +209,8 @@ export const NAV: NavGroupSpec[] = [
         labelKey: 'conversations',
         namespace: 'crm',
         icon: 'chat',
-        permissions: ['crm.leads', 'clients.manage'],
+        // ved.docs joined in round 33 — the vedchi's supervision view.
+        permissions: ['crm.leads', 'clients.manage', 'ved.docs'],
       },
       {
         href: '/crm/today',
@@ -371,10 +372,12 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
   // is here because recalculating a job the client was mis-quoted for is a VED
-  // manager's work as much as a salesperson's (DEALS.md answer 2).
+  // manager's work as much as a salesperson's (DEALS.md answer 2). Suhbatlar
+  // joined in round 33: the calc files and photos arrive in the client's chat
+  // with WHICHEVER manager, and the vedchi reads them all (owner's widening).
   ved_manager: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/batches', '/stock', '/receipts', '/reports',
-    '/finance', '/o',
+    '/finance', '/suhbatlar', '/o',
   ],
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.
