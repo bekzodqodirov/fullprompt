@@ -1019,6 +1019,8 @@
     "nextStage": "Следующий этап",
     "fieldsMoved": "переехали в «Поля и объекты»",
     "telegramThread": "Переписка в Telegram",
+    "whoTalked": "Кто переписывался",
+    "allManagers": "Все",
     "telegramClient": "Клиент",
     "telegramMedia": "вложение",
     "conversations": "Переписки",

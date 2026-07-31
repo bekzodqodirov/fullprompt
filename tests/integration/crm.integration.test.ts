@@ -20,6 +20,7 @@ import {
   listConversations,
   tgViewerFor,
   threadClientFor,
+  threadManagers,
 } from '@/modules/wms/crm/conversations';
 import {
   addActivity,
@@ -826,6 +827,48 @@ describe('the conversation list', () => {
     expect(canReadTg({ roles: ['warehouse_manager'], permissions: new Set(['scan.load']) })).toBe(
       false,
     );
+  });
+
+  it('the manager selector: names listed, reading only where allowed (round 34)', async () => {
+    /**
+     * Owner: «qaysi hodimlar gaplashganiga qarab spiskasi chiqib tursa,
+     * tanlab ko'rib olish uchun». The list of WHO talked is shared knowledge;
+     * PICKING a thread is the supervision view's move, and a foreign id in
+     * the URL must not widen a rank-and-file read past their own account.
+     */
+    const suffix = String(Date.now()).slice(-5);
+    const duo = await clientWith(`CM${suffix}`, [
+      { dir: 'in', body: 'birinchi hodimga', at: '2026-05-01T09:00:00Z' },
+    ]);
+    const [other] = await db
+      .insert(users)
+      .values({
+        phone: `+99891${String(Date.now()).slice(-7)}`,
+        fullName: 'Second manager',
+        passwordHash: 'x',
+      })
+      .returning();
+    await db.insert(tgMessages).values({
+      clientId: duo.id,
+      managerUserId: other!.id,
+      peerId: BigInt(Date.now()) * 1000n + 999n,
+      tgMessageId: 1n,
+      direction: 'in',
+      body: 'ikkinchi hodimga',
+      sentAt: new Date('2026-05-02T09:00:00Z'),
+    });
+
+    const who = await threadManagers(duo.id);
+    expect(who).toHaveLength(2);
+    expect(who.every((m) => m.messages >= 1)).toBe(true);
+
+    // The supervision view picks one manager and reads exactly that thread.
+    const picked = await conversationFor(duo.id, { id: actorId, all: true }, 500, other!.id);
+    expect(picked.map((m) => m.body)).toEqual(['ikkinchi hodimga']);
+
+    // A rank-and-file viewer passing a colleague's id still reads their OWN.
+    const sneaky = await conversationFor(duo.id, { id: actorId }, 500, other!.id);
+    expect(sneaky.map((m) => m.body)).toEqual(['birinchi hodimga']);
   });
 });
 

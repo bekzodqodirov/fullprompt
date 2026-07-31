@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-805 unit/integration + 93 e2e, verified in CI's order on a fresh database.
+806 unit/integration + 93 e2e, verified in CI's order on a fresh database.
 Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -703,6 +703,21 @@ bot lookup, morning plan, approval buttons, unanswered-client reminder,
 load/unload summary) + AI calc intake (client sends files/photos/texts →
 AI analyzes + completeness verdict → manager confirms → lands in the
 lead's hisoblash section). Design sent; batches to build next.
+
+Round 34 — his three answers (#409). (1) SHIPPED: `threadManagers` chips
+on card panel + /suhbatlar/[clientId] (`?hodim=` filter);
+`conversationFor(clientId, viewer, limit, managerId?)` honors managerId
+ONLY under viewer.all (red-proof: unconditional param → sneaky test red);
+names stay shared, content stays scoped. (2) AI intake REDESIGNED by him:
+staff opens the BOT, «Hisoblatish» mode, forwards files/photos/texts +
+client info; result = card on the lead (or deal if coded client) whose
+lenta carries AI's TNVED codes/grouping steps. (3) All bot batches YES;
+hisoblash has THREE sections: yo'lkira / rastamojka / podklyuch;
+rastamojka+podklyuch: AI checks cargo completeness (kg, kub, tovar nomi);
+yo'lkira: from-city/to-city/kub/kg/tovar checked, accepted with a
+confirmation; bot entry = separate STAFF and CLIENT buttons. Clarifying
+questions sent (podklyuch scope, freight tariff table, who may use
+hisoblatish, client-button scope); batches to build on his answers.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

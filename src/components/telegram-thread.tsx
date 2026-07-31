@@ -8,6 +8,7 @@ import {
   conversationFor,
   tgViewerFor,
   threadClientFor,
+  threadManagers,
 } from '@/modules/wms/crm/conversations';
 import { TelegramBubble } from './telegram-bubble';
 import { TelegramReply } from './telegram-reply';
@@ -72,6 +73,11 @@ export async function TelegramThread({
   if (rows.length === 0) return null;
   const siblingCode =
     threadClientId === clientId ? null : (await conversationClient(threadClientId))?.clientCode;
+  // WHO has talked with this person (owner: the card must list the staff so
+  // the reader can pick whose conversation to open). Names are shared
+  // knowledge; a supervision viewer's chips LINK to that manager's thread,
+  // everyone else reads the names and their own thread below.
+  const managers = await threadManagers(threadClientId);
 
   // Replies that have not gone yet. Shown here too, because a manager who
   // answered from this very panel must see that the answer is still waiting —
@@ -93,6 +99,26 @@ export async function TelegramThread({
           {t('conversations')} →
         </Link>
       </div>
+      {managers.length > 0 && (
+        <div className="flex flex-wrap items-baseline gap-1.5 text-sm" data-testid="card-managers">
+          <span className="text-ink-500">{t('whoTalked')}:</span>
+          {managers.map((m) =>
+            viewer.all ? (
+              <Link
+                key={m.id}
+                href={`/suhbatlar/${threadClientId}?hodim=${m.id}`}
+                className="rounded-full border border-line px-2.5 py-0.5 font-semibold text-ink-700 underline-offset-2 hover:underline"
+              >
+                {m.name} · {m.messages}
+              </Link>
+            ) : (
+              <span key={m.id} className="rounded-full border border-line px-2.5 py-0.5 text-ink-700">
+                {m.name}
+              </span>
+            ),
+          )}
+        </div>
+      )}
       <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
         {[...queued].reverse().map((row) => (
           <div

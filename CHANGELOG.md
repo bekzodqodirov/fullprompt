@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## Kartada «kim yozishgan» ro'yxati — tanlab o'qish — 2026-07-31
+
+1-javobingiz bo'yicha:
+
+- **Lead/bitim/mijoz kartasidagi chat panelida** endi shu odam bilan
+  yozishgan hodimlarning RO'YXATI chiqib turadi (nechta xabar bilan).
+- **Vedchi, admin va siz** ro'yxatdan hodimni bosib, aynan o'sha
+  hodimning suhbatini ochib o'qiysiz; suhbat ekranida ham xuddi shu
+  tanlov chiplari bor («Hammasi» yoki bitta hodim).
+- **Oddiy sotuvchi** ro'yxatda ismlarni ko'radi (kim gaplashganini
+  bilish — umumiy ma'lumot), lekin faqat o'z suhbatini o'qiydi —
+  manzilni qo'lda o'zgartirib ham boshqaning suhbatini ocholmaydi
+  (tekshiruv bilan isbotlangan).
+
+Tekshirildi: 806 unit/integration + 93 e2e yashil. Migratsiya yo'q.
+
+
 ## Vedchi va admin — barcha chatlarni ko'radi — 2026-07-31
 
 Javoblaringiz bo'yicha 1-band tayyor:

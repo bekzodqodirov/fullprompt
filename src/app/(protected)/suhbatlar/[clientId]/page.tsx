@@ -8,6 +8,7 @@ import {
   conversationClient,
   conversationFor,
   tgViewerFor,
+  threadManagers,
 } from '@/modules/wms/crm/conversations';
 import { pendingFor } from '@/modules/wms/crm/outbox';
 import { AutoRefresh } from '@/components/auto-refresh';
@@ -40,8 +41,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function ConversationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ clientId: string }>;
+  searchParams: Promise<{ hodim?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -50,15 +53,20 @@ export default async function ConversationPage({
     redirect('/');
   }
   const { clientId } = await params;
+  // The supervision view's selector (owner: «qaysi hodim gaplashganini
+  // tanlab ko'rish»). conversationFor ignores it for everyone else.
+  const { hodim } = await searchParams;
   const viewer = tgViewerFor(actor);
-  const [client, messages, queued, codes] = await Promise.all([
+  const [client, messages, queued, codes, managers] = await Promise.all([
     conversationClient(clientId),
-    conversationFor(clientId, viewer),
+    conversationFor(clientId, viewer, 500, hodim),
     pendingFor(clientId, viewer),
     codesSharingPhones(clientId),
+    threadManagers(clientId),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');
+  const showPicker = viewer.all === true && managers.length > 1;
 
 
   return (
@@ -81,6 +89,33 @@ export default async function ConversationPage({
           {t('openCard')}
         </Link>
       </div>
+
+      {/* The supervision view's selector (owner): several staff talk to one
+          person — pick whose conversation to read. Rank-and-file never see
+          this row; their own-account rule leaves nothing to pick. */}
+      {showPicker && (
+        <div className="flex flex-wrap gap-1.5" data-testid="thread-managers">
+          <Link
+            href={`/suhbatlar/${client.id}`}
+            className={`rounded-full border px-3 py-1 text-sm font-semibold ${
+              !hodim ? 'border-brand-700 bg-brand-700 text-white' : 'border-line text-ink-700'
+            }`}
+          >
+            {t('allManagers')}
+          </Link>
+          {managers.map((m) => (
+            <Link
+              key={m.id}
+              href={`/suhbatlar/${client.id}?hodim=${m.id}`}
+              className={`rounded-full border px-3 py-1 text-sm font-semibold ${
+                hodim === m.id ? 'border-brand-700 bg-brand-700 text-white' : 'border-line text-ink-700'
+              }`}
+            >
+              {m.name} · {m.messages}
+            </Link>
+          ))}
+        </div>
+      )}
 
       {messages.length === 0 && queued.length === 0 ? (
         <p className="card text-center text-sm text-ink-500">{t('conversationsEmpty')}</p>

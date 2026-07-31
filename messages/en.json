@@ -1019,6 +1019,8 @@
     "nextStage": "Next stage",
     "fieldsMoved": "moved to Fields and objects",
     "telegramThread": "Telegram conversation",
+    "whoTalked": "Who talked",
+    "allManagers": "All",
     "telegramClient": "Client",
     "telegramMedia": "attachment",
     "conversations": "Conversations",

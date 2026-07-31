@@ -194,7 +194,20 @@ export async function conversationFor(
   clientId: string,
   viewer: TgViewer,
   limit = 500,
+  managerId?: string,
 ): Promise<ConversationMessage[]> {
+  // The viewer's own account only — a colleague's thread with the same
+  // client is that colleague's personal Telegram, not a shared record. The
+  // exception is the supervision view (`all`), where every bubble names its
+  // manager — and only THERE does the optional manager filter act as the
+  // owner's selector («qaysi hodim gaplashganini tanlab ko'rish»). For
+  // everyone else the own-account rule already fixes whose thread this is,
+  // and a foreign id in the URL must not widen it.
+  const accountFilter = viewer.all
+    ? managerId
+      ? eq(tgMessages.managerUserId, managerId)
+      : undefined
+    : eq(tgMessages.managerUserId, viewer.id);
   const rows = await db
     .select({
       id: tgMessages.id,
@@ -206,20 +219,36 @@ export async function conversationFor(
     })
     .from(tgMessages)
     .innerJoin(users, eq(tgMessages.managerUserId, users.id))
-    // The viewer's own account only — a colleague's thread with the same
-    // client is that colleague's personal Telegram, not a shared record.
-    // The one exception is the owner's supervision view (`all`), where every
-    // bubble already names its manager.
-    .where(
-      viewer.all
-        ? eq(tgMessages.clientId, clientId)
-        : and(eq(tgMessages.clientId, clientId), eq(tgMessages.managerUserId, viewer.id)),
-    )
+    .where(and(eq(tgMessages.clientId, clientId), accountFilter))
     .orderBy(desc(tgMessages.sentAt))
     .limit(limit);
   // The newest `limit` rows, in that order. Taking the OLDEST n would push the
   // recent end — the only part anyone reads — off a long history entirely.
   return attachPhotos(rows);
+}
+
+export interface ThreadManager {
+  id: string;
+  name: string;
+  messages: number;
+}
+
+/**
+ * WHO holds a chat with this person, and how much of it — the card's
+ * selector (owner: «qaysi hodimlar gaplashganiga qarab spiskasi chiqib
+ * tursa, tanlab ko'rib olish uchun»). The NAMES are shared knowledge — who
+ * talks is not what was said (round 20) — but READING a colleague's thread
+ * still demands the supervision view; `conversationFor` holds that line.
+ */
+export async function threadManagers(clientId: string): Promise<ThreadManager[]> {
+  const rows = await db
+    .select({ id: users.id, name: users.fullName, messages: sql<number>`count(*)` })
+    .from(tgMessages)
+    .innerJoin(users, eq(tgMessages.managerUserId, users.id))
+    .where(eq(tgMessages.clientId, clientId))
+    .groupBy(users.id, users.fullName)
+    .orderBy(desc(sql`count(*)`));
+  return rows.map((r) => ({ id: r.id, name: r.name, messages: Number(r.messages) }));
 }
 
 /**
