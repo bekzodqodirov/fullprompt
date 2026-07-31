@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Kartadagi Telegram chat — telefondosh kodni ham topadi — 2026-07-31
+
+«Bitimda ham, leadda ham chat ko'rinmayabti» xabaringizning sababi topildi:
+bir odamda bir nechta GS kod bo'lganda, chat import paytida telefon mos
+kelgan kodga biriktirilgan; bitim esa boshqa kodda ochilgan bo'lsa, karta
+«bu mijozda chat yo'q» deb bo'sh qolar edi — «Suhbatlar»da esa chat turardi.
+
+- Endi bitim/lead/mijoz kartasidagi panel o'sha odamning **telefondosh
+  kodidagi chatni ham topadi** va sarlavhada qaysi kod ostida ekanini
+  ko'rsatadi; javob ham to'g'ri kodga yoziladi.
+- Ikki xil kodda ikki xil chat topilsa — panel ataylab jim qoladi
+  (adashib boshqa odamning yozishmasini ko'rsatishdan ko'ra hech nima
+  ko'rsatmaslik yaxshi); «Suhbatlar»dan ochasiz.
+- Maxfiylik qoidasi o'zgargani yo'q: har menejer faqat o'z akkauntidagi
+  chatlarni ko'radi, siz hammasini.
+
+Eslatma: bu va yashik tuzatishlari ko'rinishi uchun serverni yangilash
+kerak (backup → git pull → docker compose ... up -d --build).
+
+Tekshirildi: 803 unit/integration + 93 e2e yashil. Migratsiya yo'q.
+
+
 ## Yashik yo'li to'liq tekshirildi va tuzatildi — 2026-07-30
 
 «Unda shu yashikni ham tuzat» buyrug'ingiz bo'yicha yashikning butun yo'li

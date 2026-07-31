@@ -266,6 +266,48 @@ export async function conversationCount(viewer: TgViewer): Promise<number> {
 }
 
 /**
+ * Which client id holds the thread that belongs on a CARD for this client:
+ * the card's own client when their thread exists, otherwise the ONE
+ * phone-sibling code that holds it.
+ *
+ * The owner's people hold several GS codes on one number, and the import
+ * pinned each chat to whichever code the phone matched — so a deal filed
+ * under the sibling code showed an EMPTY card panel while «Suhbatlar»
+ * clearly held the conversation (owner's report). Ambiguity refuses, same
+ * rule as the lead resolver below: showing the wrong person's private chat
+ * is a worse failure than showing none.
+ */
+export async function threadClientFor(clientId: string, viewer: TgViewer): Promise<string | null> {
+  const hasThread = async (id: string) => {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(tgMessages)
+      .where(
+        viewer.all
+          ? eq(tgMessages.clientId, id)
+          : and(eq(tgMessages.clientId, id), eq(tgMessages.managerUserId, viewer.id)),
+      );
+    return Number(row?.n ?? 0) > 0;
+  };
+  if (await hasThread(clientId)) return clientId;
+
+  const client = await conversationClient(clientId);
+  if (!client) return null;
+  const phones = Array.isArray(client.phones) ? (client.phones as string[]) : [];
+  const siblings = new Set<string>();
+  for (const phone of phones) {
+    for (const match of await activeClientsByPhone(phone)) {
+      if (match.id !== clientId) siblings.add(match.id);
+    }
+  }
+  const withThread: string[] = [];
+  for (const id of siblings) {
+    if (await hasThread(id)) withThread.push(id);
+  }
+  return withThread.length === 1 ? withThread[0]! : null;
+}
+
+/**
  * Which client's conversation belongs on a LEAD's card.
  *
  * A lead is not a client, and `tg_messages.client_id` is NOT NULL — so a brand

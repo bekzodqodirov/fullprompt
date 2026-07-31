@@ -17,6 +17,7 @@ import {
   conversationClientForLead,
   conversationFor,
   listConversations,
+  threadClientFor,
 } from '@/modules/wms/crm/conversations';
 import {
   addActivity,
@@ -526,6 +527,52 @@ describe('telegram conversations on the client card', () => {
       .onConflictDoNothing()
       .returning();
     expect(third).toHaveLength(1);
+  });
+
+  it('the card finds the thread under a phone-sibling code (owner report)', async () => {
+    /**
+     * One person, several GS codes on one number — the import pinned the chat
+     * to whichever code the phone matched. A deal filed under the SIBLING
+     * code showed an empty card panel while «Suhbatlar» clearly held the
+     * conversation. Exact match wins; a lone sibling with a thread is shown;
+     * two candidates refuse — the wrong person's private chat is worse than
+     * none (the lead resolver's rule).
+     */
+    const stamp = String(Date.now()).slice(-6);
+    const phone = `+99893${String(Date.now()).slice(-7)}`;
+    const mint = (prefix: string) =>
+      db
+        .insert(clients)
+        .values({ clientCode: `${prefix}${stamp}`, name: `Sibling ${prefix}`, phones: [phone] })
+        .returning();
+    const [a] = await mint('SA');
+    const [b] = await mint('SB');
+    await db.insert(tgMessages).values({
+      clientId: a!.id,
+      managerUserId: actorId,
+      peerId: BigInt(Date.now()) + 7n,
+      tgMessageId: 1n,
+      direction: 'in',
+      body: 'salom',
+      sentAt: new Date('2026-07-21T10:00:00Z'),
+    });
+    const viewer = { id: actorId, all: false };
+
+    expect(await threadClientFor(b!.id, viewer)).toBe(a!.id);
+    expect(await threadClientFor(a!.id, viewer)).toBe(a!.id);
+
+    // A second sibling thread makes the answer ambiguous → none.
+    const [c] = await mint('SC');
+    await db.insert(tgMessages).values({
+      clientId: c!.id,
+      managerUserId: actorId,
+      peerId: BigInt(Date.now()) + 8n,
+      tgMessageId: 1n,
+      direction: 'in',
+      body: 'salom',
+      sentAt: new Date('2026-07-21T11:00:00Z'),
+    });
+    expect(await threadClientFor(b!.id, viewer)).toBeNull();
   });
 
   it('reads back as one client’s thread, newest first', async () => {

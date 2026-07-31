@@ -2,7 +2,12 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { pendingFor } from '@/modules/wms/crm/outbox';
-import { conversationFor, tgViewerFor } from '@/modules/wms/crm/conversations';
+import {
+  conversationClient,
+  conversationFor,
+  tgViewerFor,
+  threadClientFor,
+} from '@/modules/wms/crm/conversations';
 import { TelegramBubble } from './telegram-bubble';
 import { TelegramReply } from './telegram-reply';
 
@@ -53,23 +58,36 @@ export async function TelegramThread({
   // The same read the «Suhbatlar» screen makes — own account only, or the
   // whole company for the owner's supervision view (#383, round 21).
   const viewer = tgViewerFor(actor);
-  const rows = await conversationFor(clientId, viewer, limit);
-
-  // Nothing imported for this client — say nothing rather than show an empty
+  // The thread may live under a phone-sibling GS code (one person, several
+  // codes; the import pinned the chat to whichever code the phone matched) —
+  // the card must find it there too, or a deal on the sibling code shows an
+  // empty card while «Suhbatlar» holds the conversation.
+  const threadClientId = await threadClientFor(clientId, viewer);
+  // Nothing imported for this person — say nothing rather than show an empty
   // box on every card in the system.
+  if (!threadClientId) return null;
+  const rows = await conversationFor(threadClientId, viewer, limit);
   if (rows.length === 0) return null;
+  const siblingCode =
+    threadClientId === clientId ? null : (await conversationClient(threadClientId))?.clientCode;
 
   // Replies that have not gone yet. Shown here too, because a manager who
   // answered from this very panel must see that the answer is still waiting —
   // otherwise the panel looks exactly as it did before they typed.
-  const queued = await pendingFor(clientId, viewer);
+  const queued = await pendingFor(threadClientId, viewer);
 
   return (
     <section className="card space-y-2" data-testid="tg-thread">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-bold">✈️ {t('telegramThread')}</h2>
+        <h2 className="text-lg font-bold">
+          ✈️ {t('telegramThread')}
+          {/* The chat lives under the person's OTHER code — say which. */}
+          {siblingCode && (
+            <span className="ml-2 font-mono text-sm font-semibold text-ink-500">{siblingCode}</span>
+          )}
+        </h2>
         {/* The panel is a glance; the whole conversation is one tap away. */}
-        <Link href={`/suhbatlar/${clientId}`} className="text-sm text-ink-500 underline">
+        <Link href={`/suhbatlar/${threadClientId}`} className="text-sm text-ink-500 underline">
           {t('conversations')} →
         </Link>
       </div>
@@ -101,8 +119,9 @@ export async function TelegramThread({
         ))}
       </div>
 
-      {/* Owner: the send box must be here too, not only on «Suhbatlar». */}
-      <TelegramReply clientId={clientId} compact />
+      {/* Owner: the send box must be here too, not only on «Suhbatlar» —
+          replying onto the code that actually HOLDS the chat. */}
+      <TelegramReply clientId={threadClientId} compact />
     </section>
   );
 }

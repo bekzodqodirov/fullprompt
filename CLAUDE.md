@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-802 unit/integration + 93 e2e, verified in CI's order on a fresh database.
+803 unit/integration + 93 e2e, verified in CI's order on a fresh database.
 Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -676,6 +676,19 @@ receipts.assignCrated ×4). 8 new tests (m2×3, m3×3 — the confirm-scan
 test loads planned+stray in ONE scan or isSpot doesn't bite, m4×2). No
 migration. Verify rejections worth keeping: crate dims label-only and
 «1 place» plan-granularity are DESIGN, not defects.
+
+Round 32 — the owner's empty-card report (#407): a person's several GS
+codes share one phone, the import pinned each chat to the code the phone
+matched, and TelegramThread asked for the CARD's exact client — the deal
+on the sibling code showed nothing while /suhbatlar held the chat.
+`threadClientFor(clientId, viewer)`: exact client first, else the ONE
+phone-sibling holding a thread (activeClientsByPhone), ambiguity refuses
+(the lead resolver's rule); panel names the sibling code, links and
+REPLIES onto the code that holds the chat; viewer scoping unchanged.
+Red-proof: sibling branch stripped → crm sibling test red. NEXT AGREED:
+the staff-side Telegram bot round («endi telegram botni mukammal
+qilishimiz kerak hodimlar ishlashi uchun») — proposals sent, his picks
+awaited.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
