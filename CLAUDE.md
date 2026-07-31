@@ -121,7 +121,7 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-804 unit/integration + 93 e2e, verified in CI's order on a fresh database.
+805 unit/integration + 93 e2e, verified in CI's order on a fresh database.
 Latest migration: **0052** (`calc_requests`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),

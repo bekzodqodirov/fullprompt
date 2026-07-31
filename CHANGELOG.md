@@ -18,7 +18,7 @@ Javoblaringiz bo'yicha 1-band tayyor:
 
 Bot va AI-hisoblash bo'yicha javob alohida xabarda.
 
-Tekshirildi: 804 unit/integration + 93 e2e yashil. Migratsiya yo'q.
+Tekshirildi: 805 unit/integration + 93 e2e yashil. Migratsiya yo'q.
 
 
 ## Kartadagi Telegram chat — telefondosh kodni ham topadi — 2026-07-31
