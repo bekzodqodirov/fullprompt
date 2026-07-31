@@ -5,6 +5,7 @@ import {
   completeTaskFromBot,
   decideApprovalFromBot,
   linkStaffChat,
+  lookupFromBot,
   noteStaffEntry,
   noteTaskPending,
   parseCallback,
@@ -153,7 +154,19 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
-    return next();
+    // Anything else a MEMBER OF STAFF types is a lookup: a client code, a box
+    // label, a crate or a truck (owner's item 2). A customer's text still
+    // falls through — the cabinet answers those.
+    const staff = await staffForChat(chatId);
+    if (!staff) return next();
+    const answer = await lookupFromBot(chatId, ctx.message.text).catch((err) => {
+      logger.warn({ err }, 'bot lookup failed');
+      return null;
+    });
+    await ctx.reply(
+      answer ??
+        'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
+    );
   });
 }
 

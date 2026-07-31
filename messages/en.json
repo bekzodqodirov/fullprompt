@@ -282,7 +282,8 @@
       "crm_dormant_days": "Days of silence before a client counts as gone quiet (appears in the Monday CRM digest)",
       "deal_deviation_threshold_pct": "How far the cargo may differ from the quote before the manager is alerted. Never blocks loading.",
       "tg_sending_enabled": "Allow the CRM to send messages to clients through a manager’s personal Telegram (off by default)",
-      "debt_approval_ttl_hours": "How many hours an approved permission to issue cargo to a debtor stays valid"
+      "debt_approval_ttl_hours": "How many hours an approved permission to issue cargo to a debtor stays valid",
+      "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)"
     },
     "driverApp": "Driver app"
   },

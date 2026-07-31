@@ -12,6 +12,8 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { usersWithPermission } from '../../platform/notifications/service';
 
 export class ScanError extends Error {
   constructor(public readonly code: string) {
@@ -363,11 +365,65 @@ export async function finishLoading(batchId: string, ctx: AuditContext) {
         )[0]!.n,
       },
     });
-    return {
+    const summary = {
       loaded: loaded.length,
       shortLoaded: shortLoaded.length,
       shortLoadedCodes: shortLoaded.map((b) => b.shortCode),
+      addedOnSpot: Number(
+        (
+          await tx
+            .select({ n: sql<number>`count(*)` })
+            .from(scanEvents)
+            .where(
+              and(
+                eq(scanEvents.batchId, batchId),
+                eq(scanEvents.addedOnSpot, true),
+                eq(scanEvents.type, 'load'),
+              ),
+            )
+        )[0]!.n,
+      ),
     };
+    return { ...summary, batchCode: batch.code };
+  }).then(async (result) => {
+    // The loading summary (staff bot, owner's item 6): the people who plan
+    // the trucks learn how it went without opening anything. AFTER the
+    // transaction — a Telegram row must never be able to roll a load back —
+    // and never to the person who just pressed the button.
+    await notifyLoadSummary(batchId, result, ctx.actorId).catch(() => {});
+    return {
+      loaded: result.loaded,
+      shortLoaded: result.shortLoaded,
+      shortLoadedCodes: result.shortLoadedCodes,
+    };
+  });
+}
+
+/**
+ * Who is told how a truck went: whoever plans them. Resolved from the
+ * EDITABLE grants (#170), so a role the owner invents is included the day it
+ * gets `plans.manage` — never a compiled list of role names.
+ */
+async function notifyLoadSummary(
+  batchId: string,
+  result: { batchCode: string; loaded: number; shortLoaded: number; shortLoadedCodes: string[]; addedOnSpot: number },
+  actorId: string | null | undefined,
+): Promise<void> {
+  const userIds = await usersWithPermission('plans.manage');
+  if (userIds.length === 0) return;
+  const appUrl = process.env.APP_URL ?? '';
+  await notifyStaffTelegram({
+    userIds,
+    type: 'LoadFinished',
+    exceptUserId: actorId ?? null,
+    text:
+      `🚚 ${result.batchCode} — yuklash tugadi\n` +
+      `Yuklandi: ${result.loaded} karobka` +
+      (result.shortLoaded
+        ? `\n↩️ Qolib ketdi: ${result.shortLoaded} — ${result.shortLoadedCodes.slice(0, 12).join(', ')}`
+        : '') +
+      (result.addedOnSpot ? `\n⚠️ Qo‘shib yuklandi: ${result.addedOnSpot}` : '') +
+      `\n${appUrl}/batches/${batchId}`,
   });
 }
 

@@ -282,7 +282,8 @@
       "crm_dormant_days": "客户多少天未发货即视为「沉寂」（出现在周一的 CRM 摘要中）",
       "deal_deviation_threshold_pct": "货物与报价相差多少百分比时向负责人发送提醒。不会阻止装车。",
       "tg_sending_enabled": "允许 CRM 通过经理的个人 Telegram 向客户发送消息（默认关闭）",
-      "debt_approval_ttl_hours": "欠款客户放货批准在通过后有效多少小时"
+      "debt_approval_ttl_hours": "欠款客户放货批准在通过后有效多少小时",
+      "unanswered_reminder_minutes": "客户等待多少分钟后提醒其经理（0 = 关闭）"
     },
     "driverApp": "司机应用"
   },

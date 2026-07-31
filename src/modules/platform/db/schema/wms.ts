@@ -1300,6 +1300,11 @@ export const tgMessages = pgTable(
     hasMedia: boolean('has_media').notNull().default(false),
     sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
     importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * When the manager was reminded that this incoming message is still
+     * unanswered (migration 0053). Once per silence, never per sweep.
+     */
+    remindedAt: timestamp('reminded_at', { withTimezone: true }),
   },
   (t) => [
     check('tg_messages_direction_check', sql`${t.direction} IN ('in', 'out')`),

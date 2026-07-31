@@ -19,6 +19,8 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
 import { emitEvent } from '../../platform/events/service';
+import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { usersWithPermission } from '../../platform/notifications/service';
 import { ScanError } from './service';
 
 export const unloadScanSchema = z.object({
@@ -431,10 +433,44 @@ export async function finishUnload(batchId: string, ctx: AuditContext) {
       action: 'status_change',
       after: { status: 'unloaded', missing: missing.length },
     });
+    const accepted = await tx
+      .select({ n: sql<number>`count(DISTINCT box_id)` })
+      .from(sql`box_movements bm`)
+      .where(
+        sql`bm.ref_type = 'batch' AND bm.ref_id = ${batchId} AND bm.cause IN ('unload_scan', 'undocumented_transfer')`,
+      );
     return {
       batch: updated!,
       missing: missing.map((b) => b.shortCode),
+      accepted: Number(accepted[0]?.n ?? 0),
     };
+  }).then(async (result) => {
+    // The unload summary (staff bot, owner's item 6) — same shape and same
+    // rule as the loading one: after the transaction, never to the presser.
+    await notifyUnloadSummary(batchId, result, ctx.actorId).catch(() => {});
+    return { batch: result.batch, missing: result.missing };
+  });
+}
+
+async function notifyUnloadSummary(
+  batchId: string,
+  result: { batch: { code: string }; missing: string[]; accepted: number },
+  actorId: string | null | undefined,
+): Promise<void> {
+  const userIds = await usersWithPermission('plans.manage');
+  if (userIds.length === 0) return;
+  const appUrl = process.env.APP_URL ?? '';
+  await notifyStaffTelegram({
+    userIds,
+    type: 'UnloadFinished',
+    exceptUserId: actorId ?? null,
+    text:
+      `📥 ${result.batch.code} — tushirish tugadi\n` +
+      `Qabul qilindi: ${result.accepted} karobka` +
+      (result.missing.length
+        ? `\n🔍 Yetib kelmadi: ${result.missing.length} — ${result.missing.slice(0, 12).join(', ')}`
+        : '') +
+      `\n${appUrl}/batches/${batchId}`,
   });
 }
 

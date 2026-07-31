@@ -39,6 +39,13 @@ export const SETTING_DEFAULTS = {
    * enough that last week's permission never opens today's bigger debt.
    */
   debt_approval_ttl_hours: 24,
+  /**
+   * How long a client may wait for an answer before their manager is
+   * reminded (staff bot, round 36). A setting because the honest number is
+   * the owner's to choose: too short and the reminder is noise during a
+   * phone call, too long and the point of it is gone. 0 switches it off.
+   */
+  unanswered_reminder_minutes: 30,
   costing_base_currency: 'USD',
   client_code_prefix: 'GS',
   label_size: '100x100',

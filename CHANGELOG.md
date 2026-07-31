@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## Xodimlar boti — ikkinchi bo'lak — 2026-07-31
+
+- **Botdan qidiruv.** Xodim botga mijoz kodini (GS777), karobka kodini
+  (YW26-000123), yashik (CR-…) yoki partiya kodini yozsa — bot holatini
+  aytadi: kimniki, nima, qayerda, qaysi mashinada, qachon jo'nagan.
+  Mijoz kodiga: yuki qaysi omborda nechta, balansi (faqat moliya
+  huquqi borlarga) va oxirgi prixodi. **Muhim:** bot faqat o'sha odam
+  sistemadan ko'ra oladigan narsani ko'rsatadi — o'z omboriga tegishli
+  bo'lmagan yukka «bu sizning omboringizda emas» deb javob beradi.
+- **Javob kutayotgan mijoz.** Mijoz yozgan-u, 30 daqiqadan beri javob
+  bo'lmasa — chat qaysi xodimning akkauntida bo'lsa, o'shanga eslatma
+  boradi (mijoz kodi, qancha kutgani va oxirgi xabari bilan). Bitta
+  sukut bo'yicha **bir marta** — takrorlanavermaydi. Muddatni Admin →
+  Sozlamalardan o'zgartirasiz, 0 qilsangiz butunlay o'chadi.
+- **Yuklash/tushirish svodkasi.** «Yuklashni yakunlash» bosilganda plan
+  bilan ishlaydiganlarga qisqa xabar: nechta yuklandi, nechtasi qolib
+  ketdi (kodlari bilan), nechtasi qo'shib yuklandi. Tushirishda: nechta
+  qabul qilindi, nechtasi yetib kelmadi. Tugmani bosgan odamning o'ziga
+  yuborilmaydi.
+
+Migratsiya: **0053** (qo'shimcha ustun — mavjud ma'lumotga tegmaydi).
+
+Tekshirildi: 819 unit/integration + 93 e2e yashil.
+
+
 ## Xodimlar boti — birinchi bo'lak — 2026-07-31
 
 Javoblaringiz bo'yicha (podklyuch = rastamojka + yo'lkira qo'shilgan narx;

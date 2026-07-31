@@ -53,7 +53,7 @@ async function usersWithRoles(roleCodes: string[]): Promise<string[]> {
  * role_permissions, never from the seed matrix: grants have been editable
  * data since Phase 1, and a role the owner invented must be reachable too.
  */
-async function usersWithPermission(code: string): Promise<string[]> {
+export async function usersWithPermission(code: string): Promise<string[]> {
   const rows = await db
     .select({ userId: userRoles.userId })
     .from(userRoles)

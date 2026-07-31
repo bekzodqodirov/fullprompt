@@ -121,8 +121,8 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-07-29
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-813 unit/integration + 93 e2e, verified in CI's order on a fresh database.
-Latest migration: **0052** (`calc_requests`).
+819 unit/integration + 93 e2e, verified in CI's order on a fresh database.
+Latest migration: **0053** (`tg_reminded_at`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -737,6 +737,24 @@ the same words). Red-proofs: permission gate + chat_taken stripped →
 tests red. NOT live-tested against Telegram (watch first real press in
 docker logs). Batches B (lookup, unanswered reminder, load summary) and
 C (hisoblatish AI intake) next.
+
+Round 36 (batch B) — three items, one rule: the bot may know only what
+the person already knows (#411). LOOKUP `wms/bot/lookup.ts` (client code
+/ box / crate CR- / batch), reached by dynamic import from
+`lookupFromBot`; `botActorFor(chatId)` = getActor WITHOUT a session
+(perms union + scope from the roles COLUMN + assigned warehouses); every
+branch asks `inScope` (in-transit box judged by its batch's TWO ends) and
+the balance line needs finance.view/manage. UNANSWERED: migration 0053
+adds `tg_messages.reminded_at` + partial index; `unansweredChats` =
+DISTINCT ON (client, manager) newest row, direction 'in', unmarked, older
+than `unanswered_reminder_minutes` (setting, 30, 0 = off); marked after
+sending so ONE silence reports ONCE; 5-min worker `JOB_UNANSWERED`;
+'ClientWaiting' in MUTE_GROUPS.alerts. SUMMARIES: finishLoading /
+finishUnload → notifyStaffTelegram to `usersWithPermission('plans.manage')`
+(now exported from notifications/service), AFTER the tx, exceptUserId =
+the presser; 'LoadFinished'/'UnloadFinished' in MUTE_GROUPS.operations
+(routine news, not alarms). Red-proofs ×3: money gate, box scope check,
+reminded_at filter. Batch C (hisoblatish AI intake) next.
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

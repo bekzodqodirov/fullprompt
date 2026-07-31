@@ -36,6 +36,9 @@ export const MUTE_GROUPS = {
     // A calculation blew its 30–120 minute deadline (round 28) — told to the
     // waiting salesperson and the owner while chasing it still helps.
     'CalcOverdue',
+    // A customer has been waiting for an answer past the threshold (round 36).
+    // An alert, not a digest: it is only worth anything before they ring.
+    'ClientWaiting',
   ],
   operations: [
     'ReceiptConfirmed',
@@ -45,6 +48,11 @@ export const MUTE_GROUPS = {
     'PlanApproved',
     'PlanChangesRequested',
     'InventoryCompleted',
+    // How a truck actually went (round 36) — routine news for the people who
+    // plan them, so it belongs here beside the arrivals, not among the
+    // alarms: a deviation worth shouting about already has its own alert.
+    'LoadFinished',
+    'UnloadFinished',
     // A colleague wrote on a card you are involved in.
     'InternalNote',
     // The personal half of the same message: a colleague named YOU with @.

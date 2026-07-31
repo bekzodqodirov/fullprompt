@@ -282,7 +282,8 @@
       "crm_dormant_days": "Mijoz necha kun yuk yubormasa «jim qolgan» hisoblanadi (CRM dushanba digestida chiqadi)",
       "deal_deviation_threshold_pct": "Yuk hisob-kitobdan necha foizga farq qilsa, menejerga xabar ketadi. Yuklashni to‘xtatmaydi.",
       "tg_sending_enabled": "CRM menejerning shaxsiy Telegramidan mijozga xabar yuborishi mumkinmi (odatda o‘chirilgan)",
-      "debt_approval_ttl_hours": "Qarzdorga yuk berish ruxsati tasdiqlangach necha soat amal qiladi"
+      "debt_approval_ttl_hours": "Qarzdorga yuk berish ruxsati tasdiqlangach necha soat amal qiladi",
+      "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)"
     },
     "driverApp": "Haydovchi ilovasi"
   },

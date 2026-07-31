@@ -6,8 +6,10 @@ import {
   telegramLinks,
   userRoles,
   users,
+  userWarehouses,
 } from '../db/schema';
 import { writeAudit } from '../audit/service';
+import { loadUserRoles } from '../rbac/authorize';
 import { completeTask, TaskError } from '../tasks/service';
 
 /**
@@ -197,6 +199,46 @@ async function permissionsOf(userId: string): Promise<Set<string>> {
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
     .where(eq(userRoles.userId, userId));
   return new Set(rows.map((r) => r.code));
+}
+
+/**
+ * `getActor` for a chat instead of a session — the SAME three answers
+ * (permissions union, warehouse scope from the roles COLUMN per #199/0049,
+ * assigned warehouses), because a bot read that is wider than the screen's
+ * read is a back door. Never invents an admin: no chat, no actor.
+ */
+export async function botActorFor(chatId: bigint): Promise<
+  | (StaffChat & {
+      permissions: Set<string>;
+      warehouseScoped: boolean;
+      warehouseIds: string[];
+    })
+  | null
+> {
+  const staff = await staffForChat(chatId);
+  if (!staff) return null;
+  const roleRows = await loadUserRoles(staff.id);
+  const whRows = await db
+    .select({ warehouseId: userWarehouses.warehouseId })
+    .from(userWarehouses)
+    .where(eq(userWarehouses.userId, staff.id));
+  return {
+    ...staff,
+    permissions: await permissionsOf(staff.id),
+    warehouseScoped: roleRows.some((r) => r.warehouseScoped),
+    warehouseIds: whRows.map((w) => w.warehouseId),
+  };
+}
+
+/**
+ * "Where is it?" from the bot. The wms lookup is reached by dynamic import —
+ * platform never imports wms statically (the startBoss crossing).
+ */
+export async function lookupFromBot(chatId: bigint, query: string): Promise<string | null> {
+  const actor = await botActorFor(chatId);
+  if (!actor) return null;
+  const { botLookup } = await import('../../wms/bot/lookup');
+  return botLookup(actor, query);
 }
 
 export type BotTaskResult = 'done' | 'not_linked' | 'not_yours' | 'already_closed' | 'not_found';
