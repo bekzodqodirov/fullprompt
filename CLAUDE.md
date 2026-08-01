@@ -122,7 +122,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
 828 unit/integration + 93 e2e, verified in CI's order on a fresh database.
-Latest migration: **0054** (`partners`).
+Latest migration: **0055** (`receipt_customs`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,

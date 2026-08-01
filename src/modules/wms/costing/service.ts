@@ -6,6 +6,7 @@ import {
   boxes,
   boxMovements,
   clients,
+  partners,
   costAllocations,
   costEntries,
   costTypes,
@@ -410,10 +411,12 @@ export async function batchCostSheet(batchId: string) {
       entry: costEntries,
       typeName: costTypes.name,
       clientCode: clients.clientCode,
+      partnerName: partners.name,
     })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(clients, eq(costEntries.clientId, clients.id))
+    .leftJoin(partners, eq(costEntries.partnerId, partners.id))
     .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)))
     .orderBy(asc(costEntries.createdAt));
 

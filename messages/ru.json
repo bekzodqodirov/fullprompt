@@ -662,7 +662,9 @@
     "customsFirm": "Фирма растаможки",
     "customsByClient": "Клиент своей фирмой",
     "customsFirmAccount": "Открыть счёт фирмы",
-    "documents": "Документы"
+    "documents": "Документы",
+    "customsPerReceipt": "Растаможка по приёмкам",
+    "customsFromBatch": "Как у партии"
   },
   "loading": {
     "title": "Погрузка",

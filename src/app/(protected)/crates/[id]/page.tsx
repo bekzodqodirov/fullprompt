@@ -8,6 +8,7 @@ import {
   clients,
   costEntries,
   costTypes,
+  partners,
   crates,
   currencies,
   receiptLots,
@@ -16,6 +17,7 @@ import {
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { CostPanel } from '@/components/cost-panel';
+import { listPartners } from '@/modules/wms/partners/service';
 import { dissolveCrateAction, updateCrateAction } from '../actions';
 import { BackLink } from '@/components/back-link';
 import { PrintLabels } from '@/components/print-labels';
@@ -72,9 +74,10 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
     .orderBy(asc(attachments.createdAt));
 
   const costs = await db
-    .select({ entry: costEntries, typeName: costTypes.name })
+    .select({ entry: costEntries, typeName: costTypes.name, partnerName: partners.name })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
+    .leftJoin(partners, eq(costEntries.partnerId, partners.id))
     .where(and(eq(costEntries.crateId, id), isNull(costEntries.voidedAt)));
 
   // A wrong yashik fee needs the same correction path as every other cost:
@@ -91,6 +94,11 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
         ).map((c) => c.code),
       }
     : null;
+  // Crating money is warehouse money and is often settled by the transport
+  // firm too, so the same «who paid» choice belongs here (owner).
+  const partnerOptions = canEditCosts
+    ? (await listPartners()).map((row) => ({ id: row.id, name: row.name }))
+    : [];
 
   const active = crate.status === 'active';
 
@@ -121,7 +129,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
         <CostPanel
           scope="crate"
           targetId={crate.id}
-          entries={costs.map(({ entry, typeName }) => ({
+          entries={costs.map(({ entry, typeName, partnerName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -130,12 +138,14 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
             costDate: entry.costDate,
             allocationBasis: entry.allocationBasis,
             note: entry.note,
+            partnerName,
           }))}
           costTypes={costMeta?.types ?? []}
           currencies={costMeta?.currencies ?? []}
           clientOptions={[{ id: crate.clientId, clientCode }]}
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
           canEdit={canEditCosts}
+          partnerOptions={partnerOptions}
         />
         {active && (
           <div className="flex flex-wrap gap-2 pt-1">

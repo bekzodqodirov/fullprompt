@@ -7,6 +7,7 @@ import {
   clients,
   costEntries,
   costTypes,
+  partners,
   currencies,
   deals,
   receiptLots,
@@ -30,6 +31,7 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
+import { listPartners } from '@/modules/wms/partners/service';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -75,9 +77,10 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   }
 
   const costs = await db
-    .select({ entry: costEntries, typeName: costTypes.name })
+    .select({ entry: costEntries, typeName: costTypes.name, partnerName: partners.name })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
+    .leftJoin(partners, eq(costEntries.partnerId, partners.id))
     .where(and(eq(costEntries.receiptId, id), isNull(costEntries.voidedAt)));
   const canEnterCosts = actor.permissions.has('costs.enter_receipt');
   const costMeta = canEnterCosts
@@ -101,6 +104,13 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     })
     .from(attachments)
     .where(and(eq(attachments.entityType, 'receipt'), eq(attachments.entityId, id)));
+
+  // Who settled a cost is asked HERE too (owner: «skladchilar rasxodni
+  // kiritganda kim tomondan berilgani yozilmayabti»). The warehouse enters
+  // most of the money on a prixod, so the choice has to be where they are.
+  const partnerOptions = canEnterCosts
+    ? (await listPartners()).map((row) => ({ id: row.id, name: row.name }))
+    : [];
 
   const canVoid = actor.permissions.has('receipts.void') && receipt.status === 'confirmed';
   const canPrint = actor.permissions.has('receipts.create');
@@ -266,7 +276,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             <CostPanel
               scope="receipt"
               targetId={id}
-              entries={costs.map(({ entry, typeName }) => ({
+              entries={costs.map(({ entry, typeName, partnerName }) => ({
                 id: entry.id,
                 typeName,
                 amount: entry.amount,
@@ -275,12 +285,14 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 costDate: entry.costDate,
                 allocationBasis: entry.allocationBasis,
                 note: entry.note,
+                partnerName,
               }))}
               costTypes={costMeta.types}
               currencies={costMeta.currencies}
               clientOptions={client ? [{ id: client.id, clientCode: client.clientCode }] : []}
               defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
               canEdit={receipt.status === 'confirmed'}
+              partnerOptions={partnerOptions}
             />
           </div>
         ) : costs.length > 0 && (

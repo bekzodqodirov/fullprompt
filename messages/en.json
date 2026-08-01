@@ -662,7 +662,9 @@
     "customsFirm": "Customs firm",
     "customsByClient": "Client's own firm",
     "customsFirmAccount": "Open the firm's account",
-    "documents": "Documents"
+    "documents": "Documents",
+    "customsPerReceipt": "Customs per receipt",
+    "customsFromBatch": "As the truck says"
   },
   "loading": {
     "title": "Loading",

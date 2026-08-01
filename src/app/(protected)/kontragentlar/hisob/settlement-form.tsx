@@ -114,13 +114,13 @@ export function SettlementForm({
         <div className="flex gap-2">
           <input
             name="clientAmount"
-            className="input flex-1"
+            className="input min-w-0 flex-1 !py-3 text-right font-mono text-2xl font-extrabold"
             inputMode="decimal"
             aria-label={t('clientSent')}
             data-testid="settle-client-amount"
             required
           />
-          <select name="clientCurrency" className="input w-28" aria-label={t('currency')}>
+          <select name="clientCurrency" className="input w-24 shrink-0 font-bold" aria-label={t('currency')}>
             {currencies.map((code) => (
               <option key={code} value={code}>
                 {code}
@@ -135,13 +135,13 @@ export function SettlementForm({
         <div className="flex gap-2">
           <input
             name="partnerAmount"
-            className="input flex-1"
+            className="input min-w-0 flex-1 !py-3 text-right font-mono text-2xl font-extrabold"
             inputMode="decimal"
             aria-label={t('firmCredited')}
             data-testid="settle-partner-amount"
             required
           />
-          <select name="partnerCurrency" className="input w-28" aria-label={t('currency')}>
+          <select name="partnerCurrency" className="input w-24 shrink-0 font-bold" aria-label={t('currency')}>
             {currencies.map((code) => (
               <option key={code} value={code}>
                 {code}

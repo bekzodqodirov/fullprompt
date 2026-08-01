@@ -75,6 +75,14 @@ test('a transport firm gets an account, a debt and a payment against it', async 
   // finds them.
   await page.goto(cardUrl);
   await page.getByTestId('partner-toggle-active').click();
+  // Wait for the SERVER's answer before navigating: the hidden input flips to
+  // "1" (meaning "the button would re-activate") only once the row is really
+  // retired. Leaving immediately after the click races the action and the
+  // list below then still holds the partner — a flake, not a bug in the app.
+  // toHaveCount, not toBeVisible: it is a hidden input by design.
+  await expect(page.locator('input[name="active"][value="1"]')).toHaveCount(1, {
+    timeout: 15_000,
+  });
   await page.goto('/kontragentlar');
   await expect(page.getByText(name)).toHaveCount(0);
 });

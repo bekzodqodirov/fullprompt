@@ -82,19 +82,26 @@ export function PartnerTxForm({
       </select>
       <p className="text-xs text-ink-500">{t(`kindHints.${type}` as 'kindHints.charge')}</p>
 
+      {/* The sum is the point of the form, so it gets the room: its own line,
+          typed big enough to read back at a glance. Sharing a row with the
+          currency box left it a third of a phone screen wide (owner). */}
+      <label className="label" htmlFor="tx-amount">
+        {t('amount')}
+      </label>
       <div className="flex gap-2">
         <input
+          id="tx-amount"
           name="amount"
-          className="input flex-1"
+          className="input min-w-0 flex-1 !py-3 text-right font-mono text-2xl font-extrabold"
           inputMode="decimal"
-          placeholder={t('amount')}
+          placeholder="0"
           aria-label={t('amount')}
           data-testid="partner-tx-amount"
           required
         />
         <select
           name="currency"
-          className="input w-28"
+          className="input w-24 shrink-0 font-bold"
           aria-label={t('currency')}
           data-testid="partner-tx-currency"
         >

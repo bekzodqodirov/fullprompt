@@ -662,7 +662,9 @@
     "customsFirm": "清关公司",
     "customsByClient": "客户自有公司",
     "customsFirmAccount": "打开该公司账户",
-    "documents": "单据"
+    "documents": "单据",
+    "customsPerReceipt": "按入库单清关",
+    "customsFromBatch": "随整车"
   },
   "loading": {
     "title": "装车",

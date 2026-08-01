@@ -174,6 +174,23 @@ export async function setCustomsFirmAction(batchId: string, value: string): Prom
 }
 
 /**
+ * One prixod's own customs answer (round 39 follow-up). Same gate as the
+ * truck-level choice: this is VED paperwork, not warehouse work.
+ */
+export async function setReceiptCustomsAction(
+  batchId: string,
+  receiptId: string,
+  value: string,
+): Promise<void> {
+  const actor = await authorize('ved.docs', {});
+  const meta = await requestMeta();
+  const { setReceiptCustoms } = await import('@/modules/wms/partners/customs');
+  await setReceiptCustoms(receiptId, value, { actorId: actor.id, ...meta });
+  revalidatePath(`/batches/${batchId}`);
+  revalidatePath(`/receipts/${receiptId}`);
+}
+
+/**
  * Manual position pin for the tracking map ("still at the border") — the
  * simulation re-anchors from this moment. Tapping the active pin clears it.
  */

@@ -662,7 +662,9 @@
     "customsFirm": "Rastamojka firmasi",
     "customsByClient": "Mijoz o‘z firmasi bilan",
     "customsFirmAccount": "Firma hisobini ochish",
-    "documents": "Hujjatlar"
+    "documents": "Hujjatlar",
+    "customsPerReceipt": "Prixodlar bo‘yicha rastamojka",
+    "customsFromBatch": "Partiya bo‘yicha"
   },
   "loading": {
     "title": "Pogruzka",

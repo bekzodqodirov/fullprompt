@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## Uchta tuzatish — 2026-08-01
+
+**1. Summa maydoni.** Kontragent yozuvida va uch tomonlama hisobda summa
+endi **o'z qatorida, katta va yo'g'on** yoziladi. Valyuta yonida, tor
+qutida. Oldin telefonda uchdan bir ekran edi.
+
+**2. Skladchi «kim to'ladi» ni ko'rmayotgan edi.** «Kim to'ladi» tanlovi
+faqat partiya kartochkasida bor edi — holbuki pulning ko'pi **prixodga**
+kiritiladi. Endi u:
+
+- prixod kartochkasida,
+- yashik kartochkasida,
+- partiya kartochkasida — hammasida bor.
+
+Va eng muhimi: **saqlangan xarajat qatorida kim to'lagani yozilib turadi**
+(sariq belgi bilan). Oldin to'g'ri kiritilgan yozuv ham keyin hech narsa
+demasdi — «bizning pulimizdanmi yoki transportnikiga qarzmizmi» bilib
+bo'lmasdi. Endi ko'rinadi.
+
+**3. Rastamojka — har bir prixod bo'yicha.** Siz aytgan holat: bitta
+partiyaning ichida ba'zi mijozlar o'z firmasi bilan rastamojka qiladi,
+qolganini biz qilamiz. Endi partiya kartochkasida **«Prixodlar bo'yicha
+rastamojka»** ro'yxati bor — har bir prixod yonida tanlov:
+
+- **«Partiya bo'yicha»** — hech narsa aytilmagan, partiyaning umumiy
+  javobi amal qiladi (odatiy holat, o'zgartirish shart emas);
+- **firma nomi** — o'sha firma qilgan, hisobi o'sha firmaga yoziladi;
+- **«Mijoz o'z firmasi bilan»** — mijoz o'zi qilgan, **bizga hech qanday
+  xarajat tushmaydi**.
+
+Partiya darajasidagi tanlov saqlanib qoldi — u endi butun mashinaning
+**standart javobi**, prixod uni faqat kerak bo'lganda bekor qiladi.
+
 ## Balans, kassa va rollar — 2026-08-01
 
 Sizning ikkita gapingiz bo'yicha.

@@ -15,6 +15,8 @@ export interface CostEntryView {
   allocationBasis: string;
   note: string | null;
   clientCode?: string | null;
+  /** Who settled it, when it was not us (round 39). */
+  partnerName?: string | null;
 }
 
 export interface CostTypeOption {
@@ -135,6 +137,14 @@ export function CostPanel({
             {entry.costDate} · {t(`bases.${entry.allocationBasis}`)}
             {entry.clientCode && ` → ${entry.clientCode}`}
           </span>
+          {/* Who settled it. Its absence was the complaint: the warehouse
+              could not tell our own money from a debt to the transport firm
+              once the row was saved. */}
+          {entry.partnerName && (
+            <span className="rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn">
+              {entry.partnerName}
+            </span>
+          )}
           {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
           {canEdit && (
             <button

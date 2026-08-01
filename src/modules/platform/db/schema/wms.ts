@@ -65,6 +65,15 @@ export const receipts = pgTable(
     sourceNote: text('source_note'),
     /** Marking written on unknown-code boxes (owner's rule: keep it, resolve later). */
     unclaimedMarking: text('unclaimed_marking'),
+    /**
+     * Who clears THIS prixod through customs, when the truck's own answer is
+     * not the whole story (round 39 follow-up): inside one batch some clients
+     * clear their own cargo through their own firm and we clear the rest.
+     * NULL means "as the batch says"; `customsByClient` true means the client
+     * did it and no cost of ours is involved.
+     */
+    customsPartnerId: uuid('customs_partner_id').references(() => partners.id),
+    customsByClient: boolean('customs_by_client'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),

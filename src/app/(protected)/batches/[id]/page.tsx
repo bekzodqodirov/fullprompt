@@ -39,6 +39,8 @@ import { inScope } from '@/modules/platform/rbac/scope';
 import { listPartners } from '@/modules/wms/partners/service';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { CustomsFirm } from './customs-firm';
+import { CustomsPerReceipt } from './customs-per-receipt';
+import { batchCustomsRows } from '@/modules/wms/partners/customs';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -136,6 +138,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const customsPartners = allPartners
     .filter((row) => row.typeCode === 'customs' || row.id === batch.customsPartnerId)
     .map((row) => ({ id: row.id, name: row.name }));
+  const customsRows = await batchCustomsRows(id);
   const batchFiles = await db
     .select({
       id: attachments.id,
@@ -361,7 +364,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <CostPanel
             scope="batch"
             targetId={batch.id}
-            entries={costSheet.entries.map(({ entry, typeName, clientCode }) => ({
+            entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName }) => ({
               id: entry.id,
               typeName,
               amount: entry.amount,
@@ -371,6 +374,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               allocationBasis: entry.allocationBasis,
               note: entry.note,
               clientCode,
+              partnerName,
             }))}
             costTypes={costMeta.types}
             currencies={costMeta.currencies}
@@ -449,6 +453,15 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             batchId={batch.id}
             partnerId={batch.customsPartnerId}
             byClient={batch.customsByClient}
+            partners={customsPartners}
+            canEdit={actor.permissions.has('ved.docs')}
+          />
+          {/* His third case: inside one truck some clients clear their own
+              cargo and we clear the rest, so the answer lives per prixod
+              with the truck's as the default. */}
+          <CustomsPerReceipt
+            batchId={batch.id}
+            rows={customsRows}
             partners={customsPartners}
             canEdit={actor.permissions.has('ved.docs')}
           />

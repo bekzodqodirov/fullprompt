@@ -14,6 +14,7 @@ import {
   expenses,
   moneyAccounts,
   partners,
+  receipts,
   partnerTransactions,
   partnerTypes,
   users,
@@ -31,6 +32,7 @@ import {
 import { recordSettlement } from '@/modules/wms/partners/settlement';
 import { accountBalances } from '@/modules/wms/accounting/service';
 import { cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
+import { effectiveCustoms, setReceiptCustoms } from '@/modules/wms/partners/customs';
 
 /**
  * Kontragentlar — the owner's three cases, each proved against the database
@@ -485,5 +487,77 @@ describe('the money reports know about counterparties', () => {
     expect(before.netUsd - after.netUsd).toBeCloseTo(450, 2);
     // Cash is untouched: taking a truck on credit is not spending money.
     expect(after.cashUsd).toBeCloseTo(before.cashUsd, 2);
+  });
+});
+
+describe('who clears which cargo', () => {
+  it("a prixod's own answer wins over the truck's, and silence follows it", () => {
+    const batch = { customsPartnerId: 'firm-a', customsByClient: false };
+
+    // Silence: whatever the truck says.
+    expect(effectiveCustoms({ customsPartnerId: null, customsByClient: null }, batch)).toEqual({
+      partnerId: 'firm-a',
+      byClient: false,
+      fromBatch: true,
+    });
+
+    // The owner's case: this one client cleared their own goods, inside a
+    // truck we cleared. `false` is an ANSWER and null is silence — mixing
+    // them is what would make a client's own clearance invisible.
+    expect(effectiveCustoms({ customsPartnerId: null, customsByClient: true }, batch)).toEqual({
+      partnerId: null,
+      byClient: true,
+      fromBatch: false,
+    });
+    expect(
+      effectiveCustoms({ customsPartnerId: 'firm-b', customsByClient: false }, batch),
+    ).toEqual({ partnerId: 'firm-b', byClient: false, fromBatch: false });
+
+    // «We clear this one ourselves», said explicitly with no firm named yet:
+    // still an ANSWER, and it must not fall back to the truck's firm. This is
+    // the case that separates `false` from `null`, and the column allows it
+    // even though today's form always names a firm alongside.
+    expect(
+      effectiveCustoms({ customsPartnerId: null, customsByClient: false }, batch),
+    ).toEqual({ partnerId: null, byClient: false, fromBatch: false });
+
+    // A truck with no answer either leaves everything unanswered rather than
+    // inventing one.
+    expect(effectiveCustoms({ customsPartnerId: null, customsByClient: null }, null)).toEqual({
+      partnerId: null,
+      byClient: false,
+      fromBatch: true,
+    });
+  });
+
+  it('stores the three states and comes back to "follow the truck"', async () => {
+    const partnerId = await newPartner('Rastamojkachi');
+    const [receipt] = await db
+      .insert(receipts)
+      .values({
+        number: `RC-${STAMP}`,
+        warehouseId,
+        status: 'confirmed',
+        createdBy: actorId,
+      })
+      .returning();
+
+    await setReceiptCustoms(receipt!.id, partnerId, ctx());
+    let row = (await db.select().from(receipts).where(eq(receipts.id, receipt!.id)))[0]!;
+    expect(row.customsPartnerId).toBe(partnerId);
+    expect(row.customsByClient).toBe(false);
+
+    await setReceiptCustoms(receipt!.id, 'client', ctx());
+    row = (await db.select().from(receipts).where(eq(receipts.id, receipt!.id)))[0]!;
+    expect(row.customsPartnerId).toBeNull();
+    expect(row.customsByClient).toBe(true);
+
+    // Back to silence — the state a person needs after a wrong answer.
+    await setReceiptCustoms(receipt!.id, '', ctx());
+    row = (await db.select().from(receipts).where(eq(receipts.id, receipt!.id)))[0]!;
+    expect(row.customsPartnerId).toBeNull();
+    expect(row.customsByClient).toBeNull();
+
+    await db.delete(receipts).where(eq(receipts.id, receipt!.id));
   });
 });
