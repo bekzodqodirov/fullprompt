@@ -383,6 +383,8 @@
     "title": "收货单",
     "unclaimedTitle": "无主货物",
     "client": "客户",
+    "deal": "交易",
+    "dealNone": "未关联",
     "date": "日期",
     "lots": "货物",
     "statuses": {

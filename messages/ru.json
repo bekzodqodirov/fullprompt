@@ -383,6 +383,8 @@
     "title": "Приёмки",
     "unclaimedTitle": "Неопознанные грузы",
     "client": "Клиент",
+    "deal": "Сделка",
+    "dealNone": "Не привязана",
     "date": "Дата",
     "lots": "Товары",
     "statuses": {

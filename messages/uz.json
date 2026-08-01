@@ -383,6 +383,8 @@
     "title": "Qabullar",
     "unclaimedTitle": "Aniqlanmagan yuklar",
     "client": "Mijoz",
+    "deal": "Bitim",
+    "dealNone": "Bog‘lanmagan",
     "date": "Sana",
     "lots": "Tovarlar",
     "statuses": {

@@ -35,6 +35,7 @@ import {
   listStages,
   moveDeal,
   resolveExpiredDeferrals,
+  unlinkedReceipts,
   updateDeal,
 } from '@/modules/wms/deals/service';
 
@@ -110,6 +111,11 @@ async function receiveCargo(
   );
   madeReceipts.push(result.receiptId);
   return result.receiptId;
+}
+
+/** Is this receipt among the ones the deal card's picker would offer? */
+async function unlinkedFor(client: string, receiptId: string): Promise<boolean> {
+  return (await unlinkedReceipts(client)).some((r) => r.id === receiptId);
 }
 
 async function newDeal(over: Record<string, unknown> = {}): Promise<string> {
@@ -276,6 +282,28 @@ describe('the reality side is summed from the receipts, never typed in', () => {
     // A cancelled receipt never happened; counting it would report the job
     // 40 % over when it is not.
     expect((await dealReality(id)).volumeM3).toBe(0);
+  });
+
+  it('lets cargo filed under the wrong job be moved to the right one, and detached', async () => {
+    // The receipt card's picker (round 38) is the only way back from the
+    // commonest mistake there is: the deal card offers only UNLINKED receipts,
+    // so once a receipt is on the wrong job it vanishes from every picker.
+    const wrong = await newDeal();
+    const right = await newDeal();
+    const receiptId = await receiveCargo(0.9, 90, 9, wrong);
+    expect((await dealReality(wrong)).receiptCount).toBe(1);
+
+    // Straight across, with no detach step in between — what the picker does.
+    await linkReceipt(receiptId, right, ctx());
+    expect((await dealReality(wrong)).receiptCount).toBe(0);
+    expect((await dealReality(right)).boxCount).toBe(9);
+    expect(await unlinkedFor(clientId, receiptId)).toBe(false);
+
+    // And the empty option puts it back among the client's free receipts,
+    // where the deal card's own picker can find it again.
+    await linkReceipt(receiptId, null, ctx());
+    expect((await dealReality(right)).receiptCount).toBe(0);
+    expect(await unlinkedFor(clientId, receiptId)).toBe(true);
   });
 
   it('refuses to file one client’s cargo under another client’s job', async () => {

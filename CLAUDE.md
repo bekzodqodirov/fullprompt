@@ -775,6 +775,20 @@ Red-proofs ×2: rastamojka route requirement, ambiguous-phone resolve.
 LESSON: JS `\b` is ASCII-only, so «120кг» never matched — negative
 lookahead + `u` flag (caught by the test, not by reading).
 
+Round 38 — the owner's split-shipment question («bitimga 2-3 ta prixodni
+qanday biriktiraman») exposed a one-way door (#413): both linking paths
+(receive wizard, deal card) only ADD, and the deal card offers
+`unlinkedReceipts`, so a prixod on the WRONG bitim vanished from every
+picker — `linkReceipt(id, null)` existed since birth with no button.
+`DealLink` on the receipt card: current deal as a link, picker of the
+client's open deals + ALWAYS the deal it is on (won/lost included — the
+open list would hide the mistake), empty option detaches. Gate
+`canWriteDeal` (deal-write list, not a warehouse permission). Service
+untouched. STATED: detaching does NOT walk the funnel stage back — a
+stage is a person's record. New i18n `receipts.deal`/`dealNone` ×4;
+`deals.unlink` finally has a caller. Red-proof: panel deleted → m9h red
+at `receipt-deal-pick` on a fresh db. No migration.
+
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
 free 15 GB Drive in ten days). **ON HOLD by the owner (2026-07-28: «tohtab

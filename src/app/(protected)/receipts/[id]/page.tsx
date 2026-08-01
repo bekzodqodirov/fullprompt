@@ -8,6 +8,7 @@ import {
   costEntries,
   costTypes,
   currencies,
+  deals,
   receiptLots,
   receipts,
   warehouses,
@@ -20,8 +21,10 @@ import { AttachmentsPanel } from '@/components/attachments-panel';
 import { voidReceiptAction } from './actions';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
+import { DealLink } from './deal-link';
 import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
+import { canWriteDeal, openDealsForClient } from '@/modules/wms/deals/service';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
@@ -104,6 +107,21 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   const canEdit = actor.permissions.has('receipts.edit') && receipt.status === 'confirmed';
   const canAssign = actor.permissions.has('receipts.unclaimed.resolve') && receipt.status === 'confirmed';
 
+  // Which job this cargo belongs to — shown, and correctable, from the cargo
+  // itself. Only to somebody who may write deals: to everybody else a deal
+  // code is a link into a screen they cannot open.
+  const canLinkDeal = canWriteDeal(actor.permissions) && Boolean(receipt.clientId);
+  const linkedDeal = receipt.dealId
+    ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
+    : null;
+  const dealOptions = canLinkDeal ? await openDealsForClient(receipt.clientId!) : [];
+  // A deal that has since been won or lost is not in the open list, and
+  // hiding it would hide the very mistake being corrected.
+  const dealChoices =
+    linkedDeal && !dealOptions.some((d) => d.id === linkedDeal.id)
+      ? [{ id: linkedDeal.id, code: linkedDeal.code, title: linkedDeal.title }, ...dealOptions]
+      : dealOptions;
+
   return (
     <div className="space-y-6">
       <BackLink href="/receipts" label={t('title')} />
@@ -159,6 +177,14 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           </p>
         )}
       </div>
+
+      {canLinkDeal && (
+        <DealLink
+          receiptId={id}
+          current={linkedDeal ? { id: linkedDeal.id, code: linkedDeal.code } : null}
+          options={dealChoices}
+        />
+      )}
 
       <section className="space-y-3">
         {lots.map((lot) => (

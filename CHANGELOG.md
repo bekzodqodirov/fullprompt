@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## Prixodni bitimga bog'lash — prixod kartochkasidan — 2026-08-01
+
+Savolingizdan chiqdi: bitimga 2-3 ta prixodni qanday biriktiraman.
+Biriktirish avvaldan bor edi — **uzish va boshqasiga ko'chirish yo'q edi**.
+
+- Prixod kartochkasida endi **«Bitim»** qatori turadi: qaysi bitimga
+  bog'langani ko'rinadi va bosilsa o'sha bitim ochiladi.
+- O'sha yerda **ro'yxat** bor: mijozning ochiq bitimlari. Boshqasini
+  tanlab **Saqlash** — prixod o'sha bitimga ko'chadi. **«— Uzish»** ni
+  tanlasangiz — prixod bitimdan uziladi va bitim kartochkasidagi
+  «Prixodni bog'lash» ro'yxatiga qaytadi.
+- Ro'yxatda **hozir bog'langan bitim ham doim turadi**, u yopilgan
+  (yutilgan yoki yo'qotilgan) bo'lsa ham — aks holda xatoning o'zi
+  ko'rinmay qolardi.
+- Kim ko'radi: bitim yozish huquqi borlar (sotuvchi, VED, mijoz
+  boshqaruvchisi). Skladchiga bu qator ko'rinmaydi.
+- Qoidalar o'zgargani yo'q: **boshqa mijozning prixodini** bitimga
+  bog'lab bo'lmaydi, faqat **tasdiqlangan** prixod bog'lanadi, va
+  bog'lash bitimni voronkada avtomat siljitadi.
+- **Bir gap ochiq aytilsin:** prixodni bitimdan uzsangiz, bitimning
+  voronkadagi etapi **orqaga qaytmaydi** — etap odam qo'ygan belgi,
+  hisoblab chiqariladigan narsa emas. Kerak bo'lsa etapni qo'lda
+  qaytarasiz.
+
 ## Xodimlar boti — «Hisoblatish» — 2026-07-31
 
 Botning uchinchi va oxirgi bo'lagi — siz o'ylab topgan tartibda:

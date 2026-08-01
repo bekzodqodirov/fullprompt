@@ -383,6 +383,8 @@
     "title": "Receipts",
     "unclaimedTitle": "Unidentified cargo",
     "client": "Client",
+    "deal": "Deal",
+    "dealNone": "Not linked",
     "date": "Date",
     "lots": "Products",
     "statuses": {

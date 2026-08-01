@@ -77,6 +77,37 @@ test('a job is quoted, the cargo arrives bigger, and the card says so', async ({
   await page.reload();
   await expect(page.getByTestId('deal-compare')).toContainText(/%/);
 
+  // The same link, seen and undone FROM THE CARGO — the way back from the
+  // commonest mistake, which the deal card alone cannot offer: once a receipt
+  // is on a job it stops being "unlinked" and disappears from that picker.
+  const dealId = dealUrl.split('/').pop()!;
+  await page.locator('a[href^="/receipts/"]').first().click();
+  await expect(page).toHaveURL(/\/receipts\/[0-9a-f-]+$/);
+  const receiptUrl = page.url();
+  const dealPick = page.getByTestId('receipt-deal-pick');
+  await expect(dealPick).toHaveValue(dealId);
+
+  // The link the panel prints is server-rendered, so waiting on IT — rather
+  // than on the select, which is local state — is what proves the save landed.
+  // Navigating away sooner aborts the action mid-flight.
+  const dealHref = page.locator(`a[href="/bitimlar/${dealId}"]`);
+  await dealPick.selectOption('');
+  await page.getByTestId('receipt-deal-save').click();
+  await expect(dealHref).toHaveCount(0);
+
+  // The job carries no cargo again — asked of the receipts list rather than
+  // of the verdict line, which prints a "%" of its own whatever happens.
+  await page.goto(dealUrl);
+  await expect(page.locator('a[href^="/receipts/"]')).toHaveCount(0);
+
+  // …and it goes back on with the same two presses.
+  await page.goto(receiptUrl);
+  await page.getByTestId('receipt-deal-pick').selectOption(dealId);
+  await page.getByTestId('receipt-deal-save').click();
+  await expect(page.locator(`a[href="/bitimlar/${dealId}"]`)).toBeVisible();
+  await page.goto(dealUrl);
+  await expect(page.locator('a[href^="/receipts/"]').first()).toBeVisible();
+
   // …and the job now shows up as needing attention on the board.
   await page.goto('/bitimlar?scope=all');
   await expect(page.getByTestId('deal-attention')).toBeVisible();
