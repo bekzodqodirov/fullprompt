@@ -68,14 +68,22 @@ test('a job is quoted, the cargo arrives bigger, and the card says so', async ({
   await expect(picker).toBeVisible();
   const options = await picker.locator('option').all();
   const values = (await Promise.all(options.map((o) => o.getAttribute('value')))).filter(Boolean);
-  expect(values.length).toBeGreaterThan(1);
-  await picker.selectOption(values[1]!);
+  // The empty option is already filtered out, so any of these is real cargo —
+  // and taking the FIRST keeps the spec survivable on a retry, where the
+  // previous attempt has already consumed one of the unlinked receipts.
+  expect(values.length).toBeGreaterThan(0);
+  await picker.selectOption(values[0]!);
   await page.getByTestId('link-receipt-save').click();
 
   // The reality column is filled in from the receipt, and the verdict flips.
-  await expect(page.getByTestId('deal-compare')).toContainText(/%/);
+  // Waited on the RECEIPT ROW, and on a signed percentage: the verdict line
+  // always prints the threshold's own "25 %", so `/%/` passed even when the
+  // link had not landed yet. That vacuum hid a race until this spec was given
+  // something below that genuinely depends on the link.
+  await expect(page.locator('a[href^="/receipts/"]').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('deal-compare')).toContainText(/\+\d+\.\d %/);
   await page.reload();
-  await expect(page.getByTestId('deal-compare')).toContainText(/%/);
+  await expect(page.getByTestId('deal-compare')).toContainText(/\+\d+\.\d %/);
 
   // The same link, seen and undone FROM THE CARGO — the way back from the
   // commonest mistake, which the deal card alone cannot offer: once a receipt
@@ -93,7 +101,7 @@ test('a job is quoted, the cargo arrives bigger, and the card says so', async ({
   const dealHref = page.locator(`a[href="/bitimlar/${dealId}"]`);
   await dealPick.selectOption('');
   await page.getByTestId('receipt-deal-save').click();
-  await expect(dealHref).toHaveCount(0);
+  await expect(dealHref).toHaveCount(0, { timeout: 15_000 });
 
   // The job carries no cargo again — asked of the receipts list rather than
   // of the verdict line, which prints a "%" of its own whatever happens.
@@ -104,7 +112,7 @@ test('a job is quoted, the cargo arrives bigger, and the card says so', async ({
   await page.goto(receiptUrl);
   await page.getByTestId('receipt-deal-pick').selectOption(dealId);
   await page.getByTestId('receipt-deal-save').click();
-  await expect(page.locator(`a[href="/bitimlar/${dealId}"]`)).toBeVisible();
+  await expect(page.locator(`a[href="/bitimlar/${dealId}"]`)).toBeVisible({ timeout: 15_000 });
   await page.goto(dealUrl);
   await expect(page.locator('a[href^="/receipts/"]').first()).toBeVisible();
 
