@@ -58,6 +58,19 @@ import { confirmReceipt } from '@/modules/wms/receipts/service';
  */
 
 const SUFFIX = String(Date.now()).slice(-7);
+
+/**
+ * A peer id no other row in this file can collide with.
+ *
+ * Every site used to mint its own `BigInt(Date.now())`, some with a small
+ * constant added — and `Date.now() + 7n` in one test is the plain
+ * `Date.now()` of a test that runs seven milliseconds later, which is exactly
+ * how CI hit `tg_messages_unique_idx` on (manager, peer, 1). The millisecond
+ * is multiplied out and a counter occupies the low digits, so two calls can
+ * never land on the same number however fast they follow each other.
+ */
+let peerSeq = 0;
+const nextPeer = () => BigInt(Date.now()) * 1000n + BigInt((peerSeq += 1));
 let actorId: string;
 let managerId: string;
 let sourceId: string;
@@ -494,7 +507,7 @@ describe('telegram conversations on the client card', () => {
     // Unique per RUN. Hard-coded ids passed on a fresh database and then made
     // the SECOND run fail on its own leftovers — this suite shares a database
     // with itself as much as with the other specs (#154).
-    const stamp = BigInt(Date.now());
+    const stamp = nextPeer();
     const row = {
       clientId: client!.id,
       managerUserId: actorId,
@@ -553,7 +566,7 @@ describe('telegram conversations on the client card', () => {
     await db.insert(tgMessages).values({
       clientId: a!.id,
       managerUserId: actorId,
-      peerId: BigInt(Date.now()) + 7n,
+      peerId: nextPeer(),
       tgMessageId: 1n,
       direction: 'in',
       body: 'salom',
@@ -569,7 +582,7 @@ describe('telegram conversations on the client card', () => {
     await db.insert(tgMessages).values({
       clientId: c!.id,
       managerUserId: actorId,
-      peerId: BigInt(Date.now()) + 8n,
+      peerId: nextPeer(),
       tgMessageId: 1n,
       direction: 'in',
       body: 'salom',
@@ -583,7 +596,7 @@ describe('telegram conversations on the client card', () => {
       .insert(clients)
       .values({ clientCode: `TH${String(Date.now()).slice(-6)}`, name: 'Thread client' })
       .returning();
-    const peer = BigInt(Date.now());
+    const peer = nextPeer();
     await db.insert(tgMessages).values([
       {
         clientId: client!.id,
@@ -630,7 +643,6 @@ describe('the conversation list', () => {
   // the code's length gave every client the same one, and since the message
   // ids restart per client the unique index refused the second insert — the
   // index catching a test's own mistake, which is the index working.
-  let peerSeq = 0;
 
   async function clientWith(
     code: string,
@@ -644,7 +656,7 @@ describe('the conversation list', () => {
     // the same database, and a counter starting at zero each time collides
     // with the rows the last run left — the same trap the rest of this file
     // avoids with a timestamp suffix.
-    const peer = BigInt(Date.now()) * 1000n + BigInt((peerSeq += 1));
+    const peer = nextPeer();
     let n = 0;
     await db.insert(tgMessages).values(
       msgs.map((m) => ({
@@ -851,7 +863,7 @@ describe('the conversation list', () => {
     await db.insert(tgMessages).values({
       clientId: duo.id,
       managerUserId: other!.id,
-      peerId: BigInt(Date.now()) * 1000n + 999n,
+      peerId: nextPeer(),
       tgMessageId: 1n,
       direction: 'in',
       body: 'ikkinchi hodimga',
