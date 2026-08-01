@@ -9,7 +9,10 @@ import {
   costEntries,
   expenseCategories,
   expenses,
+  partnerTransactions,
+  partners,
 } from '../../platform/db/schema';
+import { uzsRate } from './period';
 
 /**
  * Management reports (Phase 2.4).
@@ -243,8 +246,38 @@ export async function cashFlow(from: string, to: string) {
       and(
         eq(clientTransactions.type, 'payment'),
         isNull(clientTransactions.voidedAt),
+        // A payment made into a PARTNER's account never reached a cash box of
+        // ours (round 39). Counting it as money received would report cash we
+        // cannot spend — the one lie a cash-flow report must not tell.
+        isNull(clientTransactions.partnerId),
         gte(clientTransactions.txDate, from),
         lte(clientTransactions.txDate, to),
+      ),
+    );
+
+  // Money a counterparty put INTO one of our accounts — the cash buyers' first
+  // leg. It is real cash in, and we owe it, but the debt is not this report's
+  // business; this report answers only "what moved".
+  const [partnerIn] = await db
+    .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)` })
+    .from(partnerTransactions)
+    .where(
+      and(
+        eq(partnerTransactions.type, 'receipt'),
+        isNull(partnerTransactions.voidedAt),
+        gte(partnerTransactions.txDate, from),
+        lte(partnerTransactions.txDate, to),
+      ),
+    );
+  const [partnerOut] = await db
+    .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)` })
+    .from(partnerTransactions)
+    .where(
+      and(
+        eq(partnerTransactions.type, 'payment'),
+        isNull(partnerTransactions.voidedAt),
+        gte(partnerTransactions.txDate, from),
+        lte(partnerTransactions.txDate, to),
       ),
     );
 
@@ -259,6 +292,8 @@ export async function cashFlow(from: string, to: string) {
       and(
         isNull(expenses.voidedAt),
         eq(expenseCategories.cash, true),
+        // Settled by a partner out of their own account: ours never opened.
+        isNull(expenses.partnerId),
         gte(expenses.expenseDate, from),
         lte(expenses.expenseDate, to),
       ),
@@ -272,6 +307,9 @@ export async function cashFlow(from: string, to: string) {
     .where(
       and(
         isNull(costEntries.voidedAt),
+        // Same rule as the expenses above: a truck the transport company is
+        // still owed for has cost us nothing in CASH yet.
+        isNull(costEntries.partnerId),
         gte(costEntries.costDate, from),
         lte(costEntries.costDate, to),
       ),
@@ -288,18 +326,28 @@ export async function cashFlow(from: string, to: string) {
       ),
     );
 
-  const inflow = money(received?.sum);
+  const partnerInflow = money(partnerIn?.sum);
+  const partnerOutflow = money(partnerOut?.sum);
+  const inflow = money(received?.sum) + partnerInflow;
   const outflow =
-    money(cargoCosts?.sum) + outRows.reduce((acc, row) => acc + money(row.sum), 0);
+    money(cargoCosts?.sum) +
+    partnerOutflow +
+    outRows.reduce((acc, row) => acc + money(row.sum), 0);
   return {
-    inflow,
+    inflow: money(inflow),
     outflow: money(outflow),
     net: money(inflow - outflow),
     /** Informational: transfers are excluded from both sides on purpose. */
     transferCount: Number(transfers?.n ?? 0),
     rows: [
-      { label: 'clientPayments', kind: 'in' as const, amountUsd: inflow },
+      { label: 'clientPayments', kind: 'in' as const, amountUsd: money(received?.sum) },
+      ...(partnerInflow
+        ? [{ label: 'partnerIn', kind: 'in' as const, amountUsd: partnerInflow }]
+        : []),
       { label: 'cargoCosts', kind: 'out' as const, amountUsd: money(cargoCosts?.sum) },
+      ...(partnerOutflow
+        ? [{ label: 'partnerOut', kind: 'out' as const, amountUsd: partnerOutflow }]
+        : []),
       ...outRows.map((row) => ({
         label: row.label,
         kind: 'out' as const,
@@ -554,4 +602,96 @@ export async function profitByRoute(from: string, to: string) {
       };
     })
     .sort((a, b) => b.profitUsd - a.profitUsd);
+}
+
+/**
+ * Balans — what the company holds against what it owes, on one screen.
+ *
+ * Round 39 made this answerable for the first time: until counterparties
+ * existed, "we owe" had no number at all, so a page like this could only ever
+ * have shown half the picture and would have flattered every month.
+ *
+ * Deliberately management accounting, not a balance sheet: cargo in the
+ * warehouse is NOT valued here. It is not ours — it is the client's goods —
+ * and the money side of it is already in what they owe us. Adding a stock
+ * valuation would double-count the same shipment and read as profit that
+ * belongs to somebody else.
+ *
+ * Cash boxes are converted at TODAY's rate for the total only; each box also
+ * comes back in its own currency, because that is the figure someone counts
+ * against the notes in the drawer.
+ */
+export async function companyBalance() {
+  const { accountBalances } = await import('./service');
+  const [accounts, rate] = await Promise.all([accountBalances(), uzsRate()]);
+
+  // Per box in its own money, and a USD total. A UZS box divides by the rate;
+  // anything else is treated as dollars, which is true of every box the owner
+  // keeps today and is stated rather than guessed at.
+  let cashUsd = 0;
+  const cashRows = accounts
+    .filter((account) => account.active)
+    .map((account) => {
+      const usd =
+        account.currency === 'USD'
+          ? account.balance
+          : account.currency === 'UZS' && rate
+            ? account.balance * rate
+            : null;
+      if (usd !== null) cashUsd += usd;
+      return {
+        id: account.id,
+        name: account.name,
+        currency: account.currency,
+        balance: account.balance,
+        /** null when no rate has been entered for that currency yet. */
+        balanceUsd: usd === null ? null : Math.round(usd * 100) / 100,
+      };
+    });
+
+  // What clients owe us: the same sum the finance screen shows, in one query.
+  const [owedToUs] = await db
+    .select({
+      sum: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END), 0)`,
+    })
+    .from(clientTransactions)
+    .where(isNull(clientTransactions.voidedAt));
+
+  // What we owe counterparties. Negative balances (a firm that owes US) are
+  // reported separately rather than netted off: one is a bill to pay and the
+  // other is money to chase, and a single number hides which.
+  const partnerRows = await db
+    .select({
+      partnerId: partnerTransactions.partnerId,
+      name: partners.name,
+      balance: sql<string>`sum(CASE WHEN ${partnerTransactions.type} IN ('charge', 'receipt', 'adjust') THEN ${partnerTransactions.amountUsd} ELSE -${partnerTransactions.amountUsd} END)`,
+    })
+    .from(partnerTransactions)
+    .innerJoin(partners, eq(partnerTransactions.partnerId, partners.id))
+    .where(isNull(partnerTransactions.voidedAt))
+    .groupBy(partnerTransactions.partnerId, partners.name);
+
+  let owedByUs = 0;
+  let owedToUsByPartners = 0;
+  for (const row of partnerRows) {
+    const value = money(row.balance);
+    if (value > 0) owedByUs += value;
+    else owedToUsByPartners += -value;
+  }
+
+  const receivable = money(owedToUs?.sum);
+  const net = cashUsd + receivable + owedToUsByPartners - owedByUs;
+
+  return {
+    cashRows,
+    cashUsd: money(cashUsd),
+    /** Clients' outstanding balance — what is still to come in. */
+    receivableUsd: receivable,
+    /** Counterparties we still have to pay. */
+    payableUsd: money(owedByUs),
+    /** Counterparties who are in front on their account. */
+    partnerReceivableUsd: money(owedToUsByPartners),
+    netUsd: money(net),
+    uzsRate: rate,
+  };
 }

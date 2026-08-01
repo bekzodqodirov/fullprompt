@@ -79,6 +79,26 @@ test('a transport firm gets an account, a debt and a payment against it', async 
   await expect(page.getByText(name)).toHaveCount(0);
 });
 
+test('the balance screen states what we hold against what we owe', async ({ page }) => {
+  await login(page, OWNER);
+  await page.goto('/accounting/balance');
+  // Four lines and a net figure. The numbers themselves are proved in the
+  // integration suite; what only a browser can say is that the screen renders
+  // and the doors out of it exist.
+  await expect(page.getByTestId('balance-net')).toBeVisible();
+  // Scoped to main: the ••• sheet holds the same hrefs off-screen, and the
+  // first match in DOM order would be one of those.
+  await expect(page.locator('main a[href="/kontragentlar"]').first()).toBeVisible();
+  await expect(page.locator('main a[href="/finance"]').first()).toBeVisible();
+});
+
+test('the VED manager reaches the counterparties, the warehouse does not', async ({ page }) => {
+  // His instruction (round 39 follow-up): moliya, VED, buxgalter and admin.
+  await login(page, '+998900000004');
+  await page.goto('/kontragentlar');
+  await expect(page).toHaveURL(/\/kontragentlar$/);
+});
+
 test('the warehouse never sees what the company owes', async ({ page }) => {
   await login(page, WAREHOUSE);
   await expect(page.locator('main a[href="/kontragentlar"]')).toHaveCount(0);

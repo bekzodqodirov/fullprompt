@@ -8,6 +8,7 @@ import {
   expenseCategories,
   expenses,
   moneyAccounts,
+  partnerTransactions,
   recurringExpenses,
   users,
   warehouses,
@@ -484,12 +485,38 @@ export async function accountBalances() {
             isNull(accountTransfers.voidedAt),
           ),
         );
+      // Round 39: counterparty money moves the same boxes. A cash buyer
+      // wiring som into the company account raises it; paying the transport
+      // firm out of the till lowers it. Left out, every till this touched
+      // would read wrong on the screen somebody counts notes against.
+      const [partnerIn] = await db
+        .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amount}), 0)` })
+        .from(partnerTransactions)
+        .where(
+          and(
+            eq(partnerTransactions.accountId, account.id),
+            eq(partnerTransactions.type, 'receipt'),
+            isNull(partnerTransactions.voidedAt),
+          ),
+        );
+      const [partnerOut] = await db
+        .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amount}), 0)` })
+        .from(partnerTransactions)
+        .where(
+          and(
+            eq(partnerTransactions.accountId, account.id),
+            eq(partnerTransactions.type, 'payment'),
+            isNull(partnerTransactions.voidedAt),
+          ),
+        );
       const balance =
         Number(account.openingBalance) +
         Number(paid?.sum ?? 0) -
         Number(spent?.sum ?? 0) +
         Number(inbound?.sum ?? 0) -
-        Number(outbound?.sum ?? 0);
+        Number(outbound?.sum ?? 0) +
+        Number(partnerIn?.sum ?? 0) -
+        Number(partnerOut?.sum ?? 0);
       return {
         id: account.id,
         name: account.name,

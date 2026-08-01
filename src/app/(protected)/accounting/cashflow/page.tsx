@@ -26,8 +26,10 @@ export default async function CashFlowPage({
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const label = (key: string) =>
-    key === 'clientPayments' || key === 'cargoCosts' ? t(key) : key;
+  // Known keys are translated; an expense CATEGORY name comes through as its
+  // own text, because the owner named it and it needs no second name.
+  const KNOWN = ['clientPayments', 'cargoCosts', 'partnerIn', 'partnerOut'];
+  const label = (key: string) => (KNOWN.includes(key) ? t(key as 'clientPayments') : key);
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">

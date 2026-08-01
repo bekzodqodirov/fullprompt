@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Balans, kassa va rollar — 2026-08-01
+
+Sizning ikkita gapingiz bo'yicha.
+
+**1. Rollar.** «Kontragentlar» endi **VED**, **buxgalter** va **admin**
+menyusida turadi (buxgalterda avvaldan bor edi, VEDda yo'q edi — shu
+tuzatildi). Skladchiga hech qachon ko'rinmaydi.
+
+**2. Kassa raqamlari to'g'rilandi.** Bu jiddiy edi, ochiq aytaman: yangi
+kontragent bo'limi kassadan pul chiqara oladi va kassaga pul kirita oladi,
+lekin **kassa qoldig'i buni hisobga olmayotgan edi**. Endi:
+- Kontragentga kassadan to'lasangiz — kassa kamayadi.
+- Kontragent hisobimizga pul tushirsa — kassa ko'payadi.
+- **Uch tomonlama hisob kassaga tegmaydi** — mijoz pulni firmaning
+  hisobiga tashlagan, bizning kassaga kirmagan. Endi pul harakati
+  hisobotida ham «kirdi» deb ko'rsatilmaydi.
+- Boshqa firma to'lagan rastamojka va arenda ham «kassadan chiqdi» deb
+  sanalmaydi — chunki chiqmagan.
+
+**3. Yangi ekran: Balans** (`Buxgalteriya → Balans`). Bir ekranda:
+
+- Kassalardagi pul (har biri o'z valyutasida + dollarda)
+- Mijozlar bizga qarzi
+- Kontragentlar bizga qarzi
+- **Bizning qarzimiz**
+- va pastida **sof holat**
+
+Har bir qator bosiladi — tegishli ro'yxatga olib boradi.
+
+**Bir narsa atayin hisobga olinmagan:** ombordagi yuk **pul sifatida
+baholanmaydi** — u mijozning moli, bizniki emas. Uning puli allaqachon
+«mijozlar qarzi» da turibdi; ikkinchi marta qo'shsak, o'zimizni boy qilib
+ko'rsatgan bo'lardik.
+
 ## Kontragentlar — kimga qarzdormiz — 2026-08-01
 
 Endi sistema faqat «mijoz bizga qancha qarzdor» emas, **«biz kimga qancha

@@ -894,7 +894,7 @@
     "net": "净额",
     "clientPayments": "客户付款",
     "cargoCosts": "货物费用",
-    "balance": "余额",
+    "balance": "资产负债",
     "opening": "期初余额",
     "kind": "类型",
     "cash": "现金",
@@ -941,7 +941,16 @@
     "amountTo": "转入金额",
     "paidBy": "由谁支付",
     "paidByUs": "我们自己付",
-    "paidByHint": "选择合作方后现金账不动，改为增加对其欠款。"
+    "paidByHint": "选择合作方后现金账不动，改为增加对其欠款。",
+    "balNet": "净头寸",
+    "balCash": "现金账余额",
+    "balReceivable": "客户欠我们",
+    "balPartnerReceivable": "合作方欠我们",
+    "balPayable": "我们所欠",
+    "balHint": "现金 + 应收 − 应付。仓库货物不计价：那是客户的货。",
+    "noRate": "无汇率",
+    "partnerIn": "合作方转入",
+    "partnerOut": "支付给合作方"
   },
   "crm": {
     "title": "CRM",

@@ -29,6 +29,8 @@ import {
   voidPartnerTx,
 } from '@/modules/wms/partners/service';
 import { recordSettlement } from '@/modules/wms/partners/settlement';
+import { accountBalances } from '@/modules/wms/accounting/service';
+import { cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
 
 /**
  * Kontragentlar — the owner's three cases, each proved against the database
@@ -400,5 +402,88 @@ describe('a counterparty who is also a client', () => {
     const clientId = await newClient(`PC${STAMP}`);
     await newPartner('Ikki tomonlama', clientId);
     await expect(newPartner('Ikkinchi hisob', clientId)).rejects.toThrow('client_taken');
+  });
+});
+
+describe('the money reports know about counterparties', () => {
+  it('a cash box moved by a partner reads right, and money that never moved is not claimed', async () => {
+    const partnerId = await newPartner('Kassa');
+    const clientId = await newClient(`PB${STAMP}`);
+    const [account] = await db.select().from(moneyAccounts).limit(1);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const before = (await accountBalances()).find((a) => a.id === account!.id)!.balance;
+    const flowBefore = await cashFlow(today, today);
+
+    // Real cash IN: the buyer wired money into this account.
+    await addPartnerTx(
+      { partnerId, type: 'receipt', amount: 700, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
+      ctx(),
+    );
+    // Real cash OUT of the same box.
+    await addPartnerTx(
+      { partnerId, type: 'payment', amount: 200, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
+      ctx(),
+    );
+
+    const after = (await accountBalances()).find((a) => a.id === account!.id)!.balance;
+    expect(after - before, 'the till must reflect both legs').toBeCloseTo(500, 2);
+
+    const flowAfter = await cashFlow(today, today);
+    expect(flowAfter.inflow - flowBefore.inflow).toBeCloseTo(700, 2);
+    expect(flowAfter.outflow - flowBefore.outflow).toBeCloseTo(200, 2);
+
+    // A client settling through a partner moves NO cash of ours, so the
+    // cash-flow report must not report money it never held.
+    await db.insert(clientTransactions).values({
+      clientId,
+      type: 'charge',
+      amount: '300',
+      currency: 'USD',
+      rateToUsd: '1',
+      amountUsd: '300.00',
+      txDate: today,
+      createdBy: actorId,
+    });
+    await recordSettlement(
+      {
+        txId: uuidv4(),
+        clientId,
+        partnerId,
+        clientAmount: 300,
+        clientCurrency: 'USD',
+        partnerAmount: 300,
+        partnerCurrency: 'USD',
+        txDate: today,
+        note: 'firma hisobiga',
+      },
+      ctx(),
+    );
+    const flowSettled = await cashFlow(today, today);
+    expect(
+      flowSettled.inflow - flowAfter.inflow,
+      'a settlement is not cash received',
+    ).toBeCloseTo(0, 2);
+    const settledBalance = (await accountBalances()).find((a) => a.id === account!.id)!.balance;
+    expect(settledBalance).toBeCloseTo(after, 2);
+  });
+
+  it('the balance counts what we owe as well as what is owed to us', async () => {
+    const partnerId = await newPartner('Balanschi');
+    const today = new Date().toISOString().slice(0, 10);
+    const before = await companyBalance();
+
+    await addPartnerTx(
+      { partnerId, type: 'charge', amount: 450, currency: 'USD', txDate: today, accountId: '', batchId: '', note: 'fura' },
+      ctx(),
+    );
+
+    const after = await companyBalance();
+    expect(after.payableUsd - before.payableUsd).toBeCloseTo(450, 2);
+    // A debt lowers the net position by exactly its own size — nothing else
+    // moved, so anything else here would be double counting.
+    expect(before.netUsd - after.netUsd).toBeCloseTo(450, 2);
+    // Cash is untouched: taking a truck on credit is not spending money.
+    expect(after.cashUsd).toBeCloseTo(before.cashUsd, 2);
   });
 });

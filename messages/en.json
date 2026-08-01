@@ -941,7 +941,16 @@
     "amountTo": "Received",
     "paidBy": "Settled by",
     "paidByUs": "We paid it",
-    "paidByHint": "Pick a counterparty and no cash box moves — our debt to them grows instead."
+    "paidByHint": "Pick a counterparty and no cash box moves — our debt to them grows instead.",
+    "balNet": "Net position",
+    "balCash": "Cash in the boxes",
+    "balReceivable": "Owed to us by clients",
+    "balPartnerReceivable": "Owed to us by counterparties",
+    "balPayable": "What we owe",
+    "balHint": "Cash + what is owed to us − what we owe. Cargo in the warehouse is not valued: it is the client's goods.",
+    "noRate": "no rate",
+    "partnerIn": "Received from a counterparty",
+    "partnerOut": "Paid to a counterparty"
   },
   "crm": {
     "title": "CRM",

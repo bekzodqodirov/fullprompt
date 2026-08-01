@@ -387,7 +387,9 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   // with WHICHEVER manager, and the vedchi reads them all (owner's widening).
   ved_manager: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/batches', '/stock', '/receipts', '/reports',
-    '/finance', '/suhbatlar', '/o',
+    // Kontragentlar joined in round 39, his instruction: the VED manager
+    // arranges the customs firms and knows what each one is owed.
+    '/finance', '/kontragentlar', '/suhbatlar', '/o',
   ],
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.

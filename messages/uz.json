@@ -941,7 +941,16 @@
     "amountTo": "Tushdi",
     "paidBy": "Kim to‘ladi",
     "paidByUs": "O‘zimiz to‘ladik",
-    "paidByHint": "Kontragent tanlansa — kassadan pul chiqmaydi, o‘shanga qarzimiz oshadi."
+    "paidByHint": "Kontragent tanlansa — kassadan pul chiqmaydi, o‘shanga qarzimiz oshadi.",
+    "balNet": "Sof holat",
+    "balCash": "Kassalardagi pul",
+    "balReceivable": "Mijozlar qarzi (bizga)",
+    "balPartnerReceivable": "Kontragentlar qarzi (bizga)",
+    "balPayable": "Bizning qarzimiz",
+    "balHint": "Kassadagi pul + bizga qarzlar − bizning qarzimiz. Ombordagi yuk hisobga olinmaydi — u mijozning moli.",
+    "noRate": "kurs yo‘q",
+    "partnerIn": "Kontragentdan tushdi",
+    "partnerOut": "Kontragentga to‘landi"
   },
   "crm": {
     "title": "CRM",
