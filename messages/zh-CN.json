@@ -582,7 +582,9 @@
     "gridReceipt": "入库单",
     "gridRowTotal": "合计",
     "gridEntered": "已录入 (USD)",
-    "gridNow": "本次录入"
+    "gridNow": "本次录入",
+    "paidBy": "由谁支付",
+    "paidByUs": "我们自己付"
   },
   "batches": {
     "title": "车次",
@@ -656,7 +658,11 @@
     "cancelConfirm": "确定取消此批次？箱子将退回仓库。",
     "cancelled": "批次已取消，退回箱数：{n}",
     "receiptGridTitle": "按入库单费用（表格）",
-    "receiptGridHint": "行＝入库单，列＝费用类型（清关、服务费、运费…）。填好金额一次保存——每格都会成为该入库单的普通费用。已录入的金额显示在格下。"
+    "receiptGridHint": "行＝入库单，列＝费用类型（清关、服务费、运费…）。填好金额一次保存——每格都会成为该入库单的普通费用。已录入的金额显示在格下。",
+    "customsFirm": "清关公司",
+    "customsByClient": "客户自有公司",
+    "customsFirmAccount": "打开该公司账户",
+    "documents": "单据"
   },
   "loading": {
     "title": "装车",
@@ -932,7 +938,10 @@
     "fromAccount": "转出账户",
     "toAccount": "转入账户",
     "amountFrom": "转出金额",
-    "amountTo": "转入金额"
+    "amountTo": "转入金额",
+    "paidBy": "由谁支付",
+    "paidByUs": "我们自己付",
+    "paidByHint": "选择合作方后现金账不动，改为增加对其欠款。"
   },
   "crm": {
     "title": "CRM",
@@ -1612,5 +1621,61 @@
     "queueTitle": "当前队列",
     "lateBy": "超时 {n} 分",
     "leftMin": "剩 {n} 分"
+  },
+  "partners": {
+    "title": "合作方",
+    "typesTitle": "合作方类型",
+    "settlement": "三方抵账",
+    "settlementHint": "客户把欠我们的款打到合作方账户。现金账不动：两边欠款同时减少。",
+    "settlementSaved": "抵账已登记",
+    "totalOwed": "我们共欠",
+    "weOwe": "我们欠",
+    "empty": "暂无合作方",
+    "noRows": "暂无记录",
+    "balanceHint": "正数表示我们欠对方，负数表示对方欠我们。",
+    "newPartner": "新增合作方",
+    "newRow": "新增记录",
+    "name": "名称",
+    "type": "类型",
+    "typeName": "类型名称",
+    "addType": "添加类型",
+    "hide": "隐藏",
+    "show": "显示",
+    "alsoClient": "同时是我们的客户",
+    "notAClient": "非客户",
+    "clientTaken": "该客户已有合作方账户",
+    "phone": "电话",
+    "note": "备注",
+    "inactive": "已停用",
+    "date": "日期",
+    "kind": "类型",
+    "amount": "金额",
+    "currency": "货币",
+    "account": "现金账 / 账户",
+    "fxMissing": "该日期未录入汇率",
+    "voidReason": "作废原因",
+    "kinds": {
+      "charge": "向我们计费（欠款增加）",
+      "receipt": "打入我们账户",
+      "payment": "我们已付",
+      "offset": "通过客户抵账",
+      "adjust": "调整 / 汇差"
+    },
+    "kindHints": {
+      "charge": "车辆、清关、租金、工资等已获服务。现金账不动。",
+      "receipt": "对方把钱打入我们账户。现金增加，我们欠对方增加。",
+      "payment": "我们从现金账付给对方。现金减少，欠款减少。",
+      "adjust": "汇差或手工更正，可为负数。"
+    },
+    "whoPaid": "哪位客户付款",
+    "paidTo": "打入谁的账户",
+    "clientSent": "客户汇出",
+    "firmCredited": "对方冲抵我们欠款",
+    "firmCreditedHint": "对方按自己汇率算了多少，就填多少。",
+    "rateGap": "汇差",
+    "rateGapHint": "对方冲抵金额与客户汇出金额之差（美元）。",
+    "proof": "收据 / 截图",
+    "proofNote": "备注（无附件时必填）",
+    "proofRequired": "必须有附件或备注"
   }
 }

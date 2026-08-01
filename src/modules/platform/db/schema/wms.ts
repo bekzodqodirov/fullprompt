@@ -384,6 +384,13 @@ export const costEntries = pgTable(
     costDate: date('cost_date').notNull(),
     allocationBasis: text('allocation_basis').notNull().default('weight'),
     clientId: uuid('client_id').references(() => clients.id),
+    /**
+     * Somebody else settled this cost — the customs firm's own account, the
+     * transport company's. The cost still belongs to the cargo, so tannarx is
+     * unchanged; what changes is that our cash box never opened and the debt
+     * lands on that partner's ledger instead (round 39).
+     */
+    partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     enteredBy: uuid('entered_by')
       .notNull()
@@ -502,6 +509,14 @@ export const batches = pgTable(
     closedAt: timestamp('closed_at', { withTimezone: true }),
     /** VED "sent to agent" checkbox (export batches). */
     sentToAgentAt: date('sent_to_agent_at'),
+    /**
+     * Which firm cleared this truck (round 39). Usually one firm per batch —
+     * ours, whose bill lands on its partner ledger — but a client sometimes
+     * clears their own cargo through their own firm, and then the only thing
+     * worth recording is that they did: no cost of ours is involved.
+     */
+    customsPartnerId: uuid('customs_partner_id').references(() => partners.id),
+    customsByClient: boolean('customs_by_client').notNull().default(false),
     /** Latest manual position pin: {key: at_border|in_kg|in_uz, at: ISO} — re-anchors the map estimate. */
     trackingCheckpoint: jsonb('tracking_checkpoint'),
     createdBy: uuid('created_by')
@@ -776,6 +791,13 @@ export const clientTransactions = pgTable(
     dealId: uuid('deal_id').references(() => deals.id),
     /** Which cash box the payment landed in (Phase 2.4 cash flow). */
     accountId: uuid('account_id'),
+    /**
+     * The payment reached us through this partner's account instead of a cash
+     * box of ours — the client settled their debt into our transport
+     * company's account in China, and the firm took it off what we owe them.
+     * `accountId` is NULL on these by construction: no till opened.
+     */
+    partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -868,6 +890,12 @@ export const expenses = pgTable(
     employeeId: uuid('employee_id').references(() => users.id),
     /** Which cash box / account it was paid from — drives the cash flow. */
     accountId: uuid('account_id').references(() => moneyAccounts.id),
+    /**
+     * Paid THROUGH a partner rather than out of a cash box — the owner rents
+     * the Chinese warehouses jointly with a transport company and pays the
+     * Chinese staff through it. The expense is ours; the money is not.
+     */
+    partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -1495,5 +1523,119 @@ export const calcRequests = pgTable(
       .on(t.entityType, t.entityId)
       .where(sql`${t.completedAt} IS NULL`),
     index('calc_requests_assignee_idx').on(t.assigneeId, t.requestedAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Kontragentlar (round 39) — the OTHER side of the money.
+//
+// The ledger had one counterparty, the client. Everything else was a cost
+// with no creditor: trucks taken on credit, customs paid out of another
+// firm's account, Chinese warehouse rent and salaries settled through the
+// transport company, and the two people who wire money into our bank account
+// and collect cash from the till. All four are the same shape — an account
+// per counterparty — so they are one table, not four features.
+// ---------------------------------------------------------------------------
+
+/** Editable by the owner, never a compiled list (his rule for every dictionary). */
+export const partnerTypes = pgTable('partner_types', {
+  id: id(),
+  code: text('code').notNull().unique(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(100),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+});
+
+export const partners = pgTable(
+  'partners',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    typeId: uuid('type_id')
+      .notNull()
+      .references(() => partnerTypes.id),
+    /**
+     * The client this counterparty IS, when they are the same person (owner:
+     * «kontragent klient bolishi ham mumkun»). One card, two ledgers: cargo
+     * money stays on the client side, service money lands here.
+     */
+    clientId: uuid('client_id').references(() => clients.id),
+    phone: text('phone'),
+    note: text('note'),
+    active: boolean('active').notNull().default(true),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // Two accounts for one person would each show half the truth.
+    uniqueIndex('partners_client_uniq').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
+    index('partners_type_idx').on(t.typeId).where(sql`${t.active}`),
+  ],
+);
+
+/**
+ * The partner ledger. Balance = Σ(charge, receipt) − Σ(payment, offset) ± adjust,
+ * in USD, frozen at entry exactly like the client ledger (#108).
+ *
+ * - `charge`  they billed us / we took the service    debt ↑, no cash
+ * - `receipt` they put money into an account of OURS  debt ↑, cash ↑
+ * - `payment` we settled from a cash box              debt ↓, cash ↓
+ * - `offset`  a client paid them on our behalf        debt ↓, no cash
+ * - `adjust`  correction or rate difference           either, no cash
+ *
+ * `receipt` is the leg the cash buyers need: som lands in the company account
+ * and we owe them dollars until they collect it.
+ */
+export const partnerTransactions = pgTable(
+  'partner_transactions',
+  {
+    id: id(),
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id),
+    type: text('type').notNull(),
+    amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    currency: varchar('currency', { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    rateToUsd: numeric('rate_to_usd', { precision: 24, scale: 12 }).notNull(),
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    txDate: date('tx_date').notNull(),
+    accountId: uuid('account_id').references(() => moneyAccounts.id),
+    /** A truck line points at the batch it carried. */
+    batchId: uuid('batch_id').references(() => batches.id),
+    costEntryId: uuid('cost_entry_id').references(() => costEntries.id),
+    expenseId: uuid('expense_id').references(() => expenses.id),
+    /** The client payment this offset pairs with. */
+    clientTxId: uuid('client_tx_id').references(() => clientTransactions.id),
+    note: text('note'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedBy: uuid('voided_by').references(() => users.id),
+    voidReason: text('void_reason'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'partner_tx_type_check',
+      sql`${t.type} IN ('charge', 'receipt', 'payment', 'offset', 'adjust')`,
+    ),
+    check(
+      'partner_tx_amount_check',
+      sql`CASE WHEN ${t.type} = 'adjust' THEN ${t.amount} <> 0 ELSE ${t.amount} > 0 END`,
+    ),
+    // Money that moved must name its cash box; money that did not must not.
+    check(
+      'partner_tx_account_check',
+      sql`(${t.type} IN ('receipt', 'payment')) = (${t.accountId} IS NOT NULL)`,
+    ),
+    index('partner_tx_partner_idx').on(t.partnerId, t.txDate),
+    index('partner_tx_batch_idx').on(t.batchId),
   ],
 );

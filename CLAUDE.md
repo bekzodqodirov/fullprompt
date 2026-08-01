@@ -122,7 +122,7 @@ pnpm build && pnpm e2e  # 44 e2e
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
 828 unit/integration + 93 e2e, verified in CI's order on a fresh database.
-Latest migration: **0053** (`tg_reminded_at`).
+Latest migration: **0054** (`partners`).
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -788,6 +788,41 @@ untouched. STATED: detaching does NOT walk the funnel stage back — a
 stage is a person's record. New i18n `receipts.deal`/`dealNone` ×4;
 `deals.unlink` finally has a caller. Red-proof: panel deleted → m9h red
 at `receipt-deal-pick` on a fresh db. No migration.
+
+Round 39 — kontragentlar, his money round (#415, «transportlarni qarzga
+olamiz … hisobini oladigan qilaolamizmi»). The ledger had ONE counterparty
+(the client); trucks on credit, customs paid from another firm's account,
+Chinese rent+salaries settled through the transport company, and the two
+cash buyers were all costs with no creditor. Migration 0054 (additive):
+`partner_types` (editable incl. «Boshqa»), `partners` (optional client
+link, ONE account per client), `partner_transactions` (charge / receipt /
+payment / offset / adjust) + nullable `partner_id` on cost_entries,
+expenses and client_transactions + `customs_partner_id`/`customs_by_client`
+on batches. THE RULE: a cost and a debt are different facts — naming a
+partner on a cost writes a `charge` POINTING AT the cost row (P&L reads
+costs, partner screen reads debts, neither counts the other); paying is
+money moving, not a second cost; voiding either side voids the other. DB
+`CHECK ((type IN ('receipt','payment')) = (account_id IS NOT NULL))` keeps
+the cash-flow honest. A partner-settled expense DROPS its account_id.
+`receipt` is the cash buyers' first leg (som in, we owe dollars, residue =
+rate gain, closed by a signed `adjust`). THREE-CORNERED SETTLEMENT
+(`/kontragentlar/hisob`): two SEPARATE amounts/currencies — his words, the
+firm states its own rate — gap printed, never averaged; proof (file or
+note) mandatory and the file must be the actor's own upload. Batch card:
+customs firm (or «mijoz o'z firmasi bilan») + an attachments panel (batch
+had none). Gates: read finance.view, write finance.manage (his answer);
+warehouse never sees it. New attachment types `batch` + `partner_transaction`
+(allowlist + authz branches). Red-proofs ×4 (cost→charge link, expense's
+dropped cash box, proof requirement, paired void). e2e m9y RETIRES its
+partner at the end — while active it adds a payer picker to every cost and
+expense form (#183). NOT built, stated: opening balances (he does not know
+the totals yet).
+
+**Agreed next (owner, 2026-08-01):** the SPEED round — measure before
+guessing. Server is 8 GB, so the pg tuning is innocent. Plan: postgres
+`log_min_duration_statement`, per-page render timing, and a navigation
+progress indicator (there is none, and a Germany→Uzbekistan round trip
+plus SSR means every tap has ~half a second of dead screen).
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

@@ -70,6 +70,7 @@ export async function addExpenseAction(
     warehouseId: String(formData.get('warehouseId') ?? ''),
     employeeId: String(formData.get('employeeId') ?? ''),
     accountId: String(formData.get('accountId') ?? ''),
+    partnerId: String(formData.get('partnerId') ?? ''),
     note: String(formData.get('note') ?? ''),
   });
   if (!parsed.success) return { error: 'validation' };

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
+  batches,
   crates,
   crmActivities,
   customFieldValues,
@@ -194,6 +195,29 @@ async function decide(
       return spec.writePermissions.length === 0 || has(...spec.writePermissions)
         ? { allow: true, rule: 'custom-field' }
         : { allow: false, rule: 'custom_field-no-permission' };
+    }
+    // The papers that ride with a truck. The batch card itself asks only for
+    // a login and the warehouse fence, so the files ask exactly that too — a
+    // declaration is not more secret than the manifest it belongs to.
+    case 'batch': {
+      const row = await db.query.batches.findFirst({
+        where: eq(batches.id, attachment.entityId),
+        columns: { originWarehouseId: true, destWarehouseId: true },
+      });
+      if (!row) return { allow: false, rule: 'orphan' };
+      // Both ends, like the bot lookup (#411): a truck between two countries
+      // belongs to nobody's floor and both ends legitimately care.
+      return inScope(actor, row.originWarehouseId) || inScope(actor, row.destWarehouseId)
+        ? { allow: true, rule: 'batch-scope' }
+        : { allow: false, rule: 'batch-out-of-scope' };
+    }
+    // The proof behind a three-cornered settlement: a bank receipt naming a
+    // client and a sum. Money eyes only — and an entry not yet saved has no
+    // row, so only its uploader (matched above) has any claim on it.
+    case 'partner_transaction': {
+      return has('finance.view', 'finance.manage')
+        ? { allow: true, rule: 'partner-tx-finance' }
+        : { allow: false, rule: 'partner-tx-no-permission' };
     }
     // entityType was free-form before the upload allowlist, so production may
     // hold strings no code writes today — in log-only mode this branch IS the

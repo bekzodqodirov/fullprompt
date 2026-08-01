@@ -100,6 +100,13 @@ export const costEntrySchema = z.object({
   costDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   allocationBasis: z.enum(['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client']),
   clientId: z.string().uuid().optional(),
+  /**
+   * Somebody else settled this — the customs firm's own account, the
+   * transport company's (round 39). The cost still belongs to the cargo, so
+   * tannarx is untouched; what changes is that no cash box of ours opened,
+   * and the amount lands on that partner's ledger as a debt instead.
+   */
+  partnerId: z.string().uuid().optional().or(z.literal('')),
   note: z.string().trim().max(2000).optional().or(z.literal('')),
 });
 
@@ -125,6 +132,7 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
       costDate: input.costDate,
       allocationBasis: input.allocationBasis,
       clientId: input.clientId ?? null,
+      partnerId: input.partnerId || null,
       note: input.note || null,
       enteredBy: ctx.actorId,
     })
@@ -136,6 +144,13 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
     after: { scope: input.scope, amount: input.amount, currency: input.currency },
   });
   await recomputeEntry(entry!.id);
+  // The debt side. Written AFTER the allocation so a partner never carries a
+  // charge for a cost that failed to land; dynamic import because costing is
+  // the older module and partners reaches back into it for the FX rate.
+  if (input.partnerId) {
+    const { chargeForCost } = await import('../partners/link');
+    await chargeForCost(entry!.id, ctx);
+  }
   return entry!;
 }
 
@@ -149,6 +164,12 @@ export async function voidCostEntry(id: string, reason: string, ctx: AuditContex
     .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
     .where(eq(costEntries.id, id));
   await db.delete(costAllocations).where(eq(costAllocations.costEntryId, id));
+  // A cancelled cost cannot leave a live debt behind it: the truck we are no
+  // longer paying for must stop appearing on the transport company's account.
+  if (entry.partnerId) {
+    const { voidChargeForCost } = await import('../partners/link');
+    await voidChargeForCost(id, reason, ctx);
+  }
   await writeAudit(db, ctx, {
     entityType: 'cost_entry',
     entityId: id,

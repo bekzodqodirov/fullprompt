@@ -44,6 +44,7 @@ export function CostPanel({
   clientOptions,
   defaultCurrency,
   canEdit,
+  partnerOptions = [],
 }: {
   scope: 'batch' | 'receipt' | 'crate';
   targetId: string;
@@ -54,6 +55,12 @@ export function CostPanel({
   clientOptions: ClientOption[];
   defaultCurrency: string;
   canEdit: boolean;
+  /**
+   * Counterparties who might have settled this cost out of their own account
+   * (round 39). Empty for a caller that does not offer the choice, and then
+   * the field is not drawn at all.
+   */
+  partnerOptions?: { id: string; name: string }[];
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
@@ -67,6 +74,7 @@ export function CostPanel({
   const [costDate, setCostDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [basis, setBasis] = useState<(typeof BASES)[number]>('weight');
   const [clientId, setClientId] = useState('');
+  const [partnerId, setPartnerId] = useState('');
   const [note, setNote] = useState('');
 
   async function submit() {
@@ -84,6 +92,7 @@ export function CostPanel({
         costDate,
         allocationBasis: basis,
         clientId: basis === 'direct_to_client' ? clientId || undefined : undefined,
+        partnerId: partnerId || undefined,
         note,
       });
       if (res.ok) {
@@ -208,6 +217,25 @@ export function CostPanel({
               {clientOptions.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.clientCode}
+                </option>
+              ))}
+            </select>
+          )}
+          {/* Who settled it. Left empty this is our own money, exactly as
+              before; named, the cost still lands on the cargo but the amount
+              becomes a debt to that firm instead of cash we spent. */}
+          {partnerOptions.length > 0 && (
+            <select
+              aria-label={t('paidBy')}
+              data-testid="cost-partner"
+              className="input"
+              value={partnerId}
+              onChange={(e) => setPartnerId(e.target.value)}
+            >
+              <option value="">{t('paidByUs')}</option>
+              {partnerOptions.map((partner) => (
+                <option key={partner.id} value={partner.id}>
+                  {partner.name}
                 </option>
               ))}
             </select>

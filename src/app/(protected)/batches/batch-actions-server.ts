@@ -144,6 +144,36 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
 }
 
 /**
+ * Which firm cleared this truck (round 39). `'client'` is not a partner id
+ * but the owner's third case — the client cleared it through their own firm —
+ * and it is stored as its own flag rather than as a fake counterparty,
+ * because there is no account to keep for a firm we never pay.
+ */
+export async function setCustomsFirmAction(batchId: string, value: string): Promise<void> {
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return;
+  const actor = await authorize('ved.docs', {});
+  const meta = await requestMeta();
+  const byClient = value === 'client';
+  await db
+    .update(batches)
+    .set({
+      customsByClient: byClient,
+      customsPartnerId: byClient || !value ? null : value,
+    })
+    .where(eq(batches.id, batchId));
+  const { writeAudit } = await import('@/modules/platform/audit/service');
+  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId }, {
+    entityType: 'batch',
+    entityId: batchId,
+    action: 'update',
+    before: { customsPartnerId: batch.customsPartnerId, customsByClient: batch.customsByClient },
+    after: { customsPartnerId: byClient || !value ? null : value, customsByClient: byClient },
+  });
+  revalidatePath(`/batches/${batchId}`);
+}
+
+/**
  * Manual position pin for the tracking map ("still at the border") — the
  * simulation re-anchors from this moment. Tapping the active pin clears it.
  */

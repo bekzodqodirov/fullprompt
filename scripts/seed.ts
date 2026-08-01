@@ -466,6 +466,23 @@ async function seedAccounting() {
     ]);
     console.log('money accounts seeded (owner list; editable)');
   }
+
+  // Counterparty types (round 39). A starter list, not a compiled one: the
+  // owner adds his own and «Boshqa» carries whatever has no box yet.
+  const { partnerTypes } = await import('../src/modules/platform/db/schema');
+  const existingPartnerTypes = await db
+    .select({ id: partnerTypes.id })
+    .from(partnerTypes)
+    .limit(1);
+  if (existingPartnerTypes.length === 0) {
+    await db.insert(partnerTypes).values([
+      { code: 'transport', name: 'Transport firmasi', sortOrder: 10 },
+      { code: 'customs', name: 'Rastamojka firmasi', sortOrder: 20 },
+      { code: 'cash', name: 'Naqd almashtiruvchi', sortOrder: 30 },
+      { code: 'other', name: 'Boshqa', sortOrder: 200 },
+    ]);
+    console.log('partner types seeded (editable)');
+  }
 }
 
 /**

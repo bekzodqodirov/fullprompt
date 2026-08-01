@@ -582,7 +582,9 @@
     "gridReceipt": "Receipt",
     "gridRowTotal": "Total",
     "gridEntered": "Already entered (USD)",
-    "gridNow": "Being entered now"
+    "gridNow": "Being entered now",
+    "paidBy": "Settled by",
+    "paidByUs": "We paid it"
   },
   "batches": {
     "title": "Batches",
@@ -656,7 +658,11 @@
     "cancelConfirm": "Cancel this batch? Its boxes go back to stock.",
     "cancelled": "Batch cancelled, boxes released: {n}",
     "receiptGridTitle": "Costs per receipt (grid)",
-    "receiptGridHint": "Row = receipt, column = cost type (customs, service, freight…). Fill the amounts and save once — every cell becomes an ordinary receipt cost. Already-entered sums show under the cells."
+    "receiptGridHint": "Row = receipt, column = cost type (customs, service, freight…). Fill the amounts and save once — every cell becomes an ordinary receipt cost. Already-entered sums show under the cells.",
+    "customsFirm": "Customs firm",
+    "customsByClient": "Client's own firm",
+    "customsFirmAccount": "Open the firm's account",
+    "documents": "Documents"
   },
   "loading": {
     "title": "Loading",
@@ -932,7 +938,10 @@
     "fromAccount": "From",
     "toAccount": "To",
     "amountFrom": "Sent",
-    "amountTo": "Received"
+    "amountTo": "Received",
+    "paidBy": "Settled by",
+    "paidByUs": "We paid it",
+    "paidByHint": "Pick a counterparty and no cash box moves — our debt to them grows instead."
   },
   "crm": {
     "title": "CRM",
@@ -1612,5 +1621,61 @@
     "queueTitle": "Waiting now",
     "lateBy": "{n} min late",
     "leftMin": "{n} min left"
+  },
+  "partners": {
+    "title": "Counterparties",
+    "typesTitle": "Counterparty types",
+    "settlement": "Three-cornered settlement",
+    "settlementHint": "A client settled their debt to us into a counterparty's account. No cash box moves: both debts fall.",
+    "settlementSaved": "Settlement recorded",
+    "totalOwed": "Total we owe",
+    "weOwe": "We owe",
+    "empty": "No counterparties yet",
+    "noRows": "No rows yet",
+    "balanceHint": "Positive means we owe them. Negative means they owe us.",
+    "newPartner": "New counterparty",
+    "newRow": "New row",
+    "name": "Name",
+    "type": "Type",
+    "typeName": "Type name",
+    "addType": "Add type",
+    "hide": "Hide",
+    "show": "Show",
+    "alsoClient": "Also our client",
+    "notAClient": "not a client",
+    "clientTaken": "This client already has a counterparty account",
+    "phone": "Phone",
+    "note": "Note",
+    "inactive": "inactive",
+    "date": "Date",
+    "kind": "Kind",
+    "amount": "Amount",
+    "currency": "Currency",
+    "account": "Cash box / account",
+    "fxMissing": "No FX rate entered for this date",
+    "voidReason": "Reason for cancelling",
+    "kinds": {
+      "charge": "Billed us (debt up)",
+      "receipt": "Paid into our account",
+      "payment": "We paid them",
+      "offset": "Settled through a client",
+      "adjust": "Correction / rate difference"
+    },
+    "kindHints": {
+      "charge": "A truck, customs, rent, salaries — a service we took. No cash box moves.",
+      "receipt": "They put money into our account. Cash up, our debt to them up.",
+      "payment": "We paid them from a cash box. Cash down, debt down.",
+      "adjust": "Rate difference or a manual correction. May be negative."
+    },
+    "whoPaid": "Which client paid",
+    "paidTo": "Into whose account",
+    "clientSent": "The client sent",
+    "firmCredited": "The firm took off our debt",
+    "firmCreditedHint": "Whatever the firm counted at its own rate — put that here.",
+    "rateGap": "Rate difference",
+    "rateGapHint": "The gap between what the firm credited and what the client sent, in dollars.",
+    "proof": "Receipt / screenshot",
+    "proofNote": "Note (required when there is no file)",
+    "proofRequired": "A file or a note is required"
   }
 }

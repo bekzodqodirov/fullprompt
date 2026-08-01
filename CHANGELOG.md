@@ -1,5 +1,51 @@
 # CHANGELOG
 
+## Kontragentlar — kimga qarzdormiz — 2026-08-01
+
+Endi sistema faqat «mijoz bizga qancha qarzdor» emas, **«biz kimga qancha
+qarzdormiz»** ni ham biladi.
+
+**Yangi bo'lim: Kontragentlar.** Har bir transport firmasi, rastamojka
+firmasi, naqd almashtiruvchi odam — o'z kartochkasi va o'z hisob varaqasi
+bilan. Turlari sizniki: `Admin → Kontragent turlari` da qo'shasiz,
+o'zgartirasiz, «Boshqa» ham bor. Kontragent bir vaqtda **mijozimiz** ham
+bo'lishi mumkin — bitta kartochka, ikkita hisob.
+
+**Mashinani qarzga olganda.** Xarajatni odatdagidek kiritasiz, faqat
+«Kim to'ladi» da transport firmasini tanlaysiz. Tannarx o'sha zahoti
+partiyaga tushadi (o'zgargani yo'q), qarz esa firmaning hisobida paydo
+bo'ladi va qaysi mashina uchun ekani ko'rinib turadi. To'laganingizda
+kassadan chiqadi va qarz kamayadi — **xarajat ikki marta sanalmaydi.**
+Xarajatni bekor qilsangiz qarz ham o'chadi.
+
+**Ombor arendasi va Xitoy oyliklari.** Xarajat kiritishda «Kim to'ladi»
+da o'sha transport firmasini tanlaysiz: xarajat bizniki bo'lib qoladi,
+lekin **kassadan pul chiqmaydi** — firmaga qarzimiz oshadi.
+
+**Uch tomonlama hisob** (`Kontragentlar → Uch tomonlama hisob`). Mijoz
+qarzini Xitoydagi firmaning hisobiga tashlasa: bitta amal, ikkita hisob
+yopiladi — mijozning qarzi kamayadi va bizning firmaga qarzimiz kamayadi,
+kassa tegilmaydi. **Ikkita summa alohida so'raladi**: mijoz qancha
+yuborgan va firma o'z kursi bilan qanchani qarzimizdan ayirgan. Farqi
+alohida ko'rsatiladi — o'rtacha kurs o'ylab topilmaydi. **Kvitansiya yoki
+izoh majburiy**, aks holda saqlanmaydi.
+
+**Naqd sotib oluvchilar.** «Hisobimizga pul tushirdi» yozuvi — hisob
+ko'payadi va unga qarzimiz paydo bo'ladi; «To'ladik» — kassadan naqd
+chiqadi. Qolgan farq — sizning kurs foydangiz, ko'rinib turadi va
+«Kurs farqi» yozuvi bilan yopiladi.
+
+**Partiya kartochkasida ikkita yangilik:** «Rastamojka firmasi» qatori
+(bizniki bo'lsa xarajat o'sha firmaga; **mijoz o'z firmasi bilan** qilsa
+shu belgilanadi va bizga hech qanday xarajat tushmaydi) va **hujjatlar
+uchun joy** — yo'lda kerak bo'ladigan fayllarni shu yerga qo'yasiz.
+
+Kim kiradi: buxgalter va admin. Skladchiga bu bo'lim umuman ko'rinmaydi.
+
+**Hozircha kiritilmagani, ochiq aytaman:** boshlang'ich qarz qoldiqlari —
+siz aytganingizdek, hozir umumiy qarz qancha ekani noma'lum. Bilganingizda
+har bir firmaga bitta yozuv bilan kiritamiz.
+
 ## Prixodni bitimga bog'lash — prixod kartochkasidan — 2026-08-01
 
 Savolingizdan chiqdi: bitimga 2-3 ta prixodni qanday biriktiraman.

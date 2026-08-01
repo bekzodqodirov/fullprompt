@@ -238,6 +238,16 @@ export const NAV: NavGroupSpec[] = [
         primary: 4,
       },
       {
+        // The other side of the money (round 39): who WE owe. Next to the
+        // client ledger because the two are read together — a client's debt
+        // can be settled into a supplier's account, and then both move.
+        href: '/kontragentlar',
+        labelKey: 'title',
+        namespace: 'partners',
+        icon: 'briefcase',
+        permissions: ['finance.view', 'finance.manage'],
+      },
+      {
         // Beside the client money rather than among the admin screens
         // (owner, 2026-07-28: "upravlenskiy schet prodajada turgani yaxshi")
         // — the P&L is read in the same sitting as the receivables.
@@ -386,8 +396,8 @@ const MENU_BY_ROLE: Record<string, string[]> = {
     '/finance', '/pipeline', '/arrivals', '/approvals', '/o',
   ],
   accountant: [
-    '/', '/bugun', '/kalendar', '/accounting', '/finance', '/reports', '/dashboard',
-    '/admin', '/receipts', '/stock', '/approvals', '/o',
+    '/', '/bugun', '/kalendar', '/accounting', '/finance', '/kontragentlar', '/reports',
+    '/dashboard', '/admin', '/receipts', '/stock', '/approvals', '/o',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

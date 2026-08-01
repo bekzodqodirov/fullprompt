@@ -21,6 +21,7 @@ export default async function AdminHubPage() {
   const t = await getTranslations('nav');
   const tHome = await getTranslations('home');
   const tCosting = await getTranslations('costing');
+  const tPartners = await getTranslations('partners');
   const tRoles = await getTranslations('roles');
   const tFields = await getTranslations('fields');
   const tPlans = await getTranslations('plans');
@@ -38,6 +39,7 @@ export default async function AdminHubPage() {
     { href: '/admin/fields', label: tFields('title'), icon: 'clipboard', show: has('admin.dictionaries.manage') },
     { href: '/admin/entities', label: tObjects('adminTitle'), icon: 'boxes', show: has('admin.dictionaries.manage') },
     { href: '/admin/cost-types', label: tCosting('typesTitle'), icon: 'wallet', show: has('admin.dictionaries.manage') },
+    { href: '/admin/partner-types', label: tPartners('typesTitle'), icon: 'briefcase', show: has('admin.dictionaries.manage') },
     { href: '/admin/fx', label: tCosting('fxTitle'), icon: 'exchange', show: has('costs.fx.manage') },
     { href: '/admin/trucks', label: tPlans('trucksTitle'), icon: 'truck', show: has('plans.manage') },
     { href: '/admin/driver-app', label: tSettings('driverApp'), icon: 'truck', show: has('admin.settings.manage') },

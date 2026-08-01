@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
@@ -15,7 +15,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { batchCostSheet, batchReceiptRows, receiptCostMatrix } from '@/modules/wms/costing/service';
-import { costTypes, currencies } from '@/modules/platform/db/schema';
+import { attachments, costTypes, currencies } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
 import { ReceiptCostGrid } from './receipt-cost-grid';
 import { VehicleForm } from './vehicle-form';
@@ -36,6 +36,9 @@ import { CardCols } from '@/components/card-cols';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
+import { listPartners } from '@/modules/wms/partners/service';
+import { AttachmentsPanel } from '@/components/attachments-panel';
+import { CustomsFirm } from './customs-firm';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -122,6 +125,26 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // moment a phone claims it — a burnt code on a header teaches nothing.
   const pairCode = devices.find((device) => device.pairCode)?.pairCode ?? null;
   const costSheet = canSeeCosts ? await batchCostSheet(id) : null;
+  // Round 39: a truck's freight and its customs bill are usually settled by
+  // somebody else's account, so the cost form has to be able to say whose.
+  // The papers that ride with the truck (owner: «1 ta partiyaga yo'lda
+  // bo'ladigan dokumentlarni qo'shib ketadigan joy»).
+  // Only the customs firms, plus whichever partner is already on this truck
+  // — a firm retired last month must not vanish from the record it is on.
+  const allPartners = await listPartners();
+  const partnerOptions = canEnterCosts ? allPartners.map((r) => ({ id: r.id, name: r.name })) : [];
+  const customsPartners = allPartners
+    .filter((row) => row.typeCode === 'customs' || row.id === batch.customsPartnerId)
+    .map((row) => ({ id: row.id, name: row.name }));
+  const batchFiles = await db
+    .select({
+      id: attachments.id,
+      fileName: attachments.fileName,
+      contentType: attachments.contentType,
+      kind: attachments.kind,
+    })
+    .from(attachments)
+    .where(and(eq(attachments.entityType, 'batch'), eq(attachments.entityId, id)));
   // Round 29: the accountant's Excel as a grid — a row per prixod on this
   // truck, a column per expense type. Reads what is already written so a
   // second session never double-enters blind.
@@ -354,6 +377,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             clientOptions={costMeta.clients}
             defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
             canEdit={canEnterCosts}
+            partnerOptions={partnerOptions}
           />
           {costSheet.entries.length > 0 && (
             <p className="border-t border-line pt-2 text-sm">
@@ -420,6 +444,24 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             <Link href={`/batches/${batch.id}/tnved`} className="btn-secondary flex-1 whitespace-nowrap px-3">
               🏷 ТНВЭД
             </Link>
+          </div>
+          <CustomsFirm
+            batchId={batch.id}
+            partnerId={batch.customsPartnerId}
+            byClient={batch.customsByClient}
+            partners={customsPartners}
+            canEdit={actor.permissions.has('ved.docs')}
+          />
+          {/* The papers that travel with the truck. Same fence as the card
+              itself — a declaration is not more secret than the manifest. */}
+          <div className="border-t border-line pt-2">
+            <p className="section-title">📎 {t('documents')}</p>
+            <AttachmentsPanel
+              entityType="batch"
+              entityId={batch.id}
+              initial={batchFiles}
+              editable={actor.permissions.has('ved.docs') || canVehicle}
+            />
           </div>
           {actor.permissions.has('ved.docs') && (
             <form action={setSentToAgentAction}>

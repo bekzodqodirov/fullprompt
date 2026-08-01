@@ -34,6 +34,12 @@ const ATTACHABLE = [
   'custom_field',
   'crm_activity',
   'tg_outbox',
+  // 'batch': the papers that travel with the truck — invoice, declaration,
+  // whatever the road asks for (owner, round 39). 'partner_transaction': the
+  // proof behind a three-cornered settlement, pre-bound to the id the form
+  // mints so a receipt photo can be attached before the entry is saved.
+  'batch',
+  'partner_transaction',
 ] as const;
 
 const metaSchema = z.object({

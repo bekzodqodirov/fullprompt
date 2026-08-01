@@ -379,6 +379,13 @@
       "when": 1785190000022,
       "tag": "0053_tg_reminded_at",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1785190000023,
+      "tag": "0054_partners",
+      "breakpoints": true
     }
   ]
 }

@@ -582,7 +582,9 @@
     "gridReceipt": "Prixod",
     "gridRowTotal": "Jami",
     "gridEntered": "Yozilgan (USD)",
-    "gridNow": "Hozir kiritilmoqda"
+    "gridNow": "Hozir kiritilmoqda",
+    "paidBy": "Kim to‘ladi",
+    "paidByUs": "O‘zimiz to‘ladik"
   },
   "batches": {
     "title": "Partiyalar",
@@ -656,7 +658,11 @@
     "cancelConfirm": "Partiya bekor qilinsinmi? Qutilar skladga qaytadi.",
     "cancelled": "Partiya bekor qilindi, qaytarilgan quti: {n}",
     "receiptGridTitle": "Prixodlar xarajati (jadval)",
-    "receiptGridHint": "Qator — prixod, ustun — xarajat turi (rastamojka, usluga, yo'lkira…). Summalarni to'ldirib bir marta saqlang — har katak prixodning oddiy xarajati bo'lib yoziladi. Avval yozilganlari kataklar ostida ko'rinadi."
+    "receiptGridHint": "Qator — prixod, ustun — xarajat turi (rastamojka, usluga, yo'lkira…). Summalarni to'ldirib bir marta saqlang — har katak prixodning oddiy xarajati bo'lib yoziladi. Avval yozilganlari kataklar ostida ko'rinadi.",
+    "customsFirm": "Rastamojka firmasi",
+    "customsByClient": "Mijoz o‘z firmasi bilan",
+    "customsFirmAccount": "Firma hisobini ochish",
+    "documents": "Hujjatlar"
   },
   "loading": {
     "title": "Pogruzka",
@@ -932,7 +938,10 @@
     "fromAccount": "Qayerdan",
     "toAccount": "Qayerga",
     "amountFrom": "Yechildi",
-    "amountTo": "Tushdi"
+    "amountTo": "Tushdi",
+    "paidBy": "Kim to‘ladi",
+    "paidByUs": "O‘zimiz to‘ladik",
+    "paidByHint": "Kontragent tanlansa — kassadan pul chiqmaydi, o‘shanga qarzimiz oshadi."
   },
   "crm": {
     "title": "CRM",
@@ -1612,5 +1621,61 @@
     "queueTitle": "Hozir navbatda",
     "lateBy": "{n} daq kechikdi",
     "leftMin": "{n} daq qoldi"
+  },
+  "partners": {
+    "title": "Kontragentlar",
+    "typesTitle": "Kontragent turlari",
+    "settlement": "Uch tomonlama hisob",
+    "settlementHint": "Mijoz bizga bo‘lgan qarzini kontragentning hisobiga to‘lagan bo‘lsa — shu yerda yozing. Kassaga pul kirmaydi: mijozning qarzi ham, bizning qarzimiz ham kamayadi.",
+    "settlementSaved": "Hisob yopildi",
+    "totalOwed": "Jami qarzimiz",
+    "weOwe": "Qarzimiz",
+    "empty": "Hali kontragent yo‘q",
+    "noRows": "Hali yozuv yo‘q",
+    "balanceHint": "Musbat raqam — biz qarzdormiz. Manfiy — ular bizga qarzdor.",
+    "newPartner": "Yangi kontragent",
+    "newRow": "Yangi yozuv",
+    "name": "Nomi",
+    "type": "Turi",
+    "typeName": "Tur nomi",
+    "addType": "Tur qo‘shish",
+    "hide": "Yashirish",
+    "show": "Ko‘rsatish",
+    "alsoClient": "Mijozimiz ham",
+    "notAClient": "mijoz emas",
+    "clientTaken": "Bu mijozda allaqachon kontragent hisobi bor",
+    "phone": "Telefon",
+    "note": "Izoh",
+    "inactive": "faol emas",
+    "date": "Sana",
+    "kind": "Turi",
+    "amount": "Summa",
+    "currency": "Valyuta",
+    "account": "Kassa / hisob",
+    "fxMissing": "Bu sanaga valyuta kursi kiritilmagan",
+    "voidReason": "Bekor qilish sababi",
+    "kinds": {
+      "charge": "Hisob qo‘ydi (qarzimiz oshdi)",
+      "receipt": "Hisobimizga pul tushirdi",
+      "payment": "To‘ladik",
+      "offset": "Mijoz orqali yopildi",
+      "adjust": "Tuzatish / kurs farqi"
+    },
+    "kindHints": {
+      "charge": "Mashina, rastamojka, arenda, oylik — biz olgan xizmat. Kassadan pul chiqmaydi.",
+      "receipt": "U bizning hisobimizga pul tushirdi. Kassa ko‘payadi, unga qarzimiz oshadi.",
+      "payment": "Biz unga kassadan to‘ladik. Kassa kamayadi, qarzimiz kamayadi.",
+      "adjust": "Kurs farqi yoki qo‘lda tuzatish. Manfiy ham yozish mumkin."
+    },
+    "whoPaid": "Qaysi mijoz to‘ladi",
+    "paidTo": "Kimning hisobiga",
+    "clientSent": "Mijoz yubordi",
+    "firmCredited": "Firma qarzimizdan ayirdi",
+    "firmCreditedHint": "Firma o‘z kursi bilan qancha hisoblagan bo‘lsa — o‘shani yozing.",
+    "rateGap": "Kurs farqi",
+    "rateGapHint": "Firma hisoblagan summa bilan mijoz yuborgan summa orasidagi farq (dollarda).",
+    "proof": "Kvitansiya / skrinshot",
+    "proofNote": "Izoh (fayl bo‘lmasa — majburiy)",
+    "proofRequired": "Fayl yoki izoh bo‘lishi shart"
   }
 }

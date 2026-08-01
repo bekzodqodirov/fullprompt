@@ -21,6 +21,7 @@ export function ExpenseForm({
   employees,
   currencies,
   today,
+  partners = [],
 }: {
   categories: Option[];
   accounts: Option[];
@@ -28,6 +29,12 @@ export function ExpenseForm({
   employees: Option[];
   currencies: string[];
   today: string;
+  /**
+   * Counterparties who settle expenses on our behalf (round 39): the Chinese
+   * warehouses are rented jointly with a transport company and the Chinese
+   * staff are paid through it. Picking one means no cash box moves.
+   */
+  partners?: Option[];
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
@@ -87,6 +94,16 @@ export function ExpenseForm({
             </option>
           ))}
         </select>
+        {partners.length > 0 && (
+          <select name="partnerId" aria-label={t('paidBy')} className="input min-w-40 flex-1">
+            <option value="">— {t('paidByUs')} —</option>
+            {partners.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
         <select name="employeeId" aria-label={t('employee')} className="input min-w-40 flex-1">
           <option value="">— {t('employee')} —</option>
           {employees.map((option) => (

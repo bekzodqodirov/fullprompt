@@ -12,6 +12,7 @@ import {
   listRecurring,
 } from '@/modules/wms/accounting/service';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
+import { listPartners } from '@/modules/wms/partners/service';
 import { PeriodForm } from '../period-form';
 import { ExpenseForm } from './expense-form';
 import { GenerateRecurringButton, RecurringForm } from './recurring-form';
@@ -65,6 +66,9 @@ export default async function ExpensesPage({
     warehouses: warehouseRows.map((row) => ({ id: row.id, label: row.code })),
     employees: employeeRows.map((row) => ({ id: row.id, label: row.fullName })),
     currencies: currencyRows.map((row) => row.code),
+    // Round 39: rent and Chinese salaries are settled through the transport
+    // company, so the expense book has to be able to say who paid.
+    partners: (await listPartners()).map((row) => ({ id: row.id, label: row.name })),
   };
   const totalUsd =
     Math.round(rows.reduce((acc, row) => acc + Number(row.expense.amountUsd), 0) * 100) / 100;

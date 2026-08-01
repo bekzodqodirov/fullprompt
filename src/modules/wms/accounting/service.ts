@@ -144,6 +144,13 @@ export const expenseSchema = z.object({
   warehouseId: z.string().uuid().optional().or(z.literal('')),
   employeeId: z.string().uuid().optional().or(z.literal('')),
   accountId: z.string().uuid().optional().or(z.literal('')),
+  /**
+   * Settled THROUGH a partner instead of out of a cash box (round 39): the
+   * Chinese warehouses are rented jointly with a transport company and the
+   * Chinese staff are paid through it. The expense is ours and belongs in the
+   * P&L; the money is not ours to show leaving a till.
+   */
+  partnerId: z.string().uuid().optional().or(z.literal('')),
   note: z.string().trim().max(2000).optional().or(z.literal('')),
 });
 export type ExpenseInput = z.infer<typeof expenseSchema>;
@@ -165,7 +172,10 @@ export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
       expenseDate: input.expenseDate,
       warehouseId: input.warehouseId || null,
       employeeId: input.employeeId || null,
-      accountId: input.accountId || null,
+      // A partner settled it, so no cash box did — holding both would double
+      // the money in the cash-flow report.
+      accountId: input.partnerId ? null : input.accountId || null,
+      partnerId: input.partnerId || null,
       note: input.note || null,
       createdBy: ctx.actorId,
     })
@@ -176,6 +186,10 @@ export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
     action: 'create',
     after: { amount: input.amount, currency: input.currency, amountUsd, date: input.expenseDate },
   });
+  if (input.partnerId) {
+    const { chargeForExpense } = await import('../partners/link');
+    await chargeForExpense(row!.id, ctx);
+  }
   return row!;
 }
 
@@ -189,6 +203,10 @@ export async function voidExpense(id: string, reason: string, ctx: AuditContext)
     .update(expenses)
     .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason.trim() })
     .where(eq(expenses.id, id));
+  if (row.partnerId) {
+    const { voidChargeForExpense } = await import('../partners/link');
+    await voidChargeForExpense(id, reason.trim(), ctx);
+  }
   await writeAudit(db, ctx, {
     entityType: 'expense',
     entityId: id,
