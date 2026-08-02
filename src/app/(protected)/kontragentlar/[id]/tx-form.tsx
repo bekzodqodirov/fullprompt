@@ -101,7 +101,11 @@ export function PartnerTxForm({
         />
         <select
           name="currency"
-          className="input w-24 shrink-0 font-bold"
+          // `!w-24`, not `w-24`: `.input` carries w-full and wins on source
+          // order, so without the important the box claims the whole row — and
+          // `shrink-0` then forbids it to give any of it back, which is how the
+          // amount field ended up a sliver (owner's screenshot).
+          className="input !w-24 shrink-0 font-bold"
           aria-label={t('currency')}
           data-testid="partner-tx-currency"
         >

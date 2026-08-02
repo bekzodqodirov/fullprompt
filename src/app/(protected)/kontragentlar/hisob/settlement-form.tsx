@@ -120,7 +120,7 @@ export function SettlementForm({
             data-testid="settle-client-amount"
             required
           />
-          <select name="clientCurrency" className="input w-24 shrink-0 font-bold" aria-label={t('currency')}>
+          <select name="clientCurrency" className="input !w-24 shrink-0 font-bold" aria-label={t('currency')}>
             {currencies.map((code) => (
               <option key={code} value={code}>
                 {code}
@@ -141,7 +141,7 @@ export function SettlementForm({
             data-testid="settle-partner-amount"
             required
           />
-          <select name="partnerCurrency" className="input w-24 shrink-0 font-bold" aria-label={t('currency')}>
+          <select name="partnerCurrency" className="input !w-24 shrink-0 font-bold" aria-label={t('currency')}>
             {currencies.map((code) => (
               <option key={code} value={code}>
                 {code}

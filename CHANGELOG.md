@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## Summa maydoni — tuzatildi — 2026-08-02
+
+Rasm uchun rahmat, muammo o'sha zahoti ko'rindi va u **meniki** edi.
+
+Kecha summa maydonini kattalashtirmoqchi bo'lib, yonidagi valyuta qutisiga
+«torayma» degan buyruq qo'shibman. Natijada valyuta qutisi butun qatorni
+egallab, summa maydonini qisib qo'ygan — siz yuborgan rasmda aynan shu.
+
+Endi to'g'ri: **summa maydoni qatorning kattasini oladi**, valyuta yonida
+tor qutida turadi.
+
+Bunday xato boshqa takrorlanmasligi uchun test qo'shdim — u endi maydonning
+**haqiqiy kengligini o'lchaydi**, ya'ni ekranda qanday ko'rinishini
+tekshiradi.
+
 ## Uchta tuzatish — 2026-08-01
 
 **1. Summa maydoni.** Kontragent yozuvida va uch tomonlama hisobda summa

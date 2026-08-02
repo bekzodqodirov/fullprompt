@@ -44,6 +44,16 @@ test('a transport firm gets an account, a debt and a payment against it', async 
 
   // A truck taken on credit: no cash box asked for, because none moved.
   await page.getByTestId('partner-tx-new').click();
+
+  // The amount box must actually BE usable, measured rather than asserted
+  // from its class list. `.input` carries w-full, so a currency select given
+  // a plain `w-24` keeps the whole row and `shrink-0` forbids it to give any
+  // back — which collapsed the amount field to a sliver on a real phone and
+  // no markup assertion would have noticed (owner's screenshot).
+  const amountBox = await page.getByTestId('partner-tx-amount').boundingBox();
+  const currencyBox = await page.getByTestId('partner-tx-currency').boundingBox();
+  expect(amountBox!.width, 'the amount field must own most of its row').toBeGreaterThan(180);
+  expect(currencyBox!.width, 'the currency box must stay narrow').toBeLessThan(130);
   await expect(page.getByTestId('partner-tx-account')).toHaveCount(0);
   await page.getByTestId('partner-tx-amount').fill('3200');
   await page.getByTestId('partner-tx-currency').selectOption('USD');
