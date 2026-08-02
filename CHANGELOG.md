@@ -1,5 +1,75 @@
 # CHANGELOG
 
+## Kontragentlar bo'yicha 17 ta xato topildi va tuzatildi — 2026-08-02
+
+O'tgan hafta qurgan «kontragentlar» qismini **maxsus tekshiruvdan o'tkazdim** —
+to'rt xil nuqtai nazardan, har bir topilma alohida qayta tekshirilgan holda.
+**17 ta xato chiqdi va hammasi meniki edi.** Testlarim yashil edi, chunki
+testlar men o'ylagan narsani tekshiradi; bu tekshiruv esa men o'ylamagan
+narsani tekshirdi.
+
+Eng muhimi — **pul bilan bog'liq to'rttasi**:
+
+**1. Uch tomonlama hisobni mijoz tomonidan bekor qilsangiz, firmaga bo'lgan
+qarzimiz abadiy yopilib qolardi.** Misol: GS100 bizga to'lash o'rniga
+transport firmasining Xitoydagi hisobiga 1000$ tushirdi. Keyin ma'lum bo'ldiki
+mijoz noto'g'ri — buxgalter mijoz kartochkasidan to'lovni bekor qildi. GS100
+yana 1000$ qarzdor bo'ldi (to'g'ri), **lekin transport firmasiga bo'lgan
+qarzimiz 1000$ kam bo'lib qolaverdi** va «Balans» ekrani firmani 1000$ ga
+boyroq ko'rsatardi. Endi ikkala tomon birga bekor bo'ladi.
+
+**2. Dollar va so'mdan boshqa valyutadagi kassa umuman hisoblanmasdi.** Yuvyda
+yuanda kassa ochsangiz — bu tabiiy, chunki Xitoydagi xarajatlar yuanda — u
+kassadagi 300 000 ¥ «Balans» ekranida **0$** bo'lib turardi. Endi kursi
+kiritilgan har qanday valyuta hisoblanadi.
+
+**3. Kursi kiritilmagan valyutada «kim to'ladi» ni ko'rsatsangiz, qarz
+yozilmasdi.** Xarajat qatorida firma nomi turardi — ya'ni ekran «bu firma
+to'lagan» deb turardi — lekin o'sha firmaning hisobida hech narsa yo'q edi.
+Keyinchalik kursni kiritsangiz ham tuzalmasdi. Endi: kursi yo'q bo'lsa
+**saqlashga qo'ymaydi**, va kursni kiritganingizda eski qatorlar ham
+avtomatik to'g'rilanadi.
+
+**4. Kontragentni «yashirish» qarzni ham yashirardi.** 8000$ qarzimiz bor
+firmani yashirsangiz, «Jami qarzimiz» 8000$ ga kamayardi, «Balans» ekranida
+esa o'sha 8000$ turaverardi — ikki ekran bir-biriga qarshi. Ustiga-ustak
+kartochkaga qaytish yo'li ham qolmasdi. Endi: **qarzi bor kontragent
+yashirilsa ham ro'yxatda qoladi** (xiraroq, «yashirilgan» belgisi bilan);
+qarzi 0 bo'lsa yo'qoladi. Kontragent turini yashirsangiz ham shu — turi
+yashirilgan hisoblar ro'yxatdan tushib qolmaydi.
+
+Qolganlari:
+
+- **Kontragent kartochkasi telefonda ekrandan kengroq edi** — brauzer butun
+  sahifani kichraytirib yuborardi (o'tgan safar shu sabab tugmalar noto'g'ri
+  joyga bosilgandi). Endi jadval o'zi yon tomonga suriladi.
+- **«+50» tuzatish qatorda «−$50» bo'lib yashil rangda chiqardi**, balans esa
+  ko'tarilardi — ya'ni qatorlar yuqoridagi summaga qo'shilmasdi.
+- **Kontragent nomini tuzatib bo'lmasdi.** Xato yozilgan nom abadiy edi. Endi
+  kartochkada ✏️ tugmasi bor.
+- **Xarajatda kassa ham, «kim to'ladi» ham birga so'ralardi** va kassa jimgina
+  tashlab yuborilardi — ya'ni saqlangan yozuv siz kiritgan narsa emas edi.
+  Endi kontragent tanlansangiz kassa so'ralmaydi va sababi yozib turadi.
+- **Har bir uch tomonlama hisob buxgalterning bosh ekranida «kassaga
+  joylanmagan to'lov» bo'lib osilib qolardi** — hech qachon bajarib
+  bo'lmaydigan vazifa. Endi hisoblanmaydi; «Reyestr» da esa qaysi firmaga
+  tushgani yozib turadi.
+- Bekor qilish tugmasi har tilda **«common.confirm»** deb yozilib turgan ekan
+  (tarjimasi hech qaysi tilda yo'q edi).
+- «Isbot» sifatida rasm biriktirib, keyin o'chirsangiz, tugma yoqiq
+  qolaverardi va server rad qilardi.
+- TNVED ro'yxatini tasdiqlash ekranida tovar nomi maydoni ikki harf enida
+  edi.
+
+Va uchta **doimiy qo'riqchi** qo'shdim, chunki shu xatolarning uchtasi
+avval ham boshqa nom bilan chiqqan edi: maydon kengligi masalasi, tarjima
+kaliti yo'qligi masalasi endi testda avtomatik ushlanadi.
+
+Hammasi tekshirildi: **851 ta test + 99 ta brauzer testi**, toza bazada,
+CI tartibida. Har bir tuzatish ataylab buzib ko'rildi — test qizil bo'ldi,
+keyin qaytarildi.
+
+
 ## Rastamojka ko'rinmay turgan ekan — 2026-08-02
 
 Siz «boshqa 2 tasiniyam ko'rib chiq» dedingiz. Bu safar men ularni **telefon

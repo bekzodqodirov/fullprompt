@@ -3,6 +3,7 @@
     "appName": "GSR LOGISTICS",
     "save": "Saqlash",
     "cancel": "Bekor qilish",
+    "confirm": "Tasdiqlash",
     "create": "Yaratish",
     "edit": "Tahrirlash",
     "delete": "O'chirish",
@@ -564,6 +565,7 @@
     "void": "Bekor qilish",
     "voidReason": "Bekor qilish sababi:",
     "noRate": "kurs yo‘q",
+    "fxMissing": "Bu valyuta uchun kurs kiritilmagan — avval «Kurslar» bo‘limiga kiriting",
     "landedCost": "Tan narx",
     "scopeReceipt": "qabul",
     "bases": {

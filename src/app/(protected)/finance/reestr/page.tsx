@@ -103,8 +103,16 @@ export default async function PaymentsRegisterPage({
                   <td className="num p-2 text-right font-semibold">
                     {Number(row.amountUsd).toFixed(2)}
                   </td>
+                  {/* A settlement's money went into a supplier's account, not
+                      a till of ours: the row is not "unplaced", it is placed
+                      somewhere else, and only the red warning was wrong. */}
                   <td className="p-2 text-xs">
-                    {row.accountName ?? <span className="text-warn">{t('noAccount')}</span>}
+                    {row.accountName ??
+                      (row.partnerName ? (
+                        <span className="text-ink-700">→ {row.partnerName}</span>
+                      ) : (
+                        <span className="text-warn">{t('noAccount')}</span>
+                      ))}
                   </td>
                   <td className="p-2 text-xs text-ink-500">{row.enteredBy}</td>
                 </tr>

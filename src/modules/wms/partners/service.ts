@@ -45,6 +45,41 @@ export type PartnerTxType = (typeof PARTNER_TX_TYPES)[number];
 /** Types that moved real money, and so must name the cash box that moved. */
 export const CASH_TYPES: PartnerTxType[] = ['receipt', 'payment'];
 
+/**
+ * Does this row push what we owe UP? The one question a ledger row's colour
+ * and sign both answer, and the ledger page used to answer it differently
+ * from `balanceExpr` — which is the only opinion that decides the total.
+ *
+ * `adjust` is the kind whose SIGN is the meaning: a positive correction raises
+ * the debt, a negative one lowers it, and the balance adds it signed. Reading
+ * it as a reduction printed a +50 correction as «−$50.00» in green under a
+ * balance it had just pushed up, so the rows stopped adding to the figure
+ * above them. Exported so the screen and the sum cannot drift again.
+ */
+export function raisesBalance(type: string, amountUsd: number): boolean {
+  if (type === 'adjust') return amountUsd > 0;
+  return (RAISING as readonly string[]).includes(type);
+}
+
+/**
+ * The «kimga qarzdormiz» register, grouped.
+ *
+ * Grouping runs over EVERY type, including the hidden ones: `listPartnerTypes`
+ * returns active types only, so an account whose type was hidden on
+ * /admin/partner-types matched no group and vanished from the screen — while
+ * its debt stayed in the total above it, and its card became reachable only by
+ * typing the uuid. Hiding a type means "do not offer it for new accounts", not
+ * "delete the accounts already under it".
+ */
+export function groupPartnersByType<T extends { code: string }>(
+  rows: PartnerRow[],
+  types: T[],
+): { type: T; rows: PartnerRow[] }[] {
+  return types
+    .map((type) => ({ type, rows: rows.filter((row) => row.typeCode === type.code) }))
+    .filter((group) => group.rows.length > 0);
+}
+
 export const partnerSchema = z.object({
   name: z.string().trim().min(2).max(200),
   typeId: z.string().uuid(),

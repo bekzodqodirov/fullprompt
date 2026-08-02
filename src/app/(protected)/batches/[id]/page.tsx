@@ -133,12 +133,24 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // bo'ladigan dokumentlarni qo'shib ketadigan joy»).
   // Only the customs firms, plus whichever partner is already on this truck
   // — a firm retired last month must not vanish from the record it is on.
-  const allPartners = await listPartners();
-  const partnerOptions = canEnterCosts ? allPartners.map((r) => ({ id: r.id, name: r.name })) : [];
-  const customsPartners = allPartners
-    .filter((row) => row.typeCode === 'customs' || row.id === batch.customsPartnerId)
-    .map((row) => ({ id: row.id, name: row.name }));
+  // Retired firms included on purpose: the `|| row.id === batch.customsPartnerId`
+  // escape below was dead code while this read active-only, so a firm retired
+  // after it cleared this truck dropped out of the picker — and a select whose
+  // value matches no option silently shows the FIRST one, which here reads
+  // «as the truck says». New rows are offered the live firms only.
+  const allPartners = await listPartners({ includeInactive: true });
+  const partnerOptions = canEnterCosts
+    ? allPartners.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }))
+    : [];
   const customsRows = await batchCustomsRows(id);
+  const customsChosen = new Set(
+    [batch.customsPartnerId, ...customsRows.map((row) => row.partnerId)].filter(
+      (value): value is string => value !== null,
+    ),
+  );
+  const customsPartners = allPartners
+    .filter((row) => (row.typeCode === 'customs' && row.active) || customsChosen.has(row.id))
+    .map((row) => ({ id: row.id, name: row.name }));
   // What the collapsed panel says out loud: which firm clears this truck, and
   // how many prixods answer for themselves. Without it the panel is one more
   // shut door among seven and nobody opens it (round 43).

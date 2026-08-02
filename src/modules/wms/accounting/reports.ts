@@ -13,6 +13,9 @@ import {
   partners,
 } from '../../platform/db/schema';
 import { uzsRate } from './period';
+// Every cash box converts through the generic rate lookup, not a per-currency
+// branch — the branch is how a CNY till came to be worth nothing.
+import { rateFor } from '../costing/service';
 
 /**
  * Management reports (Phase 2.4).
@@ -625,19 +628,28 @@ export async function companyBalance() {
   const { accountBalances } = await import('./service');
   const [accounts, rate] = await Promise.all([accountBalances(), uzsRate()]);
 
-  // Per box in its own money, and a USD total. A UZS box divides by the rate;
-  // anything else is treated as dollars, which is true of every box the owner
-  // keeps today and is stated rather than guessed at.
+  // Per box in its own money, and a USD total. EVERY currency converts at
+  // today's rate for that currency, not just USD and UZS: the comment here
+  // used to claim "anything else is treated as dollars" and the code did the
+  // opposite — a CNY till for Yiwu, the obvious thing to open once the Chinese
+  // costs are in CNY, contributed nothing at all to the net figure while its
+  // own row printed the yuan and the words «no rate». Only a currency with no
+  // rate entered anywhere stays out, which is what `balanceUsd: null` means.
+  const active = accounts.filter((account) => account.active);
+  const today = new Date().toISOString().slice(0, 10);
+  const rates = new Map(
+    await Promise.all(
+      [...new Set(active.map((account) => account.currency))].map(
+        async (code) => [code, await rateFor(code, today)] as const,
+      ),
+    ),
+  );
+
   let cashUsd = 0;
-  const cashRows = accounts
-    .filter((account) => account.active)
+  const cashRows = active
     .map((account) => {
-      const usd =
-        account.currency === 'USD'
-          ? account.balance
-          : account.currency === 'UZS' && rate
-            ? account.balance * rate
-            : null;
+      const boxRate = rates.get(account.currency);
+      const usd = boxRate && boxRate > 0 ? account.balance * boxRate : null;
       if (usd !== null) cashUsd += usd;
       return {
         id: account.id,

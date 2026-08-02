@@ -106,8 +106,9 @@ export async function logistFlowCounts(
 
 export interface MoneyFlowCounts {
   snapshot: MoneySnapshot;
-  /** THIS month's payments with no cash box — bounded so the years of
-   *  pre-accounts history don't drown the actionable few. */
+  /** THIS month's payments with no cash box AND no counterparty behind them —
+   *  bounded so the years of pre-accounts history don't drown the actionable
+   *  few, and partner-settled so the queue only holds work somebody can do. */
   unassignedPayments: number;
   /** Active recurring templates not yet posted this month. */
   recurringDue: number;
@@ -125,6 +126,13 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
         and(
           eq(clientTransactions.type, 'payment'),
           isNull(clientTransactions.accountId),
+          // A three-cornered settlement's client half has no cash box BY
+          // CONSTRUCTION — the money went into the supplier's account, not a
+          // till of ours (#415) — and no screen can ever name one for it. It
+          // was posting a chore the accountant could not finish, one per
+          // settlement, until the month rolled over. Same clause, same
+          // reason as `cashFlow`.
+          isNull(clientTransactions.partnerId),
           isNull(clientTransactions.voidedAt),
           sql`${clientTransactions.txDate} >= ${`${month}-01`}`,
         ),

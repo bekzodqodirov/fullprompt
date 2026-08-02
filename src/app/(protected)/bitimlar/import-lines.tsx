@@ -237,7 +237,14 @@ export function ImportLines({
                 }
                 placeholder={t('tnved')}
                 aria-label={t('tnved')}
-                className="input num w-32 shrink-0"
+                // `!w-32`, not `w-32`: `.input` carries w-full and beats a
+                // plain width on source order, so this box took the whole row
+                // and `shrink-0` forbade it to give any back — leaving the
+                // description beside it about two characters wide on a phone,
+                // on the screen where the VED manager confirms AI's grouping.
+                // Third time this exact cascade has shipped; there is now a
+                // unit tripwire for it.
+                className="input num !w-32 shrink-0"
               />
               <input
                 value={line.description}
@@ -247,7 +254,7 @@ export function ImportLines({
                   )
                 }
                 aria-label={t('description')}
-                className="input flex-1"
+                className="input min-w-0 flex-1"
               />
             </div>
             <p className="mt-1 text-xs text-ink-500">

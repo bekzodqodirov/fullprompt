@@ -33,6 +33,11 @@ export function SettlementForm({
   const txId = useMemo(() => crypto.randomUUID(), []);
   const [note, setNote] = useState('');
   const [fileCount, setFileCount] = useState(0);
+  // Controlled, like the note: React resets an uncontrolled form when its
+  // action returns, so a refused save (missing proof, missing rate) used to
+  // eat both typed amounts — the two numbers this screen exists to capture.
+  const [clientAmount, setClientAmount] = useState('');
+  const [partnerAmount, setPartnerAmount] = useState('');
   const [state, formAction, pending] = useActionState<PartnerFormState, FormData>(
     recordSettlementAction,
     {},
@@ -118,6 +123,8 @@ export function SettlementForm({
             inputMode="decimal"
             aria-label={t('clientSent')}
             data-testid="settle-client-amount"
+            value={clientAmount}
+            onChange={(event) => setClientAmount(event.target.value)}
             required
           />
           <select name="clientCurrency" className="input !w-24 shrink-0 font-bold" aria-label={t('currency')}>
@@ -139,6 +146,8 @@ export function SettlementForm({
             inputMode="decimal"
             aria-label={t('firmCredited')}
             data-testid="settle-partner-amount"
+            value={partnerAmount}
+            onChange={(event) => setPartnerAmount(event.target.value)}
             required
           />
           <select name="partnerCurrency" className="input !w-24 shrink-0 font-bold" aria-label={t('currency')}>
@@ -170,6 +179,10 @@ export function SettlementForm({
           initial={[]}
           editable
           onAdd={() => setFileCount((n) => n + 1)}
+          // Both halves. Counting uploads only left the gate open after the
+          // photo was deleted again, and the server then refused what this
+          // screen had just called ready.
+          onRemove={() => setFileCount((n) => Math.max(0, n - 1))}
         />
       </div>
 

@@ -3,6 +3,7 @@
     "appName": "GSR LOGISTICS",
     "save": "保存",
     "cancel": "取消",
+    "confirm": "确认",
     "create": "创建",
     "edit": "编辑",
     "delete": "删除",
@@ -564,6 +565,7 @@
     "void": "作废",
     "voidReason": "作废原因：",
     "noRate": "无汇率",
+    "fxMissing": "该币种尚无汇率 — 请先在「汇率」中录入",
     "landedCost": "到岸成本",
     "scopeReceipt": "收货",
     "bases": {

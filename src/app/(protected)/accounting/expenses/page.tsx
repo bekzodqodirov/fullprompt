@@ -153,7 +153,14 @@ export default async function ExpensesPage({
                   </td>
                 </tr>
               )}
-              {rows.map(({ expense, categoryName, warehouseCode, employeeName, accountName }) => (
+              {rows.map(({
+                expense,
+                categoryName,
+                warehouseCode,
+                employeeName,
+                accountName,
+                partnerName,
+              }) => (
                 <tr key={expense.id} className="border-b border-line">
                   <td className="p-2 whitespace-nowrap font-mono">{expense.expenseDate}</td>
                   <td className="p-2">
@@ -170,7 +177,12 @@ export default async function ExpensesPage({
                   <td className="p-2 text-right font-mono font-bold">
                     {Number(expense.amountUsd).toLocaleString('en-US')}
                   </td>
-                  <td className="p-2 text-ink-700">{accountName ?? ''}</td>
+                  {/* Cash box, or the firm that settled it instead. A blank
+                      cell used to mean both "no till named" and "a partner
+                      paid", which are different facts about the same money. */}
+                  <td className="p-2 text-ink-700">
+                    {accountName ?? (partnerName ? `${t('paidBy')}: ${partnerName}` : '')}
+                  </td>
                   <td className="p-2 text-ink-700">{expense.note ?? ''}</td>
                   <td className="p-2 text-right">
                     <VoidExpenseButton id={expense.id} />

@@ -15,6 +15,12 @@ const WAREHOUSE = '+998900000006';
 const PASSWORD = 'demo1234';
 const runId = String(Date.now()).slice(-6);
 
+/** The smallest real PNG — the proof gate only cares that a file landed. */
+const PNG_1PX = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 async function login(page: import('@playwright/test').Page, phone: string) {
   await page.context().clearCookies();
   await page.goto('/login');
@@ -75,15 +81,67 @@ test('a transport firm gets an account, a debt and a payment against it', async 
   await page.getByTestId('partner-tx-save').click();
   await expect(page.getByTestId('partner-balance')).toContainText('$2000.00', { timeout: 15_000 });
 
+  // The card must not be wider than the phone. An over-wide page makes mobile
+  // Chrome zoom the WHOLE screen out, which shifts every tap coordinate — the
+  // round-29 failure mode, and the ledger table had no scroll container.
+  const inner = await page.evaluate(() => window.innerWidth);
+  expect(inner, 'the counterparty card must not rescale the page').toBe(360);
+
+  // A correction that RAISES the debt prints as a rise. The row used to read
+  // «−$50.00» in green under a balance it had just pushed up.
+  await page.getByTestId('partner-tx-new').click();
+  await page.getByTestId('partner-tx-type').selectOption('adjust');
+  await page.getByTestId('partner-tx-amount').fill('50');
+  await page.getByTestId('partner-tx-currency').selectOption('USD');
+  await page.getByTestId('partner-tx-save').click();
+  await expect(page.getByTestId('partner-balance')).toContainText('$2050.00', { timeout: 15_000 });
+  await expect(page.getByTestId('partner-ledger').locator('tr').first()).toContainText('+$50.00');
+
+  // Renaming used to be impossible: the service had an update branch that no
+  // button posted to, so a typo in a counterparty's name was permanent.
+  const renamed = `${name} MCHJ`;
+  await page.getByTestId('partner-edit').click();
+  await page.getByTestId('partner-name').fill(renamed);
+  await page.getByTestId('partner-save').click();
+  await expect(page.locator('h1')).toContainText(renamed, { timeout: 15_000 });
+
   // The settlement screen refuses to save with no evidence behind it.
   await page.goto('/kontragentlar/hisob');
   await expect(page.getByTestId('settle-save')).toBeDisabled();
   await page.getByTestId('settle-note').fill('Kvitansiya Telegramda');
   await expect(page.getByTestId('settle-save')).toBeEnabled();
+  // A file is proof too — and DELETING it has to close the gate again. It did
+  // not: the form counted uploads and never heard about removals, so it
+  // offered a save the server then refused.
+  await page.getByTestId('settle-note').fill('');
+  await expect(page.getByTestId('settle-save')).toBeDisabled();
+  await page.locator('input[type=file]').first().setInputFiles({
+    name: 'kvitansiya.png',
+    mimeType: 'image/png',
+    buffer: PNG_1PX,
+  });
+  await expect(page.getByTestId('settle-save')).toBeEnabled({ timeout: 15_000 });
+  await page.getByRole('button', { name: '✕' }).first().click();
+  await expect(page.getByTestId('settle-save')).toBeDisabled({ timeout: 15_000 });
 
   // Retire it so the cost and expense forms go back to how every other spec
-  // finds them.
+  // finds them. A retired account we still OWE keeps its row now — that is
+  // the fix for the two money screens disagreeing — so the debt is settled
+  // first, which is also what the accountant would really do.
   await page.goto(cardUrl);
+  await page.getByTestId('partner-tx-new').click();
+  await page.getByTestId('partner-tx-type').selectOption('payment');
+  const settle = page.getByTestId('partner-tx-account');
+  const settleOptions = await settle.locator('option').all();
+  const settleValues = (
+    await Promise.all(settleOptions.map((o) => o.getAttribute('value')))
+  ).filter(Boolean);
+  await settle.selectOption(settleValues[0]!);
+  await page.getByTestId('partner-tx-amount').fill('2050');
+  await page.getByTestId('partner-tx-currency').selectOption('USD');
+  await page.getByTestId('partner-tx-save').click();
+  await expect(page.getByTestId('partner-balance')).toContainText('$0.00', { timeout: 15_000 });
+
   await page.getByTestId('partner-toggle-active').click();
   // Wait for the SERVER's answer before navigating: the hidden input flips to
   // "1" (meaning "the button would re-activate") only once the row is really
@@ -94,7 +152,40 @@ test('a transport firm gets an account, a debt and a payment against it', async 
     timeout: 15_000,
   });
   await page.goto('/kontragentlar');
-  await expect(page.getByText(name)).toHaveCount(0);
+  await expect(page.getByText(renamed)).toHaveCount(0);
+});
+
+test('an expense settled by a counterparty stops asking which till it came from', async ({
+  page,
+}) => {
+  // The form offered a cash box and a payer at once and the service silently
+  // dropped the cash box, so the saved row meant something the typist never
+  // said. Needs a live counterparty, so it runs inside this spec's window.
+  await login(page, OWNER);
+  const firm = `Xarajatchi ${runId}`;
+  await page.goto('/kontragentlar');
+  await page.getByTestId('partner-new').click();
+  await page.getByTestId('partner-name').fill(firm);
+  await page.getByTestId('partner-save').click();
+  await expect(page.getByText(firm)).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/accounting/expenses');
+  // Scoped to the ADD form: the recurring-expense form on the same page has a
+  // cash-box picker of its own, and it is not the one under test.
+  const form = page.locator('form').filter({ has: page.getByTestId('expense-partner') });
+  const account = form.locator('select[name="accountId"]');
+  await expect(account).toBeVisible();
+  await page.getByTestId('expense-partner').selectOption({ label: firm });
+  await expect(account, 'naming a payer means no till of ours moved').toHaveCount(0);
+
+  // Retire it again — an active counterparty adds a payer picker to every
+  // cost and expense form in the app, which is configuration (#183).
+  await page.goto('/kontragentlar');
+  await page.locator('a[href^="/kontragentlar/"]', { hasText: firm }).first().click();
+  await page.getByTestId('partner-toggle-active').click();
+  await expect(page.locator('input[name="active"][value="1"]')).toHaveCount(1, {
+    timeout: 15_000,
+  });
 });
 
 test('the balance screen states what we hold against what we owe', async ({ page }) => {

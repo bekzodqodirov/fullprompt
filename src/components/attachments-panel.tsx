@@ -23,6 +23,7 @@ export function AttachmentsPanel({
   initial,
   editable,
   onAdd,
+  onRemove,
 }: {
   entityType: string;
   entityId: string;
@@ -30,6 +31,13 @@ export function AttachmentsPanel({
   editable: boolean;
   /** Called after each successful upload so a caller can persist the list (e.g. into a draft). */
   onAdd?: (item: AttachmentItem) => void;
+  /**
+   * Called after each successful delete. A caller that GATES on "is there a
+   * file" has to hear both halves or its gate goes stale: the settlement form
+   * counted uploads only, so deleting the receipt photo left the save button
+   * lit and the server then refused what the screen had called ready.
+   */
+  onRemove?: (id: string) => void;
 }) {
   const t = useTranslations('receipts');
   const tr = useTranslations('receive');
@@ -52,6 +60,7 @@ export function AttachmentsPanel({
     const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 404) {
       setItems((prev) => prev.filter((item) => item.id !== id));
+      onRemove?.(id);
     }
   }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { addExpenseAction, type AccountingFormState } from '../actions';
 
@@ -38,6 +38,13 @@ export function ExpenseForm({
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
+  // `addExpense` drops the cash box whenever a payer is named — correctly, no
+  // till of ours moved — but the form offered both at once and said nothing,
+  // so the saved row meant something different from what was typed and only a
+  // hand reconciliation of the till would ever show it. The picker now
+  // disappears with the choice, the way the counterparty form already hides
+  // its cash box for the kinds that move no money.
+  const [partnerId, setPartnerId] = useState('');
   const [state, formAction, pending] = useActionState<AccountingFormState, FormData>(
     addExpenseAction,
     {},
@@ -78,14 +85,18 @@ export function ExpenseForm({
         />
       </div>
       <div className="flex flex-wrap gap-2">
-        <select name="accountId" aria-label={t('account')} className="input min-w-40 flex-1">
-          <option value="">— {t('account')} —</option>
-          {accounts.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        {/* Only while the money is ours. A hidden select posts nothing, so
+            the service's own drop becomes unreachable rather than silent. */}
+        {!partnerId && (
+          <select name="accountId" aria-label={t('account')} className="input min-w-40 flex-1">
+            <option value="">— {t('account')} —</option>
+            {accounts.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
         <select name="warehouseId" aria-label={t('warehouse')} className="input !w-32">
           <option value="">— {t('warehouse')} —</option>
           {warehouses.map((option) => (
@@ -100,6 +111,8 @@ export function ExpenseForm({
             aria-label={t('paidBy')}
             data-testid="expense-partner"
             className="input min-w-40 flex-1"
+            value={partnerId}
+            onChange={(event) => setPartnerId(event.target.value)}
           >
             <option value="">— {t('paidByUs')} —</option>
             {partners.map((option) => (
@@ -118,6 +131,9 @@ export function ExpenseForm({
           ))}
         </select>
       </div>
+      {/* Already translated in all four bundles and never rendered until now:
+          the rule was implied by a disappearing field instead of stated. */}
+      {partnerId && <p className="text-xs text-ink-500">{t('paidByHint')}</p>}
       <input name="note" placeholder={t('note')} aria-label={t('note')} className="input" />
       <button
         type="submit"

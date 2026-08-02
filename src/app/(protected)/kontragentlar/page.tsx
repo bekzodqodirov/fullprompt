@@ -2,7 +2,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { listPartnerTypes, listPartners } from '@/modules/wms/partners/service';
+import {
+  groupPartnersByType,
+  listPartnerTypes,
+  listPartners,
+} from '@/modules/wms/partners/service';
 import { PageHeader } from '@/components/ui/page';
 import { PartnerForm } from './partner-form';
 import { db } from '@/modules/platform/db/client';
@@ -26,8 +30,26 @@ export default async function PartnersPage() {
   const t = await getTranslations('partners');
   const canManage = actor.permissions.has('finance.manage');
 
-  const rows = await listPartners();
-  const types = await listPartnerTypes();
+  // Retired rows are READ here and hidden only when they are settled.
+  //
+  // Two screens were disagreeing about the same money. `companyBalance` counts
+  // every partner row whether or not the account is retired — correctly, a
+  // debt is real either way — while this page listed active accounts only and
+  // summed those. So hiding a firm we still owed $8,000 dropped $8,000 off
+  // «jami qarzimiz» here and changed nothing on /accounting/balance, which is
+  // the page that LINKS here. Worse, the hide button lives on the card, and
+  // after hiding, nothing on any screen linked to that card any more.
+  //
+  // A retired account with a live balance therefore keeps its row (dimmed, and
+  // saying so); a retired account that is settled disappears, which is the
+  // tidying the button was for.
+  const allRows = await listPartners({ includeInactive: true });
+  const rows = allRows.filter((r) => r.active || Math.abs(r.balanceUsd) > 0.009);
+  // Group over EVERY type, offer only the live ones on the form: hiding a type
+  // on /admin/partner-types must not delete the accounts under it from the
+  // screen while their debt stays in the total.
+  const allTypes = await listPartnerTypes(true);
+  const types = allTypes.filter((type) => type.active);
   const owed = rows.filter((r) => r.balanceUsd > 0).reduce((a, r) => a + r.balanceUsd, 0);
 
   // For the "this counterparty is also one of our clients" picker. Active
@@ -40,9 +62,7 @@ export default async function PartnersPage() {
         .orderBy(asc(clients.clientCode))
     : [];
 
-  const byType = types
-    .map((type) => ({ type, rows: rows.filter((r) => r.typeCode === type.code) }))
-    .filter((group) => group.rows.length > 0);
+  const byType = groupPartnersByType(rows, allTypes);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -78,7 +98,9 @@ export default async function PartnersPage() {
                 {group.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-b border-line last:border-0 hover:bg-surface-sunken"
+                    className={`border-b border-line last:border-0 hover:bg-surface-sunken ${
+                      row.active ? '' : 'opacity-60'
+                    }`}
                   >
                     <td className="p-0">
                       <Link
@@ -90,6 +112,14 @@ export default async function PartnersPage() {
                         {row.clientCode && (
                           <span className="ml-2 font-mono text-xs text-brand-700">
                             {row.clientCode}
+                          </span>
+                        )}
+                        {/* Retired but still owed: the row stays so the money
+                            stays visible and the card stays reachable — the
+                            «Ko'rsatish» button lives on it. */}
+                        {!row.active && (
+                          <span className="ml-2 rounded bg-bad/15 px-1.5 py-0.5 text-xs font-bold text-bad">
+                            {t('inactive')}
                           </span>
                         )}
                       </Link>

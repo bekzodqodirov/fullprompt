@@ -69,6 +69,17 @@ test('discount with a reason, profit for finance eyes, and the goods file become
   await expect(page.getByTestId('import-review')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('import-line')).toHaveCount(2);
 
+  // Both boxes must be usable at 360 px. `.input` carries w-full and beats a
+  // plain `w-32`, so the code box took the whole row and `shrink-0` forbade it
+  // to give any back — leaving the description about two characters wide on
+  // the screen where the grouping is confirmed. Measured, never asserted from
+  // a class list: the markup was exactly what was intended (#419).
+  const boxes = page.getByTestId('import-line').first().getByRole('textbox');
+  const codeBox = await boxes.first().boundingBox();
+  const descBox = await boxes.nth(1).boundingBox();
+  expect(codeBox!.width, 'the TN VED code box must stay narrow').toBeLessThan(160);
+  expect(descBox!.width, 'the description must own the rest of the row').toBeGreaterThan(100);
+
   await page.getByTestId('import-confirm').click();
   // The confirmed draft became the deal's real lines.
   await expect(page.getByTestId('import-review')).toHaveCount(0);

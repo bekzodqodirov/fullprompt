@@ -41,13 +41,19 @@ export function VoidTx({ id, partnerId }: { id: string; partnerId: string }) {
         required
         minLength={3}
       />
-      <div className="flex gap-1">
-        <button type="submit" className="btn-danger !py-1 flex-1 text-xs">
+      {/* `flex-wrap` and no `flex-1`: a flex item keeps `min-width:auto`, so
+          this pair had a 208 px min-content floor that it forced onto the
+          ledger's kind column — opening the form took the table from 377 px
+          to 512 px and zoomed the phone out with the confirm button already
+          under the accountant's finger. Wrapping costs a line; widening the
+          page costs the whole screen. */}
+      <div className="flex flex-wrap gap-1">
+        <button type="submit" className="btn-danger !px-2 !py-1 text-xs">
           ✕ {tc('confirm')}
         </button>
         <button
           type="button"
-          className="btn-secondary !py-1 flex-1 text-xs"
+          className="btn-secondary !px-2 !py-1 text-xs"
           onClick={() => setOpen(false)}
         >
           {tc('cancel')}

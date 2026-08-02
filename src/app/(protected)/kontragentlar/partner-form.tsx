@@ -16,9 +16,25 @@ import { savePartnerAction, type PartnerFormState } from './actions';
 export function PartnerForm({
   types,
   clients,
+  partner,
 }: {
   types: { id: string; name: string }[];
   clients: { id: string; clientCode: string; name: string }[];
+  /**
+   * Present on the card, absent on the register. `savePartner` has had a full
+   * update branch with before/after audit since the day it shipped — nothing
+   * ever posted an `id` to it, so a name typed wrong, a wrong type or a wrong
+   * client link was permanent and the only recourse was to retire the account
+   * and start a second one, splitting its history in two.
+   */
+  partner?: {
+    id: string;
+    name: string;
+    typeId: string;
+    clientId: string | null;
+    phone: string | null;
+    note: string | null;
+  };
 }) {
   const t = useTranslations('partners');
   const tc = useTranslations('common');
@@ -43,27 +59,36 @@ export function PartnerForm({
       <button
         type="button"
         className="btn-secondary w-full"
-        data-testid="partner-new"
+        data-testid={partner ? 'partner-edit' : 'partner-new'}
         onClick={() => setOpen(true)}
       >
-        ➕ {t('newPartner')}
+        {partner ? `✏️ ${tc('edit')}` : `➕ ${t('newPartner')}`}
       </button>
     );
   }
 
   return (
     <form action={formAction} className="card space-y-2">
-      <p className="section-title">{t('newPartner')}</p>
+      {partner && <input type="hidden" name="id" value={partner.id} />}
+      <p className="section-title">{partner ? tc('edit') : t('newPartner')}</p>
       <input
         name="name"
         className="input"
         placeholder={t('name')}
         aria-label={t('name')}
         data-testid="partner-name"
+        defaultValue={partner?.name ?? ''}
         required
         minLength={2}
       />
-      <select name="typeId" className="input" aria-label={t('type')} data-testid="partner-type" required>
+      <select
+        name="typeId"
+        className="input"
+        aria-label={t('type')}
+        data-testid="partner-type"
+        defaultValue={partner?.typeId}
+        required
+      >
         {types.map((type) => (
           <option key={type.id} value={type.id}>
             {type.name}
@@ -73,7 +98,15 @@ export function PartnerForm({
       <label className="label" htmlFor="partner-client">
         {t('alsoClient')}
       </label>
-      <select id="partner-client" name="clientId" className="input" data-testid="partner-client">
+      {/* The empty option stays in edit mode on purpose: a link to the wrong
+          client is the one mistake here that cannot be worked around. */}
+      <select
+        id="partner-client"
+        name="clientId"
+        className="input"
+        data-testid="partner-client"
+        defaultValue={partner?.clientId ?? ''}
+      >
         <option value="">— {t('notAClient')}</option>
         {clients.map((client) => (
           <option key={client.id} value={client.id}>
@@ -81,13 +114,20 @@ export function PartnerForm({
           </option>
         ))}
       </select>
-      <input name="phone" className="input" placeholder={t('phone')} aria-label={t('phone')} />
+      <input
+        name="phone"
+        className="input"
+        placeholder={t('phone')}
+        aria-label={t('phone')}
+        defaultValue={partner?.phone ?? ''}
+      />
       <textarea
         name="note"
         className="input"
         rows={2}
         placeholder={t('note')}
         aria-label={t('note')}
+        defaultValue={partner?.note ?? ''}
       />
       <div className="flex gap-2">
         <button

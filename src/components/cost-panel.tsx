@@ -103,7 +103,16 @@ export function CostPanel({
         setNote('');
         router.refresh();
       } else {
-        setError(res.error === 'client_required' ? t('clientRequired') : (res.error ?? 'error'));
+        setError(
+          res.error === 'client_required'
+            ? t('clientRequired')
+            : // Naming a payer turns the cost into a debt, and a debt needs a
+              // rate. Refused rather than saved half — the row used to keep
+              // the firm's name with nothing on that firm's account.
+              res.error === 'fx_missing'
+              ? t('fxMissing')
+              : (res.error ?? 'error'),
+        );
       }
     } finally {
       setBusy(false);

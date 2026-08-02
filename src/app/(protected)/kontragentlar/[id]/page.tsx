@@ -1,13 +1,20 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, or } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { currencies, moneyAccounts } from '@/modules/platform/db/schema';
+import { clients, currencies, moneyAccounts } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { partnerBalanceUsd, partnerById, partnerLedger } from '@/modules/wms/partners/service';
+import {
+  listPartnerTypes,
+  partnerBalanceUsd,
+  partnerById,
+  partnerLedger,
+  raisesBalance,
+} from '@/modules/wms/partners/service';
 import { BackLink } from '@/components/back-link';
 import { HistoryTab } from '@/components/history-tab';
+import { PartnerForm } from '../partner-form';
 import { PartnerTxForm } from './tx-form';
 import { VoidTx } from './void-tx';
 import { setPartnerActiveAction } from '../actions';
@@ -55,6 +62,29 @@ export default async function PartnerCardPage({
           .from(currencies)
           .where(eq(currencies.active, true))
       ).map((c) => c.code)
+    : [];
+
+  // Editing was reachable from nowhere: `savePartner` branches on an `id` that
+  // no form ever posted. The types offered are the live ones plus whichever
+  // this account already carries — a retired type must not be offered to
+  // others but must not silently reassign this one either — and the client
+  // list includes the currently linked client even when inactive, or saving an
+  // unrelated edit would blank the link without saying so.
+  const editTypes = canManage
+    ? (await listPartnerTypes(true)).filter(
+        (type) => type.active || type.id === row.partner.typeId,
+      )
+    : [];
+  const editClients = canManage
+    ? await db
+        .select({ id: clients.id, clientCode: clients.clientCode, name: clients.name })
+        .from(clients)
+        .where(
+          row.partner.clientId
+            ? or(eq(clients.active, true), eq(clients.id, row.partner.clientId))
+            : eq(clients.active, true),
+        )
+        .orderBy(asc(clients.clientCode))
     : [];
 
   return (
@@ -117,11 +147,30 @@ export default async function PartnerCardPage({
       </div>
 
       {canManage && (
+        <PartnerForm
+          types={editTypes}
+          clients={editClients}
+          partner={{
+            id,
+            name: row.partner.name,
+            typeId: row.partner.typeId,
+            clientId: row.partner.clientId,
+            phone: row.partner.phone,
+            note: row.partner.note,
+          }}
+        />
+      )}
+
+      {canManage && (
         <PartnerTxForm partnerId={id} accounts={accounts} currencies={currencyCodes} />
       )}
 
-      <section className="card !p-0">
-        <table className="w-full text-sm">
+      {/* The scroll container the other 18 wide tables in the app already use.
+          Without it this table is ~430 px on a 360 px phone, and mobile Chrome
+          answers an over-wide page by zooming the WHOLE screen out — the
+          round-29 failure mode, where every tap coordinate then shifts. */}
+      <section className="card overflow-x-auto !p-0">
+        <table className="w-full min-w-[420px] text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase text-ink-500">
               <th className="p-2">{t('date')}</th>
@@ -132,8 +181,9 @@ export default async function PartnerCardPage({
           </thead>
           <tbody data-testid="partner-ledger">
             {ledger.map(({ tx, accountName, batchCode, authorName }) => {
-              const raises = tx.type === 'charge' || tx.type === 'receipt';
               const usd = Number(tx.amountUsd);
+              // The same predicate the BALANCE uses, not a second opinion.
+              const raises = raisesBalance(tx.type, usd);
               return (
                 <tr key={tx.id} className="border-b border-line align-top last:border-0">
                   <td className="p-2 whitespace-nowrap">

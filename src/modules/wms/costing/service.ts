@@ -119,6 +119,14 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
   if (input.allocationBasis === 'direct_to_client' && !input.clientId) {
     throw new CostError('client_required');
   }
+  // Naming a payer means recording a DEBT, and a debt with no dollar figure
+  // cannot be recorded: `chargeForCost` returns silently when the conversion
+  // is missing, so the cost row would go on showing the firm's name while
+  // that firm's account never heard of it. `addPartnerTx` and `addExpense`
+  // already refuse the same way — this path did not.
+  if (input.partnerId && (await rateFor(input.currency, input.costDate)) === null) {
+    throw new CostError('fx_missing');
+  }
 
   const [entry] = await db
     .insert(costEntries)
@@ -308,6 +316,22 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
         amountUsd: String(s.amountUsd),
       })),
     );
+  }
+
+  // The debt this cost owes its payer, posted the moment a dollar figure
+  // exists. Rows entered before the entry-time refusal above shipped — and
+  // any row whose rate arrived later — are repaired by the /admin/fx
+  // recompute, which is the only thing that ever revisits them.
+  // `chargeForCost` is idempotent per cost, so a re-run costs nothing.
+  if (entry.partnerId) {
+    try {
+      const { chargeForCost } = await import('../partners/link');
+      await chargeForCost(costEntryId, { actorId: entry.enteredBy });
+    } catch (error) {
+      // Never let the partner side roll back an allocation rebuild — the same
+      // fence every other costing→partners crossing uses.
+      console.error('[costing] charge after recompute failed', error);
+    }
   }
 }
 

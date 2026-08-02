@@ -3,6 +3,7 @@
     "appName": "GSR LOGISTICS",
     "save": "Save",
     "cancel": "Cancel",
+    "confirm": "Confirm",
     "create": "Create",
     "edit": "Edit",
     "delete": "Delete",
@@ -564,6 +565,7 @@
     "void": "Void",
     "voidReason": "Reason for voiding:",
     "noRate": "no rate",
+    "fxMissing": "No exchange rate for this currency — enter one under Rates first",
     "landedCost": "Landed cost",
     "scopeReceipt": "receipt",
     "bases": {

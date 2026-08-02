@@ -9,6 +9,7 @@ import {
   expenses,
   moneyAccounts,
   partnerTransactions,
+  partners,
   recurringExpenses,
   users,
   warehouses,
@@ -236,12 +237,17 @@ export async function listExpenses(filters: {
       warehouseCode: warehouses.code,
       employeeName: users.fullName,
       accountName: moneyAccounts.name,
+      // Who settled it, when it was not us. Without this a partner-settled
+      // expense is indistinguishable on the list from one entered with no
+      // cash box at all, which is the same blank cell for two different facts.
+      partnerName: partners.name,
     })
     .from(expenses)
     .innerJoin(expenseCategories, eq(expenses.categoryId, expenseCategories.id))
     .leftJoin(warehouses, eq(expenses.warehouseId, warehouses.id))
     .leftJoin(users, eq(expenses.employeeId, users.id))
     .leftJoin(moneyAccounts, eq(expenses.accountId, moneyAccounts.id))
+    .leftJoin(partners, eq(expenses.partnerId, partners.id))
     .where(and(...where))
     .orderBy(sql`${expenses.expenseDate} DESC`, sql`${expenses.createdAt} DESC`)
     .limit(filters.limit ?? 500);

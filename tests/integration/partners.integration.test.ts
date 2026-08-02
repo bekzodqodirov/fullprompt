@@ -10,8 +10,10 @@ import {
   clientTransactions,
   costEntries,
   costTypes,
+  currencies,
   expenseCategories,
   expenses,
+  fxRates,
   moneyAccounts,
   partners,
   receipts,
@@ -20,13 +22,18 @@ import {
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
-import { addCostEntry, voidCostEntry } from '@/modules/wms/costing/service';
-import { addExpense, voidExpense } from '@/modules/wms/accounting/service';
-import { clientBalanceUsd } from '@/modules/wms/finance/service';
+import { addCostEntry, recomputeAll, upsertFxRate, voidCostEntry } from '@/modules/wms/costing/service';
+import { addExpense, saveAccount, voidExpense } from '@/modules/wms/accounting/service';
+import { addTransaction, clientBalanceUsd, voidTransaction } from '@/modules/wms/finance/service';
+import { moneyFlowCounts } from '@/modules/wms/home/role-flows';
 import {
   addPartnerTx,
+  groupPartnersByType,
+  listPartnerTypes,
+  listPartners,
   partnerBalanceUsd,
   savePartner,
+  setPartnerActive,
   voidPartnerTx,
 } from '@/modules/wms/partners/service';
 import { recordSettlement } from '@/modules/wms/partners/settlement';
@@ -56,6 +63,11 @@ const madeClients: string[] = [];
 const madeCosts: string[] = [];
 const madeExpenses: string[] = [];
 const madeBatches: string[] = [];
+const madeAccounts: string[] = [];
+const madeTypes: string[] = [];
+/** Minted here so no other suite's currency can decide these assertions. */
+const TEST_CCY = 'QAA';
+const NO_RATE_CCY = 'QAB';
 
 beforeAll(async () => {
   actorId = (await db.select().from(users).limit(1))[0]!.id;
@@ -81,6 +93,16 @@ afterAll(async () => {
   }
   if (madePartners.length) await db.delete(partners).where(inArray(partners.id, madePartners));
   if (madeClients.length) await db.delete(clients).where(inArray(clients.id, madeClients));
+  // A cash box and a currency are CONFIGURATION while they exist — a leftover
+  // till changes what /accounting/balance and every money form render, and
+  // vitest orders files by a DURATION cache, so the next reader is not even
+  // predictable (#183, the VITEST half).
+  if (madeAccounts.length) {
+    await db.delete(moneyAccounts).where(inArray(moneyAccounts.id, madeAccounts));
+  }
+  if (madeTypes.length) await db.delete(partnerTypes).where(inArray(partnerTypes.id, madeTypes));
+  await db.delete(fxRates).where(inArray(fxRates.currency, [TEST_CCY, NO_RATE_CCY]));
+  await db.delete(currencies).where(inArray(currencies.code, [TEST_CCY, NO_RATE_CCY]));
   await pgClient.end();
 });
 
@@ -559,5 +581,256 @@ describe('who clears which cargo', () => {
     expect(row.customsByClient).toBeNull();
 
     await db.delete(receipts).where(eq(receipts.id, receipt!.id));
+  });
+});
+
+/**
+ * The audit round: seven defects the counterparty feature shipped with, each
+ * proved here against the database because each of them is a number the owner
+ * reads off a screen and acts on.
+ */
+describe('what the audit found', () => {
+  it('voiding the CLIENT half of a settlement takes the firm’s half with it', async () => {
+    const clientId = await newClient(`GSV${STAMP}`);
+    const partnerId = await newPartner('Uch tomonlama');
+    const today = new Date().toISOString().slice(0, 10);
+
+    // We owe the firm $1000; the client owes us $1000.
+    await addPartnerTx(
+      { partnerId, type: 'charge', amount: 1000, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' },
+      ctx(),
+    );
+    await addTransaction(
+      { clientId, type: 'charge', amount: 1000, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    expect(await partnerBalanceUsd(partnerId)).toBe(1000);
+    expect(await clientBalanceUsd(clientId)).toBe(1000);
+
+    // The client pays our supplier instead of us: both debts close.
+    const txId = uuidv4();
+    await recordSettlement(
+      {
+        txId,
+        clientId,
+        partnerId,
+        clientAmount: 1000,
+        clientCurrency: 'USD',
+        partnerAmount: 1000,
+        partnerCurrency: 'USD',
+        txDate: today,
+        note: 'Kvitansiya',
+      },
+      ctx(),
+    );
+    expect(await partnerBalanceUsd(partnerId)).toBe(0);
+    expect(await clientBalanceUsd(clientId)).toBe(0);
+
+    // Wrong client. Voided from the CLIENT ledger, which is the screen the
+    // accountant is on — and the only direction that was not guarded.
+    const [offset] = await db
+      .select()
+      .from(partnerTransactions)
+      .where(eq(partnerTransactions.id, txId));
+    const clientTxId = offset!.clientTxId!;
+    await voidTransaction(clientTxId, 'noto‘g‘ri mijoz', ctx());
+
+    expect(await clientBalanceUsd(clientId)).toBe(1000);
+    // Was 0 for ever: our debt to the firm stayed forgiven with nothing
+    // standing behind it, and /accounting/balance read $1000 healthier.
+    expect(await partnerBalanceUsd(partnerId)).toBe(1000);
+    const [after] = await db
+      .select()
+      .from(partnerTransactions)
+      .where(eq(partnerTransactions.id, txId));
+    expect(after!.voidedAt).not.toBeNull();
+  });
+
+  it('voids an ordinary client payment without touching anybody else', async () => {
+    const clientId = await newClient(`GSP${STAMP}`);
+    const today = new Date().toISOString().slice(0, 10);
+    await addTransaction(
+      { clientId, type: 'charge', amount: 500, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    const payment = await addTransaction(
+      { clientId, type: 'payment', amount: 500, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    expect(await clientBalanceUsd(clientId)).toBe(0);
+    await voidTransaction(payment.id, 'xato summa', ctx());
+    expect(await clientBalanceUsd(clientId)).toBe(500);
+  });
+
+  it('counts a cash box in any currency the owner has a rate for', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    await db.insert(currencies).values({ code: TEST_CCY, name: 'Audit test currency' }).onConflictDoNothing();
+    await upsertFxRate({ currency: TEST_CCY, rateToUsd: 0.5, effectiveDate: '2020-01-01' }, ctx());
+    // Read AFTER the rate exists: entering a rate is itself a change to this
+    // total, and the delta being measured here is the payment, not the rate.
+    const before = await companyBalance();
+
+    const account = await saveAccount(
+      { name: `Yiwu kassa ${STAMP}`, currency: TEST_CCY, kind: 'cash', openingBalance: 0, sortOrder: 900, active: true },
+      ctx(),
+    );
+    const accountId = account.id;
+    madeAccounts.push(accountId);
+    const clientId = await newClient(`GSC${STAMP}`);
+    await addTransaction(
+      { clientId, type: 'payment', amount: 300, currency: TEST_CCY, txDate: today, accountId },
+      ctx(),
+    );
+
+    const after = await companyBalance();
+    const row = after.cashRows.find((r) => r.id === accountId);
+    // Was null — every currency but USD and UZS fell out of the total, so a
+    // CNY till for Yiwu would have been worth exactly nothing on the screen
+    // that says what the company holds.
+    expect(row?.balanceUsd).toBe(150);
+    // A delta, not an absolute: the seeded tills carry whatever the suites
+    // before this one left in them, and only the movement is this test's.
+    expect(Math.round((after.cashUsd - before.cashUsd) * 100) / 100).toBe(150);
+  });
+
+  it('refuses a cost that names a payer in a currency with no rate, and repairs the old ones', async () => {
+    const partnerId = await newPartner('Kursi yo‘q');
+    const [type] = await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1);
+    const today = new Date().toISOString().slice(0, 10);
+    const [batch] = await db
+      .insert(batches)
+      .values({
+        code: `PF-${STAMP}`,
+        originWarehouseId: warehouseId,
+        destWarehouseId,
+        status: 'forming',
+        createdBy: actorId,
+      })
+      .returning();
+    madeBatches.push(batch!.id);
+    await db.insert(currencies).values({ code: NO_RATE_CCY, name: 'No rate at all' }).onConflictDoNothing();
+
+    // Naming a payer means recording a debt, and a debt needs a dollar figure.
+    await expect(
+      addCostEntry(
+        {
+          scope: 'batch',
+          batchId: batch!.id,
+          costTypeId: type!.id,
+          amount: 100,
+          currency: NO_RATE_CCY,
+          costDate: today,
+          allocationBasis: 'weight',
+          partnerId,
+        },
+        ctx(),
+      ),
+    ).rejects.toThrow('fx_missing');
+
+    // A row entered before that refusal existed: the cost carries the firm's
+    // name, the firm's account has never heard of it.
+    const [orphan] = await db
+      .insert(costEntries)
+      .values({
+        scope: 'batch',
+        batchId: batch!.id,
+        costTypeId: type!.id,
+        amount: '100',
+        currency: NO_RATE_CCY,
+        costDate: today,
+        allocationBasis: 'weight',
+        partnerId,
+        enteredBy: actorId,
+      })
+      .returning();
+    madeCosts.push(orphan!.id);
+    expect(await partnerBalanceUsd(partnerId)).toBe(0);
+
+    // The owner enters the rate; /admin/fx recomputes. The debt appears.
+    await upsertFxRate({ currency: NO_RATE_CCY, rateToUsd: 0.25, effectiveDate: '2020-01-01' }, ctx());
+    await recomputeAll({ currency: NO_RATE_CCY });
+    expect(await partnerBalanceUsd(partnerId)).toBe(25);
+
+    // And a second sweep does not post it twice.
+    await recomputeAll({ currency: NO_RATE_CCY });
+    expect(await partnerBalanceUsd(partnerId)).toBe(25);
+  });
+
+  it('does not put a settlement on the accountant’s "place this payment" queue', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const before = await moneyFlowCounts(today);
+
+    const clientId = await newClient(`GSQ${STAMP}`);
+    const partnerId = await newPartner('Navbat');
+    await addPartnerTx(
+      { partnerId, type: 'charge', amount: 200, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' },
+      ctx(),
+    );
+    await recordSettlement(
+      {
+        txId: uuidv4(),
+        clientId,
+        partnerId,
+        clientAmount: 200,
+        clientCurrency: 'USD',
+        partnerAmount: 200,
+        partnerCurrency: 'USD',
+        txDate: today,
+        note: 'Kvitansiya',
+      },
+      ctx(),
+    );
+    // No cash box of ours opened and none ever can, so it is not work.
+    expect((await moneyFlowCounts(today)).unassignedPayments).toBe(before.unassignedPayments);
+
+    // A genuinely unplaced payment still counts, or the guard is too wide.
+    await addTransaction(
+      { clientId, type: 'payment', amount: 10, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    expect((await moneyFlowCounts(today)).unassignedPayments).toBe(
+      before.unassignedPayments + 1,
+    );
+  });
+
+  it('keeps the counterparty register and the balance sheet agreeing after a retire', async () => {
+    const partnerId = await newPartner('Yashiriladigan');
+    const today = new Date().toISOString().slice(0, 10);
+    await addPartnerTx(
+      { partnerId, type: 'charge', amount: 8000, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' },
+      ctx(),
+    );
+    await setPartnerActive(partnerId, false, ctx());
+
+    // The register's own expression, read the way the page reads it. Active
+    // rows only — which is what shipped — loses the retired firm's $8,000
+    // while /accounting/balance goes on counting it.
+    const shown = (await listPartners({ includeInactive: true })).filter(
+      (row) => row.active || Math.abs(row.balanceUsd) > 0.009,
+    );
+    const owed = shown.filter((r) => r.balanceUsd > 0).reduce((a, r) => a + r.balanceUsd, 0);
+    expect(shown.some((row) => row.id === partnerId)).toBe(true);
+    expect(Math.round(owed * 100) / 100).toBe((await companyBalance()).payableUsd);
+  });
+
+  it('keeps an account whose TYPE was hidden inside the register', async () => {
+    const [type] = await db
+      .insert(partnerTypes)
+      .values({ code: `zz${STAMP}`, name: `Yashirin tur ${STAMP}`, sortOrder: 990 })
+      .returning();
+    madeTypes.push(type!.id);
+    const id = await savePartner(
+      null,
+      { name: `Turi yashirin ${STAMP}`, typeId: type!.id, clientId: '', phone: '', note: '' },
+      ctx(),
+    );
+    madePartners.push(id);
+    await db.update(partnerTypes).set({ active: false }).where(eq(partnerTypes.id, type!.id));
+
+    // Grouping over the ACTIVE types dropped this row from every section
+    // while its debt stayed in the total above them.
+    const rows = await listPartners({ includeInactive: true });
+    const grouped = groupPartnersByType(rows, await listPartnerTypes(true));
+    expect(grouped.flatMap((g) => g.rows).some((row) => row.id === id)).toBe(true);
   });
 });

@@ -1,7 +1,16 @@
 import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
-import { batches, clients, clientTransactions, deals, moneyAccounts, users } from '../../platform/db/schema';
+import {
+  batches,
+  clients,
+  clientTransactions,
+  deals,
+  moneyAccounts,
+  partnerTransactions,
+  partners,
+  users,
+} from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
 
@@ -89,16 +98,40 @@ export async function voidTransaction(id: string, reason: string, ctx: AuditCont
   });
   if (!row) throw new FinanceError('not_found');
   if (row.voidedAt) throw new FinanceError('already_voided');
-  await db
-    .update(clientTransactions)
-    .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
-    .where(eq(clientTransactions.id, id));
+  // A three-cornered settlement is ONE agreement with two halves (#415), and
+  // `voidPartnerTx` has always taken the client half with it. This is the
+  // mirror, which was missing: voiding the client half alone left our debt to
+  // the firm forgiven with nothing standing behind it, and only that partner's
+  // ledger — read row by row — could ever show it. Matched on the FK that
+  // DEFINES the pair, not on the client row's own partner_id, because only
+  // `recordSettlement` ever sets `client_tx_id`.
+  const paired = await db.transaction(async (tx) => {
+    await tx
+      .update(clientTransactions)
+      .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
+      .where(eq(clientTransactions.id, id));
+    return tx
+      .update(partnerTransactions)
+      .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
+      .where(
+        and(eq(partnerTransactions.clientTxId, id), isNull(partnerTransactions.voidedAt)),
+      )
+      .returning({ id: partnerTransactions.id });
+  });
   await writeAudit(db, ctx, {
     entityType: 'client_transaction',
     entityId: id,
     action: 'void',
-    after: { reason },
+    after: { reason, partnerTxIds: paired.map((p) => p.id) },
   });
+  for (const half of paired) {
+    await writeAudit(db, ctx, {
+      entityType: 'partner_transaction',
+      entityId: half.id,
+      action: 'void',
+      after: { reason, from: 'client_transaction', clientTxId: id },
+    });
+  }
 }
 
 /** USD balance of one client: Σ charges − Σ payments (active rows only). */
@@ -244,6 +277,13 @@ export interface PaymentRegisterRow {
   amountUsd: string;
   method: string | null;
   accountName: string | null;
+  /**
+   * Named when the money went into a counterparty's account instead of a till
+   * of ours (a three-cornered settlement). The row belongs in the register —
+   * the client really did pay — but a blank cash box on it is not the same
+   * fact as an unplaced payment, and the screen was printing both in red.
+   */
+  partnerName: string | null;
   note: string | null;
   enteredBy: string | null;
 }
@@ -264,12 +304,14 @@ export async function paymentsRegister(
       amountUsd: clientTransactions.amountUsd,
       method: clientTransactions.method,
       accountName: moneyAccounts.name,
+      partnerName: partners.name,
       note: clientTransactions.note,
       enteredBy: users.fullName,
     })
     .from(clientTransactions)
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
     .leftJoin(moneyAccounts, eq(clientTransactions.accountId, moneyAccounts.id))
+    .leftJoin(partners, eq(clientTransactions.partnerId, partners.id))
     .leftJoin(users, eq(clientTransactions.createdBy, users.id))
     .where(
       and(
