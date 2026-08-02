@@ -200,27 +200,29 @@ export function CostPanel({
               ))}
             </select>
           </div>
-          <div className="flex gap-2">
-            <input
-              aria-label={t('date')}
-              type="date"
-              className="input flex-1"
-              value={costDate}
-              onChange={(e) => setCostDate(e.target.value)}
-            />
-            <select
-              aria-label={t('basis')}
-              className="input flex-1"
-              value={basis}
-              onChange={(e) => setBasis(e.target.value as (typeof BASES)[number])}
-            >
-              {BASES.map((b) => (
-                <option key={b} value={b}>
-                  {t(`bases.${b}`)}
-                </option>
-              ))}
-            </select>
-          </div>
+          <input
+            aria-label={t('date')}
+            type="date"
+            className="input"
+            value={costDate}
+            onChange={(e) => setCostDate(e.target.value)}
+          />
+          {/* Its own line. Sharing one with the date box left it reading «по»
+              on a phone, and «по весу», «по объёму» and «клиенту напрямую»
+              all start that way — the answer was unreadable exactly where it
+              decides how the money is spread. */}
+          <select
+            aria-label={t('basis')}
+            className="input"
+            value={basis}
+            onChange={(e) => setBasis(e.target.value as (typeof BASES)[number])}
+          >
+            {BASES.map((b) => (
+              <option key={b} value={b}>
+                {t(`bases.${b}`)}
+              </option>
+            ))}
+          </select>
           {basis === 'direct_to_client' && (
             <select aria-label={t('client')} className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
               <option value="">{t('client')}…</option>

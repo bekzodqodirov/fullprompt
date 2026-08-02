@@ -126,10 +126,14 @@ export function AttachmentsPanel({
             </span>
           ),
         )}
+        {/* min-w, not w: «Прикрепить» is 11 characters and a fixed 64px tile
+            simply let it hang outside the card — over the first photo on the
+            receipt screen and off the left edge of the batch panel. The tile
+            grows to its own word instead. */}
         {editable && (
-          <label className="btn-secondary flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 !p-1 text-xs">
+          <label className="btn-secondary flex h-16 min-w-[4rem] cursor-pointer flex-col items-center justify-center gap-0.5 overflow-hidden !px-2 !py-1 text-xs">
             {uploading ? '…' : '📎'}
-            <span>{t('attach')}</span>
+            <span className="max-w-full truncate">{t('attach')}</span>
             <input
               type="file"
               multiple

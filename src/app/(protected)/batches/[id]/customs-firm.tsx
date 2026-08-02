@@ -50,27 +50,30 @@ export function CustomsFirm({
       <label className="label" htmlFor="customs-firm">
         {t('customsFirm')}
       </label>
-      <div className="flex gap-2">
-        <select
-          id="customs-firm"
-          className="input min-w-0 flex-1"
-          data-testid="batch-customs-firm"
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-        >
-          <option value="">—</option>
-          {partners.map((partner) => (
-            <option key={partner.id} value={partner.id}>
-              {partner.name}
-            </option>
-          ))}
-          <option value="client">{t('customsByClient')}</option>
-        </select>
+      <select
+        id="customs-firm"
+        className="input"
+        data-testid="batch-customs-firm"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      >
+        <option value="">—</option>
+        {partners.map((partner) => (
+          <option key={partner.id} value={partner.id}>
+            {partner.name}
+          </option>
+        ))}
+        <option value="client">{t('customsByClient')}</option>
+      </select>
+      {/* The button turns up only once the answer has been changed: the whole
+          row belongs to the name of the firm, which is what has to be read
+          back at a glance on a phone. */}
+      {value !== (byClient ? 'client' : (partnerId ?? '')) && (
         <button
           type="button"
-          className="btn-primary shrink-0 disabled:opacity-50"
+          className="btn-primary w-full"
           data-testid="batch-customs-save"
-          disabled={pending || value === (byClient ? 'client' : (partnerId ?? ''))}
+          disabled={pending}
           onClick={() =>
             startTransition(async () => {
               await setCustomsFirmAction(batchId, value);
@@ -80,7 +83,7 @@ export function CustomsFirm({
         >
           {pending ? tc('loading') : tc('save')}
         </button>
-      </div>
+      )}
       {partnerId && !byClient && (
         <Link
           href={`/kontragentlar/${partnerId}`}

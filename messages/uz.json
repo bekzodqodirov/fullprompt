@@ -659,6 +659,7 @@
     "cancelled": "Partiya bekor qilindi, qaytarilgan quti: {n}",
     "receiptGridTitle": "Prixodlar xarajati (jadval)",
     "receiptGridHint": "Qator — prixod, ustun — xarajat turi (rastamojka, usluga, yo'lkira…). Summalarni to'ldirib bir marta saqlang — har katak prixodning oddiy xarajati bo'lib yoziladi. Avval yozilganlari kataklar ostida ko'rinadi.",
+    "customs": "Rastamojka",
     "customsFirm": "Rastamojka firmasi",
     "customsByClient": "Mijoz o‘z firmasi bilan",
     "customsFirmAccount": "Firma hisobini ochish",

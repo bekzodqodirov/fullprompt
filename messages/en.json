@@ -659,6 +659,7 @@
     "cancelled": "Batch cancelled, boxes released: {n}",
     "receiptGridTitle": "Costs per receipt (grid)",
     "receiptGridHint": "Row = receipt, column = cost type (customs, service, freight…). Fill the amounts and save once — every cell becomes an ordinary receipt cost. Already-entered sums show under the cells.",
+    "customs": "Customs",
     "customsFirm": "Customs firm",
     "customsByClient": "Client's own firm",
     "customsFirmAccount": "Open the firm's account",

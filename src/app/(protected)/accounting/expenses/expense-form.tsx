@@ -95,7 +95,12 @@ export function ExpenseForm({
           ))}
         </select>
         {partners.length > 0 && (
-          <select name="partnerId" aria-label={t('paidBy')} className="input min-w-40 flex-1">
+          <select
+            name="partnerId"
+            aria-label={t('paidBy')}
+            data-testid="expense-partner"
+            className="input min-w-40 flex-1"
+          >
             <option value="">— {t('paidByUs')} —</option>
             {partners.map((option) => (
               <option key={option.id} value={option.id}>

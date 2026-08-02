@@ -123,3 +123,78 @@ test('the warehouse never sees what the company owes', async ({ page }) => {
   await page.goto('/kontragentlar');
   await expect(page).toHaveURL('/');
 });
+
+test('one prixod inside a truck is cleared by the client, and it sticks', async ({ page }) => {
+  // The owner's third case, in a browser. It shipped without one and he
+  // reported the whole feature as missing: the panel was folded inside the
+  // folded VED panel, and its picker was two characters wide (round 43).
+  // Everything below the "is it visible and usable" line is what no
+  // integration test can say.
+  await login(page, OWNER);
+
+  const firm = `Rastamojka ${runId}`;
+  await page.goto('/kontragentlar');
+  await page.getByTestId('partner-new').click();
+  await page.getByTestId('partner-name').fill(firm);
+  const type = page.getByTestId('partner-type');
+  const typeLabels = await type.locator('option').allTextContents();
+  const customsIndex = typeLabels.findIndex((label) => /rastamojka|растамож|清关|customs/i.test(label));
+  expect(customsIndex, 'a customs partner type must exist in the seed').toBeGreaterThanOrEqual(0);
+  await type.selectOption({ index: customsIndex });
+  await page.getByTestId('partner-save').click();
+  await expect(page.getByText(firm)).toBeVisible({ timeout: 15_000 });
+
+  // Find a truck that actually carries prixods. Which batch that is depends on
+  // what the specs before this one loaded, so it is looked for, not assumed.
+  await page.goto('/batches');
+  const hrefs = await page.locator('main a[href^="/batches/"]').evaluateAll((nodes) =>
+    Array.from(new Set(nodes.map((node) => (node as HTMLAnchorElement).getAttribute('href') ?? ''))).filter(
+      (href) => /^\/batches\/[0-9a-f-]{36}$/.test(href),
+    ),
+  );
+  expect(hrefs.length, 'the board must hold at least one batch by now').toBeGreaterThan(0);
+
+  let found = '';
+  for (const href of hrefs.slice(0, 6)) {
+    await page.goto(href);
+    const panel = page.getByTestId('batch-customs-panel');
+    if ((await panel.count()) === 0) continue;
+    await panel.click();
+    if ((await page.getByTestId('receipt-customs-pick').count()) > 0) {
+      found = href;
+      break;
+    }
+  }
+  expect(found, 'some truck on the board must carry a prixod').not.toBe('');
+
+  // Readable, not merely present: the picker shared its row with the client
+  // code and rendered as «Ка».
+  const pick = page.getByTestId('receipt-customs-pick').first();
+  const box = await pick.boundingBox();
+  expect(box!.width, 'the customs picker must be wide enough to read back').toBeGreaterThan(200);
+
+  await pick.selectOption('client');
+  await page.getByTestId('receipt-customs-save').first().click();
+
+  // Reload and read it back — the answer is on the prixod, not in the page.
+  await expect(async () => {
+    await page.goto(found);
+    await page.getByTestId('batch-customs-panel').click();
+    await expect(page.getByTestId('receipt-customs-pick').first()).toHaveValue('client');
+  }).toPass({ timeout: 20_000 });
+
+  // Put it back: a customs answer on somebody's cargo is configuration for
+  // every screen that reads it (#183).
+  await page.getByTestId('receipt-customs-pick').first().selectOption('');
+  await page.getByTestId('receipt-customs-save').first().click();
+  await expect(async () => {
+    await page.goto(found);
+    await page.getByTestId('batch-customs-panel').click();
+    await expect(page.getByTestId('receipt-customs-pick').first()).toHaveValue('');
+  }).toPass({ timeout: 20_000 });
+
+  await page.goto('/kontragentlar');
+  await page.locator('a[href^="/kontragentlar/"]', { hasText: firm }).first().click();
+  await page.getByTestId('partner-toggle-active').click();
+  await expect(page.locator('input[name="active"][value="1"]')).toHaveCount(1, { timeout: 15_000 });
+});

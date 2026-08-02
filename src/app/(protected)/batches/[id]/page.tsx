@@ -139,6 +139,18 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     .filter((row) => row.typeCode === 'customs' || row.id === batch.customsPartnerId)
     .map((row) => ({ id: row.id, name: row.name }));
   const customsRows = await batchCustomsRows(id);
+  // What the collapsed panel says out loud: which firm clears this truck, and
+  // how many prixods answer for themselves. Without it the panel is one more
+  // shut door among seven and nobody opens it (round 43).
+  const customsOwnAnswers = customsRows.filter((row) => !row.fromBatch).length;
+  const customsBadge = [
+    batch.customsByClient
+      ? t('customsByClient')
+      : (customsPartners.find((row) => row.id === batch.customsPartnerId)?.name ?? '—'),
+    customsOwnAnswers > 0 ? `+${customsOwnAnswers}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const batchFiles = await db
     .select({
       id: attachments.id,
@@ -449,22 +461,6 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               🏷 ТНВЭД
             </Link>
           </div>
-          <CustomsFirm
-            batchId={batch.id}
-            partnerId={batch.customsPartnerId}
-            byClient={batch.customsByClient}
-            partners={customsPartners}
-            canEdit={actor.permissions.has('ved.docs')}
-          />
-          {/* His third case: inside one truck some clients clear their own
-              cargo and we clear the rest, so the answer lives per prixod
-              with the truck's as the default. */}
-          <CustomsPerReceipt
-            batchId={batch.id}
-            rows={customsRows}
-            partners={customsPartners}
-            canEdit={actor.permissions.has('ved.docs')}
-          />
           {/* The papers that travel with the truck. Same fence as the card
               itself — a declaration is not more secret than the manifest. */}
           <div className="border-t border-line pt-2">
@@ -486,6 +482,33 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               </button>
             </form>
           )}
+        </Panel>
+      )}
+
+      {/* Rastamojka has a panel of its own, and it is deliberately NOT inside
+          the VED papers. It shipped there, folded inside another fold, and the
+          owner reported the feature as missing — a collapsed panel with
+          nothing on its face is invisible whatever it holds (round 43). The
+          badge names the firm on the collapsed card, so the answer to "who is
+          clearing this truck" needs no tap at all. */}
+      {(actor.permissions.has('ved.docs') || actor.permissions.has('plans.manage')) && (
+        <Panel title={`🛃 ${t('customs')}`} badge={customsBadge} testId="batch-customs-panel">
+          <CustomsFirm
+            batchId={batch.id}
+            partnerId={batch.customsPartnerId}
+            byClient={batch.customsByClient}
+            partners={customsPartners}
+            canEdit={actor.permissions.has('ved.docs')}
+          />
+          {/* His third case: inside one truck some clients clear their own
+              cargo and we clear the rest, so the answer lives per prixod
+              with the truck's as the default. */}
+          <CustomsPerReceipt
+            batchId={batch.id}
+            rows={customsRows}
+            partners={customsPartners}
+            canEdit={actor.permissions.has('ved.docs')}
+          />
         </Panel>
       )}
 

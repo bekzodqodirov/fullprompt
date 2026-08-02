@@ -659,6 +659,7 @@
     "cancelled": "批次已取消，退回箱数：{n}",
     "receiptGridTitle": "按入库单费用（表格）",
     "receiptGridHint": "行＝入库单，列＝费用类型（清关、服务费、运费…）。填好金额一次保存——每格都会成为该入库单的普通费用。已录入的金额显示在格下。",
+    "customs": "清关",
     "customsFirm": "清关公司",
     "customsByClient": "客户自有公司",
     "customsFirmAccount": "打开该公司账户",

@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## Rastamojka ko'rinmay turgan ekan — 2026-08-02
+
+Siz «boshqa 2 tasiniyam ko'rib chiq» dedingiz. Bu safar men ularni **telefon
+ekranida ochib, rasmini olib, ko'zim bilan qaradim** — o'tgan safar aynan
+shuni qilmaganim uchun uch marta bekorga vaqtingizni oldim.
+
+**Topilgani: 3-punkt (prixod bo'yicha rastamojka) umuman ko'rinmas ekan.**
+U «Документы ВЭД» panelining ichida, o'zi ham yopiq holda turgan edi —
+ya'ni ikki marta bosish kerak, va tashqarisida u yerda nimadir borligini
+aytadigan hech narsa yo'q. Siz «hech nima o'zgarmagan» deganingiz to'g'ri
+bo'lgan: **ochib bo'lmaydigan narsa yo'q narsa bilan barobar.**
+
+Endi:
+
+- **Partiya kartochkasida «🛃 Растаможка» degan alohida panel bor.** Yopiq
+  turganda ham yonida qaysi firma rasmlashtirayotgani yozib turadi, va agar
+  ba'zi prixodlar o'zicha javob bergan bo'lsa — «+1», «+3» deb ko'rsatadi.
+  Ya'ni **bosmasdan ham ko'rinadi.**
+- Ichida: avval partiyaning umumiy firmasi, keyin **har bir prixod alohida
+  qator** bo'lib turadi — «Partiya bo'yicha» / firma nomi / «Mijoz o'z
+  firmasi bilan».
+- **Tanlov qutisi endi butun qatorni oladi.** Oldin u «Ка» deb ko'rinardi
+  («Как у партии» ning ikkita harfi) — nima tanlanganini o'qib bo'lmasdi.
+- «Saqlash» tugmasi **faqat siz javobni o'zgartirsangiz** chiqadi. Oldin har
+  bir prixod tagida o'chiq, bosilmaydigan tugma turardi.
+
+**2-punkt (kim to'ladi) — ishlayapti, tekshirdim.** «Kim to'ladi» tanlovi
+prixod kartochkasida, yashik kartochkasida, partiya kartochkasida va
+xarajatlar ekranida bor; **skladchining o'z login'i bilan kirib ham
+ko'rdim** — unda ham chiqyapti. Saqlangan xarajat qatorida esa firma nomi
+sariq yorliq bo'lib turadi, ya'ni «bu bizning pulimizmi yoki transport
+firmasiga qarzmi» degan savolga qator o'zi javob beradi. Puli ham to'g'ri:
+firma nomi qo'yilgan xarajat o'sha firmaga **qarz** bo'lib yoziladi,
+kassadan pul chiqmaydi.
+
+Yo'lda ko'ringan yana ikkita mayda kamchilik tuzatildi:
+
+- Xarajat qo'shishda «qanday taqsimlansin» degan qatorda faqat «по» so'zi
+  ko'rinardi — «по весу», «по объёму», «клиенту напрямую» hammasi shu bilan
+  boshlanadi, ya'ni pulni qanday bo'lish tanlangani noma'lum edi. Endi u
+  o'z qatorida to'liq yoziladi.
+- «Прикрепить» tugmasining yozuvi kartochkadan tashqariga chiqib, prixoddagi
+  birinchi rasm ustiga tushib turardi. Endi tugma o'z so'ziga qarab kengayadi.
+
+Va bu safar test **ekrandagi haqiqiy kenglikni o'lchaydi** — brauzerda ochib,
+partiyani topib, prixodni «mijoz o'zi qiladi» ga o'tkazib, sahifani qayta
+yuklab, saqlanganini tekshiradi. Shuning uchun bu buzilsa, CI qizil bo'ladi.
+
+
 ## Summa maydoni — tuzatildi — 2026-08-02
 
 Rasm uchun rahmat, muammo o'sha zahoti ko'rindi va u **meniki** edi.
