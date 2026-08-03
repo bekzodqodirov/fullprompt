@@ -194,6 +194,13 @@ services:
       - 'max_wal_size=2GB'
       - '-c'
       - 'random_page_cost=1.1'
+      # Every statement slower than a fifth of a second, with its text, in
+      # `docker compose logs postgres`. Round 45 needed exactly this to find
+      # /accounting asking 1,564 questions for one screen, and the next slow
+      # page will need it again. 200 ms is quiet on a healthy system: a whole
+      # day of normal use logs a handful of lines.
+      - '-c'
+      - 'log_min_duration_statement=200'
     environment:
       POSTGRES_USER: gsr
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

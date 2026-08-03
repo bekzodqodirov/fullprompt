@@ -121,13 +121,14 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-02
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-851 unit/integration + 99 e2e, verified in CI's order on a fresh database.
+851 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0055** (`receipt_customs`). Every numbered phase is
 shipped; the agreed next round is SPEED (see the bottom of this section).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
-(rastamojka panel) and `143dcb0` (the 17 audit defects — four of them live
-money bugs). The owner's last confirmed update was `eea3509`.
+(rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
+money bugs) and the speed round. The owner's last confirmed update was
+`eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -870,11 +871,37 @@ string edit, never `git checkout`** — doing so here reverted the
 uncommitted fix along with the strip. m9y now settles before retiring,
 which is the truer demonstration anyway (#431).
 
-**Agreed next (owner, 2026-08-01):** the SPEED round — measure before
-guessing. Server is 8 GB, so the pg tuning is innocent. Plan: postgres
-`log_min_duration_statement`, per-page render timing, and a navigation
-progress indicator (there is none, and a Germany→Uzbekistan round trip
-plus SSR means every tap has ~half a second of dead screen).
+Round 45 — the SPEED round (#432-436, owner «tezlikni hal qil»), measured
+on a clone of his real data before anything was changed. All 22 main
+screens timed: worst server time 313 ms, no query over 200 ms. COUNTING
+round trips instead of timing them found the real thing — `/accounting`
+issued **1,564 queries for one screen** (`/accounting/balance` 1,611):
+`accountBalances()` was six queries per cash box, he keeps 86, and three
+panels each asked for the same list. Now five grouped aggregates + a JS
+join wrapped in React `cache()` (the `getActor` memo): **1,564/193 ms →
+23/44 ms**, balance **1,611/186 ms → 31/53 ms**. Everything else issues
+20-70 distinct queries, none over 30 ms — the database is no longer the
+story. `log_min_duration_statement=200` added to the compose block (pinned
+by the pg-tuning tripwire). What was actually slow was SILENCE: App Router
+shows the old screen for the whole Germany→Uzbekistan round trip, so
+`NavProgress` starts a 2 px line on the CLICK and ends it on the URL
+change, invisible for the first 140 ms so a prefetched page draws nothing.
+It cost three rebuilds to a trap worth knowing: a `<Suspense>` boundary
+(which `useSearchParams()` forces) hydrates LATE, so the component rendered
+while its effects had not run and the click listener was never attached —
+the fix was to drop both navigation hooks and watch `location.href` on the
+tick it already runs. Also: never key an effect on `useSearchParams()`
+itself (new object every render); key it on `.toString()`. e2e m9z asserts
+both halves — a bar on a held-back navigation, none on an instant one.
+E2E LESSON: `page.route('**/x')` matches no URL with a query string and
+App Router asks for `/x?_rsc=…`; and aborting the prefetch makes Next fall
+back to a FULL browser navigation, which tears the React tree down and
+takes the bar with it.
+
+**Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
+above. Still unmeasured: the phone-side render on a real device over a real
+mobile network (everything here was measured on localhost, so the numbers
+are server time, not what a warehouse phone feels).
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

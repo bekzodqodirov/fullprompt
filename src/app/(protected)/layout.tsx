@@ -8,6 +8,7 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { readTheme } from '@/modules/platform/theme/theme';
 import { Icon } from '@/components/ui/icon';
 import { UpdateBanner } from '@/components/update-banner';
+import { NavProgress } from '@/components/nav-progress';
 import { MobileNav, Sidebar, type NavGroup, type NavItem } from '@/components/ui/nav';
 import { Dock } from '@/components/dock';
 import { canReadTg } from '@/modules/wms/crm/conversations';
@@ -65,6 +66,12 @@ export default async function ProtectedLayout({ children }: { children: React.Re
 
   return (
     <div className="min-h-dvh">
+      {/* A tap from Uzbekistan to Germany and back has half a second where
+          App Router shows the old screen and nothing moves. This is the only
+          thing on it (round 45). NOT wrapped in Suspense, and it reads no
+          navigation hook: a boundary here hydrates late, and a listener that
+          attaches late misses the taps it exists for. */}
+      <NavProgress />
       <header className="sticky top-0 z-30 border-b border-line bg-surface-raised/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-1 px-3">
           <Link href="/" className="flex items-center gap-2 font-extrabold tracking-tight">

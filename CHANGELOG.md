@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## Tezlik — o'lchadim, sababini topdim — 2026-08-03
+
+Avval **o'lchadim**, keyin tuzatdim. Sizning haqiqiy bazangizning nusxasini
+olib (26 ming quti harakati, 10 900 quti, 4 400 prixod, 1 700 mijoz), **22 ta
+asosiy ekranni birma-bir sekundomer bilan ochdim**.
+
+Natija kutilganidan boshqacha chiqdi:
+
+**1. Ekranlarning o'zi sekin emas ekan.** Eng sekini 0,3 soniya, ko'pchiligi
+0,15 soniyadan tez. Bazada 0,2 soniyadan uzun **birorta ham so'rov yo'q**.
+
+**2. Lekin «Uchyot» ekrani bitta ochilishda bazaga 1564 marta murojaat
+qilarkan.** «Balans» — 1611 marta. Sabab: har bir kassaning qoldig'i
+alohida-alohida so'ralardi, sizda esa **86 ta kassa** bor — va ekrandagi uchta
+bo'lim bir xil ro'yxatni uch marta so'rardi. Endi hammasi bitta so'rovda
+olinadi:
+
+| Ekran | Oldin | Endi |
+|---|---|---|
+| Uchyot | 1564 so'rov / 193 ms | **23 so'rov / 44 ms** |
+| Balans | 1611 so'rov / 186 ms | **31 so'rov / 53 ms** |
+
+**3. Va eng asosiysi — «qotib qolgan» degani aslida «hech narsa
+ko'rsatmayapti» degani ekan.** Server Germaniyada, siz O'zbekistonda: tugmani
+bosgandan keyin javob kelguncha yarim soniya o'tadi, va o'sha yarim soniyada
+ekran **eski holida turadi** — na aylanadigan belgi, na boshqa narsa. Odam
+tabiiy ravishda «ishlamayapti» deb o'ylaydi va yana bosadi.
+
+Endi **tugmani bosgan zahoti ekran tepasida qizil chiziq yuguradi** va sahifa
+kelganda yo'qoladi. Muhim tafsilot: agar sahifa **tez** ochilsa (0,14
+soniyadan tez) chiziq umuman chiqmaydi — aks holda u har bosishda lipillab,
+odam unga e'tibor bermay qo'yardi. Ya'ni chiziq «bosildi» emas, **«bu biroz
+vaqt oladi»** degani.
+
+Yana: serverda endi **0,2 soniyadan sekin har bir so'rov jurnalga yoziladi**.
+Keyingi safar biror ekran sekinlashsa, sababini sizdan so'ramasdan
+o'zim topaman.
+
+Tekshirildi: **851 ta test + 101 ta brauzer testi**, toza bazada, CI
+tartibida. Chiziqni ataylab o'chirib ko'rdim — test qizil bo'ldi.
+
+
 ## Kontragentlar bo'yicha 17 ta xato topildi va tuzatildi — 2026-08-02
 
 O'tgan hafta qurgan «kontragentlar» qismini **maxsus tekshiruvdan o'tkazdim** —

@@ -28,6 +28,9 @@ describe('postgres tuning in docker-compose.yml', () => {
       'maintenance_work_mem=',
       'max_wal_size=',
       'random_page_cost=',
+      // Round 45: the slow-query log is how the next N+1 gets found. Without
+      // it the only evidence a page is slow is somebody saying so.
+      'log_min_duration_statement=',
     ]) {
       expect(block, param).toContain(param);
     }

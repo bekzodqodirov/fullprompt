@@ -4,13 +4,13 @@
 
 ---
 
-## STATUS — 2026-08-02 (round 44)
+## STATUS — 2026-08-03 (round 45)
 
 **Every numbered phase is shipped.** Phases 0–8 of the CRM/platform programme
 are done, and the last two rounds were repair rather than construction. The
 system is live on the owner's VPS with real cargo and real money in it.
 
-Size: 98 screens, 56 migrations, 851 unit/integration + 99 e2e tests green in
+Size: 98 screens, 56 migrations, 851 unit/integration + 101 e2e tests green in
 CI's order on a fresh database.
 
 ### What exists, by area
@@ -48,18 +48,37 @@ CI's order on a fresh database.
    in Uzbekistan, and there is no navigation indicator at all, so every tap has
    roughly half a second of dead screen with nothing on it.
 
-### Agreed next — the speed round
+### The speed round — SHIPPED (round 45)
 
-The owner's order was «oldin moliyani togirlaylik keyin optimizationga otamiz».
-Finance is now finished and audited, so the speed round is next:
+Measured on a clone of his real database before anything was changed. All 22
+main screens timed; the guess ("pages are slow") was wrong and the measurement
+said so: worst server time 313 ms, no query over 200 ms.
 
-1. Postgres `log_min_duration_statement` — find the slow queries before guessing.
-2. Per-page render timing, so "which screen is slow" is a fact, not a feeling.
-3. A navigation progress indicator (there is none).
+COUNTING round trips rather than timing them found the real defect —
+`/accounting` issued **1,564 queries for one screen**, `/accounting/balance`
+1,611. `accountBalances()` was six queries per cash box, he keeps 86, and
+three panels each asked for the same list.
 
-Measure first, on his data — the scan-path round moved 40 ms → 1.2 ms because
-it started with EXPLAIN ANALYZE, and the one change made on intuition was the
-one the tests rejected.
+| Screen | Before | After |
+|---|---|---|
+| `/accounting` | 1,564 queries / 193 ms | **23 / 44 ms** |
+| `/accounting/balance` | 1,611 / 186 ms | **31 / 53 ms** |
+
+Everything else issues 20–70 distinct queries with nothing repeated and nothing
+over 30 ms, so the database is no longer the story.
+
+What was actually slow was silence: App Router shows the OLD screen for the
+whole Germany→Uzbekistan round trip. `NavProgress` starts a 2 px line on the
+click and ends it when the URL changes, staying invisible for the first 140 ms
+so a prefetched page draws nothing.
+
+`log_min_duration_statement=200` now ships in the compose block, pinned by the
+pg-tuning tripwire, so the next one of these is found from the server rather
+than from a complaint.
+
+**Still unmeasured:** the phone-side render on a real device over a real mobile
+network. Everything above is server time measured on localhost — it is not what
+a warehouse phone in Yiwu feels.
 
 ### Deferred by design (stated to the owner, not forgotten)
 

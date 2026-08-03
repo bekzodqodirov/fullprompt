@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
@@ -451,92 +452,91 @@ export async function voidTransfer(id: string, reason: string, ctx: AuditContext
  * Balance per account, in the account's OWN currency.
  *
  * Opening balance + client payments in − expenses out + transfers in −
- * transfers out. Deliberately native currency, not USD: this number is what
- * someone counts in the cash box, and converting it would make it impossible
- * to reconcile against the actual notes.
+ * transfers out ± counterparty money. Deliberately native currency, not USD:
+ * this number is what someone counts in the cash box, and converting it would
+ * make it impossible to reconcile against the actual notes.
+ *
+ * FIVE grouped queries for every box, not six per box. It used to loop — and
+ * the owner keeps 86 cash boxes, so one visit to /accounting issued 516
+ * round trips, three times over, because three panels each asked for the same
+ * balances. 1,564 queries for one screen. Grouped and memoised per request,
+ * the same screen asks 15 questions.
+ *
+ * `cache` is the same per-request memo `getActor` uses: the accounts panel,
+ * the money snapshot and the balance sheet all want this list, and none of
+ * them should pay for it twice.
  */
-export async function accountBalances() {
-  const accounts = await listAccounts(true);
-  const rows = await Promise.all(
-    accounts.map(async (account) => {
-      const [paid] = await db
-        .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amount}), 0)` })
-        .from(clientTransactions)
-        .where(
-          and(
-            eq(clientTransactions.accountId, account.id),
-            eq(clientTransactions.type, 'payment'),
-            isNull(clientTransactions.voidedAt),
-          ),
-        );
-      const [spent] = await db
-        .select({ sum: sql<string>`coalesce(sum(${expenses.amount}), 0)` })
-        .from(expenses)
-        .where(and(eq(expenses.accountId, account.id), isNull(expenses.voidedAt)));
-      const [inbound] = await db
-        .select({ sum: sql<string>`coalesce(sum(${accountTransfers.amountTo}), 0)` })
-        .from(accountTransfers)
-        .where(
-          and(
-            eq(accountTransfers.toAccountId, account.id),
-            isNull(accountTransfers.voidedAt),
-          ),
-        );
-      const [outbound] = await db
-        .select({ sum: sql<string>`coalesce(sum(${accountTransfers.amountFrom}), 0)` })
-        .from(accountTransfers)
-        .where(
-          and(
-            eq(accountTransfers.fromAccountId, account.id),
-            isNull(accountTransfers.voidedAt),
-          ),
-        );
-      // Round 39: counterparty money moves the same boxes. A cash buyer
-      // wiring som into the company account raises it; paying the transport
-      // firm out of the till lowers it. Left out, every till this touched
-      // would read wrong on the screen somebody counts notes against.
-      const [partnerIn] = await db
-        .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amount}), 0)` })
-        .from(partnerTransactions)
-        .where(
-          and(
-            eq(partnerTransactions.accountId, account.id),
-            eq(partnerTransactions.type, 'receipt'),
-            isNull(partnerTransactions.voidedAt),
-          ),
-        );
-      const [partnerOut] = await db
-        .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amount}), 0)` })
-        .from(partnerTransactions)
-        .where(
-          and(
-            eq(partnerTransactions.accountId, account.id),
-            eq(partnerTransactions.type, 'payment'),
-            isNull(partnerTransactions.voidedAt),
-          ),
-        );
-      const balance =
-        Number(account.openingBalance) +
-        Number(paid?.sum ?? 0) -
-        Number(spent?.sum ?? 0) +
-        Number(inbound?.sum ?? 0) -
-        Number(outbound?.sum ?? 0) +
-        Number(partnerIn?.sum ?? 0) -
-        Number(partnerOut?.sum ?? 0);
-      return {
-        id: account.id,
-        name: account.name,
-        currency: account.currency,
-        kind: account.kind,
-        active: account.active,
-        opening: Number(account.openingBalance),
-        paidIn: Number(paid?.sum ?? 0),
-        spent: Number(spent?.sum ?? 0),
-        transferredIn: Number(inbound?.sum ?? 0),
-        transferredOut: Number(outbound?.sum ?? 0),
-        balance: Math.round(balance * 100) / 100,
-      };
-    }),
-  );
-  return rows;
-}
+export const accountBalances = cache(async function accountBalances() {
+  const [accounts, paidRows, spentRows, inRows, outRows, partnerRows] = await Promise.all([
+    listAccounts(true),
+    db
+      .select({ id: clientTransactions.accountId, sum: sql<string>`sum(${clientTransactions.amount})` })
+      .from(clientTransactions)
+      .where(and(eq(clientTransactions.type, 'payment'), isNull(clientTransactions.voidedAt)))
+      .groupBy(clientTransactions.accountId),
+    db
+      .select({ id: expenses.accountId, sum: sql<string>`sum(${expenses.amount})` })
+      .from(expenses)
+      .where(isNull(expenses.voidedAt))
+      .groupBy(expenses.accountId),
+    db
+      .select({ id: accountTransfers.toAccountId, sum: sql<string>`sum(${accountTransfers.amountTo})` })
+      .from(accountTransfers)
+      .where(isNull(accountTransfers.voidedAt))
+      .groupBy(accountTransfers.toAccountId),
+    db
+      .select({ id: accountTransfers.fromAccountId, sum: sql<string>`sum(${accountTransfers.amountFrom})` })
+      .from(accountTransfers)
+      .where(isNull(accountTransfers.voidedAt))
+      .groupBy(accountTransfers.fromAccountId),
+    // Round 39: counterparty money moves the same boxes. A cash buyer wiring
+    // som into the company account raises it; paying the transport firm out
+    // of the till lowers it. Both directions in one pass, split by type.
+    db
+      .select({
+        id: partnerTransactions.accountId,
+        type: partnerTransactions.type,
+        sum: sql<string>`sum(${partnerTransactions.amount})`,
+      })
+      .from(partnerTransactions)
+      .where(isNull(partnerTransactions.voidedAt))
+      .groupBy(partnerTransactions.accountId, partnerTransactions.type),
+  ]);
+
+  const total = (rows: { id: string | null; sum: string }[]) =>
+    new Map(rows.filter((row) => row.id !== null).map((row) => [row.id!, Number(row.sum)]));
+  const paid = total(paidRows);
+  const spent = total(spentRows);
+  const inbound = total(inRows);
+  const outbound = total(outRows);
+  const partnerIn = total(partnerRows.filter((row) => row.type === 'receipt'));
+  const partnerOut = total(partnerRows.filter((row) => row.type === 'payment'));
+
+  return accounts.map((account) => {
+    const paidIn = paid.get(account.id) ?? 0;
+    const spentOut = spent.get(account.id) ?? 0;
+    const transferredIn = inbound.get(account.id) ?? 0;
+    const transferredOut = outbound.get(account.id) ?? 0;
+    const balance =
+      Number(account.openingBalance) +
+      paidIn -
+      spentOut +
+      transferredIn -
+      transferredOut +
+      (partnerIn.get(account.id) ?? 0) -
+      (partnerOut.get(account.id) ?? 0);
+    return {
+      id: account.id,
+      name: account.name,
+      currency: account.currency,
+      kind: account.kind,
+      active: account.active,
+      opening: Number(account.openingBalance),
+      paidIn,
+      spent: spentOut,
+      transferredIn,
+      transferredOut,
+      balance: Math.round(balance * 100) / 100,
+    };
+  });
+});

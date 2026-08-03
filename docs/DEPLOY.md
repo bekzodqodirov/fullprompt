@@ -38,6 +38,11 @@ Kirish: `+998900000001 / demo1234` (demo seed; darhol parol almashtiring).
 - **HTTPS'siz rejim**: telefon kamera-skaneri ishlamaydi (brauzer talabi),
   qo'lda kiritish va HID-skaner ishlayveradi. Domen ulagach
   `DOMAIN=... docker compose --profile https up -d` yetarli.
+- **Sekin ekranni topish**: postgres har bir 0,2 soniyadan uzun so'rovni
+  jurnalga yozadi — `docker compose logs postgres | grep duration:`. Bo'sh
+  bo'lsa baza aybdor emas; keyingi qadam — bitta ekranni ochib, o'sha
+  ochilishda nechta so'rov ketganini SANASH (raund 45 shu bilan «Uchyot»
+  ekranidagi 1564 ta so'rovni topgan — ularning har biri alohida tez edi).
 - **Yangilash**: `git pull && docker compose up -d --build` (migratsiyalar
   avtomatik o'tadi).
 - **Backup**: har kuni avtomatik (`backups` volume), haftalik restore-sinov
