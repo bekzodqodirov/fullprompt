@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## CI qizil bo'ldi — sabab topildi — 2026-08-03
+
+Tezlik raundidan keyin avtomatik tekshiruv (CI) bitta testda yiqildi. Sabab
+dasturda emas, **testning o'zida** edi: avtomatik qoidalar testi o'z
+tekshiruvini **umumiy voronka bosqichiga** ulab qo'ygan ekan — ya'ni boshqa
+testlarning bitimlari ham o'sha bosqichga kirib, qoida ikki marta ishlab
+ketgan.
+
+Ikki narsa tuzatildi:
+
+- **Test endi o'ziga alohida bosqich yaratadi** va oxirida o'chiradi. Endi
+  undan boshqa hech kim qoidani ishga tushira olmaydi.
+- **Bitimlar voronkasidagi ustunlar tartibi barqaror bo'ldi.** Ikki bosqichda
+  bir xil tartib raqami bo'lsa, ular har safar har xil ketma-ketlikda
+  chiqishi mumkin edi (lidlar voronkasida bu allaqachon to'g'ri edi).
+
+Dasturning ishlashiga ta'sir qiladigan o'zgarish yo'q — faqat ustunlar
+tartibi endi har doim bir xil.
+
+
 ## Tezlik — o'lchadim, sababini topdim — 2026-08-03
 
 Avval **o'lchadim**, keyin tuzatdim. Sizning haqiqiy bazangizning nusxasini

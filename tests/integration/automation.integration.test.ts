@@ -7,6 +7,8 @@ import {
   attachments,
   automationRules,
   clients,
+  dealStages as dealStagesTable,
+  leadStages as leadStagesTable,
   notifications,
   tasks,
   users,
@@ -15,7 +17,7 @@ import {
 import { saveRule, setRuleActive } from '@/modules/platform/automation/service';
 import { processPendingEvents } from '@/modules/platform/notifications/service';
 import { createDeal, listStages as dealStages, moveDeal } from '@/modules/wms/deals/service';
-import { createLead, listStages as leadStages, moveLead } from '@/modules/wms/crm/service';
+import { createLead, moveLead } from '@/modules/wms/crm/service';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 
 /**
@@ -30,6 +32,17 @@ let assigneeId: string;
 let clientId: string;
 let whId: string;
 const ruleIds: string[] = [];
+/**
+ * The trigger stage is MINTED here, not borrowed from the seeded funnel.
+ *
+ * It used to be `stages.find((s) => s.id !== from.id)` — a shared column that
+ * any other test file's deal can also walk into. CI caught it once: the rule
+ * had fired twice and `fireCount` read 2. A rule is only testable if nothing
+ * but this file can pull its trigger. Deleted in afterAll — a stage is
+ * CONFIGURATION (#183).
+ */
+const madeStages: string[] = [];
+const madeLeadStages: string[] = [];
 const ctx = (actorId: string) => ({ actorId, ip: null, userAgent: null });
 
 beforeAll(async () => {
@@ -74,6 +87,10 @@ afterAll(async () => {
     await db.delete(automationRules).where(eq(automationRules.id, id));
   }
   await db.delete(tasks).where(like(tasks.title, `AU-${STAMP}%`));
+  for (const id of madeStages) await db.delete(dealStagesTable).where(eq(dealStagesTable.id, id));
+  for (const id of madeLeadStages) {
+    await db.delete(leadStagesTable).where(eq(leadStagesTable.id, id));
+  }
   await db.delete(notifications).where(eq(notifications.type, 'AutomationRule'));
   await db.update(warehouses).set({ active: false }).where(eq(warehouses.id, whId));
   await pgClient.end();
@@ -83,7 +100,20 @@ describe('a rule turns an event into work', () => {
   it('deal enters the chosen stage → a task opens for the deal owner, linked to the deal', async () => {
     const stages = await dealStages();
     const from = stages.find((s) => s.kind === 'open')!;
-    const to = stages.find((s) => s.id !== from.id)!;
+    // A column of this file's own, so only this file's move can fire the rule.
+    const to = (
+      await db
+        .insert(dealStagesTable)
+        .values({
+          name: `AU-${STAMP} bosqich`,
+          kind: 'open',
+          color: 'blue',
+          sortOrder: 9700,
+          active: true,
+        })
+        .returning()
+    )[0]!;
+    madeStages.push(to.id);
 
     ruleIds.push(
       await saveRule(
@@ -129,12 +159,41 @@ describe('a rule turns an event into work', () => {
       .where(eq(automationRules.id, ruleIds[0]!));
     expect(rule!.fireCount).toBe(1);
     expect(rule!.lastFiredAt).not.toBeNull();
+
+    // Somebody else's deal walking the SHARED funnel must not pull this
+    // rule's trigger. It used to: the trigger was a seeded column, so any
+    // other file's move fired it and `fireCount` came back 2 — which is how
+    // CI failed once while every local run passed.
+    const foreignStage = stages.find((s) => s.id !== from.id)!;
+    const foreignDeal = await createDeal(
+      { clientId, ownerId: assigneeId, stageId: from.id },
+      ctx(authorId),
+    );
+    await moveDeal(foreignDeal, foreignStage.id, ctx(authorId));
+    await processPendingEvents();
+    const [after] = await db
+      .select()
+      .from(automationRules)
+      .where(eq(automationRules.id, ruleIds[0]!));
+    expect(after!.fireCount, 'only this file may fire this rule').toBe(1);
   });
 
   it('a lead move fires the notify action; a PAUSED rule stays silent', async () => {
-    const stages = await leadStages();
-    const from = stages.find((s) => s.kind === 'open')!;
-    const to = stages.find((s) => s.id !== from.id && s.kind !== 'lost')!;
+    // Minted, for the same reason the deal trigger is: a shared column is
+    // pulled by every other file's lead as well as this one's.
+    const to = (
+      await db
+        .insert(leadStagesTable)
+        .values({
+          name: `AU-${STAMP} lid bosqichi`,
+          kind: 'open',
+          color: 'blue',
+          sortOrder: 9700,
+          active: true,
+        })
+        .returning()
+    )[0]!;
+    madeLeadStages.push(to.id);
 
     const ruleId = await saveRule(
       {

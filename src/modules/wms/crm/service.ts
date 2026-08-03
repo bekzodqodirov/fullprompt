@@ -634,7 +634,8 @@ export async function funnelReport(ownerId?: string) {
     .from(leadStages)
     .leftJoin(leads, and(eq(leads.stageId, leadStages.id), scope))
     .groupBy(leadStages.id, leadStages.name, leadStages.kind, leadStages.sortOrder)
-    .orderBy(asc(leadStages.sortOrder));
+    // Same tiebreak as `listStages` above: a tie leaves the order to Postgres.
+    .orderBy(asc(leadStages.sortOrder), asc(leadStages.name));
 
   const bySource = await db
     .select({

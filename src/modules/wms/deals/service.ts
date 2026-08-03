@@ -895,7 +895,11 @@ export async function listStages(includeInactive = false) {
     .select()
     .from(dealStages)
     .where(includeInactive ? sql`true` : eq(dealStages.active, true))
-    .orderBy(asc(dealStages.sortOrder));
+    // A tiebreak, because two stages may share a sortOrder and Postgres then
+    // returns them in whatever order it likes — the funnel's columns would
+    // swap between page loads, and anything that picks "the next stage" from
+    // this list stops being repeatable. The lead funnel has always had one.
+    .orderBy(asc(dealStages.sortOrder), asc(dealStages.name));
 }
 
 export interface DealRow {
