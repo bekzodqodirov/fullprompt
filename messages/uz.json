@@ -1161,7 +1161,8 @@
     },
     "chatPurge": "Yozuvlarini o'chirish",
     "chatPurgeConfirm": "Bu chatning saqlangan xabarlari (va rasmlari) butunlay o'chirilsinmi? Bu amal jurnalga yoziladi.",
-    "showAll": "hammasini ko'rsatish"
+    "showAll": "hammasini ko'rsatish",
+    "replyStuck": "Ketgan, lekin yozilmagan — Telegramda tekshiring"
   },
   "navShort": {
     "home": "Bosh",

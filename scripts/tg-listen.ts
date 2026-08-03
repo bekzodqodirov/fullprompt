@@ -17,6 +17,7 @@ import {
 import {
   canSendNow,
   floodWaitUntil as computeFloodWait,
+  isDbUnreachable,
   isPermanentSendError,
   MAX_ATTEMPTS,
 } from '../src/modules/wms/crm/telegram-send';
@@ -71,6 +72,16 @@ import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
  * talking all week so startup cannot turn into a full re-import.
  */
 const CATCHUP_PER_CHAT = 200;
+
+/**
+ * How long the database may be unreachable before the manager is told, in
+ * their own Telegram (round 48).
+ *
+ * Thirty seconds of blips are normal and self-healing; his outage ran for
+ * days with nothing but a log line to show for it, because the only thing
+ * that could have raised the alarm was the database.
+ */
+const DB_ALERT_AFTER_MS = 60_000;
 
 /**
  * Download an incoming photo and pin it to its message row (owner, item 15:
@@ -269,7 +280,80 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   let floodWaitUntil: Date | null = null;
   let sent = 0;
 
+  /**
+   * A message Telegram has ACCEPTED and the database has not heard about yet
+   * (round 48, the owner's item 14).
+   *
+   * This is the gap his stuck reply fell through. The old code sent, then
+   * called `markSent`, and treated a failure of the SECOND as a failure of the
+   * first: on a database blip the row was marked failed — or, when the
+   * database was properly gone, left in `sending` for ever while the screen
+   * read «navbatda» and the client had already answered. A message that has
+   * left is a fact about the outside world; it cannot be un-sent by a local
+   * error, and it must never be re-sent to fix one.
+   *
+   * So the fact is held HERE until the database accepts it, retried on every
+   * tick, and nothing else is claimed while it is outstanding — which also
+   * keeps the queue in order.
+   */
+  let unsettled: { id: string; tgMessageId: bigint | null } | null = null;
+  /** Consecutive ticks that could not reach the database at all. */
+  let dbDownSince: Date | null = null;
+  let dbAlertSent = false;
+
+  /**
+   * Tell the human, without the database.
+   *
+   * Every other alarm in this system is a row somebody reads on a screen the
+   * database serves — useless for exactly this failure. The listener holds a
+   * live connection to the manager's own Telegram, so it writes to their
+   * Saved Messages, which needs nothing but the socket it already has. Once
+   * per outage: an alarm that repeats every three seconds is an alarm nobody
+   * reads twice.
+   */
+  const alertOwner = async (text: string) => {
+    try {
+      await client.sendMessage('me', { message: `⚠️ GSR: ${text}` });
+    } catch {
+      // Nothing left to try; the log is the last resort.
+    }
+  };
+
+  const noteDbFailure = async (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('navbat:', message);
+    if (!dbDownSince) dbDownSince = new Date();
+    const downMs = Date.now() - dbDownSince.getTime();
+    if (downMs > DB_ALERT_AFTER_MS && !dbAlertSent) {
+      dbAlertSent = true;
+      await alertOwner(
+        `bazaga ulanib bo'lmayapti (${message}). Telegram xabarlari saqlanmayapti.` +
+          ` Serverda: docker compose --profile telegram restart tg-listen`,
+      );
+    }
+  };
+
+  const noteDbOk = () => {
+    if (dbDownSince && dbAlertSent) void alertOwner('baza qaytdi, hammasi joyida.');
+    dbDownSince = null;
+    dbAlertSent = false;
+  };
+
   const pump = async () => {
+    // A message that already left has to be written down before anything else
+    // goes out, or the queue reorders itself around a failure.
+    if (unsettled) {
+      try {
+        await markSent(unsettled.id, unsettled.tgMessageId);
+        console.log(`  → ${unsettled.id.slice(0, 8)} nihoyat yozildi`);
+        unsettled = null;
+        noteDbOk();
+      } catch (err) {
+        await noteDbFailure(err);
+      }
+      return;
+    }
+
     // Cheap enough to ask every tick, and the switch has to be able to stop
     // sending WITHOUT anybody restarting a process on a server.
     if ((await getSetting('tg_sending_enabled')) !== true) return;
@@ -321,7 +405,17 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       } else {
         result = await client.sendMessage(target, { message: job.body });
       }
-      await markSent(job.id, result?.id ? BigInt(result.id) : null);
+      // From here the message EXISTS in somebody's Telegram. Every failure
+      // below is a bookkeeping failure and is treated as one.
+      const tgMessageId = result?.id ? BigInt(result.id) : null;
+      try {
+        await markSent(job.id, tgMessageId);
+        noteDbOk();
+      } catch (err) {
+        unsettled = { id: job.id, tgMessageId };
+        await noteDbFailure(err);
+        return;
+      }
       // The echo is written HERE, so the thread shows the photo we uploaded
       // instead of downloading a second copy when Telegram echoes it back.
       if (job.attachmentId && result?.id) {
@@ -344,6 +438,14 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // Telegram's own instruction, and obeying it is not optional: carrying
       // on through a FLOOD_WAIT is the fastest way to lose the account.
       const seconds = (err as { seconds?: number })?.seconds;
+      // A database that is not there is not a send that failed: the message
+      // never left, so the row must go back in the queue rather than be
+      // marked failed by a write that would fail too.
+      if (isDbUnreachable(message)) {
+        await noteDbFailure(err);
+        await releaseClaim(job.id).catch(() => {});
+        return;
+      }
       if (typeof seconds === 'number') {
         floodWaitUntil = computeFloodWait(seconds);
         console.error(`FLOOD_WAIT ${seconds}s — ${floodWaitUntil.toISOString()} gacha to‘xtadim`);
@@ -361,7 +463,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   // at three seconds a message the human on the other end cannot tell.
   const sender = setInterval(() => {
     void pump().catch((err) => {
-      console.error('navbat:', err instanceof Error ? err.message : err);
+      void noteDbFailure(err);
     });
   }, 3000);
 

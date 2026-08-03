@@ -31,6 +31,24 @@ seed → manzilni chiqaradi.
 
 Kirish: `+998900000001 / demo1234` (demo seed; darhol parol almashtiring).
 
+## Telegram tinglovchisi (mijozlar bilan yozishmalar)
+
+Servis nomi **`tg-listen`** (`tg-listener` emas) va u `telegram` profili
+ortida turadi — profilsiz `docker compose logs` uni topa olmaydi.
+
+```bash
+# loglar
+docker compose --profile telegram logs -f tg-listen
+# qayta ishga tushirish (xabarlar «navbatda» bo'lib qotib qolsa — shu)
+docker compose --profile telegram restart tg-listen
+```
+
+**«getaddrinfo EAI_AGAIN postgres»** — konteyner bazani topa olmayapti
+(Docker'ning ichki DNS'i). Sayt ishlayotgan bo'lsa ham shu bo'lishi mumkin.
+Yuqoridagi `restart` yetadi. 2026-08-03 dan boshlab tinglovchi bu holatni
+1 daqiqadan keyin **sizning Telegramingizga («Saved Messages») o'zi yozadi**.
+
+
 ## Keyingi qadamlar (xohlaganda)
 
 - **Telegram**: `.env` dagi `TELEGRAM_BOT_TOKEN` ni to'ldirib

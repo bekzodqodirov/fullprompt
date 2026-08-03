@@ -121,13 +121,13 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-861 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+869 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0055** (`receipt_customs`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (rounds 46-47).
+shipped; the current round is the owner's 14-point feedback list (rounds 46-48).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-47. The owner's last confirmed
+money bugs), the speed round and rounds 46-48. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -951,6 +951,28 @@ against `endOfToday()`; moving the convention has to move both. `aboutHref`
 exported from tasks/view rather than copied. **14 —** the compose service is
 `tg-listen` behind the `telegram` profile; the «navbatda» report is still
 unexplained and needs those logs. No migration in this round.
+
+Round 48 — his item 14, diagnosed from the server's own logs (#458-462).
+The listener's container had lost DNS for the database
+(`getaddrinfo EAI_AGAIN postgres`, repeating, for days) while everything else
+kept working. `pump()` called `sendMessage` then `markSent` and treated a
+failure of the SECOND as a failure of the first: the row sat in `sending`
+while the screen read «navbatda» — and with the db merely blinking, the same
+path would have marked a DELIVERED message failed and sent it to the customer
+twice. Now: everything after the network call is bookkeeping — a successful
+send with a failed `markSent` becomes an in-process `unsettled` fact, retried
+every tick, nothing else claimed until it lands; a db error anywhere else
+RELEASES the claim (the message never left); `isDbUnreachable` extracted
+beside `isPermanentSendError` and tested so a Telegram refusal is never
+re-queued as a blip. **The alarm for a dead database cannot be a row in the
+database** — after a minute of consecutive failures the listener writes to the
+manager's own Telegram **Saved Messages** (`client.sendMessage('me', …)`),
+once per outage, with the fix command, and «baza qaytdi» when it clears; this
+is the only alerting path here that needs nothing but a socket.
+`outboxLabel(status, claimedSince, now)` adds **stuck** (in flight > 5 min) —
+not failed, not queued, «check Telegram», in warn colour. Red-proofs ×2.
+His command failed because the service is `tg-listen` behind the `telegram`
+profile: `docker compose --profile telegram logs -f tg-listen`. No migration.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

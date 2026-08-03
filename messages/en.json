@@ -1161,7 +1161,8 @@
     },
     "chatPurge": "Delete stored messages",
     "chatPurgeConfirm": "Delete this chat's stored messages (and photos) for good? The action is logged.",
-    "showAll": "show all"
+    "showAll": "show all",
+    "replyStuck": "Left, but not recorded — check Telegram"
   },
   "navShort": {
     "home": "Home",

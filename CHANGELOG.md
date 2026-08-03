@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## 14-punkt: sabab topildi — 2026-08-03 (3-qism)
+
+Loglar uchun rahmat — ular hamma narsani aytdi.
+
+**Nima bo'lgan.** Tinglovchi konteyner **bazani topa olmay qolgan**:
+`getaddrinfo EAI_AGAIN postgres` — Docker'ning ichki DNS'i o'sha konteyner
+uchun ishlamay qolgan (sayt, ishchilar, hammasi ishlayvergan). Natijada:
+xabar **Telegramga ketgan**, lekin «ketdi» degan yozuv bazaga tusha olmagan.
+Shu sababli ekranda kunlab «navbatda» turgan, mijoz esa allaqachon javob
+bergan. Aynan siz aytgan narsa.
+
+**Yana bir xavf bor edi** (siz sezmagansiz): baza bir soniyaga uzilsa,
+sistema **yuborilgan xabarni «yuborilmadi» deb belgilab, ikkinchi marta
+yuborib qo'yishi** mumkin edi. Mijoz bir xabarni ikki marta olardi.
+
+**Nima qilindi:**
+
+1. **Ketgan xabar — ketgan.** Telegram qabul qilgandan keyingi har qanday
+   xatolik endi «yuborilmadi» deb hisoblanmaydi. Yozuv baza tiklanguncha
+   xotirada saqlanadi va har 3 soniyada qayta urinadi; shu bitmaguncha
+   navbatdan yangi xabar olinmaydi (tartib buzilmasin).
+2. **Baza yo'qligi ≠ Telegram rad etishi.** Ikkisini ajratadigan alohida
+   tekshiruv qo'yildi va testga olindi — bloklagan mijozga qayta-qayta
+   yuborilib qolmasligi uchun.
+3. **Baza o'lganini bazaga yozib bo'lmaydi.** Shuning uchun tinglovchi endi
+   1 daqiqadan keyin **sizning o'zingizning Telegramingizga («Saved
+   Messages») yozadi**: nima buzilgani va tuzatadigan buyruq. Baza qaytsa —
+   «baza qaytdi» deb yozadi. Har uzilishga bir marta.
+4. **Ekran endi yolg'on gapirmaydi.** 5 daqiqadan ortiq «ketayotgan» xabar
+   «navbatda» emas, **«Ketgan, lekin yozilmagan — Telegramda tekshiring»**
+   deb sariq rangda turadi.
+
+**Hozir serverda qiling** (eski xabarlar qotib qolgan bo'lsa shu yetadi):
+```
+docker compose --profile telegram restart tg-listen
+```
+
+Tekshirish: 869 ta ichki test, 101 ta brauzer testi — hammasi yashil.
+
+
 ## Javoblaringiz bo'yicha — 2026-08-03 (2-qism)
 
 **6. Yopilgan lidlar endi voronkani to'ldirmaydi.** «Sotuv» va «Yo'qotildi»

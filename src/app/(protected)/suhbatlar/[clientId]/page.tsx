@@ -11,6 +11,7 @@ import {
   threadManagers,
 } from '@/modules/wms/crm/conversations';
 import { pendingFor } from '@/modules/wms/crm/outbox';
+import { outboxLabel } from '@/modules/wms/crm/telegram-send';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { TelegramReply } from '@/components/telegram-reply';
@@ -131,16 +132,32 @@ export default async function ConversationPage({
               purpose: a queued reply is not a delivered one, and a client
               waiting on an answer nobody sent is the worst thing this feature
               can produce. */}
-          {[...queued].reverse().map((row) => (
+          {[...queued].reverse().map((row) => {
+            // Round 48, his item 14: a row the listener claimed and could not
+            // finish reading «navbatda» for hours is the screen lying about
+            // something the client has already replied to. `queuedAt` stands
+            // in for "claimed at" — a row is claimed within seconds of being
+            // written, so the two differ by less than the threshold cares
+            // about.
+            const label = outboxLabel(row.status, row.queuedAt);
+            return (
             <div
               key={row.id}
               className={`ml-auto max-w-[85%] rounded-xl border border-dashed px-3 py-2 text-sm ${
-                row.status === 'failed' ? 'border-bad text-bad' : 'border-line-strong text-ink-500'
+                label === 'failed'
+                  ? 'border-bad text-bad'
+                  : label === 'stuck'
+                    ? 'border-warn text-warn'
+                    : 'border-line-strong text-ink-500'
               }`}
-              data-testid={`outbox-${row.status}`}
+              data-testid={`outbox-${label}`}
             >
               <div className="mb-0.5 text-xs font-semibold">
-                {row.status === 'failed' ? `✕ ${t('replyFailed')}` : `◷ ${t('replyQueued')}`}
+                {label === 'failed'
+                  ? `✕ ${t('replyFailed')}`
+                  : label === 'stuck'
+                    ? `⚠ ${t('replyStuck')}`
+                    : `◷ ${t('replyQueued')}`}
               </div>
               <p className="whitespace-pre-wrap break-words">
                 {row.attachmentId && '🖼 '}
@@ -148,7 +165,8 @@ export default async function ConversationPage({
               </p>
               {row.lastError && <p className="mt-1 text-xs">{row.lastError}</p>}
             </div>
-          ))}
+            );
+          })}
 
           {messages.map((msg) => (
             <TelegramBubble

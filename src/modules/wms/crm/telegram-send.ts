@@ -192,3 +192,57 @@ export const MAX_CAPTION_CHARS = 1024;
 export function captionTooLong(body: string): boolean {
   return [...body.trim()].length > MAX_CAPTION_CHARS;
 }
+
+/**
+ * How long a reply may sit «in flight» before the screen must stop calling it
+ * queued (round 48, the owner's item 14).
+ *
+ * A row goes to `sending` the instant the listener claims it and leaves that
+ * state a second later — unless the listener sent the message and could not
+ * write down that it had. Five minutes is far longer than any real send and
+ * far shorter than the hours his stuck row sat there reading «navbatda» while
+ * the client had already answered it.
+ */
+export const STUCK_SENDING_MS = 5 * 60_000;
+
+export type OutboxLabel = 'queued' | 'sending' | 'stuck' | 'failed';
+
+/**
+ * What the thread should CALL a row that has not been marked sent.
+ *
+ * The distinction that matters is the last one: «stuck» does not mean the
+ * message failed and it does not mean it is waiting. It means nobody here
+ * knows, and the one person who can find out is the manager whose Telegram it
+ * left from — so the screen says «check it» instead of guessing.
+ */
+export function outboxLabel(
+  status: string,
+  claimedSince: Date | null,
+  now: Date = new Date(),
+): OutboxLabel {
+  if (status === 'failed') return 'failed';
+  if (status !== 'sending') return 'queued';
+  if (!claimedSince) return 'sending';
+  return now.getTime() - claimedSince.getTime() > STUCK_SENDING_MS ? 'stuck' : 'sending';
+}
+
+/**
+ * Is this "cannot reach the database" rather than "Telegram refused"?
+ *
+ * The distinction decides whether a claimed reply goes back in the queue or is
+ * marked failed, and getting it wrong costs a customer a message. `EAI_AGAIN`
+ * is what the owner's server actually produced — Docker's embedded DNS stopped
+ * resolving `postgres` for the listener's container while everything else kept
+ * working, for days. The rest are the other shapes the same thing takes.
+ */
+export function isDbUnreachable(message: string): boolean {
+  return [
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'Connection terminated',
+    'terminating connection',
+  ].some((code) => message.includes(code));
+}
