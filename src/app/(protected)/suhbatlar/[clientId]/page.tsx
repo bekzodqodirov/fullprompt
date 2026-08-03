@@ -13,6 +13,7 @@ import {
 import { pendingFor } from '@/modules/wms/crm/outbox';
 import { outboxLabel } from '@/modules/wms/crm/telegram-send';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { ChatMenu } from '@/components/chat-menu';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { TelegramReply } from '@/components/telegram-reply';
 
@@ -74,7 +75,9 @@ export default async function ConversationPage({
     // Capped and centred: on a wide screen an 85 % bubble against each edge
     // reads as two columns of unrelated text rather than as one conversation.
     <div className="mx-auto flex h-[calc(100dvh-11.5rem)] w-full max-w-3xl flex-col gap-3 md:h-[calc(100dvh-6.5rem)]">
-      <div className="flex flex-wrap items-baseline gap-2">
+      {/* `relative` for the ⋯ menu: its popover anchors to this ROW so it
+          cannot open off the left edge when the header wraps. */}
+      <div className="relative flex flex-wrap items-baseline gap-2">
         <Link href="/suhbatlar" className="text-sm text-ink-500 underline">
           ← {t('conversations')}
         </Link>
@@ -89,6 +92,9 @@ export default async function ConversationPage({
         <Link href={`/admin/clients/${client.id}`} className="btn-secondary !py-1 text-sm">
           {t('openCard')}
         </Link>
+        {/* The rare, destructive one — folded, and as far from the compose
+            box as this screen goes (round 51). */}
+        <ChatMenu clientId={client.id} />
       </div>
 
       {/* The supervision view's selector (owner): several staff talk to one

@@ -121,13 +121,13 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-875 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+878 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0056** (`tg_session_removable`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (rounds 46-50).
+shipped; the current round is the owner's 14-point feedback list (rounds 46-51).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-50. The owner's last confirmed
+money bugs), the speed round and rounds 46-51. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -1013,6 +1013,19 @@ killed the session and wrong when the manager chose to leave); conversations
 and the account row stay. The confirm names all four consequences instead of
 asking «are you sure». Red-proof: the session wipe stripped → the integration
 test reads back `v1.x.y.z` instead of null.
+
+Round 51 — «chatni qo'shmaslik … oson bosilib ketmaydigan joyga» (#469-471).
+«Stop taking this chat» had sat under the compose box since round 22, on
+every screen showing a conversation — a thumb from «Send», on the strip a
+keyboard shoves about, and since round 25 the action PURGES what is stored.
+Now a ⋯ menu in the thread HEADER (`components/chat-menu.tsx`, native
+`<details>`, gated by `replyAccountFor`); off the cards entirely. Reaching it
+is open → press → confirm. New tripwire `tests/unit/chat-controls.test.ts`:
+telegram-reply/reply-box/dock must mention neither `TelegramStopTaking` nor
+`excludeChatAction` — source-shape, because both components always WORKED and
+the defect was adjacency. The popover anchors to the header ROW, not the ⋯:
+`right-0` on the button put its left edge off-screen at 360 px once the
+header wrapped — caught in a screenshot, invisible to every test.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

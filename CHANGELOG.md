@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## «Bu chatni olmang» tugmasi joyini o'zgartirdi — 2026-08-03 (6-qism)
+
+To'g'ri aytdingiz: u **yozish oynasining tagida** turardi — «Yuborish»dan bir
+barmoq narida, klaviatura ochilib-yopilib turadigan joyda. Ustiga-ustak u
+25-raunddan beri shunchaki «olmaslik» emas, **saqlangan yozishmalarni ham
+o'chiradi**. Eng xavfli tugma eng ko'p bosiladigan tugmaning yonida turgan.
+
+Endi u **chat sarlavhasidagi «⋯» menyusida** — ekranning eng tepasida,
+klaviaturadan eng uzoq nuqtada, yopiq holatda. Unga yetish uchun: menyuni
+ochish → bosish → tasdiqlash. Uch qadam, uchalasi ham ataylab.
+
+Mijoz/bitim/lid kartochkalaridagi chatdan **butunlay olib tashlandi** —
+suhbatni tashlab yuborish qarori kartochkada emas, chatning o'zida
+qabul qilinadi.
+
+Yo'l-yo'lakay: menyu telefon ekranida **chapga chiqib ketayotgan edi**
+(sarlavha ikki qatorga bo'linganda), rasmga olib ko'rmasam bilinmasdi —
+tuzatildi.
+
+Tekshirish: 878 ta ichki test, 101 ta brauzer testi — hammasi yashil.
+Ekranni telefon o'lchamida (360×800) ochib, menyuni ochib-yopib ko'rdim.
+
+
 ## Telegramdan chiqish tugmasi — 2026-08-03 (5-qism)
 
 **Suhbatlar → Ulash** sahifasida endi ulangan akkaunt ostida

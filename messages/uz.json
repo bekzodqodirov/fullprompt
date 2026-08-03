@@ -1165,7 +1165,8 @@
     "replyStuck": "Ketgan, lekin yozilmagan — Telegramda tekshiring",
     "disconnect": "🚪 Telegramimni uzish",
     "disconnectConfirm": "Telegramni sistemadan uzasizmi?\n\n• mijozlarning xabarlari kelmay qoladi\n• navbatdagi javoblar «yuborilmadi» bo'ladi\n• seans serverdan o'chiriladi va Telegramning o'zida ham tugatiladi\n\nQaytish uchun yana ulash kerak bo'ladi (telefon + kod).",
-    "disconnectDone": "Uzildi. Mijoz suhbatlari endi kelmaydi."
+    "disconnectDone": "Uzildi. Mijoz suhbatlari endi kelmaydi.",
+    "chatMenu": "Chat sozlamalari"
   },
   "navShort": {
     "home": "Bosh",
