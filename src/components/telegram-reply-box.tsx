@@ -1,9 +1,9 @@
 'use client';
 
-import { useActionState, useRef, useState } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
-import { sendReplyAction, type ReplyState } from '@/modules/wms/crm/reply-actions';
+import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 
 /**
  * The compose box — the first thing in this system that speaks to a customer
@@ -36,13 +36,37 @@ export function TelegramReplyBox({
   /** On a card the box sits inside a panel and needs no card frame of its own. */
   compact?: boolean;
 }) {
-  const [state, submit, pending] = useActionState<ReplyState, FormData>(sendReplyAction, {});
+  // NOT `useActionState` with the action on the form (round 49). React runs a
+  // form Action and then resets the form's uncontrolled fields — on success
+  // AND on refusal — so a message the queue turned down took the manager's
+  // words with it, which is exactly the «habar yo'q bo'lib qolyabti» the owner
+  // reported. The old code even called `reset()` itself, under a comment
+  // claiming it only cleared after a successful round trip. Submitting by
+  // hand is the only way to see the verdict before deciding, and it is what
+  // the dock's composer has always done.
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const coarse = useCoarsePointer();
   const [photo, setPhoto] = useState<{ id: string; name: string } | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  function submit() {
+    const form = formRef.current;
+    if (!form || pending || uploading) return;
+    const data = new FormData(form);
+    start(async () => {
+      const result = await sendReplyAction({}, data);
+      setError(result.error ?? null);
+      // A refusal keeps what was typed. There is nowhere else it exists.
+      if (!result.ok) return;
+      form.reset();
+      setPhoto(null);
+      if (bodyRef.current) bodyRef.current.style.height = '';
+    });
+  }
 
   async function attach(list: FileList | null) {
     const file = list?.[0];
@@ -64,14 +88,11 @@ export function TelegramReplyBox({
   return (
     <form
       ref={formRef}
-      action={async (data) => {
-        await submit(data);
-        // Cleared after the round trip rather than optimistically: the queue
-        // can refuse, and a box that empties on a refusal has thrown away
-        // what somebody typed.
-        formRef.current?.reset();
-        setPhoto(null);
-        if (bodyRef.current) bodyRef.current.style.height = '';
+      onSubmit={(event) => {
+        // `preventDefault` and no `action` prop: both halves matter. The
+        // action prop is what makes React reset the fields afterwards.
+        event.preventDefault();
+        submit();
       }}
       className={compact ? 'shrink-0 space-y-1 pt-1' : 'card shrink-0 space-y-1 !p-2'}
       data-testid="reply-box"
@@ -132,9 +153,9 @@ export function TelegramReplyBox({
           {pending ? labels.sending : labels.send}
         </button>
       </div>
-      {state.error && (
+      {error && (
         <p className="w-full text-sm font-semibold text-bad" data-testid="reply-error">
-          {labels.errors[state.error] ?? state.error}
+          {labels.errors[error] ?? error}
         </p>
       )}
     </form>
