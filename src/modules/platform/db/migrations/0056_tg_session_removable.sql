@@ -1,0 +1,12 @@
+-- A manager may take their Telegram back.
+--
+-- Round 50, the owner: «telegramga ulash bor, endi undan chiqishni qo'sh».
+-- Connecting hands this server a credential that can read and write a
+-- person's entire Telegram. The only honest way to give that back is to stop
+-- holding it — so «chiqish» NULLs the stored session rather than marking the
+-- row and keeping the bytes.
+--
+-- Relaxing, not rewriting: every existing row keeps its session and its
+-- meaning. NULL now says exactly one thing — «this account is disconnected
+-- and nothing here can speak as it».
+ALTER TABLE tg_accounts ALTER COLUMN session_enc DROP NOT NULL;

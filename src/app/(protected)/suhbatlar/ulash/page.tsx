@@ -6,6 +6,7 @@ import { accountStatuses } from '@/modules/wms/crm/telegram-accounts';
 import { secondsBehind } from '@/modules/wms/crm/telegram-live';
 import { BRIDGE_LABELS } from '@/components/telegram-bridge-status';
 import { ConnectForm } from './connect-form';
+import { DisconnectButton } from './disconnect';
 
 /**
  * «Telegram ulash» — round 21, the owner: «akkauntlarni sistemamizga
@@ -44,12 +45,26 @@ export default async function ConnectPage() {
       <ConnectForm />
 
       {ownAccount && (
-        <p className="text-xs text-ink-500">
-          {t(BRIDGE_LABELS[ownAccount.state] as 'bridgeLive')} · {ownAccount.tgPhone}
-          {ownAccount.state === 'live' &&
-            secondsBehind(ownAccount.lastSeenAt, new Date()) !== null &&
-            ` · ${t('bridgeSeconds', { n: secondsBehind(ownAccount.lastSeenAt, new Date())! })}`}
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs text-ink-500">
+            {t(BRIDGE_LABELS[ownAccount.state] as 'bridgeLive')} · {ownAccount.tgPhone}
+            {ownAccount.state === 'live' &&
+              secondsBehind(ownAccount.lastSeenAt, new Date()) !== null &&
+              ` · ${t('bridgeSeconds', { n: secondsBehind(ownAccount.lastSeenAt, new Date())! })}`}
+          </p>
+          {/* Only for an account that is actually connected — a signed-out row
+              has nothing left to disconnect, and the screen above it is
+              already telling them to log in again. */}
+          {ownAccount.state !== 'signed_out' && (
+            <DisconnectButton
+              labels={{
+                button: t('disconnect'),
+                confirm: t('disconnectConfirm'),
+                done: t('disconnectDone'),
+              }}
+            />
+          )}
+        </div>
       )}
     </div>
   );

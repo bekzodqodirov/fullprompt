@@ -1,6 +1,6 @@
 import { asc, eq, sql } from 'drizzle-orm';
 import { db, pgClient } from '../../platform/db/client';
-import { clients, tgAccounts, tgMessages, users } from '../../platform/db/schema';
+import { clients, tgAccounts, tgMessages, tgOutbox, users } from '../../platform/db/schema';
 import { openSession, sealSession, sessionKey, sessionOpens } from './telegram-session';
 import { bridgeState, type BridgeState } from './telegram-live';
 import type { ClientPhones, MessageRow } from './telegram-import';
@@ -44,6 +44,53 @@ export async function saveAccount(input: {
     });
 }
 
+/**
+ * «Chiqish» — a manager disconnects their own Telegram (round 50, the owner:
+ * «telegramga ulash bor, endi undan chiqishni qo'sh»).
+ *
+ * Three things, and the middle one is the point:
+ *
+ *  - the account is marked `signed_out`, which is the terminal state the
+ *    supervisor already refuses to start and the screen already draws in red
+ *    with «log in again»;
+ *  - **the stored session is destroyed.** Connecting hands this server a
+ *    credential that can read and write a person's whole Telegram; the only
+ *    honest way to take that back is to not have it any more, so the column is
+ *    nulled rather than the row being marked and kept. Nothing here can send
+ *    from that account again without a fresh login.
+ *  - queued replies are FAILED with the reason, not left hopeful. A reply
+ *    waiting for a reconnection that the manager just decided against is a
+ *    customer waiting for nothing; failed rows stay visible on the thread and
+ *    can be re-sent by whoever reconnects.
+ *
+ * The row itself stays: it carries which phone was connected and, through
+ * `tg_messages.manager_user_id`, every conversation ever stored under it.
+ *
+ * Ending the session INSIDE Telegram is the listener's half — it is the only
+ * process holding a live connection, and it logs out when the supervisor sees
+ * the account leave the listenable set.
+ */
+export async function disconnectAccount(managerUserId: string): Promise<boolean> {
+  const [row] = await db
+    .update(tgAccounts)
+    .set({
+      status: 'signed_out',
+      sessionEnc: null,
+      lastError: 'disconnected by the manager',
+      updatedAt: new Date(),
+    })
+    .where(eq(tgAccounts.managerUserId, managerUserId))
+    .returning({ id: tgAccounts.id });
+  if (!row) return false;
+  await db
+    .update(tgOutbox)
+    .set({ status: 'failed', lastError: 'Telegram uzildi — qayta ulanib, qayta yuboring' })
+    .where(
+      sql`${tgOutbox.managerUserId} = ${managerUserId} AND ${tgOutbox.status} = 'queued'`,
+    );
+  return true;
+}
+
 export interface LoadedAccount {
   id: string;
   managerUserId: string;
@@ -69,6 +116,10 @@ export async function loadAccount(tgPhone: string): Promise<LoadedAccount | null
     .where(eq(tgAccounts.tgPhone, tgPhone))
     .limit(1);
   if (!row) return null;
+  // A disconnected account keeps its row and its history and has no session
+  // at all (round 50). There is nothing to start, and saying so is better
+  // than a decryption error further down.
+  if (row.sessionEnc === null) return null;
   return {
     id: row.id,
     managerUserId: row.managerUserId,
@@ -144,7 +195,8 @@ export async function accountStatuses(now = new Date()): Promise<AccountStatus[]
     state: bridgeState({ status: r.status, lastSeenAt: r.lastSeenAt }, now),
     lastSeenAt: r.lastSeenAt,
     lastError: r.lastError,
-    keyOpens: key !== null && sessionOpens(r.sessionEnc, r.managerUserId, key),
+    keyOpens:
+      key !== null && r.sessionEnc !== null && sessionOpens(r.sessionEnc, r.managerUserId, key),
   }));
 }
 

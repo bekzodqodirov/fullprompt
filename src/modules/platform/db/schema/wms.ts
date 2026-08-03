@@ -1381,7 +1381,12 @@ export const tgAccounts = pgTable(
      * for one number would be two locks and two connections.
      */
     tgPhone: text('tg_phone').notNull().unique(),
-    sessionEnc: text('session_enc').notNull(),
+    /**
+     * NULL once the manager disconnects (round 50): the credential is not
+     * kept in a disabled row, it is destroyed. A row with no session can
+     * never be started by the supervisor.
+     */
+    sessionEnc: text('session_enc'),
     status: text('status').notNull().default('active'),
     /** Heartbeat: a row is not a live connection, and the screen must tell them apart. */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),

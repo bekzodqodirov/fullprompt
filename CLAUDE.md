@@ -121,13 +121,13 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-873 unit/integration + 101 e2e, verified in CI's order on a fresh database.
-Latest migration: **0055** (`receipt_customs`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (rounds 46-49).
+875 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+Latest migration: **0056** (`tg_session_removable`). Every numbered phase is
+shipped; the current round is the owner's 14-point feedback list (rounds 46-50).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-49. The owner's last confirmed
+money bugs), the speed round and rounds 46-50. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -997,6 +997,22 @@ claiming the opposite. Now `preventDefault` + no `action` prop + verdict read
 first, as the dock's composer always did. Third appearance of that shape
 (#377, #419): **a form that can be refused must hold its inputs.** No
 migration. OWNER ACTION: reconnect at /suhbatlar/ulash.
+
+Round 50 — «telegramga ulash bor, endi undan chiqishni qo'sh» (#467-468).
+A log-out button that would have been a lie in three places, so all three
+were made true: `disconnectAccount` NULLs `session_enc` (**migration 0056**
+relaxes the NOT NULL — a disabled row must not keep a credential that reads
+a person's whole Telegram); the supervisor's `scan()` now STOPS listeners
+whose phone left the listenable set (it only ever started, so the button
+would have taken effect at the next container restart); and `stop()` takes a
+`logOutOfTelegram` flag so the session ends INSIDE Telegram too — the
+listener is the only process holding a live connection, so it is the only
+place `auth.logOut` can happen. Queued replies are FAILED with the reason
+(round 49 released them for a reconnection; that is right when Telegram
+killed the session and wrong when the manager chose to leave); conversations
+and the account row stay. The confirm names all four consequences instead of
+asking «are you sure». Red-proof: the session wipe stripped → the integration
+test reads back `v1.x.y.z` instead of null.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

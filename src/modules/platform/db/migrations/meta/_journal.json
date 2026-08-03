@@ -393,6 +393,13 @@
       "when": 1785190000024,
       "tag": "0055_receipt_customs",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1785190000025,
+      "tag": "0056_tg_session_removable",
+      "breakpoints": true
     }
   ]
 }

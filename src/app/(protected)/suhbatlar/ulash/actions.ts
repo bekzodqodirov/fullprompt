@@ -1,6 +1,11 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { requestMeta } from '@/modules/platform/auth/session';
+import { writeAudit } from '@/modules/platform/audit/service';
+import { db } from '@/modules/platform/db/client';
+import { disconnectAccount } from '@/modules/wms/crm/telegram-accounts';
 import { beginTgLogin, completeTgLogin } from '@/modules/wms/crm/telegram-connect';
 
 /**
@@ -62,4 +67,31 @@ export async function completeConnectAction(
     };
   }
   return { stage: 'done' };
+}
+
+/**
+ * «Chiqish» — take my Telegram back off this server (round 50).
+ *
+ * ALWAYS the actor's own account, exactly as connecting is: there is no form
+ * field for whose. Somebody else's Telegram is theirs to disconnect, and a
+ * screen that could sign a colleague out of their own phone is a screen that
+ * can silence a customer's conversations without them knowing.
+ *
+ * Audited, because it is not a preference: it destroys a credential and fails
+ * whatever was still queued to go out under it.
+ */
+export async function disconnectAction(): Promise<ConnectState> {
+  const actor = await connector();
+  if (!actor) return { stage: 'phone', error: 'forbidden' };
+  const removed = await disconnectAccount(actor.id);
+  if (!removed) return { stage: 'phone', error: 'no_account' };
+  await writeAudit(db, { actorId: actor.id, ...(await requestMeta()) }, {
+    entityType: 'user',
+    entityId: actor.id,
+    action: 'update',
+    after: { telegram: 'disconnected' },
+  });
+  revalidatePath('/suhbatlar/ulash');
+  revalidatePath('/suhbatlar', 'layout');
+  return { stage: 'phone' };
 }

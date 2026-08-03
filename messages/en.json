@@ -1162,7 +1162,10 @@
     "chatPurge": "Delete stored messages",
     "chatPurgeConfirm": "Delete this chat's stored messages (and photos) for good? The action is logged.",
     "showAll": "show all",
-    "replyStuck": "Left, but not recorded — check Telegram"
+    "replyStuck": "Left, but not recorded — check Telegram",
+    "disconnect": "🚪 Disconnect my Telegram",
+    "disconnectConfirm": "Disconnect Telegram from the system?\n\n• client messages stop arriving\n• queued replies become «not sent»\n• the session is destroyed here and ended inside Telegram\n\nComing back means connecting again (phone + code).",
+    "disconnectDone": "Disconnected. Client chats no longer arrive."
   },
   "navShort": {
     "home": "Home",

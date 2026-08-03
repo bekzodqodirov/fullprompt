@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## Telegramdan chiqish tugmasi — 2026-08-03 (5-qism)
+
+**Suhbatlar → Ulash** sahifasida endi ulangan akkaunt ostida
+**«🚪 Telegramimni uzish»** tugmasi bor.
+
+Bosilganda (avval tasdiq so'raydi va nima bo'lishini aytadi):
+
+- mijozlarning xabarlari **kelmay qoladi**;
+- navbatdagi javoblar **«yuborilmadi»** bo'lib qoladi (kutib turmaydi — chunki
+  siz o'zingiz uzishga qaror qildingiz);
+- **seans serverdan butunlay o'chiriladi** — ya'ni sistemada sizning
+  Telegramingiz kaliti umuman qolmaydi;
+- **Telegramning o'zida ham seans tugatiladi** (tinglovchi chiqib ketadi).
+
+**O'chirilmaydi:** yozishmalar tarixi va akkaunt yozuvi joyida qoladi — mijoz
+bilan nima gaplashilgani firmaning yozuvi, uzilish uni o'chirmaydi.
+
+Qaytish uchun o'sha sahifadan yana ulaysiz (telefon → kod).
+
+Yo'l-yo'lakay bitta jimgina kamchilik ham tuzatildi: tinglovchi jarayoni
+akkauntlarni faqat **ishga tushirardi**, to'xtatmasdi. Ya'ni uzish tugmasi
+bosilsa ham, konteyner qayta ishga tushmaguncha eski ulanish ishlab turaverar
+edi. Endi bir daqiqa ichida o'zi to'xtaydi.
+
+Migratsiya: **0056** (seansni o'chirish mumkin bo'lishi uchun).
+Tekshirish: 875 ta ichki test, 101 ta brauzer testi — hammasi yashil.
+
+
 ## Sabab topildi: Telegram seansingiz o'chirilgan — 2026-08-03 (4-qism)
 
 Loglardagi bitta qator hammasini aytdi:

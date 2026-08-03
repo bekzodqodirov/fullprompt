@@ -4,13 +4,13 @@
 
 ---
 
-## STATUS — 2026-08-03 (round 49)
+## STATUS — 2026-08-03 (round 50)
 
 **Every numbered phase is shipped.** Phases 0–8 of the CRM/platform programme
 are done, and the last two rounds were repair rather than construction. The
 system is live on the owner's VPS with real cargo and real money in it.
 
-Size: 100 screens, 56 migrations, 873 unit/integration + 101 e2e tests green in
+Size: 100 screens, 57 migrations, 875 unit/integration + 101 e2e tests green in
 CI's order on a fresh database.
 
 ### What exists, by area

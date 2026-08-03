@@ -133,7 +133,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     throw new Error(`another listener already holds ${tgPhone} — refusing to connect twice`);
   }
 
-  const { TelegramClient, helpers } = await import('telegram');
+  const { Api, TelegramClient, helpers } = await import('telegram');
   const { StringSession } = await import('telegram/sessions');
   const { NewMessage } = await import('telegram/events');
   const { EditedMessage } = await import('telegram/events/EditedMessage');
@@ -576,9 +576,28 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   }, HEARTBEAT_MS);
   await heartbeat(account.id);
 
-  const stop = async (why: string, status: 'stopped' | 'signed_out' = 'stopped') => {
+  const stop = async (
+    why: string,
+    status: 'stopped' | 'signed_out' = 'stopped',
+    /**
+     * End the session inside TELEGRAM too, not merely here.
+     *
+     * Set when a manager pressed «chiqish» (round 50). This process is the
+     * only one holding a live connection, so it is the only place the logout
+     * can actually happen — the web app deleted the stored session, which
+     * stops US using the account, and this is what stops the account being
+     * logged in at all. Best-effort: a session Telegram has already revoked
+     * refuses the call, and that is the same outcome.
+     */
+    logOutOfTelegram = false,
+  ) => {
     clearInterval(beat);
     clearInterval(sender);
+    if (logOutOfTelegram) {
+      await client.invoke(new Api.auth.LogOut()).catch((err: unknown) => {
+        console.error('logout:', err instanceof Error ? err.message : err);
+      });
+    }
     // 'stopped' is an ordinary shutdown and the supervisor may start it again;
     // 'signed_out' is terminal and it must NOT — the screen has to say «log in
     // again» rather than «starting…» for ever.
@@ -614,7 +633,10 @@ async function main() {
   const i = argv.indexOf('--tg');
   const pinned = i >= 0 ? argv[i + 1] : undefined;
 
-  const running = new Map<string, (why: string) => Promise<void>>();
+  const running = new Map<
+    string,
+    (why: string, status?: 'stopped' | 'signed_out', logOut?: boolean) => Promise<void>
+  >();
   const nextTryAt = new Map<string, number>();
 
   const startOne = async (phone: string) => {
@@ -629,6 +651,22 @@ async function main() {
 
   const scan = async () => {
     const phones = pinned ? [pinned] : await listListenablePhones();
+    // Round 50: the scan STOPS as well as starts. It only ever started, so a
+    // manager who disconnected on the «ulash» screen stayed connected until
+    // somebody restarted the container — which made the button a promise the
+    // server did not keep. An account leaves this list only by a deliberate
+    // act (disconnect, or a session Telegram ended), so leaving it is an
+    // instruction: drop the connection, and log out of Telegram while we
+    // still hold one.
+    if (!pinned) {
+      const listenable = new Set(phones);
+      for (const [phone, stop] of [...running.entries()]) {
+        if (listenable.has(phone)) continue;
+        running.delete(phone);
+        console.log(`${phone}: uzildi — tinglashni to‘xtatdim`);
+        await stop('disconnected by the manager', 'signed_out', true).catch(() => {});
+      }
+    }
     for (const phone of phones) {
       if (running.has(phone)) continue;
       if ((nextTryAt.get(phone) ?? 0) > Date.now()) continue;

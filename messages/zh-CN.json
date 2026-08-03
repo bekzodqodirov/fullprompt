@@ -1162,7 +1162,10 @@
     "chatPurge": "删除聊天记录",
     "chatPurgeConfirm": "永久删除该聊天已保存的消息（及其照片）？此操作将记入日志。",
     "showAll": "查看全部",
-    "replyStuck": "已发出但未记录 — 请在 Telegram 中确认"
+    "replyStuck": "已发出但未记录 — 请在 Telegram 中确认",
+    "disconnect": "🚪 断开我的 Telegram",
+    "disconnectConfirm": "要断开 Telegram 吗？\n\n• 客户消息将不再进入\n• 队列中的回复会变成「未发送」\n• 会话将从服务器删除，并在 Telegram 中终止\n\n若要恢复，需要重新连接（手机号 + 验证码）。",
+    "disconnectDone": "已断开。客户会话不再进入。"
   },
   "navShort": {
     "home": "首页",

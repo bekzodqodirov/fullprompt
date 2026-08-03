@@ -13,6 +13,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { setSetting } from '@/modules/platform/settings/service';
 import { deleteAttachment, saveAttachment } from '@/modules/platform/files/service';
+import { disconnectAccount, listListenablePhones } from '@/modules/wms/crm/telegram-accounts';
 import {
   cancelQueued,
   claimNext,
@@ -441,5 +442,57 @@ describe('changing your mind', () => {
     await queueReply({ clientId, managerUserId: managerId, body: 'uchmoqda' }, ctx());
     const job = await claimNext(managerId);
     await expect(cancelQueued(job!.id, ctx())).rejects.toThrow('already_sent');
+  });
+});
+
+/**
+ * «Chiqish» — round 50, the owner: «telegramga ulash bor, endi undan
+ * chiqishni qo'sh».
+ *
+ * Last in the file on purpose: it disconnects the account every other test
+ * here depends on, and the cleanup would have to rebuild it anyway.
+ */
+describe('a manager takes their Telegram back', () => {
+  it('destroys the session, stops the queue, and leaves the history alone', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    // A message id of its own: `inbound()` defaults to one this file has
+    // already used, and the unique index says so.
+    await inbound(50);
+    const { id } = await queueReply({ clientId, managerUserId: managerId, body: 'ketmaydi' }, ctx());
+
+    const phonesBefore = await listListenablePhones();
+    expect(await disconnectAccount(managerId)).toBe(true);
+
+    const [row] = await db.select().from(tgAccounts).where(eq(tgAccounts.id, accountId));
+    // The credential is GONE, not merely disabled — this is the whole point
+    // of the button: the server can no longer speak as him.
+    expect(row!.sessionEnc).toBeNull();
+    expect(row!.status).toBe('signed_out');
+
+    // …and the supervisor will not start it again, which is what makes the
+    // press take effect rather than merely being recorded.
+    const phonesAfter = await listListenablePhones();
+    expect(phonesBefore.length - phonesAfter.length).toBe(1);
+    expect(phonesAfter).not.toContain(row!.tgPhone);
+
+    // The reply that can never go now says so, rather than waiting for a
+    // reconnection the manager just decided against.
+    const [queued] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(queued!.status).toBe('failed');
+    expect(queued!.lastError).toContain('Telegram');
+
+    // The conversations stay. They are the company's record of what was said
+    // to a customer, and logging out of a phone does not unsay it.
+    const kept = await db.select().from(tgMessages).where(eq(tgMessages.clientId, clientId));
+    expect(kept.length).toBeGreaterThan(0);
+
+    // Nothing new may be queued into the void.
+    await expect(
+      queueReply({ clientId, managerUserId: managerId, body: 'yana' }, ctx()),
+    ).rejects.toThrow('bridge_down');
+  });
+
+  it('says so honestly when there is nothing connected', async () => {
+    expect(await disconnectAccount(otherId)).toBe(false);
   });
 });
