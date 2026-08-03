@@ -4,7 +4,94 @@
 
 ---
 
-## STATUS — 2026-07-27
+## STATUS — 2026-08-02 (round 44)
+
+**Every numbered phase is shipped.** Phases 0–8 of the CRM/platform programme
+are done, and the last two rounds were repair rather than construction. The
+system is live on the owner's VPS with real cargo and real money in it.
+
+Size: 98 screens, 56 migrations, 851 unit/integration + 99 e2e tests green in
+CI's order on a fresh database.
+
+### What exists, by area
+
+| Area | State |
+|---|---|
+| **Warehouse** — receiving, QR labels, crates, load plan, scanner (load + unload), missing-in-transit, handover + act, inventory | ✅ |
+| **VED** — invoice + packing list in the owner's ka23 format, TNVED (memory-first AI), customs firm per batch AND per prixod, batch documents | ✅ |
+| **Costing** — FX + allocation engine (weight / volume / chargeable / boxes / direct), landed cost per box, receipt-cost grid | ✅ |
+| **Client money** — ledger, batch pricing, debt gate + approvals, payments register, per-deal profit | ✅ |
+| **Management accounting** — expenses + recurring, cash boxes + transfers, P&L, cash flow, receivables, profit by batch/client/route, balance sheet | ✅ |
+| **Counterparties** — transport firms on credit, customs firms, cash buyers, three-cornered settlement, cost→debt derivation | ✅ (audited, round 44) |
+| **CRM** — leads + funnel, deals with cargo-driven stages, tasks + calendar (hour-level), calc SLA, mentions, automation rules, custom entities | ✅ |
+| **Telegram** — client cabinet Mini App, arrival messages in 3 languages, staff bot (tasks, lookup, morning plan, approvals, calc intake), client conversations inside the CRM | ✅ |
+| **Driver** — Android app, pairing per trip, map | ✅ |
+| **Configuration** — roles/permissions, custom fields, dictionaries, cost types, stages, owner-invented objects | ✅ nothing hard-coded |
+
+### Where the risk is now, in order
+
+1. **Three commits are not deployed.** The owner's last confirmed update was
+   the counterparty + per-receipt-customs release. Since then: the amount-field
+   layout fix, the rastamojka panel, and **seventeen audit defects — four of
+   them about money** (settlement void leaving a partner offset live, non-USD/UZS
+   cash boxes worth nothing, a partner-named cost with no FX rate never becoming
+   a debt, retiring a counterparty hiding its debt from one screen but not the
+   other). Those four are live defects until he rebuilds.
+2. **Photos are still not backed up.** ~1–1.5 GB in MinIO, no off-site copy.
+   Built as a plan, **ON HOLD by the owner** («tohtab tur», 2026-07-28).
+3. **The Drive backup is built and not switched on** — three secrets he has to
+   enter on the server (`docs/BACKUP.md`, ~15 min).
+4. **The 17 seller logins do not exist**, which blocks scoping clients to their
+   sales manager AND blocks re-running `pnpm import-clients --apply --update`
+   (running it now would overwrite corrected data — do not).
+5. **Speed has been measured nowhere.** The server is in Germany, the users are
+   in Uzbekistan, and there is no navigation indicator at all, so every tap has
+   roughly half a second of dead screen with nothing on it.
+
+### Agreed next — the speed round
+
+The owner's order was «oldin moliyani togirlaylik keyin optimizationga otamiz».
+Finance is now finished and audited, so the speed round is next:
+
+1. Postgres `log_min_duration_statement` — find the slow queries before guessing.
+2. Per-page render timing, so "which screen is slow" is a fact, not a feeling.
+3. A navigation progress indicator (there is none).
+
+Measure first, on his data — the scan-path round moved 40 ms → 1.2 ms because
+it started with EXPLAIN ANALYZE, and the one change made on intuition was the
+one the tests rejected.
+
+### Deferred by design (stated to the owner, not forgotten)
+
+- Automation rules: time triggers, conditions, `{placeholders}` in texts.
+- Custom entities: lookup fields between them, Telegram deep links, per-record chat.
+- Telegram: photo albums, media backfill for imported history.
+- PWA web push — **parked by the owner** («hozircha telegram ham tursin»).
+- Counterparty opening balances — he does not know the totals yet.
+
+### Explicitly cut (do not build without a fresh decision)
+
+Formula fields, a visual node editor, an in-app chat, a separate projects
+module, an external web form builder.
+
+### Not started — future modules from SPEC §2
+
+**HR & Payroll is module 4 of the original roadmap** (SPEC.md §2) and has never
+been agreed as a build item; §21 lists it under "do not build" for phase 1 and
+nothing of it exists. What is already in place as the seam for it: user
+accounts with roles, salaries booked per employee as an expense (with recurring
+monthly templates), Chinese staff salaries settled through a counterparty, and
+`scan_events` recording who scanned what — which is the raw data loader
+piece-work would need. What HR itself would require: staff cards (hire date,
+contract, documents), attendance, salary calculation, piece-work rates, leave.
+
+Also unbuilt from that roadmap: fleet management, customs-declaration e-filing,
+an API for partner agents, multi-company support.
+
+---
+
+
+## STATUS — 2026-07-27 (round 9)
 
 ### Round 9 (2026-07-26 → 27) — shipped on branch `claude/gsr-logistics-wms-phase1-o8h4en`
 

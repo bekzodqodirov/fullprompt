@@ -118,11 +118,16 @@ pnpm build && pnpm e2e  # 44 e2e
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 
-## State — 2026-07-29
+## State — 2026-08-02
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-828 unit/integration + 93 e2e, verified in CI's order on a fresh database.
-Latest migration: **0055** (`receipt_customs`).
+851 unit/integration + 99 e2e, verified in CI's order on a fresh database.
+Latest migration: **0055** (`receipt_customs`). Every numbered phase is
+shipped; the agreed next round is SPEED (see the bottom of this section).
+
+**NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
+(rastamojka panel) and `143dcb0` (the 17 audit defects — four of them live
+money bugs). The owner's last confirmed update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -818,6 +823,53 @@ partner at the end — while active it adds a payer picker to every cost and
 expense form (#183). NOT built, stated: opening balances (he does not know
 the totals yet).
 
+Rounds 40-42 — the counterparty round's own follow-ups: money reports
+taught about partner receipts/payments (`accountBalances`, `cashFlow`,
+new `companyBalance` + `/accounting/balance`), `/kontragentlar` opened to
+moliya/VED/buxgalter/admin, per-receipt customs (migration 0055) so a
+client clearing their own cargo inside a shared truck is recordable, a
+payer picker on receipt/crate/batch cost forms and on expenses. Then the
+layout bug that cost three rounds (#419): `.input` carries `w-full` and
+beats a plain `w-24`, `shrink-0` then forbids the box to give the row
+back — the amount field collapsed to a sliver and only the owner's
+SCREENSHOT found it. Two process lessons, both mine: a UI change shipped
+without ever being looked at in a browser is a change nobody has checked,
+and when a user says «tuzatilmagan» after the server is proven current,
+ask for the screenshot FIRST.
+
+Round 43 — «boshqa 2 tasiniyam korib chiq», done the way round 42 was not:
+opened at 360x800, screenshotted, looked at. **Item 3 was invisible** —
+per-prixod customs was a `<details>` nested inside the collapsed VED panel,
+two taps deep with nothing on either fold to say it existed (#420).
+Rastamojka now has its own panel whose BADGE names the firm and counts the
+prixods answering for themselves. Three controls were rendering unreadably
+narrow, all the same shape (#421): the customs picker read «Ка», the cost
+form's basis read «по», the attach tile's label hung outside its card. Each
+gets its own line. The per-row save button appears only when the answer has
+changed (#422). Item 2 was correct and reachable all along (#423) — verified
+by logging in AS the warehouse operator, not by reading the gate.
+
+Round 44 — an adversarial audit of everything rounds 39-43 touched, four
+lenses, per-finding verification: **17 defects, all mine, all from that
+week** (#424). Four about money: voiding the CLIENT half of a settlement
+left the partner offset live for ever (#425); a cash box in any currency
+but USD/UZS was worth zero, with a comment claiming the opposite (#426); a
+partner-named cost with no FX rate wrote the firm's name and no debt, and
+the rate arriving later did not repair it (#427); retiring a counterparty
+dropped its debt from the register but not the balance sheet, and hid the
+only door back to its card — same one level up for a hidden partner TYPE
+(#428). Plus: `adjust` printed the opposite sign to the balance it made,
+the ledger table rescaled the whole phone, a counterparty could never be
+renamed though `savePartner`'s update branch had always existed, the
+expense form asked for a cash box it then discarded, `common.confirm`
+existed in no bundle (#429). THREE TRIPWIRES because three had shipped
+before under another name (#430): `style-cascade.test.ts` (a bare width on
+`.input`), `i18n-keys.test.ts` (a literal `t('…')` key in no bundle — the
+fourth instance of #163), and the rule that **a red proof is undone by a
+string edit, never `git checkout`** — doing so here reverted the
+uncommitted fix along with the strip. m9y now settles before retiring,
+which is the truer demonstration anyway (#431).
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — measure before
 guessing. Server is 8 GB, so the pg tuning is innocent. Plan: postgres
 `log_min_duration_statement`, per-page render timing, and a navigation
@@ -848,9 +900,10 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** (migrations up to 0052 — back up first; the compose
-change recreates the postgres container, ~5-15 s outage: off-hours, run
-`free -h` first and halve the tuned values on a 2 GB box) · set
+**Deploy the branch** — three commits behind, and the newest one fixes four
+LIVE money bugs (settlement void, non-USD/UZS cash boxes, a partner cost with
+no FX rate, a retired counterparty's debt). No migration in them; back up
+first anyway · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
 offered on anything but public HTTPS, #275) · **revoke the bot token he pasted
 in chat** and rotate `ANTHROPIC_API_KEY` · merge
