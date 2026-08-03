@@ -66,8 +66,18 @@ Yuqoridagi `restart` yetadi. 2026-08-03 dan boshlab tinglovchi bu holatni
   bo'lsa baza aybdor emas; keyingi qadam — bitta ekranni ochib, o'sha
   ochilishda nechta so'rov ketganini SANASH (raund 45 shu bilan «Uchyot»
   ekranidagi 1564 ta so'rovni topgan — ularning har biri alohida tez edi).
-- **Yangilash**: `git pull && docker compose up -d --build` (migratsiyalar
-  avtomatik o'tadi).
+- **Yangilash**: `git pull && docker compose up -d --build`. Migratsiyalar
+  `migrate` servisi orqali o'tadi — u bir marta ishlab to'xtaydi va
+  **xato bersa hech kim sezmaydi**. Yangi kod eski bazaga tushib qolsa,
+  ekranlar «Something went wrong» deb chiqadi. Tekshirish va tuzatish:
+
+  ```bash
+  # oxirgi qo'llangan migratsiyalar
+  docker compose exec -T postgres psql -U gsr -d gsr \
+    -c "SELECT count(*) FROM drizzle.__drizzle_migrations;"
+  # migratsiyani qo'lda o'tkazish (seed idempotent — zarar qilmaydi)
+  docker compose run --rm migrate
+  ```
 - **Backup**: har kuni avtomatik (`backups` volume), haftalik restore-sinov
   app ichidagi job orqali; qo'lda tekshirish — `docker compose exec app node
   --version` emas, README'dagi restore bo'limiga qarang.

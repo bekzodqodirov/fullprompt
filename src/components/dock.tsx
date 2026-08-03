@@ -138,11 +138,17 @@ export function Dock({ canChat }: { canChat: boolean }) {
   }
 
   async function send() {
-    if (!threadFor || (!body.trim() && !photo) || sending) return;
+    // The id the SERVER resolved, not the marker the card put on the page:
+    // one person often holds several GS codes on one phone and the chat
+    // hangs off whichever one the import matched (round 32). Posting the
+    // card's own code would be refused as «not your conversation» while the
+    // thread above the box shows the very messages being answered.
+    const target = thread?.client.id ?? threadFor;
+    if (!target || (!body.trim() && !photo) || sending) return;
     setSending(true);
     setSendError(null);
     const form = new FormData();
-    form.set('clientId', threadFor);
+    form.set('clientId', target);
     form.set('body', body);
     if (photo) form.set('attachmentId', photo.id);
     const result = await sendReplyAction({}, form);
@@ -150,7 +156,7 @@ export function Dock({ canChat }: { canChat: boolean }) {
     if (result.ok) {
       setBody('');
       setPhoto(null);
-      void loadThread(threadFor);
+      void loadThread(target);
     } else {
       setSendError(result.error ?? 'error');
     }

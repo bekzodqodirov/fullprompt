@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { canReadTg, conversationClient, conversationFor, tgViewerFor } from '@/modules/wms/crm/conversations';
+import {
+  canReadTg,
+  conversationClient,
+  conversationFor,
+  tgViewerFor,
+  threadClientFor,
+} from '@/modules/wms/crm/conversations';
 import { conversationManagers, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
 
@@ -17,14 +23,24 @@ export async function GET(request: Request) {
   if (!canReadTg(actor)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
-  const clientId = new URL(request.url).searchParams.get('client') ?? '';
-  if (!/^[0-9a-f-]{36}$/i.test(clientId)) {
+  const asked = new URL(request.url).searchParams.get('client') ?? '';
+  if (!/^[0-9a-f-]{36}$/i.test(asked)) {
     return NextResponse.json({ error: 'bad_client' }, { status: 400 });
   }
 
+  // The chat may live under a phone-SIBLING code: one person routinely holds
+  // several GS codes on one number, and the import pinned the conversation to
+  // whichever code the phone matched (round 32). The card's own panel has
+  // resolved that since #407; the dock never did, so the same card showed the
+  // conversation in one place and «no chat» in the other, and a manager could
+  // read a thread in the panel that the dock refused to let them answer.
+  // One resolver, both doors.
+  const viewer = tgViewerFor(actor);
+  const clientId = (await threadClientFor(asked, viewer)) ?? asked;
+
   const [client, messages, account, managers] = await Promise.all([
     conversationClient(clientId),
-    conversationFor(clientId, tgViewerFor(actor), 80),
+    conversationFor(clientId, viewer, 80),
     replyAccountFor(clientId, actor.id),
     conversationManagers(clientId),
   ]);
@@ -46,6 +62,8 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
+    // The RESOLVED id, so the composer posts against the code that actually
+    // holds the chat rather than the marker the card put on the page.
     client: { id: client.id, code: client.clientCode, name: client.name },
     canReply: reason === null,
     reason,

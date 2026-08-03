@@ -1166,7 +1166,8 @@
     "disconnect": "🚪 断开我的 Telegram",
     "disconnectConfirm": "要断开 Telegram 吗？\n\n• 客户消息将不再进入\n• 队列中的回复会变成「未发送」\n• 会话将从服务器删除，并在 Telegram 中终止\n\n若要恢复，需要重新连接（手机号 + 验证码）。",
     "disconnectDone": "已断开。客户会话不再进入。",
-    "chatMenu": "会话设置"
+    "chatMenu": "会话设置",
+    "disconnectFailed": "断开失败。服务器的数据库迁移似乎未执行 — 请先更新后重试。"
   },
   "navShort": {
     "home": "首页",

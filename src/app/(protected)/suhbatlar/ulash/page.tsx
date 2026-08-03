@@ -61,6 +61,7 @@ export default async function ConnectPage() {
                 button: t('disconnect'),
                 confirm: t('disconnectConfirm'),
                 done: t('disconnectDone'),
+                failed: t('disconnectFailed'),
               }}
             />
           )}

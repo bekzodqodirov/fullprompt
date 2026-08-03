@@ -83,7 +83,18 @@ export async function completeConnectAction(
 export async function disconnectAction(): Promise<ConnectState> {
   const actor = await connector();
   if (!actor) return { stage: 'phone', error: 'forbidden' };
-  const removed = await disconnectAccount(actor.id);
+  let removed = false;
+  try {
+    removed = await disconnectAccount(actor.id);
+  } catch (err) {
+    // Never a white «Something went wrong» page (round 52). The owner pressed
+    // this against a server whose code was newer than its DATABASE — the
+    // migration had not run, `session_enc` was still NOT NULL, and the
+    // resulting 500 told him a random error code and nothing he could act on.
+    // A refusal on a screen is worth more than a digest in a log.
+    console.error('[tg-disconnect]', err instanceof Error ? err.message : err);
+    return { stage: 'phone', error: 'disconnect_failed' };
+  }
   if (!removed) return { stage: 'phone', error: 'no_account' };
   await writeAudit(db, { actorId: actor.id, ...(await requestMeta()) }, {
     entityType: 'user',

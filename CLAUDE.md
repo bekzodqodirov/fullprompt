@@ -121,13 +121,13 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-878 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+880 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0056** (`tg_session_removable`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (rounds 46-51).
+shipped; the current round is the owner's 14-point feedback list (rounds 46-52).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-51. The owner's last confirmed
+money bugs), the speed round and rounds 46-52. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -1026,6 +1026,26 @@ telegram-reply/reply-box/dock must mention neither `TelegramStopTaking` nor
 the defect was adjacency. The popover anchors to the header ROW, not the ⋯:
 `right-0` on the button put its left edge off-screen at 360 px once the
 header wrapped — caught in a screenshot, invisible to every test.
+
+Round 52 — «disconnect qilmoqchi bo'lganimda shunday chiqyabti» (#472-475).
+His «Something went wrong» was **the code deployed without migration 0056**:
+`session_enc` still NOT NULL → the disconnect's UPDATE throws → 500 → a digest
+on screen. Reproduced by putting a db back into the 0055 shape and pressing
+the real button. Fixes: `disconnectAction` CATCHES and returns a coded
+refusal the button renders in words (the real error goes to the log under
+`[tg-disconnect]`); the button no longer assumes success. RULE for ~40 server
+actions: **an action touching a schema this release changed must catch** —
+the one machine where the schema is behind is production on deploy morning.
+DEPLOY.md now says how to check (`drizzle.__drizzle_migrations` count) and fix
+(`docker compose run --rm migrate`) — the `migrate` service is `restart: 'no'`,
+so a failed migration leaves the app up on the old schema with no trace.
+Also shipped from the 4-lens adversarial sweep of the send path (44
+candidates, 1 survived, and the verifier proved it explains NEITHER symptom —
+the sweep's real value was confirming the write path sound and pointing at the
+drain): `/api/dock/thread` never learned round 32's `threadClientFor`, so a
+sibling-code card showed the chat in the panel and «no chat» in the dock, and
+the dock posted the card's raw id. Both doors ask one resolver now;
+`tests/unit/chat-controls.test.ts` says they must.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

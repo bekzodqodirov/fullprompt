@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## «Something went wrong» — sabab topildi — 2026-08-03 (7-qism)
+
+Xato sizda emas: **kod yangilangan, baza yangilanmagan.** «Chiqish» tugmasi
+`tg_accounts` jadvalidagi bitta ustunni bo'shatadi, buni esa **0056-migratsiya**
+ruxsat beradi. Server kodni olibdi, migratsiyani o'tkazmabdi — shuning uchun
+baza rad etgan va ekran shu tushunarsiz xatoni ko'rsatgan.
+
+Xuddi shu holatni o'zimda takrorlab ko'rdim: baza eski holatga qaytarilganda
+tugma aynan shu xatoni beradi.
+
+**Serverda tuzatish:**
+
+```
+cd ~/gsr
+docker compose run --rm migrate
+```
+
+(Bu migratsiyani o'tkazadi; ichidagi seed zarar qilmaydi.) Shundan keyin
+tugma ishlaydi.
+
+**Kodda ham tuzatdim** — bundan keyin bunday holatda oq ekran chiqmaydi:
+tugma ostida odam tushunadigan yozuv chiqadi («serverda baza migratsiyalari
+qo'llanmagan ko'rinadi»), asl xato esa server logiga yoziladi. Ilgari tugma
+nima bo'lishidan qat'i nazar «Uzildi» deb yozardi — u ham tuzatildi.
+
+**Yana bittasi (chuqur tekshiruvdan):** dock'dagi (o'ng tarafdagi) chat
+oynasi, bitta odamning bir nechta GS kodi bo'lganda, suhbat qaysi kodda
+turganini topa olmasdi — kartochkadagi panel suhbatni ko'rsatib turardi,
+dock esa «chat yo'q» derdi va javob yozdirmasdi. Endi ikkalasi bir xil
+qidiradi.
+
+Tekshirish: 880 ta ichki test, 101 ta brauzer testi — hammasi yashil.
+
+
 ## «Bu chatni olmang» tugmasi joyini o'zgartirdi — 2026-08-03 (6-qism)
 
 To'g'ri aytdingiz: u **yozish oynasining tagida** turardi — «Yuborish»dan bir

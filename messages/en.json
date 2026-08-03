@@ -1166,7 +1166,8 @@
     "disconnect": "🚪 Disconnect my Telegram",
     "disconnectConfirm": "Disconnect Telegram from the system?\n\n• client messages stop arriving\n• queued replies become «not sent»\n• the session is destroyed here and ended inside Telegram\n\nComing back means connecting again (phone + code).",
     "disconnectDone": "Disconnected. Client chats no longer arrive.",
-    "chatMenu": "Chat settings"
+    "chatMenu": "Chat settings",
+    "disconnectFailed": "Could not disconnect. The server’s database migrations look unapplied — ask for an update and try again."
   },
   "navShort": {
     "home": "Home",

@@ -1166,7 +1166,8 @@
     "disconnect": "🚪 Telegramimni uzish",
     "disconnectConfirm": "Telegramni sistemadan uzasizmi?\n\n• mijozlarning xabarlari kelmay qoladi\n• navbatdagi javoblar «yuborilmadi» bo'ladi\n• seans serverdan o'chiriladi va Telegramning o'zida ham tugatiladi\n\nQaytish uchun yana ulash kerak bo'ladi (telefon + kod).",
     "disconnectDone": "Uzildi. Mijoz suhbatlari endi kelmaydi.",
-    "chatMenu": "Chat sozlamalari"
+    "chatMenu": "Chat sozlamalari",
+    "disconnectFailed": "Uzib bo'lmadi. Serverda baza migratsiyalari qo'llanmagan ko'rinadi — yangilashni so'rang va qayta urinib ko'ring."
   },
   "navShort": {
     "home": "Bosh",
