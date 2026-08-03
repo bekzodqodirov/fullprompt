@@ -23,7 +23,6 @@ export default async function ReportsPage() {
       ? [
           { href: '/reports/client-history', icon: '📜', label: t('clientHistory') },
           { href: '/reports/staff-activity', icon: '👥', label: t('staffActivity') },
-          { href: '/reports/hisoblash', icon: '🧮', label: t('calcSpeed') },
           { href: '/reports/label-prints', icon: '🖨', label: t('labelPrints') },
         ]
       : []),

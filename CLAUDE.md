@@ -118,17 +118,17 @@ pnpm build && pnpm e2e  # 44 e2e
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 
-## State — 2026-08-02
+## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
 851 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0055** (`receipt_customs`). Every numbered phase is
-shipped; the agreed next round is SPEED (see the bottom of this section).
+shipped; the current round is the owner's 14-point feedback list (round 46).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs) and the speed round. The owner's last confirmed update was
-`eea3509`.
+money bugs), the speed round and round 46. The owner's last confirmed
+update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -897,6 +897,31 @@ E2E LESSON: `page.route('**/x')` matches no URL with a query string and
 App Router asks for `/x?_rsc=…`; and aborting the prefetch makes Next fall
 back to a FULL browser navigation, which tears the React tree down and
 takes the bar with it.
+
+Round 46 — the owner's 14-point list, the six items that needed no answer
+(#440-446). **3 — a truck reads like a shelf:** contents is now the stock
+table (photo/code/tovar/📦/kg/m³ + Σ), membership via `batchMemberFilter`
+NOT the live pointer — landing nulls `current_batch_id`, so an arrived
+batch had been showing «Σ 0» exactly when he looks (red-proven in m4);
+kg/m³ are a SHARE of the lot (`onBatch / lot.boxCount`); count keeps the
+plan while planned>0, plain cargo count after; column names borrowed from
+the `stock` namespace, empty truck gets the sentence with no table.
+**4** — stock thumbnails 56→80 px; the sidebar got its OWN scrollbar
+(`max-h-[calc(100dvh-3.5rem)] overflow-y-auto` — `sticky` pins but gives
+no height, so the menu could only be reached by scrolling the page, which
+took the menu with it). **5+12a** — `CalcPanel`/`CalcForm`/
+`/reports/hisoblash` DELETED; `calc_requests`, `requestCalc`, the clock,
+the sweep and both clock-stop hooks KEPT and still tested, so nothing in
+the browser can open a request now — stated to him, VED home's calc queue
+will read zero until a door goes back. **7** — «Где машина» is a `Panel`;
+m3 now opens `batch-where-panel` before pressing a checkpoint pin
+(collapsing something is a behaviour change, not a style one). **13** —
+the receive wizard's deal picker needs `canWriteDeal`; the warehouse
+cannot know which job cargo belongs to and round 38 put a picker on the
+receipt CARD for whoever can. Verified as round 42/43 taught: screenshots
+at 360×800 (and 1280×600 for the sidebar), logged in AS the YW operator.
+Awaiting his answers: 1 (driver app dying after ~2 h), 6, 8, 9, 10, 11,
+12b, 14. Item 2 he closed himself.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

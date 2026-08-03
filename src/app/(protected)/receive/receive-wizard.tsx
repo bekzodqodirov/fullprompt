@@ -161,6 +161,7 @@ export function ReceiveWizard({
   currencies,
   densityThresholds,
   prefill = null,
+  canPickDeal = false,
 }: {
   warehouses: WarehouseOption[];
   costTypes: CostTypeOption[];
@@ -169,6 +170,8 @@ export function ReceiveWizard({
   densityThresholds: { light: number; medium: number; heavy: number };
   /** Set when opened from a promise's «Qabul qilish» button. */
   prefill?: ArrivalPrefill | null;
+  /** Whoever may write a deal. The warehouse may not, and must not be asked. */
+  canPickDeal?: boolean;
 }) {
   const t = useTranslations('receive');
   const tc = useTranslations('common');
@@ -757,11 +760,16 @@ export function ReceiveWizard({
           )}
         </div>
       </div>
-      {/* The one moment that decides whether the price-control alert can do
-          its job: cargo linked to the job it was quoted under compares against
-          that quote, cargo linked to nothing shouts "unpriced". Shown only when
-          the client HAS an open job — a select with one "—" in it is furniture. */}
-      {draft.clientId && openDeals.length > 0 && (
+      {/* The moment that decides whether the price-control alert can do its
+          job: cargo linked to the job it was quoted under compares against
+          that quote, cargo linked to nothing shouts "unpriced".
+          NOT for the warehouse (owner: «skladchi tanlamasin»): the operator
+          weighing boxes has no way of knowing which job they belong to, and a
+          guess here is worse than the honest blank. Whoever may write a deal
+          links it afterwards on the prixod card, which is where they can see
+          the job (round 38). Shown only when the client HAS an open job too —
+          a select with one "—" in it is furniture. */}
+      {canPickDeal && draft.clientId && openDeals.length > 0 && (
         <label className="block">
           <span className="label">{td('pickDeal')}</span>
           <select

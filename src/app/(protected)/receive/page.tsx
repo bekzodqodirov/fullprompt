@@ -10,6 +10,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { canWriteDeal } from '@/modules/wms/deals/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { ReceiveWizard, type ArrivalPrefill } from './receive-wizard';
 
@@ -95,6 +96,7 @@ export default async function ReceivePage({
         currencies={currencyRows.map((c) => c.code)}
         densityThresholds={await getSetting('density_thresholds')}
         prefill={prefill}
+        canPickDeal={canWriteDeal(actor.permissions)}
       />
     </div>
   );

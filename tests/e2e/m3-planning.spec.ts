@@ -85,6 +85,9 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   // --- Tracking map: the departed truck shows up, checkpoint pin works ---
   const batchCode = await page.getByText(/YW-\d{3}/).first().innerText();
   await page.goto(batchUrl);
+  // «Где машина» folds now (owner's round-46 item 7): the checkpoint pins are
+  // behind its summary, so open it before pressing one.
+  await page.getByTestId('batch-where-panel').click();
   await page.getByRole('button', { name: /🛃/ }).click(); // "at the border" pin
   await expect(page.getByRole('button', { name: /🛃/ })).toHaveClass(/border-blue-700/, {
     timeout: 10_000,

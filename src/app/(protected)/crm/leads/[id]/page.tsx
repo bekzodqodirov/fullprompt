@@ -17,7 +17,6 @@ import { LeadForm } from '../lead-form';
 import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
 import { TasksPanel } from '@/components/tasks-panel';
-import { CalcPanel } from '@/components/calc-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
 import { CardCols } from '@/components/card-cols';
@@ -161,10 +160,6 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
           <CustomFieldInputs {...custom} />
         </LeadForm>
       </Panel>
-
-      {/* Round 28: a lead's pricing also goes to VED with a clock on it —
-          «hisoblash etapi 2 ta kanbanda bor, bitimda ham crmda ham». */}
-      <CalcPanel entityType="lead" entityId={id} revalidate={`/crm/leads/${id}`} />
 
       <TasksPanel
         entityType="lead"

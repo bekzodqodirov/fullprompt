@@ -26,7 +26,8 @@ import {
   setTrackingCheckpointAction,
 } from '../batch-actions-server';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
-import { remainingToUnload } from '@/modules/wms/scanning/unload';
+import { batchMemberFilter, remainingToUnload } from '@/modules/wms/scanning/unload';
+import { LightboxImg } from '@/components/lightbox-img';
 import { Panel } from '@/components/panel';
 import { BatchCodeForm } from './batch-code-form';
 import { BatchActions } from './batch-actions';
@@ -63,6 +64,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   if (!actor) redirect('/login');
   const t = await getTranslations('batches');
   const tc = await getTranslations('common');
+  // The contents table is the stock table applied to a truck, so it borrows
+  // the stock screen's own column names rather than inventing second ones.
+  const tstock = await getTranslations('stock');
   const format = await getFormatter();
 
   const dest = aliasedTable(warehouses, 'dest');
@@ -82,23 +86,62 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   }
   const { batch, originCode, destCode } = hit;
 
+  // The truck's contents, read the way the stock screen reads a shelf (owner:
+  // «uni ichidagisni sklad qoldiqlaridek toliq neccha kub necha kg rasimlari
+  // bn»). Two things had to change for that to be true after departure:
+  // membership is `batchMemberFilter`, not the live pointer — an unloaded box
+  // no longer points at its truck and the old count read 0/0 for a whole
+  // arrived batch — and kg/m³ come off the lot, shared per box, so a truck
+  // carrying half a lot is credited with half its weight.
   const lots = await db
     .select({
       lotId: receiptLots.id,
+      receiptId: receipts.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
+      productNameRu: receiptLots.productNameRu,
+      lotBoxCount: receiptLots.boxCount,
+      lotWeightKg: receiptLots.totalWeightKg,
+      lotVolumeM3: receiptLots.totalVolumeM3,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
+      onBatch: sql<number>`count(*)`,
       planned: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'planned')`,
       loaded: sql<number>`count(*) FILTER (WHERE ${boxes.status} IN ('loading', 'in_transit'))`,
+      photoId: sql<string | null>`(
+        SELECT a.id FROM attachments a
+        WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
+        ORDER BY a.created_at LIMIT 1
+      )`,
+      generalPhotoId: sql<string | null>`(
+        SELECT a.id FROM attachments a
+        WHERE a.entity_type = 'receipt' AND a.entity_id = ${receipts.id} AND a.kind = 'photo'
+        ORDER BY a.created_at LIMIT 1
+      )`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(eq(boxes.currentBatchId, id))
-    .groupBy(receiptLots.id, clients.clientCode, receipts.unclaimedMarking)
+    .where(batchMemberFilter(id))
+    .groupBy(receiptLots.id, receipts.id, clients.clientCode)
     .orderBy(asc(receiptLots.letter));
+
+  // Per-lot kg/m³ are a share of the lot, so the totals have to be derived
+  // before they can be summed — same shape as the stock table.
+  const contents = lots.map((lot) => {
+    const onBatch = Number(lot.onBatch);
+    const per = lot.lotBoxCount > 0 ? onBatch / lot.lotBoxCount : 0;
+    return {
+      ...lot,
+      onBatch,
+      kg: Number(lot.lotWeightKg) * per,
+      m3: Number(lot.lotVolumeM3) * per,
+    };
+  });
+  const totalKg = contents.reduce((acc, row) => acc + row.kg, 0);
+  const totalM3 = contents.reduce((acc, row) => acc + row.m3, 0);
+  const totalBoxes = contents.reduce((acc, row) => acc + row.onBatch, 0);
 
   const onSpotCount = (
     await db
@@ -344,20 +387,79 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       <CardCols
         main={
           <>
-      <div className="card space-y-1">
+      <div className="card space-y-2">
         <h2 className="text-lg font-bold">{t('contents')}</h2>
-        {lots.map((lot) => (
-          <div key={lot.lotId} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
-            <span className="font-mono font-extrabold text-brand-700">
-              {lot.clientCode ?? lot.marking ?? '?'}-{lot.letter}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{lot.productNameZh}</span>
-            <span className="font-semibold">
-              {lot.loaded}/{Number(lot.loaded) + Number(lot.planned)} 📦
-            </span>
-          </div>
-        ))}
-        {lots.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
+        <p className="text-sm font-semibold text-ink-700" data-testid="batch-contents-total">
+          Σ {totalBoxes} 📦 · {Math.round(totalKg)} kg · {Math.round(totalM3 * 100) / 100} m³
+        </p>
+        {contents.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
+        {/* Its own sideways scroll: a row wider than the phone rescales the
+            WHOLE page, and then every tap lands somewhere else (#400). An empty
+            truck gets the sentence alone — a header row over nothing reads as
+            a broken table. */}
+        {contents.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-line">
+          <table className="w-full min-w-[520px] text-sm">
+            <thead>
+              <tr className="border-b border-line-strong bg-surface-sunken text-left">
+                <th className="p-2">📷</th>
+                <th className="p-2">{tstock('colCode')}</th>
+                <th className="p-2">{tstock('colProduct')}</th>
+                <th className="p-2 text-right">📦</th>
+                <th className="p-2 text-right">kg</th>
+                <th className="p-2 text-right">m³</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contents.map((lot) => (
+                <tr key={lot.lotId} className="border-b border-line last:border-0">
+                  <td className="p-1.5">
+                    <div className="flex items-center gap-1">
+                      {lot.photoId ? (
+                        <LightboxImg
+                          attachmentId={lot.photoId}
+                          className="h-20 w-20 rounded-lg object-cover"
+                        />
+                      ) : lot.generalPhotoId ? (
+                        <LightboxImg
+                          attachmentId={lot.generalPhotoId}
+                          className="h-20 w-20 rounded-lg border-2 border-warn/40 object-cover"
+                        />
+                      ) : (
+                        <span className="text-ink-400">—</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap p-2">
+                    <Link
+                      href={`/stock?lot=${lot.lotId}`}
+                      className="font-mono font-extrabold text-brand-700"
+                    >
+                      {lot.clientCode ?? lot.marking ?? '?'}-{lot.letter}
+                    </Link>
+                  </td>
+                  <td className="max-w-56 p-2">
+                    <Link href={`/receipts/${lot.receiptId}`} className="block truncate">
+                      {lot.productNameZh}
+                      {lot.productNameRu && (
+                        <span className="text-ink-500"> ({lot.productNameRu})</span>
+                      )}
+                    </Link>
+                  </td>
+                  <td className="p-2 text-right font-semibold">
+                    {/* While the truck is being filled the useful number is
+                        progress; once it has left, the plan is history and the
+                        count IS the cargo. */}
+                    {Number(lot.planned) > 0 ? `${lot.loaded}/${lot.onBatch}` : lot.onBatch}
+                  </td>
+                  <td className="p-2 text-right">{Math.round(lot.kg)}</td>
+                  <td className="p-2 text-right">{Math.round(lot.m3 * 100) / 100}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        )}
       </div>
 
       {loadedBoxes.length > 0 && (
@@ -608,8 +710,23 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       {/* Tracking map pins: the logist marks where the truck ACTUALLY is —
           the map's estimate re-anchors from that moment (owner's feature). */}
       {batch.status === 'in_transit' && canVehicle && (
-        <div className="card space-y-2">
-          <h2 className="text-sm font-bold uppercase text-ink-500">📍 {t('whereIsTruck')}</h2>
+        // Folded like every other rail panel (owner): three buttons and a map
+        // link are worth a tap, not a permanent block of the card.
+        <Panel
+          title={`📍 ${t('whereIsTruck')}`}
+          badge={
+            (batch.trackingCheckpoint as { key?: string } | null)?.key
+              ? t(
+                  `cp${((batch.trackingCheckpoint as { key: string }).key === 'at_border'
+                    ? 'Border'
+                    : (batch.trackingCheckpoint as { key: string }).key === 'in_kg'
+                      ? 'Kg'
+                      : 'Uz') as 'cpBorder'}`,
+                )
+              : undefined
+          }
+          testId="batch-where-panel"
+        >
           <div className="flex flex-wrap gap-2">
             {(
               [
@@ -639,7 +756,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <Link href="/map" className="text-sm font-semibold text-brand-700 underline">
             🗺 {t('openMap')} →
           </Link>
-        </div>
+        </Panel>
       )}
 
       {/* Phase 2.1: VED manager + accountant set each client's negotiated

@@ -62,6 +62,14 @@ test('unload lifecycle: scan in at destination, finish, close', async ({ page })
   await page.getByTestId('close-batch').click();
   await expect(page.getByTestId('close-batch')).toBeHidden({ timeout: 15_000 });
 
+  // Round 46, the owner's item 3: a finished truck still says what it carried,
+  // in the same terms as a shelf — boxes, kg, m³. It could not before: landing
+  // clears the box's batch pointer, so the contents read from that pointer
+  // went blank the moment the cargo arrived, which is exactly when he looks.
+  // The weight is a share of the lot, so it must be a real number, not a zero
+  // standing in for "we no longer know" — the lightest seeded lot is 8 kg a box.
+  await expect(page.getByTestId('batch-contents-total')).toContainText(/Σ 1 📦 · [1-9]\d* kg/);
+
   // Transit report renders
   await page.goto('/transit');
   await expect(page.getByRole('heading')).toBeVisible();

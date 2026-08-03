@@ -8,7 +8,6 @@ import { CardCols } from '@/components/card-cols';
 import { HistoryTab } from '@/components/history-tab';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
-import { CalcPanel } from '@/components/calc-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
 import { stageClass } from '../../crm/stage-color';
@@ -248,15 +247,9 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
         />
       </Panel>
 
-      {/* Round 28: hand the pricing to a VED person with a clock on it.
-          Right under the lines, because the lines ARE the calculation — and
-          saving them is what stops the clock. */}
-      <CalcPanel
-        entityType="deal"
-        entityId={row.deal.id}
-        revalidate={`/bitimlar/${row.deal.id}`}
-        defaultItems={Math.max(1, row.lines.length)}
-      />
+      {/* The «Hisoblash» panel stood here from round 28 and is gone at the
+          owner's word — «ikkala voronkada ham kerak emas». A calculation is
+          asked for in the bot now (round 37), not by a button on a card. */}
 
       <Panel
         title={`🏷 ${t('discountTitle')}`}

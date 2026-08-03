@@ -4,7 +4,7 @@
 
 ---
 
-## STATUS — 2026-08-03 (round 45)
+## STATUS — 2026-08-03 (round 46)
 
 **Every numbered phase is shipped.** Phases 0–8 of the CRM/platform programme
 are done, and the last two rounds were repair rather than construction. The
@@ -44,9 +44,15 @@ CI's order on a fresh database.
 4. **The 17 seller logins do not exist**, which blocks scoping clients to their
    sales manager AND blocks re-running `pnpm import-clients --apply --update`
    (running it now would overwrite corrected data — do not).
-5. **Speed has been measured nowhere.** The server is in Germany, the users are
-   in Uzbekistan, and there is no navigation indicator at all, so every tap has
-   roughly half a second of dead screen with nothing on it.
+5. **Speed on a real phone over a real mobile network is still unmeasured.**
+   The server round trip is now answered for (round 45) and a navigation
+   indicator exists, but everything was timed on localhost — that is server
+   time, not what a warehouse phone in Yiwu feels.
+6. **Nothing in the browser can open a hisoblash request any more** (round 46,
+   his items 5 and 12): both doors were removed at his request and the queue,
+   the clock and the overdue sweep are all still running behind them. Either
+   the staff bot's «Hisoblatish» flow starts the clock, or a door goes back
+   somewhere he wants one.
 
 ### The speed round — SHIPPED (round 45)
 
@@ -79,6 +85,29 @@ than from a complaint.
 **Still unmeasured:** the phone-side render on a real device over a real mobile
 network. Everything above is server time measured on localhost — it is not what
 a warehouse phone in Yiwu feels.
+
+### Round 46 — the owner's 14-point feedback list, the unambiguous half
+
+Six items built the same day; the rest are questions only he can answer and
+are waiting on his reply. Item 2 (freezing the box label code once the client
+is identified) he closed himself: «hozirgidek qolaversin».
+
+| # | What | State |
+|---|---|---|
+| 3 | A loaded/arrived truck reads like a shelf — photo, code, tovar, 📦, kg, m³ + Σ | ✅ (and it had been showing «Σ 0» after every unload) |
+| 4 | Stock photos 56 → 80 px; the sidebar scrolls on its own instead of with the page | ✅ |
+| 5 | «Расчёт» panel off both funnel cards | ✅ |
+| 7 | «Где машина» folds | ✅ |
+| 12a | «Скорость расчётов» report removed | ✅ |
+| 13 | «Сделка (если есть)» hidden from the warehouse on receiving | ✅ (sales/VED keep it; the receipt card links it) |
+| 1 | Driver app stops after ~2 h | ⏳ answer awaited — Android cannot run silently for ever; proposed exact alarms + boot re-arm + a server-side watchdog |
+| 6 | Move a card from the funnel to a deal | ⏳ it exists («Bitim ochish» on a won lead) — asked whether he means something else |
+| 8 | Make the receipt-cost grid convenient | ⏳ asked what specifically is inconvenient |
+| 9 | Warehouse does not need "expected cargo" | ⏳ asked: delete the data, or just take it off the warehouse screen |
+| 10 | GPS-less position should follow the ROAD | ⏳ needs stored route polylines — asked which routes matter |
+| 11 | What is «Свои списки» | ⏳ answered (custom entities, `/o`) — asked whether to remove it |
+| 12b | A page that analyses how tasks are going overall | ⏳ asked whether to build it |
+| 14 | Chat says «в очереди» after the message was really sent | ⏳ asked for `docker compose logs tg-listener` |
 
 ### Deferred by design (stated to the owner, not forgotten)
 

@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## 14 ta ro'yxatning aniq yarmi — 2026-08-03
+
+Rasm bilan yuborgan 14 ta gapingizdan **6 tasi** bajarildi. Qolganlariga
+savol yozdim — javobingizdan keyin qilaman.
+
+**3. Partiya ichidagi yuk — endi sklad qoldig'idek ko'rinadi.**
+Partiya kartasida «Содержимое» bo'limi jadval bo'ldi: **rasm, kod, tovar,
+nechta korobka, necha kg, necha kub**, tepasida esa butun mashinaning
+yig'indisi (Σ). Muhimi: **ilgari mashina yetib kelgach ro'yxat bo'shab
+qolar edi** — yuk tushirilgandan keyin sistema uni «bu mashinaniki» deb
+bilmay qolgan. Endi partiya nima olib kelganini yopilgandan keyin ham
+aytadi. kg va kub — o'sha partiyada ketgan korobkalar ulushi bo'yicha
+(bir lotning yarmi ketsa, yarmi hisoblanadi).
+
+**4. Skladdagi rasmlar kattalashdi** (56 → 80 piksel, bosilsa baribir
+to'liq ochiladi), **va yon menyu endi ekran bilan birga pastga tushmaydi** —
+o'zining alohida aylantirgichi bor. Ilgari menyuning pastki qatorlariga
+yetish uchun butun sahifani surish kerak edi, sursangiz esa menyu ham
+birga ketardi.
+
+**5. «Расчёт» paneli ikkala voronkadan ham olib tashlandi** (bitim va lid
+kartasidan), **12. «Скорость расчётов» hisoboti ham** o'chirildi.
+Aytib qo'yishim kerak: shu ikki tugma ketgani uchun **endi saytdan
+hisoblash so'rab bo'lmaydi**. Jadval, soat va kechikish ogohlantirishi
+joyida turibdi — kerak bo'lsa boshqa joyga tugma qo'yaman, ayting.
+
+**7. «Где машина» endi yig'iladigan bo'ldi** — kartani ochganda yopiq
+turadi, kerak bo'lsa bosasiz.
+
+**13. Yuk qabul qilishda «Сделка (если есть)» skladchida ko'rinmaydi.**
+Buni sotuvchi va VED xodimi ko'radi. Yiwudagi operator qaysi bitimga
+tegishli ekanini bilmaydi — noto'g'ri tanlansa narx nazorati noto'g'ri
+bitim bilan solishtiradi. Prixod kartasida bitimni ulash tugmasi bor
+(o'tgan raundda qo'shilgan edi) — kim biladi, o'sha ulaydi.
+
+Tekshirish: 851 ta ichki test, 101 ta brauzer testi — hammasi yashil.
+Ekranlarni telefon o'lchamida (360×800) ochib, **rasmga olib ko'rdim**.
+Skladchi hisobiga ham kirib tekshirdim.
+
+
 ## CI qizil bo'ldi — sabab topildi — 2026-08-03
 
 Tezlik raundidan keyin avtomatik tekshiruv (CI) bitta testda yiqildi. Sabab

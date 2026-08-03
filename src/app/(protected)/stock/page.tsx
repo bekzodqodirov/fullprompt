@@ -286,10 +286,15 @@ export default async function StockPage({
                 <tr key={line.lot.id} className="border-b border-line hover:bg-surface-sunken">
                   <td className="p-1.5">
                     <div className="flex items-center gap-1">
+                      {/* Bigger than they were (owner: «rasimlar kichkina»).
+                          The table is 860 px wide inside its own sideways
+                          scroll, so on a phone every column is already being
+                          read at arm's length — a 56 px thumbnail told nobody
+                          what was in the box. Tap still opens the full photo. */}
                       {line.photoId ? (
                         <LightboxImg
                           attachmentId={line.photoId}
-                          className="h-14 w-14 rounded object-cover"
+                          className="h-20 w-20 rounded-lg object-cover"
                         />
                       ) : (
                         <span className="text-ink-400">—</span>
@@ -298,7 +303,7 @@ export default async function StockPage({
                         <LightboxImg
                           attachmentId={line.generalPhotoId}
                           testId="general-photo"
-                          className="h-14 w-14 rounded border-2 border-warn/40 object-cover"
+                          className="h-20 w-20 rounded-lg border-2 border-warn/40 object-cover"
                         />
                       )}
                     </div>

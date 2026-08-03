@@ -172,7 +172,15 @@ export function Sidebar({ groups }: { groups: NavGroup[] }) {
         collapsed ? 'w-14' : 'w-56'
       }`}
     >
-      <div className={`sticky top-14 space-y-5 ${collapsed ? 'p-1.5' : 'p-3'}`}>
+      {/* Its OWN scrollbar, not the page's. `sticky` alone pins the block but
+          gives it no height, so a menu taller than the screen could only be
+          reached by scrolling the whole page — and then the menu went up with
+          it and the bottom rows were unreachable (owner). */}
+      <div
+        className={`sticky top-14 max-h-[calc(100dvh-3.5rem)] space-y-5 overflow-y-auto overscroll-contain ${
+          collapsed ? 'p-1.5' : 'p-3'
+        }`}
+      >
         <button
           type="button"
           onClick={toggle}
