@@ -1,5 +1,52 @@
 # CHANGELOG
 
+## Sabab topildi: Telegram seansingiz o'chirilgan — 2026-08-03 (4-qism)
+
+Loglardagi bitta qator hammasini aytdi:
+
+```
+yuborilmadi (qayta urinaman): 401: SESSION_REVOKED
+```
+
+**Telegram sizning seansingizni tugatgan.** Ya'ni server sizning Telegram
+akkauntingizga ulana olmaydi — parol yoki internet emas, seansning o'zi
+o'chirilgan (odatda Telegramda «Устройства → Завершить сеанс» bosilganda yoki
+Telegram o'zi bekor qilganda bo'ladi).
+
+**Nima uchun sistema buni ko'rsatmagan** (asosiy kamchilik, tuzatildi):
+
+- Sistema «tirikmi» degan savolga **yurak urishi** bilan javob berardi — ya'ni
+  jarayon ishlayaptimi. Jarayon ishlayotgan edi, ulanish ham bor edi, faqat
+  **huquq** yo'q edi. Shuning uchun ekran «jonli» deb turaverdi va yangi
+  xabarlarni qabul qilaverdi.
+- `SESSION_REVOKED` xatosi «keyin qayta urinib ko'ramiz» turkumida edi. Har
+  3 soniyada o'lik seansga urinib, har xabar 3 marta urinib «xato» bo'lgan.
+  Sizdagi 4 ta «failed» qator — shundan.
+
+**Tuzatildi:**
+
+1. Seans o'lgani **alohida tanib olinadi** va u xabarning emas, **akkauntning**
+   xatosi deb hisoblanadi.
+2. Shu zahoti akkaunt **«signed_out»** deb belgilanadi → ekranda qizil holat va
+   yozish oynasi o'rniga «qayta ulaning» deb chiqadi, yangi xabar qabul
+   qilinmaydi.
+3. Tinglovchi o'sha akkaunt uchun **to'xtaydi** (Telegramni bekorga bezovta
+   qilmaydi).
+4. Navbatdagi xabar **o'chirilmaydi** — qayta ulanganingizdan keyin ketadi.
+5. **Ogohlantirish BOT orqali** keladi (sizning akkauntingiz o'lgani uchun undan
+   yuborib bo'lmaydi — boshqa yo'l kerak edi).
+
+**Ikkinchi xato — «habar yo'q bo'lib qolyabti»:** chat oynasi rad javob
+bo'lganda ham yozilgan matnni o'chirib tashlar edi (React formani har doim
+tozalaydi). Endi rad javobda matn joyida qoladi. Dock'dagi oyna to'g'ri ishlar
+edi — faqat asosiy chat ekranida shu xato bor edi.
+
+**SIZDAN:** saytda **Suhbatlar → Ulash** ga kirib Telegramingizni **qayta
+ulang** (telefon → kod). Shundan keyin navbatdagi xabarlar o'zi ketadi.
+
+Tekshirish: 873 ta ichki test, 101 ta brauzer testi — hammasi yashil.
+
+
 ## 14-punkt: sabab topildi — 2026-08-03 (3-qism)
 
 Loglar uchun rahmat — ular hamma narsani aytdi.

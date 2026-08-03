@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isDbUnreachable,
   isPermanentSendError,
+  isSessionDead,
   outboxLabel,
   STUCK_SENDING_MS,
 } from '@/modules/wms/crm/telegram-send';
@@ -73,5 +74,58 @@ describe('telling a dead database apart from a refused message', () => {
       expect(isDbUnreachable(message), message).toBe(false);
       expect(isPermanentSendError(message), message).toBe(true);
     }
+  });
+});
+
+/**
+ * Round 49, straight off his server's logs:
+ *
+ *   yuborilmadi (qayta urinaman): 401: SESSION_REVOKED (caused by messages.SendMessage)
+ *   …eight times…
+ *
+ * Telegram had ended the session. Nothing recognised that, so the listener
+ * treated a dead account as a flaky network and knocked every three seconds
+ * until each reply burned its three attempts — while the heartbeat kept being
+ * written, the screen said the bridge was LIVE, and the compose box went on
+ * accepting messages that could never leave.
+ */
+describe('telling a dead SESSION apart from a dead message', () => {
+  it('recognises what Telegram actually said on his server', () => {
+    expect(isSessionDead('401: SESSION_REVOKED (caused by messages.SendMessage)')).toBe(true);
+  });
+
+  it('and the other ways an account stops being ours', () => {
+    for (const message of [
+      'AUTH_KEY_UNREGISTERED',
+      'AUTH_KEY_DUPLICATED',
+      '401: SESSION_EXPIRED',
+      'USER_DEACTIVATED_BAN',
+    ]) {
+      expect(isSessionDead(message), message).toBe(true);
+    }
+  });
+
+  it('does not mistake one refused message for a dead account', () => {
+    // These kill the MESSAGE. Marking the account signed out for one of them
+    // would take the whole company's chat offline because one customer
+    // blocked one manager.
+    for (const message of [
+      'USER_IS_BLOCKED',
+      'CHAT_WRITE_FORBIDDEN',
+      'MESSAGE_TOO_LONG',
+      'PEER_FLOOD',
+      'getaddrinfo EAI_AGAIN postgres',
+    ]) {
+      expect(isSessionDead(message), message).toBe(false);
+    }
+  });
+
+  it('a revoked session is never merely "try again later"', () => {
+    // The bug in one line: the old code asked only this question, got `false`,
+    // and printed «qayta urinaman».
+    const revoked = '401: SESSION_REVOKED (caused by messages.SendMessage)';
+    expect(isPermanentSendError(revoked)).toBe(false);
+    expect(isDbUnreachable(revoked)).toBe(false);
+    expect(isSessionDead(revoked)).toBe(true);
   });
 });

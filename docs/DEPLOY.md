@@ -43,6 +43,11 @@ docker compose --profile telegram logs -f tg-listen
 docker compose --profile telegram restart tg-listen
 ```
 
+**«401: SESSION_REVOKED»** — Telegram akkauntning seansi tugatilgan. Restart
+yordam bermaydi: saytda **Suhbatlar → Ulash** dan qayta ulash kerak (telefon →
+kod). 2026-08-03 dan boshlab sistema buni o'zi taniydi, akkauntni «signed_out»
+deb belgilaydi va **bot orqali** ogohlantiradi.
+
 **«getaddrinfo EAI_AGAIN postgres»** — konteyner bazani topa olmayapti
 (Docker'ning ichki DNS'i). Sayt ishlayotgan bo'lsa ham shu bo'lishi mumkin.
 Yuqoridagi `restart` yetadi. 2026-08-03 dan boshlab tinglovchi bu holatni

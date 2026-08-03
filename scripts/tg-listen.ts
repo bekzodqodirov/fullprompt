@@ -19,8 +19,10 @@ import {
   floodWaitUntil as computeFloodWait,
   isDbUnreachable,
   isPermanentSendError,
+  isSessionDead,
   MAX_ATTEMPTS,
 } from '../src/modules/wms/crm/telegram-send';
+import { notifyStaffTelegram } from '../src/modules/platform/notifications/staff';
 import {
   applyEdit,
   clientBook,
@@ -319,6 +321,30 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     }
   };
 
+  /**
+   * The session is dead, so the alarm cannot ride on it.
+   *
+   * Round 48's alarm went to the manager's own Saved Messages because the
+   * DATABASE was the broken thing. Here it is the opposite: the database is
+   * fine and the Telegram account is gone, so the message goes through the
+   * ordinary notification path and is delivered by the BOT — a different
+   * transport, which is the whole reason it still works.
+   */
+  const announceSessionDead = async (reason: string) => {
+    try {
+      await notifyStaffTelegram({
+        userIds: [account.managerUserId],
+        type: 'TelegramSessionEnded',
+        text:
+          `⚠️ Telegram seansingiz tugatilgan (${reason}).\n` +
+          `Mijozlarga javob yuborib bo‘lmaydi. Saytda «Suhbatlar → Ulash» orqali ` +
+          `qayta ulaning.`,
+      });
+    } catch (err) {
+      console.error('ogohlantira olmadim:', err instanceof Error ? err.message : err);
+    }
+  };
+
   const noteDbFailure = async (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error('navbat:', message);
@@ -446,6 +472,20 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         await releaseClaim(job.id).catch(() => {});
         return;
       }
+      // Telegram ended the SESSION. Nothing this account sends will work
+      // again until somebody logs in, so retrying is not perseverance, it is
+      // a dead loop knocking every three seconds — which is what the owner's
+      // logs showed, eight «qayta urinaman» in a row against a revoked
+      // session while the screen said the bridge was live.
+      if (isSessionDead(message)) {
+        console.error(`SESSION o‘lgan: ${message} — qayta ulanish kerak`);
+        // The reply itself is fine and goes out when he reconnects; failing
+        // it would throw away an answer a client is still waiting for.
+        await releaseClaim(job.id).catch(() => {});
+        await announceSessionDead(message);
+        void stop(message, 'signed_out');
+        return;
+      }
       if (typeof seconds === 'number') {
         floodWaitUntil = computeFloodWait(seconds);
         console.error(`FLOOD_WAIT ${seconds}s — ${floodWaitUntil.toISOString()} gacha to‘xtadim`);
@@ -536,10 +576,13 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   }, HEARTBEAT_MS);
   await heartbeat(account.id);
 
-  const stop = async (why: string) => {
+  const stop = async (why: string, status: 'stopped' | 'signed_out' = 'stopped') => {
     clearInterval(beat);
     clearInterval(sender);
-    await markAccount(account.id, 'stopped', why);
+    // 'stopped' is an ordinary shutdown and the supervisor may start it again;
+    // 'signed_out' is terminal and it must NOT — the screen has to say «log in
+    // again» rather than «starting…» for ever.
+    await markAccount(account.id, status, why);
     await releaseLock();
     console.log(
       `\n${tgPhone} to‘xtadi (${why}) · yozildi: ${stored} · o‘tkazildi: ${passed} · yuborildi: ${sent}`,

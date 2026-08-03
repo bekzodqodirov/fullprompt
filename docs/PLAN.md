@@ -4,13 +4,13 @@
 
 ---
 
-## STATUS — 2026-08-03 (round 48)
+## STATUS — 2026-08-03 (round 49)
 
 **Every numbered phase is shipped.** Phases 0–8 of the CRM/platform programme
 are done, and the last two rounds were repair rather than construction. The
 system is live on the owner's VPS with real cargo and real money in it.
 
-Size: 100 screens, 56 migrations, 869 unit/integration + 101 e2e tests green in
+Size: 100 screens, 56 migrations, 873 unit/integration + 101 e2e tests green in
 CI's order on a fresh database.
 
 ### What exists, by area
@@ -53,10 +53,12 @@ CI's order on a fresh database.
    the clock and the overdue sweep are all still running behind them. Either
    the staff bot's «Hisoblatish» flow starts the clock, or a door goes back
    somewhere he wants one.
-7. **The listener on his server is currently cut off from the database**
-   (`getaddrinfo EAI_AGAIN postgres`, since 2026-08-02). Round 48 makes this
-   survivable and audible, but the running container still needs
-   `docker compose --profile telegram restart tg-listen`.
+7. **His Telegram session is REVOKED** (`401: SESSION_REVOKED`, 2026-08-03).
+   The DNS outage is over; this is what was underneath it. Round 49 makes the
+   system SAY so instead of accepting messages that cannot leave, but the
+   account itself only comes back when he reconnects at `/suhbatlar/ulash`.
+   Worth watching: a personal Telegram account being revoked is the standing
+   risk of the user-account route he chose in round 33.
 
 ### The speed round — SHIPPED (round 45)
 
@@ -110,7 +112,7 @@ is identified) he closed himself: «hozirgidek qolaversin».
 | 10 | GPS-less position should follow the ROAD | ✅ round 47 — the corridor learned the highway towns; spans are derived, not hand-counted |
 | 11 | What is «Свои списки» | ✅ round 47 — off every menu; pages and tables kept |
 | 12b | A page that analyses how tasks are going overall | ✅ round 47 — `/reports/vazifalar` |
-| 14 | Chat says «в очереди» after the message was really sent | ✅ round 48 — the listener's container had lost DNS to the database; a sent message could not be written down, and a blip could have re-sent it. Fixed, plus an alarm that reaches him without the database |
+| 14 | Chat says «в очереди» after the message was really sent | ✅ rounds 48-49 — the listener's container had lost DNS to the database; a sent message could not be written down, and a blip could have re-sent it. Fixed, plus an alarm that reaches him without the database |
 | 1 | Driver app stops after ~2 h | ⏳ answer awaited — Android cannot run silently for ever; proposed exact alarms + boot re-arm + a server-side watchdog |
 
 ### Deferred by design (stated to the owner, not forgotten)

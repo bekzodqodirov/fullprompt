@@ -39,6 +39,11 @@ export const MUTE_GROUPS = {
     // A customer has been waiting for an answer past the threshold (round 36).
     // An alert, not a digest: it is only worth anything before they ring.
     'ClientWaiting',
+    // Telegram ended a manager's session (round 49). Delivered by the BOT,
+    // deliberately: the account that would normally carry it is the one that
+    // just died. Nothing this person types can reach a customer until they
+    // reconnect, so it is an alarm and not news.
+    'TelegramSessionEnded',
   ],
   operations: [
     'ReceiptConfirmed',

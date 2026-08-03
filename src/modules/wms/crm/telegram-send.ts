@@ -172,6 +172,33 @@ export function isPermanentSendError(message: string): boolean {
   ].some((code) => m.includes(code));
 }
 
+/**
+ * Telegram has ended our SESSION — this is not about the message at all.
+ *
+ * Found the hard way (round 49): the owner's account was revoked and every
+ * reply came back `401: SESSION_REVOKED`, which `isPermanentSendError` did not
+ * recognise, so the listener printed «qayta urinaman» and hammered a dead
+ * session every three seconds until each row burned its three attempts and
+ * failed. Meanwhile the heartbeat kept being written, so the screen said the
+ * bridge was LIVE and went on accepting replies that could never leave.
+ *
+ * Kept apart from `isPermanentSendError` because the two demand different
+ * things: that one is a fact about the RECIPIENT and only the message dies;
+ * this is a fact about US, and the account has to be marked signed out so the
+ * compose box says «log in again» instead of taking dictation for nobody.
+ */
+export function isSessionDead(message: string): boolean {
+  const m = message.toUpperCase();
+  return [
+    'SESSION_REVOKED', // somebody pressed «terminate session» in Telegram
+    'AUTH_KEY_UNREGISTERED',
+    'AUTH_KEY_INVALID',
+    'AUTH_KEY_DUPLICATED', // the same session used from two places at once
+    'SESSION_EXPIRED',
+    'USER_DEACTIVATED_BAN',
+  ].some((code) => m.includes(code));
+}
+
 /** Telegram's own ceiling for one text message. */
 export const MAX_BODY_CHARS = 4096;
 

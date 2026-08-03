@@ -121,13 +121,13 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-869 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+873 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0055** (`receipt_customs`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (rounds 46-48).
+shipped; the current round is the owner's 14-point feedback list (rounds 46-49).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-48. The owner's last confirmed
+money bugs), the speed round and rounds 46-49. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -973,6 +973,30 @@ is the only alerting path here that needs nothing but a socket.
 not failed, not queued, «check Telegram», in warn colour. Red-proofs ×2.
 His command failed because the service is `tg-listen` behind the `telegram`
 profile: `docker compose --profile telegram logs -f tg-listen`. No migration.
+
+Round 49 — «ishlamadi, qued turibti va habar yo'q bo'lib qolyabti» (#463-466).
+His logs after the round-48 restart: DNS fixed, and underneath it
+**`401: SESSION_REVOKED`** — Telegram had ended his account's session.
+`isPermanentSendError` did not list it, so the listener called it retryable and
+knocked every 3 s until each reply burned 3 attempts (4 rows `failed`); the
+HEARTBEAT kept being written (the socket was fine, only the AUTH was dead) so
+`bridgeState` said «live», `canQueue` passed, and the box went on taking
+dictation. **A heartbeat proves the process is alive, not the account.**
+`isSessionDead` is now its own predicate — deliberately NOT folded into
+`isPermanentSendError`: that one is a fact about the RECIPIENT and kills one
+message, this is a fact about US → mark the account `signed_out` (screen goes
+red, box becomes «log in again», queueing refuses), `stop(why, 'signed_out')`
+the listener, RELEASE the claim so the reply goes out after he reconnects.
+The alarm rides the BOT, not the user account — round 48's Saved-Messages
+alarm would have gone nowhere. RULE: an alarm about a component must never
+depend on that component; this system's two alarms need opposite carriers.
+Second bug in the same report, found by reading: the thread's compose box
+threw the typed text away on a REFUSAL — React resets an uncontrolled form
+after a form Action, and the box also called `reset()` under a comment
+claiming the opposite. Now `preventDefault` + no `action` prop + verdict read
+first, as the dock's composer always did. Third appearance of that shape
+(#377, #419): **a form that can be refused must hold its inputs.** No
+migration. OWNER ACTION: reconnect at /suhbatlar/ulash.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real
