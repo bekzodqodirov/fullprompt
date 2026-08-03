@@ -14,6 +14,7 @@ import { pendingFor } from '@/modules/wms/crm/outbox';
 import { outboxLabel } from '@/modules/wms/crm/telegram-send';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { ChatMenu } from '@/components/chat-menu';
+import { OutboxDismiss } from '@/components/outbox-dismiss';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { TelegramReply } from '@/components/telegram-reply';
 
@@ -68,6 +69,7 @@ export default async function ConversationPage({
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');
+  const tc = await getTranslations('common');
   const showPicker = viewer.all === true && managers.length > 1;
 
 
@@ -158,12 +160,19 @@ export default async function ConversationPage({
               }`}
               data-testid={`outbox-${label}`}
             >
-              <div className="mb-0.5 text-xs font-semibold">
-                {label === 'failed'
-                  ? `✕ ${t('replyFailed')}`
-                  : label === 'stuck'
-                    ? `⚠ ${t('replyStuck')}`
-                    : `◷ ${t('replyQueued')}`}
+              <div className="mb-0.5 flex items-start gap-2 text-xs font-semibold">
+                <span className="min-w-0 flex-1">
+                  {label === 'failed'
+                    ? `✕ ${t('replyFailed')}`
+                    : label === 'stuck'
+                      ? `⚠ ${t('replyStuck')}`
+                      : `◷ ${t('replyQueued')}`}
+                </span>
+                {/* A failure is a note to the manager, not a record of
+                    anything a customer saw — once read, it may go. */}
+                {label === 'failed' && (
+                  <OutboxDismiss id={row.id} clientId={client.id} label={tc('delete')} />
+                )}
               </div>
               <p className="whitespace-pre-wrap break-words">
                 {row.attachmentId && '🖼 '}

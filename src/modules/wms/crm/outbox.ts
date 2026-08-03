@@ -482,19 +482,34 @@ export async function loadOutboxPhoto(
 }
 
 /**
- * After a photo went out: write the echo row OURSELVES and hand the photo to
- * it. Telegram will deliver the same message back through the NewMessage
- * event; the unique (manager, peer, tg_message_id) index makes that a no-op
- * replay — and because the attachment is already claimed onto the row, the
- * thread shows the photo we uploaded instead of downloading a second copy.
+ * After a reply went out: write the echo row OURSELVES.
+ *
+ * Round 53, and the owner found it: «habar telegramdan ketyabti ammo bizning
+ * sistemadagi chatda jonatgan habarlarim korinmayabti — rasim korindi habar
+ * korinmadi». Exactly so, and the asymmetry names the bug. This function
+ * existed for PHOTOS only, to avoid re-downloading bytes we had just
+ * uploaded; a text reply was left to arrive back through the NewMessage
+ * event, on the assumption that Telegram echoes everything.
+ *
+ * It does not echo a message sent on the SAME connection. The listener is the
+ * connection, so its own text replies were delivered to the client and never
+ * stored — the queue row flipped to `sent`, the «navbatda» bubble vanished
+ * with it, and the thread showed nothing at all. A photo was fine, which is
+ * why a photo was the one thing he could see.
+ *
+ * So it is written for every send now. A real echo — one typed on the
+ * manager's own phone, or a replay after a reconnect — is a no-op: the
+ * unique (manager, peer, tg_message_id) index refuses the duplicate, and for
+ * a photo the attachment is already claimed onto the row, so the thread shows
+ * the copy we uploaded rather than a second download.
  */
-export async function recordSentPhoto(input: {
+export async function recordSent(input: {
   clientId: string;
   managerUserId: string;
   peerId: bigint;
   tgMessageId: bigint;
   body: string;
-  attachmentId: string;
+  attachmentId?: string | null;
   sentAt: Date;
 }): Promise<void> {
   const echoId = await storeIncoming({
@@ -505,10 +520,12 @@ export async function recordSentPhoto(input: {
       tgMessageId: input.tgMessageId,
       direction: 'out',
       body: input.body.trim() || null,
-      hasMedia: true,
+      hasMedia: Boolean(input.attachmentId),
       sentAt: input.sentAt,
     },
   });
+  // A text reply has nothing to claim; the row IS the whole record.
+  if (!input.attachmentId) return;
   // Null = the event handler won the race and wrote the row first; the claim
   // then lands on that row instead.
   const rowId =
@@ -531,6 +548,32 @@ export async function recordSentPhoto(input: {
     .update(attachments)
     .set({ entityType: 'tg_message', entityId: rowId })
     .where(eq(attachments.id, input.attachmentId));
+}
+
+/**
+ * Clear a reply that failed, off the thread.
+ *
+ * A failed row is not a record of anything a customer saw — it is a note to
+ * the manager that their words did not leave. Once they know, it is clutter,
+ * and the owner watched three «401: SESSION_REVOKED» boxes sit at the top of
+ * a conversation for a day because nothing could remove them (round 53).
+ *
+ * Only a FAILED row, and only from an account the actor may speak on: a
+ * queued one is withdrawn with `cancelQueued`, and a sent one is on somebody's
+ * phone and cannot be unsaid.
+ */
+export async function dismissFailed(id: string, ctx: AuditContext): Promise<void> {
+  if (!ctx.actorId) throw new OutboxError('no_actor');
+  const [row] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+  if (!row) throw new OutboxError('not_found');
+  if (row.status !== 'failed') throw new OutboxError('not_failed');
+  await db.delete(tgOutbox).where(eq(tgOutbox.id, id));
+  await writeAudit(db, ctx, {
+    entityType: 'tg_outbox',
+    entityId: id,
+    action: 'delete',
+    before: { status: row.status, lastError: row.lastError },
+  });
 }
 
 /**

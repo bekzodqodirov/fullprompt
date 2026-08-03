@@ -121,13 +121,13 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-880 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+882 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0056** (`tg_session_removable`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (rounds 46-52).
+shipped; the current round is the owner's 14-point feedback list (rounds 46-53).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-52. The owner's last confirmed
+money bugs), the speed round and rounds 46-53. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -1046,6 +1046,27 @@ drain): `/api/dock/thread` never learned round 32's `threadClientFor`, so a
 sibling-code card showed the chat in the panel and «no chat» in the dock, and
 the dock posted the card's raw id. Both doors ask one resolver now;
 `tests/unit/chat-controls.test.ts` says they must.
+
+Round 53 — the real one (#476-479). His screenshot: «habar telegramdan
+ketyabti ammo bizning chatda ko'rinmayabti — RASIM KORINDI HABAR KORINMADI».
+The asymmetry IS the bug. **Telegram does not echo a message sent on the same
+connection**, and the listener IS that connection: `recordSentPhoto` wrote the
+`tg_messages` row itself for photos (to avoid re-downloading its own bytes,
+not for correctness) while TEXT was left to arrive back through NewMessage —
+its own comment stated the assumption. So a text reply reached the customer,
+`markSent` flipped the row to 'sent', the «navbatda» bubble vanished with it,
+and nothing was ever stored. Outgoing messages typed on his PHONE always
+appeared (those genuinely are updates), which hid it. Now `recordSent`
+(attachment optional) is called for EVERY send; the unique
+(manager, peer, tg_message_id) index keeps a later real echo a no-op — that
+protection was always the reason the photo path worked. Red-proof: restore
+the photo-only guard → the text test reads back an empty thread. Also
+`dismissFailed` + a ✕ on failed bubbles (his three SESSION_REVOKED boxes had
+sat at the top of a conversation for a day with nothing able to clear them);
+own-account only, audited, refuses anything not `failed`. LESSON: rounds
+48-52 each fixed something real and none was his bug, because each reasoned
+from a symptom. **When a user reports two things and one WORKS, the working
+one is the control group and the difference is the defect.**
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

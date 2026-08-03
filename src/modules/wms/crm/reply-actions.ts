@@ -3,7 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
-import { cancelQueued, OutboxError, queueReply, replyAccountFor } from './outbox';
+import {
+  cancelQueued,
+  dismissFailed,
+  OutboxError,
+  queueReply,
+  replyAccountFor,
+} from './outbox';
 import { excludeAndPurgeChat } from './chat-rules';
 import { addActivity } from './service';
 import { announceNote } from './internal-chat';
@@ -78,6 +84,42 @@ export async function cancelReplyAction(_prev: ReplyState, form: FormData): Prom
   const meta = await requestMeta();
   try {
     await cancelQueued(id, { actorId: who.id, ...meta });
+  } catch (err) {
+    if (err instanceof OutboxError) return { error: err.message };
+    throw err;
+  }
+  revalidatePath(`/suhbatlar/${clientId}`);
+  return { ok: true };
+}
+
+/**
+ * Take a failed reply off the thread (round 53).
+ *
+ * The owner watched three «401: SESSION_REVOKED» boxes sit at the top of a
+ * conversation for a day with nothing able to remove them. A failed row is a
+ * note to the manager that their words did not leave; once read, it is
+ * clutter on the screen they answer customers from.
+ *
+ * Same ownership rule as withdrawing: only on a conversation you may speak in.
+ */
+export async function dismissFailedAction(
+  _prev: ReplyState,
+  form: FormData,
+): Promise<ReplyState> {
+  let who;
+  try {
+    who = await authorize('crm.leads');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const id = String(form.get('id') ?? '');
+  const clientId = String(form.get('clientId') ?? '');
+  if (!(await replyAccountFor(clientId, who.id))) return { error: 'not_your_conversation' };
+
+  const meta = await requestMeta();
+  try {
+    await dismissFailed(id, { actorId: who.id, ...meta });
   } catch (err) {
     if (err instanceof OutboxError) return { error: err.message };
     throw err;

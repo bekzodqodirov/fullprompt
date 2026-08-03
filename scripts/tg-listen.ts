@@ -8,7 +8,7 @@ import {
   loadOutboxPhoto,
   markAttemptFailed,
   markSent,
-  recordSentPhoto,
+  recordSent,
   recoverInFlight,
   releaseClaim,
   sentCounts,
@@ -442,10 +442,15 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         await noteDbFailure(err);
         return;
       }
-      // The echo is written HERE, so the thread shows the photo we uploaded
-      // instead of downloading a second copy when Telegram echoes it back.
-      if (job.attachmentId && result?.id) {
-        await recordSentPhoto({
+      // The echo is written HERE, for EVERY send (round 53). Telegram does not
+      // deliver a NewMessage back for a message sent on this same connection,
+      // so a text reply left the building and was never recorded — the queue
+      // row went to 'sent', its «navbatda» bubble vanished with it, and the
+      // thread showed nothing. A photo was fine only because this branch used
+      // to exist for photos alone, which is why the owner could see the
+      // picture and not the words.
+      if (result?.id) {
+        await recordSent({
           clientId: job.clientId,
           managerUserId: account.managerUserId,
           peerId: job.peerId,
@@ -454,7 +459,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           attachmentId: job.attachmentId,
           sentAt: new Date((result.date ?? Math.floor(Date.now() / 1000)) * 1000),
         }).catch((err: unknown) => {
-          console.error('rasm yozilmadi:', err instanceof Error ? err.message : err);
+          console.error('eho yozilmadi:', err instanceof Error ? err.message : err);
         });
       }
       sent += 1;

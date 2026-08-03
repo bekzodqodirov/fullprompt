@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Topildi: jo'natilgan xabar nega chatda ko'rinmasdi — 2026-08-03 (8-qism)
+
+Sizning rasmingiz hammasini aytdi: **«rasm ko'rindi, xabar ko'rinmadi».**
+Aynan shu farq — kasallikning o'zi.
+
+**Sabab.** Telegram, agar xabarni **o'sha ulanishning o'zidan** jo'natsangiz,
+uni sizga «yangi xabar» qilib qaytarmaydi. Bizning tinglovchi — o'sha ulanish.
+Rasm uchun biz yozuvni **o'zimiz** yozardik (boshqa sababga ko'ra: rasmni
+ikkinchi marta yuklab olmaslik uchun). Matn uchun esa «Telegram o'zi
+qaytaradi» deb kutib turardik — u qaytarmaydi.
+
+Natijada: matn mijozga **yetib borardi**, navbatdagi «navbatda» yozuvi
+yo'qolardi, va bizning chatda **hech narsa qolmasdi**. Telefoningizdan
+yozgan xabarlaringiz esa ko'rinardi — ular haqiqatan ham «yangi xabar» bo'lib
+keladi. Shuning uchun teshik ko'rinmay turgan.
+
+**Tuzatildi:** endi har bir jo'natilgan xabar — matnmi, rasmmi — darrov
+chatga yoziladi. Agar Telegram keyin o'sha xabarni qaytarsa, ikkilanmaydi
+(baza darajasida himoya bor edi, o'sha ishlaydi).
+
+**Ikkinchisi:** «401: SESSION_REVOKED» yozuvlari chat tepasida bir kundan
+beri turgan ekan — ularni o'chiradigan hech narsa yo'q edi. Endi har bir
+xato yozuvining yonida **✕** bor. Xato — bu sizga aytilgan gap, mijoz uni
+ko'rmagan; o'qib bo'lgach, olib tashlash mumkin.
+
+Tekshirish: 882 ta ichki test, 101 ta brauzer testi — hammasi yashil.
+Tuzatishni olib tashlab, testning qizarganini ko'rdim, keyin qaytardim.
+
+
 ## «Something went wrong» — sabab topildi — 2026-08-03 (7-qism)
 
 Xato sizda emas: **kod yangilangan, baza yangilanmagan.** «Chiqish» tugmasi

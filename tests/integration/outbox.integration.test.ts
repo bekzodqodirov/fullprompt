@@ -25,7 +25,8 @@ import {
   peerForClient,
   pendingFor,
   queueReply,
-  recordSentPhoto,
+  dismissFailed,
+  recordSent,
   recoverInFlight,
   releaseClaim,
   replyAccountFor,
@@ -381,7 +382,7 @@ describe('a photo rides along (item 15, the sending half)', () => {
       attachmentId: file.id,
       sentAt: new Date(),
     };
-    await recordSentPhoto(echoInput);
+    await recordSent(echoInput);
     const echoes = await db
       .select()
       .from(tgMessages)
@@ -395,7 +396,7 @@ describe('a photo rides along (item 15, the sending half)', () => {
     // The listener can tell this echo's photo is its own upload…
     expect(await wasSentWithPhoto(managerId, PEER, 555000111n)).toBe(true);
     // …and Telegram's own echo arriving later is a no-op replay.
-    await recordSentPhoto(echoInput);
+    await recordSent(echoInput);
     expect(
       await db
         .select()
@@ -442,6 +443,69 @@ describe('changing your mind', () => {
     await queueReply({ clientId, managerUserId: managerId, body: 'uchmoqda' }, ctx());
     const job = await claimNext(managerId);
     await expect(cancelQueued(job!.id, ctx())).rejects.toThrow('already_sent');
+  });
+});
+
+/**
+ * Round 53, the owner's screenshot: «habar telegramdan ketyabti ammo bizning
+ * sistemadagi chatda jonatgan habarlarim korinmayabti — rasim korindi habar
+ * korinmadi».
+ *
+ * The asymmetry IS the bug. The listener wrote the echo row itself for a
+ * photo and left a text reply to arrive back through the NewMessage event —
+ * which Telegram never sends for a message posted on the same connection. So
+ * the words reached the customer and nothing in the CRM ever knew.
+ */
+describe('a reply that went out is on the thread, photo or not', () => {
+  it('records a TEXT send, and a later echo is a no-op replay', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const echo = {
+      clientId,
+      managerUserId: managerId,
+      peerId: PEER,
+      tgMessageId: 555000222n,
+      body: 'matn javobi',
+      sentAt: new Date(),
+    };
+    await recordSent(echo);
+
+    const rows = await db
+      .select()
+      .from(tgMessages)
+      .where(and(eq(tgMessages.clientId, clientId), eq(tgMessages.tgMessageId, 555000222n)));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.direction).toBe('out');
+    expect(rows[0]!.body).toBe('matn javobi');
+    // No photo was sent, so nothing may claim to have one.
+    expect(rows[0]!.hasMedia).toBe(false);
+
+    // The manager's own phone echoing it back later must not double it.
+    await recordSent(echo);
+    expect(
+      await db
+        .select()
+        .from(tgMessages)
+        .where(and(eq(tgMessages.clientId, clientId), eq(tgMessages.tgMessageId, 555000222n))),
+    ).toHaveLength(1);
+
+    await db.delete(tgMessages).where(eq(tgMessages.tgMessageId, 555000222n));
+  });
+});
+
+describe('clearing a failure off the thread', () => {
+  it('removes a failed reply, and refuses to touch anything else', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const { id } = await queueReply({ clientId, managerUserId: managerId, body: 'ketmadi' }, ctx());
+    // A queued row is withdrawn, not dismissed — the two are different acts.
+    await expect(dismissFailed(id, ctx())).rejects.toThrow('not_failed');
+
+    const job = await claimNext(managerId);
+    await markAttemptFailed(job!.id, '401: SESSION_REVOKED', true, MAX_ATTEMPTS);
+    expect((await pendingFor(clientId, { id: managerId }))[0]!.status).toBe('failed');
+
+    await dismissFailed(id, ctx());
+    expect(await pendingFor(clientId, { id: managerId })).toHaveLength(0);
+    await expect(dismissFailed(id, ctx())).rejects.toThrow('not_found');
   });
 });
 
@@ -496,3 +560,4 @@ describe('a manager takes their Telegram back', () => {
     expect(await disconnectAccount(otherId)).toBe(false);
   });
 });
+
