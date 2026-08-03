@@ -16,6 +16,12 @@ Ikki narsa tuzatildi:
   bir xil tartib raqami bo'lsa, ular har safar har xil ketma-ketlikda
   chiqishi mumkin edi (lidlar voronkasida bu allaqachon to'g'ri edi).
 
+Ikkinchi urinishda yana qizil bo'ldi: tozalash bosqichi **bosqichni o'chirmoqchi
+bo'ldi, lekin unda bitim turgan edi** — bu dasturning o'z qoidasi (bosqichni
+o'chirishdan oldin bitimlarni ko'chirish kerak). Endi test ham shunday qiladi.
+Bu safar men **noto'g'ri qatorga qarab turgan ekanman**: barcha 851 test
+o'tgan, lekin FAYL yiqilgan — ikkisi har xil narsa.
+
 Dasturning ishlashiga ta'sir qiladigan o'zgarish yo'q — faqat ustunlar
 tartibi endi har doim bir xil.
 

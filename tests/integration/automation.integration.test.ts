@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -8,7 +8,9 @@ import {
   automationRules,
   clients,
   dealStages as dealStagesTable,
+  deals,
   leadStages as leadStagesTable,
+  leads,
   notifications,
   tasks,
   users,
@@ -87,9 +89,24 @@ afterAll(async () => {
     await db.delete(automationRules).where(eq(automationRules.id, id));
   }
   await db.delete(tasks).where(like(tasks.title, `AU-${STAMP}%`));
-  for (const id of madeStages) await db.delete(dealStagesTable).where(eq(dealStagesTable.id, id));
-  for (const id of madeLeadStages) {
-    await db.delete(leadStagesTable).where(eq(leadStagesTable.id, id));
+  // MOVE FIRST, then delete — the same law `deleteDealStage` enforces on the
+  // screen. A stage still under a deal cannot be dropped (`deals_stage_id_fkey`),
+  // and a cleanup that throws fails the FILE even when every test passed: CI
+  // reported «Test Files 1 failed» beside «851 tests passed».
+  if (madeStages.length) {
+    const home = (await dealStages()).find((stage) => !madeStages.includes(stage.id))!;
+    await db
+      .update(deals)
+      .set({ stageId: home.id })
+      .where(inArray(deals.stageId, madeStages));
+    await db.delete(dealStagesTable).where(inArray(dealStagesTable.id, madeStages));
+  }
+  if (madeLeadStages.length) {
+    const home = (await db.select().from(leadStagesTable)).find(
+      (stage) => !madeLeadStages.includes(stage.id),
+    )!;
+    await db.update(leads).set({ stageId: home.id }).where(inArray(leads.stageId, madeLeadStages));
+    await db.delete(leadStagesTable).where(inArray(leadStagesTable.id, madeLeadStages));
   }
   await db.delete(notifications).where(eq(notifications.type, 'AutomationRule'));
   await db.update(warehouses).set({ active: false }).where(eq(warehouses.id, whId));
