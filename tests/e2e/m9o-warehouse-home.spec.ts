@@ -29,10 +29,10 @@ async function login(page: import('@playwright/test').Page, phone: string) {
 }
 
 /** The badge is absent at zero — absence IS the number. */
-async function arrivalsCount(page: import('@playwright/test').Page): Promise<number> {
+async function batchCount(page: import('@playwright/test').Page): Promise<number> {
   await page.goto('/');
-  await expect(page.getByTestId('flow-arrivals')).toBeVisible();
-  const badge = page.getByTestId('flow-arrivals-count');
+  await expect(page.getByTestId('flow-batches')).toBeVisible();
+  const badge = page.getByTestId('flow-batches-count');
   if ((await badge.count()) === 0) return 0;
   return Number((await badge.innerText()).trim());
 }
@@ -42,33 +42,46 @@ test('the warehouse day, in order, with live numbers', async ({ page }) => {
 
   // The sequence: receive on top, then the steps of the day.
   await expect(page.getByTestId('flow-receive')).toBeVisible();
-  await expect(page.getByTestId('flow-arrivals')).toBeVisible();
   await expect(page.getByTestId('flow-batches')).toBeVisible();
   await expect(page.getByTestId('flow-issue')).toBeVisible();
 
-  // A promise recorded for HIS warehouse moves HIS number.
-  const before = await arrivalsCount(page);
-  await page.goto('/arrivals');
-  const add = page.locator('details').filter({ has: page.getByTestId('save-arrival') });
-  await add.locator('summary').click();
-  await page.getByTestId('arrival-client').fill('GS777');
-  await page.getByRole('button', { name: /GS777/ }).first().click();
-  await page.locator('input[name="note"]').fill(`Flow sinov ${runId}`);
-  await page.getByTestId('save-arrival').click();
-  await expect(add.getByText('✅')).toBeVisible({ timeout: 15_000 });
+  // Round 47, the owner's item 9: «skladga kutilayotgan yuklar degan narsa
+  // kerak emas — faqat kelishi kutilayotgan partiyani qo'shsang bo'lgani».
+  // The promise row is gone from the warehouse screen entirely, and so is the
+  // menu entry behind it: a packer acts on trucks, not on somebody's plan.
+  await expect(page.getByTestId('flow-arrivals')).toHaveCount(0);
+  await expect(page.locator('nav a[href="/arrivals"]')).toHaveCount(0);
 
-  expect(await arrivalsCount(page)).toBe(before + 1);
+  // A truck forming AT his warehouse moves HIS number.
+  const before = await batchCount(page);
+  await login(page, OWNER);
+  await page.goto('/batches');
+  // The origin has to be HIS warehouse or his number would not move — the
+  // quick form defaults to the first code alphabetically.
+  await page.locator('select[name="originId"]').selectOption({ label: 'YW' });
+  await page.locator('select[name="destId"]').selectOption({ label: 'TAS1' });
+  await page.getByTestId('create-quick-batch').click();
+  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
+  const batchUrl = page.url();
 
-  // …and cancelling the promise takes the number back down. This is also the
-  // cleanup: the next spec inherits this database (#154).
-  await page.goto('/arrivals');
-  const row = page.getByTestId('expected-row').filter({ hasText: `Flow sinov ${runId}` });
-  await row.locator('input[name="reason"]').fill('sinov tugadi');
-  await row.locator('button[title]').last().click();
-  await expect(
-    page.getByTestId('expected-row').filter({ hasText: `Flow sinov ${runId}` }),
-  ).toHaveCount(0);
-  expect(await arrivalsCount(page)).toBe(before);
+  await login(page, YW_OPERATOR);
+  expect(await batchCount(page)).toBe(before + 1);
+
+  // …and retiring it takes the number back down. This is also the cleanup:
+  // the next spec inherits this database (#154).
+  await login(page, OWNER);
+  await page.goto(batchUrl);
+  await page.getByTestId('cancel-batch').click();
+  await page.locator('#cancel-reason').fill(`flow sinov ${runId}`);
+  // The confirm is a real `window.confirm`, and Playwright DISMISSES dialogs
+  // unless told otherwise — without this the cancel silently never happens
+  // and the cleanup assertion is the only thing that notices (m9m's rule).
+  page.once('dialog', (d) => void d.accept());
+  await page.getByTestId('cancel-batch-confirm').click();
+  await expect(page.getByTestId('cancel-batch')).toHaveCount(0, { timeout: 15_000 });
+
+  await login(page, YW_OPERATOR);
+  expect(await batchCount(page)).toBe(before);
 });
 
 test('everyone else keeps the tile home', async ({ page }) => {

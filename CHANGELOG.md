@@ -1,5 +1,53 @@
 # CHANGELOG
 
+## Javoblaringiz bo'yicha — 2026-08-03 (2-qism)
+
+**6. Yopilgan lidlar endi voronkani to'ldirmaydi.** «Sotuv» va «Yo'qotildi»
+ustunlari **oxirgi 20 tasini** ko'rsatadi, ustun sarlavhasida esa **haqiqiy
+soni** turadi — ya'ni «Sotuv 143» deb yozilaveradi. Pastida «+123 · hammasini
+ko'rsatish» tugmasi: bosilsa hammasi chiqadi. **Hech narsa o'chirilmaydi va
+yashirilmaydi** — manbalar bo'yicha hisobot ham, mijoz tarixi ham joyida.
+Bitimlar voronkasiga ham shu qoidani qo'ydim (u ham xuddi shunday ikkita
+yopiq ustunga ega — aytmasangiz ham qildim, keyingi hafta so'ramasligingiz
+uchun).
+
+**8. «Расходы по приходам» endi alohida sahifada.** 12 ta prixod × 6 ta xarajat
+turi = 72 ta katak edi, kartaning yarim ustuniga sig'dirilgan. Endi partiya
+kartasida faqat tugma turadi («12 × 6» deb o'lchamini aytadi), bosilsa jadval
+butun ekranni egallaydi. Ishlashi, huquqi, saqlashi — hammasi o'sha-o'sha.
+
+**9. Skladdan «kutilayotgan yuklar» olib tashlandi.** Uning o'rniga
+skladchining ekranida **kelayotgan mashinalar** turadi: «Partiyalar · 5 ·
+🚛 3 kelayapti · 📦 2 yuklanmoqda». Menyudan ham olindi. Sahifaning o'zi
+yo'qolmadi — sotuvchi va logist uni ishlatishda davom etadi.
+
+**10. Xarita endi yo'ldan yuradi.** Mashina to'g'ri chiziq bilan tog'dan
+oshib o'tmaydi: Lanchjou–Xami orasida Xesi yo'lagidan, Urumchidan Aksuga
+Tyan-Shanni **aylanib** — Toksun, Korla, Kucha orqali, Qashqardan chegaraga
+Uqiya orqali, Kirgizistonda Sari-Tosh va Gulcha orqali, Andijondan Toshkentga
+esa **Qamchiq dovoni** yo'li bilan (Qo'qon, Ohangaron). Ilgari Urumchi–Aksu
+chizig'i Korladan ~130 km chetda, tog'ning ustidan o'tar edi.
+
+**11. «Свои списки» hamma menyudan olib tashlandi.** Sahifalari va ma'lumoti
+o'chirilmadi (agar keyin kerak bo'lsa, bir qatorda qaytariladi) — lekin endi
+hech qayerda ko'rinmaydi.
+
+**12. Yangi sahifa: «Как идут задачи»** (Hisobotlar → ✅). Bir ekranda: bugun
+**kechikkan / bugungi / bajarilgan / ishdagi** zadachalar; 14 kunlik grafik —
+qancha qo'yildi va qancha yopildi (o'syaptimi yoki kamayyaptimi); **hodimlar
+bo'yicha jadval** — kechikkani ko'p bo'lgan yuqorida; muddati qo'yilmagan
+zadachalar soni (ular hech kimning «Mening kunim»iga tushmaydi); va **eng ko'p
+kechikkan 10 tasi ism bilan**, har biri kartasiga bosiladi.
+
+**14.** Buyruq noto'g'ri edi — servis nomi `tg-listener` emas, **`tg-listen`**,
+va u profil ortida turadi. To'g'risi:
+`docker compose --profile telegram logs -f tg-listen`
+Shuni yuboring — «navbatda» muammosining sababi faqat o'sha loglarda ko'rinadi.
+
+Tekshirish: 861 ta ichki test, 101 ta brauzer testi — hammasi yashil.
+Yangi ekranlarni telefon o'lchamida ochib rasmga oldim.
+
+
 ## 14 ta ro'yxatning aniq yarmi — 2026-08-03
 
 Rasm bilan yuborgan 14 ta gapingizdan **6 tasi** bajarildi. Qolganlariga

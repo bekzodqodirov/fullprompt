@@ -180,7 +180,21 @@
     "who": "谁",
     "receipt": "收货单",
     "labels": "标签数",
-    "calcSpeed": "核算速度"
+    "calcSpeed": "核算速度",
+    "taskAnalytics": "任务进展",
+    "taskDoneToday": "今日完成",
+    "taskOpen": "进行中",
+    "taskTrend": "新建与完成",
+    "taskOpened": "新建",
+    "taskClosed": "完成",
+    "taskByPerson": "按员工",
+    "taskPerson": "员工",
+    "taskDoneWeek": "本周",
+    "taskMedian": "中位数",
+    "taskHours": "小时",
+    "taskUndated": "无期限：{n} 项 — 不会出现在任何人的「我的一天」。",
+    "taskStalest": "逾期最久",
+    "taskLateDays": "{n} 天"
   },
   "warehouses": {
     "title": "仓库",
@@ -1146,7 +1160,8 @@
       "failed": "未成功，请重试。"
     },
     "chatPurge": "删除聊天记录",
-    "chatPurgeConfirm": "永久删除该聊天已保存的消息（及其照片）？此操作将记入日志。"
+    "chatPurgeConfirm": "永久删除该聊天已保存的消息（及其照片）？此操作将记入日志。",
+    "showAll": "查看全部"
   },
   "navShort": {
     "home": "首页",

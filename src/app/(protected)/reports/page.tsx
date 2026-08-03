@@ -23,6 +23,9 @@ export default async function ReportsPage() {
       ? [
           { href: '/reports/client-history', icon: '📜', label: t('clientHistory') },
           { href: '/reports/staff-activity', icon: '👥', label: t('staffActivity') },
+          // Round 47, item 12: who is buried, whose deadlines slipped, and
+          // whether today closed more than it opened.
+          { href: '/reports/vazifalar', icon: '✅', label: t('taskAnalytics') },
           { href: '/reports/label-prints', icon: '🖨', label: t('labelPrints') },
         ]
       : []),

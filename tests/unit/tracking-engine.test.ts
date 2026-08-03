@@ -5,6 +5,13 @@ import { CHECKPOINT_SEGMENTS, routeFor } from '@/modules/wms/tracking/map-data';
 /** Tracking simulation (owner's corridor timings). */
 
 const KA_TAS = routeFor('KA', 'TAS1')!;
+/**
+ * The border, asked of the ROUTE rather than counted by hand. It used to be
+ * `points[1]`, which stopped being true the moment the corridor learned the
+ * road it actually drives (round 47) — the same brittleness the spans
+ * themselves had.
+ */
+const BORDER = KA_TAS.points[KA_TAS.segments.find((s) => s.key === 'border_wait')!.span[0]]!;
 
 describe('routeFor', () => {
   it('knows the owner corridors and falls back to a straight line', () => {
@@ -47,9 +54,8 @@ describe('estimateTransit', () => {
     // to_border mid = 18h; border_wait mid = 48h → at 30h we are waiting.
     const waiting = estimateTransit(KA_TAS, 30);
     expect(waiting.segKey).toBe('border_wait');
-    const borderPoint = KA_TAS.points[1]!;
-    expect(waiting.x).toBeCloseTo(borderPoint.x, 5);
-    expect(waiting.y).toBeCloseTo(borderPoint.y, 5);
+    expect(waiting.x).toBeCloseTo(BORDER.x, 5);
+    expect(waiting.y).toBeCloseTo(BORDER.y, 5);
 
     // 18 + 48 + 1 → into Kyrgyzstan.
     const kg = estimateTransit(KA_TAS, 68);
@@ -77,8 +83,7 @@ describe('estimateTransit', () => {
       elapsedInSegHours: 5,
     });
     expect(pinned.segKey).toBe('border_wait');
-    const borderPoint = KA_TAS.points[1]!;
-    expect(pinned.x).toBeCloseTo(borderPoint.x, 5);
+    expect(pinned.x).toBeCloseTo(BORDER.x, 5);
     // Remaining time counts from the pin, not from departure.
     expect(pinned.remainingHours[1]).toBeGreaterThan(noPin.remainingHours[1]);
   });

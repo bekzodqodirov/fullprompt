@@ -14,10 +14,9 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { batchCostSheet, batchReceiptRows, receiptCostMatrix } from '@/modules/wms/costing/service';
+import { batchCostSheet, batchReceiptRows } from '@/modules/wms/costing/service';
 import { attachments, costTypes, currencies } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
-import { ReceiptCostGrid } from './receipt-cost-grid';
 import { VehicleForm } from './vehicle-form';
 import {
   createDriverDeviceAction,
@@ -215,13 +214,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     })
     .from(attachments)
     .where(and(eq(attachments.entityType, 'batch'), eq(attachments.entityId, id)));
-  // Round 29: the accountant's Excel as a grid — a row per prixod on this
-  // truck, a column per expense type. Reads what is already written so a
-  // second session never double-enters blind.
+  // Round 29's grid lives on its own screen since round 47; the card only
+  // needs to know how big it is, to decide whether to offer the door at all.
   const gridRows = canSeeCosts ? await batchReceiptRows(id) : [];
-  const gridExisting = canSeeCosts
-    ? Object.fromEntries(await receiptCostMatrix(gridRows.map((row) => row.receiptId)))
-    : {};
   const costMeta = canSeeCosts
     ? {
         types: await db
@@ -528,30 +523,26 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         </div>
       )}
 
-      {/* Round 29: rastamojka/usluga/yo'lkira per prixod, entered as the
-          table it always was in the accountant's Excel — one save, ordinary
-          receipt-scope entries underneath. */}
-      {costMeta && gridRows.length > 0 && (
-        <div className="card space-y-2">
-          <h2 className="text-lg font-bold">🧾 {t('receiptGridTitle')}</h2>
-          <p className="text-xs text-ink-500">{t('receiptGridHint')}</p>
-          <ReceiptCostGrid
-            batchId={batch.id}
-            rows={gridRows.map((row) => ({
-              receiptId: row.receiptId,
-              number: row.number,
-              clientCode: row.clientCode,
-              kg: row.kg,
-              m3: row.m3,
-            }))}
-            types={costMeta.types}
-            existing={gridExisting}
-            currencies={costMeta.currencies}
-            defaultCurrency="USD"
-            today={new Date().toISOString().slice(0, 10)}
-            canEdit={canEnterCosts}
-          />
-        </div>
+      {/* Round 29's grid moved OUT of the card in round 47 (owner: «kichkina
+          joyga katta narsa tiqilgan»). Twelve prixods across six cost types
+          is 72 boxes, and half of a two-column card is not a spreadsheet.
+          What stays here is the door, with the count that says whether it is
+          worth opening. */}
+      {canSeeCosts && gridRows.length > 0 && (
+        <Link
+          href={`/batches/${batch.id}/xarajatlar`}
+          data-testid="batch-cost-grid-link"
+          className="card-tap flex items-center gap-3"
+        >
+          <span className="text-xl">🧾</span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-bold">{t('receiptGridTitle')}</span>
+            <span className="block text-xs text-ink-500">
+              {gridRows.length} × {costMeta?.types.length ?? 0}
+            </span>
+          </span>
+          <span className="text-ink-400">›</span>
+        </Link>
       )}
           </>
         }

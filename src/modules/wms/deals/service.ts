@@ -931,18 +931,26 @@ export async function listDeals(filters: {
   clientId?: string;
   stageId?: string;
   openOnly?: boolean;
+  /** Only the finished ones — what the board shows a recent slice of. */
+  closedOnly?: boolean;
   limit?: number;
 }): Promise<DealRow[]> {
   const conditions = [];
   if (filters.ownerId) conditions.push(eq(deals.ownerId, filters.ownerId));
   if (filters.clientId) conditions.push(eq(deals.clientId, filters.clientId));
   if (filters.stageId) conditions.push(eq(deals.stageId, filters.stageId));
-  if (filters.openOnly) {
+  if (filters.openOnly || filters.closedOnly) {
     const terminal = await db
       .select({ id: dealStages.id })
       .from(dealStages)
       .where(notInArray(dealStages.kind, ['open']));
-    if (terminal.length > 0) {
+    if (filters.closedOnly) {
+      // No terminal stage at all means nothing is closed — and an empty
+      // `inArray` is a SQL error, so say "match nothing" out loud.
+      conditions.push(
+        terminal.length > 0 ? inArray(deals.stageId, terminal.map((s) => s.id)) : sql`false`,
+      );
+    } else if (terminal.length > 0) {
       conditions.push(notInArray(deals.stageId, terminal.map((s) => s.id)));
     }
   }
@@ -976,6 +984,24 @@ export async function listDeals(filters: {
     ...row,
     deferred: Boolean(deferredAt) && !deferralEndedAt,
   }));
+}
+
+/**
+ * How many finished deals each closed stage really holds (round 47).
+ *
+ * The board draws a recent slice of them and the header keeps the true total,
+ * so «Sotuv 143» stays 143 even when twelve cards are on screen.
+ */
+export async function closedDealCounts(ownerId?: string): Promise<Record<string, number>> {
+  const where = [notInArray(dealStages.kind, ['open'])];
+  if (ownerId) where.push(eq(deals.ownerId, ownerId));
+  const rows = await db
+    .select({ stageId: deals.stageId, n: sql<number>`count(*)` })
+    .from(deals)
+    .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+    .where(and(...where))
+    .groupBy(deals.stageId);
+  return Object.fromEntries(rows.map((row) => [row.stageId, Number(row.n)]));
 }
 
 export async function dealById(id: string) {

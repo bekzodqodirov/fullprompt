@@ -4,13 +4,13 @@
 
 ---
 
-## STATUS — 2026-08-03 (round 46)
+## STATUS — 2026-08-03 (round 47)
 
 **Every numbered phase is shipped.** Phases 0–8 of the CRM/platform programme
 are done, and the last two rounds were repair rather than construction. The
 system is live on the owner's VPS with real cargo and real money in it.
 
-Size: 98 screens, 56 migrations, 851 unit/integration + 101 e2e tests green in
+Size: 100 screens, 56 migrations, 861 unit/integration + 101 e2e tests green in
 CI's order on a fresh database.
 
 ### What exists, by area
@@ -53,6 +53,9 @@ CI's order on a fresh database.
    the clock and the overdue sweep are all still running behind them. Either
    the staff bot's «Hisoblatish» flow starts the clock, or a door goes back
    somewhere he wants one.
+7. **Item 14 is still unexplained.** A chat message reads «navbatda» after it
+   really went out. He tried the wrong service name, so there are no logs yet
+   (`docker compose --profile telegram logs -f tg-listen`).
 
 ### The speed round — SHIPPED (round 45)
 
@@ -100,14 +103,14 @@ is identified) he closed himself: «hozirgidek qolaversin».
 | 7 | «Где машина» folds | ✅ |
 | 12a | «Скорость расчётов» report removed | ✅ |
 | 13 | «Сделка (если есть)» hidden from the warehouse on receiving | ✅ (sales/VED keep it; the receipt card links it) |
+| 6 | Won/lost cards clutter the funnel | ✅ round 47 — newest 20 on the board, true total in the header, «+N · show all»; deals board too |
+| 8 | Make the receipt-cost grid convenient | ✅ round 47 — `/batches/[id]/xarajatlar`, its own viewport |
+| 9 | Warehouse does not need "expected cargo" | ✅ round 47 — off the warehouse home and both warehouse menus; incoming trucks in its place |
+| 10 | GPS-less position should follow the ROAD | ✅ round 47 — the corridor learned the highway towns; spans are derived, not hand-counted |
+| 11 | What is «Свои списки» | ✅ round 47 — off every menu; pages and tables kept |
+| 12b | A page that analyses how tasks are going overall | ✅ round 47 — `/reports/vazifalar` |
+| 14 | Chat says «в очереди» after the message was really sent | ⏳ his command named a service that does not exist — the right one is `docker compose --profile telegram logs -f tg-listen`; still unexplained |
 | 1 | Driver app stops after ~2 h | ⏳ answer awaited — Android cannot run silently for ever; proposed exact alarms + boot re-arm + a server-side watchdog |
-| 6 | Move a card from the funnel to a deal | ⏳ it exists («Bitim ochish» on a won lead) — asked whether he means something else |
-| 8 | Make the receipt-cost grid convenient | ⏳ asked what specifically is inconvenient |
-| 9 | Warehouse does not need "expected cargo" | ⏳ asked: delete the data, or just take it off the warehouse screen |
-| 10 | GPS-less position should follow the ROAD | ⏳ needs stored route polylines — asked which routes matter |
-| 11 | What is «Свои списки» | ⏳ answered (custom entities, `/o`) — asked whether to remove it |
-| 12b | A page that analyses how tasks are going overall | ⏳ asked whether to build it |
-| 14 | Chat says «в очереди» after the message was really sent | ⏳ asked for `docker compose logs tg-listener` |
 
 ### Deferred by design (stated to the owner, not forgotten)
 

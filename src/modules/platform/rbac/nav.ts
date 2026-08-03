@@ -79,9 +79,14 @@ export const NAV: NavGroupSpec[] = [
         primary: 2,
       },
       {
-        // What is on its way HERE — a client's promised cargo in China, our
-        // own trucks in Uzbekistan. Sales writes the promises, the warehouse
-        // reads them, so both permissions open it.
+        // A client's promise that cargo is coming, plus our own trucks on the
+        // road. Sales writes the promises and sales chases them; the WAREHOUSE
+        // roles were taken off this menu in round 47 (owner: «sklad ekranidan
+        // yo'qolsin») — a packer cannot act on a promise, only on a truck, and
+        // the truck is on /batches. The permission list is unchanged on
+        // purpose: the page still answers by URL and to the roles the owner
+        // may invent, because closing a route is a different decision from
+        // taking it off a menu.
         href: '/arrivals',
         shortKey: 'arrivals',
         labelKey: 'title',
@@ -137,9 +142,11 @@ export const NAV: NavGroupSpec[] = [
       { href: '/unclaimed', labelKey: 'unclaimedTitle', namespace: 'receipts', icon: 'alert' },
       { href: '/trucks', shortKey: 'trucks', labelKey: 'title', namespace: 'trucks', icon: 'truck' },
       { href: '/map', labelKey: 'title', namespace: 'map', icon: 'map' },
-      // Phase 8: the owner's own lists. Everyone may READ them — they are the
-      // reference lists staff keep current; writing is gated per list.
-      { href: '/o', labelKey: 'customLists', namespace: 'nav', icon: 'menu' },
+      // Phase 8's «Свои списки» is deliberately NOT here. The owner looked at
+      // it and said «kerak emas, olib tashla» — nobody was keeping a list in
+      // it. The screens and the two tables stay (a table with rows is not
+      // dropped in the release that stops showing it, and he may want the
+      // idea back), but no menu offers them.
       {
         href: '/dashboard',
         labelKey: 'title',
@@ -316,8 +323,8 @@ export interface Viewer {
 const PRIMARY_BY_ROLE: Record<string, string[]> = {
   // The warehouse bars are unchanged: receiving IS the job there, and tasks
   // are occasional — /bugun stays one tap away on the home tiles.
-  warehouse_operator: ['/', '/receive', '/arrivals', '/batches', '/issue'],
-  warehouse_manager: ['/', '/receive', '/arrivals', '/batches', '/stock'],
+  warehouse_operator: ['/', '/receive', '/batches', '/issue', '/stock'],
+  warehouse_manager: ['/', '/receive', '/batches', '/stock', '/receipts'],
   logist: ['/', '/bugun', '/plans', '/batches', '/trucks'],
   // /crm/today is gone from the bar, not from the app: /bugun shows those same
   // follow-ups alongside the tasks, so keeping both would be two doors to one
@@ -329,7 +336,7 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
   // `primary` number among the ten screens they may open, and the generic
   // fallback can only pick from those. Naming their four makes half the phone
   // screen useful again.
-  viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports', '/o'],
+  viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // The owner watches the money and the funnel; the operational screens are
   // one tap away behind •••.
   super_admin: ['/', '/bugun', '/accounting', '/crm', '/stock'],
@@ -364,12 +371,12 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
 const MENU_BY_ROLE: Record<string, string[]> = {
   // Receive, load, unload, hand over. Nothing else is their job.
   warehouse_operator: [
-    '/', '/receive', '/arrivals', '/batches', '/issue', '/crates', '/stock', '/receipts', '/o',
+    '/', '/receive', '/batches', '/issue', '/crates', '/stock', '/receipts',
   ],
   // The same, plus the two screens a manager answers questions from.
   warehouse_manager: [
-    '/', '/receive', '/arrivals', '/batches', '/issue', '/crates', '/stock', '/receipts',
-    '/unclaimed', '/dashboard', '/reports', '/o',
+    '/', '/receive', '/batches', '/issue', '/crates', '/stock', '/receipts',
+    '/unclaimed', '/dashboard', '/reports',
   ],
   // Plans and trucks. A logist does not receive cargo, but does chase it —
   // and does hold `clients.manage`: he creates client cards and mints their
@@ -378,7 +385,7 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
     '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
-    '/suhbatlar', '/approvals', '/o',
+    '/suhbatlar', '/approvals',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
   // is here because recalculating a job the client was mis-quoted for is a VED
@@ -389,17 +396,17 @@ const MENU_BY_ROLE: Record<string, string[]> = {
     '/', '/bugun', '/kalendar', '/bitimlar', '/batches', '/stock', '/receipts', '/reports',
     // Kontragentlar joined in round 39, his instruction: the VED manager
     // arranges the customs firms and knows what each one is owed.
-    '/finance', '/kontragentlar', '/suhbatlar', '/o',
+    '/finance', '/kontragentlar', '/suhbatlar',
   ],
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.
   sales_manager: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/crm/today', '/suhbatlar', '/my-clients',
-    '/finance', '/pipeline', '/arrivals', '/approvals', '/o',
+    '/finance', '/pipeline', '/arrivals', '/approvals',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/kontragentlar', '/reports',
-    '/dashboard', '/admin', '/receipts', '/stock', '/approvals', '/o',
+    '/dashboard', '/admin', '/receipts', '/stock', '/approvals',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

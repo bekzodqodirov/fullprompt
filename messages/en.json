@@ -180,7 +180,21 @@
     "who": "Who",
     "receipt": "Receipt",
     "labels": "Labels",
-    "calcSpeed": "Calculation speed"
+    "calcSpeed": "Calculation speed",
+    "taskAnalytics": "How the work is going",
+    "taskDoneToday": "Done today",
+    "taskOpen": "Open",
+    "taskTrend": "Opened and closed",
+    "taskOpened": "opened",
+    "taskClosed": "closed",
+    "taskByPerson": "By person",
+    "taskPerson": "Person",
+    "taskDoneWeek": "This week",
+    "taskMedian": "Median",
+    "taskHours": "h",
+    "taskUndated": "No deadline: {n} — these reach nobody’s «my day».",
+    "taskStalest": "Longest overdue",
+    "taskLateDays": "{n} d"
   },
   "warehouses": {
     "title": "Warehouses",
@@ -1146,7 +1160,8 @@
       "failed": "It did not work. Try again."
     },
     "chatPurge": "Delete stored messages",
-    "chatPurgeConfirm": "Delete this chat's stored messages (and photos) for good? The action is logged."
+    "chatPurgeConfirm": "Delete this chat's stored messages (and photos) for good? The action is logged.",
+    "showAll": "show all"
   },
   "navShort": {
     "home": "Home",

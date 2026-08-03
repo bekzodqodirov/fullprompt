@@ -48,7 +48,15 @@ test('a warehouse operator gets a warehouse app, and nothing else', async ({ pag
 
   // The home tiles ARE the menu on a phone.
   await expect(page.locator('main a[href="/receive"]').first()).toBeVisible();
-  await expect(page.locator('main a[href="/arrivals"]').first()).toBeVisible();
+  await expect(page.locator('main a[href="/batches"]').first()).toBeVisible();
+
+  // Round 47, the owner's item 9: a promise about cargo is a sales fact, and
+  // there is nothing a packer can do with one. Gone from his screens — the
+  // route still answers for the people whose job it is.
+  await expect(page.locator('main a[href="/arrivals"]')).toHaveCount(0);
+  // …and «Свои списки» is gone from everybody's, his instruction («kerak
+  // emas, olib tashla»).
+  await expect(page.locator('main a[href="/o"]')).toHaveCount(0);
 
   // The personal planner belongs to people who plan; a packer is told what to
   // pack. Both entries are gone from the menu — not from the app.

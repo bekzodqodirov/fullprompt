@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, isNotNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, isNotNull, lte, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -396,12 +396,15 @@ export async function listLeads(filters: {
   ownerId?: string;
   stageId?: string;
   openOnly?: boolean;
+  /** Only the finished ones — what the board shows a recent slice of. */
+  closedOnly?: boolean;
   limit?: number;
 }) {
   const where = [];
   if (filters.ownerId) where.push(eq(leads.ownerId, filters.ownerId));
   if (filters.stageId) where.push(eq(leads.stageId, filters.stageId));
   if (filters.openOnly) where.push(eq(leadStages.kind, 'open'));
+  if (filters.closedOnly) where.push(ne(leadStages.kind, 'open'));
   return db
     .select({
       lead: leads,
@@ -418,8 +421,35 @@ export async function listLeads(filters: {
     .leftJoin(users, eq(leads.ownerId, users.id))
     .leftJoin(clients, eq(leads.clientId, clients.id))
     .where(where.length ? and(...where) : undefined)
-    .orderBy(asc(leadStages.sortOrder), desc(leads.updatedAt))
+    .orderBy(
+      // Closed cards are cut by `limit`, so the ORDER decides which ones
+      // survive: newest first, or the slice on the board would be whichever
+      // leads happen to sit in the earliest column.
+      ...(filters.closedOnly
+        ? [desc(leads.updatedAt)]
+        : [asc(leadStages.sortOrder), desc(leads.updatedAt)]),
+    )
     .limit(filters.limit ?? 300);
+}
+
+/**
+ * How many finished leads each closed stage really holds (round 47).
+ *
+ * The board shows a recent slice of them — the owner: «lost bo'lganlar va
+ * yutuq bo'lganlar juda chalg'itadi» — and a column that shows twelve of a
+ * hundred and forty must still SAY a hundred and forty, or the funnel is
+ * lying about the year's work. Scoped the same way the board is.
+ */
+export async function closedLeadCounts(ownerId?: string): Promise<Record<string, number>> {
+  const where = [ne(leadStages.kind, 'open')];
+  if (ownerId) where.push(eq(leads.ownerId, ownerId));
+  const rows = await db
+    .select({ stageId: leads.stageId, n: sql<number>`count(*)` })
+    .from(leads)
+    .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
+    .where(and(...where))
+    .groupBy(leads.stageId);
+  return Object.fromEntries(rows.map((row) => [row.stageId, Number(row.n)]));
 }
 
 // --- Contact history --------------------------------------------------------

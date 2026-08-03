@@ -43,10 +43,16 @@ describe('menu relevance', () => {
   it('leaves warehouse staff a short, warehouse-shaped menu', () => {
     // A regression fence, not a spec: these numbers went 15 → 8 / 11, and a
     // future nav entry that quietly lands back in the warehouse menu should
-    // have to say so here. Phase 8 says so: /o (the owner's own reference
-    // lists) is FOR everyone, warehouse included — 8 → 9, 11 → 12.
-    expect(menuFor('warehouse_operator')).toHaveLength(9);
-    expect(menuFor('warehouse_manager')).toHaveLength(12);
+    // have to say so here. Round 47 took TWO screens back off them, both on
+    // the owner's instruction: /o («Свои списки» — «kerak emas, olib tashla»,
+    // gone from every menu) and /arrivals («sklad ekranidan yo'qolsin» — a
+    // promise is a sales fact and a packer can only act on a truck). 9 → 7,
+    // 12 → 10.
+    expect(menuFor('warehouse_operator')).toHaveLength(7);
+    expect(menuFor('warehouse_manager')).toHaveLength(10);
+    // And they are gone rather than merely reordered.
+    expect(menuFor('warehouse_operator')).not.toContain('/arrivals');
+    expect(menuFor('warehouse_manager')).not.toContain('/o');
     for (const href of menuFor('warehouse_operator')) {
       expect(href).not.toMatch(/^\/(crm|pipeline|accounting|admin|map)/);
     }

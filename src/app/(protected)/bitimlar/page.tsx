@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
 import {
   canWriteDeal,
+  closedDealCounts,
   dealsNeedingAttention,
   listDeals,
   listStages,
@@ -22,10 +23,13 @@ import { DealBoard, type BoardDeal } from './board';
  * why this board exists beside the lead board rather than instead of it
  * (docs/DEALS.md, "The board").
  */
+/** See the note on the lead board's constant of the same name. */
+const CLOSED_ON_BOARD = 20;
+
 export default async function DealsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string }>;
+  searchParams: Promise<{ scope?: string; arxiv?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -40,13 +44,29 @@ export default async function DealsPage({
   const mine = !seesAll || params.scope !== 'all';
   const scope = mine ? actor.id : undefined;
 
-  const [stages, rows, attention, badges] = await Promise.all([
+  // Same rule as the lead funnel (round 47, owner's item 6): the won and lost
+  // columns keep the recent cards and say how many more they hold. A closed
+  // job is a record; a board is a list of work.
+  const archive = params.arxiv === '1';
+  const [stages, open, closed, closedTotals, attention, badges] = await Promise.all([
     listStages(),
-    listDeals({ ownerId: scope }),
+    listDeals({ ownerId: scope, openOnly: true }),
+    listDeals({ ownerId: scope, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
+    closedDealCounts(scope),
     dealsNeedingAttention(scope),
     // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
     chatBadges(tgViewerFor(actor)),
   ]);
+  const rows = [...open, ...closed];
+  const shownClosed = new Map<string, number>();
+  for (const row of closed) {
+    shownClosed.set(row.stageId, (shownClosed.get(row.stageId) ?? 0) + 1);
+  }
+  const hidden = Object.fromEntries(
+    Object.entries(closedTotals)
+      .map(([stageId, total]) => [stageId, total - (shownClosed.get(stageId) ?? 0)] as const)
+      .filter(([, left]) => left > 0),
+  );
 
   const flags = new Map(attention.map((row) => [row.id, row]));
   const deals: BoardDeal[] = rows.map((row) => {
@@ -148,7 +168,12 @@ export default async function DealsPage({
         </section>
       )}
 
-      <DealBoard stages={stages} deals={deals} />
+      <DealBoard
+        stages={stages}
+        deals={deals}
+        hidden={hidden}
+        archiveHref={`/bitimlar?arxiv=1${mine ? '' : '&scope=all'}`}
+      />
     </div>
   );
 }

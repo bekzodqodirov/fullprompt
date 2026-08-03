@@ -25,6 +25,21 @@ const ROUTES: Record<string, (id: string) => string> = {
 };
 
 /**
+ * Where a task's subject lives, or null when it is about nothing.
+ *
+ * Exported so the analytics screen links the same way the task lists do —
+ * a second copy of this map would be the phase-8 `x_` rule remembered in one
+ * place and forgotten in the other (#381).
+ */
+export function aboutHref(entityType: string | null, entityId: string | null): string | null {
+  if (!entityType || !entityId) return null;
+  const route =
+    ROUTES[entityType] ??
+    (entityType.startsWith('x_') ? (id: string) => `/o/${entityType}/${id}` : undefined);
+  return route ? route(entityId) : null;
+}
+
+/**
  * Turn service rows into something a client component can hold.
  *
  * Dates become ISO strings — a `Date` cannot cross the server/client boundary —
@@ -36,12 +51,7 @@ export async function toTaskViews(rows: TaskRow[]): Promise<TaskView[]> {
   return rows.map((row) => {
     const key = row.entityType && row.entityId ? `${row.entityType}:${row.entityId}` : null;
     // Owner-invented objects (phase 8) all live at the generic card.
-    const route = row.entityType
-      ? (ROUTES[row.entityType] ??
-        (row.entityType.startsWith('x_')
-          ? (id: string) => `/o/${row.entityType}/${id}`
-          : undefined))
-      : undefined;
+
     return {
       id: row.id,
       title: row.title,
@@ -57,7 +67,7 @@ export async function toTaskViews(rows: TaskRow[]): Promise<TaskView[]> {
       result: row.result,
       priority: row.priority,
       repeatUnit: row.repeatUnit,
-      aboutHref: route && row.entityId ? route(row.entityId) : null,
+      aboutHref: aboutHref(row.entityType, row.entityId),
       aboutLabel: key ? (labels.get(key) ?? null) : null,
     };
   });

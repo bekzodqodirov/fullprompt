@@ -138,12 +138,18 @@ export default async function HomePage() {
  */
 async function WarehouseFlow({ flow }: { flow: WarehouseFlowCounts }) {
   const t = await getTranslations('home');
-  const ta = await getTranslations('arrivals');
+  const tb = await getTranslations('batches');
 
-  const incoming = flow.trucksIncoming + flow.expectedWaiting;
-  const arrivalsSub = [
+  // Round 47, the owner's item 9: «skladga kutilayotgan yuklar degan narsa
+  // kerak emas — faqat kelishi kutilayotgan partiyani qo'shsang bo'lgani».
+  // A promise is a sales fact — it is written by a salesperson, chased by a
+  // salesperson, and there is nothing a packer can DO with one. What the
+  // warehouse acts on is a truck, so the promise row is gone and the trucks
+  // heading here ride on the batches row instead. Both numbers make one badge
+  // because both are answered on the same board.
+  const batchSub = [
     flow.trucksIncoming > 0 && `🚛 ${t('flowTrucks', { n: flow.trucksIncoming })}`,
-    flow.expectedWaiting > 0 && `📦 ${t('flowExpected', { n: flow.expectedWaiting })}`,
+    flow.loadingBatches > 0 && `📦 ${t('flowLoading', { n: flow.loadingBatches })}`,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -160,32 +166,12 @@ async function WarehouseFlow({ flow }: { flow: WarehouseFlowCounts }) {
           sub={null}
         />
         <FlowRow
-          href="/arrivals"
-          icon="clock"
-          testid="flow-arrivals"
-          label={ta('title')}
-          count={incoming}
-          warn={flow.expectedLate > 0}
-          sub={
-            arrivalsSub || flow.expectedLate > 0 ? (
-              <>
-                {arrivalsSub}
-                {flow.expectedLate > 0 && (
-                  <span className="text-warn">
-                    {arrivalsSub && ' · '}⚠ {t('flowLate', { n: flow.expectedLate })}
-                  </span>
-                )}
-              </>
-            ) : null
-          }
-        />
-        <FlowRow
           href="/batches"
           icon="truck"
           testid="flow-batches"
-          label={t('loading')}
-          count={flow.loadingBatches}
-          sub={flow.loadingBatches > 0 ? t('flowLoading', { n: flow.loadingBatches }) : null}
+          label={tb('title')}
+          count={flow.trucksIncoming + flow.loadingBatches}
+          sub={batchSub || null}
         />
         <FlowRow
           href="/issue"

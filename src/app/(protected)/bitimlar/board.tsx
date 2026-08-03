@@ -31,13 +31,27 @@ export interface BoardDeal {
  * lead card says: the client, the money, and above all whether this job has
  * gone WRONG, which is the reason the whole feature exists.
  */
-export function DealBoard({ stages, deals }: { stages: KanbanStage[]; deals: BoardDeal[] }) {
+export function DealBoard({
+  stages,
+  deals,
+  hidden,
+  archiveHref,
+}: {
+  stages: KanbanStage[];
+  deals: BoardDeal[];
+  /** Finished deals left off the board, per stage (round 47). */
+  hidden?: Record<string, number>;
+  archiveHref?: string;
+}) {
   const t = useTranslations('deals');
+  const tcrm = useTranslations('crm');
   const tc = useTranslations('common');
 
   return (
     <Board
       stages={stages}
+      hidden={hidden}
+      archiveHref={archiveHref}
       items={deals}
       cardTestId="deal-card"
       hrefOf={(deal) => `/bitimlar/${deal.id}`}
@@ -51,6 +65,7 @@ export function DealBoard({ stages, deals }: { stages: KanbanStage[]; deals: Boa
         dragHint: t('dragHint'),
         empty: t('empty'),
         error: tc('error'),
+        showAll: tcrm('showAll'),
       }}
       renderCard={(deal) => (
         <>

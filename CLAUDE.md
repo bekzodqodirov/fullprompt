@@ -121,13 +121,13 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-851 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+861 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0055** (`receipt_customs`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (round 46).
+shipped; the current round is the owner's 14-point feedback list (rounds 46-47).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and round 46. The owner's last confirmed
+money bugs), the speed round and rounds 46-47. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -922,6 +922,35 @@ receipt CARD for whoever can. Verified as round 42/43 taught: screenshots
 at 360×800 (and 1280×600 for the sidebar), logged in AS the YW operator.
 Awaiting his answers: 1 (driver app dying after ~2 h), 6, 8, 9, 10, 11,
 12b, 14. Item 2 he closed himself.
+
+Round 47 — his answers to round 46's open items (#447-457). **6 —** a finished
+lead leaves the BOARD, never the database: closed columns show the newest 20
+(`CLOSED_ON_BOARD`), the header keeps the true total (`closedLeadCounts` /
+`closedDealCounts`, scoped as the board is), footer «+N · show all» →
+`?arxiv=1`; two queries now (`openOnly` + `closedOnly`), which also fixed a
+latent 300-row cap that could have pushed OPEN leads off a busy funnel; deals
+board given the same treatment unasked and stated. Red-proof: an OPEN lead
+created LAST appears in the won slice with the kind filter stripped.
+**8 —** `/batches/[id]/xarajatlar`, the cost grid on its own viewport; the
+card keeps a door labelled «12 × 6». **9 —** «kutilayotgan yuklar» off the
+warehouse home AND both warehouse menus; the trucks heading here ride on the
+batches row instead; the ROUTE and its permissions untouched (a menu decision
+is not an access decision); m9o's live-number proof now creates+cancels a
+quick batch out of YW. **10 —** route legs carry their own points and `build`
+DERIVES the spans (they were hand-written indices), then the corridor learned
+the road: Hexi between Lanzhou and Hami, Toksun/Korla/Kuqa around the Tian
+Shan, Wuqia to Irkeshtam, Sary-Tash + Gulcha on the M41, Kokand + Angren over
+Kamchik. Red-proof 1.475° at Korla. `tracking-engine.test` stopped hard-coding
+`points[1]` for the border. **11 —** «Свои списки» off every menu and the
+/admin hub; `/o`, `/admin/entities` and both tables untouched; nav tripwire
+9→7, 12→10. **12 —** `/reports/vazifalar`: late/due-today/done-today/open,
+a 14-day opened-vs-closed bar pair, a per-person table ordered LATE FIRST,
+the undated pile, and the ten longest-overdue BY NAME. **Days are UTC days**
+on purpose — `parseDue` stores all-day as 23:59:59.999Z and `/bugun` measures
+against `endOfToday()`; moving the convention has to move both. `aboutHref`
+exported from tasks/view rather than copied. **14 —** the compose service is
+`tg-listen` behind the `telegram` profile; the «navbatda» report is still
+unexplained and needs those logs. No migration in this round.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

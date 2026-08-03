@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
-import { listLeads, listStages } from '@/modules/wms/crm/service';
+import { closedLeadCounts, listLeads, listStages } from '@/modules/wms/crm/service';
 import { KanbanBoard } from './leads/kanban';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
@@ -18,10 +18,18 @@ import { PageHeader } from '@/components/ui/page';
  * — a 360 px phone cannot show eight stages at once, and this is the shape
  * every salesperson already knows from amoCRM.
  */
+/**
+ * How many finished cards a board carries before it stops being a board.
+ * Twenty is roughly one column's worth on a laptop — enough that last week's
+ * wins are still in front of the salesperson, few enough that a year of them
+ * cannot bury the open work.
+ */
+const CLOSED_ON_BOARD = 20;
+
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string }>;
+  searchParams: Promise<{ scope?: string; arxiv?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -36,12 +44,31 @@ export default async function LeadsPage({
   const mine = !seesAll || params.scope !== 'all';
   const scope = mine ? actor.id : undefined;
 
-  const [stages, rows, badges] = await Promise.all([
+  // Round 47, the owner's item 6: «leadlar soni ko'payib ketgandan keyin lost
+  // bo'lganlar va yutuq bo'lganlar juda chalg'itadi — ular nima qilinadi
+  // keyinchalik». They are not deleted and they are not hidden: the finished
+  // columns show the RECENT ones and say how many more there are, with a link
+  // that opens the lot. A won lead from March is a record, not a task, and a
+  // board is a list of work.
+  const archive = params.arxiv === '1';
+  const [stages, open, closed, closedTotals, badges] = await Promise.all([
     listStages(),
-    listLeads({ ownerId: scope }),
+    listLeads({ ownerId: scope, openOnly: true }),
+    listLeads({ ownerId: scope, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
+    closedLeadCounts(scope),
     // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
     chatBadges(tgViewerFor(actor)),
   ]);
+  const rows = [...open, ...closed];
+  const shown = new Map<string, number>();
+  for (const row of closed) {
+    shown.set(row.lead.stageId, (shown.get(row.lead.stageId) ?? 0) + 1);
+  }
+  const hidden = Object.fromEntries(
+    Object.entries(closedTotals)
+      .map(([stageId, total]) => [stageId, total - (shown.get(stageId) ?? 0)] as const)
+      .filter(([, left]) => left > 0),
+  );
   // The board counts its own columns: a card dropped into another stage must
   // update the header immediately, before the server has revalidated.
 
@@ -105,6 +132,8 @@ export default async function LeadsPage({
           nextActionAt: lead.nextActionAt,
           chat: (lead.clientId && badges.get(lead.clientId)) || null,
         }))}
+        hidden={hidden}
+        archiveHref={`/crm?arxiv=1${mine ? '' : '&scope=all'}`}
       />
 
     </div>

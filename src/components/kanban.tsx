@@ -47,6 +47,8 @@ export interface KanbanLabels {
   dragHint: string;
   empty: string;
   error: string;
+  /** Footer of a column that is holding cards back: «+N · show all». */
+  showAll: string;
 }
 
 /** Below this the gesture is a scroll or a tap, not a drag. */
@@ -66,6 +68,15 @@ interface BoardProps<T extends KanbanItem> {
   onMove: (id: string, stageId: string, reason: string) => Promise<{ ok: boolean }>;
   /** Distinguishes the two boards in the e2e without a second selector scheme. */
   cardTestId?: string;
+  /**
+   * Cards this column holds that were not sent to the browser, per stage
+   * (round 47). The header count stays the TRUE total — a funnel that lies
+   * about how many jobs were won is worse than a long column — and the
+   * column grows a footer link to the rest.
+   */
+  hidden?: Record<string, number>;
+  /** Where that footer link goes. Required only when `hidden` has entries. */
+  archiveHref?: string;
 }
 
 export function KanbanBoard<T extends KanbanItem>({
@@ -76,6 +87,8 @@ export function KanbanBoard<T extends KanbanItem>({
   hrefOf,
   onMove,
   cardTestId = 'kanban-card',
+  hidden = {},
+  archiveHref,
 }: BoardProps<T>) {
   const [placement, setPlacement] = useState<Record<string, string>>({});
   const [error, setError] = useState(false);
@@ -124,9 +137,24 @@ export function KanbanBoard<T extends KanbanItem>({
   );
 
   const counts = Object.fromEntries(
-    stages.map((stage) => [stage.id, items.filter((item) => stageOf(item) === stage.id).length]),
+    stages.map((stage) => [
+      stage.id,
+      items.filter((item) => stageOf(item) === stage.id).length + (hidden[stage.id] ?? 0),
+    ]),
   );
-  const view = { stages, items, counts, stageOf, move, labels, renderCard, hrefOf, cardTestId };
+  const view = {
+    stages,
+    items,
+    counts,
+    hidden,
+    archiveHref,
+    stageOf,
+    move,
+    labels,
+    renderCard,
+    hrefOf,
+    cardTestId,
+  };
 
   return (
     <>
@@ -146,6 +174,8 @@ interface ViewProps<T extends KanbanItem> {
   stages: KanbanStage[];
   items: T[];
   counts: Record<string, number>;
+  hidden: Record<string, number>;
+  archiveHref?: string;
   stageOf: (item: T) => string;
   move: (item: T, stageId: string) => void | Promise<void>;
   labels: KanbanLabels;
@@ -168,6 +198,8 @@ function StageView<T extends KanbanItem>({
   stages,
   items,
   counts,
+  hidden,
+  archiveHref,
   stageOf,
   move,
   labels,
@@ -326,8 +358,17 @@ function StageView<T extends KanbanItem>({
                     </div>
                   </div>
                 ))}
-                {inStage.length === 0 && (
+                {inStage.length === 0 && (hidden[stage.id] ?? 0) === 0 && (
                   <p className="px-1 pt-1 text-center text-sm text-ink-500">{labels.empty}</p>
+                )}
+                {(hidden[stage.id] ?? 0) > 0 && archiveHref && (
+                  <Link
+                    href={archiveHref}
+                    data-testid="stage-archive-link"
+                    className="block rounded-lg border border-dashed border-line px-2 py-1.5 text-center text-xs font-semibold text-ink-500 hover:bg-surface-raised"
+                  >
+                    +{hidden[stage.id]} · {labels.showAll}
+                  </Link>
                 )}
               </div>
             </section>
@@ -386,6 +427,8 @@ function DragBoard<T extends KanbanItem>({
   stages,
   items,
   counts,
+  hidden,
+  archiveHref,
   stageOf,
   move,
   labels,
@@ -559,8 +602,17 @@ function DragBoard<T extends KanbanItem>({
                       {renderCard(item)}
                     </Link>
                   ))}
-                  {inStage.length === 0 && (
+                  {inStage.length === 0 && (hidden[stage.id] ?? 0) === 0 && (
                     <p className="px-1 text-xs text-ink-400">{labels.empty}</p>
+                  )}
+                  {(hidden[stage.id] ?? 0) > 0 && archiveHref && (
+                    <Link
+                      href={archiveHref}
+                      data-testid="stage-archive-link"
+                      className="block rounded-lg border border-dashed border-line px-2 py-1.5 text-center text-xs font-semibold text-ink-500 hover:bg-surface-raised"
+                    >
+                      +{hidden[stage.id]} · {labels.showAll}
+                    </Link>
                   )}
                 </div>
               </section>

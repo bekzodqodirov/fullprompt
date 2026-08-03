@@ -221,7 +221,7 @@ export async function buildHomeFlow(
   if (actor.warehouseScoped) {
     return {
       kind: 'warehouse',
-      hrefs: ['/receive', '/arrivals', '/batches', '/issue'],
+      hrefs: ['/receive', '/batches', '/issue'],
       counts: await warehouseFlowCounts(actor, today),
     };
   }

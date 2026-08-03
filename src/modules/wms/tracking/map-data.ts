@@ -1,4 +1,4 @@
-import type { RouteDef, RoutePoint } from './engine';
+import type { RouteDef, RoutePoint, RouteSegment } from './engine';
 
 /**
  * Corridor geometry (owner's routes). Points are REAL lon/lat (x = lon,
@@ -56,6 +56,95 @@ const P = {
   GZ: { x: 113.26, y: 23.13 }, // Guangzhou
 } satisfies Record<string, RoutePoint>;
 
+/**
+ * The towns the road actually goes through (round 47, owner's item 10:
+ * «to'g'ri liniya bo'yicha emas — marshrut bo'yicha, yo'ldan yursin, huddi
+ * navigatordagidek»).
+ *
+ * Nothing here is a stop and nothing is displayed: these are shape points, so
+ * the corridor drawn on the map — and the estimated position walking along it
+ * — follows the highway instead of cutting across it. Two stretches made the
+ * old drawing plainly wrong to anyone who knows the road: Lanzhou→Hami runs
+ * the Hexi corridor, a long arc north-west between the Qilian mountains and
+ * the Gobi, and the straight line went through both; and Urumqi→Aksu goes
+ * AROUND the Tian Shan through Turpan and Korla, while the straight line flew
+ * over a 5,000 m range. Andijan→Tashkent is the same story at home — the
+ * Kamchik pass road via Kokand and Angren, not a line over the Fergana rim.
+ *
+ * They are the road's own towns, not GPS traces: the point is that the line
+ * bends where the road bends, not that it is metre-accurate.
+ */
+const W = {
+  // G30/G25, Yiwu → Xi'an.
+  HGH: { x: 120.15, y: 30.27 }, // Hangzhou
+  NKG: { x: 118.78, y: 32.06 }, // Nanjing
+  CGO: { x: 113.63, y: 34.75 }, // Zhengzhou
+  // G4/G55, Guangzhou → Changsha → Xi'an.
+  SHG: { x: 113.6, y: 24.81 }, // Shaoguan
+  HNY: { x: 112.61, y: 26.89 }, // Hengyang
+  XFN: { x: 112.14, y: 32.01 }, // Xiangyang
+  ANK: { x: 109.03, y: 32.68 }, // Ankang
+  // G30, Xi'an → Lanzhou.
+  BAO: { x: 107.14, y: 34.36 }, // Baoji
+  TSN: { x: 105.72, y: 34.58 }, // Tianshui
+  // G30, the Hexi corridor: Lanzhou → Hami.
+  WUW: { x: 102.63, y: 37.93 }, // Wuwei
+  ZHY: { x: 100.45, y: 38.93 }, // Zhangye
+  JIQ: { x: 98.51, y: 39.73 }, // Jiuquan
+  GUA: { x: 95.78, y: 40.52 }, // Guazhou
+  // G30, Hami → Urumqi.
+  SHS: { x: 90.21, y: 42.87 }, // Shanshan
+  TFU: { x: 89.18, y: 42.95 }, // Turpan
+  // G3012, around the Tian Shan: Urumqi → Aksu.
+  TOK: { x: 88.65, y: 42.79 }, // Toksun
+  KRL: { x: 86.15, y: 41.73 }, // Korla
+  LUN: { x: 84.25, y: 41.78 }, // Luntai
+  KCA: { x: 82.96, y: 41.72 }, // Kuqa
+  // G3012, Aksu → Kashgar.
+  BCH: { x: 78.55, y: 39.8 }, // Bachu
+  // Kashgar → the Irkeshtam border.
+  WUQ: { x: 75.02, y: 39.72 }, // Wuqia
+  // M41 through Kyrgyzstan.
+  SRT: { x: 73.26, y: 39.72 }, // Sary-Tash
+  GUL: { x: 73.44, y: 40.31 }, // Gulcha
+  // The Kamchik pass road, Andijan → Tashkent.
+  FEG: { x: 70.94, y: 40.53 }, // Kokand
+  ANG: { x: 70.14, y: 41.02 }, // Angren
+} satisfies Record<string, RoutePoint>;
+
+/**
+ * A route is a list of LEGS, and the point spans are computed rather than
+ * counted by hand.
+ *
+ * They used to be written literally (`span: [1, 2]`), which is why the road
+ * shape could not be improved without re-numbering every segment of every
+ * route — and getting one index wrong parks a truck on the wrong side of a
+ * border with nothing to say so. A leg carries its own points; the builder
+ * joins them, drops the duplicate at each seam, and hands each segment the
+ * span it landed on. A leg with a single point is stationary — that is the
+ * border wait.
+ */
+interface RouteLeg {
+  key: string;
+  hours: [number, number];
+  points: RoutePoint[];
+}
+
+function build(legs: RouteLeg[]): RouteDef {
+  const points: RoutePoint[] = [];
+  const segments: RouteSegment[] = [];
+  for (const leg of legs) {
+    const start = points.length === 0 ? 0 : points.length - 1;
+    const same =
+      points.length > 0 &&
+      points[points.length - 1]!.x === leg.points[0]!.x &&
+      points[points.length - 1]!.y === leg.points[0]!.y;
+    points.push(...(same ? leg.points.slice(1) : leg.points));
+    segments.push({ key: leg.key, hours: leg.hours, span: [start, points.length - 1] });
+  }
+  return { points, segments };
+}
+
 /** Warehouse code → map dot. TAS2 sits beside TAS1 so both stay clickable. */
 export const WAREHOUSE_POINTS: Record<string, RoutePoint> = {
   YW: P.YW,
@@ -79,20 +168,32 @@ export const MAP_BOUNDS: [[number, number], [number, number]] = [
   [47, 125], // north-east
 ];
 
-const CN_SPINE = [P.XIA, P.LAN, P.HAM, P.UCH, P.AKS, P.KA];
+/** Xi'an → Kashgar: the G30 and G3012, the way a truck really drives it. */
+const CN_SPINE = [
+  P.XIA, W.BAO, W.TSN, P.LAN,
+  W.WUW, W.ZHY, W.JIQ, W.GUA, P.HAM,
+  W.SHS, W.TFU, P.UCH,
+  W.TOK, W.KRL, W.LUN, W.KCA, P.AKS,
+  W.BCH, P.KA,
+];
+/** Andijan → Tashkent over the Kamchik pass. */
+const AND_TAS = (dest: RoutePoint) => [P.AND, W.FEG, W.ANG, dest];
 
 function ka2uz(dest: RoutePoint, uzHours: [number, number]): RouteDef {
-  return {
-    points: [P.KA, P.IRK, P.OSH, P.AND, dest],
-    segments: [
-      { key: 'to_border', hours: [12, 24], span: [0, 1] },
-      // Owner: the truck waits at the Chinese border 1–3 days (sometimes more
-      // — the manual checkpoint on the batch card corrects this).
-      { key: 'border_wait', hours: [24, 72], span: [1, 1] },
-      { key: 'kg', hours: [36, 48], span: [1, 2] },
-      { key: 'uz', hours: uzHours, span: [2, 4] },
-    ],
-  };
+  return build([
+    { key: 'to_border', hours: [12, 24], points: [P.KA, W.WUQ, P.IRK] },
+    // Owner: the truck waits at the Chinese border 1–3 days (sometimes more
+    // — the manual checkpoint on the batch card corrects this).
+    { key: 'border_wait', hours: [24, 72], points: [P.IRK] },
+    { key: 'kg', hours: [36, 48], points: [P.IRK, W.SRT, W.GUL, P.OSH] },
+    {
+      key: 'uz',
+      hours: uzHours,
+      // Andijan IS the destination on the short leg — no need to leave it and
+      // come back, which is what the old hand-counted spans had to fake.
+      points: dest === P.AND ? [P.OSH, P.AND] : [P.OSH, ...AND_TAS(dest)],
+    },
+  ]);
 }
 
 /** Typical corridor schedule per origin→dest pair (owner's numbers). */
@@ -103,42 +204,43 @@ export function routeFor(originCode: string, destCode: string): RouteDef | null 
   if (!destPoint || !WAREHOUSE_POINTS[o]) return null;
 
   if (o === 'YW' && d === 'KA') {
-    return {
-      points: [P.YW, ...CN_SPINE],
-      segments: [{ key: 'cn_transit', hours: [144, 168], span: [0, 6] }],
-    };
+    return build([
+      {
+        key: 'cn_transit',
+        hours: [144, 168],
+        points: [P.YW, W.HGH, W.NKG, W.CGO, ...CN_SPINE],
+      },
+    ]);
   }
   if (o === 'GZ' && d === 'KA') {
-    return {
-      points: [P.GZ, P.CSX, ...CN_SPINE],
-      segments: [{ key: 'cn_transit', hours: [120, 144], span: [0, 7] }],
-    };
+    return build([
+      {
+        key: 'cn_transit',
+        hours: [120, 144],
+        points: [P.GZ, W.SHG, W.HNY, P.CSX, W.XFN, W.ANK, ...CN_SPINE],
+      },
+    ]);
   }
   if (o === 'UCH' && d === 'KA') {
-    return {
-      points: [P.UCH, P.AKS, P.KA],
-      segments: [{ key: 'cn_transit', hours: [48, 72], span: [0, 2] }],
-    };
+    return build([
+      {
+        key: 'cn_transit',
+        hours: [48, 72],
+        points: [P.UCH, W.TOK, W.KRL, W.LUN, W.KCA, P.AKS, W.BCH, P.KA],
+      },
+    ]);
   }
-  if (o === 'KA' && d === 'AND') {
-    const r = ka2uz(P.AND, [12, 24]);
-    // Destination IS Andijan — trim the trailing duplicate point.
-    return { points: r.points.slice(0, 4), segments: r.segments.map((s) => ({ ...s, span: [Math.min(s.span[0], 3), Math.min(s.span[1], 3)] as [number, number] })) };
-  }
+  if (o === 'KA' && d === 'AND') return ka2uz(P.AND, [12, 24]);
   if (o === 'KA' && (d === 'TAS1' || d === 'TAS2')) {
     return ka2uz(WAREHOUSE_POINTS[d]!, [36, 48]);
   }
   if (o === 'AND' && (d === 'TAS1' || d === 'TAS2')) {
-    return {
-      points: [P.AND, WAREHOUSE_POINTS[d]!],
-      segments: [{ key: 'uz', hours: [12, 24], span: [0, 1] }],
-    };
+    return build([{ key: 'uz', hours: [12, 24], points: AND_TAS(WAREHOUSE_POINTS[d]!) }]);
   }
   // Any other pair between mapped warehouses: straight line, generic timing.
-  return {
-    points: [WAREHOUSE_POINTS[o]!, destPoint],
-    segments: [{ key: 'transit', hours: [120, 168], span: [0, 1] }],
-  };
+  // Honest rather than invented — we do not know the road, so we do not draw
+  // one, and the label already says the position is approximate.
+  return build([{ key: 'transit', hours: [120, 168], points: [WAREHOUSE_POINTS[o]!, destPoint] }]);
 }
 
 /** Checkpoint key → the segment it anchors (batch card buttons). */

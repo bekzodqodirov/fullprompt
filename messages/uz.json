@@ -180,7 +180,21 @@
     "who": "Kim",
     "receipt": "Qabul",
     "labels": "Stikerlar",
-    "calcSpeed": "Hisoblash tezligi"
+    "calcSpeed": "Hisoblash tezligi",
+    "taskAnalytics": "Ishlar qanday ketyapti",
+    "taskDoneToday": "Bugun bajarildi",
+    "taskOpen": "Ishda",
+    "taskTrend": "Qo'yilgan va yopilgan",
+    "taskOpened": "qo'yildi",
+    "taskClosed": "yopildi",
+    "taskByPerson": "Hodimlar bo'yicha",
+    "taskPerson": "Hodim",
+    "taskDoneWeek": "Haftada",
+    "taskMedian": "Mediana",
+    "taskHours": "soat",
+    "taskUndated": "Muddatsiz: {n} ta — ular hech kimning «Mening kunim»iga tushmaydi.",
+    "taskStalest": "Eng ko'p kechikkanlari",
+    "taskLateDays": "{n} kun"
   },
   "warehouses": {
     "title": "Skladlar",
@@ -1146,7 +1160,8 @@
       "failed": "Bo'lmadi. Yana urinib ko'ring."
     },
     "chatPurge": "Yozuvlarini o'chirish",
-    "chatPurgeConfirm": "Bu chatning saqlangan xabarlari (va rasmlari) butunlay o'chirilsinmi? Bu amal jurnalga yoziladi."
+    "chatPurgeConfirm": "Bu chatning saqlangan xabarlari (va rasmlari) butunlay o'chirilsinmi? Bu amal jurnalga yoziladi.",
+    "showAll": "hammasini ko'rsatish"
   },
   "navShort": {
     "home": "Bosh",

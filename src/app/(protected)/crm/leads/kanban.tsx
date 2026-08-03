@@ -29,13 +29,26 @@ export interface KanbanLead {
  * apart at the first bug fix. What stays here is what is genuinely about
  * leads — the card, and which action moves one.
  */
-export function KanbanBoard({ stages, leads }: { stages: KanbanStage[]; leads: KanbanLead[] }) {
+export function KanbanBoard({
+  stages,
+  leads,
+  hidden,
+  archiveHref,
+}: {
+  stages: KanbanStage[];
+  leads: KanbanLead[];
+  /** Finished leads left off the board, per stage (round 47). */
+  hidden?: Record<string, number>;
+  archiveHref?: string;
+}) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
 
   return (
     <Board
       stages={stages}
+      hidden={hidden}
+      archiveHref={archiveHref}
       items={leads}
       cardTestId="lead-card"
       hrefOf={(lead) => `/crm/leads/${lead.id}`}
@@ -51,6 +64,7 @@ export function KanbanBoard({ stages, leads }: { stages: KanbanStage[]; leads: K
         dragHint: t('dragHint'),
         empty: t('empty'),
         error: tc('error'),
+        showAll: t('showAll'),
       }}
       renderCard={(lead) => (
         <>
