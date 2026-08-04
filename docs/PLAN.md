@@ -4,14 +4,23 @@
 
 ---
 
-## STATUS — 2026-08-04 (round 54)
+## STATUS — 2026-08-04 (round 56)
 
 **Every numbered phase is shipped.** Phases 0–8 of the CRM/platform programme
-are done, and the last two rounds were repair rather than construction. The
-system is live on the owner's VPS with real cargo and real money in it.
+are done. The system is live on the owner's VPS with real cargo and real money
+in it.
 
-Size: 100 screens, 57 migrations, 883 unit/integration + 101 e2e tests green in
+Size: 100 screens, 57 migrations, 891 unit/integration + 101 e2e tests green in
 CI's order on a fresh database.
+
+### Agreed next — the Frappe-UX programme (2026-08-04)
+
+The owner asked for Frappe-CRM-grade ease of use («ishlatish oson UI»).
+The study's verdict — install refused, port the UX layer natively — and the
+five approved batches (lists/views engine → search+quick-create+bulk →
+inline edit → kanban DnD → dark mode+canned replies+polish) live in
+**[CRM-UX.md](./CRM-UX.md)**. Three small questions await his answers there;
+Batch 1 starts on his go, on branch `claude/frappe-crm-full-prompt-vempoq`.
 
 ### What exists, by area
 

@@ -111,16 +111,19 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 301 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 489 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04, batches 1–5, three questions open |
 
 ## State — 2026-08-04
 
-Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
+Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
+onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
+cut from the same tip.
 891 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0057** (`device_silent_notified`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
@@ -1108,6 +1111,34 @@ Red-proofs ×3; the integration file closes its trips in afterAll (a quiet
 paired leftover IS a silent truck to the e2e server's sweep, #154). NOT
 verifiable here: the APK runs on no machine I have — CI builds it, the
 first real 1.3 trip is the proof (watch the batch card's device row).
+
+Round 56 — the Frappe-CRM study (#488-489, owner: «frappe crm bor shuni
+organib chiq … ishlatish oson UI da bolishini hohlayman»). ANALYSIS ONLY —
+no code, no migration. Three-lens inventory of `/home/user/frappe-crm`
+(`develop` @ 2025-01-06). Verdict, told to the owner and APPROVED by him:
+do NOT install it (own stack — MariaDB + 8-11 processes + ~2 GB beside
+ours; zero translation files; FLAT permissions — every seller sees every
+deal; AGPL §13 — **ideas yes, code NEVER copied out of that repo**); port
+its ease-of-use layer natively instead. Where we are already ahead, stated:
+deal money (their Deal has NO amount field), lost reason (they have none),
+in-app custom fields, automation rules, cargo funnel, Telegram depth,
+measured SLA (theirs stops on a manual dropdown), reports (their dashboard
+is a stub), 4 locales vs 0. The programme is **docs/CRM-UX.md** — five
+approved batches: (1) lists = saved views + quick filters + any-column
+sort + column chooser + current-view XLSX (rbac-scoped, never a raw dump);
+(2) speed = `/search` WIDENED (it exists — spec §12 — but knows no
+leads/deals/batches/kontragent/phones) + Ctrl+K + quick-create modals +
+bulk actions THROUGH moveLead/moveDeal so audit+rules fire; (3) inline
+edit on card rails (a refusal keeps the typed value); (4) desktop-only
+kanban DnD via `(pointer: fine)` — touch keeps buttons (owner refused
+touch drag twice), stage COLOURS already exist (`crm/stage-color.ts`);
+(5) dark mode (print routes stay light) + Telegram canned replies
+({ism}/{kod}) + polish. Corrected en route: my own «global search yo'q»
+claim was wrong — /search shipped with spec §12; a "we lack X" claim
+needs a grep first. THREE questions await his answer (public views
+admin-only? / bulk-lost with reason? / shared+personal templates? —
+recommendations in the doc are the default if he says «boshla»). Batch 1
+starts on his go.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

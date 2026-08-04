@@ -1,6 +1,35 @@
 # CHANGELOG
 
-## Haydovchi ilovasi 1.3: 2 soatdan keyin o'lish tuzatildi, bildirishnoma yo'qoldi — 2026-08-04
+## Frappe CRM o'rganildi — «oson UI» strategiyasi kelishildi (kod o'zgarmagan) — 2026-08-04
+
+Topshiriq: «frappe crm bor shuni organib chiq … ishlatish oson UI da
+bolishini hohlayman». Frappe CRM uch yo'nalishda to'liq o'rganildi
+(imkoniyatlari, interfeysi, texnik talablari) va xulosa siz bilan kelishildi.
+
+**Qaror: Frappe CRM alohida o'rnatilmaydi.** Sabablari: serverga og'ir
+(o'zining boshqa bazasi va 8–11 ta alohida jarayon), interfeysi faqat
+inglizcha (tarjima fayllari umuman yo'q), har sotuvchi hamma mijoz-bitimni
+ko'radi (bizdagi chegaralar yo'q), Telegram/sklad/pul bilan bog'lanmaydi,
+litsenziyasi kodini ko'chirishga ruxsat bermaydi. Mazmun jihatdan bizning
+tizim allaqachon oldinda (bitimda pul, yo'qotish sababi, maxsus maydonlar,
+avtomatlashtirish, sklad-voronka, Telegram, hisobotlar, 4 til) — yetishmagani
+Frappe'ning qulaylik qatlami, va aynan shu bosqichma-bosqich qo'shiladi.
+
+**Kelishilgan 5 bosqich** (to'liq reja: `docs/CRM-UX.md`): 1) ro'yxatlar —
+saqlanadigan ko'rinishlar, tezkor filtrlar, istalgan ustun bo'yicha saralash,
+ustun tanlash, Excel eksport; 2) tezlik — qidiruv kengayadi (lead/bitim/
+partiya/kontragent/telefon) + Ctrl+K, tez qo'shish oynalari, ommaviy amallar;
+3) kartada joyida tahrirlash; 4) kompyuterda kanban sudrash (telefonda
+tugmalar qoladi); 5) tungi rejim, Telegram shablon javoblar, mayda pardozlar.
+
+**Javobingizni kutayotgan 3 savol:** umumiy ko'rinishni faqat admin
+e'lon qilsinmi; leadlarni ommaviy «yo'qotildi» qilish (sabab majburiy)
+bo'lsinmi; shablon javoblar umumiy + shaxsiy bo'lsinmi. «Tavsiyalaring
+bo'yicha boshla» desangiz — uchalasi ham «ha» bo'lib boshlanadi.
+
+Kod va bazada hech narsa o'zgarmadi; eski eslatma kuchida: serverni
+yangilashdan oldin backup, yangilanishda 4 ta jonli pul xatosining
+tuzatmalari bor.
 
 Sizning 1-band: «driver app negadur 2 soatdan keyin ishlamay qoldi» + «hech
 qanday notification ko'rsatmasin, telda yo'qdek bo'lsin».
