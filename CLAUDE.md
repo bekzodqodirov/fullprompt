@@ -121,13 +121,13 @@ pnpm build && pnpm e2e  # 44 e2e
 ## State — 2026-08-03
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-882 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+883 unit/integration + 101 e2e, verified in CI's order on a fresh database.
 Latest migration: **0056** (`tg_session_removable`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (rounds 46-53).
+shipped; the current round is the owner's 14-point feedback list (rounds 46-54).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-53. The owner's last confirmed
+money bugs), the speed round and rounds 46-54. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -1067,6 +1067,20 @@ own-account only, audited, refuses anything not `failed`. LESSON: rounds
 48-52 each fixed something real and none was his bug, because each reasoned
 from a symptom. **When a user reports two things and one WORKS, the working
 one is the control group and the difference is the defect.**
+
+Round 54 — «rasimlar cho'zinchoq bo'lib ko'rinmay qolyabti» (#480-481).
+His photos rendered as ~18px vertical strips while the same page measured
+80×80 locally: a large Android font scale widens the nowrap columns past the
+stock table's width, and the layout takes the difference from the photo
+column, because the browser stylesheet's `img { max-width: 100% }` makes a
+"fixed" thumbnail's MINIMAL width zero. Crush reproduced headlessly (cell
+forced to 60px → 60×80, his «cho'zinchoq»; 80×80 with the fix). ONE class in
+ONE component: `LightboxImg` puts `max-w-none` on the thumbnail + `shrink-0`
+on its wrapper — the photo's width IS its minimum, the table grows and
+scrolls instead, every caller (stock, batch contents, receive, plans, feed,
+chat) fixed at once; the overlay keeps `max-w-full` (filling the screen is
+its job). Guard in `style-cascade.test.ts` — the third cascade rule after
+`.input w-full` and the page-zoom rescale.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

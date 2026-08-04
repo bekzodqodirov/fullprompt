@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## Sklad rasmlari endi ezilmaydi — 2026-08-04
+
+Sabab topildi: brauzerning o'zi har bir rasmga «kerak bo'lsa toraytirsa
+bo'ladi» degan ruxsat berib qo'yadi. Telefonda shrift kattaroq bo'lsa,
+jadvalning raqamli ustunlari kengayadi va joy yetmay qolganda **aynan surat
+ustuni ezilardi** — 80×80 rasm ingichka chiziqqa aylanib qolardi. Ro'yxat
+uzunlashgani sari matn ko'payib, siqilish kuchayardi.
+
+Endi rasmning eni **hech qachon kichraymaydi**: joy yetmasa jadval o'zi
+kengayib, yon tomonga suriladigan bo'ladi (bu imkoniyat baribir bor edi).
+
+Bu tuzatish bitta joyda qilindi va **hamma ekranlarga birdan** ta'sir qiladi:
+sklad ostatkalari, partiya ichidagi yuklar jadvali, priyomka, plan tuzish,
+lenta va chatdagi rasmlar.
+
+Tekshirish: ezilishni o'zimda qayta tikladim (katakni ataylab 60 px qilib —
+rasm 60×80 bo'lib ezildi), tuzatishdan keyin o'sha holatda ham 80×80 qoldi.
+883 ta ichki test, 101 ta brauzer testi — hammasi yashil. Bunday sinf
+xatolariga qo'riqchi test ham qo'shildi.
+
+
 ## Topildi: jo'natilgan xabar nega chatda ko'rinmasdi — 2026-08-03 (8-qism)
 
 Sizning rasmingiz hammasini aytdi: **«rasm ko'rindi, xabar ko'rinmadi».**

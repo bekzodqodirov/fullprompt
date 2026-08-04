@@ -59,3 +59,29 @@ describe('a width utility on .input needs the important', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * The thumbnail must not be squeezable (round 54).
+ *
+ * The browser's own stylesheet gives every img `max-width: 100%`, which turns
+ * a fixed 80×80 thumbnail into one whose MINIMAL width is zero — permission
+ * for any table column or flex row to crush it to a sliver. That is exactly
+ * what the owner's phone did: large system fonts pushed the stock table's
+ * nowrap columns past its width, the photo column paid, and every photo
+ * rendered as an 18px vertical strip («cho'zinchoq»). Reproduced headlessly
+ * by forcing the cell to 60px — 60×80 before the fix, 80×80 after.
+ *
+ * `max-w-none` takes the permission away and `shrink-0` on the wrapper does
+ * the same for flex rows; the table then grows and scrolls sideways, which is
+ * what its overflow container exists for. A cascade rule, like `.input`'s
+ * width above: invisible to typecheck, lint and every behaviour test, because
+ * the class list is exactly what was intended.
+ */
+describe('the lightbox thumbnail owns its minimal width', () => {
+  it('carries max-w-none on the img and shrink-0 on its wrapper', () => {
+    const source = readFileSync('src/components/lightbox-img.tsx', 'utf8');
+    const thumb = source.slice(0, source.indexOf('onDelete &&'));
+    expect(thumb).toContain('max-w-none');
+    expect(thumb).toContain('shrink-0');
+  });
+});
