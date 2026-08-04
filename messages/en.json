@@ -340,7 +340,7 @@
     "devices": "Devices",
     "thisDevice": "This device",
     "logoutOthers": "Sign out on all other devices",
-    "language": "Interface language",
+    "language": "Language",
     "telegram": "Telegram",
     "telegramSoon": "Telegram linking arrives in the next stage",
     "lastSeen": "Last activity",
@@ -1757,5 +1757,28 @@
     "select": "Select",
     "doMove": "Move",
     "doAssign": "Assign"
+  },
+  "quick": {
+    "title": "Quick add",
+    "newLead": "New lead",
+    "newClient": "New client",
+    "name": "Name",
+    "phone": "Phone",
+    "save": "Save",
+    "full": "Full form →",
+    "close": "Close",
+    "created": "Added:",
+    "discard": "Close without saving? What you typed will be lost.",
+    "hint": {
+      "lead": "Lands on the first stage and belongs to you — the rest on the card.",
+      "client": "The code is assigned automatically — the rest on the card."
+    },
+    "error": {
+      "validation": "Type a name",
+      "forbidden": "Not allowed",
+      "code_exists": "That code already exists",
+      "code_format": "Bad code format",
+      "failed": "Could not save"
+    }
   }
 }

@@ -340,7 +340,7 @@
     "devices": "设备",
     "thisDevice": "当前设备",
     "logoutOthers": "退出其他设备",
-    "language": "界面语言",
+    "language": "语言",
     "telegram": "Telegram",
     "telegramSoon": "Telegram绑定将在下一阶段推出",
     "lastSeen": "活动时间",
@@ -1757,5 +1757,28 @@
     "select": "选择",
     "doMove": "移动",
     "doAssign": "分配"
+  },
+  "quick": {
+    "title": "快速添加",
+    "newLead": "新线索",
+    "newClient": "新客户",
+    "name": "姓名",
+    "phone": "电话",
+    "save": "保存",
+    "full": "详细 →",
+    "close": "关闭",
+    "created": "已添加：",
+    "discard": "不保存就关闭吗？已输入的内容会丢失。",
+    "hint": {
+      "lead": "进入第一阶段并归属于您——其余在卡片上填写。",
+      "client": "代码自动分配——其余在卡片上填写。"
+    },
+    "error": {
+      "validation": "请输入姓名",
+      "forbidden": "没有权限",
+      "code_exists": "该代码已存在",
+      "code_format": "代码格式不正确",
+      "failed": "保存失败"
+    }
   }
 }

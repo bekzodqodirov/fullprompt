@@ -340,7 +340,7 @@
     "devices": "Qurilmalar",
     "thisDevice": "Shu qurilma",
     "logoutOthers": "Boshqa qurilmalardan chiqish",
-    "language": "Interfeys tili",
+    "language": "Til",
     "telegram": "Telegram",
     "telegramSoon": "Telegram ulash keyingi bosqichda qo'shiladi",
     "lastSeen": "Faollik",
@@ -1757,5 +1757,28 @@
     "select": "Tanlash",
     "doMove": "Ko'chirish",
     "doAssign": "Biriktirish"
+  },
+  "quick": {
+    "title": "Tez qo'shish",
+    "newLead": "Yangi lid",
+    "newClient": "Yangi mijoz",
+    "name": "Ism",
+    "phone": "Telefon",
+    "save": "Saqlash",
+    "full": "Batafsil →",
+    "close": "Yopish",
+    "created": "Qo'shildi:",
+    "discard": "Saqlamasdan yopilsinmi? Yozganingiz yo'qoladi.",
+    "hint": {
+      "lead": "Birinchi bosqichga tushadi va o'zingizga biriktiriladi — qolgani kartada.",
+      "client": "Kod avtomatik beriladi — qolgani kartada."
+    },
+    "error": {
+      "validation": "Ism yozing",
+      "forbidden": "Ruxsat yo'q",
+      "code_exists": "Bunday kod bor",
+      "code_format": "Kod formati noto'g'ri",
+      "failed": "Saqlanmadi"
+    }
   }
 }

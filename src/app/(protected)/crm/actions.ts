@@ -122,6 +122,45 @@ export async function createLeadAction(
   redirect(`/crm/leads/${leadId}`);
 }
 
+/**
+ * The five-second lead: a name, maybe a phone, nothing else.
+ *
+ * A separate action rather than a flag on `createLeadAction`, for a reason
+ * that is about the framework and not about taste: that one ends in
+ * `redirect()`, and a `redirect()` inside a server action called from an
+ * onClick REJECTS the promise with NEXT_REDIRECT instead of resolving — an
+ * async click handler has no error boundary to catch it. A modal has to be
+ * told what happened, so this returns it (the `CrateActionResult` shape).
+ *
+ * Everything it leaves out is already defaulted by the service: the stage
+ * falls back to the first one, the owner to whoever pressed the button. The
+ * card is where the rest of a lead gets filled in — including any custom
+ * field the owner made required, which this deliberately does not ask for.
+ */
+export interface QuickCreateResult {
+  ok: boolean;
+  id?: string;
+  name?: string;
+  error?: string;
+}
+
+export async function quickCreateLeadAction(input: {
+  name: string;
+  phone: string;
+}): Promise<QuickCreateResult> {
+  const name = String(input?.name ?? '').trim();
+  const phone = String(input?.phone ?? '').trim();
+  if (name.length < 2) return { ok: false, error: 'validation' };
+
+  let created: { id: string; name: string } | null = null;
+  const state = await run('crm.leads', async (ctx) => {
+    const lead = await createLead({ name, phone }, ctx);
+    created = { id: lead.id, name: lead.name };
+  });
+  if (!state.ok) return { ok: false, error: state.error ?? 'failed' };
+  return { ok: true, id: created!.id, name: created!.name };
+}
+
 export async function updateLeadAction(
   id: string,
   _prev: CrmFormState,

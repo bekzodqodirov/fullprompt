@@ -117,14 +117,14 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1, 2a, 2c SHIPPED; 2b + 3–5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1 and 2 COMPLETE; 3–5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-940 unit/integration + 111 e2e, verified in CI's order on a fresh database.
+944 unit/integration + 115 e2e, verified in CI's order on a fresh database.
 Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1224,6 +1224,35 @@ is chosen by `option[data-kind="lost"]`, never by position, because the owner
 names his own funnel; `audit_log` refuses DELETE by database rule, so a spec
 cleans up leads and events and LEAVES the audit trail. **Batch 2b
 (quick-create modals) is the one piece of batch 2 still open.**
+
+Round 60 — **UX batch 2b, quick create; batch 2 COMPLETE** (#497-499). The
+design was reviewed by three adversarial lenses BEFORE any code, and three
+load-bearing assumptions died: (a) the option lists had no home — the layout
+cannot afford four queries per render (#432's lesson) and the codebase refuses
+a definitions JSON route on purpose, so they were DELETED: `leadSchema` needs
+only a name, stage falls back to the first, owner to the presser, an empty
+client code means «mint the next». **Two boxes, zero queries.** (b) the
+«required custom field → full page» branch enforced NOTHING —
+`validateValues` skips an ABSENT key, so a modal with no `cf_` inputs lands a
+clean record; replaced by an unconditional «Batafsil →» link, with the card's
+panel still refusing the next save. (c) the three existing create actions
+CANNOT be called from a button: `redirect()` inside an action invoked from an
+onClick rejects with NEXT_REDIRECT and an async handler has no boundary —
+hence `quickCreateLeadAction` / `quickCreateClientAction` returning
+`{ ok, id, name, error }` (the `CrateActionResult` shape). Also caught in
+review: `ClientFormState` has no `ok` field, so `res.ok` would have called
+every success a failure. Behaviour: it STAYS on the page (a jump is the
+interruption the button avoids), leaves one dismissible «Qo'shildi: …» line
+with a link, and refuses to discard a dirty form on a backdrop tap or Escape —
+never on a route change, where the page underneath has gone.
+`components/ui/overlay.tsx` extracted (portal + backdrop + Escape +
+close-on-route with a REASON); the scaffold existed three times and Escape
+worked in one. THE MEASUREMENT: adding the «+» silently squeezed every app-bar
+icon from 44 px to **33 px** at 360 px — no overflow, no page rescale, no test
+red. The language select (60 px, set-once) moved to `/profile` on phones
+(`sm:hidden` / `hidden sm:inline-flex`), and everything is back at 44 px.
+RULE: `flex` without `shrink-0` protects the layout, never the controls —
+only a measurement says they became unusable.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

@@ -6,6 +6,7 @@ import { logoutAction } from '@/modules/platform/auth/actions';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { SearchPalette } from '@/components/search-palette';
+import { QuickCreate, type QuickKind } from '@/components/quick-create';
 import { readTheme } from '@/modules/platform/theme/theme';
 import { Icon } from '@/components/ui/icon';
 import { UpdateBanner } from '@/components/update-banner';
@@ -30,6 +31,10 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   const tHome = await getTranslations('home');
   const tSearch = await getTranslations('search');
   const theme = await readTheme();
+  const quickKinds: QuickKind[] = [
+    ...(actor.permissions.has('crm.leads') ? (['lead'] as const) : []),
+    ...(actor.permissions.has('clients.manage') ? (['client'] as const) : []),
+  ];
 
   // Labels come from each screen's own namespace, so the nav never invents a
   // second name for a page that already has one.
@@ -84,6 +89,10 @@ export default async function ProtectedLayout({ children }: { children: React.Re
             <span className="hidden text-ink-900 sm:inline">GSR GROUP</span>
           </Link>
           <div className="min-w-0 flex-1" />
+          {/* Which objects this person may mint, decided HERE: the client
+              component holds no permission knowledge, the same way the nav
+              receives a ready list rather than the rules behind it. */}
+          <QuickCreate kinds={quickKinds} />
           {/* Search is a tool, not a destination (owner): it lives in the bar
               at every width instead of taking a tile and a sidebar row. */}
           {/* The palette wraps the link rather than replacing it: with no
@@ -102,7 +111,12 @@ export default async function ProtectedLayout({ children }: { children: React.Re
               follows the conversation gate; tasks belong to everyone. */}
           <Dock canChat={canReadTg(actor)} />
           <ThemeToggle current={theme} />
-          <LocaleSwitcher current={actor.locale} />
+          {/* Hidden on a phone — it lives on /profile there. Seven controls
+              at 44 px do not fit in 360 px, and flex silently squeezed every
+              one of them to 33 px when the «+» was added. */}
+          <span className="hidden sm:inline-flex">
+            <LocaleSwitcher current={actor.locale} />
+          </span>
           <Link href="/profile" aria-label={t('profile')} className="btn-ghost btn-icon text-ink-700">
             <Icon name="user" />
           </Link>

@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## «+» tugmasi: lid yoki mijoz 5 soniyada — 2026-08-04
+
+«Oson UI» rejasining 2-bosqichi tugadi.
+
+**Yuqori qatorda «+» tugmasi.** Qayerda bo'lsangiz ham bosasiz — sahifadan
+chiqmaysiz, ustidan kichkina oyna ochiladi. **Ikkita katak:** ism va telefon.
+Saqlaysiz — o'sha sahifada qolasiz, pastda «Qo'shildi: …» deb yozilib,
+kartaga havola beriladi.
+
+**Nega faqat ikkita katak.** Qolgan hammasi o'zi to'ldiriladi: lid birinchi
+bosqichga tushadi va yozgan odamga biriktiriladi; mijozga kod avtomatik
+beriladi. Bularni kartada bir bosishda o'zgartirasiz. Agar to'liq shakl
+kerak bo'lsa — o'sha oynada «Batafsil →» havolasi turibdi.
+
+**Yozganingiz yo'qolmaydi.** Oynaning tashqarisiga tasodifan bosib
+yuborsangiz, «saqlamasdan yopilsinmi?» deb so'raydi.
+
+**Kimga nima ko'rinadi:** lid — lidlar bilan ishlash huquqi borlarga; mijoz —
+mijozlarni boshqarish huquqi borlarga. Bittasigina bo'lsa, tanlash oynasi
+o'tkazib yuborilib, darrov katak ochiladi.
+
+**Yo'l-yo'lakay tuzatilgan narsa.** «+» qo'shilgach, telefonda yuqori
+qatordagi tugmalar 44px dan **33px ga siqilib qolgan ekan** — barmoq uchun
+juda kichik. O'lchab ko'rildi va tuzatildi: **til tanlash telefonda endi
+Profil sahifasida** (kompyuterda avvalgidek yuqorida qoladi). Endi hamma
+tugma yana 44px.
+
+Tekshiruv: 944 ta ichki test, 112 ta brauzer testi. Bazaga o'zgarish yo'q.
+
+Ishni boshlashdan oldin taklif qilingan dizayn uch mustaqil ko'z bilan
+tekshirildi va uchta jiddiy xato kod yozilishidan OLDIN topildi (shuning
+uchun oyna faqat ikkita katakdan iborat bo'ldi).
+
 ## Ommaviy amallar: bir nechta leadni birdan ko'chirish — 2026-08-04
 
 «Oson UI» rejasining 2-bosqichi, ikkinchi yarmi.

@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { clients } from '@/modules/platform/db/schema';
-import { authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { autoLinkClientToVerifiedChats } from '@/modules/platform/telegram/client-cabinet';
@@ -58,6 +58,63 @@ function toValues(data: z.infer<typeof clientSchema>) {
     messengerNote: data.messengerNote || null,
     notes: data.notes || null,
   };
+}
+
+/**
+ * The five-second client: a name and a phone.
+ *
+ * The code is left EMPTY on purpose — the service reads that as «mint the
+ * next one», which is the owner's own rule and the whole reason this can be
+ * two boxes. Returns the new id and the code it was given rather than
+ * redirecting, because a `redirect()` inside an action called from an onClick
+ * rejects the promise instead of resolving it, and the modal has to be able
+ * to show what it created.
+ */
+export interface QuickClientResult {
+  ok: boolean;
+  id?: string;
+  name?: string;
+  error?: string;
+}
+
+export async function quickCreateClientAction(input: {
+  name: string;
+  phones: string;
+}): Promise<QuickClientResult> {
+  const name = String(input?.name ?? '').trim();
+  const phones = String(input?.phones ?? '').trim();
+  if (name.length < 1) return { ok: false, error: 'validation' };
+
+  let actor;
+  try {
+    actor = await authorize('clients.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+
+  const meta = await requestMeta();
+  try {
+    const row = await createClient(
+      {
+        clientCode: '',
+        name,
+        phones: phones
+          .split(',')
+          .map((one) => one.trim())
+          .filter(Boolean),
+      },
+      { actorId: actor.id, ...meta },
+    );
+    revalidatePath('/admin/clients');
+    return { ok: true, id: row.id, name: `${row.clientCode} · ${row.name}` };
+  } catch (err) {
+    if (err instanceof ClientError) return { ok: false, error: err.code };
+    // The deploy-morning rule (#473): an action that touches the database
+    // catches, so a refusal is words rather than a digest on a white page.
+    console.error('[quick-client]', err);
+    return { ok: false, error: 'failed' };
+  }
 }
 
 export async function createClientAction(

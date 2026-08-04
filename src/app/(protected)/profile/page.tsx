@@ -8,6 +8,7 @@ import { logoutOtherDevicesAction } from '@/modules/platform/auth/actions';
 import { createTelegramLinkAction, telegramLinkStatus } from '@/modules/platform/telegram/actions';
 import { groupsFromList } from '@/modules/platform/notifications/mutes';
 import { setNotificationMutesAction } from './actions';
+import { LocaleSwitcher } from '@/components/locale-switcher';
 
 export default async function ProfilePage() {
   const user = await getSessionUser();
@@ -30,6 +31,15 @@ export default async function ProfilePage() {
         <p className="font-semibold">{user.fullName}</p>
         <p className="text-sm text-ink-700">{user.phone}</p>
       </div>
+
+      {/* The language lives HERE on a phone: the app bar ran out of room when
+          the «+» arrived, and squeezing every icon from 44 px to 33 px is a
+          worse answer for a warehouse thumb than one extra tap for a control
+          most people set once. It stays in the bar from `sm` up. */}
+      <section className="card flex items-center justify-between gap-3 sm:hidden">
+        <span className="text-sm font-semibold">{t('language')}</span>
+        <LocaleSwitcher current={user.locale} />
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-lg font-bold">{t('devices')}</h2>
