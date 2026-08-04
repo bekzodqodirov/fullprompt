@@ -117,15 +117,15 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04, batches 1–5, three questions open |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batch 1 SHIPPED, 2–5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-891 unit/integration + 101 e2e, verified in CI's order on a fresh database.
-Latest migration: **0057** (`device_silent_notified`). Every numbered phase
+915 unit/integration + 104 e2e, verified in CI's order on a fresh database.
+Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
 Actions → driver-apk → artifact → Admin → Haydovchi ilovasi).
@@ -1139,6 +1139,37 @@ needs a grep first. THREE questions await his answer (public views
 admin-only? / bulk-lost with reason? / shared+personal templates? —
 recommendations in the doc are the default if he says «boshla»). Batch 1
 starts on his go.
+
+Round 57 — **UX batch 1, the lists** (#490-491, owner: «tavsiyalaring
+bo'yicha boshla» = all three questions answered yes). A saved view is a NAME
+for the address bar and nothing else: `list_views` (migration 0058) stores the
+screen's own query string, applying it is a LINK, so it is shareable, opens in
+a tab, walks with the back button and is carried by the export for free — and
+a screen that grows a filter next month is savable with no code. `user_id`
+NULL = published to the company (admin only, his answer); `is_default` is
+personal by construction (CHECK + partial unique index per person+screen);
+`normalizeQuery` sorts keys, drops empty boxes and drops the control params so
+a view cannot re-save itself. Columns became DATA (`platform/lists/columns.ts`
+`ColumnDef`, custom fields join the same list as `cf_<uuid>`): `visibleColumns`
+is the one gate — a permissioned column is dropped even when the URL names it,
+the link column cannot be turned off, an unknown key is DROPPED (a view
+outlives the field it names). Both exports learned the same set — a sheet
+carrying a column the screen hid is a leak with a filename. Screens: clients
+(views + picker + export, card grid retired for one table), stock (same;
+STOCK_COLUMNS in `wms/inventory/columns.ts`), `/o/<code>` (views only, screen
+key `o:<code>`). Red-proofs ×3 (permission drop, publish gate, default-clear).
+FOUND AT 360 px, all mine: the picker's `<details>` stayed open across its own
+navigation and swallowed the next tap; the view menu anchored to the ⋯ pushed
+the document to 487 px and mobile Chrome zoomed the PAGE out (#400's mechanism,
+#471's mistake repeated — `relative` belongs on the ROW); the stock search
+collapsed to ~50 px (#419's cascade, third costume). E2E LESSON:
+`browser.newPage()` in `afterAll` has neither baseURL nor login, so the
+cleanup silently did nothing and left a saved view that redirects the next
+spec — cleanup is a final TEST now, proven by finding the row in the database.
+m9e's `getByLabel(city)` now scopes to `custom-filters`: the picker names
+every column too. NOT green here: m1×2, m2×1, m9h — all the photo-upload path,
+all identical with this round's changes stashed (no image service in this
+container; m9h cascades off m1's receipt).
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

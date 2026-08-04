@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## Ro'yxatlar: saqlanadigan ko'rinishlar, ustun tanlash, Excel — 2026-08-04
+
+«Oson UI» rejasining 1-bosqichi (`docs/CRM-UX.md`). Mijozlar kitobi, sklad
+qoldig'i va o'z obyektlaringiz ro'yxatida:
+
+**Ko'rinish saqlash.** Filtr, saralash va ustunlarni sozlaganingizdan keyin
+«⋯» tugmasidan nom berib saqlaysiz. Saqlangan ko'rinish ro'yxat tepasida
+tugmacha bo'lib turadi — bir bosishda o'sha holat qaytadi. Uchta belgisi bor:
+📌 — yuqorida tursin; ★ — shu ro'yxatni ochganda doim shu ko'rinish
+ochilsin; ✕ — o'chirish. **«Hammaga ko'rsatish»** faqat adminda: o'zingiz
+uchun ko'rinish saqlash hammaga ochiq, butun firmaga tarqatish esa admin
+ishi (siz shunday deb tanladingiz).
+
+**Ustun tanlash.** «⋮≡» tugmasi — qaysi ustun ko'rinishini o'zingiz
+belgilaysiz, maxsus maydonlaringiz ham shu ro'yxatda. Kod ustuni doim
+qoladi (u kartaga kiradigan havola). Pul bilan bog'liq ustunlar faqat
+huquqi borga ko'rinadi — manzilga qo'lda yozib ham ochib bo'lmaydi.
+
+**Excel aynan ko'rinib turganini beradi.** Endi yuklab olingan fayl ekrandagi
+filtr, saralash va TANLANGAN USTUNLARni oladi — ekranda yashirilgan ustun
+faylga ham tushmaydi.
+
+**Havola bo'lib ishlaydi.** Ko'rinish — bu manzil qatoridagi holat, shuning
+uchun uni hamkasbingizga havola qilib yuborsangiz, u ham aynan o'sha
+ro'yxatni ko'radi; «orqaga» tugmasi ham odatdagidek ishlaydi.
+
+Yo'l-yo'lakay tuzatilganlar (hammasi 360px telefon ekranida ko'rib
+topilgan): ustun tanlash oynasi ochiq qolib jadvalni to'sib turishi;
+ko'rinishlar oynasi ekran chetidan chiqib ketib butun sahifani kichraytirib
+yuborishi; sklad qidiruv oynasining juda torayib qolishi.
+
+Tekshiruv: 915 ta ichki test (24 tasi yangi — himoyasiz qolganda qizarishi
+isbotlangan), 100 ta brauzer testi. Bu konteynerda 4 ta brauzer testi
+o'tmadi — hammasi rasm yuklash yo'lida va o'zgarishlarimizsiz ham
+o'tmasligi tekshirildi (bu yerda rasm xizmati yo'q; serverda ular ishlaydi).
+
+Bazaga bitta yangi jadval qo'shildi (0058) — yangilashda migratsiya
+avtomatik ishlaydi, avval backup oling.
+
 ## Frappe CRM o'rganildi — «oson UI» strategiyasi kelishildi (kod o'zgarmagan) — 2026-08-04
 
 Topshiriq: «frappe crm bor shuni organib chiq … ishlatish oson UI da

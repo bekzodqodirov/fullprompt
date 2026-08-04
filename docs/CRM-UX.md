@@ -101,14 +101,27 @@ expiry is dead code), PostHog telemetry on by default.
 | XLSX builder + route pattern to extend | `wms/accounting/xlsx.ts`, `/api/clients/xlsx`, `/api/accounting/[kind]` |
 | Custom-field columns/filters on lists (phase 2) | `/admin/clients`, `/o` lists |
 | Composers unified (the place a template picker plugs in) | `components/composer.ts` (round 14) |
-| ABSENT, verified by grep: saved views, per-user columns/sort, bulk actions on CRM lists, quick-create modals (only full-page `new` routes), inline click-to-edit (forms with save only), dark mode, canned replies, board filters. In-app bell and email are ABSENT BY DECISION (Telegram-only, #375 / round 25) | — |
+| **Dark mode EXISTS and is complete** — `data-theme` on `:root` over CSS-variable tokens, cookie-read on the server so the first HTML is already themed (no flash), system preference when no cookie, sun/moon toggle in the app bar, and every `(print)` route pinned light on purpose | `src/app/globals.css` (`:root[data-theme='dark']` + `prefers-color-scheme` block), `platform/theme/theme.ts` + `actions.ts`, `components/ui/theme-toggle.tsx`, `(protected)/layout.tsx`, `(print)/print.css` |
+| Column sort primitive EXISTS: `SortTh` (URL `?sort=&dir=`, preserves other params) + in-memory `sortRows` with an allow-list; used on clients, `/o`, `/stock` and four reports | `src/components/sort-th.tsx` and its callers |
+| ABSENT, verified by grep: saved views, per-user column choice, quick-filter rows on most lists, bulk/multi-select actions, quick-create modals (only full-page `new` routes), inline click-to-edit, Telegram canned replies, kanban board filters. In-app bell and email are ABSENT BY DECISION (Telegram-only, #375 / round 25) | — |
 
 ## The programme — five batches, in order
 
 Every batch is independently shippable and independently deployable.
 Sizes are honest guesses in this codebase's «rounds».
 
-### Batch 1 — Lists (~2–3 rounds) ← START HERE
+### Batch 1 — Lists — **PART 1 SHIPPED (round 57)**
+
+Shipped: the engine (`platform/lists/` — `columns.ts`, `query.ts`,
+`service.ts`, `actions.ts`; `components/list/view-bar.tsx` +
+`column-picker.tsx`; migration 0058) on `/admin/clients` (views + column
+picker + view-aware XLSX), `/stock` (same) and `/o/<code>` (views only).
+**Still to do in part 2:** `/arrivals` (has no searchParams at all today) and
+`/batches` (a board — needs a table view beside it, not instead of it), then
+`/kontragentlar` and the finance registers. Quick-filter ROWS beyond what each
+screen already has are part 2 as well.
+
+The original scope, for reference:
 
 Owner-visible: quick-filter row (hodim / etap / sklad / date range as fits
 each list) · sort by any column header · column chooser incl. custom
@@ -168,12 +181,10 @@ reason on refusal; writes through `moveLead`/`moveDeal`. Card-field config
 (summa, kub, hodim, 💬 badge) per user. Board quick filters (hodim +
 text). Column colours already exist — do not rebuild them.
 
-### Batch 5 — Polish (~1–2 rounds)
+### Batch 5 — Polish (~1 round)
 
-Dark mode: `data-theme` on `<html>` + a toggle; the Tailwind tokens are
-CSS variables already; PRINT ROUTES STAY LIGHT (everything under
-`(print)` — labels, manifest, act); persist the choice in a cookie so SSR
-does not flash. Telegram canned replies: shared (admin-managed) +
+**Dark mode is NOT in this batch — it already shipped** (see the inventory
+table). Telegram canned replies: shared (admin-managed) +
 personal (per Q3), `{ism}` / `{kod}` placeholders filled from the thread's
 client, a picker button in ALL composers (they are already unified).
 Empty states with a CTA; composer drafts to localStorage; a favorites
@@ -200,18 +211,18 @@ time-in-stage read from `audit_log` (the data is already being written).
   markup or CSS out of it (AGPL). When in doubt: describe the behaviour in
   words, close the file, implement.
 
-## Open questions to the owner (asked 2026-08-04 — AWAITING ANSWERS)
+## The three questions — ANSWERED 2026-08-04 («tavsiyalaring bo'yicha boshla»)
 
-1. Public saved views — may only admin/super_admin publish a view to
-   everyone? (Recommended: yes.) Blocks nothing in Batch 1 except the
-   «make public» button's gate; default to admin-only until answered.
-2. Bulk «mark lost» for leads, with the reason typed once for the batch?
-   (Recommended: yes.)
-3. Canned replies — both shared (admin-managed) and personal (each manager
-   their own)? (Recommended: yes.)
+The owner accepted all three recommendations, so these are now spec:
 
-If he answers «tavsiyalaring bo'yicha boshla», the recommendations above
-become the agreed spec.
+1. **Publishing a saved view to everyone is admin-only.** Anyone may save
+   and pin their own; making one visible to the whole company needs
+   `admin.settings.manage` (no new permission — #170's rule).
+2. **Bulk «mark lost» exists for leads**, with ONE reason typed for the
+   whole selection and written onto every row (a lost without a reason is
+   refused, as the single-row path already refuses it).
+3. **Canned replies come in two kinds**: shared (admin-managed, everyone
+   sees them) and personal (each manager's own, nobody else's).
 
 ## Out of scope — stated to the owner and accepted
 

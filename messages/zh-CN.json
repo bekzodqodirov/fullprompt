@@ -1712,5 +1712,28 @@
     "proof": "收据 / 截图",
     "proofNote": "备注（无附件时必填）",
     "proofRequired": "必须有附件或备注"
+  },
+  "lists": {
+    "allRecords": "全部",
+    "saveCurrent": "保存当前视图",
+    "namePlaceholder": "视图名称",
+    "save": "保存",
+    "makeDefault": "默认打开此视图",
+    "makePublic": "所有人可见",
+    "publicView": "公共视图",
+    "pin": "置顶",
+    "delete": "删除",
+    "columns": "列",
+    "resetColumns": "恢复默认",
+    "viewsHint": "设置筛选和列后保存为视图，下次仍在此列表中。",
+    "error": {
+      "unauthenticated": "请重新登录",
+      "forbidden": "没有权限",
+      "not_found": "未找到视图",
+      "name_required": "请输入名称",
+      "duplicate_name": "已有同名视图",
+      "server_behind": "服务器尚未更新——请要求更新",
+      "failed": "保存失败"
+    }
   }
 }

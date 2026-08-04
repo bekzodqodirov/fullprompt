@@ -1712,5 +1712,28 @@
     "proof": "Kvitansiya / skrinshot",
     "proofNote": "Izoh (fayl bo‘lmasa — majburiy)",
     "proofRequired": "Fayl yoki izoh bo‘lishi shart"
+  },
+  "lists": {
+    "allRecords": "Hammasi",
+    "saveCurrent": "Shu ko'rinishni saqlash",
+    "namePlaceholder": "Ko'rinish nomi",
+    "save": "Saqlash",
+    "makeDefault": "Doim shu ko'rinish ochilsin",
+    "makePublic": "Hammaga ko'rinsin",
+    "publicView": "Umumiy ko'rinish",
+    "pin": "Qadab qo'yish",
+    "delete": "O'chirish",
+    "columns": "Ustunlar",
+    "resetColumns": "Avvalgidek qilish",
+    "viewsHint": "Filtr va ustunlarni sozlang, so'ng ko'rinish qilib saqlang — keyin shu ro'yxatda turadi.",
+    "error": {
+      "unauthenticated": "Qaytadan kiring",
+      "forbidden": "Ruxsat yo'q",
+      "not_found": "Ko'rinish topilmadi",
+      "name_required": "Nom yozing",
+      "duplicate_name": "Bunday nomli ko'rinish bor",
+      "server_behind": "Server hali yangilanmagan — yangilashni so'rang",
+      "failed": "Saqlanmadi"
+    }
   }
 }

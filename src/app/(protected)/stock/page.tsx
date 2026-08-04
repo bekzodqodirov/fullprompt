@@ -16,20 +16,15 @@ import { DensityBadge } from '@/components/density-badge';
 import { LightboxImg } from '@/components/lightbox-img';
 import { SortTh, sortRows } from '@/components/sort-th';
 import { warehouseScope } from '@/modules/platform/rbac/scope';
+import { parseCols, visibleColumns } from '@/modules/platform/lists/columns';
+import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
+import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
+import { ViewBar } from '@/components/list/view-bar';
+import { ColumnPicker } from '@/components/list/column-picker';
+import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
 
 /** Owner's request: order the stock table by any column, filters kept. */
-const SORTABLE = [
-  'code',
-  'product',
-  'boxes',
-  'perBoxKg',
-  'stockKg',
-  'stockM3',
-  'density',
-  'note',
-  'whCode',
-  'receivedAt',
-] as const;
+const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
 
 /** Stock browser v1 (spec §10 screen 6): WH → client → lot → box. */
 export default async function StockPage({
@@ -42,13 +37,25 @@ export default async function StockPage({
     q?: string;
     sort?: string;
     dir?: string;
+    cols?: string;
   }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('stock');
+  // No namespace: a ColumnDef carries its full key, so one call resolves the
+  // labels of any column list this screen renders.
+  const tAny = await getTranslations();
   const format = await getFormatter();
   const params = await searchParams;
+
+  // A personal default view applies on a BARE visit only, and by redirecting:
+  // the address bar then matches the screen, so every sort link and the export
+  // carry the same state (the client book does this too).
+  if (Object.keys(params).length === 0) {
+    const preset = await defaultViewFor('stock', actor.id);
+    if (preset?.query) redirect(`/stock?${preset.query}`);
+  }
 
   // Everything physically ON the shelf counts as stock — including boxes
   // reserved for a plan, mid-loading, or unloaded at a customs/distribution
@@ -221,7 +228,20 @@ export default async function StockPage({
     };
   });
   const sorted = sortRows(rows, params.sort, params.dir, SORTABLE);
-  const sortParams = { wh: params.wh, q: params.q };
+  const chosen = parseCols(params.cols);
+  const columns = visibleColumns(STOCK_COLUMNS, chosen, (permission) =>
+    actor.permissions.has(permission),
+  );
+  const sortParams = { wh: params.wh, q: params.q, cols: params.cols };
+  const currentQuery = normalizeQuery(params as Record<string, string | undefined>);
+  const views = await listViewsFor('stock', actor.id);
+  const label = (column: (typeof STOCK_COLUMNS)[number]) => column.label ?? tAny(column.labelKey!);
+  const exportQuery = new URLSearchParams();
+  if (params.wh) exportQuery.set('wh', params.wh);
+  if (params.q) exportQuery.set('q', params.q);
+  if (params.cols) exportQuery.set('cols', params.cols);
+  if (params.sort) exportQuery.set('sort', params.sort);
+  if (params.dir) exportQuery.set('dir', params.dir);
 
   const sumBoxes = rows.reduce((acc, r) => acc + r.boxes, 0);
   const sumKg = rows.reduce((acc, r) => acc + r.stockKg, 0);
@@ -230,28 +250,55 @@ export default async function StockPage({
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-bold">{t('title')}</h1>
-      <form method="get" className="flex gap-2">
-        <select name="wh" className="input !w-28" defaultValue={params.wh ?? ''}>
-          <option value="">{t('allWh')}</option>
-          {allWhs.map((wh) => (
-            <option key={wh.id} value={wh.id}>
-              {wh.code}
-            </option>
-          ))}
-        </select>
-        <input
-          type="search"
-          name="q"
-          defaultValue={params.q}
-          placeholder={t('filterPlaceholder')}
-          className="input flex-1"
+
+      <ViewBar
+        screen="stock"
+        path="/stock"
+        views={views}
+        currentQuery={currentQuery}
+        canPublish={canPublishViews(actor.permissions)}
+      />
+
+      <form method="get" className="relative flex flex-wrap gap-2">
+        {params.cols && <input type="hidden" name="cols" value={params.cols} />}
+        {/* The warehouse and the search share a line of their OWN. Wrapping
+            them into the same row as the buttons left the search box about
+            50 px wide on a phone — the `.input` cascade again (#419): a
+            flex-1 box next to four fixed-width neighbours gets what is left,
+            and on 360 px that is nothing. */}
+        <div className="flex w-full gap-2 md:w-auto md:flex-1">
+          <select name="wh" className="input !w-28 shrink-0" defaultValue={params.wh ?? ''}>
+            <option value="">{t('allWh')}</option>
+            {allWhs.map((wh) => (
+              <option key={wh.id} value={wh.id}>
+                {wh.code}
+              </option>
+            ))}
+          </select>
+          <input
+            type="search"
+            name="q"
+            defaultValue={params.q}
+            placeholder={t('filterPlaceholder')}
+            className="input min-w-0 flex-1"
+          />
+        </div>
+        <ColumnPicker
+          columns={STOCK_COLUMNS.map((column) => ({
+            key: column.key,
+            label: label(column),
+            always: column.always,
+          }))}
+          visible={columns.map((column) => column.key)}
+          query={currentQuery}
         />
         <button type="submit" className="btn-primary">
           🔍
         </button>
         <a
-          href={`/api/reports/stock?wh=${encodeURIComponent(params.wh ?? '')}&q=${encodeURIComponent(params.q ?? '')}`}
+          href={`/api/reports/stock?${exportQuery.toString()}`}
           className="btn-secondary whitespace-nowrap"
+          data-testid="stock-xlsx"
           title="XLSX"
         >
           ⬇️ XLSX
@@ -266,82 +313,114 @@ export default async function StockPage({
         <table className="w-full min-w-[860px] text-sm">
           <thead>
             <tr className="border-b border-line-strong bg-surface-sunken text-left">
-              <th className="p-2">📷</th>
-              <SortTh label={t('colCode')} field="code" sort={params.sort} dir={params.dir} params={sortParams} />
-              <SortTh label={t('colProduct')} field="product" sort={params.sort} dir={params.dir} params={sortParams} />
-              <SortTh label="📦" field="boxes" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
-              <SortTh label="kg/📦" field="perBoxKg" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
-              <SortTh label="Σ kg" field="stockKg" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
-              <SortTh label="m³" field="stockM3" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
-              <SortTh label="kg/m³" field="density" sort={params.sort} dir={params.dir} params={sortParams} className="p-2 text-right" />
-              <SortTh label="📝" field="note" sort={params.sort} dir={params.dir} params={sortParams} />
-              <SortTh label={t('colWh')} field="whCode" sort={params.sort} dir={params.dir} params={sortParams} />
-              <SortTh label={t('colDate')} field="receivedAt" sort={params.sort} dir={params.dir} params={sortParams} />
+              {columns.map((column) =>
+                column.key === 'photo' ? (
+                  <th key={column.key} className="p-2">
+                    {column.label}
+                  </th>
+                ) : (
+                  <SortTh
+                    key={column.key}
+                    label={label(column)}
+                    field={column.key}
+                    sort={params.sort}
+                    dir={params.dir}
+                    params={sortParams}
+                    className={column.numeric ? 'p-2 text-right' : 'p-2'}
+                  />
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row) => {
-              const { line, perBoxKg, stockKg, stockM3, density } = row;
-              return (
-                <tr key={line.lot.id} className="border-b border-line hover:bg-surface-sunken">
-                  <td className="p-1.5">
-                    <div className="flex items-center gap-1">
-                      {/* Bigger than they were (owner: «rasimlar kichkina»).
-                          The table is 860 px wide inside its own sideways
-                          scroll, so on a phone every column is already being
-                          read at arm's length — a 56 px thumbnail told nobody
-                          what was in the box. Tap still opens the full photo. */}
-                      {line.photoId ? (
-                        <LightboxImg
-                          attachmentId={line.photoId}
-                          className="h-20 w-20 rounded-lg object-cover"
-                        />
-                      ) : (
-                        <span className="text-ink-400">—</span>
-                      )}
-                      {line.generalPhotoId && (
-                        <LightboxImg
-                          attachmentId={line.generalPhotoId}
-                          testId="general-photo"
-                          className="h-20 w-20 rounded-lg border-2 border-warn/40 object-cover"
-                        />
-                      )}
-                    </div>
+            {sorted.map((row) => (
+              <tr key={row.line.lot.id} className="border-b border-line hover:bg-surface-sunken">
+                {columns.map((column) => (
+                  <td
+                    key={column.key}
+                    className={cellClass(column.key, column.numeric)}
+                    title={column.key === 'note' ? (row.line.lot.note ?? '') : undefined}
+                  >
+                    {column.key === 'photo' ? (
+                      <div className="flex items-center gap-1">
+                        {/* Bigger than they were (owner: «rasimlar kichkina»).
+                            The table scrolls sideways inside its own box, so on
+                            a phone every column is already being read at arm's
+                            length — a 56 px thumbnail told nobody what was in
+                            the box. Tap still opens the full photo. */}
+                        {row.line.photoId ? (
+                          <LightboxImg
+                            attachmentId={row.line.photoId}
+                            className="h-20 w-20 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <span className="text-ink-400">—</span>
+                        )}
+                        {row.line.generalPhotoId && (
+                          <LightboxImg
+                            attachmentId={row.line.generalPhotoId}
+                            testId="general-photo"
+                            className="h-20 w-20 rounded-lg border-2 border-warn/40 object-cover"
+                          />
+                        )}
+                      </div>
+                    ) : column.key === 'code' ? (
+                      <Link
+                        href={`/stock?lot=${row.line.lot.id}`}
+                        className="font-mono font-extrabold text-brand-700"
+                      >
+                        {row.line.clientCode ?? row.line.marking ?? '❓'}-{row.line.lot.letter}
+                      </Link>
+                    ) : column.key === 'product' ? (
+                      <Link href={`/receipts/${row.line.receiptId}`} className="block truncate">
+                        {row.line.lot.productNameZh}
+                        {row.line.lot.productNameRu && (
+                          <span className="text-ink-500"> ({row.line.lot.productNameRu})</span>
+                        )}
+                      </Link>
+                    ) : column.key === 'boxes' ? (
+                      row.boxes
+                    ) : column.key === 'perBoxKg' ? (
+                      Math.round(row.perBoxKg * 10) / 10
+                    ) : column.key === 'stockKg' ? (
+                      Math.round(row.stockKg)
+                    ) : column.key === 'stockM3' ? (
+                      Math.round(row.stockM3 * 100) / 100
+                    ) : column.key === 'density' ? (
+                      <DensityBadge density={row.density} thresholds={densityThresholds} />
+                    ) : column.key === 'note' ? (
+                      (row.line.lot.note ?? '')
+                    ) : column.key === 'whCode' ? (
+                      row.line.whCode
+                    ) : (
+                      format.dateTime(row.line.receivedAt, { dateStyle: 'short' })
+                    )}
                   </td>
-                  <td className="whitespace-nowrap p-2">
-                    <Link href={`/stock?lot=${line.lot.id}`} className="font-mono font-extrabold text-brand-700">
-                      {line.clientCode ?? line.marking ?? '❓'}-{line.lot.letter}
-                    </Link>
-                  </td>
-                  <td className="max-w-56 p-2">
-                    <Link href={`/receipts/${line.receiptId}`} className="block truncate">
-                      {line.lot.productNameZh}
-                      {line.lot.productNameRu && (
-                        <span className="text-ink-500"> ({line.lot.productNameRu})</span>
-                      )}
-                    </Link>
-                  </td>
-                  <td className="p-2 text-right font-semibold">{row.boxes}</td>
-                  <td className="p-2 text-right">{Math.round(perBoxKg * 10) / 10}</td>
-                  <td className="p-2 text-right font-semibold">{Math.round(stockKg)}</td>
-                  <td className="p-2 text-right">{Math.round(stockM3 * 100) / 100}</td>
-                  <td className="p-2 text-right">
-                    <DensityBadge density={density} thresholds={densityThresholds} />
-                  </td>
-                  <td className="max-w-32 truncate p-2 text-xs text-ink-500" title={line.lot.note ?? ''}>
-                    {line.lot.note ?? ''}
-                  </td>
-                  <td className="p-2 font-mono font-bold">{line.whCode}</td>
-                  <td className="whitespace-nowrap p-2 text-ink-500">
-                    {format.dateTime(line.receivedAt, { dateStyle: 'short' })}
-                  </td>
-                </tr>
-              );
-            })}
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
         {lines.length === 0 && <p className="p-4 text-sm text-ink-500">{t('empty')}</p>}
       </div>
     </div>
   );
+}
+
+/**
+ * The per-column cell class.
+ *
+ * Kept beside the table rather than on the ColumnDef: these are this screen's
+ * typography (a truncating note, a monospaced warehouse code), not facts about
+ * what a column IS — another list showing the same column may want neither.
+ */
+function cellClass(key: string, numeric?: boolean): string {
+  if (key === 'photo') return 'p-1.5';
+  if (numeric) return key === 'boxes' || key === 'stockKg' ? 'p-2 text-right font-semibold' : 'p-2 text-right';
+  if (key === 'code') return 'whitespace-nowrap p-2';
+  if (key === 'product') return 'max-w-56 p-2';
+  if (key === 'note') return 'max-w-32 truncate p-2 text-xs text-ink-500';
+  if (key === 'whCode') return 'p-2 font-mono font-bold';
+  if (key === 'receivedAt') return 'whitespace-nowrap p-2 text-ink-500';
+  return 'p-2';
 }

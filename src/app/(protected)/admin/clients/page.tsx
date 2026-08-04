@@ -13,9 +13,14 @@ import {
   readFilters,
 } from '@/modules/platform/fields/filter';
 import { sortRows, SortTh } from '@/components/sort-th';
+import { parseCols, visibleColumns, type ColumnDef } from '@/modules/platform/lists/columns';
+import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
+import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
+import { ViewBar } from '@/components/list/view-bar';
+import { ColumnPicker } from '@/components/list/column-picker';
 import { CustomFilters } from './custom-filters';
 import { phoneNeedle } from '@/modules/platform/clients/phone';
-import { CLIENT_LIST_CAP } from '@/modules/platform/clients/list';
+import { CLIENT_COLUMNS, CLIENT_LIST_CAP } from '@/modules/platform/clients/list';
 
 /**
  * The client book, filterable and sortable by the owner's own fields.
@@ -25,7 +30,12 @@ import { CLIENT_LIST_CAP } from '@/modules/platform/clients/list';
  * first 200 clients rather than all of them, while sorting after it orders
  * exactly the rows being shown. This is the same `sortRows` every other table
  * in the app uses — a custom column is just another allowed sort key.
+ *
+ * Round 57 made this the first screen on the shared list engine: the columns
+ * are data rather than JSX, so they can be chosen, and everything the screen
+ * reads out of the URL can be saved under a name (`ViewBar`).
  */
+
 export default async function ClientsPage({
   searchParams,
 }: {
@@ -41,14 +51,39 @@ export default async function ClientsPage({
   const t = await getTranslations('clients');
   const tf = await getTranslations('fields');
   const tc = await getTranslations('common');
+  const tl = await getTranslations('lists');
+  // No namespace: a ColumnDef carries its FULL key, so one call resolves both
+  // the core columns here and the ones any other screen declares.
+  const tAny = await getTranslations();
   const params = await searchParams;
+
+  // A personal default view is applied on a BARE visit only, and by
+  // redirecting rather than rendering: the address bar then matches what is
+  // on screen, so every sort link, filter and export carries the same state.
+  if (Object.keys(params).length === 0) {
+    const preset = await defaultViewFor('clients', actor.id);
+    if (preset?.query) redirect(`/admin/clients?${preset.query}`);
+  }
+
   const q = typeof params.q === 'string' ? params.q : undefined;
   const sort = typeof params.sort === 'string' ? params.sort : undefined;
   const dir = typeof params.dir === 'string' ? params.dir : undefined;
 
   const fields = await listFields('client');
-  const columns = listColumns(fields);
+  const customColumns = listColumns(fields);
   const filters = readFilters(params, fields);
+
+  // Core and custom columns go through ONE picker: the custom ones are added
+  // to the same descriptor list rather than living in a second mechanism.
+  const allColumns: ColumnDef[] = [
+    ...CLIENT_COLUMNS,
+    ...customColumns.map((field) => ({ key: `cf_${field.id}`, label: field.label })),
+  ];
+  const chosen = parseCols(params.cols);
+  const columns = visibleColumns(allColumns, chosen, (permission) =>
+    actor.permissions.has(permission),
+  );
+  const label = (column: ColumnDef) => column.label ?? tAny(column.labelKey!);
 
   const conditions: SQL[] = [];
   if (q) {
@@ -95,17 +130,24 @@ export default async function ClientsPage({
       name: row.client.name,
       active: row.client.active,
       manager: row.managerName ?? '',
+      phone: Array.isArray(row.client.phones) ? (row.client.phones as string[]).join(', ') : '',
     })),
-    columns,
+    customColumns,
   );
-  const sortable = ['code', 'name', 'manager', ...columns.map((field) => `cf_${field.id}`)];
+  const sortable = allColumns.map((column) => column.key);
   const rows = sortRows(decorated, sort, dir, sortable);
 
   // Carry every filter through a sort click, and vice versa.
   const carried: Record<string, string | undefined> = { q };
   for (const filter of filters) carried[`cf_${filter.fieldId}`] = filter.value;
+  if (chosen !== null) carried.cols = chosen.join(',');
   const exportQuery = new URLSearchParams();
   for (const [key, value] of Object.entries(carried)) if (value) exportQuery.set(key, value);
+  if (sort) exportQuery.set('sort', sort);
+  if (dir) exportQuery.set('dir', dir);
+
+  const currentQuery = normalizeQuery(params);
+  const views = await listViewsFor('clients', actor.id);
 
   return (
     <div className="space-y-4">
@@ -116,7 +158,18 @@ export default async function ClientsPage({
         </Link>
       </div>
 
+      <ViewBar
+        screen="clients"
+        path="/admin/clients"
+        views={views}
+        currentQuery={currentQuery}
+        canPublish={canPublishViews(actor.permissions)}
+      />
+
       <form method="get" className="space-y-2">
+        {/* The column choice rides the same GET form so typing a filter does
+            not silently drop it. */}
+        {chosen !== null && <input type="hidden" name="cols" value={chosen.join(',')} />}
         <input
           type="search"
           name="q"
@@ -124,9 +177,9 @@ export default async function ClientsPage({
           placeholder={tc('search')}
           className="input max-w-md"
         />
-        {columns.length > 0 && (
+        {customColumns.length > 0 && (
           <CustomFilters
-            fields={columns.map((field) => ({
+            fields={customColumns.map((field) => ({
               id: field.id,
               label: field.label,
               type: field.type,
@@ -137,13 +190,20 @@ export default async function ClientsPage({
         )}
       </form>
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+      <div className="relative flex flex-wrap items-center gap-2 text-sm">
+        <ColumnPicker
+          columns={allColumns.map((column) => ({
+            key: column.key,
+            label: label(column),
+            always: column.always,
+          }))}
+          visible={columns.map((column) => column.key)}
+          query={currentQuery}
+        />
         <span className="num font-semibold">
           {rows.length < total ? t('shownOf', { shown: rows.length, total }) : total}
         </span>
-        {rows.length < total && (
-          <span className="text-xs text-warn">{t('refineSearch')}</span>
-        )}
+        {rows.length < total && <span className="text-xs text-warn">{t('refineSearch')}</span>}
         <a
           href={`/api/clients/xlsx?${exportQuery.toString()}`}
           data-testid="clients-xlsx"
@@ -153,78 +213,53 @@ export default async function ClientsPage({
         </a>
       </div>
 
-      {/* A table only once there is something to line up: with no custom
-          columns the cards read better on a phone. */}
-      {columns.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-max text-sm">
-            <thead className="border-b border-line text-left">
-              <tr>
-                <SortTh label={t('code')} field="code" sort={sort} dir={dir} params={carried} />
-                <SortTh label={t('name')} field="name" sort={sort} dir={dir} params={carried} />
+      {/* One table, always: with a column picker beside it the card grid was
+          a second layout that could not show what the picker had chosen. */}
+      <div className="table-wrap">
+        <table className="table" data-testid="clients-table">
+          <thead>
+            <tr>
+              {columns.map((column) => (
                 <SortTh
-                  label={t('salesManager')}
-                  field="manager"
+                  key={column.key}
+                  label={label(column)}
+                  field={column.key}
                   sort={sort}
                   dir={dir}
                   params={carried}
+                  className=""
                 />
-                {columns.map((field) => (
-                  <SortTh
-                    key={field.id}
-                    label={field.label}
-                    field={`cf_${field.id}`}
-                    sort={sort}
-                    dir={dir}
-                    params={carried}
-                  />
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className={`border-b border-line ${row.active ? '' : 'opacity-50'}`}>
-                  <td className="p-2">
-                    <Link
-                      href={`/admin/clients/${row.id}`}
-                      className="font-mono font-extrabold text-brand-700"
-                    >
-                      {row.code}
-                    </Link>
-                  </td>
-                  <td className="p-2">{row.name}</td>
-                  <td className="p-2 text-ink-700">{row.manager || t('noManager')}</td>
-                  {columns.map((field) => (
-                    <td key={field.id} className="p-2">
-                      {cell(row[`cf_${field.id}`])}
-                    </td>
-                  ))}
-                </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="grid gap-3 md:grid-cols-2">
-          {rows.map((row) => (
-            <Link
-              key={row.id}
-              href={`/admin/clients/${row.id}`}
-              className={`card block hover:bg-surface-sunken ${row.active ? '' : 'opacity-50'}`}
-            >
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-lg font-extrabold text-brand-700">{row.code}</span>
-                <span className="font-semibold">{row.name}</span>
-              </div>
-              <div className="mt-1 text-sm text-ink-700">
-                {t('salesManager')}: {row.manager || t('noManager')}
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className={row.active ? '' : 'opacity-50'}>
+                {columns.map((column) =>
+                  column.key === 'code' ? (
+                    <td key={column.key}>
+                      <Link
+                        href={`/admin/clients/${row.id}`}
+                        className="font-mono font-extrabold text-brand-700"
+                      >
+                        {row.code}
+                      </Link>
+                    </td>
+                  ) : column.key === 'manager' ? (
+                    <td key={column.key} className="text-ink-700">
+                      {row.manager || t('noManager')}
+                    </td>
+                  ) : (
+                    <td key={column.key}>{cell(row[column.key])}</td>
+                  ),
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {rows.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
-      {columns.length === 0 && (
+      {customColumns.length === 0 && (
         <p className="text-xs text-ink-400">
           {tf('noColumnsHint')}{' '}
           <Link href="/admin/fields" className="underline">
@@ -232,12 +267,13 @@ export default async function ClientsPage({
           </Link>
         </p>
       )}
+      <p className="text-xs text-ink-400">{tl('viewsHint')}</p>
     </div>
   );
 }
 
 function cell(value: unknown): string {
-  if (value === null || value === undefined) return '—';
+  if (value === null || value === undefined || value === '') return '—';
   if (typeof value === 'boolean') return value ? '✓' : '—';
   return String(value);
 }

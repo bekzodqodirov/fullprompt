@@ -1712,5 +1712,28 @@
     "proof": "Receipt / screenshot",
     "proofNote": "Note (required when there is no file)",
     "proofRequired": "A file or a note is required"
+  },
+  "lists": {
+    "allRecords": "All",
+    "saveCurrent": "Save this view",
+    "namePlaceholder": "View name",
+    "save": "Save",
+    "makeDefault": "Open this view by default",
+    "makePublic": "Show to everyone",
+    "publicView": "Shared view",
+    "pin": "Pin",
+    "delete": "Delete",
+    "columns": "Columns",
+    "resetColumns": "Reset to default",
+    "viewsHint": "Set the filters and columns, then save them as a view — it stays in this list.",
+    "error": {
+      "unauthenticated": "Sign in again",
+      "forbidden": "Not allowed",
+      "not_found": "View not found",
+      "name_required": "Type a name",
+      "duplicate_name": "A view with that name exists",
+      "server_behind": "The server is not updated yet — ask for an update",
+      "failed": "Could not save"
+    }
   }
 }

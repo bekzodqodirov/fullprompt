@@ -407,6 +407,13 @@
       "when": 1785190000026,
       "tag": "0057_device_silent_notified",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1785190000027,
+      "tag": "0058_list_views",
+      "breakpoints": true
     }
   ]
 }
