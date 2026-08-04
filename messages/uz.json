@@ -1746,6 +1746,16 @@
       "duplicate_name": "Bunday nomli ko'rinish bor",
       "server_behind": "Server hali yangilanmagan — yangilashni so'rang",
       "failed": "Saqlanmadi"
-    }
+    },
+    "selected": "Tanlandi: {n}",
+    "moveTo": "Ko'chirish…",
+    "assignTo": "Biriktirish…",
+    "clearSelection": "Belgilashni bekor qilish",
+    "lostReason": "Yo'qotish sababi",
+    "bulkDone": "Bajarildi: {done}, bo'lmadi: {failed}",
+    "bulkSomeRefused": "sababini ko'rish uchun kartani oching",
+    "select": "Tanlash",
+    "doMove": "Ko'chirish",
+    "doAssign": "Biriktirish"
   }
 }

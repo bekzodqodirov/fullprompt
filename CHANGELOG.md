@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## Ommaviy amallar: bir nechta leadni birdan ko'chirish — 2026-08-04
+
+«Oson UI» rejasining 2-bosqichi, ikkinchi yarmi.
+
+**Kartalarni belgilash.** Lidlar va bitimlar doskasidagi har kartada endi
+belgilash katagi bor. Bittasini belgilaganingizdan keyin pastda amallar
+paneli chiqadi.
+
+**Nima qilish mumkin.** Belgilanganlarni: bitta etapga **ko'chirish** (agar
+«yo'qotildi» etapi tanlansa — sabab majburiy, siz shunday deb tanlagansiz);
+lidlarni bitta hodimga **biriktirish** (bu faqat «hamma lidlarni ko'rish»
+huquqi borlarda ko'rinadi — o'z lidini boshqaga berish rahbar ishi).
+Bitimlarda biriktirish yo'q: bitim egasini almashtirish suhbat talab qiladi,
+ommaviy ish emas.
+
+**Halol hisobot.** Panel «Bajarildi: 19, bo'lmadi: 1» deb yozadi. Nega
+bo'lmagani kartada ko'rinadi. Bitta karta rad etilsa, qolgan 19 tasi
+baribir bajariladi — yarim yo'lda to'xtash eng yomoni. Muvaffaqiyatsizlar
+belgilangan holicha qoladi, qaytadan urinib ko'rishingiz uchun.
+
+**Muhim ichki qoida.** Har bir karta odatdagi yo'ldan ko'chadi — ya'ni tarix
+yoziladi va **avtomatlashtirish qoidalari ishlaydi**. Tezlik uchun «hammasini
+birdan» qilib yuborilganda qoidalar jim qolar edi.
+
+Tekshiruv: 940 ta ichki test (7 tasi yangi; ikkita qoida himoyasiz qolganda
+qizarishi isbotlangan), 108 ta brauzer testi. Bazaga o'zgarish yo'q.
+
+Telefon ekranida ko'rib topilgan va tuzatilgan: bajarilgandan keyin panel
+javobni ko'rsatmasdan yo'qolib ketardi; ikkita tugma bir xil «Применить»
+deb nomlangan edi.
+
 ## Qidiruv: butun tizim bo'ylab, Ctrl+K bilan — 2026-08-04
 
 «Oson UI» rejasining 2-bosqichi, birinchi yarmi.

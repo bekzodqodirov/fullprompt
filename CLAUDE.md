@@ -117,14 +117,14 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batch 1 + 2a SHIPPED, 2b–5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1, 2a, 2c SHIPPED; 2b + 3–5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-933 unit/integration + 108 e2e, verified in CI's order on a fresh database.
+940 unit/integration + 111 e2e, verified in CI's order on a fresh database.
 Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1200,6 +1200,30 @@ passes because the thing under test never appeared proves nothing. NOTED, not
 chased: every page logs one React #418 hydration warning, with and without
 this round's changes — pre-existing, wants its own round. **Batch 2 second
 half (quick-create modals + bulk actions) is next.**
+
+Round 59 — **UX batch 2c, bulk actions** (#495-496). Ticks on lead and deal
+cards (`kanban.tsx` grows an optional `selection` prop — a prop, not internal
+state, because only the screen knows what «assign» means; `SelectBox` stops
+propagation AND prevents default, since the desktop card IS the anchor and
+carries the drag handlers). `BulkBar` (`components/list/bulk-bar.tsx`) over
+the board. Actions loop inside ONE `run()` — one authorize, one revalidate,
+one rules kick — but the WRITE stays per row through `moveLead`/`moveDeal`/
+`setLeadOwner`, the only paths that audit and emit the stage events phase-7
+and the cargo-trigger listen to. Answers COUNTS («19 done, 1 refused»); a
+refusal never abandons the rest; the selection clears only on a clean run.
+New `setLeadOwner` — narrow on purpose (`updateLead` replaces every field)
+with a no-op guard so a sweep does not write twenty empty audit rows. Lost
+reason still mandatory through the bulk path. Owner assign is offered only
+under `crm.leads.view_all`; deals get no bulk assign by design. Red-proofs
+×2. FOUND IN A SCREENSHOT: `if (count === 0) return null` unmounted the bar
+at the moment it had an answer — it now survives on `count || result`; and
+both buttons said «Apply» (now «Ko'chirish» / «Biriktirish»). E2E LESSONS:
+the funnel renders BOTH board shapes into the DOM (CSS toggles them), so
+specs scope to `funnel-mobile` or every card is found twice; the lost column
+is chosen by `option[data-kind="lost"]`, never by position, because the owner
+names his own funnel; `audit_log` refuses DELETE by database rule, so a spec
+cleans up leads and events and LEAVES the audit trail. **Batch 2b
+(quick-create modals) is the one piece of batch 2 still open.**
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

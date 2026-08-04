@@ -153,14 +153,19 @@ Guardrails: a PUBLIC saved view is CONFIGURATION in e2e terms (#183) — any
 spec that creates one deletes it; screenshot pass at 360×800 (the filter
 row is exactly the kind of thing that rescales a phone page, #400).
 
-### Batch 2 — Speed — **(a) SHIPPED (round 58); (b) and (c) next**
+### Batch 2 — Speed — **(a) SHIPPED r58, (c) SHIPPED r59; (b) still open**
 
 Shipped in (a): `wms/search/{query,service}.ts` (pure parse + one scoped
 service), `/api/search`, `components/search-palette.tsx` (⌘K + the app-bar
 icon), `/search` rewritten onto the same function. The scoping the old page
 never had is the load-bearing part — see DECISIONS #492.
 
-Still to build: **(b) quick-create modals** and **(c) bulk actions**. Notes
+Shipped in (c): ticks on lead/deal cards via the shared board's `selection`
+prop, `components/list/bulk-bar.tsx`, and bulk actions that loop inside one
+`run()` while writing per row through `moveLead`/`moveDeal`/`setLeadOwner`.
+See DECISIONS #495-496.
+
+Still to build: **(b) quick-create modals**. Notes
 gathered while reading, so the next session does not re-learn them: three of
 the four create forms REDIRECT on success (`createLeadAction`,
 `createDealAction`, `createClientAction`) which is wrong for "create and

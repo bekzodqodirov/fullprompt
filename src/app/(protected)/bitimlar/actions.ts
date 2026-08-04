@@ -108,6 +108,37 @@ export async function updateDealAction(
   return run((ctx) => updateDeal(id, parsed.data, ctx));
 }
 
+/**
+ * Move several deals at once — one authorize, one revalidate, one rules kick.
+ *
+ * Every deal still goes through `moveDeal`, which is the only path that
+ * audits and emits `DealStageChanged`; the cargo-trigger engine and the
+ * phase-7 rules both listen to it. A row that refuses is counted, not fatal.
+ */
+export async function bulkMoveDealsAction(
+  ids: string[],
+  stageId: string,
+  reason: string,
+): Promise<{ ok?: boolean; done?: number; failed?: number; error?: string }> {
+  if (ids.length === 0) return { ok: true, done: 0, failed: 0 };
+  let done = 0;
+  let failed = 0;
+  let error: string | undefined;
+  const outcome = await run(async (ctx) => {
+    for (const id of ids) {
+      try {
+        await moveDeal(id, stageId, ctx, reason);
+        done += 1;
+      } catch (err) {
+        failed += 1;
+        if (!error) error = err instanceof DealError ? err.code : 'failed';
+      }
+    }
+  });
+  if (outcome.error) return { error: outcome.error };
+  return { ok: failed === 0, done, failed, ...(error ? { error } : {}) };
+}
+
 export async function moveDealAction(
   id: string,
   stageId: string,

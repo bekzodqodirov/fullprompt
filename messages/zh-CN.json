@@ -1746,6 +1746,16 @@
       "duplicate_name": "已有同名视图",
       "server_behind": "服务器尚未更新——请要求更新",
       "failed": "保存失败"
-    }
+    },
+    "selected": "已选 {n}",
+    "moveTo": "移动到…",
+    "assignTo": "分配给…",
+    "clearSelection": "取消选择",
+    "lostReason": "丢单原因",
+    "bulkDone": "完成 {done}，失败 {failed}",
+    "bulkSomeRefused": "打开卡片查看原因",
+    "select": "选择",
+    "doMove": "移动",
+    "doAssign": "分配"
   }
 }

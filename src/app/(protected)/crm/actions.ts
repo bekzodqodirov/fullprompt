@@ -15,6 +15,7 @@ import {
   deleteStage,
   leadSchema,
   moveLead,
+  setLeadOwner,
   reorderStages,
   saveSource,
   saveStage,
@@ -30,6 +31,22 @@ import { announceMentions } from '@/modules/wms/crm/internal-chat';
 
 export interface CrmFormState {
   ok?: boolean;
+  error?: string;
+}
+
+/**
+ * What a bulk press did, row by row.
+ *
+ * A count rather than a bare ok: twenty cards can include one that has moved
+ * on since the board was drawn, and «19 ta ko'chdi, 1 tasi bo'lmadi» is the
+ * truth. A single `error` on the whole batch would either hide the nineteen
+ * that worked or claim a failure that did not happen.
+ */
+export interface BulkState {
+  ok?: boolean;
+  done?: number;
+  failed?: number;
+  /** The first refusal's code — they are almost always the same one. */
   error?: string;
 }
 
@@ -125,6 +142,58 @@ export async function moveLeadAction(
   reason: string,
 ): Promise<CrmFormState> {
   return run('crm.leads', (ctx) => moveLead(id, stageId, reason, ctx));
+}
+
+/**
+ * Move several leads at once.
+ *
+ * ONE `run()` around the loop, not one per id: that means one permission
+ * check, one revalidate and one kick of the rules worker, instead of twenty
+ * of each. What is NOT batched is the write — every lead goes through
+ * `moveLead`, because that is the only path that writes the audit row and
+ * emits `LeadStageChanged`, which the phase-7 rules listen to. A bare
+ * `UPDATE ... WHERE id IN (...)` would be a silent third stage-write path,
+ * exactly the shape round 18 closed.
+ */
+export async function bulkMoveLeadsAction(
+  ids: string[],
+  stageId: string,
+  reason: string,
+): Promise<BulkState> {
+  return runBulk('crm.leads', ids, (id, ctx) => moveLead(id, stageId, reason, ctx));
+}
+
+/** Hand several leads to one person. */
+export async function bulkAssignLeadsAction(ids: string[], ownerId: string): Promise<BulkState> {
+  return runBulk('crm.leads', ids, (id, ctx) => setLeadOwner(id, ownerId || null, ctx));
+}
+
+async function runBulk(
+  permission: Permission,
+  ids: string[],
+  work: (id: string, ctx: { actorId: string } & Record<string, unknown>) => Promise<unknown>,
+): Promise<BulkState> {
+  if (ids.length === 0) return { ok: true, done: 0, failed: 0 };
+  let done = 0;
+  let failed = 0;
+  let error: string | undefined;
+  const outcome = await run(permission, async (ctx) => {
+    for (const id of ids) {
+      try {
+        await work(id, ctx);
+        done += 1;
+      } catch (err) {
+        // One row's refusal must not abandon the other nineteen — a bulk
+        // press that stops halfway leaves the board disagreeing with the
+        // database and nobody able to tell where it stopped.
+        failed += 1;
+        if (!error && (err instanceof CrmError || err instanceof ClientError)) error = err.code;
+        if (!error) error = 'failed';
+      }
+    }
+  });
+  if (outcome.error) return { error: outcome.error };
+  return { ok: failed === 0, done, failed, ...(error ? { error } : {}) };
 }
 
 export async function convertLeadAction(

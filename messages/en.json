@@ -1746,6 +1746,16 @@
       "duplicate_name": "A view with that name exists",
       "server_behind": "The server is not updated yet — ask for an update",
       "failed": "Could not save"
-    }
+    },
+    "selected": "{n} selected",
+    "moveTo": "Move to…",
+    "assignTo": "Assign to…",
+    "clearSelection": "Clear selection",
+    "lostReason": "Lost reason",
+    "bulkDone": "Done {done}, refused {failed}",
+    "bulkSomeRefused": "open the card to see why",
+    "select": "Select",
+    "doMove": "Move",
+    "doAssign": "Assign"
   }
 }
