@@ -129,7 +129,8 @@ export default async function StockPage({
         <div className="space-y-1">
           {lotRows.map(({ lot, receiptNumber, whCode, inStock }) => (
             <Link
-              key={lot.id}
+              // Same reason as the table below: grouped by lot AND warehouse.
+              key={`${lot.id}-${whCode}`}
               href={`/stock?lot=${lot.id}`}
               className="card block !p-3 hover:bg-surface-sunken"
             >
@@ -334,7 +335,15 @@ export default async function StockPage({
           </thead>
           <tbody>
             {sorted.map((row) => (
-              <tr key={row.line.lot.id} className="border-b border-line hover:bg-surface-sunken">
+              // The key carries the WAREHOUSE too. The query groups by lot AND
+              // warehouse, so a lot whose boxes sit in two places is two rows —
+              // three lots on the owner's own data — and keying them both on
+              // the lot id gave React two children with one key, which it is
+              // free to duplicate or omit.
+              <tr
+                key={`${row.line.lot.id}-${row.line.whCode}`}
+                className="border-b border-line hover:bg-surface-sunken"
+              >
                 {columns.map((column) => (
                   <td
                     key={column.key}
