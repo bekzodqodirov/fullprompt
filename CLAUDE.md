@@ -117,14 +117,14 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batch 1 SHIPPED, 2–5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batch 1 + 2a SHIPPED, 2b–5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-915 unit/integration + 104 e2e, verified in CI's order on a fresh database.
+933 unit/integration + 108 e2e, verified in CI's order on a fresh database.
 Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1170,6 +1170,36 @@ m9e's `getByLabel(city)` now scopes to `custom-filters`: the picker names
 every column too. NOT green here: m1×2, m2×1, m9h — all the photo-upload path,
 all identical with this round's changes stashed (no image service in this
 container; m9h cascades off m1's receipt).
+
+Round 58 — **UX batch 2, first half: the search** (#492-494, owner «2-bosqichni
+boshlayver»). READING `/search` first found the real story: its whole guard was
+`if (!actor) redirect('/login')` and its four queries had NO scoping — a Yiwu
+operator could find a Tashkent box and anyone could page the client book, since
+spec §12. The bot's rule («a read wider than the screens is a back door»,
+`wms/bot/lookup.ts`) is now the search's: `wms/search/service.ts` asks each
+group its own screen's question — warehouseScope on receipts/lots, boxes by
+`inScope` on the box OR its batch's TWO ends (transit belongs to no warehouse),
+the funnel's ownership rule for leads+deals, the batch screen's five-permission
+door, `finance.view` for partners — and a group the actor lacks is NOT QUERIED
+rather than filtered. `SearchHit` has no money field, tested structurally.
+Widened to leads/deals/batches/partners/phone→client. Red-proofs ×3.
+**⌘K palette** (`components/search-palette.tsx`): portal (header's
+backdrop-blur, dock's lesson), 220 ms debounce with stale-answer guard, closes
+on pathname, Escape. THE CLICK: wrapping the app-bar `<Link>` in
+`onClick={preventDefault}` did NOTHING — Next's Link handles the click on the
+anchor first, so the icon navigated and the panel never opened;
+**`onClickCapture`** is the only phase that can win (Link skips its work when
+already default-prevented). The Link stays underneath = the no-JS door, and
+`/search` renders the same hits from the same function. `/api/search` is
+`private, no-store`. BROKE + FIXED: m9z-nav-progress measured the bar through
+that very search link — now the tab bar's `/bugun`, with `:visible` (the
+sidebar renders the same href first and is `hidden md:block`). The ⌘K spec
+passed alone and failed in the full suite (listener attached by an effect) —
+it retries with `toPass()`. TEST LESSON, learned twice this round: a test that
+passes because the thing under test never appeared proves nothing. NOTED, not
+chased: every page logs one React #418 hydration warning, with and without
+this round's changes — pre-existing, wants its own round. **Batch 2 second
+half (quick-create modals + bulk actions) is next.**
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

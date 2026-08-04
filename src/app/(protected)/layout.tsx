@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { logoutAction } from '@/modules/platform/auth/actions';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { SearchPalette } from '@/components/search-palette';
 import { readTheme } from '@/modules/platform/theme/theme';
 import { Icon } from '@/components/ui/icon';
 import { UpdateBanner } from '@/components/update-banner';
@@ -85,13 +86,18 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           <div className="min-w-0 flex-1" />
           {/* Search is a tool, not a destination (owner): it lives in the bar
               at every width instead of taking a tile and a sidebar row. */}
-          <Link
-            href="/search"
-            aria-label={tSearch('title')}
-            className="btn-ghost btn-icon text-ink-700"
-          >
-            <Icon name="search" />
-          </Link>
+          {/* The palette wraps the link rather than replacing it: with no
+              JavaScript, or before hydration, the icon still opens a page
+              that works. Ctrl/⌘+K reaches the same panel from anywhere. */}
+          <SearchPalette>
+            <Link
+              href="/search"
+              aria-label={tSearch('title')}
+              className="btn-ghost btn-icon text-ink-700"
+            >
+              <Icon name="search" />
+            </Link>
+          </SearchPalette>
           {/* Chat and tasks from ANY page (owner, items 5+7). The chat tab
               follows the conversation gate; tasks belong to everyone. */}
           <Dock canChat={canReadTg(actor)} />

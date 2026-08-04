@@ -153,9 +153,27 @@ Guardrails: a PUBLIC saved view is CONFIGURATION in e2e terms (#183) — any
 spec that creates one deletes it; screenshot pass at 360×800 (the filter
 row is exactly the kind of thing that rescales a phone page, #400).
 
-### Batch 2 — Speed (~2 rounds)
+### Batch 2 — Speed — **(a) SHIPPED (round 58); (b) and (c) next**
 
-(a) Search: extend `/search` with leads (name/phone), deals (code/title),
+Shipped in (a): `wms/search/{query,service}.ts` (pure parse + one scoped
+service), `/api/search`, `components/search-palette.tsx` (⌘K + the app-bar
+icon), `/search` rewritten onto the same function. The scoping the old page
+never had is the load-bearing part — see DECISIONS #492.
+
+Still to build: **(b) quick-create modals** and **(c) bulk actions**. Notes
+gathered while reading, so the next session does not re-learn them: three of
+the four create forms REDIRECT on success (`createLeadAction`,
+`createDealAction`, `createClientAction`) which is wrong for "create and
+stay" — only the task form is already modal-ready; all four are uncontrolled
+`defaultValue` forms, so a refusal inside a modal blanks what was typed
+unless they are made controlled (#377/#419/#466). Leads and deals live on
+KANBAN boards, not lists — bulk selection lands on the cards
+(`cardTestId` `lead-card` / `deal-card`), and `crates/new/crate-builder.tsx`
+is the existing multi-select pattern to copy. A bulk stage move must be ONE
+`run(...)` wrapping a loop over `moveLead`/`moveDeal` (one authorize, one
+revalidate, one event kick), never a bare UPDATE.
+
+The original scope of (a): extend `/search` with leads (name/phone), deals (code/title),
 batches (code), kontragent, and phone-number → client; add a Ctrl+K
 overlay (desktop) and the app-bar icon opening the same thing (mobile),
 debounced live results. THE RULE (round 36, the bot's law): search returns

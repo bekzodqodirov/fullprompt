@@ -480,7 +480,19 @@
     "receipts": "收货单",
     "boxesGroup": "箱子",
     "lotsGroup": "批次",
-    "title": "搜索"
+    "title": "搜索",
+    "close": "关闭",
+    "seeAll": "查看全部结果",
+    "kind": {
+      "client": "客户",
+      "lead": "线索",
+      "deal": "交易",
+      "batch": "批次",
+      "partner": "往来单位",
+      "box": "箱子",
+      "receipt": "入库",
+      "lot": "货物"
+    }
   },
   "crates": {
     "title": "木箱",

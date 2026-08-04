@@ -480,7 +480,19 @@
     "receipts": "Receipts",
     "boxesGroup": "Boxes",
     "lotsGroup": "Lots",
-    "title": "Search"
+    "title": "Search",
+    "close": "Close",
+    "seeAll": "See all results",
+    "kind": {
+      "client": "Clients",
+      "lead": "Leads",
+      "deal": "Deals",
+      "batch": "Batches",
+      "partner": "Counterparties",
+      "box": "Boxes",
+      "receipt": "Receipts",
+      "lot": "Goods"
+    }
   },
   "crates": {
     "title": "Crates",

@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## Qidiruv: butun tizim bo'ylab, Ctrl+K bilan — 2026-08-04
+
+«Oson UI» rejasining 2-bosqichi, birinchi yarmi.
+
+**Qidiruv kengaydi.** Avval faqat mijoz, karobka, prixod va tovar nomini
+topardi. Endi qo'shildi: **lidlar** (ism, firma, telefon), **bitimlar** (kod,
+nom, mijoz kodi), **partiyalar** (kod, mashina raqami, haydovchi),
+**kontragentlar**, va **telefon raqami bo'yicha mijoz** (oxirgi 9 raqam —
+formati qanday yozilganidan qat'i nazar).
+
+**Ctrl+K.** Kompyuterda istalgan ekranda Ctrl+K (Mac'da ⌘K) bossangiz qidiruv
+oynasi sahifa ustida ochiladi — sahifadan chiqmaysiz. Telefonda yuqoridagi
+qidiruv belgisini bossangiz o'sha oyna ochiladi. Yozgan sari natija chiqadi;
+strelka bilan tanlab Enter bosasiz. Escape yopadi.
+
+**Muhim tuzatish — qidiruv juda ko'p narsani ko'rsatardi.** Tekshirganimda
+ma'lum bo'ldiki, eski qidiruvda **hech qanday chegara yo'q ekan**: Yivudagi
+skladchi Toshkentdagi karobkani ham topa olardi, va tizimga kirgan har kim
+butun mijozlar kitobini varaqlay olardi. Endi qidiruv har bir turdagi
+ma'lumot uchun **o'sha ekranning o'z qoidasini** so'raydi: skladchi faqat o'z
+skladini, sotuvchi faqat o'z lidlarini (agar «hammasini ko'rish» huquqi
+bo'lmasa), kontragentlarni faqat moliya huquqi borlar. Huquqi yo'q bo'lsa —
+umuman qidirilmaydi ham. Va qidiruv natijasida **hech qachon pul ko'rinmaydi**
+— natija sizni kartaga olib boradi, savolga javob bermaydi.
+
+Tekshiruv: 933 ta ichki test (18 tasi yangi; uchta chegara himoyasiz
+qolganda qizarishi isbotlangan), 105 ta brauzer testi. Bu konteynerda 3 ta
+brauzer testi o'tmadi — rasm yuklash yo'lida, o'zgarishlarimizsiz ham
+o'tmaydi.
+
+Bazaga o'zgarish yo'q.
+
 ## Ro'yxatlar: saqlanadigan ko'rinishlar, ustun tanlash, Excel — 2026-08-04
 
 «Oson UI» rejasining 1-bosqichi (`docs/CRM-UX.md`). Mijozlar kitobi, sklad

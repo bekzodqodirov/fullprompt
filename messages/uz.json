@@ -480,7 +480,19 @@
     "receipts": "Qabullar",
     "boxesGroup": "Karobkalar",
     "lotsGroup": "Partiyalar",
-    "title": "Qidiruv"
+    "title": "Qidiruv",
+    "close": "Yopish",
+    "seeAll": "Hamma natijani ko'rish",
+    "kind": {
+      "client": "Mijozlar",
+      "lead": "Lidlar",
+      "deal": "Bitimlar",
+      "batch": "Partiyalar",
+      "partner": "Kontragentlar",
+      "box": "Karobkalar",
+      "receipt": "Prixodlar",
+      "lot": "Tovarlar"
+    }
   },
   "crates": {
     "title": "Yashiklar",
