@@ -125,9 +125,18 @@ The original scope, for reference:
 
 Owner-visible: quick-filter row (hodim / etap / sklad / date range as fits
 each list) · sort by any column header · column chooser incl. custom
-fields · personal saved views (last state auto-persists; named views; pin
-to sidebar; PUBLIC views gated per Q1) · «Excel» button exporting the
-CURRENT view — exactly the visible filters + columns.
+fields · personal saved views (named; pinned; PUBLIC gated per Q1) ·
+«Excel» button exporting the CURRENT view — exactly the visible filters +
+columns.
+
+**CHANGED IN ROUND 57, deliberately: the last list state does NOT
+auto-persist.** Frappe silently saves an unnamed default view on every
+tweak; here you press ★ on a saved view instead. Two reasons, both
+practical: a silent write on every list PAGE VIEW makes reading a list a
+database write, and an implicitly stored filter is state one e2e spec
+leaves for the next (#154/#183 — this suite runs one worker over one
+database, and the redirect would follow the seeded user across specs).
+One deliberate press buys predictability; the owner was told.
 
 Scope v1: `/admin/clients`, `/arrivals`, `/batches`, `/stock`; then the
 same shared engine spreads to `/o` lists, `/kontragentlar`, finance
