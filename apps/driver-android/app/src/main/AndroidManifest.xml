@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Android 10+: the service keeps reporting with the screen off. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!--
+      Deliberately NO android.permission.POST_NOTIFICATIONS (v1.3): the owner
+      asked for an app the driver never sees. On Android 13+ a foreground
+      service whose app cannot post notifications simply shows none — the
+      service runs all the same. On older Android the notification exists only
+      for the minute or two a cycle takes, at minimum importance.
+    -->
+    <!-- The truck may be restarted mid-trip; tracking resumes by itself.
+         Also what lets the periodic job be persisted across reboots. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Keeps the CPU up for the ~90 s it takes to get a fix and upload it. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!--
+      Lets the setup screen show the system "run in the background?" dialog.
+      Not a Play Store build (the APK is handed out at the warehouse). The
+      allowlist is doubly needed: without it Doze defers the periodic job,
+      and Android 12+ refuses to START the service from a background job at
+      all — the job then falls back to last-known-position reporting.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <!--
+      Android 11+ hides other packages unless they are declared here, which
+      would stop the setup screen from opening the vendor auto-start list.
+    -->
+    <queries>
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.iqoo.secure" />
+        <package android:name="com.letv.android.letvsafe" />
+        <package android:name="com.asus.mobilemanager" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GSRDriver">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".TrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- The metronome: JobScheduler runs this every interval (persisted,
+             so it survives reboots and any single run failing). -->
+        <service
+            android:name=".TrackJob"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

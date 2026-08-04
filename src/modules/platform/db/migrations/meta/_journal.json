@@ -1,0 +1,419 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784750841276,
+      "tag": "0000_blushing_ted_forrester",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784750849932,
+      "tag": "0001_audit_immutability_and_trgm",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784756447418,
+      "tag": "0002_shiny_the_hand",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784756448669,
+      "tag": "0003_wms_trgm_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784785950024,
+      "tag": "0004_complete_khan",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784796566253,
+      "tag": "0005_medical_silver_surfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784803313618,
+      "tag": "0006_broken_sir_ram",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784804543942,
+      "tag": "0007_bizarre_infant_terrible",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784806695891,
+      "tag": "0008_fast_caretaker",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784814447276,
+      "tag": "0009_silky_terror",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784814447277,
+      "tag": "0010_boxes_flags_gin",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784838430307,
+      "tag": "0011_plan_line_crates",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784839630306,
+      "tag": "0012_fx_costing",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784900000000,
+      "tag": "0013_notification_mutes",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784910000000,
+      "tag": "0014_tnved",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784920000000,
+      "tag": "0015_finance",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784930000000,
+      "tag": "0016_client_cabinet",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784940000000,
+      "tag": "0017_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784950000000,
+      "tag": "0018_driver_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784960000000,
+      "tag": "0019_locale_en",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784970000000,
+      "tag": "0020_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785056400000,
+      "tag": "0021_crm",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785060000000,
+      "tag": "0022_crm_custom",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785110000000,
+      "tag": "0023_fx_precision",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785120000000,
+      "tag": "0024_arrivals",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785130000000,
+      "tag": "0025_notification_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785140000000,
+      "tag": "0026_editable_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1785150000000,
+      "tag": "0027_custom_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1785160000000,
+      "tag": "0028_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1785170000000,
+      "tag": "0029_task_repeat",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1785180000000,
+      "tag": "0030_deals",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785190000000,
+      "tag": "0031_deal_charges",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785190000001,
+      "tag": "0032_scan_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785190000002,
+      "tag": "0033_client_locale",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785190000003,
+      "tag": "0034_tg_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785190000004,
+      "tag": "0035_tg_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785190000005,
+      "tag": "0036_tg_chat_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1785190000006,
+      "tag": "0037_tg_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1785190000007,
+      "tag": "0038_tg_phone_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785190000008,
+      "tag": "0039_deal_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1785190000009,
+      "tag": "0040_density_thresholds",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1785190000010,
+      "tag": "0041_expected_arrival_measures",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1785190000011,
+      "tag": "0042_self_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1785190000012,
+      "tag": "0043_tg_outbox_photo",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1785190000013,
+      "tag": "0044_issue_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1785190000014,
+      "tag": "0045_deal_money_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1785190000015,
+      "tag": "0046_automation_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1785190000016,
+      "tag": "0047_custom_entities_live",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1785190000017,
+      "tag": "0048_tg_messages_manager_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1785190000018,
+      "tag": "0049_roles_warehouse_scoped",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1785190000019,
+      "tag": "0050_deal_stage_cargo_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1785190000020,
+      "tag": "0051_deal_stage_partial_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1785190000021,
+      "tag": "0052_calc_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1785190000022,
+      "tag": "0053_tg_reminded_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1785190000023,
+      "tag": "0054_partners",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1785190000024,
+      "tag": "0055_receipt_customs",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1785190000025,
+      "tag": "0056_tg_session_removable",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1785190000026,
+      "tag": "0057_device_silent_notified",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1785190000027,
+      "tag": "0058_list_views",
+      "breakpoints": true
+    }
+  ]
+}

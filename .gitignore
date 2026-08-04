@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.env
+.env.local
+.data/
+*.log
+.pnpm-store/
+test-results/
+playwright-report/
+coverage/
+tsconfig.tsbuildinfo
+public/sw.js
+public/sw.js.map

@@ -1,0 +1,4 @@
+# Shell scripts must stay LF — Windows checkouts with autocrlf turned *.sh
+# into CRLF and busybox sh choked on "set -eu\r" (owner's basemap run).
+*.sh text eol=lf
+*.mjs text eol=lf

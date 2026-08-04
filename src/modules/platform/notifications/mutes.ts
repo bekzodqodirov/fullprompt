@@ -1,0 +1,103 @@
+/**
+ * Per-user Telegram mute settings (spec §11). Stored on users as a jsonb
+ * list of event type names ('all' = everything). The profile UI exposes
+ * them as a few understandable groups instead of an 11-row type matrix.
+ */
+
+export const MUTE_GROUPS = {
+  // The CRM digests belong here rather than in `operations`: they are the
+  // same kind of "once a day, nothing is on fire" message as the warehouse
+  // digest, and someone who mutes that means these too.
+  digest: ['DailyDigest', 'CrmFollowUps', 'CrmDormant'],
+  // A group of its own rather than folded into `digest`: someone silencing the
+  // warehouse summary is not saying "stop telling me about the work I was
+  // personally given", and that is the one message nobody should lose by
+  // accident.
+  // TaskAssigned/TaskDone are the instant halves of the same story the
+  // morning digest tells; someone silencing one means all of it.
+  tasks: ['TasksDue', 'TaskAssigned', 'TaskDone'],
+  // "Something is wrong, act now." The three price-control messages belong
+  // here rather than in `operations`: cargo that arrived is routine, cargo
+  // that arrived at a different size to the one the client was quoted is not,
+  // and it is only worth anything while the cargo is still in China.
+  alerts: [
+    'BoxScannedOnLoad',
+    'UndocumentedTransfer',
+    'MissingInTransit',
+    'UnquotedCargo',
+    'DealDeviation',
+    'DealDeferralEnded',
+    // A promise landed at a different size to the one the client stated.
+    'ArrivalDiff',
+    // A debtor is standing at the counter: the ask and the answer are both
+    // only worth anything while they are still standing there.
+    'DebtApprovalRequested',
+    'DebtApprovalDecided',
+    // A calculation blew its 30–120 minute deadline (round 28) — told to the
+    // waiting salesperson and the owner while chasing it still helps.
+    'CalcOverdue',
+    // A customer has been waiting for an answer past the threshold (round 36).
+    // An alert, not a digest: it is only worth anything before they ring.
+    'ClientWaiting',
+    // Telegram ended a manager's session (round 49). Delivered by the BOT,
+    // deliberately: the account that would normally carry it is the one that
+    // just died. Nothing this person types can reach a customer until they
+    // reconnect, so it is an alarm and not news.
+    'TelegramSessionEnded',
+    // A driver phone on an in-transit trip went quiet past the map's own
+    // staleness threshold (round 55). Raised by the SERVER, deliberately:
+    // every alarm the phone itself could raise dies with the app.
+    'TruckSilent',
+  ],
+  operations: [
+    'ReceiptConfirmed',
+    'UnknownCargoReceived',
+    'ReadyForPickup',
+    'BoxIssued',
+    'PlanApproved',
+    'PlanChangesRequested',
+    'InventoryCompleted',
+    // How a truck actually went (round 36) — routine news for the people who
+    // plan them, so it belongs here beside the arrivals, not among the
+    // alarms: a deviation worth shouting about already has its own alert.
+    'LoadFinished',
+    'UnloadFinished',
+    // A colleague wrote on a card you are involved in.
+    'InternalNote',
+    // The personal half of the same message: a colleague named YOU with @.
+    'MentionedInNote',
+    // Phase 7: a rule somebody wrote pinged you — mutable like any other
+    // routine workflow message; the rule's author is not above your mutes.
+    'AutomationRule',
+  ],
+} as const;
+
+export type MuteGroup = keyof typeof MUTE_GROUPS;
+
+export function isTelegramMuted(muted: unknown, type: string): boolean {
+  if (!Array.isArray(muted)) return false;
+  return muted.includes('all') || muted.includes(type);
+}
+
+/** Which groups are fully covered by the stored list (for checkbox state). */
+export function groupsFromList(muted: unknown): { all: boolean; groups: Record<MuteGroup, boolean> } {
+  const list = Array.isArray(muted) ? (muted as string[]) : [];
+  const all = list.includes('all');
+  const groups = Object.fromEntries(
+    (Object.keys(MUTE_GROUPS) as MuteGroup[]).map((g) => [
+      g,
+      all || MUTE_GROUPS[g].every((t) => list.includes(t)),
+    ]),
+  ) as Record<MuteGroup, boolean>;
+  return { all, groups };
+}
+
+/** Build the stored list from the profile form's group checkboxes. */
+export function listFromGroups(all: boolean, groups: Record<MuteGroup, boolean>): string[] {
+  if (all) return ['all'];
+  const list: string[] = [];
+  for (const g of Object.keys(MUTE_GROUPS) as MuteGroup[]) {
+    if (groups[g]) list.push(...MUTE_GROUPS[g]);
+  }
+  return list;
+}

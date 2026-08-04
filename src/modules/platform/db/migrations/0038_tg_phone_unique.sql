@@ -1,0 +1,18 @@
+-- One Telegram account, one row — the constraint that was actually needed.
+--
+-- 0035 put a UNIQUE on `manager_user_id`, which enforces "one login per
+-- PERSON". But the invariant the whole design rests on is about the TELEGRAM
+-- ACCOUNT: exactly one listener may hold one Telegram session, because a
+-- second connection is what gets a personal account limited.
+--
+-- `tg_phone` had neither a unique constraint nor an index, and it is the only
+-- key `loadAccount` looks up by. Two people logging in with the same Telegram
+-- number — two managers sharing a company phone, or one person registered
+-- twice — produced two rows, two account ids, two advisory locks, and two
+-- listeners cheerfully connecting to the same account. The lock cannot help:
+-- it is taken per ROW.
+--
+-- Additive and safe on the live database: nobody has logged in yet, so there
+-- is nothing to conflict. If that ever changes, this migration fails loudly
+-- rather than silently allowing the thing it exists to forbid.
+CREATE UNIQUE INDEX IF NOT EXISTS tg_accounts_phone_unique ON tg_accounts (tg_phone);

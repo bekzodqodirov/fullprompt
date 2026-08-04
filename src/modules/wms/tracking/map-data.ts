@@ -1,0 +1,304 @@
+import type { RouteDef, RoutePoint, RouteSegment } from './engine';
+
+/**
+ * Corridor geometry (owner's routes). Points are REAL lon/lat (x = lon,
+ * y = lat), so the same data drives both renderers:
+ *  - the Leaflet basemap (self-hosted OSM PMTiles — real zoomable map);
+ *  - the fallback SVG drawing (shown until the basemap file is downloaded),
+ *    which projects lon/lat into a 1000×600 viewBox via toSvg().
+ */
+
+/**
+ * Equirectangular projection, and the reference latitude that makes it
+ * honest (owner: "xarita to'g'ri nisbatlarda bo'lsin").
+ *
+ * A degree of longitude is shorter than a degree of latitude by cos(lat): at
+ * 35°N, 0.819 as long. The old projection scaled x by 16.6 and y by 24 — a
+ * ratio of 0.69 — which squeezed the corridor sideways, so China looked
+ * narrow and the Uzbek end looked stretched. Scaling x by `SCALE * cos(35°)`
+ * puts every distance on the drawing in the right proportion to every other.
+ */
+const REF_LAT = 35;
+const SCALE = 20;
+const LON_SCALE = SCALE * Math.cos((REF_LAT * Math.PI) / 180);
+
+/** Drawing extent, in degrees, with a margin for labels. */
+const BOX = { west: 66.5, east: 122, north: 45.5, south: 21.5 };
+
+/**
+ * Deliberately NOT rounded: the viewBox has to be exactly the projected
+ * extent, or the graticule's outermost lines fall a fraction outside the
+ * drawing and get clipped.
+ */
+export const VIEWBOX = {
+  w: (BOX.east - BOX.west) * LON_SCALE,
+  h: (BOX.north - BOX.south) * SCALE,
+};
+
+/** lon/lat → fallback-SVG coordinates, in proportion. */
+export function toSvg(p: RoutePoint): { x: number; y: number } {
+  return { x: (p.x - BOX.west) * LON_SCALE, y: (BOX.north - p.y) * SCALE };
+}
+
+const P = {
+  TAS: { x: 69.24, y: 41.31 }, // Tashkent
+  AND: { x: 72.34, y: 40.78 }, // Andijan
+  OSH: { x: 72.8, y: 40.53 }, // Osh (KG)
+  IRK: { x: 73.91, y: 39.68 }, // Irkeshtam border
+  KA: { x: 75.98, y: 39.47 }, // Kashgar
+  AKS: { x: 80.26, y: 41.17 }, // Aksu
+  UCH: { x: 87.62, y: 43.83 }, // Urumqi
+  HAM: { x: 93.51, y: 42.83 }, // Hami
+  LAN: { x: 103.83, y: 36.06 }, // Lanzhou
+  XIA: { x: 108.94, y: 34.34 }, // Xi'an
+  CSX: { x: 113.0, y: 28.2 }, // Changsha
+  YW: { x: 120.07, y: 29.31 }, // Yiwu
+  GZ: { x: 113.26, y: 23.13 }, // Guangzhou
+} satisfies Record<string, RoutePoint>;
+
+/**
+ * The towns the road actually goes through (round 47, owner's item 10:
+ * «to'g'ri liniya bo'yicha emas — marshrut bo'yicha, yo'ldan yursin, huddi
+ * navigatordagidek»).
+ *
+ * Nothing here is a stop and nothing is displayed: these are shape points, so
+ * the corridor drawn on the map — and the estimated position walking along it
+ * — follows the highway instead of cutting across it. Two stretches made the
+ * old drawing plainly wrong to anyone who knows the road: Lanzhou→Hami runs
+ * the Hexi corridor, a long arc north-west between the Qilian mountains and
+ * the Gobi, and the straight line went through both; and Urumqi→Aksu goes
+ * AROUND the Tian Shan through Turpan and Korla, while the straight line flew
+ * over a 5,000 m range. Andijan→Tashkent is the same story at home — the
+ * Kamchik pass road via Kokand and Angren, not a line over the Fergana rim.
+ *
+ * They are the road's own towns, not GPS traces: the point is that the line
+ * bends where the road bends, not that it is metre-accurate.
+ */
+const W = {
+  // G30/G25, Yiwu → Xi'an.
+  HGH: { x: 120.15, y: 30.27 }, // Hangzhou
+  NKG: { x: 118.78, y: 32.06 }, // Nanjing
+  CGO: { x: 113.63, y: 34.75 }, // Zhengzhou
+  // G4/G55, Guangzhou → Changsha → Xi'an.
+  SHG: { x: 113.6, y: 24.81 }, // Shaoguan
+  HNY: { x: 112.61, y: 26.89 }, // Hengyang
+  XFN: { x: 112.14, y: 32.01 }, // Xiangyang
+  ANK: { x: 109.03, y: 32.68 }, // Ankang
+  // G30, Xi'an → Lanzhou.
+  BAO: { x: 107.14, y: 34.36 }, // Baoji
+  TSN: { x: 105.72, y: 34.58 }, // Tianshui
+  // G30, the Hexi corridor: Lanzhou → Hami.
+  WUW: { x: 102.63, y: 37.93 }, // Wuwei
+  ZHY: { x: 100.45, y: 38.93 }, // Zhangye
+  JIQ: { x: 98.51, y: 39.73 }, // Jiuquan
+  GUA: { x: 95.78, y: 40.52 }, // Guazhou
+  // G30, Hami → Urumqi.
+  SHS: { x: 90.21, y: 42.87 }, // Shanshan
+  TFU: { x: 89.18, y: 42.95 }, // Turpan
+  // G3012, around the Tian Shan: Urumqi → Aksu.
+  TOK: { x: 88.65, y: 42.79 }, // Toksun
+  KRL: { x: 86.15, y: 41.73 }, // Korla
+  LUN: { x: 84.25, y: 41.78 }, // Luntai
+  KCA: { x: 82.96, y: 41.72 }, // Kuqa
+  // G3012, Aksu → Kashgar.
+  BCH: { x: 78.55, y: 39.8 }, // Bachu
+  // Kashgar → the Irkeshtam border.
+  WUQ: { x: 75.02, y: 39.72 }, // Wuqia
+  // M41 through Kyrgyzstan.
+  SRT: { x: 73.26, y: 39.72 }, // Sary-Tash
+  GUL: { x: 73.44, y: 40.31 }, // Gulcha
+  // The Kamchik pass road, Andijan → Tashkent.
+  FEG: { x: 70.94, y: 40.53 }, // Kokand
+  ANG: { x: 70.14, y: 41.02 }, // Angren
+} satisfies Record<string, RoutePoint>;
+
+/**
+ * A route is a list of LEGS, and the point spans are computed rather than
+ * counted by hand.
+ *
+ * They used to be written literally (`span: [1, 2]`), which is why the road
+ * shape could not be improved without re-numbering every segment of every
+ * route — and getting one index wrong parks a truck on the wrong side of a
+ * border with nothing to say so. A leg carries its own points; the builder
+ * joins them, drops the duplicate at each seam, and hands each segment the
+ * span it landed on. A leg with a single point is stationary — that is the
+ * border wait.
+ */
+interface RouteLeg {
+  key: string;
+  hours: [number, number];
+  points: RoutePoint[];
+}
+
+function build(legs: RouteLeg[]): RouteDef {
+  const points: RoutePoint[] = [];
+  const segments: RouteSegment[] = [];
+  for (const leg of legs) {
+    const start = points.length === 0 ? 0 : points.length - 1;
+    const same =
+      points.length > 0 &&
+      points[points.length - 1]!.x === leg.points[0]!.x &&
+      points[points.length - 1]!.y === leg.points[0]!.y;
+    points.push(...(same ? leg.points.slice(1) : leg.points));
+    segments.push({ key: leg.key, hours: leg.hours, span: [start, points.length - 1] });
+  }
+  return { points, segments };
+}
+
+/** Warehouse code → map dot. TAS2 sits beside TAS1 so both stay clickable. */
+export const WAREHOUSE_POINTS: Record<string, RoutePoint> = {
+  YW: P.YW,
+  GZ: P.GZ,
+  UCH: P.UCH,
+  KA: P.KA,
+  AND: P.AND,
+  TAS1: P.TAS,
+  TAS2: { x: P.TAS.x - 0.85, y: P.TAS.y - 0.58 },
+};
+
+/** Named dots drawn for context even without a warehouse. */
+export const LANDMARKS: { name: string; p: RoutePoint }[] = [
+  { name: 'Irkeshtam', p: P.IRK },
+  { name: 'Osh', p: P.OSH },
+];
+
+/** Leaflet initial view: whole corridor. */
+export const MAP_BOUNDS: [[number, number], [number, number]] = [
+  [20, 60], // south-west lat,lon
+  [47, 125], // north-east
+];
+
+/** Xi'an → Kashgar: the G30 and G3012, the way a truck really drives it. */
+const CN_SPINE = [
+  P.XIA, W.BAO, W.TSN, P.LAN,
+  W.WUW, W.ZHY, W.JIQ, W.GUA, P.HAM,
+  W.SHS, W.TFU, P.UCH,
+  W.TOK, W.KRL, W.LUN, W.KCA, P.AKS,
+  W.BCH, P.KA,
+];
+/** Andijan → Tashkent over the Kamchik pass. */
+const AND_TAS = (dest: RoutePoint) => [P.AND, W.FEG, W.ANG, dest];
+
+function ka2uz(dest: RoutePoint, uzHours: [number, number]): RouteDef {
+  return build([
+    { key: 'to_border', hours: [12, 24], points: [P.KA, W.WUQ, P.IRK] },
+    // Owner: the truck waits at the Chinese border 1–3 days (sometimes more
+    // — the manual checkpoint on the batch card corrects this).
+    { key: 'border_wait', hours: [24, 72], points: [P.IRK] },
+    { key: 'kg', hours: [36, 48], points: [P.IRK, W.SRT, W.GUL, P.OSH] },
+    {
+      key: 'uz',
+      hours: uzHours,
+      // Andijan IS the destination on the short leg — no need to leave it and
+      // come back, which is what the old hand-counted spans had to fake.
+      points: dest === P.AND ? [P.OSH, P.AND] : [P.OSH, ...AND_TAS(dest)],
+    },
+  ]);
+}
+
+/** Typical corridor schedule per origin→dest pair (owner's numbers). */
+export function routeFor(originCode: string, destCode: string): RouteDef | null {
+  const o = originCode.toUpperCase();
+  const d = destCode.toUpperCase();
+  const destPoint = WAREHOUSE_POINTS[d];
+  if (!destPoint || !WAREHOUSE_POINTS[o]) return null;
+
+  if (o === 'YW' && d === 'KA') {
+    return build([
+      {
+        key: 'cn_transit',
+        hours: [144, 168],
+        points: [P.YW, W.HGH, W.NKG, W.CGO, ...CN_SPINE],
+      },
+    ]);
+  }
+  if (o === 'GZ' && d === 'KA') {
+    return build([
+      {
+        key: 'cn_transit',
+        hours: [120, 144],
+        points: [P.GZ, W.SHG, W.HNY, P.CSX, W.XFN, W.ANK, ...CN_SPINE],
+      },
+    ]);
+  }
+  if (o === 'UCH' && d === 'KA') {
+    return build([
+      {
+        key: 'cn_transit',
+        hours: [48, 72],
+        points: [P.UCH, W.TOK, W.KRL, W.LUN, W.KCA, P.AKS, W.BCH, P.KA],
+      },
+    ]);
+  }
+  if (o === 'KA' && d === 'AND') return ka2uz(P.AND, [12, 24]);
+  if (o === 'KA' && (d === 'TAS1' || d === 'TAS2')) {
+    return ka2uz(WAREHOUSE_POINTS[d]!, [36, 48]);
+  }
+  if (o === 'AND' && (d === 'TAS1' || d === 'TAS2')) {
+    return build([{ key: 'uz', hours: [12, 24], points: AND_TAS(WAREHOUSE_POINTS[d]!) }]);
+  }
+  // Any other pair between mapped warehouses: straight line, generic timing.
+  // Honest rather than invented — we do not know the road, so we do not draw
+  // one, and the label already says the position is approximate.
+  return build([{ key: 'transit', hours: [120, 168], points: [WAREHOUSE_POINTS[o]!, destPoint] }]);
+}
+
+/** Checkpoint key → the segment it anchors (batch card buttons). */
+export const CHECKPOINT_SEGMENTS: Record<string, string> = {
+  at_border: 'border_wait',
+  in_kg: 'kg',
+  in_uz: 'uz',
+};
+
+/**
+ * A lat/lon grid for the fallback drawing, generated from the projection.
+ *
+ * It replaces two hand-drawn "country hint" blobs that were never real
+ * geography and were drawn against the old, squashed projection — so they
+ * became wrong the moment the proportions were fixed. A graticule cannot be
+ * wrong: it IS the projection, and it is what makes a schematic read as a
+ * map rather than a diagram.
+ */
+export interface GridLine {
+  /** Line ends in SVG space. */
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  label: string;
+  /** Where to put the label. */
+  lx: number;
+  ly: number;
+}
+
+export function graticule(): { meridians: GridLine[]; parallels: GridLine[] } {
+  const meridians: GridLine[] = [];
+  for (let lon = 70; lon <= BOX.east; lon += 10) {
+    const top = toSvg({ x: lon, y: BOX.north });
+    const bottom = toSvg({ x: lon, y: BOX.south });
+    meridians.push({
+      x1: top.x,
+      y1: top.y,
+      x2: bottom.x,
+      y2: bottom.y,
+      label: `${lon}°E`,
+      lx: top.x + 4,
+      ly: 16,
+    });
+  }
+  const parallels: GridLine[] = [];
+  for (let lat = 25; lat <= BOX.north; lat += 5) {
+    const left = toSvg({ x: BOX.west, y: lat });
+    const right = toSvg({ x: BOX.east, y: lat });
+    parallels.push({
+      x1: left.x,
+      y1: left.y,
+      x2: right.x,
+      y2: right.y,
+      label: `${lat}°N`,
+      lx: 4,
+      ly: left.y - 4,
+    });
+  }
+  return { meridians, parallels };
+}

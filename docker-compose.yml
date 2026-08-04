@@ -1,0 +1,242 @@
+# Production deployment topology (spec §3). Dev in this repo runs against a
+# local Postgres directly; this file is for the VPS.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
+      S3_ENDPOINT: http://minio:9000
+      STORAGE_DRIVER: s3
+      BACKUP_DIR: /backups
+    volumes:
+      # Self-hosted OSM basemap for /map (ops/fetch-basemap.sh downloads it).
+      - ./.data/basemap:/app/.data/basemap:ro
+      # The SAME volume the `backup` service writes to. Without this the app's
+      # own nightly dump went to .data/backups INSIDE the container — thrown
+      # away on every `up --build` — and the weekly restore test was checking
+      # a file the real backup had never written. Two backup systems that
+      # could not see each other.
+      - backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  # One-shot, on demand: downloads the self-hosted OSM basemap for /map.
+  # Works the same on Windows/Mac/Linux hosts:
+  #   docker compose --profile basemap run --rm basemap
+  basemap:
+    profiles: ['basemap']
+    image: alpine:3.20
+    restart: 'no'
+    volumes:
+      - ./.data/basemap:/out
+    # Inline script in exec-list form: no mounted .sh file (CRLF-proof on
+    # Windows checkouts) and no compose shell-word mangling of backslashes.
+    command:
+      - 'sh'
+      - '-ceu'
+      - |
+        apk add --no-cache curl >/dev/null
+        echo "== 1/3 pmtiles CLI"
+        curl -sL -o /tmp/p.tgz https://github.com/protomaps/go-pmtiles/releases/download/v1.22.1/go-pmtiles_1.22.1_Linux_x86_64.tar.gz
+        tar xzf /tmp/p.tgz -C /tmp pmtiles
+        echo "== 2/3 latest world build (probing by date)"
+        NOW=$$(date +%s)
+        BUILD=""
+        i=0
+        while [ $$i -lt 14 ]; do
+          D=$$(date -u -d "@$$((NOW - i*86400))" +%Y%m%d)
+          if curl -sfI "https://build.protomaps.com/$$D.pmtiles" >/dev/null 2>&1; then
+            BUILD="$$D.pmtiles"
+            break
+          fi
+          echo "   $$D — not there yet"
+          i=$$((i+1))
+        done
+        if [ -z "$$BUILD" ]; then
+          echo "!! no daily build reachable — diagnostics:"
+          curl -sSI https://build.protomaps.com/builds.json 2>&1 | head -5
+          exit 1
+        fi
+        echo "   using $$BUILD"
+        echo "== 3/3 extracting corridor (UZ+KG+China, maxzoom 8) — a few minutes"
+        /tmp/pmtiles extract "https://build.protomaps.com/$$BUILD" /out/corridor.pmtiles --bbox=55,17,127,49 --maxzoom=8
+        ls -lh /out/corridor.pmtiles
+        echo "Done. Run: docker compose up -d app — then refresh /map."
+
+  # One-shot: apply migrations + idempotent seed before the app starts.
+  # Uses the build stage (full sources + tsx), not the slim runtime image.
+  migrate:
+    build:
+      context: .
+      target: build
+    restart: 'no'
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
+      # Same storage view as the app — the seed uploads demo photos.
+      S3_ENDPOINT: http://minio:9000
+      STORAGE_DRIVER: s3
+    command: sh -c "pnpm db:migrate && pnpm db:seed"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  # The Telegram bridge — the manager's own account, receiving and replying.
+  #
+  # A SERVICE and not `docker compose run`, and that is the whole point of this
+  # block: a `run` container has no restart policy, so the VPS rebooting or the
+  # process falling over left the bridge silently dead — which `pnpm tg-doctor`
+  # reports as «hech qachon», because it never wrote a single heartbeat. Since
+  # a listener that is down loses every message sent while it is away (it
+  # catches up on start, but only if it starts), "it comes back by itself" is
+  # not a nicety here.
+  #
+  # ONE container, EVERY stored account (round 21). The supervisor inside
+  # `pnpm tg-listen` scans tg_accounts once a minute and starts a listener
+  # for each active account — so a manager connecting their Telegram on the
+  # «ulash» screen starts receiving within a minute, with nobody touching
+  # docker. Per-account exclusivity is still the advisory lock: two
+  # listeners on one Telegram account refuse each other noisily.
+  # (`pnpm tg-listen --tg +998...` still pins a single account if ever
+  # needed; TG_LISTEN_PHONE in .env is no longer read.)
+  #
+  #   docker compose --profile telegram up -d
+  #   docker compose --profile telegram logs -f tg-listen
+  tg-listen:
+    build:
+      context: .
+      target: build
+    profiles: ['telegram']
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
+      S3_ENDPOINT: http://minio:9000
+      STORAGE_DRIVER: s3
+    command: sh -c "pnpm tg-listen"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # LAN HTTPS with a self-signed cert (no domain needed) — for office/trial
+  # runs where phones need the camera scanner. Browsers warn once; tap
+  # "Advanced → proceed". Enable with:
+  #   docker compose --profile https-local up -d
+  caddy-local:
+    image: caddy:2
+    profiles: ['https-local']
+    restart: unless-stopped
+    ports:
+      - '443:443'
+    environment:
+      # The PC's LAN IP (set LAN_IP=192.168.x.x in .env) — the internal cert
+      # must name it explicitly, and browsers hitting a bare IP send no SNI,
+      # so it's also the default_sni fallback.
+      LAN_IP: ${LAN_IP:-127.0.0.1}
+    command: >
+      sh -c 'printf "{\n default_sni %s\n}\nhttps://localhost, https://%s {\n tls internal\n reverse_proxy app:3000\n}\n" "$$LAN_IP" "$$LAN_IP" > /etc/caddy/Caddyfile
+      && caddy run --config /etc/caddy/Caddyfile'
+    volumes:
+      - caddydata:/data
+    depends_on:
+      - app
+
+  # HTTPS front (needed for the phone camera scanner — secure context).
+  # Enable with: DOMAIN=wms.example.com docker compose --profile https up -d
+  caddy:
+    image: caddy:2
+    profiles: ['https']
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    command: sh -c 'printf "%s {\n reverse_proxy app:3000\n}\n" "$$DOMAIN" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
+    volumes:
+      - caddydata:/data
+    depends_on:
+      - app
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    # Tuned for a ~4 GB VPS shared with the app and MinIO: the stock image
+    # runs shared_buffers=128MB and prices the SSD like a spinning disk
+    # (random_page_cost=4), the planner bias behind the #152 class of scans.
+    # On a 2 GB box halve the first four values (256MB/768MB/8MB/64MB).
+    # `command` REPLACES the image CMD, so the first token must be `postgres`.
+    shm_size: '256mb'
+    command:
+      - 'postgres'
+      - '-c'
+      - 'shared_buffers=512MB'
+      - '-c'
+      - 'effective_cache_size=1536MB'
+      - '-c'
+      - 'work_mem=16MB'
+      - '-c'
+      - 'maintenance_work_mem=128MB'
+      - '-c'
+      - 'min_wal_size=256MB'
+      - '-c'
+      - 'max_wal_size=2GB'
+      - '-c'
+      - 'random_page_cost=1.1'
+      # Every statement slower than a fifth of a second, with its text, in
+      # `docker compose logs postgres`. Round 45 needed exactly this to find
+      # /accounting asking 1,564 questions for one screen, and the next slow
+      # page will need it again. 200 ms is quiet on a healthy system: a whole
+      # day of normal use logs a handful of lines.
+      - '-c'
+      - 'log_min_duration_statement=200'
+    environment:
+      POSTGRES_USER: gsr
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: gsr
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gsr']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    entrypoint: ['/bin/sh', '-c', 'while true; do /backup.sh; sleep 86400; done']
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./ops/backup.sh:/backup.sh:ro
+      - backups:/backups
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
+  miniodata:
+  backups:
+  caddydata:
