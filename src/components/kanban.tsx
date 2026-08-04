@@ -77,6 +77,20 @@ interface BoardProps<T extends KanbanItem> {
   hidden?: Record<string, number>;
   /** Where that footer link goes. Required only when `hidden` has entries. */
   archiveHref?: string;
+  /**
+   * Multi-select, when the board offers it (round 59).
+   *
+   * A prop rather than internal state: the ACTIONS live with the caller —
+   * only the leads board knows what «assign to» means — so the selection has
+   * to be owned there too. Absent means no checkboxes at all, which is what
+   * every other caller of this component gets.
+   */
+  selection?: {
+    ids: Set<string>;
+    toggle: (id: string) => void;
+    /** Already translated: a client component cannot resolve a namespace. */
+    label: string;
+  };
 }
 
 export function KanbanBoard<T extends KanbanItem>({
@@ -87,6 +101,7 @@ export function KanbanBoard<T extends KanbanItem>({
   hrefOf,
   onMove,
   cardTestId = 'kanban-card',
+  selection,
   hidden = {},
   archiveHref,
 }: BoardProps<T>) {
@@ -154,6 +169,7 @@ export function KanbanBoard<T extends KanbanItem>({
     renderCard,
     hrefOf,
     cardTestId,
+    selection,
   };
 
   return (
@@ -182,6 +198,39 @@ interface ViewProps<T extends KanbanItem> {
   renderCard: (item: T) => ReactNode;
   hrefOf: (item: T) => string;
   cardTestId: string;
+  selection?: BoardProps<T>['selection'];
+}
+
+/**
+ * The tick in the corner of a card.
+ *
+ * `stopPropagation` AND `preventDefault`, because on the desktop board the
+ * card itself IS the anchor and also carries the drag's pointer handlers: a
+ * bare checkbox there would navigate to the card and start a drag on the way.
+ */
+function SelectBox({
+  id,
+  selection,
+}: {
+  id: string;
+  selection: NonNullable<BoardProps<KanbanItem>['selection']>;
+}) {
+  return (
+    <input
+      type="checkbox"
+      checked={selection.ids.has(id)}
+      aria-label={selection.label}
+      data-testid="card-select"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        selection.toggle(id);
+      }}
+      onChange={() => {}}
+      className="h-5 w-5 shrink-0 accent-brand-600"
+    />
+  );
 }
 
 /**
@@ -206,6 +255,7 @@ function StageView<T extends KanbanItem>({
   renderCard,
   hrefOf,
   cardTestId,
+  selection,
 }: ViewProps<T>) {
   // Open on the first stage that has anything in it: an empty "new" column is
   // a wasted first screen when the work is three stages along.
@@ -332,7 +382,8 @@ function StageView<T extends KanbanItem>({
                     <Link href={hrefOf(item)} className="block">
                       {renderCard(item)}
                     </Link>
-                    <div className="mt-2 flex gap-2 border-t border-line pt-2">
+                    <div className="mt-2 flex items-center gap-2 border-t border-line pt-2">
+                      {selection && <SelectBox id={item.id} selection={selection} />}
                       {/* One tap for the move that happens ten times a day;
                           the sheet for everything else. */}
                       {nextStage && (
@@ -435,6 +486,7 @@ function DragBoard<T extends KanbanItem>({
   renderCard,
   hrefOf,
   cardTestId,
+  selection,
 }: ViewProps<T>) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<string | null>(null);
@@ -599,6 +651,11 @@ function DragBoard<T extends KanbanItem>({
                       }`}
                       style={{ touchAction: dragId === item.id ? 'none' : undefined }}
                     >
+                      {selection && (
+                        <span className="float-right ml-1">
+                          <SelectBox id={item.id} selection={selection} />
+                        </span>
+                      )}
                       {renderCard(item)}
                     </Link>
                   ))}

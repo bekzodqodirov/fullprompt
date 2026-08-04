@@ -44,9 +44,15 @@ const GIVE_UP_MS = 20_000;
 export function NavProgress() {
   const [progress, setProgress] = useState<number | null>(null);
   const [visible, setVisible] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const startedAt = useRef(0);
   const startedHref = useRef('');
   const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     function start(event: MouseEvent) {
@@ -107,8 +113,18 @@ export function NavProgress() {
     return () => clearTimeout(tick);
   }, [progress]);
 
-  // Nothing on the server: the portal needs a document.
-  if (typeof document === 'undefined') return null;
+  // Nothing until the component has MOUNTED, not merely until a document
+  // exists. `typeof document === 'undefined'` is false during hydration too,
+  // so the very first client render portalled a <div> into the body that the
+  // server's HTML did not contain — and React answered by discarding the
+  // server tree and rebuilding the whole page on the client, on every single
+  // navigation. Invisible on screen, and the reason a listener attached in an
+  // effect could still be missing when a key was pressed.
+  //
+  // The other three portals in this app are already safe by accident: they
+  // are all behind an `open` flag that starts false, so their first render is
+  // null on both sides. This one had nothing to hide behind.
+  if (!mounted) return null;
 
   return createPortal(
     <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-[60] h-0.5">

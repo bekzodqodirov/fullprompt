@@ -1,6 +1,170 @@
 # CHANGELOG
 
-## Haydovchi ilovasi 1.3: 2 soatdan keyin o'lish tuzatildi, bildirishnoma yo'qoldi — 2026-08-04
+## «+» tugmasi: lid yoki mijoz 5 soniyada — 2026-08-04
+
+«Oson UI» rejasining 2-bosqichi tugadi.
+
+**Yuqori qatorda «+» tugmasi.** Qayerda bo'lsangiz ham bosasiz — sahifadan
+chiqmaysiz, ustidan kichkina oyna ochiladi. **Ikkita katak:** ism va telefon.
+Saqlaysiz — o'sha sahifada qolasiz, pastda «Qo'shildi: …» deb yozilib,
+kartaga havola beriladi.
+
+**Nega faqat ikkita katak.** Qolgan hammasi o'zi to'ldiriladi: lid birinchi
+bosqichga tushadi va yozgan odamga biriktiriladi; mijozga kod avtomatik
+beriladi. Bularni kartada bir bosishda o'zgartirasiz. Agar to'liq shakl
+kerak bo'lsa — o'sha oynada «Batafsil →» havolasi turibdi.
+
+**Yozganingiz yo'qolmaydi.** Oynaning tashqarisiga tasodifan bosib
+yuborsangiz, «saqlamasdan yopilsinmi?» deb so'raydi.
+
+**Kimga nima ko'rinadi:** lid — lidlar bilan ishlash huquqi borlarga; mijoz —
+mijozlarni boshqarish huquqi borlarga. Bittasigina bo'lsa, tanlash oynasi
+o'tkazib yuborilib, darrov katak ochiladi.
+
+**Yo'l-yo'lakay tuzatilgan narsa.** «+» qo'shilgach, telefonda yuqori
+qatordagi tugmalar 44px dan **33px ga siqilib qolgan ekan** — barmoq uchun
+juda kichik. O'lchab ko'rildi va tuzatildi: **til tanlash telefonda endi
+Profil sahifasida** (kompyuterda avvalgidek yuqorida qoladi). Endi hamma
+tugma yana 44px.
+
+Tekshiruv: 944 ta ichki test, 112 ta brauzer testi. Bazaga o'zgarish yo'q.
+
+Ishni boshlashdan oldin taklif qilingan dizayn uch mustaqil ko'z bilan
+tekshirildi va uchta jiddiy xato kod yozilishidan OLDIN topildi (shuning
+uchun oyna faqat ikkita katakdan iborat bo'ldi).
+
+## Ommaviy amallar: bir nechta leadni birdan ko'chirish — 2026-08-04
+
+«Oson UI» rejasining 2-bosqichi, ikkinchi yarmi.
+
+**Kartalarni belgilash.** Lidlar va bitimlar doskasidagi har kartada endi
+belgilash katagi bor. Bittasini belgilaganingizdan keyin pastda amallar
+paneli chiqadi.
+
+**Nima qilish mumkin.** Belgilanganlarni: bitta etapga **ko'chirish** (agar
+«yo'qotildi» etapi tanlansa — sabab majburiy, siz shunday deb tanlagansiz);
+lidlarni bitta hodimga **biriktirish** (bu faqat «hamma lidlarni ko'rish»
+huquqi borlarda ko'rinadi — o'z lidini boshqaga berish rahbar ishi).
+Bitimlarda biriktirish yo'q: bitim egasini almashtirish suhbat talab qiladi,
+ommaviy ish emas.
+
+**Halol hisobot.** Panel «Bajarildi: 19, bo'lmadi: 1» deb yozadi. Nega
+bo'lmagani kartada ko'rinadi. Bitta karta rad etilsa, qolgan 19 tasi
+baribir bajariladi — yarim yo'lda to'xtash eng yomoni. Muvaffaqiyatsizlar
+belgilangan holicha qoladi, qaytadan urinib ko'rishingiz uchun.
+
+**Muhim ichki qoida.** Har bir karta odatdagi yo'ldan ko'chadi — ya'ni tarix
+yoziladi va **avtomatlashtirish qoidalari ishlaydi**. Tezlik uchun «hammasini
+birdan» qilib yuborilganda qoidalar jim qolar edi.
+
+Tekshiruv: 940 ta ichki test (7 tasi yangi; ikkita qoida himoyasiz qolganda
+qizarishi isbotlangan), 108 ta brauzer testi. Bazaga o'zgarish yo'q.
+
+Telefon ekranida ko'rib topilgan va tuzatilgan: bajarilgandan keyin panel
+javobni ko'rsatmasdan yo'qolib ketardi; ikkita tugma bir xil «Применить»
+deb nomlangan edi.
+
+## Qidiruv: butun tizim bo'ylab, Ctrl+K bilan — 2026-08-04
+
+«Oson UI» rejasining 2-bosqichi, birinchi yarmi.
+
+**Qidiruv kengaydi.** Avval faqat mijoz, karobka, prixod va tovar nomini
+topardi. Endi qo'shildi: **lidlar** (ism, firma, telefon), **bitimlar** (kod,
+nom, mijoz kodi), **partiyalar** (kod, mashina raqami, haydovchi),
+**kontragentlar**, va **telefon raqami bo'yicha mijoz** (oxirgi 9 raqam —
+formati qanday yozilganidan qat'i nazar).
+
+**Ctrl+K.** Kompyuterda istalgan ekranda Ctrl+K (Mac'da ⌘K) bossangiz qidiruv
+oynasi sahifa ustida ochiladi — sahifadan chiqmaysiz. Telefonda yuqoridagi
+qidiruv belgisini bossangiz o'sha oyna ochiladi. Yozgan sari natija chiqadi;
+strelka bilan tanlab Enter bosasiz. Escape yopadi.
+
+**Muhim tuzatish — qidiruv juda ko'p narsani ko'rsatardi.** Tekshirganimda
+ma'lum bo'ldiki, eski qidiruvda **hech qanday chegara yo'q ekan**: Yivudagi
+skladchi Toshkentdagi karobkani ham topa olardi, va tizimga kirgan har kim
+butun mijozlar kitobini varaqlay olardi. Endi qidiruv har bir turdagi
+ma'lumot uchun **o'sha ekranning o'z qoidasini** so'raydi: skladchi faqat o'z
+skladini, sotuvchi faqat o'z lidlarini (agar «hammasini ko'rish» huquqi
+bo'lmasa), kontragentlarni faqat moliya huquqi borlar. Huquqi yo'q bo'lsa —
+umuman qidirilmaydi ham. Va qidiruv natijasida **hech qachon pul ko'rinmaydi**
+— natija sizni kartaga olib boradi, savolga javob bermaydi.
+
+Tekshiruv: 933 ta ichki test (18 tasi yangi; uchta chegara himoyasiz
+qolganda qizarishi isbotlangan), 105 ta brauzer testi. Bu konteynerda 3 ta
+brauzer testi o'tmadi — rasm yuklash yo'lida, o'zgarishlarimizsiz ham
+o'tmaydi.
+
+Bazaga o'zgarish yo'q.
+
+## Ro'yxatlar: saqlanadigan ko'rinishlar, ustun tanlash, Excel — 2026-08-04
+
+«Oson UI» rejasining 1-bosqichi (`docs/CRM-UX.md`). Mijozlar kitobi, sklad
+qoldig'i va o'z obyektlaringiz ro'yxatida:
+
+**Ko'rinish saqlash.** Filtr, saralash va ustunlarni sozlaganingizdan keyin
+«⋯» tugmasidan nom berib saqlaysiz. Saqlangan ko'rinish ro'yxat tepasida
+tugmacha bo'lib turadi — bir bosishda o'sha holat qaytadi. Uchta belgisi bor:
+📌 — yuqorida tursin; ★ — shu ro'yxatni ochganda doim shu ko'rinish
+ochilsin; ✕ — o'chirish. **«Hammaga ko'rsatish»** faqat adminda: o'zingiz
+uchun ko'rinish saqlash hammaga ochiq, butun firmaga tarqatish esa admin
+ishi (siz shunday deb tanladingiz).
+
+**Ustun tanlash.** «⋮≡» tugmasi — qaysi ustun ko'rinishini o'zingiz
+belgilaysiz, maxsus maydonlaringiz ham shu ro'yxatda. Kod ustuni doim
+qoladi (u kartaga kiradigan havola). Pul bilan bog'liq ustunlar faqat
+huquqi borga ko'rinadi — manzilga qo'lda yozib ham ochib bo'lmaydi.
+
+**Excel aynan ko'rinib turganini beradi.** Endi yuklab olingan fayl ekrandagi
+filtr, saralash va TANLANGAN USTUNLARni oladi — ekranda yashirilgan ustun
+faylga ham tushmaydi.
+
+**Havola bo'lib ishlaydi.** Ko'rinish — bu manzil qatoridagi holat, shuning
+uchun uni hamkasbingizga havola qilib yuborsangiz, u ham aynan o'sha
+ro'yxatni ko'radi; «orqaga» tugmasi ham odatdagidek ishlaydi.
+
+Yo'l-yo'lakay tuzatilganlar (hammasi 360px telefon ekranida ko'rib
+topilgan): ustun tanlash oynasi ochiq qolib jadvalni to'sib turishi;
+ko'rinishlar oynasi ekran chetidan chiqib ketib butun sahifani kichraytirib
+yuborishi; sklad qidiruv oynasining juda torayib qolishi.
+
+Tekshiruv: 915 ta ichki test (24 tasi yangi — himoyasiz qolganda qizarishi
+isbotlangan), 100 ta brauzer testi. Bu konteynerda 4 ta brauzer testi
+o'tmadi — hammasi rasm yuklash yo'lida va o'zgarishlarimizsiz ham
+o'tmasligi tekshirildi (bu yerda rasm xizmati yo'q; serverda ular ishlaydi).
+
+Bazaga bitta yangi jadval qo'shildi (0058) — yangilashda migratsiya
+avtomatik ishlaydi, avval backup oling.
+
+## Frappe CRM o'rganildi — «oson UI» strategiyasi kelishildi (kod o'zgarmagan) — 2026-08-04
+
+Topshiriq: «frappe crm bor shuni organib chiq … ishlatish oson UI da
+bolishini hohlayman». Frappe CRM uch yo'nalishda to'liq o'rganildi
+(imkoniyatlari, interfeysi, texnik talablari) va xulosa siz bilan kelishildi.
+
+**Qaror: Frappe CRM alohida o'rnatilmaydi.** Sabablari: serverga og'ir
+(o'zining boshqa bazasi va 8–11 ta alohida jarayon), interfeysi faqat
+inglizcha (tarjima fayllari umuman yo'q), har sotuvchi hamma mijoz-bitimni
+ko'radi (bizdagi chegaralar yo'q), Telegram/sklad/pul bilan bog'lanmaydi,
+litsenziyasi kodini ko'chirishga ruxsat bermaydi. Mazmun jihatdan bizning
+tizim allaqachon oldinda (bitimda pul, yo'qotish sababi, maxsus maydonlar,
+avtomatlashtirish, sklad-voronka, Telegram, hisobotlar, 4 til) — yetishmagani
+Frappe'ning qulaylik qatlami, va aynan shu bosqichma-bosqich qo'shiladi.
+
+**Kelishilgan 5 bosqich** (to'liq reja: `docs/CRM-UX.md`): 1) ro'yxatlar —
+saqlanadigan ko'rinishlar, tezkor filtrlar, istalgan ustun bo'yicha saralash,
+ustun tanlash, Excel eksport; 2) tezlik — qidiruv kengayadi (lead/bitim/
+partiya/kontragent/telefon) + Ctrl+K, tez qo'shish oynalari, ommaviy amallar;
+3) kartada joyida tahrirlash; 4) kompyuterda kanban sudrash (telefonda
+tugmalar qoladi); 5) tungi rejim, Telegram shablon javoblar, mayda pardozlar.
+
+**Javobingizni kutayotgan 3 savol:** umumiy ko'rinishni faqat admin
+e'lon qilsinmi; leadlarni ommaviy «yo'qotildi» qilish (sabab majburiy)
+bo'lsinmi; shablon javoblar umumiy + shaxsiy bo'lsinmi. «Tavsiyalaring
+bo'yicha boshla» desangiz — uchalasi ham «ha» bo'lib boshlanadi.
+
+Kod va bazada hech narsa o'zgarmadi; eski eslatma kuchida: serverni
+yangilashdan oldin backup, yangilanishda 4 ta jonli pul xatosining
+tuzatmalari bor.
 
 Sizning 1-band: «driver app negadur 2 soatdan keyin ishlamay qoldi» + «hech
 qanday notification ko'rsatmasin, telda yo'qdek bo'lsin».

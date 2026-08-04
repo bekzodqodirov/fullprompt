@@ -89,7 +89,11 @@ test('a field invented for clients reaches the card, the list and the export', a
   await expect(page.getByTestId('custom-filters')).toBeVisible();
 
   const before = await page.locator('table tbody tr').count();
-  await page.getByLabel(city).selectOption('Toshkent');
+  // Scoped to the filter row: the column picker beside it names every column
+  // too, so an unscoped getByLabel now matches the filter AND the checkbox
+  // that turns this column off. Two controls may legitimately carry one
+  // column's name; a locator has to say which of them it means.
+  await page.getByTestId('custom-filters').getByLabel(city).selectOption('Toshkent');
   await page.getByTestId('custom-filters').getByRole('button').click();
   await expect(page).toHaveURL(/cf_/);
   // Nobody is in Tashkent, so the filter really filtered.

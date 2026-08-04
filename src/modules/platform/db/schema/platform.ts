@@ -697,3 +697,36 @@ export const automationRules = pgTable(
     index('automation_rules_trigger_idx').on(t.triggerType, t.active),
   ],
 );
+
+/**
+ * Round 57: a saved list view — a named query string for one screen.
+ *
+ * The whole engine is this table plus a navigation: every list already
+ * filters, sorts and picks its columns through URL params, so a view stores
+ * what was in the address bar and applying it is a link. A screen that grows
+ * a new filter next month is savable without a migration.
+ *
+ * `userId` NULL = published to everyone (admin only); `isDefault` is personal
+ * by construction (see the migration's comment and the CHECK).
+ */
+export const listViews = pgTable(
+  'list_views',
+  {
+    id: id(),
+    screen: text('screen').notNull(),
+    name: text('name').notNull(),
+    query: text('query').notNull().default(''),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    isDefault: boolean('is_default').notNull().default(false),
+    pinned: boolean('pinned').notNull().default(false),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('list_views_default_check', sql`${t.isDefault} = false OR ${t.userId} IS NOT NULL`),
+    index('list_views_screen_idx').on(t.screen, t.userId),
+  ],
+);

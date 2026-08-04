@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { closedLeadCounts, listLeads, listStages } from '@/modules/wms/crm/service';
 import { KanbanBoard } from './leads/kanban';
@@ -51,13 +52,17 @@ export default async function LeadsPage({
   // that opens the lot. A won lead from March is a record, not a task, and a
   // board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, open, closed, closedTotals, badges] = await Promise.all([
+  const [stages, open, closed, closedTotals, badges, managers] = await Promise.all([
     listStages(),
     listLeads({ ownerId: scope, openOnly: true }),
     listLeads({ ownerId: scope, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
     closedLeadCounts(scope),
     // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
     chatBadges(tgViewerFor(actor)),
+    // Only offered to somebody who may see everybody's leads: handing YOUR
+    // lead to a colleague is a supervisor's act, and a seller who cannot see
+    // the board they would be moving it onto should not be doing it.
+    seesAll ? salesManagerOptions() : Promise.resolve([]),
   ]);
   const rows = [...open, ...closed];
   const shown = new Map<string, number>();
@@ -114,6 +119,11 @@ export default async function LeadsPage({
       )}
 
       <KanbanBoard
+        owners={
+          managers.length
+            ? managers.map((row) => ({ id: row.id, name: row.fullName }))
+            : undefined
+        }
         stages={stages.map((stage) => ({
           id: stage.id,
           name: stage.name,

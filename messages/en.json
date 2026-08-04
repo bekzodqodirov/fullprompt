@@ -340,7 +340,7 @@
     "devices": "Devices",
     "thisDevice": "This device",
     "logoutOthers": "Sign out on all other devices",
-    "language": "Interface language",
+    "language": "Language",
     "telegram": "Telegram",
     "telegramSoon": "Telegram linking arrives in the next stage",
     "lastSeen": "Last activity",
@@ -480,7 +480,19 @@
     "receipts": "Receipts",
     "boxesGroup": "Boxes",
     "lotsGroup": "Lots",
-    "title": "Search"
+    "title": "Search",
+    "close": "Close",
+    "seeAll": "See all results",
+    "kind": {
+      "client": "Clients",
+      "lead": "Leads",
+      "deal": "Deals",
+      "batch": "Batches",
+      "partner": "Counterparties",
+      "box": "Boxes",
+      "receipt": "Receipts",
+      "lot": "Goods"
+    }
   },
   "crates": {
     "title": "Crates",
@@ -1712,5 +1724,61 @@
     "proof": "Receipt / screenshot",
     "proofNote": "Note (required when there is no file)",
     "proofRequired": "A file or a note is required"
+  },
+  "lists": {
+    "allRecords": "All",
+    "saveCurrent": "Save this view",
+    "namePlaceholder": "View name",
+    "save": "Save",
+    "makeDefault": "Open this view by default",
+    "makePublic": "Show to everyone",
+    "publicView": "Shared view",
+    "pin": "Pin",
+    "delete": "Delete",
+    "columns": "Columns",
+    "resetColumns": "Reset to default",
+    "viewsHint": "Set the filters and columns, then save them as a view — it stays in this list.",
+    "error": {
+      "unauthenticated": "Sign in again",
+      "forbidden": "Not allowed",
+      "not_found": "View not found",
+      "name_required": "Type a name",
+      "duplicate_name": "A view with that name exists",
+      "server_behind": "The server is not updated yet — ask for an update",
+      "failed": "Could not save"
+    },
+    "selected": "{n} selected",
+    "moveTo": "Move to…",
+    "assignTo": "Assign to…",
+    "clearSelection": "Clear selection",
+    "lostReason": "Lost reason",
+    "bulkDone": "Done {done}, refused {failed}",
+    "bulkSomeRefused": "open the card to see why",
+    "select": "Select",
+    "doMove": "Move",
+    "doAssign": "Assign"
+  },
+  "quick": {
+    "title": "Quick add",
+    "newLead": "New lead",
+    "newClient": "New client",
+    "name": "Name",
+    "phone": "Phone",
+    "save": "Save",
+    "full": "Full form →",
+    "close": "Close",
+    "created": "Added:",
+    "discard": "Close without saving? What you typed will be lost.",
+    "hint": {
+      "lead": "Lands on the first stage and belongs to you — the rest on the card.",
+      "client": "The code is assigned automatically — the rest on the card."
+    },
+    "error": {
+      "validation": "Type a name",
+      "forbidden": "Not allowed",
+      "code_exists": "That code already exists",
+      "code_format": "Bad code format",
+      "failed": "Could not save"
+    }
   }
 }

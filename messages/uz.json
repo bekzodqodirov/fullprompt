@@ -340,7 +340,7 @@
     "devices": "Qurilmalar",
     "thisDevice": "Shu qurilma",
     "logoutOthers": "Boshqa qurilmalardan chiqish",
-    "language": "Interfeys tili",
+    "language": "Til",
     "telegram": "Telegram",
     "telegramSoon": "Telegram ulash keyingi bosqichda qo'shiladi",
     "lastSeen": "Faollik",
@@ -480,7 +480,19 @@
     "receipts": "Qabullar",
     "boxesGroup": "Karobkalar",
     "lotsGroup": "Partiyalar",
-    "title": "Qidiruv"
+    "title": "Qidiruv",
+    "close": "Yopish",
+    "seeAll": "Hamma natijani ko'rish",
+    "kind": {
+      "client": "Mijozlar",
+      "lead": "Lidlar",
+      "deal": "Bitimlar",
+      "batch": "Partiyalar",
+      "partner": "Kontragentlar",
+      "box": "Karobkalar",
+      "receipt": "Prixodlar",
+      "lot": "Tovarlar"
+    }
   },
   "crates": {
     "title": "Yashiklar",
@@ -1712,5 +1724,61 @@
     "proof": "Kvitansiya / skrinshot",
     "proofNote": "Izoh (fayl bo‘lmasa — majburiy)",
     "proofRequired": "Fayl yoki izoh bo‘lishi shart"
+  },
+  "lists": {
+    "allRecords": "Hammasi",
+    "saveCurrent": "Shu ko'rinishni saqlash",
+    "namePlaceholder": "Ko'rinish nomi",
+    "save": "Saqlash",
+    "makeDefault": "Doim shu ko'rinish ochilsin",
+    "makePublic": "Hammaga ko'rinsin",
+    "publicView": "Umumiy ko'rinish",
+    "pin": "Qadab qo'yish",
+    "delete": "O'chirish",
+    "columns": "Ustunlar",
+    "resetColumns": "Avvalgidek qilish",
+    "viewsHint": "Filtr va ustunlarni sozlang, so'ng ko'rinish qilib saqlang — keyin shu ro'yxatda turadi.",
+    "error": {
+      "unauthenticated": "Qaytadan kiring",
+      "forbidden": "Ruxsat yo'q",
+      "not_found": "Ko'rinish topilmadi",
+      "name_required": "Nom yozing",
+      "duplicate_name": "Bunday nomli ko'rinish bor",
+      "server_behind": "Server hali yangilanmagan — yangilashni so'rang",
+      "failed": "Saqlanmadi"
+    },
+    "selected": "Tanlandi: {n}",
+    "moveTo": "Ko'chirish…",
+    "assignTo": "Biriktirish…",
+    "clearSelection": "Belgilashni bekor qilish",
+    "lostReason": "Yo'qotish sababi",
+    "bulkDone": "Bajarildi: {done}, bo'lmadi: {failed}",
+    "bulkSomeRefused": "sababini ko'rish uchun kartani oching",
+    "select": "Tanlash",
+    "doMove": "Ko'chirish",
+    "doAssign": "Biriktirish"
+  },
+  "quick": {
+    "title": "Tez qo'shish",
+    "newLead": "Yangi lid",
+    "newClient": "Yangi mijoz",
+    "name": "Ism",
+    "phone": "Telefon",
+    "save": "Saqlash",
+    "full": "Batafsil →",
+    "close": "Yopish",
+    "created": "Qo'shildi:",
+    "discard": "Saqlamasdan yopilsinmi? Yozganingiz yo'qoladi.",
+    "hint": {
+      "lead": "Birinchi bosqichga tushadi va o'zingizga biriktiriladi — qolgani kartada.",
+      "client": "Kod avtomatik beriladi — qolgani kartada."
+    },
+    "error": {
+      "validation": "Ism yozing",
+      "forbidden": "Ruxsat yo'q",
+      "code_exists": "Bunday kod bor",
+      "code_format": "Kod formati noto'g'ri",
+      "failed": "Saqlanmadi"
+    }
   }
 }

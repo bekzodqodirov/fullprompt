@@ -301,6 +301,29 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
 }
 
 /**
+ * Hand a lead to somebody, and nothing else.
+ *
+ * `updateLead` replaces every field it is given, so using it to change one
+ * would blank the other nine unless the caller re-sent them — which is fine
+ * for a form that HAS them all and wrong for a bulk action that has an id and
+ * a name. The audit row says exactly what changed, which is the point.
+ */
+export async function setLeadOwner(id: string, ownerId: string | null, ctx: AuditContext) {
+  if (!ctx.actorId) throw new CrmError('unauthenticated');
+  const before = await db.query.leads.findFirst({ where: eq(leads.id, id) });
+  if (!before) throw new CrmError('not_found');
+  if (before.ownerId === ownerId) return;
+  await db.update(leads).set({ ownerId, updatedAt: new Date() }).where(eq(leads.id, id));
+  await writeAudit(db, ctx, {
+    entityType: 'lead',
+    entityId: id,
+    action: 'update',
+    before: { ownerId: before.ownerId },
+    after: { ownerId },
+  });
+}
+
+/**
  * Move a lead along the funnel.
  *
  * A lost stage demands a reason — "why did we lose them" is the only thing

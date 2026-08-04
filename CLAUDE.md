@@ -111,18 +111,21 @@ pnpm build && pnpm e2e  # 44 e2e
 
 | Question | File |
 |---|---|
-| Why is it built this way? | `DECISIONS.md` — 301 numbered entries, newest last |
+| Why is it built this way? | `DECISIONS.md` — 489 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1 and 2 COMPLETE; 3–5 queued |
 
 ## State — 2026-08-04
 
-Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-891 unit/integration + 101 e2e, verified in CI's order on a fresh database.
-Latest migration: **0057** (`device_silent_notified`). Every numbered phase
+Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
+onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
+cut from the same tip.
+944 unit/integration + 115 e2e, verified in CI's order on a fresh database.
+Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
 Actions → driver-apk → artifact → Admin → Haydovchi ilovasi).
@@ -1108,6 +1111,148 @@ Red-proofs ×3; the integration file closes its trips in afterAll (a quiet
 paired leftover IS a silent truck to the e2e server's sweep, #154). NOT
 verifiable here: the APK runs on no machine I have — CI builds it, the
 first real 1.3 trip is the proof (watch the batch card's device row).
+
+Round 56 — the Frappe-CRM study (#488-489, owner: «frappe crm bor shuni
+organib chiq … ishlatish oson UI da bolishini hohlayman»). ANALYSIS ONLY —
+no code, no migration. Three-lens inventory of `/home/user/frappe-crm`
+(`develop` @ 2025-01-06). Verdict, told to the owner and APPROVED by him:
+do NOT install it (own stack — MariaDB + 8-11 processes + ~2 GB beside
+ours; zero translation files; FLAT permissions — every seller sees every
+deal; AGPL §13 — **ideas yes, code NEVER copied out of that repo**); port
+its ease-of-use layer natively instead. Where we are already ahead, stated:
+deal money (their Deal has NO amount field), lost reason (they have none),
+in-app custom fields, automation rules, cargo funnel, Telegram depth,
+measured SLA (theirs stops on a manual dropdown), reports (their dashboard
+is a stub), 4 locales vs 0. The programme is **docs/CRM-UX.md** — five
+approved batches: (1) lists = saved views + quick filters + any-column
+sort + column chooser + current-view XLSX (rbac-scoped, never a raw dump);
+(2) speed = `/search` WIDENED (it exists — spec §12 — but knows no
+leads/deals/batches/kontragent/phones) + Ctrl+K + quick-create modals +
+bulk actions THROUGH moveLead/moveDeal so audit+rules fire; (3) inline
+edit on card rails (a refusal keeps the typed value); (4) desktop-only
+kanban DnD via `(pointer: fine)` — touch keeps buttons (owner refused
+touch drag twice), stage COLOURS already exist (`crm/stage-color.ts`);
+(5) dark mode (print routes stay light) + Telegram canned replies
+({ism}/{kod}) + polish. Corrected en route: my own «global search yo'q»
+claim was wrong — /search shipped with spec §12; a "we lack X" claim
+needs a grep first. THREE questions await his answer (public views
+admin-only? / bulk-lost with reason? / shared+personal templates? —
+recommendations in the doc are the default if he says «boshla»). Batch 1
+starts on his go.
+
+Round 57 — **UX batch 1, the lists** (#490-491, owner: «tavsiyalaring
+bo'yicha boshla» = all three questions answered yes). A saved view is a NAME
+for the address bar and nothing else: `list_views` (migration 0058) stores the
+screen's own query string, applying it is a LINK, so it is shareable, opens in
+a tab, walks with the back button and is carried by the export for free — and
+a screen that grows a filter next month is savable with no code. `user_id`
+NULL = published to the company (admin only, his answer); `is_default` is
+personal by construction (CHECK + partial unique index per person+screen);
+`normalizeQuery` sorts keys, drops empty boxes and drops the control params so
+a view cannot re-save itself. Columns became DATA (`platform/lists/columns.ts`
+`ColumnDef`, custom fields join the same list as `cf_<uuid>`): `visibleColumns`
+is the one gate — a permissioned column is dropped even when the URL names it,
+the link column cannot be turned off, an unknown key is DROPPED (a view
+outlives the field it names). Both exports learned the same set — a sheet
+carrying a column the screen hid is a leak with a filename. Screens: clients
+(views + picker + export, card grid retired for one table), stock (same;
+STOCK_COLUMNS in `wms/inventory/columns.ts`), `/o/<code>` (views only, screen
+key `o:<code>`). Red-proofs ×3 (permission drop, publish gate, default-clear).
+FOUND AT 360 px, all mine: the picker's `<details>` stayed open across its own
+navigation and swallowed the next tap; the view menu anchored to the ⋯ pushed
+the document to 487 px and mobile Chrome zoomed the PAGE out (#400's mechanism,
+#471's mistake repeated — `relative` belongs on the ROW); the stock search
+collapsed to ~50 px (#419's cascade, third costume). E2E LESSON:
+`browser.newPage()` in `afterAll` has neither baseURL nor login, so the
+cleanup silently did nothing and left a saved view that redirects the next
+spec — cleanup is a final TEST now, proven by finding the row in the database.
+m9e's `getByLabel(city)` now scopes to `custom-filters`: the picker names
+every column too. NOT green here: m1×2, m2×1, m9h — all the photo-upload path,
+all identical with this round's changes stashed (no image service in this
+container; m9h cascades off m1's receipt).
+
+Round 58 — **UX batch 2, first half: the search** (#492-494, owner «2-bosqichni
+boshlayver»). READING `/search` first found the real story: its whole guard was
+`if (!actor) redirect('/login')` and its four queries had NO scoping — a Yiwu
+operator could find a Tashkent box and anyone could page the client book, since
+spec §12. The bot's rule («a read wider than the screens is a back door»,
+`wms/bot/lookup.ts`) is now the search's: `wms/search/service.ts` asks each
+group its own screen's question — warehouseScope on receipts/lots, boxes by
+`inScope` on the box OR its batch's TWO ends (transit belongs to no warehouse),
+the funnel's ownership rule for leads+deals, the batch screen's five-permission
+door, `finance.view` for partners — and a group the actor lacks is NOT QUERIED
+rather than filtered. `SearchHit` has no money field, tested structurally.
+Widened to leads/deals/batches/partners/phone→client. Red-proofs ×3.
+**⌘K palette** (`components/search-palette.tsx`): portal (header's
+backdrop-blur, dock's lesson), 220 ms debounce with stale-answer guard, closes
+on pathname, Escape. THE CLICK: wrapping the app-bar `<Link>` in
+`onClick={preventDefault}` did NOTHING — Next's Link handles the click on the
+anchor first, so the icon navigated and the panel never opened;
+**`onClickCapture`** is the only phase that can win (Link skips its work when
+already default-prevented). The Link stays underneath = the no-JS door, and
+`/search` renders the same hits from the same function. `/api/search` is
+`private, no-store`. BROKE + FIXED: m9z-nav-progress measured the bar through
+that very search link — now the tab bar's `/bugun`, with `:visible` (the
+sidebar renders the same href first and is `hidden md:block`). The ⌘K spec
+passed alone and failed in the full suite (listener attached by an effect) —
+it retries with `toPass()`. TEST LESSON, learned twice this round: a test that
+passes because the thing under test never appeared proves nothing. NOTED, not
+chased: every page logs one React #418 hydration warning, with and without
+this round's changes — pre-existing, wants its own round. **Batch 2 second
+half (quick-create modals + bulk actions) is next.**
+
+Round 59 — **UX batch 2c, bulk actions** (#495-496). Ticks on lead and deal
+cards (`kanban.tsx` grows an optional `selection` prop — a prop, not internal
+state, because only the screen knows what «assign» means; `SelectBox` stops
+propagation AND prevents default, since the desktop card IS the anchor and
+carries the drag handlers). `BulkBar` (`components/list/bulk-bar.tsx`) over
+the board. Actions loop inside ONE `run()` — one authorize, one revalidate,
+one rules kick — but the WRITE stays per row through `moveLead`/`moveDeal`/
+`setLeadOwner`, the only paths that audit and emit the stage events phase-7
+and the cargo-trigger listen to. Answers COUNTS («19 done, 1 refused»); a
+refusal never abandons the rest; the selection clears only on a clean run.
+New `setLeadOwner` — narrow on purpose (`updateLead` replaces every field)
+with a no-op guard so a sweep does not write twenty empty audit rows. Lost
+reason still mandatory through the bulk path. Owner assign is offered only
+under `crm.leads.view_all`; deals get no bulk assign by design. Red-proofs
+×2. FOUND IN A SCREENSHOT: `if (count === 0) return null` unmounted the bar
+at the moment it had an answer — it now survives on `count || result`; and
+both buttons said «Apply» (now «Ko'chirish» / «Biriktirish»). E2E LESSONS:
+the funnel renders BOTH board shapes into the DOM (CSS toggles them), so
+specs scope to `funnel-mobile` or every card is found twice; the lost column
+is chosen by `option[data-kind="lost"]`, never by position, because the owner
+names his own funnel; `audit_log` refuses DELETE by database rule, so a spec
+cleans up leads and events and LEAVES the audit trail. **Batch 2b
+(quick-create modals) is the one piece of batch 2 still open.**
+
+Round 60 — **UX batch 2b, quick create; batch 2 COMPLETE** (#497-499). The
+design was reviewed by three adversarial lenses BEFORE any code, and three
+load-bearing assumptions died: (a) the option lists had no home — the layout
+cannot afford four queries per render (#432's lesson) and the codebase refuses
+a definitions JSON route on purpose, so they were DELETED: `leadSchema` needs
+only a name, stage falls back to the first, owner to the presser, an empty
+client code means «mint the next». **Two boxes, zero queries.** (b) the
+«required custom field → full page» branch enforced NOTHING —
+`validateValues` skips an ABSENT key, so a modal with no `cf_` inputs lands a
+clean record; replaced by an unconditional «Batafsil →» link, with the card's
+panel still refusing the next save. (c) the three existing create actions
+CANNOT be called from a button: `redirect()` inside an action invoked from an
+onClick rejects with NEXT_REDIRECT and an async handler has no boundary —
+hence `quickCreateLeadAction` / `quickCreateClientAction` returning
+`{ ok, id, name, error }` (the `CrateActionResult` shape). Also caught in
+review: `ClientFormState` has no `ok` field, so `res.ok` would have called
+every success a failure. Behaviour: it STAYS on the page (a jump is the
+interruption the button avoids), leaves one dismissible «Qo'shildi: …» line
+with a link, and refuses to discard a dirty form on a backdrop tap or Escape —
+never on a route change, where the page underneath has gone.
+`components/ui/overlay.tsx` extracted (portal + backdrop + Escape +
+close-on-route with a REASON); the scaffold existed three times and Escape
+worked in one. THE MEASUREMENT: adding the «+» silently squeezed every app-bar
+icon from 44 px to **33 px** at 360 px — no overflow, no page rescale, no test
+red. The language select (60 px, set-once) moved to `/profile` on phones
+(`sm:hidden` / `hidden sm:inline-flex`), and everything is back at 44 px.
+RULE: `flex` without `shrink-0` protects the layout, never the controls —
+only a measurement says they became unusable.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

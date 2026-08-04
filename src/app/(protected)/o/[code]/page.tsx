@@ -16,6 +16,9 @@ import {
   listColumns,
   readFilters,
 } from '@/modules/platform/fields/filter';
+import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
+import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
+import { ViewBar } from '@/components/list/view-bar';
 import { CustomFilters } from '../../admin/clients/custom-filters';
 import { NewRecordForm } from './new-record';
 
@@ -40,6 +43,13 @@ export default async function CustomListPage({
   if (!entity?.custom) notFound();
 
   const query = await searchParams;
+  // The screen key carries the object's code: two of the owner's own objects
+  // are two different lists and must not share each other's saved views.
+  const screen = `o:${code}`;
+  if (Object.keys(query).length === 0) {
+    const preset = await defaultViewFor(screen, actor.id);
+    if (preset?.query) redirect(`/o/${code}?${preset.query}`);
+  }
   const q = typeof query.q === 'string' ? query.q.trim() : '';
   const sort = typeof query.sort === 'string' ? query.sort : 'name';
   const dir = query.dir === 'desc' ? 'desc' : 'asc';
@@ -77,6 +87,7 @@ export default async function CustomListPage({
   for (const filter of filters) carried[`cf_${filter.fieldId}`] = filter.value;
 
   const writable = canWriteEntity(entity, actor.permissions);
+  const views = await listViewsFor(screen, actor.id);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
@@ -85,6 +96,14 @@ export default async function CustomListPage({
         back={{ href: '/o', label: t('title') }}
         title={entity.label ?? code}
         subtitle={<span className="num">{total}</span>}
+      />
+
+      <ViewBar
+        screen={screen}
+        path={`/o/${code}`}
+        views={views}
+        currentQuery={normalizeQuery(query)}
+        canPublish={canPublishViews(actor.permissions)}
       />
 
       {writable && <NewRecordForm entityCode={code} />}
