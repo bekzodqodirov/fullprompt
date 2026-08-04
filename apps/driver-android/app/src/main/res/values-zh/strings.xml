@@ -23,7 +23,6 @@
     <string name="setup_title">设置</string>
     <string name="check_location">位置权限</string>
     <string name="check_background">「始终允许」位置权限</string>
-    <string name="check_notify">通知权限</string>
     <string name="check_battery">已关闭电池优化</string>
     <string name="check_autostart">已允许自启动</string>
     <string name="check_autostart_hint">小米/华为/OPPO/vivo 手机必须设置。在列表中打开 GSRDriver，然后点「已完成」。</string>

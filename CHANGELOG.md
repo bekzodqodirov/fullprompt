@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## Haydovchi ilovasi 1.3: 2 soatdan keyin o'lish tuzatildi, bildirishnoma yo'qoldi — 2026-08-04
+
+Sizning 1-band: «driver app negadur 2 soatdan keyin ishlamay qoldi» + «hech
+qanday notification ko'rsatmasin, telda yo'qdek bo'lsin».
+
+**Nega aynan 2 soatdan keyin o'lardi.** Eski ilovada jadval zanjir edi: har
+sikl KEYINGI budilnikni o'zi qurardi. Telefon ilovani xotiradan o'chirib
+yuborgan bo'lsa, budilnik chalinganda Android xizmatni qayta ishga
+tushirishga ruxsat bermasligi mumkin — va o'sha payt zanjir uziladi:
+budilnik «ishlatildi», yangisini quradigan hech kim yo'q. Birinchi
+qarovsiz signal esa ulanishdan roppa-rosa 2 soat keyin — shuning uchun
+aynan 2 soat.
+
+**Endi jadval telefonning o'z tizimida saqlanadi** (Android'ning o'zi har
+2 soatda ishga tushiradi, telefon o'chib yonsa ham). Bitta urinish muvaffaqiyatsiz
+bo'lsa, keyingisi baribir keladi — zanjir yo'q, uzilish ham yo'q. Xizmat
+ishga tushmagan holatda ham ilova to'plangan nuqtalarni yuboradi va oxirgi
+ma'lum joylashuvni jo'natadi: sekinlashadi, lekin o'lmaydi.
+
+**Bildirishnoma.** Android 13+ telefonlarda ilova endi **umuman
+bildirishnoma ko'rsatmaydi** — talabingizdagidek, telda yo'qdek. Eskiroq
+Androidlarda qonun bo'yicha butunlay yashirib bo'lmaydi, lekin endi u
+faqat joylashuv olinayotgan 1-2 daqiqada, eng past darajada, tovushsiz
+ko'rinadi va o'zi yo'qoladi (avval butun reys davomida turardi).
+
+**Serverda qo'riqchi.** O'lgan ilova o'z o'limi haqida xabar berolmaydi —
+buni faqat server ko'radi. Endi yo'ldagi reysning telefoni 8 soatdan ortiq
+jim qolsa, logistlarga Telegram orqali **bir marta** xabar boradi (reys
+kodi, mashina, necha soat jim, havola). Telefon yana gapirsa, hisob
+qaytadan boshlanadi. Bu xaritadagi nuqta kulrang bo'ladigan o'lchovning
+o'zi — ikkita alohida «eskirgan» tushunchasi yo'q.
+
+Yangi APK'ni chiqarish kerak bo'ladi (GitHub Actions → driver-apk →
+artifact → Admin → Haydovchi ilovasi; telefonlardagi eski ilova avval
+o'chiriladi). Sozlashda endi bitta qadam kam: bildirishnoma so'ralmaydi.
+
+Tekshirish: 891 ta ichki test (8 tasi yangi — jim qolgan reys qoidalari,
+har biri himoyasiz qolganda qizil bo'lishi isbotlangan), 101 brauzer testi.
+Ilovaning o'zi bu konteynerda ishga tushirilmaydi — shuning uchun yig'ishdan
+oldin Android kodi uch mustaqil ko'z bilan adversarial tekshiruvdan o'tkazildi:
+5 ta yashirin xato topilib tuzatildi (jumladan to'la diskda ilovaning o'lib
+qolishi va ruxsat olib qo'yilganda har 10 daqiqada bekorga uyg'onish).
+APK'ni CI yig'adi; birinchi jonli reysda kuzatib borish kerak.
+
+
 ## Sklad rasmlari endi ezilmaydi — 2026-08-04
 
 Sabab topildi: brauzerning o'zi har bir rasmga «kerak bo'lsa toraytirsa

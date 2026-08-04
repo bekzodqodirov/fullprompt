@@ -21,7 +21,7 @@ skanerlaydi.
 1. GitHub → **Actions** → **driver-apk** → oxirgi ✅ yashil ish → **Artifacts**
    dan `GSRDriver-apk` ni yuklab oling, zipdan `.apk` ni chiqaring.
 2. Saytda **Admin → Haydovchi ilovasi** ni oching.
-3. Versiya nomini yozing (masalan `1.2`), APK faylni tanlang, **Chiqarish**.
+3. Versiya nomini yozing (masalan `1.3`), APK faylni tanlang, **Chiqarish**.
 
 Shu zahoti `https://gsrwms.uz/driver` yangi faylni beradi. Havola o'zgarmaydi —
 haydovchilarga har safar yangi manzil yuborish kerak emas.
@@ -58,8 +58,8 @@ maydonini yangi domenga o'zgartirish yetarli, qayta ulash shart emas.
 2. Saytda partiya sahifasidagi **📲 Haydovchi telefoni → Kod yaratish** ni
    bosing va chiqqan 6 belgili kodni ilovaga kiriting → **Ulash**.
 3. Ilova **ketma-ket** so'raydi — hammasiga rozilik bering:
-   joylashuv → bildirishnomalar → **«Doim ruxsat berish»** → **batareya
-   cheklovini olib tashlash** → **avtoishga tushirish** ro'yxati.
+   joylashuv → **«Doim ruxsat berish»** → **batareya cheklovini olib
+   tashlash** → **avtoishga tushirish** ro'yxati.
    Avtoishga tushirish oynasida GSRDriver'ni yoqib, ilovadagi **«Bajarildi»**
    tugmasini bosing (bu qadamni telefon o'zi aytmaydi, shuning uchun qo'lda
    tasdiqlanadi).
@@ -69,11 +69,12 @@ maydonini yangi domenga o'zgartirish yetarli, qayta ulash shart emas.
 
 Shundan keyin telefonni haydovchiga qaytarasiz.
 
-> Bildirishnoma sohasida ilova jim turadi — faqat reys nomi ko'rinadi.
-> Muammo bo'lsa (ruxsat olinmagan, internetsiz uzoq qolib ketgan) o'shanda
-> yozuv chiqadi. Android foydali ish bajarayotgan ilovadan bildirishnomani
-> olib tashlashga ruxsat bermaydi, shuning uchun uni butunlay yashirib
-> bo'lmaydi.
+> **Bildirishnoma haqida (1.3):** egasining talabi — «telda yo'qdek
+> bo'lsin». Android 13 va undan yangi telefonlarda ilova endi **umuman
+> bildirishnoma ko'rsatmaydi** (ilova bildirishnoma ruxsatini so'ramaydi
+> ham). Eskiroq Androidlarda Android qonuni bo'yicha joylashuv olinayotgan
+> 1-2 daqiqagina jimgina, eng past darajada ko'rinadi va o'chib ketadi —
+> butunlay yashirishga faqat shu darajagacha ruxsat bor.
 
 ## Qanday ishlaydi
 
@@ -81,7 +82,11 @@ Shundan keyin telefonni haydovchiga qaytarasiz.
   o'zgartirsa bo'ladi). Oraliqlar orasida GPS **butunlay o'chib turadi** —
   batareya shuning uchun kam sarflanadi.
 - Joylashuv olinmasa (tunnel, garaj, yopiq osmon) ilova 10 daqiqadan keyin
-  qayta urinadi, 2 soat kutmaydi.
+  qayta urinadi, 2 soat kutmaydi — lekin ketma-ket 3 martagina: yarim soat
+  tinglagach ham hech narsa eshitilmasa, bu tunnel emas, va ilova odatdagi
+  jadvalga qaytadi. Ruxsat olib qo'yilgan yoki joylashuv o'chirilgan telefonda
+  esa tez urinish umuman bo'lmaydi — har 10 daqiqada uyg'onish odam hal
+  qiladigan muammoni tuzata olmaydi, batareyani esa yeydi.
 - Nuqtalar avval telefonda saqlanadi, keyin serverga yuboriladi; internet
   yo'q joyda (chegara, tog'lar) navbatda turadi va aloqa paydo bo'lishi bilan
   birdan ketadi. Ekranda «Yuborilmagan nuqtalar» soni ko'rinadi.
@@ -96,10 +101,23 @@ Texnik izohlar:
 - Google Play xizmatlari **ishlatilmaydi** (Xitoy telefonlarining ko'pida u
   yo'q) — joylashuv Android'ning o'z `LocationManager`i orqali olinadi,
   shuning uchun ilova har qanday Android telefonda ishlaydi.
-- Oraliqni `AlarmManager` yuritadi (`setAndAllowWhileIdle`), shuning uchun
-  telefon uxlab yotganda ham signal keladi. Aynan shu sababdan **batareya
-  cheklovini olib tashlash majburiy**: aks holda Android signalni kechiktiradi
-  va nuqtalar 2 soatda emas, tasodifiy kelib turadi.
+- **1.3 dan boshlab** oraliqni `JobScheduler`ning saqlanadigan (persisted)
+  davriy vazifasi yuritadi, `AlarmManager` emas. Farqi jonli reysda ko'ringan:
+  eski zanjirda har sikl KEYINGI signalni o'zi qurar edi — Android bir marta
+  xizmatni ishga tushirishga ruxsat bermasa, zanjir uzilib, kuzatuv 2 soatdan
+  keyin butunlay to'xtab qolardi. Endi jadval tizimning o'zida saqlanadi:
+  bitta sikl o'tmay qolsa ham, keyingisi baribir keladi, telefon o'chib
+  yonsa ham jadval tiklanadi. Xizmat ishga tushmagan siklda ham ilova
+  navbatdagi nuqtalarni yuborib, oxirgi ma'lum joylashuvni jo'natadi.
+- **Batareya cheklovini olib tashlash baribir majburiy**: usiz Android uyqu
+  rejimida vazifani kechiktiradi VA fon xizmatini ishga tushirishga umuman
+  ruxsat bermaydi. Avtoishga tushirish ro'yxati (Xiaomi/Vivo/Oppo/Huawei)
+  ham majburiy — usiz haydovchi ilovani «hammasini tozalash» bilan yopsa,
+  hech narsa uni qayta tiriltira olmaydi.
+- Serverda qo'shimcha qo'riqchi bor: yo'ldagi reysning telefoni 8 soatdan
+  ortiq jim qolsa, logistlarga Telegram orqali bir marta xabar boradi
+  (xaritadagi nuqta kulrang bo'lgan payt bilan bir xil o'lchov). O'lgan
+  ilova o'zining o'limi haqida xabar berolmaydi — buni faqat server ko'radi.
 
 ## Ishlab chiquvchi uchun
 

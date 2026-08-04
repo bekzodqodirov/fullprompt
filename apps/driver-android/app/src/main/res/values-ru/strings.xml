@@ -21,7 +21,6 @@
     <string name="setup_title">Настройка</string>
     <string name="check_location">Доступ к геолокации</string>
     <string name="check_background">«Разрешать всегда»</string>
-    <string name="check_notify">Уведомления</string>
     <string name="check_battery">Снято ограничение батареи</string>
     <string name="check_autostart">Разрешён автозапуск</string>
     <string name="check_autostart_hint">Обязательно на Xiaomi/Huawei/Oppo/Vivo. Включите GSRDriver в списке и нажмите «Готово».</string>

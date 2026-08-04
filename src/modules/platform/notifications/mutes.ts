@@ -44,6 +44,10 @@ export const MUTE_GROUPS = {
     // just died. Nothing this person types can reach a customer until they
     // reconnect, so it is an alarm and not news.
     'TelegramSessionEnded',
+    // A driver phone on an in-transit trip went quiet past the map's own
+    // staleness threshold (round 55). Raised by the SERVER, deliberately:
+    // every alarm the phone itself could raise dies with the app.
+    'TruckSilent',
   ],
   operations: [
     'ReceiptConfirmed',

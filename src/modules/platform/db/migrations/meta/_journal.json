@@ -400,6 +400,13 @@
       "when": 1785190000025,
       "tag": "0056_tg_session_removable",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1785190000026,
+      "tag": "0057_device_silent_notified",
+      "breakpoints": true
     }
   ]
 }

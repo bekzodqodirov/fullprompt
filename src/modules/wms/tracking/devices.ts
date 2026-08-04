@@ -180,7 +180,9 @@ export async function ingestPositions(
   });
   await db
     .update(driverDevices)
-    .set({ lastSeenAt: new Date() })
+    // The phone spoke: any reported silence is over, so a NEW one can be
+    // reported again later (round 55's silent-truck alarm).
+    .set({ lastSeenAt: new Date(), silentNotifiedAt: null })
     .where(eq(driverDevices.id, device.id));
   return { accepted: inserted.length };
 }

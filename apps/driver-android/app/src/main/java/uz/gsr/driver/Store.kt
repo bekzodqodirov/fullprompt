@@ -77,6 +77,11 @@ class Store(context: Context) :
         get() = prefs.getLong("nextTick", 0L)
         set(value) = prefs.edit().putLong("nextTick", value).apply()
 
+    /** Consecutive listened-but-heard-nothing cycles — caps the quick retries. */
+    var missStreak: Int
+        get() = prefs.getInt("missStreak", 0)
+        set(value) = prefs.edit().putInt("missStreak", value).apply()
+
     /**
      * The OEM auto-start whitelist (Xiaomi/Huawei/Oppo/Vivo) cannot be read
      * back from an app, so the warehouse worker ticks it off by hand.
@@ -107,20 +112,27 @@ class Store(context: Context) :
             .remove("lastSent")
             .remove("lastError")
             .remove("nextTick")
+            .remove("missStreak")
             .remove("fixAt")
             .remove("fixLat")
             .remove("fixLon")
             .apply()
-        writableDatabase.delete("fixes", null, null)
+        runCatching { writableDatabase.delete("fixes", null, null) }
     }
 
     // --- Queue -------------------------------------------------------------
 
     fun enqueue(lat: Double, lon: Double, accuracy: Float, speed: Float, recordedAt: Long) {
-        writableDatabase.execSQL(
-            "INSERT INTO fixes (lat, lon, acc, spd, ts) VALUES (?, ?, ?, ?, ?)",
-            arrayOf<Any>(lat, lon, accuracy.toInt(), speed.toDouble(), recordedAt),
-        )
+        // A full disk (drivers' phones are full of videos) must cost one
+        // point, not the process: this runs on the main thread, and an
+        // uncaught SQLite throw there is a crash the persisted schedule
+        // would replay every interval.
+        runCatching {
+            writableDatabase.execSQL(
+                "INSERT INTO fixes (lat, lon, acc, spd, ts) VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any>(lat, lon, accuracy.toInt(), speed.toDouble(), recordedAt),
+            )
+        }
     }
 
     fun pending(limit: Int): List<Fix> {

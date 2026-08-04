@@ -9,15 +9,24 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- The truck may be restarted mid-trip; tracking resumes by itself. -->
+    <!--
+      Deliberately NO android.permission.POST_NOTIFICATIONS (v1.3): the owner
+      asked for an app the driver never sees. On Android 13+ a foreground
+      service whose app cannot post notifications simply shows none — the
+      service runs all the same. On older Android the notification exists only
+      for the minute or two a cycle takes, at minimum importance.
+    -->
+    <!-- The truck may be restarted mid-trip; tracking resumes by itself.
+         Also what lets the periodic job be persisted across reboots. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Keeps the CPU up for the ~90 s it takes to get a fix and upload it. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!--
       Lets the setup screen show the system "run in the background?" dialog.
-      Not a Play Store build (the APK is handed out at the warehouse), and
-      without the allowlist the every-2-hours alarm is deferred by Doze.
+      Not a Play Store build (the APK is handed out at the warehouse). The
+      allowlist is doubly needed: without it Doze defers the periodic job,
+      and Android 12+ refuses to START the service from a background job at
+      all — the job then falls back to last-known-position reporting.
     -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -60,6 +69,13 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- The metronome: JobScheduler runs this every interval (persisted,
+             so it survives reboots and any single run failing). -->
+        <service
+            android:name=".TrackJob"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
@@ -68,10 +84,5 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-
-        <!-- Fires every interval to take one position and go back to sleep. -->
-        <receiver
-            android:name=".AlarmReceiver"
-            android:exported="false" />
     </application>
 </manifest>

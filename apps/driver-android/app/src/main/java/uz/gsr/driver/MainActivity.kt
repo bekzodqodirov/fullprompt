@@ -24,16 +24,18 @@ import java.util.concurrent.Executors
  * Two screens in one: pairing (before the truck leaves) and trip status.
  *
  * The warehouse worker does the whole setup with the driver's phone in hand,
- * so the five things that have to be right — location, background location,
- * notifications, battery, vendor auto-start — are walked through one after
- * another and then kept on screen as a checklist that stays red until each
- * one is actually done.
+ * so the four things that have to be right — location, background location,
+ * battery, vendor auto-start — are walked through one after another and then
+ * kept on screen as a checklist that stays red until each one is actually
+ * done. Notifications are deliberately NOT among them since v1.3: the owner
+ * asked for an app the driver never sees, so the permission is never asked
+ * for — on Android 13+ that alone keeps the tracking notification off the
+ * screen entirely.
  */
 class MainActivity : AppCompatActivity() {
 
     private companion object {
         const val STEP_LOCATION = 1
-        const val STEP_NOTIFY = 2
         const val STEP_BACKGROUND = 3
         const val STEP_BATTERY = 4
         const val STEP_AUTOSTART = 5
@@ -58,11 +60,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setupCard: View
     private lateinit var textLocation: TextView
     private lateinit var textBackground: TextView
-    private lateinit var textNotify: TextView
     private lateinit var textBattery: TextView
     private lateinit var textAutostart: TextView
     private lateinit var rowBackground: View
-    private lateinit var rowNotify: View
     private lateinit var btnAutostartDone: Button
     private lateinit var intervalGroup: RadioGroup
     private lateinit var lastFixText: TextView
@@ -93,11 +93,9 @@ class MainActivity : AppCompatActivity() {
         setupCard = findViewById(R.id.setupCard)
         textLocation = findViewById(R.id.textLocation)
         textBackground = findViewById(R.id.textBackground)
-        textNotify = findViewById(R.id.textNotify)
         textBattery = findViewById(R.id.textBattery)
         textAutostart = findViewById(R.id.textAutostart)
         rowBackground = findViewById(R.id.rowBackground)
-        rowNotify = findViewById(R.id.rowNotify)
         btnAutostartDone = findViewById(R.id.btnAutostartDone)
         intervalGroup = findViewById(R.id.intervalGroup)
         lastFixText = findViewById(R.id.lastFixText)
@@ -117,7 +115,7 @@ class MainActivity : AppCompatActivity() {
 
         // Every red row offers the same escape hatch: restart the chain from
         // the first thing that is still missing.
-        for (id in intArrayOf(R.id.btnLocation, R.id.btnBackground, R.id.btnNotify, R.id.btnBattery)) {
+        for (id in intArrayOf(R.id.btnLocation, R.id.btnBackground, R.id.btnBattery)) {
             findViewById<Button>(id).setOnClickListener { runChain() }
         }
         findViewById<Button>(R.id.btnAutostart).setOnClickListener { openAutostart() }
@@ -135,8 +133,12 @@ class MainActivity : AppCompatActivity() {
             val minutes = intervalFor(checkedId)
             if (minutes != store.intervalMinutes) {
                 store.intervalMinutes = minutes
-                // Re-arm right away so the screen shows the new schedule.
-                if (store.isPaired) TrackingService.sendNow(this)
+                if (store.isPaired) {
+                    // The period changed, so ensure() re-posts the job; a cycle
+                    // right away makes the screen show the new schedule.
+                    Schedule.ensure(this, store)
+                    TrackingService.sendNow(this)
+                }
             }
         }
 
@@ -210,14 +212,8 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.ACCESS_BACKGROUND_LOCATION,
             ) == PackageManager.PERMISSION_GRANTED
 
-    private fun hasNotifications(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-
     private fun nextMissingStep(): Int? = when {
         !hasForegroundLocation() -> STEP_LOCATION
-        !hasNotifications() -> STEP_NOTIFY
         !hasBackgroundLocation() -> STEP_BACKGROUND
         !Setup.batteryUnrestricted(this) -> STEP_BATTERY
         !store.autostartConfirmed -> STEP_AUTOSTART
@@ -262,12 +258,6 @@ class MainActivity : AppCompatActivity() {
                 STEP_LOCATION,
             )
 
-            STEP_NOTIFY -> ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                STEP_NOTIFY,
-            )
-
             STEP_BACKGROUND -> {
                 toast(getString(R.string.background_hint))
                 ActivityCompat.requestPermissions(
@@ -310,7 +300,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startTrackingIfReady() {
-        if (store.isPaired && hasForegroundLocation()) TrackingService.start(this)
+        if (!store.isPaired || !hasForegroundLocation()) return
+        // The schedule is the thing that keeps tracking alive; the service is
+        // only started when a report is genuinely due — starting it just to
+        // have it stop again would flash the notification the owner asked to
+        // lose.
+        Schedule.ensure(this, store)
+        if (store.nextTickAt <= System.currentTimeMillis()) TrackingService.start(this)
     }
 
     // --- Rendering ---------------------------------------------------------
@@ -333,13 +329,11 @@ class MainActivity : AppCompatActivity() {
     private fun renderChecklist() {
         val location = hasForegroundLocation()
         val background = hasBackgroundLocation()
-        val notify = hasNotifications()
         val battery = Setup.batteryUnrestricted(this)
         val autostart = store.autostartConfirmed
 
         mark(textLocation, R.string.check_location, location)
         mark(textBackground, R.string.check_background, background)
-        mark(textNotify, R.string.check_notify, notify)
         mark(textBattery, R.string.check_battery, battery)
         mark(textAutostart, R.string.check_autostart, autostart)
         btnAutostartDone.visibility = if (autostart) View.GONE else View.VISIBLE
@@ -347,10 +341,8 @@ class MainActivity : AppCompatActivity() {
         // Steps Android does not have on this version are not "missing".
         rowBackground.visibility =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) View.VISIBLE else View.GONE
-        rowNotify.visibility =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) View.VISIBLE else View.GONE
 
-        val ready = location && background && notify && battery && autostart
+        val ready = location && background && battery && autostart
         setupCard.visibility = if (ready) View.GONE else View.VISIBLE
         stateText.text = getString(if (ready) R.string.state_ok else R.string.state_setup)
         stateText.setTextColor(

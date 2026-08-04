@@ -2,7 +2,6 @@ package uz.gsr.driver
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -27,12 +26,18 @@ import androidx.core.app.NotificationCompat
 import java.util.concurrent.Executors
 
 /**
- * Reports the truck's position a few times a day and sleeps in between.
+ * Reports the truck's position a few times a day and DOES NOT EXIST in
+ * between.
  *
  * The first release kept the GPS registered permanently; the owner asked for
  * the opposite trade — a position every 2-3 hours is all the logist needs and
- * the driver's battery has to survive a six-day run. So the service now wakes
- * on an alarm, takes ONE fix, uploads, and lets the radio go back to sleep.
+ * the driver's battery has to survive a six-day run. v1.3 takes the same idea
+ * one step further: the service only lives for the length of one cycle (wake,
+ * one fix, upload, stop), so its notification exists for a minute or two
+ * every couple of hours instead of sitting in the shade all trip — the
+ * closest Android allows to the owner's «telda yo'qdek bo'lsin». The clock
+ * that wakes it is a persisted periodic job (see Schedule), not an alarm the
+ * service has to keep re-arming itself.
  *
  * Uses the plain framework LocationManager rather than Google's fused
  * provider on purpose: many Chinese phones (Huawei above all) ship without
@@ -58,53 +63,46 @@ class TrackingService : Service() {
         private const val FIX_WINDOW_MS = 90_000L
         /** Accurate enough to stop waiting and switch the radio off early. */
         private const val GOOD_ACCURACY_M = 100f
-        /** No fix this cycle (tunnel, ferry, garage): retry soon, not in 2 h. */
-        private const val RETRY_MS = 10 * 60_000L
+        /** Quick retries in a row before falling back to the normal cadence. */
+        private const val MISS_RETRY_MAX = 3
         private const val WAKE_TIMEOUT_MS = 3 * 60_000L
-        private const val BATCH_SIZE = 200
         /** Only mention the queue once a real backlog has piled up. */
         private const val BACKLOG_WARN = 12
 
-        fun start(context: Context) = send(context, null)
+        fun start(context: Context) {
+            startWith(context, null)
+        }
 
-        fun tick(context: Context) = send(context, ACTION_TICK)
+        fun sendNow(context: Context) {
+            startWith(context, ACTION_SEND_NOW)
+        }
 
-        fun sendNow(context: Context) = send(context, ACTION_SEND_NOW)
+        /**
+         * A cycle start that reports whether Android allowed it — the job's
+         * fallback hangs off the answer.
+         */
+        fun tryStart(context: Context): Boolean = startWith(context, ACTION_TICK)
 
         fun stop(context: Context) {
-            cancelAlarm(context)
+            Schedule.cancelAll(context)
             runCatching { context.stopService(Intent(context, TrackingService::class.java)) }
         }
 
-        private fun send(context: Context, action: String?) {
+        private fun startWith(context: Context, action: String?): Boolean {
             val intent = Intent(context, TrackingService::class.java)
             if (action != null) intent.action = action
-            // While the service is already running in the foreground a plain
-            // start is enough and never trips Android 12's background-start
-            // rules; startForegroundService is the fallback for a cold start.
-            runCatching { context.startService(intent) }.onFailure {
-                runCatching {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(intent)
-                    } else {
-                        context.startService(intent)
-                    }
-                }.onFailure { err -> Log.w("GSRDriver", "start: ${err.message}") }
-            }
-        }
-
-        private fun alarmIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
-            context,
-            7,
-            Intent(context, AlarmReceiver::class.java).setAction(ACTION_TICK),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        fun cancelAlarm(context: Context) {
-            runCatching {
-                (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
-                    .cancel(alarmIntent(context))
-            }
+            // A plain start works whenever the app is visible or the service
+            // is already up; startForegroundService is the cold-start path
+            // from a background job — which Android 12+ allows because the
+            // setup screen has the app taken off battery optimisations.
+            if (runCatching { context.startService(intent) }.isSuccess) return true
+            return runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }.onFailure { err -> Log.w("GSRDriver", "start: ${err.message}") }.isSuccess
         }
     }
 
@@ -113,7 +111,9 @@ class TrackingService : Service() {
     private val network = Executors.newSingleThreadExecutor()
 
     @Volatile private var flushing = false
+    @Volatile private var destroyed = false
     private var acquiring = false
+    private var lastStartId = 0
     private var best: Location? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -138,6 +138,7 @@ class TrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         if (!store.isPaired) {
             stopSelf()
             return START_NOT_STICKY
@@ -145,31 +146,38 @@ class TrackingService : Service() {
         when (intent?.action) {
             ACTION_TICK, ACTION_SEND_NOW -> startCycle()
             else -> {
-                // Fresh start, or a restart after the OS killed us. `nextTickAt`
+                // A restart after the OS killed us mid-cycle (START_STICKY
+                // hands back a null intent), or an activity poke. `nextTickAt`
                 // is only set at the END of a cycle, so an unset/past value
-                // means one is genuinely due — including the very first one,
-                // which is how the warehouse worker sees the dot appear before
-                // the truck leaves. Anything else just re-arms the alarm, so
-                // repeated starts can never turn into a reporting loop.
+                // means one is genuinely due — including the very first one.
+                // Anything else has nothing to do here: the schedule lives in
+                // JobScheduler, and an idle foreground service would keep a
+                // notification up for no reason.
                 if (store.nextTickAt <= System.currentTimeMillis()) {
                     startCycle()
                 } else {
-                    scheduleNext(store.nextTickAt - System.currentTimeMillis())
-                    updateNotification()
+                    endCycleIfIdle()
                 }
             }
         }
-        // Restart if Android kills us (aggressive Chinese OEM battery savers).
+        // Finish an interrupted cycle if Android kills us mid-way.
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        destroyed = true
         handler.removeCallbacksAndMessages(null)
         stopListening()
         releaseWake(force = true)
         network.shutdown()
+        // Belt for the in-flight drain's late post: once the service is gone
+        // its notification must be too, whoever re-posted it.
+        runCatching {
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .cancel(NOTIFICATION_ID)
+        }
         super.onDestroy()
     }
 
@@ -194,7 +202,7 @@ class TrackingService : Service() {
     @SuppressLint("MissingPermission")
     private fun acquireFix() {
         if (!hasLocationPermission()) {
-            finishCycle(retry = true)
+            finishCycle(hopeless = true)
             return
         }
         val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -211,7 +219,7 @@ class TrackingService : Service() {
             }.onFailure { Log.w("GSRDriver", "provider $provider: ${it.message}") }
         }
         if (!registered) {
-            finishCycle(retry = true)
+            finishCycle(hopeless = true)
             return
         }
         acquiring = true
@@ -236,7 +244,8 @@ class TrackingService : Service() {
         }
     }
 
-    private fun finishCycle(retry: Boolean = false) {
+    /** `hopeless`: no permission or no providers — nothing a retry can heal. */
+    private fun finishCycle(hopeless: Boolean = false) {
         val wasAcquiring = acquiring
         stopListening()
         val fix = best
@@ -253,30 +262,52 @@ class TrackingService : Service() {
                 recordedAt = recordedAt,
             )
             store.rememberFix(fix.latitude, fix.longitude, recordedAt)
+            store.missStreak = 0
             flush()
         }
-        val missed = fix == null && (retry || wasAcquiring)
-        scheduleNext(if (missed) RETRY_MS else store.intervalMinutes * 60_000L)
+        // A tunnel heals, so a missed WINDOW retries soon — but only a few in
+        // a row: a phone that listens and hears nothing for half an hour is
+        // not in a tunnel, and an every-10-minutes GPS window would eat the
+        // battery this whole schedule exists to protect. A hopeless miss
+        // (permission revoked, location switched off) never retries early —
+        // waking every 10 minutes cannot fix what only a person can.
+        var delayMs = store.intervalMinutes * 60_000L
+        if (fix == null && wasAcquiring && !hopeless) {
+            val streak = store.missStreak + 1
+            store.missStreak = streak
+            if (streak <= MISS_RETRY_MAX) {
+                delayMs = Schedule.RETRY_MS
+                Schedule.soon(this, Schedule.RETRY_MS)
+            }
+        }
+        // An estimate for the status screen (JobScheduler owns the real time),
+        // and the dedupe that stops a repeated poke becoming a reporting loop.
+        store.nextTickAt = System.currentTimeMillis() + delayMs
         updateNotification()
-        releaseWake()
+        endCycleIfIdle()
     }
 
-    private fun scheduleNext(delayMs: Long) {
-        val at = System.currentTimeMillis() + delayMs.coerceAtLeast(60_000L)
-        store.nextTickAt = at
-        runCatching {
-            val alarms = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            // Inexact on purpose: setExactAndAllowWhileIdle needs a restricted
-            // permission and a truck does not care about ±10 minutes. Once the
-            // app is off the battery-optimisation list this fires on time.
-            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarmIntent(this))
-        }.onFailure { Log.w("GSRDriver", "alarm: ${it.message}") }
+    /**
+     * The cycle is over when neither the GPS nor the upload is running — then
+     * the service stops and takes its notification with it. The next run is
+     * JobScheduler's problem, which is the point: nothing that happens to
+     * THIS process can lose the schedule.
+     */
+    private fun endCycleIfIdle() {
+        if (acquiring || flushing) return
+        releaseWake(force = true)
+        // stopSelf(startId), never plain stopSelf(): if a newer start — the
+        // next tick, a «Hozir yuborish» press — was accepted but not yet
+        // delivered, this stop is refused and the service lives to run it.
+        // A plain stopSelf() swallows that start with the instance, which is
+        // the v1.2 silent-gap shape all over again, just rarer.
+        stopSelf(lastStartId)
     }
 
     // --- Wake lock ---------------------------------------------------------
 
     /**
-     * The alarm only guarantees a few seconds of CPU. Waiting up to 90 s for a
+     * The job only guarantees a few seconds of CPU. Waiting up to 90 s for a
      * GPS fix and then uploading needs the CPU awake for longer, so the cycle
      * holds a partial wake lock — with a hard timeout, so it can never leak.
      */
@@ -300,35 +331,30 @@ class TrackingService : Service() {
     // --- Upload ------------------------------------------------------------
 
     private fun flush() {
-        val token = store.token ?: return
         if (flushing) return
         flushing = true
         network.execute {
-            try {
-                while (true) {
-                    val batch = store.pending(BATCH_SIZE)
-                    if (batch.isEmpty()) break
-                    Api.upload(store.server, token, batch)
-                    store.delete(batch)
-                    store.lastSentAt = System.currentTimeMillis()
-                    store.lastError = ""
-                }
-            } catch (finished: TripFinished) {
-                store.clearTrip()
-                handler.post {
-                    cancelAlarm(this)
-                    updateNotification(getString(R.string.status_trip_finished))
+            // Nothing may escape this executor: an uncaught throw on a bare
+            // thread kills the PROCESS, and with a persisted schedule that
+            // replays every interval, a full disk would become a crash loop.
+            val outcome = runCatching { Uploader.drain(store) }
+                .getOrDefault(Uploader.Outcome.ERROR)
+            flushing = false
+            handler.post {
+                // The service can be destroyed while the drain is in flight
+                // (the stop button, a trip end). A late notify() here would
+                // re-post the notification as an ordinary ongoing one that
+                // nothing left alive could ever remove.
+                if (destroyed) return@post
+                if (outcome == Uploader.Outcome.FINISHED) {
+                    Schedule.cancelAll(this)
+                    store.clearTrip()
+                    stopListening()
+                    releaseWake(force = true)
                     stopSelf()
-                }
-            } catch (err: Exception) {
-                // Offline or server hiccup: the queue keeps everything and the
-                // next cycle tries again.
-                store.lastError = err.message ?: "network"
-            } finally {
-                flushing = false
-                handler.post {
-                    releaseWake()
+                } else {
                     updateNotification()
+                    endCycleIfIdle()
                 }
             }
         }
@@ -359,7 +385,7 @@ class TrackingService : Service() {
         return null
     }
 
-    private fun buildNotification(override: String?): Notification {
+    private fun buildNotification(): Notification {
         val open = PendingIntent.getActivity(
             this,
             0,
@@ -382,22 +408,30 @@ class TrackingService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
         // The driver should not get a "sent" message every couple of hours
         // (owner's request) — the notification only speaks up about problems.
-        val text = override ?: problemText()
+        val text = problemText()
         if (text != null) builder.setContentText(text)
         return builder.build()
     }
 
+    /**
+     * Failure is survivable here: on Android 14+ a location-type foreground
+     * start throws if the location permission was revoked mid-trip. The
+     * cycle still runs in the background then — the upload half works, and
+     * the job's next run tries again.
+     */
     private fun startInForeground() {
-        val notification = buildNotification(null)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        runCatching {
+            val notification = buildNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        }.onFailure { Log.w("GSRDriver", "foreground: ${it.message}") }
     }
 
-    private fun updateNotification(override: String? = null) {
+    private fun updateNotification() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        runCatching { manager.notify(NOTIFICATION_ID, buildNotification(override)) }
+        runCatching { manager.notify(NOTIFICATION_ID, buildNotification()) }
     }
 }

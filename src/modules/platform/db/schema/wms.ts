@@ -729,6 +729,12 @@ export const driverDevices = pgTable(
     tokenHash: text('token_hash').unique(),
     pairedAt: timestamp('paired_at', { withTimezone: true }),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    /**
+     * "This silence has been reported" (round 55) — set when the silent-truck
+     * sweep tells the logists, cleared by the next position, so one silence
+     * is one message however many times the sweep runs.
+     */
+    silentNotifiedAt: timestamp('silent_notified_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdBy: uuid('created_by')
       .notNull()

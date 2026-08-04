@@ -118,16 +118,18 @@ pnpm build && pnpm e2e  # 44 e2e
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 
-## State — 2026-08-03
+## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green.
-883 unit/integration + 101 e2e, verified in CI's order on a fresh database.
-Latest migration: **0056** (`tg_session_removable`). Every numbered phase is
-shipped; the current round is the owner's 14-point feedback list (rounds 46-54).
+891 unit/integration + 101 e2e, verified in CI's order on a fresh database.
+Latest migration: **0057** (`device_silent_notified`). Every numbered phase
+is shipped; the current round is the owner's 14-point feedback list (rounds
+46-55; round 55 = item 1, the driver app, **needs a new APK released** —
+Actions → driver-apk → artifact → Admin → Haydovchi ilovasi).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-54. The owner's last confirmed
+money bugs), the speed round and rounds 46-55. The owner's last confirmed
 update was `eea3509`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
@@ -1081,6 +1083,31 @@ scrolls instead, every caller (stock, batch contents, receive, plans, feed,
 chat) fixed at once; the overlay keeps `max-w-full` (filling the screen is
 its job). Guard in `style-cascade.test.ts` — the third cascade rule after
 `.input w-full` and the page-zoom rescale.
+
+Round 55 — the owner's item 1, the driver app (#482-486, «2 soatdan keyin
+ishlamay qoldi … hech qanday notification ko'rsatmasin, telda yo'qdek»).
+WHY 2 h: v1.2's schedule was an AlarmManager CHAIN re-armed by the service
+at each cycle's end — process killed + Android 12+ refusing the background
+FGS start = alarm consumed, nobody re-arms, dead until a human opens the
+app; the first unattended alarm is one interval after pairing. v1.3 (APK
+versionCode 4): schedule = PERSISTED periodic JobScheduler job (`Schedule`/
+`TrackJob`, no chain, survives reboots); TrackingService is now per-CYCLE
+(stops itself, notification exists only the 1-2 min a cycle takes); FGS
+start refused → the job degrades instead of dying (drains queue + last
+known position — `Uploader` shared drain); BootReceiver touches only
+JobScheduler; POST_NOTIFICATIONS REMOVED from manifest+setup chain, so
+Android 13+ shows NO notification at all (stated: older Android cannot go
+fully invisible). Battery exemption is now doubly load-bearing (Doze AND
+the FGS background-start permission) — README says so. SERVER: silent-truck
+alarm (round 49's rule, an alarm about a phone cannot live on the phone) —
+`tracking/silent.ts`, 30-min sweep, paired+unrevoked device on IN-TRANSIT
+batch quiet past FRESH_MINUTES (the map's own constant) → 'TruckSilent'
+(MUTE_GROUPS.alerts) to plans.manage ONCE per silence; stamp =
+`silent_notified_at` (migration 0057), cleared by the next position.
+Red-proofs ×3; the integration file closes its trips in afterAll (a quiet
+paired leftover IS a silent truck to the e2e server's sweep, #154). NOT
+verifiable here: the APK runs on no machine I have — CI builds it, the
+first real 1.3 trip is the proof (watch the batch card's device row).
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

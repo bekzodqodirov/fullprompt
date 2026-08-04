@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq } from 'drizzle-orm';
+import { eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import { batches, driverDevices, users, warehouses } from '@/modules/platform/db/schema';
@@ -13,6 +13,7 @@ import {
   pairDevice,
   revokeDriverDevice,
 } from '@/modules/wms/tracking/devices';
+import { silentTrucks, silentTruckText } from '@/modules/wms/tracking/silent';
 
 /**
  * Driver tracking (owner's flow): the warehouse worker pairs the driver's
@@ -60,6 +61,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // The quiet paired devices minted above must not feed the silent-truck
+  // sweep the e2e server runs on this same database later in CI (#154). A
+  // closed trip is nobody the server waits for.
+  await db.update(batches).set({ status: 'closed' }).where(like(batches.code, 'TRK-%'));
   await pgClient.end();
 });
 
@@ -219,5 +224,121 @@ describe('latest position', () => {
     const trip = await newBatch();
     expect((await latestPositions([trip])).size).toBe(0);
     expect((await latestPositions([])).size).toBe(0);
+  });
+});
+
+/**
+ * The silent-truck alarm (round 55). The driver app can die in ways nothing
+ * inside it survives — a vendor battery killer, a force stop — and every
+ * alarm the app could raise dies with it. So the server watches for the
+ * phone that stopped calling in, judged by the same FRESH_MINUTES that
+ * greys the map dot.
+ */
+describe('silent trucks', () => {
+  const quiet = () => new Date(Date.now() - (FRESH_MINUTES + 60) * 60_000);
+
+  async function quietDevice(trip: string) {
+    const device = await createDriverDevice({ batchId: trip }, ctx());
+    await pairDevice(device.pairCode!);
+    await db
+      .update(driverDevices)
+      .set({ lastSeenAt: quiet(), pairedAt: quiet() })
+      .where(eq(driverDevices.id, device.id));
+    return device.id;
+  }
+
+  it('reports a paired phone on an in-transit trip that went quiet', async () => {
+    const trip = await newBatch();
+    const deviceId = await quietDevice(trip);
+    const due = await silentTrucks();
+    const mine = due.find((t) => t.deviceId === deviceId);
+    expect(mine).toBeDefined();
+    expect(mine!.batchId).toBe(trip);
+    expect(mine!.silentSinceMs).toBeGreaterThan(FRESH_MINUTES * 60_000);
+  });
+
+  it('one silence is one report: a stamped device is not listed again', async () => {
+    const trip = await newBatch();
+    const deviceId = await quietDevice(trip);
+    await db
+      .update(driverDevices)
+      .set({ silentNotifiedAt: new Date() })
+      .where(eq(driverDevices.id, deviceId));
+    const due = await silentTrucks();
+    expect(due.find((t) => t.deviceId === deviceId)).toBeUndefined();
+  });
+
+  it('the next position ends the silence, so a NEW one can be reported', async () => {
+    const trip = await newBatch();
+    const device = await createDriverDevice({ batchId: trip }, ctx());
+    const { token } = await pairDevice(device.pairCode!);
+    await db
+      .update(driverDevices)
+      .set({ silentNotifiedAt: new Date() })
+      .where(eq(driverDevices.id, device.id));
+
+    await ingestPositions(token, {
+      positions: [{ lat: 40.1, lon: 72.5, recordedAt: new Date().toISOString() }],
+    });
+    const stored = await db.query.driverDevices.findFirst({
+      where: eq(driverDevices.id, device.id),
+    });
+    expect(stored!.silentNotifiedAt).toBeNull();
+  });
+
+  it('a trip not under way is expected to be quiet', async () => {
+    // Paired at loading, truck still at the gate: silence is normal there,
+    // and an arrived batch has nothing left to report.
+    const loading = await newBatch('loading');
+    const deviceId = await quietDevice(loading);
+    const due = await silentTrucks();
+    expect(due.find((t) => t.deviceId === deviceId)).toBeUndefined();
+  });
+
+  it('a revoked phone is nobody we wait for', async () => {
+    const trip = await newBatch();
+    const deviceId = await quietDevice(trip);
+    await revokeDriverDevice(deviceId, ctx());
+    const due = await silentTrucks();
+    expect(due.find((t) => t.deviceId === deviceId)).toBeUndefined();
+  });
+
+  it('a phone that paired and never reported once is judged from the pairing', async () => {
+    const trip = await newBatch();
+    const device = await createDriverDevice({ batchId: trip }, ctx());
+    await pairDevice(device.pairCode!);
+    await db
+      .update(driverDevices)
+      .set({ lastSeenAt: null, pairedAt: quiet() })
+      .where(eq(driverDevices.id, device.id));
+    const due = await silentTrucks();
+    expect(due.find((t) => t.deviceId === device.id)).toBeDefined();
+  });
+
+  it('a minted code nobody typed in is not a phone', async () => {
+    const trip = await newBatch();
+    await createDriverDevice({ batchId: trip }, ctx());
+    const due = await silentTrucks();
+    expect(due.find((t) => t.batchId === trip)).toBeUndefined();
+  });
+
+  it('the message names the trip, the hours, and both causes of silence', () => {
+    const text = silentTruckText(
+      {
+        deviceId: 'd',
+        batchId: 'b-1',
+        batchCode: 'YW-042',
+        driverName: 'Karim aka',
+        vehiclePlate: '01A123BC',
+        silentSinceMs: 9 * 3_600_000,
+      },
+      'https://gsrwms.uz',
+    );
+    expect(text).toContain('YW-042');
+    expect(text).toContain('01A123BC');
+    expect(text).toContain('9 soatdan beri jim');
+    // Silence has two causes; the message must not claim to know which.
+    expect(text).toContain("Aloqa yo'q hududda");
+    expect(text).toContain('https://gsrwms.uz/batches/b-1');
   });
 });

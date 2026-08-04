@@ -32,7 +32,6 @@
     <string name="mark_warn">⚠️ %1$s</string>
     <string name="check_location">Joylashuvga ruxsat</string>
     <string name="check_background">«Doim ruxsat berish»</string>
-    <string name="check_notify">Bildirishnomalar</string>
     <string name="check_battery">Batareya cheklovidan chiqarilgan</string>
     <string name="check_autostart">Avtoishga tushirishga ruxsat</string>
     <string name="check_autostart_hint">Xiaomi/Huawei/Oppo/Vivo telefonlarida majburiy. Sozlamada GSRDriver’ni yoqing va «Bajarildi»ni bosing.</string>

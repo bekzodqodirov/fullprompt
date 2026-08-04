@@ -56,6 +56,8 @@ export async function startBoss(): Promise<PgBoss> {
     await registerCalcWorker(boss);
     const { registerUnansweredWorker } = await import('../../wms/crm/unanswered-jobs');
     await registerUnansweredWorker(boss);
+    const { registerSilentTrucksWorker } = await import('../../wms/tracking/silent-jobs');
+    await registerSilentTrucksWorker(boss);
     /**
      * LAST, not first.
      *
