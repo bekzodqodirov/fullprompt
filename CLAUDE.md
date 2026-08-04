@@ -117,14 +117,14 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1 and 2 COMPLETE; 3–5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1 and 2 COMPLETE, 3 part 1 shipped; 4–5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-944 unit/integration + 115 e2e, verified in CI's order on a fresh database.
+951 unit/integration + 119 e2e, verified in CI's order on a fresh database.
 Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1253,6 +1253,28 @@ red. The language select (60 px, set-once) moved to `/profile` on phones
 (`sm:hidden` / `hidden sm:inline-flex`), and everything is back at 44 px.
 RULE: `flex` without `shrink-0` protects the layout, never the controls —
 only a measurement says they became unusable.
+
+Round 61 — **UX batch 3 part 1, the lead card's facts** (#500-501). The
+design was reviewed first and came back UNSOUND on two of three lenses: «a
+fact in the rail becomes editable» described NO card — the lead rail carried
+no read-only facts at all (phone/company/source/owner/next-call lived inside
+a FOLDED ✏️ form), the client rail's facts ARE a form, and the deal rail's
+only facts are the deliberately un-editable quote-vs-actual block. So the
+round shipped the half that was missing: `LeadFacts` at the top of the lead
+rail, with `InlineField` (`components/inline-field.tsx`) on name/phone/
+company/note. Interaction copied from the batch card's per-prixod customs
+picker — press the value → it becomes a box → SAVE appears only once
+something differs; NOT autosave-on-blur (twice refused here; a phone has no
+Escape). `wms/crm/inline.ts` `patchLead`: an ALLOWLIST (stage = a move,
+owner = a handover, nextActionAt = a PAIR with its note — all refused),
+a no-op guard (the funnel orders by `updated_at`), and a `diffFields` audit.
+THE HAZARD, fixed: every inline field is ALSO in the ✏️ form, whose inputs
+are uncontrolled — correcting a phone inline then pressing Save there put
+the old number back. The form is now keyed on `lead.updatedAt` (the LinesForm
+precedent), and m9ze presses that exact sequence. Red-proofs ×2. E2E LESSON:
+reach the card by the URL captured at creation, never through the funnel —
+the board is capped and every earlier spec adds leads to the first column.
+**Deal and client cards are part 2.**
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

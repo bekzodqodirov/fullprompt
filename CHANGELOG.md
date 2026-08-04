@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## Lid kartasi: ma'lumotlar ko'rinadigan va joyida tuzatiladigan bo'ldi — 2026-08-04
+
+3-bosqichning birinchi qismi.
+
+**Muammo shu edi:** lid kartasida telefon, firma, manba, mas'ul va keyingi
+qo'ng'iroq sanasi **umuman ko'rinmasdi** — ularni ko'rish uchun «✏️ Tahrirlash»
+formasini ochib, katakning ichidan o'qish kerak edi. Ya'ni mijozga qo'ng'iroq
+qilmoqchi bo'lgan sotuvchi avval tahrirlash formasini ochardi.
+
+**Endi:** kartaning o'ng ustunida eng tepada **ma'lumotlar bloki** turadi —
+ism, telefon, firma, izoh, etap, manba, mas'ul, keyingi qo'ng'iroq. Hammasi
+bir qarashda o'qiladi.
+
+**Tuzatish ham o'sha yerda.** Ism, telefon, firma yoki izohni bosasiz — katak
+ochiladi. **«Saqlash» tugmasi faqat haqiqatan biror narsa o'zgargandagina
+chiqadi.** Bekor qilsangiz eski qiymat qoladi. Xato bo'lsa yozganingiz
+yo'qolmaydi va sabab ko'rsatiladi.
+
+**Etap, mas'ul va keyingi qo'ng'iroq sanasi ataylab bu yerda tahrirlanmaydi** —
+ular oddiy matn emas: etapni ko'chirish tarixga yoziladi va qoidalarni ishga
+tushiradi, mas'ulni almashtirish topshiriq, sana esa izohi bilan juftlikda
+yoziladi. Ular avvalgi joyida qoladi.
+
+**Ichkaridagi muhim ehtiyot chorasi.** Bir maydonni ikki joyda tahrirlash
+mumkin bo'lgani uchun, joyida tuzatgandan keyin pastdagi eski forma **eski
+qiymatni qaytarib qo'yishi** mumkin edi. Buning oldi olindi va aynan shu
+ketma-ketlik brauzer testi bilan tekshiriladi.
+
+Tekshiruv: 951 ta ichki test (7 tasi yangi; ikkita qoida himoyasiz qolganda
+qizarishi isbotlangan), 116 ta brauzer testi. Bazaga o'zgarish yo'q.
+
+**Keyingi:** bitim va mijoz kartalari uchun ham shunday qilinadi.
+
 ## «+» tugmasi: lid yoki mijoz 5 soniyada — 2026-08-04
 
 «Oson UI» rejasining 2-bosqichi tugadi.

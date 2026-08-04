@@ -14,6 +14,7 @@ import { convertLeadAction, updateLeadAction } from '../../actions';
 import { ActivityForm } from '../../activity-form';
 import { CustomFieldInputs } from '@/components/custom-fields';
 import { LeadForm } from '../lead-form';
+import { LeadFacts } from './facts';
 import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
 import { TasksPanel } from '@/components/tasks-panel';
@@ -101,6 +102,24 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
           lentaning pastida emas, yon tarafdagi menyuda tursin, collapsible
           bo'lib"). Its kind and «keyingi qadam» date are what feed
           /crm/today — the lenta's quick note box has neither. */}
+      {/* The facts FIRST — they were invisible until now, buried in the
+          folded ✏️ form below, so reading a lead's phone number meant opening
+          an editor and reading it out of an input. */}
+      <LeadFacts
+        leadId={id}
+        editable
+        values={{
+          name: lead.name,
+          phone: lead.phone ?? '',
+          company: lead.company ?? '',
+          note: lead.note ?? '',
+        }}
+        stageName={stages.find((stage) => stage.id === lead.stageId)?.name ?? ''}
+        sourceName={sources.find((row) => row.id === lead.sourceId)?.name ?? ''}
+        ownerName={managers.find((row) => row.id === lead.ownerId)?.fullName ?? ''}
+        nextAction={[lead.nextActionAt, lead.nextActionNote].filter(Boolean).join(' · ')}
+      />
+
       <Panel title={`📞 ${t('addActivity')}`} testId="activity-panel">
         <ActivityForm entityType="lead" entityId={id} today={today} bare people={await mentionablePeople()} />
       </Panel>
@@ -139,8 +158,15 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         </Panel>
       )}
 
-      <Panel title={`✏️ ${tc('edit')}`}>
+      <Panel title={`✏️ ${tc('edit')}`} testId="lead-edit-panel">
+        {/* KEYED on the row's own timestamp. Both writers touch the same
+            columns, and this form's inputs are uncontrolled — so without the
+            key it would still be holding the values it was rendered with, and
+            pressing Save after an inline edit would put the old phone back.
+            The key remounts it with fresh defaults after every save (the
+            LinesForm precedent). */}
         <LeadForm
+          key={String(lead.updatedAt)}
           action={update}
           sources={sources.map((row) => ({ id: row.id, label: row.name }))}
           stages={stages.map((row) => ({ id: row.id, label: row.name }))}

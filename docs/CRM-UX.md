@@ -200,7 +200,20 @@ export selection. Stage moves go through `moveLead`/`moveDeal` one by one
 so audit + `LeadStageChanged`/`DealStageChanged` + phase-7 rules fire
 (round 26: EVERY stage write path emits) — never a bare UPDATE.
 
-### Batch 3 — Card ease (~1–2 rounds)
+### Batch 3 — Card ease — **PART 1 SHIPPED (round 61): the lead card**
+
+The design was reviewed before any code and came back **unsound**: there were
+no read-only facts on any of the three rails to make editable (see
+DECISIONS #500). What shipped is the lead card's missing facts block plus
+inline edit on its four text fields. Part 2 = the deal and client cards, each
+of which needs its own decision about which fields leave their whole-form.
+
+**Also corrected here:** the batch's second half as originally written —
+«consecutive field-change rows collapse in the lenta» — rests on a false
+premise. Field changes were never in the lenta; they are in the History tab.
+The owner has been told; it is dropped unless he wants it re-aimed at History.
+
+The original scope:
 
 Inline click-to-edit on the facts rails of client/lead/deal cards: click a
 field → in-place control → autosave on blur/Enter → toast; a refusal
