@@ -81,7 +81,11 @@ test('two leads are ticked and moved together', async ({ page }) => {
 test('a lost move stays refused until a reason is typed', async ({ page }) => {
   await login(page);
   await page.goto('/crm?scope=all');
-  const card = page.locator(BOARD).getByTestId('lead-card').filter({ hasText: `${TAG} A` }).first();
+  const card = page
+    .locator(BOARD)
+    .getByTestId('lead-card')
+    .filter({ hasText: `${TAG} A` })
+    .first();
   await card.getByTestId('card-select').click();
 
   const bar = page.getByTestId('bulk-bar');
@@ -99,7 +103,11 @@ test('a lost move stays refused until a reason is typed', async ({ page }) => {
   await expect(bar.getByTestId('bulk-move')).toBeEnabled();
 });
 
-test('the leads it created are put back where the board expects them', async ({ page }) => {
+test('the leads it created are closed, so they leave the board', async ({ page }) => {
+  // A lead is never DELETED here — «a finished lead leaves the board, never
+  // the database» (round 47) — so the honest cleanup is to lose them with a
+  // reason. They drop out of the open funnel, which is what the next spec
+  // sees, and the path that closes them is the one this spec is about.
   await login(page);
   await page.goto('/crm?scope=all');
   for (const suffix of ['A', 'B']) {
@@ -111,12 +119,19 @@ test('the leads it created are put back where the board expects them', async ({ 
     if ((await card.count()) === 0) continue;
     await card.getByTestId('card-select').click();
   }
+
   const bar = page.getByTestId('bulk-bar');
-  if (await bar.isVisible()) {
-    const options = await bar.getByTestId('bulk-stage').locator('option').all();
-    const values = (await Promise.all(options.map((o) => o.getAttribute('value')))).filter(Boolean);
-    await bar.getByTestId('bulk-stage').selectOption(values[0]!);
-    await bar.getByTestId('bulk-move').click();
-    await expect(bar.getByTestId('bulk-result')).toBeVisible({ timeout: 15_000 });
-  }
+  if (!(await bar.isVisible())) return;
+  const lost = await bar
+    .getByTestId('bulk-stage')
+    .locator('option[data-kind="lost"]')
+    .first()
+    .getAttribute('value');
+  await bar.getByTestId('bulk-stage').selectOption(lost!);
+  await bar.getByTestId('bulk-reason').fill('e2e tozalash');
+  await bar.getByTestId('bulk-move').click();
+  // The count IS the proof: two leads closed, none refused. Asserting which
+  // COLUMN they landed in would mean naming the owner's lost stage in the
+  // DOM, and he names his own funnel in whichever of four languages.
+  await expect(bar.getByTestId('bulk-result')).toContainText('2', { timeout: 15_000 });
 });
