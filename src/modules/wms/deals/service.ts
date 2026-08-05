@@ -21,6 +21,7 @@ import { emitEvent } from '@/modules/platform/events/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
+import { likeNeedle } from '../search/query';
 import { STAGE_COLORS } from '../crm/service';
 import {
   ARRIVED_BOX_STATUSES,
@@ -968,16 +969,38 @@ export interface DealRow {
  * than a rule baked in because who may see everyone's work is a permission
  * question the CALLER already answered — the same split `listLeads` uses.
  */
+/**
+ * What the deal board's search box matches, as ONE fragment.
+ *
+ * Shared with `closedDealCounts` for the reason the lead one is: the closed
+ * columns show a slice and print the true total, so filtering the cards
+ * without filtering the totals makes the «+N · show all» footer lie.
+ *
+ * It reaches the CLIENT CODE, which is what a person actually types when they
+ * are looking for somebody's job — so both queries carry the clients join.
+ */
+export function dealTextWhere(q?: string) {
+  const text = q?.trim();
+  if (!text) return undefined;
+  const like = likeNeedle(text);
+  return sql`(${deals.code} ILIKE ${like} OR ${deals.title} ILIKE ${like} OR ${clients.clientCode} ILIKE ${like})`;
+}
+
 export async function listDeals(filters: {
   ownerId?: string;
   clientId?: string;
   stageId?: string;
+  /** The board's search box. */
+  q?: string;
   openOnly?: boolean;
   /** Only the finished ones — what the board shows a recent slice of. */
   closedOnly?: boolean;
   limit?: number;
 }): Promise<DealRow[]> {
   const conditions = [];
+  // In SQL, never over the fetched array — the closed slice is capped at 20.
+  const text = dealTextWhere(filters.q);
+  if (text) conditions.push(text);
   if (filters.ownerId) conditions.push(eq(deals.ownerId, filters.ownerId));
   if (filters.clientId) conditions.push(eq(deals.clientId, filters.clientId));
   if (filters.stageId) conditions.push(eq(deals.stageId, filters.stageId));
@@ -1034,13 +1057,20 @@ export async function listDeals(filters: {
  * The board draws a recent slice of them and the header keeps the true total,
  * so «Sotuv 143» stays 143 even when twelve cards are on screen.
  */
-export async function closedDealCounts(ownerId?: string): Promise<Record<string, number>> {
+export async function closedDealCounts(
+  ownerId?: string,
+  q?: string,
+): Promise<Record<string, number>> {
   const where = [notInArray(dealStages.kind, ['open'])];
   if (ownerId) where.push(eq(deals.ownerId, ownerId));
+  const text = dealTextWhere(q);
+  if (text) where.push(text);
   const rows = await db
     .select({ stageId: deals.stageId, n: sql<number>`count(*)` })
     .from(deals)
     .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+    // The predicate reaches the client code, so the join comes with it.
+    .innerJoin(clients, eq(deals.clientId, clients.id))
     .where(and(...where))
     .groupBy(deals.stageId);
   return Object.fromEntries(rows.map((row) => [row.stageId, Number(row.n)]));
@@ -1130,10 +1160,13 @@ export async function openDealsForClient(clientId: string) {
  * sales manager's day: quoted but the cargo is over the threshold, or landed
  * with no price at all.
  */
-export async function dealsNeedingAttention(ownerId?: string): Promise<
+export async function dealsNeedingAttention(ownerId?: string, q?: string): Promise<
   { id: string; code: string; clientCode: string; clientName: string; reason: string; pct: number | null }[]
 > {
-  const rows = await listDeals({ ownerId, openOnly: true, limit: 200 });
+  // The filter reaches here too. Not cosmetic: this loop is one query per row
+  // on top of the list, so it is the most expensive thing on the screen, and
+  // narrowing the board should narrow it rather than leave it running whole.
+  const rows = await listDeals({ ownerId, q, openOnly: true, limit: 200 });
   const threshold = await deviationThreshold();
   const out = [];
   for (const row of rows) {

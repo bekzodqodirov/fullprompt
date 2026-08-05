@@ -444,7 +444,7 @@ function StageView<T extends KanbanItem>({
         ref={trackRef}
         onScroll={onTrackScroll}
         data-testid="stage-track"
-        className="-mx-4 flex h-[calc(100dvh-19rem)] min-h-[18rem] snap-x snap-mandatory gap-3 overflow-x-auto px-4"
+        className="-mx-4 flex h-[calc(100dvh-19rem-var(--board-extra,0px))] min-h-[18rem] snap-x snap-mandatory gap-3 overflow-x-auto px-4"
       >
         {stages.map((stage) => {
           const inStage = items.filter((item) => stageOf(item) === stage.id);
@@ -639,7 +639,7 @@ function DragBoard<T extends KanbanItem>({
         // pastidan scroll chiqib qolmasdi" — the amoCRM shape). The page
         // never grows below the board, so its scrollbar disappears; a long
         // column scrolls inside itself with the header staying put.
-        className="-mx-4 h-[calc(100dvh-17.5rem)] min-h-[20rem] overflow-x-auto px-4"
+        className="-mx-4 h-[calc(100dvh-17.5rem-var(--board-extra,0px))] min-h-[20rem] overflow-x-auto px-4"
         // While a card is in the air the board must not pan under it: the
         // pointer is already down, so the browser would otherwise treat the
         // same gesture as a scroll.

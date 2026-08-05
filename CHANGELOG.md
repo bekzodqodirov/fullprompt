@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## Doskada qidiruv va hodim bo'yicha filtr — 2026-08-05
+
+4-bosqichning ikkinchi qismi. Lid voronkasida ham, bitimlar doskasida ham
+endi tepada **qidiruv katagi** bor, va hamma ishni ko'ra oladiganlar uchun
+**hodim tanlash** ro'yxati.
+
+**Qidiruv nimani topadi.** Lidda — ism, firma, telefon (oxirgi 9 raqami
+bo'yicha, xuddi umumiy qidiruvdek). Bitimda — bitim raqami, sarlavha va
+**mijoz kodi** (odam aslida shuni yozadi).
+
+**Eng muhim tafsilot.** Qidiruv **bazada** ishlaydi, ekrandagi kartalar
+ichida emas. Bu shunchaki texnik gap emas: doska yopilgan ustunlardan faqat
+oxirgi 20 tasini ko'rsatadi, ochiqlardan 300 tasini. Agar qidiruv shu
+ko'rsatilganlar ichidan izlaganda, «topilmadi» degani **bazada yo'q** emas,
+**oxirgi 20 tada yo'q** degani bo'lardi — va aynan yo'qolgan ishni
+qidirayotganda yolg'on gapirardi.
+
+**«+N · hammasini ko'rish» ham to'g'ri sanaydi.** Kartalarni filtrlab,
+sonlarni filtrlamasak, ikkita ish topilgan ustun ostida «+143» yozilib
+qolardi. Endi ikkalasi bitta savoldan hisoblanadi.
+
+**Havolalar filtrni yo'qotmaydi.** «Meniki / Hammasi» tugmalari va «+N ·
+hammasini ko'rish» havolasi ilgari qattiq yozilgan edi — biror biriga
+bossangiz yozganingiz o'chib, 400 ta filtrsiz karta yuklanardi. Endi hammasi
+filtrni o'zi bilan olib ketadi.
+
+**Ruxsat.** Faqat o'z lidlarini ko'radigan sotuvchiga hodim ro'yxati
+umuman ko'rsatilmaydi — va manzil qatoriga qo'lda `hodim=...` yozib
+qo'yilsa ham **e'tiborga olinmaydi**.
+
+**Yo'l-yo'lakay tuzatildi (bu rounddan oldingi nosozlik):** bitimlar
+doskasining tepasidagi uchta tugma 360 px ekranga sig'may, **butun sahifani
+kichraytirib** yuborardi — bu o'sha eski nosozlik turi (bosgan joyingiz
+siljib ketadi). Endi sig'adi.
+
+Migratsiya yo'q. Doskaning balandligi ekranga qarab hisoblanadi, shuning
+uchun filtr qatori qancha joy olganini o'lchab, doskani o'sha qadar
+qisqartirdim — uchala holatda ham doska aynan avvalgi joyida turibdi.
+
 ## Kanban: barmoq bilan sudrash olib tashlandi, rad etilgan ko'chirish sababini aytadi — 2026-08-05
 
 4-bosqichning birinchi qismi.

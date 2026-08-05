@@ -234,7 +234,7 @@ renders the reason AND keeps the typed value. Permissions and audit
 exactly as today's forms. Lenta polish: consecutive field-change rows
 collapse («+N o'zgarish», expandable); relative time + absolute tooltip.
 
-### Batch 4 — Kanban — **PART 1 SHIPPED (round 64): the pointer split**
+### Batch 4 — Kanban — **PARTS 1-2 SHIPPED (rounds 64-65)**
 
 The approved text asked for «desktop-only card DnD via `(pointer: fine)`».
 An inventory before any code found the drag ALREADY BUILT (see the table
@@ -266,12 +266,13 @@ would get a board with neither door.
   — whether hiding the deal AMOUNT should become a permission. `/bitimlar`
   is gated by `canWriteDeal` with no finance gate today, so attaching one
   would TAKE money away from people who currently see it.
-- **Board quick filters (hodim + text).** Verified absent: both boards read
-  only `{scope, arxiv}`. The design is written and checked — the filter must
-  be pushed into the SQL `where` AND into `closedLeadCounts`/
-  `closedDealCounts`, or the «+N · show all» footer lies; and the mine/all
-  and archive links are literal strings that would drop the filter on the
-  first tap.
+- **Board quick filters (hodim + text)** — SHIPPED in round 65. One shared
+  predicate per module reaches the rows AND the closed counts, so the «+N ·
+  show all» footer cannot lie; the filtering is in SQL because the lists are
+  capped; every board link is rebuilt from the live params; `hodim` is read
+  only under `crm.leads.view_all`. Found while measuring it: `/bitimlar`'s
+  header had been rendering a 389 px document inside a 360 px screen
+  (DECISIONS #513-515).
 
 ### Batch 5 — Polish (~1 round)
 

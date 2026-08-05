@@ -12,6 +12,7 @@ import {
 import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
+import { likeNeedle, parseQuery } from '../search/query';
 
 /**
  * Phase 7 hears the funnel through this one door. Every path that changes a
@@ -427,9 +428,32 @@ export async function convertLead(
   return client;
 }
 
+/**
+ * What the board's search box matches, as ONE fragment.
+ *
+ * Exported and shared because the rows and the COUNTS have to be filtered by
+ * the same question: the closed columns show a slice and the header prints the
+ * true total (#447), so a filter that reaches the cards and not the totals
+ * turns «+3 · show all» into «+143 · show all» on a column matching two.
+ *
+ * The needles are the global search's own (`likeNeedle`, `parseQuery`), so
+ * typing a name into the board finds what typing it into ⌘K finds.
+ */
+export function leadTextWhere(q?: string) {
+  const text = q?.trim();
+  if (!text) return undefined;
+  const like = likeNeedle(text);
+  const phone = parseQuery(text).phone;
+  return phone
+    ? sql`(${leads.name} ILIKE ${like} OR ${leads.company} ILIKE ${like} OR right(regexp_replace(coalesce(${leads.phone}, ''), '[^0-9]', '', 'g'), 9) = ${phone})`
+    : sql`(${leads.name} ILIKE ${like} OR ${leads.company} ILIKE ${like})`;
+}
+
 export async function listLeads(filters: {
   ownerId?: string;
   stageId?: string;
+  /** The board's search box. */
+  q?: string;
   openOnly?: boolean;
   /** Only the finished ones — what the board shows a recent slice of. */
   closedOnly?: boolean;
@@ -438,6 +462,11 @@ export async function listLeads(filters: {
   const where = [];
   if (filters.ownerId) where.push(eq(leads.ownerId, filters.ownerId));
   if (filters.stageId) where.push(eq(leads.stageId, filters.stageId));
+  // In SQL, never over the fetched array: the closed slice is capped at 20 and
+  // the open one at 300, so filtering afterwards would search the newest
+  // twenty and answer «nothing found» about a database that has it.
+  const text = leadTextWhere(filters.q);
+  if (text) where.push(text);
   if (filters.openOnly) where.push(eq(leadStages.kind, 'open'));
   if (filters.closedOnly) where.push(ne(leadStages.kind, 'open'));
   return db
@@ -475,9 +504,14 @@ export async function listLeads(filters: {
  * hundred and forty must still SAY a hundred and forty, or the funnel is
  * lying about the year's work. Scoped the same way the board is.
  */
-export async function closedLeadCounts(ownerId?: string): Promise<Record<string, number>> {
+export async function closedLeadCounts(
+  ownerId?: string,
+  q?: string,
+): Promise<Record<string, number>> {
   const where = [ne(leadStages.kind, 'open')];
   if (ownerId) where.push(eq(leads.ownerId, ownerId));
+  const text = leadTextWhere(q);
+  if (text) where.push(text);
   const rows = await db
     .select({ stageId: leads.stageId, n: sql<number>`count(*)` })
     .from(leads)

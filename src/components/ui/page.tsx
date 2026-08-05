@@ -51,7 +51,16 @@ export function PageHeader({
             {subtitle && <p className="truncate text-sm text-ink-500">{subtitle}</p>}
           </div>
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {/* WRAP, and no `shrink-0`. That combination looked protective and
+            was the opposite: `shrink-0` refuses to narrow, so the box never
+            reaches a width it could wrap at and the buttons simply run past
+            the edge — /bitimlar's two header buttons measured 373 px inside a
+            360 px screen, and one row wider than the viewport makes mobile
+            Chrome rescale the WHOLE page (#400). Pre-dates round 65; found
+            while measuring it. */}
+        {actions && (
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+        )}
       </div>
     </header>
   );
