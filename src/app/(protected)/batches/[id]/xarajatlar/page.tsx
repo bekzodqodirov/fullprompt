@@ -7,6 +7,7 @@ import { aliasedTable } from 'drizzle-orm';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { batchReceiptRows, receiptCostMatrix } from '@/modules/wms/costing/service';
+import { listPartners } from '@/modules/wms/partners/service';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 import { ReceiptCostGrid } from '../receipt-cost-grid';
@@ -57,6 +58,10 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
   const currencyCodes = (
     await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true))
   ).map((row) => row.code);
+  // Same list the CostPanel offers: who settled this, when it was not us.
+  const partnerOptions = canEnter
+    ? (await listPartners()).map((row) => ({ id: row.id, name: row.name }))
+    : [];
 
   return (
     <div className="space-y-3">
@@ -81,6 +86,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
           defaultCurrency="USD"
           today={new Date().toISOString().slice(0, 10)}
           canEdit={canEnter}
+          partners={partnerOptions}
         />
       )}
     </div>

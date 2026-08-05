@@ -500,7 +500,9 @@
     },
     "openInBrowser": "Open in the browser (if printing did not start)",
     "printDialog": "Print",
-    "shareToPrinter": "Send to printer"
+    "shareToPrinter": "Send to printer",
+    "voidHasCosts": "Void this receipt's costs first — a money record is finance's decision, not the warehouse's.",
+    "voidBoxGone": "Cannot void: at least one box has already left the shelf."
   },
   "stock": {
     "title": "Warehouse stock",
@@ -920,7 +922,8 @@
     "clientBalance": "Client balance (overall)",
     "openLedger": "client ledger",
     "prevLegs": "before this trip",
-    "costDetail": "breakdown"
+    "costDetail": "breakdown",
+    "forDeal": "For which deal"
   },
   "map": {
     "title": "Map",

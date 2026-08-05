@@ -28,6 +28,12 @@ export async function addTransactionAction(
     method: formData.get('method') || undefined,
     txDate: formData.get('txDate'),
     batchId: formData.get('batchId') || undefined,
+    // The deal this money answers, when the accountant said. Load-bearing for
+    // deferrals: the #251 netting joins payments to the deferred deal BY THIS
+    // COLUMN, and until the form could send it, no payment ever carried one —
+    // so a paid-off deferral went on excusing unrelated debt at the handover
+    // gate, exactly what #251 was written to stop.
+    dealId: formData.get('dealId') || undefined,
     accountId: formData.get('accountId') || undefined,
     note: String(formData.get('note') ?? ''),
   });

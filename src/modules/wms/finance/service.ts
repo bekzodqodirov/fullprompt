@@ -52,6 +52,14 @@ export type TransactionInput = z.infer<typeof transactionSchema>;
 
 export async function addTransaction(input: TransactionInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  // A named deal must be THIS client's. The deal id steers the deferral
+  // netting (#251) — a payment parked on another client's deal would quietly
+  // re-open their handover gate — and a select's value is a forged post until
+  // the server has checked it (the inline-picker rule, #507).
+  if (input.dealId) {
+    const deal = await db.query.deals.findFirst({ where: eq(deals.id, input.dealId) });
+    if (!deal || deal.clientId !== input.clientId) throw new FinanceError('deal_mismatch');
+  }
   // The rate is frozen NOW — a later FX edit must not move settled money.
   // No rate for the currency yet → the accountant enters one first.
   const rate = await rateFor(input.currency, input.txDate);

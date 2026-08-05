@@ -505,6 +505,23 @@ describe('"I will pay when it is all here"', () => {
     expect(await deferredBalanceUsd(who)).toBeCloseTo(200, 2);
   });
 
+  it('a payment naming another client\'s deal is refused, not misfiled', async () => {
+    // The dealId column steers the deferral netting above, and the form's
+    // select is a POST like any other: a stale tab or a forged value must not
+    // park this client's money on somebody else's job — it would quietly
+    // re-open THAT client's handover gate.
+    const who = await freshClient();
+    const other = await freshClient();
+    const foreignDeal = await newDeal({ clientId: other });
+    const today = new Date().toISOString().slice(0, 10);
+    await expect(
+      addTransaction(
+        { clientId: who, dealId: foreignDeal, type: 'payment', amount: 100, currency: 'USD', txDate: today },
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'deal_mismatch' });
+  });
+
   it('a deferral that was already PAID stops excusing anything', async () => {
     /**
      * The hole the audit found, and it is the expensive direction.

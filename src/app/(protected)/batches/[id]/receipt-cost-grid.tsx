@@ -33,6 +33,7 @@ export function ReceiptCostGrid({
   defaultCurrency,
   today,
   canEdit,
+  partners,
 }: {
   batchId: string;
   rows: GridReceiptRow[];
@@ -43,12 +44,15 @@ export function ReceiptCostGrid({
   defaultCurrency: string;
   today: string;
   canEdit: boolean;
+  /** Active counterparties — empty when the viewer may not name a payer. */
+  partners: { id: string; name: string }[];
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
   const [cells, setCells] = useState<Record<string, string>>({});
   const [currency, setCurrency] = useState(defaultCurrency);
   const [costDate, setCostDate] = useState(today);
+  const [partnerId, setPartnerId] = useState('');
   const [message, setMessage] = useState<'ok' | string | null>(null);
   const [pending, start] = useTransition();
 
@@ -83,6 +87,7 @@ export function ReceiptCostGrid({
         batchId,
         currency,
         costDate,
+        partnerId,
         cells: payload,
       });
       if (result.ok) {
@@ -211,6 +216,24 @@ export function ReceiptCostGrid({
             aria-label={t('date')}
             className="input !w-40"
           />
+          {/* Who settled the sheet. Its own LINE, not a squeezed neighbour —
+              a picker narrower than its shortest option is the #421 shape. */}
+          {partners.length > 0 && (
+            <select
+              value={partnerId}
+              onChange={(event) => setPartnerId(event.target.value)}
+              aria-label="grid payer"
+              data-testid="grid-payer"
+              className="input !w-full"
+            >
+              <option value="">{t('paidByUs')}</option>
+              {partners.map((partner) => (
+                <option key={partner.id} value={partner.id}>
+                  {t('paidBy')}: {partner.name}
+                </option>
+              ))}
+            </select>
+          )}
           {grand > 0 && (
             <span className="num text-sm font-bold">
               Σ {grand.toFixed(2)} {currency}

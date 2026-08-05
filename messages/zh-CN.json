@@ -500,7 +500,9 @@
     },
     "openInBrowser": "在浏览器中打开（如果无法打印）",
     "printDialog": "打印",
-    "shareToPrinter": "发送到打印机"
+    "shareToPrinter": "发送到打印机",
+    "voidHasCosts": "请先作废该入库单的费用——资金记录由财务决定，而非仓库。",
+    "voidBoxGone": "无法作废：至少有一箱已离开仓库。"
   },
   "stock": {
     "title": "库存",
@@ -920,7 +922,8 @@
     "clientBalance": "客户余额（总）",
     "openLedger": "客户账页",
     "prevLegs": "本车次之前",
-    "costDetail": "成本明细"
+    "costDetail": "成本明细",
+    "forDeal": "对应哪笔交易"
   },
   "map": {
     "title": "地图",

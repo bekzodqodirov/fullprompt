@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -224,11 +224,19 @@ async function boxDims(boxIds: string[]): Promise<BoxDims[]> {
 /** Boxes in an entry's scope: receipt → its boxes; crate → its boxes; batch → everything that rode it. */
 async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promise<string[]> {
   if (entry.scope === 'receipt' && entry.receiptId) {
+    // NOT the void ones. A lot-edit shrink voids the miscounted surplus, and
+    // a share left (or re-swept) onto a void box is money on a box that never
+    // existed: the batch pricing screen reads shares through membership a
+    // shelf-voided box can never have, so «totalUsd» — the number a price has
+    // to beat — understated by exactly the phantom boxes' share, while
+    // profit-by-client (no box join) still counted all of it. Issued, loaded,
+    // in-transit boxes all KEEP their shares — they are real cargo the money
+    // was spent on; only `void` says «this box was a counting mistake».
     const rows = await db
       .select({ id: boxes.id })
       .from(boxes)
       .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-      .where(eq(receiptLots.receiptId, entry.receiptId));
+      .where(and(eq(receiptLots.receiptId, entry.receiptId), ne(boxes.status, 'void')));
     return rows.map((r) => r.id);
   }
   if (entry.scope === 'crate' && entry.crateId) {
@@ -560,6 +568,15 @@ export const receiptCostGridSchema = z.object({
   batchId: z.string().uuid(),
   currency: z.string().trim().length(3).toUpperCase(),
   costDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /**
+   * Who settled the whole sheet, when it was not us. One payer per save on
+   * purpose — the accountant's Excel is «shu ustunlarni falon firma to'ladi»,
+   * and per-cell payers would be twenty pickers on a phone. Without this the
+   * grid was the ONE cost door with no payer (round 39 gave the single form
+   * one), so partner-settled customs typed here landed as our own cash out
+   * and the firm's ledger never heard of it.
+   */
+  partnerId: z.string().uuid().optional().or(z.literal('')),
   cells: z
     .array(
       z.object({
@@ -599,6 +616,9 @@ export async function addReceiptCostsBulk(
         // Within one receipt the split lands on one client either way;
         // weight is the house default the rest of the engine uses.
         allocationBasis: 'weight',
+        // The engine cannot tell grid from form (#398), so the payer rides
+        // the same field and derives the same partner charge per entry.
+        partnerId: input.partnerId,
       },
       ctx,
     );

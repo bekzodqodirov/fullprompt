@@ -28,8 +28,8 @@ export async function chargeForCost(costEntryId: string, ctx: AuditContext): Pro
   // missing it is null and there is nothing honest to post yet.
   if (entry.amountUsd === null || entry.fxRateUsed === null) return;
 
-  const existing = await db
-    .select({ id: partnerTransactions.id })
+  const [existing] = await db
+    .select()
     .from(partnerTransactions)
     .where(
       and(
@@ -38,7 +38,37 @@ export async function chargeForCost(costEntryId: string, ctx: AuditContext): Pro
       ),
     )
     .limit(1);
-  if (existing.length > 0) return;
+  if (existing) {
+    // The recompute that brought us here may have RE-PRICED the cost — an FX
+    // rate arriving or being corrected re-runs every entry in that currency —
+    // and a charge left at the old number lets the two facts drift: the P&L
+    // reads the new cost while the firm gets settled for the old one. The
+    // debt follows its cost, always, or the pair rule is only half a rule.
+    const drifted =
+      existing.amount !== entry.amount ||
+      existing.amountUsd !== entry.amountUsd ||
+      existing.rateToUsd !== entry.fxRateUsed ||
+      existing.currency !== entry.currency;
+    if (drifted) {
+      await db
+        .update(partnerTransactions)
+        .set({
+          amount: entry.amount,
+          currency: entry.currency,
+          rateToUsd: entry.fxRateUsed,
+          amountUsd: entry.amountUsd,
+        })
+        .where(eq(partnerTransactions.id, existing.id));
+      await writeAudit(db, ctx, {
+        entityType: 'partner_transaction',
+        entityId: existing.id,
+        action: 'update',
+        before: { amount: existing.amount, currency: existing.currency, amountUsd: existing.amountUsd },
+        after: { amount: entry.amount, currency: entry.currency, amountUsd: entry.amountUsd, from: 'cost_entry_reprice' },
+      });
+    }
+    return;
+  }
 
   const [row] = await db
     .insert(partnerTransactions)

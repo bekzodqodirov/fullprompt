@@ -19,7 +19,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { HistoryTab } from '@/components/history-tab';
 import { PhotoGallery } from '@/components/photo-gallery';
 import { AttachmentsPanel } from '@/components/attachments-panel';
-import { voidReceiptAction } from './actions';
+import { VoidReceiptForm } from './void-form';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
 import { DealLink } from './deal-link';
@@ -314,16 +314,17 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       </section>
 
       {canVoid && (
-        <form action={voidReceiptAction} className="card space-y-2">
-          <input type="hidden" name="receiptId" value={id} />
-          <label className="label" htmlFor="void-reason">
-            {t('voidReason')}
-          </label>
-          <input id="void-reason" name="reason" className="input" required minLength={3} />
-          <button type="submit" className="btn-danger w-full">
-            {t('voidBtn')}
-          </button>
-        </form>
+        <VoidReceiptForm
+          receiptId={id}
+          labels={{
+            reason: t('voidReason'),
+            button: t('voidBtn'),
+            errors: {
+              box_not_in_stock: t('voidBoxGone'),
+              receipt_has_costs: t('voidHasCosts'),
+            },
+          }}
+        />
       )}
 
       <TasksPanel

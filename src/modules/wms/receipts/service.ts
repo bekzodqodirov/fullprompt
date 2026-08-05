@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -393,7 +393,7 @@ async function confirmedLotSummaries(receiptId: string): Promise<ConfirmedLotSum
 
 /** Void a receipt (nothing is deleted; letters are NOT returned, spec 5.3). */
 export class VoidError extends Error {
-  constructor(public readonly code: 'box_not_in_stock') {
+  constructor(public readonly code: 'box_not_in_stock' | 'receipt_has_costs') {
     super(code);
   }
 }
@@ -406,6 +406,20 @@ export async function voidReceipt(
   await db.transaction(async (tx) => {
     const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
     if (!receipt || receipt.voidedAt) return;
+
+    // Money first — the batch-cancel rule (#288), which this door never had.
+    // A voided receipt's costs used to stay alive: still in the P&L's direct
+    // costs, still allocated onto the void boxes, and a partner-named one
+    // kept the firm's debt standing for a prixod that officially never
+    // happened. Voiding money is finance's decision made on the cost panel,
+    // not a side effect of a warehouse button, so the void REFUSES until the
+    // receipt's costs are voided — same shape as `batch_has_costs`.
+    const [liveCost] = await tx
+      .select({ id: costEntries.id })
+      .from(costEntries)
+      .where(and(eq(costEntries.receiptId, receiptId), isNull(costEntries.voidedAt)))
+      .limit(1);
+    if (liveCost) throw new VoidError('receipt_has_costs');
 
     await tx
       .update(receipts)

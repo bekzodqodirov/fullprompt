@@ -500,7 +500,9 @@
     },
     "openInBrowser": "Brauzerda ochish (chop etish ketmasa)",
     "printDialog": "Chop etish",
-    "shareToPrinter": "Printerga yuborish"
+    "shareToPrinter": "Printerga yuborish",
+    "voidHasCosts": "Avval bu prixodning xarajatlarini bekor qiling — pul yozuvi omborda emas, moliyada hal qilinadi.",
+    "voidBoxGone": "Bekor qilib bo'lmaydi: kamida bitta quti skladdan chiqib ketgan."
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -920,7 +922,8 @@
     "clientBalance": "Mijoz balansi (umumiy)",
     "openLedger": "mijoz kassasi",
     "prevLegs": "shu reysgacha (Xitoy ichida)",
-    "costDetail": "tarkibi"
+    "costDetail": "tarkibi",
+    "forDeal": "Qaysi bitim uchun"
   },
   "map": {
     "title": "Xarita",

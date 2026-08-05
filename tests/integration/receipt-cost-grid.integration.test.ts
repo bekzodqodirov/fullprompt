@@ -12,6 +12,9 @@ import {
   costEntries,
   costTypes,
   events,
+  partnerTransactions,
+  partnerTypes,
+  partners,
   receiptLots,
   receipts,
   users,
@@ -28,6 +31,7 @@ import {
   receiptCostMatrix,
 } from '@/modules/wms/costing/service';
 import { addTransaction, paymentsRegister, voidTransaction } from '@/modules/wms/finance/service';
+import { partnerBalanceUsd } from '@/modules/wms/partners/service';
 import { buildPaymentsXlsx } from '@/modules/wms/accounting/xlsx';
 
 /**
@@ -242,6 +246,55 @@ describe("the accountant's grid writes ordinary cost entries", () => {
         ),
       );
     expect(entries.length).toBe(0);
+  });
+});
+
+describe('the grid can say who settled the sheet', () => {
+  it('a payer on the save derives a partner charge per cell — the form\'s rule', async () => {
+    const [type] = await db
+      .select()
+      .from(partnerTypes)
+      .where(eq(partnerTypes.active, true))
+      .limit(1);
+    const [partner] = await db
+      .insert(partners)
+      .values({ name: `Grid firma ${STAMP}`, typeId: type!.id, createdBy: actorId })
+      .returning();
+
+    await addReceiptCostsBulk(
+      {
+        batchId: fakeBatchId,
+        currency: 'USD',
+        costDate: today,
+        partnerId: partner!.id,
+        cells: [
+          { receiptId: receipt1, costTypeId: type1, amount: 70 },
+          { receiptId: receipt2, costTypeId: type1, amount: 30 },
+        ],
+      },
+      ctx(),
+    );
+
+    // Two cells, two costs, two derived charges: the customs firm's ledger
+    // hears about the money the moment the sheet is saved — before this, the
+    // grid was the one cost door with no payer, and partner-settled customs
+    // typed here read as OUR cash leaving.
+    expect(await partnerBalanceUsd(partner!.id)).toBe(100);
+    const charges = await db
+      .select()
+      .from(partnerTransactions)
+      .where(eq(partnerTransactions.partnerId, partner!.id));
+    expect(charges).toHaveLength(2);
+    expect(charges.every((row) => row.type === 'charge' && row.costEntryId !== null)).toBe(true);
+
+    // Sweep before the shared afterAll: a partner row is CONFIGURATION (#183)
+    // — while one exists, every cost and expense form offers a payer picker.
+    await db.delete(partnerTransactions).where(eq(partnerTransactions.partnerId, partner!.id));
+    await db
+      .update(costEntries)
+      .set({ partnerId: null })
+      .where(eq(costEntries.partnerId, partner!.id));
+    await db.delete(partners).where(eq(partners.id, partner!.id));
   });
 });
 

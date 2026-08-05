@@ -234,6 +234,20 @@ export async function editLot(
       });
     }
     return result;
+  }).then(async (result) => {
+    // The receipt's costs were shared over boxes that just changed: a shrink
+    // voids the miscounted surplus, and its shares must move onto the real
+    // boxes NOW, not at the next FX sweep — the batch pricing screen reads
+    // them through membership a shelf-voided box can never have, so until a
+    // resweep the client's landed cost quietly understated by exactly the
+    // phantom boxes' share. A grow redistributes the same way. Outside the
+    // transaction on purpose: the engine re-reads the boxes it allocates
+    // over, and money must not be able to roll back a warehouse's count fix.
+    if (result.labelsToPrint > 0 || result.labelsToDestroy.length > 0) {
+      const { recomputeAll } = await import('../costing/service');
+      await recomputeAll({ receiptId: lot.receiptId });
+    }
+    return result;
   });
 }
 
