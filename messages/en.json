@@ -1238,7 +1238,9 @@
     "disconnectDone": "Disconnected. Client chats no longer arrive.",
     "chatMenu": "Chat settings",
     "disconnectFailed": "Could not disconnect. The server’s database migrations look unapplied — ask for an update and try again.",
-    "filterClear": "Clear"
+    "filterClear": "Clear",
+    "cardChat": "Chat",
+    "cardFields": "What is on a card"
   },
   "navShort": {
     "home": "Home",
@@ -1604,7 +1606,12 @@
     "triggerReady": "Ready for pickup",
     "triggerHanded": "Fully handed to client",
     "triggerOnLost": "A lost stage cannot have an auto-move",
-    "triggerHandedPartial": "Partially handed to client"
+    "triggerHandedPartial": "Partially handed to client",
+    "cardOwner": "Owner",
+    "cardClient": "Client code",
+    "cardChat": "Chat",
+    "cardAlarms": "Alerts",
+    "cardFields": "What is on a card"
   },
   "automation": {
     "title": "Automation rules",

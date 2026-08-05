@@ -234,7 +234,7 @@ renders the reason AND keeps the typed value. Permissions and audit
 exactly as today's forms. Lenta polish: consecutive field-change rows
 collapse («+N o'zgarish», expandable); relative time + absolute tooltip.
 
-### Batch 4 — Kanban — **PARTS 1-2 SHIPPED (rounds 64-65)**
+### Batch 4 — Kanban — **COMPLETE (rounds 64-66)**
 
 The approved text asked for «desktop-only card DnD via `(pointer: fine)`».
 An inventory before any code found the drag ALREADY BUILT (see the table
@@ -258,14 +258,17 @@ would get a board with neither door.
 
 **Still open in batch 4:**
 
-- **Card-field config per user** (summa, kub, hodim, 💬 badge). Not built at
-  all. Needs an owner decision first: where a personal choice is STORED
-  (a `list_views` row is shareable and costs two queries per render; a
-  `localStorage` key is free and un-shareable but cannot be server-rendered;
-  a new column is a migration), and — the part that is not a layout question
-  — whether hiding the deal AMOUNT should become a permission. `/bitimlar`
-  is gated by `canWriteDeal` with no finance gate today, so attaching one
-  would TAKE money away from people who currently see it.
+- **Card-field config per user** — SHIPPED in round 66. A ☰ in each board's
+  header; the specs and the one gate live in `platform/lists/card-fields.ts`.
+  The default is TODAY's card, so an untouched browser sees no change, and the
+  card's identity (lead name, deal code+title) is not switchable at all. NOT a
+  permission: the owner confirmed the deal amount stays visible to everyone who
+  can open the board, since `/bitimlar` has no finance gate and attaching one
+  would have taken money away from people who read it today. Stored in a cookie
+  (server-read, no flash) rather than a `list_views` row or localStorage
+  (DECISIONS #516-518).
+
+
 - **Board quick filters (hodim + text)** — SHIPPED in round 65. One shared
   predicate per module reaches the rows AND the closed counts, so the «+N ·
   show all» footer cannot lie; the filtering is in SQL because the lists are

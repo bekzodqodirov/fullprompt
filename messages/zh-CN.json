@@ -1238,7 +1238,9 @@
     "disconnectDone": "已断开。客户会话不再进入。",
     "chatMenu": "会话设置",
     "disconnectFailed": "断开失败。服务器的数据库迁移似乎未执行 — 请先更新后重试。",
-    "filterClear": "清除"
+    "filterClear": "清除",
+    "cardChat": "聊天",
+    "cardFields": "卡片显示"
   },
   "navShort": {
     "home": "首页",
@@ -1604,7 +1606,12 @@
     "triggerReady": "可提货",
     "triggerHanded": "已全部交付客户",
     "triggerOnLost": "失败阶段不能设置自动流转",
-    "triggerHandedPartial": "部分已交付客户"
+    "triggerHandedPartial": "部分已交付客户",
+    "cardOwner": "负责人",
+    "cardClient": "客户编号",
+    "cardChat": "聊天",
+    "cardAlarms": "提醒",
+    "cardFields": "卡片显示"
   },
   "automation": {
     "title": "自动化规则",

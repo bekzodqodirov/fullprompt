@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## Kartochkada nima ko'rinishini o'zingiz tanlaysiz — 2026-08-05
+
+4-bosqich tugadi.
+
+Lid voronkasi va bitimlar doskasining tepasida **☰** tugmasi bor. Bosasiz —
+ro'yxat chiqadi, va kartochkada qaysi qatorlar turishini belgilaysiz.
+
+**Lidda:** firma · telefon · manba · mas'ul · mijoz kodi · chat · keyingi aloqa.
+**Bitimda:** summa · mas'ul · mijoz kodi · chat · ogohlantirishlar · **kub**.
+
+**Kub yangi** — doskada ilgari yo'q edi, siz aytgan edingiz. U **o'chirilgan
+holda** turadi: yoqmaguningizcha kartochka avvalgidek ko'rinadi.
+
+**Ism va bitim raqami ro'yxatda yo'q** — ularni o'chirib bo'lmaydi. Kartochka
+qaysi ish ekanini aytmasa, u kartochka emas.
+
+**Summa hammaga ochiq qoldi**, siz aytganingizdek. Bu sozlama — ruxsat emas,
+har kim o'ziga qulay qilib qo'yadi.
+
+**Tanlov brauzerda saqlanadi** (xuddi qorong'i rejimdek), serverdan o'qiladi —
+shuning uchun sahifa ochilishi bilanoq to'g'ri chiqadi, «sakramaydi».
+Telefon va kompyuterda alohida bo'lishi mumkin.
+
+**Hech narsa tanlamasangiz — hammasi avvalgidek.** Bu ataylab: yangi sozlama
+hech kimning ekranini o'zi-o'zidan o'zgartirmasligi kerak.
+
+Migratsiya yo'q. 1011 ta ichki test, 135 ta brauzer testi.
+
 ## Doskada qidiruv va hodim bo'yicha filtr — 2026-08-05
 
 4-bosqichning ikkinchi qismi. Lid voronkasida ham, bitimlar doskasida ham

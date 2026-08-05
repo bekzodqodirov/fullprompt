@@ -9,6 +9,8 @@ import { KanbanBoard } from './leads/kanban';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
 import { BoardFilter, hrefWith } from '@/components/list/board-filter';
+import { CardFieldsMenu } from '@/components/list/card-fields-menu';
+import { LEAD_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
 
 /**
  * The funnel board — and nothing else.
@@ -40,6 +42,9 @@ export default async function LeadsPage({
   const td = await getTranslations('deals');
   const tc = await getTranslations('common');
   const params = await searchParams;
+  // Which lines this browser wants on a card — a cookie, so the first HTML is
+  // already right and nothing rearranges itself after hydration.
+  const cardFields = await readCardFields('lead');
 
   const seesAll = actor.permissions.has('crm.leads.view_all');
   // Someone who may see everything still starts on their own leads; "all" is
@@ -121,6 +126,16 @@ export default async function LeadsPage({
               {/* Same rule as the deal board's door back — see the note there. */}
               <span className="hidden sm:inline">{td('title')}</span>
             </Link>
+            <CardFieldsMenu
+              board="lead"
+              specs={LEAD_CARD_FIELDS}
+              chosen={cardFields}
+              labels={{
+                title: t('cardFields'),
+                save: tc('save'),
+                field: (key) => t(key as 'company'),
+              }}
+            />
             <Link href="/crm/leads/new" className="btn-primary">
               <Icon name="plus" className="h-4 w-4" />
               {t('newLead')}
@@ -167,6 +182,7 @@ export default async function LeadsPage({
       />
 
       <KanbanBoard
+        fields={cardFields}
         owners={
           managers.length
             ? managers.map((row) => ({ id: row.id, name: row.fullName }))

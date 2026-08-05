@@ -1238,7 +1238,9 @@
     "disconnectDone": "Uzildi. Mijoz suhbatlari endi kelmaydi.",
     "chatMenu": "Chat sozlamalari",
     "disconnectFailed": "Uzib bo'lmadi. Serverda baza migratsiyalari qo'llanmagan ko'rinadi — yangilashni so'rang va qayta urinib ko'ring.",
-    "filterClear": "Tozalash"
+    "filterClear": "Tozalash",
+    "cardChat": "Chat",
+    "cardFields": "Kartochkada nima"
   },
   "navShort": {
     "home": "Bosh",
@@ -1604,7 +1606,12 @@
     "triggerReady": "Topshirishga tayyor",
     "triggerHanded": "Mijozga to'liq topshirildi",
     "triggerOnLost": "Yo'qotilgan etapga avto-o'tish qo'yib bo'lmaydi",
-    "triggerHandedPartial": "Qisman topshirildi"
+    "triggerHandedPartial": "Qisman topshirildi",
+    "cardOwner": "Mas’ul",
+    "cardClient": "Mijoz kodi",
+    "cardChat": "Chat",
+    "cardAlarms": "Ogohlantirishlar",
+    "cardFields": "Kartochkada nima"
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

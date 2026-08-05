@@ -58,8 +58,14 @@ export function PageHeader({
             360 px screen, and one row wider than the viewport makes mobile
             Chrome rescale the WHOLE page (#400). Pre-dates round 65; found
             while measuring it. */}
+        {/* `relative` on the ROW, so a popover an action opens is anchored to
+            the row rather than to its own button — anchoring to the button put
+            a panel's left edge off-screen at 360 px (#471) and pushed the
+            document to 487 px (round 57). Both times, the same fix. */}
         {actions && (
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+          <div className="relative flex min-w-0 flex-wrap items-center justify-end gap-2">
+            {actions}
+          </div>
         )}
       </div>
     </header>

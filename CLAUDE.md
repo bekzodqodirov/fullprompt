@@ -117,14 +117,14 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE (bar per-user card fields); 5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-1002 unit/integration + 130 e2e, verified in CI's order on a fresh database.
+1011 unit/integration + 135 e2e, verified in CI's order on a fresh database.
 Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1405,6 +1405,35 @@ counts → the agreement test goes red. No migration. **Batch 4's last item —
 per-user card fields — is the only thing left, and the owner has answered its
 one blocking question: the deal AMOUNT stays visible to everyone, so the
 setting is show/hide per person and NOT a permission.**
+
+Round 66 — **UX batch 4 part 3; batch 4 COMPLETE** (#516-518, owner «1 menimcha
+togri» = the amount stays open to everyone). A ☰ in each board's header opens a
+`<details>` of checkboxes: which lines a CARD carries, per person.
+`platform/lists/card-fields.ts` holds the specs (lead ×7, deal ×6 incl. the
+`volume` the owner asked for and the board never had) and `visibleCardFields`,
+the one gate — mirroring batch 1's `visibleColumns`. THE RULE that makes it
+safe: `null` (nobody chose) is **today's set**, not everything and not nothing,
+so an untouched browser renders exactly the card that shipped — which is also
+why `volume` is OFF by default. An EMPTY choice survives distinctly from no
+choice (`lead=` vs absent). The card's IDENTITY (lead name, deal code+title) is
+not in the specs at all: most of the browser suite finds a board card by its
+text, so a hideable name would put every one of those specs one cookie away
+from red. NOT a permission (#516) — `/bitimlar` is gated by `canWriteDeal` with
+NO finance gate, so attaching `finance.view` to the amount would have TAKEN
+money from every seller who reads it today; the owner was asked and said keep
+it open. Storage = a COOKIE following `platform/theme` (server-read, so no
+flash; nothing in the db for the next spec to inherit, #183). Rejected and why:
+a `list_views` row costs two queries per render on the sales team's home board
+plus a bare-visit redirect, and leaves CONFIGURATION behind; `localStorage`
+cannot be server-rendered. Cost stated: per browser, so phone and desktop can
+differ — like the theme and the sidebar. The parser survives a hand-edited
+cookie (unknown board, missing `=`, truncated tail). Menu is absolute, so
+CLOSED it costs the board no height — e2e measures the board does not move when
+it opens. Red-proofs ×2 (default→everything; empty choice dropped on parse).
+`PageHeader` actions got `relative` so a popover anchors to the ROW (#471,
+round 57). No migration. NOTE: /bitimlar's header wraps to two lines at 360 px
+for `crm.manage` holders only — they get a fourth button — costing 56 px of
+board; measured and accepted.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

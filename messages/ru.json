@@ -1238,7 +1238,9 @@
     "disconnectDone": "Отключено. Клиентские чаты больше не поступают.",
     "chatMenu": "Настройки чата",
     "disconnectFailed": "Не удалось отключить. Похоже, на сервере не применены миграции базы — попросите обновить и повторите.",
-    "filterClear": "Сбросить"
+    "filterClear": "Сбросить",
+    "cardChat": "Чат",
+    "cardFields": "Что на карточке"
   },
   "navShort": {
     "home": "Главная",
@@ -1604,7 +1606,12 @@
     "triggerReady": "Готов к выдаче",
     "triggerHanded": "Выдан клиенту полностью",
     "triggerOnLost": "На проигранный этап автопереход не ставится",
-    "triggerHandedPartial": "Частично выдан клиенту"
+    "triggerHandedPartial": "Частично выдан клиенту",
+    "cardOwner": "Ответственный",
+    "cardClient": "Код клиента",
+    "cardChat": "Чат",
+    "cardAlarms": "Предупреждения",
+    "cardFields": "Что на карточке"
   },
   "automation": {
     "title": "Правила автоматизации",

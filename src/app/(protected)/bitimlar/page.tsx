@@ -6,6 +6,8 @@ import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
 import { BoardFilter, hrefWith } from '@/components/list/board-filter';
+import { CardFieldsMenu } from '@/components/list/card-fields-menu';
+import { DEAL_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import {
   canWriteDeal,
@@ -40,6 +42,9 @@ export default async function DealsPage({
   const tc = await getTranslations('crm');
   const tcommon = await getTranslations('common');
   const params = await searchParams;
+  // Which lines this browser wants on a card — a cookie, so the first HTML is
+  // already right and nothing rearranges itself after hydration.
+  const cardFields = await readCardFields('deal');
 
   const seesAll = actor.permissions.has('crm.leads.view_all');
   // Somebody who may see everything still starts on their own jobs; "all" is
@@ -98,6 +103,7 @@ export default async function DealsPage({
       ownerName: row.ownerName,
       quotedAmount: row.quotedAmount,
       quotedCurrency: row.quotedCurrency,
+      quotedVolumeM3: row.quotedVolumeM3,
       deferred: row.deferred,
       flag: (flag?.reason as 'deviation' | 'unpriced' | undefined) ?? null,
       flagPct: flag?.pct ?? null,
@@ -149,6 +155,16 @@ export default async function DealsPage({
                 <Icon name="settings" className="h-4 w-4" />
               </Link>
             )}
+            <CardFieldsMenu
+              board="deal"
+              specs={DEAL_CARD_FIELDS}
+              chosen={cardFields}
+              labels={{
+                title: t('cardFields'),
+                save: tcommon('save'),
+                field: (key) => t(key as 'amount'),
+              }}
+            />
             <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal">
               <Icon name="plus" className="h-4 w-4" />
               {t('newDeal')}
@@ -221,6 +237,7 @@ export default async function DealsPage({
       <DealBoard
         stages={stages}
         deals={deals}
+        fields={cardFields}
         hidden={hidden}
         archiveHref={`/bitimlar${hrefWith(carried, { arxiv: '1' })}`}
       />

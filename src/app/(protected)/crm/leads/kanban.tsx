@@ -37,6 +37,7 @@ export function KanbanBoard({
   hidden,
   archiveHref,
   owners,
+  fields,
 }: {
   stages: KanbanStage[];
   leads: KanbanLead[];
@@ -45,6 +46,8 @@ export function KanbanBoard({
   archiveHref?: string;
   /** Who a lead may be handed to; absent means no bulk assign is offered. */
   owners?: { id: string; name: string }[];
+  /** Which switchable lines this browser wants; the name is never in it. */
+  fields: Set<string>;
 }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
@@ -94,25 +97,31 @@ export function KanbanBoard({
         }}
         renderCard={(lead) => (
           <>
+            {/* The NAME is not switchable. A card with nothing on it is not a
+                card, and half the browser suite finds a board card by it. */}
             <div className="font-semibold [overflow-wrap:anywhere]">{lead.name}</div>
-            {lead.company && <div className="text-xs text-ink-700">{lead.company}</div>}
-            {lead.phone && <div className="font-mono text-xs">{lead.phone}</div>}
+            {fields.has('company') && lead.company && (
+              <div className="text-xs text-ink-700">{lead.company}</div>
+            )}
+            {fields.has('phone') && lead.phone && (
+              <div className="font-mono text-xs">{lead.phone}</div>
+            )}
             <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-ink-500">
-              {lead.sourceName && (
+              {fields.has('source') && lead.sourceName && (
                 <span className="rounded bg-surface-sunken px-1.5">{lead.sourceName}</span>
               )}
-              {lead.ownerName && <span>{lead.ownerName}</span>}
-              {lead.clientCode && (
+              {fields.has('owner') && lead.ownerName && <span>{lead.ownerName}</span>}
+              {fields.has('code') && lead.clientCode && (
                 <span className="font-mono font-bold text-good">{lead.clientCode}</span>
               )}
               {/* The chat, on the card (owner, round 25) — and whether it waits on us. */}
-              {lead.chat && (
+              {fields.has('chat') && lead.chat && (
                 <span className={lead.chat === 'waiting' ? 'font-semibold text-warn' : ''}>
                   💬{lead.chat === 'waiting' && ' !'}
                 </span>
               )}
             </div>
-            {lead.nextActionAt && (
+            {fields.has('nextAction') && lead.nextActionAt && (
               <div className="mt-1 text-[11px] font-semibold text-warn">📅 {lead.nextActionAt}</div>
             )}
           </>
