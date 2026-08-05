@@ -529,7 +529,10 @@
     "markVoid": "作废",
     "markFound": "找到（退回在库）",
     "reasonRequired": "原因（必填）",
-    "empty": "按筛选未找到货物"
+    "empty": "按筛选未找到货物",
+    "pageOf": "{from}–{to} / {total}",
+    "pageNext": "下一页 →",
+    "pagePrev": "← 上一页"
   },
   "search": {
     "placeholder": "搜索：GS777、GS777-A、YW26-000123、货物…",

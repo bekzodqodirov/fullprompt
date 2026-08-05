@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## Tezlik: bitimlar doskasi va sklad jadvali — 2026-08-05
+
+Siz «qotyabti, ayniqsa bitim bilan» degan edingiz. Sizning
+ma'lumotlaringizning nusxasida o'lchab chiqdim — ikkita katta sabab topildi,
+ikkalasi tuzatildi.
+
+**1. Bitimlar doskasi.** Doska har ochilganda **har bir ochiq bitim uchun
+alohida 2-3 ta so'rov** yuborar ekan (og'ish belgisi uchun — «⚠ smetadan
+oshdi» belgilari). Bitim qancha ko'paysa, doska shuncha sekinlashardi — siz
+sezgan narsa aynan shu. Endi hammasi uchun **bitta umumiy so'rov**: doskaning
+bazaga murojaatlari ~120 tadan **17 taga** tushdi. Belgilar o'sha-o'sha,
+hisob o'zgargani yo'q. Mijoz kartasidagi bitimlar ro'yxati ham xuddi shu
+yo'l bilan tuzatildi.
+
+**2. Sklad jadvali.** Server tez edi, lekin telefon ~450 qatorni (har birida
+rasm bilan) birdaniga chizishga **3-4 sekund** sarflar ekan — telefonda
+qotish shu edi. Endi jadval **120 qatordan** ko'rsatiladi, pastda
+«1–120 / 456 · Keyingi →» tugmalari. Muhimi:
+
+- **Σ jami (quti, kg, m³) butun ro'yxat bo'yicha** qoladi, sahifa bo'yicha emas.
+- **Excel eksport hammasini** chiqaradi, avvalgidek.
+- Saralash butun ro'yxat bo'yicha ishlaydi, sahifalab emas.
+
+O'lchov (telefon tezligida): sklad ekrani **4.8 s → 1 s**. Doska ham,
+voronka ham yarim sekunddan tez chiziladi.
+
+Migratsiya yo'q. Pul hisob-kitobi auditi alohida ketyapti — natijasini
+alohida yozaman.
+
+---
+
 ## Kirishdagi bir kamchilik va uchta tartib tuzatildi — 2026-08-05
 
 Shablonlar chiqqandan keyin testlar bir joyda qizil bo'ldi. Sababini

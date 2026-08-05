@@ -38,6 +38,7 @@ export default async function StockPage({
     sort?: string;
     dir?: string;
     cols?: string;
+    page?: string;
   }>;
 }) {
   const actor = await getActor();
@@ -229,6 +230,25 @@ export default async function StockPage({
     };
   });
   const sorted = sortRows(rows, params.sort, params.dir, SORTABLE);
+  // The RENDER is paged, the fetch is not: the sort above runs over the whole
+  // fetched set, so ordering stays truthful across pages, and the Σ header and
+  // the export keep describing everything the filter matched. What the page
+  // cap buys is the phone: ~450 rows with a photo each are ~10,000 DOM nodes,
+  // and a warehouse phone spent 3+ seconds of main-thread time laying them
+  // out — the «qotish». 120 rows are one screenful of scrolling and render in
+  // a fraction of that.
+  const PAGE_ROWS = 120;
+  const page = Math.max(1, Math.floor(Number(params.page)) || 1);
+  const pageRows = sorted.slice((page - 1) * PAGE_ROWS, page * PAGE_ROWS);
+  const pageHref = (target: number) => {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== '' && key !== 'page') search.set(key, value);
+    }
+    if (target > 1) search.set('page', String(target));
+    const qs = search.toString();
+    return qs ? `/stock?${qs}` : '/stock';
+  };
   const chosen = parseCols(params.cols);
   const columns = visibleColumns(STOCK_COLUMNS, chosen, (permission) =>
     actor.permissions.has(permission),
@@ -334,7 +354,7 @@ export default async function StockPage({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row) => (
+            {pageRows.map((row) => (
               // The key carries the WAREHOUSE too. The query groups by lot AND
               // warehouse, so a lot whose boxes sit in two places is two rows —
               // three lots on the owner's own data — and keying them both on
@@ -412,6 +432,37 @@ export default async function StockPage({
         </table>
         {lines.length === 0 && <p className="p-4 text-sm text-ink-500">{t('empty')}</p>}
       </div>
+
+      {/* The pager, only when there is something beyond the page. Plain links:
+          they walk with the back button and a saved view never stores a page
+          (CONTROL_PARAMS drops it). */}
+      {sorted.length > PAGE_ROWS && (
+        <div className="flex items-center justify-between text-sm" data-testid="stock-pager">
+          <span className="text-ink-500">
+            {t('pageOf', {
+              from: (page - 1) * PAGE_ROWS + 1,
+              to: Math.min(page * PAGE_ROWS, sorted.length),
+              total: sorted.length,
+            })}
+          </span>
+          <span className="flex gap-2">
+            {page > 1 && (
+              <Link href={pageHref(page - 1)} className="btn-secondary !min-h-9 px-3">
+                {t('pagePrev')}
+              </Link>
+            )}
+            {page * PAGE_ROWS < sorted.length && (
+              <Link
+                href={pageHref(page + 1)}
+                className="btn-secondary !min-h-9 px-3"
+                data-testid="stock-next-page"
+              >
+                {t('pageNext')}
+              </Link>
+            )}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

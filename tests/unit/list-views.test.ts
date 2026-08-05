@@ -90,6 +90,10 @@ describe('the query a view stores', () => {
     expect(normalizeQuery({ q: 'GS7', view: 'abc', makeDefault: 'on' })).toBe('q=GS7');
   });
 
+  it('drops the page — a saved view must not open on the middle of a list', () => {
+    expect(normalizeQuery({ q: 'GS7', page: '3' })).toBe('q=GS7');
+  });
+
   it('keeps the column choice, because a view is its columns too', () => {
     expect(normalizeQuery({ cols: 'code,name' })).toBe('cols=code%2Cname');
   });

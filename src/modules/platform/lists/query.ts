@@ -11,8 +11,9 @@
  * changed something since".
  */
 
-/** Params that describe an action, never a list state. */
-export const CONTROL_PARAMS = ['view', 'viewName', 'savedView', 'public', 'makeDefault'] as const;
+/** Params that describe an action or a position, never a list state. A saved
+ * view carrying `page=3` would greet its owner with the middle of a list. */
+export const CONTROL_PARAMS = ['view', 'viewName', 'savedView', 'public', 'makeDefault', 'page'] as const;
 
 export function normalizeQuery(
   params: Record<string, string | string[] | undefined>,

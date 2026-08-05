@@ -529,7 +529,10 @@
     "markVoid": "Bekor qilish",
     "markFound": "Topildi (skladga qaytarish)",
     "reasonRequired": "Sabab (majburiy)",
-    "empty": "Filtr bo‘yicha yuk topilmadi"
+    "empty": "Filtr bo‘yicha yuk topilmadi",
+    "pageOf": "{from}–{to} / {total}",
+    "pageNext": "Keyingi →",
+    "pagePrev": "← Oldingi"
   },
   "search": {
     "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",

@@ -591,15 +591,38 @@ export interface DealReality {
   lostBoxes: number;
 }
 
+const EMPTY_REALITY: DealReality = {
+  receiptCount: 0,
+  boxCount: 0,
+  volumeM3: 0,
+  weightKg: 0,
+  pendingBoxes: 0,
+  arrivedBoxes: 0,
+  lostBoxes: 0,
+};
+
 /**
- * What actually turned up, summed from the receipts.
+ * What actually turned up, summed from the receipts — for a whole LIST of
+ * deals in one pair of grouped queries.
+ *
+ * This is the board's shape, not the card's: `dealsNeedingAttention` asks the
+ * question for every open deal on every render of /bitimlar, and asking it one
+ * deal at a time was two round trips per deal — ~350 queries on the owner's
+ * board, growing with every deal he opens, which is the screen he reported
+ * freezing. A deal with no receipts is simply absent from the grouped rows;
+ * the caller gets the zero object, which is what per-deal aggregation returned
+ * for it anyway.
  *
  * Voided receipts are excluded: a receipt that was cancelled never happened,
  * and counting its volume would make the deal look 40 % over when it is not.
  */
-export async function dealReality(dealId: string): Promise<DealReality> {
-  const [totals] = await db
+export async function dealRealitiesFor(dealIds: string[]): Promise<Map<string, DealReality>> {
+  const map = new Map<string, DealReality>();
+  if (dealIds.length === 0) return map;
+
+  const totals = await db
     .select({
+      dealId: receipts.dealId,
       receipts: sql<number>`count(DISTINCT ${receipts.id})`,
       boxes: sql<number>`coalesce(sum(${receiptLots.boxCount}), 0)`,
       volume: sql<number>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
@@ -607,14 +630,16 @@ export async function dealReality(dealId: string): Promise<DealReality> {
     })
     .from(receipts)
     .leftJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
-    .where(and(eq(receipts.dealId, dealId), isNull(receipts.voidedAt)));
+    .where(and(inArray(receipts.dealId, dealIds), isNull(receipts.voidedAt)))
+    .groupBy(receipts.dealId);
 
   // inArray/notInArray, never `IN ${array}`: a JS array interpolated into a raw
   // drizzle fragment is bound as ONE parameter and postgres refuses it.
   const settled = notInArray(boxes.status, [...SETTLED_BOX_STATUSES]);
   const arrived = inArray(boxes.status, [...ARRIVED_BOX_STATUSES]);
-  const [boxState] = await db
+  const boxStates = await db
     .select({
+      dealId: receipts.dealId,
       pending: sql<number>`count(*) FILTER (WHERE ${settled})`,
       arrived: sql<number>`count(*) FILTER (WHERE ${arrived})`,
       lost: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'lost')`,
@@ -622,17 +647,28 @@ export async function dealReality(dealId: string): Promise<DealReality> {
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(and(eq(receipts.dealId, dealId), isNull(receipts.voidedAt)));
+    .where(and(inArray(receipts.dealId, dealIds), isNull(receipts.voidedAt)))
+    .groupBy(receipts.dealId);
 
-  return {
-    receiptCount: Number(totals?.receipts ?? 0),
-    boxCount: Number(totals?.boxes ?? 0),
-    volumeM3: Number(totals?.volume ?? 0),
-    weightKg: Number(totals?.weight ?? 0),
-    pendingBoxes: Number(boxState?.pending ?? 0),
-    arrivedBoxes: Number(boxState?.arrived ?? 0),
-    lostBoxes: Number(boxState?.lost ?? 0),
-  };
+  const states = new Map(boxStates.map((row) => [row.dealId, row]));
+  for (const row of totals) {
+    if (!row.dealId) continue;
+    const state = states.get(row.dealId);
+    map.set(row.dealId, {
+      receiptCount: Number(row.receipts),
+      boxCount: Number(row.boxes),
+      volumeM3: Number(row.volume),
+      weightKg: Number(row.weight),
+      pendingBoxes: Number(state?.pending ?? 0),
+      arrivedBoxes: Number(state?.arrived ?? 0),
+      lostBoxes: Number(state?.lost ?? 0),
+    });
+  }
+  return map;
+}
+
+export async function dealReality(dealId: string): Promise<DealReality> {
+  return (await dealRealitiesFor([dealId])).get(dealId) ?? EMPTY_REALITY;
 }
 
 export async function deviationThreshold(): Promise<number> {
@@ -958,6 +994,7 @@ export interface DealRow {
   quotedAmount: string | null;
   quotedCurrency: string | null;
   quotedVolumeM3: string | null;
+  quotedWeightKg: string | null;
   deferred: boolean;
   createdAt: Date;
 }
@@ -1034,6 +1071,7 @@ export async function listDeals(filters: {
       quotedAmount: deals.quotedAmount,
       quotedCurrency: deals.quotedCurrency,
       quotedVolumeM3: deals.quotedVolumeM3,
+      quotedWeightKg: deals.quotedWeightKg,
       deferredAt: deals.deferredAt,
       deferralEndedAt: deals.deferralEndedAt,
       createdAt: deals.createdAt,
@@ -1163,15 +1201,21 @@ export async function openDealsForClient(clientId: string) {
 export async function dealsNeedingAttention(ownerId?: string, q?: string): Promise<
   { id: string; code: string; clientCode: string; clientName: string; reason: string; pct: number | null }[]
 > {
-  // The filter reaches here too. Not cosmetic: this loop is one query per row
-  // on top of the list, so it is the most expensive thing on the screen, and
-  // narrowing the board should narrow it rather than leave it running whole.
+  // The filter reaches here too — narrowing the board narrows this as well.
+  // The realities come GROUPED: this used to be two queries per open deal on
+  // every render of the board, which is the linear cost that turned into the
+  // owner's «qotyabti» as his deal count grew. The quote columns ride on the
+  // list row for the same reason — refetching each deal to read its quoted
+  // weight was a third query per row.
   const rows = await listDeals({ ownerId, q, openOnly: true, limit: 200 });
-  const threshold = await deviationThreshold();
+  const [threshold, realities] = await Promise.all([
+    deviationThreshold(),
+    dealRealitiesFor(rows.map((row) => row.id)),
+  ]);
   const out = [];
   for (const row of rows) {
-    const reality = await dealReality(row.id);
-    if (reality.receiptCount === 0) continue;
+    const reality = realities.get(row.id);
+    if (!reality || reality.receiptCount === 0) continue;
     if (row.quotedAmount === null) {
       out.push({
         id: row.id,
@@ -1183,12 +1227,11 @@ export async function dealsNeedingAttention(ownerId?: string, q?: string): Promi
       });
       continue;
     }
-    const deal = await db.query.deals.findFirst({ where: eq(deals.id, row.id) });
     const deviation = compareQuote(
       {
-        volumeM3: deal?.quotedVolumeM3 == null ? null : Number(deal.quotedVolumeM3),
-        weightKg: deal?.quotedWeightKg == null ? null : Number(deal.quotedWeightKg),
-        amount: deal?.quotedAmount == null ? null : Number(deal.quotedAmount),
+        volumeM3: row.quotedVolumeM3 === null ? null : Number(row.quotedVolumeM3),
+        weightKg: row.quotedWeightKg === null ? null : Number(row.quotedWeightKg),
+        amount: Number(row.quotedAmount),
       },
       { volumeM3: reality.volumeM3, weightKg: reality.weightKg },
       threshold,

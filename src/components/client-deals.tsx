@@ -4,15 +4,12 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { Icon } from '@/components/ui/icon';
 import {
   canWriteDeal,
-  dealReality,
+  dealRealitiesFor,
   deviationThreshold,
   compareQuote,
   listDeals,
 } from '@/modules/wms/deals/service';
 import { worthAlerting } from '@/modules/wms/deals/deviation';
-import { db } from '@/modules/platform/db/client';
-import { deals } from '@/modules/platform/db/schema';
-import { eq } from 'drizzle-orm';
 
 /**
  * This client's jobs, on their card.
@@ -29,29 +26,28 @@ export async function ClientDeals({ clientId }: { clientId: string }) {
 
   const t = await getTranslations('deals');
   const rows = await listDeals({ clientId, limit: 30 });
-  const threshold = await deviationThreshold();
+  // Grouped, the board's shape: this was two queries per deal plus a refetch
+  // for the quote, on a card that already runs a dozen reads.
+  const [threshold, realities] = await Promise.all([
+    deviationThreshold(),
+    dealRealitiesFor(rows.map((row) => row.id)),
+  ]);
 
-  // Small N per client, so the gap is computed per row rather than in one
-  // clever query: this card already runs a dozen reads and a deal list of 30
-  // is the top of the range.
-  const withGap = await Promise.all(
-    rows.map(async (row) => {
-      const reality = await dealReality(row.id);
-      if (reality.receiptCount === 0) return { row, pct: null, unpriced: false };
-      const deal = await db.query.deals.findFirst({ where: eq(deals.id, row.id) });
-      if (!deal?.quotedAmount) return { row, pct: null, unpriced: true };
-      const deviation = compareQuote(
-        {
-          volumeM3: deal.quotedVolumeM3 === null ? null : Number(deal.quotedVolumeM3),
-          weightKg: deal.quotedWeightKg === null ? null : Number(deal.quotedWeightKg),
-          amount: Number(deal.quotedAmount),
-        },
-        { volumeM3: reality.volumeM3, weightKg: reality.weightKg },
-        threshold,
-      );
-      return { row, pct: worthAlerting(deviation) ? deviation.worstPct : null, unpriced: false };
-    }),
-  );
+  const withGap = rows.map((row) => {
+    const reality = realities.get(row.id);
+    if (!reality || reality.receiptCount === 0) return { row, pct: null, unpriced: false };
+    if (row.quotedAmount === null) return { row, pct: null, unpriced: true };
+    const deviation = compareQuote(
+      {
+        volumeM3: row.quotedVolumeM3 === null ? null : Number(row.quotedVolumeM3),
+        weightKg: row.quotedWeightKg === null ? null : Number(row.quotedWeightKg),
+        amount: Number(row.quotedAmount),
+      },
+      { volumeM3: reality.volumeM3, weightKg: reality.weightKg },
+      threshold,
+    );
+    return { row, pct: worthAlerting(deviation) ? deviation.worstPct : null, unpriced: false };
+  });
 
   return (
     <section className="card space-y-2">

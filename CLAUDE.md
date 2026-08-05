@@ -1493,10 +1493,32 @@ uniquely indexed + `[A-Z0-9]{2,10}` on every write path), `staffByPhone`
 (matches on `phone`, `notNull().unique()`), the plan's crate-conflict read
 (multi-row but consumed as a set).
 
+Round 68 — **the second speed round** (#526-527, owner «qotyabti, ayniqsa
+crmda bitim bilan» + «pullar hisob kitobi togri yuritilyabtimi audit qil»).
+Round 45's method rerun on his data: the deals board issued ~120 statements
+per render — `dealsNeedingAttention` ran `dealReality` PER OPEN DEAL
+(2 aggregates each) plus a `findFirst` per priced deal for the quotedWeightKg
+that `listDeals` didn't carry. Serial awaits, linear in his deal count = the
+freeze he reported. Now `dealRealitiesFor(dealIds)` = ONE pair of
+`GROUP BY deal_id` aggregates (absent deal → zero object); `listDeals` grew
+`quotedWeightKg`; the client card's deals panel rides the same function.
+Measured: /bitimlar 120 → **17 statements**. RULE (#432 restated): a per-row
+aggregate on a list screen must be one grouped query — a list's length is the
+business growing. **The real PHONE freeze was /stock** (#527): ~450 rows ×
+photo ≈ 10,000 DOM nodes, `domInteractive` **4.8 s** at 4× CPU throttle,
+server innocent (165 ms / 28 queries), no test red. Fix pages the RENDER not
+the fetch: query+sort+Σ+XLSX still cover the whole filtered set, `<tbody>`
+shows 120 rows, prev/next are plain links, `page` joined `CONTROL_PARAMS`
+(a saved view must not store a position). Measured after: **989 ms / 2,696
+nodes**. REJECTED with reasons: `content-visibility:auto` (ignored on
+table-internal boxes), SQL LIMIT/OFFSET (the JS sort over derived columns
+would sort each page separately — #513's lie in pagination's clothes).
+MEASUREMENT NOTE: count statements by grepping `execute`, not `duration:` —
+parse/bind lines inflate the naive count ~3×. The money AUDIT ran as a
+4-lens adversarial workflow the same day — findings in round 69.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
-above. Still unmeasured: the phone-side render on a real device over a real
-mobile network (everything here was measured on localhost, so the numbers
-are server time, not what a warehouse phone feels).
+above (and continued in round 68 with the phone-side numbers it lacked).
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a
