@@ -129,7 +129,15 @@ describe('what it writes down', () => {
     const rows = await db
       .select()
       .from(auditLog)
-      .where(and(eq(auditLog.entityId, leadId), eq(auditLog.action, 'update')));
+      .where(and(eq(auditLog.entityId, leadId), eq(auditLog.action, 'update')))
+      // Postgres returns rows in NO order unless asked, and this file writes
+      // three update rows for the same lead. `at(-1)` read the right one for
+      // four rounds and then handed back the `company` row on CI — audit_log
+      // takes no deletes but it does take ROLLED-BACK inserts, whose dead
+      // tuples autovacuum frees for a later row to land in, so physical order
+      // stops being insertion order the moment the suite grows. An unordered
+      // read must never be indexed into.
+      .orderBy(asc(auditLog.createdAt), asc(auditLog.id));
     const last = rows.at(-1)!;
     expect(last.after).toEqual({ note: 'yangi izoh' });
     expect(last.before).toEqual({ note: 'eski izoh' });
