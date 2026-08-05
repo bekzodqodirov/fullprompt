@@ -125,7 +125,9 @@ test('a job is quoted, the cargo arrives bigger, and the card says so', async ({
   await page.goto(clientUrl);
   await expect(page.getByTestId('client-deal-row').first()).toBeVisible();
   await page.goto(dealUrl);
-  await expect(page.getByText(title)).toBeVisible();
+  // Scoped to the HEADING: since round 63 the title is also an editable fact
+  // on the rail, so it is on this card twice and a bare getByText is ambiguous.
+  await expect(page.locator('h1').getByText(title)).toBeVisible();
 });
 
 test('a warehouse operator never reaches the deal board', async ({ page }) => {
