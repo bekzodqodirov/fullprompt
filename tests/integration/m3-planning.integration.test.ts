@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -84,7 +84,19 @@ async function makeLot(boxCount: number) {
     },
     ctx(),
   );
-  const rows = await db.select().from(boxes).where(eq(boxes.lotId, lotId));
+  // BY SEQUENCE, because every caller reads this array positionally —
+  // `shortCodes.slice(0, 3)` are «the planned ones» and `boxIds.slice(2)` is
+  // «boxes 3..6». What makes those true is that `recordVerdict` reserves the
+  // LOWEST seq_in_lot boxes, so a read that comes back in another order plans
+  // one box and scans a different one, and the scan gate answers
+  // 'not_on_plan' about a lot that is perfectly planned. An unordered read is
+  // only insertion-ordered until the table reuses a freed page, and this suite
+  // deletes boxes in two other files.
+  const rows = await db
+    .select()
+    .from(boxes)
+    .where(eq(boxes.lotId, lotId))
+    .orderBy(asc(boxes.seqInLot));
   return { lotId, boxIds: rows.map((b) => b.id), shortCodes: rows.map((b) => b.shortCode) };
 }
 

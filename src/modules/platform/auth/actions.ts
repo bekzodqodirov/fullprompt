@@ -1,11 +1,12 @@
 'use server';
 
-import { eq, or } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { db } from '../db/client';
 import { users } from '../db/schema';
 import { writeAudit } from '../audit/service';
+import { findUserByIdentifier } from './identify';
 import { verifyPassword } from './password';
 import { isRateLimited, recordLoginAttempt } from './rate-limit';
 import {
@@ -40,11 +41,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     return { error: 'rate_limited' };
   }
 
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(or(eq(users.phone, identifier), eq(users.username, identifier)))
-    .limit(1);
+  const user = await findUserByIdentifier(identifier);
 
   const valid = user && user.active && (await verifyPassword(user.passwordHash, password));
   await recordLoginAttempt(identifier, ipForLimit, Boolean(valid));

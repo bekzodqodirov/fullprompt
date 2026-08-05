@@ -124,7 +124,7 @@ pnpm build && pnpm e2e  # 44 e2e
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-1029 unit/integration + 140 e2e, verified in CI's order on a fresh database.
+1032 unit/integration + 140 e2e, verified in CI's order on a fresh database.
 Latest migration: **0059** (`reply_templates`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1461,6 +1461,37 @@ row behind, so a refusal-shaped file sweeps by run-scoped TITLE, never by
 collected ids — three orphans were found by the next spec's locator matching
 two. NOT provable here: the picker inside a live composer (CI has no Telegram
 account, the same reason m9x can only prove the refusal).
+
+Round 67b — **the CI failure round 67 caused, and the sweep it earned**
+(#524-525). CI went red on `inline-edit.integration.test.ts`, a file this
+round never touched: it writes three `update` audit rows for one lead, reads
+them back with **no ORDER BY** and asserts on `rows.at(-1)`. The new test file
+added rows and rollback churn and tipped it over. MEASURED on real data: of
+the 1,166 entities with more than one `audit_log` row, **210 already come back
+out of insertion order** — `audit_log` takes no DELETEs but plenty of
+ROLLED-BACK inserts, and autovacuum frees those slots for later rows. Also:
+the local suite runs on a long-lived database whose physical layout is nothing
+like CI's fresh one. A four-lens sweep for the same shape (unordered read →
+positional access) over `src/` + `tests/`: 7 candidates, **4 confirmed**.
+(a) **login** (#525) — `or(phone, username)` + `limit(1)` is not unique
+because the two columns are unique SEPARATELY; fail-closed (the session only
+ever follows the hash that validated), so the symptom is a colleague refused
+with the RIGHT password at random. `findUserByIdentifier` asks twice and the
+**phone wins**, stated. RED-PROOF LESSON: the first fixture inserted the phone
+holder first and passed WITH the defect — a non-deterministic bug does not
+fail on demand, so the fixture must make the broken version deterministic
+(username holder inserted first, assertion repeated ×10).
+(b) **`clientsForChat`** — `chatLocale` takes the FIRST client with a language,
+so a broker chat could answer in a different language between two presses;
+ordered by oldest link. Cosmetic: everything that could show wrong data
+consumes that list as a SET.
+(c) **`m3-planning`'s `makeLot`** — callers read the array positionally and
+`recordVerdict` reserves the LOWEST `seq_in_lot`, so a reordered read would
+plan one box and scan another. Ordered by seq.
+Refuted, worth recording: client-history's `findFirst` (client_code is
+uniquely indexed + `[A-Z0-9]{2,10}` on every write path), `staffByPhone`
+(matches on `phone`, `notNull().unique()`), the plan's crate-conflict read
+(multi-row but consumed as a set).
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

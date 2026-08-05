@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## Kirishdagi bir kamchilik va uchta tartib tuzatildi — 2026-08-05
+
+Shablonlar chiqqandan keyin testlar bir joyda qizil bo'ldi. Sababini
+qidirgandim, o'zi katta emas, lekin **bazadan ma'lumot o'qishning bir
+qoidasi** butun tizim bo'ylab buzilgan joylari chiqdi. Uchtasi topildi va
+tuzatildi.
+
+**Eng muhimi — kirish (login).** Tizim telefon raqamini **yoki** login nomini
+qabul qiladi. Ikkalasi ham takrorlanmas, lekin **alohida** takrorlanmas: bir
+odamning telefoni boshqa odamning «login nomi» bo'lib qolsa (admin qo'lda
+yozib qo'yishi mumkin), baza qaysi birini beradi — noaniq edi. Xavfsizlik
+buzilmasdi (parol tekshirilmasdan hech kim kira olmaydi), lekin **to'g'ri
+parol bilan ham «noto'g'ri» deb rad etilishi** mumkin edi — sababini hech
+qayerdan bilib bo'lmaydi. Endi **telefon raqami ustun**: avval telefon bo'yicha
+qidiriladi, keyin login nomi bo'yicha.
+
+Bu ayniqsa siz **17 ta sotuvchiga login ochganingizda** ahamiyatli — o'shanda
+raqamlar va nomlar bir vaqtda ko'p yoziladi.
+
+**Ikkinchisi — mijoz kabineti tili.** Bitta Telegram chatga bir necha mijoz
+kodi bog'langan bo'lsa (brokerlar shunday), javob qaysi tilda chiqishi
+noaniq edi — ikki bosishda ikki xil til bo'lishi mumkin. Endi **chat kimga
+ochilgan bo'lsa, o'sha mijozning tili** ustun.
+
+Uchinchisi ichki test edi, mijoz ko'rmaydi.
+
+Migratsiya yo'q. 1032 ta ichki test, 140 ta brauzer testi.
+
+---
+
 ## Javob shablonlari — bir marta yozasiz, keyin bir bosasiz — 2026-08-05
 
 5-bosqich boshlandi.
