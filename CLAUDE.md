@@ -1334,7 +1334,17 @@ return. E2E RULE: a spec whose subject is SEEDED data must put it back, and
 the restore must be a TEST (round 57's `afterAll` lie) — m9zf captures and
 restores both records; note that a restore written after the fact restores
 what it FOUND, so the local db had to be rebuilt before this round counted as
-verified. Red-proofs ×3. No migration.
+verified. Red-proofs ×3. No migration. **CI caught one thing this container
+structurally cannot** (#509): m9h reads the deal title back with a bare
+`getByText`, and the title is now on that card TWICE (the h1 and the editable
+fact) — strict mode refuses. It never ran here, because m9h dies earlier at
+the receipt picker, cascading off m1's photo upload. **RULE: the four
+known-failing specs (m1×2, m2×1, m9h) make everything AFTER their failure
+point unverified locally** — "fails for the known reason" is not "has nothing
+to say", and a change touching the receipt, deal or client cards needs CI to
+confirm. Fixed by scoping to the h1, and verified by measuring the claim
+instead of the spec: bare locator → 2 elements on a real deal card, scoped
+→ 1.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real
