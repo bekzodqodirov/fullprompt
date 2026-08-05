@@ -30,7 +30,13 @@
     "notFoundBody": "Bunday sahifa yo‘q yoki o‘chirilgan.",
     "empty": "Hozircha bo‘sh",
     "updateAvailable": "Ilovaning yangi versiyasi bor",
-    "updateNow": "Yangilash"
+    "updateNow": "Yangilash",
+    "moveErrors": {
+      "forbidden": "Bu ko'chirish uchun ruxsat yetarli emas",
+      "notFound": "Kartochka topilmadi — sahifani yangilang",
+      "reasonRequired": "Sababini yozish kerak",
+      "stageNotFound": "Etap o'chirilgan — sahifani yangilang"
+    }
   },
   "login": {
     "title": "Tizimga kirish",
@@ -1117,7 +1123,7 @@
     "badDate": "Bu yerga sana kerak",
     "dormantNote": "Ilgari yuk yuborib, keyin to‘xtagan mijoz. Hech qachon yubormagan odam bu yerga tushmaydi.",
     "personNote": "Kodlar birlashtirilmaydi: har birida o‘z harflari, yuklari va kabineti qoladi. Odam ularni faqat sotuv uchun bog‘laydi.",
-    "dragHint": "Kartochkani ushlab turib boshqa bosqichga sudrang",
+    "dragHint": "Kartochkani sichqoncha bilan boshqa etapga torting",
     "cancelMove": "Bekor qilish",
     "prevStage": "Oldingi bosqich",
     "nextStage": "Keyingi bosqich",

@@ -30,7 +30,13 @@
     "notFoundBody": "该页面不存在或已被删除。",
     "empty": "暂无内容",
     "updateAvailable": "有新版本",
-    "updateNow": "更新"
+    "updateNow": "更新",
+    "moveErrors": {
+      "forbidden": "没有权限执行此移动",
+      "notFound": "找不到卡片 — 请刷新页面",
+      "reasonRequired": "需要填写原因",
+      "stageNotFound": "阶段已删除 — 请刷新页面"
+    }
   },
   "login": {
     "title": "登录系统",
@@ -1117,7 +1123,7 @@
     "badDate": "此处需填日期",
     "dormantNote": "曾经发货但已停止的客户。从未发过货的不会出现在这里。",
     "personNote": "代码不会被合并：各自保留字母、货物和客户端。主体只是在销售侧把它们关联起来。",
-    "dragHint": "长按卡片可拖到其他阶段",
+    "dragHint": "用鼠标将卡片拖到其他阶段",
     "cancelMove": "取消",
     "prevStage": "上一阶段",
     "nextStage": "下一阶段",

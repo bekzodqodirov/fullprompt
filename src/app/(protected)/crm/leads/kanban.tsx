@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { KanbanBoard as Board, type KanbanStage } from '@/components/kanban';
+import { KanbanBoard as Board, type KanbanStage, useMoveErrors } from '@/components/kanban';
 import { BulkBar } from '@/components/list/bulk-bar';
 import { bulkAssignLeadsAction, bulkMoveLeadsAction, moveLeadAction } from '../actions';
 
@@ -48,6 +48,7 @@ export function KanbanBoard({
 }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
+  const moveErrors = useMoveErrors();
   const tl = useTranslations('lists');
   // The SELECTION lives here, not in the shared board: only this screen knows
   // what «assign to» means for a lead, so the actions and the ticks that feed
@@ -73,11 +74,14 @@ export function KanbanBoard({
         cardTestId="lead-card"
         selection={{ ids: picked, toggle, label: tl('select') }}
         hrefOf={(lead) => `/crm/leads/${lead.id}`}
-        // The CRM actions answer `{ ok?: boolean; error?: string }`; the board
-        // only asks "did it stick", and a missing `ok` means it did not.
-        onMove={async (id, stageId, reason) => ({
-          ok: Boolean((await moveLeadAction(id, stageId, reason)).ok),
-        })}
+        // The action answers `{ ok?: boolean; error?: string }`. The CODE
+        // travels with the verdict now: a card that jumps back under the word
+        // «Xatolik» is the screen asking somebody to guess which of five
+        // things went wrong.
+        onMove={async (id, stageId, reason) => {
+          const result = await moveLeadAction(id, stageId, reason);
+          return { ok: Boolean(result.ok), error: result.error };
+        }}
         labels={{
           lostReason: t('lostReason'),
           moveTo: t('moveTo'),
@@ -85,6 +89,7 @@ export function KanbanBoard({
           dragHint: t('dragHint'),
           empty: t('empty'),
           error: tc('error'),
+          moveErrors,
           showAll: t('showAll'),
         }}
         renderCard={(lead) => (

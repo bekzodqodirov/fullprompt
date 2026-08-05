@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## Kanban: barmoq bilan sudrash olib tashlandi, rad etilgan ko'chirish sababini aytadi — 2026-08-05
+
+4-bosqichning birinchi qismi.
+
+**Avvalo bir tuzatish.** 4-bosqichda «kompyuterda kartani sudrab ko'chirish»
+qo'shamiz deb yozgan edim. Kodni ochib ko'rilganda — **u allaqachon bor
+ekan**, ancha oldindan. Mening ro'yxatim xato bo'lgan. (Bu shu dasturda
+to'rtinchi marta shunday bo'ldi: qorong'i rejim, qidiruv, lenta va endi bu.)
+
+**Lekin ostidan haqiqiy nosozlik chiqdi.** Qaysi ko'rinish chiqishi faqat
+**ekran kengligiga** qarab hal qilinar ekan (768 piksel). Ya'ni **planshet**
+kompyuter ko'rinishini oladi — va u yerda kartani **barmoq bilan 0,25 soniya
+ushlab turib sudrash** ishlab turgan ekan, telefon ham titrab qo'yardi.
+
+Bu — siz **ikki marta rad etgan** narsa. Endi sudrash **faqat sichqoncha**
+bilan ishlaydi.
+
+**Planshet uchun.** Sudrashni olib tashlasak, planshetda kartani ko'chirish
+umuman iloji qolmasdi (tugmalar faqat telefon ko'rinishida edi). Shuning
+uchun kompyuter ko'rinishidagi kartaga ham **⋯** tugmasi qo'shildi — bosasiz,
+etaplar ro'yxati chiqadi.
+
+**Rad etilgan ko'chirish endi sababini aytadi.** Ilgari karta orqaga qaytib,
+ustida faqat **«Xatolik»** yozilardi. Beshta har xil sabab bor edi va
+hammasi bir xil so'z bilan chiqardi. Endi: «Bu ko'chirish uchun ruxsat
+yetarli emas» · «Etap o'chirilgan — sahifani yangilang» · «Kartochka
+topilmadi» · «Sababini yozish kerak». To'rt tilda.
+
+**Telefon ko'rinishi umuman o'zgarmadi.**
+
+Migratsiya yo'q. 991 ta ichki test, 124 ta brauzer testi.
+
 ## Bitim va mijoz kartalari ham joyida tuzatiladigan bo'ldi — 2026-08-05
 
 3-bosqich tugadi.

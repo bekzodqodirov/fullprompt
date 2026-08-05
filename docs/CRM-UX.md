@@ -95,7 +95,7 @@ expiry is dead code), PostHog telemetry on by default.
 |---|---|
 | Global search EXISTS: client code/name, box short code, receipt no, product zh/ru, combined `gs777-a` | `src/app/(protected)/search/page.tsx`, linked from `(protected)/layout.tsx` app bar. MISSING: leads, deals, batches, kontragent, phone-number lookup, Ctrl+K palette |
 | Stage colours EXIST, user-editable, 7-colour fixed palette | `crm/stage-color.ts` (`STAGE_CLASS`), `lead_stages.color` / `deal_stages.color` + DB CHECK, pickers in `crm/settings/forms.tsx` and `bitimlar/etaplar/stage-form.tsx` |
-| Kanban deliberately refuses drag today | `components/kanban.tsx` (`draggable={false}` + `onDragStart` preventDefault); owner refused TOUCH drag twice (round 14). Batch 4 adds POINTER-FINE-ONLY DnD; move buttons stay |
+| **Desktop card DnD EXISTS and always did** — hand-written Pointer Events (`DragBoard`), drag ghost, edge auto-scroll, optimistic move through `moveLead`/`moveDeal`, proven by an e2e mouse drag. The inventory line here USED to read «Kanban deliberately refuses drag today», reading `draggable={false}` + `onDragStart` preventDefault as a refusal when they are what make the pointer drag WORK (a native anchor drag fires `pointercancel`). Fourth false «we lack X» claim in this programme — corrected in round 64 | `components/kanban.tsx` `DragBoard`, `tests/e2e/m8-crm.desktop.spec.ts`; DECISIONS #133, #149 |
 | `leads.ownerId` AND `deals.ownerId` exist, indexed | `platform/db/schema/wms.ts` — bulk-assign has its columns |
 | `lost_reason` on leads AND deals, mandatory via UI | schema + stage movers |
 | XLSX builder + route pattern to extend | `wms/accounting/xlsx.ts`, `/api/clients/xlsx`, `/api/accounting/[kind]` |
@@ -234,14 +234,44 @@ renders the reason AND keeps the typed value. Permissions and audit
 exactly as today's forms. Lenta polish: consecutive field-change rows
 collapse («+N o'zgarish», expandable); relative time + absolute tooltip.
 
-### Batch 4 — Kanban (~1 round)
+### Batch 4 — Kanban — **PART 1 SHIPPED (round 64): the pointer split**
 
-Desktop-only card DnD via `(pointer: fine)` (the `components/composer.ts`
-detection pattern); touch keeps the move buttons — the owner refused touch
-drag twice and chose this split explicitly. Optimistic move, revert +
-reason on refusal; writes through `moveLead`/`moveDeal`. Card-field config
-(summa, kub, hodim, 💬 badge) per user. Board quick filters (hodim +
-text). Column colours already exist — do not rebuild them.
+The approved text asked for «desktop-only card DnD via `(pointer: fine)`».
+An inventory before any code found the drag ALREADY BUILT (see the table
+above) — and found the real defect underneath it. Which board a viewer gets
+is decided by **viewport width alone** (`md`, 768 px), and the desktop drag
+armed a 250 ms hold for every pointer that was not a mouse. A tablet in
+portrait is 768 px, so it had hold-to-drag: the gesture the owner refused
+twice, shipping since round 14 (DECISIONS #510).
+
+Shipped in round 64: the drag is a mouse's alone; the desktop card grew the
+⋯ move sheet, because taking the drag from a finger otherwise leaves a
+tablet on a board it cannot move anything on (#511); and a refused move
+finally says WHICH refusal it was instead of the word «error» (#512).
+
+`(pointer: fine)` was deliberately NOT used, and the reason is recorded:
+it answers about the PRIMARY pointer, so a touchscreen laptop reports
+`fine` and would still have dragged with a finger. `event.pointerType` is
+the honest question. The ⋯ is ungated for the mirror-image reason — a
+machine answering `fine` to a media query and «not a mouse» to the event
+would get a board with neither door.
+
+**Still open in batch 4:**
+
+- **Card-field config per user** (summa, kub, hodim, 💬 badge). Not built at
+  all. Needs an owner decision first: where a personal choice is STORED
+  (a `list_views` row is shareable and costs two queries per render; a
+  `localStorage` key is free and un-shareable but cannot be server-rendered;
+  a new column is a migration), and — the part that is not a layout question
+  — whether hiding the deal AMOUNT should become a permission. `/bitimlar`
+  is gated by `canWriteDeal` with no finance gate today, so attaching one
+  would TAKE money away from people who currently see it.
+- **Board quick filters (hodim + text).** Verified absent: both boards read
+  only `{scope, arxiv}`. The design is written and checked — the filter must
+  be pushed into the SQL `where` AND into `closedLeadCounts`/
+  `closedDealCounts`, or the «+N · show all» footer lies; and the mine/all
+  and archive links are literal strings that would drop the filter on the
+  first tap.
 
 ### Batch 5 — Polish (~1 round)
 

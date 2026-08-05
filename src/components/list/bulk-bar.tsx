@@ -171,9 +171,13 @@ export function BulkBar({
           }`}
         >
           {/* Counts, and one fixed sentence when some refused. The service's
-              code is deliberately NOT rendered: it would be a runtime-built
-              i18n key, and a missing key throws while RENDERING in every
-              locale (#163). The card itself says why, one row at a time. */}
+              code is deliberately NOT rendered HERE, and the reason is about
+              this screen rather than about codes: a sweep can refuse twenty
+              rows for twenty reasons, and the ticks are still on screen to
+              retry one at a time. A single DRAGGED card has no such second
+              chance, so the board does name its refusal — `useMoveErrors` in
+              components/kanban.tsx, a literal map for exactly the #163 reason
+              this comment used to give. */}
           <span className="flex-1">
             {t('bulkDone', { done: result.done ?? 0, failed: result.failed ?? 0 })}
             {result.failed ? ` · ${t('bulkSomeRefused')}` : ''}

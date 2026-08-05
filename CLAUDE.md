@@ -117,14 +117,14 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1, 2 and 3 COMPLETE; 4–5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-3 COMPLETE, 4 part 1 shipped; 5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-983 unit/integration + 121 e2e, verified in CI's order on a fresh database.
+991 unit/integration + 124 e2e, verified in CI's order on a fresh database.
 Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -154,7 +154,43 @@ Round 9 (this round) — all on the branch, **deployed up to the print sheet**:
   yesterday's screen. Three rounds were lost to "deployed or cached?".
 - **Scan-path speed** (#248-250): the snapshot was re-downloaded after EVERY
   scan (~300 KB on a quick batch); now on the 15 s tick only. Two indexes,
-  migration 0032 — measured on his data: 40 ms → 1.2 ms, and a 9.6 s cold case
+  migration 0032 — measured on his data: 40 ms → 1.
+
+Round 64 — **UX batch 4 part 1, the pointer split** (#510-512, owner «4
+bosqichni boshla»). An inventory BEFORE any code found batch 4's headline item
+— desktop card DnD — **already built** since #133 (`DragBoard`, hand-written
+Pointer Events, ghost, edge-scroll, optimistic through moveLead/moveDeal, e2e
+mouse drag). docs/CRM-UX.md had read «Kanban deliberately refuses drag today»,
+mistaking `draggable={false}` + `onDragStart` preventDefault (the ENABLERS —
+a native anchor drag fires `pointercancel`) for a refusal: **the fourth false
+«we lack X» claim** in this programme. THE REAL DEFECT underneath: the shape a
+viewer gets is decided by **width alone** (`md`, 768 px) and the drag armed a
+250 ms hold + `navigator.vibrate` for every non-mouse pointer — so a tablet in
+portrait had the touch drag the owner refused TWICE. Now `pointerType ===
+'mouse'` and nothing else; `(pointer: fine)` deliberately REFUSED (it answers
+about the PRIMARY pointer, so a touchscreen laptop reports fine and keeps
+dragging by hand). THE TRAP the review caught: the guard must come BEFORE
+`start.current` is armed, or a finger leaves a live origin and the drag starts
+on the next 8 px with NO hold — worse than before. Consequence handled (#511):
+the move controls lived in the phone view, so a mouse-only drag left a tablet
+on a board it could not move anything on — the ⋯ is on the desktop card too
+and the sheet was LIFTED to `KanbanBoard` (one sheet, both shapes); ungated on
+purpose, because a machine answering `fine` to the media query and «not a
+mouse» to the event would otherwise get neither door. REFUSALS (#512): `onMove`
+was typed `{ok: boolean}` so both screens dropped the service's code —
+`useMoveErrors` (literal map, #163) now names all five, carrying BOTH
+spellings (`reason_required` / `lost_reason_required`); `bulk-bar.tsx`'s
+opposite comment was REWRITTEN rather than left to disagree (a sweep's rows
+are still on screen to retry, a dragged card has no second chance). New
+`common.moveErrors.*` ×4; `crm.dragHint` reworded ×4 (the hold is gone).
+Tests: `tests/unit/kanban-pointer.test.ts` (source-shape, incl. the ORDER of
+the guard and the origin) + an e2e that dispatches a touch-typed pointer
+sequence — red-proven by stripping both guards and watching the card move. No
+migration. Batch 4 still open: per-user card fields (needs an owner decision:
+where a personal choice is stored, and whether hiding the deal AMOUNT becomes
+a permission — /bitimlar has no finance gate today) and board quick filters
+(verified absent; the filter must reach `closedLeadCounts`/`closedDealCounts`
+or the «+N» footer lies).2 ms, and a 9.6 s cold case
   gone. A 350 ms flush debounce was tried and REJECTED by the e2e (#249).
 - **Money** (#251): a deferral that had been PAID went on excusing an unrelated
   debt, opening the handover gate with no override and nothing in the audit log.

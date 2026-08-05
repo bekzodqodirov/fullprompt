@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { KanbanBoard as Board, type KanbanStage } from '@/components/kanban';
+import { KanbanBoard as Board, type KanbanStage, useMoveErrors } from '@/components/kanban';
 import { BulkBar } from '@/components/list/bulk-bar';
 import { bulkMoveDealsAction, moveDealAction } from './actions';
 
@@ -61,6 +61,7 @@ export function DealBoard({
   const t = useTranslations('deals');
   const tcrm = useTranslations('crm');
   const tc = useTranslations('common');
+  const moveErrors = useMoveErrors();
 
   return (
     <>
@@ -72,9 +73,10 @@ export function DealBoard({
         cardTestId="deal-card"
         selection={{ ids: picked, toggle, label: tl('select') }}
         hrefOf={(deal) => `/bitimlar/${deal.id}`}
-        onMove={async (id, stageId, reason) => ({
-          ok: Boolean((await moveDealAction(id, stageId, reason)).ok),
-        })}
+        onMove={async (id, stageId, reason) => {
+          const result = await moveDealAction(id, stageId, reason);
+          return { ok: Boolean(result.ok), error: result.error };
+        }}
         labels={{
           lostReason: t('lostReason'),
           moveTo: t('moveTo'),
@@ -82,6 +84,7 @@ export function DealBoard({
           dragHint: t('dragHint'),
           empty: t('empty'),
           error: tc('error'),
+          moveErrors,
           showAll: tcrm('showAll'),
         }}
         renderCard={(deal) => (
