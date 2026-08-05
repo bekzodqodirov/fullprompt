@@ -149,6 +149,7 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
             AND e.expense_date = (${month} || '-' || lpad(r.day_of_month::text, 2, '0'))::date
             AND e.voided_at IS NULL
             AND ((r.employee_id IS NULL AND e.employee_id IS NULL) OR e.employee_id = r.employee_id)
+            AND ((r.warehouse_id IS NULL AND e.warehouse_id IS NULL) OR e.warehouse_id = r.warehouse_id)
         )
     `),
     costMissingBatches(3),

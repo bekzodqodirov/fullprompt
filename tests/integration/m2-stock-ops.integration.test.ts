@@ -11,6 +11,7 @@ import {
   costEntries,
   costTypes,
   notifications,
+  receipts,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
@@ -19,7 +20,7 @@ import type { Actor } from '@/modules/platform/rbac/authorize';
 import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
 import { editLot } from '@/modules/wms/receipts/edit';
 import { moveReceipt, MoveError } from '@/modules/wms/receipts/move';
-import { recomputeEntry } from '@/modules/wms/costing/service';
+import { addCostEntry, recomputeEntry, voidCostEntry } from '@/modules/wms/costing/service';
 import { createCrate, dissolveCrate, resolveCrate, CrateError } from '@/modules/wms/crates/service';
 import { setBoxStatus, BoxStatusError } from '@/modules/wms/boxes/status';
 import { returnUnclaimedToSender } from '@/modules/wms/unclaimed/return';
@@ -285,6 +286,98 @@ describe('crates', () => {
         ctx(),
       ),
     ).rejects.toThrowError(new CrateError('unclaimed_not_allowed'));
+  });
+});
+
+describe('a shrink moves the money onto the real boxes', () => {
+  it('voided surplus boxes lose their cost shares, live boxes absorb them', async () => {
+    const { receiptId, lotId, boxIds } = await makeReceipt({ clientId: clientAId, boxCount: 4 });
+    const [type] = await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1);
+    const entry = await addCostEntry(
+      {
+        scope: 'receipt',
+        receiptId,
+        costTypeId: type!.id,
+        amount: 400,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'boxes',
+      },
+      ctx(),
+    );
+    // $100 a box while all four are real.
+    const before = await db
+      .select()
+      .from(costAllocations)
+      .where(eq(costAllocations.costEntryId, entry.id));
+    expect(before).toHaveLength(4);
+
+    // The loader miscounted: two of the four never existed. Their shares must
+    // move onto the two real boxes NOW — the pricing screen reads shares
+    // through batch membership a shelf-voided box can never have, so a share
+    // left on a phantom box is landed cost the owner prices a trip without.
+    const manager = { id: actorId, permissions: new Set(['receipts.edit']) } as unknown as Actor;
+    await editLot(
+      {
+        lotId,
+        productNameZh: '测试货',
+        boxCount: 2,
+        boxLengthCm: 40,
+        boxWidthCm: 30,
+        boxHeightCm: 20,
+        boxWeightKg: 5,
+      },
+      manager,
+      ctx(),
+    );
+    const after = await db
+      .select()
+      .from(costAllocations)
+      .where(eq(costAllocations.costEntryId, entry.id));
+    expect(after).toHaveLength(2);
+    const liveIds = new Set(
+      (await db.select().from(boxes).where(inArray(boxes.id, boxIds)))
+        .filter((b) => b.status === 'in_stock')
+        .map((b) => b.id),
+    );
+    expect(after.every((a) => liveIds.has(a.boxId))).toBe(true);
+    // The whole $400 is still allocated — the money was spent on the lot,
+    // the miscount changes who carries it, never how much of it exists.
+    expect(after.reduce((sum, a) => sum + Number(a.amountUsd), 0)).toBe(400);
+  });
+});
+
+describe('money first — a prixod with live costs refuses to void', () => {
+  it('refuses while a cost stands, allows once finance voided it', async () => {
+    const { receiptId } = await makeReceipt({ clientId: clientAId, boxCount: 1 });
+    const [type] = await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1);
+    const entry = await addCostEntry(
+      {
+        scope: 'receipt',
+        receiptId,
+        costTypeId: type!.id,
+        amount: 300,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+
+    // A voided prixod's costs used to stay alive for ever: in the P&L's
+    // direct costs, allocated onto the void boxes, and — partner-named — as
+    // the firm's standing debt for cargo that officially never existed.
+    // The batch-cancel rule (#288) applies here too: money first.
+    await expect(voidReceipt(receiptId, 'dublikat', ctx())).rejects.toMatchObject({
+      code: 'receipt_has_costs',
+    });
+    const [still] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
+    expect(still!.voidedAt).toBeNull();
+
+    await voidCostEntry(entry.id, 'prixod bekor bolyapti', ctx());
+    await voidReceipt(receiptId, 'dublikat', ctx());
+    const [gone] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
+    expect(gone!.voidedAt).not.toBeNull();
   });
 });
 

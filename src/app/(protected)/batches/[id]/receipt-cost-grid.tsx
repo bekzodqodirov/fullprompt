@@ -33,22 +33,26 @@ export function ReceiptCostGrid({
   defaultCurrency,
   today,
   canEdit,
+  partners,
 }: {
   batchId: string;
   rows: GridReceiptRow[];
   types: GridCostType[];
   /** `receiptId:costTypeId` → already-entered USD sum. */
-  existing: Record<string, number>;
+  existing: Record<string, { usd: number; unconverted: boolean }>;
   currencies: string[];
   defaultCurrency: string;
   today: string;
   canEdit: boolean;
+  /** Active counterparties — empty when the viewer may not name a payer. */
+  partners: { id: string; name: string }[];
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
   const [cells, setCells] = useState<Record<string, string>>({});
   const [currency, setCurrency] = useState(defaultCurrency);
   const [costDate, setCostDate] = useState(today);
+  const [partnerId, setPartnerId] = useState('');
   const [message, setMessage] = useState<'ok' | string | null>(null);
   const [pending, start] = useTransition();
 
@@ -64,7 +68,7 @@ export function ReceiptCostGrid({
   const colTyped = (typeId: string) =>
     rows.reduce((sum, row) => sum + (parsed(`${row.receiptId}:${typeId}`) ?? 0), 0);
   const colDone = (typeId: string) =>
-    rows.reduce((sum, row) => sum + (existing[`${row.receiptId}:${typeId}`] ?? 0), 0);
+    rows.reduce((sum, row) => sum + (existing[`${row.receiptId}:${typeId}`]?.usd ?? 0), 0);
   const doneGrand = types.reduce((sum, type) => sum + colDone(type.id), 0);
 
   const save = () => {
@@ -83,6 +87,7 @@ export function ReceiptCostGrid({
         batchId,
         currency,
         costDate,
+        partnerId,
         cells: payload,
       });
       if (result.ok) {
@@ -142,8 +147,14 @@ export function ReceiptCostGrid({
                       ) : null}
                       {done !== undefined && (
                         // What is ALREADY on this prixod for this expense —
-                        // the guard against paying the same bill twice.
-                        <p className="num text-xs text-ink-400">≈ ${done}</p>
+                        // the guard against paying the same bill twice. A
+                        // cell holding money with no FX rate yet must not
+                        // wear an empty cell's face: «≈ $0» invited the very
+                        // double entry this hint exists to stop.
+                        <p className={`num text-xs ${done.unconverted ? 'font-semibold text-warn' : 'text-ink-400'}`}>
+                          ≈ ${done.usd}
+                          {done.unconverted && ' ⚠'}
+                        </p>
                       )}
                     </td>
                   );
@@ -211,6 +222,24 @@ export function ReceiptCostGrid({
             aria-label={t('date')}
             className="input !w-40"
           />
+          {/* Who settled the sheet. Its own LINE, not a squeezed neighbour —
+              a picker narrower than its shortest option is the #421 shape. */}
+          {partners.length > 0 && (
+            <select
+              value={partnerId}
+              onChange={(event) => setPartnerId(event.target.value)}
+              aria-label="grid payer"
+              data-testid="grid-payer"
+              className="input !w-full"
+            >
+              <option value="">{t('paidByUs')}</option>
+              {partners.map((partner) => (
+                <option key={partner.id} value={partner.id}>
+                  {t('paidBy')}: {partner.name}
+                </option>
+              ))}
+            </select>
+          )}
           {grand > 0 && (
             <span className="num text-sm font-bold">
               Σ {grand.toFixed(2)} {currency}

@@ -18,11 +18,18 @@ export function ClientForm({
   initial,
   managers,
   codePrefix,
+  revision,
 }: {
   action: (prev: ClientFormState, formData: FormData) => Promise<ClientFormState>;
   initial?: ClientFormValues;
   managers: { id: string; fullName: string }[];
   codePrefix: string;
+  /**
+   * The row's own `updated_at`, keying ONLY the three inputs the facts block
+   * above can also write, so a Save here after an inline correction cannot put
+   * the old value back. The whole form is deliberately NOT keyed.
+   */
+  revision?: string;
 }) {
   const t = useTranslations('clients');
   const tc = useTranslations('common');
@@ -55,6 +62,7 @@ export function ClientForm({
           {t('phones')}
         </label>
         <input
+          key={`phones-${revision ?? ''}`}
           id="phones"
           name="phones"
           className="input"
@@ -68,6 +76,7 @@ export function ClientForm({
           {t('salesManager')}
         </label>
         <select
+          key={`manager-${revision ?? ''}`}
           id="salesManagerId"
           name="salesManagerId"
           className="input"
@@ -96,7 +105,7 @@ export function ClientForm({
         <label className="label" htmlFor="notes">
           {t('notes')}
         </label>
-        <textarea id="notes" name="notes" className="input py-2" rows={3} defaultValue={initial?.notes} />
+        <textarea key={`notes-${revision ?? ''}`} id="notes" name="notes" className="input py-2" rows={3} defaultValue={initial?.notes} />
       </div>
       {state.error && (
         <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">

@@ -414,6 +414,13 @@
       "when": 1785190000027,
       "tag": "0058_list_views",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1785190000028,
+      "tag": "0059_reply_templates",
+      "breakpoints": true
     }
   ]
 }

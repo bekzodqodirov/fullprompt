@@ -59,11 +59,22 @@ export default async function ConversationsPage({
       <PageHeader
         title={`✈️ ${t('conversations')}`}
         actions={
-          // Their own account, connected from the screen (round 21). The
-          // person allowed to read chats is the person who may hold one.
-          <Link href="/suhbatlar/ulash" className="btn-secondary" data-testid="connect-link">
-            {t('connectTitle')}
-          </Link>
+          <>
+            {/* The sentences typed twenty times a day. Same gate as this
+                screen — whoever may answer a client may keep their own. */}
+            <Link
+              href="/suhbatlar/shablonlar"
+              className="btn-secondary"
+              data-testid="templates-link"
+            >
+              ⚡ {t('templates')}
+            </Link>
+            {/* Their own account, connected from the screen (round 21). The
+                person allowed to read chats is the person who may hold one. */}
+            <Link href="/suhbatlar/ulash" className="btn-secondary" data-testid="connect-link">
+              {t('connectTitle')}
+            </Link>
+          </>
         }
       />
 
@@ -71,19 +82,30 @@ export default async function ConversationsPage({
           evidence, and "nobody wrote today" looks identical to a dead bridge. */}
       <TelegramBridgeStatus />
 
-      {/* Only offered to the people who may answer, and only when there is
-          something to answer — an empty link here is a permanent invitation
-          to a screen with nothing on it. */}
-      {canDecide && waiting > 0 && (
+      {/* Offered to whoever may decide, ALWAYS. It used to appear only while
+          something was waiting, on the reasoning that an empty link is an
+          invitation to an empty screen — and that reasoning was wrong: the
+          screen also holds every chat already decided, with the button that
+          takes one back out and the one that deletes what was stored from it.
+          Answer the last pending chat and the only door to all of that
+          vanished, which is exactly how the owner reported it («chatda
+          qo'shilishi kerak bo'lmagan chatlarni olib tashlash degan joyi yo'q
+          bo'lib qolibdi»). The BADGE is what depends on there being work. */}
+      {canDecide && (
         <Link
           href="/suhbatlar/qaysi"
           className="card flex items-center justify-between !py-2.5 text-sm font-semibold"
           data-testid="which-chats-link"
         >
           <span>✈️ {t('whichChats')}</span>
-          <span className="rounded-full bg-warn/15 px-2 text-warn">
-            {t('whichChatsPendingBadge', { n: waiting })}
-          </span>
+          {waiting > 0 && (
+            <span
+              data-testid="which-chats-badge"
+              className="rounded-full bg-warn/15 px-2 text-warn"
+            >
+              {t('whichChatsPendingBadge', { n: waiting })}
+            </span>
+          )}
         </Link>
       )}
 

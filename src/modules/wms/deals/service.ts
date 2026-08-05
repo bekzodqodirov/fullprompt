@@ -16,11 +16,12 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import type { Db, Tx } from '@/modules/platform/db/client';
-import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
+import { diffFields, writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { emitEvent } from '@/modules/platform/events/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
+import { likeNeedle } from '../search/query';
 import { STAGE_COLORS } from '../crm/service';
 import {
   ARRIVED_BOX_STATUSES,
@@ -81,6 +82,16 @@ export const dealLineSchema = z.object({
 
 const num = (value: number | null | undefined) =>
   value === null || value === undefined ? null : value.toString();
+
+/**
+ * One spelling for a stored number.
+ *
+ * `numeric(14,2)` comes back from postgres at its full scale ("200.00") while a
+ * form sends "200". Both are the same money, and every comparison in this file
+ * that forgot it treated an untouched price as a new one.
+ */
+const canonical = (value: string | null) => (value === null ? null : String(Number(value)));
+const sameNumber = (a: string | null, b: string | null) => canonical(a) === canonical(b);
 
 /** `B-000123` — a lifetime sequence, because a deal is not scoped to a warehouse. */
 async function nextDealCode(tx: Db | Tx): Promise<string> {
@@ -148,10 +159,40 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
   if (!before) throw new DealError('not_found');
 
   // Re-pricing stamps who and when: the whole point of the deal is that the
-  // number the client was told has an author and a date behind it.
+  // number the client was told has an author and a date behind it. Compared as
+  // NUMBERS — postgres hands back `numeric(14,2)` as "200.00" and the form
+  // sends "200", so a string comparison called every save a re-pricing and
+  // moved the quote's author and date onto whoever last fixed a typo.
   const amountChanged =
-    input.quotedAmount !== undefined && num(input.quotedAmount) !== before.quotedAmount;
+    input.quotedAmount !== undefined && !sameNumber(num(input.quotedAmount), before.quotedAmount);
   const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
+
+  // What the audit trail records. The old row named `amount` and `volume` only,
+  // so a retitled or re-staged deal left no trace, and the scale difference
+  // above printed `200.00 → 200` on every save.
+  const audited = {
+    title: input.title || null,
+    stageId: input.stageId ?? before.stageId,
+    ownerId: input.ownerId === undefined ? before.ownerId : input.ownerId,
+    amount: canonical(num(input.quotedAmount)),
+    volumeM3: canonical(num(input.quotedVolumeM3)),
+    weightKg: canonical(num(input.quotedWeightKg)),
+    currency: input.quotedCurrency ?? (priced ? before.quotedCurrency ?? 'USD' : null),
+    note: input.note || null,
+  };
+  const diff = diffFields(
+    {
+      title: before.title,
+      stageId: before.stageId,
+      ownerId: before.ownerId,
+      amount: canonical(before.quotedAmount),
+      volumeM3: canonical(before.quotedVolumeM3),
+      weightKg: canonical(before.quotedWeightKg),
+      currency: before.quotedCurrency,
+      note: before.note,
+    },
+    audited,
+  );
 
   await db.transaction(async (tx) => {
     await tx
@@ -170,13 +211,15 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
       })
       .where(eq(deals.id, id));
 
-    await writeAudit(tx, ctx, {
-      entityType: 'deal',
-      entityId: id,
-      action: 'update',
-      before: { amount: before.quotedAmount, volume: before.quotedVolumeM3 },
-      after: { amount: num(input.quotedAmount), volume: num(input.quotedVolumeM3) },
-    });
+    if (diff) {
+      await writeAudit(tx, ctx, {
+        entityType: 'deal',
+        entityId: id,
+        action: 'update',
+        before: diff.before,
+        after: diff.after,
+      });
+    }
   });
   const newStageId = input.stageId ?? before.stageId;
   if (newStageId !== before.stageId) await announceDealStage(before, newStageId, ctx);
@@ -548,15 +591,38 @@ export interface DealReality {
   lostBoxes: number;
 }
 
+const EMPTY_REALITY: DealReality = {
+  receiptCount: 0,
+  boxCount: 0,
+  volumeM3: 0,
+  weightKg: 0,
+  pendingBoxes: 0,
+  arrivedBoxes: 0,
+  lostBoxes: 0,
+};
+
 /**
- * What actually turned up, summed from the receipts.
+ * What actually turned up, summed from the receipts — for a whole LIST of
+ * deals in one pair of grouped queries.
+ *
+ * This is the board's shape, not the card's: `dealsNeedingAttention` asks the
+ * question for every open deal on every render of /bitimlar, and asking it one
+ * deal at a time was two round trips per deal — ~350 queries on the owner's
+ * board, growing with every deal he opens, which is the screen he reported
+ * freezing. A deal with no receipts is simply absent from the grouped rows;
+ * the caller gets the zero object, which is what per-deal aggregation returned
+ * for it anyway.
  *
  * Voided receipts are excluded: a receipt that was cancelled never happened,
  * and counting its volume would make the deal look 40 % over when it is not.
  */
-export async function dealReality(dealId: string): Promise<DealReality> {
-  const [totals] = await db
+export async function dealRealitiesFor(dealIds: string[]): Promise<Map<string, DealReality>> {
+  const map = new Map<string, DealReality>();
+  if (dealIds.length === 0) return map;
+
+  const totals = await db
     .select({
+      dealId: receipts.dealId,
       receipts: sql<number>`count(DISTINCT ${receipts.id})`,
       boxes: sql<number>`coalesce(sum(${receiptLots.boxCount}), 0)`,
       volume: sql<number>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
@@ -564,14 +630,16 @@ export async function dealReality(dealId: string): Promise<DealReality> {
     })
     .from(receipts)
     .leftJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
-    .where(and(eq(receipts.dealId, dealId), isNull(receipts.voidedAt)));
+    .where(and(inArray(receipts.dealId, dealIds), isNull(receipts.voidedAt)))
+    .groupBy(receipts.dealId);
 
   // inArray/notInArray, never `IN ${array}`: a JS array interpolated into a raw
   // drizzle fragment is bound as ONE parameter and postgres refuses it.
   const settled = notInArray(boxes.status, [...SETTLED_BOX_STATUSES]);
   const arrived = inArray(boxes.status, [...ARRIVED_BOX_STATUSES]);
-  const [boxState] = await db
+  const boxStates = await db
     .select({
+      dealId: receipts.dealId,
       pending: sql<number>`count(*) FILTER (WHERE ${settled})`,
       arrived: sql<number>`count(*) FILTER (WHERE ${arrived})`,
       lost: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'lost')`,
@@ -579,17 +647,28 @@ export async function dealReality(dealId: string): Promise<DealReality> {
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(and(eq(receipts.dealId, dealId), isNull(receipts.voidedAt)));
+    .where(and(inArray(receipts.dealId, dealIds), isNull(receipts.voidedAt)))
+    .groupBy(receipts.dealId);
 
-  return {
-    receiptCount: Number(totals?.receipts ?? 0),
-    boxCount: Number(totals?.boxes ?? 0),
-    volumeM3: Number(totals?.volume ?? 0),
-    weightKg: Number(totals?.weight ?? 0),
-    pendingBoxes: Number(boxState?.pending ?? 0),
-    arrivedBoxes: Number(boxState?.arrived ?? 0),
-    lostBoxes: Number(boxState?.lost ?? 0),
-  };
+  const states = new Map(boxStates.map((row) => [row.dealId, row]));
+  for (const row of totals) {
+    if (!row.dealId) continue;
+    const state = states.get(row.dealId);
+    map.set(row.dealId, {
+      receiptCount: Number(row.receipts),
+      boxCount: Number(row.boxes),
+      volumeM3: Number(row.volume),
+      weightKg: Number(row.weight),
+      pendingBoxes: Number(state?.pending ?? 0),
+      arrivedBoxes: Number(state?.arrived ?? 0),
+      lostBoxes: Number(state?.lost ?? 0),
+    });
+  }
+  return map;
+}
+
+export async function dealReality(dealId: string): Promise<DealReality> {
+  return (await dealRealitiesFor([dealId])).get(dealId) ?? EMPTY_REALITY;
 }
 
 export async function deviationThreshold(): Promise<number> {
@@ -915,6 +994,7 @@ export interface DealRow {
   quotedAmount: string | null;
   quotedCurrency: string | null;
   quotedVolumeM3: string | null;
+  quotedWeightKg: string | null;
   deferred: boolean;
   createdAt: Date;
 }
@@ -926,16 +1006,38 @@ export interface DealRow {
  * than a rule baked in because who may see everyone's work is a permission
  * question the CALLER already answered — the same split `listLeads` uses.
  */
+/**
+ * What the deal board's search box matches, as ONE fragment.
+ *
+ * Shared with `closedDealCounts` for the reason the lead one is: the closed
+ * columns show a slice and print the true total, so filtering the cards
+ * without filtering the totals makes the «+N · show all» footer lie.
+ *
+ * It reaches the CLIENT CODE, which is what a person actually types when they
+ * are looking for somebody's job — so both queries carry the clients join.
+ */
+export function dealTextWhere(q?: string) {
+  const text = q?.trim();
+  if (!text) return undefined;
+  const like = likeNeedle(text);
+  return sql`(${deals.code} ILIKE ${like} OR ${deals.title} ILIKE ${like} OR ${clients.clientCode} ILIKE ${like})`;
+}
+
 export async function listDeals(filters: {
   ownerId?: string;
   clientId?: string;
   stageId?: string;
+  /** The board's search box. */
+  q?: string;
   openOnly?: boolean;
   /** Only the finished ones — what the board shows a recent slice of. */
   closedOnly?: boolean;
   limit?: number;
 }): Promise<DealRow[]> {
   const conditions = [];
+  // In SQL, never over the fetched array — the closed slice is capped at 20.
+  const text = dealTextWhere(filters.q);
+  if (text) conditions.push(text);
   if (filters.ownerId) conditions.push(eq(deals.ownerId, filters.ownerId));
   if (filters.clientId) conditions.push(eq(deals.clientId, filters.clientId));
   if (filters.stageId) conditions.push(eq(deals.stageId, filters.stageId));
@@ -969,6 +1071,7 @@ export async function listDeals(filters: {
       quotedAmount: deals.quotedAmount,
       quotedCurrency: deals.quotedCurrency,
       quotedVolumeM3: deals.quotedVolumeM3,
+      quotedWeightKg: deals.quotedWeightKg,
       deferredAt: deals.deferredAt,
       deferralEndedAt: deals.deferralEndedAt,
       createdAt: deals.createdAt,
@@ -992,13 +1095,20 @@ export async function listDeals(filters: {
  * The board draws a recent slice of them and the header keeps the true total,
  * so «Sotuv 143» stays 143 even when twelve cards are on screen.
  */
-export async function closedDealCounts(ownerId?: string): Promise<Record<string, number>> {
+export async function closedDealCounts(
+  ownerId?: string,
+  q?: string,
+): Promise<Record<string, number>> {
   const where = [notInArray(dealStages.kind, ['open'])];
   if (ownerId) where.push(eq(deals.ownerId, ownerId));
+  const text = dealTextWhere(q);
+  if (text) where.push(text);
   const rows = await db
     .select({ stageId: deals.stageId, n: sql<number>`count(*)` })
     .from(deals)
     .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+    // The predicate reaches the client code, so the join comes with it.
+    .innerJoin(clients, eq(deals.clientId, clients.id))
     .where(and(...where))
     .groupBy(deals.stageId);
   return Object.fromEntries(rows.map((row) => [row.stageId, Number(row.n)]));
@@ -1088,15 +1198,24 @@ export async function openDealsForClient(clientId: string) {
  * sales manager's day: quoted but the cargo is over the threshold, or landed
  * with no price at all.
  */
-export async function dealsNeedingAttention(ownerId?: string): Promise<
+export async function dealsNeedingAttention(ownerId?: string, q?: string): Promise<
   { id: string; code: string; clientCode: string; clientName: string; reason: string; pct: number | null }[]
 > {
-  const rows = await listDeals({ ownerId, openOnly: true, limit: 200 });
-  const threshold = await deviationThreshold();
+  // The filter reaches here too — narrowing the board narrows this as well.
+  // The realities come GROUPED: this used to be two queries per open deal on
+  // every render of the board, which is the linear cost that turned into the
+  // owner's «qotyabti» as his deal count grew. The quote columns ride on the
+  // list row for the same reason — refetching each deal to read its quoted
+  // weight was a third query per row.
+  const rows = await listDeals({ ownerId, q, openOnly: true, limit: 200 });
+  const [threshold, realities] = await Promise.all([
+    deviationThreshold(),
+    dealRealitiesFor(rows.map((row) => row.id)),
+  ]);
   const out = [];
   for (const row of rows) {
-    const reality = await dealReality(row.id);
-    if (reality.receiptCount === 0) continue;
+    const reality = realities.get(row.id);
+    if (!reality || reality.receiptCount === 0) continue;
     if (row.quotedAmount === null) {
       out.push({
         id: row.id,
@@ -1108,12 +1227,11 @@ export async function dealsNeedingAttention(ownerId?: string): Promise<
       });
       continue;
     }
-    const deal = await db.query.deals.findFirst({ where: eq(deals.id, row.id) });
     const deviation = compareQuote(
       {
-        volumeM3: deal?.quotedVolumeM3 == null ? null : Number(deal.quotedVolumeM3),
-        weightKg: deal?.quotedWeightKg == null ? null : Number(deal.quotedWeightKg),
-        amount: deal?.quotedAmount == null ? null : Number(deal.quotedAmount),
+        volumeM3: row.quotedVolumeM3 === null ? null : Number(row.quotedVolumeM3),
+        weightKg: row.quotedWeightKg === null ? null : Number(row.quotedWeightKg),
+        amount: Number(row.quotedAmount),
       },
       { volumeM3: reality.volumeM3, weightKg: reality.weightKg },
       threshold,

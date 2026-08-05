@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
+import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 
 /**
@@ -23,15 +24,19 @@ import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 export function TelegramReplyBox({
   clientId,
   labels,
+  templates = [],
   compact = false,
 }: {
   clientId: string;
+  /** Canned replies, already filled for THIS client on the server. */
+  templates?: ReplyTemplate[];
   labels: {
     placeholder: string;
     send: string;
     sending: string;
     attach: string;
     errors: Record<string, string>;
+    templates: string;
   };
   /** On a card the box sits inside a panel and needs no card frame of its own. */
   compact?: boolean;
@@ -122,6 +127,21 @@ export function TelegramReplyBox({
           hidden
           onChange={(event) => void attach(event.target.files)}
         />
+        <ReplyTemplates
+          templates={templates}
+          label={labels.templates}
+          className="btn-secondary btn-icon !min-h-9 shrink-0"
+          onPick={(body) => {
+            const box = bodyRef.current;
+            if (!box) return;
+            // INSERT, never replace: half a typed sentence plus a template is
+            // «and this too», and eating those words is the mistake #377,
+            // #419 and #463 each paid for once.
+            box.value = box.value ? `${box.value.replace(/\s*$/, '')} ${body}` : body;
+            autogrow(box);
+            box.focus();
+          }}
+        />
         <button
           type="button"
           aria-label={labels.attach}
@@ -145,12 +165,26 @@ export function TelegramReplyBox({
           className="input-sm max-h-32 min-h-9 flex-1 resize-none py-2"
           data-testid="reply-body"
         />
+        {/* The word costs 62 px of a 360 px row, and the ⚡ beside the 📎 has
+            just spent 44 of them: measured, the typing box went 128 → 76 px,
+            which is eight characters. Icon on a phone, word from `sm` up —
+            the same trade round 60 made in the app bar, and the box comes
+            back WIDER than it was before the picker (138 px). */}
         <button
           type="submit"
-          className="btn-primary !min-h-9 shrink-0"
+          aria-label={labels.send}
+          title={labels.send}
+          className="btn-primary !min-h-9 shrink-0 !px-3 sm:!px-4"
           disabled={pending || uploading}
         >
-          {pending ? labels.sending : labels.send}
+          {pending ? (
+            '…'
+          ) : (
+            <>
+              <span className="sm:hidden">➤</span>
+              <span className="hidden sm:inline">{labels.send}</span>
+            </>
+          )}
         </button>
       </div>
       {error && (

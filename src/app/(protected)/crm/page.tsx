@@ -8,6 +8,9 @@ import { closedLeadCounts, listLeads, listStages } from '@/modules/wms/crm/servi
 import { KanbanBoard } from './leads/kanban';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
+import { BoardFilter, hrefWith } from '@/components/list/board-filter';
+import { CardFieldsMenu } from '@/components/list/card-fields-menu';
+import { LEAD_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
 
 /**
  * The funnel board — and nothing else.
@@ -30,20 +33,37 @@ const CLOSED_ON_BOARD = 20;
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string; arxiv?: string }>;
+  searchParams: Promise<{ scope?: string; arxiv?: string; q?: string; hodim?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crm.leads')) redirect('/');
   const t = await getTranslations('crm');
   const td = await getTranslations('deals');
+  const tc = await getTranslations('common');
   const params = await searchParams;
+  // Which lines this browser wants on a card — a cookie, so the first HTML is
+  // already right and nothing rearranges itself after hydration.
+  const cardFields = await readCardFields('lead');
 
   const seesAll = actor.permissions.has('crm.leads.view_all');
   // Someone who may see everything still starts on their own leads; "all" is
   // one tap away and is what the owner uses.
   const mine = !seesAll || params.scope !== 'all';
-  const scope = mine ? actor.id : undefined;
+  // One colleague, when asked for. A `hodim` in the address bar from somebody
+  // who may NOT see everybody's leads is ignored rather than obeyed: the
+  // funnel's ownership rule is also the search's and the bot's, and a fourth
+  // door has to ask the same question.
+  const hodim = seesAll ? (params.hodim ?? '') : '';
+  const scope = hodim || (mine ? actor.id : undefined);
+  const q = (params.q ?? '').trim();
+  // What every link on this screen has to carry, or the first tap on «all» or
+  // on «+N · show all» drops the filter and reloads the unfiltered board.
+  const carried = {
+    ...(params.scope === 'all' ? { scope: 'all' } : {}),
+    ...(q ? { q } : {}),
+    ...(hodim ? { hodim } : {}),
+  };
 
   // Round 47, the owner's item 6: «leadlar soni ko'payib ketgandan keyin lost
   // bo'lganlar va yutuq bo'lganlar juda chalg'itadi — ular nima qilinadi
@@ -54,9 +74,11 @@ export default async function LeadsPage({
   const archive = params.arxiv === '1';
   const [stages, open, closed, closedTotals, badges, managers] = await Promise.all([
     listStages(),
-    listLeads({ ownerId: scope, openOnly: true }),
-    listLeads({ ownerId: scope, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
-    closedLeadCounts(scope),
+    listLeads({ ownerId: scope, q, openOnly: true }),
+    listLeads({ ownerId: scope, q, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
+    // The SAME q — the header prints the true total and the column shows a
+    // slice, so counts filtered differently from rows make the footer lie.
+    closedLeadCounts(scope, q),
     // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
     chatBadges(tgViewerFor(actor)),
     // Only offered to somebody who may see everybody's leads: handing YOUR
@@ -78,7 +100,14 @@ export default async function LeadsPage({
   // update the header immediately, before the server has revalidated.
 
   return (
-    <div className="space-y-3">
+    // The board's height is a viewport calculation, so anything added ABOVE it
+    // has to say how much room it took or the page grows a second scrollbar
+    // under a board that was built not to have one (#354). The filter row is
+    // one line, or two when the colleague picker is offered.
+    <div
+      className="space-y-3"
+      style={{ ['--board-extra' as string]: managers.length ? '8.9rem' : '4.9rem' }}
+    >
       <PageHeader
         icon="target"
         title={t('funnel')}
@@ -87,10 +116,26 @@ export default async function LeadsPage({
             {/* The two funnels are one sales story (owner: "bir-biriga
                 chambarchas") — a lead is worked HERE and its jobs live THERE,
                 so each board carries the door to the other. */}
-            <Link href="/bitimlar" className="btn-secondary px-3" data-testid="to-deals">
+            <Link
+              href="/bitimlar"
+              className="btn-secondary px-3"
+              data-testid="to-deals"
+              aria-label={td('title')}
+            >
               <Icon name="handshake" className="h-4 w-4" />
-              {td('title')}
+              {/* Same rule as the deal board's door back — see the note there. */}
+              <span className="hidden sm:inline">{td('title')}</span>
             </Link>
+            <CardFieldsMenu
+              board="lead"
+              specs={LEAD_CARD_FIELDS}
+              chosen={cardFields}
+              labels={{
+                title: t('cardFields'),
+                save: tc('save'),
+                field: (key) => t(key as 'company'),
+              }}
+            />
             <Link href="/crm/leads/new" className="btn-primary">
               <Icon name="plus" className="h-4 w-4" />
               {t('newLead')}
@@ -102,8 +147,8 @@ export default async function LeadsPage({
       {seesAll && (
         <div className="flex gap-1.5 text-sm font-semibold">
           {[
-            { href: '/crm', label: t('mine'), on: mine },
-            { href: '/crm?scope=all', label: t('all'), on: !mine },
+            { href: `/crm${hrefWith(carried, { scope: undefined })}`, label: t('mine'), on: mine },
+            { href: `/crm${hrefWith(carried, { scope: 'all' })}`, label: t('all'), on: !mine },
           ].map((tab) => (
             <Link
               key={tab.href}
@@ -118,7 +163,26 @@ export default async function LeadsPage({
         </div>
       )}
 
+      <BoardFilter
+        q={q}
+        hodim={hodim}
+        people={managers.map((row) => ({ id: row.id, fullName: row.fullName }))}
+        // The form REPLACES the URL, so anything it does not re-post is
+        // cleared — a control that posts nothing reads as «remove» (#171).
+        hidden={{
+          ...(params.scope === 'all' ? { scope: 'all' } : {}),
+          ...(archive ? { arxiv: '1' } : {}),
+        }}
+        labels={{
+          search: tc('search'),
+          everyone: t('allManagers'),
+          apply: tc('search'),
+          clear: t('filterClear'),
+        }}
+      />
+
       <KanbanBoard
+        fields={cardFields}
         owners={
           managers.length
             ? managers.map((row) => ({ id: row.id, name: row.fullName }))
@@ -143,7 +207,7 @@ export default async function LeadsPage({
           chat: (lead.clientId && badges.get(lead.clientId)) || null,
         }))}
         hidden={hidden}
-        archiveHref={`/crm?arxiv=1${mine ? '' : '&scope=all'}`}
+        archiveHref={`/crm${hrefWith(carried, { arxiv: '1' })}`}
       />
 
     </div>

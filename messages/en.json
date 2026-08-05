@@ -30,7 +30,13 @@
     "notFoundBody": "This page does not exist or has been removed.",
     "empty": "Nothing here yet",
     "updateAvailable": "A newer version is available",
-    "updateNow": "Update"
+    "updateNow": "Update",
+    "moveErrors": {
+      "forbidden": "Not allowed to make this move",
+      "notFound": "Card not found — reload the page",
+      "reasonRequired": "A reason is required",
+      "stageNotFound": "Stage deleted — reload the page"
+    }
   },
   "login": {
     "title": "Sign in",
@@ -333,7 +339,59 @@
     "before": "Before",
     "after": "After",
     "filterEntityPlaceholder": "for example: warehouse, client, receipt",
-    "noRows": "No records match the filter"
+    "noRows": "No records match the filter",
+    "changeCount": "changes: {n}",
+    "entryCount": "entries: {n}",
+    "fields": {
+      "active": "Active",
+      "amount": "Amount",
+      "boxCount": "Boxes",
+      "boxWeightKg": "Box weight, kg",
+      "client": "Client",
+      "clientCode": "Client code",
+      "code": "Code",
+      "company": "Company",
+      "currency": "Currency",
+      "date": "Date",
+      "deal": "Deal",
+      "description": "Description",
+      "discount": "Discount",
+      "discountReason": "Discount reason",
+      "dueAt": "Due",
+      "grants": "Permissions",
+      "heightCm": "Height, cm",
+      "lengthCm": "Length, cm",
+      "lines": "Lines",
+      "locale": "Language",
+      "lostReason": "Lost reason",
+      "messengerNote": "Messenger",
+      "name": "Name",
+      "nextAction": "Next contact",
+      "nextActionNote": "Contact note",
+      "note": "Note",
+      "order": "Order",
+      "owner": "Owner",
+      "partner": "Counterparty",
+      "password": "Password",
+      "phone": "Phone",
+      "productNameRu": "Goods (RU)",
+      "productNameZh": "Goods (ZH)",
+      "rateToUsd": "USD rate",
+      "reason": "Reason",
+      "roles": "Roles",
+      "source": "Source",
+      "stage": "Stage",
+      "status": "Status",
+      "title": "Title",
+      "tnvedCode": "HS code",
+      "type": "Type",
+      "username": "Username",
+      "volumeM3": "Volume, m³",
+      "warehouse": "Warehouse",
+      "warehouses": "Warehouses",
+      "weightKg": "Weight, kg",
+      "widthCm": "Width, cm"
+    }
   },
   "profile": {
     "title": "Profile",
@@ -442,7 +500,9 @@
     },
     "openInBrowser": "Open in the browser (if printing did not start)",
     "printDialog": "Print",
-    "shareToPrinter": "Send to printer"
+    "shareToPrinter": "Send to printer",
+    "voidHasCosts": "Void this receipt's costs first — a money record is finance's decision, not the warehouse's.",
+    "voidBoxGone": "Cannot void: at least one box has already left the shelf."
   },
   "stock": {
     "title": "Warehouse stock",
@@ -471,7 +531,10 @@
     "markVoid": "Void",
     "markFound": "Found (return to the warehouse)",
     "reasonRequired": "Reason (required)",
-    "empty": "Nothing matches the filter"
+    "empty": "Nothing matches the filter",
+    "pageOf": "{from}–{to} / {total}",
+    "pageNext": "Next →",
+    "pagePrev": "← Previous"
   },
   "search": {
     "placeholder": "Search: GS777, GS777-A, YW26-000123, product…",
@@ -859,7 +922,10 @@
     "clientBalance": "Client balance (overall)",
     "openLedger": "client ledger",
     "prevLegs": "before this trip",
-    "costDetail": "breakdown"
+    "costDetail": "breakdown",
+    "forDeal": "For which deal",
+    "accountCurrencyMismatch": "The cash box's currency does not match the amount's",
+    "registerTruncated": "Showing the newest {shown} of {total}; the total covers the whole period."
   },
   "map": {
     "title": "Map",
@@ -981,7 +1047,8 @@
     "balHint": "Cash + what is owed to us − what we owe. Cargo in the warehouse is not valued: it is the client's goods.",
     "noRate": "no rate",
     "partnerIn": "Received from a counterparty",
-    "partnerOut": "Paid to a counterparty"
+    "partnerOut": "Paid to a counterparty",
+    "accountCurrencyMismatch": "The cash box's currency does not match the amount's"
   },
   "crm": {
     "title": "CRM",
@@ -1065,7 +1132,7 @@
     "badDate": "A date is expected here",
     "dormantNote": "A client who used to ship and stopped. Someone who never shipped is not listed here.",
     "personNote": "The codes are not merged: each keeps its letters, cargo and cabinet. The person only ties them together for sales.",
-    "dragHint": "Hold a card and drag it to another stage",
+    "dragHint": "Drag a card with the mouse to another stage",
     "cancelMove": "Cancel",
     "prevStage": "Previous stage",
     "nextStage": "Next stage",
@@ -1179,7 +1246,19 @@
     "disconnectConfirm": "Disconnect Telegram from the system?\n\n• client messages stop arriving\n• queued replies become «not sent»\n• the session is destroyed here and ended inside Telegram\n\nComing back means connecting again (phone + code).",
     "disconnectDone": "Disconnected. Client chats no longer arrive.",
     "chatMenu": "Chat settings",
-    "disconnectFailed": "Could not disconnect. The server’s database migrations look unapplied — ask for an update and try again."
+    "disconnectFailed": "Could not disconnect. The server’s database migrations look unapplied — ask for an update and try again.",
+    "filterClear": "Clear",
+    "cardChat": "Chat",
+    "cardFields": "What is on a card",
+    "templates": "Templates",
+    "templatesTitle": "Reply templates",
+    "templateTitle": "Name",
+    "templateBody": "Text",
+    "templateOrder": "Order",
+    "templateShared": "For the whole company",
+    "templateHint": "Write '{'ism'}' for the client name and '{'kod'}' for their code.",
+    "templateNone": "No templates yet",
+    "templateAdd": "New template"
   },
   "navShort": {
     "home": "Home",
@@ -1545,7 +1624,12 @@
     "triggerReady": "Ready for pickup",
     "triggerHanded": "Fully handed to client",
     "triggerOnLost": "A lost stage cannot have an auto-move",
-    "triggerHandedPartial": "Partially handed to client"
+    "triggerHandedPartial": "Partially handed to client",
+    "cardOwner": "Owner",
+    "cardClient": "Client code",
+    "cardChat": "Chat",
+    "cardAlarms": "Alerts",
+    "cardFields": "What is on a card"
   },
   "automation": {
     "title": "Automation rules",

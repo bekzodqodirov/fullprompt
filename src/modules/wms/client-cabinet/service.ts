@@ -69,6 +69,14 @@ export async function clientsForChat(chatId: bigint) {
         eq(clientTelegramLinks.status, 'linked'),
       ),
     )
+    // Ordered because the answer is used first-match, not as a set: `chatLocale`
+    // takes the first client with a language on file and renders the whole
+    // reply in it. A broker chat holding two clients who chose differently
+    // would otherwise be answered in whichever language Postgres happened to
+    // return first — the same reply switching languages between two presses,
+    // with nothing to explain it. The OLDEST link wins: the client the chat
+    // was opened for.
+    .orderBy(asc(clientTelegramLinks.linkedAt), asc(clients.clientCode))
     .then((rows) => rows.map((r) => r.client));
 }
 

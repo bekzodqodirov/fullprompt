@@ -730,3 +730,26 @@ export const listViews = pgTable(
     index('list_views_screen_idx').on(t.screen, t.userId),
   ],
 );
+
+/**
+ * Canned replies (round 67). `user_id` NULL = the company's, admin-written;
+ * otherwise it is that person's and nobody else sees it — the same ownership
+ * rule `list_views` uses, for the same reason.
+ */
+export const replyTemplates = pgTable(
+  'reply_templates',
+  {
+    id: id(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    /** Holds `{ism}` / `{kod}` verbatim; they are filled where the client is known. */
+    body: text('body').notNull(),
+    sortOrder: integer('sort_order').notNull().default(100),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('reply_templates_owner_idx').on(t.userId, t.sortOrder)],
+);

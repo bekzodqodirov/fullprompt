@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
 import { stageClass } from '@/app/(protected)/crm/stage-color';
 
@@ -47,14 +48,45 @@ export interface KanbanLabels {
   dragHint: string;
   empty: string;
   error: string;
+  /**
+   * A refusal, in words. Keyed by the code the service returned, with
+   * `error` as the fallback — so a code nobody has translated yet degrades to
+   * today's generic line instead of throwing at render (#163).
+   */
+  moveErrors: Record<string, string>;
   /** Footer of a column that is holding cards back: «+N · show all». */
   showAll: string;
 }
 
+/**
+ * The refusal codes a move can come back with, in words.
+ *
+ * A literal map, exported and built by the caller, because the key handed to
+ * `t()` here would be built at runtime and `tests/unit/i18n-keys.test.ts` says
+ * outright that it cannot see those. `useMoveErrors` is the one place the six
+ * codes are written down, so the two boards cannot drift — and both services
+ * are included, since `moveLead` spells it `reason_required` and `moveDeal`
+ * spells the same refusal `lost_reason_required`.
+ *
+ * This replaces a deliberate earlier decision (the bulk bar's «the service's
+ * code is deliberately NOT rendered»), and that comment has been updated: a
+ * bulk press answers with counts and the cards are still on screen to try
+ * again, while a single dragged card jumps back with nothing said.
+ */
+export function useMoveErrors(): Record<string, string> {
+  const t = useTranslations('common');
+  return {
+    forbidden: t('moveErrors.forbidden'),
+    unauthenticated: t('moveErrors.forbidden'),
+    not_found: t('moveErrors.notFound'),
+    stage_not_found: t('moveErrors.stageNotFound'),
+    reason_required: t('moveErrors.reasonRequired'),
+    lost_reason_required: t('moveErrors.reasonRequired'),
+  };
+}
+
 /** Below this the gesture is a scroll or a tap, not a drag. */
 const MOVE_THRESHOLD = 8;
-/** A touch has to be held this long before the card comes off the board. */
-const HOLD_MS = 250;
 /** Auto-scroll the board when the pointer nears an edge. */
 const EDGE = 48;
 const EDGE_STEP = 12;
@@ -65,7 +97,7 @@ interface BoardProps<T extends KanbanItem> {
   labels: KanbanLabels;
   renderCard: (item: T) => ReactNode;
   hrefOf: (item: T) => string;
-  onMove: (id: string, stageId: string, reason: string) => Promise<{ ok: boolean }>;
+  onMove: (id: string, stageId: string, reason: string) => Promise<{ ok: boolean; error?: string }>;
   /** Distinguishes the two boards in the e2e without a second selector scheme. */
   cardTestId?: string;
   /**
@@ -106,7 +138,11 @@ export function KanbanBoard<T extends KanbanItem>({
   archiveHref,
 }: BoardProps<T>) {
   const [placement, setPlacement] = useState<Record<string, string>>({});
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // ONE move sheet for both shapes. It used to live inside the phone view,
+  // which was fine while the desktop board's only way to move a card was a
+  // drag — and a drag is now a mouse's alone.
+  const [sheetFor, setSheetFor] = useState<T | null>(null);
 
   // The server is the truth; `placement` only holds a card in its new column
   // between the move and the revalidation, so the card never jumps back for
@@ -137,7 +173,7 @@ export function KanbanBoard<T extends KanbanItem>({
       }
 
       setPlacement((current) => ({ ...current, [item.id]: stageId }));
-      setError(false);
+      setError(null);
       const result = await onMove(item.id, stageId, reason);
       if (!result.ok) {
         setPlacement((current) => {
@@ -145,7 +181,11 @@ export function KanbanBoard<T extends KanbanItem>({
           delete next[item.id];
           return next;
         });
-        setError(true);
+        // The CODE, not a boolean. «Xatolik» over a card that jumped back is
+        // the screen telling somebody to guess: a stage deleted under an open
+        // board, a permission taken away, a lost move with no reason — three
+        // different situations and three different next actions.
+        setError(result.error ?? 'failed');
       }
     },
     [placement, stages, labels.lostReason, onMove],
@@ -170,11 +210,16 @@ export function KanbanBoard<T extends KanbanItem>({
     hrefOf,
     cardTestId,
     selection,
+    setSheetFor,
   };
 
   return (
     <>
-      {error && <p className="text-sm font-semibold text-bad">{labels.error}</p>}
+      {error && (
+        <p className="text-sm font-semibold text-bad" data-testid="kanban-error">
+          {labels.moveErrors[error] ?? labels.error}
+        </p>
+      )}
 
       <div data-testid="funnel-mobile" className="md:hidden">
         <StageView {...view} />
@@ -182,6 +227,46 @@ export function KanbanBoard<T extends KanbanItem>({
       <div data-testid="funnel-desktop" className="hidden md:block">
         <DragBoard {...view} />
       </div>
+
+      {/* The move sheet, owned by the board rather than by either shape: the
+          phone opens it from a card's ⋯, and so does the desktop board, which
+          since the drag became a mouse's alone is the only way a tablet can
+          move anything. */}
+      {sheetFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40"
+          onClick={() => setSheetFor(null)}
+        >
+          <div
+            className="pb-safe max-h-[80vh] w-full space-y-1.5 overflow-y-auto rounded-t-2xl bg-surface-raised p-4 md:mx-auto md:mb-auto md:mt-24 md:max-w-sm md:rounded-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="section-title">{labels.moveTo}</p>
+            {stages
+              .filter((stage) => stage.id !== (placement[sheetFor.id] ?? sheetFor.stageId))
+              .map((stage) => (
+                <button
+                  key={stage.id}
+                  type="button"
+                  data-testid={`move-to-${stage.kind}`}
+                  onClick={() => {
+                    const item = sheetFor;
+                    setSheetFor(null);
+                    void move(item, stage.id);
+                  }}
+                  className={`w-full rounded-xl border px-3 py-3 text-left font-semibold ${stageClass(
+                    stage.color,
+                  )}`}
+                >
+                  {stage.name}
+                </button>
+              ))}
+            <button type="button" onClick={() => setSheetFor(null)} className="btn-secondary w-full">
+              {labels.cancelMove}
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -199,6 +284,8 @@ interface ViewProps<T extends KanbanItem> {
   hrefOf: (item: T) => string;
   cardTestId: string;
   selection?: BoardProps<T>['selection'];
+  /** Both shapes open the ONE sheet the board owns. */
+  setSheetFor: (item: T | null) => void;
 }
 
 /**
@@ -256,13 +343,13 @@ function StageView<T extends KanbanItem>({
   hrefOf,
   cardTestId,
   selection,
+  setSheetFor,
 }: ViewProps<T>) {
   // Open on the first stage that has anything in it: an empty "new" column is
   // a wasted first screen when the work is three stages along.
   const [activeId, setActiveId] = useState(
     () => stages.find((stage) => counts[stage.id])?.id ?? stages[0]?.id ?? '',
   );
-  const [sheetFor, setSheetFor] = useState<T | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   // A chip tap starts a smooth scroll that fires the same onScroll the thumb
@@ -357,7 +444,7 @@ function StageView<T extends KanbanItem>({
         ref={trackRef}
         onScroll={onTrackScroll}
         data-testid="stage-track"
-        className="-mx-4 flex h-[calc(100dvh-19rem)] min-h-[18rem] snap-x snap-mandatory gap-3 overflow-x-auto px-4"
+        className="-mx-4 flex h-[calc(100dvh-19rem-var(--board-extra,0px))] min-h-[18rem] snap-x snap-mandatory gap-3 overflow-x-auto px-4"
       >
         {stages.map((stage) => {
           const inStage = items.filter((item) => stageOf(item) === stage.id);
@@ -426,42 +513,6 @@ function StageView<T extends KanbanItem>({
           );
         })}
       </div>
-
-      {sheetFor && (
-        <div
-          className="fixed inset-0 z-50 flex items-end bg-black/40"
-          onClick={() => setSheetFor(null)}
-        >
-          <div
-            className="pb-safe max-h-[80vh] w-full space-y-1.5 overflow-y-auto rounded-t-2xl bg-surface-raised p-4"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <p className="section-title">{labels.moveTo}</p>
-            {stages
-              .filter((stage) => stage.id !== stageOf(sheetFor))
-              .map((stage) => (
-                <button
-                  key={stage.id}
-                  type="button"
-                  data-testid={`move-to-${stage.kind}`}
-                  onClick={() => {
-                    const item = sheetFor;
-                    setSheetFor(null);
-                    void move(item, stage.id);
-                  }}
-                  className={`w-full rounded-xl border px-3 py-3 text-left font-semibold ${stageClass(
-                    stage.color,
-                  )}`}
-                >
-                  {stage.name}
-                </button>
-              ))}
-            <button type="button" onClick={() => setSheetFor(null)} className="btn-secondary w-full">
-              {labels.cancelMove}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -487,13 +538,13 @@ function DragBoard<T extends KanbanItem>({
   hrefOf,
   cardTestId,
   selection,
+  setSheetFor,
 }: ViewProps<T>) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<string | null>(null);
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
 
   const boardRef = useRef<HTMLDivElement>(null);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const dragged = useRef(false);
   const scrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -504,8 +555,6 @@ function DragBoard<T extends KanbanItem>({
   };
 
   const cleanup = useCallback(() => {
-    if (holdTimer.current) clearTimeout(holdTimer.current);
-    holdTimer.current = null;
     stopScrolling();
     setDragId(null);
     setOverStage(null);
@@ -533,27 +582,25 @@ function DragBoard<T extends KanbanItem>({
     }, 16);
   };
 
-  const onPointerDown = (event: React.PointerEvent, item: T) => {
+  const onPointerDown = (event: React.PointerEvent) => {
+    // A MOUSE, and nothing else. Which board a viewer gets is decided by width
+    // alone (`md`, 768 px), so before this guard a tablet held a card for
+    // 250 ms and dragged it — the touch drag the owner refused twice.
+    //
+    // The guard comes FIRST for a reason. Arming `start` and then returning
+    // for a finger leaves the move handler holding a live origin, and the drag
+    // then starts on the next 8 px with no hold at all: worse than what it
+    // fixes.
+    if (event.pointerType !== 'mouse') return;
     // Only the primary button; a right-click must not pick a card up.
     if (event.button !== 0) return;
     dragged.current = false;
     start.current = { x: event.clientX, y: event.clientY };
-    const target = event.currentTarget as HTMLElement;
-
-    const begin = () => {
-      dragged.current = true;
-      setDragId(item.id);
-      setGhost({ x: event.clientX, y: event.clientY });
-      setOverStage(stageOf(item));
-      target.setPointerCapture?.(event.pointerId);
-      navigator.vibrate?.(15);
-    };
-
-    if (event.pointerType === 'mouse') return; // starts on movement instead
-    holdTimer.current = setTimeout(begin, HOLD_MS);
   };
 
   const onPointerMove = (event: React.PointerEvent, item: T) => {
+    if (event.pointerType !== 'mouse') return;
+    
     if (!start.current) return;
     const dx = event.clientX - start.current.x;
     const dy = event.clientY - start.current.y;
@@ -561,18 +608,10 @@ function DragBoard<T extends KanbanItem>({
 
     if (dragId !== item.id) {
       if (moved < MOVE_THRESHOLD) return;
-      if (event.pointerType === 'mouse') {
-        dragged.current = true;
-        setDragId(item.id);
-        setOverStage(stageOf(item));
-        (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
-      } else {
-        // The pointer moved before the hold completed — that is a scroll.
-        if (holdTimer.current) clearTimeout(holdTimer.current);
-        holdTimer.current = null;
-        start.current = null;
-        return;
-      }
+      dragged.current = true;
+      setDragId(item.id);
+      setOverStage(stageOf(item));
+      (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
     }
 
     event.preventDefault();
@@ -592,7 +631,7 @@ function DragBoard<T extends KanbanItem>({
 
   return (
     <>
-      <p className="text-xs text-ink-500">✋ {labels.dragHint}</p>
+      <p className="text-xs text-ink-500">🖱 {labels.dragHint}</p>
       <div
         ref={boardRef}
         // The board owns the rest of the viewport and the COLUMNS scroll,
@@ -600,7 +639,7 @@ function DragBoard<T extends KanbanItem>({
         // pastidan scroll chiqib qolmasdi" — the amoCRM shape). The page
         // never grows below the board, so its scrollbar disappears; a long
         // column scrolls inside itself with the header staying put.
-        className="-mx-4 h-[calc(100dvh-17.5rem)] min-h-[20rem] overflow-x-auto px-4"
+        className="-mx-4 h-[calc(100dvh-17.5rem-var(--board-extra,0px))] min-h-[20rem] overflow-x-auto px-4"
         // While a card is in the air the board must not pan under it: the
         // pointer is already down, so the browser would otherwise treat the
         // same gesture as a scroll.
@@ -638,7 +677,7 @@ function DragBoard<T extends KanbanItem>({
                       // moment the card started to move.
                       draggable={false}
                       onDragStart={(event) => event.preventDefault()}
-                      onPointerDown={(event) => onPointerDown(event, item)}
+                      onPointerDown={onPointerDown}
                       onPointerMove={(event) => onPointerMove(event, item)}
                       onPointerUp={() => onPointerUp(item)}
                       onPointerCancel={cleanup}
@@ -651,11 +690,34 @@ function DragBoard<T extends KanbanItem>({
                       }`}
                       style={{ touchAction: dragId === item.id ? 'none' : undefined }}
                     >
-                      {selection && (
-                        <span className="float-right ml-1">
-                          <SelectBox id={item.id} selection={selection} />
-                        </span>
-                      )}
+                      {/* The way to move a card that is NOT a drag. Load-bearing
+                          rather than a convenience: which board a viewer gets is
+                          decided by width alone, so a tablet lands here — and
+                          since the drag became a mouse's alone, without this
+                          there would be no way to move anything at all.
+                          Not gated on a pointer query: this file's own comment
+                          says a trackpad can report as touch, and a machine that
+                          answered «fine» to the query and «not a mouse» to the
+                          event would get a board with neither door. */}
+                      <span className="float-right ml-1 flex items-center gap-1">
+                        {selection && <SelectBox id={item.id} selection={selection} />}
+                        <button
+                          type="button"
+                          data-testid="move-other"
+                          aria-label={labels.moveTo}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            // The card IS the anchor and carries the drag —
+                            // SelectBox's lesson, one element over.
+                            event.stopPropagation();
+                            event.preventDefault();
+                            setSheetFor(item);
+                          }}
+                          className="btn-secondary btn-icon !min-h-7 !w-7 shrink-0 !p-0 text-xs"
+                        >
+                          ⋯
+                        </button>
+                      </span>
                       {renderCard(item)}
                     </Link>
                   ))}

@@ -5,6 +5,8 @@ import {
   batches,
   clients,
   clientTransactions,
+  costEntries,
+  expenses,
   moneyAccounts,
   partners,
   partnerTransactions,
@@ -179,6 +181,16 @@ export type PartnerTxInput = z.infer<typeof partnerTxSchema>;
  */
 export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new PartnerError('unauthenticated');
+  // A named cash box must speak the row's currency (the ledger rule).
+  if (input.accountId) {
+    const [account] = await db
+      .select({ currency: moneyAccounts.currency })
+      .from(moneyAccounts)
+      .where(eq(moneyAccounts.id, input.accountId));
+    if (account && account.currency !== input.currency) {
+      throw new PartnerError('account_currency_mismatch');
+    }
+  }
   const rate = await rateFor(input.currency, input.txDate);
   if (rate === null) throw new PartnerError('fx_missing');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
@@ -235,12 +247,34 @@ export async function voidPartnerTx(id: string, reason: string, ctx: AuditContex
         .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
         .where(and(eq(clientTransactions.id, row.clientTxId), isNull(clientTransactions.voidedAt)));
     }
+    // A charge DERIVED from a cost or an expense is the pair rule's other
+    // direction. Voiding the debt says «this firm does not answer for this
+    // money» — the cost stays a P&L fact, but it must lose its payer, or the
+    // next recompute (any FX save, any batch departure) re-derives the charge
+    // the accountant just cancelled, under the original enterer's name. The
+    // void of the DEBT without this line was a void that undid itself.
+
+    if (row.costEntryId) {
+      await tx
+        .update(costEntries)
+        .set({ partnerId: null })
+        .where(eq(costEntries.id, row.costEntryId));
+    }
+    if (row.expenseId) {
+      await tx.update(expenses).set({ partnerId: null }).where(eq(expenses.id, row.expenseId));
+    }
   });
   await writeAudit(db, ctx, {
     entityType: 'partner_transaction',
     entityId: id,
     action: 'void',
-    after: { reason, clientTxId: row.clientTxId },
+    after: {
+      reason,
+      clientTxId: row.clientTxId,
+      // The record that the source fact lost its payer, and to whom it points.
+      ...(row.costEntryId ? { unlinkedCostEntry: row.costEntryId } : {}),
+      ...(row.expenseId ? { unlinkedExpense: row.expenseId } : {}),
+    },
   });
 }
 

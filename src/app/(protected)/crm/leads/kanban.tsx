@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { KanbanBoard as Board, type KanbanStage } from '@/components/kanban';
+import { KanbanBoard as Board, type KanbanStage, useMoveErrors } from '@/components/kanban';
 import { BulkBar } from '@/components/list/bulk-bar';
 import { bulkAssignLeadsAction, bulkMoveLeadsAction, moveLeadAction } from '../actions';
 
@@ -37,6 +37,7 @@ export function KanbanBoard({
   hidden,
   archiveHref,
   owners,
+  fields,
 }: {
   stages: KanbanStage[];
   leads: KanbanLead[];
@@ -45,9 +46,12 @@ export function KanbanBoard({
   archiveHref?: string;
   /** Who a lead may be handed to; absent means no bulk assign is offered. */
   owners?: { id: string; name: string }[];
+  /** Which switchable lines this browser wants; the name is never in it. */
+  fields: Set<string>;
 }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
+  const moveErrors = useMoveErrors();
   const tl = useTranslations('lists');
   // The SELECTION lives here, not in the shared board: only this screen knows
   // what «assign to» means for a lead, so the actions and the ticks that feed
@@ -73,11 +77,14 @@ export function KanbanBoard({
         cardTestId="lead-card"
         selection={{ ids: picked, toggle, label: tl('select') }}
         hrefOf={(lead) => `/crm/leads/${lead.id}`}
-        // The CRM actions answer `{ ok?: boolean; error?: string }`; the board
-        // only asks "did it stick", and a missing `ok` means it did not.
-        onMove={async (id, stageId, reason) => ({
-          ok: Boolean((await moveLeadAction(id, stageId, reason)).ok),
-        })}
+        // The action answers `{ ok?: boolean; error?: string }`. The CODE
+        // travels with the verdict now: a card that jumps back under the word
+        // «Xatolik» is the screen asking somebody to guess which of five
+        // things went wrong.
+        onMove={async (id, stageId, reason) => {
+          const result = await moveLeadAction(id, stageId, reason);
+          return { ok: Boolean(result.ok), error: result.error };
+        }}
         labels={{
           lostReason: t('lostReason'),
           moveTo: t('moveTo'),
@@ -85,29 +92,36 @@ export function KanbanBoard({
           dragHint: t('dragHint'),
           empty: t('empty'),
           error: tc('error'),
+          moveErrors,
           showAll: t('showAll'),
         }}
         renderCard={(lead) => (
           <>
+            {/* The NAME is not switchable. A card with nothing on it is not a
+                card, and half the browser suite finds a board card by it. */}
             <div className="font-semibold [overflow-wrap:anywhere]">{lead.name}</div>
-            {lead.company && <div className="text-xs text-ink-700">{lead.company}</div>}
-            {lead.phone && <div className="font-mono text-xs">{lead.phone}</div>}
+            {fields.has('company') && lead.company && (
+              <div className="text-xs text-ink-700">{lead.company}</div>
+            )}
+            {fields.has('phone') && lead.phone && (
+              <div className="font-mono text-xs">{lead.phone}</div>
+            )}
             <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-ink-500">
-              {lead.sourceName && (
+              {fields.has('source') && lead.sourceName && (
                 <span className="rounded bg-surface-sunken px-1.5">{lead.sourceName}</span>
               )}
-              {lead.ownerName && <span>{lead.ownerName}</span>}
-              {lead.clientCode && (
+              {fields.has('owner') && lead.ownerName && <span>{lead.ownerName}</span>}
+              {fields.has('code') && lead.clientCode && (
                 <span className="font-mono font-bold text-good">{lead.clientCode}</span>
               )}
               {/* The chat, on the card (owner, round 25) — and whether it waits on us. */}
-              {lead.chat && (
+              {fields.has('chat') && lead.chat && (
                 <span className={lead.chat === 'waiting' ? 'font-semibold text-warn' : ''}>
                   💬{lead.chat === 'waiting' && ' !'}
                 </span>
               )}
             </div>
-            {lead.nextActionAt && (
+            {fields.has('nextAction') && lead.nextActionAt && (
               <div className="mt-1 text-[11px] font-semibold text-warn">📅 {lead.nextActionAt}</div>
             )}
           </>

@@ -30,7 +30,13 @@
     "notFoundBody": "Bunday sahifa yo‘q yoki o‘chirilgan.",
     "empty": "Hozircha bo‘sh",
     "updateAvailable": "Ilovaning yangi versiyasi bor",
-    "updateNow": "Yangilash"
+    "updateNow": "Yangilash",
+    "moveErrors": {
+      "forbidden": "Bu ko'chirish uchun ruxsat yetarli emas",
+      "notFound": "Kartochka topilmadi — sahifani yangilang",
+      "reasonRequired": "Sababini yozish kerak",
+      "stageNotFound": "Etap o'chirilgan — sahifani yangilang"
+    }
   },
   "login": {
     "title": "Tizimga kirish",
@@ -333,7 +339,59 @@
     "before": "Oldin",
     "after": "Keyin",
     "filterEntityPlaceholder": "masalan: warehouse, client, receipt",
-    "noRows": "Filtr bo‘yicha yozuv topilmadi"
+    "noRows": "Filtr bo‘yicha yozuv topilmadi",
+    "changeCount": "{n} ta o'zgarish",
+    "entryCount": "{n} ta yozuv",
+    "fields": {
+      "active": "Faol",
+      "amount": "Summa",
+      "boxCount": "Quti soni",
+      "boxWeightKg": "Quti og‘irligi, kg",
+      "client": "Mijoz",
+      "clientCode": "Mijoz kodi",
+      "code": "Kod",
+      "company": "Firma",
+      "currency": "Valyuta",
+      "date": "Sana",
+      "deal": "Bitim",
+      "description": "Tavsif",
+      "discount": "Chegirma",
+      "discountReason": "Chegirma sababi",
+      "dueAt": "Muddat",
+      "grants": "Huquqlar",
+      "heightCm": "Balandlik, sm",
+      "lengthCm": "Uzunlik, sm",
+      "lines": "Qatorlar",
+      "locale": "Til",
+      "lostReason": "Rad sababi",
+      "messengerNote": "Messenjer",
+      "name": "Nomi",
+      "nextAction": "Keyingi aloqa",
+      "nextActionNote": "Aloqa izohi",
+      "note": "Izoh",
+      "order": "Tartib",
+      "owner": "Mas’ul",
+      "partner": "Kontragent",
+      "password": "Parol",
+      "phone": "Telefon",
+      "productNameRu": "Tovar (RU)",
+      "productNameZh": "Tovar (ZH)",
+      "rateToUsd": "USD kursi",
+      "reason": "Sabab",
+      "roles": "Rollar",
+      "source": "Manba",
+      "stage": "Etap",
+      "status": "Holat",
+      "title": "Sarlavha",
+      "tnvedCode": "TN VED kodi",
+      "type": "Turi",
+      "username": "Login",
+      "volumeM3": "Hajm, m³",
+      "warehouse": "Sklad",
+      "warehouses": "Skladlar",
+      "weightKg": "Og‘irlik, kg",
+      "widthCm": "Eni, sm"
+    }
   },
   "profile": {
     "title": "Profil",
@@ -442,7 +500,9 @@
     },
     "openInBrowser": "Brauzerda ochish (chop etish ketmasa)",
     "printDialog": "Chop etish",
-    "shareToPrinter": "Printerga yuborish"
+    "shareToPrinter": "Printerga yuborish",
+    "voidHasCosts": "Avval bu prixodning xarajatlarini bekor qiling — pul yozuvi omborda emas, moliyada hal qilinadi.",
+    "voidBoxGone": "Bekor qilib bo'lmaydi: kamida bitta quti skladdan chiqib ketgan."
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -471,7 +531,10 @@
     "markVoid": "Bekor qilish",
     "markFound": "Topildi (skladga qaytarish)",
     "reasonRequired": "Sabab (majburiy)",
-    "empty": "Filtr bo‘yicha yuk topilmadi"
+    "empty": "Filtr bo‘yicha yuk topilmadi",
+    "pageOf": "{from}–{to} / {total}",
+    "pageNext": "Keyingi →",
+    "pagePrev": "← Oldingi"
   },
   "search": {
     "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",
@@ -859,7 +922,10 @@
     "clientBalance": "Mijoz balansi (umumiy)",
     "openLedger": "mijoz kassasi",
     "prevLegs": "shu reysgacha (Xitoy ichida)",
-    "costDetail": "tarkibi"
+    "costDetail": "tarkibi",
+    "forDeal": "Qaysi bitim uchun",
+    "accountCurrencyMismatch": "Kassa valyutasi to'lov valyutasiga mos emas",
+    "registerTruncated": "Eng yangi {shown} tasi ko'rsatildi (jami {total}); «jami» summa to'liq davr bo'yicha."
   },
   "map": {
     "title": "Xarita",
@@ -981,7 +1047,8 @@
     "balHint": "Kassadagi pul + bizga qarzlar − bizning qarzimiz. Ombordagi yuk hisobga olinmaydi — u mijozning moli.",
     "noRate": "kurs yo‘q",
     "partnerIn": "Kontragentdan tushdi",
-    "partnerOut": "Kontragentga to‘landi"
+    "partnerOut": "Kontragentga to‘landi",
+    "accountCurrencyMismatch": "Kassa valyutasi summaga mos emas"
   },
   "crm": {
     "title": "CRM",
@@ -1065,7 +1132,7 @@
     "badDate": "Bu yerga sana kerak",
     "dormantNote": "Ilgari yuk yuborib, keyin to‘xtagan mijoz. Hech qachon yubormagan odam bu yerga tushmaydi.",
     "personNote": "Kodlar birlashtirilmaydi: har birida o‘z harflari, yuklari va kabineti qoladi. Odam ularni faqat sotuv uchun bog‘laydi.",
-    "dragHint": "Kartochkani ushlab turib boshqa bosqichga sudrang",
+    "dragHint": "Kartochkani sichqoncha bilan boshqa etapga torting",
     "cancelMove": "Bekor qilish",
     "prevStage": "Oldingi bosqich",
     "nextStage": "Keyingi bosqich",
@@ -1179,7 +1246,19 @@
     "disconnectConfirm": "Telegramni sistemadan uzasizmi?\n\n• mijozlarning xabarlari kelmay qoladi\n• navbatdagi javoblar «yuborilmadi» bo'ladi\n• seans serverdan o'chiriladi va Telegramning o'zida ham tugatiladi\n\nQaytish uchun yana ulash kerak bo'ladi (telefon + kod).",
     "disconnectDone": "Uzildi. Mijoz suhbatlari endi kelmaydi.",
     "chatMenu": "Chat sozlamalari",
-    "disconnectFailed": "Uzib bo'lmadi. Serverda baza migratsiyalari qo'llanmagan ko'rinadi — yangilashni so'rang va qayta urinib ko'ring."
+    "disconnectFailed": "Uzib bo'lmadi. Serverda baza migratsiyalari qo'llanmagan ko'rinadi — yangilashni so'rang va qayta urinib ko'ring.",
+    "filterClear": "Tozalash",
+    "cardChat": "Chat",
+    "cardFields": "Kartochkada nima",
+    "templates": "Shablonlar",
+    "templatesTitle": "Javob shablonlari",
+    "templateTitle": "Nomi",
+    "templateBody": "Matn",
+    "templateOrder": "Tartib",
+    "templateShared": "Butun kompaniya uchun",
+    "templateHint": "Matnda '{'ism'}' — mijoz ismi, '{'kod'}' — uning kodi deb yozsangiz bo'ladi.",
+    "templateNone": "Hozircha shablon yo'q",
+    "templateAdd": "Yangi shablon"
   },
   "navShort": {
     "home": "Bosh",
@@ -1545,7 +1624,12 @@
     "triggerReady": "Topshirishga tayyor",
     "triggerHanded": "Mijozga to'liq topshirildi",
     "triggerOnLost": "Yo'qotilgan etapga avto-o'tish qo'yib bo'lmaydi",
-    "triggerHandedPartial": "Qisman topshirildi"
+    "triggerHandedPartial": "Qisman topshirildi",
+    "cardOwner": "Mas’ul",
+    "cardClient": "Mijoz kodi",
+    "cardChat": "Chat",
+    "cardAlarms": "Ogohlantirishlar",
+    "cardFields": "Kartochkada nima"
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

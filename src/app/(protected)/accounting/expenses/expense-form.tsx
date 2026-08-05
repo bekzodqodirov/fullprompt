@@ -146,7 +146,11 @@ export function ExpenseForm({
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
       {state.error && (
         <p className="text-sm font-semibold text-bad">
-          {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
+          {state.error === 'fx_missing'
+            ? t('fxMissing')
+            : state.error === 'account_currency_mismatch'
+              ? t('accountCurrencyMismatch')
+              : tc('error')}
         </p>
       )}
     </form>

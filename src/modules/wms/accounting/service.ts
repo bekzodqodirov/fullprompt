@@ -160,6 +160,18 @@ export type ExpenseInput = z.infer<typeof expenseSchema>;
 
 export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
+  // The same rule as the client ledger: a named cash box must speak the
+  // row's currency, or the till balances stop meaning anything.
+  const accountId = input.partnerId ? null : input.accountId || null;
+  if (accountId) {
+    const [account] = await db
+      .select({ currency: moneyAccounts.currency })
+      .from(moneyAccounts)
+      .where(eq(moneyAccounts.id, accountId));
+    if (account && account.currency !== input.currency) {
+      throw new AccountingError('account_currency_mismatch');
+    }
+  }
   const rate = await rateFor(input.currency, input.expenseDate);
   if (rate === null) throw new AccountingError('fx_missing');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
@@ -328,6 +340,12 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
   const skipped: string[] = [];
   for (const template of templates) {
     const date = `${month}-${String(template.dayOfMonth).padStart(2, '0')}`;
+    // The slot is (category, date, employee, WAREHOUSE) — the warehouse is
+    // what tells two rents in one category apart. Without it, «Ijara YW» and
+    // «Ijara GZ» on the same day collided: the first posted, the second read
+    // as already-posted every month for ever, the P&L short its amount and
+    // the home counter — which mirrors this predicate — saying nothing was
+    // due.
     const existing = await db
       .select({ id: expenses.id })
       .from(expenses)
@@ -339,6 +357,9 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
           template.employeeId
             ? eq(expenses.employeeId, template.employeeId)
             : isNull(expenses.employeeId),
+          template.warehouseId
+            ? eq(expenses.warehouseId, template.warehouseId)
+            : isNull(expenses.warehouseId),
         ),
       )
       .limit(1);

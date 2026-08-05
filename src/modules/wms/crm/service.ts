@@ -9,9 +9,10 @@ import {
   leadStages,
   users,
 } from '../../platform/db/schema';
-import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
+import { likeNeedle, parseQuery } from '../search/query';
 
 /**
  * Phase 7 hears the funnel through this one door. Every path that changes a
@@ -276,6 +277,8 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const before = await db.query.leads.findFirst({ where: eq(leads.id, id) });
   if (!before) throw new CrmError('not_found');
+  // The business columns, WITHOUT `updatedAt`: a fresh Date never equals the
+  // stored one, so diffing a value set that carries it always reports a change.
   const values = {
     name: input.name,
     phone: input.phone || null,
@@ -286,16 +289,26 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     note: input.note || null,
     nextActionAt: input.nextActionAt || null,
     nextActionNote: input.nextActionNote || null,
-    updatedAt: new Date(),
   };
-  const [row] = await db.update(leads).set(values).where(eq(leads.id, id)).returning();
-  await writeAudit(db, ctx, {
-    entityType: 'lead',
-    entityId: id,
-    action: 'update',
-    before: { name: before.name, stageId: before.stageId, ownerId: before.ownerId },
-    after: { name: values.name, stageId: values.stageId, ownerId: values.ownerId },
-  });
+  const [row] = await db
+    .update(leads)
+    .set({ ...values, updatedAt: new Date() })
+    .where(eq(leads.id, id))
+    .returning();
+  // The form writes nine columns; the audit used to record three fixed ones,
+  // so correcting a phone here left no trace while correcting it inline did —
+  // and every save wrote a row whose before equalled its after. The trail says
+  // what changed, or it says nothing.
+  const diff = diffFields(before, values);
+  if (diff) {
+    await writeAudit(db, ctx, {
+      entityType: 'lead',
+      entityId: id,
+      action: 'update',
+      before: diff.before,
+      after: diff.after,
+    });
+  }
   if (values.stageId !== before.stageId) await announceLeadStage(row!, values.stageId, ctx);
   return row!;
 }
@@ -415,9 +428,32 @@ export async function convertLead(
   return client;
 }
 
+/**
+ * What the board's search box matches, as ONE fragment.
+ *
+ * Exported and shared because the rows and the COUNTS have to be filtered by
+ * the same question: the closed columns show a slice and the header prints the
+ * true total (#447), so a filter that reaches the cards and not the totals
+ * turns «+3 · show all» into «+143 · show all» on a column matching two.
+ *
+ * The needles are the global search's own (`likeNeedle`, `parseQuery`), so
+ * typing a name into the board finds what typing it into ⌘K finds.
+ */
+export function leadTextWhere(q?: string) {
+  const text = q?.trim();
+  if (!text) return undefined;
+  const like = likeNeedle(text);
+  const phone = parseQuery(text).phone;
+  return phone
+    ? sql`(${leads.name} ILIKE ${like} OR ${leads.company} ILIKE ${like} OR right(regexp_replace(coalesce(${leads.phone}, ''), '[^0-9]', '', 'g'), 9) = ${phone})`
+    : sql`(${leads.name} ILIKE ${like} OR ${leads.company} ILIKE ${like})`;
+}
+
 export async function listLeads(filters: {
   ownerId?: string;
   stageId?: string;
+  /** The board's search box. */
+  q?: string;
   openOnly?: boolean;
   /** Only the finished ones — what the board shows a recent slice of. */
   closedOnly?: boolean;
@@ -426,6 +462,11 @@ export async function listLeads(filters: {
   const where = [];
   if (filters.ownerId) where.push(eq(leads.ownerId, filters.ownerId));
   if (filters.stageId) where.push(eq(leads.stageId, filters.stageId));
+  // In SQL, never over the fetched array: the closed slice is capped at 20 and
+  // the open one at 300, so filtering afterwards would search the newest
+  // twenty and answer «nothing found» about a database that has it.
+  const text = leadTextWhere(filters.q);
+  if (text) where.push(text);
   if (filters.openOnly) where.push(eq(leadStages.kind, 'open'));
   if (filters.closedOnly) where.push(ne(leadStages.kind, 'open'));
   return db
@@ -463,9 +504,14 @@ export async function listLeads(filters: {
  * hundred and forty must still SAY a hundred and forty, or the funnel is
  * lying about the year's work. Scoped the same way the board is.
  */
-export async function closedLeadCounts(ownerId?: string): Promise<Record<string, number>> {
+export async function closedLeadCounts(
+  ownerId?: string,
+  q?: string,
+): Promise<Record<string, number>> {
   const where = [ne(leadStages.kind, 'open')];
   if (ownerId) where.push(eq(leads.ownerId, ownerId));
+  const text = leadTextWhere(q);
+  if (text) where.push(text);
   const rows = await db
     .select({ stageId: leads.stageId, n: sql<number>`count(*)` })
     .from(leads)

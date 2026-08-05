@@ -1,5 +1,9 @@
+import { eq } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
+import { db } from '@/modules/platform/db/client';
+import { clients } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { templatesFor } from '@/modules/wms/crm/templates';
 import { conversationManagers, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
 import { TelegramReplyBox } from './telegram-reply-box';
@@ -104,15 +108,25 @@ export async function TelegramReply({
   // (round 51, the owner: «oson bosilib ketmaydigan joyga olish kerak») —
   // a destructive action a thumb's width from «Send», on the strip of screen
   // a keyboard shoves about. It lives in the thread's ⋯ menu now.
+  // Filled HERE, where the client is known: the browser never has to be told
+  // a customer's name in order to offer a greeting.
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+  const templates = await templatesFor(actor.id, {
+    name: client?.name,
+    code: client?.clientCode,
+  });
+
   return (
     <TelegramReplyBox
       clientId={clientId}
       compact={compact}
+      templates={templates}
       labels={{
         placeholder: t('replyPlaceholder'),
         send: t('replySend'),
         sending: t('replySending'),
         attach: t('replyAttach'),
+        templates: t('templates'),
         errors: reasons,
       }}
     />

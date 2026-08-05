@@ -25,6 +25,23 @@ async function login(page: import('@playwright/test').Page, phone: string) {
   await expect(page).toHaveURL('/');
 }
 
+test('the door to «which chats to keep» is there with nothing pending', async ({ page }) => {
+  // It used to appear only while a chat was waiting for a decision, so the
+  // moment the owner answered the last one, the screen holding every decided
+  // chat — and the buttons that take one back out or delete what was stored
+  // from it — became unreachable. Nothing links to it from any menu.
+  await login(page, OWNER);
+  await page.goto('/suhbatlar');
+  const link = page.getByTestId('which-chats-link');
+  await expect(link).toBeVisible();
+  await link.click();
+  await expect(page).toHaveURL(/\/suhbatlar\/qaysi$/);
+  // And the decided list is reachable from there, which is where the undo and
+  // the purge live.
+  await page.getByTestId('show-decided').click();
+  await expect(page).toHaveURL(/show=done$/);
+});
+
 test('the conversation list opens and leads into a thread', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/suhbatlar');
@@ -198,7 +215,11 @@ test('somebody who may decide gets the screen, and it says when there is nothing
   // Nothing has been scanned in CI, so the screen must SAY so rather than
   // render an empty page that looks broken.
   await expect(page.getByTestId('which-chats-empty')).toBeVisible();
-  // And the conversations screen must not advertise a list with nothing on it.
+  // The DOOR stays — it also leads to every chat already decided, and to the
+  // buttons that take one back out or delete what was stored from it. What
+  // must not appear with nothing pending is the BADGE: the link is a place,
+  // the badge is a claim that there is work waiting.
   await page.goto('/suhbatlar');
-  await expect(page.getByTestId('which-chats-link')).toHaveCount(0);
+  await expect(page.getByTestId('which-chats-link')).toBeVisible();
+  await expect(page.getByTestId('which-chats-badge')).toHaveCount(0);
 });

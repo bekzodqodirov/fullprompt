@@ -6,10 +6,11 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { clients } from '@/modules/platform/db/schema';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
 import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { autoLinkClientToVerifiedChats } from '@/modules/platform/telegram/client-cabinet';
+import { ClientPatchError, patchClient } from '@/modules/platform/clients/inline';
 import {
   ClientError,
   createClient,
@@ -153,6 +154,31 @@ export async function createClientAction(
   // Land on the new card: the owner must SEE the assigned code (and the
   // cabinet block) right after saving — the list hid it.
   redirect(`/admin/clients/${row.id}`);
+}
+
+/**
+ * One field of a client card, from the facts block on its rail.
+ *
+ * Returns a verdict instead of throwing: it is called from a click handler,
+ * where a throw reaches no error boundary (#497). Same permission as the form
+ * below it — a fact you may correct in place is a fact you may correct.
+ */
+export async function patchClientFieldAction(
+  id: string,
+  field: string,
+  value: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const actor = await getActor();
+  if (!actor || !actor.permissions.has('clients.manage')) return { ok: false, error: 'forbidden' };
+  const meta = await requestMeta();
+  try {
+    await patchClient(id, field, value, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof ClientPatchError) return { ok: false, error: err.code };
+    throw err;
+  }
+  revalidatePath(`/admin/clients/${id}`);
+  return { ok: true };
 }
 
 export async function updateClientAction(

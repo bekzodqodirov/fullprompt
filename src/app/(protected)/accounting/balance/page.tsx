@@ -88,7 +88,12 @@ export default async function BalancePage() {
             <tbody>
               {balance.cashRows.map((row) => (
                 <tr key={row.id} className="border-b border-line last:border-0">
-                  <td className="p-3">{row.name}</td>
+                  <td className={`p-3 ${row.retired ? 'text-ink-500' : ''}`}>
+                    {row.name}
+                    {/* Money in a RETIRED till: still the company's, still on
+                        the sheet, marked so somebody moves it out. */}
+                    {row.retired && ' ⚠'}
+                  </td>
                   {/* The box's OWN currency first: this is the number somebody
                       counts against the notes in the drawer. */}
                   <td className="p-3 text-right font-mono font-bold">

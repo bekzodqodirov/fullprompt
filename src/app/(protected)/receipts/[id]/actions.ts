@@ -20,17 +20,25 @@ const voidSchema = z.object({
   reason: z.string().trim().min(3).max(500),
 });
 
-export async function voidReceiptAction(formData: FormData): Promise<void> {
+export interface VoidReceiptState {
+  ok?: boolean;
+  error?: string;
+}
+
+export async function voidReceiptAction(
+  _prev: VoidReceiptState,
+  formData: FormData,
+): Promise<VoidReceiptState> {
   const parsed = voidSchema.safeParse({
     receiptId: formData.get('receiptId'),
     reason: formData.get('reason'),
   });
-  if (!parsed.success) return;
+  if (!parsed.success) return { error: 'validation' };
 
   const receipt = await db.query.receipts.findFirst({
     where: eq(receipts.id, parsed.data.receiptId),
   });
-  if (!receipt) return;
+  if (!receipt) return { error: 'not_found' };
 
   const actor = await authorize('receipts.void', { warehouseId: receipt.warehouseId });
   const meta = await requestMeta();
@@ -38,11 +46,14 @@ export async function voidReceiptAction(formData: FormData): Promise<void> {
     await voidReceipt(parsed.data.receiptId, parsed.data.reason, { actorId: actor.id, ...meta });
   } catch (err) {
     // A refusal, not a crash: the transaction rolled back and the receipt is
-    // exactly as it was — a box of this receipt has already left the shelf.
-    if (err instanceof VoidError) return;
+    // exactly as it was. NAMED, because a silent refusal reads as a broken
+    // button — a box left the shelf, or the prixod still carries live costs
+    // (money first, the batch-cancel rule).
+    if (err instanceof VoidError) return { error: err.code };
     throw err;
   }
   revalidatePath(`/receipts/${parsed.data.receiptId}`);
+  return { ok: true };
 }
 
 const moveSchema = z.object({

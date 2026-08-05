@@ -11,6 +11,7 @@ import {
   costTypes,
   expenses,
   fxRates,
+  moneyAccounts,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
@@ -42,6 +43,7 @@ import {
   cashFlow,
   monthsBetween,
   profitAndLoss,
+  companyBalance,
   profitByBatch,
   profitByClient,
   profitByRoute,
@@ -396,6 +398,43 @@ describe('recurring fixed costs', () => {
     expect(Number(posted[0]!.amountUsd)).toBe(700);
   });
 
+  it('two rents in one category, told apart by their warehouse — both post', async () => {
+    // Two warehouse rents, same category, same day, no employee: the slot
+    // check used to collide them — the first posted, the second reported
+    // «already posted» every month for ever, and the home counter (which
+    // mirrors the same predicate) said nothing was due.
+    const category = await saveCategory(
+      { name: `Ikki ijara ${SUFFIX}`, cash: true, sortOrder: 31, active: true },
+      ctx(),
+    );
+    const whs = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
+    for (const [i, wh] of whs.entries()) {
+      await saveRecurring(
+        {
+          categoryId: category.id,
+          amount: 700 + i * 200,
+          currency: 'USD',
+          dayOfMonth: 6,
+          warehouseId: wh.id,
+          active: true,
+        },
+        ctx(),
+      );
+    }
+
+    const run = await generateRecurring(M2, ctx());
+    expect(run.created).toBe(2);
+    // …and the guard still guards: a second press posts nothing.
+    const again = await generateRecurring(M2, ctx());
+    expect(again.created).toBe(0);
+
+    const posted = await db
+      .select()
+      .from(expenses)
+      .where(sql`${expenses.categoryId} = ${category.id} AND ${expenses.voidedAt} IS NULL`);
+    expect(posted).toHaveLength(2);
+  });
+
   it('rejects a malformed month rather than guessing', async () => {
     await expect(generateRecurring('2031-3', ctx())).rejects.toThrow('bad_month');
   });
@@ -640,6 +679,94 @@ describe('profitability', () => {
       (row) => row.clientId === clientId,
     )!;
     expect(after.costUsd).toBe(Math.round((withCost.costUsd - 77) * 100) / 100);
+  });
+  it('a client whose period holds only COSTS still appears in profit-by-client', async () => {
+    // Routine on live data: costs are booked at receipt and load, the price
+    // agreed the month after. Keyed on revenue rows alone, the report dropped
+    // the client entirely — the totals row was short the real cost and total
+    // profit read high by exactly that much, while the P&L on the same hub
+    // counted every entry by cost_date.
+    const entry = await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: profitBatchId,
+        costTypeId: profitCostTypeId,
+        amount: 77,
+        currency: 'USD',
+        costDate: '2031-01-15',
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+    const rows = await profitByClient('2031-01-01', '2031-01-31');
+    const mine = rows.find((row) => row.clientId === clientId);
+    expect(mine).toBeTruthy();
+    expect(mine!.revenueUsd).toBe(0);
+    expect(mine!.costUsd).toBe(77);
+    expect(mine!.profitUsd).toBe(-77);
+    await voidCostEntry(entry.id, 'davr testi tugadi', ctx());
+  });
+
+
+});
+
+describe('a cash box speaks one currency', () => {
+  it('refuses money in the wrong currency for the till it names', async () => {
+    // One slip of an 86-option dropdown: 500 USD into a som till reads as
+    // 500 SOM on the accounts screen — ~$500 quietly gone from the Balans,
+    // with the client ledger still right and nothing anywhere flagging it.
+    const [till] = await db
+      .insert(moneyAccounts)
+      .values({
+        name: `USD kassa ${SUFFIX}`,
+        currency: 'USD',
+        kind: 'cash',
+        openingBalance: '0',
+        sortOrder: 951,
+        active: true,
+      })
+      .returning();
+    await expect(
+      addTransaction(
+        {
+          clientId,
+          type: 'payment',
+          amount: 500,
+          currency: 'UZS',
+          txDate: new Date().toISOString().slice(0, 10),
+          accountId: till!.id,
+        },
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'account_currency_mismatch' });
+    await db.delete(moneyAccounts).where(eq(moneyAccounts.id, till!.id));
+  });
+});
+
+describe('the Balans and retired tills', () => {
+  it('a retired cash box with money in it stays on the Balans', async () => {
+    // The partner register\'s lesson (#428) on the accounts side: hiding a
+    // till is a menu decision; deleting its balance from the sheet is a lie
+    // about what the company holds.
+    const [account] = await db
+      .insert(moneyAccounts)
+      .values({
+        name: `Eski kassa ${SUFFIX}`,
+        currency: 'USD',
+        kind: 'cash',
+        openingBalance: '250',
+        sortOrder: 950,
+        active: false,
+      })
+      .returning();
+
+    const balance = await companyBalance();
+    const row = balance.cashRows.find((r) => r.id === account!.id);
+    expect(row).toBeTruthy();
+    expect(row!.retired).toBe(true);
+    expect(row!.balance).toBe(250);
+
+    await db.delete(moneyAccounts).where(eq(moneyAccounts.id, account!.id));
   });
 });
 

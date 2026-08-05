@@ -117,15 +117,15 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1 and 2 COMPLETE; 3–5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-944 unit/integration + 115 e2e, verified in CI's order on a fresh database.
-Latest migration: **0058** (`list_views`). Every numbered phase
+1046 unit/integration + 140 e2e, verified in CI's order on a fresh database.
+Latest migration: **0059** (`reply_templates`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
 Actions → driver-apk → artifact → Admin → Haydovchi ilovasi).
@@ -1254,10 +1254,301 @@ red. The language select (60 px, set-once) moved to `/profile` on phones
 RULE: `flex` without `shrink-0` protects the layout, never the controls —
 only a measurement says they became unusable.
 
+Round 61 — **UX batch 3 part 1, the lead card's facts** (#500-501). The
+design was reviewed first and came back UNSOUND on two of three lenses: «a
+fact in the rail becomes editable» described NO card — the lead rail carried
+no read-only facts at all (phone/company/source/owner/next-call lived inside
+a FOLDED ✏️ form), the client rail's facts ARE a form, and the deal rail's
+only facts are the deliberately un-editable quote-vs-actual block. So the
+round shipped the half that was missing: `LeadFacts` at the top of the lead
+rail, with `InlineField` (`components/inline-field.tsx`) on name/phone/
+company/note. Interaction copied from the batch card's per-prixod customs
+picker — press the value → it becomes a box → SAVE appears only once
+something differs; NOT autosave-on-blur (twice refused here; a phone has no
+Escape). `wms/crm/inline.ts` `patchLead`: an ALLOWLIST (stage = a move,
+owner = a handover, nextActionAt = a PAIR with its note — all refused),
+a no-op guard (the funnel orders by `updated_at`), and a `diffFields` audit.
+THE HAZARD, fixed: every inline field is ALSO in the ✏️ form, whose inputs
+are uncontrolled — correcting a phone inline then pressing Save there put
+the old number back. The form is now keyed on `lead.updatedAt` (the LinesForm
+precedent), and m9ze presses that exact sequence. Red-proofs ×2. E2E LESSON:
+reach the card by the URL captured at creation, never through the funnel —
+the board is capped and every earlier spec adds leads to the first column.
+**Deal and client cards are part 2.**
+
+Round 62 — **UX batch 3 part 2, the history** (#502-505, owner «1 ozing togri
+deb bilganingni qil»). The approved item («collapse repeated changes in the
+lenta») was FALSE — `clientFeed` has carried no field changes since round 21;
+they live in the History tab — so it was re-aimed there and STATED. Reading
+that tab first found the round's real work: **`updateLead` writes NINE columns
+and audited a hard-coded THREE** (name/stageId/ownerId, no `diffFields`, no
+guard), so a phone/company/source/note/next-call correction through the ✏️ form
+left NO trace while the same correction made inline did — and every save wrote
+a row whose before equalled its after. `updateDeal` = same, 2 of 8. Both now
+diff their real value set, with `updatedAt` SPLIT OUT of it first (a fresh Date
+never equals the stored one → `diffFields` would never return null). **`"200.00"
+≠ "200"**: `amountChanged` string-compared the form's number against postgres's
+full-scale numeric, so `quotedAt`/`quotedBy` were re-stamped on EVERY deal save
+— fix a title, own the quote; `canonical()` through `Number()` fixes the stamp
+and the `amount: 200.00 → 200` audit line together. `groupHistory`
+(`platform/audit/history.ts`): one actor, both `update`, ≤10 min apart → one
+entry with the NET per field; never across actors, never a null actor, never a
+create/void/scan; **every row survives in a fold with its own time**; a run
+netting to EMPTY is not merged (a count over a blank box reads as a broken
+screen); badge counts lines on screen, fold counts rows. `visibleChanges` drops
+before===after for EVERY row, alone or merged, or one row would read
+differently depending on its neighbours. `AUDIT_FIELD_LABELS` translates the
+recorded columns ×4 (unknown column prints its own name); runtime key →
+anchored by `tests/unit/audit-fields.test.ts`, the fourth instance of #163.
+**The lead card gained the History panel it never had.** Red-proofs ×5. No
+migration. E2E LESSON: a failed test costs Playwright its worker and the next
+test re-imports the spec with module state reset — `goto('')` then lands
+quietly on the HOME page and every locator times out blaming the wrong thing;
+m9ze asserts `cardUrl` before using it. Also: a bare `ol li` matches the change
+lines nested inside each folded row — count by testid.
+
+Round 63 — **UX batch 3 part 3; batch 3 COMPLETE** (#506-508, owner «2 ha
+kerak»). Inline edit on the DEAL and CLIENT cards, each with its own
+allowlist. Deal = `title` + `note` only (`wms/deals/inline.ts`): the QUOTE
+(amount/volume/weight/currency) carries `quoted_at`/`quoted_by`, and a
+one-field patch would skip or forge that stamp — #503 had just shown the
+cost; stage = a move, owner = a handover, client = whose job it is. Client =
+`phones` + `notes` + `salesManagerId` (`platform/clients/inline.ts`, its own
+`ClientPatchError`); the CODE stays in the form (identity on every label, act
+and payment). `phones` is jsonb, split from one line as the form always did;
+the manager is the first PICKER an inline field has had — `options` +
+`display` on `InlineField` (the box holds an id, the reader sees a name), the
+empty option is a REAL answer, and the id is checked against `users` before
+it is written (a picker's bad value is a forged post, and the FK would refuse
+it unreadably). Both facts blocks render only for whoever may WRITE — adding
+the manager and the internal notes to the read-only client view would be an
+access change in a layout change's clothes. **THE REGRESSION, mine, one round
+old:** round 61 keyed the WHOLE `LeadForm` on `updated_at`, which remounts it
+after every save and resets `useActionState` — the «✅ Saved» line vanished
+and nothing asked, until the same key on `DealForm` failed **m9v-automation**
+on `toContainText('✅')`. Fix = key the contested INPUTS
+(`key={`title-${revision}`}`), never the form; all three forms take a
+`revision` prop; a refused save now keeps every typed input for free
+(`updated_at` does not move). m9ze asserts the ✅ so the silent version cannot
+return. E2E RULE: a spec whose subject is SEEDED data must put it back, and
+the restore must be a TEST (round 57's `afterAll` lie) — m9zf captures and
+restores both records; note that a restore written after the fact restores
+what it FOUND, so the local db had to be rebuilt before this round counted as
+verified. Red-proofs ×3. No migration. **CI caught one thing this container
+structurally cannot** (#509): m9h reads the deal title back with a bare
+`getByText`, and the title is now on that card TWICE (the h1 and the editable
+fact) — strict mode refuses. It never ran here, because m9h dies earlier at
+the receipt picker, cascading off m1's photo upload. **RULE: the four
+known-failing specs (m1×2, m2×1, m9h) make everything AFTER their failure
+point unverified locally** — "fails for the known reason" is not "has nothing
+to say", and a change touching the receipt, deal or client cards needs CI to
+confirm. Fixed by scoping to the h1, and verified by measuring the claim
+instead of the spec: bare locator → 2 elements on a real deal card, scoped
+→ 1.
+
+Round 64 — **UX batch 4 part 1, the pointer split** (#510-512, owner «4
+bosqichni boshla»). An inventory BEFORE any code found batch 4's headline item
+— desktop card DnD — **already built** since #133 (`DragBoard`, hand-written
+Pointer Events, ghost, edge-scroll, optimistic through moveLead/moveDeal, e2e
+mouse drag). docs/CRM-UX.md had read «Kanban deliberately refuses drag today»,
+mistaking `draggable={false}` + `onDragStart` preventDefault (the ENABLERS —
+a native anchor drag fires `pointercancel`) for a refusal: **the fourth false
+«we lack X» claim** in this programme. THE REAL DEFECT underneath: the shape a
+viewer gets is decided by **width alone** (`md`, 768 px) and the drag armed a
+250 ms hold + `navigator.vibrate` for every non-mouse pointer — so a tablet in
+portrait had the touch drag the owner refused TWICE. Now `pointerType ===
+'mouse'` and nothing else; `(pointer: fine)` deliberately REFUSED (it answers
+about the PRIMARY pointer, so a touchscreen laptop reports fine and keeps
+dragging by hand). THE TRAP the review caught: the guard must come BEFORE
+`start.current` is armed, or a finger leaves a live origin and the drag starts
+on the next 8 px with NO hold — worse than before. Consequence handled (#511):
+the move controls lived in the phone view, so a mouse-only drag left a tablet
+on a board it could not move anything on — the ⋯ is on the desktop card too
+and the sheet was LIFTED to `KanbanBoard` (one sheet, both shapes); ungated on
+purpose, because a machine answering `fine` to the media query and «not a
+mouse» to the event would otherwise get neither door. REFUSALS (#512): `onMove`
+was typed `{ok: boolean}` so both screens dropped the service's code —
+`useMoveErrors` (literal map, #163) now names all five, carrying BOTH
+spellings (`reason_required` / `lost_reason_required`); `bulk-bar.tsx`'s
+opposite comment was REWRITTEN rather than left to disagree (a sweep's rows
+are still on screen to retry, a dragged card has no second chance). New
+`common.moveErrors.*` ×4; `crm.dragHint` reworded ×4 (the hold is gone).
+Tests: `tests/unit/kanban-pointer.test.ts` (source-shape, incl. the ORDER of
+the guard and the origin) + an e2e that dispatches a touch-typed pointer
+sequence — red-proven by stripping both guards and watching the card move. No
+migration.
+
+Round 65 — **UX batch 4 part 2, board filters; batch 4 COMPLETE** (#513-515,
+owner «4 bosqichni boshla» + «1 menimcha togri» on the money question). Both
+boards read `q` + `hodim` beside `scope`/`arxiv`. THE RULE (#513): one exported
+predicate per module (`leadTextWhere`, `dealTextWhere`) pushed into the rows
+AND into `closedLeadCounts`/`closedDealCounts` — filter the cards only and a
+column matching two jobs prints «+143 · show all» (round 47's promise,
+inverted). In SQL, never over the fetched array: open is capped at 300 and
+closed at 20, so a JS filter would answer «not found» about the newest twenty.
+Needles are the global search's `likeNeedle`/`parseQuery`, so the board finds
+what ⌘K finds (phone by last 9 digits; deals also by CLIENT CODE, which is why
+`closedDealCounts` gained the clients join). #514: four board links were
+LITERAL strings and each dropped the filter — `hrefWith(current, patch)` now
+builds them; `hodim` is read only under `crm.leads.view_all` and IGNORED
+otherwise (a URL param is a forged post), options from `salesManagerOptions()`
+never from the loaded rows. #515: the board's height is `calc(100dvh-19rem)`
+so anything above it must declare its cost — `--board-extra` (one line, or two
+with the picker). VERIFIED BY MEASURING against a stashed baseline: all three
+cases returned to the same board bottom to the pixel. The same measurement
+found a PRE-EXISTING defect: `/bitimlar` rendered a 389 px document in a 360 px
+screen because its header actions carry `shrink-0`, which refuses to narrow so
+the box never reaches a width it could wrap at — #400's page-rescale. Fixed
+with `flex-wrap` minus `shrink-0` + the cross-board door reduced to its icon on
+phones. New `crm.filterClear` ×4. Red-proof: unshare the predicate from the
+counts → the agreement test goes red. No migration. **Batch 4's last item —
+per-user card fields — is the only thing left, and the owner has answered its
+one blocking question: the deal AMOUNT stays visible to everyone, so the
+setting is show/hide per person and NOT a permission.**
+
+Round 66 — **UX batch 4 part 3; batch 4 COMPLETE** (#516-518, owner «1 menimcha
+togri» = the amount stays open to everyone). A ☰ in each board's header opens a
+`<details>` of checkboxes: which lines a CARD carries, per person.
+`platform/lists/card-fields.ts` holds the specs (lead ×7, deal ×6 incl. the
+`volume` the owner asked for and the board never had) and `visibleCardFields`,
+the one gate — mirroring batch 1's `visibleColumns`. THE RULE that makes it
+safe: `null` (nobody chose) is **today's set**, not everything and not nothing,
+so an untouched browser renders exactly the card that shipped — which is also
+why `volume` is OFF by default. An EMPTY choice survives distinctly from no
+choice (`lead=` vs absent). The card's IDENTITY (lead name, deal code+title) is
+not in the specs at all: most of the browser suite finds a board card by its
+text, so a hideable name would put every one of those specs one cookie away
+from red. NOT a permission (#516) — `/bitimlar` is gated by `canWriteDeal` with
+NO finance gate, so attaching `finance.view` to the amount would have TAKEN
+money from every seller who reads it today; the owner was asked and said keep
+it open. Storage = a COOKIE following `platform/theme` (server-read, so no
+flash; nothing in the db for the next spec to inherit, #183). Rejected and why:
+a `list_views` row costs two queries per render on the sales team's home board
+plus a bare-visit redirect, and leaves CONFIGURATION behind; `localStorage`
+cannot be server-rendered. Cost stated: per browser, so phone and desktop can
+differ — like the theme and the sidebar. The parser survives a hand-edited
+cookie (unknown board, missing `=`, truncated tail). Menu is absolute, so
+CLOSED it costs the board no height — e2e measures the board does not move when
+it opens. Red-proofs ×2 (default→everything; empty choice dropped on parse).
+`PageHeader` actions got `relative` so a popover anchors to the ROW (#471,
+round 57). No migration. NOTE: /bitimlar's header wraps to two lines at 360 px
+for `crm.manage` holders only — they get a fourth button — costing 56 px of
+board; measured and accepted.
+
+Round 67 — **UX batch 5 part 1, canned Telegram replies** (#519-523, owner
+«5 bosqichni boshla»). A `reply_templates` row (**migration 0059**) whose
+`user_id` is a person (mine) or NULL (the company's) — `list_views`'s column
+exactly, and publishing asks `admin.settings.manage` (#170, no new code); the
+checkbox is a REQUEST and the service checks again; editing/deleting somebody
+else's is a refusal. `{ism}`/`{kod}` are filled on the SERVER at the moment a
+composer is rendered for a known client (`templatesFor`), so the stored text
+stays a template and the browser is never told a customer's name to write a
+greeting; the dock fills against the id `threadClientFor` RESOLVED, so both
+composers say the same words. A placeholder the caller said nothing about is
+LEFT ALONE (≠ an empty value, which blanks itself). The ⚡ picker INSERTS,
+never replaces (#377/#419/#463's fourth hat). Screen: `/suhbatlar/shablonlar`
++ a header door. THREE things only measurement or a browser found: the hint
+string renders `{ism}` literally, so it needs the ICU escape `'{'ism'}'` or
+next-intl prints the KEY in all four locales — the i18n tripwire checks
+existence, not validity (#520); `.input` carries `min-h-12`, so a bare
+`min-h-24` textarea came back three lines (#519's cousin, #521 — tripwire
+extended, `h-28` is the idiom); and the ⚡ took the typing box **128 → 76 px**
+at 360 px, so «Yuborish» becomes ➤ below `sm` and the box measures **138 px**,
+wider than before (#522). The panel opens `left-0`, not `right-0` — a control
+110 px from the edge would put half of it off-screen (#471's third outing).
+TEST LESSON (#523): a red proof that turns a REFUSAL into a success leaves the
+row behind, so a refusal-shaped file sweeps by run-scoped TITLE, never by
+collected ids — three orphans were found by the next spec's locator matching
+two. NOT provable here: the picker inside a live composer (CI has no Telegram
+account, the same reason m9x can only prove the refusal).
+
+Round 67b — **the CI failure round 67 caused, and the sweep it earned**
+(#524-525). CI went red on `inline-edit.integration.test.ts`, a file this
+round never touched: it writes three `update` audit rows for one lead, reads
+them back with **no ORDER BY** and asserts on `rows.at(-1)`. The new test file
+added rows and rollback churn and tipped it over. MEASURED on real data: of
+the 1,166 entities with more than one `audit_log` row, **210 already come back
+out of insertion order** — `audit_log` takes no DELETEs but plenty of
+ROLLED-BACK inserts, and autovacuum frees those slots for later rows. Also:
+the local suite runs on a long-lived database whose physical layout is nothing
+like CI's fresh one. A four-lens sweep for the same shape (unordered read →
+positional access) over `src/` + `tests/`: 7 candidates, **4 confirmed**.
+(a) **login** (#525) — `or(phone, username)` + `limit(1)` is not unique
+because the two columns are unique SEPARATELY; fail-closed (the session only
+ever follows the hash that validated), so the symptom is a colleague refused
+with the RIGHT password at random. `findUserByIdentifier` asks twice and the
+**phone wins**, stated. RED-PROOF LESSON: the first fixture inserted the phone
+holder first and passed WITH the defect — a non-deterministic bug does not
+fail on demand, so the fixture must make the broken version deterministic
+(username holder inserted first, assertion repeated ×10).
+(b) **`clientsForChat`** — `chatLocale` takes the FIRST client with a language,
+so a broker chat could answer in a different language between two presses;
+ordered by oldest link. Cosmetic: everything that could show wrong data
+consumes that list as a SET.
+(c) **`m3-planning`'s `makeLot`** — callers read the array positionally and
+`recordVerdict` reserves the LOWEST `seq_in_lot`, so a reordered read would
+plan one box and scan another. Ordered by seq.
+Refuted, worth recording: client-history's `findFirst` (client_code is
+uniquely indexed + `[A-Z0-9]{2,10}` on every write path), `staffByPhone`
+(matches on `phone`, `notNull().unique()`), the plan's crate-conflict read
+(multi-row but consumed as a set).
+
+Round 68 — **the second speed round** (#526-527, owner «qotyabti, ayniqsa
+crmda bitim bilan» + «pullar hisob kitobi togri yuritilyabtimi audit qil»).
+Round 45's method rerun on his data: the deals board issued ~120 statements
+per render — `dealsNeedingAttention` ran `dealReality` PER OPEN DEAL
+(2 aggregates each) plus a `findFirst` per priced deal for the quotedWeightKg
+that `listDeals` didn't carry. Serial awaits, linear in his deal count = the
+freeze he reported. Now `dealRealitiesFor(dealIds)` = ONE pair of
+`GROUP BY deal_id` aggregates (absent deal → zero object); `listDeals` grew
+`quotedWeightKg`; the client card's deals panel rides the same function.
+Measured: /bitimlar 120 → **17 statements**. RULE (#432 restated): a per-row
+aggregate on a list screen must be one grouped query — a list's length is the
+business growing. **The real PHONE freeze was /stock** (#527): ~450 rows ×
+photo ≈ 10,000 DOM nodes, `domInteractive` **4.8 s** at 4× CPU throttle,
+server innocent (165 ms / 28 queries), no test red. Fix pages the RENDER not
+the fetch: query+sort+Σ+XLSX still cover the whole filtered set, `<tbody>`
+shows 120 rows, prev/next are plain links, `page` joined `CONTROL_PARAMS`
+(a saved view must not store a position). Measured after: **989 ms / 2,696
+nodes**. REJECTED with reasons: `content-visibility:auto` (ignored on
+table-internal boxes), SQL LIMIT/OFFSET (the JS sort over derived columns
+would sort each page separately — #513's lie in pagination's clothes).
+MEASUREMENT NOTE: count statements by grepping `execute`, not `duration:` —
+parse/bind lines inflate the naive count ~3×. The money AUDIT ran as a
+4-lens adversarial workflow the same day — findings in round 69.
+
+Round 69 — **the money audit** (#528-533, owner «pullar hisob kitobi togri
+yuritilyabtimi audit qil»). Four-lens adversarial workflow (client money /
+partner money / costs-tannarx / reports), per-finding verify-to-refute: 21
+candidates, 20 confirmed ≈ 15 distinct, 1 refuted. THE PATTERN: nearly every
+live bug was a PAIR RULE enforced in one direction only (#528). Fixed, each
+red-proven: **voidPartnerTx** on a derived charge now unlinks the cost/expense
+payer in-tx — before, any recompute RESURRECTED the cancelled debt under the
+original enterer's name; chargeForCost now re-prices a live charge when the
+cost was re-priced (FX drift); voidCostEntry became ONE transaction (#529).
+**voidReceipt** refuses `receipt_has_costs` (money first, #288's rule; cascade
+rejected — a warehouse button must not void money); the engine's receipt scope
+excludes void boxes and lot-edit shrink recomputes immediately (#530). **The
+deferral gate hole** (#531): #251's netting joins on client_transactions.
+deal_id and NO form could write it — dead code on real data, gate open on
+stale sums; payment form gained the deal select, action parses it, service
+refuses a foreign deal, `payment-deal-wire.test.ts` pins both wire halves
+source-shape. RULE (3rd appearance): a service-level test of a form-fed path
+proves the service, not the system. **Reports** (#532): grid customs now
+STAMP their batch (attribution not scope) so profitByBatch sees them
+(historical rows stay unattributed, stated); profitByClient = union of both
+sides; companyBalance keeps retired tills with money (⚠ row); payments XLSX
+kassa matches its screen; `notLaterLeg` stops «shu reysgacha» reading the
+future. **Gates** (#533): account_currency_mismatch at all three money doors;
+recurring slot gained WAREHOUSE (two rents, one category — second never
+posted, home counter mirrors the fix); paymentsRegister total aggregated
+in SQL + «newest N of M» on screen and file; grid hint marks unconverted
+cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
+batches row (the stamp's FK) — in_transit + departedAt, route check needs
+two warehouses.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
-above. Still unmeasured: the phone-side render on a real device over a real
-mobile network (everything here was measured on localhost, so the numbers
-are server time, not what a warehouse phone feels).
+above (and continued in round 68 with the phone-side numbers it lacked).
 
 **Agreed next (owner, 2026-07-27):** photos to Drive — ~1–1.5 GB in MinIO,
 nothing of it backed up, needs an incremental sync (a full nightly copy fills a

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -67,6 +67,7 @@ const madeAccounts: string[] = [];
 const madeTypes: string[] = [];
 /** Minted here so no other suite's currency can decide these assertions. */
 const TEST_CCY = 'QAA';
+const DRIFT_CCY = 'QAC';
 const NO_RATE_CCY = 'QAB';
 
 beforeAll(async () => {
@@ -101,8 +102,8 @@ afterAll(async () => {
     await db.delete(moneyAccounts).where(inArray(moneyAccounts.id, madeAccounts));
   }
   if (madeTypes.length) await db.delete(partnerTypes).where(inArray(partnerTypes.id, madeTypes));
-  await db.delete(fxRates).where(inArray(fxRates.currency, [TEST_CCY, NO_RATE_CCY]));
-  await db.delete(currencies).where(inArray(currencies.code, [TEST_CCY, NO_RATE_CCY]));
+  await db.delete(fxRates).where(inArray(fxRates.currency, [TEST_CCY, NO_RATE_CCY, DRIFT_CCY]));
+  await db.delete(currencies).where(inArray(currencies.code, [TEST_CCY, NO_RATE_CCY, DRIFT_CCY]));
   await pgClient.end();
 });
 
@@ -832,5 +833,106 @@ describe('what the audit found', () => {
     const rows = await listPartners({ includeInactive: true });
     const grouped = groupPartnersByType(rows, await listPartnerTypes(true));
     expect(grouped.flatMap((g) => g.rows).some((row) => row.id === id)).toBe(true);
+  });
+});
+
+describe('the pair rule holds in BOTH directions', () => {
+  it('voiding the derived charge takes the payer off the cost, and the recompute stays quiet', async () => {
+    const partnerId = await newPartner('Bekor qilingan qarz');
+    const [type] = await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1);
+    const [batch] = await db
+      .insert(batches)
+      .values({
+        code: `PV-${STAMP}`,
+        originWarehouseId: warehouseId,
+        destWarehouseId,
+        status: 'forming',
+        createdBy: actorId,
+      })
+      .returning();
+    madeBatches.push(batch!.id);
+
+    const entry = await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: batch!.id,
+        costTypeId: type!.id,
+        amount: 900,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'weight',
+        partnerId,
+        note: 'Fura — firma keyin rad etdi',
+      },
+      ctx(),
+    );
+    madeCosts.push(entry.id);
+    expect(await partnerBalanceUsd(partnerId)).toBe(900);
+
+    // The accountant voids the DEBT from the ledger — the firm does not
+    // answer for this truck. The cost must stay (it is a P&L fact) but must
+    // lose its payer…
+    const [charge] = await db
+      .select()
+      .from(partnerTransactions)
+      .where(and(eq(partnerTransactions.costEntryId, entry.id), isNull(partnerTransactions.voidedAt)));
+    await voidPartnerTx(charge!.id, 'firma rad etdi', ctx());
+    expect(await partnerBalanceUsd(partnerId)).toBe(0);
+    const [cost] = await db.select().from(costEntries).where(eq(costEntries.id, entry.id));
+    expect(cost!.partnerId).toBeNull();
+    expect(cost!.voidedAt).toBeNull();
+
+    // …because otherwise THIS is what resurrected it: any FX save or a batch
+    // departure re-runs the recompute, and the recompute re-derives a charge
+    // for every partner-named cost. The void must survive the sweep.
+    await recomputeAll({ batchId: batch!.id });
+    expect(await partnerBalanceUsd(partnerId)).toBe(0);
+    const live = await db
+      .select()
+      .from(partnerTransactions)
+      .where(and(eq(partnerTransactions.costEntryId, entry.id), isNull(partnerTransactions.voidedAt)));
+    expect(live).toHaveLength(0);
+  });
+
+  it('re-pricing the cost re-prices the derived charge — the debt follows its cost', async () => {
+    const partnerId = await newPartner('Kurs drift');
+    const [type] = await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1);
+    const [batch] = await db
+      .insert(batches)
+      .values({
+        code: `PD-${STAMP}`,
+        originWarehouseId: warehouseId,
+        destWarehouseId,
+        status: 'forming',
+        createdBy: actorId,
+      })
+      .returning();
+    madeBatches.push(batch!.id);
+    await db.insert(currencies).values({ code: DRIFT_CCY, name: 'Drift test' }).onConflictDoNothing();
+    await upsertFxRate({ currency: DRIFT_CCY, rateToUsd: 0.25, effectiveDate: '2020-01-01' }, ctx());
+
+    const entry = await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: batch!.id,
+        costTypeId: type!.id,
+        amount: 100,
+        currency: DRIFT_CCY,
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'weight',
+        partnerId,
+      },
+      ctx(),
+    );
+    madeCosts.push(entry.id);
+    expect(await partnerBalanceUsd(partnerId)).toBe(25);
+
+    // The rate was typed wrong and corrected. The P&L follows the recompute;
+    // the firm's account must not go on holding yesterday's number.
+    await upsertFxRate({ currency: DRIFT_CCY, rateToUsd: 0.5, effectiveDate: '2020-01-01' }, ctx());
+    await recomputeAll({ currency: DRIFT_CCY });
+    const [cost] = await db.select().from(costEntries).where(eq(costEntries.id, entry.id));
+    expect(cost!.amountUsd).toBe('50.00');
+    expect(await partnerBalanceUsd(partnerId)).toBe(50);
   });
 });

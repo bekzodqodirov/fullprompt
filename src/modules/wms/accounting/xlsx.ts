@@ -87,8 +87,18 @@ export async function buildCashFlowXlsx(from: string, to: string, locale?: strin
   head.font = { bold: true };
   sheet.columns = [{ width: 34 }, { width: 16 }];
 
+  // The SAME list the cash-flow screen translates — a label the screen knows
+  // and the file prints raw is the screen and its download disagreeing.
   const name = (label: string) =>
-    label === 'clientPayments' ? L.clientPayments : label === 'cargoCosts' ? L.cargoCosts : label;
+    label === 'clientPayments'
+      ? L.clientPayments
+      : label === 'cargoCosts'
+        ? L.cargoCosts
+        : label === 'partnerIn'
+          ? L.partnerIn
+          : label === 'partnerOut'
+            ? L.partnerOut
+            : label;
   for (const row of flow.rows) {
     sheet.addRow([name(row.label), row.kind === 'in' ? row.amountUsd : -row.amountUsd]);
   }
@@ -237,7 +247,7 @@ export async function buildExpensesXlsx(
  */
 export async function buildPaymentsXlsx(from: string, to: string, locale?: string): Promise<Buffer> {
   const L = reportLabels(locale);
-  const { rows, totalUsd } = await paymentsRegister(from, to);
+  const { rows, totalUsd, count, truncated } = await paymentsRegister(from, to);
   const workbook = new ExcelJS.Workbook();
   const sheet = sheetSetup(workbook, 'Payments', `${L.clientPayments} · ${period(from, to)}`);
 
@@ -257,12 +267,21 @@ export async function buildPaymentsXlsx(from: string, to: string, locale?: strin
       Number(row.amount),
       row.currency,
       Number(row.amountUsd),
-      row.accountName ?? '',
+      // The reestr screen's own rule: a settlement paid through a partner's
+      // account is NOT the same fact as an unplaced payment, and the file the
+      // accountant reconciles the tills against must not blur them.
+      row.accountName ?? (row.partnerName ? `→ ${row.partnerName}` : ''),
       row.enteredBy ?? '',
       row.note ?? '',
     ]);
   }
   const total = sheet.addRow([L.total, '', '', '', '', totalUsd]);
   total.font = { bold: true };
+  // No silent caps: the rows above are the newest 2000, the total the whole
+  // period — the file must say so or a clipped list reads as complete.
+  if (truncated) {
+    const warn = sheet.addRow([`⚠ ${rows.length} / ${count}`]);
+    warn.font = { bold: true };
+  }
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

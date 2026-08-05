@@ -95,7 +95,7 @@ expiry is dead code), PostHog telemetry on by default.
 |---|---|
 | Global search EXISTS: client code/name, box short code, receipt no, product zh/ru, combined `gs777-a` | `src/app/(protected)/search/page.tsx`, linked from `(protected)/layout.tsx` app bar. MISSING: leads, deals, batches, kontragent, phone-number lookup, Ctrl+K palette |
 | Stage colours EXIST, user-editable, 7-colour fixed palette | `crm/stage-color.ts` (`STAGE_CLASS`), `lead_stages.color` / `deal_stages.color` + DB CHECK, pickers in `crm/settings/forms.tsx` and `bitimlar/etaplar/stage-form.tsx` |
-| Kanban deliberately refuses drag today | `components/kanban.tsx` (`draggable={false}` + `onDragStart` preventDefault); owner refused TOUCH drag twice (round 14). Batch 4 adds POINTER-FINE-ONLY DnD; move buttons stay |
+| **Desktop card DnD EXISTS and always did** — hand-written Pointer Events (`DragBoard`), drag ghost, edge auto-scroll, optimistic move through `moveLead`/`moveDeal`, proven by an e2e mouse drag. The inventory line here USED to read «Kanban deliberately refuses drag today», reading `draggable={false}` + `onDragStart` preventDefault as a refusal when they are what make the pointer drag WORK (a native anchor drag fires `pointercancel`). Fourth false «we lack X» claim in this programme — corrected in round 64 | `components/kanban.tsx` `DragBoard`, `tests/e2e/m8-crm.desktop.spec.ts`; DECISIONS #133, #149 |
 | `leads.ownerId` AND `deals.ownerId` exist, indexed | `platform/db/schema/wms.ts` — bulk-assign has its columns |
 | `lost_reason` on leads AND deals, mandatory via UI | schema + stage movers |
 | XLSX builder + route pattern to extend | `wms/accounting/xlsx.ts`, `/api/clients/xlsx`, `/api/accounting/[kind]` |
@@ -200,7 +200,33 @@ export selection. Stage moves go through `moveLead`/`moveDeal` one by one
 so audit + `LeadStageChanged`/`DealStageChanged` + phase-7 rules fire
 (round 26: EVERY stage write path emits) — never a bare UPDATE.
 
-### Batch 3 — Card ease (~1–2 rounds)
+### Batch 3 — Card ease — **COMPLETE (rounds 61-63)**
+
+**Part 1 (round 61), the lead card.** The design was reviewed before any code
+and came back **unsound**: there were no read-only facts on any of the three
+rails to make editable (see DECISIONS #500). What shipped is the lead card's
+missing facts block plus inline edit on its four text fields.
+
+**Part 2 (round 62), the history.** The batch's second half as originally
+written — «consecutive field-change rows collapse in the lenta» — rested on a
+false premise: field changes were never in the lenta, they are in the History
+tab. Told to the owner, who answered «ozing togri deb bilganingni qil», so it
+was re-aimed at History. Reading that tab first found the round's real work:
+`updateLead` and `updateDeal` audited a hard-coded handful of their columns, so
+the trail on the two busiest CRM cards had been recording the wrong thing since
+they shipped (DECISIONS #502-503). Grouping, field-name translation and the
+lead card's first History panel followed (#504-505).
+
+**Part 3 (round 63), the deal and client cards.** Each got its own allowlist
+rather than a copy of the lead's (DECISIONS #506). The deal takes `title` and
+`note` only: the quote carries the name and date of whoever gave it, and a
+one-field patch would skip or forge that stamp. The client takes the three the
+owner named — phone, sales manager, note — while the CODE stays in the form.
+The sales manager is the first picker an inline field has had. Found on the
+way and fixed: round 61's whole-form `key` was resetting each form's own
+«saved» line (#507).
+
+The original scope:
 
 Inline click-to-edit on the facts rails of client/lead/deal cards: click a
 field → in-place control → autosave on blur/Enter → toast; a refusal
@@ -208,24 +234,70 @@ renders the reason AND keeps the typed value. Permissions and audit
 exactly as today's forms. Lenta polish: consecutive field-change rows
 collapse («+N o'zgarish», expandable); relative time + absolute tooltip.
 
-### Batch 4 — Kanban (~1 round)
+### Batch 4 — Kanban — **COMPLETE (rounds 64-66)**
 
-Desktop-only card DnD via `(pointer: fine)` (the `components/composer.ts`
-detection pattern); touch keeps the move buttons — the owner refused touch
-drag twice and chose this split explicitly. Optimistic move, revert +
-reason on refusal; writes through `moveLead`/`moveDeal`. Card-field config
-(summa, kub, hodim, 💬 badge) per user. Board quick filters (hodim +
-text). Column colours already exist — do not rebuild them.
+The approved text asked for «desktop-only card DnD via `(pointer: fine)`».
+An inventory before any code found the drag ALREADY BUILT (see the table
+above) — and found the real defect underneath it. Which board a viewer gets
+is decided by **viewport width alone** (`md`, 768 px), and the desktop drag
+armed a 250 ms hold for every pointer that was not a mouse. A tablet in
+portrait is 768 px, so it had hold-to-drag: the gesture the owner refused
+twice, shipping since round 14 (DECISIONS #510).
+
+Shipped in round 64: the drag is a mouse's alone; the desktop card grew the
+⋯ move sheet, because taking the drag from a finger otherwise leaves a
+tablet on a board it cannot move anything on (#511); and a refused move
+finally says WHICH refusal it was instead of the word «error» (#512).
+
+`(pointer: fine)` was deliberately NOT used, and the reason is recorded:
+it answers about the PRIMARY pointer, so a touchscreen laptop reports
+`fine` and would still have dragged with a finger. `event.pointerType` is
+the honest question. The ⋯ is ungated for the mirror-image reason — a
+machine answering `fine` to a media query and «not a mouse» to the event
+would get a board with neither door.
+
+**Still open in batch 4:**
+
+- **Card-field config per user** — SHIPPED in round 66. A ☰ in each board's
+  header; the specs and the one gate live in `platform/lists/card-fields.ts`.
+  The default is TODAY's card, so an untouched browser sees no change, and the
+  card's identity (lead name, deal code+title) is not switchable at all. NOT a
+  permission: the owner confirmed the deal amount stays visible to everyone who
+  can open the board, since `/bitimlar` has no finance gate and attaching one
+  would have taken money away from people who read it today. Stored in a cookie
+  (server-read, no flash) rather than a `list_views` row or localStorage
+  (DECISIONS #516-518).
+
+
+- **Board quick filters (hodim + text)** — SHIPPED in round 65. One shared
+  predicate per module reaches the rows AND the closed counts, so the «+N ·
+  show all» footer cannot lie; the filtering is in SQL because the lists are
+  capped; every board link is rebuilt from the live params; `hodim` is read
+  only under `crm.leads.view_all`. Found while measuring it: `/bitimlar`'s
+  header had been rendering a 389 px document inside a 360 px screen
+  (DECISIONS #513-515).
 
 ### Batch 5 — Polish (~1 round)
 
 **Dark mode is NOT in this batch — it already shipped** (see the inventory
-table). Telegram canned replies: shared (admin-managed) +
-personal (per Q3), `{ism}` / `{kod}` placeholders filled from the thread's
-client, a picker button in ALL composers (they are already unified).
-Empty states with a CTA; composer drafts to localStorage; a favorites
-star on clients/deals (sorts them first); a funnel-velocity report —
-time-in-stage read from `audit_log` (the data is already being written).
+table).
+
+- **Telegram canned replies** — SHIPPED in round 67. `reply_templates`
+  (migration 0059) with `list_views`'s ownership column: `user_id` NULL = the
+  company's, and publishing asks `admin.settings.manage`. `{ism}`/`{kod}` are
+  filled on the SERVER against the client the composer is open on — the
+  browser is never told a customer's name in order to write a greeting — and
+  a placeholder the caller said nothing about is left alone. Managed at
+  `/suhbatlar/shablonlar`; the ⚡ picker inserts into both composers rather
+  than replacing what is typed. Found on the way: a translated string that
+  SHOWS `{ism}` needs the ICU escape or next-intl prints the key; `.input`
+  carries `min-h-12` as well as `w-full`; and the new button cost the typing
+  box 128 → 76 px until «Yuborish» became ➤ on phones (DECISIONS #519-523).
+
+Still open in this batch: empty states with a CTA; composer drafts to
+localStorage; a favorites star on clients/deals (sorts them first); a
+funnel-velocity report — time-in-stage read from `audit_log` (the data is
+already being written).
 
 ## Cross-cutting rules (every batch)
 

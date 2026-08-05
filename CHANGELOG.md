@@ -1,5 +1,361 @@
 # CHANGELOG
 
+## Pul auditi: 15 ta kamchilik topildi va tuzatildi — 2026-08-05
+
+Siz «pullar hisob-kitobi to'g'ri yuritilyabtimi, audit qil» degan edingiz.
+To'rt yo'nalishda (mijoz qarzi, kontragent qarzi, xarajat/tannarx,
+hisobotlar) tekshirildi, har bir topilma alohida qarshi tekshiruvdan o'tdi.
+**Yaxshi yangilik: asosiy yozuvlar (to'lovlar, xarajatlar, kurslar) to'g'ri
+yuritilgan.** Kamchiliklar — juftliklarning bir tomoni va hisobotlarda edi.
+Eng muhimlari:
+
+**1. Kontragent qarzini bekor qilish o'z-o'zidan qaytib kelardi.** Xarajatdan
+kelib chiqqan qarzni registrda bekor qilsangiz, keyingi qayta hisob (kurs
+kiritilishi, fura jo'nashi) uni **qaytadan tiklab qo'yardi** — siz bekor
+qilgan qarz firma hisobiga qaytib chiqardi. Endi qarz bekor qilinsa, xarajat
+ham «to'lovchisiz» qoladi va qayta tiklanmaydi. Kurs to'g'irlanganda esa qarz
+ham xarajat bilan birga qayta narxlanadi — ikkalasi endi hech qachon farq
+qilmaydi.
+
+**2. Kechiktirilgan to'lov (otsrochka) darvozasi.** Otsrochkali bitim to'lab
+bo'lingandan keyin ham **boshqa qarzlarni kechirishda davom etardi** — sklad
+qarzdorga yukni ruxsatsiz berib yuborishi mumkin edi. Sabab: to'lov formasi
+«qaysi bitim uchun» deb so'ramasdi. Endi to'lovga bitim tanlanadi va darvoza
+to'g'ri hisoblaydi. **Otsrochkali bitim to'lovini kiritganda bitimni
+tanlashni unutmang.**
+
+**3. Prixodni bekor qilish pulini tashlab ketardi.** Bekor qilingan prixodning
+xarajatlari P&L da, tannarxda va firma qarzida **abadiy qolardi**. Endi avval
+xarajatlari bekor qilinmaguncha prixod bekor bo'lmaydi (fura qoidasi) — va
+forma endi sababini aytadi, jim qolmaydi.
+
+**4. Partiya foydasi rastamojkani ko'rmasdi.** Partiyaning o'z sahifasidagi
+jadvalga yozilgan rastamojka /accounting foyda hisobotida **hech qaysi
+partiyaga tushmasdi** — har fura o'sha summa miqdoricha foydali ko'rinardi.
+Endi jadval yozuvlari o'z partiyasiga bog'lanadi. (Eskilari bog'lanmagan —
+faqat yangilari.)
+
+**5. Jadvalga to'lovchi qo'shildi.** Rastamojka jadvalida endi «kim to'ladi»
+tanlanadi — firma to'lagan bo'lsa, qarz avtomatik yoziladi (formadagidek).
+
+**Hisobotlarda yana:** yopilgan kassadagi pul Balansdan yo'qolmasin; faqat
+xarajati bor (narxi keyin kelishilgan) mijoz foyda hisobotidan tushmasin;
+ichki reys ekrani keyingi reys rastamojkasini «shu reysgacha» deb
+ko'rsatmasin; Excel reestr kassani ekrandagidek yozsin.
+
+**Himoyalar:** boshqa valyutadagi kassaga to'lov kiritib bo'lmaydi (500$
+so'm kassasiga tushib yo'qolmasin); bitta kategoriyada ikkita ijara (YW+GZ)
+endi ikkalasi ham post bo'ladi; reestr 2000 qatordan oshsa ochiq aytadi.
+
+Har bir tuzatish testi bilan (xatosiz holda qizil bo'lishi isbotlangan).
+Migratsiya yo'q. 1046 ta ichki test, 140 ta brauzer testi.
+
+---
+
+## Tezlik: bitimlar doskasi va sklad jadvali — 2026-08-05
+
+Siz «qotyabti, ayniqsa bitim bilan» degan edingiz. Sizning
+ma'lumotlaringizning nusxasida o'lchab chiqdim — ikkita katta sabab topildi,
+ikkalasi tuzatildi.
+
+**1. Bitimlar doskasi.** Doska har ochilganda **har bir ochiq bitim uchun
+alohida 2-3 ta so'rov** yuborar ekan (og'ish belgisi uchun — «⚠ smetadan
+oshdi» belgilari). Bitim qancha ko'paysa, doska shuncha sekinlashardi — siz
+sezgan narsa aynan shu. Endi hammasi uchun **bitta umumiy so'rov**: doskaning
+bazaga murojaatlari ~120 tadan **17 taga** tushdi. Belgilar o'sha-o'sha,
+hisob o'zgargani yo'q. Mijoz kartasidagi bitimlar ro'yxati ham xuddi shu
+yo'l bilan tuzatildi.
+
+**2. Sklad jadvali.** Server tez edi, lekin telefon ~450 qatorni (har birida
+rasm bilan) birdaniga chizishga **3-4 sekund** sarflar ekan — telefonda
+qotish shu edi. Endi jadval **120 qatordan** ko'rsatiladi, pastda
+«1–120 / 456 · Keyingi →» tugmalari. Muhimi:
+
+- **Σ jami (quti, kg, m³) butun ro'yxat bo'yicha** qoladi, sahifa bo'yicha emas.
+- **Excel eksport hammasini** chiqaradi, avvalgidek.
+- Saralash butun ro'yxat bo'yicha ishlaydi, sahifalab emas.
+
+O'lchov (telefon tezligida): sklad ekrani **4.8 s → 1 s**. Doska ham,
+voronka ham yarim sekunddan tez chiziladi.
+
+Migratsiya yo'q. Pul hisob-kitobi auditi alohida ketyapti — natijasini
+alohida yozaman.
+
+---
+
+## Kirishdagi bir kamchilik va uchta tartib tuzatildi — 2026-08-05
+
+Shablonlar chiqqandan keyin testlar bir joyda qizil bo'ldi. Sababini
+qidirgandim, o'zi katta emas, lekin **bazadan ma'lumot o'qishning bir
+qoidasi** butun tizim bo'ylab buzilgan joylari chiqdi. Uchtasi topildi va
+tuzatildi.
+
+**Eng muhimi — kirish (login).** Tizim telefon raqamini **yoki** login nomini
+qabul qiladi. Ikkalasi ham takrorlanmas, lekin **alohida** takrorlanmas: bir
+odamning telefoni boshqa odamning «login nomi» bo'lib qolsa (admin qo'lda
+yozib qo'yishi mumkin), baza qaysi birini beradi — noaniq edi. Xavfsizlik
+buzilmasdi (parol tekshirilmasdan hech kim kira olmaydi), lekin **to'g'ri
+parol bilan ham «noto'g'ri» deb rad etilishi** mumkin edi — sababini hech
+qayerdan bilib bo'lmaydi. Endi **telefon raqami ustun**: avval telefon bo'yicha
+qidiriladi, keyin login nomi bo'yicha.
+
+Bu ayniqsa siz **17 ta sotuvchiga login ochganingizda** ahamiyatli — o'shanda
+raqamlar va nomlar bir vaqtda ko'p yoziladi.
+
+**Ikkinchisi — mijoz kabineti tili.** Bitta Telegram chatga bir necha mijoz
+kodi bog'langan bo'lsa (brokerlar shunday), javob qaysi tilda chiqishi
+noaniq edi — ikki bosishda ikki xil til bo'lishi mumkin. Endi **chat kimga
+ochilgan bo'lsa, o'sha mijozning tili** ustun.
+
+Uchinchisi ichki test edi, mijoz ko'rmaydi.
+
+Migratsiya yo'q. 1032 ta ichki test, 140 ta brauzer testi.
+
+---
+
+## Javob shablonlari — bir marta yozasiz, keyin bir bosasiz — 2026-08-05
+
+5-bosqich boshlandi.
+
+Kunda yigirma marta yozadigan gaplaringiz endi tayyor turadi. **Perepiski →
+⚡ Shablonlar** da yozib qo'yasiz, chatda esa yozuv oynasi yonidagi **⚡** ni
+bosib qo'yasiz.
+
+**Ikki xil shablon bor:**
+- **Butun kompaniya uchun** — buni faqat admin yozadi, hammaga chiqadi (🏢
+  belgisi bilan).
+- **O'zingizniki** — boshqa hech kim ko'rmaydi.
+
+**Matnda ikkita so'z ishlaydi:**
+- `{ism}` — mijozning ismi
+- `{kod}` — uning kodi (GS…)
+
+Masalan «Hurmatli {ism}, {kod} yukingiz Toshkent omboriga yetib keldi» deb
+yozib qo'ysangiz, chatda bosganingizda **o'sha mijozning ismi va kodi bilan**
+tushadi. Ismini o'zingiz yozib o'tirmaysiz.
+
+**Shablon yozganingizni o'chirmaydi:** oynada gap yozib turgan bo'lsangiz,
+shablon uning **davomiga** qo'shiladi, ustiga yozilmaydi.
+
+**Tartib** raqami bilan eng ko'p ishlatadiganingizni tepaga chiqarasiz.
+
+Yo'l-yo'lakay: telefonda **«Yuborish»** tugmasi endi **➤** belgisi bo'lib
+qoldi (kompyuterda so'z qolgan) — o'lchab ko'rdim, so'z 360 px li ekranda
+yozuv oynasidan 62 px olib qo'yayotgan ekan. Endi oyna avvalgidan ham keng.
+
+Migratsiya: **0059**. 1029 ta ichki test, 140 ta brauzer testi.
+
+---
+
+## Kartochkada nima ko'rinishini o'zingiz tanlaysiz — 2026-08-05
+
+4-bosqich tugadi.
+
+Lid voronkasi va bitimlar doskasining tepasida **☰** tugmasi bor. Bosasiz —
+ro'yxat chiqadi, va kartochkada qaysi qatorlar turishini belgilaysiz.
+
+**Lidda:** firma · telefon · manba · mas'ul · mijoz kodi · chat · keyingi aloqa.
+**Bitimda:** summa · mas'ul · mijoz kodi · chat · ogohlantirishlar · **kub**.
+
+**Kub yangi** — doskada ilgari yo'q edi, siz aytgan edingiz. U **o'chirilgan
+holda** turadi: yoqmaguningizcha kartochka avvalgidek ko'rinadi.
+
+**Ism va bitim raqami ro'yxatda yo'q** — ularni o'chirib bo'lmaydi. Kartochka
+qaysi ish ekanini aytmasa, u kartochka emas.
+
+**Summa hammaga ochiq qoldi**, siz aytganingizdek. Bu sozlama — ruxsat emas,
+har kim o'ziga qulay qilib qo'yadi.
+
+**Tanlov brauzerda saqlanadi** (xuddi qorong'i rejimdek), serverdan o'qiladi —
+shuning uchun sahifa ochilishi bilanoq to'g'ri chiqadi, «sakramaydi».
+Telefon va kompyuterda alohida bo'lishi mumkin.
+
+**Hech narsa tanlamasangiz — hammasi avvalgidek.** Bu ataylab: yangi sozlama
+hech kimning ekranini o'zi-o'zidan o'zgartirmasligi kerak.
+
+Migratsiya yo'q. 1011 ta ichki test, 135 ta brauzer testi.
+
+## Doskada qidiruv va hodim bo'yicha filtr — 2026-08-05
+
+4-bosqichning ikkinchi qismi. Lid voronkasida ham, bitimlar doskasida ham
+endi tepada **qidiruv katagi** bor, va hamma ishni ko'ra oladiganlar uchun
+**hodim tanlash** ro'yxati.
+
+**Qidiruv nimani topadi.** Lidda — ism, firma, telefon (oxirgi 9 raqami
+bo'yicha, xuddi umumiy qidiruvdek). Bitimda — bitim raqami, sarlavha va
+**mijoz kodi** (odam aslida shuni yozadi).
+
+**Eng muhim tafsilot.** Qidiruv **bazada** ishlaydi, ekrandagi kartalar
+ichida emas. Bu shunchaki texnik gap emas: doska yopilgan ustunlardan faqat
+oxirgi 20 tasini ko'rsatadi, ochiqlardan 300 tasini. Agar qidiruv shu
+ko'rsatilganlar ichidan izlaganda, «topilmadi» degani **bazada yo'q** emas,
+**oxirgi 20 tada yo'q** degani bo'lardi — va aynan yo'qolgan ishni
+qidirayotganda yolg'on gapirardi.
+
+**«+N · hammasini ko'rish» ham to'g'ri sanaydi.** Kartalarni filtrlab,
+sonlarni filtrlamasak, ikkita ish topilgan ustun ostida «+143» yozilib
+qolardi. Endi ikkalasi bitta savoldan hisoblanadi.
+
+**Havolalar filtrni yo'qotmaydi.** «Meniki / Hammasi» tugmalari va «+N ·
+hammasini ko'rish» havolasi ilgari qattiq yozilgan edi — biror biriga
+bossangiz yozganingiz o'chib, 400 ta filtrsiz karta yuklanardi. Endi hammasi
+filtrni o'zi bilan olib ketadi.
+
+**Ruxsat.** Faqat o'z lidlarini ko'radigan sotuvchiga hodim ro'yxati
+umuman ko'rsatilmaydi — va manzil qatoriga qo'lda `hodim=...` yozib
+qo'yilsa ham **e'tiborga olinmaydi**.
+
+**Yo'l-yo'lakay tuzatildi (bu rounddan oldingi nosozlik):** bitimlar
+doskasining tepasidagi uchta tugma 360 px ekranga sig'may, **butun sahifani
+kichraytirib** yuborardi — bu o'sha eski nosozlik turi (bosgan joyingiz
+siljib ketadi). Endi sig'adi.
+
+Migratsiya yo'q. Doskaning balandligi ekranga qarab hisoblanadi, shuning
+uchun filtr qatori qancha joy olganini o'lchab, doskani o'sha qadar
+qisqartirdim — uchala holatda ham doska aynan avvalgi joyida turibdi.
+
+## Kanban: barmoq bilan sudrash olib tashlandi, rad etilgan ko'chirish sababini aytadi — 2026-08-05
+
+4-bosqichning birinchi qismi.
+
+**Avvalo bir tuzatish.** 4-bosqichda «kompyuterda kartani sudrab ko'chirish»
+qo'shamiz deb yozgan edim. Kodni ochib ko'rilganda — **u allaqachon bor
+ekan**, ancha oldindan. Mening ro'yxatim xato bo'lgan. (Bu shu dasturda
+to'rtinchi marta shunday bo'ldi: qorong'i rejim, qidiruv, lenta va endi bu.)
+
+**Lekin ostidan haqiqiy nosozlik chiqdi.** Qaysi ko'rinish chiqishi faqat
+**ekran kengligiga** qarab hal qilinar ekan (768 piksel). Ya'ni **planshet**
+kompyuter ko'rinishini oladi — va u yerda kartani **barmoq bilan 0,25 soniya
+ushlab turib sudrash** ishlab turgan ekan, telefon ham titrab qo'yardi.
+
+Bu — siz **ikki marta rad etgan** narsa. Endi sudrash **faqat sichqoncha**
+bilan ishlaydi.
+
+**Planshet uchun.** Sudrashni olib tashlasak, planshetda kartani ko'chirish
+umuman iloji qolmasdi (tugmalar faqat telefon ko'rinishida edi). Shuning
+uchun kompyuter ko'rinishidagi kartaga ham **⋯** tugmasi qo'shildi — bosasiz,
+etaplar ro'yxati chiqadi.
+
+**Rad etilgan ko'chirish endi sababini aytadi.** Ilgari karta orqaga qaytib,
+ustida faqat **«Xatolik»** yozilardi. Beshta har xil sabab bor edi va
+hammasi bir xil so'z bilan chiqardi. Endi: «Bu ko'chirish uchun ruxsat
+yetarli emas» · «Etap o'chirilgan — sahifani yangilang» · «Kartochka
+topilmadi» · «Sababini yozish kerak». To'rt tilda.
+
+**Telefon ko'rinishi umuman o'zgarmadi.**
+
+Migratsiya yo'q. 991 ta ichki test, 124 ta brauzer testi.
+
+## Bitim va mijoz kartalari ham joyida tuzatiladigan bo'ldi — 2026-08-05
+
+3-bosqich tugadi.
+
+**Bitim kartasi.** Eng tepada **sarlavha** va **izoh** turadi — ilgari sarlavha
+faqat sahifa boshida ko'rinardi, izohni esa umuman ko'rish uchun «✏️
+Tahrirlash»ni ochish kerak edi. Endi bosasiz — tuzatasiz.
+
+**Narx, kub, kilo va valyuta ataylab qo'shilmadi.** Ular mijozga aytilgan
+va'da: kim aytgani va qachon aytgani yozib boriladi. Bir bosishda
+o'zgartiriladigan qilib qo'ysak, o'sha imzo buziladi. Narxni o'zgartirish
+o'zining formasida qoladi — kecha aynan shu imzo bilan bog'liq xatoni
+tuzatgan edik.
+
+**Mijoz kartasi.** Siz aytgan uchtasi: **telefon**, **mas'ul sotuvchi** va
+**izoh**. Endi butun formani ochib, hammasini qaytadan saqlash shart emas.
+Mas'ul sotuvchi ro'yxatdan tanlanadi va **«Не назначен»** ham haqiqiy javob —
+mijozni mas'ulsiz qoldirish mumkin.
+
+**Mijoz kodi va nomi formada qoldi** — kod har bir stikerda, har bir aktda va
+har bir to'lovda turadi, uni bir bosishda o'zgartirib bo'lmasligi kerak.
+
+**Yo'l-yo'lakay topilgan xato (o'zimniki).** Kecha lid formasi «saqlandi»
+degan **✅** belgisini ko'rsatmay qo'ygan edi — tuzatishning nojo'ya ta'siri
+edi, hech bir test buni so'ramagani uchun bilinmay qolgan. Endi uchala forma
+ham ✅ ni ko'rsatadi, va test buni tekshiradi.
+
+Migratsiya yo'q. 983 ta ichki test, 121 ta brauzer testi.
+
+## Tarix bo'limi o'qiladigan bo'ldi — va tarixning o'zi to'g'ri yozila boshladi — 2026-08-05
+
+3-bosqichning ikkinchi qismi. Siz «lentadagi bir xil o'zgarishlarni yig'ish»ni
+ma'qullagan edingiz; kodni ochib ko'rilganda **lentada maydon o'zgarishlari
+umuman yo'q ekan** — ular kartaning **«Tarix»** bo'limida turadi. Shuning uchun
+ish o'sha yerga qaratildi, va o'sha yerdan ancha jiddiyroq narsa topildi.
+
+**Eng muhimi: tarix noto'g'ri yozilayotgan ekan.**
+
+Lid kartasining «✏️ Tahrirlash» formasi **9 ta maydonni** yozadi, lekin
+tarixga faqat **3 tasini** (ism, etap, mas'ul) qayd qilardi. Ya'ni:
+
+- telefonni, firmani, manbani, izohni yoki keyingi qo'ng'iroq sanasini
+  formadan o'zgartirsangiz — **tarixda hech qanday iz qolmasdi**;
+- hech narsani o'zgartirmasdan «Saqlash» bossangiz ham — tarixga «o'zgartirdi»
+  degan qator yozilardi.
+
+Bitim kartasida ham shunday: 8 ta maydondan faqat 2 tasi yozilardi.
+**Endi ikkalasi ham haqiqatan nima o'zgarganini yozadi, o'zgarmasa —
+hech narsa yozmaydi.**
+
+**Bitimdagi narx muallifi ham tuzatildi.** Baza narxni «200.00» ko'rinishida
+saqlaydi, forma esa «200» yuboradi — dastur ularni har safar «narx
+o'zgardi» deb hisoblardi. Natijada bitimning sarlavhasini tuzatsangiz ham
+**«narxni kim va qachon aytdi»** degan yozuv siznikiga almashib ketardi.
+Endi narx faqat haqiqatan o'zgarganda qayta imzolanadi.
+
+**Yig'ish o'zi.** Bir odam bir o'tirishda (10 daqiqa ichida) bir necha
+maydonni tuzatgan bo'lsa, tarixda **bitta qator** ko'rinadi: «Bekzod
+o'zgartirdi · 3 ta o'zgarish», ostida esa nima nimaga almashgani. **Hech
+narsa yo'qolmaydi** — «3 ta yozuv» degan joyni bossangiz, har bir tuzatish
+o'z vaqti bilan alohida ochiladi.
+
+Qoidalar: ikki xil odamning ishi hech qachon birlashtirilmaydi; yaratish,
+bekor qilish va skan alohida qoladi; ko'rinadigan o'zgarish qolmagan
+qatorlar birlashtirilmaydi (aks holda «2 ta o'zgarish» yozilib, ostida bo'sh
+joy chiqardi).
+
+**Maydon nomlari tarjima qilindi.** Ilgari tarixda `nextActionAt`,
+`boxWeightKg`, `stageId` kabi texnik nomlar chiqardi. Endi «Keyingi aloqa»,
+«Quti og'irligi, kg», «Etap» — to'rt tilda. Ro'yxatda yo'q ustun o'z nomi
+bilan chiqadi (noto'g'ri nomdan ko'ra texnik nom yaxshi).
+
+**Lid kartasiga «Tarix» bo'limi qo'shildi** — ilgari u yagona karta edi
+tarixi yo'q, va aynan u endi har bir tuzatishni alohida yozadi.
+
+Migratsiya yo'q. 973 ta ichki test, 116 ta brauzer testi.
+
+## Lid kartasi: ma'lumotlar ko'rinadigan va joyida tuzatiladigan bo'ldi — 2026-08-04
+
+3-bosqichning birinchi qismi.
+
+**Muammo shu edi:** lid kartasida telefon, firma, manba, mas'ul va keyingi
+qo'ng'iroq sanasi **umuman ko'rinmasdi** — ularni ko'rish uchun «✏️ Tahrirlash»
+formasini ochib, katakning ichidan o'qish kerak edi. Ya'ni mijozga qo'ng'iroq
+qilmoqchi bo'lgan sotuvchi avval tahrirlash formasini ochardi.
+
+**Endi:** kartaning o'ng ustunida eng tepada **ma'lumotlar bloki** turadi —
+ism, telefon, firma, izoh, etap, manba, mas'ul, keyingi qo'ng'iroq. Hammasi
+bir qarashda o'qiladi.
+
+**Tuzatish ham o'sha yerda.** Ism, telefon, firma yoki izohni bosasiz — katak
+ochiladi. **«Saqlash» tugmasi faqat haqiqatan biror narsa o'zgargandagina
+chiqadi.** Bekor qilsangiz eski qiymat qoladi. Xato bo'lsa yozganingiz
+yo'qolmaydi va sabab ko'rsatiladi.
+
+**Etap, mas'ul va keyingi qo'ng'iroq sanasi ataylab bu yerda tahrirlanmaydi** —
+ular oddiy matn emas: etapni ko'chirish tarixga yoziladi va qoidalarni ishga
+tushiradi, mas'ulni almashtirish topshiriq, sana esa izohi bilan juftlikda
+yoziladi. Ular avvalgi joyida qoladi.
+
+**Ichkaridagi muhim ehtiyot chorasi.** Bir maydonni ikki joyda tahrirlash
+mumkin bo'lgani uchun, joyida tuzatgandan keyin pastdagi eski forma **eski
+qiymatni qaytarib qo'yishi** mumkin edi. Buning oldi olindi va aynan shu
+ketma-ketlik brauzer testi bilan tekshiriladi.
+
+Tekshiruv: 951 ta ichki test (7 tasi yangi; ikkita qoida himoyasiz qolganda
+qizarishi isbotlangan), 116 ta brauzer testi. Bazaga o'zgarish yo'q.
+
+**Keyingi:** bitim va mijoz kartalari uchun ham shunday qilinadi.
+
 ## «+» tugmasi: lid yoki mijoz 5 soniyada — 2026-08-04
 
 «Oson UI» rejasining 2-bosqichi tugadi.

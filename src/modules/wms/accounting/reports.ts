@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   accountTransfers,
@@ -552,9 +552,40 @@ export async function profitByClient(from: string, to: string) {
     .groupBy(costAllocations.clientId);
   const costByClient = new Map(costRows.map((row) => [row.clientId, money(row.costUsd)]));
 
-  return revenueRows
+  // The UNION of both sides, not the revenue rows alone. Keyed on revenue,
+  // the report dropped every client whose costs landed in the period while
+  // the price was agreed the month after — routine here: costs are booked at
+  // receipt and load, the charge when the truck is priced — so the totals row
+  // was missing real cost and total profit read high by exactly that much,
+  // while the P&L on the SAME hub counted every entry by cost_date. A client
+  // with cost and no revenue is a red row, which is the point of looking.
+  const revenueByClient = new Map(revenueRows.map((row) => [row.clientId, row]));
+  const costOnly = [...costByClient.keys()].filter(
+    (clientId) => clientId !== null && !revenueByClient.has(clientId),
+  ) as string[];
+  const names = costOnly.length
+    ? await db
+        .select({ id: clients.id, clientCode: clients.clientCode, name: clients.name })
+        .from(clients)
+        .where(inArray(clients.id, costOnly))
+    : [];
+
+  return [
+    ...revenueRows.map((row) => ({
+      clientId: row.clientId,
+      clientCode: row.clientCode,
+      clientName: row.clientName,
+      revenueUsd: money(row.revenueUsd),
+    })),
+    ...names.map((row) => ({
+      clientId: row.id,
+      clientCode: row.clientCode,
+      clientName: row.name,
+      revenueUsd: 0,
+    })),
+  ]
     .map((row) => {
-      const revenue = money(row.revenueUsd);
+      const revenue = row.revenueUsd;
       const cost = costByClient.get(row.clientId) ?? 0;
       const profit = money(revenue - cost);
       return {
@@ -635,18 +666,26 @@ export async function companyBalance() {
   // costs are in CNY, contributed nothing at all to the net figure while its
   // own row printed the yuan and the words «no rate». Only a currency with no
   // rate entered anywhere stays out, which is what `balanceUsd: null` means.
-  const active = accounts.filter((account) => account.active);
+  // Retired boxes with money still in them COUNT — the partner register's
+  // lesson (#428) on the accounts side: hiding a till is a menu decision,
+  // deleting its balance from the Balans is a lie about what the company
+  // holds. An emptied retired box adds zero and is not shown; one holding
+  // money stays on the sheet, flagged, until somebody actually moves the
+  // cash out.
+  const counted = accounts.filter(
+    (account) => account.active || Math.abs(account.balance) > 0.009,
+  );
   const today = new Date().toISOString().slice(0, 10);
   const rates = new Map(
     await Promise.all(
-      [...new Set(active.map((account) => account.currency))].map(
+      [...new Set(counted.map((account) => account.currency))].map(
         async (code) => [code, await rateFor(code, today)] as const,
       ),
     ),
   );
 
   let cashUsd = 0;
-  const cashRows = active
+  const cashRows = counted
     .map((account) => {
       const boxRate = rates.get(account.currency);
       const usd = boxRate && boxRate > 0 ? account.balance * boxRate : null;
@@ -656,6 +695,7 @@ export async function companyBalance() {
         name: account.name,
         currency: account.currency,
         balance: account.balance,
+        retired: !account.active,
         /** null when no rate has been entered for that currency yet. */
         balanceUsd: usd === null ? null : Math.round(usd * 100) / 100,
       };

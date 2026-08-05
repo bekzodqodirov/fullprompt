@@ -13,11 +13,14 @@ export function TxForm({
   clientId,
   currencies,
   accounts,
+  deals,
   today,
 }: {
   clientId: string;
   currencies: string[];
   accounts: { id: string; name: string; currency: string }[];
+  /** The client's open deals — offered so a payment can name its job. */
+  deals: { id: string; code: string; title: string | null }[];
   today: string;
 }) {
   const t = useTranslations('finance');
@@ -86,10 +89,30 @@ export function TxForm({
           ))}
         </select>
       )}
+      {/* Which JOB the money answers. Optional — plenty of money arrives with
+          no deal behind it — but for a DEFERRED deal this select is the whole
+          mechanism: the handover gate nets a deferral's charges against the
+          payments that name it, and a payment that names nothing pays the
+          deferral off on paper while the gate goes on excusing other debt. */}
+      {deals.length > 0 && (
+        <select name="dealId" aria-label={t('forDeal')} className="input" defaultValue="" data-testid="tx-deal">
+          <option value="">— {t('forDeal')}</option>
+          {deals.map((deal) => (
+            <option key={deal.id} value={deal.id}>
+              {deal.code}
+              {deal.title ? ` — ${deal.title}` : ''}
+            </option>
+          ))}
+        </select>
+      )}
       <input name="note" className="input" placeholder={t('note')} maxLength={2000} />
       {state.error && (
         <p role="alert" className="text-sm font-semibold text-bad">
-          {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
+          {state.error === 'fx_missing'
+            ? t('fxMissing')
+            : state.error === 'account_currency_mismatch'
+              ? t('accountCurrencyMismatch')
+              : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

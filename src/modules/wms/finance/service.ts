@@ -52,6 +52,27 @@ export type TransactionInput = z.infer<typeof transactionSchema>;
 
 export async function addTransaction(input: TransactionInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  // A named deal must be THIS client's. The deal id steers the deferral
+  // netting (#251) — a payment parked on another client's deal would quietly
+  // re-open their handover gate — and a select's value is a forged post until
+  // the server has checked it (the inline-picker rule, #507).
+  if (input.dealId) {
+    const deal = await db.query.deals.findFirst({ where: eq(deals.id, input.dealId) });
+    if (!deal || deal.clientId !== input.clientId) throw new FinanceError('deal_mismatch');
+  }
+  // A named cash box must speak the row's currency. The till balances sum
+  // NATIVE amounts per box, so 500 USD dropped into a som till reads as 500
+  // som — ~$500 quietly vanishing from the Balans while the drawer count can
+  // never reconcile. One slip of an 86-option dropdown; refused, not trusted.
+  if (input.accountId) {
+    const [account] = await db
+      .select({ currency: moneyAccounts.currency })
+      .from(moneyAccounts)
+      .where(eq(moneyAccounts.id, input.accountId));
+    if (account && account.currency !== input.currency) {
+      throw new FinanceError('account_currency_mismatch');
+    }
+  }
   // The rate is frozen NOW — a later FX edit must not move settled money.
   // No rate for the currency yet → the accountant enters one first.
   const rate = await rateFor(input.currency, input.txDate);
@@ -291,7 +312,7 @@ export interface PaymentRegisterRow {
 export async function paymentsRegister(
   from: string,
   to: string,
-): Promise<{ rows: PaymentRegisterRow[]; totalUsd: number; count: number }> {
+): Promise<{ rows: PaymentRegisterRow[]; totalUsd: number; count: number; truncated: boolean }> {
   const rows = await db
     .select({
       id: clientTransactions.id,
@@ -323,7 +344,31 @@ export async function paymentsRegister(
     )
     .orderBy(desc(clientTransactions.txDate), desc(clientTransactions.createdAt))
     .limit(2000);
-  const totalUsd =
-    Math.round(rows.reduce((sum, row) => sum + Number(row.amountUsd), 0) * 100) / 100;
-  return { rows, totalUsd, count: rows.length };
+  // The TOTAL is aggregated over the whole period, never over the fetched
+  // slice: the rows are capped for the screen, and a «jami» computed from a
+  // silently clipped list would understate the year the moment the register
+  // outgrows the cap — while cash-flow, summing the same period uncapped,
+  // says otherwise on the next tab. No silent caps: `truncated` tells the
+  // screen and the XLSX to say «newest 2000 of N».
+  const [agg] = await db
+    .select({
+      totalUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
+      n: sql<number>`count(*)`,
+    })
+    .from(clientTransactions)
+    .where(
+      and(
+        eq(clientTransactions.type, 'payment'),
+        isNull(clientTransactions.voidedAt),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
+      ),
+    );
+  const count = Number(agg?.n ?? rows.length);
+  return {
+    rows,
+    totalUsd: Math.round(Number(agg?.totalUsd ?? 0) * 100) / 100,
+    count,
+    truncated: rows.length < count,
+  };
 }
