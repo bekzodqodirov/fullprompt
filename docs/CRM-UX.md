@@ -200,7 +200,7 @@ export selection. Stage moves go through `moveLead`/`moveDeal` one by one
 so audit + `LeadStageChanged`/`DealStageChanged` + phase-7 rules fire
 (round 26: EVERY stage write path emits) — never a bare UPDATE.
 
-### Batch 3 — Card ease — **PARTS 1-2 SHIPPED (rounds 61-62)**
+### Batch 3 — Card ease — **COMPLETE (rounds 61-63)**
 
 **Part 1 (round 61), the lead card.** The design was reviewed before any code
 and came back **unsound**: there were no read-only facts on any of the three
@@ -217,10 +217,14 @@ the trail on the two busiest CRM cards had been recording the wrong thing since
 they shipped (DECISIONS #502-503). Grouping, field-name translation and the
 lead card's first History panel followed (#504-505).
 
-**Still open in batch 3:** inline edit on the DEAL and CLIENT cards. Each needs
-its own decision about which fields leave their whole-form — the client rail's
-facts ARE a live form and the deal rail's are the deliberately un-editable
-quote-versus-actual block, so neither is a copy of the lead card's answer.
+**Part 3 (round 63), the deal and client cards.** Each got its own allowlist
+rather than a copy of the lead's (DECISIONS #506). The deal takes `title` and
+`note` only: the quote carries the name and date of whoever gave it, and a
+one-field patch would skip or forge that stamp. The client takes the three the
+owner named — phone, sales manager, note — while the CODE stays in the form.
+The sales manager is the first picker an inline field has had. Found on the
+way and fixed: round 61's whole-form `key` was resetting each form's own
+«saved» line (#507).
 
 The original scope:
 

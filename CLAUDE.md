@@ -117,14 +117,14 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1 and 2 COMPLETE, 3 parts 1-2 shipped; 4–5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1, 2 and 3 COMPLETE; 4–5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-973 unit/integration + 120 e2e, verified in CI's order on a fresh database.
+983 unit/integration + 121 e2e, verified in CI's order on a fresh database.
 Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1306,6 +1306,35 @@ test re-imports the spec with module state reset — `goto('')` then lands
 quietly on the HOME page and every locator times out blaming the wrong thing;
 m9ze asserts `cardUrl` before using it. Also: a bare `ol li` matches the change
 lines nested inside each folded row — count by testid.
+
+Round 63 — **UX batch 3 part 3; batch 3 COMPLETE** (#506-508, owner «2 ha
+kerak»). Inline edit on the DEAL and CLIENT cards, each with its own
+allowlist. Deal = `title` + `note` only (`wms/deals/inline.ts`): the QUOTE
+(amount/volume/weight/currency) carries `quoted_at`/`quoted_by`, and a
+one-field patch would skip or forge that stamp — #503 had just shown the
+cost; stage = a move, owner = a handover, client = whose job it is. Client =
+`phones` + `notes` + `salesManagerId` (`platform/clients/inline.ts`, its own
+`ClientPatchError`); the CODE stays in the form (identity on every label, act
+and payment). `phones` is jsonb, split from one line as the form always did;
+the manager is the first PICKER an inline field has had — `options` +
+`display` on `InlineField` (the box holds an id, the reader sees a name), the
+empty option is a REAL answer, and the id is checked against `users` before
+it is written (a picker's bad value is a forged post, and the FK would refuse
+it unreadably). Both facts blocks render only for whoever may WRITE — adding
+the manager and the internal notes to the read-only client view would be an
+access change in a layout change's clothes. **THE REGRESSION, mine, one round
+old:** round 61 keyed the WHOLE `LeadForm` on `updated_at`, which remounts it
+after every save and resets `useActionState` — the «✅ Saved» line vanished
+and nothing asked, until the same key on `DealForm` failed **m9v-automation**
+on `toContainText('✅')`. Fix = key the contested INPUTS
+(`key={`title-${revision}`}`), never the form; all three forms take a
+`revision` prop; a refused save now keeps every typed input for free
+(`updated_at` does not move). m9ze asserts the ✅ so the silent version cannot
+return. E2E RULE: a spec whose subject is SEEDED data must put it back, and
+the restore must be a TEST (round 57's `afterAll` lie) — m9zf captures and
+restores both records; note that a restore written after the fact restores
+what it FOUND, so the local db had to be rebuilt before this round counted as
+verified. Red-proofs ×3. No migration.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

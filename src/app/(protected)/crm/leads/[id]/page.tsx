@@ -160,14 +160,13 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       )}
 
       <Panel title={`✏️ ${tc('edit')}`} testId="lead-edit-panel">
-        {/* KEYED on the row's own timestamp. Both writers touch the same
-            columns, and this form's inputs are uncontrolled — so without the
-            key it would still be holding the values it was rendered with, and
-            pressing Save after an inline edit would put the old phone back.
-            The key remounts it with fresh defaults after every save (the
-            LinesForm precedent). */}
+        {/* The four facts above have two writers, and this form's inputs are
+            uncontrolled — so those four are keyed on the row's own timestamp
+            and get fresh defaults after an inline save. The FORM itself is not
+            keyed: remounting it would throw away its own ✅ along with the
+            stale values (found by m9v, one round later). */}
         <LeadForm
-          key={String(lead.updatedAt)}
+          revision={String(lead.updatedAt)}
           action={update}
           sources={sources.map((row) => ({ id: row.id, label: row.name }))}
           stages={stages.map((row) => ({ id: row.id, label: row.name }))}

@@ -20,16 +20,23 @@ import { useTranslations } from 'next-intl';
 export function InlineField({
   label,
   value,
+  display,
   placeholder,
   multiline,
+  options,
   editable,
   testId,
   onSave,
 }: {
   label: string;
+  /** What the box holds and what «has it changed?» compares — an id for a picker. */
   value: string;
+  /** What the reader sees, when that is not the stored value (a person's name). */
+  display?: string;
   placeholder?: string;
   multiline?: boolean;
+  /** Present ⇒ the editor is a picker rather than a box. */
+  options?: { value: string; label: string }[];
   /** False renders the fact and nothing else — the read-only reader's view. */
   editable: boolean;
   testId: string;
@@ -46,6 +53,7 @@ export function InlineField({
   const [pending, start] = useTransition();
 
   const changed = draft.trim() !== value.trim();
+  const shown = display ?? value;
 
   function open() {
     if (!editable) return;
@@ -81,13 +89,28 @@ export function InlineField({
           data-testid={`${testId}-open`}
           className={`w-full text-left text-sm ${
             editable ? 'cursor-text hover:text-brand-700' : 'cursor-default'
-          } ${value ? '' : 'text-ink-400'}`}
+          } ${shown ? '' : 'text-ink-400'}`}
         >
-          {value || (editable ? (placeholder ?? '—') : '—')}
+          {shown || (editable ? (placeholder ?? '—') : '—')}
         </button>
       ) : (
         <div className="space-y-1">
-          {multiline ? (
+          {options ? (
+            <select
+              className="input !py-1 text-sm"
+              autoFocus
+              value={draft}
+              aria-label={label}
+              data-testid={`${testId}-input`}
+              onChange={(event) => setDraft(event.target.value)}
+            >
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          ) : multiline ? (
             <textarea
               className="input !py-1 text-sm"
               rows={3}

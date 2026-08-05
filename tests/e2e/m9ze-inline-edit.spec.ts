@@ -88,6 +88,11 @@ test('the ✏️ form below does not put the old value back', async ({ page }) =
   await expect(form.locator('input[name="phone"]')).toHaveValue('+998911112233');
 
   await form.locator('button[type="submit"]').first().click();
+  // The form must keep its own «saved» line. Round 61 keyed the WHOLE form on
+  // the row's timestamp to fix the value hazard, which remounted it after
+  // every save and threw this away — silently, because nothing asked.
+  await expect(form.getByText('✅')).toBeVisible({ timeout: 15_000 });
+
   await page.reload();
   await expect(page.getByTestId('lead-facts').getByTestId('fact-phone')).toContainText(
     '+998911112233',

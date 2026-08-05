@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Bitim va mijoz kartalari ham joyida tuzatiladigan bo'ldi — 2026-08-05
+
+3-bosqich tugadi.
+
+**Bitim kartasi.** Eng tepada **sarlavha** va **izoh** turadi — ilgari sarlavha
+faqat sahifa boshida ko'rinardi, izohni esa umuman ko'rish uchun «✏️
+Tahrirlash»ni ochish kerak edi. Endi bosasiz — tuzatasiz.
+
+**Narx, kub, kilo va valyuta ataylab qo'shilmadi.** Ular mijozga aytilgan
+va'da: kim aytgani va qachon aytgani yozib boriladi. Bir bosishda
+o'zgartiriladigan qilib qo'ysak, o'sha imzo buziladi. Narxni o'zgartirish
+o'zining formasida qoladi — kecha aynan shu imzo bilan bog'liq xatoni
+tuzatgan edik.
+
+**Mijoz kartasi.** Siz aytgan uchtasi: **telefon**, **mas'ul sotuvchi** va
+**izoh**. Endi butun formani ochib, hammasini qaytadan saqlash shart emas.
+Mas'ul sotuvchi ro'yxatdan tanlanadi va **«Не назначен»** ham haqiqiy javob —
+mijozni mas'ulsiz qoldirish mumkin.
+
+**Mijoz kodi va nomi formada qoldi** — kod har bir stikerda, har bir aktda va
+har bir to'lovda turadi, uni bir bosishda o'zgartirib bo'lmasligi kerak.
+
+**Yo'l-yo'lakay topilgan xato (o'zimniki).** Kecha lid formasi «saqlandi»
+degan **✅** belgisini ko'rsatmay qo'ygan edi — tuzatishning nojo'ya ta'siri
+edi, hech bir test buni so'ramagani uchun bilinmay qolgan. Endi uchala forma
+ham ✅ ni ko'rsatadi, va test buni tekshiradi.
+
+Migratsiya yo'q. 983 ta ichki test, 121 ta brauzer testi.
+
 ## Tarix bo'limi o'qiladigan bo'ldi — va tarixning o'zi to'g'ri yozila boshladi — 2026-08-05
 
 3-bosqichning ikkinchi qismi. Siz «lentadagi bir xil o'zgarishlarni yig'ish»ni

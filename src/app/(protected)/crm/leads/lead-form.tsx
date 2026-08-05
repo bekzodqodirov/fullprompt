@@ -22,12 +22,19 @@ export function LeadForm({
   stages,
   owners,
   initial,
+  revision,
   children,
 }: {
   action: (state: CrmFormState, formData: FormData) => Promise<CrmFormState>;
   sources: Option[];
   stages: Option[];
   owners: Option[];
+  /**
+   * The row's own `updated_at`, keying ONLY the four inputs the card's facts
+   * block can also write. Keying the whole form would remount it after every
+   * save and take `useActionState` — and with it the ✅ — along with it.
+   */
+  revision?: string;
   initial?: {
     name: string;
     phone: string;
@@ -48,6 +55,7 @@ export function LeadForm({
   return (
     <form action={formAction} className="card space-y-2">
       <input
+        key={`name-${revision ?? ''}`}
         name="name"
         defaultValue={initial?.name}
         placeholder={t('name')}
@@ -58,7 +66,8 @@ export function LeadForm({
       />
       <div className="flex flex-wrap gap-2">
         <input
-          name="phone"
+          key={`phone-${revision ?? ''}`}
+        name="phone"
           type="tel"
           defaultValue={initial?.phone}
           placeholder={t('phone')}
@@ -66,7 +75,8 @@ export function LeadForm({
           className="input min-w-40 flex-1"
         />
         <input
-          name="company"
+          key={`company-${revision ?? ''}`}
+        name="company"
           defaultValue={initial?.company}
           placeholder={t('company')}
           aria-label={t('company')}
@@ -109,6 +119,7 @@ export function LeadForm({
       </div>
 
       <textarea
+        key={`note-${revision ?? ''}`}
         name="note"
         defaultValue={initial?.note}
         placeholder={t('note')}
