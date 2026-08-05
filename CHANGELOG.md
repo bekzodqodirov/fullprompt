@@ -1,5 +1,57 @@
 # CHANGELOG
 
+## Pul auditi: 15 ta kamchilik topildi va tuzatildi — 2026-08-05
+
+Siz «pullar hisob-kitobi to'g'ri yuritilyabtimi, audit qil» degan edingiz.
+To'rt yo'nalishda (mijoz qarzi, kontragent qarzi, xarajat/tannarx,
+hisobotlar) tekshirildi, har bir topilma alohida qarshi tekshiruvdan o'tdi.
+**Yaxshi yangilik: asosiy yozuvlar (to'lovlar, xarajatlar, kurslar) to'g'ri
+yuritilgan.** Kamchiliklar — juftliklarning bir tomoni va hisobotlarda edi.
+Eng muhimlari:
+
+**1. Kontragent qarzini bekor qilish o'z-o'zidan qaytib kelardi.** Xarajatdan
+kelib chiqqan qarzni registrda bekor qilsangiz, keyingi qayta hisob (kurs
+kiritilishi, fura jo'nashi) uni **qaytadan tiklab qo'yardi** — siz bekor
+qilgan qarz firma hisobiga qaytib chiqardi. Endi qarz bekor qilinsa, xarajat
+ham «to'lovchisiz» qoladi va qayta tiklanmaydi. Kurs to'g'irlanganda esa qarz
+ham xarajat bilan birga qayta narxlanadi — ikkalasi endi hech qachon farq
+qilmaydi.
+
+**2. Kechiktirilgan to'lov (otsrochka) darvozasi.** Otsrochkali bitim to'lab
+bo'lingandan keyin ham **boshqa qarzlarni kechirishda davom etardi** — sklad
+qarzdorga yukni ruxsatsiz berib yuborishi mumkin edi. Sabab: to'lov formasi
+«qaysi bitim uchun» deb so'ramasdi. Endi to'lovga bitim tanlanadi va darvoza
+to'g'ri hisoblaydi. **Otsrochkali bitim to'lovini kiritganda bitimni
+tanlashni unutmang.**
+
+**3. Prixodni bekor qilish pulini tashlab ketardi.** Bekor qilingan prixodning
+xarajatlari P&L da, tannarxda va firma qarzida **abadiy qolardi**. Endi avval
+xarajatlari bekor qilinmaguncha prixod bekor bo'lmaydi (fura qoidasi) — va
+forma endi sababini aytadi, jim qolmaydi.
+
+**4. Partiya foydasi rastamojkani ko'rmasdi.** Partiyaning o'z sahifasidagi
+jadvalga yozilgan rastamojka /accounting foyda hisobotida **hech qaysi
+partiyaga tushmasdi** — har fura o'sha summa miqdoricha foydali ko'rinardi.
+Endi jadval yozuvlari o'z partiyasiga bog'lanadi. (Eskilari bog'lanmagan —
+faqat yangilari.)
+
+**5. Jadvalga to'lovchi qo'shildi.** Rastamojka jadvalida endi «kim to'ladi»
+tanlanadi — firma to'lagan bo'lsa, qarz avtomatik yoziladi (formadagidek).
+
+**Hisobotlarda yana:** yopilgan kassadagi pul Balansdan yo'qolmasin; faqat
+xarajati bor (narxi keyin kelishilgan) mijoz foyda hisobotidan tushmasin;
+ichki reys ekrani keyingi reys rastamojkasini «shu reysgacha» deb
+ko'rsatmasin; Excel reestr kassani ekrandagidek yozsin.
+
+**Himoyalar:** boshqa valyutadagi kassaga to'lov kiritib bo'lmaydi (500$
+so'm kassasiga tushib yo'qolmasin); bitta kategoriyada ikkita ijara (YW+GZ)
+endi ikkalasi ham post bo'ladi; reestr 2000 qatordan oshsa ochiq aytadi.
+
+Har bir tuzatish testi bilan (xatosiz holda qizil bo'lishi isbotlangan).
+Migratsiya yo'q. 1046 ta ichki test, 140 ta brauzer testi.
+
+---
+
 ## Tezlik: bitimlar doskasi va sklad jadvali — 2026-08-05
 
 Siz «qotyabti, ayniqsa bitim bilan» degan edingiz. Sizning

@@ -923,7 +923,9 @@
     "openLedger": "client ledger",
     "prevLegs": "before this trip",
     "costDetail": "breakdown",
-    "forDeal": "For which deal"
+    "forDeal": "For which deal",
+    "accountCurrencyMismatch": "The cash box's currency does not match the amount's",
+    "registerTruncated": "Showing the newest {shown} of {total}; the total covers the whole period."
   },
   "map": {
     "title": "Map",
@@ -1045,7 +1047,8 @@
     "balHint": "Cash + what is owed to us − what we owe. Cargo in the warehouse is not valued: it is the client's goods.",
     "noRate": "no rate",
     "partnerIn": "Received from a counterparty",
-    "partnerOut": "Paid to a counterparty"
+    "partnerOut": "Paid to a counterparty",
+    "accountCurrencyMismatch": "The cash box's currency does not match the amount's"
   },
   "crm": {
     "title": "CRM",

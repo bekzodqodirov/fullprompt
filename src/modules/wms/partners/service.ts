@@ -181,6 +181,16 @@ export type PartnerTxInput = z.infer<typeof partnerTxSchema>;
  */
 export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new PartnerError('unauthenticated');
+  // A named cash box must speak the row's currency (the ledger rule).
+  if (input.accountId) {
+    const [account] = await db
+      .select({ currency: moneyAccounts.currency })
+      .from(moneyAccounts)
+      .where(eq(moneyAccounts.id, input.accountId));
+    if (account && account.currency !== input.currency) {
+      throw new PartnerError('account_currency_mismatch');
+    }
+  }
   const rate = await rateFor(input.currency, input.txDate);
   if (rate === null) throw new PartnerError('fx_missing');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;

@@ -108,7 +108,11 @@ export function TxForm({
       <input name="note" className="input" placeholder={t('note')} maxLength={2000} />
       {state.error && (
         <p role="alert" className="text-sm font-semibold text-bad">
-          {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
+          {state.error === 'fx_missing'
+            ? t('fxMissing')
+            : state.error === 'account_currency_mismatch'
+              ? t('accountCurrencyMismatch')
+              : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

@@ -39,7 +39,7 @@ export function ReceiptCostGrid({
   rows: GridReceiptRow[];
   types: GridCostType[];
   /** `receiptId:costTypeId` → already-entered USD sum. */
-  existing: Record<string, number>;
+  existing: Record<string, { usd: number; unconverted: boolean }>;
   currencies: string[];
   defaultCurrency: string;
   today: string;
@@ -68,7 +68,7 @@ export function ReceiptCostGrid({
   const colTyped = (typeId: string) =>
     rows.reduce((sum, row) => sum + (parsed(`${row.receiptId}:${typeId}`) ?? 0), 0);
   const colDone = (typeId: string) =>
-    rows.reduce((sum, row) => sum + (existing[`${row.receiptId}:${typeId}`] ?? 0), 0);
+    rows.reduce((sum, row) => sum + (existing[`${row.receiptId}:${typeId}`]?.usd ?? 0), 0);
   const doneGrand = types.reduce((sum, type) => sum + colDone(type.id), 0);
 
   const save = () => {
@@ -147,8 +147,14 @@ export function ReceiptCostGrid({
                       ) : null}
                       {done !== undefined && (
                         // What is ALREADY on this prixod for this expense —
-                        // the guard against paying the same bill twice.
-                        <p className="num text-xs text-ink-400">≈ ${done}</p>
+                        // the guard against paying the same bill twice. A
+                        // cell holding money with no FX rate yet must not
+                        // wear an empty cell's face: «≈ $0» invited the very
+                        // double entry this hint exists to stop.
+                        <p className={`num text-xs ${done.unconverted ? 'font-semibold text-warn' : 'text-ink-400'}`}>
+                          ≈ ${done.usd}
+                          {done.unconverted && ' ⚠'}
+                        </p>
                       )}
                     </td>
                   );

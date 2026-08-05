@@ -124,7 +124,7 @@ pnpm build && pnpm e2e  # 44 e2e
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-1032 unit/integration + 140 e2e, verified in CI's order on a fresh database.
+1046 unit/integration + 140 e2e, verified in CI's order on a fresh database.
 Latest migration: **0059** (`reply_templates`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1516,6 +1516,36 @@ would sort each page separately — #513's lie in pagination's clothes).
 MEASUREMENT NOTE: count statements by grepping `execute`, not `duration:` —
 parse/bind lines inflate the naive count ~3×. The money AUDIT ran as a
 4-lens adversarial workflow the same day — findings in round 69.
+
+Round 69 — **the money audit** (#528-533, owner «pullar hisob kitobi togri
+yuritilyabtimi audit qil»). Four-lens adversarial workflow (client money /
+partner money / costs-tannarx / reports), per-finding verify-to-refute: 21
+candidates, 20 confirmed ≈ 15 distinct, 1 refuted. THE PATTERN: nearly every
+live bug was a PAIR RULE enforced in one direction only (#528). Fixed, each
+red-proven: **voidPartnerTx** on a derived charge now unlinks the cost/expense
+payer in-tx — before, any recompute RESURRECTED the cancelled debt under the
+original enterer's name; chargeForCost now re-prices a live charge when the
+cost was re-priced (FX drift); voidCostEntry became ONE transaction (#529).
+**voidReceipt** refuses `receipt_has_costs` (money first, #288's rule; cascade
+rejected — a warehouse button must not void money); the engine's receipt scope
+excludes void boxes and lot-edit shrink recomputes immediately (#530). **The
+deferral gate hole** (#531): #251's netting joins on client_transactions.
+deal_id and NO form could write it — dead code on real data, gate open on
+stale sums; payment form gained the deal select, action parses it, service
+refuses a foreign deal, `payment-deal-wire.test.ts` pins both wire halves
+source-shape. RULE (3rd appearance): a service-level test of a form-fed path
+proves the service, not the system. **Reports** (#532): grid customs now
+STAMP their batch (attribution not scope) so profitByBatch sees them
+(historical rows stay unattributed, stated); profitByClient = union of both
+sides; companyBalance keeps retired tills with money (⚠ row); payments XLSX
+kassa matches its screen; `notLaterLeg` stops «shu reysgacha» reading the
+future. **Gates** (#533): account_currency_mismatch at all three money doors;
+recurring slot gained WAREHOUSE (two rents, one category — second never
+posted, home counter mirrors the fix); paymentsRegister total aggregated
+in SQL + «newest N of M» on screen and file; grid hint marks unconverted
+cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
+batches row (the stamp's FK) — in_transit + departedAt, route check needs
+two warehouses.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

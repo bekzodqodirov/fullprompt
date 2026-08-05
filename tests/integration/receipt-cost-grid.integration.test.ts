@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
+  batches,
   boxMovements,
   boxes,
   clientTransactions,
@@ -23,6 +24,7 @@ import {
 import { createClient } from '@/modules/platform/clients/service';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import {
+  addCostEntry,
   addReceiptCostsBulk,
   batchClientCostBreakdown,
   batchLandedCostByClient,
@@ -32,6 +34,7 @@ import {
 } from '@/modules/wms/costing/service';
 import { addTransaction, paymentsRegister, voidTransaction } from '@/modules/wms/finance/service';
 import { partnerBalanceUsd } from '@/modules/wms/partners/service';
+import { profitByBatch } from '@/modules/wms/accounting/reports';
 import { buildPaymentsXlsx } from '@/modules/wms/accounting/xlsx';
 
 /**
@@ -119,6 +122,20 @@ beforeAll(async () => {
   receipt1 = await receiveCargo();
   receipt2 = await receiveCargo();
   foreignReceipt = await receiveCargo();
+  // A REAL batches row: the grid stamps every entry with the truck it was
+  // typed on (attribution for /accounting/profit), and the FK refuses a
+  // batch that does not exist — as it would in production, where the grid
+  // only renders on a batch's own page.
+  const [, secondWh] = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
+  await db.insert(batches).values({
+    id: fakeBatchId,
+    code: `RGB-${STAMP}`,
+    originWarehouseId: warehouseId,
+    destWarehouseId: secondWh!.id,
+    status: 'in_transit',
+    departedAt: new Date(),
+    createdBy: actorId,
+  });
   // Two of the three rode the truck; the third stayed on the shelf — the
   // grid must offer the two and refuse the third.
   for (const receiptId of [receipt1, receipt2]) {
@@ -166,6 +183,7 @@ afterAll(async () => {
     await db.delete(receipts).where(eq(receipts.id, id));
   }
   await db.delete(clients).where(eq(clients.id, clientId));
+  await db.delete(batches).where(eq(batches.id, fakeBatchId));
   await pgClient.end();
 });
 
@@ -200,17 +218,19 @@ describe("the accountant's grid writes ordinary cost entries", () => {
     expect(box2.totalUsd).toBe(200);
 
     const matrix = await receiptCostMatrix([receipt1, receipt2]);
-    expect(matrix.get(`${receipt1}:${type1}`)).toBe(100);
-    expect(matrix.get(`${receipt1}:${type2}`)).toBe(50);
-    expect(matrix.get(`${receipt2}:${type1}`)).toBe(200);
+    expect(matrix.get(`${receipt1}:${type1}`)).toEqual({ usd: 100, unconverted: false });
+    expect(matrix.get(`${receipt1}:${type2}`)).toEqual({ usd: 50, unconverted: false });
+    expect(matrix.get(`${receipt2}:${type1}`)).toEqual({ usd: 200, unconverted: false });
 
-    // The «shu reysgacha» split the batch-money screen prints: everything
-    // here is receipt-scope (came WITH the cargo), nothing on the truck
-    // itself yet — so the whole journey is "before this trip".
+    // The grid types THIS truck's customs, and the money screen must say so:
+    // the entries stay receipt-scope for allocation, but carry the batch as
+    // ATTRIBUTION — so «shu reysgacha» (prev legs) reads 0 and batchUsd the
+    // full sheet. Before the stamp these rows counted as money the cargo
+    // «brought with it», and /accounting/profit could not see them at all.
     const perClient = await batchLandedCostByClient(fakeBatchId);
     const mine = perClient.get(clientId)!;
     expect(mine.totalUsd).toBe(350);
-    expect(mine.batchUsd).toBe(0);
+    expect(mine.batchUsd).toBe(350);
 
     // And the tannarx opened up (the owner's «nimalar o'tirganini ko'rsam»):
     // each part named by its source, the parts summing to the whole.
@@ -218,6 +238,13 @@ describe("the accountant's grid writes ordinary cost entries", () => {
     expect(parts.length).toBe(3);
     expect(Math.round(parts.reduce((sum, part) => sum + part.usd, 0))).toBe(350);
     expect(parts.every((part) => part.source && part.source !== '—')).toBe(true);
+
+    // /accounting/profit finally sees the truck's own customs: the batch row
+    // used to show revenue against a cost column missing the very sheet typed
+    // on its page — margin overstated by the whole grid total.
+    const profitRows = await profitByBatch('2000-01-01', '2100-01-01');
+    const ours = profitRows.find((row) => row.batchId === fakeBatchId)!;
+    expect(ours.costUsd).toBe(350);
   });
 
   it("a receipt that is NOT on the batch cannot be hung with the batch's bill", async () => {
@@ -246,6 +273,70 @@ describe("the accountant's grid writes ordinary cost entries", () => {
         ),
       );
     expect(entries.length).toBe(0);
+  });
+});
+
+describe('«shu reysgacha» does not read the future', () => {
+  it("an earlier leg's money screen excludes a later leg's costs", async () => {
+    // The same boxes ride a SECOND truck a day later, and that truck carries
+    // its own $999 of batch costs. Membership is for-ever, so the FIRST
+    // leg's screen used to show the later customs inside its cost column —
+    // every internal leg read loss-making by money spent after it landed.
+    const laterBatchId = uuidv4();
+    const [, secondWh] = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
+    await db.insert(batches).values({
+      id: laterBatchId,
+      code: `RGB2-${STAMP}`,
+      originWarehouseId: warehouseId,
+      destWarehouseId: secondWh!.id,
+      status: 'in_transit',
+      departedAt: new Date(Date.now() + 60 * 60 * 1000),
+      createdBy: actorId,
+    });
+    for (const receiptId of [receipt1, receipt2]) {
+      await db.insert(boxMovements).values({
+        boxId: await boxOf(receiptId),
+        fromWarehouseId: warehouseId,
+        toWarehouseId: warehouseId,
+        fromStatus: 'in_stock',
+        toStatus: 'in_transit',
+        cause: 'batch_departed',
+        refType: 'batch',
+        refId: laterBatchId,
+        actorId,
+      });
+    }
+    const [type] = await db
+      .select({ id: costTypes.id })
+      .from(costTypes)
+      .where(eq(costTypes.active, true))
+      .limit(1);
+    await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: laterBatchId,
+        costTypeId: type!.id,
+        amount: 999,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+
+    // The first leg keeps its own story…
+    const first = (await batchLandedCostByClient(fakeBatchId)).get(clientId)!;
+    expect(first.totalUsd).toBe(350);
+    // …and the later leg tells the whole journey, earlier legs included.
+    const second = (await batchLandedCostByClient(laterBatchId)).get(clientId)!;
+    expect(second.totalUsd).toBe(1349);
+    expect(second.batchUsd).toBe(999);
+
+    await db.delete(costEntries).where(eq(costEntries.batchId, laterBatchId));
+    await db
+      .delete(boxMovements)
+      .where(and(eq(boxMovements.refType, 'batch'), eq(boxMovements.refId, laterBatchId)));
+    await db.delete(batches).where(eq(batches.id, laterBatchId));
   });
 });
 

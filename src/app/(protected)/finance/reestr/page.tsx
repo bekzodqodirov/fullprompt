@@ -33,7 +33,7 @@ export default async function PaymentsRegisterPage({
   const from = valid(params.from) ?? monthStart;
   const to = valid(params.to) ?? today;
 
-  const { rows, totalUsd, count } = await paymentsRegister(from, to);
+  const { rows, totalUsd, count, truncated } = await paymentsRegister(from, to);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -73,6 +73,11 @@ export default async function PaymentsRegisterPage({
           {count} · ${totalUsd.toFixed(2)}
         </p>
       </form>
+      {truncated && (
+        <p className="text-xs font-semibold text-warn" data-testid="register-truncated">
+          {t('registerTruncated', { shown: rows.length, total: count })}
+        </p>
+      )}
 
       <div className="card !p-0">
         <div className="overflow-x-auto">

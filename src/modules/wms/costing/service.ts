@@ -12,6 +12,7 @@ import {
   costTypes,
   crates,
   fxRates,
+  partnerTransactions,
   receiptLots,
   receipts,
 } from '../../platform/db/schema';
@@ -168,16 +169,35 @@ export async function voidCostEntry(id: string, reason: string, ctx: AuditContex
   const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, id) });
   if (!entry) throw new CostError('not_found');
   if (entry.voidedAt) throw new CostError('already_voided');
-  await db
-    .update(costEntries)
-    .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
-    .where(eq(costEntries.id, id));
-  await db.delete(costAllocations).where(eq(costAllocations.costEntryId, id));
-  // A cancelled cost cannot leave a live debt behind it: the truck we are no
-  // longer paying for must stop appearing on the transport company's account.
-  if (entry.partnerId) {
-    const { voidChargeForCost } = await import('../partners/link');
-    await voidChargeForCost(id, reason, ctx);
+  // ONE transaction, deliberately. These used to be four autocommitted
+  // statements, and a crash between the entry's void and the charge's left a
+  // live partner debt whose backing cost was gone — with no retry possible
+  // ('already_voided') and no sweep that could ever repair it. #360 added a
+  // reader-side belt for the allocation half of that window; the charge half
+  // gets the transaction, because a debt has no reader-side belt.
+  const voidedCharges = await db.transaction(async (tx) => {
+    await tx
+      .update(costEntries)
+      .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
+      .where(eq(costEntries.id, id));
+    await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, id));
+    // A cancelled cost cannot leave a live debt behind it: the truck we are
+    // no longer paying for must stop appearing on the firm's account.
+    return tx
+      .update(partnerTransactions)
+      .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
+      .where(
+        and(eq(partnerTransactions.costEntryId, id), isNull(partnerTransactions.voidedAt)),
+      )
+      .returning({ id: partnerTransactions.id });
+  });
+  for (const row of voidedCharges) {
+    await writeAudit(db, ctx, {
+      entityType: 'partner_transaction',
+      entityId: row.id,
+      action: 'void',
+      after: { reason, from: 'cost_entry', costEntryId: id },
+    });
   }
   await writeAudit(db, ctx, {
     entityType: 'cost_entry',
@@ -409,6 +429,31 @@ export interface ClientLandedCost {
  * cargo cost us end to end (China-side receipt costs included) and is the one
  * a price has to beat; `batchUsd` is what this trip added.
  */
+/**
+ * «Shu reysgacha» must not read the future. `batchMemberFilter` is
+ * membership-for-ever, so re-opening an internal leg's money screen AFTER the
+ * export departed showed the export's customs inside the internal leg's cost
+ * column — every last-month leg read loss-making by exactly the later leg's
+ * money, under a label that says «before this trip». An entry attributed to
+ * another batch counts only when that batch departed BEFORE this one did (or
+ * before now, while this one is still forming); an entry with no batch at all
+ * is cargo money and rides everywhere it always did.
+ */
+function notLaterLeg(batchId: string) {
+  return sql`(
+    ${costEntries.batchId} IS NULL
+    OR ${costEntries.batchId} = ${batchId}
+    OR EXISTS (
+      SELECT 1 FROM batches later
+      WHERE later.id = ${costEntries.batchId}
+        AND later.departed_at IS NOT NULL
+        AND later.departed_at <= coalesce(
+          (SELECT b0.departed_at FROM batches b0 WHERE b0.id = ${batchId}), now()
+        )
+    )
+  )`;
+}
+
 export async function batchLandedCostByClient(batchId: string): Promise<Map<string, ClientLandedCost>> {
   const rows = await db
     .select({
@@ -421,7 +466,9 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
     .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(and(isNull(costEntries.voidedAt), batchMemberFilter(batchId)))
+    .where(
+      and(isNull(costEntries.voidedAt), batchMemberFilter(batchId), notLaterLeg(batchId)),
+    )
     .groupBy(receipts.clientId);
 
   const out = new Map<string, ClientLandedCost>();
@@ -542,13 +589,20 @@ export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow
  * the grid's inputs so a second session never double-enters blind. Keyed
  * `receiptId:costTypeId`.
  */
-export async function receiptCostMatrix(receiptIds: string[]): Promise<Map<string, number>> {
+export async function receiptCostMatrix(
+  receiptIds: string[],
+): Promise<Map<string, { usd: number; unconverted: boolean }>> {
   if (receiptIds.length === 0) return new Map();
   const rows = await db
     .select({
       receiptId: costEntries.receiptId,
       costTypeId: costEntries.costTypeId,
       usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+      // A cell whose entry has no FX rate yet summed to «$0» — exactly the
+      // face an EMPTY cell wears, on the hint whose whole job is stopping a
+      // second session from double-entering blind (#86: unconverted money is
+      // flagged, never silently zero).
+      unconverted: sql<number>`count(*) FILTER (WHERE ${costEntries.amountUsd} IS NULL)`,
     })
     .from(costEntries)
     .where(
@@ -560,7 +614,10 @@ export async function receiptCostMatrix(receiptIds: string[]): Promise<Map<strin
     )
     .groupBy(costEntries.receiptId, costEntries.costTypeId);
   return new Map(
-    rows.map((row) => [`${row.receiptId}:${row.costTypeId}`, Math.round(Number(row.usd) * 100) / 100]),
+    rows.map((row) => [
+      `${row.receiptId}:${row.costTypeId}`,
+      { usd: Math.round(Number(row.usd) * 100) / 100, unconverted: Number(row.unconverted) > 0 },
+    ]),
   );
 }
 
@@ -619,6 +676,12 @@ export async function addReceiptCostsBulk(
         // The engine cannot tell grid from form (#398), so the payer rides
         // the same field and derives the same partner charge per entry.
         partnerId: input.partnerId,
+        // ATTRIBUTION, not scope: allocation still spreads over the RECEIPT's
+        // boxes, but the entry names the truck whose grid it was typed on —
+        // this is the truck's own customs bill, and without the stamp it
+        // landed in NO batch's profit row: /accounting/profit showed the
+        // truck's margin without the very customs typed on its own page.
+        batchId: input.batchId,
       },
       ctx,
     );
@@ -663,6 +726,7 @@ export async function batchClientCostBreakdown(
       and(
         batchMemberFilter(batchId),
         isNull(costEntries.voidedAt),
+        notLaterLeg(batchId),
         sql`${costAllocations.clientId} IS NOT NULL`,
       ),
     )

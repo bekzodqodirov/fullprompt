@@ -923,7 +923,9 @@
     "openLedger": "客户账页",
     "prevLegs": "本车次之前",
     "costDetail": "成本明细",
-    "forDeal": "对应哪笔交易"
+    "forDeal": "对应哪笔交易",
+    "accountCurrencyMismatch": "账户币种与金额币种不符",
+    "registerTruncated": "显示最新 {shown} 条（共 {total} 条）；合计为整个期间。"
   },
   "map": {
     "title": "地图",
@@ -1045,7 +1047,8 @@
     "balHint": "现金 + 应收 − 应付。仓库货物不计价：那是客户的货。",
     "noRate": "无汇率",
     "partnerIn": "合作方转入",
-    "partnerOut": "支付给合作方"
+    "partnerOut": "支付给合作方",
+    "accountCurrencyMismatch": "账户币种与金额币种不符"
   },
   "crm": {
     "title": "CRM",

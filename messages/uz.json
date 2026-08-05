@@ -923,7 +923,9 @@
     "openLedger": "mijoz kassasi",
     "prevLegs": "shu reysgacha (Xitoy ichida)",
     "costDetail": "tarkibi",
-    "forDeal": "Qaysi bitim uchun"
+    "forDeal": "Qaysi bitim uchun",
+    "accountCurrencyMismatch": "Kassa valyutasi to'lov valyutasiga mos emas",
+    "registerTruncated": "Eng yangi {shown} tasi ko'rsatildi (jami {total}); «jami» summa to'liq davr bo'yicha."
   },
   "map": {
     "title": "Xarita",
@@ -1045,7 +1047,8 @@
     "balHint": "Kassadagi pul + bizga qarzlar − bizning qarzimiz. Ombordagi yuk hisobga olinmaydi — u mijozning moli.",
     "noRate": "kurs yo‘q",
     "partnerIn": "Kontragentdan tushdi",
-    "partnerOut": "Kontragentga to‘landi"
+    "partnerOut": "Kontragentga to‘landi",
+    "accountCurrencyMismatch": "Kassa valyutasi summaga mos emas"
   },
   "crm": {
     "title": "CRM",
