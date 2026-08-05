@@ -59,11 +59,22 @@ export default async function ConversationsPage({
       <PageHeader
         title={`✈️ ${t('conversations')}`}
         actions={
-          // Their own account, connected from the screen (round 21). The
-          // person allowed to read chats is the person who may hold one.
-          <Link href="/suhbatlar/ulash" className="btn-secondary" data-testid="connect-link">
-            {t('connectTitle')}
-          </Link>
+          <>
+            {/* The sentences typed twenty times a day. Same gate as this
+                screen — whoever may answer a client may keep their own. */}
+            <Link
+              href="/suhbatlar/shablonlar"
+              className="btn-secondary"
+              data-testid="templates-link"
+            >
+              ⚡ {t('templates')}
+            </Link>
+            {/* Their own account, connected from the screen (round 21). The
+                person allowed to read chats is the person who may hold one. */}
+            <Link href="/suhbatlar/ulash" className="btn-secondary" data-testid="connect-link">
+              {t('connectTitle')}
+            </Link>
+          </>
         }
       />
 

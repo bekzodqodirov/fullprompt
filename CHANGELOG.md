@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Javob shablonlari — bir marta yozasiz, keyin bir bosasiz — 2026-08-05
+
+5-bosqich boshlandi.
+
+Kunda yigirma marta yozadigan gaplaringiz endi tayyor turadi. **Perepiski →
+⚡ Shablonlar** da yozib qo'yasiz, chatda esa yozuv oynasi yonidagi **⚡** ni
+bosib qo'yasiz.
+
+**Ikki xil shablon bor:**
+- **Butun kompaniya uchun** — buni faqat admin yozadi, hammaga chiqadi (🏢
+  belgisi bilan).
+- **O'zingizniki** — boshqa hech kim ko'rmaydi.
+
+**Matnda ikkita so'z ishlaydi:**
+- `{ism}` — mijozning ismi
+- `{kod}` — uning kodi (GS…)
+
+Masalan «Hurmatli {ism}, {kod} yukingiz Toshkent omboriga yetib keldi» deb
+yozib qo'ysangiz, chatda bosganingizda **o'sha mijozning ismi va kodi bilan**
+tushadi. Ismini o'zingiz yozib o'tirmaysiz.
+
+**Shablon yozganingizni o'chirmaydi:** oynada gap yozib turgan bo'lsangiz,
+shablon uning **davomiga** qo'shiladi, ustiga yozilmaydi.
+
+**Tartib** raqami bilan eng ko'p ishlatadiganingizni tepaga chiqarasiz.
+
+Yo'l-yo'lakay: telefonda **«Yuborish»** tugmasi endi **➤** belgisi bo'lib
+qoldi (kompyuterda so'z qolgan) — o'lchab ko'rdim, so'z 360 px li ekranda
+yozuv oynasidan 62 px olib qo'yayotgan ekan. Endi oyna avvalgidan ham keng.
+
+Migratsiya: **0059**. 1029 ta ichki test, 140 ta brauzer testi.
+
+---
+
 ## Kartochkada nima ko'rinishini o'zingiz tanlaysiz — 2026-08-05
 
 4-bosqich tugadi.

@@ -280,12 +280,24 @@ would get a board with neither door.
 ### Batch 5 — Polish (~1 round)
 
 **Dark mode is NOT in this batch — it already shipped** (see the inventory
-table). Telegram canned replies: shared (admin-managed) +
-personal (per Q3), `{ism}` / `{kod}` placeholders filled from the thread's
-client, a picker button in ALL composers (they are already unified).
-Empty states with a CTA; composer drafts to localStorage; a favorites
-star on clients/deals (sorts them first); a funnel-velocity report —
-time-in-stage read from `audit_log` (the data is already being written).
+table).
+
+- **Telegram canned replies** — SHIPPED in round 67. `reply_templates`
+  (migration 0059) with `list_views`'s ownership column: `user_id` NULL = the
+  company's, and publishing asks `admin.settings.manage`. `{ism}`/`{kod}` are
+  filled on the SERVER against the client the composer is open on — the
+  browser is never told a customer's name in order to write a greeting — and
+  a placeholder the caller said nothing about is left alone. Managed at
+  `/suhbatlar/shablonlar`; the ⚡ picker inserts into both composers rather
+  than replacing what is typed. Found on the way: a translated string that
+  SHOWS `{ism}` needs the ICU escape or next-intl prints the key; `.input`
+  carries `min-h-12` as well as `w-full`; and the new button cost the typing
+  box 128 → 76 px until «Yuborish» became ➤ on phones (DECISIONS #519-523).
+
+Still open in this batch: empty states with a CTA; composer drafts to
+localStorage; a favorites star on clients/deals (sorts them first); a
+funnel-velocity report — time-in-stage read from `audit_log` (the data is
+already being written).
 
 ## Cross-cutting rules (every batch)
 

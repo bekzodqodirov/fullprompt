@@ -1240,7 +1240,16 @@
     "disconnectFailed": "Не удалось отключить. Похоже, на сервере не применены миграции базы — попросите обновить и повторите.",
     "filterClear": "Сбросить",
     "cardChat": "Чат",
-    "cardFields": "Что на карточке"
+    "cardFields": "Что на карточке",
+    "templates": "Шаблоны",
+    "templatesTitle": "Шаблоны ответов",
+    "templateTitle": "Название",
+    "templateBody": "Текст",
+    "templateOrder": "Порядок",
+    "templateShared": "Для всей компании",
+    "templateHint": "В тексте можно писать '{'ism'}' — имя клиента, и '{'kod'}' — его код.",
+    "templateNone": "Шаблонов пока нет",
+    "templateAdd": "Новый шаблон"
   },
   "navShort": {
     "home": "Главная",

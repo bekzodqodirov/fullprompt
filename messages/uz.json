@@ -1240,7 +1240,16 @@
     "disconnectFailed": "Uzib bo'lmadi. Serverda baza migratsiyalari qo'llanmagan ko'rinadi — yangilashni so'rang va qayta urinib ko'ring.",
     "filterClear": "Tozalash",
     "cardChat": "Chat",
-    "cardFields": "Kartochkada nima"
+    "cardFields": "Kartochkada nima",
+    "templates": "Shablonlar",
+    "templatesTitle": "Javob shablonlari",
+    "templateTitle": "Nomi",
+    "templateBody": "Matn",
+    "templateOrder": "Tartib",
+    "templateShared": "Butun kompaniya uchun",
+    "templateHint": "Matnda '{'ism'}' — mijoz ismi, '{'kod'}' — uning kodi deb yozsangiz bo'ladi.",
+    "templateNone": "Hozircha shablon yo'q",
+    "templateAdd": "Yangi shablon"
   },
   "navShort": {
     "home": "Bosh",

@@ -1240,7 +1240,16 @@
     "disconnectFailed": "Could not disconnect. The server’s database migrations look unapplied — ask for an update and try again.",
     "filterClear": "Clear",
     "cardChat": "Chat",
-    "cardFields": "What is on a card"
+    "cardFields": "What is on a card",
+    "templates": "Templates",
+    "templatesTitle": "Reply templates",
+    "templateTitle": "Name",
+    "templateBody": "Text",
+    "templateOrder": "Order",
+    "templateShared": "For the whole company",
+    "templateHint": "Write '{'ism'}' for the client name and '{'kod'}' for their code.",
+    "templateNone": "No templates yet",
+    "templateAdd": "New template"
   },
   "navShort": {
     "home": "Home",

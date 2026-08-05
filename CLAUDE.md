@@ -117,15 +117,15 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-1011 unit/integration + 135 e2e, verified in CI's order on a fresh database.
-Latest migration: **0058** (`list_views`). Every numbered phase
+1029 unit/integration + 140 e2e, verified in CI's order on a fresh database.
+Latest migration: **0059** (`reply_templates`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
 Actions → driver-apk → artifact → Admin → Haydovchi ilovasi).
@@ -1434,6 +1434,33 @@ it opens. Red-proofs ×2 (default→everything; empty choice dropped on parse).
 round 57). No migration. NOTE: /bitimlar's header wraps to two lines at 360 px
 for `crm.manage` holders only — they get a fourth button — costing 56 px of
 board; measured and accepted.
+
+Round 67 — **UX batch 5 part 1, canned Telegram replies** (#519-523, owner
+«5 bosqichni boshla»). A `reply_templates` row (**migration 0059**) whose
+`user_id` is a person (mine) or NULL (the company's) — `list_views`'s column
+exactly, and publishing asks `admin.settings.manage` (#170, no new code); the
+checkbox is a REQUEST and the service checks again; editing/deleting somebody
+else's is a refusal. `{ism}`/`{kod}` are filled on the SERVER at the moment a
+composer is rendered for a known client (`templatesFor`), so the stored text
+stays a template and the browser is never told a customer's name to write a
+greeting; the dock fills against the id `threadClientFor` RESOLVED, so both
+composers say the same words. A placeholder the caller said nothing about is
+LEFT ALONE (≠ an empty value, which blanks itself). The ⚡ picker INSERTS,
+never replaces (#377/#419/#463's fourth hat). Screen: `/suhbatlar/shablonlar`
++ a header door. THREE things only measurement or a browser found: the hint
+string renders `{ism}` literally, so it needs the ICU escape `'{'ism'}'` or
+next-intl prints the KEY in all four locales — the i18n tripwire checks
+existence, not validity (#520); `.input` carries `min-h-12`, so a bare
+`min-h-24` textarea came back three lines (#519's cousin, #521 — tripwire
+extended, `h-28` is the idiom); and the ⚡ took the typing box **128 → 76 px**
+at 360 px, so «Yuborish» becomes ➤ below `sm` and the box measures **138 px**,
+wider than before (#522). The panel opens `left-0`, not `right-0` — a control
+110 px from the edge would put half of it off-screen (#471's third outing).
+TEST LESSON (#523): a red proof that turns a REFUSAL into a success leaves the
+row behind, so a refusal-shaped file sweeps by run-scoped TITLE, never by
+collected ids — three orphans were found by the next spec's locator matching
+two. NOT provable here: the picker inside a live composer (CI has no Telegram
+account, the same reason m9x can only prove the refusal).
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

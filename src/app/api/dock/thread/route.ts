@@ -9,6 +9,7 @@ import {
 } from '@/modules/wms/crm/conversations';
 import { conversationManagers, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
+import { templatesFor } from '@/modules/wms/crm/templates';
 
 /**
  * One client's thread for the dock, with the same honest reply verdict the
@@ -61,10 +62,19 @@ export async function GET(request: Request) {
     if (!verdict.ok) reason = verdict.reason;
   }
 
+  // Filled HERE, against the resolved client — the browser is never told a
+  // customer's name in order to write a greeting, and the dock's composer
+  // offers exactly what the card's composer offers.
+  const templates = await templatesFor(actor.id, {
+    name: client.name,
+    code: client.clientCode,
+  });
+
   return NextResponse.json({
     // The RESOLVED id, so the composer posts against the code that actually
     // holds the chat rather than the marker the card put on the page.
     client: { id: client.id, code: client.clientCode, name: client.name },
+    templates,
     canReply: reason === null,
     reason,
     managers,

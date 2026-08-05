@@ -1240,7 +1240,16 @@
     "disconnectFailed": "断开失败。服务器的数据库迁移似乎未执行 — 请先更新后重试。",
     "filterClear": "清除",
     "cardChat": "聊天",
-    "cardFields": "卡片显示"
+    "cardFields": "卡片显示",
+    "templates": "模板",
+    "templatesTitle": "回复模板",
+    "templateTitle": "名称",
+    "templateBody": "内容",
+    "templateOrder": "顺序",
+    "templateShared": "全公司可用",
+    "templateHint": "文本中可以写 '{'ism'}'（客户姓名）和 '{'kod'}'（客户编号）。",
+    "templateNone": "暂无模板",
+    "templateAdd": "新建模板"
   },
   "navShort": {
     "home": "首页",

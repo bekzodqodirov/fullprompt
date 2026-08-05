@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
 import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
+import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { entityHref } from '@/modules/platform/notifications/links';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
@@ -54,6 +55,8 @@ interface DockThread {
   canReply: boolean;
   reason: string | null;
   managers: string[];
+  /** Already filled for this client — `{ism}`/`{kod}` resolved server-side. */
+  templates: ReplyTemplate[];
   messages: {
     id: string;
     direction: string;
@@ -349,6 +352,15 @@ export function Dock({ canChat }: { canChat: boolean }) {
                               onChange={(event) => void attachPhoto(event.target.files)}
                             />
                           </label>
+                          {/* Inserts, never replaces: half a typed sentence
+                              plus a template means «and this too». */}
+                          <ReplyTemplates
+                            templates={thread.templates ?? []}
+                            label={t('templates')}
+                            onPick={(text) =>
+                              setBody((was) => (was.trim() ? `${was.trimEnd()}\n${text}` : text))
+                            }
+                          />
                           <textarea
                             value={body}
                             onChange={(event) => {
@@ -366,9 +378,18 @@ export function Dock({ canChat }: { canChat: boolean }) {
                             onClick={() => void send()}
                             disabled={sending || uploading || (!body.trim() && !photo)}
                             data-testid="dock-send"
-                            className="btn-primary shrink-0 px-3 disabled:opacity-50"
+                            aria-label={t('replySend')}
+                            title={t('replySend')}
+                            className="btn-primary shrink-0 !px-3 disabled:opacity-50 sm:!px-4"
                           >
-                            {sending ? t('replySending') : t('replySend')}
+                            {sending ? (
+                              '…'
+                            ) : (
+                              <>
+                                <span className="sm:hidden">➤</span>
+                                <span className="hidden sm:inline">{t('replySend')}</span>
+                              </>
+                            )}
                           </button>
                           </div>
                         </div>

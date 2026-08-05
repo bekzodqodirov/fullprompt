@@ -35,11 +35,41 @@ function classLists(source: string): string[] {
   return [...source.matchAll(/className\s*=\s*"([^"]*)"/g)].map((m) => m[1]!);
 }
 
+/**
+ * The same cascade, wearing its fourth costume: `.input` also carries
+ * `min-h-12`, so a bare `min-h-24` on a textarea that wants to be six lines
+ * tall does nothing and the box comes back at three — which is what round 67's
+ * template body did, found in a screenshot and in nothing else.
+ *
+ * The house idioms are `h-28` (ask for a HEIGHT; `min-height` is only a floor
+ * and 3rem is below it) or `!min-h-…`. Both pass. `min-h-9`/`min-h-0` are
+ * exempt: they sit beside `max-h-…` on the autogrowing composers, where losing
+ * to `min-h-12` makes the box taller, never unusable.
+ */
+const BARE_MIN_HEIGHT = /(?:^|\s)(?:[a-z]+:)?min-h-(?:1[3-9]|[2-9]\d|\[)/;
+
 describe('a width utility on .input needs the important', () => {
   const files = globSync('src/**/*.tsx');
 
   it('finds the components to check', () => {
     expect(files.length).toBeGreaterThan(50);
+  });
+
+  it('never lets a bare min-height sit on a class list that already owns one', () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8');
+      for (const list of classLists(source)) {
+        const classes = list.split(/\s+/);
+        if (!classes.some((cls) => WIDTH_OWNING.includes(cls))) continue;
+        if (!BARE_MIN_HEIGHT.test(list)) continue;
+        offenders.push(`${file}: "${list}"`);
+      }
+    }
+    expect(
+      offenders,
+      'these need `h-…` or `!min-h-…` — `.input` carries min-h-12 and wins on source order',
+    ).toEqual([]);
   });
 
   it('never lets a bare width sit on a class list that already owns its width', () => {
