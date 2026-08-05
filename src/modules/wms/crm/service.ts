@@ -9,7 +9,7 @@ import {
   leadStages,
   users,
 } from '../../platform/db/schema';
-import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
 
@@ -276,6 +276,8 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const before = await db.query.leads.findFirst({ where: eq(leads.id, id) });
   if (!before) throw new CrmError('not_found');
+  // The business columns, WITHOUT `updatedAt`: a fresh Date never equals the
+  // stored one, so diffing a value set that carries it always reports a change.
   const values = {
     name: input.name,
     phone: input.phone || null,
@@ -286,16 +288,26 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     note: input.note || null,
     nextActionAt: input.nextActionAt || null,
     nextActionNote: input.nextActionNote || null,
-    updatedAt: new Date(),
   };
-  const [row] = await db.update(leads).set(values).where(eq(leads.id, id)).returning();
-  await writeAudit(db, ctx, {
-    entityType: 'lead',
-    entityId: id,
-    action: 'update',
-    before: { name: before.name, stageId: before.stageId, ownerId: before.ownerId },
-    after: { name: values.name, stageId: values.stageId, ownerId: values.ownerId },
-  });
+  const [row] = await db
+    .update(leads)
+    .set({ ...values, updatedAt: new Date() })
+    .where(eq(leads.id, id))
+    .returning();
+  // The form writes nine columns; the audit used to record three fixed ones,
+  // so correcting a phone here left no trace while correcting it inline did —
+  // and every save wrote a row whose before equalled its after. The trail says
+  // what changed, or it says nothing.
+  const diff = diffFields(before, values);
+  if (diff) {
+    await writeAudit(db, ctx, {
+      entityType: 'lead',
+      entityId: id,
+      action: 'update',
+      before: diff.before,
+      after: diff.after,
+    });
+  }
   if (values.stageId !== before.stageId) await announceLeadStage(row!, values.stageId, ctx);
   return row!;
 }

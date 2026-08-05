@@ -200,18 +200,27 @@ export selection. Stage moves go through `moveLead`/`moveDeal` one by one
 so audit + `LeadStageChanged`/`DealStageChanged` + phase-7 rules fire
 (round 26: EVERY stage write path emits) — never a bare UPDATE.
 
-### Batch 3 — Card ease — **PART 1 SHIPPED (round 61): the lead card**
+### Batch 3 — Card ease — **PARTS 1-2 SHIPPED (rounds 61-62)**
 
-The design was reviewed before any code and came back **unsound**: there were
-no read-only facts on any of the three rails to make editable (see
-DECISIONS #500). What shipped is the lead card's missing facts block plus
-inline edit on its four text fields. Part 2 = the deal and client cards, each
-of which needs its own decision about which fields leave their whole-form.
+**Part 1 (round 61), the lead card.** The design was reviewed before any code
+and came back **unsound**: there were no read-only facts on any of the three
+rails to make editable (see DECISIONS #500). What shipped is the lead card's
+missing facts block plus inline edit on its four text fields.
 
-**Also corrected here:** the batch's second half as originally written —
-«consecutive field-change rows collapse in the lenta» — rests on a false
-premise. Field changes were never in the lenta; they are in the History tab.
-The owner has been told; it is dropped unless he wants it re-aimed at History.
+**Part 2 (round 62), the history.** The batch's second half as originally
+written — «consecutive field-change rows collapse in the lenta» — rested on a
+false premise: field changes were never in the lenta, they are in the History
+tab. Told to the owner, who answered «ozing togri deb bilganingni qil», so it
+was re-aimed at History. Reading that tab first found the round's real work:
+`updateLead` and `updateDeal` audited a hard-coded handful of their columns, so
+the trail on the two busiest CRM cards had been recording the wrong thing since
+they shipped (DECISIONS #502-503). Grouping, field-name translation and the
+lead card's first History panel followed (#504-505).
+
+**Still open in batch 3:** inline edit on the DEAL and CLIENT cards. Each needs
+its own decision about which fields leave their whole-form — the client rail's
+facts ARE a live form and the deal rail's are the deliberately un-editable
+quote-versus-actual block, so neither is a copy of the lead card's answer.
 
 The original scope:
 

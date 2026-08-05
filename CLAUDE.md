@@ -117,14 +117,14 @@ pnpm build && pnpm e2e  # 44 e2e
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
-| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1 and 2 COMPLETE, 3 part 1 shipped; 4–5 queued |
+| The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1 and 2 COMPLETE, 3 parts 1-2 shipped; 4–5 queued |
 
 ## State — 2026-08-04
 
 Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
 onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
 cut from the same tip.
-951 unit/integration + 119 e2e, verified in CI's order on a fresh database.
+973 unit/integration + 120 e2e, verified in CI's order on a fresh database.
 Latest migration: **0058** (`list_views`). Every numbered phase
 is shipped; the current round is the owner's 14-point feedback list (rounds
 46-55; round 55 = item 1, the driver app, **needs a new APK released** —
@@ -1275,6 +1275,37 @@ precedent), and m9ze presses that exact sequence. Red-proofs ×2. E2E LESSON:
 reach the card by the URL captured at creation, never through the funnel —
 the board is capped and every earlier spec adds leads to the first column.
 **Deal and client cards are part 2.**
+
+Round 62 — **UX batch 3 part 2, the history** (#502-505, owner «1 ozing togri
+deb bilganingni qil»). The approved item («collapse repeated changes in the
+lenta») was FALSE — `clientFeed` has carried no field changes since round 21;
+they live in the History tab — so it was re-aimed there and STATED. Reading
+that tab first found the round's real work: **`updateLead` writes NINE columns
+and audited a hard-coded THREE** (name/stageId/ownerId, no `diffFields`, no
+guard), so a phone/company/source/note/next-call correction through the ✏️ form
+left NO trace while the same correction made inline did — and every save wrote
+a row whose before equalled its after. `updateDeal` = same, 2 of 8. Both now
+diff their real value set, with `updatedAt` SPLIT OUT of it first (a fresh Date
+never equals the stored one → `diffFields` would never return null). **`"200.00"
+≠ "200"**: `amountChanged` string-compared the form's number against postgres's
+full-scale numeric, so `quotedAt`/`quotedBy` were re-stamped on EVERY deal save
+— fix a title, own the quote; `canonical()` through `Number()` fixes the stamp
+and the `amount: 200.00 → 200` audit line together. `groupHistory`
+(`platform/audit/history.ts`): one actor, both `update`, ≤10 min apart → one
+entry with the NET per field; never across actors, never a null actor, never a
+create/void/scan; **every row survives in a fold with its own time**; a run
+netting to EMPTY is not merged (a count over a blank box reads as a broken
+screen); badge counts lines on screen, fold counts rows. `visibleChanges` drops
+before===after for EVERY row, alone or merged, or one row would read
+differently depending on its neighbours. `AUDIT_FIELD_LABELS` translates the
+recorded columns ×4 (unknown column prints its own name); runtime key →
+anchored by `tests/unit/audit-fields.test.ts`, the fourth instance of #163.
+**The lead card gained the History panel it never had.** Red-proofs ×5. No
+migration. E2E LESSON: a failed test costs Playwright its worker and the next
+test re-imports the spec with module state reset — `goto('')` then lands
+quietly on the HOME page and every locator times out blaming the wrong thing;
+m9ze asserts `cardUrl` before using it. Also: a bare `ol li` matches the change
+lines nested inside each folded row — count by testid.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above. Still unmeasured: the phone-side render on a real device over a real

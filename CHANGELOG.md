@@ -1,5 +1,53 @@
 # CHANGELOG
 
+## Tarix bo'limi o'qiladigan bo'ldi — va tarixning o'zi to'g'ri yozila boshladi — 2026-08-05
+
+3-bosqichning ikkinchi qismi. Siz «lentadagi bir xil o'zgarishlarni yig'ish»ni
+ma'qullagan edingiz; kodni ochib ko'rilganda **lentada maydon o'zgarishlari
+umuman yo'q ekan** — ular kartaning **«Tarix»** bo'limida turadi. Shuning uchun
+ish o'sha yerga qaratildi, va o'sha yerdan ancha jiddiyroq narsa topildi.
+
+**Eng muhimi: tarix noto'g'ri yozilayotgan ekan.**
+
+Lid kartasining «✏️ Tahrirlash» formasi **9 ta maydonni** yozadi, lekin
+tarixga faqat **3 tasini** (ism, etap, mas'ul) qayd qilardi. Ya'ni:
+
+- telefonni, firmani, manbani, izohni yoki keyingi qo'ng'iroq sanasini
+  formadan o'zgartirsangiz — **tarixda hech qanday iz qolmasdi**;
+- hech narsani o'zgartirmasdan «Saqlash» bossangiz ham — tarixga «o'zgartirdi»
+  degan qator yozilardi.
+
+Bitim kartasida ham shunday: 8 ta maydondan faqat 2 tasi yozilardi.
+**Endi ikkalasi ham haqiqatan nima o'zgarganini yozadi, o'zgarmasa —
+hech narsa yozmaydi.**
+
+**Bitimdagi narx muallifi ham tuzatildi.** Baza narxni «200.00» ko'rinishida
+saqlaydi, forma esa «200» yuboradi — dastur ularni har safar «narx
+o'zgardi» deb hisoblardi. Natijada bitimning sarlavhasini tuzatsangiz ham
+**«narxni kim va qachon aytdi»** degan yozuv siznikiga almashib ketardi.
+Endi narx faqat haqiqatan o'zgarganda qayta imzolanadi.
+
+**Yig'ish o'zi.** Bir odam bir o'tirishda (10 daqiqa ichida) bir necha
+maydonni tuzatgan bo'lsa, tarixda **bitta qator** ko'rinadi: «Bekzod
+o'zgartirdi · 3 ta o'zgarish», ostida esa nima nimaga almashgani. **Hech
+narsa yo'qolmaydi** — «3 ta yozuv» degan joyni bossangiz, har bir tuzatish
+o'z vaqti bilan alohida ochiladi.
+
+Qoidalar: ikki xil odamning ishi hech qachon birlashtirilmaydi; yaratish,
+bekor qilish va skan alohida qoladi; ko'rinadigan o'zgarish qolmagan
+qatorlar birlashtirilmaydi (aks holda «2 ta o'zgarish» yozilib, ostida bo'sh
+joy chiqardi).
+
+**Maydon nomlari tarjima qilindi.** Ilgari tarixda `nextActionAt`,
+`boxWeightKg`, `stageId` kabi texnik nomlar chiqardi. Endi «Keyingi aloqa»,
+«Quti og'irligi, kg», «Etap» — to'rt tilda. Ro'yxatda yo'q ustun o'z nomi
+bilan chiqadi (noto'g'ri nomdan ko'ra texnik nom yaxshi).
+
+**Lid kartasiga «Tarix» bo'limi qo'shildi** — ilgari u yagona karta edi
+tarixi yo'q, va aynan u endi har bir tuzatishni alohida yozadi.
+
+Migratsiya yo'q. 973 ta ichki test, 116 ta brauzer testi.
+
 ## Lid kartasi: ma'lumotlar ko'rinadigan va joyida tuzatiladigan bo'ldi — 2026-08-04
 
 3-bosqichning birinchi qismi.

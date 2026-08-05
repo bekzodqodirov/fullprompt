@@ -18,6 +18,7 @@ import { LeadFacts } from './facts';
 import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
 import { TasksPanel } from '@/components/tasks-panel';
+import { HistoryTab } from '@/components/history-tab';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
 import { CardCols } from '@/components/card-cols';
@@ -192,6 +193,13 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         entityId={id}
         revalidate={`/crm/leads/${id}`}
       />
+
+      {/* The lead was the one card in the app with no history, and it is the
+          one that now records a row per corrected field. Folded, because a
+          salesperson opens this card to call somebody, not to audit it. */}
+      <Panel title={`🕓 ${tc('history')}`} testId="lead-history-panel">
+        <HistoryTab entityType="lead" entityId={id} />
+      </Panel>
           </>
         }
       />

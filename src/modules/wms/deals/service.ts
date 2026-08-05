@@ -16,7 +16,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import type { Db, Tx } from '@/modules/platform/db/client';
-import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
+import { diffFields, writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { emitEvent } from '@/modules/platform/events/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
@@ -81,6 +81,16 @@ export const dealLineSchema = z.object({
 
 const num = (value: number | null | undefined) =>
   value === null || value === undefined ? null : value.toString();
+
+/**
+ * One spelling for a stored number.
+ *
+ * `numeric(14,2)` comes back from postgres at its full scale ("200.00") while a
+ * form sends "200". Both are the same money, and every comparison in this file
+ * that forgot it treated an untouched price as a new one.
+ */
+const canonical = (value: string | null) => (value === null ? null : String(Number(value)));
+const sameNumber = (a: string | null, b: string | null) => canonical(a) === canonical(b);
 
 /** `B-000123` — a lifetime sequence, because a deal is not scoped to a warehouse. */
 async function nextDealCode(tx: Db | Tx): Promise<string> {
@@ -148,10 +158,40 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
   if (!before) throw new DealError('not_found');
 
   // Re-pricing stamps who and when: the whole point of the deal is that the
-  // number the client was told has an author and a date behind it.
+  // number the client was told has an author and a date behind it. Compared as
+  // NUMBERS — postgres hands back `numeric(14,2)` as "200.00" and the form
+  // sends "200", so a string comparison called every save a re-pricing and
+  // moved the quote's author and date onto whoever last fixed a typo.
   const amountChanged =
-    input.quotedAmount !== undefined && num(input.quotedAmount) !== before.quotedAmount;
+    input.quotedAmount !== undefined && !sameNumber(num(input.quotedAmount), before.quotedAmount);
   const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
+
+  // What the audit trail records. The old row named `amount` and `volume` only,
+  // so a retitled or re-staged deal left no trace, and the scale difference
+  // above printed `200.00 → 200` on every save.
+  const audited = {
+    title: input.title || null,
+    stageId: input.stageId ?? before.stageId,
+    ownerId: input.ownerId === undefined ? before.ownerId : input.ownerId,
+    amount: canonical(num(input.quotedAmount)),
+    volumeM3: canonical(num(input.quotedVolumeM3)),
+    weightKg: canonical(num(input.quotedWeightKg)),
+    currency: input.quotedCurrency ?? (priced ? before.quotedCurrency ?? 'USD' : null),
+    note: input.note || null,
+  };
+  const diff = diffFields(
+    {
+      title: before.title,
+      stageId: before.stageId,
+      ownerId: before.ownerId,
+      amount: canonical(before.quotedAmount),
+      volumeM3: canonical(before.quotedVolumeM3),
+      weightKg: canonical(before.quotedWeightKg),
+      currency: before.quotedCurrency,
+      note: before.note,
+    },
+    audited,
+  );
 
   await db.transaction(async (tx) => {
     await tx
@@ -170,13 +210,15 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
       })
       .where(eq(deals.id, id));
 
-    await writeAudit(tx, ctx, {
-      entityType: 'deal',
-      entityId: id,
-      action: 'update',
-      before: { amount: before.quotedAmount, volume: before.quotedVolumeM3 },
-      after: { amount: num(input.quotedAmount), volume: num(input.quotedVolumeM3) },
-    });
+    if (diff) {
+      await writeAudit(tx, ctx, {
+        entityType: 'deal',
+        entityId: id,
+        action: 'update',
+        before: diff.before,
+        after: diff.after,
+      });
+    }
   });
   const newStageId = input.stageId ?? before.stageId;
   if (newStageId !== before.stageId) await announceDealStage(before, newStageId, ctx);
