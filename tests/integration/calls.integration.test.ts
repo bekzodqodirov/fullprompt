@@ -1,14 +1,24 @@
 import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, isNull, and } from 'drizzle-orm';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { attachments, callLogs, callRecorderDevices, clients, users } from '@/modules/platform/db/schema';
+import {
+  attachments,
+  callLogs,
+  callRecorderDevices,
+  clients,
+  leads,
+  leadStages,
+  users,
+} from '@/modules/platform/db/schema';
 import { createClient } from '@/modules/platform/clients/service';
+import { convertLead } from '@/modules/wms/crm/service';
 import {
   attachCallAudio,
   callDeviceForToken,
   callsFor,
   callsForCard,
+  callsForLeadCard,
   canReadCallAudio,
   createCallDevice,
   findCallForAudio,
@@ -26,11 +36,14 @@ import {
 const SUFFIX = String(Date.now()).slice(-7);
 const CLIENT_PHONE = `+99893${SUFFIX.slice(-7)}`;
 const STRANGER_PHONE = `+99871${SUFFIX.slice(-7)}`;
+const LEAD_PHONE = `+99897${SUFFIX.slice(-7)}`;
 
 let sellerId = '';
 let otherSellerId = '';
 let clientId = '';
 let siblingId = '';
+let leadId = '';
+let convertedClientId = '';
 let deviceId = '';
 let token = '';
 let attachmentId = '';
@@ -52,9 +65,14 @@ beforeAll(async () => {
 afterAll(async () => {
   // Calls first: their attachment_id FK points at the attachments row.
   await db.delete(callLogs).where(eq(callLogs.clientId, clientId));
+  if (leadId) await db.delete(callLogs).where(eq(callLogs.leadId, leadId));
+  if (convertedClientId) await db.delete(callLogs).where(eq(callLogs.clientId, convertedClientId));
   if (attachmentId) await db.delete(attachments).where(eq(attachments.id, attachmentId));
   await db.delete(callRecorderDevices).where(inArray(callRecorderDevices.userId, [sellerId]));
-  await db.delete(clients).where(inArray(clients.id, [clientId, siblingId].filter(Boolean)));
+  if (leadId) await db.delete(leads).where(eq(leads.id, leadId));
+  await db
+    .delete(clients)
+    .where(inArray(clients.id, [clientId, siblingId, convertedClientId].filter(Boolean)));
   await pgClient.end();
 });
 
@@ -182,6 +200,59 @@ describe('the card follows the person, not the code', () => {
     expect(onSibling[0]!.clientId).toBe(clientId); // the DATA stays where it landed
     // The narrow read stays narrow — the widening belongs to the card alone.
     expect(await callsFor(siblingId, { id: sellerId, all: false })).toHaveLength(0);
+  });
+});
+
+describe("an open lead's phone is the second door (0063)", () => {
+  it("keeps a prospect's call on the lead, shows it on the lead card", async () => {
+    const [stage] = await db
+      .select({ id: leadStages.id })
+      .from(leadStages)
+      .where(eq(leadStages.kind, 'open'))
+      .limit(1);
+    leadId = (
+      await db
+        .insert(leads)
+        .values({ name: `Prospekt ${SUFFIX}`, phone: LEAD_PHONE, stageId: stage!.id, createdBy: sellerId })
+        .returning({ id: leads.id })
+    )[0]!.id;
+
+    const verdicts = await ingestCalls({ id: deviceId, userId: sellerId }, {
+      calls: [{ phone: LEAD_PHONE, direction: 'in', startedAt: Date.now() - 30_000, durationSec: 40 }],
+    });
+    expect(verdicts[0]!.matched).toBe(true);
+    const [row] = await db.select().from(callLogs).where(eq(callLogs.leadId, leadId));
+    expect(row).toBeDefined();
+    expect(row!.clientId).toBeNull();
+
+    const onLead = await callsForLeadCard({ id: leadId, phone: LEAD_PHONE }, { id: sellerId, all: false });
+    expect(onLead).toHaveLength(1);
+    expect(onLead[0]!.clientCode).toBeNull();
+  });
+
+  it("the owner's case: a lead sharing the CLIENT's phone shows the client's call", async () => {
+    // conversationClientForLead refuses this (two sibling codes = ambiguous),
+    // which blanked the lead card while the client card played the audio.
+    const onAmbiguous = await callsForLeadCard(
+      { id: leadId, phone: CLIENT_PHONE },
+      { id: sellerId, all: false },
+    );
+    expect(onAmbiguous.length).toBeGreaterThanOrEqual(1);
+    expect(onAmbiguous.some((r) => r.clientId === clientId)).toBe(true);
+  });
+
+  it('converting the lead moves its calls onto the new code', async () => {
+    const client = await convertLead(leadId, {}, ctx(sellerId));
+    convertedClientId = client.id;
+    // The call follows the person: readable by the CLIENT card's exact read.
+    const onClient = await callsFor(convertedClientId, { id: sellerId, all: false });
+    expect(onClient).toHaveLength(1);
+    // The lead key stays — the lead card's history does not go blank.
+    const [row] = await db
+      .select()
+      .from(callLogs)
+      .where(and(eq(callLogs.leadId, leadId), isNull(callLogs.clientId)));
+    expect(row).toBeUndefined();
   });
 });
 

@@ -1715,9 +1715,10 @@ export const callLogs = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id),
-    clientId: uuid('client_id')
-      .notNull()
-      .references(() => clients.id),
+    /** Nullable since 0063 — a call may belong to an open LEAD instead. */
+    clientId: uuid('client_id').references(() => clients.id),
+    /** The open lead whose phone matched (0063) — the owner's widened door. */
+    leadId: uuid('lead_id').references(() => leads.id),
     deviceId: uuid('device_id')
       .notNull()
       .references(() => callRecorderDevices.id),
@@ -1730,6 +1731,9 @@ export const callLogs = pgTable(
   },
   (t) => [
     check('call_logs_direction_check', sql`${t.direction} IN ('in', 'out')`),
+    // Every stored call names its owner — the privacy rule structurally:
+    // a number on neither the client book nor an open lead is never stored.
+    check('call_logs_owner_check', sql`${t.clientId} IS NOT NULL OR ${t.leadId} IS NOT NULL`),
     // The phone re-sends its recent log every cycle (a missed upload heals
     // that way), so the same call arriving twice must be a no-op — keyed by
     // USER, not device (0061): a device is a pairing, and revoke + re-pair

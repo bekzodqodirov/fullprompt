@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## Lead qo'ng'iroqlari: raqam yozilgan lead uchun ham yoziladi — 2026-08-06 (tun)
+
+Siz so'ragandek: telefon raqami yozilgan **ochiq lead** bo'lsa, o'sha
+raqamdan kelgan/ketgan qo'ng'iroqlar endi saqlanadi va lead kartasida
+ko'rinadi — odam hali mijoz bo'lmasidan oldin ham (migratsiya **0063**).
+Lead mijozga aylantirilganda qo'ng'iroqlari yangi kodga o'zi o'tadi.
+
+Yana bir tuzatish: bir raqamda bir nechta GS kod bo'lsa, lead kartasi
+qo'ng'iroqlarni ko'rsatmay qolar edi (chat qoidasi «kimga yozishni
+bilmayman» deb rad etardi) — endi qo'ng'iroqlar jurnali bunday rad
+etmaydi, hammasini ko'rsatadi, har qatorda qaysi kodda ekani yozilgan.
+
+Maxfiylik chegarasi o'z joyida: mijozlar bazasida ham, ochiq lead'da ham
+YO'Q raqam saqlanmaydi — shaxsiy qo'ng'iroqlar tizimga kirmaydi.
+
 ## Qo'ng'iroq ilovasi 1.1/1.2: yozuvlar endi yuklanadi — 2026-08-06 (kech)
 
 Samsung'da yozuv fayllari papkada turgani bilan ilova ularni «ko'ra olmas»

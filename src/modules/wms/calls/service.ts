@@ -1,10 +1,18 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
-import { attachments, callLogs, callRecorderDevices, clients, users } from '../../platform/db/schema';
+import {
+  attachments,
+  callLogs,
+  callRecorderDevices,
+  clients,
+  leads,
+  leadStages,
+  users,
+} from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
-import { phoneBelongsToClient, phonesOverlap } from '../client-cabinet/service';
+import { phoneBelongsToClient, phonesMatch, phonesOverlap } from '../client-cabinet/service';
 import { seesAllTg, type TgViewer } from '../crm/conversations';
 
 /**
@@ -15,10 +23,11 @@ import { seesAllTg, type TgViewer } from '../crm/conversations';
  * so the phone's own recorder writes the file and our APK ships it. This
  * module is the server half, and its two rules are the owner's two answers:
  *
- *  · **Only the client book.** A call whose number no active client holds is
- *    answered `matched: false` and NEVER stored — the tg-import rule: a
- *    hodim's personal calls are not the company's data. `call_logs.client_id
- *    NOT NULL` makes the rule structural.
+ *  · **Only the company's people.** A call is stored when its number belongs
+ *    to the client book or an OPEN lead (0063, the owner's ask) — anything
+ *    else is answered `matched: false` and NEVER stored: a hodim's personal
+ *    calls are not the company's data. The owner CHECK (client or lead,
+ *    never neither) keeps the rule structural.
  *  · **Read like Telegram.** A call is the taker's record: `callsFor` shows a
  *    manager their own calls, and the supervision set (round 33's `seesAllTg`)
  *    everything — the same eyes that read the chats.
@@ -161,10 +170,22 @@ export async function ingestCalls(
     .from(clients)
     .where(eq(clients.active, true))
     .orderBy(asc(clients.createdAt), asc(clients.clientCode));
+  // The second door (0063, owner's ask): a number written on an OPEN lead is
+  // company business before the person has a code. The NEWEST open lead wins
+  // — that is the card being worked; deterministic for 67b's reason.
+  const prospects = await db
+    .select({ id: leads.id, phone: leads.phone })
+    .from(leads)
+    .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
+    .where(and(eq(leadStages.kind, 'open'), sql`${leads.phone} IS NOT NULL`))
+    .orderBy(desc(leads.createdAt), asc(leads.id));
   const verdicts: CallVerdict[] = [];
   for (const call of input.calls) {
     const client = book.find((c) => phoneBelongsToClient(call.phone, c.phones));
-    if (!client) {
+    const lead = client
+      ? null
+      : prospects.find((p) => p.phone && phonesMatch(call.phone, p.phone));
+    if (!client && !lead) {
       verdicts.push({ phone: call.phone, startedAt: call.startedAt, matched: false });
       continue;
     }
@@ -172,7 +193,8 @@ export async function ingestCalls(
       .insert(callLogs)
       .values({
         userId: device.userId,
-        clientId: client.id,
+        clientId: client?.id ?? null,
+        leadId: lead?.id ?? null,
         deviceId: device.id,
         direction: call.direction,
         phone: call.phone,
@@ -228,8 +250,8 @@ export async function attachCallAudio(callId: string, attachmentId: string): Pro
 
 export interface CallRow {
   id: string;
-  clientId: string;
-  clientCode: string;
+  clientId: string | null;
+  clientCode: string | null;
   direction: string;
   phone: string;
   startedAt: Date;
@@ -252,8 +274,14 @@ async function callsForClients(
   clientIds: string[],
   viewer: TgViewer,
   limit: number,
+  leadId?: string,
 ): Promise<CallRow[]> {
-  if (clientIds.length === 0) return [];
+  if (clientIds.length === 0 && !leadId) return [];
+  const ownerWhere = leadId
+    ? clientIds.length > 0
+      ? or(inArray(callLogs.clientId, clientIds), eq(callLogs.leadId, leadId))
+      : eq(callLogs.leadId, leadId)
+    : inArray(callLogs.clientId, clientIds);
   return db
     .select({
       id: callLogs.id,
@@ -268,13 +296,9 @@ async function callsForClients(
     })
     .from(callLogs)
     .innerJoin(users, eq(callLogs.userId, users.id))
-    .innerJoin(clients, eq(callLogs.clientId, clients.id))
-    .where(
-      and(
-        inArray(callLogs.clientId, clientIds),
-        viewer.all ? undefined : eq(callLogs.userId, viewer.id),
-      ),
-    )
+    // LEFT since 0063: a lead-kept call has no code to name yet.
+    .leftJoin(clients, eq(callLogs.clientId, clients.id))
+    .where(and(ownerWhere, viewer.all ? undefined : eq(callLogs.userId, viewer.id)))
     .orderBy(desc(callLogs.startedAt))
     .limit(limit);
 }
@@ -308,6 +332,44 @@ export async function callsForCard(
     }
   }
   return callsForClients(ids, viewer, limit);
+}
+
+/**
+ * The LEAD card's calls: the lead's OWN kept calls plus every phone-sibling
+ * client's — WITHOUT the chat resolver's ambiguity refusal. That refusal is
+ * right for replying (one target) and wrong for a read-only log: the owner's
+ * person holds several codes on one number, `conversationClientForLead`
+ * answered null, and the lead card showed nothing while the client card
+ * played the recording.
+ */
+export async function callsForLeadCard(
+  lead: { id: string; phone: string | null },
+  viewer: TgViewer,
+  limit = 50,
+): Promise<CallRow[]> {
+  const ids: string[] = [];
+  const phone = (lead.phone ?? '').trim();
+  if (phone) {
+    const book = await db
+      .select({ id: clients.id, phones: clients.phones })
+      .from(clients)
+      .where(eq(clients.active, true));
+    for (const c of book) {
+      if (phoneBelongsToClient(phone, c.phones)) ids.push(c.id);
+    }
+  }
+  return callsForClients(ids, viewer, limit, lead.id);
+}
+
+/**
+ * A converted lead's kept calls follow the person onto their new code — the
+ * lead card keeps showing them (lead_id stays), the client card gains them.
+ */
+export async function rekeyLeadCalls(leadId: string, clientId: string) {
+  await db
+    .update(callLogs)
+    .set({ clientId })
+    .where(and(eq(callLogs.leadId, leadId), isNull(callLogs.clientId)));
 }
 
 /**
