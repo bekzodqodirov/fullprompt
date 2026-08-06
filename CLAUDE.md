@@ -121,24 +121,31 @@ pnpm build && pnpm e2e  # 44 e2e
 
 ## State — 2026-08-06
 
-Rounds 1-55 merged via PR #1; rounds 56-69 (the Frappe-UX programme + the
-second speed round + the money audit) merged via PR #3, the truck-marker
-follow-up via PR #4 — `main` is the record, and
-`claude/frappe-crm-full-prompt-vempoq` restarts from it for each new round.
-1054 unit/integration + 141 e2e, verified in CI's order on a fresh database
-(the four photo-path specs stay locally red by design — no image service in
-this container; CI is the arbiter).
-Latest migration: **0061** (calls dedup rekeyed to the USER — the
-device-keyed unique double-stored the whole first day on a revoke+re-pair). Every
-numbered phase is shipped. The driver app **still needs its v1.3 APK
-released** (Actions → driver-apk → artifact → Admin → Haydovchi ilovasi),
-and the calls round needs its FIRST APK published the same way (Actions →
+`main` is the trunk (PR #1 = rounds 1-55; PR #3 = rounds 56-69; PR #4 =
+the truck-marker follow-up; PR #5 = the calls round; PR #7 = the calls
+day-one fixes). This branch (`claude/gsr-logistics-wms-phase1-o8h4en`)
+carries rounds 70-71 on PR #6.
+1077 unit/integration + 148 e2e, verified in CI's order on a fresh database
+(in the OTHER session's container the four photo-path specs are locally red
+by design — no image service there; CI is the arbiter).
+Latest migration: **0062** (`lead_quote`; 0061 `call_dedup_by_user`, 0060
+`call_recorder` and 0059 `reply_templates` are the other session's). Every
+numbered phase is shipped; rounds 56-69 + the calls round + its day-one
+fixes were built by ANOTHER session and are on main — read
+`docs/CRM-UX.md` before touching lists, search, bulk or quick-create. The
+driver app **still needs its v1.3 APK released**
+(Actions → driver-apk → artifact → Admin → Haydovchi ilovasi), and the
+calls round needs its FIRST APK published the same way (Actions →
 calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 
-**NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
-(rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-55. The owner's last confirmed
-update was `eea3509`.
+**NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
+17 audit defects (four live money bugs), the speed rounds, rounds 46-70, the
+driver app 1.3. The owner's last confirmed update was `eea3509`.
+**Deploy note:** migrations 0058-0062 MUST land — 0058 especially — the client book, the stock table
+and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
+deploy shows those three the error page (round 52's failure, wider). Check
+`drizzle.__drizzle_migrations` after updating; fix with
+`docker compose run --rm migrate`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -1552,7 +1559,8 @@ cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
 batches row (the stamp's FK) — in_transit + departedAt, route check needs
 two warehouses.
 
-Round 70 — **qo'ng'iroq yozuvi** (#534-538, owner's five answers: client-book
+Round 70 (calls track, parallel session) — **qo'ng'iroq yozuvi** (#534-538,
+owner's five answers: client-book
 only / read like Telegram / from install day / iPhone planned-not-built /
 accounts stay phone+password). Migration 0060: `call_recorder_devices` +
 `call_logs` (`client_id NOT NULL` = the tg-import privacy rule structural;
@@ -1592,13 +1600,75 @@ day-one duplicates) and `findCallForAudio` now scopes by user, or a
 re-paired phone's audio would 404 for ever. Local-only e2e note: a SECOND
 full run on the same db leaves two in-transit m3 batches whose truck
 markers can stack on a warehouse pin and intercept m9c's click — fresh-db
-runs (and CI) are green. APK v1.1 the same evening (#540): scoped storage
+runs (and CI) are green. APK v1.1 the same evening (#549): scoped storage
 made the File-API finder answer «nothing» on his Samsung while the files
 sat in Recordings/Call — MediaStore-first + resolver streaming, the
 privacy fence now folder-says-call OR name-carries-number, and the audio
 pass's counters live on the app screen (a silent pass cost the day). The
 server was exonerated by scripts/dev-call-audio-probe.mjs — the APK's
 exact wire shape, green end-to-end locally.
+
+Round 70 — the owner's four items after the merges (#540-544 — renumbered
+THRICE: #500-504 collided with round 61, #534-538 with the calls round,
+#539-543 with its day-one fixes; every merge re-reads the file's tail). Two
+REGRESSIONS from the other session's work: the client book's XLSX had lost
+its phone column (`optional` is a rule about a narrow table, not about a
+file — `exportColumns` now answers the export's own question, permission
+filter unchanged in both branches), and round 55's CHANGELOG heading had
+been overwritten so the driver-app entry hung under «kod va bazada hech
+narsa o'zgarmadi». REMOVED at his word: inline edit of the lead NAME («nomni
+ustiga bosib o'zgartirish … umuman olib tashla») — off the JSX AND out of
+`INLINE_LEAD_FIELDS`, since a control removed from a screen while the action
+still accepts the field is hidden, not removed; the name is the card's h1 so
+nothing is hidden; phone/company/note keep theirs. FIXED, measured on a clone
+of his data: the bulk-select freeze — 298 open leads × BOTH board shapes
+mounted (`md:hidden` is CSS) = 596 live cards, and a `useState<Set>` in the
+parent re-rendered all of them per tick: **135-400 ms → 35-66 ms** (the
+33 ms measurement floor). `useSelection()` = a store with per-id
+subscriptions (`useSyncExternalStore`, the composer's pattern); the board's
+`selection` prop identity never changes so a tick does not reach it; the bar
+reads ids at press time. Source-shape tripwire `tests/unit/board-selection.test.ts`
+— both versions work, so nothing about behaviour can see it. RULE:
+**per-item state over hundreds of live nodes belongs outside the component
+that renders them.** STUDIED, no code (his «kodni yozma oldin hammasini
+aniqlashtirib ol»): board filters — 383 leads / 1,692 clients, a
+four-condition filter with text search + join runs in 0.99 ms, and the
+`hodim` filter already works the right way (URL → server query), so the
+database is not the question for years; price/kg/kub exist on a DEAL and not
+on a lead, so the two boards cannot carry the same filter set. His answers
+awaited before building.
+
+Round 71 — his four answers arrived, all built (#545-547). (1) **The lead
+took money** («ha pul kerak … hisoblatish bosqichidan keyin bizning
+serviceimiz narxi yozilishi kerak va shu narx yutildimi yo'qmi etapiga
+o'tadi» — his override of #108): migration **0062** adds (renumbered
+twice — 0060 and 0061 both went to the calls work)
+`quoted_amount/currency/volume_m3/weight_kg` to `leads`, additive/nullable;
+one `quoteValues` helper writes toFixed(2)/(3) so a re-save diffs to
+nothing (#503's rule — integration test asserts NO audit row); currency
+USD only when priced; the form gained a quote row (`lead-quote-amount`),
+the facts rail a read-only line, the CARD a green price line — the one
+DELIBERATE break of #517's «null = yesterday's card» stillness, stated in
+card-fields.test; «Bitim ochish» on a won lead prefills the deal form,
+only when the lead's client matches the preset (#514). (2+3+4) **The
+filter panel on BOTH kanbans** (`board-filter.tsx`): manba/dan/gacha/
+narx/kub/kg ranges + lenta search; `readBoardFilters` validates
+everything out of the URL (#514 — number/date/uuid or dropped);
+`leadBoardWhere`/`dealBoardWhere` are the ONE predicate each, consumed by
+rows AND closed counts (#513 at design time, red-proven by unsharing);
+lenta = EXISTS over crm_activities + the record's own note, deliberately
+NOT tg_messages (#383's fence); every combination savable as a round-57
+view — ViewBar now on /crm and /bitimlar with a bare-visit default
+redirect. MOBILE (his «UI UX ga juda katta etibor»): on phones the panel
+is a FIXED bottom sheet above the tab bar; anchored `top-full` it
+overflowed the viewport — e2e went green after a z-index fix and only the
+360×800 SCREENSHOT showed the apply button below the fold (#547: green
+for a robot ≠ reachable for a thumb); chips under the search row remove
+one filter each, whole chip = the link. e2e m9zh (3 tests, serial): real
+form → price on card → panel narrows → chip restores → saved view →
+view deleted as a final TEST. NOTE: this branch's DECISIONS numbers collided twice
+(round 61's #500-504, then the calls round's #534-538); rounds 70-71 now
+hold **#540-548**.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

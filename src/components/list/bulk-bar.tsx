@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
+import type { Selection } from './selection';
 
 export interface BulkStage {
   id: string;
@@ -30,22 +31,27 @@ export interface BulkOutcome {
  * move without it whatever this screen sends.
  */
 export function BulkBar({
-  count,
+  selection,
   stages,
   owners,
   onMove,
   onAssign,
-  onClear,
 }: {
-  count: number;
+  /**
+   * The tick store (round 70). The bar reads the COUNT from it and the ids at
+   * press time — the board's parent no longer holds either, which is what
+   * stopped a tick from re-rendering 596 cards.
+   */
+  selection: Selection;
   stages: BulkStage[];
   /** Only the leads board has an owner to hand work to. */
   owners?: { id: string; name: string }[];
-  onMove: (stageId: string, reason: string) => Promise<BulkOutcome>;
-  onAssign?: (ownerId: string) => Promise<BulkOutcome>;
-  onClear: () => void;
+  onMove: (ids: string[], stageId: string, reason: string) => Promise<BulkOutcome>;
+  onAssign?: (ids: string[], ownerId: string) => Promise<BulkOutcome>;
 }) {
   const t = useTranslations('lists');
+  const count = selection.useCount();
+  const onClear = selection.clear;
   const [pending, start] = useTransition();
   const [stageId, setStageId] = useState('');
   const [ownerId, setOwnerId] = useState('');
@@ -119,7 +125,7 @@ export function BulkBar({
           type="button"
           disabled={pending || !stageId || (needsReason && reason.trim().length < 2)}
           data-testid="bulk-move"
-          onClick={() => run(() => onMove(stageId, reason))}
+          onClick={() => run(() => onMove(selection.ids(), stageId, reason))}
           className="btn-primary !min-h-10"
         >
           {t('doMove')}
@@ -145,7 +151,7 @@ export function BulkBar({
               type="button"
               disabled={pending || !ownerId}
               data-testid="bulk-assign"
-              onClick={() => run(() => onAssign(ownerId))}
+              onClick={() => run(() => onAssign(selection.ids(), ownerId))}
               className="btn-secondary !min-h-10"
             >
               {t('doAssign')}

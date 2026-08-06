@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { asc, eq } from 'drizzle-orm';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
-import { clients } from '@/modules/platform/db/schema';
+import { clients, leads } from '@/modules/platform/db/schema';
 import { PageHeader } from '@/components/ui/page';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { canWriteDeal, listStages } from '@/modules/wms/deals/service';
@@ -20,7 +20,7 @@ import { ClientPicker } from './client-picker';
 export default async function NewDealPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string }>;
+  searchParams: Promise<{ client?: string; lead?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -35,6 +35,15 @@ export default async function NewDealPage({
   const preset = params.client
     ? await db.query.clients.findFirst({ where: eq(clients.id, params.client) })
     : null;
+  // Arrived from a WON lead's «Bitim ochish»: the price hisoblatish produced
+  // and the seller wrote on the lead opens the deal's quote, typed once
+  // (round 71 — «shu narx yutildimi yo'qmi etapiga o'tadi»). Only a lead that
+  // really belongs to this client may hand its numbers over: a `lead=` in the
+  // URL is a forged post until proven (#514).
+  const fromLead = params.lead
+    ? await db.query.leads.findFirst({ where: eq(leads.id, params.lead) })
+    : null;
+  const quote = fromLead && preset && fromLead.clientId === preset.id ? fromLead : null;
 
   if (!preset) {
     const list = await db
@@ -74,10 +83,10 @@ export default async function NewDealPage({
           clientId: preset.id,
           ownerId: preset.salesManagerId,
           title: null,
-          quotedVolumeM3: null,
-          quotedWeightKg: null,
-          quotedAmount: null,
-          quotedCurrency: 'USD',
+          quotedVolumeM3: quote?.quotedVolumeM3 ?? null,
+          quotedWeightKg: quote?.quotedWeightKg ?? null,
+          quotedAmount: quote?.quotedAmount ?? null,
+          quotedCurrency: quote?.quotedCurrency ?? 'USD',
           note: null,
         }}
       />

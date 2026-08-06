@@ -33,6 +33,11 @@ export const LEAD_CARD_FIELDS: CardFieldSpec[] = [
   { key: 'code', labelKey: 'clientCode', on: true },
   { key: 'chat', labelKey: 'cardChat', on: true },
   { key: 'nextAction', labelKey: 'nextAction', on: true },
+  // ON by default, deliberately breaking the «null = today's set» stillness
+  // once: the quote IS round 71's feature — the price written after
+  // hisoblatish, riding to won/lost — and a filterable number nobody can see
+  // on the card is a filter over invisible ink. Stated to the owner.
+  { key: 'quote', labelKey: 'quotedAmount', on: true },
 ];
 
 export const DEAL_CARD_FIELDS: CardFieldSpec[] = [

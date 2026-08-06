@@ -1270,7 +1270,17 @@
     "templateShared": "Butun kompaniya uchun",
     "templateHint": "Matnda '{'ism'}' — mijoz ismi, '{'kod'}' — uning kodi deb yozsangiz bo'ladi.",
     "templateNone": "Hozircha shablon yo'q",
-    "templateAdd": "Yangi shablon"
+    "templateAdd": "Yangi shablon",
+    "boardFilters": "Filtrlar",
+    "filterFrom": "dan",
+    "filterTo": "gacha",
+    "filterMin": "min",
+    "filterMax": "max",
+    "filterLenta": "Izohlardan qidirish",
+    "quotedAmount": "Narx (xizmat)",
+    "quotedCurrency": "Valyuta",
+    "quotedVolume": "Kub (m³)",
+    "quotedWeight": "Og'irlik (kg)"
   },
   "navShort": {
     "home": "Bosh",
@@ -1641,7 +1651,9 @@
     "cardClient": "Mijoz kodi",
     "cardChat": "Chat",
     "cardAlarms": "Ogohlantirishlar",
-    "cardFields": "Kartochkada nima"
+    "cardFields": "Kartochkada nima",
+    "volumeM3": "Hajm (m³)",
+    "weightKg": "Og'irlik (kg)"
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

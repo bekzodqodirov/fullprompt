@@ -43,6 +43,10 @@ export function LeadForm({
     stageId: string;
     ownerId: string;
     note: string;
+    quotedAmount: string;
+    quotedCurrency: string;
+    quotedVolumeM3: string;
+    quotedWeightKg: string;
     nextActionAt: string;
     nextActionNote: string;
   };
@@ -127,6 +131,62 @@ export function LeadForm({
         rows={2}
         className="input"
       />
+
+      {/* The service price, written after hisoblatish (round 71) — the number
+          that rides with the lead into won/lost and, on «Bitim ochish», into
+          the deal's quote. Sizes ride with it; all three are what the AI
+          intake extracts, so the seller mostly confirms rather than types. */}
+      <div className="flex flex-wrap gap-2">
+        <label className="min-w-28 flex-1 text-sm">
+          <span className="block text-xs text-ink-500">{t('quotedAmount')}</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            name="quotedAmount"
+            defaultValue={initial?.quotedAmount}
+            data-testid="lead-quote-amount"
+            aria-label={t('quotedAmount')}
+            className="input"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="block text-xs text-ink-500">{t('quotedCurrency')}</span>
+          <select
+            name="quotedCurrency"
+            defaultValue={initial?.quotedCurrency || 'USD'}
+            aria-label={t('quotedCurrency')}
+            className="input !w-24"
+          >
+            {['USD', 'UZS', 'CNY'].map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="min-w-24 flex-1 text-sm">
+          <span className="block text-xs text-ink-500">{t('quotedVolume')}</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            name="quotedVolumeM3"
+            defaultValue={initial?.quotedVolumeM3}
+            aria-label={t('quotedVolume')}
+            className="input"
+          />
+        </label>
+        <label className="min-w-24 flex-1 text-sm">
+          <span className="block text-xs text-ink-500">{t('quotedWeight')}</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            name="quotedWeightKg"
+            defaultValue={initial?.quotedWeightKg}
+            aria-label={t('quotedWeight')}
+            className="input"
+          />
+        </label>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <label className="text-sm">

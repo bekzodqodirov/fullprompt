@@ -53,7 +53,7 @@ afterAll(async () => {
 describe('the funnel keeps its finished cards without showing all of them', () => {
   it('caps the closed slice, counts the whole column, and keeps the newest', async () => {
     const ctx = { actorId: ownerId };
-    const before = (await closedLeadCounts())[wonStageId] ?? 0;
+    const before = (await closedLeadCounts({}))[wonStageId] ?? 0;
 
     // Three wins, in a known order.
     const names: string[] = [];
@@ -66,7 +66,7 @@ describe('the funnel keeps its finished cards without showing all of them', () =
     }
 
     // The column really holds three more than it did.
-    expect((await closedLeadCounts())[wonStageId]).toBe(before + 3);
+    expect((await closedLeadCounts({}))[wonStageId]).toBe(before + 3);
 
     // An OPEN lead created last, so it is the newest row of all. This is what
     // makes the next assertion mean something: the closed slice is ordered
@@ -92,12 +92,12 @@ describe('the funnel keeps its finished cards without showing all of them', () =
 
     // Which is what the board's «+N» is computed from: total minus shown.
     const shown = slice.filter((row) => row.lead.stageId === wonStageId).length;
-    expect((await closedLeadCounts())[wonStageId]! - shown).toBeGreaterThan(0);
+    expect((await closedLeadCounts({}))[wonStageId]! - shown).toBeGreaterThan(0);
   });
 
   it('scopes the count to the owner the board is scoped to', async () => {
-    const mine = await closedLeadCounts(ownerId);
-    const everyone = await closedLeadCounts();
+    const mine = await closedLeadCounts({ ownerId });
+    const everyone = await closedLeadCounts({});
     expect(mine[wonStageId] ?? 0).toBeLessThanOrEqual(everyone[wonStageId] ?? 0);
     // The three above are this user's, so his own count cannot be zero.
     expect(mine[wonStageId] ?? 0).toBeGreaterThanOrEqual(3);

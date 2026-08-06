@@ -1270,7 +1270,17 @@
     "templateShared": "For the whole company",
     "templateHint": "Write '{'ism'}' for the client name and '{'kod'}' for their code.",
     "templateNone": "No templates yet",
-    "templateAdd": "New template"
+    "templateAdd": "New template",
+    "boardFilters": "Filters",
+    "filterFrom": "from",
+    "filterTo": "to",
+    "filterMin": "min",
+    "filterMax": "max",
+    "filterLenta": "Search in notes",
+    "quotedAmount": "Price (service)",
+    "quotedCurrency": "Currency",
+    "quotedVolume": "Volume (m³)",
+    "quotedWeight": "Weight (kg)"
   },
   "navShort": {
     "home": "Home",
@@ -1641,7 +1651,9 @@
     "cardClient": "Client code",
     "cardChat": "Chat",
     "cardAlarms": "Alerts",
-    "cardFields": "What is on a card"
+    "cardFields": "What is on a card",
+    "volumeM3": "Volume (m³)",
+    "weightKg": "Weight (kg)"
   },
   "automation": {
     "title": "Automation rules",

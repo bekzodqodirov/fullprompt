@@ -129,14 +129,31 @@ test('a refused save keeps what was typed', async ({ page }) => {
   await openCard(page);
 
   const facts = page.getByTestId('lead-facts');
-  await facts.getByTestId('fact-name-open').click();
-  // A lead must have a name; emptying it is refused by the service.
-  await facts.getByTestId('fact-name-input').fill('x');
-  await facts.getByTestId('fact-name-save').click();
+  await facts.getByTestId('fact-phone-open').click();
+  // Longer than the column holds; the service refuses it.
+  await facts.getByTestId('fact-phone-input').fill('9'.repeat(41));
+  await facts.getByTestId('fact-phone-save').click();
 
-  await expect(facts.getByTestId('fact-name-error')).toBeVisible({ timeout: 15_000 });
+  await expect(facts.getByTestId('fact-phone-error')).toBeVisible({ timeout: 15_000 });
   // Still open, still holding the typed value — the rule three rounds bought.
-  await expect(facts.getByTestId('fact-name-input')).toHaveValue('x');
+  await expect(facts.getByTestId('fact-phone-input')).toHaveValue('9'.repeat(41));
+});
+
+test('the NAME is read on this card, never edited on it', async ({ page }) => {
+  // Owner, 2026-08-06: «lead kartochkasida nomni ustiga bosib o'zgartirish …
+  // buni umuman olib tashla». The name is the card's TITLE — the h1 sits above
+  // this rail — and a tap on a record's title must not turn it into an input.
+  await openCard(page);
+
+  const facts = page.getByTestId('lead-facts');
+  await expect(facts.getByTestId('fact-name-open')).toHaveCount(0);
+  await expect(facts.getByTestId('fact-name-input')).toHaveCount(0);
+  // Still SHOWN, both in the rail and as the heading — removing the control
+  // must not remove the fact.
+  await expect(facts).toContainText(await page.locator('h1').first().innerText());
+  // And the fields that stayed are still editable, so this is a removal and
+  // not an outage.
+  await expect(facts.getByTestId('fact-company-open')).toBeVisible();
 });
 
 test('the lead it created is closed, so it leaves the board', async ({ page }) => {
