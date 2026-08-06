@@ -72,6 +72,33 @@ export function visibleColumns(
   return allowed.filter((def) => def.always || wanted.has(def.key));
 }
 
+/**
+ * The columns a DOWNLOAD carries — which is not quite the screen's answer.
+ *
+ * `optional` exists to keep a phone-width table readable, not to keep
+ * anything out of a spreadsheet: a sheet is read at a desk. So a plain
+ * download (no `?cols=`, i.e. nobody chose a view) carries every column the
+ * person may see, optional ones included, while a download OF a view carries
+ * exactly that view.
+ *
+ * The permission filter is untouched in both branches — that is the rule this
+ * must not weaken («an export that shows a column the page hides is a leak
+ * with a filename»), and it is about what somebody may SEE, never about what
+ * makes a narrow table tidy.
+ *
+ * Round 57 collapsed the two ideas into one call and the client book's
+ * spreadsheet quietly lost its phone-numbers column — which is the file the
+ * owner corrects the client book from.
+ */
+export function exportColumns(
+  defs: ColumnDef[],
+  chosen: string[] | null,
+  can: (permission: string) => boolean,
+): ColumnDef[] {
+  if (chosen !== null) return visibleColumns(defs, chosen, can);
+  return defs.filter((def) => !def.permission || can(def.permission));
+}
+
 /** The value to put in `?cols=` for a given selection. */
 export function colsParam(defs: ColumnDef[], visible: ColumnDef[]): string {
   const shown = new Set(visible.map((def) => def.key));

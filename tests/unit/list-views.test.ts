@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   colsParam,
+  exportColumns,
   parseCols,
   visibleColumns,
   type ColumnDef,
@@ -71,6 +72,55 @@ describe('column choice', () => {
     expect(colsParam(COLUMNS, visibleColumns(COLUMNS, ['noisy', 'name'], yes))).toBe(
       'code,name,noisy',
     );
+  });
+});
+
+/**
+ * What a DOWNLOAD carries, which is not quite what the screen shows.
+ *
+ * The owner, 2026-08-06: the client book's spreadsheet had lost its phone
+ * numbers. Round 57 gave the export the screen's own column resolver, and the
+ * screen's rule drops `optional` columns when nobody has chosen a view — a
+ * rule that exists to keep a phone-width TABLE readable and has no business
+ * deciding what is in a file read at a desk. He corrects the client book from
+ * that file (nameless clients, truncated phones), so the column it silently
+ * lost was the one he opens it for.
+ *
+ * The permission rule is the one that must NOT bend, and it is asserted here
+ * beside the relaxation so the two can never be confused for each other.
+ */
+describe('what a download carries', () => {
+  it('carries the optional columns when nobody chose a view', () => {
+    const shipped = exportColumns(COLUMNS, null, yes).map((column) => column.key);
+    expect(shipped).toEqual(['code', 'name', 'money', 'noisy']);
+  });
+
+  it('carries exactly the chosen view when somebody did', () => {
+    // A saved view exports as itself — including leaving `noisy` out.
+    expect(exportColumns(COLUMNS, ['name'], yes).map((c) => c.key)).toEqual(['code', 'name']);
+  });
+
+  it('never carries a column the person may not see, either way', () => {
+    expect(exportColumns(COLUMNS, null, no).map((c) => c.key)).toEqual(['code', 'name', 'noisy']);
+    expect(exportColumns(COLUMNS, ['money'], no).map((c) => c.key)).toEqual(['code']);
+  });
+
+  it("the client book's plain download really does carry the phone numbers", () => {
+    // The owner's actual case, spelled out against the real column list.
+    const shipped = exportColumns(CLIENT_COLUMNS, null, yes).map((column) => column.key);
+    expect(shipped).toContain('phone');
+  });
+
+  it('and the export route asks the export question, not the screen question', () => {
+    // Source-shape, like the chat-controls and style-cascade tripwires: both
+    // helpers work perfectly and the defect was calling the wrong one. Nothing
+    // about behaviour can see that, and the file has no header test of its own.
+    const route = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/clients/xlsx/route.ts'),
+      'utf8',
+    );
+    expect(route).toContain('exportColumns(');
+    expect(route).not.toMatch(/\bvisibleColumns\(/);
   });
 });
 

@@ -119,21 +119,25 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-04
+## State — 2026-08-06
 
-Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
-onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
-cut from the same tip.
-1046 unit/integration + 140 e2e, verified in CI's order on a fresh database.
-Latest migration: **0059** (`reply_templates`). Every numbered phase
-is shipped; the current round is the owner's 14-point feedback list (rounds
-46-55; round 55 = item 1, the driver app, **needs a new APK released** —
-Actions → driver-apk → artifact → Admin → Haydovchi ilovasi).
+Branch `claude/gsr-logistics-wms-phase1-o8h4en` restarted from `main` (PR #1
+merged 2026-08-05; PRs #2/#3/#4 merged since). `main` is the trunk now — the
+next PR targets it.
+1058 unit/integration + 144 e2e, verified in CI's order on a fresh database.
+Latest migration: **0058** (`list_views`). Every numbered phase is shipped;
+rounds 56-69 (the Frappe-UX programme) were built by ANOTHER session and are
+on main — read `docs/CRM-UX.md` before touching lists, search, bulk or
+quick-create.
 
-**NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
-(rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
-money bugs), the speed round and rounds 46-55. The owner's last confirmed
-update was `eea3509`.
+**NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
+17 audit defects (four live money bugs), the speed rounds, rounds 46-70, the
+driver app 1.3. The owner's last confirmed update was `eea3509`.
+**Deploy note:** migration 0058 MUST land — the client book, the stock table
+and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
+deploy shows those three the error page (round 52's failure, wider). Check
+`drizzle.__drizzle_migrations` after updating; fix with
+`docker compose run --rm migrate`.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -1546,6 +1550,34 @@ in SQL + «newest N of M» on screen and file; grid hint marks unconverted
 cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
 batches row (the stamp's FK) — in_transit + departedAt, route check needs
 two warehouses.
+
+Round 70 — the owner's four items after the merges (#500-504). Two
+REGRESSIONS from the other session's work: the client book's XLSX had lost
+its phone column (`optional` is a rule about a narrow table, not about a
+file — `exportColumns` now answers the export's own question, permission
+filter unchanged in both branches), and round 55's CHANGELOG heading had
+been overwritten so the driver-app entry hung under «kod va bazada hech
+narsa o'zgarmadi». REMOVED at his word: inline edit of the lead NAME («nomni
+ustiga bosib o'zgartirish … umuman olib tashla») — off the JSX AND out of
+`INLINE_LEAD_FIELDS`, since a control removed from a screen while the action
+still accepts the field is hidden, not removed; the name is the card's h1 so
+nothing is hidden; phone/company/note keep theirs. FIXED, measured on a clone
+of his data: the bulk-select freeze — 298 open leads × BOTH board shapes
+mounted (`md:hidden` is CSS) = 596 live cards, and a `useState<Set>` in the
+parent re-rendered all of them per tick: **135-400 ms → 35-66 ms** (the
+33 ms measurement floor). `useSelection()` = a store with per-id
+subscriptions (`useSyncExternalStore`, the composer's pattern); the board's
+`selection` prop identity never changes so a tick does not reach it; the bar
+reads ids at press time. Source-shape tripwire `tests/unit/board-selection.test.ts`
+— both versions work, so nothing about behaviour can see it. RULE:
+**per-item state over hundreds of live nodes belongs outside the component
+that renders them.** STUDIED, no code (his «kodni yozma oldin hammasini
+aniqlashtirib ol»): board filters — 383 leads / 1,692 clients, a
+four-condition filter with text search + join runs in 0.99 ms, and the
+`hodim` filter already works the right way (URL → server query), so the
+database is not the question for years; price/kg/kub exist on a DEAL and not
+on a lead, so the two boards cannot carry the same filter set. His answers
+awaited before building.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

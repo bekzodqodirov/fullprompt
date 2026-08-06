@@ -7,7 +7,7 @@ import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { listFields } from '@/modules/platform/fields/service';
 import { CLIENT_COLUMNS, CLIENT_EXPORT_CAP } from '@/modules/platform/clients/list';
-import { parseCols, visibleColumns, type ColumnDef } from '@/modules/platform/lists/columns';
+import { exportColumns, parseCols, type ColumnDef } from '@/modules/platform/lists/columns';
 import { sortRows } from '@/components/sort-th';
 import { phoneNeedle } from '@/modules/platform/clients/phone';
 import {
@@ -88,14 +88,16 @@ export async function GET(request: Request) {
     columns,
   );
 
-  // The screen's column set, resolved the same way and by the same helper —
-  // an export that shows a column the page hides is a leak with a filename.
+  // The VIEW's column set when a view was chosen, and everything this person
+  // may see when one was not — `exportColumns` states why the two differ. A
+  // column hidden by PERMISSION is out of the file either way: an export that
+  // shows a column the page hides is a leak with a filename.
   const allColumns: ColumnDef[] = [
     ...CLIENT_COLUMNS,
     { key: 'active', labelKey: 'common.active' },
     ...columns.map((field) => ({ key: `cf_${field.id}`, label: field.label })),
   ];
-  const visible = visibleColumns(allColumns, parseCols(params.cols), (permission) =>
+  const visible = exportColumns(allColumns, parseCols(params.cols), (permission) =>
     actor.permissions.has(permission),
   );
   const rows = sortRows(

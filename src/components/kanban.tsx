@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
+import type { Selection as SelectionStore } from '@/components/list/selection';
 import { stageClass } from '@/app/(protected)/crm/stage-color';
 
 /**
@@ -118,8 +119,15 @@ interface BoardProps<T extends KanbanItem> {
    * every other caller of this component gets.
    */
   selection?: {
-    ids: Set<string>;
-    toggle: (id: string) => void;
+    /**
+     * The store from `useSelection()`, NOT a Set (round 70).
+     *
+     * A Set here meant a new object on every tick, which re-rendered this
+     * whole board — 596 live card subtrees on the owner's funnel — to change
+     * one checkbox. The store's identity never changes, so a tick does not
+     * reach this component at all.
+     */
+    store: SelectionStore;
     /** Already translated: a client component cannot resolve a namespace. */
     label: string;
   };
@@ -302,17 +310,20 @@ function SelectBox({
   id: string;
   selection: NonNullable<BoardProps<KanbanItem>['selection']>;
 }) {
+  // This checkbox subscribes to its OWN id and to nothing else, which is what
+  // keeps a tick from costing the board a full re-render.
+  const checked = selection.store.useIsSelected(id);
   return (
     <input
       type="checkbox"
-      checked={selection.ids.has(id)}
+      checked={checked}
       aria-label={selection.label}
       data-testid="card-select"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();
         event.preventDefault();
-        selection.toggle(id);
+        selection.store.toggle(id);
       }}
       onChange={() => {}}
       className="h-5 w-5 shrink-0 accent-brand-600"

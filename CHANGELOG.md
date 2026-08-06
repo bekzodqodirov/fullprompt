@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## Ommaviy belgilash qotmaydigan bo'ldi, lid nomi endi bosilib o'zgarmaydi — 2026-08-06
+
+Sizning to'rtta gapingiz bo'yicha.
+
+**1. Mijozlar Excelida telefon ustuni qaytdi.** Yo'qolgan sabab: ustun
+tanlash qo'shilganda, "ekranda ko'rinmaydigan ustun faylga ham tushmasin"
+degan qoida telefon ustuniga ham tegib ketgan edi — telefon esa jadvalni
+tor telefonda ixcham qilish uchun "yashirin" deb belgilangan. Endi qoida
+ikkiga bo'lindi: **saqlangan ko'rinishni** yuklasangiz — o'sha ko'rinish
+tushadi; oddiy yuklasangiz — **ko'rishga haqli bo'lgan hamma ustun** tushadi.
+Pul ustunlari qanday bo'lsa shunday qoladi: ruxsati yo'q odam ularni faylda
+ham ko'rmaydi.
+
+**2. Haydovchi ilovasi haqidagi yozuv o'z sarlavhasini tikladi.** U
+Frappe tadqiqoti yozuvining ostiga tushib qolgan edi — ya'ni «kod va bazada
+hech narsa o'zgarmadi» degan gapning ostida haydovchi ilovasi haqidagi
+o'zgarish turardi. Matn joyida edi, sarlavha yo'q edi; qaytarildi.
+
+**3. Lid kartasida nomni bosib o'zgartirish olib tashlandi.** Nom
+kartaning sarlavhasi — u yuqorida baribir ko'rinib turadi, shuning uchun
+hech narsa yashirilmadi. Nomni o'zgartirish endi faqat ✏️ shakli orqali,
+ya'ni ataylab qilinadigan ish. Muhimi: tugma ekrandan olindi **va** server
+tomonida ham yopildi — aks holda bu "olib tashlash" emas, "yashirish"
+bo'lardi. Telefon, firma va izohni joyida tuzatish qoldi.
+
+**4. Ommaviy belgilashning qotishi — sabab topildi va o'lchandi.** Sizning
+lidlaringiz doskada 298 ta ochiq karta beradi, va ilova telefon shakli bilan
+kompyuter shaklini **bir vaqtda** ushlab turadi — jami 596 ta karta. Bitta
+katakchani belgilaganda dastur **hamma 596 tasini qaytadan chizardi**.
+O'rtacha telefon tezligida o'lchadim: **bir marta belgilash 135–400 ms
+ekranni qotirardi**, ya'ni 10 ta kartani belgilash 2-4 soniya o'lik ekran.
+
+Endi belgilash doskadan tashqarida saqlanadi: faqat bosilgan katakcha va
+pastdagi hisoblagich yangilanadi, doska umuman qayta chizilmaydi. O'sha
+o'lchov endi **35–66 ms** ko'rsatadi — bu o'lchash usulining o'z chegarasi
+(33 ms), ya'ni ish deyarli qolmadi.
+
+Tekshirish: 1058 ta ichki test, 144 ta brauzer testi — hammasi yashil. Uchala
+tuzatish ham "himoyasiz qoldirilsa qizil bo'ladi" deb isbotlangan. Bazaga
+o'zgarish yo'q.
+
 ## Pul auditi: 15 ta kamchilik topildi va tuzatildi — 2026-08-05
 
 Siz «pullar hisob-kitobi to'g'ri yuritilyabtimi, audit qil» degan edingiz.
@@ -521,6 +562,9 @@ bo'yicha boshla» desangiz — uchalasi ham «ha» bo'lib boshlanadi.
 Kod va bazada hech narsa o'zgarmadi; eski eslatma kuchida: serverni
 yangilashdan oldin backup, yangilanishda 4 ta jonli pul xatosining
 tuzatmalari bor.
+
+
+## Haydovchi ilovasi 1.3: 2 soatdan keyin o'lish tuzatildi, bildirishnoma yo'qoldi — 2026-08-04
 
 Sizning 1-band: «driver app negadur 2 soatdan keyin ishlamay qoldi» + «hech
 qanday notification ko'rsatmasin, telda yo'qdek bo'lsin».

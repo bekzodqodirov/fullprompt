@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { KanbanBoard as Board, type KanbanStage, useMoveErrors } from '@/components/kanban';
 import { BulkBar } from '@/components/list/bulk-bar';
+import { useSelection } from '@/components/list/selection';
 import { bulkAssignLeadsAction, bulkMoveLeadsAction, moveLeadAction } from '../actions';
 
 export type { KanbanStage };
@@ -55,17 +55,10 @@ export function KanbanBoard({
   const tl = useTranslations('lists');
   // The SELECTION lives here, not in the shared board: only this screen knows
   // what «assign to» means for a lead, so the actions and the ticks that feed
-  // them belong together.
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const toggle = useCallback((id: string) => {
-    setPicked((was) => {
-      const next = new Set(was);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-  const ids = [...picked];
+  // them belong together. It is a STORE and not React state (round 70): as
+  // state, every tick re-rendered this component and through it all 596 live
+  // cards, which is the freeze the owner reported.
+  const selection = useSelection();
 
   return (
     <>
@@ -75,7 +68,7 @@ export function KanbanBoard({
         archiveHref={archiveHref}
         items={leads}
         cardTestId="lead-card"
-        selection={{ ids: picked, toggle, label: tl('select') }}
+        selection={{ store: selection, label: tl('select') }}
         hrefOf={(lead) => `/crm/leads/${lead.id}`}
         // The action answers `{ ok?: boolean; error?: string }`. The CODE
         // travels with the verdict now: a card that jumps back under the word
@@ -129,12 +122,11 @@ export function KanbanBoard({
       />
 
       <BulkBar
-        count={picked.size}
+        selection={selection}
         stages={stages}
         owners={owners}
-        onMove={(stageId, reason) => bulkMoveLeadsAction(ids, stageId, reason)}
-        onAssign={owners ? (ownerId) => bulkAssignLeadsAction(ids, ownerId) : undefined}
-        onClear={() => setPicked(new Set())}
+        onMove={(ids, stageId, reason) => bulkMoveLeadsAction(ids, stageId, reason)}
+        onAssign={owners ? (ids, ownerId) => bulkAssignLeadsAction(ids, ownerId) : undefined}
       />
     </>
   );
