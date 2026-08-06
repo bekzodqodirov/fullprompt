@@ -1719,8 +1719,10 @@ export const callLogs = pgTable(
   (t) => [
     check('call_logs_direction_check', sql`${t.direction} IN ('in', 'out')`),
     // The phone re-sends its recent log every cycle (a missed upload heals
-    // that way), so the same call arriving twice must be a no-op.
-    unique('call_logs_dedup').on(t.deviceId, t.phone, t.startedAt),
+    // that way), so the same call arriving twice must be a no-op — keyed by
+    // USER, not device (0061): a device is a pairing, and revoke + re-pair
+    // re-reported a whole day under the new id on production's first day.
+    unique('call_logs_dedup').on(t.userId, t.phone, t.startedAt),
     index('call_logs_client_idx').on(t.clientId, t.startedAt),
     index('call_logs_user_idx').on(t.userId, t.startedAt),
   ],

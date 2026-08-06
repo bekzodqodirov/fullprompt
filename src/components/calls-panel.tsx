@@ -1,7 +1,7 @@
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { canReadTg, tgViewerFor } from '@/modules/wms/crm/conversations';
-import { callsFor } from '@/modules/wms/calls/service';
+import { callsForCard } from '@/modules/wms/calls/service';
 
 /**
  * This client's recorded phone calls, beside the Telegram thread on the
@@ -20,7 +20,9 @@ export async function CallsPanel({ clientId }: { clientId: string | null }) {
   if (!actor || !canReadTg(actor)) return null;
 
   const viewer = tgViewerFor(actor);
-  const rows = await callsFor(clientId, viewer);
+  // Widened to phone-siblings: a call lands on the person's OLDEST code, and
+  // the card in front of the reader may be a newer one (round 32's shape).
+  const rows = await callsForCard(clientId, viewer);
   // No calls this viewer may see — say nothing rather than put an empty box
   // on every card in the system (the thread panel's rule).
   if (rows.length === 0) return null;
@@ -43,6 +45,10 @@ export async function CallsPanel({ clientId }: { clientId: string | null }) {
                 {row.direction === 'in' ? `↙ ${t('callIn')}` : `↗ ${t('callOut')}`}
               </span>
               <span className="font-semibold">{row.takerName}</span>
+              {/* The call sits on the person's OTHER code — say which. */}
+              {row.clientId !== clientId && (
+                <span className="font-mono text-xs font-semibold text-ink-500">{row.clientCode}</span>
+              )}
               <span className="text-ink-500">
                 {format.dateTime(row.startedAt, { dateStyle: 'short', timeStyle: 'short' })}
               </span>

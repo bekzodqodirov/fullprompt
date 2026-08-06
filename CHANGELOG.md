@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## Qo'ng'iroq yozuvi: birinchi kun tuzatishlari — 2026-08-06 (kech)
+
+Siz birinchi telefonni ulab sinaganingizda uchta narsa chiqdi, uchalasi ham
+tuzatildi (migratsiya **0061**):
+
+**1. Dublikatlar.** Ilovani uzib qayta ulaganingizda kunning qo'ng'iroqlari
+ikkinchi marta yozilgan edi (bazada har biri 2 tadan ko'rinib turgan edi).
+Endi takrorlanish himoyasi HODIM bo'yicha — qayta ulash hech narsani
+ikkilantirmaydi, mavjud dublikatlar migratsiyada o'zi tozalanadi.
+
+**2. Qayta ulangandan keyin audio yo'qolishi.** Yozuv fayli eski ulanish
+nomiga qidirilardi — qayta ulangan telefon audioni yuklay olmay qolardi.
+Endi hodim bo'yicha qidiriladi.
+
+**3. Karta bo'sh ko'rinishi.** Bir odamning bir nechta GS kodi bitta
+telefonda bo'lsa, qo'ng'iroq eng eski kodga tushadi, siz esa boshqa kod
+kartasini ochgan edingiz — panel bo'sh edi. Endi karta odamning BARCHA
+kodlaridan qidiradi va qo'ng'iroq qaysi kodda bo'lsa, yonida o'sha kod
+yozilgan chip turadi.
+
+Yana bir sabab oddiy edi: ilova 15 daqiqada bir yuboradi — kartani
+qo'ng'iroqdan keyin darrov ochsangiz, hali yetib kelmagan bo'ladi
+(ilovadagi «Hozir yuborish» tugmasi darhol jo'natadi).
+
 ## Qo'ng'iroq yozuvi: mijoz bilan suhbatlar endi CRM'da — 2026-08-06
 
 Siz so'ragan qo'ng'iroq yozuvi tayyor. Android telefonlar uchun **GSR
