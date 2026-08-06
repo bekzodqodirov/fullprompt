@@ -143,6 +143,7 @@ export default async function DealsPage({
       quotedAmount: row.quotedAmount,
       quotedCurrency: row.quotedCurrency,
       quotedVolumeM3: row.quotedVolumeM3,
+      quotedWeightKg: row.quotedWeightKg,
       deferred: row.deferred,
       flag: (flag?.reason as 'deviation' | 'unpriced' | undefined) ?? null,
       flagPct: flag?.pct ?? null,

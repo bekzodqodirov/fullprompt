@@ -14,7 +14,7 @@ import {
   hrefWith,
   readBoardFilters,
 } from '@/components/list/board-filter';
-import { BoardMenu } from '@/components/list/board-menu';
+import { BoardMenu, boardMenuItem } from '@/components/list/board-menu';
 import { PopoverRow } from '@/components/list/popover-row';
 import { CardFieldsMenu } from '@/components/list/card-fields-menu';
 import { LEAD_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
@@ -164,17 +164,14 @@ export default async function LeadsPage({
     // has to say how much room it took or the page grows a second scrollbar
     // under a board that was built not to have one (#354). Round 72 collapsed
     // the header / scope tabs / view chips / filter card into ONE toolbar row
-    // — the owner's «urg'u kanban view'ga berilsin». The price: the toolbar,
-    // the chips row when something is filtering, and — only on THIS page —
-    // the CRM SubNav, which costs more on a phone (it wraps taller) than on a
-    // desktop, hence the max-md override. Literal classes, because Tailwind
-    // only compiles what it can see.
+    // — the owner's «urg'u kanban view'ga berilsin» — and round 73 took the
+    // SubNav off this page too, so the price is the same as the deal board's:
+    // the toolbar, plus the chips row when something is filtering.
     <div
-      className={`space-y-2 ${
-        chipsOn
-          ? '[--board-extra:7.15rem] max-md:[--board-extra:9.4rem]'
-          : '[--board-extra:4.65rem] max-md:[--board-extra:6.9rem]'
-      }`}
+      className="space-y-2"
+      style={{
+        ['--board-extra' as string]: `${3.25 + (chipsOn ? 2.5 : 0)}rem`,
+      }}
     >
       {/* `relative` on the ROW: every popover on it (filter panel from md,
           views, ⋯) anchors to the row's edges, never to its own button —
@@ -241,6 +238,29 @@ export default async function LeadsPage({
           label={tl('views')}
         />
         <BoardMenu label={tc('moreActions')}>
+          {/* The section doors the tab strip used to shout from the top
+              (round 73, owner: «yo'qot, halaqit qilmaydigan joyga o'tkaz»).
+              The strip itself still renders on these pages. */}
+          <Link href="/crm/today" className={boardMenuItem} data-testid="menu-today">
+            <Icon name="phone" className="h-4 w-4 text-ink-500" />
+            {t('today')}
+          </Link>
+          <Link href="/crm/dormant" className={boardMenuItem}>
+            <Icon name="sleep" className="h-4 w-4 text-ink-500" />
+            {t('dormant')}
+          </Link>
+          {actor.permissions.has('crm.manage') && (
+            <>
+              <Link href="/crm/people" className={boardMenuItem}>
+                <Icon name="users" className="h-4 w-4 text-ink-500" />
+                {t('people')}
+              </Link>
+              <Link href="/crm/settings" className={boardMenuItem}>
+                <Icon name="settings" className="h-4 w-4 text-ink-500" />
+                {t('settings')}
+              </Link>
+            </>
+          )}
           <CardFieldsMenu
             inline
             board="lead"
@@ -294,6 +314,8 @@ export default async function LeadsPage({
           clientCode,
           quotedAmount: lead.quotedAmount,
           quotedCurrency: lead.quotedCurrency,
+          quotedVolumeM3: lead.quotedVolumeM3,
+          quotedWeightKg: lead.quotedWeightKg,
           nextActionAt: lead.nextActionAt,
           chat: (lead.clientId && badges.get(lead.clientId)) || null,
         }))}

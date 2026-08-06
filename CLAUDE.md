@@ -1689,6 +1689,21 @@ m9zg ×5, m9zh-board-filters (views flow + fence), m9zh-card-fields ×7
 (board-menu first); m9p untouched (door stayed visible). 1077 + 149
 green on a fresh db in CI's order; screenshots at 360×800 and 1280×800.
 
+Round 73 — three more the same evening (#553-555). (1) The CRM SubNav
+left the funnel: it renders only inside a `(pages)` route group
+(today/dormant/people/settings — URLs unchanged, gates stay in the section
+layout); the funnel's ⋯ menu carries those doors; /crm --board-extra fell
+back to the deal board's constant. (2) Both boards' cards print
+summa · kub · kg as ONE composite line under the money switch; the deal
+board's separate `volume` opt-in RETIRED (a switch for a line that always
+renders lies) — cookie names for it are dropped, tests rewritten to assert
+the absence. (3) The lenta note and the contact log became composer
+SHELLS (focus-within ring, `MentionTextarea bare`, 📎 + send on a footer
+row); the KIND dropdown became four peer-checked chips. Caught before
+shipping: a clipped two-line placeholder (min-h-14) and `border-brand-400`
+— a token that does not exist — refused by the tokens tripwire. Same
+testids everywhere; m8 untouched. 1077 + 149 green fresh-db CI order.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 

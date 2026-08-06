@@ -70,6 +70,10 @@ export function FeedNoteBox({
   }
 
   return (
+    // Round 73, the owner's «lenta, komment beradigan inputlarga e'tibor ber»:
+    // the note is a composer SHELL now — one rounded surface that carries the
+    // focus ring for the whole group, the textarea borderless inside it, the
+    // 📎 and the send button on a footer row where a messenger keeps them.
     <form
       ref={formRef}
       action={async (data) => {
@@ -78,7 +82,7 @@ export function FeedNoteBox({
         setFiles([]);
         setActivityId('');
       }}
-      className="space-y-1.5"
+      className="rounded-2xl border border-line bg-surface-raised p-1.5 transition-colors focus-within:border-brand-500"
       data-testid="feed-note-box"
     >
       <input type="hidden" name="entityType" value={entityType} />
@@ -86,7 +90,7 @@ export function FeedNoteBox({
       {files.length > 0 && <input type="hidden" name="activityId" value={activityId} />}
 
       {files.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 px-1 pt-1">
           {files.map((file) => (
             <span
               key={file.id}
@@ -98,7 +102,17 @@ export function FeedNoteBox({
         </div>
       )}
 
-      <div className="flex items-end gap-2">
+      {/* No Enter-send here on purpose: a note is multi-line prose. Enter
+          inside the @-dropdown picks a colleague, nothing more. */}
+      <MentionTextarea
+        bare
+        name="note"
+        required
+        placeholder={labels.placeholder}
+        people={people}
+        testid="feed-note-body"
+      />
+      <div className="flex items-center gap-1">
         <input
           ref={fileRef}
           type="file"
@@ -112,29 +126,21 @@ export function FeedNoteBox({
           title={labels.attach}
           disabled={uploading}
           onClick={() => fileRef.current?.click()}
-          className="btn-secondary btn-icon !min-h-9 shrink-0 disabled:opacity-50"
+          className="btn-ghost btn-icon !min-h-9 shrink-0 disabled:opacity-50"
           data-testid="feed-note-attach"
         >
           {uploading ? '…' : '📎'}
         </button>
-        {/* No Enter-send here on purpose: a note is multi-line prose. Enter
-            inside the @-dropdown picks a colleague, nothing more. */}
-        <MentionTextarea
-          name="note"
-          required
-          placeholder={labels.placeholder}
-          people={people}
-          testid="feed-note-body"
-        />
+        {state.error && <p className="min-w-0 flex-1 truncate text-sm font-semibold text-bad">{state.error}</p>}
         <button
           type="submit"
-          className="btn-secondary !min-h-9 shrink-0"
+          aria-label={labels.save}
+          className="btn-primary !min-h-9 ml-auto shrink-0 rounded-xl px-4"
           disabled={pending || uploading}
         >
           {pending ? labels.saving : labels.save}
         </button>
       </div>
-      {state.error && <p className="w-full text-sm font-semibold text-bad">{state.error}</p>}
     </form>
   );
 }

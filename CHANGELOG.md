@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## Tepadagi qator ketdi, kartada summa·kub·kg, izoh oynalari yangi — 2026-08-06 (kech)
+
+Uchala gapingiz bo'yicha:
+
+**1. «Звонки / Настройки» qatori voronkadan olib tashlandi.** U endi faqat
+o'z sahifalarida (Сегодня звоним, Затихшие, Люди, Настройки CRM) ko'rinadi;
+voronkadan ularga yo'l — ⋯ menyuda. Doska yana ham yuqoriroqdan boshlanadi.
+
+**2. Kartochkada summa · kub · kg.** Ikkala doskada ham: lidda «1 800 USD ·
+12.5 m³ · 3400 kg», bitimda ham xuddi shunday bitta qatorda. Alohida «kub»
+katakchasi endi yo'q — u doim summa bilan birga chiqadi.
+
+**3. Izoh yozish joylari yangilandi.** Lentadagi ichki izoh va «kontakt
+yozish» endi messenjer ko'rinishida: bitta yumaloq oyna, ichida yozuv
+maydoni, pastida 📎 va yuborish tugmasi. Kontakt turi (qo'ng'iroq / xabar /
+uchrashuv / izoh) endi ochiladigan ro'yxat emas — bosiladigan tugmachalar.
+
+Bazaga o'zgarish yo'q. Tekshiruv: 1077 test + 149 brauzer testi yashil,
+skrinshotlarda ko'rildi.
+
 ## Doska endi ekranning egasi: bitta boshqaruv qatori — 2026-08-06 (kech)
 
 «Urg'u kanban view'ga berilsin, qidiruv va hodim filtrini ham panel ichiga
