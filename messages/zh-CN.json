@@ -1258,7 +1258,17 @@
     "templateShared": "全公司可用",
     "templateHint": "文本中可以写 '{'ism'}'（客户姓名）和 '{'kod'}'（客户编号）。",
     "templateNone": "暂无模板",
-    "templateAdd": "新建模板"
+    "templateAdd": "新建模板",
+    "boardFilters": "筛选",
+    "filterFrom": "从",
+    "filterTo": "至",
+    "filterMin": "最小",
+    "filterMax": "最大",
+    "filterLenta": "按备注搜索",
+    "quotedAmount": "价格（服务）",
+    "quotedCurrency": "货币",
+    "quotedVolume": "方数（m³）",
+    "quotedWeight": "重量（kg）"
   },
   "navShort": {
     "home": "首页",
@@ -1629,7 +1639,9 @@
     "cardClient": "客户编号",
     "cardChat": "聊天",
     "cardAlarms": "提醒",
-    "cardFields": "卡片显示"
+    "cardFields": "卡片显示",
+    "volumeM3": "方数（m³）",
+    "weightKg": "重量（kg）"
   },
   "automation": {
     "title": "自动化规则",

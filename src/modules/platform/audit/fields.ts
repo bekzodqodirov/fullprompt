@@ -45,6 +45,11 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // Money
   amount: 'amount',
   currency: 'currency',
+  // The lead's service quote (round 71) — same words as the deal's numbers.
+  quotedAmount: 'amount',
+  quotedCurrency: 'currency',
+  quotedVolumeM3: 'volumeM3',
+  quotedWeightKg: 'weightKg',
   discount: 'discount',
   discountReason: 'discountReason',
   rateToUsd: 'rateToUsd',

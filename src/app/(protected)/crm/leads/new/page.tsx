@@ -39,6 +39,10 @@ export default async function NewLeadPage() {
           // The person entering a lead is usually the one who will work it.
           ownerId: actor.id,
           note: '',
+          quotedAmount: '',
+          quotedCurrency: '',
+          quotedVolumeM3: '',
+          quotedWeightKg: '',
           nextActionAt: '',
           nextActionNote: '',
         }}

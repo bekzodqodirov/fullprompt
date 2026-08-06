@@ -17,6 +17,9 @@ export interface KanbanLead {
   sourceName: string | null;
   ownerName: string | null;
   clientCode: string | null;
+  /** The service price after hisoblatish (round 71); numeric arrives a string. */
+  quotedAmount: string | null;
+  quotedCurrency: string | null;
   nextActionAt: string | null;
   /** The viewer holds a Telegram chat with this client; 'waiting' = client spoke last. */
   chat: 'waiting' | 'yes' | null;
@@ -114,6 +117,13 @@ export function KanbanBoard({
                 </span>
               )}
             </div>
+            {/* The price the funnel now runs on (round 71): written after
+                hisoblatish, read at a glance on the way to won/lost. */}
+            {fields.has('quote') && lead.quotedAmount && (
+              <div className="mt-1 text-[12px] font-bold tabular-nums text-good">
+                {Number(lead.quotedAmount).toLocaleString('ru-RU')} {lead.quotedCurrency ?? 'USD'}
+              </div>
+            )}
             {fields.has('nextAction') && lead.nextActionAt && (
               <div className="mt-1 text-[11px] font-semibold text-warn">📅 {lead.nextActionAt}</div>
             )}

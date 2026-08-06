@@ -231,6 +231,16 @@ export const leadSchema = z.object({
   stageId: z.string().uuid().optional().or(z.literal('')),
   ownerId: z.string().uuid().optional().or(z.literal('')),
   note: z.string().trim().max(4000).optional().or(z.literal('')),
+  /**
+   * The SERVICE price, written after the hisoblatish stage (round 71 — the
+   * owner's answer overriding #108's "no price on a lead"): the number that
+   * rides with the lead into won/lost, and into the deal's quote when the won
+   * lead opens its job. Null means "not quoted yet", which is most leads.
+   */
+  quotedAmount: z.number().nonnegative().nullable().optional(),
+  quotedCurrency: z.enum(['USD', 'UZS', 'CNY']).nullable().optional(),
+  quotedVolumeM3: z.number().nonnegative().nullable().optional(),
+  quotedWeightKg: z.number().nonnegative().nullable().optional(),
   nextActionAt: OPTIONAL_DATE,
   nextActionNote: z.string().trim().max(500).optional().or(z.literal('')),
 });
@@ -242,6 +252,26 @@ async function defaultStageId() {
   const first = stages.find((stage) => stage.kind === 'open') ?? stages[0];
   if (!first) throw new CrmError('no_stages');
   return first.id;
+}
+
+/**
+ * The lead's quote, written as the DATABASE will hand it back: numeric(14,2)
+ * returns trailing-zero strings ("1500.00"), and `diffFields` compares
+ * strings — write "1500" where postgres stores "1500.00" and every later
+ * save would audit a phantom change and reshuffle the board (#503's lesson,
+ * one table over). A currency without an amount is noise, so it clears with
+ * the price.
+ */
+function quoteValues(input: LeadInput) {
+  const money = (n: number | null | undefined) => (n == null ? null : n.toFixed(2));
+  const size = (n: number | null | undefined) => (n == null ? null : n.toFixed(3));
+  const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
+  return {
+    quotedAmount: money(input.quotedAmount),
+    quotedCurrency: priced ? (input.quotedCurrency ?? 'USD') : null,
+    quotedVolumeM3: size(input.quotedVolumeM3),
+    quotedWeightKg: size(input.quotedWeightKg),
+  };
 }
 
 export async function createLead(input: LeadInput, ctx: AuditContext) {
@@ -259,6 +289,7 @@ export async function createLead(input: LeadInput, ctx: AuditContext) {
       // entered it rather than to nobody.
       ownerId: input.ownerId || ctx.actorId,
       note: input.note || null,
+      ...quoteValues(input),
       nextActionAt: input.nextActionAt || null,
       nextActionNote: input.nextActionNote || null,
       createdBy: ctx.actorId,
@@ -287,6 +318,7 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     stageId: input.stageId || before.stageId,
     ownerId: input.ownerId || null,
     note: input.note || null,
+    ...quoteValues(input),
     nextActionAt: input.nextActionAt || null,
     nextActionNote: input.nextActionNote || null,
   };
@@ -449,24 +481,87 @@ export function leadTextWhere(q?: string) {
     : sql`(${leads.name} ILIKE ${like} OR ${leads.company} ILIKE ${like})`;
 }
 
-export async function listLeads(filters: {
+/**
+ * Everything the board's filter panel can ask (round 71).
+ *
+ * ONE builder consumed by `listLeads` AND `closedLeadCounts`, which is #513's
+ * rule with more fields: the closed columns show a slice and the header
+ * prints the true total, so any filter that reaches the cards and not the
+ * counts turns the «+N · show all» footer into a lie.
+ *
+ * Ranges are numbers from the URL; dates are `YYYY-MM-DD` strings bound with
+ * an explicit `::date` (a bare Date beside a raw fragment is #156). A range
+ * over the quote naturally EXCLUDES unquoted leads — NULL answers no
+ * comparison — which is what «narxi 500$ dan baland» means.
+ */
+export interface LeadBoardFilters {
   ownerId?: string;
   stageId?: string;
   /** The board's search box. */
   q?: string;
-  openOnly?: boolean;
-  /** Only the finished ones — what the board shows a recent slice of. */
-  closedOnly?: boolean;
-  limit?: number;
-}) {
+  sourceId?: string;
+  /** Created-at bounds, inclusive, the typist's calendar days. */
+  createdFrom?: string;
+  createdTo?: string;
+  amountMin?: number;
+  amountMax?: number;
+  volMin?: number;
+  volMax?: number;
+  kgMin?: number;
+  kgMax?: number;
+  /**
+   * Text sought across the card's WRITTEN record: the lead's own note and
+   * every lenta entry (calls, meetings, notes). Deliberately NOT the Telegram
+   * messages: those are scoped per manager (#383), and a shared board whose
+   * result set differed by viewer — or leaked a chat's words through a
+   * card's presence — would break the rule that made them private.
+   */
+  lenta?: string;
+}
+
+export function leadBoardWhere(filters: LeadBoardFilters) {
   const where = [];
   if (filters.ownerId) where.push(eq(leads.ownerId, filters.ownerId));
   if (filters.stageId) where.push(eq(leads.stageId, filters.stageId));
+  const text = leadTextWhere(filters.q);
+  if (text) where.push(text);
+  if (filters.sourceId) where.push(eq(leads.sourceId, filters.sourceId));
+  if (filters.createdFrom) where.push(sql`${leads.createdAt} >= ${filters.createdFrom}::date`);
+  // Inclusive: «to 15th» means through the 15th's midnight, not up to it.
+  if (filters.createdTo) where.push(sql`${leads.createdAt} < ${filters.createdTo}::date + 1`);
+  if (filters.amountMin !== undefined) where.push(sql`${leads.quotedAmount} >= ${filters.amountMin}`);
+  if (filters.amountMax !== undefined) where.push(sql`${leads.quotedAmount} <= ${filters.amountMax}`);
+  if (filters.volMin !== undefined) where.push(sql`${leads.quotedVolumeM3} >= ${filters.volMin}`);
+  if (filters.volMax !== undefined) where.push(sql`${leads.quotedVolumeM3} <= ${filters.volMax}`);
+  if (filters.kgMin !== undefined) where.push(sql`${leads.quotedWeightKg} >= ${filters.kgMin}`);
+  if (filters.kgMax !== undefined) where.push(sql`${leads.quotedWeightKg} <= ${filters.kgMax}`);
+  const lenta = filters.lenta?.trim();
+  if (lenta) {
+    const like = likeNeedle(lenta);
+    // EXISTS, not a join: several matching entries must not multiply the
+    // card, and (entity_type, entity_id) is the lenta's own index.
+    where.push(
+      sql`(${leads.note} ILIKE ${like} OR EXISTS (
+        SELECT 1 FROM crm_activities a
+        WHERE a.entity_type = 'lead' AND a.entity_id = ${leads.id} AND a.note ILIKE ${like}
+      ))`,
+    );
+  }
+  return where;
+}
+
+export async function listLeads(
+  filters: LeadBoardFilters & {
+    openOnly?: boolean;
+    /** Only the finished ones — what the board shows a recent slice of. */
+    closedOnly?: boolean;
+    limit?: number;
+  },
+) {
   // In SQL, never over the fetched array: the closed slice is capped at 20 and
   // the open one at 300, so filtering afterwards would search the newest
   // twenty and answer «nothing found» about a database that has it.
-  const text = leadTextWhere(filters.q);
-  if (text) where.push(text);
+  const where = leadBoardWhere(filters);
   if (filters.openOnly) where.push(eq(leadStages.kind, 'open'));
   if (filters.closedOnly) where.push(ne(leadStages.kind, 'open'));
   return db
@@ -505,13 +600,11 @@ export async function listLeads(filters: {
  * lying about the year's work. Scoped the same way the board is.
  */
 export async function closedLeadCounts(
-  ownerId?: string,
-  q?: string,
+  filters: LeadBoardFilters,
 ): Promise<Record<string, number>> {
-  const where = [ne(leadStages.kind, 'open')];
-  if (ownerId) where.push(eq(leads.ownerId, ownerId));
-  const text = leadTextWhere(q);
-  if (text) where.push(text);
+  // The SAME builder as the rows (#513): a filter the counts do not hear
+  // turns the «+N · show all» footer into a lie on a filtered board.
+  const where = [ne(leadStages.kind, 'open'), ...leadBoardWhere(filters)];
   const rows = await db
     .select({ stageId: leads.stageId, n: sql<number>`count(*)` })
     .from(leads)

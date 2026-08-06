@@ -30,6 +30,7 @@ export function LeadFacts({
   stageName,
   sourceName,
   ownerName,
+  quote,
   nextAction,
 }: {
   leadId: string;
@@ -38,6 +39,8 @@ export function LeadFacts({
   stageName: string;
   sourceName: string;
   ownerName: string;
+  /** «1 500 USD · 12 m³ · 3 400 kg» — empty until hisoblatish has answered. */
+  quote: string;
   nextAction: string;
 }) {
   const t = useTranslations('crm');
@@ -71,7 +74,9 @@ export function LeadFacts({
       />
 
       {/* Read-only here, and each has its own control elsewhere on the card:
-          the stage chips above, the ✏️ form below. */}
+          the stage chips above, the ✏️ form below — the quote too, because a
+          price is written deliberately, not corrected on a tap. */}
+      <ReadOnly label={t('quotedAmount')} value={quote} />
       <ReadOnly label={t('stage')} value={stageName} />
       <ReadOnly label={t('source')} value={sourceName} />
       <ReadOnly label={t('owner')} value={ownerName} />

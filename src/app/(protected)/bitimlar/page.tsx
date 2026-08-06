@@ -5,7 +5,10 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
-import { BoardFilter, hrefWith } from '@/components/list/board-filter';
+import { BoardFilter, hrefWith, readBoardFilters } from '@/components/list/board-filter';
+import { ViewBar } from '@/components/list/view-bar';
+import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
+import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { CardFieldsMenu } from '@/components/list/card-fields-menu';
 import { DEAL_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
@@ -33,7 +36,7 @@ const CLOSED_ON_BOARD = 20;
 export default async function DealsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string; arxiv?: string; q?: string; hodim?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -41,7 +44,19 @@ export default async function DealsPage({
   const t = await getTranslations('deals');
   const tc = await getTranslations('crm');
   const tcommon = await getTranslations('common');
-  const params = await searchParams;
+  const raw = await searchParams;
+  // A bare visit opens the person's default VIEW, exactly as the lists do.
+  if (Object.keys(raw).length === 0) {
+    const preset = await defaultViewFor('bitimlar', actor.id);
+    if (preset?.query) redirect(`/bitimlar?${preset.query}`);
+  }
+  const params = {
+    scope: Array.isArray(raw.scope) ? raw.scope[0] : raw.scope,
+    arxiv: Array.isArray(raw.arxiv) ? raw.arxiv[0] : raw.arxiv,
+    q: Array.isArray(raw.q) ? raw.q[0] : raw.q,
+    hodim: Array.isArray(raw.hodim) ? raw.hodim[0] : raw.hodim,
+  };
+  const filters = readBoardFilters(raw);
   // Which lines this browser wants on a card — a cookie, so the first HTML is
   // already right and nothing rearranges itself after hydration.
   const cardFields = await readCardFields('deal');
@@ -59,18 +74,34 @@ export default async function DealsPage({
     ...(params.scope === 'all' ? { scope: 'all' } : {}),
     ...(q ? { q } : {}),
     ...(hodim ? { hodim } : {}),
+    ...filters.raw,
+  };
+  // What listDeals and closedDealCounts BOTH hear — one question (#513).
+  const boardFilters = {
+    ownerId: scope,
+    q,
+    createdFrom: filters.createdFrom,
+    createdTo: filters.createdTo,
+    amountMin: filters.amountMin,
+    amountMax: filters.amountMax,
+    volMin: filters.volMin,
+    volMax: filters.volMax,
+    kgMin: filters.kgMin,
+    kgMax: filters.kgMax,
+    lenta: filters.lenta,
   };
 
   // Same rule as the lead funnel (round 47, owner's item 6): the won and lost
   // columns keep the recent cards and say how many more they hold. A closed
   // job is a record; a board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, open, closed, closedTotals, attention, badges, managers] = await Promise.all([
+  const [stages, views, open, closed, closedTotals, attention, badges, managers] = await Promise.all([
     listStages(),
-    listDeals({ ownerId: scope, q, openOnly: true }),
-    listDeals({ ownerId: scope, q, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
-    // The SAME q as the rows, or the «+N · show all» footer lies.
-    closedDealCounts(scope, q),
+    listViewsFor('bitimlar', actor.id),
+    listDeals({ ...boardFilters, openOnly: true }),
+    listDeals({ ...boardFilters, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
+    // The SAME filters as the rows, or the «+N · show all» footer lies.
+    closedDealCounts(boardFilters),
     dealsNeedingAttention(scope, q),
     // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
     chatBadges(tgViewerFor(actor)),
@@ -118,7 +149,11 @@ export default async function DealsPage({
     // one line, or two when the colleague picker is offered.
     <div
       className="space-y-3"
-      style={{ ['--board-extra' as string]: managers.length ? '8.9rem' : '4.9rem' }}
+      style={{
+        ['--board-extra' as string]: `${
+          (managers.length ? 8.9 : 4.9) + 2.6 + (Object.keys(filters.raw).length ? 2.2 : 0)
+        }rem`,
+      }}
     >
       <PageHeader
         icon="handshake"
@@ -190,6 +225,15 @@ export default async function DealsPage({
         </div>
       )}
 
+      {/* The board's query string is already a view; a name makes it a door. */}
+      <ViewBar
+        screen="bitimlar"
+        path="/bitimlar"
+        views={views}
+        currentQuery={normalizeQuery(raw)}
+        canPublish={canPublishViews(actor.permissions)}
+      />
+
       <BoardFilter
         q={q}
         hodim={hodim}
@@ -203,6 +247,21 @@ export default async function DealsPage({
           everyone: tc('allManagers'),
           apply: tcommon('search'),
           clear: tc('filterClear'),
+        }}
+        advanced={{
+          values: filters.raw,
+          labels: {
+            filters: tc('boardFilters'),
+            source: tc('source'),
+            dateFrom: tc('filterFrom'),
+            dateTo: tc('filterTo'),
+            price: t('amount'),
+            volume: t('volumeM3'),
+            weight: t('weightKg'),
+            lentaSearch: tc('filterLenta'),
+            min: tc('filterMin'),
+            max: tc('filterMax'),
+          },
         }}
       />
 

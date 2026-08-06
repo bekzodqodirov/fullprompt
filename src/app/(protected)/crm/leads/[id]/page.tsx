@@ -118,6 +118,17 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         stageName={stages.find((stage) => stage.id === lead.stageId)?.name ?? ''}
         sourceName={sources.find((row) => row.id === lead.sourceId)?.name ?? ''}
         ownerName={managers.find((row) => row.id === lead.ownerId)?.fullName ?? ''}
+        quote={
+          lead.quotedAmount
+            ? [
+                `${Number(lead.quotedAmount).toLocaleString('ru-RU')} ${lead.quotedCurrency ?? 'USD'}`,
+                lead.quotedVolumeM3 ? `${Number(lead.quotedVolumeM3)} m³` : '',
+                lead.quotedWeightKg ? `${Number(lead.quotedWeightKg)} kg` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            : ''
+        }
         nextAction={[lead.nextActionAt, lead.nextActionNote].filter(Boolean).join(' · ')}
       />
 
@@ -136,7 +147,9 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
               open the JOB (owner: "lead voronkadan bitim voronkaga oson
               o'tilishi kerak"). One tap, client pre-picked. */}
           <Link
-            href={`/bitimlar/new?client=${lead.clientId}`}
+            // `lead=` carries the quote: the price agreed on the LEAD is the
+            // price the deal opens with, typed once (round 71).
+            href={`/bitimlar/new?client=${lead.clientId}&lead=${lead.id}`}
             data-testid="lead-to-deal"
             className="card flex items-center text-sm font-bold text-brand-700"
           >
@@ -179,6 +192,10 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
             stageId: lead.stageId,
             ownerId: lead.ownerId ?? '',
             note: lead.note ?? '',
+            quotedAmount: lead.quotedAmount ?? '',
+            quotedCurrency: lead.quotedCurrency ?? '',
+            quotedVolumeM3: lead.quotedVolumeM3 ?? '',
+            quotedWeightKg: lead.quotedWeightKg ?? '',
             nextActionAt: lead.nextActionAt ?? '',
             nextActionNote: lead.nextActionNote ?? '',
           }}

@@ -1,5 +1,42 @@
 # CHANGELOG
 
+## Lidda xizmat narxi va ikkala kanbanda katta filtr paneli — 2026-08-06
+
+Sizning to'rtta javobingiz bo'yicha qurildi.
+
+**1. Lid endi pul ko'taradi.** Hisoblatishdan keyin yoziladigan xizmat
+narxi (narx + valyuta + kub + kg) endi lidning o'zida turadi: yangi lid
+shaklida, kartadagi faktlar ro'yxatida, va **voronkadagi kartochkada ham**
+(yashil rangda) — filtrlanadigan raqam ko'rinmasa, filtr ko'r bo'lardi.
+Narx yozilgan holda lid «Sotuv»ga o'tsa, «Bitim ochish» tugmasi shu
+raqamlarni bitim shakliga o'zi olib o'tadi. Har bir narx o'zgarishi
+tarixga tushadi; o'zgarmagan narxni qayta saqlash esa tarixga ortiqcha
+qator yozmaydi.
+
+**2. Katta filtr paneli — CRMda ham, Bitimlarda ham.** Qidiruv qatori
+yonidagi ⚲ tugma panel ochadi: manba (faqat CRMda), sana oralig'i, narx,
+kub, kg — hammasi «dan–gacha» ko'rinishida — va **lenta bo'yicha qidiruv**
+(kartaga yozilgan izohlar ichidan topadi; Telegram yozishmalari bunga
+kirmaydi — ular har bir menejerning o'z chati). Tanlangan filtrlar panel
+yopiq turganda ham chip bo'lib ko'rinib turadi, chipni bossangiz o'sha
+bitta filtr olinadi. Muhimi: filtr faqat kartalarni emas, yopiq
+ustunlardagi «+N · hammasi» sonini ham hisoblaydi — ekran yolg'on
+gapirmaydi.
+
+**3. Filtr saqlangan ko'rinish bo'la oladi.** Yoqqan kombinatsiyani
+(masalan «narxi 1000 dan yuqori») nomlab saqlaysiz — mijozlar kitobidagi
+kabi, endi ikkala doskada ham. Saqlangan ko'rinish havola, ulashsa ham
+bo'ladi.
+
+**4. Telefonda.** Panel telefonda pastdan chiqadigan varaq bo'lib ochiladi
+— «Qo'llash» tugmasi barmoq ostida, pastki menyu ustida turadi. Ekran
+kengaymaydi, sahifa yon tomonga siljimaydi — 360 px da skrinshot bilan
+tekshirildi, ikkala doskada ham.
+
+Yangi migratsiya: 0060 (liddagi narx ustunlari — faqat qo'shimcha, hech
+narsa o'zgartirilmaydi). Yangilashda bazani tekshirish esdan chiqmasin
+(DEPLOY.md dagi tartib).
+
 ## Ommaviy belgilash qotmaydigan bo'ldi, lid nomi endi bosilib o'zgarmaydi — 2026-08-06
 
 Sizning to'rtta gapingiz bo'yicha.

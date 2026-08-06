@@ -124,8 +124,9 @@ pnpm build && pnpm e2e  # 44 e2e
 Branch `claude/gsr-logistics-wms-phase1-o8h4en` restarted from `main` (PR #1
 merged 2026-08-05; PRs #2/#3/#4 merged since). `main` is the trunk now — the
 next PR targets it.
-1058 unit/integration + 144 e2e, verified in CI's order on a fresh database.
-Latest migration: **0058** (`list_views`). Every numbered phase is shipped;
+1071 unit/integration + 147 e2e, verified in CI's order on a fresh database.
+Latest migration: **0060** (`lead_quote`; 0059 `reply_templates` is the
+other session's). Every numbered phase is shipped;
 rounds 56-69 (the Frappe-UX programme) were built by ANOTHER session and are
 on main — read `docs/CRM-UX.md` before touching lists, search, bulk or
 quick-create.
@@ -133,7 +134,7 @@ quick-create.
 **NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
 17 audit defects (four live money bugs), the speed rounds, rounds 46-70, the
 driver app 1.3. The owner's last confirmed update was `eea3509`.
-**Deploy note:** migration 0058 MUST land — the client book, the stock table
+**Deploy note:** migrations 0058-0060 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations` after updating; fix with
@@ -1551,7 +1552,8 @@ cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
 batches row (the stamp's FK) — in_transit + departedAt, route check needs
 two warehouses.
 
-Round 70 — the owner's four items after the merges (#500-504). Two
+Round 70 — the owner's four items after the merges (#534-538 — first
+written as #500-504, colliding with round 61's numbers; renumbered). Two
 REGRESSIONS from the other session's work: the client book's XLSX had lost
 its phone column (`optional` is a rule about a narrow table, not about a
 file — `exportColumns` now answers the export's own question, permission
@@ -1578,6 +1580,36 @@ four-condition filter with text search + join runs in 0.99 ms, and the
 database is not the question for years; price/kg/kub exist on a DEAL and not
 on a lead, so the two boards cannot carry the same filter set. His answers
 awaited before building.
+
+Round 71 — his four answers arrived, all built (#539-541). (1) **The lead
+took money** («ha pul kerak … hisoblatish bosqichidan keyin bizning
+serviceimiz narxi yozilishi kerak va shu narx yutildimi yo'qmi etapiga
+o'tadi» — his override of #108): migration **0060** adds
+`quoted_amount/currency/volume_m3/weight_kg` to `leads`, additive/nullable;
+one `quoteValues` helper writes toFixed(2)/(3) so a re-save diffs to
+nothing (#503's rule — integration test asserts NO audit row); currency
+USD only when priced; the form gained a quote row (`lead-quote-amount`),
+the facts rail a read-only line, the CARD a green price line — the one
+DELIBERATE break of #517's «null = yesterday's card» stillness, stated in
+card-fields.test; «Bitim ochish» on a won lead prefills the deal form,
+only when the lead's client matches the preset (#514). (2+3+4) **The
+filter panel on BOTH kanbans** (`board-filter.tsx`): manba/dan/gacha/
+narx/kub/kg ranges + lenta search; `readBoardFilters` validates
+everything out of the URL (#514 — number/date/uuid or dropped);
+`leadBoardWhere`/`dealBoardWhere` are the ONE predicate each, consumed by
+rows AND closed counts (#513 at design time, red-proven by unsharing);
+lenta = EXISTS over crm_activities + the record's own note, deliberately
+NOT tg_messages (#383's fence); every combination savable as a round-57
+view — ViewBar now on /crm and /bitimlar with a bare-visit default
+redirect. MOBILE (his «UI UX ga juda katta etibor»): on phones the panel
+is a FIXED bottom sheet above the tab bar; anchored `top-full` it
+overflowed the viewport — e2e went green after a z-index fix and only the
+360×800 SCREENSHOT showed the apply button below the fold (#541: green
+for a robot ≠ reachable for a thumb); chips under the search row remove
+one filter each, whole chip = the link. e2e m9zh (3 tests, serial): real
+form → price on card → panel narrows → chip restores → saved view →
+view deleted as a final TEST. NOTE: round 70's DECISIONS numbers collided
+with round 61's (#500-504 twice); round 70's are renumbered **#534-538**.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

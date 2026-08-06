@@ -130,8 +130,8 @@ describe('the counts are filtered by the same question as the cards', () => {
   it('counts only the matching closed leads', async () => {
     // Two closed leads were made, one matching. Unfiltered the column holds
     // both; filtered it must hold one — the number under «+N · show all».
-    const unfiltered = await closedLeadCounts(actorId);
-    const filtered = await closedLeadCounts(actorId, NEEDLE);
+    const unfiltered = await closedLeadCounts({ ownerId: actorId });
+    const filtered = await closedLeadCounts({ ownerId: actorId, q: NEEDLE });
     expect(unfiltered[closedStageId]).toBeGreaterThanOrEqual(2);
     expect(filtered[closedStageId]).toBe(1);
   });
@@ -140,7 +140,7 @@ describe('the counts are filtered by the same question as the cards', () => {
     // The assertion the whole feature rests on: whatever the closed slice
     // shows, the total must be the same query's answer.
     const shown = await listLeads({ ownerId: actorId, closedOnly: true, q: NEEDLE, limit: 400 });
-    const totals = await closedLeadCounts(actorId, NEEDLE);
+    const totals = await closedLeadCounts({ ownerId: actorId, q: NEEDLE });
     const perStage = new Map<string, number>();
     for (const row of shown) {
       perStage.set(row.lead.stageId, (perStage.get(row.lead.stageId) ?? 0) + 1);
@@ -170,6 +170,6 @@ describe('what the box finds on the deal board', () => {
   it('counts the closed ones through the same predicate, joins and all', async () => {
     // `closedDealCounts` had no clients join; the shared predicate reaches the
     // client code, so it needed one or it would be a missing-FROM SQL error.
-    await expect(closedDealCounts(undefined, `FLT${SUFFIX}`)).resolves.toBeTypeOf('object');
+    await expect(closedDealCounts({ q: `FLT${SUFFIX}` })).resolves.toBeTypeOf('object');
   });
 });

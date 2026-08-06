@@ -1023,24 +1023,69 @@ export function dealTextWhere(q?: string) {
   return sql`(${deals.code} ILIKE ${like} OR ${deals.title} ILIKE ${like} OR ${clients.clientCode} ILIKE ${like})`;
 }
 
-export async function listDeals(filters: {
+/**
+ * Everything the board's filter panel can ask (round 71) — the deal board's
+ * twin of `LeadBoardFilters`, consumed by `listDeals` AND `closedDealCounts`
+ * so the «+N · show all» footer cannot lie on a filtered board (#513).
+ */
+export interface DealBoardFilters {
   ownerId?: string;
   clientId?: string;
   stageId?: string;
-  /** The board's search box. */
+  /** The board's search box (code, title, client code). */
   q?: string;
-  openOnly?: boolean;
-  /** Only the finished ones — what the board shows a recent slice of. */
-  closedOnly?: boolean;
-  limit?: number;
-}): Promise<DealRow[]> {
+  createdFrom?: string;
+  createdTo?: string;
+  amountMin?: number;
+  amountMax?: number;
+  volMin?: number;
+  volMax?: number;
+  kgMin?: number;
+  kgMax?: number;
+  /** Text across the deal's written record: its note and the lenta. */
+  lenta?: string;
+}
+
+export function dealBoardWhere(filters: DealBoardFilters) {
   const conditions = [];
-  // In SQL, never over the fetched array — the closed slice is capped at 20.
   const text = dealTextWhere(filters.q);
   if (text) conditions.push(text);
   if (filters.ownerId) conditions.push(eq(deals.ownerId, filters.ownerId));
   if (filters.clientId) conditions.push(eq(deals.clientId, filters.clientId));
   if (filters.stageId) conditions.push(eq(deals.stageId, filters.stageId));
+  if (filters.createdFrom) conditions.push(sql`${deals.createdAt} >= ${filters.createdFrom}::date`);
+  if (filters.createdTo) conditions.push(sql`${deals.createdAt} < ${filters.createdTo}::date + 1`);
+  if (filters.amountMin !== undefined) conditions.push(sql`${deals.quotedAmount} >= ${filters.amountMin}`);
+  if (filters.amountMax !== undefined) conditions.push(sql`${deals.quotedAmount} <= ${filters.amountMax}`);
+  if (filters.volMin !== undefined) conditions.push(sql`${deals.quotedVolumeM3} >= ${filters.volMin}`);
+  if (filters.volMax !== undefined) conditions.push(sql`${deals.quotedVolumeM3} <= ${filters.volMax}`);
+  if (filters.kgMin !== undefined) conditions.push(sql`${deals.quotedWeightKg} >= ${filters.kgMin}`);
+  if (filters.kgMax !== undefined) conditions.push(sql`${deals.quotedWeightKg} <= ${filters.kgMax}`);
+  const lenta = filters.lenta?.trim();
+  if (lenta) {
+    const like = likeNeedle(lenta);
+    // EXISTS, never a join — a card with three matching notes is one card.
+    // Telegram messages stay out on purpose: they are per-manager (#383).
+    conditions.push(
+      sql`(${deals.note} ILIKE ${like} OR EXISTS (
+        SELECT 1 FROM crm_activities a
+        WHERE a.entity_type = 'deal' AND a.entity_id = ${deals.id} AND a.note ILIKE ${like}
+      ))`,
+    );
+  }
+  return conditions;
+}
+
+export async function listDeals(
+  filters: DealBoardFilters & {
+    openOnly?: boolean;
+    /** Only the finished ones — what the board shows a recent slice of. */
+    closedOnly?: boolean;
+    limit?: number;
+  },
+): Promise<DealRow[]> {
+  // In SQL, never over the fetched array — the closed slice is capped at 20.
+  const conditions = dealBoardWhere(filters);
   if (filters.openOnly || filters.closedOnly) {
     const terminal = await db
       .select({ id: dealStages.id })
@@ -1096,13 +1141,11 @@ export async function listDeals(filters: {
  * so «Sotuv 143» stays 143 even when twelve cards are on screen.
  */
 export async function closedDealCounts(
-  ownerId?: string,
-  q?: string,
+  filters: DealBoardFilters,
 ): Promise<Record<string, number>> {
-  const where = [notInArray(dealStages.kind, ['open'])];
-  if (ownerId) where.push(eq(deals.ownerId, ownerId));
-  const text = dealTextWhere(q);
-  if (text) where.push(text);
+  // The SAME builder as the rows (#513) — a filter the counts do not hear
+  // makes the «+N · show all» footer lie on a filtered board.
+  const where = [notInArray(dealStages.kind, ['open']), ...dealBoardWhere(filters)];
   const rows = await db
     .select({ stageId: deals.stageId, n: sql<number>`count(*)` })
     .from(deals)

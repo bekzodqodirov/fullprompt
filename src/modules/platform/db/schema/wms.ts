@@ -1055,6 +1055,18 @@ export const leads = pgTable(
     /** The sales manager who owns the conversation. */
     ownerId: uuid('owner_id').references(() => users.id),
     note: text('note'),
+    /**
+     * The SERVICE price quoted after the hisoblatish stage (round 71, the
+     * owner's answer overriding #108's "no price on a lead"): «tovarga
+     * hisoblatish bosqichidan keyin bizning servicemiz narxi yozilishi kerak
+     * va shu narx yutildimi yo'qmi etapiga o'tadi». Nullable — an unquoted
+     * lead is the normal state — and carried into the deal's quote when the
+     * won lead opens its job.
+     */
+    quotedAmount: numeric('quoted_amount', { precision: 14, scale: 2 }),
+    quotedCurrency: varchar('quoted_currency', { length: 3 }),
+    quotedVolumeM3: numeric('quoted_volume_m3', { precision: 12, scale: 3 }),
+    quotedWeightKg: numeric('quoted_weight_kg', { precision: 12, scale: 3 }),
     /** "Call back on Friday" — what the follow-up list is built from. */
     nextActionAt: date('next_action_at'),
     nextActionNote: text('next_action_note'),
