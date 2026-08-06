@@ -92,6 +92,35 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   await expect(page.getByRole('button', { name: /🛃/ })).toHaveClass(/border-blue-700/, {
     timeout: 10_000,
   });
+  // --- The phone row's own door to the map (owner: «ulangan telefonni
+  // kirgizganda tagida kartaga o'tish havolasi turar edi») ---
+  // Pair a phone the way the APK does: mint a code on the card, exchange it.
+  // The panel folds (round 46's idiom) — open it before pressing anything.
+  await page.getByTestId('batch-driver-panel').click();
+  await page.getByRole('button', { name: /📲/ }).click();
+  const pairCode = await page
+    .locator('span.font-mono.tracking-widest')
+    .first()
+    .innerText();
+  const paired = await page.request.post('/api/track/pair', {
+    data: { pairCode: pairCode.trim(), platform: 'android' },
+  });
+  expect(paired.status()).toBe(200);
+  await page.reload();
+  // The panel folds shut on every load; the link lives inside it.
+  await page.getByTestId('batch-driver-panel').click();
+  await expect(page.getByTestId('device-map-link')).toBeVisible();
+  // Revoke before leaving: a quiet PAIRED phone on an in-transit batch is a
+  // silent truck to this server's round-55 sweep (#154 — state a spec leaves
+  // behind is the next spec's input).
+  // Every batch also mints a pending pair code at creation, so more than one
+  // row can be here — sweep them all; only a device-free panel is clean.
+  while ((await page.getByRole('button', { name: /✖/ }).count()) > 0) {
+    await page.getByRole('button', { name: /✖/ }).first().click();
+    await page.waitForTimeout(400);
+  }
+  await expect(page.getByTestId('device-map-link')).toHaveCount(0, { timeout: 10_000 });
+
   await page.goto('/map');
   await expect(page.locator('svg[role="img"]')).toBeVisible();
   await expect(page.locator(`svg text:has-text("${batchCode}")`).first()).toBeVisible({

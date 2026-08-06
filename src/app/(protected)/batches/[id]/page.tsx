@@ -654,8 +654,24 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         <Panel
           title={`📲 ${t('driverPhone')}`}
           badge={devices.find((d) => d.pairCode)?.pairCode ?? (devices.length > 0 ? '✅' : undefined)}
+          testId="batch-driver-panel"
         >
           {devices.length === 0 && <p className="text-xs text-ink-500">{t('driverPhoneHint')}</p>}
+          {/* The door the phone row always had, put back where he looks for
+              it (owner: «ulangan telefonni kirgizganda tagida kartaga o'tish
+              havolasi turar edi»). Round 46 folded «Где машина» into its own
+              panel and the map link folded away WITH it — still there, but
+              two taps deep with nothing on this panel saying so. A paired
+              phone on a moving truck IS the reason somebody opens the map. */}
+          {batch.status === 'in_transit' && devices.some((d) => !d.pairCode) && (
+            <Link
+              href="/map"
+              className="block text-sm font-semibold text-brand-700 underline"
+              data-testid="device-map-link"
+            >
+              🗺 {t('openMap')} →
+            </Link>
+          )}
           {devices.map((device) => (
             <div key={device.id} className="flex flex-wrap items-center gap-2 border-b border-line pb-2 text-sm last:border-0">
               {device.pairCode ? (
