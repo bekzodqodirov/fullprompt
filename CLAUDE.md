@@ -1592,7 +1592,13 @@ day-one duplicates) and `findCallForAudio` now scopes by user, or a
 re-paired phone's audio would 404 for ever. Local-only e2e note: a SECOND
 full run on the same db leaves two in-transit m3 batches whose truck
 markers can stack on a warehouse pin and intercept m9c's click — fresh-db
-runs (and CI) are green.
+runs (and CI) are green. APK v1.1 the same evening (#540): scoped storage
+made the File-API finder answer «nothing» on his Samsung while the files
+sat in Recordings/Call — MediaStore-first + resolver streaming, the
+privacy fence now folder-says-call OR name-carries-number, and the audio
+pass's counters live on the app screen (a silent pass cost the day). The
+server was exonerated by scripts/dev-call-audio-probe.mjs — the APK's
+exact wire shape, green end-to-end locally.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

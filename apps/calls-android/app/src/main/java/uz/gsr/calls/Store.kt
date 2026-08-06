@@ -90,6 +90,11 @@ class Store(context: Context) :
         get() = prefs.getInt("sentAudio", 0)
         set(value) = prefs.edit().putInt("sentAudio", value).apply()
 
+    /** Last audio pass, «pending/found/sent/refused» — the screen's eyes. */
+    var audioStatus: String
+        get() = prefs.getString("audioStatus", "") ?: ""
+        set(value) = prefs.edit().putString("audioStatus", value).apply()
+
     /** The OEM auto-start whitelist cannot be read back — ticked by hand. */
     var autostartConfirmed: Boolean
         get() = prefs.getBoolean("autostart", false)
@@ -112,6 +117,7 @@ class Store(context: Context) :
             .remove("lastError")
             .remove("sentCalls")
             .remove("sentAudio")
+            .remove("audioStatus")
             .apply()
         runCatching { writableDatabase.delete("calls", null, null) }
     }

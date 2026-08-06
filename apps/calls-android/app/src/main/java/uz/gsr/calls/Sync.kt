@@ -50,24 +50,40 @@ object Sync {
 
             // 2. Recordings for matched calls. MIUI/Samsung close the file at
             //    hang-up but folders can index late — a call with no file yet
-            //    simply stays pending for a later cycle.
-            for (pending in store.pendingAudio(AUDIO_PER_CYCLE)) {
-                val file = Recordings.findFor(context, pending.phone, pending.startedAt, pending.durationSec)
-                if (file == null) {
+            //    simply stays pending for a later cycle. Counters go to the
+            //    screen (v1.1): a silent audio pass was undebuggable — zero
+            //    uploads and nothing anywhere to say why.
+            var found = 0
+            var sent = 0
+            var refused = 0
+            val pendings = store.pendingAudio(AUDIO_PER_CYCLE)
+            for (pending in pendings) {
+                val rec = Recordings.findFor(context, pending.phone, pending.startedAt, pending.durationSec)
+                if (rec == null) {
                     if (now - pending.startedAt > AUDIO_WAIT_MS) {
                         store.markAudio(pending.phone, pending.startedAt, Store.AUDIO_EXPIRED)
                     }
                     continue
                 }
+                found += 1
+                val stream = rec.open(context)
+                if (stream == null) {
+                    // Visible but unreadable: leave it pending — the counters
+                    // will show found > sent and name the problem.
+                    continue
+                }
                 try {
-                    Api.uploadAudio(store.server, token, file, pending.phone, pending.startedAt)
+                    Api.uploadAudio(store.server, token, rec.name, stream, pending.phone, pending.startedAt)
                     store.markAudio(pending.phone, pending.startedAt, Store.AUDIO_SENT)
                     store.sentAudio = store.sentAudio + 1
-                } catch (refused: AudioRefused) {
+                    sent += 1
+                } catch (r: AudioRefused) {
                     // Final for THIS file — retrying re-sends megabytes for ever.
                     store.markAudio(pending.phone, pending.startedAt, Store.AUDIO_REFUSED)
+                    refused += 1
                 }
             }
+            store.audioStatus = "${pendings.size}/${found}/${sent}/${refused}"
 
             store.prune(now)
             store.lastSyncAt = now

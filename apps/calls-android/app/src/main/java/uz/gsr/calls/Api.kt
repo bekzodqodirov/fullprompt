@@ -2,7 +2,6 @@ package uz.gsr.calls
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -109,8 +108,17 @@ object Api {
     /**
      * Upload one recording for a call the server already knows. `true` means
      * the server holds the audio (fresh or already) — the file is done.
+     * The bytes arrive as a STREAM (v1.1): on scoped storage the recording
+     * is only reachable through a content resolver, never as a File.
      */
-    fun uploadAudio(server: String, token: String, file: File, phone: String, startedAt: Long): Boolean {
+    fun uploadAudio(
+        server: String,
+        token: String,
+        fileName: String,
+        bytes: java.io.InputStream,
+        phone: String,
+        startedAt: Long,
+    ): Boolean {
         val boundary = "----gsrcalls${System.currentTimeMillis()}"
         val connection = open(server, "/api/calls/audio", token, "multipart/form-data; boundary=$boundary")
         // The file can be many megabytes: stream it, never buffer the whole
@@ -125,10 +133,10 @@ object Api {
                 field("startedAt", startedAt.toString())
                 out.write(
                     ("--$boundary\r\nContent-Disposition: form-data; name=\"audio\"; " +
-                        "filename=\"${file.name.replace("\"", "")}\"\r\n" +
+                        "filename=\"${fileName.replace("\"", "")}\"\r\n" +
                         "Content-Type: application/octet-stream\r\n\r\n").toByteArray(),
                 )
-                file.inputStream().use { it.copyTo(out) }
+                bytes.use { it.copyTo(out) }
                 out.write("\r\n--$boundary--\r\n".toByteArray())
             }
             val code = connection.responseCode

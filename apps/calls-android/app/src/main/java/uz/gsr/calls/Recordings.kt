@@ -1,29 +1,31 @@
 package uz.gsr.calls
 
+import android.content.ContentUris
 import android.content.Context
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import java.io.File
+import java.io.InputStream
 import java.util.Locale
 
 /**
  * Finds the file the phone's OWN call recorder wrote for one call.
  *
- * Android gives no app the call audio (since 10), so Samsung/Xiaomi/… write
- * the recording themselves into a folder of their choosing, and this app
- * only picks it up. Two ways in, both media-permission only:
+ * v1.1: MediaStore FIRST, File API only as the pre-scoped-storage fallback.
+ * On Android 13+ the audio permission grants access to other apps'
+ * recordings THROUGH MediaStore — but `File.listFiles()` on their folder
+ * (and even `File.isFile` on a path MediaStore returned) can silently
+ * answer nothing, which is exactly what v1.0 shipped: the owner's Samsung
+ * had the files sitting in Recordings/Call and the app uploaded zero.
+ * A candidate is therefore carried as a content URI and STREAMED via the
+ * resolver, never touched as a File on modern Android.
  *
- *  · the vendors' known call-recording folders, scanned directly — these
- *    folders hold NOTHING but call recordings, so a time match is enough;
- *  · a MediaStore query for audio whose path says "call" — the net for a
- *    vendor we did not list. A generic recordings folder is deliberately
- *    NOT scanned: a voice memo taped during the call window must never be
- *    mistaken for the call and uploaded.
- *
- * A candidate matches when its mtime sits in the call's window (the
- * recorder closes the file at hang-up), and the one whose name carries the
- * number's tail wins over a bare time match — Xiaomi and Samsung both put
- * the number or contact in the filename.
+ * A candidate matches when its mtime sits in the call's window (recorders
+ * close the file at hang-up) AND it says «call» in its path or carries the
+ * number's tail in its name — a voice memo taped during the call window
+ * must never be mistaken for the call and uploaded.
  */
 object Recordings {
 
@@ -46,58 +48,95 @@ object Recordings {
     private const val AFTER_MS = 10L * 60 * 1000
     private const val BEFORE_MS = 90L * 1000
 
-    data class Candidate(val file: File, val score: Long)
+    /** One found recording, openable without the File API. */
+    class Rec(
+        val name: String,
+        val sizeBytes: Long,
+        private val uri: Uri?,
+        private val file: File?,
+        val score: Long,
+    ) {
+        fun open(context: Context): InputStream? = runCatching {
+            if (uri != null) context.contentResolver.openInputStream(uri) else file?.inputStream()
+        }.getOrNull()
+    }
 
-    fun findFor(context: Context, phone: String, startedAt: Long, durationSec: Int): File? {
+    fun findFor(context: Context, phone: String, startedAt: Long, durationSec: Int): Rec? {
         val endAt = startedAt + durationSec * 1000L
         val windowFrom = startedAt - BEFORE_MS
         val windowTo = endAt + AFTER_MS
         val tail = phone.filter { it.isDigit() }.takeLast(7)
 
-        val candidates = ArrayList<Candidate>()
-        fun consider(file: File) {
-            val name = file.name.lowercase(Locale.US)
-            if (name.substringAfterLast('.', "") !in AUDIO_EXT) return
-            val mtime = file.lastModified()
-            if (mtime < windowFrom || mtime > windowTo) return
-            if (file.length() == 0L || file.length() > MAX_BYTES) return
-            // Closest to the hang-up wins; a filename naming the number beats
-            // any bare time match (several calls can share a window).
-            var score = Math.abs(mtime - endAt)
-            if (tail.length >= 5 && file.name.filter { it.isDigit() }.contains(tail)) {
-                score -= 100L * 60 * 1000
-            }
-            candidates.add(Candidate(file, score))
+        val candidates = ArrayList<Rec>()
+
+        fun consider(name: String, path: String, mtimeMs: Long, size: Long, uri: Uri?, file: File?) {
+            val lowerName = name.lowercase(Locale.US)
+            if (lowerName.substringAfterLast('.', "") !in AUDIO_EXT) return
+            if (mtimeMs < windowFrom || mtimeMs > windowTo) return
+            if (size == 0L || size > MAX_BYTES) return
+            val nameHasNumber = tail.length >= 5 && name.filter { it.isDigit() }.contains(tail)
+            val pathSaysCall = path.lowercase(Locale.US).contains("call")
+            // The privacy fence: a file is a call recording when its FOLDER
+            // says so or its NAME carries the caller's number — never on a
+            // bare time coincidence.
+            if (!nameHasNumber && !pathSaysCall) return
+            var score = Math.abs(mtimeMs - endAt)
+            if (nameHasNumber) score -= 100L * 60 * 1000
+            candidates.add(Rec(name, size, uri, file, score))
         }
 
-        val root = Environment.getExternalStorageDirectory()
-        for (dir in CALL_DIRS) {
-            val folder = File(root, dir)
-            if (!folder.isDirectory) continue
-            runCatching { folder.listFiles()?.forEach(::consider) }
-        }
-
-        // The net: any audio MediaStore indexed whose path mentions call
-        // recording — catches a vendor folder not on the list above.
+        // MediaStore — the road that stays open under scoped storage.
         runCatching {
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.DATE_MODIFIED,
+                MediaStore.Audio.Media.SIZE,
+                MediaStore.Audio.Media.DATA,
+            )
             context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.DATE_MODIFIED),
+                projection,
                 "${MediaStore.Audio.Media.DATE_MODIFIED} BETWEEN ? AND ?",
                 arrayOf((windowFrom / 1000).toString(), (windowTo / 1000).toString()),
                 null,
             )?.use { c ->
+                val iId = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val iName = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val iDate = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+                val iSize = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
                 val iData = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
                 while (c.moveToNext()) {
-                    val path = c.getString(iData) ?: continue
-                    val lower = path.lowercase(Locale.US)
-                    if (!lower.contains("call")) continue
-                    val file = File(path)
-                    if (file.isFile) consider(file)
+                    val uri = ContentUris.withAppendedId(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        c.getLong(iId),
+                    )
+                    consider(
+                        name = c.getString(iName) ?: continue,
+                        path = c.getString(iData) ?: "",
+                        mtimeMs = c.getLong(iDate) * 1000,
+                        size = c.getLong(iSize),
+                        uri = uri,
+                        file = null,
+                    )
                 }
             }
         }
 
-        return candidates.minByOrNull { it.score }?.file
+        // Pre-scoped-storage Android (≤10): the vendor folders directly.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && candidates.isEmpty()) {
+            val root = Environment.getExternalStorageDirectory()
+            for (dir in CALL_DIRS) {
+                val folder = File(root, dir)
+                if (!folder.isDirectory) continue
+                runCatching {
+                    folder.listFiles()?.forEach { f ->
+                        consider(f.name, f.absolutePath, f.lastModified(), f.length(), null, f)
+                    }
+                }
+            }
+        }
+
+        return candidates.minByOrNull { it.score }
     }
 }

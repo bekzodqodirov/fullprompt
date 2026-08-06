@@ -19,12 +19,14 @@ settings), and this app only:
    the **client book** — a `matched: false` call is dropped on both ends and
    its recording never leaves the phone (personal calls are not the
    company's data);
-3. finds the matched calls' recordings in the vendor recorder folders
-   (MIUI `sound_recorder/call_rec`, Samsung `Recordings/Call`, Huawei
-   `Sounds/CallRecord`, Vivo `Record/Call`, Oppo `Music/Recordings/Call
-   Recordings` + a MediaStore net for paths saying "call") and uploads them —
-   matched by call window + number-in-filename, capped at 25 MB (the
-   server's own cap).
+3. finds the matched calls' recordings THROUGH MEDIASTORE (v1.1 — scoped
+   storage neither lists nor stats other apps' files via the File API, it
+   only streams them through the resolver; the direct scan of the vendor
+   folders remains for pre-Android-11 phones) and uploads them — a
+   candidate counts only when its folder says «call» or its name carries
+   the number's tail, matched by call window, capped at 25 MB (the
+   server's own cap). The audio pass prints its counters on the app
+   screen: navbat/topildi/yubordi/rad.
 
 **iPhone cannot do this** — iOS exposes neither the call log nor recordings.
 The owner's decision (2026-08-06): planned, not built; iPhone staff stay with

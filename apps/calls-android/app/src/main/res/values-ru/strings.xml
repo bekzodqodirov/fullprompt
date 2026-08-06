@@ -41,6 +41,7 @@
     <string name="info_last_sync_none">Последняя отправка: ещё не было</string>
     <string name="info_sent">Отправлено: %1$d звонков · %2$d записей</string>
     <string name="info_queue">Звонков в ожидании записи: %1$d</string>
+    <string name="info_audio_pass">Последний поиск (очередь/найдено/отправлено/отказ): %1$s</string>
     <string name="info_error">Ошибка связи: %1$s</string>
     <string name="sync_now">Отправить сейчас</string>
     <string name="syncing">Отправка…</string>

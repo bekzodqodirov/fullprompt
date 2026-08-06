@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## Qo'ng'iroq ilovasi 1.1: yozuvlar endi yuklanadi — 2026-08-06 (kech)
+
+Samsung'da yozuv fayllari papkada turgani bilan ilova ularni «ko'ra olmas»
+edi — yangi Android (13+) boshqa ilova yozgan fayllarni to'g'ridan-to'g'ri
+papkadan o'qishga ruxsat bermaydi, faqat media-katalog orqali beradi.
+Ilova 1.1 endi o'sha rasmiy yo'ldan o'qiydi. Server tomonda hech narsa
+o'zgarmadi (u to'g'ri ishlayotgani sinov bilan isbotlandi).
+
+Yana: ilova ekranida endi qidiruv holati ko'rinib turadi
+(navbat/topildi/yubordi/rad) — «nega yuklanmayapti» savoli endi
+javobsiz qolmaydi.
+
+**O'rnatish:** Actions → calls-apk → yangi artifact → Admin → Qo'ng'iroq
+ilovasi'ga qo'ying → telefonda Profil'dan yuklab o'rnating (ustidan
+o'rnatiladi, qayta ulash SHART EMAS — o'rnatgach «Hozir yuborish»ni
+bosing, kutilayotgan yozuvlar o'zi ketadi).
+
 ## Qo'ng'iroq yozuvi: birinchi kun tuzatishlari — 2026-08-06 (kech)
 
 Siz birinchi telefonni ulab sinaganingizda uchta narsa chiqdi, uchalasi ham
