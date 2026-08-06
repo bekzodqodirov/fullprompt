@@ -18,6 +18,7 @@ import { ClientCrmSections } from '../../../crm/client-crm';
 import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
+import { CallsPanel } from '@/components/calls-panel';
 import { ClientDeals } from '@/components/client-deals';
 import { ClientFacts } from './facts';
 
@@ -89,6 +90,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 the working surface of the card (owner: the amoCRM shape). */}
             <ClientFeed clientId={client.id} tall />
             <TelegramThread clientId={client.id} />
+            <CallsPanel clientId={client.id} />
           </>
         }
         rail={

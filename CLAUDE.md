@@ -121,20 +121,25 @@ pnpm build && pnpm e2e  # 44 e2e
 
 ## State — 2026-08-06
 
-Branch `claude/gsr-logistics-wms-phase1-o8h4en` restarted from `main` (PR #1
-merged 2026-08-05; PRs #2/#3/#4 merged since). `main` is the trunk now — the
-next PR targets it.
-1071 unit/integration + 147 e2e, verified in CI's order on a fresh database.
-Latest migration: **0060** (`lead_quote`; 0059 `reply_templates` is the
-other session's). Every numbered phase is shipped;
-rounds 56-69 (the Frappe-UX programme) were built by ANOTHER session and are
-on main — read `docs/CRM-UX.md` before touching lists, search, bulk or
-quick-create.
+`main` is the trunk (PR #1 = rounds 1-55; PR #3 = rounds 56-69; PR #4 =
+the truck-marker follow-up; PR #5 = the calls round). This branch
+(`claude/gsr-logistics-wms-phase1-o8h4en`) carries rounds 70-71 on PR #6.
+1076 unit/integration + 148 e2e, verified in CI's order on a fresh database
+(in the OTHER session's container the four photo-path specs are locally red
+by design — no image service there; CI is the arbiter).
+Latest migration: **0061** (`lead_quote`; 0060 `call_recorder` and 0059
+`reply_templates` are the other session's). Every numbered phase is
+shipped; rounds 56-69 + the calls round were built by ANOTHER session and
+are on main — read `docs/CRM-UX.md` before touching lists, search, bulk or
+quick-create. The driver app **still needs its v1.3 APK released**
+(Actions → driver-apk → artifact → Admin → Haydovchi ilovasi), and the
+calls round needs its FIRST APK published the same way (Actions →
+calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 
 **NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
 17 audit defects (four live money bugs), the speed rounds, rounds 46-70, the
 driver app 1.3. The owner's last confirmed update was `eea3509`.
-**Deploy note:** migrations 0058-0060 MUST land — 0058 especially — the client book, the stock table
+**Deploy note:** migrations 0058-0061 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations` after updating; fix with
@@ -1552,8 +1557,45 @@ cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
 batches row (the stamp's FK) — in_transit + departedAt, route check needs
 two warehouses.
 
-Round 70 — the owner's four items after the merges (#534-538 — first
-written as #500-504, colliding with round 61's numbers; renumbered). Two
+Round 70 — **qo'ng'iroq yozuvi** (#534-538, owner's five answers: client-book
+only / read like Telegram / from install day / iPhone planned-not-built /
+accounts stay phone+password). Migration 0060: `call_recorder_devices` +
+`call_logs` (`client_id NOT NULL` = the tg-import privacy rule structural;
+dedup `(device, phone, started_at)`). `wms/calls/service.ts`: own-account
+pairing (a code SIGNS a person — no user picker by design), single-use code,
+sha256 token, 410 on revocation (#289); `ingestCalls` answers matched per
+call and stores NOTHING for a stranger — the phone mirrors it (a local row
+only on `matched:true`, so personal calls exist on neither end);
+`callsFor(clientId, viewer)` = the round-21/33 TgViewer verbatim. Routes:
+`/api/calls/{pair,logs,audio}` — audio is log-first (bytes only for a known
+call, device-scoped find), magic-sniffed, 25 MB, claim-once with
+`already:true` on every replay (stops megabyte re-sends). Attachment authz
+`call_log` branch ENFORCES from birth (no legacy to break). UI: /profile
+«Qo'ng'iroq yozuvi» (mint code / revoke / authed APK download — no public
+page, a staff member has a login), `CallsPanel` on client/deal/lead cards
+beside the thread (gated `canReadTg`, `<audio preload="none">`), Admin →
+Qo'ng'iroq ilovasi publish page. `apps/calls-android` (GSR Qo'ng'iroqlar,
+uz+ru): the driver v1.3 skeleton — persisted JobScheduler 15-min job, no
+notification EVER (no FGS at all), boot receiver, battery/autostart
+checklist + the one step no app can check (the phone's OWN recorder switched
+on — Android hands no app the call audio, the design picks up the files the
+built-in recorder writes from vendor call-rec folders + a MediaStore «call»
+net; generic recordings folders deliberately NOT scanned). Install-day floor
+clamps the 24 h re-read overlap (his «ornatilgan kundan»). Found before
+shipping: per-call client-book loads (#432's shape, 200×/batch → one ordered
+load, oldest code wins per 67b) and a replay-inflated sent counter (~96×/day
+→ count only genuinely-new local inserts). e2e m9zj (mint + revoke, leaves
+the section bare); 5 integration tests, red-proofs ×2 (client-book gate,
+viewer scoping). NOT verifiable here: the APK runs on no machine I have — CI
+builds it; the first real paired phone is the proof (watch /profile
+lastSeen + docker logs). Siblings deferral stated: a call lands on the
+OLDEST code of a shared phone; the panel reads the exact card's client, so
+a sibling-code deal card may show none (round 32's shape, wants its own
+round if he reports it).
+
+Round 70 — the owner's four items after the merges (#539-543 — renumbered
+TWICE: first written as #500-504 colliding with round 61, then as #534-538
+colliding with the calls round merged the same day). Two
 REGRESSIONS from the other session's work: the client book's XLSX had lost
 its phone column (`optional` is a rule about a narrow table, not about a
 file — `exportColumns` now answers the export's own question, permission
@@ -1581,10 +1623,11 @@ database is not the question for years; price/kg/kub exist on a DEAL and not
 on a lead, so the two boards cannot carry the same filter set. His answers
 awaited before building.
 
-Round 71 — his four answers arrived, all built (#539-541). (1) **The lead
+Round 71 — his four answers arrived, all built (#544-546). (1) **The lead
 took money** («ha pul kerak … hisoblatish bosqichidan keyin bizning
 serviceimiz narxi yozilishi kerak va shu narx yutildimi yo'qmi etapiga
-o'tadi» — his override of #108): migration **0060** adds
+o'tadi» — his override of #108): migration **0061** adds (renumbered
+from 0060 when the calls round took that slot)
 `quoted_amount/currency/volume_m3/weight_kg` to `leads`, additive/nullable;
 one `quoteValues` helper writes toFixed(2)/(3) so a re-save diffs to
 nothing (#503's rule — integration test asserts NO audit row); currency
@@ -1604,12 +1647,13 @@ view — ViewBar now on /crm and /bitimlar with a bare-visit default
 redirect. MOBILE (his «UI UX ga juda katta etibor»): on phones the panel
 is a FIXED bottom sheet above the tab bar; anchored `top-full` it
 overflowed the viewport — e2e went green after a z-index fix and only the
-360×800 SCREENSHOT showed the apply button below the fold (#541: green
+360×800 SCREENSHOT showed the apply button below the fold (#546: green
 for a robot ≠ reachable for a thumb); chips under the search row remove
 one filter each, whole chip = the link. e2e m9zh (3 tests, serial): real
 form → price on card → panel narrows → chip restores → saved view →
-view deleted as a final TEST. NOTE: round 70's DECISIONS numbers collided
-with round 61's (#500-504 twice); round 70's are renumbered **#534-538**.
+view deleted as a final TEST. NOTE: this branch's DECISIONS numbers collided twice
+(round 61's #500-504, then the calls round's #534-538); rounds 70-71 now
+hold **#539-546**.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
@@ -1638,10 +1682,12 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** — three commits behind, and the newest one fixes four
-LIVE money bugs (settlement void, non-USD/UZS cash boxes, a partner cost with
-no FX rate, a retired counterparty's debt). No migration in them; back up
-first anyway · set
+**Deploy from `main`** — the calls round adds migration **0060** (and 0059
+is likely still pending on the server: check
+`drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
+Back up first · **release both APKs** (driver v1.3 AND the first
+GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its
+Admin page) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
 offered on anything but public HTTPS, #275) · **revoke the bot token he pasted
 in chat** and rotate `ANTHROPIC_API_KEY` · merge

@@ -7,6 +7,7 @@ import { users } from '@/modules/platform/db/schema';
 import { getSessionUser, requestMeta } from '@/modules/platform/auth/session';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { listFromGroups, MUTE_GROUPS, type MuteGroup } from '@/modules/platform/notifications/mutes';
+import { CallsError, createCallDevice, revokeCallDevice } from '@/modules/wms/calls/service';
 
 /** Self-service Telegram mute settings (spec §11) — no special permission. */
 export async function setNotificationMutesAction(formData: FormData): Promise<void> {
@@ -33,4 +34,47 @@ export async function setNotificationMutesAction(formData: FormData): Promise<vo
     after: { mutedNotificationTypes: list },
   });
   revalidatePath('/profile');
+}
+
+export interface CallDeviceState {
+  ok?: boolean;
+  error?: string;
+}
+
+/** Own phone only — the service takes the actor, never a chosen user id. */
+export async function createCallDeviceAction(
+  _prev: CallDeviceState,
+  formData: FormData,
+): Promise<CallDeviceState> {
+  const user = await getSessionUser();
+  if (!user) return { error: 'unauthenticated' };
+  const meta = await requestMeta();
+  try {
+    await createCallDevice(
+      { label: String(formData.get('label') ?? '').trim().slice(0, 100) || null },
+      { actorId: user.id, ...meta },
+    );
+  } catch (err) {
+    // The schema-behind morning (#472): a coded refusal, never a digest.
+    if (err instanceof CallsError) return { error: err.code };
+    console.error('[call-device]', err);
+    return { error: 'failed' };
+  }
+  revalidatePath('/profile');
+  return { ok: true };
+}
+
+export async function revokeCallDeviceAction(deviceId: string): Promise<CallDeviceState> {
+  const user = await getSessionUser();
+  if (!user) return { error: 'unauthenticated' };
+  const meta = await requestMeta();
+  try {
+    await revokeCallDevice(deviceId, { actorId: user.id, ...meta });
+  } catch (err) {
+    if (err instanceof CallsError) return { error: err.code };
+    console.error('[call-device]', err);
+    return { error: 'failed' };
+  }
+  revalidatePath('/profile');
+  return { ok: true };
 }

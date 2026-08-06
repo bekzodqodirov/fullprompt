@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light only: the screen is read by staff on any phone and the checklist
+         colours have to mean the same thing every time. -->
+    <style name="Theme.GSRCalls" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@color/page</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+</resources>

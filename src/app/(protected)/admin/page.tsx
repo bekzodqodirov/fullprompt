@@ -45,6 +45,7 @@ export default async function AdminHubPage() {
     { href: '/admin/fx', label: tCosting('fxTitle'), icon: 'exchange', show: has('costs.fx.manage') },
     { href: '/admin/trucks', label: tPlans('trucksTitle'), icon: 'truck', show: has('plans.manage') },
     { href: '/admin/driver-app', label: tSettings('driverApp'), icon: 'truck', show: has('admin.settings.manage') },
+    { href: '/admin/calls-app', label: tSettings('callsApp'), icon: 'phone', show: has('admin.settings.manage') },
     { href: '/admin/rules', label: tAutomation('title'), icon: 'target', show: has('admin.settings.manage') },
     { href: '/admin/audit', label: t('audit'), icon: 'clipboard', show: has('admin.audit.browse') },
     { href: '/admin/notifications', label: t('notifications'), icon: 'alert', show: has('admin.audit.browse') },

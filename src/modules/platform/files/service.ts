@@ -25,6 +25,22 @@ const DOC_TYPES = new Set([
   'application/x-7z-compressed',
 ]);
 const VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
+// The calls round: what a phone's own call recorder writes, per vendor —
+// Xiaomi mp3/aac, Samsung m4a/amr, others ogg/wav. The card renders these
+// with an <audio> player instead of a download tile.
+export const AUDIO_TYPES = new Set([
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/aac',
+  'audio/amr',
+  'audio/3gpp',
+  'audio/ogg',
+  'audio/opus',
+  'audio/wav',
+  'audio/x-wav',
+]);
 
 const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
 const MAX_DOC_BYTES = 25 * 1024 * 1024;
@@ -56,6 +72,14 @@ const EXT_TYPES: Record<string, string> = {
   mp4: 'video/mp4',
   mov: 'video/quicktime',
   webm: 'video/webm',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  amr: 'audio/amr',
+  '3gp': 'audio/3gpp',
+  ogg: 'audio/ogg',
+  opus: 'audio/opus',
+  wav: 'audio/wav',
 };
 
 export function resolveContentType(fileName: string, contentType: string): string {
@@ -95,7 +119,12 @@ export async function saveAttachment(
 ): Promise<{ id: string }> {
   const contentType = resolveContentType(input.fileName, input.contentType);
   const isPhoto = PHOTO_TYPES.has(contentType);
-  if (!isPhoto && !DOC_TYPES.has(contentType) && !VIDEO_TYPES.has(contentType)) {
+  if (
+    !isPhoto &&
+    !DOC_TYPES.has(contentType) &&
+    !VIDEO_TYPES.has(contentType) &&
+    !AUDIO_TYPES.has(contentType)
+  ) {
     throw new FileValidationError(`Unsupported content type: ${contentType || '?'}`, 'unsupported_type');
   }
   const maxBytes = isPhoto

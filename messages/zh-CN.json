@@ -306,7 +306,8 @@
       "debt_approval_ttl_hours": "欠款客户放货批准在通过后有效多少小时",
       "unanswered_reminder_minutes": "客户等待多少分钟后提醒其经理（0 = 关闭）"
     },
-    "driverApp": "司机应用"
+    "driverApp": "司机应用",
+    "callsApp": "通话应用"
   },
   "audit": {
     "title": "审计日志",
@@ -411,7 +412,15 @@
     "notifMuteDigest": "每日汇总",
     "notifMuteAlerts": "警报（计划外、丢失、无单货物）",
     "notifMuteOps": "业务消息（收货、到达、发放…）",
-    "notifMuteTasks": "我的任务"
+    "notifMuteTasks": "我的任务",
+    "callRecTitle": "通话录音",
+    "callRecHint": "您安卓手机上的 GSR 通话应用会把与客户的通话发送到 CRM。私人通话不会保存——只保存客户库中的号码。",
+    "callRecAdd": "添加手机",
+    "callRecCodeHint": "在应用中输入此代码。代码仅可使用一次。",
+    "callRecCount": "个通话",
+    "callRecRemove": "断开",
+    "callRecNotSeen": "暂无数据",
+    "callRecApp": "下载应用（安卓）"
   },
   "receive": {
     "title": "收货",
@@ -1138,6 +1147,9 @@
     "nextStage": "下一阶段",
     "fieldsMoved": "已迁移至「字段与对象」",
     "telegramThread": "Telegram 对话",
+    "callsTitle": "通话",
+    "callIn": "呼入",
+    "callOut": "呼出",
     "whoTalked": "谁在沟通",
     "allManagers": "全部",
     "telegramClient": "客户",

@@ -474,7 +474,12 @@ function StageView<T extends KanbanItem>({
                 {stage.name}
                 <span className="ml-2 opacity-70">{counts[stage.id]}</span>
               </header>
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+              {/* pb-24: the bulk bar is a FIXED overlay over the column's
+                  bottom edge, so without spare scroll the LAST card's
+                  checkbox sits under it permanently — unreachable for a
+                  thumb, intercepted for Playwright. Unconditional because
+                  ticks deliberately never re-render the board (#537). */}
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 pb-24">
                 {inStage.map((item) => (
                   <div key={item.id} data-testid={cardTestId} className="card !p-3">
                     <Link href={hrefOf(item)} className="block">
@@ -677,7 +682,9 @@ function DragBoard<T extends KanbanItem>({
                   {stage.name}
                   <span className="ml-2 opacity-70">{counts[stage.id]}</span>
                 </header>
-                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+                {/* pb-24: same spare scroll as the phone board — the bulk
+                    bar floats over the column bottom on desktop too. */}
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 pb-24">
                   {inStage.map((item) => (
                     <Link
                       key={item.id}
