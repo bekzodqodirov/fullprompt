@@ -6,7 +6,6 @@ import { db } from '@/modules/platform/db/client';
 import {
   batches,
   boxes,
-  boxMovements,
   clients,
   receiptLots,
   receipts,
@@ -14,9 +13,9 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { basemapAvailable } from '@/modules/wms/tracking/basemap';
-import { latestPositions, type LatestPosition } from '@/modules/wms/tracking/devices';
-import { estimateTransit } from '@/modules/wms/tracking/engine';
-import { CHECKPOINT_SEGMENTS, routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
+import { latestPositions } from '@/modules/wms/tracking/devices';
+import { WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
+import { truckFor } from '@/modules/wms/tracking/truck';
 import { TrackingMap, type MapTruck, type MapWarehouse } from './tracking-map';
 import { PageHeader } from '@/components/ui/page';
 
@@ -107,75 +106,4 @@ export default async function MapPage() {
       <TrackingMap warehouses={mapWarehouses} trucks={trucks} basemap={basemapAvailable()} />
     </div>
   );
-}
-
-/** Estimate + contents for one in-transit batch (null = not on the map). */
-async function truckFor(
-  batch: typeof batches.$inferSelect,
-  originCode: string,
-  destCode: string,
-  fix?: LatestPosition,
-): Promise<MapTruck | null> {
-  const route = routeFor(originCode, destCode);
-  if (!route || !batch.departedAt) return null;
-  const cp = batch.trackingCheckpoint as { key?: string; at?: string } | null;
-  const anchorSeg = cp?.key ? CHECKPOINT_SEGMENTS[cp.key] : undefined;
-  const anchor =
-    anchorSeg && cp?.at
-      ? { segKey: anchorSeg, elapsedInSegHours: (Date.now() - new Date(cp.at).getTime()) / 3_600_000 }
-      : null;
-  const est = estimateTransit(
-    route,
-    (Date.now() - new Date(batch.departedAt).getTime()) / 3_600_000,
-    anchor,
-  );
-
-  const contents = await db
-      .select({
-        clientCode: sql<string | null>`coalesce(${clients.clientCode}, ${receipts.unclaimedMarking})`,
-        n: sql<number>`count(distinct ${boxes.id})`,
-      })
-      .from(boxMovements)
-      .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
-      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-      .leftJoin(clients, eq(receipts.clientId, clients.id))
-      .where(
-        and(
-          eq(boxMovements.refType, 'batch'),
-          eq(boxMovements.refId, batch.id),
-          eq(boxMovements.cause, 'batch_departed'),
-        ),
-      )
-      .groupBy(sql`coalesce(${clients.clientCode}, ${receipts.unclaimedMarking})`);
-
-  // A fresh fix from the driver's phone replaces the estimated dot; a stale
-  // one is kept as information but the schedule drives the marker again.
-  const live = fix?.fresh ? fix : null;
-
-  return {
-    batchId: batch.id,
-    code: batch.code,
-    originCode,
-    destCode,
-    x: live ? live.lon : est.x,
-    y: live ? live.lat : est.y,
-    live: live !== null,
-    fixAgeMinutes: fix?.ageMinutes ?? null,
-    fixSource: fix?.source ?? null,
-    segKey: est.segKey,
-    progress: est.progress,
-    overdue: est.overdue,
-    remainingDays: [
-      Math.round((est.remainingHours[0] / 24) * 10) / 10,
-      Math.round((est.remainingHours[1] / 24) * 10) / 10,
-    ],
-    departedAt: batch.departedAt.toISOString(),
-    checkpointKey: cp?.key ?? null,
-    vehiclePlate: batch.vehiclePlate,
-    routePoints: route.points,
-    contents: contents
-      .map((c) => ({ clientCode: c.clientCode ?? '?', n: Number(c.n) }))
-      .sort((a, b) => b.n - a.n),
-  };
 }
