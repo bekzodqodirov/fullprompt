@@ -10,11 +10,18 @@ import { patchLeadFieldAction } from '../../actions';
  * Until now the rail carried no facts at all: a salesperson wanting the phone
  * number of the person they were about to ring had to unfold the ✏️ form and
  * read it out of an input. The facts are the top of the rail now, and the
- * four plain-text ones are correctable where they are read.
+ * plain-text ones are correctable where they are read.
  *
- * The other five stay in the form on purpose — a stage is a move, an owner is
- * a handover, and the follow-up date and its note are written as a pair, so a
- * one-field patch of either leaves a stale reminder on a new date.
+ * The NAME is not one of them (owner, 2026-08-06: «lead kartochkasida nomni
+ * ustiga bosib o'zgartirish … buni umuman olib tashla»). It is the one field
+ * on this card that is also its TITLE — the `<h1>` sits directly above this
+ * rail — so nothing is hidden by making it read-only, and a tap on a record's
+ * title should never turn the title into an input. It is still correctable in
+ * the ✏️ form, where changing what a record is called is a deliberate act.
+ *
+ * The other five stay in the form on purpose too — a stage is a move, an owner
+ * is a handover, and the follow-up date and its note are written as a pair, so
+ * a one-field patch of either leaves a stale reminder on a new date.
  */
 export function LeadFacts({
   leadId,
@@ -23,6 +30,7 @@ export function LeadFacts({
   stageName,
   sourceName,
   ownerName,
+  quote,
   nextAction,
 }: {
   leadId: string;
@@ -31,6 +39,8 @@ export function LeadFacts({
   stageName: string;
   sourceName: string;
   ownerName: string;
+  /** «1 500 USD · 12 m³ · 3 400 kg» — empty until hisoblatish has answered. */
+  quote: string;
   nextAction: string;
 }) {
   const t = useTranslations('crm');
@@ -39,13 +49,7 @@ export function LeadFacts({
 
   return (
     <div className="card" data-testid="lead-facts">
-      <InlineField
-        label={t('name')}
-        value={values.name}
-        editable={editable}
-        testId="fact-name"
-        onSave={save('name')}
-      />
+      <ReadOnly label={t('name')} value={values.name} />
       <InlineField
         label={t('phone')}
         value={values.phone}
@@ -70,7 +74,9 @@ export function LeadFacts({
       />
 
       {/* Read-only here, and each has its own control elsewhere on the card:
-          the stage chips above, the ✏️ form below. */}
+          the stage chips above, the ✏️ form below — the quote too, because a
+          price is written deliberately, not corrected on a tap. */}
+      <ReadOnly label={t('quotedAmount')} value={quote} />
       <ReadOnly label={t('stage')} value={stageName} />
       <ReadOnly label={t('source')} value={sourceName} />
       <ReadOnly label={t('owner')} value={ownerName} />

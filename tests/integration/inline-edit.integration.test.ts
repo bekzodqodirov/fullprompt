@@ -76,8 +76,8 @@ describe('what a one-field patch touches', () => {
     expect(row!.company).toBeNull();
   });
 
-  it('refuses to empty the NAME, which is the only thing a lead must have', async () => {
-    await expect(patchLead(leadId, 'name', '', ctx())).rejects.toMatchObject({
+  it('refuses a value longer than the column holds', async () => {
+    await expect(patchLead(leadId, 'phone', '9'.repeat(41), ctx())).rejects.toMatchObject({
       code: 'validation',
     });
   });
@@ -92,7 +92,16 @@ describe('what it refuses', () => {
         code: 'field_not_editable',
       });
     }
-    expect([...INLINE_LEAD_FIELDS]).toEqual(['name', 'phone', 'company', 'note']);
+    expect([...INLINE_LEAD_FIELDS]).toEqual(['phone', 'company', 'note']);
+  });
+
+  it('will not patch the NAME — the owner had that control removed', async () => {
+    // Owner, 2026-08-06: «lead kartochkasida nomni ustiga bosib o'zgartirish …
+    // buni umuman olib tashla». The control is off the card AND the door is
+    // shut here, which is the difference between removed and merely hidden.
+    await expect(patchLead(leadId, 'name', 'Yangi nom', ctx())).rejects.toMatchObject({
+      code: 'field_not_editable',
+    });
   });
 
   it('needs an actor', async () => {

@@ -1270,7 +1270,17 @@
     "templateShared": "Для всей компании",
     "templateHint": "В тексте можно писать '{'ism'}' — имя клиента, и '{'kod'}' — его код.",
     "templateNone": "Шаблонов пока нет",
-    "templateAdd": "Новый шаблон"
+    "templateAdd": "Новый шаблон",
+    "boardFilters": "Фильтры",
+    "filterFrom": "с",
+    "filterTo": "по",
+    "filterMin": "мин",
+    "filterMax": "макс",
+    "filterLenta": "Поиск по заметкам",
+    "quotedAmount": "Цена (услуга)",
+    "quotedCurrency": "Валюта",
+    "quotedVolume": "Куб (м³)",
+    "quotedWeight": "Вес (кг)"
   },
   "navShort": {
     "home": "Главная",
@@ -1641,7 +1651,9 @@
     "cardClient": "Код клиента",
     "cardChat": "Чат",
     "cardAlarms": "Предупреждения",
-    "cardFields": "Что на карточке"
+    "cardFields": "Что на карточке",
+    "volumeM3": "Объём (м³)",
+    "weightKg": "Вес (кг)"
   },
   "automation": {
     "title": "Правила автоматизации",

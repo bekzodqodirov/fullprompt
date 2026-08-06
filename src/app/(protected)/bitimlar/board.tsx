@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { KanbanBoard as Board, type KanbanStage, useMoveErrors } from '@/components/kanban';
 import { BulkBar } from '@/components/list/bulk-bar';
+import { useSelection } from '@/components/list/selection';
 import { bulkMoveDealsAction, moveDealAction } from './actions';
 
 export interface BoardDeal {
@@ -53,15 +53,9 @@ export function DealBoard({
   // No bulk «assign», deliberately: a deal's owner is who is carrying the job
   // right now and changing it is a conversation, not a sweep. Stage moves are
   // the thing that happens twenty at a time (a truck lands, a batch is paid).
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const toggle = useCallback((id: string) => {
-    setPicked((was) => {
-      const next = new Set(was);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  // A STORE, not React state (round 70) — see `useSelection`: as state, a tick
+  // re-rendered every card on the board to change one checkbox.
+  const selection = useSelection();
   const tl = useTranslations('lists');
   const t = useTranslations('deals');
   const tcrm = useTranslations('crm');
@@ -76,7 +70,7 @@ export function DealBoard({
         archiveHref={archiveHref}
         items={deals}
         cardTestId="deal-card"
-        selection={{ ids: picked, toggle, label: tl('select') }}
+        selection={{ store: selection, label: tl('select') }}
         hrefOf={(deal) => `/bitimlar/${deal.id}`}
         onMove={async (id, stageId, reason) => {
           const result = await moveDealAction(id, stageId, reason);
@@ -146,10 +140,9 @@ export function DealBoard({
       />
 
       <BulkBar
-        count={picked.size}
+        selection={selection}
         stages={stages}
-        onMove={(stageId, reason) => bulkMoveDealsAction([...picked], stageId, reason)}
-        onClear={() => setPicked(new Set())}
+        onMove={(ids, stageId, reason) => bulkMoveDealsAction(ids, stageId, reason)}
       />
     </>
   );

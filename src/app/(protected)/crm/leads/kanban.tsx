@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { KanbanBoard as Board, type KanbanStage, useMoveErrors } from '@/components/kanban';
 import { BulkBar } from '@/components/list/bulk-bar';
+import { useSelection } from '@/components/list/selection';
 import { bulkAssignLeadsAction, bulkMoveLeadsAction, moveLeadAction } from '../actions';
 
 export type { KanbanStage };
@@ -17,6 +17,9 @@ export interface KanbanLead {
   sourceName: string | null;
   ownerName: string | null;
   clientCode: string | null;
+  /** The service price after hisoblatish (round 71); numeric arrives a string. */
+  quotedAmount: string | null;
+  quotedCurrency: string | null;
   nextActionAt: string | null;
   /** The viewer holds a Telegram chat with this client; 'waiting' = client spoke last. */
   chat: 'waiting' | 'yes' | null;
@@ -55,17 +58,10 @@ export function KanbanBoard({
   const tl = useTranslations('lists');
   // The SELECTION lives here, not in the shared board: only this screen knows
   // what «assign to» means for a lead, so the actions and the ticks that feed
-  // them belong together.
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const toggle = useCallback((id: string) => {
-    setPicked((was) => {
-      const next = new Set(was);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-  const ids = [...picked];
+  // them belong together. It is a STORE and not React state (round 70): as
+  // state, every tick re-rendered this component and through it all 596 live
+  // cards, which is the freeze the owner reported.
+  const selection = useSelection();
 
   return (
     <>
@@ -75,7 +71,7 @@ export function KanbanBoard({
         archiveHref={archiveHref}
         items={leads}
         cardTestId="lead-card"
-        selection={{ ids: picked, toggle, label: tl('select') }}
+        selection={{ store: selection, label: tl('select') }}
         hrefOf={(lead) => `/crm/leads/${lead.id}`}
         // The action answers `{ ok?: boolean; error?: string }`. The CODE
         // travels with the verdict now: a card that jumps back under the word
@@ -121,6 +117,13 @@ export function KanbanBoard({
                 </span>
               )}
             </div>
+            {/* The price the funnel now runs on (round 71): written after
+                hisoblatish, read at a glance on the way to won/lost. */}
+            {fields.has('quote') && lead.quotedAmount && (
+              <div className="mt-1 text-[12px] font-bold tabular-nums text-good">
+                {Number(lead.quotedAmount).toLocaleString('ru-RU')} {lead.quotedCurrency ?? 'USD'}
+              </div>
+            )}
             {fields.has('nextAction') && lead.nextActionAt && (
               <div className="mt-1 text-[11px] font-semibold text-warn">📅 {lead.nextActionAt}</div>
             )}
@@ -129,12 +132,11 @@ export function KanbanBoard({
       />
 
       <BulkBar
-        count={picked.size}
+        selection={selection}
         stages={stages}
         owners={owners}
-        onMove={(stageId, reason) => bulkMoveLeadsAction(ids, stageId, reason)}
-        onAssign={owners ? (ownerId) => bulkAssignLeadsAction(ids, ownerId) : undefined}
-        onClear={() => setPicked(new Set())}
+        onMove={(ids, stageId, reason) => bulkMoveLeadsAction(ids, stageId, reason)}
+        onAssign={owners ? (ids, ownerId) => bulkAssignLeadsAction(ids, ownerId) : undefined}
       />
     </>
   );

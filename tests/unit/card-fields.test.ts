@@ -20,7 +20,11 @@ import {
  */
 
 describe('the default is today, not everything and not nothing', () => {
-  it('renders the lead card the board already had', () => {
+  it('renders the lead card the board already had — plus the quote, deliberately', () => {
+    // Round 71 broke the «null = yesterday's card» stillness ONCE, on
+    // purpose and stated: the quote IS the feature (the price written after
+    // hisoblatish), and a filterable number nobody can see on a card is a
+    // filter over invisible ink. Everything else stays exactly as shipped.
     expect([...visibleCardFields(LEAD_CARD_FIELDS, null)].sort()).toEqual([
       'chat',
       'code',
@@ -28,6 +32,7 @@ describe('the default is today, not everything and not nothing', () => {
       'nextAction',
       'owner',
       'phone',
+      'quote',
       'source',
     ]);
   });

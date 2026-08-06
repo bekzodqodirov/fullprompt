@@ -4,13 +4,16 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
-import { closedLeadCounts, listLeads, listStages } from '@/modules/wms/crm/service';
+import { closedLeadCounts, listLeads, listSources, listStages } from '@/modules/wms/crm/service';
 import { KanbanBoard } from './leads/kanban';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
-import { BoardFilter, hrefWith } from '@/components/list/board-filter';
+import { BoardFilter, hrefWith, readBoardFilters } from '@/components/list/board-filter';
 import { CardFieldsMenu } from '@/components/list/card-fields-menu';
 import { LEAD_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
+import { ViewBar } from '@/components/list/view-bar';
+import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
+import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 
 /**
  * The funnel board — and nothing else.
@@ -33,7 +36,7 @@ const CLOSED_ON_BOARD = 20;
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string; arxiv?: string; q?: string; hodim?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -41,7 +44,20 @@ export default async function LeadsPage({
   const t = await getTranslations('crm');
   const td = await getTranslations('deals');
   const tc = await getTranslations('common');
-  const params = await searchParams;
+  const raw = await searchParams;
+  // A bare visit opens the person's default VIEW, exactly as the lists do —
+  // a board is a list wearing columns.
+  if (Object.keys(raw).length === 0) {
+    const preset = await defaultViewFor('crm', actor.id);
+    if (preset?.query) redirect(`/crm?${preset.query}`);
+  }
+  const params = {
+    scope: Array.isArray(raw.scope) ? raw.scope[0] : raw.scope,
+    arxiv: Array.isArray(raw.arxiv) ? raw.arxiv[0] : raw.arxiv,
+    q: Array.isArray(raw.q) ? raw.q[0] : raw.q,
+    hodim: Array.isArray(raw.hodim) ? raw.hodim[0] : raw.hodim,
+  };
+  const filters = readBoardFilters(raw);
   // Which lines this browser wants on a card — a cookie, so the first HTML is
   // already right and nothing rearranges itself after hydration.
   const cardFields = await readCardFields('lead');
@@ -63,6 +79,22 @@ export default async function LeadsPage({
     ...(params.scope === 'all' ? { scope: 'all' } : {}),
     ...(q ? { q } : {}),
     ...(hodim ? { hodim } : {}),
+    ...filters.raw,
+  };
+  // What listLeads and closedLeadCounts BOTH hear — one question (#513).
+  const boardFilters = {
+    ownerId: scope,
+    q,
+    sourceId: filters.sourceId,
+    createdFrom: filters.createdFrom,
+    createdTo: filters.createdTo,
+    amountMin: filters.amountMin,
+    amountMax: filters.amountMax,
+    volMin: filters.volMin,
+    volMax: filters.volMax,
+    kgMin: filters.kgMin,
+    kgMax: filters.kgMax,
+    lenta: filters.lenta,
   };
 
   // Round 47, the owner's item 6: «leadlar soni ko'payib ketgandan keyin lost
@@ -72,13 +104,16 @@ export default async function LeadsPage({
   // that opens the lot. A won lead from March is a record, not a task, and a
   // board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, open, closed, closedTotals, badges, managers] = await Promise.all([
+  const [stages, sources, views, open, closed, closedTotals, badges, managers] = await Promise.all([
     listStages(),
-    listLeads({ ownerId: scope, q, openOnly: true }),
-    listLeads({ ownerId: scope, q, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
-    // The SAME q — the header prints the true total and the column shows a
-    // slice, so counts filtered differently from rows make the footer lie.
-    closedLeadCounts(scope, q),
+    listSources(),
+    listViewsFor('crm', actor.id),
+    listLeads({ ...boardFilters, openOnly: true }),
+    listLeads({ ...boardFilters, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
+    // The SAME filters — the header prints the true total and the column
+    // shows a slice, so counts filtered differently from rows make the
+    // footer lie.
+    closedLeadCounts(boardFilters),
     // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
     chatBadges(tgViewerFor(actor)),
     // Only offered to somebody who may see everybody's leads: handing YOUR
@@ -103,10 +138,15 @@ export default async function LeadsPage({
     // The board's height is a viewport calculation, so anything added ABOVE it
     // has to say how much room it took or the page grows a second scrollbar
     // under a board that was built not to have one (#354). The filter row is
-    // one line, or two when the colleague picker is offered.
+    // one line, or two when the colleague picker is offered; the view chips
+    // are one more, and the active-filter chips another when any are on.
     <div
       className="space-y-3"
-      style={{ ['--board-extra' as string]: managers.length ? '8.9rem' : '4.9rem' }}
+      style={{
+        ['--board-extra' as string]: `${
+          (managers.length ? 8.9 : 4.9) + 2.6 + (Object.keys(filters.raw).length ? 2.2 : 0)
+        }rem`,
+      }}
     >
       <PageHeader
         icon="target"
@@ -163,6 +203,16 @@ export default async function LeadsPage({
         </div>
       )}
 
+      {/* A filter worth typing twice is a filter worth a NAME — the same
+          views engine as the lists, on the board's own query string. */}
+      <ViewBar
+        screen="crm"
+        path="/crm"
+        views={views}
+        currentQuery={normalizeQuery(raw)}
+        canPublish={canPublishViews(actor.permissions)}
+      />
+
       <BoardFilter
         q={q}
         hodim={hodim}
@@ -178,6 +228,22 @@ export default async function LeadsPage({
           everyone: t('allManagers'),
           apply: tc('search'),
           clear: t('filterClear'),
+        }}
+        advanced={{
+          values: filters.raw,
+          sources: sources.map((source) => ({ id: source.id, name: source.name })),
+          labels: {
+            filters: t('boardFilters'),
+            source: t('source'),
+            dateFrom: t('filterFrom'),
+            dateTo: t('filterTo'),
+            price: t('quotedAmount'),
+            volume: t('quotedVolume'),
+            weight: t('quotedWeight'),
+            lentaSearch: t('filterLenta'),
+            min: t('filterMin'),
+            max: t('filterMax'),
+          },
         }}
       />
 
@@ -203,6 +269,8 @@ export default async function LeadsPage({
           sourceName,
           ownerName,
           clientCode,
+          quotedAmount: lead.quotedAmount,
+          quotedCurrency: lead.quotedCurrency,
           nextActionAt: lead.nextActionAt,
           chat: (lead.clientId && badges.get(lead.clientId)) || null,
         }))}

@@ -15,14 +15,20 @@ import { CrmError } from './service';
  * forms they already have.
  *
  * What is left is exactly the text a salesperson corrects while on the phone:
- * the name they misheard, the company, the number, the note.
+ * the company, the number, the note.
+ *
+ * The NAME was here and is deliberately gone (owner, 2026-08-06: «lead
+ * kartochkasida nomni ustiga bosib o'zgartirish … buni umuman olib tashla»).
+ * Taking the control off the card and leaving the door open here would be a
+ * hidden feature rather than a removed one — anything that can still POST
+ * reaches it. Renaming a lead now goes through the ✏️ form, which is where
+ * changing what a record is CALLED belongs.
  */
-export const INLINE_LEAD_FIELDS = ['name', 'phone', 'company', 'note'] as const;
+export const INLINE_LEAD_FIELDS = ['phone', 'company', 'note'] as const;
 export type InlineLeadField = (typeof INLINE_LEAD_FIELDS)[number];
 
-/** What each field will accept; a name is the only one that cannot be empty. */
+/** What each field will accept. All three may be emptied — «no answer». */
 const LIMITS: Record<InlineLeadField, { max: number; min: number }> = {
-  name: { max: 200, min: 2 },
   phone: { max: 40, min: 0 },
   company: { max: 200, min: 0 },
   note: { max: 4000, min: 0 },
@@ -46,8 +52,7 @@ export async function patchLead(
   const before = await db.query.leads.findFirst({ where: eq(leads.id, id) });
   if (!before) throw new CrmError('not_found');
 
-  // An empty box means "no answer" for everything but the name, which the
-  // length check above has already refused.
+  // An empty box means "no answer".
   const next = value === '' ? null : value;
   const diff = diffFields({ [key]: before[key] ?? null }, { [key]: next });
   // NOTHING happens when nothing changed. `updated_at` is not decoration: the

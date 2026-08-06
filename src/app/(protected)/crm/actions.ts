@@ -87,6 +87,15 @@ async function run(
 
 const str = (formData: FormData, name: string) => String(formData.get(name) ?? '');
 
+/** Numbers arrive from a form as strings; an empty box means "not answered". */
+function optionalNumber(value: FormDataEntryValue | null): number | null | undefined {
+  if (value === null) return undefined;
+  const text = String(value).trim().replace(',', '.');
+  if (!text) return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function leadFields(formData: FormData) {
   return leadSchema.safeParse({
     name: str(formData, 'name'),
@@ -96,6 +105,10 @@ function leadFields(formData: FormData) {
     stageId: str(formData, 'stageId'),
     ownerId: str(formData, 'ownerId'),
     note: str(formData, 'note'),
+    quotedAmount: optionalNumber(formData.get('quotedAmount')),
+    quotedCurrency: formData.get('quotedCurrency') ? str(formData, 'quotedCurrency') : null,
+    quotedVolumeM3: optionalNumber(formData.get('quotedVolumeM3')),
+    quotedWeightKg: optionalNumber(formData.get('quotedWeightKg')),
     nextActionAt: str(formData, 'nextActionAt'),
     nextActionNote: str(formData, 'nextActionNote'),
   });
