@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
+  callLogs,
   batches,
   crates,
   crmActivities,
@@ -141,6 +142,20 @@ async function decide(
       return allowed
         ? { allow: true, rule: 'crm-activity' }
         : { allow: false, rule: 'crm-no-permission' };
+    }
+    // A call recording — the Telegram thread's rule, for the same reason: a
+    // call is its taker's record, and an audio URL must not out-read the
+    // panel it came from. Enforced from birth (this type never had a
+    // log-only era to inherit).
+    case 'call_log': {
+      const row = await db.query.callLogs.findFirst({
+        where: eq(callLogs.attachmentId, attachment.id),
+        columns: { userId: true },
+      });
+      if (!row) return { allow: false, rule: 'orphan', enforce: true };
+      return row.userId === actor.id || seesAllTgChats(actor)
+        ? { allow: true, rule: 'call-own' }
+        : { allow: false, rule: 'call-not-own', enforce: true };
     }
     // A photo QUEUED to go out — the audience is the account it leaves from.
     // A pre-bound upload not yet queued has no row and falls to the uploader

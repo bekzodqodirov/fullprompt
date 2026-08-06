@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The phone's own call register: number, direction, time, duration.
+         The server answers per call whether the client book knows the number;
+         everything else is dropped and never leaves the phone twice. -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <!--
+      Reading the recordings the phone's OWN recorder writes. Android hands no
+      third-party app the call audio itself (since Android 10), so the phone's
+      built-in recorder does the recording and this app only picks the files
+      up. They are media files, so the audio permission is enough — no
+      all-files access.
+    -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!--
+      Deliberately NO android.permission.POST_NOTIFICATIONS and no foreground
+      service at all: the sync is a periodic JobScheduler job that reads two
+      lists and posts JSON — nothing here needs a notification, ever
+      (the driver app's v1.3 rule).
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Doze defers periodic jobs on some skins; the setup screen offers the
+         system dialog the same way the driver app does. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Android 11+ hides other packages unless declared — needed for the
+         vendor auto-start screens the setup opens. -->
+    <queries>
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.iqoo.secure" />
+        <package android:name="com.letv.android.letvsafe" />
+        <package android:name="com.asus.mobilemanager" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GSRCalls">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- The metronome: JobScheduler runs the sync every interval
+             (persisted, so it survives reboots and any single run failing). -->
+        <service
+            android:name=".SyncJob"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

@@ -7,7 +7,10 @@ import { getSessionUser, listSessions } from '@/modules/platform/auth/session';
 import { logoutOtherDevicesAction } from '@/modules/platform/auth/actions';
 import { createTelegramLinkAction, telegramLinkStatus } from '@/modules/platform/telegram/actions';
 import { groupsFromList } from '@/modules/platform/notifications/mutes';
+import { currentCallsApk } from '@/modules/wms/calls/apk';
+import { callDevicesFor } from '@/modules/wms/calls/service';
 import { setNotificationMutesAction } from './actions';
+import { CallRecorderSection } from './call-recorder';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 
 export default async function ProfilePage() {
@@ -18,6 +21,8 @@ export default async function ProfilePage() {
   const format = await getFormatter();
   const devices = await listSessions(user.id);
   const telegramLink = await telegramLinkStatus(user.id);
+  const callDevices = await callDevicesFor(user.id);
+  const callsApk = await currentCallsApk();
   const userRow = await db.query.users.findFirst({
     columns: { mutedNotificationTypes: true },
     where: eq(users.id, user.id),
@@ -65,6 +70,31 @@ export default async function ProfilePage() {
           </button>
         </form>
       </section>
+
+      <CallRecorderSection
+        devices={callDevices.map((d) => ({
+          id: d.id,
+          label: d.label,
+          pairCode: d.pairCode,
+          paired: !d.pairCode && !!d.pairedAt,
+          lastSeenAt: d.lastSeenAt
+            ? format.dateTime(d.lastSeenAt, { dateStyle: 'short', timeStyle: 'short' })
+            : null,
+          calls: Number(d.calls),
+        }))}
+        labels={{
+          title: t('callRecTitle'),
+          hint: t('callRecHint'),
+          add: t('callRecAdd'),
+          codeHint: t('callRecCodeHint'),
+          lastSeen: t('lastSeen'),
+          callCount: t('callRecCount'),
+          remove: t('callRecRemove'),
+          notPaired: t('callRecNotSeen'),
+          downloadApk: t('callRecApp'),
+        }}
+        apkVersion={callsApk?.version ?? null}
+      />
 
       <section>
         <h2 className="mb-2 text-lg font-bold">{t('telegram')}</h2>

@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Qo'ng'iroq yozuvi: mijoz bilan suhbatlar endi CRM'da — 2026-08-06
+
+Siz so'ragan qo'ng'iroq yozuvi tayyor. Android telefonlar uchun **GSR
+Qo'ng'iroqlar** ilovasi chiqdi: hodim telefonida mijoz bilan gaplashsa,
+qo'ng'iroq (kim, qachon, qancha, kirish/chiqish) va yozuvi (agar telefonning
+o'z yozib olish funksiyasi yoqilgan bo'lsa) CRM'ga tushadi — mijoz, bitim va
+lid kartalarida **«Qo'ng'iroqlar»** paneli paydo bo'ldi, yozuvni shu yerda
+eshitsa bo'ladi.
+
+**Qanday ishlaydi:**
+1. Admin → **Qo'ng'iroq ilovasi** sahifasidan APK chiqariladi (GitHub
+   Actions → calls-apk dan yuklab olib, shu yerga qo'yasiz — haydovchi
+   ilovasidagidek).
+2. Har bir hodim **o'z profilida** («Qo'ng'iroq yozuvi» bo'limi) ilovani
+   yuklab oladi, «Telefon qo'shish» bosib 6 belgili kod oladi va ilovaga
+   kiritadi. Kod kimniki — qo'ng'iroqlar o'shaning nomidan yoziladi.
+3. Ilovada 5 qadam bor: qo'ng'iroqlar tarixi, audio fayllar, batareya,
+   avtostart, va **telefonning o'z yozib olish funksiyasini yoqish**
+   (Samsung/Xiaomi'da Telefon → Sozlamalar → Qo'ng'iroqlarni yozib olish).
+   Yozuvni telefonning o'zi qiladi — Android boshqa ilovaga ovozni bermaydi.
+
+**Maxfiylik — siz aytgandek:** faqat mijozlar bazasidagi raqamlar saqlanadi.
+Hodimning shaxsiy qo'ng'iroqlari na serverda, na ilovada saqlanadi, yozuvi
+ham yuborilmaydi. O'rnatilgan kundan boshlab yoziladi — eski tarix
+o'qilmaydi. Ko'rish huquqi Telegram'dagidek: har kim o'z qo'ng'irog'ini,
+super admin / admin / VED hammani ko'radi.
+
+**iPhone:** Apple qo'ng'iroq tarixini ham, yozuvni ham bermaydi — rejada
+turibti (bot orqali variant), hozircha iPhone'lik hodimlar Telegram bilan.
+
+Profildan «Uzish» bossangiz telefon darhol to'xtaydi va hammasini unutadi.
+Yangi jadvallar: migratsiya **0060**. Testlar: 1054 + 141 e2e, hammasi
+yashil.
+
 ## Pul auditi: 15 ta kamchilik topildi va tuzatildi — 2026-08-05
 
 Siz «pullar hisob-kitobi to'g'ri yuritilyabtimi, audit qil» degan edingiz.

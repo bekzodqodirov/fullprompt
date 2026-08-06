@@ -119,16 +119,20 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-04
+## State — 2026-08-06
 
-Branch `claude/gsr-logistics-wms-phase1-o8h4en`, PR #1, CI green; round 56
-onwards (the Frappe-UX programme) lives on `claude/frappe-crm-full-prompt-vempoq`,
-cut from the same tip.
-1046 unit/integration + 140 e2e, verified in CI's order on a fresh database.
-Latest migration: **0059** (`reply_templates`). Every numbered phase
-is shipped; the current round is the owner's 14-point feedback list (rounds
-46-55; round 55 = item 1, the driver app, **needs a new APK released** —
-Actions → driver-apk → artifact → Admin → Haydovchi ilovasi).
+Rounds 1-55 merged via PR #1; rounds 56-69 (the Frappe-UX programme + the
+second speed round + the money audit) merged via PR #3, the truck-marker
+follow-up via PR #4 — `main` is the record, and
+`claude/frappe-crm-full-prompt-vempoq` restarts from it for each new round.
+1054 unit/integration + 141 e2e, verified in CI's order on a fresh database
+(the four photo-path specs stay locally red by design — no image service in
+this container; CI is the arbiter).
+Latest migration: **0060** (`call_recorder_devices` + `call_logs`). Every
+numbered phase is shipped. The driver app **still needs its v1.3 APK
+released** (Actions → driver-apk → artifact → Admin → Haydovchi ilovasi),
+and the calls round needs its FIRST APK published the same way (Actions →
+calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 
 **NOT DEPLOYED as of this writing:** `cf9832f` (amount field), `bd876d9`
 (rastamojka panel), `143dcb0` (the 17 audit defects — four of them live
@@ -1547,6 +1551,42 @@ cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
 batches row (the stamp's FK) — in_transit + departedAt, route check needs
 two warehouses.
 
+Round 70 — **qo'ng'iroq yozuvi** (#534-538, owner's five answers: client-book
+only / read like Telegram / from install day / iPhone planned-not-built /
+accounts stay phone+password). Migration 0060: `call_recorder_devices` +
+`call_logs` (`client_id NOT NULL` = the tg-import privacy rule structural;
+dedup `(device, phone, started_at)`). `wms/calls/service.ts`: own-account
+pairing (a code SIGNS a person — no user picker by design), single-use code,
+sha256 token, 410 on revocation (#289); `ingestCalls` answers matched per
+call and stores NOTHING for a stranger — the phone mirrors it (a local row
+only on `matched:true`, so personal calls exist on neither end);
+`callsFor(clientId, viewer)` = the round-21/33 TgViewer verbatim. Routes:
+`/api/calls/{pair,logs,audio}` — audio is log-first (bytes only for a known
+call, device-scoped find), magic-sniffed, 25 MB, claim-once with
+`already:true` on every replay (stops megabyte re-sends). Attachment authz
+`call_log` branch ENFORCES from birth (no legacy to break). UI: /profile
+«Qo'ng'iroq yozuvi» (mint code / revoke / authed APK download — no public
+page, a staff member has a login), `CallsPanel` on client/deal/lead cards
+beside the thread (gated `canReadTg`, `<audio preload="none">`), Admin →
+Qo'ng'iroq ilovasi publish page. `apps/calls-android` (GSR Qo'ng'iroqlar,
+uz+ru): the driver v1.3 skeleton — persisted JobScheduler 15-min job, no
+notification EVER (no FGS at all), boot receiver, battery/autostart
+checklist + the one step no app can check (the phone's OWN recorder switched
+on — Android hands no app the call audio, the design picks up the files the
+built-in recorder writes from vendor call-rec folders + a MediaStore «call»
+net; generic recordings folders deliberately NOT scanned). Install-day floor
+clamps the 24 h re-read overlap (his «ornatilgan kundan»). Found before
+shipping: per-call client-book loads (#432's shape, 200×/batch → one ordered
+load, oldest code wins per 67b) and a replay-inflated sent counter (~96×/day
+→ count only genuinely-new local inserts). e2e m9zj (mint + revoke, leaves
+the section bare); 5 integration tests, red-proofs ×2 (client-book gate,
+viewer scoping). NOT verifiable here: the APK runs on no machine I have — CI
+builds it; the first real paired phone is the proof (watch /profile
+lastSeen + docker logs). Siblings deferral stated: a call lands on the
+OLDEST code of a shared phone; the panel reads the exact card's client, so
+a sibling-code deal card may show none (round 32's shape, wants its own
+round if he reports it).
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 
@@ -1574,10 +1614,12 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy the branch** — three commits behind, and the newest one fixes four
-LIVE money bugs (settlement void, non-USD/UZS cash boxes, a partner cost with
-no FX rate, a retired counterparty's debt). No migration in them; back up
-first anyway · set
+**Deploy from `main`** — the calls round adds migration **0060** (and 0059
+is likely still pending on the server: check
+`drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
+Back up first · **release both APKs** (driver v1.3 AND the first
+GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its
+Admin page) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
 offered on anything but public HTTPS, #275) · **revoke the bot token he pasted
 in chat** and rotate `ANTHROPIC_API_KEY` · merge

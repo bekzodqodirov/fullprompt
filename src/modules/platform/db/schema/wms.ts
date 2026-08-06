@@ -13,6 +13,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar,
@@ -1657,5 +1658,70 @@ export const partnerTransactions = pgTable(
     ),
     index('partner_tx_partner_idx').on(t.partnerId, t.txDate),
     index('partner_tx_batch_idx').on(t.batchId),
+  ],
+);
+
+/**
+ * Qo'ng'iroq yozg'ich (the calls round): a seller's phone, bound to their
+ * USER — not to a trip, because a seller records for as long as they work
+ * here. Token hashed; revocation keeps the hash so the phone hears 410, not
+ * a 401 it would retry for ever (the driver app's lesson, #289).
+ */
+export const callRecorderDevices = pgTable(
+  'call_recorder_devices',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    label: text('label'),
+    pairCode: text('pair_code').unique(),
+    tokenHash: text('token_hash').unique(),
+    platform: text('platform').notNull().default('android'),
+    pairedAt: timestamp('paired_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('call_recorder_devices_user_idx').on(t.userId)],
+);
+
+/**
+ * One phone call that matched the client book. `client_id` NOT NULL is the
+ * privacy rule as a constraint (the tg-import rule): a number the book does
+ * not know is never stored, so a hodim's personal calls structurally cannot
+ * be here. The audio arrives in a SECOND request when the phone's recorder
+ * has closed the file — nullable, and a call never recorded stays a call.
+ */
+export const callLogs = pgTable(
+  'call_logs',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => callRecorderDevices.id),
+    direction: text('direction').notNull(),
+    phone: text('phone').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    durationSec: integer('duration_sec').notNull().default(0),
+    attachmentId: uuid('attachment_id').references(() => attachments.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('call_logs_direction_check', sql`${t.direction} IN ('in', 'out')`),
+    // The phone re-sends its recent log every cycle (a missed upload heals
+    // that way), so the same call arriving twice must be a no-op.
+    unique('call_logs_dedup').on(t.deviceId, t.phone, t.startedAt),
+    index('call_logs_client_idx').on(t.clientId, t.startedAt),
+    index('call_logs_user_idx').on(t.userId, t.startedAt),
   ],
 );
