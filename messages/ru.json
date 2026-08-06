@@ -306,7 +306,8 @@
       "debt_approval_ttl_hours": "Сколько часов действует разрешение на выдачу груза должнику после одобрения",
       "unanswered_reminder_minutes": "Через сколько минут ожидания клиента напомнить его менеджеру (0 — выключено)"
     },
-    "driverApp": "Приложение водителя"
+    "driverApp": "Приложение водителя",
+    "callsApp": "Приложение звонков"
   },
   "audit": {
     "title": "Журнал аудита",
@@ -411,7 +412,15 @@
     "notifMuteDigest": "Ежедневная сводка",
     "notifMuteAlerts": "Тревоги (вне плана, потери, недокументированный груз)",
     "notifMuteOps": "Операционные сообщения (приёмка, прибытие, выдача...)",
-    "notifMuteTasks": "Мои задачи"
+    "notifMuteTasks": "Мои задачи",
+    "callRecTitle": "Запись звонков",
+    "callRecHint": "Приложение GSR Qo'ng'iroqlar на вашем Android отправляет звонки с клиентами в CRM. Личные звонки не сохраняются — только номера из базы клиентов.",
+    "callRecAdd": "Добавить телефон",
+    "callRecCodeHint": "Введите этот код в приложении. Код одноразовый.",
+    "callRecCount": "звонков",
+    "callRecRemove": "Отключить",
+    "callRecNotSeen": "данных ещё нет",
+    "callRecApp": "Скачать приложение (Android)"
   },
   "receive": {
     "title": "Приёмка",
@@ -1138,6 +1147,9 @@
     "nextStage": "Следующий этап",
     "fieldsMoved": "переехали в «Поля и объекты»",
     "telegramThread": "Переписка в Telegram",
+    "callsTitle": "Звонки",
+    "callIn": "входящий",
+    "callOut": "исходящий",
     "whoTalked": "Кто переписывался",
     "allManagers": "Все",
     "telegramClient": "Клиент",

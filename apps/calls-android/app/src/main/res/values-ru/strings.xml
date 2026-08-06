@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GSR Звонки</string>
+    <string name="app_tagline">GSR LOGISTICS · запись звонков</string>
+
+    <!-- Pairing -->
+    <string name="pair_hint">Введите 6-значный код со своей страницы профиля (раздел «Запись звонков»). Звонки с клиентами попадут в CRM — личные звонки не сохраняются.</string>
+    <string name="server_label">Адрес сервера</string>
+    <string name="code_label">Код подключения</string>
+    <string name="pair">Подключить</string>
+    <string name="pairing">Подключение…</string>
+    <string name="paired">Подключено</string>
+    <string name="error_pair">Код неверен или сервер не ответил</string>
+    <string name="error_fill_both">Заполните адрес сервера и код</string>
+    <string name="error_settings">Не удалось открыть настройки — откройте вручную</string>
+
+    <!-- Status -->
+    <string name="state_ok">✅ Запись работает</string>
+    <string name="state_setup">⚠️ Настройка не завершена</string>
+    <string name="state_hint_ok">Приложение можно закрыть — всё работает само.</string>
+    <string name="state_hint_setup">Выполните шаги ниже — иначе запись остановится.</string>
+    <string name="state_revoked">Подключение отозвано со страницы профиля. Возьмите новый код, чтобы подключиться снова.</string>
+
+    <!-- Setup checklist -->
+    <string name="setup_title">Настройка</string>
+    <string name="check_calls">Доступ к журналу звонков</string>
+    <string name="check_audio">Доступ к аудиофайлам</string>
+    <string name="check_battery">Выведено из ограничений батареи</string>
+    <string name="check_autostart">Разрешён автозапуск</string>
+    <string name="check_autostart_hint">Обязательно на Xiaomi/Huawei/Oppo/Vivo. Включите GSR Звонки в настройке и нажмите «Готово».</string>
+    <string name="check_recorder">Включена встроенная запись звонков</string>
+    <string name="check_recorder_hint">Приложение «Телефон» → Настройки → Запись вызовов → включите «Все вызовы». Записывает сам телефон, приложение отправляет только клиентские.</string>
+    <string name="btn_grant">Разрешить</string>
+    <string name="btn_open">Открыть</string>
+    <string name="btn_done">Готово</string>
+    <string name="battery_prompt">В следующем окне нажмите «Разрешить» (Allow)</string>
+    <string name="autostart_prompt">Найдите GSR Звонки в списке и включите</string>
+
+    <!-- Sync status -->
+    <string name="info_last_sync">Последняя отправка: %1$s</string>
+    <string name="info_last_sync_none">Последняя отправка: ещё не было</string>
+    <string name="info_sent">Отправлено: %1$d звонков · %2$d записей</string>
+    <string name="info_queue">Звонков в ожидании записи: %1$d</string>
+    <string name="info_error">Ошибка связи: %1$s</string>
+    <string name="sync_now">Отправить сейчас</string>
+    <string name="syncing">Отправка…</string>
+    <string name="unpair">Отключить</string>
+</resources>

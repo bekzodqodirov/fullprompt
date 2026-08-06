@@ -421,6 +421,13 @@
       "when": 1785190000028,
       "tag": "0059_reply_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1785190000029,
+      "tag": "0060_call_recorder",
+      "breakpoints": true
     }
   ]
 }

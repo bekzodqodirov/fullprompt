@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Uzbek is the default: the staff set their own phone up. values-ru takes
+     over automatically on a phone that is not in Uzbek. -->
+<resources>
+    <string name="app_name">GSR Qo\'ng\'iroqlar</string>
+    <string name="app_tagline">GSR LOGISTICS · qo\'ng\'iroq yozuvi</string>
+    <!-- tagline · v1.0 (93faf93) — locale-independent, no translation needed -->
+    <string name="app_version">%1$s · v%2$s (%3$s)</string>
+
+    <!-- Pairing -->
+    <string name="pair_hint">Profil sahifangizdagi («Qo\'ng\'iroq yozuvi» bo\'limi) 6 belgili kodni kiriting. Mijozlar bilan qo\'ng\'iroqlar CRM\'ga yoziladi — shaxsiy qo\'ng\'iroqlar saqlanmaydi.</string>
+    <string name="server_label">Server manzili</string>
+    <string name="code_label">Ulanish kodi</string>
+    <string name="pair">Ulash</string>
+    <string name="pairing">Ulanmoqda…</string>
+    <string name="paired">Ulandi</string>
+    <string name="error_pair">Kod noto\'g\'ri yoki server javob bermadi</string>
+    <string name="error_fill_both">Server manzili va kodni to\'ldiring</string>
+    <string name="error_settings">Sozlamalarni ochib bo\'lmadi — qo\'lda oching</string>
+
+    <!-- Status -->
+    <string name="state_ok">✅ Yozuv ishlayapti</string>
+    <string name="state_setup">⚠️ Sozlash tugallanmagan</string>
+    <string name="state_hint_ok">Ilovani yopsangiz bo\'ladi — hammasi o\'zi ishlaydi.</string>
+    <string name="state_hint_setup">Quyidagi qadamlarni bajaring — aks holda yozuv to\'xtab qoladi.</string>
+    <string name="state_revoked">Ulanish profil sahifasidan uzilgan. Qayta ulash uchun yangi kod oling.</string>
+
+    <!-- Setup checklist -->
+    <string name="setup_title">Sozlash</string>
+    <string name="mark_ok">✅ %1$s</string>
+    <string name="mark_warn">⚠️ %1$s</string>
+    <string name="check_calls">Qo\'ng\'iroqlar tarixiga ruxsat</string>
+    <string name="check_audio">Audio fayllarga ruxsat</string>
+    <string name="check_battery">Batareya cheklovidan chiqarilgan</string>
+    <string name="check_autostart">Avtoishga tushirishga ruxsat</string>
+    <string name="check_autostart_hint">Xiaomi/Huawei/Oppo/Vivo telefonlarida majburiy. Sozlamada GSR Qo\'ng\'iroqlar\'ni yoqing va «Bajarildi»ni bosing.</string>
+    <string name="check_recorder">Telefonning o\'z yozib olish funksiyasi yoqilgan</string>
+    <string name="check_recorder_hint">Telefon ilovasi → Sozlamalar → Qo\'ng\'iroqlarni yozib olish → «Barcha qo\'ng\'iroqlar»ni yoqing. Yozuvni telefonning o\'zi qiladi, ilova faqat mijozlarnikini yuboradi.</string>
+    <string name="btn_grant">Ruxsat</string>
+    <string name="btn_open">Ochish</string>
+    <string name="btn_done">Bajarildi</string>
+    <string name="battery_prompt">Keyingi oynada «Ruxsat berish» (Allow) ni bosing</string>
+    <string name="autostart_prompt">Ro\'yxatdan GSR Qo\'ng\'iroqlar\'ni toping va yoqing</string>
+
+    <!-- Sync status -->
+    <string name="info_last_sync">Oxirgi yuborish: %1$s</string>
+    <string name="info_last_sync_none">Oxirgi yuborish: hali yo\'q</string>
+    <string name="info_sent">Yuborildi: %1$d qo\'ng\'iroq · %2$d yozuv</string>
+    <string name="info_queue">Yozuvi kutilayotgan qo\'ng\'iroqlar: %1$d</string>
+    <string name="info_error">Aloqa xatosi: %1$s</string>
+    <string name="sync_now">Hozir yuborish</string>
+    <string name="syncing">Yuborilmoqda…</string>
+    <string name="unpair">Ulanishni uzish</string>
+</resources>

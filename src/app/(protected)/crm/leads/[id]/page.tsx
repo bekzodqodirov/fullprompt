@@ -21,6 +21,7 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { HistoryTab } from '@/components/history-tab';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
+import { CallsPanel } from '@/components/calls-panel';
 import { CardCols } from '@/components/card-cols';
 import { conversationClientForLead } from '@/modules/wms/crm/conversations';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
@@ -95,6 +96,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
             <ClientFeed clientId={dockClientId} leadId={lead.id} limit={60} tall />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread clientId={dockClientId} />
+            <CallsPanel clientId={dockClientId} />
           </>
         }
         rail={

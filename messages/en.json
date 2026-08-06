@@ -306,7 +306,8 @@
       "debt_approval_ttl_hours": "How many hours an approved permission to issue cargo to a debtor stays valid",
       "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)"
     },
-    "driverApp": "Driver app"
+    "driverApp": "Driver app",
+    "callsApp": "Calls app"
   },
   "audit": {
     "title": "Audit log",
@@ -411,7 +412,15 @@
     "notifMuteDigest": "Daily digest",
     "notifMuteAlerts": "Alerts (off-plan, losses, undocumented cargo)",
     "notifMuteOps": "Operational messages (receiving, arrival, handover…)",
-    "notifMuteTasks": "My tasks"
+    "notifMuteTasks": "My tasks",
+    "callRecTitle": "Call recording",
+    "callRecHint": "The GSR Calls app on your Android sends client calls into the CRM. Personal calls are never stored — only numbers from the client book.",
+    "callRecAdd": "Add phone",
+    "callRecCodeHint": "Enter this code in the app. The code works once.",
+    "callRecCount": "calls",
+    "callRecRemove": "Disconnect",
+    "callRecNotSeen": "no data yet",
+    "callRecApp": "Download the app (Android)"
   },
   "receive": {
     "title": "Receiving",
@@ -1138,6 +1147,9 @@
     "nextStage": "Next stage",
     "fieldsMoved": "moved to Fields and objects",
     "telegramThread": "Telegram conversation",
+    "callsTitle": "Calls",
+    "callIn": "incoming",
+    "callOut": "outgoing",
     "whoTalked": "Who talked",
     "allManagers": "All",
     "telegramClient": "Client",

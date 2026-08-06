@@ -10,6 +10,7 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
+import { CallsPanel } from '@/components/calls-panel';
 import { stageClass } from '../../crm/stage-color';
 import {
   canWriteDeal,
@@ -131,6 +132,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
             <ClientFeed clientId={row.deal.clientId} dealId={row.deal.id} limit={60} tall />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread clientId={row.deal.clientId} />
+            <CallsPanel clientId={row.deal.clientId} />
           </>
         }
         rail={

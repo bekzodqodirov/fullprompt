@@ -306,7 +306,8 @@
       "debt_approval_ttl_hours": "Qarzdorga yuk berish ruxsati tasdiqlangach necha soat amal qiladi",
       "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)"
     },
-    "driverApp": "Haydovchi ilovasi"
+    "driverApp": "Haydovchi ilovasi",
+    "callsApp": "Qo'ng'iroq ilovasi"
   },
   "audit": {
     "title": "Audit jurnali",
@@ -411,7 +412,15 @@
     "notifMuteDigest": "Kunlik svodka",
     "notifMuteAlerts": "Ogohlantirishlar (plandan tashqari, yo'qolgan, hujjatsiz yuk)",
     "notifMuteOps": "Operatsiya xabarlari (prixod, kelish, topshirish...)",
-    "notifMuteTasks": "Mening vazifalarim"
+    "notifMuteTasks": "Mening vazifalarim",
+    "callRecTitle": "Qo'ng'iroq yozuvi",
+    "callRecHint": "Android telefoningizdagi GSR Qo'ng'iroqlar ilovasi mijozlar bilan suhbatlarni CRM'ga yuboradi. Shaxsiy qo'ng'iroqlar saqlanmaydi — faqat mijozlar bazasidagi raqamlar.",
+    "callRecAdd": "Telefon qo'shish",
+    "callRecCodeHint": "Bu kodni ilovaga kiriting. Kod bir martalik.",
+    "callRecCount": "ta qo'ng'iroq",
+    "callRecRemove": "Uzish",
+    "callRecNotSeen": "hali ma'lumot kelmadi",
+    "callRecApp": "Ilovani yuklab olish (Android)"
   },
   "receive": {
     "title": "Qabul",
@@ -1138,6 +1147,9 @@
     "nextStage": "Keyingi bosqich",
     "fieldsMoved": "«Maydonlar va obyektlar»ga ko‘chdi",
     "telegramThread": "Telegram yozishmalari",
+    "callsTitle": "Qo'ng'iroqlar",
+    "callIn": "kirish",
+    "callOut": "chiqish",
     "whoTalked": "Kim yozishgan",
     "allManagers": "Hammasi",
     "telegramClient": "Mijoz",
