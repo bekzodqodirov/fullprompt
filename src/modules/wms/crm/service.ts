@@ -456,6 +456,10 @@ export async function convertLead(
     action: 'update',
     after: { convertedTo: client.id, clientCode: client.clientCode },
   });
+  // The prospect's kept calls (0063) follow the person onto the new code —
+  // dynamic import: the calls module is a leaf and this is its only door in.
+  const { rekeyLeadCalls } = await import('../calls/service');
+  await rekeyLeadCalls(id, client.id);
   if (won && won.id !== lead.stageId) await announceLeadStage(lead, won.id, ctx);
   return client;
 }

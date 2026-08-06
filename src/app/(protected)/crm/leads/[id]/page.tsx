@@ -96,7 +96,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
             <ClientFeed clientId={dockClientId} leadId={lead.id} limit={60} tall />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread clientId={dockClientId} />
-            <CallsPanel clientId={dockClientId} />
+            <CallsPanel clientId={dockClientId} lead={{ id: lead.id, phone: lead.phone }} />
           </>
         }
         rail={

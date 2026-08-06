@@ -128,7 +128,7 @@ carries rounds 70-71 on PR #6.
 1077 unit/integration + 148 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
-Latest migration: **0062** (`lead_quote`; 0061 `call_dedup_by_user`, 0060
+Latest migration: **0063** (`call_lead`; 0062 `lead_quote`, 0061 `call_dedup_by_user`, 0060
 `call_recorder` and 0059 `reply_templates` are the other session's). Every
 numbered phase is shipped; rounds 56-69 + the calls round + its day-one
 fixes were built by ANOTHER session and are on main — read
@@ -1606,7 +1606,13 @@ sat in Recordings/Call — MediaStore-first + resolver streaming, the
 privacy fence now folder-says-call OR name-carries-number, and the audio
 pass's counters live on the app screen (a silent pass cost the day). The
 server was exonerated by scripts/dev-call-audio-probe.mjs — the APK's
-exact wire shape, green end-to-end locally.
+exact wire shape, green end-to-end locally. Same night, his ask (#550):
+migration 0063 widens the door to OPEN leads — client_id nullable +
+lead_id + owner CHECK; ingest matches the book first (oldest code), else
+the newest open lead; convertLead re-keys the calls onto the minted code;
+`callsForLeadCard` drops the chat resolver's ambiguity refusal (right for
+replying, wrong for a log — his lead card sat empty while the client card
+played the same recording); app untouched, v1.2 keeps working.
 
 Round 70 — the owner's four items after the merges (#540-544 — renumbered
 THRICE: #500-504 collided with round 61, #534-538 with the calls round,
