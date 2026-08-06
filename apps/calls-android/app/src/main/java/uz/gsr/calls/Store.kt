@@ -90,6 +90,11 @@ class Store(context: Context) :
         get() = prefs.getInt("sentAudio", 0)
         set(value) = prefs.edit().putInt("sentAudio", value).apply()
 
+    /** Last audio pass, «pending/found/sent/refused» — the screen's eyes. */
+    var audioStatus: String
+        get() = prefs.getString("audioStatus", "") ?: ""
+        set(value) = prefs.edit().putString("audioStatus", value).apply()
+
     /** The OEM auto-start whitelist cannot be read back — ticked by hand. */
     var autostartConfirmed: Boolean
         get() = prefs.getBoolean("autostart", false)
@@ -112,6 +117,7 @@ class Store(context: Context) :
             .remove("lastError")
             .remove("sentCalls")
             .remove("sentAudio")
+            .remove("audioStatus")
             .apply()
         runCatching { writableDatabase.delete("calls", null, null) }
     }
@@ -141,8 +147,13 @@ class Store(context: Context) :
 
     fun pendingAudio(limit: Int): List<PendingAudio> {
         val out = ArrayList<PendingAudio>()
+        // NEWEST first (v1.2). Oldest-first head-of-line blocked the whole
+        // queue on the owner's phone: the recorder was switched on during
+        // the evening setup, the morning calls had no files and never will,
+        // and the ten of them were retried every cycle while the evening
+        // calls WITH recordings sat unreached behind the limit.
         readableDatabase.rawQuery(
-            "SELECT phone, started, dur FROM calls WHERE audio = 0 ORDER BY started ASC LIMIT ?",
+            "SELECT phone, started, dur FROM calls WHERE audio = 0 ORDER BY started DESC LIMIT ?",
             arrayOf(limit.toString()),
         ).use { c ->
             while (c.moveToNext()) {

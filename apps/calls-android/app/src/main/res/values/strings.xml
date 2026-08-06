@@ -47,6 +47,7 @@
     <string name="info_last_sync_none">Oxirgi yuborish: hali yo\'q</string>
     <string name="info_sent">Yuborildi: %1$d qo\'ng\'iroq · %2$d yozuv</string>
     <string name="info_queue">Yozuvi kutilayotgan qo\'ng\'iroqlar: %1$d</string>
+    <string name="info_audio_pass">Oxirgi qidiruv (navbat/topildi/yubordi/rad): %1$s</string>
     <string name="info_error">Aloqa xatosi: %1$s</string>
     <string name="sync_now">Hozir yuborish</string>
     <string name="syncing">Yuborilmoqda…</string>

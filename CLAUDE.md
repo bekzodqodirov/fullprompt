@@ -1559,7 +1559,8 @@ cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
 batches row (the stamp's FK) — in_transit + departedAt, route check needs
 two warehouses.
 
-Round 70 — **qo'ng'iroq yozuvi** (#534-538, owner's five answers: client-book
+Round 70 (calls track, parallel session) — **qo'ng'iroq yozuvi** (#534-538,
+owner's five answers: client-book
 only / read like Telegram / from install day / iPhone planned-not-built /
 accounts stay phone+password). Migration 0060: `call_recorder_devices` +
 `call_logs` (`client_id NOT NULL` = the tg-import privacy rule structural;
@@ -1599,7 +1600,13 @@ day-one duplicates) and `findCallForAudio` now scopes by user, or a
 re-paired phone's audio would 404 for ever. Local-only e2e note: a SECOND
 full run on the same db leaves two in-transit m3 batches whose truck
 markers can stack on a warehouse pin and intercept m9c's click — fresh-db
-runs (and CI) are green.
+runs (and CI) are green. APK v1.1 the same evening (#549): scoped storage
+made the File-API finder answer «nothing» on his Samsung while the files
+sat in Recordings/Call — MediaStore-first + resolver streaming, the
+privacy fence now folder-says-call OR name-carries-number, and the audio
+pass's counters live on the app screen (a silent pass cost the day). The
+server was exonerated by scripts/dev-call-audio-probe.mjs — the APK's
+exact wire shape, green end-to-end locally.
 
 Round 70 — the owner's four items after the merges (#540-544 — renumbered
 THRICE: #500-504 collided with round 61, #534-538 with the calls round,
