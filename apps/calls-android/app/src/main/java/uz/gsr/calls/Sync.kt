@@ -83,7 +83,10 @@ object Sync {
                     refused += 1
                 }
             }
-            store.audioStatus = "${pendings.size}/${found}/${sent}/${refused}"
+            // media:N = call recordings MediaStore shows for the last 24 h —
+            // splits «no access» from «no file for THAT call» at a glance.
+            store.audioStatus =
+                "${pendings.size}/${found}/${sent}/${refused} · media:${Recordings.visibleRecent(context)}"
 
             store.prune(now)
             store.lastSyncAt = now

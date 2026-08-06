@@ -139,4 +139,34 @@ object Recordings {
 
         return candidates.minByOrNull { it.score }
     }
+
+    /**
+     * How many call recordings MediaStore shows for the last 24 h — the
+     * status line's «media:N». Zero with files visibly sitting in the folder
+     * means ACCESS is the problem; a positive count moves the question to
+     * the per-call matching. One number that saves a day of guessing.
+     */
+    fun visibleRecent(context: Context): Int {
+        var count = 0
+        runCatching {
+            val from = (System.currentTimeMillis() - 24L * 3600 * 1000) / 1000
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Audio.Media.DISPLAY_NAME, MediaStore.Audio.Media.DATA),
+                "${MediaStore.Audio.Media.DATE_MODIFIED} >= ?",
+                arrayOf(from.toString()),
+                null,
+            )?.use { c ->
+                val iName = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val iData = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                while (c.moveToNext()) {
+                    val name = (c.getString(iName) ?: "").lowercase(Locale.US)
+                    val path = (c.getString(iData) ?: "").lowercase(Locale.US)
+                    if (name.substringAfterLast('.', "") !in AUDIO_EXT) continue
+                    if (path.contains("call") || name.contains("call")) count += 1
+                }
+            }
+        }
+        return count
+    }
 }
