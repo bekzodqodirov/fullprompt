@@ -1,7 +1,7 @@
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { canReadTg, tgViewerFor } from '@/modules/wms/crm/conversations';
-import { callsForCard } from '@/modules/wms/calls/service';
+import { callsForCard, callsForLeadCard } from '@/modules/wms/calls/service';
 
 /**
  * This client's recorded phone calls, beside the Telegram thread on the
@@ -14,15 +14,25 @@ import { callsForCard } from '@/modules/wms/calls/service';
  * `call_log` branch enforces the same rule per file — so a copied URL
  * cannot out-read the panel.
  */
-export async function CallsPanel({ clientId }: { clientId: string | null }) {
-  if (!clientId) return null;
+export async function CallsPanel({
+  clientId,
+  lead,
+}: {
+  clientId: string | null;
+  /** The LEAD card passes itself: its calls key on its own phone (0063) —
+   * the chat resolver's one-target refusal must not blank a read-only log. */
+  lead?: { id: string; phone: string | null } | null;
+}) {
+  if (!clientId && !lead) return null;
   const actor = await getActor();
   if (!actor || !canReadTg(actor)) return null;
 
   const viewer = tgViewerFor(actor);
   // Widened to phone-siblings: a call lands on the person's OLDEST code, and
   // the card in front of the reader may be a newer one (round 32's shape).
-  const rows = await callsForCard(clientId, viewer);
+  const rows = lead
+    ? await callsForLeadCard(lead, viewer)
+    : await callsForCard(clientId!, viewer);
   // No calls this viewer may see — say nothing rather than put an empty box
   // on every card in the system (the thread panel's rule).
   if (rows.length === 0) return null;
@@ -46,7 +56,7 @@ export async function CallsPanel({ clientId }: { clientId: string | null }) {
               </span>
               <span className="font-semibold">{row.takerName}</span>
               {/* The call sits on the person's OTHER code — say which. */}
-              {row.clientId !== clientId && (
+              {row.clientCode && row.clientId !== clientId && (
                 <span className="font-mono text-xs font-semibold text-ink-500">{row.clientCode}</span>
               )}
               <span className="text-ink-500">

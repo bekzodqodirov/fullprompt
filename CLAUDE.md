@@ -125,10 +125,10 @@ pnpm build && pnpm e2e  # 44 e2e
 the truck-marker follow-up; PR #5 = the calls round; PR #7 = the calls
 day-one fixes). This branch (`claude/gsr-logistics-wms-phase1-o8h4en`)
 carries rounds 70-71 on PR #6.
-1077 unit/integration + 149 e2e, verified in CI's order on a fresh database
+1080 unit/integration + 149 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
-Latest migration: **0062** (`lead_quote`; 0061 `call_dedup_by_user`, 0060
+Latest migration: **0063** (`call_lead`; 0062 `lead_quote`, 0061 `call_dedup_by_user`, 0060
 `call_recorder` and 0059 `reply_templates` are the other session's). Every
 numbered phase is shipped; rounds 56-69 + the calls round + its day-one
 fixes were built by ANOTHER session and are on main — read
@@ -1559,7 +1559,8 @@ cells «≈ $0 ⚠». No migration. e2e note: the grid test now mints a REAL
 batches row (the stamp's FK) — in_transit + departedAt, route check needs
 two warehouses.
 
-Round 70 — **qo'ng'iroq yozuvi** (#534-538, owner's five answers: client-book
+Round 70 (calls track, parallel session) — **qo'ng'iroq yozuvi** (#534-538,
+owner's five answers: client-book
 only / read like Telegram / from install day / iPhone planned-not-built /
 accounts stay phone+password). Migration 0060: `call_recorder_devices` +
 `call_logs` (`client_id NOT NULL` = the tg-import privacy rule structural;
@@ -1599,7 +1600,19 @@ day-one duplicates) and `findCallForAudio` now scopes by user, or a
 re-paired phone's audio would 404 for ever. Local-only e2e note: a SECOND
 full run on the same db leaves two in-transit m3 batches whose truck
 markers can stack on a warehouse pin and intercept m9c's click — fresh-db
-runs (and CI) are green.
+runs (and CI) are green. APK v1.1 the same evening (#549): scoped storage
+made the File-API finder answer «nothing» on his Samsung while the files
+sat in Recordings/Call — MediaStore-first + resolver streaming, the
+privacy fence now folder-says-call OR name-carries-number, and the audio
+pass's counters live on the app screen (a silent pass cost the day). The
+server was exonerated by scripts/dev-call-audio-probe.mjs — the APK's
+exact wire shape, green end-to-end locally. Same night, his ask (#550):
+migration 0063 widens the door to OPEN leads — client_id nullable +
+lead_id + owner CHECK; ingest matches the book first (oldest code), else
+the newest open lead; convertLead re-keys the calls onto the minted code;
+`callsForLeadCard` drops the chat resolver's ambiguity refusal (right for
+replying, wrong for a log — his lead card sat empty while the client card
+played the same recording); app untouched, v1.2 keeps working.
 
 Round 70 — the owner's four items after the merges (#540-544 — renumbered
 THRICE: #500-504 collided with round 61, #534-538 with the calls round,
@@ -1663,7 +1676,7 @@ view deleted as a final TEST. NOTE: this branch's DECISIONS numbers collided twi
 (round 61's #500-504, then the calls round's #534-538); rounds 70-71 now
 hold **#540-548**.
 
-Round 72 — the owner's refusal of the board chrome (#549-552, «urg'u
+Round 72 — the owner's refusal of the board chrome (#551-554, «urg'u
 kanban view'ga berilsin, qidiruv va hodim filtrini ham panel ichiga tiq,
 hamma buttonlarni boshqattdan o'ylab chiq»). Measured first: at 360×800
 the first card sat ~1,100 px down. Both boards now carry ONE toolbar row
@@ -1689,7 +1702,7 @@ m9zg ×5, m9zh-board-filters (views flow + fence), m9zh-card-fields ×7
 (board-menu first); m9p untouched (door stayed visible). 1077 + 149
 green on a fresh db in CI's order; screenshots at 360×800 and 1280×800.
 
-Round 73 — three more the same evening (#553-555). (1) The CRM SubNav
+Round 73 — three more the same evening (#555-557). (1) The CRM SubNav
 left the funnel: it renders only inside a `(pages)` route group
 (today/dormant/people/settings — URLs unchanged, gates stay in the section
 layout); the funnel's ⋯ menu carries those doors; /crm --board-extra fell

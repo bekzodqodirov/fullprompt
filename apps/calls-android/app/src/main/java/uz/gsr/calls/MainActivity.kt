@@ -339,9 +339,17 @@ class MainActivity : AppCompatActivity() {
         }
         sentText.text = getString(R.string.info_sent, store.sentCalls, store.sentAudio)
 
+        // Always on screen (v1.1): a silent audio pass cost a day of guessing
+        // — the queue plus the last pass's counters answer «why no player».
         val queued = runCatching { store.pendingAudioCount() }.getOrDefault(0)
-        queueText.visibility = if (queued > 0) View.VISIBLE else View.GONE
-        queueText.text = getString(R.string.info_queue, queued)
+        queueText.visibility = View.VISIBLE
+        queueText.text = buildString {
+            append(getString(R.string.info_queue, queued))
+            if (store.audioStatus.isNotEmpty()) {
+                append('\n')
+                append(getString(R.string.info_audio_pass, store.audioStatus))
+            }
+        }
 
         errorText.visibility = if (store.lastError.isEmpty()) View.GONE else View.VISIBLE
         errorText.text = getString(R.string.info_error, store.lastError)
