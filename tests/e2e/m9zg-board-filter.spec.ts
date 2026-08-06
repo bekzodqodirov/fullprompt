@@ -41,16 +41,19 @@ test('the box narrows the board, and a miss empties it honestly', async ({ page 
   await page.goto('/crm?scope=all');
   await expect(board(page).getByTestId('lead-card').filter({ hasText: NAME })).toHaveCount(1);
 
+  // Round 72: the search lives INSIDE the filter panel — the owner's word.
+  await page.getByTestId('board-filters-toggle').click();
   await page.getByTestId('board-q').fill(NAME);
-  await page.getByTestId('board-filter-apply').click();
+  await page.getByTestId('bf-apply').click();
   await expect(page).toHaveURL(/[?&]q=/);
   // Exactly the one card, on a board that had many.
   await expect(board(page).getByTestId('lead-card')).toHaveCount(1);
   await expect(board(page).getByTestId('lead-card').first()).toContainText(NAME);
 
   // A miss says nothing found rather than showing everything.
+  await page.getByTestId('board-filters-toggle').click();
   await page.getByTestId('board-q').fill(`yo-q-${Date.now()}`);
-  await page.getByTestId('board-filter-apply').click();
+  await page.getByTestId('bf-apply').click();
   await expect(board(page).getByTestId('lead-card')).toHaveCount(0);
 });
 
@@ -59,8 +62,16 @@ test('the filter survives the tabs, the archive link and the clear button', asyn
   await page.goto(`/crm?scope=all&q=${encodeURIComponent(NAME)}`);
   await expect(board(page).getByTestId('lead-card')).toHaveCount(1);
 
-  // «Mening»: scope drops, the filter stays.
-  await page.getByRole('link', { name: /^(Мои|Meniki|Mine|我的)$/ }).first().click();
+  // «Mening»: the whose-work radios live in the panel now; picking «mine»
+  // and applying must keep the typed filter (#171 — the form re-posts q).
+  await page.getByTestId('board-filters-toggle').click();
+  // Press the styled label a thumb actually reaches, not the sr-only input
+  // behind it (#547's rule: prove reachability, not DOM existence).
+  await page
+    .getByTestId('board-filters-panel')
+    .locator('label', { has: page.locator('input[name="scope"][value=""]') })
+    .click();
+  await page.getByTestId('bf-apply').click();
   await expect(page).toHaveURL(/[?&]q=/);
 
   // Back to all, then the archive door — the one that used to load 400
@@ -73,8 +84,9 @@ test('the filter survives the tabs, the archive link and the clear button', asyn
     await expect(page).toHaveURL(/arxiv=1/);
   }
 
-  // Clear puts the whole board back.
+  // Clear puts the whole board back — the clear link lives in the panel.
   await page.goto(`/crm?scope=all&q=${encodeURIComponent(NAME)}`);
+  await page.getByTestId('board-filters-toggle').click();
   await page.getByTestId('board-filter-clear').click();
   await expect(page).not.toHaveURL(/[?&]q=/);
   await expect(board(page).getByTestId('lead-card').first()).toBeVisible();
@@ -83,7 +95,8 @@ test('the filter survives the tabs, the archive link and the clear button', asyn
 test('somebody who may not see the whole funnel is not offered a colleague', async ({ page }) => {
   await login(page, SALES);
   await page.goto('/crm');
-  await expect(page.getByTestId('board-filter')).toBeVisible();
+  await page.getByTestId('board-filters-toggle').click();
+  await expect(page.getByTestId('board-filters-panel')).toBeVisible();
   // The picker belongs to whoever may look at everybody's work.
   await expect(page.getByTestId('board-hodim')).toHaveCount(0);
 });
@@ -102,9 +115,9 @@ test('a hodim in the address bar does not widen what a seller can see', async ({
 test('the deal board carries the same row', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/bitimlar?scope=all');
-  await expect(page.getByTestId('board-filter')).toBeVisible();
+  await page.getByTestId('board-filters-toggle').click();
   await page.getByTestId('board-q').fill(`yo-q-${Date.now()}`);
-  await page.getByTestId('board-filter-apply').click();
+  await page.getByTestId('bf-apply').click();
   await expect(page.getByTestId('deal-card')).toHaveCount(0);
   // …and the attention list narrows with it, rather than sitting there full.
   await expect(page.getByTestId('deal-attention')).toHaveCount(0);

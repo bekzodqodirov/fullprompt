@@ -4,9 +4,16 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { Icon } from '@/components/ui/icon';
-import { PageHeader } from '@/components/ui/page';
-import { BoardFilter, hrefWith, readBoardFilters } from '@/components/list/board-filter';
-import { ViewBar } from '@/components/list/view-bar';
+import {
+  BoardChips,
+  BoardFilter,
+  InlineSearch,
+  hrefWith,
+  readBoardFilters,
+} from '@/components/list/board-filter';
+import { BoardMenu, boardMenuItem } from '@/components/list/board-menu';
+import { PopoverRow } from '@/components/list/popover-row';
+import { ViewsMenu } from '@/components/list/views-menu';
 import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
 import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { CardFieldsMenu } from '@/components/list/card-fields-menu';
@@ -44,6 +51,7 @@ export default async function DealsPage({
   const t = await getTranslations('deals');
   const tc = await getTranslations('crm');
   const tcommon = await getTranslations('common');
+  const tl = await getTranslations('lists');
   const raw = await searchParams;
   // A bare visit opens the person's default VIEW, exactly as the lists do.
   if (Object.keys(raw).length === 0) {
@@ -142,155 +150,158 @@ export default async function DealsPage({
     };
   });
 
+  const advancedLabels = {
+    filters: tc('boardFilters'),
+    source: tc('source'),
+    dateFrom: tc('filterFrom'),
+    dateTo: tc('filterTo'),
+    price: t('amount'),
+    volume: t('volumeM3'),
+    weight: t('weightKg'),
+    lentaSearch: tc('filterLenta'),
+    min: tc('filterMin'),
+    max: tc('filterMax'),
+  };
+  // Every chip counts — the scope chip too, or the row renders unpaid and
+  // eats 28px off the board's bottom (the geometry fence caught exactly this).
+  const chipsOn =
+    params.scope === 'all' || Boolean(q) || Boolean(hodim) || Object.keys(filters.raw).length > 0;
+
   return (
     // The board's height is a viewport calculation, so anything added ABOVE it
     // has to say how much room it took or the page grows a second scrollbar
-    // under a board that was built not to have one (#354). The filter row is
-    // one line, or two when the colleague picker is offered.
+    // under a board that was built not to have one (#354). Round 72 collapsed
+    // the header / scope tabs / view chips / filter card into ONE toolbar row;
+    // the attention fold and the chips row pay for themselves when present.
     <div
-      className="space-y-3"
+      className="space-y-2"
       style={{
         ['--board-extra' as string]: `${
-          (managers.length ? 8.9 : 4.9) + 2.6 + (Object.keys(filters.raw).length ? 2.2 : 0)
+          3.25 + (chipsOn ? 2.5 : 0) + (attention.length > 0 ? 3 : 0)
         }rem`,
       }}
     >
-      <PageHeader
-        icon="handshake"
-        title={t('title')}
-        actions={
-          <>
-            {/* The other half of the sales story — see /crm's header. Only
-                for somebody the lead funnel would actually let in. */}
-            {actor.permissions.has('crm.leads') && (
-              <Link
-                href="/crm"
-                className="btn-secondary px-3"
-                data-testid="to-leads"
-                aria-label={tc('funnel')}
-              >
-                <Icon name="target" className="h-4 w-4" />
-                {/* Icon only on a phone. Three labelled buttons measured 373 px
-                    inside a 360 px screen, and the cheapest of the three to say
-                    without words is the door to the OTHER board — its icon is
-                    that board's own (round 60's precedent, the language
-                    switcher). */}
-                <span className="hidden sm:inline">{tc('funnel')}</span>
-              </Link>
-            )}
-            {/* The funnel's own settings — cargo triggers live there. Gated
-                like the lead settings: reshaping columns is crm.manage. */}
-            {actor.permissions.has('crm.manage') && (
-              <Link
-                href="/bitimlar/etaplar"
-                className="btn-secondary px-3"
-                data-testid="deal-stage-settings"
-                aria-label={t('stageSettings')}
-              >
-                <Icon name="settings" className="h-4 w-4" />
-              </Link>
-            )}
-            <CardFieldsMenu
-              board="deal"
-              specs={DEAL_CARD_FIELDS}
-              chosen={cardFields}
-              labels={{
-                title: t('cardFields'),
-                save: tcommon('save'),
-                field: (key) => t(key as 'amount'),
-              }}
-            />
-            <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal">
-              <Icon name="plus" className="h-4 w-4" />
-              {t('newDeal')}
+      {/* `relative` on the ROW — every popover anchors to it (#471); a
+          PopoverRow so opening one fold closes the others. */}
+      <PopoverRow className="relative flex items-center gap-1.5">
+        <h1 className="min-w-0 flex-1 truncate text-lg">{t('title')}</h1>
+        <InlineSearch
+          q={q}
+          label={tcommon('search')}
+          carried={{
+            ...(params.scope === 'all' ? { scope: 'all' } : {}),
+            ...(hodim ? { hodim } : {}),
+            ...(archive ? { arxiv: '1' } : {}),
+            ...filters.raw,
+          }}
+        />
+        {/* The other half of the sales story, in sight — only for somebody
+            the lead funnel would actually let in. */}
+        {actor.permissions.has('crm.leads') && (
+          <Link
+            href="/crm"
+            className="btn-secondary btn-icon"
+            data-testid="to-leads"
+            aria-label={tc('funnel')}
+          >
+            <Icon name="target" className="h-4 w-4" />
+          </Link>
+        )}
+        <BoardFilter
+          q={q}
+          scope={params.scope === 'all' ? 'all' : ''}
+          hodim={hodim}
+          people={managers.map((row) => ({ id: row.id, fullName: row.fullName }))}
+          // The form REPLACES the URL (#171); arxiv is the one param that
+          // lives outside it.
+          hidden={archive ? { arxiv: '1' } : {}}
+          labels={{
+            search: tcommon('search'),
+            whose: tc('whoseWork'),
+            mine: t('mine'),
+            all: t('all'),
+            everyone: tc('allManagers'),
+            apply: tcommon('search'),
+            clear: tc('filterClear'),
+          }}
+          advanced={{ values: filters.raw, labels: advancedLabels }}
+        />
+        {/* The board's query string is already a view; a name makes it a door. */}
+        <ViewsMenu
+          screen="bitimlar"
+          path="/bitimlar"
+          views={views}
+          currentQuery={normalizeQuery(raw)}
+          canPublish={canPublishViews(actor.permissions)}
+          label={tl('views')}
+        />
+        <BoardMenu label={tcommon('moreActions')}>
+          {/* The funnel's own settings — cargo triggers live there. Gated
+              like the lead settings: reshaping columns is crm.manage. */}
+          {actor.permissions.has('crm.manage') && (
+            <Link href="/bitimlar/etaplar" className={boardMenuItem} data-testid="deal-stage-settings">
+              <Icon name="settings" className="h-4 w-4 text-ink-500" />
+              {t('stageSettings')}
             </Link>
-          </>
-        }
-      />
+          )}
+          <CardFieldsMenu
+            inline
+            board="deal"
+            specs={DEAL_CARD_FIELDS}
+            chosen={cardFields}
+            labels={{
+              title: t('cardFields'),
+              save: tcommon('save'),
+              field: (key) => t(key as 'amount'),
+            }}
+          />
+        </BoardMenu>
+        <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal" aria-label={t('newDeal')}>
+          <Icon name="plus" className="h-4 w-4" />
+          <span className="hidden sm:inline">{t('newDeal')}</span>
+        </Link>
+      </PopoverRow>
 
-      {seesAll && (
-        <div className="flex gap-2">
-          <Link
-            href={`/bitimlar${hrefWith(carried, { scope: undefined })}`}
-            className={mine ? 'btn-primary flex-1' : 'btn-secondary flex-1'}
-          >
-            {t('mine')}
-          </Link>
-          <Link
-            href={`/bitimlar${hrefWith(carried, { scope: 'all' })}`}
-            className={mine ? 'btn-secondary flex-1' : 'btn-primary flex-1'}
-          >
-            {t('all')}
-          </Link>
-        </div>
-      )}
-
-      {/* The board's query string is already a view; a name makes it a door. */}
-      <ViewBar
-        screen="bitimlar"
-        path="/bitimlar"
-        views={views}
-        currentQuery={normalizeQuery(raw)}
-        canPublish={canPublishViews(actor.permissions)}
-      />
-
-      <BoardFilter
+      <BoardChips
         q={q}
+        scope={params.scope === 'all' ? 'all' : ''}
         hodim={hodim}
-        people={managers.map((row) => ({ id: row.id, fullName: row.fullName }))}
-        hidden={{
-          ...(params.scope === 'all' ? { scope: 'all' } : {}),
-          ...(archive ? { arxiv: '1' } : {}),
-        }}
-        labels={{
-          search: tcommon('search'),
-          everyone: tc('allManagers'),
-          apply: tcommon('search'),
-          clear: tc('filterClear'),
-        }}
-        advanced={{
-          values: filters.raw,
-          labels: {
-            filters: tc('boardFilters'),
-            source: tc('source'),
-            dateFrom: tc('filterFrom'),
-            dateTo: tc('filterTo'),
-            price: t('amount'),
-            volume: t('volumeM3'),
-            weight: t('weightKg'),
-            lentaSearch: tc('filterLenta'),
-            min: tc('filterMin'),
-            max: tc('filterMax'),
-          },
-        }}
+        hodimName={managers.find((row) => row.id === hodim)?.fullName ?? null}
+        values={filters.raw}
+        labels={{ ...advancedLabels, search: tcommon('search'), all: t('all') }}
+        current={{ ...carried, ...(archive ? { arxiv: '1' } : {}) }}
       />
 
-      {/* Above the board on purpose. A board answers "where is everything";
-          this answers "what is on fire", and that is the reason to open it. */}
+      {/* Above the board on purpose — «what is on fire» is the reason to open
+          this screen — but FOLDED to one line (round 72): eight warning cards
+          were pushing the board itself below the fold, and the board is what
+          the owner asked to see. */}
       {attention.length > 0 && (
-        <section className="space-y-1" data-testid="deal-attention">
-          <h2 className="section-title text-bad">
+        <details className="card !p-0" data-testid="deal-attention">
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-bold text-bad marker:content-none">
             ⚠️ {t('attention')} · {attention.length}
-          </h2>
-          {attention.slice(0, 8).map((row) => (
-            <Link
-              key={row.id}
-              href={`/bitimlar/${row.id}`}
-              className="card block !p-2.5 hover:bg-surface-sunken"
-            >
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className="num text-xs font-bold text-ink-500">{row.code}</span>
-                <span className="num font-bold text-good">{row.clientCode}</span>
-                <span className="min-w-0 flex-1 truncate text-sm">{row.clientName}</span>
-                <span className="text-xs font-bold text-bad">
-                  {row.reason === 'unpriced'
-                    ? t('unpriced')
-                    : `${row.pct !== null && row.pct > 0 ? '+' : ''}${row.pct?.toFixed(0)} % · ${t('deviation')}`}
-                </span>
-              </div>
-            </Link>
-          ))}
-        </section>
+          </summary>
+          <div className="space-y-1 border-t border-line p-2">
+            {attention.slice(0, 8).map((row) => (
+              <Link
+                key={row.id}
+                href={`/bitimlar/${row.id}`}
+                className="card block !p-2.5 hover:bg-surface-sunken"
+              >
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="num text-xs font-bold text-ink-500">{row.code}</span>
+                  <span className="num font-bold text-good">{row.clientCode}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm">{row.clientName}</span>
+                  <span className="text-xs font-bold text-bad">
+                    {row.reason === 'unpriced'
+                      ? t('unpriced')
+                      : `${row.pct !== null && row.pct > 0 ? '+' : ''}${row.pct?.toFixed(0)} % · ${t('deviation')}`}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </details>
       )}
 
       <DealBoard

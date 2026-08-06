@@ -125,7 +125,7 @@ pnpm build && pnpm e2e  # 44 e2e
 the truck-marker follow-up; PR #5 = the calls round; PR #7 = the calls
 day-one fixes). This branch (`claude/gsr-logistics-wms-phase1-o8h4en`)
 carries rounds 70-71 on PR #6.
-1077 unit/integration + 148 e2e, verified in CI's order on a fresh database
+1077 unit/integration + 149 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
 Latest migration: **0062** (`lead_quote`; 0061 `call_dedup_by_user`, 0060
@@ -1662,6 +1662,32 @@ form → price on card → panel narrows → chip restores → saved view →
 view deleted as a final TEST. NOTE: this branch's DECISIONS numbers collided twice
 (round 61's #500-504, then the calls round's #534-538); rounds 70-71 now
 hold **#540-548**.
+
+Round 72 — the owner's refusal of the board chrome (#549-552, «urg'u
+kanban view'ga berilsin, qidiruv va hodim filtrini ham panel ichiga tiq,
+hamma buttonlarni boshqattdan o'ylab chiq»). Measured first: at 360×800
+the first card sat ~1,100 px down. Both boards now carry ONE toolbar row
+(title · inline search from md · cross-board door · ⚲ filter with count
+badge · 🔖 views · ⋯ · «+» primary) — PageHeader, scope tabs, ViewBar row
+and the filter card are GONE from these two pages; q + Meniki/Hammasi
+radios (peer-checked) + hodim select live IN the filter panel's one GET
+form (#171); chips row (one sideways-scrolling line, SubNav's shape)
+includes q/hodim/scope chips. Design judged by 3 adversarial lenses
+BEFORE the build — adopted: desktop keeps a visible q input (fold saves
+no height there), cross-board door stays visible (m9p presses it), scope
+chip (invisible widening = hidden-filter confusion), sticky bf-apply in
+the sheet, PopoverRow closing sibling details, clear-link carries scope
+(#171, the regression judge's real find). ViewsMenu (boards) vs ViewBar
+(lists) share the view-* testid vocabulary as a CONTRACT; card-fields
+inside ⋯ is the suite's ONE fold-in-fold, stated. Heights re-derived
+(kanban bases 19→12 / 17.5→10 rem; /crm pays SubNav via literal
+responsive [--board-extra:…] classes). NEW geometry fence in m9zh reads
+--board-extra for the first time (board bottom within [-2,48] px of the
+tab bar, width ≤360) — its first run caught the unpaid scope chip at
+−28 px. First card now ~290 px. Specs rewritten in the same commit:
+m9zg ×5, m9zh-board-filters (views flow + fence), m9zh-card-fields ×7
+(board-menu first); m9p untouched (door stayed visible). 1077 + 149
+green on a fresh db in CI's order; screenshots at 360×800 and 1280×800.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

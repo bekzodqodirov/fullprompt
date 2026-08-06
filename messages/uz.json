@@ -36,7 +36,8 @@
       "notFound": "Kartochka topilmadi — sahifani yangilang",
       "reasonRequired": "Sababini yozish kerak",
       "stageNotFound": "Etap o'chirilgan — sahifani yangilang"
-    }
+    },
+    "moreActions": "Boshqa amallar"
   },
   "login": {
     "title": "Tizimga kirish",
@@ -1280,7 +1281,8 @@
     "quotedAmount": "Narx (xizmat)",
     "quotedCurrency": "Valyuta",
     "quotedVolume": "Kub (m³)",
-    "quotedWeight": "Og'irlik (kg)"
+    "quotedWeight": "Og'irlik (kg)",
+    "whoseWork": "Kimning ishlari"
   },
   "navShort": {
     "home": "Bosh",
@@ -1864,7 +1866,8 @@
     "bulkSomeRefused": "sababini ko'rish uchun kartani oching",
     "select": "Tanlash",
     "doMove": "Ko'chirish",
-    "doAssign": "Biriktirish"
+    "doAssign": "Biriktirish",
+    "views": "Ko'rinishlar"
   },
   "quick": {
     "title": "Tez qo'shish",

@@ -7,11 +7,18 @@ import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { closedLeadCounts, listLeads, listSources, listStages } from '@/modules/wms/crm/service';
 import { KanbanBoard } from './leads/kanban';
 import { Icon } from '@/components/ui/icon';
-import { PageHeader } from '@/components/ui/page';
-import { BoardFilter, hrefWith, readBoardFilters } from '@/components/list/board-filter';
+import {
+  BoardChips,
+  BoardFilter,
+  InlineSearch,
+  hrefWith,
+  readBoardFilters,
+} from '@/components/list/board-filter';
+import { BoardMenu } from '@/components/list/board-menu';
+import { PopoverRow } from '@/components/list/popover-row';
 import { CardFieldsMenu } from '@/components/list/card-fields-menu';
 import { LEAD_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
-import { ViewBar } from '@/components/list/view-bar';
+import { ViewsMenu } from '@/components/list/views-menu';
 import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
 import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 
@@ -44,6 +51,7 @@ export default async function LeadsPage({
   const t = await getTranslations('crm');
   const td = await getTranslations('deals');
   const tc = await getTranslations('common');
+  const tl = await getTranslations('lists');
   const raw = await searchParams;
   // A bare visit opens the person's default VIEW, exactly as the lists do —
   // a board is a list wearing columns.
@@ -134,117 +142,132 @@ export default async function LeadsPage({
   // The board counts its own columns: a card dropped into another stage must
   // update the header immediately, before the server has revalidated.
 
+  const advancedLabels = {
+    filters: t('boardFilters'),
+    source: t('source'),
+    dateFrom: t('filterFrom'),
+    dateTo: t('filterTo'),
+    price: t('quotedAmount'),
+    volume: t('quotedVolume'),
+    weight: t('quotedWeight'),
+    lentaSearch: t('filterLenta'),
+    min: t('filterMin'),
+    max: t('filterMax'),
+  };
+  // Every chip counts — the scope chip too, or the row renders unpaid and
+  // eats 28px off the board's bottom (the geometry fence caught exactly this).
+  const chipsOn =
+    params.scope === 'all' || Boolean(q) || Boolean(hodim) || Object.keys(filters.raw).length > 0;
+
   return (
     // The board's height is a viewport calculation, so anything added ABOVE it
     // has to say how much room it took or the page grows a second scrollbar
-    // under a board that was built not to have one (#354). The filter row is
-    // one line, or two when the colleague picker is offered; the view chips
-    // are one more, and the active-filter chips another when any are on.
+    // under a board that was built not to have one (#354). Round 72 collapsed
+    // the header / scope tabs / view chips / filter card into ONE toolbar row
+    // — the owner's «urg'u kanban view'ga berilsin». The price: the toolbar,
+    // the chips row when something is filtering, and — only on THIS page —
+    // the CRM SubNav, which costs more on a phone (it wraps taller) than on a
+    // desktop, hence the max-md override. Literal classes, because Tailwind
+    // only compiles what it can see.
     <div
-      className="space-y-3"
-      style={{
-        ['--board-extra' as string]: `${
-          (managers.length ? 8.9 : 4.9) + 2.6 + (Object.keys(filters.raw).length ? 2.2 : 0)
-        }rem`,
-      }}
+      className={`space-y-2 ${
+        chipsOn
+          ? '[--board-extra:7.15rem] max-md:[--board-extra:9.4rem]'
+          : '[--board-extra:4.65rem] max-md:[--board-extra:6.9rem]'
+      }`}
     >
-      <PageHeader
-        icon="target"
-        title={t('funnel')}
-        actions={
-          <>
-            {/* The two funnels are one sales story (owner: "bir-biriga
-                chambarchas") — a lead is worked HERE and its jobs live THERE,
-                so each board carries the door to the other. */}
-            <Link
-              href="/bitimlar"
-              className="btn-secondary px-3"
-              data-testid="to-deals"
-              aria-label={td('title')}
-            >
-              <Icon name="handshake" className="h-4 w-4" />
-              {/* Same rule as the deal board's door back — see the note there. */}
-              <span className="hidden sm:inline">{td('title')}</span>
-            </Link>
-            <CardFieldsMenu
-              board="lead"
-              specs={LEAD_CARD_FIELDS}
-              chosen={cardFields}
-              labels={{
-                title: t('cardFields'),
-                save: tc('save'),
-                field: (key) => t(key as 'company'),
-              }}
-            />
-            <Link href="/crm/leads/new" className="btn-primary">
-              <Icon name="plus" className="h-4 w-4" />
-              {t('newLead')}
-            </Link>
-          </>
-        }
-      />
+      {/* `relative` on the ROW: every popover on it (filter panel from md,
+          views, ⋯) anchors to the row's edges, never to its own button —
+          anchoring to a button put a panel off-screen at 360 px twice
+          (#471, round 57). The row is a PopoverRow so opening one fold
+          closes the others: three native details on one corner stack. */}
+      <PopoverRow className="relative flex items-center gap-1.5">
+        <h1 className="min-w-0 flex-1 truncate text-lg">{t('funnel')}</h1>
+        {/* From md the search sits IN the toolbar — on a laptop the fold
+            saves no height while search is the most-pressed control; the
+            phone keeps it in the panel, as asked. */}
+        <InlineSearch
+          q={q}
+          label={tc('search')}
+          carried={{
+            ...(params.scope === 'all' ? { scope: 'all' } : {}),
+            ...(hodim ? { hodim } : {}),
+            ...(archive ? { arxiv: '1' } : {}),
+            ...filters.raw,
+          }}
+        />
+        {/* The two funnels are one sales story (owner: "bir-biriga
+            chambarchas") — each board carries the door to the other, in
+            sight: daily navigation does not belong behind a ⋯. */}
+        <Link
+          href="/bitimlar"
+          className="btn-secondary btn-icon"
+          data-testid="to-deals"
+          aria-label={td('title')}
+        >
+          <Icon name="handshake" className="h-4 w-4" />
+        </Link>
+        <BoardFilter
+          q={q}
+          scope={params.scope === 'all' ? 'all' : ''}
+          hodim={hodim}
+          people={managers.map((row) => ({ id: row.id, fullName: row.fullName }))}
+          // The form REPLACES the URL, so anything it does not re-post is
+          // cleared — a control that posts nothing reads as «remove» (#171).
+          hidden={archive ? { arxiv: '1' } : {}}
+          labels={{
+            search: tc('search'),
+            whose: t('whoseWork'),
+            mine: t('mine'),
+            all: t('all'),
+            everyone: t('allManagers'),
+            apply: tc('search'),
+            clear: t('filterClear'),
+          }}
+          advanced={{
+            values: filters.raw,
+            sources: sources.map((source) => ({ id: source.id, name: source.name })),
+            labels: advancedLabels,
+          }}
+        />
+        {/* A filter worth typing twice is a filter worth a NAME — the same
+            views engine as the lists, behind one button. */}
+        <ViewsMenu
+          screen="crm"
+          path="/crm"
+          views={views}
+          currentQuery={normalizeQuery(raw)}
+          canPublish={canPublishViews(actor.permissions)}
+          label={tl('views')}
+        />
+        <BoardMenu label={tc('moreActions')}>
+          <CardFieldsMenu
+            inline
+            board="lead"
+            specs={LEAD_CARD_FIELDS}
+            chosen={cardFields}
+            labels={{
+              title: t('cardFields'),
+              save: tc('save'),
+              field: (key) => t(key as 'company'),
+            }}
+          />
+        </BoardMenu>
+        <Link href="/crm/leads/new" className="btn-primary" aria-label={t('newLead')}>
+          <Icon name="plus" className="h-4 w-4" />
+          <span className="hidden sm:inline">{t('newLead')}</span>
+        </Link>
+      </PopoverRow>
 
-      {seesAll && (
-        <div className="flex gap-1.5 text-sm font-semibold">
-          {[
-            { href: `/crm${hrefWith(carried, { scope: undefined })}`, label: t('mine'), on: mine },
-            { href: `/crm${hrefWith(carried, { scope: 'all' })}`, label: t('all'), on: !mine },
-          ].map((tab) => (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={`rounded-xl px-3 py-2 ${
-                tab.on ? 'bg-brand-600 text-white shadow-card' : 'bg-surface-raised ring-1 ring-line'
-              }`}
-            >
-              {tab.label}
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {/* A filter worth typing twice is a filter worth a NAME — the same
-          views engine as the lists, on the board's own query string. */}
-      <ViewBar
-        screen="crm"
-        path="/crm"
-        views={views}
-        currentQuery={normalizeQuery(raw)}
-        canPublish={canPublishViews(actor.permissions)}
-      />
-
-      <BoardFilter
+      <BoardChips
         q={q}
+        scope={params.scope === 'all' ? 'all' : ''}
         hodim={hodim}
-        people={managers.map((row) => ({ id: row.id, fullName: row.fullName }))}
-        // The form REPLACES the URL, so anything it does not re-post is
-        // cleared — a control that posts nothing reads as «remove» (#171).
-        hidden={{
-          ...(params.scope === 'all' ? { scope: 'all' } : {}),
-          ...(archive ? { arxiv: '1' } : {}),
-        }}
-        labels={{
-          search: tc('search'),
-          everyone: t('allManagers'),
-          apply: tc('search'),
-          clear: t('filterClear'),
-        }}
-        advanced={{
-          values: filters.raw,
-          sources: sources.map((source) => ({ id: source.id, name: source.name })),
-          labels: {
-            filters: t('boardFilters'),
-            source: t('source'),
-            dateFrom: t('filterFrom'),
-            dateTo: t('filterTo'),
-            price: t('quotedAmount'),
-            volume: t('quotedVolume'),
-            weight: t('quotedWeight'),
-            lentaSearch: t('filterLenta'),
-            min: t('filterMin'),
-            max: t('filterMax'),
-          },
-        }}
+        hodimName={managers.find((row) => row.id === hodim)?.fullName ?? null}
+        values={filters.raw}
+        sources={sources.map((source) => ({ id: source.id, name: source.name }))}
+        labels={{ ...advancedLabels, search: tc('search'), all: t('all') }}
+        current={{ ...carried, ...(archive ? { arxiv: '1' } : {}) }}
       />
 
       <KanbanBoard

@@ -36,7 +36,8 @@
       "notFound": "Card not found — reload the page",
       "reasonRequired": "A reason is required",
       "stageNotFound": "Stage deleted — reload the page"
-    }
+    },
+    "moreActions": "More actions"
   },
   "login": {
     "title": "Sign in",
@@ -1280,7 +1281,8 @@
     "quotedAmount": "Price (service)",
     "quotedCurrency": "Currency",
     "quotedVolume": "Volume (m³)",
-    "quotedWeight": "Weight (kg)"
+    "quotedWeight": "Weight (kg)",
+    "whoseWork": "Whose work"
   },
   "navShort": {
     "home": "Home",
@@ -1864,7 +1866,8 @@
     "bulkSomeRefused": "open the card to see why",
     "select": "Select",
     "doMove": "Move",
-    "doAssign": "Assign"
+    "doAssign": "Assign",
+    "views": "Views"
   },
   "quick": {
     "title": "Quick add",

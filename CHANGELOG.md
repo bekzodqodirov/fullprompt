@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Doska endi ekranning egasi: bitta boshqaruv qatori — 2026-08-06 (kech)
+
+«Urg'u kanban view'ga berilsin, qidiruv va hodim filtrini ham panel ichiga
+tiq, hamma tugmalarni boshqatdan o'ylab chiq» — bajarildi, ikkala doskada
+ham (CRM va Bitimlar).
+
+**Oldин va keyin, o'lchab:** telefonda birinchi kartochka ekranning
+~1100-pikselida turardi — endi ~290-pikselda. Sarlavha bloki, Meniki/Hammasi
+qatori, ko'rinishlar qatori va ikki qatorli qidiruv kartasi — hammasi
+**bitta ixcham qatorga** yig'ildi: nom · qidiruv (kompyuterda) · ikkinchi
+doskaga eshik · ⚲ filtr (nechta filtr faolligi ko'rinib turadi) · 🔖
+ko'rinishlar · ⋯ · qizil «+».
+
+**Qidiruv, Meniki/Hammasi va hodim tanlash endi ⚲ panel ichida** — siz
+so'raganday. Kompyuterda qidiruv qatorning o'zida ham turadi (u yerda joy
+bor, qidiruv esa eng ko'p bosiladigan narsa). Faol filtrlar panel yopiq
+bo'lsa ham qator ostида chip bo'lib ko'rinadi — «Hammasi» ham chip, bosib
+olib tashlanadi.
+
+**Ko'rinishlar** endi qator emas — 🔖 tugma: bosilsa ro'yxat ochiladi, faol
+ko'rinishning nomi tugmaning o'zida yozilib turadi.
+
+**⋯ ichida** kam ishlatiladigan narsalar: kartochka qatorlarini tanlash,
+Bitimlarda esa etaplar sozlamasi ham.
+
+**Bitimlardagi «⚠️ e'tibor» ro'yxati** endi bir qatorga yig'ilgan — bosilsa
+ochiladi; sakkizta ogohlantirish kartasi doskani pastga surib yubormaydi.
+
+Yangi qo'riqchi-test doska pastki chegarasi aynan pastki menyuda tugashini
+va ekran yon tomonga o'smasligini har safar o'lchaydi — birinchi ishga
+tushirishdayoq bitta xatoni ushladi. Bazaga o'zgarish yo'q. Tekshiruv:
+1077 ichki test + 149 brauzer testi, hammasi yashil; 360×800 va 1280×800
+skrinshotlarda ko'z bilan ko'rildi.
+
 ## Lidda xizmat narxi va ikkala kanbanda katta filtr paneli — 2026-08-06
 
 Sizning to'rtta javobingiz bo'yicha qurildi.
