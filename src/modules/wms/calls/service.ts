@@ -1,10 +1,10 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import { attachments, callLogs, callRecorderDevices, clients, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
-import { phoneBelongsToClient } from '../client-cabinet/service';
+import { phoneBelongsToClient, phonesOverlap } from '../client-cabinet/service';
 import { seesAllTg, type TgViewer } from '../crm/conversations';
 
 /**
@@ -193,11 +193,13 @@ export async function ingestCalls(
 
 /**
  * The call an uploaded recording belongs to — found by its dedup identity
- * and ONLY among this device's own calls: a token must not be able to hang
- * audio on a colleague's call.
+ * and ONLY among this USER's calls: a token must not be able to hang audio
+ * on a colleague's call. User, not device (0061's lesson): after a revoke +
+ * re-pair the call row keeps the FIRST pairing's device id, and a
+ * device-scoped find would 404 the new pairing's audio for ever.
  */
 export async function findCallForAudio(
-  device: { id: string },
+  device: { userId: string },
   input: { phone: string; startedAt: number },
 ) {
   const [call] = await db
@@ -205,7 +207,7 @@ export async function findCallForAudio(
     .from(callLogs)
     .where(
       and(
-        eq(callLogs.deviceId, device.id),
+        eq(callLogs.userId, device.userId),
         eq(callLogs.phone, input.phone),
         eq(callLogs.startedAt, new Date(input.startedAt)),
       ),
@@ -226,6 +228,8 @@ export async function attachCallAudio(callId: string, attachmentId: string): Pro
 
 export interface CallRow {
   id: string;
+  clientId: string;
+  clientCode: string;
   direction: string;
   phone: string;
   startedAt: Date;
@@ -241,9 +245,20 @@ export interface CallRow {
  * rows are scoped, so they get their own panel beside the chat's.
  */
 export async function callsFor(clientId: string, viewer: TgViewer, limit = 50): Promise<CallRow[]> {
+  return callsForClients([clientId], viewer, limit);
+}
+
+async function callsForClients(
+  clientIds: string[],
+  viewer: TgViewer,
+  limit: number,
+): Promise<CallRow[]> {
+  if (clientIds.length === 0) return [];
   return db
     .select({
       id: callLogs.id,
+      clientId: callLogs.clientId,
+      clientCode: clients.clientCode,
       direction: callLogs.direction,
       phone: callLogs.phone,
       startedAt: callLogs.startedAt,
@@ -253,14 +268,46 @@ export async function callsFor(clientId: string, viewer: TgViewer, limit = 50): 
     })
     .from(callLogs)
     .innerJoin(users, eq(callLogs.userId, users.id))
+    .innerJoin(clients, eq(callLogs.clientId, clients.id))
     .where(
       and(
-        eq(callLogs.clientId, clientId),
+        inArray(callLogs.clientId, clientIds),
         viewer.all ? undefined : eq(callLogs.userId, viewer.id),
       ),
     )
     .orderBy(desc(callLogs.startedAt))
     .limit(limit);
+}
+
+/**
+ * The card's calls, widened to the PERSON: one owner of several GS codes
+ * shares one phone, `ingestCalls` lands a call on the OLDEST code, and the
+ * owner's first real call sat invisible on a sibling while he read the deal
+ * card of the newer one — round 32's empty-card shape, on calls. The rows
+ * carry their code so the panel can say which sibling took the call; the
+ * viewer scoping is untouched.
+ */
+export async function callsForCard(
+  clientId: string,
+  viewer: TgViewer,
+  limit = 50,
+): Promise<CallRow[]> {
+  const self = await db.query.clients.findFirst({
+    columns: { id: true, phones: true },
+    where: eq(clients.id, clientId),
+  });
+  if (!self) return [];
+  const ids = [clientId];
+  if (Array.isArray(self.phones) && self.phones.length > 0) {
+    const book = await db
+      .select({ id: clients.id, phones: clients.phones })
+      .from(clients)
+      .where(eq(clients.active, true));
+    for (const c of book) {
+      if (c.id !== clientId && phonesOverlap(self.phones, c.phones)) ids.push(c.id);
+    }
+  }
+  return callsForClients(ids, viewer, limit);
 }
 
 /**

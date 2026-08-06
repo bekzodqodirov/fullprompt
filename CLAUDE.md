@@ -128,7 +128,8 @@ follow-up via PR #4 — `main` is the record, and
 1054 unit/integration + 141 e2e, verified in CI's order on a fresh database
 (the four photo-path specs stay locally red by design — no image service in
 this container; CI is the arbiter).
-Latest migration: **0060** (`call_recorder_devices` + `call_logs`). Every
+Latest migration: **0061** (calls dedup rekeyed to the USER — the
+device-keyed unique double-stored the whole first day on a revoke+re-pair). Every
 numbered phase is shipped. The driver app **still needs its v1.3 APK
 released** (Actions → driver-apk → artifact → Admin → Haydovchi ilovasi),
 and the calls round needs its FIRST APK published the same way (Actions →
@@ -1582,10 +1583,16 @@ load, oldest code wins per 67b) and a replay-inflated sent counter (~96×/day
 the section bare); 5 integration tests, red-proofs ×2 (client-book gate,
 viewer scoping). NOT verifiable here: the APK runs on no machine I have — CI
 builds it; the first real paired phone is the proof (watch /profile
-lastSeen + docker logs). Siblings deferral stated: a call lands on the
-OLDEST code of a shared phone; the panel reads the exact card's client, so
-a sibling-code deal card may show none (round 32's shape, wants its own
-round if he reports it).
+lastSeen + docker logs). The deferral arrived the same
+evening (#539): his first real call sat on the OLDEST sibling code while he
+read the newer card — `callsForCard` now widens the CARD to phone-siblings
+(data stays where it landed, the row names its code); the same report
+exposed the device-keyed dedup (migration 0061 rekeys to user + cleans the
+day-one duplicates) and `findCallForAudio` now scopes by user, or a
+re-paired phone's audio would 404 for ever. Local-only e2e note: a SECOND
+full run on the same db leaves two in-transit m3 batches whose truck
+markers can stack on a warehouse pin and intercept m9c's click — fresh-db
+runs (and CI) are green.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
