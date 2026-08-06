@@ -478,7 +478,7 @@ function StageView<T extends KanbanItem>({
                   bottom edge, so without spare scroll the LAST card's
                   checkbox sits under it permanently — unreachable for a
                   thumb, intercepted for Playwright. Unconditional because
-                  ticks deliberately never re-render the board (#537). */}
+                  ticks deliberately never re-render the board (#543). */}
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 pb-24">
                 {inStage.map((item) => (
                   <div key={item.id} data-testid={cardTestId} className="card !p-3">
