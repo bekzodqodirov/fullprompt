@@ -76,7 +76,12 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   await expect(page.getByText(/1/).first()).toBeVisible({ timeout: 10_000 });
   page.once('dialog', (d) => void d.accept()); // depart confirm
   await page.getByTestId('depart-batch').click();
-  await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
+  // The depart button ITSELF is labelled 🚀, so waiting for 🚀 proved nothing:
+  // on a slow runner the next goto landed while the action was still in
+  // flight, the card read `loading`, and the in_transit-only where-panel
+  // never appeared (CI-red, green locally). The panel appearing IS the
+  // depart's postcondition — wait for the real thing.
+  await expect(page.getByTestId('batch-where-panel')).toBeVisible({ timeout: 15_000 });
 
   const manifestRes = await page.request.get(`${new URL(batchUrl).pathname.replace('/batches/', '/api/batches/')}/manifest`);
   expect(manifestRes.status()).toBe(200);
