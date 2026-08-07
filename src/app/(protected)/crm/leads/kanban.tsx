@@ -20,6 +20,8 @@ export interface KanbanLead {
   /** The service price after hisoblatish (round 71); numeric arrives a string. */
   quotedAmount: string | null;
   quotedCurrency: string | null;
+  quotedVolumeM3: string | null;
+  quotedWeightKg: string | null;
   nextActionAt: string | null;
   /** The viewer holds a Telegram chat with this client; 'waiting' = client spoke last. */
   chat: 'waiting' | 'yes' | null;
@@ -121,7 +123,13 @@ export function KanbanBoard({
                 hisoblatish, read at a glance on the way to won/lost. */}
             {fields.has('quote') && lead.quotedAmount && (
               <div className="mt-1 text-[12px] font-bold tabular-nums text-good">
-                {Number(lead.quotedAmount).toLocaleString('ru-RU')} {lead.quotedCurrency ?? 'USD'}
+                {[
+                  `${Number(lead.quotedAmount).toLocaleString('ru-RU')} ${lead.quotedCurrency ?? 'USD'}`,
+                  lead.quotedVolumeM3 && `${Number(lead.quotedVolumeM3)} m³`,
+                  lead.quotedWeightKg && `${Number(lead.quotedWeightKg)} kg`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </div>
             )}
             {fields.has('nextAction') && lead.nextActionAt && (

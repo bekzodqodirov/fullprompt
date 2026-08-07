@@ -41,15 +41,15 @@ export const LEAD_CARD_FIELDS: CardFieldSpec[] = [
 ];
 
 export const DEAL_CARD_FIELDS: CardFieldSpec[] = [
+  // Summa · kub · kg is ONE line under one switch (round 73, the owner:
+  // «kartalarning ustiga kubi kg summasi ko'rinsin») — the separate opt-in
+  // `volume` switch retired with it, and a cookie still naming it is simply
+  // dropped, because a choice outlives a field.
   { key: 'amount', labelKey: 'amount', on: true },
   { key: 'owner', labelKey: 'cardOwner', on: true },
   { key: 'code', labelKey: 'cardClient', on: true },
   { key: 'chat', labelKey: 'cardChat', on: true },
   { key: 'alarms', labelKey: 'cardAlarms', on: true },
-  // The one thing the board does not show today. Off by default on purpose:
-  // «no choice made» has to render exactly the card that shipped, or this
-  // round changes what every existing screen looks like.
-  { key: 'volume', labelKey: 'volume', on: false },
 ];
 
 export const CARD_FIELDS: Record<string, CardFieldSpec[]> = {

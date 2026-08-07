@@ -36,7 +36,8 @@
       "notFound": "Карточка не найдена — обновите страницу",
       "reasonRequired": "Нужно указать причину",
       "stageNotFound": "Этап удалён — обновите страницу"
-    }
+    },
+    "moreActions": "Ещё действия"
   },
   "login": {
     "title": "Вход в систему",
@@ -1280,7 +1281,8 @@
     "quotedAmount": "Цена (услуга)",
     "quotedCurrency": "Валюта",
     "quotedVolume": "Куб (м³)",
-    "quotedWeight": "Вес (кг)"
+    "quotedWeight": "Вес (кг)",
+    "whoseWork": "Чьи задачи"
   },
   "navShort": {
     "home": "Главная",
@@ -1864,7 +1866,8 @@
     "bulkSomeRefused": "откройте карточку, чтобы увидеть причину",
     "select": "Выбрать",
     "doMove": "Перевести",
-    "doAssign": "Назначить"
+    "doAssign": "Назначить",
+    "views": "Виды"
   },
   "quick": {
     "title": "Быстро добавить",

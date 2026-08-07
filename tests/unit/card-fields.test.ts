@@ -37,12 +37,13 @@ describe('the default is today, not everything and not nothing', () => {
     ]);
   });
 
-  it('leaves the deal card new line OFF until somebody asks for it', () => {
-    // Cubic metres is the one thing the board never showed. On by default, it
-    // would change the card for everybody who never touched the setting.
-    const shown = visibleCardFields(DEAL_CARD_FIELDS, null);
-    expect(shown.has('volume')).toBe(false);
-    expect(shown.has('amount')).toBe(true);
+  it('the deal card offers no separate volume switch — kub rides the amount line', () => {
+    // Round 73: the owner asked for summa · kub · kg ON the card, so the
+    // composite renders under `amount` and the old opt-in `volume` switch
+    // retired. A cookie still naming it is dropped, not honoured.
+    const keys = DEAL_CARD_FIELDS.map((spec) => spec.key);
+    expect(keys).not.toContain('volume');
+    expect(visibleCardFields(DEAL_CARD_FIELDS, null).has('amount')).toBe(true);
   });
 
   it('never offers the card identity as switchable', () => {

@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { groupClientsAction } from '../actions';
+import { groupClientsAction } from '../../actions';
 
 /** Confirm one suggested group — the owner is not typing 900 of these. */
 export function GroupButton({

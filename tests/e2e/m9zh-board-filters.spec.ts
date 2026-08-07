@@ -76,8 +76,10 @@ test('a filter worth typing twice becomes a named view', async ({ page }) => {
   const chip = page.getByTestId('view-chip').filter({ hasText: `${RUN} qimmatlar` });
   await expect(chip).toBeVisible({ timeout: 15_000 });
 
-  // A view is a LINK: leave, press it, and the filtered board returns.
+  // A view is a LINK: leave, open the views menu, press it, and the
+  // filtered board returns (round 72: views live behind one button).
   await page.goto('/crm?scope=all');
+  await page.getByTestId('view-menu').click();
   await page
     .getByTestId('view-chip')
     .filter({ hasText: `${RUN} qimmatlar` })
@@ -85,6 +87,28 @@ test('a filter worth typing twice becomes a named view', async ({ page }) => {
   await expect(page).toHaveURL(/narx_min=1000/);
   await expect(page.getByTestId('funnel-mobile').getByTestId('lead-card')).toHaveCount(1);
   await expect(page.getByTestId('bf-chip-narx_min')).toBeVisible();
+});
+
+test('the board owns the screen — bottom at the tab bar, no sideways growth', async ({ page }) => {
+  // Round 72's whole point, measured: no test read --board-extra before this
+  // one, and a wrong constant is invisible to everything else. The board's
+  // bottom edge must land at the tab bar (not under it — #547's covered
+  // buttons; not far above it — wasted screen), and the document must never
+  // grow wider than the viewport (#400's page rescale).
+  for (const url of ['/crm?scope=all', `/crm?scope=all&q=${encodeURIComponent(RUN)}`, '/bitimlar?scope=all']) {
+    await page.goto(url);
+    const geo = await page.evaluate(() => {
+      const track = document.querySelector('[data-testid="stage-track"]')!.getBoundingClientRect();
+      const tabbar = document.querySelector('[data-testid="tab-bar"]')!.getBoundingClientRect();
+      return {
+        gap: Math.round(tabbar.top - track.bottom),
+        width: document.documentElement.scrollWidth,
+      };
+    });
+    expect(geo.width, `${url} grew sideways`).toBeLessThanOrEqual(360);
+    expect(geo.gap, `${url} board bottom vs tab bar`).toBeGreaterThanOrEqual(-2);
+    expect(geo.gap, `${url} board bottom vs tab bar`).toBeLessThanOrEqual(48);
+  }
 });
 
 test('the view it created is removed again', async ({ page }) => {

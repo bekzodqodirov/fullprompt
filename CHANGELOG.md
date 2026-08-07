@@ -6,6 +6,60 @@ Partiyadagi rasmli tovar ro'yxati (packing list) Excel'ida endi rasmlardan
 oldin **«Дата прихода / Received»** ustuni bor — har tovar qatorida yuk
 qachon qabul qilingani (kun.oy.yil) yozilgan.
 
+## Tepadagi qator ketdi, kartada summa·kub·kg, izoh oynalari yangi — 2026-08-06 (kech)
+
+Uchala gapingiz bo'yicha:
+
+**1. «Звонки / Настройки» qatori voronkadan olib tashlandi.** U endi faqat
+o'z sahifalarida (Сегодня звоним, Затихшие, Люди, Настройки CRM) ko'rinadi;
+voronkadan ularga yo'l — ⋯ menyuda. Doska yana ham yuqoriroqdan boshlanadi.
+
+**2. Kartochkada summa · kub · kg.** Ikkala doskada ham: lidda «1 800 USD ·
+12.5 m³ · 3400 kg», bitimda ham xuddi shunday bitta qatorda. Alohida «kub»
+katakchasi endi yo'q — u doim summa bilan birga chiqadi.
+
+**3. Izoh yozish joylari yangilandi.** Lentadagi ichki izoh va «kontakt
+yozish» endi messenjer ko'rinishida: bitta yumaloq oyna, ichida yozuv
+maydoni, pastida 📎 va yuborish tugmasi. Kontakt turi (qo'ng'iroq / xabar /
+uchrashuv / izoh) endi ochiladigan ro'yxat emas — bosiladigan tugmachalar.
+
+Bazaga o'zgarish yo'q. Tekshiruv: 1077 test + 149 brauzer testi yashil,
+skrinshotlarda ko'rildi.
+
+## Doska endi ekranning egasi: bitta boshqaruv qatori — 2026-08-06 (kech)
+
+«Urg'u kanban view'ga berilsin, qidiruv va hodim filtrini ham panel ichiga
+tiq, hamma tugmalarni boshqatdan o'ylab chiq» — bajarildi, ikkala doskada
+ham (CRM va Bitimlar).
+
+**Oldин va keyin, o'lchab:** telefonda birinchi kartochka ekranning
+~1100-pikselida turardi — endi ~290-pikselda. Sarlavha bloki, Meniki/Hammasi
+qatori, ko'rinishlar qatori va ikki qatorli qidiruv kartasi — hammasi
+**bitta ixcham qatorga** yig'ildi: nom · qidiruv (kompyuterda) · ikkinchi
+doskaga eshik · ⚲ filtr (nechta filtr faolligi ko'rinib turadi) · 🔖
+ko'rinishlar · ⋯ · qizil «+».
+
+**Qidiruv, Meniki/Hammasi va hodim tanlash endi ⚲ panel ichida** — siz
+so'raganday. Kompyuterda qidiruv qatorning o'zida ham turadi (u yerda joy
+bor, qidiruv esa eng ko'p bosiladigan narsa). Faol filtrlar panel yopiq
+bo'lsa ham qator ostида chip bo'lib ko'rinadi — «Hammasi» ham chip, bosib
+olib tashlanadi.
+
+**Ko'rinishlar** endi qator emas — 🔖 tugma: bosilsa ro'yxat ochiladi, faol
+ko'rinishning nomi tugmaning o'zida yozilib turadi.
+
+**⋯ ichida** kam ishlatiladigan narsalar: kartochka qatorlarini tanlash,
+Bitimlarda esa etaplar sozlamasi ham.
+
+**Bitimlardagi «⚠️ e'tibor» ro'yxati** endi bir qatorga yig'ilgan — bosilsa
+ochiladi; sakkizta ogohlantirish kartasi doskani pastga surib yubormaydi.
+
+Yangi qo'riqchi-test doska pastki chegarasi aynan pastki menyuda tugashini
+va ekran yon tomonga o'smasligini har safar o'lchaydi — birinchi ishga
+tushirishdayoq bitta xatoni ushladi. Bazaga o'zgarish yo'q. Tekshiruv:
+1077 ichki test + 149 brauzer testi, hammasi yashil; 360×800 va 1280×800
+skrinshotlarda ko'z bilan ko'rildi.
+
 ## Lead qo'ng'iroqlari: raqam yozilgan lead uchun ham yoziladi — 2026-08-06 (tun)
 
 Siz so'ragandek: telefon raqami yozilgan **ochiq lead** bo'lsa, o'sha

@@ -36,6 +36,7 @@ test('a line taken off the card stays off after a reload', async ({ page }) => {
   await expect(card).toBeVisible();
   const before = await card.innerText();
 
+  await page.getByTestId('board-menu').click();
   await page.getByTestId('card-fields-open').click();
   await expect(page.getByTestId('card-field-owner')).toBeChecked();
   await page.getByTestId('card-field-owner').uncheck();
@@ -52,6 +53,7 @@ test('a line taken off the card stays off after a reload', async ({ page }) => {
   await page.reload();
   // A closed <details> still holds its checkboxes in the DOM, so the question
   // is not whether they exist — it is what the SERVER rendered them as.
+  await page.getByTestId('board-menu').click();
   await page.getByTestId('card-fields-open').click();
   await expect(page.getByTestId('card-field-owner')).not.toBeChecked();
 });
@@ -59,6 +61,7 @@ test('a line taken off the card stays off after a reload', async ({ page }) => {
 test('the name is never offered, so a card can never be blank', async ({ page }) => {
   await login(page);
   await page.goto('/crm?scope=all');
+  await page.getByTestId('board-menu').click();
   await page.getByTestId('card-fields-open').click();
   // Seven switchable lines, and no checkbox for the one thing that identifies
   // the card — which is also how every other spec still finds cards by name.
@@ -66,14 +69,17 @@ test('the name is never offered, so a card can never be blank', async ({ page })
   await expect(page.getByTestId('card-field-company')).toBeVisible();
 });
 
-test('the deal board offers the cubic metres it never showed', async ({ page }) => {
+test('the cubic metres ride the amount line now, not a separate switch', async ({ page }) => {
+  // Round 73: the owner asked for summa · kub · kg ON the card, so the
+  // composite lives under the `amount` switch and the old opt-in `volume`
+  // checkbox is deliberately GONE — a menu offering a switch for a line
+  // that always renders would be lying about what it controls.
   await login(page);
   await page.goto('/bitimlar?scope=all');
+  await page.getByTestId('board-menu').click();
   await page.getByTestId('card-fields-open').click();
-  const volume = page.getByTestId('card-field-volume');
-  await expect(volume).toBeVisible();
-  // Off until asked for: the board that shipped did not have this line.
-  await expect(volume).not.toBeChecked();
+  await expect(page.getByTestId('card-field-volume')).toHaveCount(0);
+  await expect(page.getByTestId('card-field-amount')).toBeChecked();
 });
 
 test('the menu costs the board no height while it is closed', async ({ page }) => {
@@ -82,6 +88,7 @@ test('the menu costs the board no height while it is closed', async ({ page }) =
   await login(page);
   await page.goto('/crm?scope=all');
   const shut = await board(page).boundingBox();
+  await page.getByTestId('board-menu').click();
   await page.getByTestId('card-fields-open').click();
   const open = await board(page).boundingBox();
   expect(Math.round(open!.y)).toBe(Math.round(shut!.y));
@@ -94,12 +101,14 @@ test('the menu costs the board no height while it is closed', async ({ page }) =
 test('the card is put back the way it was found', async ({ page }) => {
   await login(page);
   await page.goto('/crm?scope=all');
+  await page.getByTestId('board-menu').click();
   await page.getByTestId('card-fields-open').click();
   for (const key of ['company', 'phone', 'source', 'owner', 'code', 'chat', 'nextAction']) {
     await page.getByTestId(`card-field-${key}`).check();
   }
   await page.getByTestId('card-fields-save').click();
   await page.reload();
+  await page.getByTestId('board-menu').click();
   await page.getByTestId('card-fields-open').click();
   await expect(page.getByTestId('card-field-owner')).toBeChecked();
 });
