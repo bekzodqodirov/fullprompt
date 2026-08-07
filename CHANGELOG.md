@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Rasmli tovar ro'yxatiga prixod sanasi qo'shildi — 2026-08-07
+
+Partiyadagi rasmli tovar ro'yxati (packing list) Excel'ida endi rasmlardan
+oldin **«Дата прихода / Received»** ustuni bor — har tovar qatorida yuk
+qachon qabul qilingani (kun.oy.yil) yozilgan.
+
 ## Tepadagi qator ketdi, kartada summa·kub·kg, izoh oynalari yangi — 2026-08-06 (kech)
 
 Uchala gapingiz bo'yicha:
