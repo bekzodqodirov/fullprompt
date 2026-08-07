@@ -18,6 +18,7 @@ export interface BoardDeal {
   quotedCurrency: string | null;
   /** Cubic metres quoted — off the card by default, switchable on. */
   quotedVolumeM3: string | null;
+  quotedWeightKg: string | null;
   deferred: boolean;
   /** Set when the cargo landed outside the threshold, or landed unpriced. */
   flag: 'deviation' | 'unpriced' | null;
@@ -93,8 +94,17 @@ export function DealBoard({
               <span className="num text-xs font-bold text-ink-500">{deal.code}</span>
               {fields.has('amount') &&
                 (deal.quotedAmount ? (
-                  <span className="num ml-auto font-bold">
-                    {deal.quotedAmount} {deal.quotedCurrency}
+                  // Summa · kub · kg on one line — the owner asked for all
+                  // three ON the card (round 73), so they are one fact, not
+                  // three switches.
+                  <span className="num ml-auto text-right font-bold">
+                    {[
+                      `${deal.quotedAmount} ${deal.quotedCurrency}`,
+                      deal.quotedVolumeM3 && `${Number(deal.quotedVolumeM3)} m³`,
+                      deal.quotedWeightKg && `${Number(deal.quotedWeightKg)} kg`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
                 ) : (
                   <span className="ml-auto text-[11px] font-semibold text-warn">
@@ -108,11 +118,6 @@ export function DealBoard({
             <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-ink-500">
               {fields.has('code') && (
                 <span className="num font-bold text-good">{deal.clientCode}</span>
-              )}
-              {/* The cubic metres quoted — the owner asked for it by name, and
-                  it is the one line the board did not already have. */}
-              {fields.has('volume') && deal.quotedVolumeM3 && (
-                <span className="num">{deal.quotedVolumeM3} m³</span>
               )}
               {fields.has('owner') && deal.ownerName && <span>{deal.ownerName}</span>}
               {/* The chat, on the card (owner, round 25). */}

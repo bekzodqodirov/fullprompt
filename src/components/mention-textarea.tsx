@@ -25,12 +25,19 @@ export function MentionTextarea({
   required = false,
   people,
   testid,
+  bare = false,
 }: {
   name: string;
   placeholder: string;
   required?: boolean;
   people: MentionPerson[];
   testid: string;
+  /**
+   * Round 73: inside a composer SHELL the box loses its own border — the
+   * shell carries the focus ring for the whole group, and a bordered input
+   * inside a bordered card reads as a form, not a place to talk.
+   */
+  bare?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [query, setQuery] = useState<string | null>(null);
@@ -118,7 +125,11 @@ export function MentionTextarea({
             setQuery(null);
           }
         }}
-        className="input-sm max-h-32 min-h-9 w-full resize-none py-2"
+        className={
+          bare
+            ? 'max-h-40 min-h-14 w-full resize-none border-0 bg-transparent px-1.5 py-2 text-sm outline-none placeholder:text-ink-400'
+            : 'input-sm max-h-32 min-h-9 w-full resize-none py-2'
+        }
         data-testid={testid}
       />
     </div>

@@ -8,8 +8,8 @@ import {
   saveSourceAction,
   saveStageAction,
   type CrmFormState,
-} from '../actions';
-import { STAGE_CLASS, stageClass } from '../stage-color';
+} from '../../actions';
+import { STAGE_CLASS, stageClass } from '../../stage-color';
 
 const COLORS = Object.keys(STAGE_CLASS);
 function Feedback({ state }: { state: CrmFormState }) {

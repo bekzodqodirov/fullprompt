@@ -21,26 +21,48 @@ export function CardFieldsMenu({
   specs,
   chosen,
   labels,
+  inline = false,
 }: {
   board: string;
   specs: CardFieldSpec[];
   /** What is on today — the resolved set, defaults already applied. */
   chosen: Set<string>;
   labels: { title: string; save: string; field: (key: string) => string };
+  /**
+   * Round 72: inside the board's ⋯ menu the fold opens IN FLOW — the ⋯
+   * panel is already positioned, so a second absolute layer would anchor to
+   * it and clip. Standalone callers keep the positioned panel.
+   */
+  inline?: boolean;
 }) {
   const save = saveCardFieldsAction.bind(null, board);
   return (
     <details className="shrink-0" data-testid="card-fields-menu">
       <summary
-        className="btn-secondary btn-icon cursor-pointer list-none marker:content-none"
+        className={
+          inline
+            ? 'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-semibold list-none marker:content-none hover:bg-surface-sunken'
+            : 'btn-secondary btn-icon cursor-pointer list-none marker:content-none'
+        }
         aria-label={labels.title}
         data-testid="card-fields-open"
       >
-        <Icon name="menu" className="h-4 w-4" />
+        {inline ? (
+          <>
+            <Icon name="menu" className="h-4 w-4 text-ink-500" />
+            {labels.title}
+          </>
+        ) : (
+          <Icon name="menu" className="h-4 w-4" />
+        )}
       </summary>
       <form
         action={save}
-        className="absolute right-0 top-full z-30 mt-1 w-56 max-w-[calc(100vw-2rem)] space-y-1.5 rounded-xl border border-line bg-surface-raised p-3 text-left shadow-card"
+        className={
+          inline
+            ? 'space-y-1.5 border-t border-line px-2.5 pb-1 pt-2 text-left'
+            : 'absolute right-0 top-full z-30 mt-1 w-56 max-w-[calc(100vw-2rem)] space-y-1.5 rounded-xl border border-line bg-surface-raised p-3 text-left shadow-card'
+        }
       >
         <p className="text-xs font-semibold text-ink-700">{labels.title}</p>
         {specs.map((spec) => (
