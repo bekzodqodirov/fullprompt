@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Rasmli tovar ro'yxatiga prixod sanasi qo'shildi — 2026-08-07
+
+Partiyadagi rasmli tovar ro'yxati (packing list) Excel'ida endi rasmlardan
+oldin **«Дата прихода / Received»** ustuni bor — har tovar qatorida yuk
+qachon qabul qilingani (kun.oy.yil) yozilgan.
+
 ## Lead qo'ng'iroqlari: raqam yozilgan lead uchun ham yoziladi — 2026-08-06 (tun)
 
 Siz so'ragandek: telefon raqami yozilgan **ochiq lead** bo'lsa, o'sha

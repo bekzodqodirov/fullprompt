@@ -667,7 +667,20 @@ describe('customs documents still generate', () => {
     expect(isXlsx(await buildInvoiceXlsx(batch!.id)), 'invoice').toBe(true);
     expect(isXlsx(await buildPackingXlsx(batch!.id)), 'packing list').toBe(true);
     expect(isXlsx(await buildManifestXlsx(batch!.id)), 'manifest').toBe(true);
-    expect(isXlsx(await buildPackingPhotosXlsx(batch!.id)), 'packing photos').toBe(true);
+    const photosBuffer = await buildPackingPhotosXlsx(batch!.id);
+    expect(isXlsx(photosBuffer), 'packing photos').toBe(true);
+    // Owner (2026-08-07): the receipt date sits right BEFORE the photos.
+    const ExcelJS = (await import('exceljs')).default;
+    const parsed = new ExcelJS.Workbook();
+    await parsed.xlsx.load(photosBuffer! as unknown as ArrayBuffer);
+    const headers = (parsed.getWorksheet('PACKING LIST')!.getRow(2).values as (string | undefined)[])
+      .map((v) => v ?? '');
+    const dateAt = headers.indexOf('Дата прихода / Received');
+    expect(dateAt).toBeGreaterThan(0);
+    expect(headers[dateAt + 1]).toBe('Фото / Photo');
+    // And the data row carries a real dd.mm.yyyy, not a blank.
+    const firstData = (parsed.getWorksheet('PACKING LIST')!.getRow(3).values as unknown[])[dateAt];
+    expect(String(firstData)).toMatch(/^\d{2}\.\d{2}\.\d{4}$/);
     expect(
       isXlsx(await buildAgentXlsx(sub.plan.id, sub.version.versionNo)),
       'agent file',

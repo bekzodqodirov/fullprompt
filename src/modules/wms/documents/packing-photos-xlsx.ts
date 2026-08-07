@@ -33,6 +33,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
       lot: receiptLots,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
+      receivedAt: receipts.receivedAt,
       loaded: sql<number>`count(DISTINCT ${boxes.id})`,
     })
     .from(scanEvents)
@@ -41,7 +42,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(and(eq(scanEvents.batchId, batchId), eq(scanEvents.type, 'load')))
-    .groupBy(receiptLots.id, clients.clientCode, receipts.unclaimedMarking)
+    .groupBy(receiptLots.id, clients.clientCode, receipts.unclaimedMarking, receipts.receivedAt)
     .orderBy(asc(receiptLots.letter));
   if (rows.length === 0) return null;
 
@@ -71,6 +72,8 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     { header: DOC.boxes, key: 'boxCount', width: 10 },
     { header: DOC.kg, key: 'kg', width: 10 },
     { header: DOC.m3, key: 'm3', width: 10 },
+    // Owner (2026-08-07): the receipt date, right before the photos.
+    { header: DOC.date, key: 'date', width: 12 },
     ...Array.from({ length: maxPhotos }, (_, i) => ({
       header: i === 0 ? DOC.photo : '',
       key: `photo${i}`,
@@ -106,17 +109,21 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     }
   }
 
-  const PHOTO_START_COL = 5; // zero-based: right after м³
+  const PHOTO_START_COL = 6; // zero-based: right after the date column
   let rowNo = 3;
-  for (const { lot, clientCode, marking, loaded } of rows) {
+  for (const { lot, clientCode, marking, receivedAt, loaded } of rows) {
     const kg = (Number(lot.totalWeightKg) / lot.boxCount) * Number(loaded);
     const m3 = (Number(lot.totalVolumeM3) / lot.boxCount) * Number(loaded);
+    const d = receivedAt;
     sheet.getRow(rowNo).values = {
       code: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
       product: `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
       boxCount: Number(loaded),
       kg: Number(kg.toFixed(1)),
       m3: Number(m3.toFixed(3)),
+      // The document leaves the company (DOC's rule) — dd.mm.yyyy reads the
+      // same at the border and in the office, no locale to guess.
+      date: `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}.${d.getUTCFullYear()}`,
     };
     sheet.getRow(rowNo).height = 60;
     const photoIds = photosByLot.get(lot.id) ?? [];

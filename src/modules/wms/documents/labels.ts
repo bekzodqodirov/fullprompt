@@ -16,6 +16,7 @@ export const DOC = {
   boxes: 'Коробок / Boxes',
   code: 'Код / Code',
   crate: 'Ящик / Crate',
+  date: 'Дата прихода / Received',
   density: 'кг/м³ · kg/m³',
   grossWeight: 'Вес брутто (кг) / Gross weight (kg)',
   handedBy: 'Сдал (склад) / Handed over: ____________________',
