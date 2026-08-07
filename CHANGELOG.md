@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## Kartochkada qiymat ustiga bosib o'zgartirish olib tashlandi — 2026-08-07
+
+Siz aytgandek: lid, bitim va mijoz kartochkalarida telefon/kompaniya/izoh
+kabi qiymatlar ustiga bosganda ular endi **inputga aylanmaydi** — faqat
+o'qiladi. Hammasini o'zgartirish avvalgidek **✏️ «O'zgartirish»** formasi
+orqali.
+
+Qiymatlarning o'zi kartochkada qoldi (lid va bitimda) — telefon raqamini
+o'qish uchun forma ochish shart emas. Mijoz kartochkasida esa forma
+doimo ochiq turgani uchun yuqoridagi takroriy ro'yxat olib tashlandi:
+bir xil ma'lumot ikki marta yozilib turgan edi.
+
 ## Rasmli tovar ro'yxatiga prixod sanasi qo'shildi — 2026-08-07
 
 Partiyadagi rasmli tovar ro'yxati (packing list) Excel'ida endi rasmlardan

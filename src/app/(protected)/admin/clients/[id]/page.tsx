@@ -20,7 +20,6 @@ import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
 import { CallsPanel } from '@/components/calls-panel';
 import { ClientDeals } from '@/components/client-deals';
-import { ClientFacts } from './facts';
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -97,28 +96,13 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <>
       {canEdit ? (
         <>
-          {/* The three the owner named — the number, the seller, the note —
-              correctable without scrolling a six-field form and saving the
-              whole record, which is also how a CODE gets changed in passing.
-              Only rendered for the editor: adding the manager and the internal
-              notes to the read-only view would be an access change, not a
-              layout one. */}
-          <ClientFacts
-            clientId={client.id}
-            editable
-            phones={(client.phones as string[]).join(', ')}
-            notes={client.notes ?? ''}
-            managerId={client.salesManagerId ?? ''}
-            managerName={managers.find((row) => row.id === client.salesManagerId)?.fullName ?? ''}
-            managers={managers}
-          />
-          {/* The three facts above have two writers, and this form's inputs
-              are uncontrolled — so those three are keyed on the row's own
-              timestamp and get fresh defaults after an inline save. The FORM
-              itself is not keyed: remounting it would throw its own state
-              away, which is how the deal form lost its ✅ for one round. */}
+          {/* No read-only facts block on THIS card, unlike the lead's and the
+              deal's: their ✏️ forms are folded, so a facts block is the only
+              way to read a phone without opening an editor. This form is
+              always open and shows the same fields — a block above it would
+              print every value twice (2026-08-07, when the values stopped
+              being editable in place and the duplication became visible). */}
           <ClientForm
-            revision={String(client.updatedAt)}
             action={update}
             managers={managers}
             codePrefix={codePrefix}

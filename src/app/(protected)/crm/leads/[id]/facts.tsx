@@ -1,31 +1,22 @@
-'use client';
-
-import { useTranslations } from 'next-intl';
-import { InlineField } from '@/components/inline-field';
-import { patchLeadFieldAction } from '../../actions';
+import { getTranslations } from 'next-intl/server';
 
 /**
  * What a lead IS, readable without opening anything.
  *
- * Until now the rail carried no facts at all: a salesperson wanting the phone
- * number of the person they were about to ring had to unfold the ✏️ form and
- * read it out of an input. The facts are the top of the rail now, and the
- * plain-text ones are correctable where they are read.
+ * Until round 61 the rail carried no facts at all: a salesperson wanting the
+ * phone number of the person they were about to ring had to unfold the ✏️
+ * form and read it out of an input. That is what this block fixes, and all it
+ * does — every one of these values is READ here and written in the ✏️ form
+ * below.
  *
- * The NAME is not one of them (owner, 2026-08-06: «lead kartochkasida nomni
- * ustiga bosib o'zgartirish … buni umuman olib tashla»). It is the one field
- * on this card that is also its TITLE — the `<h1>` sits directly above this
- * rail — so nothing is hidden by making it read-only, and a tap on a record's
- * title should never turn the title into an input. It is still correctable in
- * the ✏️ form, where changing what a record is called is a deliberate act.
- *
- * The other five stay in the form on purpose too — a stage is a move, an owner
- * is a handover, and the follow-up date and its note are written as a pair, so
- * a one-field patch of either leaves a stale reminder on a new date.
+ * Nothing on this card turns into an input when pressed (owner, 2026-08-07:
+ * «contactlarni ustiga bosib o'zgartirish featureni … hammasini olib
+ * tashla»). The name went first, one round earlier, for the reason that ended
+ * up applying to all of them: a card is read far more often than it is
+ * corrected, and a value that becomes an editor under a thumb is a value
+ * nobody can read safely.
  */
-export function LeadFacts({
-  leadId,
-  editable,
+export async function LeadFacts({
   values,
   stageName,
   sourceName,
@@ -33,8 +24,6 @@ export function LeadFacts({
   quote,
   nextAction,
 }: {
-  leadId: string;
-  editable: boolean;
   values: { name: string; phone: string; company: string; note: string };
   stageName: string;
   sourceName: string;
@@ -43,53 +32,29 @@ export function LeadFacts({
   quote: string;
   nextAction: string;
 }) {
-  const t = useTranslations('crm');
-  const save = (field: string) => (next: string) =>
-    patchLeadFieldAction(leadId, field, next);
+  const t = await getTranslations('crm');
 
   return (
     <div className="card" data-testid="lead-facts">
-      <ReadOnly label={t('name')} value={values.name} />
-      <InlineField
-        label={t('phone')}
-        value={values.phone}
-        editable={editable}
-        testId="fact-phone"
-        onSave={save('phone')}
-      />
-      <InlineField
-        label={t('company')}
-        value={values.company}
-        editable={editable}
-        testId="fact-company"
-        onSave={save('company')}
-      />
-      <InlineField
-        label={t('note')}
-        value={values.note}
-        multiline
-        editable={editable}
-        testId="fact-note"
-        onSave={save('note')}
-      />
-
-      {/* Read-only here, and each has its own control elsewhere on the card:
-          the stage chips above, the ✏️ form below — the quote too, because a
-          price is written deliberately, not corrected on a tap. */}
-      <ReadOnly label={t('quotedAmount')} value={quote} />
-      <ReadOnly label={t('stage')} value={stageName} />
-      <ReadOnly label={t('source')} value={sourceName} />
-      <ReadOnly label={t('owner')} value={ownerName} />
-      <ReadOnly label={t('nextAction')} value={nextAction} />
+      <Fact label={t('name')} value={values.name} testId="fact-name" />
+      <Fact label={t('phone')} value={values.phone} testId="fact-phone" />
+      <Fact label={t('company')} value={values.company} testId="fact-company" />
+      <Fact label={t('note')} value={values.note} testId="fact-note" />
+      <Fact label={t('quotedAmount')} value={quote} testId="fact-quote" />
+      <Fact label={t('stage')} value={stageName} testId="fact-stage" />
+      <Fact label={t('source')} value={sourceName} testId="fact-source" />
+      <Fact label={t('owner')} value={ownerName} testId="fact-owner" />
+      <Fact label={t('nextAction')} value={nextAction} testId="fact-next" />
     </div>
   );
 }
 
-function ReadOnly({ label, value }: { label: string; value: string }) {
+function Fact({ label, value, testId }: { label: string; value: string; testId: string }) {
   return (
-    <div className="border-b border-line/70 py-1.5 last:border-b-0">
+    <div className="border-b border-line/70 py-1.5 last:border-b-0" data-testid={testId}>
       <div className="text-2xs font-bold uppercase tracking-[0.06em] text-ink-500">{label}</div>
-      <p className={`text-sm ${value ? '' : 'text-ink-400'}`}>{value || '—'}</p>
+      {/* pre-wrap: a note written on several lines is read on several lines. */}
+      <p className={`whitespace-pre-wrap text-sm ${value ? '' : 'text-ink-400'}`}>{value || '—'}</p>
     </div>
   );
 }

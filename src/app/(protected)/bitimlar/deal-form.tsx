@@ -38,7 +38,6 @@ export function DealForm({
   stages,
   managers,
   initial,
-  revision,
 }: {
   dealId?: string;
   stages: DealStageOption[];
@@ -49,7 +48,6 @@ export function DealForm({
    * write. Keying the whole form would remount it after every save and take
    * `useActionState` — and with it the ✅ — along with the stale values.
    */
-  revision?: string;
 }) {
   const t = useTranslations('deals');
   const tc = useTranslations('common');
@@ -63,7 +61,6 @@ export function DealForm({
       <label className="block">
         <span className="label">{t('dealTitle')}</span>
         <input
-          key={`title-${revision ?? ''}`}
           name="title"
           defaultValue={initial.title ?? ''}
           data-testid="deal-title"
@@ -146,7 +143,6 @@ export function DealForm({
       <label className="block">
         <span className="label">{t('note')}</span>
         <textarea
-          key={`note-${revision ?? ''}`}
           name="note"
           defaultValue={initial.note ?? ''}
           rows={2}
