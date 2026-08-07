@@ -21,7 +21,6 @@ import {
   setDealDiscount,
   updateDeal,
 } from '@/modules/wms/deals/service';
-import { patchDeal } from '@/modules/wms/deals/inline';
 import { FinanceError, addTransaction } from '@/modules/wms/finance/service';
 import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
 
@@ -60,23 +59,6 @@ async function run(work: (ctx: { actorId: string }) => Promise<unknown>): Promis
   }
 }
 
-/**
- * One field of a deal, from the card's facts rail.
- *
- * Returns a verdict instead of throwing: it is called from a click handler,
- * where a throw reaches no error boundary and a redirect would reject the
- * promise (#497). The gate is `run`'s — the same door the ✏️ form has.
- */
-export async function patchDealFieldAction(
-  id: string,
-  field: string,
-  value: string,
-): Promise<{ ok: boolean; error?: string }> {
-  const state = await run((ctx) => patchDeal(id, field, value, ctx));
-  if (!state.ok) return { ok: false, error: state.error ?? 'failed' };
-  revalidatePath(`/bitimlar/${id}`);
-  return { ok: true };
-}
 
 /** Numbers arrive from a form as strings; an empty box means "not answered". */
 function optionalNumber(value: FormDataEntryValue | null): number | null | undefined {

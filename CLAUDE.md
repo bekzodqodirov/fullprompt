@@ -1717,6 +1717,19 @@ shipping: a clipped two-line placeholder (min-h-14) and `border-brand-400`
 — a token that does not exist — refused by the tokens tripwire. Same
 testids everywhere; m8 untouched. 1077 + 149 green fresh-db CI order.
 
+Round 74 — the owner deleted tap-to-edit (#551, «contactlarni ustiga bosib
+o'zgartirish featureni qayerda qoygan bo'lsang hammasini olib tashla»):
+`InlineField`, `patchLead`/`patchDeal`/`patchClient` and their three
+actions are GONE (deleted, not unreferenced — round 70's rule), the lead
+and deal facts render read-only server components, the CLIENT facts block
+went entirely (its ✏️ form is always open and printed the same three
+fields twice), and the `revision` keys went with them (they existed only
+because two writers shared those inputs). New source-shape tripwire
+`tests/unit/card-facts.test.ts` — red-proven against the pre-removal tree;
+m9ze/m9zf and both inline integration files deleted with their subject.
+Values still READ on the cards: round 61's real find was that a phone
+number could not be read without opening an editor.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 
