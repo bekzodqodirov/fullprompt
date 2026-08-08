@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## Kanban kartalari qaytadan chizildi — 2026-08-08 (kech)
+
+Varonka va Bitimlar doskasidagi kartalar bo'yicha: «malumotlar tartibli,
+odam shunday korganida adashmaydigan tartibli qilib ber».
+
+**1. Eng katta xato: «sotildi» ustunidagi kartalarda katta tugma
+«Yo'qotildi» deb turardi.** Tugma har doim *keyingi* etapni ko'rsatadi, va
+varonkada yutuqdan keyin darrov «yo'qotildi» keladi. Endi bunday tugma
+umuman chiqmaydi — yo'qotish sababini yozishni talab qiladi, shuning uchun u
+«⋯» menyusida qoladi. Qolgan tugmalarda esa etap nomi endi **o'sha etapning
+o'z rangidagi yorliq** bo'lib turadi, ya'ni «qayerga o'tadi» degani ko'rinib
+turadi, kartaning sarlavhasi bilan raqobatlashmaydi.
+
+**2. Ma'lumotlar bir xil tartibga tushdi.** Har kartada endi bitta tartib:
+kim → nima → pul → qolgan ma'lumotlar → muddat. Avval mijoz kodi qalin
+yashil, manba kulrang qutichada, sotuvchi oddiy matn, telefon boshqacha —
+to'rt xil ko'rinish, hech qanday ajratgich yo'q edi («DM1786192267 Bekzod»
+deb yopishib turardi). Endi ular bitta kulrang qatorda « · » bilan
+ajratilgan, pul esa ikkala doskada ham bir xil (monoshrift, raqamlar tik
+turadi).
+
+**3. Rang endi bitta narsani bildiradi.** Yashil/sariq/qizil — **etap**
+rangi. Kartadagi rangli yozuv esa faqat **shoshilinch** narsani bildiradi.
+Shu sababli mijoz kodi endi yashil emas, «keyingi aloqa» sanasi esa doim
+sariq emas: **kechikkan bo'lsa qizil, bugun bo'lsa sariq, keyin bo'lsa
+oddiy**. Avval hammasi bir xil sariq edi — kechikkanini ajratib bo'lmasdi.
+
+**4. Bitim kartasi.** Sarlavha o'rnida ba'zan ish nomi, ba'zan mijoz ismi
+turardi — endi **doim mijoz** yuqorida, ish nomi (agar yozilgan bo'lsa)
+tagida kichikroq. Narxi yo'q bitim buni **ikki marta** aytardi (biri sariq,
+biri qizil) — endi bir marta: pul o'rnida «—», izohi esa pastdagi ogohlantirish
+qatorida.
+
+**5. Kompyuterda kartalar buzilib chiqardi:** bitim kodi «B-» va «000627»
+bo'lib ikkiga bo'linardi, summa ham («200.00 USD» / «· 0.06 m³»). Sabab —
+belgilash katakchasi va «⋯» matn oqimini siqib turgani. Tuzatildi: kodlar
+ham, summa ham bitta qatorda.
+
+**6. Telefonda sahifa nomi to'liq ko'rinadi** — «Ворон…» va «Сдел…» emas,
+«Воронка» va «Сделки».
+
+Bazaga o'zgarish yo'q (migratsiya kerak emas).
+
 ## Ovozli xabarlar, navbat holati va hodimlar ro'yxati — 2026-08-08 (kech)
 
 To'rttala gapingiz bo'yicha:

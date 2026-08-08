@@ -189,8 +189,12 @@ export default async function DealsPage({
     >
       {/* `relative` on the ROW — every popover anchors to it (#471); a
           PopoverRow so opening one fold closes the others. */}
-      <PopoverRow className="relative flex items-center gap-1.5">
-        <h1 className="min-w-0 flex-1 truncate text-lg">{t('title')}</h1>
+      {/* gap-1 below `sm`: at 360 px the six controls and their gaps left the
+          title 74 px and «Воронка» — the DEFAULT locale's word — needs 77,
+          so the board's own name rendered «Ворон…». Two pixels a gap buys
+          it back without shrinking the type or dropping a control. */}
+      <PopoverRow className="relative flex items-center gap-1 sm:gap-1.5">
+        <h1 className="min-w-0 flex-1 truncate text-base sm:text-lg">{t('title')}</h1>
         <InlineSearch
           q={q}
           label={tcommon('search')}

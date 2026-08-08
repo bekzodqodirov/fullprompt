@@ -48,6 +48,40 @@ function classLists(source: string): string[] {
  */
 const BARE_MIN_HEIGHT = /(?:^|\s)(?:[a-z]+:)?min-h-(?:1[3-9]|[2-9]\d|\[)/;
 
+/**
+ * The FIFTH costume, MEASURED and deliberately NOT enforced yet.
+ *
+ * `.btn` declares its own `text-[0.9375rem]` after `@tailwind utilities`, so a
+ * bare `text-xs` on a button loses the cascade: measured in the browser, a
+ * `btn-secondary btn-icon … text-xs` renders at **15px**, and the same button
+ * with `!text-xs` renders at **12px**. Found while stopping the kanban move
+ * button from competing with the card's own name.
+ *
+ * A sweep of `src/**` finds **51** class lists in this shape — every one a
+ * button whose author asked for a smaller label and silently did not get it.
+ * They are not fixed here, and the rule is not armed, for one measured reason:
+ * `text-xs` also sets `line-height: 1rem`, and THAT half of it wins (16px on
+ * the same button). So neither deleting the class nor adding the `!` is the
+ * zero-pixel change it looks like — both move real geometry on 51 screens, and
+ * that is its own round with its own screenshots, not a side effect of a card
+ * redesign. The list above is the inventory; regenerate it by armed-and-run.
+ */
+const FONT_OWNING = ['btn', 'btn-primary', 'btn-secondary', 'btn-ghost', 'btn-danger', 'btn-icon'];
+const BARE_FONT_SIZE = /(?:^|\s)(?:[a-z]+:)?text-(?:xs|sm|base|lg|xl|\dxl|\[)/;
+
+describe('the .btn font-size cascade is known and measured', () => {
+  it('the board move button asks for its size the only way that works', () => {
+    const source = readFileSync('src/components/kanban.tsx', 'utf8');
+    const lists = classLists(source).filter((list) =>
+      list.split(/\s+/).some((cls) => FONT_OWNING.includes(cls)),
+    );
+    const moveNext = lists.find((list) => list.includes('flex-1') && list.includes('justify-start'));
+    expect(moveNext, 'the one-tap move button').toBeDefined();
+    expect(moveNext).toContain('!text-xs');
+    expect(BARE_FONT_SIZE.test(moveNext!.replace('!text-xs', ''))).toBe(false);
+  });
+});
+
 describe('a width utility on .input needs the important', () => {
   const files = globSync('src/**/*.tsx');
 

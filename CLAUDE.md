@@ -1863,6 +1863,49 @@ by default and self-opening when a filter is on; the card pages carry
 No migration. 1082 unit/integration green; m9n/m9r/m9zi green;
 screenshots at 360×800 with the fold closed, open, and filtered.
 
+Round 78 — the board cards, the owner's «yomon korinishda … adashmaydigan
+tartibli qilib ber» (#577-580). Designed, then judged by FOUR adversarial
+lenses before any code — and the lenses plus one measurement killed four of
+the five v1 decisions, including my own first fix. THE HEADLINE DEFECT nobody
+had named: `nextStage = stages[i + 1]` and every funnel puts LOST after WON,
+so **every card in the won column carried a big button reading «Yo'qotildi»**
+— suppressed now when the next stage is `lost` (that move demands a typed
+reason and was never one-tap), destination drawn as a stage-COLOURED badge in
+the vocabulary the strip and headers already use, `aria-label` from the
+existing `crm.nextStage`/`deals.nextStage` (all four bundles, referenced
+nowhere — zero new keys), tick moved behind a divider at the far end (a bare
+checkbox against a stage name read as its caption). ONE VOCABULARY per rank:
+identity = the only semibold line, money = the only mono line
+(`font-mono … tabular-nums`, never `.num` which forces text-right), everything
+descriptive on ONE muted 11px row joined by « · » (`components/board-meta.tsx`,
+separator travels with the part that FOLLOWS it so a wrap cannot orphan it).
+`text-good` left both cards — it discriminated on the funnel and decorated on
+the deal board — so **stage colour is a filled badge, card colour is text and
+only ever means urgency**; hence the follow-up date is red/amber/plain against
+a `today` the SERVER passes down. DEAL CARD: `{deal.title || deal.clientName}`
+retired (one slot, two grammars — a titled deal named no client, an untitled
+one named the client twice), and «no price» stopped being said twice in two
+colours (money slot = «—», the words belong to the alarm). MEASUREMENT
+REFUSED three things: the float→two-column trade made the deal card 139→159
+(the column steals 52px from EVERY row, the float only from the first) and is
+kept only because rows were removed to pay for it; chips for meta (+7 to +31px
+at the real 288px width, and `.chip` already exists as a one-per-row badge);
+and `text-xs` on a `.btn`, which is DEAD CSS (measured 15px with, 12px with
+`!text-xs`) — **51 live instances across `src/`**, deliberately NOT fixed here
+because `text-xs` also sets `line-height` and that half DOES win, so it is not
+the zero-pixel change it looks like. New source-shape tripwire
+`tests/unit/board-card.test.ts` (9 rules), red-proofs ×4 incl. the browser half
+in m8 (move to won → `move-next` count 0 → move back, #154). Also: the phone
+toolbar gap 1.5→1 below `sm` because «Воронка» needed 77px of the 74 the title
+had — measured, and both titles now fit exactly. Found and fixed en route,
+NOT mine: three `crm.integration` tests read `listConversations` unlimited and
+went red at 272 stored conversations (round 74's cap) — they now pass their own
+limit; CI never sees it on a fresh database (67b). 1113 unit/integration green;
+135 e2e pass. **NOT green locally and NOT this round's doing: m9z-nav-progress
+fails with this round's changes AND with them stashed** — pre-existing on this
+tree, CI is the arbiter (it was green on the merge commit). The four known
+photo-path specs (m1×2, m2×1, m9h) fail here as always.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 
