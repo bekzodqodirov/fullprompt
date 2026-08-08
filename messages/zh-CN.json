@@ -544,7 +544,8 @@
     "empty": "按筛选未找到货物",
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "下一页 →",
-    "pagePrev": "← 上一页"
+    "pagePrev": "← 上一页",
+    "shownOfTotal": "表中显示 {shown} / {total} 行"
   },
   "search": {
     "placeholder": "搜索：GS777、GS777-A、YW26-000123、货物…",

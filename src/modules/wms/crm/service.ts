@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, isNotNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, isNotNull, lte, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -525,7 +525,17 @@ export interface LeadBoardFilters {
 
 export function leadBoardWhere(filters: LeadBoardFilters) {
   const where = [];
-  if (filters.ownerId) where.push(eq(leads.ownerId, filters.ownerId));
+  // «Meniki» means mine AND the ones nobody has taken (round 74).
+  //
+  // A lead with no owner used to appear on NO seller's board: the personal
+  // scope asks `owner_id = me`, and «Hammasi» needs `crm.leads.view_all`,
+  // which a seller does not have. On his real data 27 of 383 leads (7 %) are
+  // unowned — at 100 leads a day that is ~7 every day landing where nobody
+  // is looking. They are everybody's until somebody claims one, which is how
+  // a shared inbox has to behave; the alternative is a pile that only grows.
+  if (filters.ownerId) {
+    where.push(or(eq(leads.ownerId, filters.ownerId), isNull(leads.ownerId))!);
+  }
   if (filters.stageId) where.push(eq(leads.stageId, filters.stageId));
   const text = leadTextWhere(filters.q);
   if (text) where.push(text);
@@ -554,20 +564,63 @@ export function leadBoardWhere(filters: LeadBoardFilters) {
   return where;
 }
 
+/**
+ * How many OPEN cards one column carries (round 74).
+ *
+ * The open half used to share ONE cap of 300 across every column, sorted by
+ * stage order — so the first stage took all 300 and every column after it
+ * rendered empty. Measured at 36,000 leads: «Yangi 300», then five columns
+ * saying 0 while each held ~4,500. At 100 leads a day that is a matter of
+ * days, and it arrives as a screen that lies rather than as an error.
+ *
+ * Forty is two screens of scrolling in one column; the header prints the
+ * true total beside it and the «+N» footer opens the rest.
+ */
+export const OPEN_PER_STAGE = 40;
+
 export async function listLeads(
   filters: LeadBoardFilters & {
     openOnly?: boolean;
     /** Only the finished ones — what the board shows a recent slice of. */
     closedOnly?: boolean;
     limit?: number;
+    /** Open cards per COLUMN. Ignored unless `openOnly`. */
+    perStage?: number;
   },
 ) {
   // In SQL, never over the fetched array: the closed slice is capped at 20 and
-  // the open one at 300, so filtering afterwards would search the newest
-  // twenty and answer «nothing found» about a database that has it.
+  // each open column at `perStage`, so filtering afterwards would search the
+  // newest twenty and answer «nothing found» about a database that has it.
   const where = leadBoardWhere(filters);
   if (filters.openOnly) where.push(eq(leadStages.kind, 'open'));
   if (filters.closedOnly) where.push(ne(leadStages.kind, 'open'));
+
+  // The open board is capped PER COLUMN, which a single LIMIT cannot express.
+  // One extra query names the surviving ids — the typed select below is then
+  // the same one every other caller gets, so nothing downstream had to change.
+  if (filters.openOnly) {
+    const perStage = filters.perStage ?? OPEN_PER_STAGE;
+    const ranked = await db.execute<{ id: string }>(sql`
+      SELECT id FROM (
+        SELECT ${leads.id} AS id,
+               row_number() OVER (
+                 PARTITION BY ${leads.stageId} ORDER BY ${leads.updatedAt} DESC
+               ) AS rn
+        FROM ${leads}
+        INNER JOIN ${leadStages} ON ${leadStages.id} = ${leads.stageId}
+        ${where.length ? sql`WHERE ${and(...where)}` : sql``}
+      ) ranked
+      WHERE rn <= ${perStage}
+    `);
+    if (ranked.length === 0) return [];
+    where.push(
+      inArray(
+        leads.id,
+        ranked.map((row) => row.id),
+      ),
+    );
+  }
+
   return db
     .select({
       lead: leads,
@@ -593,6 +646,27 @@ export async function listLeads(
         : [asc(leadStages.sortOrder), desc(leads.updatedAt)]),
     )
     .limit(filters.limit ?? 300);
+}
+
+/**
+ * How many OPEN leads each column really holds (round 74).
+ *
+ * The twin of `closedLeadCounts`, and the reason the funnel can be capped per
+ * column without lying: the cards are a slice, the header is the truth. Same
+ * builder as the rows (#513) — a filter the counts do not hear turns every
+ * column header into a lie on a filtered board.
+ */
+export async function openLeadCounts(
+  filters: LeadBoardFilters,
+): Promise<Record<string, number>> {
+  const where = [eq(leadStages.kind, 'open'), ...leadBoardWhere(filters)];
+  const rows = await db
+    .select({ stageId: leads.stageId, n: sql<number>`count(*)` })
+    .from(leads)
+    .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
+    .where(and(...where))
+    .groupBy(leads.stageId);
+  return Object.fromEntries(rows.map((row) => [row.stageId, Number(row.n)]));
 }
 
 /**

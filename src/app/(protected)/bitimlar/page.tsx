@@ -25,6 +25,7 @@ import {
   dealsNeedingAttention,
   listDeals,
   listStages,
+  openDealCounts,
 } from '@/modules/wms/deals/service';
 import { DealBoard, type BoardDeal } from './board';
 
@@ -103,11 +104,15 @@ export default async function DealsPage({
   // columns keep the recent cards and say how many more they hold. A closed
   // job is a record; a board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, views, open, closed, closedTotals, attention, badges, managers] = await Promise.all([
+  const [stages, views, open, closed, openTotals, closedTotals, attention, badges, managers] =
+    await Promise.all([
     listStages(),
     listViewsFor('bitimlar', actor.id),
     listDeals({ ...boardFilters, openOnly: true }),
     listDeals({ ...boardFilters, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
+    // Every column's TRUE total — the open ones too, since round 74 caps
+    // them per column. Cards are a slice; the header is the truth.
+    openDealCounts(boardFilters),
     // The SAME filters as the rows, or the «+N · show all» footer lies.
     closedDealCounts(boardFilters),
     dealsNeedingAttention(scope, q),
@@ -120,11 +125,11 @@ export default async function DealsPage({
   ]);
   const rows = [...open, ...closed];
   const shownClosed = new Map<string, number>();
-  for (const row of closed) {
+  for (const row of rows) {
     shownClosed.set(row.stageId, (shownClosed.get(row.stageId) ?? 0) + 1);
   }
   const hidden = Object.fromEntries(
-    Object.entries(closedTotals)
+    Object.entries({ ...openTotals, ...closedTotals })
       .map(([stageId, total]) => [stageId, total - (shownClosed.get(stageId) ?? 0)] as const)
       .filter(([, left]) => left > 0),
   );

@@ -235,6 +235,21 @@ services:
     depends_on:
       - postgres
 
+# All four are docker-managed volumes on the system disk — which is what a
+# small VPS has, and what is running today.
+#
+# The capacity round (round 74) measured why that stops being safe as the
+# calls app rolls out: photos and call recordings grow by tens of GB a year
+# while the database grows by half a gigabyte, and while they share a disk a
+# FULL disk stops postgres AND destroys the ability to take the backup you
+# would need to recover — the same minute.
+#
+# Moving `miniodata` to a second disk is a deliberate, one-off operator step
+# with the containers stopped, NOT a config flag: a bind mount to a path that
+# does not exist yet refuses to start the container, and the machine where
+# that bites is production on deploy morning (#472). The procedure — stop,
+# rsync, `docker volume create` with the new device, start, verify — is in
+# docs/DEPLOY.md under «Disk».
 volumes:
   pgdata:
   miniodata:

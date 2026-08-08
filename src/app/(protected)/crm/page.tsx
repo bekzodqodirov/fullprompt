@@ -4,7 +4,13 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
-import { closedLeadCounts, listLeads, listSources, listStages } from '@/modules/wms/crm/service';
+import {
+  closedLeadCounts,
+  listLeads,
+  listSources,
+  listStages,
+  openLeadCounts,
+} from '@/modules/wms/crm/service';
 import { KanbanBoard } from './leads/kanban';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -112,12 +118,16 @@ export default async function LeadsPage({
   // that opens the lot. A won lead from March is a record, not a task, and a
   // board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, sources, views, open, closed, closedTotals, badges, managers] = await Promise.all([
+  const [stages, sources, views, open, closed, openTotals, closedTotals, badges, managers] =
+    await Promise.all([
     listStages(),
     listSources(),
     listViewsFor('crm', actor.id),
     listLeads({ ...boardFilters, openOnly: true }),
     listLeads({ ...boardFilters, closedOnly: true, limit: archive ? 400 : CLOSED_ON_BOARD }),
+    // Every column's TRUE total — the open ones too, since round 74 caps
+    // them per column. Cards are a slice; the header is the truth.
+    openLeadCounts(boardFilters),
     // The SAME filters — the header prints the true total and the column
     // shows a slice, so counts filtered differently from rows make the
     // footer lie.
@@ -130,12 +140,15 @@ export default async function LeadsPage({
     seesAll ? salesManagerOptions() : Promise.resolve([]),
   ]);
   const rows = [...open, ...closed];
+  // What each column HOLDS versus what it was handed — one map for both
+  // halves, so an open column that was capped says «+N» exactly as a closed
+  // one always did.
   const shown = new Map<string, number>();
-  for (const row of closed) {
+  for (const row of rows) {
     shown.set(row.lead.stageId, (shown.get(row.lead.stageId) ?? 0) + 1);
   }
   const hidden = Object.fromEntries(
-    Object.entries(closedTotals)
+    Object.entries({ ...openTotals, ...closedTotals })
       .map(([stageId, total]) => [stageId, total - (shown.get(stageId) ?? 0)] as const)
       .filter(([, left]) => left > 0),
   );
