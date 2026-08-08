@@ -1730,6 +1730,37 @@ m9ze/m9zf and both inline integration files deleted with their subject.
 Values still READ on the cards: round 61's real find was that a phone
 number could not be read without opening an editor.
 
+Round 75 — the owner's four Telegram items (#552-554). **Audio in**
+(#552): `tgMediaPlan` extends the photo planner to voice notes and audio
+files — pure, structural, size read before any I/O, unknown size refused;
+three traps have tests (gramjs's `document.size` is a **big-integer
+OBJECT** and `Number()` on it is NaN, so `NaN <= cap` would have refused
+every voice note; a voice note may be labelled octet-stream, so the VOICE
+attribute decides; a video note carries an audio attribute too and its own
+video attribute excludes it). `attachPhotos` → `attachMedia`, split by
+KIND — it sweeps every attachment of a tg_message, so one undivided list
+would have drawn an Ogg file as an `<img>`. Player in the bubble
+(`preload="none"`), carried to the dock; `tg-import --media` uses the same
+planner. Authz unchanged by design: the tg_message branch decides on the
+message's owner, so the fence is the conversation, not the file type.
+**Queue honesty** (#553, «ocheretda turibti» twice, and the queue was
+right both times): ONE `OutboxBubble` computes `outboxLabel` for all three
+surfaces (the card panel had its own two-way check and could never say
+«stuck»; the dock showed no pending rows at all, so send made the words
+vanish), both page surfaces `<AutoRefresh>`, the dock polls its open
+thread, and `revalidateChatSurfaces` takes the pathname the person is on
+(a lead card's id is the LEAD's). `recordSent`'s swallowed failure — the
+ONLY record a text reply has — is now held and retried like `markSent`'s.
+TRIPWIRE LESSON: `toContain('AutoRefresh')` passes on a file that imports
+and never renders it (#494 from the other side) — the assertion is
+`<AutoRefresh` and only then did the strip go red. **Folded managers +
+per-manager reading** (#554): `ThreadManagers`, native `<details>`, closed
+by default and self-opening when a filter is on; the card pages carry
+`?hodim=` and filter in place; selecting is offered only under
+`viewer.all` because that is the only case `conversationFor` honours.
+No migration. 1082 unit/integration green; m9n/m9r/m9zi green;
+screenshots at 360×800 with the fold closed, open, and filtered.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 

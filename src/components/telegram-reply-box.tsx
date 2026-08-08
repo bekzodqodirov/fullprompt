@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
 import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
+import { usePathname } from 'next/navigation';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 
 /**
@@ -49,6 +50,7 @@ export function TelegramReplyBox({
   // claiming it only cleared after a successful round trip. Submitting by
   // hand is the only way to see the verdict before deciding, and it is what
   // the dock's composer has always done.
+  const pathname = usePathname();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -62,6 +64,9 @@ export function TelegramReplyBox({
     const form = formRef.current;
     if (!form || pending || uploading) return;
     const data = new FormData(form);
+    // The screen this box is on, so the reply's own card refreshes and not
+    // only «Suhbatlar» (the tasks actions' pattern).
+    data.set('path', pathname);
     start(async () => {
       const result = await sendReplyAction({}, data);
       setError(result.error ?? null);

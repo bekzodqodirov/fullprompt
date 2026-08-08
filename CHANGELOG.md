@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## Ovozli xabarlar, navbat holati va hodimlar ro'yxati — 2026-08-07 (kech)
+
+To'rttala gapingiz bo'yicha:
+
+**1. Ovozli (audio) xabarlar endi ko'rinadi va eshitiladi.** Mijoz ovozli
+xabar yuborsa, ilgari CRM'da faqat «📎» chiqardi — endi xabarning o'zi
+pleer bo'lib turadi, bosib eshitiladi. Audio fayllar ham (mp3, m4a va
+boshqalar) shunday. Rasmlar avvalgidek. Chegara: 20 MB, kattasi
+yuklanmaydi. Eski yozishmalarga tushirish uchun `pnpm tg-import --media`
+ni ishlatsa bo'ladi.
+
+**2. Ulangan hodimlar ro'yxati endi yig'iladi (foldable).** Chat tepasida
+«👥 Kim gaplashgan: 2» deb turadi — bosib ochsangiz ro'yxat chiqadi.
+Filtr yoqilgan bo'lsa, o'zi ochiq turadi (yopiq holda filtrni
+ko'rmaslik — yarim suhbatni to'liq deb o'qishga olib keladi).
+
+**3. Qaysi hodimning suhbatini o'qishni tanlash — endi KARTOCHKADA ham.**
+Avval bu faqat «Suhbatlar» sahifasida bor edi; endi mijoz, bitim va lid
+kartochkasida ham hodimni tanlaysiz va suhbat shu yerda filtrlanadi
+(boshqa sahifaga otib ketmaydi). Tanlash — nazorat huquqi borlarga
+(super admin / admin / VED); qolganlar o'z suhbatini ko'radi, ismlar
+hammaga ko'rinadi.
+
+**4. «Navbatda» yozuvi endi rost gapiradi.** Muammo navbatда emas edi —
+uchta ekran uch xil javob berardi: «Suhbatlar» to'g'ri holatni
+ko'rsatardi, kartochkadagi panel esa faqat «navbatda»/«yuborilmadi»
+bilardi va o'zini yangilamas edi, dokda esa navbatdagi xabar umuman
+ko'rinmasdi. Endi uchchalasi bitta joydan holat oladi: **«navbatda»**,
+**«⚠ ketgan, lekin yozilmagan — Telegramda tekshiring»**,
+**«yuborilmadi»**. Kartochka har 10 sekundda o'zini yangilaydi, dok ochiq
+chatni ham. Yana: xabar ketib, bizning bazaga yozilmay qolsa — endi
+yo'qolmaydi, qayta yoziladi.
+
+Bazaga o'zgarish yo'q (migratsiya kerak emas).
+
 ## Kartochkada qiymat ustiga bosib o'zgartirish olib tashlandi — 2026-08-07
 
 Siz aytgandek: lid, bitim va mijoz kartochkalarida telefon/kompaniya/izoh

@@ -43,7 +43,7 @@ import {
   HEARTBEAT_MS,
   type BookState,
 } from '../src/modules/wms/crm/telegram-live';
-import { peerFromChat, tgPhotoPlan, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
+import { peerFromChat, tgMediaPlan, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
 import { saveAttachment } from '../src/modules/platform/files/service';
 import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
 
@@ -86,21 +86,24 @@ const CATCHUP_PER_CHAT = 200;
 const DB_ALERT_AFTER_MS = 60_000;
 
 /**
- * Download an incoming photo and pin it to its message row (owner, item 15:
- * "rasimlarni ko'radigan bo'lsa ham yaxshi edi").
+ * Download an incoming photo or VOICE/AUDIO message and pin it to its row
+ * (owner, item 15: "rasimlarni ko'radigan bo'lsa ham yaxshi edi"; then
+ * 2026-08-07: «audio habarlar bizni sistemada korinmayabti»).
  *
- * Photos only, size stated up front, and only for a NEW row (the caller
- * checks) — a replay never re-downloads. Thumbnails are made INLINE with
- * sharp: `enqueue()` would start the full pg-boss worker fleet — nine
- * groups, nightly backup included — inside this container, which is the
- * two-backup-systems bug (#253-261) all over again.
+ * What deserves a download is decided by `tgMediaPlan` — pure, unit-tested,
+ * and always from the message alone BEFORE any network I/O. Only for a NEW
+ * row (the caller checks), so a replay never re-downloads. Thumbnails are
+ * made INLINE with sharp, and only for a photo: `enqueue()` would start the
+ * full pg-boss worker fleet — nine groups, nightly backup included — inside
+ * this container, which is the two-backup-systems bug (#253-261) all over
+ * again.
  */
-async function savePhotoFor(
+async function saveMediaFor(
   messageRowId: string,
   msg: { id: number; media?: unknown; downloadMedia?: () => Promise<unknown> },
   managerUserId: string,
 ): Promise<void> {
-  const plan = tgPhotoPlan(msg.media);
+  const plan = tgMediaPlan(msg.media, msg.id);
   if (!plan.download || typeof msg.downloadMedia !== 'function') return;
   const bytes = await msg.downloadMedia();
   if (!Buffer.isBuffer(bytes) || bytes.length === 0) return;
@@ -108,14 +111,16 @@ async function savePhotoFor(
     {
       entityType: 'tg_message',
       entityId: messageRowId,
-      fileName: `photo_${msg.id}.jpg`,
-      contentType: 'image/jpeg',
+      fileName: plan.fileName,
+      contentType: plan.contentType,
       body: bytes,
       uploadedBy: managerUserId,
     },
     { thumbnails: 'skip' },
   );
-  await generateThumbnails(id).catch(() => {});
+  // A voice note has no thumbnail, and asking sharp for one logs a failure
+  // for every message a client speaks.
+  if (plan.kind === 'photo') await generateThumbnails(id).catch(() => {});
 }
 
 async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<void>> {
@@ -219,7 +224,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (written) {
         stored += 1;
         console.log(`  ${verdict.clientCode} ← ${verdict.row.direction}`);
-        // The photograph itself (owner, item 15) — only for a NEW row, so a
+        // The photograph or the voice note itself — only for a NEW row, so a
         // reconnect replay never re-downloads. An outgoing echo whose photo
         // WE uploaded is skipped too: the bytes are already in storage,
         // claimed onto the row by the sender. A failure here is a missing
@@ -229,8 +234,8 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           verdict.row.hasMedia &&
           (await wasSentWithPhoto(account.managerUserId, verdict.row.peerId, verdict.row.tgMessageId));
         if (!ownUpload) {
-          await savePhotoFor(written, msg, account.managerUserId).catch((err: unknown) => {
-            console.error('rasm olinmadi:', err instanceof Error ? err.message : err);
+          await saveMediaFor(written, msg, account.managerUserId).catch((err: unknown) => {
+            console.error('media olinmadi:', err instanceof Error ? err.message : err);
           });
         }
       }
@@ -299,6 +304,17 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
    * keeps the queue in order.
    */
   let unsettled: { id: string; tgMessageId: bigint | null } | null = null;
+  /**
+   * The echo row for a message that HAS gone out, not yet written down.
+   *
+   * Round 53 made the listener write its own outgoing rows, because Telegram
+   * does not echo a message sent on the same connection — so this write is the
+   * only record a text reply has. Its failure was swallowed with a
+   * `console.error`, which puts the system back in the state the owner
+   * reported: the queue says «sent», the client has the message, and the CRM
+   * thread shows nothing. Held here and retried, exactly like `unsettled`.
+   */
+  let unrecorded: Parameters<typeof recordSent>[0] | null = null;
   /** Consecutive ticks that could not reach the database at all. */
   let dbDownSince: Date | null = null;
   let dbAlertSent = false;
@@ -379,6 +395,18 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       }
       return;
     }
+    // Same rule for the thread's own copy: the message exists in the world,
+    // and until this row lands the CRM is missing a reply that was sent.
+    if (unrecorded) {
+      try {
+        await recordSent(unrecorded);
+        unrecorded = null;
+        noteDbOk();
+      } catch (err) {
+        await noteDbFailure(err);
+      }
+      return;
+    }
 
     // Cheap enough to ask every tick, and the switch has to be able to stop
     // sending WITHOUT anybody restarting a process on a server.
@@ -450,7 +478,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // to exist for photos alone, which is why the owner could see the
       // picture and not the words.
       if (result?.id) {
-        await recordSent({
+        const echo = {
           clientId: job.clientId,
           managerUserId: account.managerUserId,
           peerId: job.peerId,
@@ -458,8 +486,12 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           body: job.body,
           attachmentId: job.attachmentId,
           sentAt: new Date((result.date ?? Math.floor(Date.now() / 1000)) * 1000),
-        }).catch((err: unknown) => {
-          console.error('eho yozilmadi:', err instanceof Error ? err.message : err);
+        };
+        await recordSent(echo).catch(async (err: unknown) => {
+          // Retried on the next tick rather than lost: this row IS the thread's
+          // copy of a message the client already has.
+          unrecorded = echo;
+          await noteDbFailure(err);
         });
       }
       sent += 1;
@@ -552,7 +584,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           });
           if (written) {
             recovered += 1;
-            await savePhotoFor(written, msg, account.managerUserId).catch(() => {});
+            await saveMediaFor(written, msg, account.managerUserId).catch(() => {});
           }
         }
       } catch (err) {

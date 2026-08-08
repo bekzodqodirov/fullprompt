@@ -27,8 +27,16 @@ import { conversationClientForLead } from '@/modules/wms/crm/conversations';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
-export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LeadPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
+  searchParams: Promise<{ hodim?: string }>;
+}) {
   const { id } = await params;
+  const { hodim } = await searchParams;
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crm.leads')) redirect('/');
@@ -95,7 +103,12 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
           <>
             <ClientFeed clientId={dockClientId} leadId={lead.id} limit={60} tall />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
-            <TelegramThread clientId={dockClientId} />
+            <TelegramThread
+              clientId={dockClientId}
+              hodim={hodim}
+              // `who` and not `id`: this page already has an `id` (the lead's).
+              hrefFor={(who) => (who ? `/crm/leads/${lead.id}?hodim=${who}` : `/crm/leads/${lead.id}`)}
+            />
             <CallsPanel clientId={dockClientId} lead={{ id: lead.id, phone: lead.phone }} />
           </>
         }

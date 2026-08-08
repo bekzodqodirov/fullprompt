@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { clients, tgAccounts, tgMessages, users } from '@/modules/platform/db/schema';
+import { attachments, clients, tgAccounts, tgMessages, users } from '@/modules/platform/db/schema';
 import {
   accountStatuses,
   clientBook,
@@ -17,6 +17,7 @@ import {
   takeListenerLock,
 } from '@/modules/wms/crm/telegram-accounts';
 import { decideIncoming } from '@/modules/wms/crm/telegram-live';
+import { attachMedia } from '@/modules/wms/crm/conversations';
 
 /**
  * The live bridge against a real database.
@@ -39,6 +40,7 @@ const PEER = BigInt(STAMP);
 let managerId: string;
 let clientId: string;
 let accountId: string;
+const mediaAttachments: string[] = [];
 
 beforeAll(async () => {
   process.env.TG_SESSION_KEY = KEY;
@@ -52,6 +54,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Attachments first: a tg_message row is what an attachment points AT, and
+  // the media test writes one.
+  for (const id of mediaAttachments) {
+    await db.delete(attachments).where(eq(attachments.id, id));
+  }
   await db.delete(tgMessages).where(eq(tgMessages.clientId, clientId));
   await db.delete(tgAccounts).where(eq(tgAccounts.managerUserId, managerId));
   await db.delete(clients).where(eq(clients.id, clientId));
@@ -275,5 +282,61 @@ describe('picking a conversation back up after the listener was away', () => {
     });
     const point = (await resumePoints(managerId)).find((p) => p.peerId === BigInt(STAMP + 501));
     expect(point?.lastMessageId).toBe(huge);
+  });
+});
+
+/**
+ * A client's VOICE note reaches the thread as a player, not as a broken image
+ * (owner, 2026-08-07: «audio habarlar bizni sistemada korinmayabti»).
+ *
+ * What only this level can prove: the read that pins media onto messages
+ * SPLITS it by kind. It fetches every attachment of a `tg_message` — so the
+ * moment the listener started storing voice notes, one undivided `photos`
+ * list would have handed the bubble an `<img>` pointing at an Ogg file.
+ */
+describe('media on a message is split by kind', () => {
+  it('a voice note lands in audios, a photo in photos, a pdf in neither', async () => {
+    const written = await storeIncoming({
+      clientId,
+      managerUserId: managerId,
+      row: {
+        peerId: PEER,
+        tgMessageId: BigInt(STAMP + 991),
+        direction: 'in',
+        body: null,
+        hasMedia: true,
+        sentAt: new Date(),
+      },
+    });
+    expect(written, 'the fixture message must be new').toBeTruthy();
+
+    for (const media of [
+      { kind: 'file', contentType: 'audio/ogg', fileName: 'voice_1.oga' },
+      { kind: 'photo', contentType: 'image/jpeg', fileName: 'photo_1.jpg' },
+      { kind: 'file', contentType: 'application/pdf', fileName: 'invoice.pdf' },
+    ]) {
+      const [row] = await db
+        .insert(attachments)
+        .values({
+          entityType: 'tg_message',
+          entityId: written!,
+          kind: media.kind,
+          storageKey: `test/tg-media-${STAMP}-${media.fileName}`,
+          fileName: media.fileName,
+          contentType: media.contentType,
+          sizeBytes: 1234,
+          uploadedBy: managerId,
+        })
+        .returning({ id: attachments.id });
+      mediaAttachments.push(row!.id);
+    }
+
+    const [message] = await attachMedia([{ id: written! }]);
+    expect(message!.audios.map((a) => a.fileName)).toEqual(['voice_1.oga']);
+    expect(message!.photos).toHaveLength(1);
+    // The pdf is in NEITHER: a bubble must not offer a player for a file no
+    // browser here can play, and it must not draw it as a picture.
+    expect(message!.audios).toHaveLength(1);
+    expect(message!.photos.length + message!.audios.length).toBe(2);
   });
 });
