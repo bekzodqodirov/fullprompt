@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## Bosh ekran: bitim bilan CRM yonma-yon, mijozlar «Boshqaruv»dan chiqdi — 2026-08-08
+
+Uchta so'rovingiz bo'yicha.
+
+**1. «Bitim» bilan «CRM» endi bir qatorda.** Ular ro'yxatda allaqachon
+yonma-yon edi, lekin telefonda ekran ikki ustunli bo'lgani uchun qator
+aynan ularning orasidan uzilib ketardi: «Mijozlar | Bitimlar», keyingi
+qatorda «CRM | Suhbatlar». Kompyuterda esa muammo umuman yo'q edi —
+uchta ustunda ular baribir yonma-yon turardi. **Ya'ni bu faqat telefondagi
+kamchilik edi.** Endi «Sotuv» bo'limi «Bitimlar»dan boshlanadi, keyin
+«CRM» — ikkalasi ham telefonda, ham kompyuterda yonma-yon. Sotuvchining
+o'z bosh ekranida ham xuddi shu tartib.
+
+**2. «Bugun qo'ng'iroq» sizning ekraningizdan va menyudan olindi.**
+Ekran o'chirilmadi — sotuvchilarda u o'z bosh ekranida **raqami bilan**
+turaveradi (masalan «Bugun qo'ng'iroq · 7»), chunki butun tizimda
+kutayotgan qo'ng'iroqlar sonini aytadigan yagona joy o'sha qator. Sizning
+ekraningizdagi katakcha esa hech qanday raqam ko'rsatmasdi — shunchaki
+eshik edi, shuning uchun uni olib tashladim. «Mening kunim» ekranida
+o'sha qo'ng'iroqlar ro'yxati hammaga ko'rinaveradi. **Agar sotuvchilardan
+ham butunlay olib tashlashni istasangiz — ayting, bir daqiqalik ish.**
+
+**3. Mijozlar ro'yxati endi «Boshqaruv» ekrani emas.** Siz buni ilgari
+ham so'ragan edingiz va o'shanda katakchasi «Sotuv»ga ko'chirilgandi —
+lekin ekranning o'zi baribir o'zini «Boshqaruv» deb tanishtirardi.
+Uchta joyda: ochganda tepasida «← Boshqaruv» yozuvi turardi, «Boshqaruv»
+ichida yana bir katakchasi bor edi, va menyuda «Mijozlar» bilan birga
+«Boshqaruv» ham yonib turardi. Uchalasi ham tuzatildi.
+
+Yo'lda topildi va tuzatildi: mijozlar «Boshqaruv»dan chiqqach logistda
+u yerda bitta eshik qoldi, ya'ni «Boshqaruv» tugmasi uni to'g'ridan-to'g'ri
+mashinalar ro'yxatiga olib kiradi — va o'sha sahifadagi «← Boshqaruv»
+o'zini o'ziga qaytaradigan tugmaga aylanardi. Endi bunday hollarda u
+tugma chizilmaydi.
+
+Bazada hech narsa o'zgarmadi, migratsiya yo'q.
+
+
 ## Sig'im tekshiruvi: 50 xodim / kuniga 100 lid ga tayyorlash — 2026-08-07
 
 Siz so'radingiz: 50 ta xodim, kuniga 50 prixod, 100 lid, 100 hisoblatish —

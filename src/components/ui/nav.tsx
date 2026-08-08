@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon, type IconName } from './icon';
+import { isActive } from './nav-active';
 
 export interface NavItem {
   href: string;
@@ -34,11 +35,6 @@ function isFocusMode(pathname: string) {
   );
 }
 
-/** `/stock` matches `/stock/abc` but `/` only matches itself. */
-function isActive(pathname: string, href: string) {
-  if (href === '/') return pathname === '/';
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
 
 /**
  * The bottom tab bar, and the sheet behind "More".

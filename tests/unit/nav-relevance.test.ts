@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { NAV, canSee, isRelevant, menuItems, primaryItems } from '@/modules/platform/rbac/nav';
+import {
+  MENU_BY_ROLE,
+  NAV,
+  canSee,
+  isRelevant,
+  menuItems,
+  primaryItems,
+} from '@/modules/platform/rbac/nav';
 import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 
 const ALL_ITEMS = NAV.flatMap((group) => group.items);
@@ -91,11 +98,20 @@ describe('menu relevance', () => {
   });
 
   it('curates only hrefs that exist in NAV', () => {
-    // A typo in a curated list is invisible: the item simply never shows. This
-    // asserts every role can still reach its home tile, which is the one href
-    // every list must contain.
+    // A typo in a curated list is invisible: `isRelevant` only ever filters,
+    // so a curated href NAV does not have simply never matches anything.
+    //
+    // This test carried that name for twelve rounds while asserting only
+    // that every role can reach its home tile — so when round 75 deleted the
+    // /crm/today entry, the stale '/crm/today' left in the sales list would
+    // have gone unnoticed. It now does what it says: every curated href must
+    // be a real destination.
+    const known = new Set(ALL_ITEMS.map((item) => item.href));
     for (const role of Object.keys(MATRIX)) {
       expect(menuFor(role)).toContain('/');
+      for (const href of MENU_BY_ROLE[role] ?? []) {
+        expect(known, `${role} curates ${href}`).toContain(href);
+      }
     }
   });
 

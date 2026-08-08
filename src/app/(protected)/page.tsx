@@ -291,6 +291,18 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
           warn={flow.callsOverdue > 0}
           sub={flow.callsOverdue > 0 ? `⚠ ${tt('overdue')} · ${flow.callsOverdue}` : null}
         />
+        {/* Bitimlar then CRM, in that order and next to each other — the
+            same pairing the tile grid now leads with (nav.ts sectionSales),
+            so the two shapes of this screen do not argue about where a
+            salesperson's jobs live. */}
+        <FlowRow
+          href="/bitimlar"
+          icon="handshake"
+          testid="sales-flow-deals"
+          label={tdl('title')}
+          count={flow.openDeals}
+          sub={null}
+        />
         <FlowRow
           href="/crm"
           icon="target"
@@ -314,14 +326,6 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
           testid="sales-flow-debtors"
           label={tg('withDebt')}
           count={flow.debtors}
-          sub={null}
-        />
-        <FlowRow
-          href="/bitimlar"
-          icon="handshake"
-          testid="sales-flow-deals"
-          label={tdl('title')}
-          count={flow.openDeals}
           sub={null}
         />
       </div>
