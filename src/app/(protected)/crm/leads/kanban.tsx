@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { KanbanBoard as Board, type KanbanStage } from '@/components/kanban';
+import { MetaLine } from '@/components/board-meta';
 import { useMoveErrors } from '@/components/move-errors';
 import { BulkBar } from '@/components/list/bulk-bar';
 import { useSelection } from '@/components/list/selection';
@@ -44,6 +45,7 @@ export function KanbanBoard({
   archiveHref,
   owners,
   fields,
+  today,
 }: {
   stages: KanbanStage[];
   leads: KanbanLead[];
@@ -54,6 +56,14 @@ export function KanbanBoard({
   owners?: { id: string; name: string }[];
   /** Which switchable lines this browser wants; the name is never in it. */
   fields: Set<string>;
+  /**
+   * The server's own «today», `YYYY-MM-DD`, for colouring the follow-up date.
+   * It comes down as a prop rather than being read from `new Date()` here so
+   * the server's HTML and the browser's first render agree — a component that
+   * computes its own today paints a different colour after hydration for
+   * anyone whose clock has crossed midnight against the server's.
+   */
+  today: string;
 }) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
@@ -93,37 +103,36 @@ export function KanbanBoard({
           error: tc('error'),
           moveErrors,
           showAll: t('showAll'),
+          nextStage: t('nextStage'),
         }}
+        // Five slots, always in this order, on both board shapes: WHO / WHAT /
+        // MONEY / META / WHEN. The old card put company, phone, source, owner,
+        // code and chat in four different typographic costumes across three
+        // rows; a reader could not tell which grey word was the client's firm
+        // and which was our salesman. One rule now: identity is the only
+        // semibold line, money is the only mono line, everything descriptive
+        // rides ONE muted line joined by « · », and colour is spent only on
+        // urgency — the stage's own colours are drawn by the board, so a
+        // second green/amber grammar on the card was two meanings for one hue.
         renderCard={(lead) => (
           <>
             {/* The NAME is not switchable. A card with nothing on it is not a
-                card, and half the browser suite finds a board card by it. */}
+                card, and half the browser suite finds a board card by it.
+                Deliberately NOT clamped: #571 measured and refused truncating
+                the one field that says which record this is. */}
             <div className="font-semibold [overflow-wrap:anywhere]">{lead.name}</div>
             {fields.has('company') && lead.company && (
-              <div className="text-xs text-ink-700">{lead.company}</div>
+              // overflow-wrap because a company name can be one 45-character
+              // token with no break opportunity, which takes the card past the
+              // viewport and rescales the whole page (#400).
+              <div className="text-xs text-ink-700 [overflow-wrap:anywhere]">{lead.company}</div>
             )}
-            {fields.has('phone') && lead.phone && (
-              <div className="font-mono text-xs">{lead.phone}</div>
-            )}
-            <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-ink-500">
-              {fields.has('source') && lead.sourceName && (
-                <span className="rounded bg-surface-sunken px-1.5">{lead.sourceName}</span>
-              )}
-              {fields.has('owner') && lead.ownerName && <span>{lead.ownerName}</span>}
-              {fields.has('code') && lead.clientCode && (
-                <span className="font-mono font-bold text-good">{lead.clientCode}</span>
-              )}
-              {/* The chat, on the card (owner, round 25) — and whether it waits on us. */}
-              {fields.has('chat') && lead.chat && (
-                <span className={lead.chat === 'waiting' ? 'font-semibold text-warn' : ''}>
-                  💬{lead.chat === 'waiting' && ' !'}
-                </span>
-              )}
-            </div>
             {/* The price the funnel now runs on (round 71): written after
-                hisoblatish, read at a glance on the way to won/lost. */}
+                hisoblatish, read at a glance on the way to won/lost. Mono and
+                tabular like every other number in the app — `.num` is not used
+                because it forces text-right. */}
             {fields.has('quote') && lead.quotedAmount && (
-              <div className="mt-1 text-[12px] font-bold tabular-nums text-good">
+              <div className="mt-1 font-mono text-xs font-bold tabular-nums">
                 {[
                   `${Number(lead.quotedAmount).toLocaleString('ru-RU')} ${lead.quotedCurrency ?? 'USD'}`,
                   lead.quotedVolumeM3 && `${Number(lead.quotedVolumeM3)} m³`,
@@ -133,8 +142,53 @@ export function KanbanBoard({
                   .join(' · ')}
               </div>
             )}
+            <MetaLine
+              parts={[
+                fields.has('code') && lead.clientCode ? (
+                  <span key="code" className="font-mono font-semibold">
+                    {lead.clientCode}
+                  </span>
+                ) : null,
+                fields.has('phone') && lead.phone ? (
+                  <span key="phone" className="font-mono">
+                    {lead.phone}
+                  </span>
+                ) : null,
+                fields.has('source') && lead.sourceName ? (
+                  <span key="source">{lead.sourceName}</span>
+                ) : null,
+                fields.has('owner') && lead.ownerName ? (
+                  <span key="owner">{lead.ownerName}</span>
+                ) : null,
+                // The chat, on the card (owner, round 25) — and whether it
+                // waits on us, which is the one thing here that is urgent.
+                fields.has('chat') && lead.chat ? (
+                  <span
+                    key="chat"
+                    className={lead.chat === 'waiting' ? 'font-semibold text-warn' : ''}
+                  >
+                    💬{lead.chat === 'waiting' && ' !'}
+                  </span>
+                ) : null,
+              ]}
+            />
+            {/* Coloured by lateness, not permanently amber: an orange date on
+                every scheduled lead teaches the eye to skip the one colour the
+                card uses for «act now». The column is a plain date, so the
+                comparison is against the server's own today (UTC days, the
+                convention /bugun measures against — round 47). */}
             {fields.has('nextAction') && lead.nextActionAt && (
-              <div className="mt-1 text-[11px] font-semibold text-warn">📅 {lead.nextActionAt}</div>
+              <div
+                className={`mt-1 text-[11px] font-semibold ${
+                  lead.nextActionAt < today
+                    ? 'text-bad'
+                    : lead.nextActionAt === today
+                      ? 'text-warn'
+                      : 'text-ink-500'
+                }`}
+              >
+                📅 {lead.nextActionAt}
+              </div>
             )}
           </>
         )}

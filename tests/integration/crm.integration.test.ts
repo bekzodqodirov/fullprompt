@@ -644,6 +644,18 @@ describe('the conversation list', () => {
   // ids restart per client the unique index refused the second insert — the
   // index catching a test's own mistake, which is the index working.
 
+  /**
+   * Enough rows that this suite's own fixture is always in the answer.
+   *
+   * `listConversations` caps at CONVERSATIONS_ON_SCREEN (round 74) and orders
+   * newest-first, so a fixture dated in the past falls off the slice entirely
+   * once the database holds more conversations than the cap — three tests here
+   * went red at 272 stored conversations, on a claim about GROUPING that has
+   * nothing to do with the cap. CI never sees it: its database is fresh
+   * (67b's lesson about a long-lived local database).
+   */
+  const UNCAPPED = 10_000;
+
   async function clientWith(
     code: string,
     msgs: { dir: 'in' | 'out'; body: string | null; at: string; media?: boolean }[],
@@ -680,7 +692,7 @@ describe('the conversation list', () => {
       { dir: 'out', body: 'oxirgi javob', at: '2026-05-02T09:00:00Z' },
     ]);
 
-    const rows = await listConversations({ id: actorId });
+    const rows = await listConversations({ id: actorId }, undefined, UNCAPPED);
     const mine = rows.filter((r) => r.clientId === quiet.id);
     // One row, not one per message — the whole reason for DISTINCT ON.
     expect(mine).toHaveLength(1);
@@ -696,7 +708,7 @@ describe('the conversation list', () => {
       { dir: 'out', body: 'salom', at: '2026-06-01T09:00:00Z' },
       { dir: 'in', body: 'yuk qachon keladi?', at: '2026-06-02T09:00:00Z' },
     ]);
-    const row = (await listConversations({ id: actorId })).find((r) => r.clientId === waiting.id)!;
+    const row = (await listConversations({ id: actorId }, undefined, UNCAPPED)).find((r) => r.clientId === waiting.id)!;
     expect(row.waitingOnUs).toBe(true);
 
     // The same fact, in the shape a kanban card asks for (round 25) — and
@@ -731,7 +743,7 @@ describe('the conversation list', () => {
     const newer = await clientWith(`CN${suffix}`, [
       { dir: 'in', body: 'yangi', at: '2027-01-05T09:00:00Z' },
     ]);
-    const rows = await listConversations({ id: actorId });
+    const rows = await listConversations({ id: actorId }, undefined, UNCAPPED);
     const positions = rows.map((r) => r.clientId);
     // Relative, never "is it first in the whole list": a previous run of this
     // same suite leaves conversations behind, and one of them may legitimately
@@ -789,7 +801,7 @@ describe('the conversation list', () => {
     ]);
 
     // The owner (actorId) sees his own thread…
-    expect((await listConversations({ id: actorId })).map((r) => r.clientId)).toContain(secret.id);
+    expect((await listConversations({ id: actorId }, undefined, UNCAPPED)).map((r) => r.clientId)).toContain(secret.id);
     expect(await conversationFor(secret.id, { id: actorId })).toHaveLength(1);
 
     // …and a colleague sees NOTHING of it: not on the list, not as a thread,

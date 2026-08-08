@@ -191,8 +191,12 @@ export default async function LeadsPage({
           anchoring to a button put a panel off-screen at 360 px twice
           (#471, round 57). The row is a PopoverRow so opening one fold
           closes the others: three native details on one corner stack. */}
-      <PopoverRow className="relative flex items-center gap-1.5">
-        <h1 className="min-w-0 flex-1 truncate text-lg">{t('funnel')}</h1>
+      {/* gap-1 below `sm`: at 360 px the six controls and their gaps left the
+          title 74 px and «Воронка» — the DEFAULT locale's word — needs 77,
+          so the board's own name rendered «Ворон…». Two pixels a gap buys
+          it back without shrinking the type or dropping a control. */}
+      <PopoverRow className="relative flex items-center gap-1 sm:gap-1.5">
+        <h1 className="min-w-0 flex-1 truncate text-base sm:text-lg">{t('funnel')}</h1>
         {/* From md the search sits IN the toolbar — on a laptop the fold
             saves no height while search is the most-pressed control; the
             phone keeps it in the panel, as asked. */}
@@ -305,6 +309,10 @@ export default async function LeadsPage({
 
       <KanbanBoard
         fields={cardFields}
+        // The follow-up date is coloured against the SERVER's today, so the
+        // first HTML and the browser's first render agree (UTC days — the
+        // convention `/bugun` already measures against, round 47).
+        today={new Date().toISOString().slice(0, 10)}
         owners={
           managers.length
             ? managers.map((row) => ({ id: row.id, name: row.fullName }))

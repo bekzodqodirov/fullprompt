@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { KanbanBoard as Board, type KanbanStage } from '@/components/kanban';
+import { MetaLine } from '@/components/board-meta';
 import { useMoveErrors } from '@/components/move-errors';
 import { BulkBar } from '@/components/list/bulk-bar';
 import { useSelection } from '@/components/list/selection';
@@ -87,47 +88,74 @@ export function DealBoard({
           error: tc('error'),
           moveErrors,
           showAll: tcrm('showAll'),
+          nextStage: t('nextStage'),
         }}
+        // The same five slots as the funnel card, so a person who works both
+        // boards in one hour forms ONE habit for where each thing lives.
         renderCard={(deal) => (
           <>
-            {/* The CODE is not switchable — it is what this card IS. */}
-            <div className="flex items-baseline gap-2">
-              <span className="num text-xs font-bold text-ink-500">{deal.code}</span>
-              {fields.has('amount') &&
-                (deal.quotedAmount ? (
-                  // Summa · kub · kg on one line — the owner asked for all
-                  // three ON the card (round 73), so they are one fact, not
-                  // three switches.
-                  <span className="num ml-auto text-right font-bold">
-                    {[
-                      `${deal.quotedAmount} ${deal.quotedCurrency}`,
-                      deal.quotedVolumeM3 && `${Number(deal.quotedVolumeM3)} m³`,
-                      deal.quotedWeightKg && `${Number(deal.quotedWeightKg)} kg`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
+            {/* The CODES are not switchable — they are what this card IS.
+                Both on one line, in one treatment: our deal number and the
+                client's. The client code used to be green down in the meta
+                row, which made green mean «is a client» on the funnel (where
+                only some leads have a code) and mean nothing at all here
+                (where every card has one). */}
+            <div className="flex flex-wrap items-baseline gap-x-2 font-mono text-xs font-bold text-ink-500">
+              <span>{deal.code}</span>
+              {fields.has('code') && <span>{deal.clientCode}</span>}
+            </div>
+            {/* WHO — always the client, never the title. This slot used to be
+                `title || clientName`, so one column mixed two grammars: a
+                titled deal named no client, an untitled one named the client
+                twice and named no job. */}
+            <div className="font-semibold [overflow-wrap:anywhere]">{deal.clientName}</div>
+            {/* WHAT — the job, secondary and optional. No «untitled»
+                placeholder: the line above already says whose card this is. */}
+            {deal.title && (
+              <div className="text-xs text-ink-700 [overflow-wrap:anywhere]">{deal.title}</div>
+            )}
+            {/* MONEY on its own full-width row and ALWAYS present, so the eye
+                finds the number in the same place on every card and a column
+                scans as a column. Sharing row 1 with the code is why it broke
+                as «200.00 USD» / «· 0.06 m³» on the desktop board.
+                An unpriced deal shows a dash here and nothing else: the words
+                «no price» belong to the alarm row below, which used to say the
+                same thing a second time in a second colour. */}
+            {fields.has('amount') &&
+              (deal.quotedAmount ? (
+                // Summa · kub · kg on one line — the owner asked for all
+                // three ON the card (round 73), so they are one fact, not
+                // three switches.
+                <div className="mt-1 font-mono text-xs font-bold tabular-nums">
+                  {[
+                    `${Number(deal.quotedAmount).toLocaleString('ru-RU')} ${deal.quotedCurrency}`,
+                    deal.quotedVolumeM3 && `${Number(deal.quotedVolumeM3)} m³`,
+                    deal.quotedWeightKg && `${Number(deal.quotedWeightKg)} kg`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
+              ) : (
+                <div className="mt-1 font-mono text-xs text-ink-400" title={t('notQuoted')}>
+                  —
+                </div>
+              ))}
+            <MetaLine
+              parts={[
+                fields.has('owner') && deal.ownerName ? (
+                  <span key="owner">{deal.ownerName}</span>
+                ) : null,
+                // The chat, on the card (owner, round 25).
+                fields.has('chat') && deal.chat ? (
+                  <span
+                    key="chat"
+                    className={deal.chat === 'waiting' ? 'font-semibold text-warn' : ''}
+                  >
+                    💬{deal.chat === 'waiting' && ' !'}
                   </span>
-                ) : (
-                  <span className="ml-auto text-[11px] font-semibold text-warn">
-                    {t('notQuoted')}
-                  </span>
-                ))}
-            </div>
-            <div className="font-semibold [overflow-wrap:anywhere]">
-              {deal.title || deal.clientName}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-ink-500">
-              {fields.has('code') && (
-                <span className="num font-bold text-good">{deal.clientCode}</span>
-              )}
-              {fields.has('owner') && deal.ownerName && <span>{deal.ownerName}</span>}
-              {/* The chat, on the card (owner, round 25). */}
-              {fields.has('chat') && deal.chat && (
-                <span className={deal.chat === 'waiting' ? 'font-semibold text-warn' : ''}>
-                  💬{deal.chat === 'waiting' && ' !'}
-                </span>
-              )}
-            </div>
+                ) : null,
+              ]}
+            />
             {/* The one line the board exists to surface. */}
             {fields.has('alarms') && deal.flag === 'deviation' && (
               <div className="mt-1 text-[11px] font-bold text-bad">
