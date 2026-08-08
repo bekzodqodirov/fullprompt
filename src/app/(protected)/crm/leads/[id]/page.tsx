@@ -11,7 +11,6 @@ import { Panel } from '@/components/panel';
 import { listSources, listStages } from '@/modules/wms/crm/service';
 import { customFieldsData } from '@/modules/platform/fields/view';
 import { convertLeadAction, updateLeadAction } from '../../actions';
-import { ActivityForm } from '../../activity-form';
 import { CustomFieldInputs } from '@/components/custom-fields';
 import { LeadForm } from '../lead-form';
 import { LeadFacts } from './facts';
@@ -24,7 +23,6 @@ import { TelegramThread } from '@/components/telegram-thread';
 import { CallsPanel } from '@/components/calls-panel';
 import { CardCols } from '@/components/card-cols';
 import { conversationClientForLead } from '@/modules/wms/crm/conversations';
-import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
 export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
@@ -53,7 +51,6 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     getSetting('client_code_prefix'),
   ]);
 
-  const today = new Date().toISOString().slice(0, 10);
   const update = updateLeadAction.bind(null, id);
   const convert = convertLeadAction.bind(null, id);
   // The conversation this lead belongs to, when there is one — shared by the
@@ -101,10 +98,13 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         }
         rail={
           <>
-      {/* The contact log, in the rail and folded (owner: "Записать контакт
-          lentaning pastida emas, yon tarafdagi menyuda tursin, collapsible
-          bo'lib"). Its kind and «keyingi qadam» date are what feed
-          /crm/today — the lenta's quick note box has neither. */}
+      {/* The «Записать контакт» form used to sit here (owner, 2026-07-28:
+          "lentaning pastida emas, yon tarafdagi menyuda tursin"). He took it
+          off entirely on 2026-08-08 — «crm kartada shu zapis yozish kerak
+          emas, lenta bor» — so a lead is written about in ONE place, the
+          lenta below. The «keyingi kontakt» date it also carried is not
+          lost: the ✏️ form has always held that pair, and it is what
+          /crm/today reads. */}
       {/* The facts FIRST — they were invisible until round 61, buried in the
           folded ✏️ form below, so reading a lead's phone number meant opening
           an editor and reading it out of an input. */}
@@ -130,9 +130,6 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         nextAction={[lead.nextActionAt, lead.nextActionNote].filter(Boolean).join(' · ')}
       />
 
-      <Panel title={`📞 ${t('addActivity')}`} testId="activity-panel">
-        <ActivityForm entityType="lead" entityId={id} today={today} bare people={await mentionablePeople()} />
-      </Panel>
       {lead.clientId ? (
         <div className="flex gap-2">
           <Link
@@ -205,10 +202,14 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       {/* The lead was the one card in the app with no history, and it is the
           one that now records a row per corrected field. Folded, because a
           salesperson opens this card to call somebody, not to audit it. */}
-      <Panel title={`🕓 ${tc('history')}`} testId="lead-history-panel">
-        <HistoryTab entityType="lead" entityId={id} />
-      </Panel>
           </>
+        }
+        tail={
+          /* Last on a phone: the audit trail is what you consult, never what
+             you came for (owner: «istoriya tarix mobileda eng pastda»). */
+          <Panel title={`🕓 ${tc('history')}`} testId="lead-history-panel">
+            <HistoryTab entityType="lead" entityId={id} />
+          </Panel>
         }
       />
     </div>

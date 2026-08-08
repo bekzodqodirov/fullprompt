@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## CRM kartasi: bitta yozish joyi, tarix eng pastda — 2026-08-08
+
+**«Записать контакт» formasi olib tashlandi.** Endi lidga bir joyda —
+**lentada** yoziladi. Ilgari ikkita quti bor edi va qaysi biriga yozish
+kerakligi tushunarsiz edi.
+
+Olib tashlashdan **oldin** tekshirdim, keyin emas: o'sha formadagi
+**«Следующий контакт»** (keyingi aloqa sanasi) — «Bugun qo'ng'iroq» ro'yxatini
+to'ldiradigan narsa — **✏️ Tahrirlash** formasida ham bor edi va o'sha yerda
+qoladi. Yangi lidda, hali mijoz kartasi yo'q bo'lsa ham, lenta ishlaydi.
+Buni brauzerda test qilib isbotladim: lentaga yozib, ✏️ da sana qo'yib,
+lid «Bugun qo'ng'iroq» ro'yxatida chiqishini tekshirdim.
+
+**Yo'qolgan bitta narsa, ochiq aytaman:** to'rtta belgi — 📞 qo'ng'iroq,
+💬 xabar, 🤝 uchrashuv, 📝 eslatma. Endi hammasi oddiy eslatma bo'lib
+yoziladi. Agar bu belgilar kerak bo'lsa — lentaning o'z qutisiga qo'shib
+beraman, bir gapingiz. Ataylab qilmadim: oxirgi ikki round aynan bu kartani
+qisqartirishga ketdi.
+
+**Tarix (История) endi eng pastda.** U «yon panel»ning oxirida turardi — bu
+kompyuterda to'g'ri, lekin telefonda yon panel yuqorida bo'lgani uchun tarix
+o'rtada, lentadan **oldin** chiqib qolardi. Endi telefonda eng oxirgi,
+kompyuterda esa avvalgi joyida.
+
+O'lchandi: lenta **752 → 628 piksel**ga ko'tarildi, tarix eng pastda (865).
+Kompyuterda hech narsa siljimadi.
+
+Bazada hech narsa o'zgarmadi, migratsiya yo'q.
+
+
 ## Varonka kartasi: etaplar yig'ildi, ma'lumot ixchamlandi — 2026-08-08
 
 **4. Etaplar endi bitta qatorda.** Sizda 8 ta etap bor, va ularning har biri

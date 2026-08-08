@@ -137,6 +137,7 @@ export function FeedNoteBox({
           aria-label={labels.save}
           className="btn-primary !min-h-9 ml-auto shrink-0 rounded-xl px-4"
           disabled={pending || uploading}
+          data-testid="feed-note-save"
         >
           {pending ? labels.saving : labels.save}
         </button>

@@ -91,16 +91,22 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   expect(geo.fold, 'the closed fold is one row').toBeLessThanOrEqual(80);
   expect(geo.feed, 'the facts start on the first screen').toBeLessThan(300);
 
-  // A call, with the next one booked for today so it lands on the call list.
-  // The contact log lives folded in the card's rail now (owner, 2026-07-28)
-  // — open it the way a finger would.
-  await page.getByTestId('activity-panel').click();
-  const today = new Date().toISOString().slice(0, 10);
-  const activity = page.locator('form').filter({ has: page.getByTestId('save-activity') });
-  await page.getByTestId('activity-note').fill('narx aytdim');
-  await activity.locator('input[name="nextActionAt"]').fill(today);
-  await page.getByTestId('save-activity').click();
+  // What was said goes on the LENTA, and the next call is booked in the ✏️
+  // form. The «Записать контакт» panel that used to do both is gone (owner,
+  // 2026-08-08: «crm kartada shu zapis yozish kerak emas, lenta bor»), and
+  // this is the claim that removal rests on — both halves still work, from
+  // the two places that remain.
+  await expect(page.getByTestId('activity-panel')).toHaveCount(0);
+  await page.getByTestId('feed-note-body').fill('narx aytdim');
+  await page.getByTestId('feed-note-save').click();
   await expect(page.getByText('narx aytdim')).toBeVisible();
+
+  const today = new Date().toISOString().slice(0, 10);
+  await page.getByTestId('lead-edit-panel').click();
+  const edit = page.locator('form').filter({ has: page.getByTestId('save-lead') });
+  await edit.locator('input[name="nextActionAt"]').fill(today);
+  await page.getByTestId('save-lead').click();
+  await expect(edit.getByText('✅')).toBeVisible();
 
   // Booked for today, so it is on the call list.
   await page.goto('/crm/today');

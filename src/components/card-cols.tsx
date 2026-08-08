@@ -12,16 +12,34 @@ import type { ReactNode } from 'react';
  * the numbers a person opens a card to check — and the lenta follows,
  * which is the order these cards already had.
  *
- * DOM order is rail-then-main; the desktop grid swaps them with `order`,
- * so both shapes come from ONE markup and no window measuring (#kanban).
+ * `tail` is the third slot, added when the owner pointed at the audit
+ * history: «istoriya tarix mobileda eng pastda bo'lishi kerak, hozir
+ * o'rtada bo'lib qolgan». It was at the BOTTOM OF THE RAIL, which on a
+ * phone means the middle of the page — after the facts and the forms, but
+ * still above the lenta a card is opened to read. Anything in `tail` comes
+ * last on a phone and keeps its place under the rail on a desktop.
+ *
+ * DOM order is rail → main → tail, so the phone needs no rules at all; the
+ * desktop grid places all three explicitly. ONE markup, no duplicated node
+ * for a locator to find twice (#509) and no window measuring.
  */
-export function CardCols({ main, rail }: { main: ReactNode; rail: ReactNode }) {
+export function CardCols({
+  main,
+  rail,
+  tail,
+}: {
+  main: ReactNode;
+  rail: ReactNode;
+  /** Rendered last on a phone; under the rail on a desktop. */
+  tail?: ReactNode;
+}) {
   return (
     <div className="space-y-4 md:grid md:grid-cols-[minmax(0,1fr)_24rem] md:items-start md:gap-4 md:space-y-0">
-      <div className="space-y-4 md:order-2 md:sticky md:top-16 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto md:pr-0.5">
+      <div className="space-y-4 md:col-start-2 md:row-start-1 md:sticky md:top-16 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto md:pr-0.5">
         {rail}
       </div>
-      <div className="min-w-0 space-y-4 md:order-1">{main}</div>
+      <div className="min-w-0 space-y-4 md:col-start-1 md:row-start-1">{main}</div>
+      {tail && <div className="space-y-4 md:col-start-2 md:row-start-2">{tail}</div>}
     </div>
   );
 }
