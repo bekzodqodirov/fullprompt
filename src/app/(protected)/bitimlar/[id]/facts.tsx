@@ -1,4 +1,5 @@
 import { getTranslations } from 'next-intl/server';
+import { CardFacts } from '@/components/card-fact';
 
 /**
  * What a deal is CALLED, and what somebody wrote down about it.
@@ -11,23 +12,27 @@ import { getTranslations } from 'next-intl/server';
  * below is where a deal is corrected. The quote was never offered here even
  * when the facts were editable — the amount, the sizes and the currency are
  * the number a client was told, and `updateDeal` stamps who said it and when.
+ *
+ * The row itself is shared with the lead card (round 76, `CardFacts`): it was
+ * the same component written out twice, so the fix for a long value rescaling
+ * the page had been made in neither. The TITLE stays here even though the
+ * header prints it too — the header falls back to the client's code when a
+ * deal has no title, so it is not the unconditional duplicate the lead's name
+ * was, and dropping it is the owner's call rather than mine.
  */
 export async function DealFacts({ title, note }: { title: string; note: string }) {
   const t = await getTranslations('deals');
+  const tc = await getTranslations('common');
 
   return (
     <div className="card" data-testid="deal-facts">
-      <Fact label={t('dealTitle')} value={title} testId="fact-deal-title" />
-      <Fact label={t('note')} value={note} testId="fact-deal-note" />
-    </div>
-  );
-}
-
-function Fact({ label, value, testId }: { label: string; value: string; testId: string }) {
-  return (
-    <div className="border-b border-line/70 py-1.5 last:border-b-0" data-testid={testId}>
-      <div className="text-2xs font-bold uppercase tracking-[0.06em] text-ink-500">{label}</div>
-      <p className={`whitespace-pre-wrap text-sm ${value ? '' : 'text-ink-400'}`}>{value || '—'}</p>
+      <CardFacts
+        missingLabel={tc('notFilled')}
+        facts={[
+          { label: t('dealTitle'), value: title, testId: 'fact-deal-title' },
+          { label: t('note'), value: note, testId: 'fact-deal-note' },
+        ]}
+      />
     </div>
   );
 }

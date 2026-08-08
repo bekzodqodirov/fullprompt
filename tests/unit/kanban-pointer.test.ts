@@ -23,6 +23,11 @@ import ru from '../../messages/ru.json';
  */
 
 const SOURCE = readFileSync('src/components/kanban.tsx', 'utf8');
+// The refusal map moved out of the board in round 76 so the LEAD CARD's stage
+// fold could share it without dragging DragBoard into that bundle. The rule
+// did not move — this file still pins it, just one door further along.
+const ERRORS = readFileSync('src/components/move-errors.ts', 'utf8');
+const CARD_MOVER = readFileSync('src/app/(protected)/crm/leads/[id]/stage-mover.tsx', 'utf8');
 
 describe('a card is dragged with a mouse, and with nothing else', () => {
   it('refuses any pointer that is not a mouse, in both handlers', () => {
@@ -81,7 +86,7 @@ describe('a refused move says which refusal it was', () => {
       'reason_required',
       'lost_reason_required',
     ]) {
-      expect(SOURCE, `useMoveErrors has no entry for ${code}`).toContain(`${code}:`);
+      expect(ERRORS, `useMoveErrors has no entry for ${code}`).toContain(`${code}:`);
     }
   });
 
@@ -89,8 +94,16 @@ describe('a refused move says which refusal it was', () => {
     expect(SOURCE).toContain('labels.moveErrors[error] ?? labels.error');
   });
 
+  it('includes the lead CARD, which sat outside this contract until round 76', () => {
+    // The card's stage buttons awaited moveLeadAction and dropped the result,
+    // so a refused move there was a tap that did nothing — for every round
+    // since #512 gave the two boards their words.
+    expect(CARD_MOVER).toContain('useMoveErrors');
+    expect(CARD_MOVER).toContain('moveErrors[res.error]');
+  });
+
   it('resolves each sentence from a literal key, so the bundle test can see it', () => {
-    const keys = [...SOURCE.matchAll(/t\('(moveErrors\.[a-zA-Z]+)'\)/g)].map((m) => m[1]!);
+    const keys = [...ERRORS.matchAll(/t\('(moveErrors\.[a-zA-Z]+)'\)/g)].map((m) => m[1]!);
     expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) {
       const leaf = key.split('.')[1]!;

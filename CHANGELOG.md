@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Varonka kartasi: etaplar yig'ildi, ma'lumot ixchamlandi — 2026-08-08
+
+**4. Etaplar endi bitta qatorda.** Sizda 8 ta etap bor, va ularning har biri
+alohida tugma edi — telefonda **4 qator, 170 piksel**, kartaning eng tepasida.
+Endi bitta qator: hozirgi etap (rangli yorliq), yonida **keyingi etapga
+o'tkazish tugmasi**, o'ng chetda «⋯». Boshqa etapga sakrash kerak bo'lsa «⋯»
+bosiladi. Ya'ni har kuni ishlatiladigan ikki narsa — qayerda turgani va
+keyingi qadam — ko'rinib turadi, faqat kamdan-kam kerak bo'ladigani yig'ilgan.
+O'lchandi: **170 → 74 piksel**.
+
+**5. Ma'lumot bloki ixchamlandi.** Uch yo'l bilan:
+- **To'ldirilmagan maydonlar** endi har biri alohida qator emas — pastda bitta
+  qatorda nomlanadi: «To'ldirilmagan: manba, keyingi aloqa». Lekin **telefon
+  raqami har doim ko'rinadi**, bo'sh bo'lsa ham — qo'ng'iroq qilib
+  bo'lmaydigan lid aynan e'tibor berish kerak bo'lgan narsa.
+- **Ikkita qator olib tashlandi**, chunki ular ekranda allaqachon bor edi:
+  lidning **nomi** — sahifaning sarlavhasi, **etapi** — yuqoridagi rangli
+  yorliq.
+- Qatorlar orasidagi bo'shliq biroz kichraytirildi.
+
+O'lchandi (telefonda): ma'lumot bloki **474 → 191 piksel** (bo'sh lidda),
+to'la lidda 341. Eng muhimi — **lenta (yozishmalar) 1131-pikseldan
+752-pikselga ko'tarildi**, ya'ni endi birinchi ekranda.
+
+**Yo'lda topilgan va tuzatilgan uchta narsa:**
+- **Telefon raqamiga bosganda qo'ng'iroq boshlanadi.** Tizimda hech qayerda
+  bunday emas edi.
+- **Izohga uzun havola yozilsa karta ekrandan chiqib ketardi** (433 piksel),
+  va telefon brauzeri butun sahifani kichraytirib yuborardi — barcha tugmalar
+  joyidan siljirdi. Tuzatildi.
+- **Ruxsat berilmagan etap o'zgarishi hech narsa demasdi** — tugma bosilardi
+  va hech nima bo'lmasdi. Endi sababi yoziladi.
+
+Bazada hech narsa o'zgarmadi, migratsiya yo'q.
+
+
 ## Bosh ekran: bitim bilan CRM yonma-yon, mijozlar «Boshqaruv»dan chiqdi — 2026-08-08
 
 Uchta so'rovingiz bo'yicha.

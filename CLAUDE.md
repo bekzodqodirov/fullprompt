@@ -1800,6 +1800,38 @@ green with its subject reverted (`toContain('openDoors')` matched the
 surviving import line) and was re-anchored on the assignment. No
 migration. 1084 unit + 140 e2e on a fresh db in CI's order.
 
+Round 76 — the owner's items 4-5, the funnel card (#570-573). Designed, then
+judged by four adversarial lenses; **two of the three v1 decisions were
+overturned by measurement**. (4) «etaplar colapse bolsin»: `StageMover` is a
+`<details>` whose SUMMARY carries the current-stage chip AND the forward-move
+button, so only the jump to a non-adjacent stage folds — the comment that
+stood there arguing against a fold is answered, not overruled, and was
+rewritten. `preventDefault` on the next button (its click would bubble to the
+summary and open the fold under the finger); `key={currentId}` because the
+move revalidates SOFTLY and React would keep the reader's `open`. 170 → **74
+px**. (5) «umumiy inof … ihcham»: the obvious one-line label/value row was
+**measured and REFUSED** — `ru` is default and «СЛЕДУЮЩИЙ КОНТАКТ» wants 165
+of 294 px, saving ~24 px and truncating. Height came from removing rows:
+`fact-name` (= the h1) and `fact-stage` (= the summary chip) deleted, empty
+facts collapsed onto one «To'ldirilmagan: …» line with `fact-phone` exempt
+and always printed, `py-1.5` → `py-1`. Facts **474 → 191 px** sparse / 341
+filled; lenta **1131 → 752 / 902**, tab bar at 741. `Fact` was the same
+component in both cards character-for-character → `components/card-fact.tsx`,
+which is how the round's real defect got fixed once: no `overflow-wrap`, so a
+token with NO break opportunity (a hyphen-less URL in a note) took the card to
+**433 px** and mobile Chrome rescaled the page (#400). **The first red-proof
+for that stayed GREEN** — the fixture was a hyphenated e-mail, which browsers
+break by themselves; a red proof that will not go red is evidence about the
+FIXTURE. Also: the card's stage buttons had awaited `moveLeadAction`'s coded
+refusal and dropped it since #512 (now `useMoveErrors`, lifted to
+`components/move-errors.ts` so the card does not import `DragBoard`). Stated,
+not fixed: `updateLead` writes `stage_id` with no kind check and never clears
+`lost_reason` — a second, unguarded stage door. **Correction recorded (#573):
+`gsr_dev`'s 383 LEADS are e2e leftovers** (12 name shapes × 27 rows, GS161/
+GS252 absent), not his data; the 1,692 clients are real. 1087 unit + 140 e2e
+on a fresh db in CI's order; m5 flaked once on ECONNRESET, green alone and on
+the full re-run.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 

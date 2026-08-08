@@ -37,7 +37,8 @@
       "reasonRequired": "Нужно указать причину",
       "stageNotFound": "Этап удалён — обновите страницу"
     },
-    "moreActions": "Ещё действия"
+    "moreActions": "Ещё действия",
+    "notFilled": "Не заполнено"
   },
   "login": {
     "title": "Вход в систему",
