@@ -1717,7 +1717,7 @@ shipping: a clipped two-line placeholder (min-h-14) and `border-brand-400`
 — a token that does not exist — refused by the tokens tripwire. Same
 testids everywhere; m8 untouched. 1077 + 149 green fresh-db CI order.
 
-Round 74 — the capacity round (#558-564, owner: «50 ta user, kuniga 50
+Round 74 — the capacity round (#559-565, owner: «50 ta user, kuniga 50
 qabul, 100 lead, 100 hisoblatish bardosh beradimi va qancha VPS kerak»).
 Answered by BUILDING the year on a clone of his data (36,383 leads,
 22,401 receipts, 64,920 boxes, 236,765 audit rows = **192 MB**) and
@@ -1749,6 +1749,19 @@ isNull branch stripped → orphan test red). New `capacity-74` integration
 file (7 tests). NOT verifiable here and left for CI/production: the load
 numbers came from this 4-vCPU container, so absolute rps on his VPS will
 differ — the RATIO (single process = the ceiling) is what transfers.
+
+Round 74 — the owner deleted tap-to-edit (#551, «contactlarni ustiga bosib
+o'zgartirish featureni qayerda qoygan bo'lsang hammasini olib tashla»):
+`InlineField`, `patchLead`/`patchDeal`/`patchClient` and their three
+actions are GONE (deleted, not unreferenced — round 70's rule), the lead
+and deal facts render read-only server components, the CLIENT facts block
+went entirely (its ✏️ form is always open and printed the same three
+fields twice), and the `revision` keys went with them (they existed only
+because two writers shared those inputs). New source-shape tripwire
+`tests/unit/card-facts.test.ts` — red-proven against the pre-removal tree;
+m9ze/m9zf and both inline integration files deleted with their subject.
+Values still READ on the cards: round 61's real find was that a phone
+number could not be read without opening an editor.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

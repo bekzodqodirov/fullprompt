@@ -139,12 +139,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
           <>
       {/* The title was only in the heading and the note was nowhere — both
           meant unfolding the ✏️ form to READ them. */}
-      <DealFacts
-        dealId={row.deal.id}
-        editable
-        title={row.deal.title ?? ''}
-        note={row.deal.note ?? ''}
-      />
+      <DealFacts title={row.deal.title ?? ''} note={row.deal.note ?? ''} />
 
       {/* ---- the two columns the whole feature exists for ---- */}
       <section className="card space-y-3" data-testid="deal-compare">
@@ -226,12 +221,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
       </section>
 
       <Panel title={`✏️ ${tc('edit')}`} testId="deal-edit-panel">
-        {/* The title and the note have two writers now, and this form's
-            inputs are uncontrolled — so those two are keyed on the row's own
-            timestamp and get fresh defaults after an inline save. The FORM is
-            not keyed: remounting it would throw away its own ✅. */}
         <DealForm
-          revision={String(row.deal.updatedAt)}
           dealId={row.deal.id}
           stages={stages}
           managers={managers}

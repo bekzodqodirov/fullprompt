@@ -28,7 +28,6 @@ import { customValues } from '@/modules/platform/fields/actions';
 import { FieldError } from '@/modules/platform/fields/types';
 import { attachClient, groupClients, personFromClient } from '@/modules/wms/crm/people';
 import { announceMentions } from '@/modules/wms/crm/internal-chat';
-import { patchLead } from '@/modules/wms/crm/inline';
 
 export interface CrmFormState {
   ok?: boolean;
@@ -175,23 +174,6 @@ export async function quickCreateLeadAction(input: {
   return { ok: true, id: created!.id, name: created!.name };
 }
 
-/**
- * One field of a lead, from the card's facts rail.
- *
- * Returns a verdict instead of throwing: it is called from a click handler,
- * where a throw reaches no error boundary and a redirect would reject the
- * promise (#497). The screen renders the code in the reader's own language.
- */
-export async function patchLeadFieldAction(
-  id: string,
-  field: string,
-  value: string,
-): Promise<{ ok: boolean; error?: string }> {
-  const state = await run('crm.leads', (ctx) => patchLead(id, field, value, ctx));
-  if (!state.ok) return { ok: false, error: state.error ?? 'failed' };
-  revalidatePath(`/crm/leads/${id}`);
-  return { ok: true };
-}
 
 export async function updateLeadAction(
   id: string,
