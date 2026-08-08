@@ -125,7 +125,7 @@ pnpm build && pnpm e2e  # 44 e2e
 the truck-marker follow-up; PR #5 = the calls round; PR #7 = the calls
 day-one fixes). This branch (`claude/gsr-logistics-wms-phase1-o8h4en`)
 carries rounds 70-71 on PR #6.
-1080 unit/integration + 149 e2e, verified in CI's order on a fresh database
+1087 unit/integration + 149 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
 Latest migration: **0063** (`call_lead`; 0062 `lead_quote`, 0061 `call_dedup_by_user`, 0060
@@ -1716,6 +1716,39 @@ row); the KIND dropdown became four peer-checked chips. Caught before
 shipping: a clipped two-line placeholder (min-h-14) and `border-brand-400`
 — a token that does not exist — refused by the tokens tripwire. Same
 testids everywhere; m8 untouched. 1077 + 149 green fresh-db CI order.
+
+Round 74 — the capacity round (#558-564, owner: «50 ta user, kuniga 50
+qabul, 100 lead, 100 hisoblatish bardosh beradimi va qancha VPS kerak»).
+Answered by BUILDING the year on a clone of his data (36,383 leads,
+22,401 receipts, 64,920 boxes, 236,765 audit rows = **192 MB**) and
+running it. Verdict: every app query under 30 ms (p50 0.2 ms), screens
+100-500 ms, and the ceiling is the APP not the database — Next standalone
+is ONE Node process, measured 130 % CPU / 742 MB RSS, saturating at ~15
+rps against a realistic peak of ~1.5. **VPS answer: 4 vCPU / 8 GB /
+400 GB**; DEPLOY.md's «2 GB tavsiya» is wrong and was corrected. What
+broke at volume was truthfulness, and four screens were fixed: the funnel
+(one 300 cap across all columns took them left-to-right, so columns 2-N
+rendered EMPTY at 36k leads — now `row_number() OVER (PARTITION BY
+stage_id) <= OPEN_PER_STAGE` plus `openLeadCounts`, the twin of
+closedLeadCounts, so the header tells the truth the slice cannot; deal
+board same); `listConversations` (a correlated count INSIDE a DISTINCT ON
+ran once per MESSAGE — 902 ms at 140k, now 167 ms via round 45's grouped
+shape, sorted+sliced BEFORE the follow-up queries, and a ceiling at all);
+`/stock` (Σ and row count reduced the 500-row fetch, so at ~700 steady
+rows the totals shrank silently and the 10k-cap XLSX disagreed — now one
+grouped aggregate over the same predicate, cap stated and raised, the
+screen says when the table is a slice); unowned leads (7 % of his real
+data, on NO seller's board — «Meniki» now means mine OR unclaimed, counts
+followed free through leadBoardWhere per #513). Disk: pgdata+miniodata+
+backups share a volume, so a full disk stops postgres AND kills the
+backup path the same minute — a `${MINIO_PATH:-…}` compose flag was
+written then REVERTED (a bind mount to a missing path refuses to start,
+and that bites on deploy morning, #472); the operator procedure went to
+DEPLOY.md instead. Red-proofs ×2 (per-stage cap stripped → 2 red;
+isNull branch stripped → orphan test red). New `capacity-74` integration
+file (7 tests). NOT verifiable here and left for CI/production: the load
+numbers came from this 4-vCPU container, so absolute rps on his VPS will
+differ — the RATIO (single process = the ceiling) is what transfers.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

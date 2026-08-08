@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## Sig'im tekshiruvi: 50 xodim / kuniga 100 lid ga tayyorlash — 2026-08-07
+
+Siz so'radingiz: 50 ta xodim, kuniga 50 prixod, 100 lid, 100 hisoblatish —
+bardosh beradimi va qanday VPS kerak. Taxmin qilmadim: bazangizdan nusxa
+olib, ustiga **bir yillik yuklamani** yasadim (36 383 lid, 22 401 prixod,
+64 920 quti, 236 765 tarix qatori) va o'lchadim.
+
+**Javob: baza va server bemalol ko'taradi** — barcha so'rovlar 30 ms dan
+tez, ekranlar 100–500 ms. Lekin uchta ekran **noto'g'ri ma'lumot ko'rsata
+boshlar ekan**, va ular tuzatildi:
+
+**1. Voronka.** Doska hammasi bo'lib 300 ta lid olar va ularni birinchi
+ustundan boshlab to'ldirar edi — natijada 36 000 lidda «Yangi 300», qolgan
+ustunlar esa «0 / Bo'sh», ichida 4 500 tadan lid turganda. Endi **har bir
+ustun o'z 40 tasini oladi**, sarlavhada esa haqiqiy son turadi. Sizga bu
+eng zarur edi: «Hammasi» ko'rinishida 278 ta ochiq lid bilan chegaraga 22
+ta qolgan edi. Bitimlar doskasi ham xuddi shunday tuzatildi.
+
+**2. Suhbatlar va har sahifadagi 💬.** Bitta so'rov har bir XABAR uchun
+alohida hisoblab chiqar edi — 140 000 xabarda **902 ms**. Endi **167 ms,
+5,4 barobar tez**. Ro'yxat eng yangi 200 ta suhbatni ko'rsatadi, eskisi
+qidiruv orqali topiladi.
+
+**3. Sklad jadvali.** «Jami kub / kg» yuqorida faqat yuklangan 500 qatorni
+qo'shar edi — kuniga 50 prixodda bu chegara darhol oshib ketadi va jami
+kamayib ko'rinardi (Excel esa boshqa raqam berardi). Endi jami **butun
+sklad bo'yicha** hisoblanadi, jadval qisqargan bo'lsa buni ekranning o'zi
+aytadi.
+
+**4. Egasiz lidlar.** Hech kimga biriktirilmagan lid (hozir 27 tasi)
+birorta sotuvchining ekranida ko'rinmasdi. Endi «Meniki» — meniki **va**
+hali hech kim olmaganlari.
+
+**5. Disk.** Baza, fotolar va zaxira nusxalar bitta diskda. Disk to'lса
+baza to'xtaydi va o'sha daqiqada zaxira ham ololmaysiz. Fotolarni ikkinchi
+diskka ko'chirish tartibi DEPLOY.md ga yozildi — **qo'ng'iroq ilovasini
+tarqatishdan oldin** qiling.
+
+**VPS tavsiyasi: 4 yadro / 8 GB / 400 GB.** Hozirgi hujjatdagi «2 GB
+yetadi» kam — faqat ilovaning o'zi 750 MB oladi.
+
+Bazaga o'zgarish yo'q. Tekshiruv: 1087 test + 149 brauzer testi yashil.
+
 ## Tepadagi qator ketdi, kartada summa·kub·kg, izoh oynalari yangi — 2026-08-06 (kech)
 
 Uchala gapingiz bo'yicha:

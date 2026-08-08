@@ -544,7 +544,8 @@
     "empty": "Nothing matches the filter",
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "Next →",
-    "pagePrev": "← Previous"
+    "pagePrev": "← Previous",
+    "shownOfTotal": "Table shows {shown} of {total} rows"
   },
   "search": {
     "placeholder": "Search: GS777, GS777-A, YW26-000123, product…",

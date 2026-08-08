@@ -871,6 +871,7 @@ export async function deferPayment(
 export async function activeDeferrals(clientId: string): Promise<
   { dealId: string; code: string; reason: string; pendingBoxes: number; untilDate: string | null }[]
 > {
+
   const rows = await db
     .select({
       id: deals.id,
@@ -1076,12 +1077,17 @@ export function dealBoardWhere(filters: DealBoardFilters) {
   return conditions;
 }
 
+/** See `OPEN_PER_STAGE` on the funnel — the same rule, the same reason. */
+export const OPEN_DEALS_PER_STAGE = 40;
+
 export async function listDeals(
   filters: DealBoardFilters & {
     openOnly?: boolean;
     /** Only the finished ones — what the board shows a recent slice of. */
     closedOnly?: boolean;
     limit?: number;
+    /** Open cards per COLUMN. Ignored unless `openOnly`. */
+    perStage?: number;
   },
 ): Promise<DealRow[]> {
   // In SQL, never over the fetched array — the closed slice is capped at 20.
@@ -1100,6 +1106,34 @@ export async function listDeals(
     } else if (terminal.length > 0) {
       conditions.push(notInArray(deals.stageId, terminal.map((s) => s.id)));
     }
+  }
+
+  // The open board is capped PER COLUMN (round 74, the funnel's fix applied
+  // to its twin): one LIMIT of 300 sorted by date showed the newest 7 % at a
+  // year's volume and understated every open column's header by the same
+  // 93 %. One extra query names the surviving ids; the typed select below is
+  // untouched, so nothing downstream had to change.
+  if (filters.openOnly) {
+    const perStage = filters.perStage ?? OPEN_DEALS_PER_STAGE;
+    const ranked = await db.execute<{ id: string }>(sql`
+      SELECT id FROM (
+        SELECT ${deals.id} AS id,
+               row_number() OVER (
+                 PARTITION BY ${deals.stageId} ORDER BY ${deals.createdAt} DESC
+               ) AS rn
+        FROM ${deals}
+        INNER JOIN ${clients} ON ${clients.id} = ${deals.clientId}
+        ${conditions.length ? sql`WHERE ${and(...conditions)}` : sql``}
+      ) ranked
+      WHERE rn <= ${perStage}
+    `);
+    if (ranked.length === 0) return [];
+    conditions.push(
+      inArray(
+        deals.id,
+        ranked.map((row) => row.id),
+      ),
+    );
   }
 
   const rows = await db
@@ -1140,6 +1174,27 @@ export async function listDeals(
  * The board draws a recent slice of them and the header keeps the true total,
  * so «Sotuv 143» stays 143 even when twelve cards are on screen.
  */
+/**
+ * How many OPEN deals each column really holds (round 74).
+ *
+ * The twin of `closedDealCounts`, and what lets the open half be capped per
+ * column without lying: the cards are a slice, the header is the truth.
+ */
+export async function openDealCounts(
+  filters: DealBoardFilters,
+): Promise<Record<string, number>> {
+  const where = [eq(dealStages.kind, 'open'), ...dealBoardWhere(filters)];
+  const rows = await db
+    .select({ stageId: deals.stageId, n: sql<number>`count(*)` })
+    .from(deals)
+    .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+    // The predicate reaches the client code, so the join comes with it.
+    .innerJoin(clients, eq(deals.clientId, clients.id))
+    .where(and(...where))
+    .groupBy(deals.stageId);
+  return Object.fromEntries(rows.map((row) => [row.stageId, Number(row.n)]));
+}
+
 export async function closedDealCounts(
   filters: DealBoardFilters,
 ): Promise<Record<string, number>> {

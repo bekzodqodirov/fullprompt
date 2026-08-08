@@ -544,7 +544,8 @@
     "empty": "Filtr bo‘yicha yuk topilmadi",
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "Keyingi →",
-    "pagePrev": "← Oldingi"
+    "pagePrev": "← Oldingi",
+    "shownOfTotal": "Jadvalda {shown} / {total} qator"
   },
   "search": {
     "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",
