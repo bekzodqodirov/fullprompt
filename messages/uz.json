@@ -37,7 +37,8 @@
       "reasonRequired": "Sababini yozish kerak",
       "stageNotFound": "Etap o'chirilgan — sahifani yangilang"
     },
-    "moreActions": "Boshqa amallar"
+    "moreActions": "Boshqa amallar",
+    "notFilled": "To‘ldirilmagan"
   },
   "login": {
     "title": "Tizimga kirish",

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
 import type { Selection as SelectionStore } from '@/components/list/selection';
 import { stageClass } from '@/app/(protected)/crm/stage-color';
@@ -57,33 +56,6 @@ export interface KanbanLabels {
   moveErrors: Record<string, string>;
   /** Footer of a column that is holding cards back: «+N · show all». */
   showAll: string;
-}
-
-/**
- * The refusal codes a move can come back with, in words.
- *
- * A literal map, exported and built by the caller, because the key handed to
- * `t()` here would be built at runtime and `tests/unit/i18n-keys.test.ts` says
- * outright that it cannot see those. `useMoveErrors` is the one place the six
- * codes are written down, so the two boards cannot drift — and both services
- * are included, since `moveLead` spells it `reason_required` and `moveDeal`
- * spells the same refusal `lost_reason_required`.
- *
- * This replaces a deliberate earlier decision (the bulk bar's «the service's
- * code is deliberately NOT rendered»), and that comment has been updated: a
- * bulk press answers with counts and the cards are still on screen to try
- * again, while a single dragged card jumps back with nothing said.
- */
-export function useMoveErrors(): Record<string, string> {
-  const t = useTranslations('common');
-  return {
-    forbidden: t('moveErrors.forbidden'),
-    unauthenticated: t('moveErrors.forbidden'),
-    not_found: t('moveErrors.notFound'),
-    stage_not_found: t('moveErrors.stageNotFound'),
-    reason_required: t('moveErrors.reasonRequired'),
-    lost_reason_required: t('moveErrors.reasonRequired'),
-  };
 }
 
 /** Below this the gesture is a scroll or a tap, not a drag. */

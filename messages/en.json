@@ -37,7 +37,8 @@
       "reasonRequired": "A reason is required",
       "stageNotFound": "Stage deleted — reload the page"
     },
-    "moreActions": "More actions"
+    "moreActions": "More actions",
+    "notFilled": "Not filled"
   },
   "login": {
     "title": "Sign in",

@@ -31,9 +31,17 @@ const FACTS = [
   'src/app/(protected)/bitimlar/[id]/facts.tsx',
 ];
 
+/**
+ * …and the ROW they both render, extracted in round 76. It was the same
+ * component written out twice, so the fence has to cover the shared file too:
+ * an editor creeping back into `CardFacts` would reach both cards at once and
+ * neither entry above would see it.
+ */
+const READ_ONLY = [...FACTS, 'src/components/card-fact.tsx'];
+
 describe('card facts are read-only', () => {
   it('no facts block imports an inline editor or a patch action', () => {
-    for (const file of FACTS) {
+    for (const file of READ_ONLY) {
       const source = read(file);
       expect(source, file).not.toContain('InlineField');
       expect(source, file).not.toMatch(/patch\w*FieldAction/);
@@ -77,7 +85,33 @@ describe('card facts are read-only', () => {
     expect(clientCard).toContain('<ClientForm');
     expect(clientCard).not.toContain('ClientFacts');
     // The lead card's phone is the one this began with: a salesperson reading
-    // it should never have to open an editor (round 61's whole point).
+    // it should never have to open an editor (round 61's whole point). Round
+    // 76 made it `always`, so it is printed even when it is empty — a lead
+    // nobody can ring is the thing to notice — and dialable.
     expect(read(FACTS[0]!)).toContain('fact-phone');
+    expect(read(FACTS[0]!)).toMatch(/testId: 'fact-phone', always: true, tel: true/);
+  });
+
+  it('prints no row the screen already carries (round 76)', () => {
+    // The height that made the owner ask came partly from rows repeating
+    // something a hundred pixels above: the lead's NAME is the page's h1, and
+    // its STAGE is the chip on the fold — which is drawn whether the fold is
+    // open or shut, so removing the row hides nothing.
+    const lead = read(FACTS[0]!);
+    expect(lead).not.toContain('fact-name');
+    expect(lead).not.toContain('fact-stage');
+    expect(read('src/app/(protected)/crm/leads/[id]/page.tsx')).toContain('<h1');
+    expect(read('src/app/(protected)/crm/leads/[id]/stage-mover.tsx')).toContain('stage-current');
+  });
+
+  it('names the empty facts instead of giving each one a row', () => {
+    // Nine rows where five said «—» taught the eye to skip the block. One
+    // line names them; only the phone is exempt.
+    const shared = read('src/components/card-fact.tsx');
+    expect(shared).toContain('facts-missing');
+    expect(shared).toContain('fact.value || fact.always');
+    // #400: one unbroken 60-character token in a note pushed the card past
+    // 360 px, and mobile Chrome rescales the WHOLE page when that happens.
+    expect(shared).toContain('[overflow-wrap:anywhere]');
   });
 });

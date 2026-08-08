@@ -37,7 +37,8 @@
       "reasonRequired": "需要填写原因",
       "stageNotFound": "阶段已删除 — 请刷新页面"
     },
-    "moreActions": "更多操作"
+    "moreActions": "更多操作",
+    "notFilled": "未填写"
   },
   "login": {
     "title": "登录系统",

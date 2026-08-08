@@ -1,4 +1,5 @@
 import { getTranslations } from 'next-intl/server';
+import { CardFacts } from '@/components/card-fact';
 
 /**
  * What a lead IS, readable without opening anything.
@@ -15,17 +16,25 @@ import { getTranslations } from 'next-intl/server';
  * up applying to all of them: a card is read far more often than it is
  * corrected, and a value that becomes an editor under a thumb is a value
  * nobody can read safely.
+ *
+ * Round 76 took the height out of it (owner: «umumiy inoflari mobileda
+ * boshqacharoq ihcham dizayda bolsin» — nine rows, 474 px, above everything
+ * the card is opened for). Two rows are gone because the screen already
+ * carries them: the NAME is the page's h1 a hundred pixels above, and the
+ * STAGE is the chip on the fold at the top, which is printed whether that
+ * fold is open or shut. The rest is `CardFacts`: an empty fact costs one
+ * word on a shared line instead of a row of its own — except the phone,
+ * which is printed even when it is missing, because a lead nobody can ring
+ * is the thing a seller has to notice.
  */
 export async function LeadFacts({
   values,
-  stageName,
   sourceName,
   ownerName,
   quote,
   nextAction,
 }: {
-  values: { name: string; phone: string; company: string; note: string };
-  stageName: string;
+  values: { phone: string; company: string; note: string };
   sourceName: string;
   ownerName: string;
   /** «1 500 USD · 12 m³ · 3 400 kg» — empty until hisoblatish has answered. */
@@ -33,28 +42,22 @@ export async function LeadFacts({
   nextAction: string;
 }) {
   const t = await getTranslations('crm');
+  const tc = await getTranslations('common');
 
   return (
     <div className="card" data-testid="lead-facts">
-      <Fact label={t('name')} value={values.name} testId="fact-name" />
-      <Fact label={t('phone')} value={values.phone} testId="fact-phone" />
-      <Fact label={t('company')} value={values.company} testId="fact-company" />
-      <Fact label={t('note')} value={values.note} testId="fact-note" />
-      <Fact label={t('quotedAmount')} value={quote} testId="fact-quote" />
-      <Fact label={t('stage')} value={stageName} testId="fact-stage" />
-      <Fact label={t('source')} value={sourceName} testId="fact-source" />
-      <Fact label={t('owner')} value={ownerName} testId="fact-owner" />
-      <Fact label={t('nextAction')} value={nextAction} testId="fact-next" />
-    </div>
-  );
-}
-
-function Fact({ label, value, testId }: { label: string; value: string; testId: string }) {
-  return (
-    <div className="border-b border-line/70 py-1.5 last:border-b-0" data-testid={testId}>
-      <div className="text-2xs font-bold uppercase tracking-[0.06em] text-ink-500">{label}</div>
-      {/* pre-wrap: a note written on several lines is read on several lines. */}
-      <p className={`whitespace-pre-wrap text-sm ${value ? '' : 'text-ink-400'}`}>{value || '—'}</p>
+      <CardFacts
+        missingLabel={tc('notFilled')}
+        facts={[
+          { label: t('phone'), value: values.phone, testId: 'fact-phone', always: true, tel: true },
+          { label: t('company'), value: values.company, testId: 'fact-company' },
+          { label: t('note'), value: values.note, testId: 'fact-note' },
+          { label: t('quotedAmount'), value: quote, testId: 'fact-quote' },
+          { label: t('source'), value: sourceName, testId: 'fact-source' },
+          { label: t('owner'), value: ownerName, testId: 'fact-owner' },
+          { label: t('nextAction'), value: nextAction, testId: 'fact-next' },
+        ]}
+      />
     </div>
   );
 }
