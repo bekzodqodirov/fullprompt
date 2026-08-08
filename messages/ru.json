@@ -37,7 +37,8 @@
       "reasonRequired": "Нужно указать причину",
       "stageNotFound": "Этап удалён — обновите страницу"
     },
-    "moreActions": "Ещё действия"
+    "moreActions": "Ещё действия",
+    "notFilled": "Не заполнено"
   },
   "login": {
     "title": "Вход в систему",
@@ -544,7 +545,8 @@
     "empty": "По фильтру ничего не найдено",
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "Дальше →",
-    "pagePrev": "← Назад"
+    "pagePrev": "← Назад",
+    "shownOfTotal": "В таблице {shown} из {total} строк"
   },
   "search": {
     "placeholder": "Поиск: GS777, GS777-A, YW26-000123, товар…",

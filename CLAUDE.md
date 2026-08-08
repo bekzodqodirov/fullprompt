@@ -119,13 +119,13 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-06
+## State — 2026-08-08
 
 `main` is the trunk (PR #1 = rounds 1-55; PR #3 = rounds 56-69; PR #4 =
 the truck-marker follow-up; PR #5 = the calls round; PR #7 = the calls
 day-one fixes). This branch (`claude/gsr-logistics-wms-phase1-o8h4en`)
 carries rounds 70-71 on PR #6.
-1080 unit/integration + 149 e2e, verified in CI's order on a fresh database
+1087 unit/integration + 149 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
 Latest migration: **0063** (`call_lead`; 0062 `lead_quote`, 0061 `call_dedup_by_user`, 0060
@@ -1717,7 +1717,40 @@ shipping: a clipped two-line placeholder (min-h-14) and `border-brand-400`
 — a token that does not exist — refused by the tokens tripwire. Same
 testids everywhere; m8 untouched. 1077 + 149 green fresh-db CI order.
 
-Round 74 — the owner deleted tap-to-edit (#551, «contactlarni ustiga bosib
+Round 74 — the capacity round (#559-565, owner: «50 ta user, kuniga 50
+qabul, 100 lead, 100 hisoblatish bardosh beradimi va qancha VPS kerak»).
+Answered by BUILDING the year on a clone of his data (36,383 leads,
+22,401 receipts, 64,920 boxes, 236,765 audit rows = **192 MB**) and
+running it. Verdict: every app query under 30 ms (p50 0.2 ms), screens
+100-500 ms, and the ceiling is the APP not the database — Next standalone
+is ONE Node process, measured 130 % CPU / 742 MB RSS, saturating at ~15
+rps against a realistic peak of ~1.5. **VPS answer: 4 vCPU / 8 GB /
+400 GB**; DEPLOY.md's «2 GB tavsiya» is wrong and was corrected. What
+broke at volume was truthfulness, and four screens were fixed: the funnel
+(one 300 cap across all columns took them left-to-right, so columns 2-N
+rendered EMPTY at 36k leads — now `row_number() OVER (PARTITION BY
+stage_id) <= OPEN_PER_STAGE` plus `openLeadCounts`, the twin of
+closedLeadCounts, so the header tells the truth the slice cannot; deal
+board same); `listConversations` (a correlated count INSIDE a DISTINCT ON
+ran once per MESSAGE — 902 ms at 140k, now 167 ms via round 45's grouped
+shape, sorted+sliced BEFORE the follow-up queries, and a ceiling at all);
+`/stock` (Σ and row count reduced the 500-row fetch, so at ~700 steady
+rows the totals shrank silently and the 10k-cap XLSX disagreed — now one
+grouped aggregate over the same predicate, cap stated and raised, the
+screen says when the table is a slice); unowned leads (7 % of his real
+data, on NO seller's board — «Meniki» now means mine OR unclaimed, counts
+followed free through leadBoardWhere per #513). Disk: pgdata+miniodata+
+backups share a volume, so a full disk stops postgres AND kills the
+backup path the same minute — a `${MINIO_PATH:-…}` compose flag was
+written then REVERTED (a bind mount to a missing path refuses to start,
+and that bites on deploy morning, #472); the operator procedure went to
+DEPLOY.md instead. Red-proofs ×2 (per-stage cap stripped → 2 red;
+isNull branch stripped → orphan test red). New `capacity-74` integration
+file (7 tests). NOT verifiable here and left for CI/production: the load
+numbers came from this 4-vCPU container, so absolute rps on his VPS will
+differ — the RATIO (single process = the ceiling) is what transfers.
+
+Round 74b — the owner deleted tap-to-edit (#558, «contactlarni ustiga bosib
 o'zgartirish featureni qayerda qoygan bo'lsang hammasini olib tashla»):
 `InlineField`, `patchLead`/`patchDeal`/`patchClient` and their three
 actions are GONE (deleted, not unreferenced — round 70's rule), the lead
@@ -1730,8 +1763,77 @@ m9ze/m9zf and both inline integration files deleted with their subject.
 Values still READ on the cards: round 61's real find was that a phone
 number could not be read without opening an editor.
 
-Round 75 — the owner's four Telegram items (#552-554). **Audio in**
-(#552): `tgMediaPlan` extends the photo planner to voice notes and audio
+Round 75 — the owner's three home-screen items (#566-569). Designed, then
+judged by four adversarial lenses BEFORE any code, and **two of the three
+v1 decisions were killed by them** — worth knowing, because both looked
+obviously right. (1) «bitim bn crmni ketma ket qoy»: they were ALREADY
+neighbours in `sectionSales` and still rendered diagonally, because the
+tiles are `grid-cols-2 sm:grid-cols-3` and the two-column row broke
+between them — **phone-only**, already correct at three columns. Pair
+anchored at index 0 (invariant to the per-viewer filter, NOT to
+insertion); sales flow rows reordered to match; `tests/unit/
+home-tiles.test.ts` + a browser half in m9p that measures real boxes,
+because the unit fence has to name the column counts. (2) «bugun
+qongiroq kerak emas»: the NAV entry only — `buildHomeFlow` returns null
+for super_admin, so he has never seen `sales-flow-hero`, and a Tile
+carries no number while a FlowRow does, so that row is the only place
+the waiting-call count exists. Route, permissions, funnel ⋯ door and CRM
+section links untouched; STATED to him that the sellers keep it. The
+«fold follow-ups into the /bugun strip» compensation was designed and
+CUT — `followUps()` has no LIMIT and `/bugun` calls it unscoped for
+view_all holders, so mirroring it onto the most-opened screen is #432's
+shape. (3) «adminstrativnoedagi klientini glavniga chiqaz»: he had asked
+once before and the TILE was moved — the SCREEN still said Administration
+in three places, the third of which nobody had noticed (`isActive`
+prefix-matched, lighting «Boshqaruv» beside «Mijozlar»). One list,
+`NOT_ADMIN_SECTION` in `components/ui/nav-active.ts`, answers all three;
+`canClients` in the admin layout deliberately UNTOUCHED. **The route move
+to `/mijozlar` was designed and REFUSED**: links.ts bakes `/admin/clients`
+into already-delivered Telegram messages so the redirect would be
+permanent, ~11 `revalidatePath` targets fail silently when they miss, and
+the phone has no address bar (`manifest.ts` standalone). Found on the way
+(#569): taking the book off the hub left the logist ONE door, so `/admin`
+walks him through it and «← Boshqaruv» became a link to the page he is
+standing on — `admin/hub-doors.ts` now holds the doors once and both the
+page and the layout ask it. Six red-proofs; the SEVENTH attempt stayed
+green with its subject reverted (`toContain('openDoors')` matched the
+surviving import line) and was re-anchored on the assignment. No
+migration. 1084 unit + 140 e2e on a fresh db in CI's order.
+
+Round 76 — the owner's items 4-5, the funnel card (#570-573). Designed, then
+judged by four adversarial lenses; **two of the three v1 decisions were
+overturned by measurement**. (4) «etaplar colapse bolsin»: `StageMover` is a
+`<details>` whose SUMMARY carries the current-stage chip AND the forward-move
+button, so only the jump to a non-adjacent stage folds — the comment that
+stood there arguing against a fold is answered, not overruled, and was
+rewritten. `preventDefault` on the next button (its click would bubble to the
+summary and open the fold under the finger); `key={currentId}` because the
+move revalidates SOFTLY and React would keep the reader's `open`. 170 → **74
+px**. (5) «umumiy inof … ihcham»: the obvious one-line label/value row was
+**measured and REFUSED** — `ru` is default and «СЛЕДУЮЩИЙ КОНТАКТ» wants 165
+of 294 px, saving ~24 px and truncating. Height came from removing rows:
+`fact-name` (= the h1) and `fact-stage` (= the summary chip) deleted, empty
+facts collapsed onto one «To'ldirilmagan: …» line with `fact-phone` exempt
+and always printed, `py-1.5` → `py-1`. Facts **474 → 191 px** sparse / 341
+filled; lenta **1131 → 752 / 902**, tab bar at 741. `Fact` was the same
+component in both cards character-for-character → `components/card-fact.tsx`,
+which is how the round's real defect got fixed once: no `overflow-wrap`, so a
+token with NO break opportunity (a hyphen-less URL in a note) took the card to
+**433 px** and mobile Chrome rescaled the page (#400). **The first red-proof
+for that stayed GREEN** — the fixture was a hyphenated e-mail, which browsers
+break by themselves; a red proof that will not go red is evidence about the
+FIXTURE. Also: the card's stage buttons had awaited `moveLeadAction`'s coded
+refusal and dropped it since #512 (now `useMoveErrors`, lifted to
+`components/move-errors.ts` so the card does not import `DragBoard`). Stated,
+not fixed: `updateLead` writes `stage_id` with no kind check and never clears
+`lost_reason` — a second, unguarded stage door. **Correction recorded (#573):
+`gsr_dev`'s 383 LEADS are e2e leftovers** (12 name shapes × 27 rows, GS161/
+GS252 absent), not his data; the 1,692 clients are real. 1087 unit + 140 e2e
+on a fresh db in CI's order; m5 flaked once on ECONNRESET, green alone and on
+the full re-run.
+
+Round 77 — the owner's four Telegram items (#574-576). **Audio in**
+(#574): `tgMediaPlan` extends the photo planner to voice notes and audio
 files — pure, structural, size read before any I/O, unknown size refused;
 three traps have tests (gramjs's `document.size` is a **big-integer
 OBJECT** and `Number()` on it is NaN, so `NaN <= cap` would have refused
@@ -1743,7 +1845,7 @@ would have drawn an Ogg file as an `<img>`. Player in the bubble
 (`preload="none"`), carried to the dock; `tg-import --media` uses the same
 planner. Authz unchanged by design: the tg_message branch decides on the
 message's owner, so the fence is the conversation, not the file type.
-**Queue honesty** (#553, «ocheretda turibti» twice, and the queue was
+**Queue honesty** (#575, «ocheretda turibti» twice, and the queue was
 right both times): ONE `OutboxBubble` computes `outboxLabel` for all three
 surfaces (the card panel had its own two-way check and could never say
 «stuck»; the dock showed no pending rows at all, so send made the words
@@ -1754,7 +1856,7 @@ ONLY record a text reply has — is now held and retried like `markSent`'s.
 TRIPWIRE LESSON: `toContain('AutoRefresh')` passes on a file that imports
 and never renders it (#494 from the other side) — the assertion is
 `<AutoRefresh` and only then did the strip go red. **Folded managers +
-per-manager reading** (#554): `ThreadManagers`, native `<details>`, closed
+per-manager reading** (#576): `ThreadManagers`, native `<details>`, closed
 by default and self-opening when a filter is on; the card pages carry
 `?hodim=` and filter in place; selecting is offered only under
 `viewer.all` because that is the only case `conversationFor` honours.

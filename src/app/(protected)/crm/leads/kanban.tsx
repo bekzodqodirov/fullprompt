@@ -1,7 +1,8 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { KanbanBoard as Board, type KanbanStage, useMoveErrors } from '@/components/kanban';
+import { KanbanBoard as Board, type KanbanStage } from '@/components/kanban';
+import { useMoveErrors } from '@/components/move-errors';
 import { BulkBar } from '@/components/list/bulk-bar';
 import { useSelection } from '@/components/list/selection';
 import { bulkAssignLeadsAction, bulkMoveLeadsAction, moveLeadAction } from '../actions';

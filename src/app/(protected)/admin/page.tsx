@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { Icon, type IconName } from '@/components/ui/icon';
+import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
+import { openDoors } from './hub-doors';
 
 /**
  * The administration HUB (owner, 2026-07-28): "administrativniyga kirsa
@@ -14,43 +15,19 @@ import { PageHeader } from '@/components/ui/page';
  * sections lived in a strip that scrolls off a phone screen — a person who
  * did not already know they were there never learnt it. One page of big
  * buttons, each shown only to somebody allowed through its door.
+ *
+ * The doors themselves live in `hub-doors.ts`, because the section layout
+ * has to ask the same question to decide whether a way back here is a real
+ * link or a link to the page you are already on.
  */
 export default async function AdminHubPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  const t = await getTranslations('nav');
   const tHome = await getTranslations('home');
-  const tCosting = await getTranslations('costing');
-  const tPartners = await getTranslations('partners');
-  const tRoles = await getTranslations('roles');
-  const tFields = await getTranslations('fields');
-  const tPlans = await getTranslations('plans');
-  const tSettings = await getTranslations('settings');
-  const tAutomation = await getTranslations('automation');
 
-  const has = (code: string) => actor.permissions.has(code);
-  const all: { href: string; label: string; icon: IconName; show: boolean }[] = [
-    { href: '/admin/warehouses', label: t('warehouses'), icon: 'crate', show: has('admin.warehouses.manage') },
-    { href: '/admin/users', label: t('users'), icon: 'user', show: has('admin.warehouses.manage') },
-    { href: '/admin/clients', label: t('clients'), icon: 'users', show: has('clients.manage') },
-    { href: '/admin/settings', label: t('settings'), icon: 'settings', show: has('admin.settings.manage') || has('admin.warehouses.manage') },
-    { href: '/admin/roles', label: tRoles('title'), icon: 'shield', show: has('platform.roles.manage') },
-    { href: '/admin/fields', label: tFields('title'), icon: 'clipboard', show: has('admin.dictionaries.manage') },
-    // Phase 8's «Свои списки» editor is off the hub — the owner looked at the
-    // feature and said «kerak emas, olib tashla». /admin/entities and /o still
-    // answer, and `custom_entities` / `custom_records` are untouched, so
-    // whatever anyone put in there is still there if he changes his mind.
-    { href: '/admin/cost-types', label: tCosting('typesTitle'), icon: 'wallet', show: has('admin.dictionaries.manage') },
-    { href: '/admin/partner-types', label: tPartners('typesTitle'), icon: 'briefcase', show: has('admin.dictionaries.manage') },
-    { href: '/admin/fx', label: tCosting('fxTitle'), icon: 'exchange', show: has('costs.fx.manage') },
-    { href: '/admin/trucks', label: tPlans('trucksTitle'), icon: 'truck', show: has('plans.manage') },
-    { href: '/admin/driver-app', label: tSettings('driverApp'), icon: 'truck', show: has('admin.settings.manage') },
-    { href: '/admin/calls-app', label: tSettings('callsApp'), icon: 'phone', show: has('admin.settings.manage') },
-    { href: '/admin/rules', label: tAutomation('title'), icon: 'target', show: has('admin.settings.manage') },
-    { href: '/admin/audit', label: t('audit'), icon: 'clipboard', show: has('admin.audit.browse') },
-    { href: '/admin/notifications', label: t('notifications'), icon: 'alert', show: has('admin.audit.browse') },
-  ];
-  const tiles = all.filter((tile) => tile.show);
+  // One namespace-less translator: a door carries its FULL key.
+  const t = await getTranslations();
+  const tiles = openDoors((code) => actor.permissions.has(code));
 
   // Somebody with exactly one door gets walked through it instead of being
   // shown a hub of one button.
@@ -72,7 +49,7 @@ export default async function AdminHubPage() {
               <Icon name={tile.icon} className="h-5 w-5" />
             </span>
             <span className="text-sm font-bold leading-tight [overflow-wrap:anywhere]">
-              {tile.label}
+              {t(tile.label as 'nav.audit')}
             </span>
           </Link>
         ))}

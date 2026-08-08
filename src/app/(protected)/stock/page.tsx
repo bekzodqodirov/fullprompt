@@ -26,6 +26,18 @@ import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
 
+/**
+ * How many lot×warehouse rows the TABLE loads (round 74).
+ *
+ * The sort keys people use here — Σ kg, m³, density — are derived per row, so
+ * the sort has to happen after the fetch and the fetch needs a ceiling (round
+ * 68 rejected SQL paging for exactly this reason). Raised from 500 because at
+ * 50 receipts a day the steady state is ~700 concurrent rows; the Σ header and
+ * the row count no longer come from this array, so exceeding it costs
+ * completeness of the TABLE and nothing else — and the screen says so.
+ */
+const STOCK_FETCH_CAP = 2000;
+
 /** Stock browser v1 (spec §10 screen 6): WH → client → lot → box. */
 export default async function StockPage({
   searchParams,
@@ -199,7 +211,42 @@ export default async function StockPage({
       clients.clientCode,
     )
     .orderBy(asc(warehouses.code), asc(receipts.receivedAt))
-    .limit(500);
+    .limit(STOCK_FETCH_CAP);
+
+  // The Σ header and the row count describe THE WAREHOUSE, not the fetch
+  // (round 74). They used to reduce the fetched array, so once the cap bit —
+  // measured at ~700 concurrent lot×warehouse rows for 50 receipts a day
+  // against a cap of 500 — the totals silently shrank to whatever had been
+  // loaded, and the XLSX (a 10,000 cap) printed a different number for the
+  // same filter. One grouped aggregate, the SAME predicate, so the two can
+  // never disagree again.
+  const [totals] = await db
+    .select({
+      lines: sql<number>`count(*)`,
+      boxes: sql<number>`coalesce(sum(g.in_stock), 0)`,
+      kg: sql<number>`coalesce(sum(g.in_stock * g.weight_per_box), 0)`,
+      m3: sql<number>`coalesce(sum(g.in_stock * g.volume_per_box), 0)`,
+    })
+    .from(
+      db
+        .select({
+          inStock: sql<number>`count(*)`.as('in_stock'),
+          weightPerBox: sql<number>`${receiptLots.totalWeightKg} / ${receiptLots.boxCount}`.as(
+            'weight_per_box',
+          ),
+          volumePerBox: sql<number>`${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}`.as(
+            'volume_per_box',
+          ),
+        })
+        .from(boxes)
+        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+        .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
+        .leftJoin(clients, eq(receipts.clientId, clients.id))
+        .where(and(...scopeFilter))
+        .groupBy(receiptLots.id, receipts.id, warehouses.code)
+        .as('g'),
+    );
 
   const allWhs = await db
     .select({ id: warehouses.id, code: warehouses.code })
@@ -230,13 +277,12 @@ export default async function StockPage({
     };
   });
   const sorted = sortRows(rows, params.sort, params.dir, SORTABLE);
-  // The RENDER is paged, the fetch is not: the sort above runs over the whole
-  // fetched set, so ordering stays truthful across pages, and the Σ header and
-  // the export keep describing everything the filter matched. What the page
-  // cap buys is the phone: ~450 rows with a photo each are ~10,000 DOM nodes,
-  // and a warehouse phone spent 3+ seconds of main-thread time laying them
-  // out — the «qotish». 120 rows are one screenful of scrolling and render in
-  // a fraction of that.
+  // The RENDER is paged and the FETCH is capped; the Σ header and the row
+  // count come from the aggregate above, so they describe everything the
+  // filter matched whether or not the cap bit. What the page cap buys is the
+  // phone: ~450 rows with a photo each are ~10,000 DOM nodes, and a warehouse
+  // phone spent 3+ seconds of main-thread time laying them out — the
+  // «qotish». 120 rows are one screenful of scrolling.
   const PAGE_ROWS = 120;
   const page = Math.max(1, Math.floor(Number(params.page)) || 1);
   const pageRows = sorted.slice((page - 1) * PAGE_ROWS, page * PAGE_ROWS);
@@ -264,9 +310,13 @@ export default async function StockPage({
   if (params.sort) exportQuery.set('sort', params.sort);
   if (params.dir) exportQuery.set('dir', params.dir);
 
-  const sumBoxes = rows.reduce((acc, r) => acc + r.boxes, 0);
-  const sumKg = rows.reduce((acc, r) => acc + r.stockKg, 0);
-  const sumM3 = rows.reduce((acc, r) => acc + r.stockM3, 0);
+  const sumBoxes = Number(totals?.boxes ?? 0);
+  const sumKg = Number(totals?.kg ?? 0);
+  const sumM3 = Number(totals?.m3 ?? 0);
+  const totalLines = Number(totals?.lines ?? rows.length);
+  // Said out loud rather than left to be discovered: beyond the cap the TABLE
+  // is a slice, while the Σ above it and the export are not.
+  const truncated = totalLines > rows.length;
 
   return (
     <div className="space-y-3">
@@ -328,6 +378,13 @@ export default async function StockPage({
 
       <p className="text-sm font-semibold text-ink-700">
         Σ {sumBoxes} {t('boxes')} · {Math.round(sumKg)} kg · {Math.round(sumM3 * 100) / 100} m³
+        {/* The Σ is the warehouse; beyond the fetch cap the TABLE is not.
+            Said out loud — a silently short table reads as missing cargo. */}
+        {truncated && (
+          <span className="ml-2 font-normal text-warn" data-testid="stock-truncated">
+            ⚠ {t('shownOfTotal', { shown: rows.length, total: totalLines })}
+          </span>
+        )}
       </p>
 
       <div className="overflow-x-auto rounded-xl border border-line bg-surface-raised">
@@ -442,7 +499,7 @@ export default async function StockPage({
             {t('pageOf', {
               from: (page - 1) * PAGE_ROWS + 1,
               to: Math.min(page * PAGE_ROWS, sorted.length),
-              total: sorted.length,
+              total: totalLines,
             })}
           </span>
           <span className="flex gap-2">

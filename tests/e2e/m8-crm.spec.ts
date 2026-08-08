@@ -51,9 +51,45 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await page.goto('/crm/leads/new');
   await page.getByTestId('lead-name').fill(`Sinov mijoz ${runId}`);
   await page.locator('input[name="phone"]').fill(`+99890${runId}`);
+  // A value with NO BREAK OPPORTUNITY in it, on purpose. Measured, because
+  // the first attempt at this fixture was wrong: a hyphenated e-mail wraps
+  // by itself (360 px either way) and proved nothing. A token with no hyphen
+  // and no space measures 462 without `[overflow-wrap:anywhere]` and 360 with
+  // it — and when a row is wider than the screen, mobile Chrome zooms the
+  // WHOLE page out and every tap target moves with it (#400).
+  await page.locator('input[name="company"]')
+    .fill(`osiyotekstilsavdoinvestkompaniyasitoshkentfiliali${runId}`);
   await page.getByLabel(`Shahar ${runId}`).selectOption('Andijon');
   await page.getByTestId('save-lead').click();
   await expect(page).toHaveURL(/\/crm\/leads\/[0-9a-f-]+$/);
+
+  // Round 76 (owner: «varonka kartasini ichidagi etaplar colapse bolsin» +
+  // «umumiy inoflari mobileda … ihcham»). The stage strip was one button per
+  // stage — four rows and 170 px at eight stages — and the facts were nine
+  // rows including five «—», so the lenta, which is what a card is opened
+  // for, began at y=1131 on a screen whose tab bar starts at 741.
+  //
+  // Closed-on-load is asserted BEFORE anything opens it: that is the whole
+  // difference between a fold and buttons that quietly stopped rendering.
+  await expect(page.getByTestId('stage-won')).toBeHidden();
+  await expect(page.getByTestId('stage-current')).toBeVisible();
+  const geo = await page.evaluate(() => {
+    const fold = document.querySelector('[data-testid="stage-fold"]')!.closest('details')!;
+    return {
+      width: document.documentElement.scrollWidth,
+      fold: Math.round(fold.getBoundingClientRect().height),
+      feed: Math.round(
+        document.querySelector('[data-testid="lead-facts"]')!.getBoundingClientRect().top,
+      ),
+    };
+  });
+  // The literal 360, never window.innerWidth: when mobile Chrome rescales the
+  // page BOTH numbers grow together and the assertion passes anyway (#400).
+  expect(geo.width, 'the lead card grew sideways').toBeLessThanOrEqual(360);
+  expect(geo.fold, 'the closed fold is one row and still a 44 px tap target')
+    .toBeGreaterThanOrEqual(44);
+  expect(geo.fold, 'the closed fold is one row').toBeLessThanOrEqual(80);
+  expect(geo.feed, 'the facts start on the first screen').toBeLessThan(300);
 
   // A call, with the next one booked for today so it lands on the call list.
   // The contact log lives folded in the card's rail now (owner, 2026-07-28)
@@ -140,6 +176,9 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await page.getByTestId('stage-tab').first().click();
   await page.getByTestId('funnel-mobile').getByText(`Sinov mijoz ${runId}`).click();
   await expect(page.getByLabel(`Shahar ${runId}`)).toHaveValue('Andijon');
+  // «Sotuv» is not the next stage, so it lives behind the fold — open it the
+  // way a finger would.
+  await page.getByTestId('stage-fold').click();
   await page.getByTestId('stage-won').click();
   await expect(page.getByTestId('convert-lead')).toBeVisible();
   await page.getByTestId('convert-lead').click();

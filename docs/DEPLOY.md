@@ -93,3 +93,45 @@ Yuqoridagi `restart` yetadi. 2026-08-03 dan boshlab tinglovchi bu holatni
 
 Agar VPS'ga SSH kalitni Claude Code muhitiga (environment secrets) qo'shib
 bersangiz, qolgan hamma qadamlarni Claude o'zi bajaradi va tekshiradi.
+
+## Disk — fotolarni alohida diskka ko'chirish
+
+Round 74 da o'lchandi: **baza yiliga ~0,5 GB**, **fotolar va qo'ng'iroq
+yozuvlari yiliga o'nlab GB** o'sadi. Hozir ikkovi ham bitta diskda. Disk
+to'lса — postgres to'xtaydi **va** ayni o'sha daqiqada zaxira ololmay
+qolasiz. Shuning uchun **qo'ng'iroq ilovasini tarqatishdan oldin** fotolarni
+ikkinchi diskka ko'chiring.
+
+Bu bir martalik ish, konteynerlar to'xtatilgan holda (flag emas: mavjud
+bo'lmagan yo'lga bind qilingan volume konteynerni umuman ishga tushirmaydi,
+va bu production'da yangilash kuni chiqadi — #472).
+
+```bash
+cd gsr
+# 0) zaxira, har doimgidek
+docker compose exec -T postgres pg_dump -U gsr -d gsr -Fc --no-owner > pre-move-$(date +%F).dump
+ls -lh pre-move-*.dump          # 0 bo'lmasin
+
+# 1) to'xtating
+docker compose down             # -v EMAS, hech qachon
+
+# 2) yangi diskni ulang va nusxa oling (misol: /mnt/data)
+mkdir -p /mnt/data/minio
+rsync -a /var/lib/docker/volumes/gsr_miniodata/_data/ /mnt/data/minio/
+du -sh /var/lib/docker/volumes/gsr_miniodata/_data /mnt/data/minio   # hajmlar teng bo'lsin
+
+# 3) eski volume'ni chetga suring, yangisini o'sha nom bilan yarating
+docker volume rename gsr_miniodata gsr_miniodata_old
+docker volume create --driver local \
+  --opt type=none --opt o=bind --opt device=/mnt/data/minio gsr_miniodata
+
+# 4) ko'taring va TEKSHIRING: bir nechta prixod fotosi ochilsin
+docker compose up -d
+```
+
+Fotolar joyida ekaniga ishonch hosil qilganingizdan **keyin** eskisini
+o'chiring: `docker volume rm gsr_miniodata_old`. Shoshilmang — u sizning
+yagona nusxangiz.
+
+Eslatma: `gsr_` prefiksi compose loyihasining nomidan keladi. O'zingizdagi
+nomni `docker volume ls` bilan tekshiring.

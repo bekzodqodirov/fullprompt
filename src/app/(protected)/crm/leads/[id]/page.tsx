@@ -123,12 +123,10 @@ export default async function LeadPage({
           an editor and reading it out of an input. */}
       <LeadFacts
         values={{
-          name: lead.name,
           phone: lead.phone ?? '',
           company: lead.company ?? '',
           note: lead.note ?? '',
         }}
-        stageName={stages.find((stage) => stage.id === lead.stageId)?.name ?? ''}
         sourceName={sources.find((row) => row.id === lead.sourceId)?.name ?? ''}
         ownerName={managers.find((row) => row.id === lead.ownerId)?.fullName ?? ''}
         quote={

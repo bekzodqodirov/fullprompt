@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Ovozli xabarlar, navbat holati va hodimlar ro'yxati — 2026-08-07 (kech)
+## Ovozli xabarlar, navbat holati va hodimlar ro'yxati — 2026-08-08 (kech)
 
 To'rttala gapingiz bo'yicha:
 
@@ -23,7 +23,7 @@ kartochkasida ham hodimni tanlaysiz va suhbat shu yerda filtrlanadi
 (super admin / admin / VED); qolganlar o'z suhbatini ko'radi, ismlar
 hammaga ko'rinadi.
 
-**4. «Navbatda» yozuvi endi rost gapiradi.** Muammo navbatда emas edi —
+**4. «Navbatda» yozuvi endi rost gapiradi.** Muammo navbatda emas edi —
 uchta ekran uch xil javob berardi: «Suhbatlar» to'g'ri holatni
 ko'rsatardi, kartochkadagi panel esa faqat «navbatda»/«yuborilmadi»
 bilardi va o'zini yangilamas edi, dokda esa navbatdagi xabar umuman
@@ -34,6 +34,123 @@ chatni ham. Yana: xabar ketib, bizning bazaga yozilmay qolsa — endi
 yo'qolmaydi, qayta yoziladi.
 
 Bazaga o'zgarish yo'q (migratsiya kerak emas).
+
+## Varonka kartasi: etaplar yig'ildi, ma'lumot ixchamlandi — 2026-08-08
+
+**4. Etaplar endi bitta qatorda.** Sizda 8 ta etap bor, va ularning har biri
+alohida tugma edi — telefonda **4 qator, 170 piksel**, kartaning eng tepasida.
+Endi bitta qator: hozirgi etap (rangli yorliq), yonida **keyingi etapga
+o'tkazish tugmasi**, o'ng chetda «⋯». Boshqa etapga sakrash kerak bo'lsa «⋯»
+bosiladi. Ya'ni har kuni ishlatiladigan ikki narsa — qayerda turgani va
+keyingi qadam — ko'rinib turadi, faqat kamdan-kam kerak bo'ladigani yig'ilgan.
+O'lchandi: **170 → 74 piksel**.
+
+**5. Ma'lumot bloki ixchamlandi.** Uch yo'l bilan:
+- **To'ldirilmagan maydonlar** endi har biri alohida qator emas — pastda bitta
+  qatorda nomlanadi: «To'ldirilmagan: manba, keyingi aloqa». Lekin **telefon
+  raqami har doim ko'rinadi**, bo'sh bo'lsa ham — qo'ng'iroq qilib
+  bo'lmaydigan lid aynan e'tibor berish kerak bo'lgan narsa.
+- **Ikkita qator olib tashlandi**, chunki ular ekranda allaqachon bor edi:
+  lidning **nomi** — sahifaning sarlavhasi, **etapi** — yuqoridagi rangli
+  yorliq.
+- Qatorlar orasidagi bo'shliq biroz kichraytirildi.
+
+O'lchandi (telefonda): ma'lumot bloki **474 → 191 piksel** (bo'sh lidda),
+to'la lidda 341. Eng muhimi — **lenta (yozishmalar) 1131-pikseldan
+752-pikselga ko'tarildi**, ya'ni endi birinchi ekranda.
+
+**Yo'lda topilgan va tuzatilgan uchta narsa:**
+- **Telefon raqamiga bosganda qo'ng'iroq boshlanadi.** Tizimda hech qayerda
+  bunday emas edi.
+- **Izohga uzun havola yozilsa karta ekrandan chiqib ketardi** (433 piksel),
+  va telefon brauzeri butun sahifani kichraytirib yuborardi — barcha tugmalar
+  joyidan siljirdi. Tuzatildi.
+- **Ruxsat berilmagan etap o'zgarishi hech narsa demasdi** — tugma bosilardi
+  va hech nima bo'lmasdi. Endi sababi yoziladi.
+
+Bazada hech narsa o'zgarmadi, migratsiya yo'q.
+
+
+## Bosh ekran: bitim bilan CRM yonma-yon, mijozlar «Boshqaruv»dan chiqdi — 2026-08-08
+
+Uchta so'rovingiz bo'yicha.
+
+**1. «Bitim» bilan «CRM» endi bir qatorda.** Ular ro'yxatda allaqachon
+yonma-yon edi, lekin telefonda ekran ikki ustunli bo'lgani uchun qator
+aynan ularning orasidan uzilib ketardi: «Mijozlar | Bitimlar», keyingi
+qatorda «CRM | Suhbatlar». Kompyuterda esa muammo umuman yo'q edi —
+uchta ustunda ular baribir yonma-yon turardi. **Ya'ni bu faqat telefondagi
+kamchilik edi.** Endi «Sotuv» bo'limi «Bitimlar»dan boshlanadi, keyin
+«CRM» — ikkalasi ham telefonda, ham kompyuterda yonma-yon. Sotuvchining
+o'z bosh ekranida ham xuddi shu tartib.
+
+**2. «Bugun qo'ng'iroq» sizning ekraningizdan va menyudan olindi.**
+Ekran o'chirilmadi — sotuvchilarda u o'z bosh ekranida **raqami bilan**
+turaveradi (masalan «Bugun qo'ng'iroq · 7»), chunki butun tizimda
+kutayotgan qo'ng'iroqlar sonini aytadigan yagona joy o'sha qator. Sizning
+ekraningizdagi katakcha esa hech qanday raqam ko'rsatmasdi — shunchaki
+eshik edi, shuning uchun uni olib tashladim. «Mening kunim» ekranida
+o'sha qo'ng'iroqlar ro'yxati hammaga ko'rinaveradi. **Agar sotuvchilardan
+ham butunlay olib tashlashni istasangiz — ayting, bir daqiqalik ish.**
+
+**3. Mijozlar ro'yxati endi «Boshqaruv» ekrani emas.** Siz buni ilgari
+ham so'ragan edingiz va o'shanda katakchasi «Sotuv»ga ko'chirilgandi —
+lekin ekranning o'zi baribir o'zini «Boshqaruv» deb tanishtirardi.
+Uchta joyda: ochganda tepasida «← Boshqaruv» yozuvi turardi, «Boshqaruv»
+ichida yana bir katakchasi bor edi, va menyuda «Mijozlar» bilan birga
+«Boshqaruv» ham yonib turardi. Uchalasi ham tuzatildi.
+
+Yo'lda topildi va tuzatildi: mijozlar «Boshqaruv»dan chiqqach logistda
+u yerda bitta eshik qoldi, ya'ni «Boshqaruv» tugmasi uni to'g'ridan-to'g'ri
+mashinalar ro'yxatiga olib kiradi — va o'sha sahifadagi «← Boshqaruv»
+o'zini o'ziga qaytaradigan tugmaga aylanardi. Endi bunday hollarda u
+tugma chizilmaydi.
+
+Bazada hech narsa o'zgarmadi, migratsiya yo'q.
+
+
+## Sig'im tekshiruvi: 50 xodim / kuniga 100 lid ga tayyorlash — 2026-08-07
+
+Siz so'radingiz: 50 ta xodim, kuniga 50 prixod, 100 lid, 100 hisoblatish —
+bardosh beradimi va qanday VPS kerak. Taxmin qilmadim: bazangizdan nusxa
+olib, ustiga **bir yillik yuklamani** yasadim (36 383 lid, 22 401 prixod,
+64 920 quti, 236 765 tarix qatori) va o'lchadim.
+
+**Javob: baza va server bemalol ko'taradi** — barcha so'rovlar 30 ms dan
+tez, ekranlar 100–500 ms. Lekin uchta ekran **noto'g'ri ma'lumot ko'rsata
+boshlar ekan**, va ular tuzatildi:
+
+**1. Voronka.** Doska hammasi bo'lib 300 ta lid olar va ularni birinchi
+ustundan boshlab to'ldirar edi — natijada 36 000 lidda «Yangi 300», qolgan
+ustunlar esa «0 / Bo'sh», ichida 4 500 tadan lid turganda. Endi **har bir
+ustun o'z 40 tasini oladi**, sarlavhada esa haqiqiy son turadi. Sizga bu
+eng zarur edi: «Hammasi» ko'rinishida 278 ta ochiq lid bilan chegaraga 22
+ta qolgan edi. Bitimlar doskasi ham xuddi shunday tuzatildi.
+
+**2. Suhbatlar va har sahifadagi 💬.** Bitta so'rov har bir XABAR uchun
+alohida hisoblab chiqar edi — 140 000 xabarda **902 ms**. Endi **167 ms,
+5,4 barobar tez**. Ro'yxat eng yangi 200 ta suhbatni ko'rsatadi, eskisi
+qidiruv orqali topiladi.
+
+**3. Sklad jadvali.** «Jami kub / kg» yuqorida faqat yuklangan 500 qatorni
+qo'shar edi — kuniga 50 prixodda bu chegara darhol oshib ketadi va jami
+kamayib ko'rinardi (Excel esa boshqa raqam berardi). Endi jami **butun
+sklad bo'yicha** hisoblanadi, jadval qisqargan bo'lsa buni ekranning o'zi
+aytadi.
+
+**4. Egasiz lidlar.** Hech kimga biriktirilmagan lid (hozir 27 tasi)
+birorta sotuvchining ekranida ko'rinmasdi. Endi «Meniki» — meniki **va**
+hali hech kim olmaganlari.
+
+**5. Disk.** Baza, fotolar va zaxira nusxalar bitta diskda. Disk to'lса
+baza to'xtaydi va o'sha daqiqada zaxira ham ololmaysiz. Fotolarni ikkinchi
+diskka ko'chirish tartibi DEPLOY.md ga yozildi — **qo'ng'iroq ilovasini
+tarqatishdan oldin** qiling.
+
+**VPS tavsiyasi: 4 yadro / 8 GB / 400 GB.** Hozirgi hujjatdagi «2 GB
+yetadi» kam — faqat ilovaning o'zi 750 MB oladi.
+
+Bazaga o'zgarish yo'q. Tekshiruv: 1087 test + 149 brauzer testi yashil.
 
 ## Kartochkada qiymat ustiga bosib o'zgartirish olib tashlandi — 2026-08-07
 

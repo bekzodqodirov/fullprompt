@@ -82,6 +82,16 @@ export interface ConversationRow {
 }
 
 /**
+ * How many conversations a screen carries (round 74).
+ *
+ * The list had no ceiling at all. On the supervision view that is every
+ * client the company has ever written to — the screen the owner opens most,
+ * growing for ever. Two hundred is roughly a year of active chats, and the
+ * search box is how an older one is found.
+ */
+export const CONVERSATIONS_ON_SCREEN = 200;
+
+/**
  * Every client THE VIEWER holds a conversation with, most recently active
  * first.
  *
@@ -101,12 +111,22 @@ export interface ConversationRow {
 export async function listConversations(
   viewer: TgViewer,
   search?: string,
+  limit = CONVERSATIONS_ON_SCREEN,
 ): Promise<ConversationRow[]> {
   const q = (search ?? '').trim();
   // One fragment, used identically in the top row and the count, so the two
   // can never disagree about whose messages a row is describing.
   const mine = viewer.all ? sql`true` : sql`m.manager_user_id = ${viewer.id}`;
   const mineN = viewer.all ? sql`true` : sql`n.manager_user_id = ${viewer.id}`;
+  // The newest message per client, and NOTHING per message (round 74).
+  //
+  // The message COUNT used to be a correlated subquery in this projection —
+  // and a subquery in a `DISTINCT ON` list is evaluated before the dedupe,
+  // so it ran once per MESSAGE rather than once per conversation: measured
+  // 916 ms and 417,000 buffers at 100,000 messages, on the screen the owner
+  // opens most and on the 💬 dock reachable from every page. It is now one
+  // grouped query joined in JS — round 45's `accountBalances` fix, same
+  // shape, same reason.
   const rows = await db.execute<{
     client_id: string;
     client_code: string;
@@ -115,7 +135,6 @@ export async function listConversations(
     body: string | null;
     has_media: boolean;
     direction: string;
-    messages: string;
   }>(sql`
     SELECT DISTINCT ON (m.client_id)
       m.client_id,
@@ -124,33 +143,52 @@ export async function listConversations(
       m.sent_at,
       m.body,
       m.has_media,
-      m.direction,
-      (SELECT count(*) FROM tg_messages n
-        WHERE n.client_id = m.client_id AND ${mineN}) AS messages
+      m.direction
     FROM tg_messages m
     JOIN clients c ON c.id = m.client_id
     WHERE ${mine}
     ${q ? sql`AND (c.name ILIKE ${'%' + q + '%'} OR c.client_code ILIKE ${'%' + q + '%'})` : sql``}
     ORDER BY m.client_id, m.sent_at DESC
   `);
+  // Newest first, then the ceiling — BEFORE anything is counted or named.
+  // The two follow-up queries then ask about at most `limit` clients rather
+  // than about every client the company has ever written to, which is the
+  // difference between a fixed cost and one that grows every month.
+  const page = rows
+    .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
+    .slice(0, limit);
+  const ids = page.map((r) => sql`${r.client_id}`);
+
+  // Counts for the clients actually on screen — a list of ids, never the
+  // whole table. An empty page asks nothing.
+  const counts = new Map<string, number>();
+  if (page.length > 0) {
+    const countRows = await db.execute<{ client_id: string; messages: string }>(sql`
+      SELECT n.client_id, count(*) AS messages
+      FROM tg_messages n
+      WHERE ${mineN}
+        AND n.client_id IN (${sql.join(ids, sql`, `)})
+      GROUP BY n.client_id
+    `);
+    for (const row of countRows) counts.set(row.client_id, Number(row.messages));
+  }
 
   // The supervision view names whose account each conversation lives on —
   // the boss reads a company of threads, and a row without its manager's
   // name is exactly the «tushunarsiz» he complained about.
   const managersByClient = new Map<string, string[]>();
-  if (viewer.all && rows.length > 0) {
+  if (viewer.all && page.length > 0) {
     const nameRows = await db.execute<{ client_id: string; names: string[] }>(sql`
       SELECT m.client_id, array_agg(DISTINCT u.full_name) AS names
       FROM tg_messages m
       JOIN users u ON u.id = m.manager_user_id
-      WHERE m.client_id IN (${sql.join(rows.map((r) => sql`${r.client_id}`), sql`, `)})
+      WHERE m.client_id IN (${sql.join(ids, sql`, `)})
       GROUP BY m.client_id
     `);
     for (const row of nameRows) managersByClient.set(row.client_id, row.names);
   }
 
-  return rows
-    .map((r) => ({
+  return page.map((r) => ({
       clientId: r.client_id,
       clientCode: r.client_code,
       clientName: r.client_name,
@@ -161,12 +199,9 @@ export async function listConversations(
       // most useful fact on the screen, so it is computed here rather than
       // left for the eye to work out from a name.
       waitingOnUs: r.direction === 'in',
-      messages: Number(r.messages),
+      messages: counts.get(r.client_id) ?? 0,
       managers: managersByClient.get(r.client_id) ?? [],
-    }))
-    // `DISTINCT ON` must sort by the grouping column first, so the useful
-    // order is applied afterwards — on at most one row per client.
-    .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
+    }));
 }
 
 export interface ConversationMessage {

@@ -37,7 +37,8 @@
       "reasonRequired": "Sababini yozish kerak",
       "stageNotFound": "Etap o'chirilgan — sahifani yangilang"
     },
-    "moreActions": "Boshqa amallar"
+    "moreActions": "Boshqa amallar",
+    "notFilled": "To‘ldirilmagan"
   },
   "login": {
     "title": "Tizimga kirish",
@@ -544,7 +545,8 @@
     "empty": "Filtr bo‘yicha yuk topilmadi",
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "Keyingi →",
-    "pagePrev": "← Oldingi"
+    "pagePrev": "← Oldingi",
+    "shownOfTotal": "Jadvalda {shown} / {total} qator"
   },
   "search": {
     "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",

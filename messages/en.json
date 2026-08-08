@@ -37,7 +37,8 @@
       "reasonRequired": "A reason is required",
       "stageNotFound": "Stage deleted — reload the page"
     },
-    "moreActions": "More actions"
+    "moreActions": "More actions",
+    "notFilled": "Not filled"
   },
   "login": {
     "title": "Sign in",
@@ -544,7 +545,8 @@
     "empty": "Nothing matches the filter",
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "Next →",
-    "pagePrev": "← Previous"
+    "pagePrev": "← Previous",
+    "shownOfTotal": "Table shows {shown} of {total} rows"
   },
   "search": {
     "placeholder": "Search: GS777, GS777-A, YW26-000123, product…",
