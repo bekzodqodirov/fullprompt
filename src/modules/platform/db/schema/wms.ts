@@ -1342,9 +1342,14 @@ export const tgMessages = pgTable(
   'tg_messages',
   {
     id: id(),
-    clientId: uuid('client_id')
-      .notNull()
-      .references(() => clients.id),
+    /**
+     * Nullable since 0064 — a conversation may belong to an open LEAD, which
+     * is how a customer who is not in the book yet stops being invisible.
+     * The CHECK keeps the fence structural: client OR lead, never neither.
+     */
+    clientId: uuid('client_id').references(() => clients.id),
+    /** The open lead this chat opened (0064), until it becomes a client. */
+    leadId: uuid('lead_id').references(() => leads.id),
     /** Whose account it was read from — two managers are two conversations. */
     managerUserId: uuid('manager_user_id')
       .notNull()
@@ -1407,6 +1412,16 @@ export const tgAccounts = pgTable(
      */
     sessionEnc: text('session_enc'),
     status: text('status').notNull().default('active'),
+    /**
+     * Is this number used ONLY for clients (0064)?
+     *
+     * False by default, and that default is the design: on a personal number
+     * an unknown chat becomes a question on a tray, on a work number it
+     * becomes a lead by itself. The safe answer must be the one nobody has
+     * to choose (owner: «shaxsiy raqam ham bor ish raqam ham bor, kalit
+     * qilib ber har kim ozi tanlasin»).
+     */
+    workAccount: boolean('work_account').notNull().default(false),
     /** Heartbeat: a row is not a live connection, and the screen must tell them apart. */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     lastError: text('last_error'),
@@ -1428,6 +1443,43 @@ export const tgAccounts = pgTable(
  * name, a number if Telegram shows one — and never a message. A chat nobody
  * has said "yes" to must leave no trace of what was said in it.
  */
+/**
+ * Which numbers each connected account has a chat with — as HASHES.
+ *
+ * The owner asked that creating a lead, a deal or a client look back into
+ * the connected Telegram accounts and offer an existing conversation. That
+ * question can only be answered from a list of every chat an account holds,
+ * and stored the obvious way that list is a copy of an employee's private
+ * address book living in the company database.
+ *
+ * So it holds no name and no number: `phone_hash` is sha256 over the
+ * normalised last nine digits with a pepper, which answers «is this number
+ * one of them?» and nothing else. There is no query that turns this table
+ * back into a list of people, which is the point (owner: «hash bilan qil»).
+ *
+ * Rows here never authorise a read. Finding a match only lets a screen say
+ * «this manager has a chat with this number» — opening it still goes through
+ * the same per-manager fence every other Telegram read uses (round 20).
+ */
+export const tgPeerIndex = pgTable(
+  'tg_peer_index',
+  {
+    id: id(),
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    /** sha256(normalised last 9 + pepper). Never the number itself. */
+    phoneHash: text('phone_hash').notNull(),
+    lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('tg_peer_index_peer_uniq').on(t.managerUserId, t.peerId),
+    index('tg_peer_index_hash_idx').on(t.phoneHash),
+  ],
+);
+
 export const tgChatRules = pgTable(
   'tg_chat_rules',
   {

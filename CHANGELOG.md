@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## Telegram: yangi mijoz endi ko'rinmay qolmaydi (1-qism) — 2026-08-08 (kech)
+
+Siz aytgan ikki narsaning **poydevori** qo'yildi va to'liq test qilindi.
+Ekranlardagi tugmalar keyingi qismda.
+
+**Nega yangi mijozlar ko'rinmayotgan edi.** Tizim chatni faqat raqam
+mijozlar kitobida bo'lsa saqlardi. Yangi mijoz esa ta'rifi bo'yicha hali
+kitobda yo'q — shuning uchun hech narsa saqlanmasdi. Bu qoida bejiz emas
+edi: sizning hisobingizni import qilganda 394 ta suhbatdan 13 tasi mijoz
+chiqqan, qolgani shaxsiy. Qoidani olib tashlamadim — **savolni
+o'zgartirdim**: endi «bu raqam kimning?» deb so'raladi.
+
+**Kalit qo'shildi** (har bir ulangan hisob uchun): **shaxsiy** yoki **ish
+raqami**. Ish raqamida notanish suhbat o'zi lid ochadi; shaxsiy raqamda
+so'raladi. **Boshlang'ich holat — shaxsiy**, ya'ni hech kim hech nima
+tanlamasa ham xavfsiz.
+
+**Ikki marta lid ochilmaydi.** Bir odam yozsa, keyin qo'ng'iroq qilsa, keyin
+yana yozsa — bitta lid. Varonkada bir odam uchun uchta karta turishi
+jimlikdan ham yomon.
+
+**Lid mijozga aylanganda yozishmasi ham u bilan ko'chadi** — qo'ng'iroq
+yozuvlari qanday ko'chsa, xuddi shunday.
+
+**Raqamlar «barmoq izi» bilan saqlanadi.** Siz aytganingizdek. Bazada na ism,
+na raqam turadi — faqat «bu raqam bormi?» degan savolga javob bera oladigan
+belgi. Ya'ni xodimlarning shaxsiy kontaktlari ro'yxati bazada **hech qachon
+paydo bo'lmaydi**.
+
+Migratsiya **0064**. Serverni yangilaganda u albatta tushishi kerak.
+
+
 ## CRM kartasi: bitta yozish joyi, tarix eng pastda — 2026-08-08
 
 **«Записать контакт» formasi olib tashlandi.** Endi lidga bir joyda —
