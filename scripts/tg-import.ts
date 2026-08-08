@@ -12,7 +12,7 @@ import {
   emptySummary,
   isWorthKeeping,
   toMessageRow,
-  tgPhotoPlan,
+  tgMediaPlan,
   type ClientPhones,
   type DialogPeer,
 } from '../src/modules/wms/crm/telegram-import';
@@ -183,7 +183,7 @@ async function main() {
       } else {
         summary.messagesAlreadyThere += 1;
       }
-      if (args.media > 0 && row.hasMedia && tgPhotoPlan(msg.media).download) {
+      if (args.media > 0 && row.hasMedia && tgMediaPlan(msg.media, msg.id).download) {
         mediaSeen.push({
           tgMessageId: row.tgMessageId,
           sentAt: row.sentAt,
@@ -234,23 +234,27 @@ async function main() {
       );
       for (const item of plan) {
         try {
+          // The same planner the listener uses, so a backfilled chat holds
+          // exactly what a live one would (photos AND voice notes).
+          const plan2 = tgMediaPlan(item.msg.media, item.msg.id);
+          if (!plan2.download) continue;
           const bytes = await item.msg.downloadMedia?.();
           if (!Buffer.isBuffer(bytes) || bytes.length === 0) continue;
           const { id } = await saveAttachment(
             {
               entityType: 'tg_message',
               entityId: rowIdByTg.get(item.tgMessageId)!,
-              fileName: `photo_${item.msg.id}.jpg`,
-              contentType: 'image/jpeg',
+              fileName: plan2.fileName,
+              contentType: plan2.contentType,
               body: bytes,
               uploadedBy: manager.id,
             },
             { thumbnails: 'skip' },
           );
-          await generateThumbnails(id).catch(() => {});
+          if (plan2.kind === 'photo') await generateThumbnails(id).catch(() => {});
           summary.photosFetched = (summary.photosFetched ?? 0) + 1;
         } catch (err) {
-          console.error('  rasm olinmadi:', err instanceof Error ? err.message : err);
+          console.error('  media olinmadi:', err instanceof Error ? err.message : err);
         }
       }
     }

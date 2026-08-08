@@ -290,6 +290,169 @@ export function tgPhotoPlan(
   return { download: biggest <= maxBytes, approxBytes: biggest };
 }
 
+/**
+ * A voice note is bigger than a photo and smaller than a film. Twenty is far
+ * above any real «ovozli xabar» (a minute of Opus is ~0.5 MB) and inside the
+ * 25 MB the files service allows a non-photo, so a refusal here is never a
+ * surprise 500 two layers down.
+ */
+export const MAX_TG_AUDIO_BYTES = 20 * 1024 * 1024;
+
+export type TgMediaKind = 'photo' | 'voice' | 'audio';
+
+export interface TgMediaPlan {
+  /** Null = leave it a paperclip; we do not fetch it. */
+  kind: TgMediaKind | null;
+  download: boolean;
+  approxBytes: number;
+  /** What to STORE it as; '' for a photo, whose branch already knows. */
+  contentType: string;
+  fileName: string;
+  durationSec: number | null;
+}
+
+const NONE: TgMediaPlan = {
+  kind: null,
+  download: false,
+  approxBytes: 0,
+  contentType: '',
+  fileName: '',
+  durationSec: null,
+};
+
+/**
+ * Telegram sizes arrive in three shapes across gramjs versions: a JS number,
+ * a JS bigint, or the `big-integer` object (which `Number()` turns into NaN —
+ * and NaN <= cap is FALSE, so a silent refusal of every voice note). Through
+ * the string, always.
+ */
+function sizeOf(raw: unknown): number {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+  if (typeof raw === 'bigint') return Number(raw);
+  if (raw && typeof raw === 'object') {
+    const asNumber = Number(String(raw));
+    return Number.isFinite(asNumber) ? asNumber : 0;
+  }
+  return 0;
+}
+
+/** Audio mimes we can store and a browser can play; anything else stays a clip. */
+const PLAYABLE_AUDIO = new Set([
+  'audio/ogg',
+  'audio/opus',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/aac',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/webm',
+]);
+
+const EXT_FOR_AUDIO: Record<string, string> = {
+  'audio/ogg': 'oga',
+  'audio/opus': 'opus',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/m4a': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'aac',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/webm': 'weba',
+};
+
+/**
+ * What to fetch from a message, and what to call it (owner, 2026-08-07:
+ * «audio habarlar bizni sistemada korinmayabti»).
+ *
+ * The listener downloaded `MessageMediaPhoto` and nothing else since round 13,
+ * so a client's voice note reached the manager's Telegram and the CRM showed
+ * «📎» — the record of a conversation with a hole in it exactly where the
+ * client explained what they wanted.
+ *
+ * Voice notes and audio files now count, on the photo branch's own terms: the
+ * size is read from the message BEFORE any network I/O, an unknown size
+ * refuses (pulling blind is how a 2 GB «audio» reaches the account the
+ * business runs on), and the decision is pure and structural — no gramjs
+ * objects in the tests. Everything else — stickers, video, documents, link
+ * previews — stays a paperclip, deliberately: this is the owner's ask, not a
+ * general file sync.
+ */
+export function tgMediaPlan(
+  media: unknown,
+  msgId: number,
+  limits: { photo?: number; audio?: number } = {},
+): TgMediaPlan {
+  const photoCap = limits.photo ?? MAX_TG_PHOTO_BYTES;
+  const audioCap = limits.audio ?? MAX_TG_AUDIO_BYTES;
+  const m = media as
+    | {
+        className?: string;
+        document?: { mimeType?: string; size?: unknown; attributes?: unknown[] };
+      }
+    | null
+    | undefined;
+  if (!m) return NONE;
+
+  if (m.className === 'MessageMediaPhoto') {
+    const photo = tgPhotoPlan(media, photoCap);
+    if (photo.approxBytes <= 0) return NONE;
+    return {
+      kind: 'photo',
+      download: photo.download,
+      approxBytes: photo.approxBytes,
+      contentType: 'image/jpeg',
+      fileName: `photo_${msgId}.jpg`,
+      durationSec: null,
+    };
+  }
+
+  if (m.className !== 'MessageMediaDocument' || !m.document) return NONE;
+  const doc = m.document;
+  const attributes = (doc.attributes ?? []) as {
+    className?: string;
+    voice?: boolean;
+    duration?: unknown;
+    fileName?: unknown;
+  }[];
+  const audioAttr = attributes.find((a) => a.className === 'DocumentAttributeAudio');
+  const declared = (doc.mimeType ?? '').toLowerCase();
+  // An audio ATTRIBUTE is the honest test: Telegram sends a voice note as a
+  // document, and some clients label an .m4a `application/octet-stream`.
+  if (!audioAttr && !declared.startsWith('audio/')) return NONE;
+  // A video note («круглое видео») also carries a duration but is not audio;
+  // its own attribute is what excludes it.
+  if (attributes.some((a) => a.className === 'DocumentAttributeVideo')) return NONE;
+
+  const named = attributes.find((a) => a.className === 'DocumentAttributeFilename');
+  const givenName = typeof named?.fileName === 'string' ? named.fileName : '';
+  const contentType = PLAYABLE_AUDIO.has(declared)
+    ? declared
+    : // A voice note with an odd mime is still Opus in an Ogg container.
+      audioAttr?.voice
+      ? 'audio/ogg'
+      : '';
+  if (!contentType) return NONE;
+
+  const bytes = sizeOf(doc.size);
+  if (bytes <= 0) return NONE;
+  const kind: TgMediaKind = audioAttr?.voice ? 'voice' : 'audio';
+  const ext = EXT_FOR_AUDIO[contentType] ?? 'oga';
+  const duration = sizeOf(audioAttr?.duration);
+  return {
+    kind,
+    download: bytes <= audioCap,
+    approxBytes: bytes,
+    contentType,
+    // The sender's own filename when they sent a FILE; a voice note has none,
+    // and «Ovozli xabar» in a file list means nothing to anybody.
+    fileName: givenName || `${kind}_${msgId}.${ext}`,
+    durationSec: duration > 0 ? Math.round(duration) : null,
+  };
+}
+
 export function toMessageRow(peerId: bigint, msg: RawMessage): MessageRow {
   const body = (msg.message ?? '').trim();
   return {

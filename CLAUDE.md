@@ -1750,7 +1750,7 @@ file (7 tests). NOT verifiable here and left for CI/production: the load
 numbers came from this 4-vCPU container, so absolute rps on his VPS will
 differ — the RATIO (single process = the ceiling) is what transfers.
 
-Round 74 — the owner deleted tap-to-edit (#551, «contactlarni ustiga bosib
+Round 74b — the owner deleted tap-to-edit (#558, «contactlarni ustiga bosib
 o'zgartirish featureni qayerda qoygan bo'lsang hammasini olib tashla»):
 `InlineField`, `patchLead`/`patchDeal`/`patchClient` and their three
 actions are GONE (deleted, not unreferenced — round 70's rule), the lead
@@ -1831,6 +1831,73 @@ not fixed: `updateLead` writes `stage_id` with no kind check and never clears
 GS252 absent), not his data; the 1,692 clients are real. 1087 unit + 140 e2e
 on a fresh db in CI's order; m5 flaked once on ECONNRESET, green alone and on
 the full re-run.
+
+Round 77 — the owner's four Telegram items (#574-576). **Audio in**
+(#574): `tgMediaPlan` extends the photo planner to voice notes and audio
+files — pure, structural, size read before any I/O, unknown size refused;
+three traps have tests (gramjs's `document.size` is a **big-integer
+OBJECT** and `Number()` on it is NaN, so `NaN <= cap` would have refused
+every voice note; a voice note may be labelled octet-stream, so the VOICE
+attribute decides; a video note carries an audio attribute too and its own
+video attribute excludes it). `attachPhotos` → `attachMedia`, split by
+KIND — it sweeps every attachment of a tg_message, so one undivided list
+would have drawn an Ogg file as an `<img>`. Player in the bubble
+(`preload="none"`), carried to the dock; `tg-import --media` uses the same
+planner. Authz unchanged by design: the tg_message branch decides on the
+message's owner, so the fence is the conversation, not the file type.
+**Queue honesty** (#575, «ocheretda turibti» twice, and the queue was
+right both times): ONE `OutboxBubble` computes `outboxLabel` for all three
+surfaces (the card panel had its own two-way check and could never say
+«stuck»; the dock showed no pending rows at all, so send made the words
+vanish), both page surfaces `<AutoRefresh>`, the dock polls its open
+thread, and `revalidateChatSurfaces` takes the pathname the person is on
+(a lead card's id is the LEAD's). `recordSent`'s swallowed failure — the
+ONLY record a text reply has — is now held and retried like `markSent`'s.
+TRIPWIRE LESSON: `toContain('AutoRefresh')` passes on a file that imports
+and never renders it (#494 from the other side) — the assertion is
+`<AutoRefresh` and only then did the strip go red. **Folded managers +
+per-manager reading** (#576): `ThreadManagers`, native `<details>`, closed
+by default and self-opening when a filter is on; the card pages carry
+`?hodim=` and filter in place; selecting is offered only under
+`viewer.all` because that is the only case `conversationFor` honours.
+No migration. 1082 unit/integration green; m9n/m9r/m9zi green;
+screenshots at 360×800 with the fold closed, open, and filtered.
+
+Round 78 — the card's two writing surfaces and the history's place
+(#577-578; my round number collided with the OTHER session's round 77, and
+the DECISIONS numbers with its #574-576 — renumbered on merge, as every
+round this week has had to). (1) «crm kartada shu zapis yozish kerak emas,
+lenta bor»: the «Записать контакт» form is off the LEAD card. What it
+uniquely carried was checked BEFORE it went — `nextActionAt` has always
+also lived in the ✏️ form, and `ClientFeed` renders on a lead with no
+client — and m8 was rewritten to PROVE it (note on the lenta, follow-up in
+✏️, lead still on the call list) rather than to accommodate it. STATED as a
+real loss: the four kinds go with it and `crm_activities.kind` is read by
+`client-feed.tsx` for the bubble's mark, so everything typed on a lead is
+now a note; the chips can move onto the lenta's box on his word. The CLIENT
+card keeps its log — he named the CRM card. (2) «istoriya tarix mobileda
+eng pastda»: the history sat last in the RAIL, which on a phone is the
+MIDDLE of the page, above the lenta. `CardCols` gained a `tail` slot — DOM
+order rail → main → tail so the phone needs no rule, desktop places all
+three explicitly (`md:col-start-2 md:row-start-2`) so nothing moved there.
+Measured at 360: lenta 752 → **628**, history last at 865, document 1022.
+
+**Agreed next (owner, 2026-08-08):** the Telegram ↔ CRM loop, both
+directions, his design. (a) A per-account switch «shaxsiy / ish raqami» —
+he confirmed the connected accounts are PERSONAL numbers and that both
+kinds will exist. (b) An unknown chat (incoming OR outgoing — the listener
+already sees both, #315/#476) opens a LEAD: automatic on a work account,
+one tap from a tray on a personal one. Schema mirrors the calls round
+exactly — `tg_messages.client_id` nullable + `lead_id`, as 0063 did for
+`call_logs` — and `convertLead` re-keys chats onto the minted code the way
+`rekeyLeadCalls` already does. (c) The reverse lookup he asked for: when a
+lead/deal/client is created, check the connected accounts for that phone
+and offer «Chatni qo'shish». **Stored as a HASH of the normalised last-9,
+with no name** (his choice, my recommendation): the company database must
+be able to answer «have we talked to this number» without ever holding a
+readable list of an employee's private contacts. Stated to him: coverage is
+partial because Telegram hides most numbers, the index needs a nightly
+refresh, and a colleague's chat is NAMED but not opened (round 20's fence).
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

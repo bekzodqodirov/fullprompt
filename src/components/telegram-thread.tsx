@@ -10,7 +10,10 @@ import {
   threadClientFor,
   threadManagers,
 } from '@/modules/wms/crm/conversations';
+import { AutoRefresh } from './auto-refresh';
+import { OutboxBubble } from './outbox-bubble';
 import { TelegramBubble } from './telegram-bubble';
+import { ThreadManagers } from './thread-managers';
 import { TelegramReply } from './telegram-reply';
 
 /**
@@ -43,9 +46,21 @@ import { TelegramReply } from './telegram-reply';
 export async function TelegramThread({
   clientId,
   limit = 200,
+  hodim,
+  hrefFor,
 }: {
   clientId: string | null;
   limit?: number;
+  /**
+   * Whose conversation to read (owner, 2026-08-07). The card PAGE takes it off
+   * its own URL and passes it here, so picking a colleague filters this panel
+   * in place instead of throwing the reader onto another screen — which is
+   * what the chips used to do, and why «qaysi biri qanday gaplashgan» could
+   * not be answered where the work happens.
+   */
+  hodim?: string;
+  /** How this card's URL carries the choice; absent ⇒ names, no selector. */
+  hrefFor?: (managerId: string | null) => string;
 }) {
   // A lead that is nobody's client yet has no thread, and that is correct: the
   // import only ever keeps conversations matching the client book.
@@ -69,8 +84,11 @@ export async function TelegramThread({
   // Nothing imported for this person — say nothing rather than show an empty
   // box on every card in the system.
   if (!threadClientId) return null;
-  const rows = await conversationFor(threadClientId, viewer, limit);
-  if (rows.length === 0) return null;
+  const rows = await conversationFor(threadClientId, viewer, limit, hodim);
+  // Nothing at all → the panel stays away. But a filter that matches nothing
+  // must NOT make the panel disappear: vanishing on a click reads as a broken
+  // screen, and the way back is the fold that is no longer on screen.
+  if (rows.length === 0 && !hodim) return null;
   const siblingCode =
     threadClientId === clientId ? null : (await conversationClient(threadClientId))?.clientCode;
   // WHO has talked with this person (owner: the card must list the staff so
@@ -99,43 +117,30 @@ export async function TelegramThread({
           {t('conversations')} →
         </Link>
       </div>
-      {managers.length > 0 && (
-        <div className="flex flex-wrap items-baseline gap-1.5 text-sm" data-testid="card-managers">
-          <span className="text-ink-500">{t('whoTalked')}:</span>
-          {managers.map((m) =>
-            viewer.all ? (
-              <Link
-                key={m.id}
-                href={`/suhbatlar/${threadClientId}?hodim=${m.id}`}
-                className="rounded-full border border-line px-2.5 py-0.5 font-semibold text-ink-700 underline-offset-2 hover:underline"
-              >
-                {m.name} · {m.messages}
-              </Link>
-            ) : (
-              <span key={m.id} className="rounded-full border border-line px-2.5 py-0.5 text-ink-700">
-                {m.name}
-              </span>
-            ),
-          )}
-        </div>
-      )}
+      <div data-testid="card-managers">
+        <ThreadManagers
+          managers={managers}
+          active={hodim ?? null}
+          // Only where the page can carry the choice, and only for the eyes
+          // `conversationFor` will actually honour it for.
+          hrefFor={viewer.all && hrefFor ? hrefFor : undefined}
+          labels={{ who: t('whoTalked'), all: t('allManagers') }}
+        />
+      </div>
+      {/* The queue moves while this card is open — the listener sends within
+          seconds — so the panel refreshes itself. Without it the «navbatda»
+          line sat there until somebody reloaded the page, which is the
+          owner's report twice over: the message had reached the client and
+          this screen still said it was waiting (round 25 gave the Suhbatlar
+          screen this and the cards never got it). */}
+      <AutoRefresh ms={10_000} />
       <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
         {[...queued].reverse().map((row) => (
-          <div
+          <OutboxBubble
             key={row.id}
-            className={`ml-auto max-w-[85%] rounded-xl border border-dashed px-3 py-2 text-sm ${
-              row.status === 'failed' ? 'border-bad text-bad' : 'border-line-strong text-ink-500'
-            }`}
-            data-testid={`outbox-${row.status}`}
-          >
-            <div className="mb-0.5 text-xs font-semibold">
-              {row.status === 'failed' ? `✕ ${t('replyFailed')}` : `◷ ${t('replyQueued')}`}
-            </div>
-            <p className="whitespace-pre-wrap break-words">
-              {row.attachmentId && '🖼 '}
-              {row.body}
-            </p>
-          </div>
+            row={row}
+            labels={{ queued: t('replyQueued'), stuck: t('replyStuck'), failed: t('replyFailed') }}
+          />
         ))}
         {rows.map((row) => (
           <TelegramBubble

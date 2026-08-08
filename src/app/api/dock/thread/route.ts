@@ -7,7 +7,12 @@ import {
   tgViewerFor,
   threadClientFor,
 } from '@/modules/wms/crm/conversations';
-import { conversationManagers, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
+import {
+  conversationManagers,
+  pendingFor,
+  replyAccountFor,
+  sendContextFor,
+} from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
 import { templatesFor } from '@/modules/wms/crm/templates';
 
@@ -39,11 +44,16 @@ export async function GET(request: Request) {
   const viewer = tgViewerFor(actor);
   const clientId = (await threadClientFor(asked, viewer)) ?? asked;
 
-  const [client, messages, account, managers] = await Promise.all([
+  const [client, messages, account, managers, pending] = await Promise.all([
     conversationClient(clientId),
     conversationFor(clientId, viewer, 80),
     replyAccountFor(clientId, actor.id),
     conversationManagers(clientId),
+    // Replies that have not left yet. The dock showed none, so pressing send
+    // made the words disappear — nothing in the thread, nothing waiting, and
+    // the message only reappeared when the listener's echo landed (owner,
+    // 2026-08-07). Scoped by the same viewer as the thread itself.
+    pendingFor(clientId, viewer),
   ]);
   if (!client) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
@@ -86,6 +96,15 @@ export async function GET(request: Request) {
       sentAt: m.sentAt.toISOString(),
       manager: m.manager,
       photos: m.photos,
+      audios: m.audios,
+    })),
+    pending: pending.map((row) => ({
+      id: row.id,
+      body: row.body,
+      status: row.status,
+      queuedAt: row.queuedAt.toISOString(),
+      attachmentId: row.attachmentId,
+      lastError: row.lastError,
     })),
   });
 }

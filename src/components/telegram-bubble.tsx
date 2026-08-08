@@ -23,6 +23,8 @@ export interface BubbleMessage {
   manager: string;
   /** Downloaded photos pinned to this message (item 15). */
   photos?: { id: string }[];
+  /** Downloaded voice notes / audio files (2026-08-07). */
+  audios?: { id: string; fileName: string }[];
 }
 
 export function TelegramBubble({
@@ -37,6 +39,7 @@ export function TelegramBubble({
   mediaLabel: string;
 }) {
   const out = message.direction === 'out';
+  const media = (message.photos?.length ?? 0) + (message.audios?.length ?? 0);
   return (
     <div
       className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
@@ -67,9 +70,28 @@ export function TelegramBubble({
           ))}
         </div>
       )}
+      {/* The voice note ITSELF (owner, 2026-08-07: «audio habarlar
+          korinmayabti» — a client explaining what they want, out loud, was
+          reaching the manager's Telegram and printing «📎» here).
+          preload="none": a thread of thirty voice notes must not fetch thirty
+          files to draw itself. */}
+      {(message.audios?.length ?? 0) > 0 && (
+        <div className="mb-1 space-y-1">
+          {message.audios!.map((audio) => (
+            <audio
+              key={audio.id}
+              controls
+              preload="none"
+              src={`/api/attachments/${audio.id}`}
+              data-testid="tg-audio"
+              className="h-9 w-full min-w-48"
+            />
+          ))}
+        </div>
+      )}
       {message.body ? (
         <p className="whitespace-pre-wrap break-words">{message.body}</p>
-      ) : (message.photos?.length ?? 0) > 0 ? null : (
+      ) : media > 0 ? null : (
         <p className="text-ink-500">📎 {mediaLabel}</p>
       )}
     </div>

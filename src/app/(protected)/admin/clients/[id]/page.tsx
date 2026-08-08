@@ -21,8 +21,16 @@ import { TelegramThread } from '@/components/telegram-thread';
 import { CallsPanel } from '@/components/calls-panel';
 import { ClientDeals } from '@/components/client-deals';
 
-export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClientDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
+  searchParams: Promise<{ hodim?: string }>;
+}) {
   const { id } = await params;
+  const { hodim } = await searchParams;
   const actor = await getActor();
   if (!actor) redirect('/login');
   // Sales staff read the card their CRM sends them to; only an admin edits
@@ -88,7 +96,13 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             {/* What was actually said, in the place it was actually said —
                 the working surface of the card (owner: the amoCRM shape). */}
             <ClientFeed clientId={client.id} tall />
-            <TelegramThread clientId={client.id} />
+            <TelegramThread
+              clientId={client.id}
+              hodim={hodim}
+              hrefFor={(who) =>
+                who ? `/admin/clients/${client.id}?hodim=${who}` : `/admin/clients/${client.id}`
+              }
+            />
             <CallsPanel clientId={client.id} />
           </>
         }
