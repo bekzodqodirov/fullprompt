@@ -167,24 +167,28 @@ export const NAV: NavGroupSpec[] = [
   {
     titleKey: 'sectionSales',
     items: [
-      {
-        /**
-         * The client book, moved out of Management (owner: "clientlarni
-         * ro'yxatiga glavniy ekrandan kira olinsa yaxshi bo'lardi").
-         *
-         * It sat in the LAST group, below the truck presets and the field
-         * editor — settings screens opened twice a year — so on the home
-         * screen the list of every client the company has was the last tile
-         * on the page. It belongs at the top of Sales, beside the funnel and
-         * the deals that are about those same clients.
-         */
-        href: '/admin/clients',
-        shortKey: 'clients',
-        labelKey: 'title',
-        namespace: 'clients',
-        icon: 'users',
-        permissions: ['clients.manage'],
-      },
+      /**
+       * Bitimlar and CRM lead this group, and they lead it as a PAIR (owner,
+       * round 75: "sotuv main ekranda bitim bn crmni ketma ket qoy").
+       *
+       * They were already consecutive in this list and still rendered
+       * DIAGONALLY on his phone: the home tiles are `grid-cols-2
+       * sm:grid-cols-3`, so at index 1 and 2 the row broke between them —
+       * «Mijozlar | Bitimlar» over «CRM | Suhbatlar». Consecutive in this
+       * list is not the same as adjacent on the screen.
+       *
+       * Index 0 is what fixes it, and the reason is not arithmetic about
+       * column counts: it is the only position the per-viewer filter cannot
+       * move. The home screen drops items this person may not open (and the
+       * ones their workflow rows already draw), so every later index shifts
+       * from role to role — an invented crm.leads-only role loses the client
+       * book below and everything after it slides up one. A pair anchored at
+       * 0 starts a row at both breakpoints for everybody.
+       *
+       * It is invariant to filtering, NOT to insertion: put a new item above
+       * these two and the pair breaks again on a phone. tests/unit/
+       * home-tiles.test.ts is the tripwire that says so.
+       */
       {
         // The deal board, above the funnel on purpose: a lead is worked once,
         // a deal is an existing client's job and repeats, and "which of my
@@ -208,6 +212,26 @@ export const NAV: NavGroupSpec[] = [
         primary: 2,
       },
       {
+        /**
+         * The client book, moved out of Management (owner: "clientlarni
+         * ro'yxatiga glavniy ekrandan kira olinsa yaxshi bo'lardi").
+         *
+         * It sat in the LAST group, below the truck presets and the field
+         * editor — settings screens opened twice a year — so on the home
+         * screen the list of every client the company has was the last tile
+         * on the page. It belongs in Sales, with the funnel and the deals
+         * that are about those same clients; it sits third rather than first
+         * only because the pair above has to start the group to stay
+         * side-by-side on a phone.
+         */
+        href: '/admin/clients',
+        shortKey: 'clients',
+        labelKey: 'title',
+        namespace: 'clients',
+        icon: 'users',
+        permissions: ['clients.manage'],
+      },
+      {
         // What clients are actually saying to us. Beside the funnel because
         // it is the same job: the funnel is where a deal stands, this is what
         // was said about it.
@@ -219,14 +243,15 @@ export const NAV: NavGroupSpec[] = [
         // ved.docs joined in round 33 — the vedchi's supervision view.
         permissions: ['crm.leads', 'clients.manage', 'ved.docs'],
       },
-      {
-        href: '/crm/today',
-        shortKey: 'today',
-        labelKey: 'today',
-        namespace: 'crm',
-        icon: 'phone',
-        permissions: ['crm.leads'],
-      },
+      // «Bugun qo'ng'iroq» has no entry here (owner, round 75: "bugun
+      // qongiroq kerak emas"). It is a menu decision and not an access one:
+      // /crm/today still answers, it is still a door on the funnel's ⋯ menu
+      // and in the CRM section's own links, and — this is the part the owner
+      // does not see, because his own home is the tile grid — a sales
+      // manager still gets it as the COUNTED first row of their workflow
+      // home. That row is the only place in the app that says how many calls
+      // are waiting, and a tile carries no number, so deleting the tile
+      // removes a door while deleting the row would hide the work.
       {
         href: '/my-clients',
         shortKey: 'myClients',
@@ -367,8 +392,12 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
  * a warehouse operator still reaches them — it surfaces on the home screen and
  * `/bugun` still answers — because a menu decision must never be able to make
  * assigned work disappear.
+ *
+ * Exported for its tripwire only (`tests/unit/nav-relevance.test.ts`): a
+ * curated href that NAV does not have matches nothing and fails silently, so
+ * the test needs the lists themselves, not just their effect.
  */
-const MENU_BY_ROLE: Record<string, string[]> = {
+export const MENU_BY_ROLE: Record<string, string[]> = {
   // Receive, load, unload, hand over. Nothing else is their job.
   warehouse_operator: [
     '/', '/receive', '/batches', '/issue', '/crates', '/stock', '/receipts',
@@ -401,7 +430,7 @@ const MENU_BY_ROLE: Record<string, string[]> = {
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.
   sales_manager: [
-    '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/crm/today', '/suhbatlar', '/my-clients',
+    '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/suhbatlar', '/my-clients',
     '/finance', '/pipeline', '/arrivals', '/approvals',
   ],
   accountant: [

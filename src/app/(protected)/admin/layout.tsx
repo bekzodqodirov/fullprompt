@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { AdminBack } from './admin-back';
+import { openDoors } from './hub-doors';
 
 /**
  * The admin section.
@@ -37,17 +38,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     actor.permissions.has('crm.leads');
   if (!canManage && !canAudit && !canFx && !canClients && !canRoles && !canFields) redirect('/');
 
-  // The way back to the hub — only for somebody the hub would actually let
-  // in. A salesperson passing through to a client card holds none of these,
-  // and a door that bounces is worse than no door.
-  const hasHub =
-    canManage ||
-    canAudit ||
-    canFx ||
-    canRoles ||
-    canFields ||
-    actor.permissions.has('plans.manage') ||
-    actor.permissions.has('admin.settings.manage');
+  // The way back to the hub — only for somebody the hub would actually SHOW.
+  // Two conditions, and the second is newer: a salesperson passing through to
+  // a client card would be bounced (a door that bounces is worse than no
+  // door), and somebody with a single administration door is walked straight
+  // through the hub by `/admin` itself, so «← Boshqaruv» would be a link back
+  // to the page they are standing on. Round 75 created that second case for
+  // the logist by taking the client book off the hub; asking the hub's own
+  // list is what stops the two answers drifting again.
+  const hasHub = openDoors((code) => actor.permissions.has(code)).length > 1;
 
   return (
     <>

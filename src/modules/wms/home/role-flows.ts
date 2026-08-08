@@ -236,7 +236,10 @@ export async function buildHomeFlow(
   if (actor.roles.includes('sales_manager')) {
     return {
       kind: 'sales',
-      hrefs: ['/crm/today', '/crm', '/suhbatlar', '/my-clients', '/bitimlar'],
+      // In the order the rows are drawn. Matched against `item.href`, so a
+      // row whose link carries a query string (`/my-clients?filter=debt`)
+      // is still named here by its bare NAV href.
+      hrefs: ['/crm/today', '/bitimlar', '/crm', '/suhbatlar', '/my-clients'],
       counts: await salesFlowCounts(actor.id, today),
     };
   }

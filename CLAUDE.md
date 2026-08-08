@@ -119,7 +119,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-06
+## State — 2026-08-08
 
 `main` is the trunk (PR #1 = rounds 1-55; PR #3 = rounds 56-69; PR #4 =
 the truck-marker follow-up; PR #5 = the calls round; PR #7 = the calls
@@ -1762,6 +1762,43 @@ because two writers shared those inputs). New source-shape tripwire
 m9ze/m9zf and both inline integration files deleted with their subject.
 Values still READ on the cards: round 61's real find was that a phone
 number could not be read without opening an editor.
+
+Round 75 — the owner's three home-screen items (#566-569). Designed, then
+judged by four adversarial lenses BEFORE any code, and **two of the three
+v1 decisions were killed by them** — worth knowing, because both looked
+obviously right. (1) «bitim bn crmni ketma ket qoy»: they were ALREADY
+neighbours in `sectionSales` and still rendered diagonally, because the
+tiles are `grid-cols-2 sm:grid-cols-3` and the two-column row broke
+between them — **phone-only**, already correct at three columns. Pair
+anchored at index 0 (invariant to the per-viewer filter, NOT to
+insertion); sales flow rows reordered to match; `tests/unit/
+home-tiles.test.ts` + a browser half in m9p that measures real boxes,
+because the unit fence has to name the column counts. (2) «bugun
+qongiroq kerak emas»: the NAV entry only — `buildHomeFlow` returns null
+for super_admin, so he has never seen `sales-flow-hero`, and a Tile
+carries no number while a FlowRow does, so that row is the only place
+the waiting-call count exists. Route, permissions, funnel ⋯ door and CRM
+section links untouched; STATED to him that the sellers keep it. The
+«fold follow-ups into the /bugun strip» compensation was designed and
+CUT — `followUps()` has no LIMIT and `/bugun` calls it unscoped for
+view_all holders, so mirroring it onto the most-opened screen is #432's
+shape. (3) «adminstrativnoedagi klientini glavniga chiqaz»: he had asked
+once before and the TILE was moved — the SCREEN still said Administration
+in three places, the third of which nobody had noticed (`isActive`
+prefix-matched, lighting «Boshqaruv» beside «Mijozlar»). One list,
+`NOT_ADMIN_SECTION` in `components/ui/nav-active.ts`, answers all three;
+`canClients` in the admin layout deliberately UNTOUCHED. **The route move
+to `/mijozlar` was designed and REFUSED**: links.ts bakes `/admin/clients`
+into already-delivered Telegram messages so the redirect would be
+permanent, ~11 `revalidatePath` targets fail silently when they miss, and
+the phone has no address bar (`manifest.ts` standalone). Found on the way
+(#569): taking the book off the hub left the logist ONE door, so `/admin`
+walks him through it and «← Boshqaruv» became a link to the page he is
+standing on — `admin/hub-doors.ts` now holds the doors once and both the
+page and the layout ask it. Six red-proofs; the SEVENTH attempt stayed
+green with its subject reverted (`toContain('openDoors')` matched the
+surviving import line) and was re-anchored on the assignment. No
+migration. 1084 unit + 140 e2e on a fresh db in CI's order.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

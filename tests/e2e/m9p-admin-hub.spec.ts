@@ -39,6 +39,62 @@ test('administration opens as a hub of buttons, not the warehouse list', async (
   await expect(page).toHaveURL('/');
 });
 
+test('the client book is a Sotuv screen, and says so wherever it is looked at', async ({ page }) => {
+  // Round 75, owner: "adminstrativnoedagi klientini glavniga chiqaz". He had
+  // asked once before and the TILE was moved — he asked again because the
+  // screen still called itself Administration in three places.
+  await login(page, OWNER);
+
+  // 1. No second door from the hub. Scoped to the tiles: the shell's own
+  //    menu offers the book from Sotuv on every page, including this one,
+  //    and that offer is the whole point.
+  await page.goto('/admin');
+  const tile = (href: string) => page.locator(`a[data-testid="admin-tile"][href="${href}"]`);
+  // The control: this selector does find a door that IS on the hub, so the
+  // assertion below is about the client book and not about a broken locator.
+  await expect(tile('/admin/warehouses')).toHaveCount(1);
+  await expect(tile('/admin/clients')).toHaveCount(0);
+
+  // 2. No «← Boshqaruv» on the book itself — while a real admin page keeps it,
+  //    so this is a rule about that subtree and not a deletion.
+  await page.goto('/admin/warehouses');
+  await expect(page.getByTestId('admin-back')).toBeVisible();
+  await page.goto('/admin/clients');
+  await expect(page.getByTestId('admin-back')).toHaveCount(0);
+
+  // 3. One menu row lit, not two. The highlight prefix-matched, so
+  //    «Boshqaruv» used to light up here at the same time as «Mijozlar».
+  const lit = page.locator('a[aria-current="page"]');
+  expect(await lit.evaluateAll((els) => els.map((el) => el.getAttribute('href')))).toEqual([
+    '/admin/clients',
+  ]);
+});
+
+test('Bitimlar and CRM sit side by side on the home screen', async ({ page }) => {
+  // Round 75, owner: "sotuv main ekranda bitim bn crmni ketma ket qoy". They
+  // were already consecutive in the navigation list and still wrapped between
+  // each other in the phone's two-column grid.
+  //
+  // Measured in the browser rather than reasoned about, because the unit
+  // fence names the column counts and only the real stylesheet knows them.
+  await login(page, OWNER);
+  const box = async (href: string) =>
+    page.locator(`main a[href="${href}"]`).first().boundingBox();
+  const deals = await box('/bitimlar');
+  const crm = await box('/crm');
+  expect(deals).not.toBeNull();
+  expect(crm).not.toBeNull();
+  // Same row, and the deal board on the left of it.
+  expect(Math.round(deals!.y)).toBe(Math.round(crm!.y));
+  expect(deals!.x).toBeLessThan(crm!.x);
+
+  // …and «Bugun qo'ng'iroq» is off the screen and off the menu, while the
+  // route it pointed at still answers (a menu decision is not an access one).
+  await expect(page.locator('a[href="/crm/today"]')).toHaveCount(0);
+  await page.goto('/crm/today');
+  await expect(page).toHaveURL('/crm/today');
+});
+
 test('the owner adds his own expense type — it was never hard-coded, now it has a door', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/admin/cost-types');
