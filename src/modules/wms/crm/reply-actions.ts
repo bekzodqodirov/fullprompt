@@ -15,6 +15,27 @@ import { addActivity } from './service';
 import { announceNote } from './internal-chat';
 
 /**
+ * A conversation is shown on FOUR surfaces, and a write must reach all of
+ * them (2026-08-07, the owner's «ocheretda turibti» reported twice).
+ *
+ * Only `/suhbatlar/<id>` was ever revalidated, so a reply queued from a
+ * client, deal or lead card left that card rendering the state from before
+ * the press: the «navbatda» line appeared or lingered depending on when the
+ * page had last been built, while the message itself had reached the client
+ * within seconds. `path` is the screen the person is actually on — the
+ * tasks actions' own pattern — because a lead card's id is the LEAD's, not
+ * this client's, and no amount of guessing here can derive it.
+ */
+function revalidateChatSurfaces(clientId: string, path?: string | null): void {
+  revalidatePath(`/suhbatlar/${clientId}`);
+  revalidatePath('/suhbatlar', 'layout');
+  revalidatePath(`/admin/clients/${clientId}`);
+  // An app path and nothing else: this arrives from a browser, and a value
+  // from a browser is a claim until it is checked.
+  if (path && path.startsWith('/') && !path.startsWith('//')) revalidatePath(path);
+}
+
+/**
  * Queue a reply to a client — phase 4.
  *
  * The action does not send. It writes a row the listener picks up, because
@@ -63,7 +84,7 @@ export async function sendReplyAction(_prev: ReplyState, form: FormData): Promis
     if (err instanceof OutboxError) return { error: err.message };
     throw err;
   }
-  revalidatePath(`/suhbatlar/${clientId}`);
+  revalidateChatSurfaces(clientId, String(form.get('path') ?? ''));
   return { ok: true };
 }
 
@@ -88,7 +109,7 @@ export async function cancelReplyAction(_prev: ReplyState, form: FormData): Prom
     if (err instanceof OutboxError) return { error: err.message };
     throw err;
   }
-  revalidatePath(`/suhbatlar/${clientId}`);
+  revalidateChatSurfaces(clientId, String(form.get('path') ?? ''));
   return { ok: true };
 }
 
@@ -124,7 +145,7 @@ export async function dismissFailedAction(
     if (err instanceof OutboxError) return { error: err.message };
     throw err;
   }
-  revalidatePath(`/suhbatlar/${clientId}`);
+  revalidateChatSurfaces(clientId, String(form.get('path') ?? ''));
   return { ok: true };
 }
 
@@ -155,8 +176,8 @@ export async function excludeChatAction(_prev: ReplyState, form: FormData): Prom
     { clientId, managerUserId: account.managerUserId, peerId: account.peerId },
     { actorId: who.id, ...meta },
   );
-  revalidatePath(`/suhbatlar/${clientId}`);
-  revalidatePath('/suhbatlar', 'layout');
+  // A purge removes the conversation from every surface at once.
+  revalidateChatSurfaces(clientId, String(form.get('path') ?? ''));
   return { ok: true };
 }
 

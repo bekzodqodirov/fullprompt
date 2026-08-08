@@ -213,6 +213,8 @@ export interface ConversationMessage {
   manager: string;
   /** Downloaded photos pinned to this message (item 15) — often empty. */
   photos: { id: string }[];
+  /** Downloaded voice notes / audio files (2026-08-07) — usually empty. */
+  audios: { id: string; fileName: string }[];
 }
 
 /**
@@ -259,7 +261,7 @@ export async function conversationFor(
     .limit(limit);
   // The newest `limit` rows, in that order. Taking the OLDEST n would push the
   // recent end — the only part anyone reads — off a long history entirely.
-  return attachPhotos(rows);
+  return attachMedia(rows);
 }
 
 export interface ThreadManager {
@@ -287,16 +289,30 @@ export async function threadManagers(clientId: string): Promise<ThreadManager[]>
 }
 
 /**
- * Pin each message's downloaded photos on (item 15). ONE query over the page
- * of ids, not one per row — `attachments_entity_idx` covers it, and most
- * messages have none.
+ * Pin each message's downloaded media on (item 15; audio 2026-08-07). ONE
+ * query over the page of ids, not one per row — `attachments_entity_idx`
+ * covers it, and most messages have none.
+ *
+ * Split by KIND, and that split is load-bearing: this read fetches every
+ * attachment of a `tg_message`, so the moment the listener started storing
+ * voice notes, a single `photos` list would have handed a bubble an `<img>`
+ * pointed at an Ogg file — a broken picture where a client's spoken message
+ * should be.
  */
-export async function attachPhotos<
+export async function attachMedia<
   T extends { id: string },
->(rows: T[]): Promise<(T & { photos: { id: string }[] })[]> {
+>(
+  rows: T[],
+): Promise<(T & { photos: { id: string }[]; audios: { id: string; fileName: string }[] })[]> {
   if (rows.length === 0) return [];
-  const photoRows = await db
-    .select({ id: attachments.id, entityId: attachments.entityId })
+  const mediaRows = await db
+    .select({
+      id: attachments.id,
+      entityId: attachments.entityId,
+      kind: attachments.kind,
+      contentType: attachments.contentType,
+      fileName: attachments.fileName,
+    })
     .from(attachments)
     .where(
       and(
@@ -305,13 +321,25 @@ export async function attachPhotos<
       ),
     )
     .orderBy(attachments.createdAt);
-  const byMessage = new Map<string, { id: string }[]>();
-  for (const photo of photoRows) {
-    const list = byMessage.get(photo.entityId) ?? [];
-    list.push({ id: photo.id });
-    byMessage.set(photo.entityId, list);
+  const photos = new Map<string, { id: string }[]>();
+  const audios = new Map<string, { id: string; fileName: string }[]>();
+  for (const media of mediaRows) {
+    if (media.kind === 'photo') {
+      photos.set(media.entityId, [...(photos.get(media.entityId) ?? []), { id: media.id }]);
+    } else if (media.contentType.startsWith('audio/')) {
+      audios.set(media.entityId, [
+        ...(audios.get(media.entityId) ?? []),
+        { id: media.id, fileName: media.fileName },
+      ]);
+    }
+    // Anything else stays a paperclip: the bubble says «media» rather than
+    // offering a player for a file no browser here can play.
   }
-  return rows.map((row) => ({ ...row, photos: byMessage.get(row.id) ?? [] }));
+  return rows.map((row) => ({
+    ...row,
+    photos: photos.get(row.id) ?? [],
+    audios: audios.get(row.id) ?? [],
+  }));
 }
 
 /** The client behind a conversation, for the thread's header. */

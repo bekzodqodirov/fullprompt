@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
 import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
 import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
+import { OutboxBubble } from '@/components/outbox-bubble';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { entityHref } from '@/modules/platform/notifications/links';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
@@ -65,6 +66,16 @@ interface DockThread {
     sentAt: string;
     manager: string;
     photos: { id: string }[];
+    audios: { id: string; fileName: string }[];
+  }[];
+  /** Replies still in the queue — the drawer must not swallow them. */
+  pending: {
+    id: string;
+    body: string;
+    status: string;
+    queuedAt: string;
+    attachmentId: string | null;
+    lastError: string | null;
   }[];
 }
 
@@ -112,6 +123,16 @@ export function Dock({ canChat }: { canChat: boolean }) {
       );
   }, []);
 
+  /**
+   * Re-read a thread that is already on screen. Deliberately NOT `loadThread`:
+   * that one blanks the panel first (right for opening a new conversation,
+   * wrong for a tick — the messages would flicker away every ten seconds).
+   */
+  const refreshThread = useCallback(async (clientId: string) => {
+    const res = await fetch(`/api/dock/thread?client=${clientId}`);
+    if (res.ok) setThread((await res.json()) as DockThread);
+  }, []);
+
   const loadThread = useCallback(async (clientId: string) => {
     setThreadFor(clientId);
     setThread(null);
@@ -119,6 +140,18 @@ export function Dock({ canChat }: { canChat: boolean }) {
     const res = await fetch(`/api/dock/thread?client=${clientId}`);
     if (res.ok) setThread((await res.json()) as DockThread);
   }, []);
+
+  // The queue moves while the drawer is open — the listener sends within
+  // seconds — so an open thread re-reads itself. Same 10 s as the two page
+  // surfaces (round 25's AutoRefresh); only while OPEN, and only for the
+  // thread being read, so a drawer nobody is looking at costs nothing.
+  useEffect(() => {
+    if (!open || tab !== 'chat' || !threadFor) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshThread(threadFor);
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, [open, tab, threadFor, refreshThread]);
 
   function openDock() {
     setOpen(true);
@@ -153,13 +186,16 @@ export function Dock({ canChat }: { canChat: boolean }) {
     const form = new FormData();
     form.set('clientId', target);
     form.set('body', body);
+    form.set('path', pathname);
     if (photo) form.set('attachmentId', photo.id);
     const result = await sendReplyAction({}, form);
     setSending(false);
     if (result.ok) {
       setBody('');
       setPhoto(null);
-      void loadThread(target);
+      // The queued bubble appears immediately — pressing send must never look
+      // like nothing happened.
+      void refreshThread(target);
     } else {
       setSendError(result.error ?? 'error');
     }
@@ -311,7 +347,18 @@ export function Dock({ canChat }: { canChat: boolean }) {
                           mediaLabel={t('telegramMedia')}
                         />
                       ))}
-                      {thread.messages.length === 0 && (
+                      {thread.pending.map((row) => (
+                        <OutboxBubble
+                          key={row.id}
+                          row={{ ...row, queuedAt: new Date(row.queuedAt) }}
+                          labels={{
+                            queued: t('replyQueued'),
+                            stuck: t('replyStuck'),
+                            failed: t('replyFailed'),
+                          }}
+                        />
+                      ))}
+                      {thread.messages.length === 0 && thread.pending.length === 0 && (
                         <p className="text-center text-sm text-ink-500">
                           {t('conversationsEmpty')}
                         </p>

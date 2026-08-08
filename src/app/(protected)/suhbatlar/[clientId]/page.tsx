@@ -11,12 +11,13 @@ import {
   threadManagers,
 } from '@/modules/wms/crm/conversations';
 import { pendingFor } from '@/modules/wms/crm/outbox';
-import { outboxLabel } from '@/modules/wms/crm/telegram-send';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { OutboxBubble } from '@/components/outbox-bubble';
 import { ChatMenu } from '@/components/chat-menu';
 import { OutboxDismiss } from '@/components/outbox-dismiss';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { TelegramReply } from '@/components/telegram-reply';
+import { ThreadManagers } from '@/components/thread-managers';
 
 /**
  * One client's conversation, read the way it happened — and opened where it
@@ -70,8 +71,6 @@ export default async function ConversationPage({
   if (!client) notFound();
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
-  const showPicker = viewer.all === true && managers.length > 1;
-
 
   return (
     // Capped and centred: on a wide screen an 85 % bubble against each edge
@@ -99,32 +98,19 @@ export default async function ConversationPage({
         <ChatMenu clientId={client.id} />
       </div>
 
-      {/* The supervision view's selector (owner): several staff talk to one
-          person — pick whose conversation to read. Rank-and-file never see
-          this row; their own-account rule leaves nothing to pick. */}
-      {showPicker && (
-        <div className="flex flex-wrap gap-1.5" data-testid="thread-managers">
-          <Link
-            href={`/suhbatlar/${client.id}`}
-            className={`rounded-full border px-3 py-1 text-sm font-semibold ${
-              !hodim ? 'border-brand-700 bg-brand-700 text-white' : 'border-line text-ink-700'
-            }`}
-          >
-            {t('allManagers')}
-          </Link>
-          {managers.map((m) => (
-            <Link
-              key={m.id}
-              href={`/suhbatlar/${client.id}?hodim=${m.id}`}
-              className={`rounded-full border px-3 py-1 text-sm font-semibold ${
-                hodim === m.id ? 'border-brand-700 bg-brand-700 text-white' : 'border-line text-ink-700'
-              }`}
-            >
-              {m.name} · {m.messages}
-            </Link>
-          ))}
-        </div>
-      )}
+      {/* Who has talked with this person, FOLDED (owner, 2026-08-07) — and
+          for the supervision view, whose conversation to read. Same component
+          as on the cards, so neither screen can grow its own answer. */}
+      <ThreadManagers
+        managers={managers}
+        active={hodim ?? null}
+        hrefFor={
+          viewer.all
+            ? (id) => (id ? `/suhbatlar/${client.id}?hodim=${id}` : `/suhbatlar/${client.id}`)
+            : undefined
+        }
+        labels={{ who: t('whoTalked'), all: t('allManagers') }}
+      />
 
       {messages.length === 0 && queued.length === 0 ? (
         <p className="card text-center text-sm text-ink-500">{t('conversationsEmpty')}</p>
@@ -140,48 +126,14 @@ export default async function ConversationPage({
               purpose: a queued reply is not a delivered one, and a client
               waiting on an answer nobody sent is the worst thing this feature
               can produce. */}
-          {[...queued].reverse().map((row) => {
-            // Round 48, his item 14: a row the listener claimed and could not
-            // finish reading «navbatda» for hours is the screen lying about
-            // something the client has already replied to. `queuedAt` stands
-            // in for "claimed at" — a row is claimed within seconds of being
-            // written, so the two differ by less than the threshold cares
-            // about.
-            const label = outboxLabel(row.status, row.queuedAt);
-            return (
-            <div
+          {[...queued].reverse().map((row) => (
+            <OutboxBubble
               key={row.id}
-              className={`ml-auto max-w-[85%] rounded-xl border border-dashed px-3 py-2 text-sm ${
-                label === 'failed'
-                  ? 'border-bad text-bad'
-                  : label === 'stuck'
-                    ? 'border-warn text-warn'
-                    : 'border-line-strong text-ink-500'
-              }`}
-              data-testid={`outbox-${label}`}
-            >
-              <div className="mb-0.5 flex items-start gap-2 text-xs font-semibold">
-                <span className="min-w-0 flex-1">
-                  {label === 'failed'
-                    ? `✕ ${t('replyFailed')}`
-                    : label === 'stuck'
-                      ? `⚠ ${t('replyStuck')}`
-                      : `◷ ${t('replyQueued')}`}
-                </span>
-                {/* A failure is a note to the manager, not a record of
-                    anything a customer saw — once read, it may go. */}
-                {label === 'failed' && (
-                  <OutboxDismiss id={row.id} clientId={client.id} label={tc('delete')} />
-                )}
-              </div>
-              <p className="whitespace-pre-wrap break-words">
-                {row.attachmentId && '🖼 '}
-                {row.body}
-              </p>
-              {row.lastError && <p className="mt-1 text-xs">{row.lastError}</p>}
-            </div>
-            );
-          })}
+              row={row}
+              labels={{ queued: t('replyQueued'), stuck: t('replyStuck'), failed: t('replyFailed') }}
+              action={<OutboxDismiss id={row.id} clientId={client.id} label={tc('delete')} />}
+            />
+          ))}
 
           {messages.map((msg) => (
             <TelegramBubble

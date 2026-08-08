@@ -41,12 +41,20 @@ import { DiscountForm } from '../discount-form';
  * sees the gap between what the client was told and what turned up until the
  * client is standing in Tashkent arguing about it.
  */
-export default async function DealPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function DealPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
+  searchParams: Promise<{ hodim?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!canWriteDeal(actor.permissions)) redirect('/');
 
   const { id } = await params;
+  const { hodim } = await searchParams;
   const row = await dealById(id);
   if (!row) notFound();
 
@@ -131,7 +139,13 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
           <>
             <ClientFeed clientId={row.deal.clientId} dealId={row.deal.id} limit={60} tall />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
-            <TelegramThread clientId={row.deal.clientId} />
+            <TelegramThread
+              clientId={row.deal.clientId}
+              hodim={hodim}
+              hrefFor={(who) =>
+                who ? `/bitimlar/${row.deal.id}?hodim=${who}` : `/bitimlar/${row.deal.id}`
+              }
+            />
             <CallsPanel clientId={row.deal.clientId} />
           </>
         }

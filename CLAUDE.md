@@ -1750,7 +1750,7 @@ file (7 tests). NOT verifiable here and left for CI/production: the load
 numbers came from this 4-vCPU container, so absolute rps on his VPS will
 differ — the RATIO (single process = the ceiling) is what transfers.
 
-Round 74 — the owner deleted tap-to-edit (#551, «contactlarni ustiga bosib
+Round 74b — the owner deleted tap-to-edit (#558, «contactlarni ustiga bosib
 o'zgartirish featureni qayerda qoygan bo'lsang hammasini olib tashla»):
 `InlineField`, `patchLead`/`patchDeal`/`patchClient` and their three
 actions are GONE (deleted, not unreferenced — round 70's rule), the lead
@@ -1831,6 +1831,37 @@ not fixed: `updateLead` writes `stage_id` with no kind check and never clears
 GS252 absent), not his data; the 1,692 clients are real. 1087 unit + 140 e2e
 on a fresh db in CI's order; m5 flaked once on ECONNRESET, green alone and on
 the full re-run.
+
+Round 77 — the owner's four Telegram items (#574-576). **Audio in**
+(#574): `tgMediaPlan` extends the photo planner to voice notes and audio
+files — pure, structural, size read before any I/O, unknown size refused;
+three traps have tests (gramjs's `document.size` is a **big-integer
+OBJECT** and `Number()` on it is NaN, so `NaN <= cap` would have refused
+every voice note; a voice note may be labelled octet-stream, so the VOICE
+attribute decides; a video note carries an audio attribute too and its own
+video attribute excludes it). `attachPhotos` → `attachMedia`, split by
+KIND — it sweeps every attachment of a tg_message, so one undivided list
+would have drawn an Ogg file as an `<img>`. Player in the bubble
+(`preload="none"`), carried to the dock; `tg-import --media` uses the same
+planner. Authz unchanged by design: the tg_message branch decides on the
+message's owner, so the fence is the conversation, not the file type.
+**Queue honesty** (#575, «ocheretda turibti» twice, and the queue was
+right both times): ONE `OutboxBubble` computes `outboxLabel` for all three
+surfaces (the card panel had its own two-way check and could never say
+«stuck»; the dock showed no pending rows at all, so send made the words
+vanish), both page surfaces `<AutoRefresh>`, the dock polls its open
+thread, and `revalidateChatSurfaces` takes the pathname the person is on
+(a lead card's id is the LEAD's). `recordSent`'s swallowed failure — the
+ONLY record a text reply has — is now held and retried like `markSent`'s.
+TRIPWIRE LESSON: `toContain('AutoRefresh')` passes on a file that imports
+and never renders it (#494 from the other side) — the assertion is
+`<AutoRefresh` and only then did the strip go red. **Folded managers +
+per-manager reading** (#576): `ThreadManagers`, native `<details>`, closed
+by default and self-opening when a filter is on; the card pages carry
+`?hodim=` and filter in place; selecting is offered only under
+`viewer.all` because that is the only case `conversationFor` honours.
+No migration. 1082 unit/integration green; m9n/m9r/m9zi green;
+screenshots at 360×800 with the fold closed, open, and filtered.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
