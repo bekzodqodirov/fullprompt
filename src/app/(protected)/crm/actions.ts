@@ -11,6 +11,7 @@ import {
   addActivity,
   convertLead,
   createLead,
+  similarLeads,
   CrmError,
   deleteStage,
   leadSchema,
@@ -155,15 +156,28 @@ export interface QuickCreateResult {
   id?: string;
   name?: string;
   error?: string;
+  /** Open leads that look like this one — a warning, never a refusal. */
+  duplicates?: { id: string; name: string; phone: string | null; ownerName: string | null }[];
 }
 
 export async function quickCreateLeadAction(input: {
   name: string;
   phone: string;
+  /** Second press: the person has read the warning and means it. */
+  anyway?: boolean;
 }): Promise<QuickCreateResult> {
   const name = String(input?.name ?? '').trim();
   const phone = String(input?.phone ?? '').trim();
   if (name.length < 2) return { ok: false, error: 'validation' };
+
+  // Asked BEFORE the write and answered with names, so the seller can open the
+  // card and see whose enquiry it already is. Never a block: the second press
+  // creates it. Two people ringing one customer about one shipment is the
+  // harm; a deliberate second lead is a legitimate record.
+  if (!input?.anyway) {
+    const duplicates = await similarLeads({ phone, name });
+    if (duplicates.length > 0) return { ok: false, error: 'duplicate', duplicates };
+  }
 
   let created: { id: string; name: string } | null = null;
   const state = await run('crm.leads', async (ctx) => {

@@ -74,17 +74,18 @@ export default async function DealPage({
   const charged = await dealCharged(id);
   // Profit is tannarx territory: same gate as the accounting reports.
   const profit = actor.permissions.has('finance.reports') ? await dealProfit(id) : null;
-  // The number a person is most likely about to charge: the re-priced figure
-  // when the cargo came out different, the quote otherwise — minus the
-  // recorded damage discount either way.
-  const baseSuggested =
-    deviation.exceeds && deviation.suggestedAmount !== null
-      ? deviation.suggestedAmount
-      : quotedAmount;
+  // The AGREED price, minus the recorded damage discount. Never the re-priced
+  // figure: it used to prefill the charge box with the quote scaled by however
+  // the cargo actually measured, so a shipment that came out smaller billed
+  // the client LESS than the price they agreed to — the system quietly giving
+  // a discount nobody granted. The owner: «kg kubda farq bo'ladigan bo'lsa
+  // kelishilgan narxni o'zidan o'zi skidka bermasin, faqat tafovutni
+  // ogohlantirishi yetarli». The gap is still stated, loudly, above; what to
+  // do about it is a conversation with the client, and then a person types it.
   const netSuggested =
-    baseSuggested === null
+    quotedAmount === null
       ? null
-      : String(Math.max(0, Math.round((baseSuggested - discount) * 100) / 100));
+      : String(Math.max(0, Math.round((quotedAmount - discount) * 100) / 100));
 
   // Three states, and the wording has to be honest about which one it is:
   // nothing arrived yet, nothing to compare against, or a real gap.
@@ -202,14 +203,12 @@ export default async function DealPage({
           </span>
         </div>
 
-        {deviation.exceeds && deviation.suggestedAmount !== null && (
-          <div className="rounded-xl border border-warn/30 bg-warn/10 p-2 text-sm">
-            <span className="font-bold">
-              {t('suggested')}: {deviation.suggestedAmount} {row.deal.quotedCurrency ?? ''}
-            </span>
-            <p className="text-xs text-ink-700">{t('suggestedHint')}</p>
-          </div>
-        )}
+        {/* The re-priced figure is deliberately NOT shown. It was labelled a
+            suggestion and it never wrote anything, but it sat beside the charge
+            box holding the same number — which is how it came to be read as the
+            system's own answer. The warning above says the cargo does not match
+            the quote and by how much; the price stays the one that was agreed
+            until a person changes it. */}
 
         {discount > 0 && (
           <p className="text-sm">

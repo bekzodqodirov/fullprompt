@@ -21,6 +21,10 @@ export interface BoardDeal {
   /** Cubic metres quoted — off the card by default, switchable on. */
   quotedVolumeM3: string | null;
   quotedWeightKg: string | null;
+  /** What the cargo is: the first goods line, or the typed title. */
+  goods: string | null;
+  /** How many more goods lines there are beyond the first. */
+  goodsExtra: number;
   deferred: boolean;
   /** Set when the cargo landed outside the threshold, or landed unpriced. */
   flag: 'deviation' | 'unpriced' | null;
@@ -94,25 +98,27 @@ export function DealBoard({
         // boards in one hour forms ONE habit for where each thing lives.
         renderCard={(deal) => (
           <>
-            {/* The CODES are not switchable — they are what this card IS.
-                Both on one line, in one treatment: our deal number and the
-                client's. The client code used to be green down in the meta
-                row, which made green mean «is a client» on the funnel (where
-                only some leads have a code) and mean nothing at all here
-                (where every card has one). */}
-            <div className="flex flex-wrap items-baseline gap-x-2 font-mono text-xs font-bold text-ink-500">
-              <span>{deal.code}</span>
-              {fields.has('code') && <span>{deal.clientCode}</span>}
+            {/* WHO — the CLIENT CODE, and it is the biggest thing on the card.
+                The owner reads the code, not the name: «GS code kattada
+                yozilib klient ismi juda kichkinada yozilsa ham bo'ladi …
+                klient kodi muhim». So the code is the identity line and the
+                name drops to the muted row below, where it is a reminder
+                rather than a heading. Our own deal number rides alongside it,
+                small — it identifies the card in a link, not to a reader. */}
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-mono font-bold [overflow-wrap:anywhere]">
+                {deal.clientCode}
+              </span>
+              <span className="font-mono text-[11px] text-ink-500">{deal.code}</span>
             </div>
-            {/* WHO — always the client, never the title. This slot used to be
-                `title || clientName`, so one column mixed two grammars: a
-                titled deal named no client, an untitled one named the client
-                twice and named no job. */}
-            <div className="font-semibold [overflow-wrap:anywhere]">{deal.clientName}</div>
-            {/* WHAT — the job, secondary and optional. No «untitled»
-                placeholder: the line above already says whose card this is. */}
-            {deal.title && (
-              <div className="text-xs text-ink-700 [overflow-wrap:anywhere]">{deal.title}</div>
+            {/* WHAT — «tovar nomi muhim». The first goods line if hisoblash has
+                filed any, otherwise the title somebody typed; «+N» when there
+                are more goods than one line can hold. */}
+            {deal.goods && (
+              <div className="text-xs text-ink-700 [overflow-wrap:anywhere]">
+                {deal.goods}
+                {deal.goodsExtra > 0 && <span className="text-ink-400"> +{deal.goodsExtra}</span>}
+              </div>
             )}
             {/* MONEY on its own full-width row and ALWAYS present, so the eye
                 finds the number in the same place on every card and a column
@@ -142,6 +148,11 @@ export function DealBoard({
               ))}
             <MetaLine
               parts={[
+                // The client's NAME, kept small and kept here: the owner reads
+                // the code, but a name is what tells two similar codes apart
+                // when somebody is not sure. «Klient ismi juda kichkinada
+                // yozilsa ham bo'ladi» — so it rides with the rest.
+                fields.has('code') ? <span key="client">{deal.clientName}</span> : null,
                 fields.has('owner') && deal.ownerName ? (
                   <span key="owner">{deal.ownerName}</span>
                 ) : null,

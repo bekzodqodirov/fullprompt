@@ -40,6 +40,7 @@ import {
   saveSource,
   saveStage,
   stageUsage,
+  similarLeads,
   updateLead,
 } from '@/modules/wms/crm/service';
 import {
@@ -817,7 +818,7 @@ describe('the conversation list', () => {
       // …unless they are THE BOSS (round 21: «rahbar sifatida hamma
       // yozishmalar korinsin»): the supervision view reads the whole
       // company, and each row names whose account the thread lives on.
-      const bossRows = await listConversations({ id: colleague, all: true });
+      const bossRows = await listConversations({ id: colleague, all: true }, undefined, UNCAPPED);
       const bossRow = bossRows.find((r) => r.clientId === secret.id);
       expect(bossRow).toBeDefined();
       expect(bossRow!.managers.length).toBeGreaterThan(0);
@@ -944,5 +945,46 @@ describe('the conversation on a lead card', () => {
     expect(await conversationClientForLead({ clientId: null, phone: null })).toBeNull();
     expect(await conversationClientForLead({ clientId: null, phone: '   ' })).toBeNull();
     expect(await conversationClientForLead({ clientId: null, phone: '+998900000000000' })).toBeNull();
+  });
+});
+
+describe('a duplicate lead is named before it is created', () => {
+  it('finds an OPEN lead by the same phone, however it was typed', async () => {
+    const suffix = String(Date.now()).slice(-6);
+    // Nine digits is the app's phone identity, so the fixture is a real
+    // nine-digit local number and the search repeats it exactly.
+    const local = `90${suffix}0`.slice(0, 9);
+    const created = await createLead(
+      { name: `Dubl A ${suffix}`, phone: `+998 ${local.slice(0, 2)} ${local.slice(2, 5)} ${local.slice(5)}` },
+      ctx(),
+    );
+    // The same person, typed the way the next seller would type it — no plus,
+    // no spaces, no country code.
+    const hits = await similarLeads({ phone: local, name: 'boshqa odam' });
+    expect(hits.map((row) => row.id)).toContain(created.id);
+    // It names WHO holds it, or the warning is a shrug.
+    expect(hits.find((row) => row.id === created.id)!.ownerName).toBeTruthy();
+  });
+
+  it('a LOST lead coming back is a new enquiry, not a duplicate', async () => {
+    const suffix = String(Date.now()).slice(-6);
+    const phone = `+99891${suffix}`;
+    const gone = await createLead({ name: `Dubl B ${suffix}`, phone }, ctx());
+    await moveLead(gone.id, stageLostId, 'narx qimmat', ctx());
+    expect((await similarLeads({ phone })).map((row) => row.id)).not.toContain(gone.id);
+  });
+
+  it('a name alone matches only when there is no phone to go on', async () => {
+    const suffix = String(Date.now()).slice(-6);
+    const named = await createLead({ name: `Dubl C ${suffix}` }, ctx());
+    // No phone typed → the name is all there is, and an exact one counts.
+    expect((await similarLeads({ name: `Dubl C ${suffix}` })).map((row) => row.id)).toContain(
+      named.id,
+    );
+    // A phone that matches nobody must not fall back to the name: the phone is
+    // the strong signal and a wrong hit here trains people to click past it.
+    expect(
+      (await similarLeads({ phone: '+998900000000', name: `Dubl C ${suffix}` })).map((r) => r.id),
+    ).not.toContain(named.id);
   });
 });
