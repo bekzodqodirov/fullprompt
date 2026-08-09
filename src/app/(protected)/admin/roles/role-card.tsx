@@ -2,7 +2,13 @@
 
 import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { deleteRoleAction, saveGrantsAction, setRoleScopedAction, type RoleFormState } from './actions';
+import {
+  deleteRoleAction,
+  saveGrantsAction,
+  setRoleRotaAction,
+  setRoleScopedAction,
+  type RoleFormState,
+} from './actions';
 
 export interface RoleCardProps {
   id: string;
@@ -12,6 +18,7 @@ export interface RoleCardProps {
   isSystem: boolean;
   grantsCustomised: boolean;
   warehouseScoped: boolean;
+  inboundRota: boolean;
   userCount: number;
   grants: string[];
   /** Areas and their permission codes, already grouped by the server. */
@@ -66,6 +73,11 @@ export function RoleCard(props: RoleCardProps) {
             🏠 {t('scoped')}
           </span>
         )}
+        {props.inboundRota && (
+          <span className="chip-neutral" data-testid={`rota-${props.code}`}>
+            📣 {t('rota')}
+          </span>
+        )}
         <button
           type="button"
           data-testid={`toggle-${props.code}`}
@@ -107,6 +119,29 @@ export function RoleCard(props: RoleCardProps) {
             <span>
               <span className="font-semibold">{t('scoped')}</span>
               <span className="block text-xs text-ink-500">{t('scopedHint')}</span>
+            </span>
+          </label>
+
+          {/* Whether people holding this role take their turn at leads that
+              arrive by themselves (migration 0065). No own-role lock: unlike
+              the scope above, ticking this on a role you hold only ever gives
+              you more calls to make. */}
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={props.inboundRota}
+              data-testid={`rota-toggle-${props.code}`}
+              onChange={(e) => {
+                const form = new FormData();
+                form.set('roleId', props.id);
+                form.set('rota', e.target.checked ? 'true' : 'false');
+                void setRoleRotaAction(form);
+              }}
+              className="mt-0.5 h-5 w-5 shrink-0"
+            />
+            <span>
+              <span className="font-semibold">{t('rota')}</span>
+              <span className="block text-xs text-ink-500">{t('rotaHint')}</span>
             </span>
           </label>
           {props.groups.map((group) => (

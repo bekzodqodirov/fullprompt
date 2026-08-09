@@ -268,6 +268,10 @@ export default async function LeadsPage({
           </Link>
           {actor.permissions.has('crm.manage') && (
             <>
+              <Link href="/crm/kelganlar" className={boardMenuItem}>
+                <Icon name="target" className="h-4 w-4 text-ink-500" />
+                {t('arrivals')}
+              </Link>
               <Link href="/crm/people" className={boardMenuItem}>
                 <Icon name="users" className="h-4 w-4 text-ink-500" />
                 {t('people')}

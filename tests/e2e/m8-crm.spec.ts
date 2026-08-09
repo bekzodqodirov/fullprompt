@@ -236,7 +236,9 @@ test('the stage and the field it invented are removed again', async ({ page }) =
   await login(page, OWNER);
 
   await page.goto('/crm/settings');
-  const row = page.locator('li, tr, div').filter({ hasText: `Sinov bosqichi ${runId}` }).last();
+  const row = page
+    .getByTestId('stage-tool-row')
+    .filter({ hasText: `Sinov bosqichi ${runId}` });
   // Deleting a stage asks WHERE its leads should go — «1» is the first of the
   // others, and this one has none anyway.
   page.once('dialog', (dialog) => void dialog.accept('1'));

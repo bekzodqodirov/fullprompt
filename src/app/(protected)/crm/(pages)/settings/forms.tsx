@@ -7,6 +7,7 @@ import {
   reorderStagesAction,
   saveSourceAction,
   saveStageAction,
+  setCalcStageAction,
   type CrmFormState,
 } from '../../actions';
 import { STAGE_CLASS, stageClass } from '../../stage-color';
@@ -58,7 +59,12 @@ export function StageForm({ stage }: { stage?: StageRow }) {
           className="input min-w-40 flex-1"
           required
         />
-        <select name="kind" defaultValue={stage?.kind ?? 'open'} aria-label={t('kind')} className="input !w-36">
+        <select
+          name="kind"
+          defaultValue={stage?.kind ?? 'open'}
+          aria-label={t('kind')}
+          className="input !w-36"
+        >
           <option value="open">{t('kindOpen')}</option>
           <option value="won">{t('kindWon')}</option>
           <option value="lost">{t('kindLost')}</option>
@@ -108,7 +114,13 @@ export function StageForm({ stage }: { stage?: StageRow }) {
 }
 
 /** Reorder and remove — the two things a fixed funnel cannot do. */
-export function StageTools({ stages, usage }: { stages: StageRow[]; usage: Record<string, number> }) {
+export function StageTools({
+  stages,
+  usage,
+}: {
+  stages: StageRow[];
+  usage: Record<string, number>;
+}) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
   const [pending, start] = useTransition();
@@ -128,6 +140,11 @@ export function StageTools({ stages, usage }: { stages: StageRow[]; usage: Recor
       {stages.map((stage, index) => (
         <div
           key={stage.id}
+          // Named so a caller can reach ONE stage's controls. Without it the
+          // only handle is div-soup, and a `.filter({hasText})` over every
+          // `div` on the page picks a different element depending on what
+          // else the screen happens to be showing.
+          data-testid="stage-tool-row"
           className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm ${stageClass(
             stage.color,
           )}`}
@@ -230,6 +247,59 @@ export function SourceForm({
         </button>
       </div>
       <Feedback state={state} />
+    </form>
+  );
+}
+
+/**
+ * Which stage a request for a price lands on (round 83, owner: «hisoblatish
+ * etapiga tushishi kerak»).
+ *
+ * A picker rather than a name the code looks for: the funnel is his to rename
+ * and reorder, and a lookup by name would break the first time he edited the
+ * word — the same reason `lead_sources` grew a stable key. «—» is a real
+ * answer and the default: it means «leave the card where it is».
+ */
+export function CalcStageForm({
+  board,
+  stages,
+  current,
+}: {
+  board: 'lead' | 'deal';
+  stages: { id: string; name: string; kind: string; active: boolean }[];
+  current: string;
+}) {
+  const t = useTranslations('crm');
+  const tc = useTranslations('common');
+  const [state, formAction, pending] = useActionState<CrmFormState, FormData>(
+    setCalcStageAction,
+    {},
+  );
+
+  return (
+    <form action={formAction} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="board" value={board} />
+      <select
+        name="stageId"
+        defaultValue={current}
+        aria-label={t('calcStage')}
+        data-testid={`calc-stage-${board}`}
+        className="input min-w-40 flex-1"
+      >
+        <option value="">—</option>
+        {stages
+          .filter((stage) => stage.active && stage.kind === 'open')
+          .map((stage) => (
+            <option key={stage.id} value={stage.id}>
+              {stage.name}
+            </option>
+          ))}
+      </select>
+      <button type="submit" className="btn-primary px-4" disabled={pending}>
+        {tc('save')}
+      </button>
+      {state.ok && <span className="self-center text-sm text-good">✅</span>}
+      {state.error && <span className="self-center text-sm text-bad">{state.error}</span>}
     </form>
   );
 }

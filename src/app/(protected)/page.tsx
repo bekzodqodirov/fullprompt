@@ -58,8 +58,7 @@ export default async function HomePage() {
         icon: item.icon,
       });
     }
-    if (items.length > 0)
-      groups.push({ title: t(group.titleKey as 'sectionInfo'), items });
+    if (items.length > 0) groups.push({ title: t(group.titleKey as 'sectionInfo'), items });
   }
 
   // Work somebody gave THIS person, on the screen everyone opens.
@@ -75,9 +74,7 @@ export default async function HomePage() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-medium text-ink-500">
-          {new Date().toLocaleDateString('en-GB')}
-        </p>
+        <p className="text-xs font-medium text-ink-500">{new Date().toLocaleDateString('en-GB')}</p>
         {/* Two lines at most: a long full name used to push the first action
             below the fold on a 360 px screen. */}
         <h1 className="line-clamp-2 text-xl leading-tight">
@@ -214,7 +211,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
           href="/plans"
           icon="clipboard"
           testid="logist-flow-hero"
-        label={tp('title')}
+          label={tp('title')}
           count={flow.plansPending}
           sub={flow.plansPending > 0 ? t('flowPlansPending', { n: flow.plansPending }) : null}
         />
@@ -341,24 +338,17 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
  */
 async function VedFlow({ flow }: { flow: VedFlowCounts }) {
   const t = await getTranslations('home');
-  const tc = await getTranslations('calc');
-
   return (
     <Section title={t('flowTitle')}>
       <div className="space-y-2">
-        <FlowRow
-          href="/bugun"
-          icon="check"
-          testid="ved-flow-hero"
-          label={tc('title')}
-          count={flow.calcOpen}
-          warn={flow.calcLate > 0}
-          sub={flow.calcLate > 0 ? `🔴 ${tc('late')}: ${flow.calcLate}` : null}
-        />
+        {/* The paperwork queue is the hero since round 83 took the hisoblash
+            clock out: a truck that left without its papers reaching the agent
+            is what this person actually gets phoned about. `ved-flow-hero`
+            keeps its testid — round 24's rule, a hero is an ordinary row. */}
         <FlowRow
           href="/batches"
           icon="inbox"
-          testid="ved-flow-docs"
+          testid="ved-flow-hero"
           label={t('flowDocsPending')}
           count={flow.docsPending}
           warn={flow.docsPending > 0}
@@ -387,8 +377,7 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
   const td = await getTranslations('dashboard');
   const tfin = await getTranslations('finance');
 
-  const usd = (value: number) =>
-    `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  const usd = (value: number) => `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 
   return (
     <Section title={t('flowTitle')}>

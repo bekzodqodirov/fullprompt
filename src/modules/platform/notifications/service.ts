@@ -501,13 +501,64 @@ export async function processPendingEvents(): Promise<number> {
   return created;
 }
 
+/**
+ * Take the oldest unprocessed event, atomically — `claimNext`'s shape, one
+ * table over.
+ *
+ * This used to be a plain `SELECT … WHERE processed_at IS NULL LIMIT 50`, with
+ * the row marked processed only AFTER it had been handled. Two drains
+ * overlapping therefore read the SAME rows and both fanned them out, and the
+ * drains overlap routinely: a pg-boss sweep runs every minute and every CRM
+ * action kicks `JOB_PROCESS_EVENTS` the moment somebody moves a card. The
+ * visible consequence is a phase-7 rule firing twice — one stage move, two
+ * identical tasks, or the same Telegram message to the same person twice.
+ *
+ * `FOR UPDATE SKIP LOCKED` inside the subquery is what makes two drains SPLIT
+ * the work instead of duplicating it, and the claim must be the UPDATE itself:
+ * a read followed by a write is two statements with a gap, and the gap is
+ * where the second drain reads the same id.
+ *
+ * ONE row per claim, not fifty. The claim marks the event processed BEFORE it
+ * is handled, so a crash mid-event loses that event's notifications — at one
+ * row that is a single missed message, where a fifty-row claim would lose a
+ * whole batch. The alternative (a separate `claimed_at` column plus a
+ * releasing sweep) buys at-least-once delivery for a migration and a second
+ * failure mode, and duplicate tasks are the complaint that exists.
+ */
+async function claimNextEvent(): Promise<typeof events.$inferSelect | null> {
+  const rows = await db.execute<Record<string, unknown>>(sql`
+    UPDATE events SET processed_at = now()
+    WHERE id = (
+      SELECT id FROM events
+      WHERE processed_at IS NULL
+      ORDER BY id
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, type, payload, entity_type, entity_id, actor_id
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    type: row.type,
+    payload: row.payload,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    actorId: row.actor_id,
+  } as typeof events.$inferSelect;
+}
+
 async function processEventBatch(): Promise<{ created: number; full: boolean }> {
-  const pending = await db
-    .select()
-    .from(events)
-    .where(isNull(events.processedAt))
-    .orderBy(events.id)
-    .limit(50);
+  // Claimed one at a time and processed as they come, so this loop is a work
+  // QUEUE rather than a snapshot: a second drain running beside it takes the
+  // rows this one has not reached, and neither sees the other's.
+  const pending: (typeof events.$inferSelect)[] = [];
+  for (let i = 0; i < 50; i++) {
+    const next = await claimNextEvent();
+    if (!next) break;
+    pending.push(next);
+  }
 
   let created = 0;
   for (const event of pending) {
@@ -582,7 +633,7 @@ async function processEventBatch(): Promise<{ created: number; full: boolean }> 
     } catch (err) {
       logger.error({ err, eventId: String(event.id) }, 'deal auto-stage failed');
     }
-    await db.update(events).set({ processedAt: new Date() }).where(eq(events.id, event.id));
+    // Already marked processed by the claim above — see `claimNextEvent`.
   }
   return { created, full: pending.length === 50 };
 }

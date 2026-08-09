@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asc, eq, like } from 'drizzle-orm';
+import { asc, eq, isNotNull, like } from 'drizzle-orm';
 import { db, pgClient } from '@/modules/platform/db/client';
 import { clients, leadStages, leads } from '@/modules/platform/db/schema';
 import { createLead } from '@/modules/wms/crm/service';
@@ -26,8 +26,14 @@ let actorId = '';
 let firstStage = '';
 
 beforeAll(async () => {
-  const [row] = await db.select({ id: leads.createdBy }).from(leads).limit(1);
-  actorId = row!.id;
+  // A lead with a real author: `created_by` is nullable since 0065 (a lead an
+  // advert created has none), so the first row is not necessarily a person.
+  const [row] = await db
+    .select({ id: leads.createdBy })
+    .from(leads)
+    .where(isNotNull(leads.createdBy))
+    .limit(1);
+  actorId = row!.id!;
   const stages = await db.select().from(leadStages).orderBy(asc(leadStages.sortOrder));
   firstStage = stages.find((stage) => stage.kind === 'open')!.id;
 });

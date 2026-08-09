@@ -2,7 +2,6 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   batches,
-  calcRequests,
   clientTransactions,
   dealStages,
   deals,
@@ -163,29 +162,22 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
 }
 
 export interface VedFlowCounts {
-  /** Open hisoblash requests sitting on THIS person — the round-28 clock. */
-  calcOpen: number;
-  /** …of which already past their deadline. */
-  calcLate: number;
   /** Departed export paperwork not yet sent to the agent. */
   docsPending: number;
   /** Goods lines on OPEN deals with no TNVED code — the classification queue. */
   tnvedMissing: number;
 }
 
-export async function vedFlowCounts(actorId: string): Promise<VedFlowCounts> {
-  const now = new Date();
-  const [calcRows, docs, tnved] = await Promise.all([
-    db
-      .select({ dueAt: calcRequests.dueAt })
-      .from(calcRequests)
-      .where(and(eq(calcRequests.assigneeId, actorId), isNull(calcRequests.completedAt))),
+export async function vedFlowCounts(): Promise<VedFlowCounts> {
+  const [docs, tnved] = await Promise.all([
     // A truck that left without its papers reaching the agent is the thing
     // this person gets phoned about; unloaded means customs is behind it.
     db
       .select({ n: sql<number>`count(*)` })
       .from(batches)
-      .where(and(inArray(batches.status, ['in_transit', 'arrived']), isNull(batches.sentToAgentAt))),
+      .where(
+        and(inArray(batches.status, ['in_transit', 'arrived']), isNull(batches.sentToAgentAt)),
+      ),
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n
       FROM deal_lines dl
@@ -195,8 +187,6 @@ export async function vedFlowCounts(actorId: string): Promise<VedFlowCounts> {
     `),
   ]);
   return {
-    calcOpen: calcRows.length,
-    calcLate: calcRows.filter((row) => row.dueAt < now).length,
     docsPending: Number(docs[0]?.n ?? 0),
     tnvedMissing: Number(tnved[0]?.n ?? 0),
   };
@@ -249,8 +239,12 @@ export async function buildHomeFlow(
   if (actor.roles.includes('ved_manager')) {
     return {
       kind: 'ved',
-      hrefs: ['/bugun', '/batches', '/bitimlar'],
-      counts: await vedFlowCounts(actor.id),
+      // `/bugun` LEFT the list when the hisoblash clock went (round 83): the
+      // flow no longer draws a row for it, and an href named here is a tile
+      // suppressed below — so keeping it would have hidden the day screen
+      // from this person's home entirely.
+      hrefs: ['/batches', '/bitimlar'],
+      counts: await vedFlowCounts(),
     };
   }
   if (actor.roles.includes('accountant')) {

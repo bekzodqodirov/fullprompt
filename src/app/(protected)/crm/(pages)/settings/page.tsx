@@ -3,8 +3,9 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
 import { listSources, listStages, stageUsage } from '@/modules/wms/crm/service';
+import { getSetting } from '@/modules/platform/settings/service';
 import Link from 'next/link';
-import { SourceForm, StageForm, StageTools } from './forms';
+import { CalcStageForm, SourceForm, StageForm, StageTools } from './forms';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -17,10 +18,11 @@ export default async function CrmSettingsPage() {
   if (!actor.permissions.has('crm.manage')) redirect('/crm');
   const t = await getTranslations('crm');
 
-  const [stages, sources, usage] = await Promise.all([
+  const [stages, sources, usage, calcStage] = await Promise.all([
     listStages(true),
     listSources(true),
     stageUsage(),
+    getSetting('crm_calc_stage'),
   ]);
 
   const stageRows = stages.map((stage) => ({
@@ -39,6 +41,12 @@ export default async function CrmSettingsPage() {
       <div className="card space-y-2">
         <h2 className="text-sm font-bold uppercase text-ink-500">🎯 {t('stages')}</h2>
         <StageTools stages={stageRows} usage={usage} />
+      </div>
+
+      <div className="card space-y-2">
+        <h2 className="text-sm font-bold uppercase text-ink-500">🧮 {t('calcStage')}</h2>
+        <p className="text-xs text-ink-500">{t('calcStageHint')}</p>
+        <CalcStageForm board="lead" stages={stageRows} current={calcStage} />
       </div>
 
       <Panel title={`➕ ${t('addStage')}`}>

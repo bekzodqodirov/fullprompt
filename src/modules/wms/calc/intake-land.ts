@@ -1,8 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { clients, dealStages, deals, leads } from '../../platform/db/schema';
+import { clients, dealStages, deals, leadStages, leads } from '../../platform/db/schema';
 import { addActivity, createLead } from '../crm/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
+import { logger } from '../../platform/logger';
 import { intakeNoteText, type CalcFacts, type CalcSection } from './intake';
 
 /**
@@ -89,6 +90,36 @@ async function dealFor(
 }
 
 /**
+ * The stage a request for a price belongs on, and whether this card may go
+ * there (owner, round 83: «hisoblatish etapiga tushishi kerak»).
+ *
+ * FORWARD only, by `sort_order` — the cargo-trigger rule (#392), for the same
+ * reason: a card already further down the funnel is somebody's work in
+ * progress, and a machine dragging it backwards because a second request came
+ * in would undo a person's decision. Nothing configured, or a stage that has
+ * since been deleted or closed, means «leave it where it is».
+ */
+async function calcStageMove(
+  board: 'lead' | 'deal',
+  currentStageId: string | null,
+): Promise<string | null> {
+  const { getSetting } = await import('../../platform/settings/service');
+  const wanted = await getSetting(board === 'lead' ? 'crm_calc_stage' : 'deal_calc_stage');
+  if (!wanted) return null;
+
+  const table = board === 'lead' ? leadStages : dealStages;
+  const rows = await db
+    .select({ id: table.id, sortOrder: table.sortOrder, kind: table.kind, active: table.active })
+    .from(table);
+  const target = rows.find((row) => row.id === wanted);
+  if (!target || !target.active || target.kind !== 'open') return null;
+  if (!currentStageId) return target.id;
+  if (currentStageId === target.id) return null;
+  const current = rows.find((row) => row.id === currentStageId);
+  return current && current.sortOrder < target.sortOrder ? target.id : null;
+}
+
+/**
  * Land a confirmed intake: find or open the card, write the note with the
  * AI's working, and return where it went so the bot can link to it.
  *
@@ -146,7 +177,42 @@ export async function landIntake(input: {
     { actorId: input.collectedBy },
   );
 
+  // …and the card moves to the hisoblatish stage, through the SAME move the
+  // board's buttons use — so the audit row, the stage event and any phase-7
+  // rule watching «entered this stage» all fire exactly as if a person had
+  // dragged it. Fenced: a funnel misconfiguration must never lose the note
+  // that was just written, which is the part the bot promised to save.
+  try {
+    await moveToCalcStage(target, input.collectedBy);
+  } catch (err) {
+    logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
+  }
+
   return target;
+}
+
+async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<void> {
+  if (target.kind === 'lead') {
+    const [row] = await db
+      .select({ stageId: leads.stageId })
+      .from(leads)
+      .where(eq(leads.id, target.id))
+      .limit(1);
+    const to = await calcStageMove('lead', row?.stageId ?? null);
+    if (!to) return;
+    const { moveLead } = await import('../crm/service');
+    await moveLead(target.id, to, '', { actorId });
+    return;
+  }
+  const [row] = await db
+    .select({ stageId: deals.stageId })
+    .from(deals)
+    .where(eq(deals.id, target.id))
+    .limit(1);
+  const to = await calcStageMove('deal', row?.stageId ?? null);
+  if (!to) return;
+  const { moveDeal } = await import('../deals/service');
+  await moveDeal(target.id, to, { actorId });
 }
 
 /**
@@ -155,7 +221,9 @@ export async function landIntake(input: {
  * on the last nine digits, the same rule the client book uses — the number a
  * salesperson types is never formatted twice the same way.
  */
-export async function openLeadForPhone(phone: string): Promise<{ id: string; name: string } | null> {
+export async function openLeadForPhone(
+  phone: string,
+): Promise<{ id: string; name: string } | null> {
   const digits = phone.replace(/\D/g, '').slice(-9);
   if (digits.length < 7) return null;
   const rows = await db

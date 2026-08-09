@@ -1007,6 +1007,12 @@ export const accountTransfers = pgTable(
 export const leadSources = pgTable('lead_sources', {
   id: id(),
   name: text('name').notNull().unique(),
+  /**
+   * A stable handle the CODE uses, while the NAME stays the owner's to edit.
+   * Find-or-create by name would split `funnelReport` the first time somebody
+   * renamed «Instagram» (migration 0065).
+   */
+  key: text('key'),
   sortOrder: integer('sort_order').notNull().default(100),
   active: boolean('active').notNull().default(true),
   createdAt: createdAt(),
@@ -1076,9 +1082,14 @@ export const leads = pgTable(
     /** Which human being this is, when several codes belong to one person. */
     personId: uuid('person_id'),
     lostReason: text('lost_reason'),
-    createdBy: uuid('created_by')
-      .notNull()
-      .references(() => users.id),
+    /**
+     * Null when the lead arrived by itself — an advert, the public form, the
+     * bot. Naming the round-robin owner as its author would put a sentence in
+     * the audit trail that nobody said (migration 0065).
+     */
+    createdBy: uuid('created_by').references(() => users.id),
+    /** Set when a machine created it; what the inbound rotation counts. */
+    inboundAt: timestamp('inbound_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1105,15 +1116,61 @@ export const crmActivities = pgTable(
     kind: text('kind').notNull(),
     happenedAt: timestamp('happened_at', { withTimezone: true }).notNull().defaultNow(),
     note: text('note').notNull(),
-    createdBy: uuid('created_by')
-      .notNull()
-      .references(() => users.id),
+    /** Null for a note a machine wrote — see leads.createdBy (0065). */
+    createdBy: uuid('created_by').references(() => users.id),
     createdAt: createdAt(),
   },
   (t) => [
     check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client', 'deal')`),
     check('crm_activities_kind_check', sql`${t.kind} IN ('call', 'meeting', 'message', 'note')`),
     index('crm_activities_entity_idx').on(t.entityType, t.entityId, t.happenedAt),
+  ],
+);
+
+/**
+ * Every lead that arrived by ITSELF — an advert, the public form, the bot.
+ *
+ * It exists for two jobs a `leads` row cannot do. The first is idempotency:
+ * Meta re-delivers a webhook until it is answered 200, and a form page reloads,
+ * so the second copy has to be refused by the DATABASE rather than by a check
+ * somebody can forget. The second is the honest record of what was NOT created
+ * — the capped, the duplicated, the ones that turned out to be a client. «Why
+ * did the advert produce nothing today» is not answerable from a table that
+ * only holds what exists.
+ */
+export const leadIntakes = pgTable(
+  'lead_intakes',
+  {
+    id: id(),
+    channel: text('channel').notNull(),
+    /** Meta's leadgen id — the idempotency key. Null for a form post. */
+    externalId: text('external_id'),
+    sourceKey: text('source_key'),
+    /** Whatever names the campaign: {utm} or {form_id, ad_id, page_id}. */
+    ref: jsonb('ref'),
+    phone: text('phone'),
+    name: text('name'),
+    outcome: text('outcome').notNull(),
+    /** 'no_contact' / 'replay' / 'capped' — only when nothing was created. */
+    reason: text('reason'),
+    leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+    assignedUserId: uuid('assigned_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('lead_intakes_channel_check', sql`${t.channel} IN ('form', 'meta', 'telegram')`),
+    check(
+      'lead_intakes_outcome_check',
+      sql`${t.outcome} IN ('created', 'joined', 'client', 'dropped')`,
+    ),
+    uniqueIndex('lead_intakes_external_idx')
+      .on(t.channel, t.externalId)
+      .where(sql`${t.externalId} IS NOT NULL`),
+    index('lead_intakes_phone_idx')
+      .on(t.phone, t.createdAt)
+      .where(sql`${t.phone} IS NOT NULL`),
+    index('lead_intakes_source_idx').on(t.sourceKey, t.createdAt),
   ],
 );
 
