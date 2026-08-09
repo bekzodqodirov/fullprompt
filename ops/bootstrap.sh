@@ -67,8 +67,12 @@ say "4/5 Health check"
 #
 # `node -e` rather than curl or wget: the runner is node:22-slim, which ships
 # neither, and node with a global fetch is the one thing it is guaranteed to
-# have.
-probe='fetch("http://127.0.0.1:3000/api/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'
+# have. The address is the container's OWN hostname, not 127.0.0.1: Next
+# standalone binds to `process.env.HOSTNAME`, which Docker sets to the
+# container id. The Dockerfile now pins HOSTNAME=0.0.0.0 so loopback works
+# too, and this form is correct either way — including on an image built
+# before that line existed, which is every image already deployed.
+probe='fetch("http://"+require("os").hostname()+":3000/api/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'
 for i in $(seq 1 60); do
   if docker compose exec -T app node -e "$probe" >/dev/null 2>&1; then break; fi
   sleep 2
