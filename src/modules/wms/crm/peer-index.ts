@@ -170,6 +170,12 @@ export async function offerableMatches(
         inArray(tgChatRules.decision, ['include', 'exclude']),
       ),
     );
+  // The two `inArray`s are a cross product and deliberately looser than the
+  // question — it is the SET that decides, keyed on the exact pair, so a row
+  // the wider query drags in matches no hit and changes nothing. That
+  // matters in the normal case, not an edge one: a Telegram peer id is
+  // global, so two colleagues with the same customer share it, and one of
+  // them saying «hech qachon» must not answer for the other.
   const decided = new Set(answered.map((row) => `${row.managerUserId}:${row.peerId}`));
   return hits.filter((hit) => !decided.has(`${hit.managerUserId}:${hit.peerId}`));
 }

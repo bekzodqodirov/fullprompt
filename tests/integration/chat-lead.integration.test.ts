@@ -37,6 +37,24 @@ import {
 const MARK = `R79-${String(Date.now()).slice(-7)}`;
 const PHONE = `+99890${String(Date.now()).slice(-7)}`;
 
+/**
+ * A peer id nobody else in this file can mint.
+ *
+ * The first version wrote `BigInt(Date.now() + 21)` and friends, and CI found
+ * what this container never would: the whole file runs in ~120 ms, so
+ * `Date.now() + 41` in one test IS `Date.now() + 21` twenty milliseconds
+ * later. The collision made «Chatni qo'shish»'s include rule land on the
+ * lookback test's peer, so `offerableMatches` correctly refused to offer it
+ * and the assertion read as a bug in the code it was testing.
+ *
+ * A clock is not a unique id — it is a unique id *per millisecond*, and a
+ * fast test file spends many tests inside one. The counter is the fix that
+ * `login-lockout` had to reach for a round ago, for the same reason.
+ */
+const PEER_BASE = BigInt(Date.now()) * 1000n;
+let peerSeq = 0;
+const nextPeer = () => PEER_BASE + BigInt((peerSeq += 1));
+
 let actorId = '';
 let otherId = '';
 const madeLeads: string[] = [];
@@ -113,7 +131,7 @@ describe('«Lid ochish» — the third answer the tray could not give', () => {
   let ruleId = '';
 
   beforeAll(async () => {
-    const peerId = BigInt(Date.now() + 31);
+    const peerId = nextPeer();
     madeRules.push(peerId);
     const [row] = await db
       .insert(tgChatRules)
@@ -166,7 +184,7 @@ describe('«Lid ochish» — the third answer the tray could not give', () => {
   });
 
   it('refuses a chat Telegram gave us no number for', async () => {
-    const peerId = BigInt(Date.now() + 33);
+    const peerId = nextPeer();
     madeRules.push(peerId);
     const [row] = await db
       .insert(tgChatRules)
@@ -180,7 +198,7 @@ describe('«Lid ochish» — the third answer the tray could not give', () => {
 
 describe('«Chatni qo’shish» from a card', () => {
   it('attaches the chat to the card, on the actor’s OWN account', async () => {
-    const peerId = BigInt(Date.now() + 41);
+    const peerId = nextPeer();
     madeRules.push(peerId);
     const [client] = await db
       .insert(clients)
@@ -199,7 +217,7 @@ describe('«Chatni qo’shish» from a card', () => {
 
   it('refuses to attach a chat to nobody', async () => {
     await expect(
-      attachPeerToCard({ peerId: BigInt(Date.now() + 43), managerUserId: actorId }, ctx()),
+      attachPeerToCard({ peerId: nextPeer(), managerUserId: actorId }, ctx()),
     ).rejects.toThrow(ChatRuleError);
   });
 });
@@ -216,8 +234,8 @@ describe('the conversation follows the person onto their client code', () => {
     await db.insert(tgMessages).values({
       leadId,
       managerUserId: actorId,
-      peerId: BigInt(Date.now()),
-      tgMessageId: BigInt(Date.now()),
+      peerId: nextPeer(),
+      tgMessageId: nextPeer(),
       direction: 'in',
       body: `${MARK} salom`,
       sentAt: new Date(),
@@ -234,7 +252,7 @@ describe('the conversation follows the person onto their client code', () => {
 describe('the lookback index names the manager and never the person', () => {
   it('finds the account that has this number, and says whose it is', async () => {
     await indexPeers(otherId, [
-      { peerId: BigInt(Date.now()), phone: PHONE, lastMessageAt: new Date() },
+      { peerId: nextPeer(), phone: PHONE, lastMessageAt: new Date() },
     ]);
     const hits = await managersWhoTalkedTo(PHONE, actorId);
     expect(hits.map((hit) => hit.managerUserId)).toContain(otherId);
@@ -269,7 +287,7 @@ describe('the lookback index names the manager and never the person', () => {
   });
 
   it('re-indexing the same peer updates rather than duplicating', async () => {
-    const peerId = BigInt(Date.now() + 5);
+    const peerId = nextPeer();
     await indexPeers(otherId, [{ peerId, phone: PHONE, lastMessageAt: new Date() }]);
     await indexPeers(otherId, [{ peerId, phone: PHONE, lastMessageAt: new Date() }]);
     const rows = await db
@@ -283,7 +301,7 @@ describe('the lookback index names the manager and never the person', () => {
     // The panel exists to ask a question. A chat already kept, or already
     // refused, is a question with an answer — re-offering it on every card
     // carrying the number turns a decision into nagging.
-    const peerId = BigInt(Date.now() + 21);
+    const peerId = nextPeer();
     await indexPeers(actorId, [{ peerId, phone: PHONE, lastMessageAt: new Date() }]);
     const before = await offerableMatches(PHONE, actorId);
     expect(before.map((hit) => hit.peerId)).toContain(peerId);
@@ -309,7 +327,7 @@ describe('the lookback index names the manager and never the person', () => {
       .from(tgPeerIndex)
       .where(eq(tgPeerIndex.managerUserId, otherId));
     const written = await indexPeers(otherId, [
-      { peerId: BigInt(Date.now() + 9), phone: null, lastMessageAt: new Date() },
+      { peerId: nextPeer(), phone: null, lastMessageAt: new Date() },
     ]);
     expect(written).toBe(0);
     const after = await db
