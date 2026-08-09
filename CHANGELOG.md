@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## Telegram ↔ CRM: halqa yopildi (3-qism) — 2026-08-09
+
+Oldingi ikki qismda poydevor qo'yilgan edi. Endi ikkala tugma ham ekranda.
+
+**«Qaysi chatlar» ro'yxatida uchinchi javob: «Yangi lid».** Ilgari faqat ikki
+javob bor edi — «Bu mijoz» (kitobdan kod tanlash) va «Hech qachon». Birinchi
+marta yozayotgan odam esa na u, na bu. Endi bitta bosishda lid ochiladi va
+o'sha suhbat lidga tushadi.
+
+- **Ikkinchi lid ochilmaydi.** Shu raqam bilan ochiq lid bo'lsa, o'sha ishlatiladi.
+- **Lid — chat kimning telefonida bo'lsa, o'shanikidir.** Siz xodimning
+  ro'yxatini ko'rib turib tugmani bossangiz ham, lid o'sha xodimga biriktiriladi.
+- Keyin «Bu mijoz» desangiz, lid ko'rsatkichi o'chadi — bitta chat ikki joyga
+  tegishli bo'lib qolmaydi.
+- Raqam ko'rinmagan chatda tugma umuman chiqmaydi: qo'ng'iroq qilib
+  bo'lmaydigan lid — bu shunchaki ism yozilgan qator.
+
+**Karta ochilganda: «Bu raqam bilan yozishma bor».** Siz aytgan teskari
+tekshiruv. Lid, bitim yoki mijoz kartasida telefon raqami bo'lsa, ulangan
+Telegram akkauntlardan qidiriladi va topilsa aytiladi:
+
+- **o'zingizning** chatingiz bo'lsa — «Chatni qo'shish» tugmasi;
+- **xodimning** chati bo'lsa — faqat ismi yoziladi, «undan so'rang». Suhbatning
+  o'zi ochilmaydi: kimdir gaplashgani bilan gapning mazmuni boshqa narsa.
+- Topilmasa — hech narsa chiqmaydi, kartalarga ortiqcha qator qo'shilmaydi.
+- Bir marta javob bergan chat (qo'shilgan yoki «hech qachon») qayta so'ralmaydi.
+
+**Raqamlar ro'yxati endi haqiqatan to'ladi.** Ilgari jadval bor edi-yu, unga
+hech narsa yozilmasdi — ya'ni javob har doim «yo'q» edi. Endi tinglovchi
+kuniga bir marta o'z chatlarini ko'rib chiqib, raqamlarni **barmoq izi**
+ko'rinishida yozib qo'yadi. Bazada na ism, na raqam turadi.
+
+**Eslatib o'taman:** Telegram raqamni faqat kontaktlarga ko'rsatadi, shuning
+uchun qamrov to'liq emas — ekranda qator yo'qligi «gaplashilmagan» degani
+emas, «topilmadi» degani.
+
+Migratsiya **0065**.
+
 ## Xavfsizlik: kirish himoyasi va ochiq port — 2026-08-09 (kech)
 
 Reklama ishini loyihalashda tekshiruv **ikkita jonli teshikni** topdi. Ikkalasi

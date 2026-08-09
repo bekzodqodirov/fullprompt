@@ -128,17 +128,17 @@ pnpm build && pnpm e2e  # 44 e2e
 `main` is the trunk and **everything is merged into it** — PR #1 = rounds
 1-55; #3 = 56-69; #4 = the truck-marker follow-up; #5 = the calls round;
 #6 = rounds 70-71; #7 = the calls day-one fixes; #13 = round 74 (capacity);
-#14 = rounds 75-76; #15 = round 77; #19 = round 79's card work; **#17 =
-rounds 78-79 (the Telegram ↔ CRM loop)**. The branch
-`claude/gsr-logistics-wms-phase1-o8h4en` is reset onto `main` and carries
-nothing of its own; start the next round from there.
-1122 unit/integration + 140 e2e, verified in CI's order on a fresh database
+#14 = rounds 75-76; #15 = round 77; #19 = round 79's card work; #17 = rounds 78-79 (the Telegram ↔ CRM loop);
+#20 = round 81's two login holes; **round 82 = the loop's second half**. The branch
+`claude/gsr-logistics-wms-phase1-o8h4en` carries round 82; everything before
+it is merged.
+1151 unit/integration + 140 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
-Latest migration: **0064** (`tg_lead` — the work-account switch, lead-owned
-chats and the hashed peer index; 0063 `call_lead`, 0062 `lead_quote`, 0061
-`call_dedup_by_user`, 0060 `call_recorder` and 0059 `reply_templates` are
-the calls track's). Every
+Latest migration: **0065** (`tg_chat_lead` — a tray rule may point at a lead;
+0064 `tg_lead` was the work-account switch, lead-owned chats and the hashed
+peer index; 0063 `call_lead`, 0062 `lead_quote`, 0061 `call_dedup_by_user`,
+0060 `call_recorder` and 0059 `reply_templates` are the calls track's). Every
 numbered phase is shipped; rounds 56-69 + the calls round + its day-one
 fixes were built by ANOTHER session and are on main — read
 `docs/CRM-UX.md` before touching lists, search, bulk or quick-create. The
@@ -152,12 +152,12 @@ calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 driver app 1.3, both APKs. The owner's last confirmed update was `eea3509`,
 so the server is **~34 rounds behind** and this is now the biggest single
 risk on the project: the gap is no longer one release, it is a year of
-work landing at once. A fresh clone of production applied 0032 → **0064**
+work landing at once. A fresh clone of production applied 0032 → **0065**
 in one run, so the migration path itself is proven.
-**Deploy note:** migrations 0058-0064 MUST land — 0058 especially — the client book, the stock table
+**Deploy note:** migrations 0058-0065 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
-`drizzle.__drizzle_migrations` after updating (**count must reach 65**); fix
+`drizzle.__drizzle_migrations` after updating (**count must reach 66**); fix
 with `docker compose run --rm migrate`. Recommended order, told to the owner:
 enlarge the VPS and move the data first (`docs/DEPLOY.md` → «Yangi VPS'ga
 ko'chirish»), deploy this code there, test it, and only then move the domain.
@@ -2016,6 +2016,44 @@ codebase» — `platform/auth/rate-limit.ts` has been one since spec 4.1. That i
 the **fifth** false «we lack X» in this programme; the rule stands and I broke
 it again: grep before claiming absence.
 
+Round 82 — **the Telegram loop's second half** (#595-597), the three items
+round 79 stated and did not build. **Migration 0065**: a `tg_chat_rules` row
+may point at a LEAD, the widening 0064 gave `tg_messages` and 0063 gave
+`call_logs`; the include CHECK moved with it rather than being dropped.
+(1) **«Yangi lid» on the tray** — the answer «this is business, but they are
+nobody yet», which is every first-time customer on a PERSONAL number (i.e.
+every connected account today). Through `leadForChat`, so #589's do-not-mint-
+twice is inherited; owned by the manager whose ACCOUNT it is, never the
+presser; the client door clears the lead pointer and the lead door clears the
+client one; refused (and not drawn) where Telegram gave no number.
+(2) **The lookback** — `TelegramLookback` on the lead, deal and client cards
+reads `offerableMatches`: names the MANAGER, a colleague's match is a sentence
+and not a button (round 20), renders NOTHING with no match or once somebody
+has answered `include`/`exclude` about that chat. `attachChatAction` never
+reads `managerUserId` from the form and re-derives the offer for the ACTOR, so
+a hand-posted peer id cannot attach a colleague's conversation.
+(3) **`tg_peer_index` finally has a producer** — it shipped in 0064 with no
+writer, so the lookback's answer was always no. It runs in the LISTENER (only
+that process holds a Telegram connection) at start and daily, and the
+«not more often than daily» is checked against `max(updated_at)` rather than
+trusted to the interval, because the listener restarts on every deploy.
+WHERE the lead rule is read is the design (#596): `decideIncoming`, not
+`classifyWithRules` — that one answers «whose CLIENT chat is this», the only
+question `tg-import` can act on — and BEFORE the classifier, or a lead chat
+falls through `not_a_client` back onto the tray. `isSelf` still wins.
+**`isClientVerdict` is now exported beside `LiveVerdict`**: `store: true` is a
+union of three, `if (!v.store)` narrows away none of it, and #591 was that
+exact shape reaching CI in files nobody had touched. Red-proofs ×4 (lead
+branch, self guard, the client door's `leadId: null`, the answered filter).
+1151 unit/integration + **140 e2e all green** on a fresh db in CI's order —
+the four photo-path specs passed here too this time. Screenshots at 360:
+tray 3 buttons wrapping to two 36 px rows, lookback panel 155 px, document
+360 wide. NOT verifiable here: the listener's index pass and the lead branch
+need a real Telegram connection — watch the first one in
+`docker compose --profile telegram logs -f tg-listen`. Stated to the owner
+and NOT built: pulling a chat's PAST messages when «Yangi lid» is pressed —
+attaching is forward-only, exactly as «Bu mijoz» has always been.
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 (abuse / regression / product-fit) produced a build plan that kills most of the
 v1: the join rule must match on PHONE only (the name branch lets a stranger
@@ -2076,7 +2114,7 @@ round 17.
 **Enlarge the VPS to 4 vCPU / 8 GB / 400 GB** and move the data
 (`docs/DEPLOY.md` → «Yangi VPS'ga ko'chirish»; round 74 measured the ceiling
 and the old «2 GB tavsiya» was wrong) · **deploy from `main`** — migrations
-**0058-0064** land together, count must reach **65** (check
+**0058-0065** land together, count must reach **66** (check
 `drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
 Back up first · **release both APKs** (driver v1.3 AND the first
 GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its

@@ -1,8 +1,16 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { attachments, clients, tgChatRules, tgMessages, users } from '../../platform/db/schema';
+import {
+  attachments,
+  clients,
+  leads,
+  tgChatRules,
+  tgMessages,
+  users,
+} from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getStorage } from '../../platform/files/storage';
+import { leadForChat } from './chat-lead';
 import type { ChatRule } from './telegram-import';
 
 /**
@@ -27,6 +35,7 @@ export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatR
       decision: tgChatRules.decision,
       clientId: tgChatRules.clientId,
       clientCode: clients.clientCode,
+      leadId: tgChatRules.leadId,
     })
     .from(tgChatRules)
     .leftJoin(clients, eq(tgChatRules.clientId, clients.id))
@@ -40,6 +49,7 @@ export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatR
         decision: r.decision as ChatRule['decision'],
         clientId: r.clientId,
         clientCode: r.clientCode,
+        leadId: r.leadId,
       },
     ]),
   );
@@ -114,6 +124,8 @@ export interface CandidateRow {
   clientId: string | null;
   clientCode: string | null;
   clientName: string | null;
+  leadId: string | null;
+  leadName: string | null;
 }
 
 /**
@@ -146,10 +158,13 @@ export async function listCandidates(filter: {
       clientId: tgChatRules.clientId,
       clientCode: clients.clientCode,
       clientName: clients.name,
+      leadId: tgChatRules.leadId,
+      leadName: leads.name,
     })
     .from(tgChatRules)
     .innerJoin(users, eq(tgChatRules.managerUserId, users.id))
     .leftJoin(clients, eq(tgChatRules.clientId, clients.id))
+    .leftJoin(leads, eq(tgChatRules.leadId, leads.id))
     .where(where.length > 0 ? and(...where) : undefined)
     .orderBy(asc(tgChatRules.peerTitle));
 
@@ -192,6 +207,12 @@ export async function decideChat(
     .set({
       decision: input.decision,
       clientId,
+      // This is the CLIENT door. Answering here always retires a lead pointer
+      // set by the other one — a chat that belongs to GS777 does not also
+      // belong to the lead it was opened as, and «hech qachon» belongs to
+      // nobody. Leaving it would make the listener store onto a lead the
+      // screen no longer shows.
+      leadId: null,
       decidedBy: ctx.actorId,
       decidedAt: new Date(),
     })
@@ -201,8 +222,128 @@ export async function decideChat(
     entityType: 'tg_chat_rule',
     entityId: input.id,
     action: 'update',
-    before: { decision: rule.decision, clientId: rule.clientId },
-    after: { decision: input.decision, clientId },
+    before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
+    after: { decision: input.decision, clientId, leadId: null },
+  });
+}
+
+/**
+ * The third answer the tray could not give: «this is business, but they are
+ * nobody yet».
+ *
+ * 0064 taught the listener to open a lead by itself on a WORK number; on a
+ * personal one it asks instead, and the only answers on offer were a client
+ * from the book and «never». A person writing in for the first time is
+ * neither — which is the exact case the owner reported as invisible.
+ *
+ * It goes through `leadForChat`, so the rule that matters most is inherited
+ * rather than restated: an OPEN lead already carrying this number wins, and
+ * pressing twice does not mint twice. The lead is owned by the manager whose
+ * account the chat is in, not by whoever pressed — the owner reading his
+ * staff's tray must not collect their leads.
+ *
+ * Future only, exactly like «Qo'shish» for a client: this attaches the chat,
+ * it does not import what was said before the press. Round 79's promise was
+ * that nothing is stored until somebody answers, and reaching backwards
+ * through Telegram for the history is a separate decision.
+ */
+export async function openLeadForChat(
+  ruleId: string,
+  ctx: AuditContext,
+): Promise<{ leadId: string }> {
+  const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+  if (!rule) throw new ChatRuleError('chat_rule_not_found');
+  const phone = (rule.peerPhone ?? '').trim();
+  // The same refusal `unknownChatAction` makes about `no_phone`: a lead
+  // nobody can ring is a row with a name in it.
+  if (!phone) throw new ChatRuleError('chat_no_phone');
+
+  const leadId = await leadForChat(
+    rule.managerUserId,
+    { phone, title: rule.peerTitle },
+    ctx,
+  );
+
+  await db
+    .update(tgChatRules)
+    .set({
+      decision: 'include',
+      leadId,
+      clientId: null,
+      decidedBy: ctx.actorId,
+      decidedAt: new Date(),
+    })
+    .where(eq(tgChatRules.id, ruleId));
+
+  await writeAudit(db, ctx, {
+    entityType: 'tg_chat_rule',
+    entityId: ruleId,
+    action: 'update',
+    before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
+    after: { decision: 'include', clientId: null, leadId },
+  });
+  return { leadId };
+}
+
+/**
+ * «Chatni qo'shish» from a card, the other end of the owner's loop.
+ *
+ * The tray asks about a chat and hands it a card; this asks about a CARD and
+ * hands it a chat — `managersWhoTalkedTo` found the number on somebody's
+ * account, and this is the press that starts keeping that conversation.
+ *
+ * `managerUserId` is the VIEWER's own id and is never taken from the form: a
+ * match names a colleague so the person creating the card knows who to ask,
+ * and round 20's fence says knowing a conversation exists is not permission
+ * to open it. Attaching somebody else's chat would do exactly that, on their
+ * behalf, without them ever pressing anything.
+ *
+ * Future only, like every other include: this decides what is kept from now
+ * on. What was said before the press is `pnpm tg-import`'s business.
+ */
+export async function attachPeerToCard(
+  input: {
+    peerId: bigint;
+    managerUserId: string;
+    clientId?: string | null;
+    leadId?: string | null;
+  },
+  ctx: AuditContext,
+): Promise<void> {
+  const clientId = input.clientId ?? null;
+  const leadId = input.leadId ?? null;
+  // The CHECK says the same thing in the database; saying it here too is what
+  // turns a constraint violation into a sentence somebody can act on.
+  if (!clientId && !leadId) throw new ChatRuleError('owner_required');
+
+  const [row] = await db
+    .insert(tgChatRules)
+    .values({
+      managerUserId: input.managerUserId,
+      peerId: input.peerId,
+      decision: 'include',
+      clientId,
+      leadId,
+      decidedBy: ctx.actorId,
+      decidedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [tgChatRules.managerUserId, tgChatRules.peerId],
+      set: {
+        decision: 'include',
+        clientId,
+        leadId,
+        decidedBy: ctx.actorId,
+        decidedAt: new Date(),
+      },
+    })
+    .returning({ id: tgChatRules.id });
+
+  await writeAudit(db, ctx, {
+    entityType: 'tg_chat_rule',
+    entityId: row!.id,
+    action: 'update',
+    after: { decision: 'include', clientId, leadId, reason: 'attached_from_card' },
   });
 }
 
@@ -244,6 +385,9 @@ export async function excludeChatForClient(
       set: {
         decision: 'exclude',
         clientId: null,
+        // …and the lead pointer with it (0065): «qo'shma» must leave the rule
+        // owning nobody, or the listener would go on storing onto the lead.
+        leadId: null,
         decidedBy: ctx.actorId,
         decidedAt: new Date(),
       },

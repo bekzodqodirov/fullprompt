@@ -115,6 +115,8 @@ export default async function WhichChatsPage({
                 noName: t('chatNoName'),
                 purge: t('chatPurge'),
                 purgeConfirm: t('chatPurgeConfirm'),
+                openLead: t('chatOpenLead'),
+                leadOpened: t('chatLeadOpened'),
               }}
             />
           ))}

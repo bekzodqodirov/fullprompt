@@ -18,6 +18,7 @@ import { ClientCrmSections } from '../../../crm/client-crm';
 import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
+import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { ClientDeals } from '@/components/client-deals';
 
@@ -135,6 +136,12 @@ export default async function ClientDetailPage({
           <p className="card num text-sm">📞 {(client.phones as string[]).join(', ')}</p>
         )
       )}
+
+      {/* «Somebody here already has a chat with this number» (round 82). The
+          FIRST phone only: a client with three numbers would otherwise get
+          three panels saying the same thing, and the first is the one every
+          other phone-matching path in this system uses. */}
+      <TelegramLookback phone={(client.phones as string[])[0]} clientId={client.id} />
 
       {/* Phase 2.2: Telegram cabinet — staff mints a one-time deep link and
           sends it to the client; the client sees cargo/photos/debt in the bot.

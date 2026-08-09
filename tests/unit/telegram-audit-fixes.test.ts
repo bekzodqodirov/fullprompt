@@ -94,7 +94,10 @@ describe('Saved Messages is never a client conversation', () => {
 
   it('cannot be opted into by a written rule either', () => {
     const rules = new Map<bigint, ChatRule>([
-      [42n, { peerId: 42n, decision: 'include', clientId: 'c-777', clientCode: 'GS777' }],
+      [
+        42n,
+        { peerId: 42n, decision: 'include', clientId: 'c-777', clientCode: 'GS777', leadId: null },
+      ],
     ]);
     // The rule beats the automatic match in both directions (#311) — but not
     // this. Nobody should be able to store their own notes as a customer's
@@ -141,7 +144,10 @@ describe('one phone, several client codes', () => {
   it('and a person can override it, which is the point of the rules', () => {
     // A stable wrong answer is correctable; an unstable one is not.
     const rules = new Map<bigint, ChatRule>([
-      [42n, { peerId: 42n, decision: 'include', clientId: 'c-777', clientCode: 'GS777' }],
+      [
+        42n,
+        { peerId: 42n, decision: 'include', clientId: 'c-777', clientCode: 'GS777', leadId: null },
+      ],
     ]);
     expect(classifyWithRules(peer(), shared, rules)).toEqual({
       keep: true,
