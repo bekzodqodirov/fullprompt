@@ -45,11 +45,37 @@ describe('deciding one live message', () => {
     expect(v.row.sentAt.getUTCFullYear()).toBe(2026);
   });
 
-  it('refuses a stranger and says nothing about them', () => {
-    // The refusal carries no id, no name and no number, deliberately: this is
-    // the manager's private life and the caller must not be ABLE to log it.
-    const v = decideIncoming(peer({ phone: '+998900000000' }), msg(), CLIENTS);
-    expect(v).toEqual({ store: false, reason: 'not_a_client' });
+  it('asks about a stranger on a PERSONAL account, and stores not one word', () => {
+    // Round 79 sharpened this promise rather than dropping it. A stranger on
+    // a personal number is now a QUESTION — so the verdict has to carry who
+    // to ask ABOUT, because a tray cannot offer an anonymous row. What it
+    // must never carry is the MESSAGE: until somebody answers, nothing of
+    // the conversation exists anywhere.
+    const stranger = peer({ phone: '+998900000000', firstName: 'Dilshod' });
+    const v = decideIncoming(stranger, msg({ message: 'Salom, yuk bormi?' }), CLIENTS);
+    expect(v).toEqual({
+      store: false,
+      ask: true,
+      peerId: 42n,
+      phone: '+998900000000',
+      title: 'Dilshod',
+    });
+    expect(
+      JSON.stringify(v, (_k, value) => (typeof value === 'bigint' ? value.toString() : value)),
+    ).not.toContain('Salom');
+    expect(v).not.toHaveProperty('row');
+  });
+
+  it('opens a lead for the same stranger on a WORK account', () => {
+    const v = decideIncoming(
+      peer({ phone: '+998900000000', firstName: 'Dilshod' }),
+      msg({ message: 'Salom, yuk bormi?' }),
+      CLIENTS,
+      new Map(),
+      true,
+    );
+    expect(v.store).toBe(true);
+    expect(v).toMatchObject({ openLead: true, peer: { phone: '+998900000000' } });
   });
 
   it('refuses a peer whose number Telegram will not show us', () => {

@@ -1284,7 +1284,12 @@
     "quotedCurrency": "货币",
     "quotedVolume": "方数（m³）",
     "quotedWeight": "重量（kg）",
-    "whoseWork": "谁的工作"
+    "whoseWork": "谁的工作",
+    "workTitle": "此号码如何使用？",
+    "workPersonal": "私人号码",
+    "workPersonalHint": "陌生人来信将进入\"哪些聊天\"列表，由您决定。不会保存任何内容。",
+    "workWork": "工作号码",
+    "workWorkHint": "仅用于客户。陌生人来信将自动创建线索并保存对话。"
   },
   "navShort": {
     "home": "首页",

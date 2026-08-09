@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { pgClient } from '../src/modules/platform/db/client';
 import { getSetting } from '../src/modules/platform/settings/service';
-import { rulesFor } from '../src/modules/wms/crm/chat-rules';
+import { recordCandidates, rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   claimNext,
   clientHasWritten,
@@ -44,6 +44,7 @@ import {
   type BookState,
 } from '../src/modules/wms/crm/telegram-live';
 import { peerFromChat, tgMediaPlan, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
+import { isWorkAccount, leadForChat } from '../src/modules/wms/crm/chat-lead';
 import { saveAttachment } from '../src/modules/platform/files/service';
 import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
 
@@ -174,6 +175,9 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   let rules = await rulesFor(account.managerUserId);
   let stored = 0;
   let passed = 0;
+  // Strangers put on the tray for the manager to answer about (round 79).
+  let asked = 0;
+  let workAccount = await isWorkAccount(account.managerUserId);
   console.log(
     `tinglayapman: ${account.managerName} · ${tgPhone} · ${book.clients.length} mijoz · ${rules.size} qoida`,
   );
@@ -200,30 +204,62 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (bookIsStale(book, now)) {
         book = newBook(await clientBook(), now);
         rules = await rulesFor(account.managerUserId);
+        // Re-read on the same tick as the book: the manager may have flipped
+        // «ish raqami» on the screen while the listener was running, and a
+        // switch that needs a restart is a switch nobody trusts.
+        workAccount = await isWorkAccount(account.managerUserId);
       }
 
-      let verdict = decideIncoming(peer, msg, book.clients, rules);
+      let verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
       // A number we do not know MIGHT be a client added since the book was
       // read. Ask once, rate-limited, before concluding they are a stranger.
-      if (!verdict.store && verdict.reason === 'not_a_client' && shouldRefreshOnMiss(book, now)) {
+      if (!verdict.store && !('ask' in verdict) && verdict.reason === 'not_a_client'
+          && shouldRefreshOnMiss(book, now)) {
         book = { ...newBook(await clientBook(), now), missRefreshedAt: now };
         rules = await rulesFor(account.managerUserId);
-        verdict = decideIncoming(peer, msg, book.clients, rules);
+        verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
       }
 
       if (!verdict.store) {
+        if ('ask' in verdict) {
+          // A stranger on a PERSONAL number. The tray gets who to ask about
+          // and nothing else — not one word of what was said (round 79).
+          await recordCandidates(account.managerUserId, [
+            { peerId: verdict.peerId, title: verdict.title, phone: verdict.phone },
+          ]);
+          asked += 1;
+          return;
+        }
         // Counted, never named. This is the manager's private life.
         passed += 1;
         return;
       }
+
+      // A stranger on a WORK number opens a lead, and the conversation is
+      // kept on it until the lead becomes a client (0064).
+      let ownerClientId: string | null = null;
+      let ownerLeadId: string | null = null;
+      let label = '';
+      if ('openLead' in verdict) {
+        ownerLeadId = await leadForChat(account.managerUserId, verdict.peer, {
+          actorId: account.managerUserId,
+          ip: null,
+          userAgent: null,
+        });
+        label = 'LID';
+      } else {
+        ownerClientId = verdict.clientId;
+        label = verdict.clientCode;
+      }
       const written = await storeIncoming({
-        clientId: verdict.clientId,
+        clientId: ownerClientId,
+        leadId: ownerLeadId,
         managerUserId: account.managerUserId,
         row: verdict.row,
       });
       if (written) {
         stored += 1;
-        console.log(`  ${verdict.clientCode} ← ${verdict.row.direction}`);
+        console.log(`  ${label} ← ${verdict.row.direction}`);
         // The photograph or the voice note itself — only for a NEW row, so a
         // reconnect replay never re-downloads. An outgoing echo whose photo
         // WE uploaded is skipped too: the bytes are already in storage,
@@ -575,10 +611,21 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           { minId: Number(point.lastMessageId), limit: CATCHUP_PER_CHAT },
         )) {
           const peer = peerFromChat((await msg.getChat?.()) as never);
-          const verdict = decideIncoming(peer, msg, book.clients, rules);
+          // The same decision the live path makes, including the work-account
+          // widening — a message that arrived during an outage is the same
+          // message it would have been a minute earlier.
+          const verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
           if (!verdict.store) continue;
           const written = await storeIncoming({
-            clientId: verdict.clientId,
+            clientId: 'openLead' in verdict ? null : verdict.clientId,
+            leadId:
+              'openLead' in verdict
+                ? await leadForChat(account.managerUserId, verdict.peer, {
+                    actorId: account.managerUserId,
+                    ip: null,
+                    userAgent: null,
+                  })
+                : null,
             managerUserId: account.managerUserId,
             row: verdict.row,
           });
@@ -641,7 +688,8 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     await markAccount(account.id, status, why);
     await releaseLock();
     console.log(
-      `\n${tgPhone} to‘xtadi (${why}) · yozildi: ${stored} · o‘tkazildi: ${passed} · yuborildi: ${sent}`,
+      `\n${tgPhone} to‘xtadi (${why}) · yozildi: ${stored} · o‘tkazildi: ${passed}` +
+        ` · so‘raladi: ${asked} · yuborildi: ${sent}`,
     );
     await client.disconnect();
     await client.destroy();

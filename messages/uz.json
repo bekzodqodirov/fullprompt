@@ -1284,7 +1284,12 @@
     "quotedCurrency": "Valyuta",
     "quotedVolume": "Kub (m³)",
     "quotedWeight": "Og'irlik (kg)",
-    "whoseWork": "Kimning ishlari"
+    "whoseWork": "Kimning ishlari",
+    "workTitle": "Bu raqam qanday ishlatiladi?",
+    "workPersonal": "Shaxsiy raqam",
+    "workPersonalHint": "Notanish odam yozsa — «Qaysi chatlar» ro‘yxatiga tushadi, siz hal qilasiz. Hech narsa saqlanmaydi.",
+    "workWork": "Ish raqami",
+    "workWorkHint": "Faqat mijozlar uchun. Notanish odam yozsa — o‘zi lid ochiladi va yozishma saqlanadi."
   },
   "navShort": {
     "home": "Bosh",

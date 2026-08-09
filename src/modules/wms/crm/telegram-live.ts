@@ -7,7 +7,9 @@ import {
   type DialogPeer,
   type MessageRow,
   type RawMessage,
+  peerTitle,
 } from './telegram-import';
+import { unknownChatAction } from './unknown-chat';
 
 /**
  * Live receiving — phase 3 of the client chat.
@@ -82,6 +84,20 @@ export function shouldRefreshOnMiss(
 export type LiveVerdict =
   | { store: true; clientId: string; clientCode: string; row: MessageRow }
   /**
+   * A stranger, on an account that says it is a WORK number (0064): mint a
+   * lead and keep the conversation on it. Carries the peer's identity because
+   * the lead has to be named and reachable — that is the trade the switch
+   * makes, and it is why the switch defaults to personal.
+   */
+  | { store: true; openLead: true; peer: { phone: string; title: string }; row: MessageRow }
+  /**
+   * A stranger on a PERSONAL number: a question, not an answer. Carries who
+   * to ask ABOUT — a tray cannot offer an anonymous row — and deliberately
+   * nothing about the message itself. Until somebody answers, no word of the
+   * conversation is stored.
+   */
+  | { store: false; ask: true; peerId: bigint; phone: string; title: string }
+  /**
    * `not_a_client` and `no_phone` are the private ones and carry NOTHING about
    * who wrote — no id, no name, no number. The caller may count them; it may
    * not identify them.
@@ -111,9 +127,27 @@ export function decideIncoming(
   msg: RawMessage,
   clients: ClientPhones[],
   rules: Map<bigint, ChatRule> = new Map(),
+  workAccount = false,
 ): LiveVerdict {
   const verdict = classifyWithRules(peer, clients, rules);
-  if (!verdict.keep) return { store: false, reason: verdict.reason };
+  if (!verdict.keep) {
+    // Round 79: a stranger is no longer automatically nothing. Whether they
+    // are a customer or the manager's own life is a question about the
+    // NUMBER, and the account answers it about itself.
+    // `not_a_client` is only reached once the number was visible, so the
+    // non-null assertions below are the classifier's guarantee, not a guess.
+    const phone = (peer.phone ?? '').trim() || null;
+    const action = unknownChatAction(verdict, workAccount);
+    if (action.action === 'open_lead') {
+      const row = toMessageRow(peer.id, msg);
+      if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
+      return { store: true, openLead: true, peer: { phone: phone!, title: peerTitle(peer) }, row };
+    }
+    if (action.action === 'ask') {
+      return { store: false, ask: true, peerId: peer.id, phone: phone!, title: peerTitle(peer) };
+    }
+    return { store: false, reason: verdict.reason };
+  }
   const row = toMessageRow(peer.id, msg);
   if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
   return { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row };

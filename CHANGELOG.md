@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## Telegram: kalit qo'yildi, notanish suhbat endi ko'rinadi (2-qism) — 2026-08-08 (kech)
+
+**Kalit ekranga chiqdi.** «Suhbatlar → Telegramga ulash» sahifasida endi
+tanlaysiz: **shaxsiy raqam** yoki **ish raqami**. Har kim o'ziniki uchun
+o'zi tanlaydi — boshqaning kalitini hech kim o'zgartira olmaydi.
+
+**Tinglovchi ulandi.** Endi notanish odam yozganda:
+- **ish raqamida** — o'zi lid ochiladi, yozishma o'sha lidga tushadi;
+- **shaxsiy raqamda** — «Qaysi chatlar» ro'yxatiga tushadi, siz hal
+  qilasiz. **Bosilmaguncha bironta so'z saqlanmaydi** — faqat kimligi
+  turadi, savol berish uchun.
+
+Bu ro'yxat ilgari faqat qo'lda skanerlaganda to'lardi. **Endi jonli
+to'ladi** — odamlar yozgan sari o'zi paydo bo'ladi.
+
+Xuddi shu qoida uzilishdan keyin qaytib olingan xabarlarga ham tegishli —
+uzilish paytida kelgan xabar bir daqiqa oldingi xabardan farq qilmasligi
+kerak.
+
+**Hali yo'q:** «Qaysi chatlar» ro'yxatidagi bitta bosishlik «Lid ochish»
+tugmasi (hozircha u yerda mijoz tanlab qo'shiladi), lid/bitim/mijoz
+ochilganda «bu raqam bilan yozishilgan» qatori, va indeksni kechasi
+yangilash.
+
+Migratsiya **0064**.
+
+
 ## Telegram: yangi mijoz endi ko'rinmay qolmaydi (1-qism) — 2026-08-08 (kech)
 
 Siz aytgan ikki narsaning **poydevori** qo'yildi va to'liq test qilindi.
