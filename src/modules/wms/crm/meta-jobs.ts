@@ -2,6 +2,7 @@ import type PgBoss from 'pg-boss';
 import { logger } from '../../platform/logger';
 import { landInboundLead } from './inbound';
 import { isPermanentGraphError, mapFieldData, metaConfig, type LeadgenEvent } from './meta-leads';
+import { metaSourceKey } from './inbound-webhook';
 
 export const JOB_META_LEAD = 'leads.meta';
 
@@ -33,7 +34,7 @@ export async function registerMetaLeadWorker(boss: PgBoss): Promise<void> {
       const event = job.data;
       if (!event?.leadgenId) continue;
 
-      const url = `${GRAPH}/${encodeURIComponent(event.leadgenId)}?fields=field_data,created_time,ad_id,form_id&access_token=${encodeURIComponent(config.pageToken)}`;
+      const url = `${GRAPH}/${encodeURIComponent(event.leadgenId)}?fields=field_data,created_time,ad_id,form_id,platform&access_token=${encodeURIComponent(config.pageToken)}`;
       const response = await fetch(url);
       let payload: unknown = null;
       try {
@@ -57,20 +58,21 @@ export async function registerMetaLeadWorker(boss: PgBoss): Promise<void> {
         throw new Error(`[meta-leads] graph ${response.status}`);
       }
 
-      const fields = mapFieldData((payload as { field_data?: unknown } | null)?.field_data ?? null);
+      const lead = (payload ?? null) as { field_data?: unknown; platform?: unknown } | null;
+      const fields = mapFieldData(lead?.field_data ?? null);
       const result = await landInboundLead({
         channel: 'meta',
         // Instagram and Facebook lead forms arrive through the SAME webhook,
-        // and the payload does not say which surface the advert ran on. So it
-        // is recorded as what it truthfully is — a Meta advert — rather than
-        // guessed at: writing «Instagram» on a Facebook lead would put a lie
-        // straight into `funnelReport`, which is the one screen that answers
-        // «which advert is worth paying for». Telling the two apart means
-        // resolving `ad_id` through the Graph API; deferred, and the ids are
-        // kept in `ref` so it can be done later without losing this month.
-        sourceKey: 'meta',
+        // and the WEBHOOK payload does not say which surface the advert ran on
+        // — but the lead object does, and the read above now asks for it.
+        // They are different adverts with different money behind them, and
+        // `funnelReport` is the one screen that answers which is worth paying
+        // for. Absent or unrecognised stays «meta», which is still the honest
+        // answer; guessing would put a lie into that same report.
+        sourceKey: metaSourceKey(lead?.platform),
         externalId: event.leadgenId,
         ref: {
+          platform: lead?.platform ?? null,
           form_id: event.formId,
           page_id: event.pageId,
           ad_id: event.adId,

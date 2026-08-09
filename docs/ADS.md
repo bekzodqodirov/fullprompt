@@ -128,6 +128,94 @@ Meta'ning **Lead Ads Testing Tool** orqali test lead yuboring →
 
 ---
 
+---
+
+## 4. Hamma platforma — havola bilan (hech narsa sozlanmaydi)
+
+**TikTok, YouTube, sayt, Instagram bio, bosma reklama, QR — hammasi.** Reklamaga
+shu havolani qo'yasiz, odam bosadi, formani to'ldiradi, lead CRM ga tushadi:
+
+```
+https://gsrwms.uz/ariza?manba=tiktok
+```
+
+Tayyor havolalar **CRM → ⋯ → Kelgan arizalar → «Reklama havolalari»** da yozib
+qo'yilgan — nusxa olib reklamaga qo'yavering. Har manba uchun alohida havola
+bor, shunda qaysi reklama qancha olib kelgani hisobotda ko'rinadi.
+
+Bu eng ishonchli yo'l: hech kimning ruxsati, tasdiqlashi yoki kaliti kerak
+emas, va platforma o'z qoidasini o'zgartirsa ham buzilmaydi.
+
+---
+
+## 5. Platformaning o'z formasi — webhook
+
+Bu faqat bitta holat uchun: odam **ilovadan chiqmay**, o'sha yerning o'z
+formasini to'ldiradi. Google Ads (va YouTube — u ham Google Ads orqali ketadi),
+TikTok konnektor orqali, yoki saytingizning o'z formasi.
+
+### 5.1 Kalitni yoqish
+
+1. **CRM → ⋯ → Kelgan arizalar** → «Reklama havolalari».
+2. Kerakli manbani toping → **«Platformaning o'z formasi»** ni oching.
+3. **«Yoqish va kalit yaratish»**. URL va kalit chiqadi — ikkalasini nusxa oling.
+
+Kalit faqat shu manba uchun ishlaydi. Bittasini o'chirsangiz qolganlari
+ishlayveradi. Kalitni qayta yaratsangiz **eskisi darhol ishlamay qoladi** — bu
+ataylab, kalit chiqib ketsa shunday to'xtatasiz.
+
+### 5.2 Google Ads (va YouTube)
+
+Google Ads → **Assets → Lead form** → **Data integration** → *Webhook*:
+
+| Maydon | Nima yoziladi |
+|---|---|
+| Webhook URL | `https://gsrwms.uz/api/leads/in/google` |
+| Key | ekrandagi kalit |
+
+«Send test data» tugmasi bor — bosing, «Kelgan arizalar» ro'yxatida darhol
+ko'rinishi kerak. YouTube reklamasi ham xuddi shu forma, alohida sozlash
+kerak emas.
+
+### 5.3 Boshqa har qanday platforma yoki saytingiz
+
+`POST https://gsrwms.uz/api/leads/in/<manba>`, sarlavhada `X-GSR-Key: <kalit>`,
+tanasi:
+
+```json
+{ "name": "Aziz Karimov", "phone": "+998901112233", "note": "Yiwudan 5 kub" }
+```
+
+Boshqa maydonlar ham yuborilsa — izohga tushadi, yo'qolmaydi.
+
+**Muhim:** javob har doim bir xil — `{"ok":true}`. Lead ochildimi, eskisiga
+qo'shildimi, mijoz ekan deb tanildimi, chegaraga urildimi — yuboruvchiga farqi
+bilinmaydi. Bu ataylab: aks holda har kim raqam yuborib bizning mijozimizmi
+yo'qmi deb tekshirib chiqa olardi.
+
+Kalit noto'g'ri bo'lsa yoki yoqilmagan bo'lsa — **404**. Ya'ni «bunday eshik
+yo'q», «kalit noto'g'ri» emas.
+
+---
+
+## 6. Qaysi reklama pul keltiryapti
+
+**CRM → ⋯ → Kelgan arizalar → «Manba bo'yicha natija»**. Har manba uchun:
+
+- **necha ta ariza keldi** — shu jumladan bekor bo'lganlari ham;
+- **necha tasi yutildi** va foizi;
+- **yutilgan summa** — leadga qo'yilgan narx (round 71).
+
+Ikkita son ikki xil savolga javob beradi: **ariza soni** reklama ishlayaptimi
+deydi, **summa** esa qaysi reklamaga ko'proq pul tikish kerakligini. Ariza ko'p,
+lead yo'q bo'lsa — forma buzilgan; ariza kam, pul katta bo'lsa — o'sha kanalga
+ko'proq bering.
+
+Instagram va Facebook endi **alohida** ko'rinadi (avval ikkalasi «Meta reklama»
+edi).
+
+---
+
 ## Bir xil odam ikki marta yozsa nima bo'ladi
 
 Tartib shunday, yuqoridan pastga:
@@ -145,8 +233,7 @@ takrorlaydi) — ikkinchisi bazaning o'zi tomonidan rad etiladi.
 
 ## Nima ataylab qilinmagan
 
-- **Instagram va Facebook'ni ajratish.** Meta'ning webhook'i qaysi ilovada
-  reklama chiqqanini aytmaydi, shuning uchun manba «Instagram/Facebook
-  reklama» deb yoziladi. Ajratish uchun `ad_id` ni Meta'dan qayta so'rash
-  kerak — keyingi raundga qoldirildi, `ad_id` saqlanib turibdi.
+- **TikTok'ning o'z Lead Ads API'si.** U tasdiqlangan ilova va Business
+  Center talab qiladi. O'rniga: reklamada havola (4-bo'lim) yoki konnektor
+  orqali webhook (5-bo'lim) — ikkalasi ham bugun ishlaydi.
 - **Formada avtomatik javob (email/SMS).** Hozircha faqat menejer qo'ng'irog'i.

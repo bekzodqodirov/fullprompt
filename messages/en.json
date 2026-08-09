@@ -38,7 +38,8 @@
       "stageNotFound": "Stage deleted — reload the page"
     },
     "moreActions": "More actions",
-    "notFilled": "Not filled"
+    "notFilled": "Not filled",
+    "copy": "Copy"
   },
   "login": {
     "title": "Sign in",
@@ -1308,7 +1309,22 @@
     "arrivalsOutcome_client": "Onto a client card",
     "arrivalsOutcome_dropped": "Not taken",
     "calcStage": "Quote stage",
-    "calcStageHint": "A request for a price from the bot moves the card to this stage. Forward only — a card already further along stays where it is. «—» means do not move it."
+    "calcStageHint": "A request for a price from the bot moves the card to this stage. Forward only — a card already further along stays where it is. «—» means do not move it.",
+    "doors": "Advert links",
+    "doorsHint": "Put this link in the advert — the enquiry lands straight in the CRM. Works for TikTok, YouTube, a website, an Instagram bio; no setup needed.",
+    "doorForm": "Enquiry form",
+    "doorBot": "Telegram bot",
+    "doorWebhook": "The platform's own form",
+    "doorWebhookHint": "Only for a form the person fills in without leaving the app (Google Ads, YouTube, a TikTok connector, your website). The key goes into the platform's settings.",
+    "doorKey": "Key",
+    "doorOn": "on",
+    "doorOff": "off",
+    "doorTurnOn": "Turn on and mint a key",
+    "doorTurnOff": "Turn off",
+    "sourceResult": "Result by source",
+    "sourceArrivals": "{n} arrivals",
+    "sourceDropped": "{n} dropped",
+    "sourceWon": "{n} won"
   },
   "navShort": {
     "home": "Home",
