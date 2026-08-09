@@ -23,6 +23,7 @@ import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
 import { STAGE_COLORS } from '../crm/service';
+import { stageWrite } from '../crm/stage-law';
 import {
   ARRIVED_BOX_STATUSES,
   SETTLED_BOX_STATUSES,
@@ -194,11 +195,32 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
     audited,
   );
 
+  /*
+   * The funnel's law, asked by this door too (round 83). `moveDeal` has
+   * demanded a reason for «Yo'qotildi» and cleared it on the way back out
+   * since it shipped; the ✏️ form wrote `stage_id` from a `<select>` of every
+   * stage and did neither. It carries no reason box, so passing none is what
+   * makes the shared rule refuse it. Only on an actual MOVE — an ordinary
+   * save on a deal that is already lost is not a refusal, and must not wipe
+   * the reason it was lost for.
+   */
+  let lostReason: string | null | undefined;
+  if ((input.stageId ?? before.stageId) !== before.stageId) {
+    const stage = await db.query.dealStages.findFirst({
+      where: eq(dealStages.id, input.stageId!),
+    });
+    if (!stage) throw new DealError('stage_not_found');
+    const law = stageWrite(stage.kind, null);
+    if (!law.ok) throw new DealError('lost_reason_required');
+    lostReason = law.lostReason;
+  }
+
   await db.transaction(async (tx) => {
     await tx
       .update(deals)
       .set({
         stageId: input.stageId ?? before.stageId,
+        ...(lostReason === undefined ? {} : { lostReason }),
         ownerId: input.ownerId === undefined ? before.ownerId : input.ownerId,
         title: input.title || null,
         quotedVolumeM3: num(input.quotedVolumeM3),
@@ -266,12 +288,13 @@ export async function moveDeal(
   if (!stage) throw new DealError('stage_not_found');
   // A job that was dropped is worth more to the business than a job that was
   // won, and only if somebody wrote down why.
-  if (stage.kind === 'lost' && !lostReason?.trim()) throw new DealError('lost_reason_required');
+  const law = stageWrite(stage.kind, lostReason);
+  if (!law.ok) throw new DealError('lost_reason_required');
 
   await db.transaction(async (tx) => {
     await tx
       .update(deals)
-      .set({ stageId, lostReason: stage.kind === 'lost' ? lostReason!.trim() : null })
+      .set({ stageId, lostReason: law.lostReason })
       .where(eq(deals.id, id));
     await writeAudit(tx, ctx, {
       entityType: 'deal',

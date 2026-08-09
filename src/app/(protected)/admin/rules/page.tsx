@@ -89,8 +89,8 @@ export default async function RulesPage() {
 
       <Panel title={`➕ ${t('newRule')}`} testId="new-rule-panel" open={rules.length === 0}>
         <RuleForm
-          leadStages={leadStages.map((s) => ({ id: s.id, name: s.name }))}
-          dealStages={dealStages.map((s) => ({ id: s.id, name: s.name }))}
+          leadStages={leadStages.map((s) => ({ id: s.id, name: s.name, kind: s.kind }))}
+          dealStages={dealStages.map((s) => ({ id: s.id, name: s.name, kind: s.kind }))}
           events={[...RULE_EVENTS]}
           users={people}
         />

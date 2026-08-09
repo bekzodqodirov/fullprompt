@@ -216,3 +216,47 @@ test('a sales manager works leads but cannot reshape the funnel', async ({ page 
   await page.goto('/crm/people');
   await expect(page).toHaveURL('/crm');
 });
+
+/**
+ * The configuration this file invented is taken back off.
+ *
+ * A STAGE and a FIELD are configuration in e2e terms (#183): they do not sit
+ * quietly like a stray lead, they change what every screen renders — a new
+ * funnel column for every board and every count, a new column and filter for
+ * every list. Left behind they also accumulate, one per run, on any database
+ * that is not thrown away; a local funnel had eight of these before anybody
+ * noticed, and round 83's own spec broke because it picked a stage BY
+ * POSITION out of a funnel that had been growing.
+ *
+ * A final TEST rather than an `afterAll`, because a page opened in a hook has
+ * neither baseURL nor a session, so the cleanup silently does nothing and the
+ * suite still passes (round 57 shipped exactly that lie).
+ */
+test('the stage and the field it invented are removed again', async ({ page }) => {
+  await login(page, OWNER);
+
+  await page.goto('/crm/settings');
+  const row = page.locator('li, tr, div').filter({ hasText: `Sinov bosqichi ${runId}` }).last();
+  // Deleting a stage asks WHERE its leads should go — «1» is the first of the
+  // others, and this one has none anyway.
+  page.once('dialog', (dialog) => void dialog.accept('1'));
+  await row.getByTestId('delete-stage').click();
+  await expect(page.getByText(`Sinov bosqichi ${runId}`)).toHaveCount(0);
+
+  await page.goto('/admin/fields');
+  // The fields of an object live inside a COLLAPSED panel, so nothing in
+  // there is clickable until it is opened.
+  await page.getByTestId('entity-lead').click();
+  // A field is rendered as its own EDIT FORM, so its label lives in an input
+  // value and not in any text node — `getByText` finds nothing.
+  const field = page
+    .locator('form')
+    .filter({ has: page.locator(`[data-testid="field-label"][value="Shahar ${runId}"]`) })
+    .first();
+  // The confirm names how many answers go with it.
+  page.once('dialog', (dialog) => void dialog.accept());
+  await field.locator('[data-testid^="delete-field-"]').click();
+  await expect(
+    page.locator(`[data-testid="field-label"][value="Shahar ${runId}"]`),
+  ).toHaveCount(0);
+});

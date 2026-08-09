@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## Varonka: «Yo'qotildi» endi sababsiz qo'yilmaydi — 2026-08-09 (kech)
+
+Kod tekshiruvida topilgan ikkita xato. Ikkalasi ham lidda ham, bitimda ham bor
+edi.
+
+**1. Sababsiz yo'qotib bo'lardi.** Varonka doskasida kartani «Yo'qotildi» ga
+surganingizda tizim «nega?» deb so'raydi va javobsiz qo'ymaydi. Ammo kartaning
+**✏️ formasida** ham bosqich tanlagich bor edi va u hech nima so'ramasdi — ya'ni
+u yerdan yo'qotilgan lidda **sabab yozilmay qolardi**. Yo'qotilgan ishning
+yagona muhim ma'lumoti esa aynan sabab.
+
+**2. Qaytarilgan lid eski sababni saqlab qolardi.** Yo'qotilgan lidni keyin
+qaytarsangiz, doska sababni o'chirardi, forma esa o'chirmasdi. Natijada ochiq
+lid kartasining tepasida qizil rangda eski «yo'qotish sababi» osilib turardi.
+
+**Endi:** qoida bitta joyda yozilgan va ikkala eshik ham o'shani so'raydi.
+Formada sabab yozadigan katak yo'q, shuning uchun u yerdan yo'qotib bo'lmaydi —
+buning uchun doskaning o'z tugmasi bor, u sababni so'raydi. Qaytarilganda sabab
+o'chadi.
+
+**Formada «Yo'qotildi» ro'yxatdan olindi** — tizim rad etadigan narsani forma
+taklif qilmasligi kerak. Doskada esa hammasi joyida turibdi. Karta allaqachon
+yo'qotilgan bo'lsa, o'z bosqichi ro'yxatda qoladi (aks holda telefonni
+tuzatib «Saqlash» bosganingizda lid o'zi qaytib ketardi).
+
+Migratsiya yo'q — faqat qoida.
+
 ## Telegram ↔ CRM: halqa yopildi (3-qism) — 2026-08-09
 
 Oldingi ikki qismda poydevor qo'yilgan edi. Endi ikkala tugma ham ekranda.

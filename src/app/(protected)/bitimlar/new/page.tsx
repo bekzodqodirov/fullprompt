@@ -7,6 +7,7 @@ import { clients, leads } from '@/modules/platform/db/schema';
 import { PageHeader } from '@/components/ui/page';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { canWriteDeal, listStages } from '@/modules/wms/deals/service';
+import { formStages } from '@/modules/wms/crm/stage-law';
 import { DealForm } from '../deal-form';
 import { ClientPicker } from './client-picker';
 
@@ -77,7 +78,7 @@ export default async function NewDealPage({
         }
       />
       <DealForm
-        stages={stages}
+        stages={formStages(stages, null)}
         managers={managers}
         initial={{
           clientId: preset.id,

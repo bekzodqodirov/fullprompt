@@ -9,6 +9,7 @@ import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { getSetting } from '@/modules/platform/settings/service';
 import { Panel } from '@/components/panel';
 import { listSources, listStages } from '@/modules/wms/crm/service';
+import { formStages } from '@/modules/wms/crm/stage-law';
 import { customFieldsData } from '@/modules/platform/fields/view';
 import { convertLeadAction, updateLeadAction } from '../../actions';
 import { CustomFieldInputs } from '@/components/custom-fields';
@@ -187,10 +188,13 @@ export default async function LeadPage({
       )}
 
       <Panel title={`✏️ ${tc('edit')}`} testId="lead-edit-panel">
+        {/* Losing a lead belongs to the board, which asks why. The lead's OWN
+            stage stays in the list even when it is lost, or the select would
+            fall back to its first option and Save would revive it. */}
         <LeadForm
           action={update}
           sources={sources.map((row) => ({ id: row.id, label: row.name }))}
-          stages={stages.map((row) => ({ id: row.id, label: row.name }))}
+          stages={formStages(stages, lead.stageId).map((row) => ({ id: row.id, label: row.name }))}
           owners={managers.map((row) => ({ id: row.id, label: row.fullName }))}
           initial={{
             name: lead.name,

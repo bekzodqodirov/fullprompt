@@ -132,7 +132,7 @@ pnpm build && pnpm e2e  # 44 e2e
 #20 = round 81's two login holes; **round 82 = the loop's second half**. The branch
 `claude/gsr-logistics-wms-phase1-o8h4en` carries round 82; everything before
 it is merged.
-1151 unit/integration + 140 e2e, verified in CI's order on a fresh database
+1158 unit/integration + 140 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
 Latest migration: **0065** (`tg_chat_lead` — a tray rule may point at a lead;
@@ -2053,6 +2053,32 @@ need a real Telegram connection — watch the first one in
 `docker compose --profile telegram logs -f tg-listen`. Stated to the owner
 and NOT built: pulling a chat's PAST messages when «Yangi lid» is pressed —
 attaching is forward-only, exactly as «Bu mijoz» has always been.
+
+Round 83 — **the funnel's second door** (#599-602), chosen as the highest-value
+work left after the event-drain lock turned out to be in the OTHER session's
+open PR #22 (which also takes migration 0065 — a number this branch has now
+merged, so it needs renumbering to 0066). `moveLead`/`moveDeal` have always
+refused a lost stage without a reason and cleared it on the way back out;
+`updateLead`/`updateDeal` — the ✏️ form on both cards, with a `<select>` of
+every stage — did NEITHER, so an ordinary press could lose a lead with
+nobody's reason on it, and a revived lead kept the reason it was lost for and
+printed it in red above an open card. Both reproduced BEFORE the fix. One
+function now answers for both doors (`crm/stage-law.ts` `stageWrite`), and the
+form's refusal needs no second condition anywhere because **the form passes no
+reason**. Only on an actual MOVE — an ordinary save on an already-lost record
+is neither a refusal nor a wipe, and that third case has its own test.
+`formStages` drops lost stages from the four create/edit pickers, KEEPING the
+record's own (filtering it out makes the select fall back to its first option,
+so Save would silently revive the lead — a worse bug, found while writing it).
+**An existing spec went red and that was the proof** (#601): m9v picked the
+LAST stage for its rule and every seeded funnel puts lost last, so it had been
+exercising the defect since it was written; it chooses by `data-kind` now, and
+the rule picker stamps it. Found on the way (#602): m8 invented a funnel column
+AND a custom field on every run and removed neither — eight extra columns on
+this container's database, which is also why a spec indexing into the stage
+list was fragile. Cleanup is a final TEST, not an `afterAll` (round 57's lie).
+Red-proofs ×3. No migration. 1158 unit/integration + 140 e2e green on a fresh
+db in CI's order; the ✏️ form verified in a browser at 360.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 (abuse / regression / product-fit) produced a build plan that kills most of the
