@@ -153,10 +153,14 @@ calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 **NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
 17 audit defects (four live money bugs), the speed rounds, rounds 46-79, the
 driver app 1.3, both APKs. The owner's last confirmed update was `eea3509`,
-so the server is **~34 rounds behind** and this is now the biggest single
+so the server is **~37 rounds behind** and this is now the biggest single
 risk on the project: the gap is no longer one release, it is a year of
-work landing at once. A fresh clone of production applied 0032 → **0065**
-in one run, so the migration path itself is proven.
+work landing at once. **Re-verified 2026-08-09 with the tail this branch
+adds:** a database built to his deployed level (journal truncated at 0032)
+then given the full journal applied **0033 → 0068 in ONE run** and reached
+**69** rows, with `list_views`, `lead_intakes`, `automation_fires`,
+`reply_templates`, `call_logs` and all five new columns present afterwards.
+Re-run that check whenever the tail grows — the claim is what he acts on.
 **Deploy note:** migrations 0058-0068 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
