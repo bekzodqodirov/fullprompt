@@ -78,6 +78,16 @@ Yuqoridagi `restart` yetadi. 2026-08-03 dan boshlab tinglovchi bu holatni
   # migratsiyani qo'lda o'tkazish (seed idempotent — zarar qilmaydi)
   docker compose run --rm migrate
   ```
+- **Demo ma'lumotlar serverga TUSHMAYDI** (raund 83). `pnpm db:seed` — bu
+  `migrate` servisi har deployda ishga tushiradigan skript — endi faqat
+  ma'lumotnoma yozadi: huquqlar, rollar, sozlamalar, valyutalar, xarajat
+  turlari, voronka bosqichlari. Demo skladlar, demo xodimlar (`demo1234`
+  paroli bilan), demo mijozlar va namuna prixod **boshqa faylda**
+  (`pnpm db:seed:demo`) va uni faqat test bazalari ishlatadi. Ilgari ular shu
+  faylda, bitta shart ortida turardi — va o'sha shart yangi bazada bir marta
+  to'g'ri bo'lgani uchun ular productionga tushib qolgan edi.
+  Serverdagi eskilarini o'chirish: `docker compose run --rm migrate pnpm
+  demo-users --disable`.
 - **Bir martalik buyruqlar — `migrate` orqali, `app` orqali EMAS.** `app`
   obrazi ataylab yalang'och: unda `pnpm` ham, `tsx` ham, kodning o'zi ham yo'q
   (faqat yig'ilgan `server.js`). Shuning uchun `docker compose run --rm app
