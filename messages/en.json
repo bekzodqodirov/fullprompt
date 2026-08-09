@@ -783,6 +783,7 @@
     "reasonRequired": "Reason (required)",
     "loadAnyway": "Load it anyway",
     "stickerLost": "Sticker lost / enter by hand",
+    "kgPerBox": "kg/box",
     "stickerLostHint": "Pick a box from the unscanned ones or enter its code",
     "unscannedList": "Unscanned boxes:",
     "stockList": "Boxes in the warehouse (tap to load):",

@@ -367,7 +367,18 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   // see WHAT sits inside and scan the crate, not hunt loose boxes).
   const byLot = new Map<
     string,
-    { label: string; product: string; total: number; done: number; crate: boolean }
+    {
+      label: string;
+      product: string;
+      total: number;
+      done: number;
+      crate: boolean;
+      /** The whole row's weight and volume, not the part already scanned. */
+      kg: number;
+      m3: number;
+      /** Boxes carrying a weight — the divisor of the per-box figure. */
+      weighed: number;
+    }
   >();
   for (const box of snapshot.boxes) {
     const codeLabel = `${box.clientCode ?? box.marking ?? '?'}-${box.letter}`;
@@ -375,8 +386,30 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     const entry =
       byLot.get(key) ??
       (box.crateCode
-        ? { label: `🧰 ${box.crateCode}`, product: '', total: 0, done: 0, crate: true }
-        : { label: codeLabel, product: box.productNameZh, total: 0, done: 0, crate: false });
+        ? {
+            label: `🧰 ${box.crateCode}`,
+            product: '',
+            total: 0,
+            done: 0,
+            crate: true,
+            kg: 0,
+            m3: 0,
+            weighed: 0,
+          }
+        : {
+            label: codeLabel,
+            product: box.productNameZh,
+            total: 0,
+            done: 0,
+            crate: false,
+            kg: 0,
+            m3: 0,
+            weighed: 0,
+          });
+    const boxKg = Number(box.perBoxKg ?? 0);
+    entry.kg += boxKg;
+    entry.m3 += Number(box.perBoxM3 ?? 0);
+    if (boxKg > 0) entry.weighed += 1;
     if (entry.crate) {
       // Contents summary: "GS777-A 化妆品 · GS777-B 键盘 …"
       const piece = `${codeLabel} ${box.productNameZh}`;
@@ -399,13 +432,23 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   }
   let loadedKg = 0;
   let loadedM3 = 0;
+  // Boxes that actually carry a weight. The average is theirs and not every
+  // loaded box's: an unweighed box adds 0 kg, so counting it in the divisor
+  // would report a lighter average the more of them there are. It is also the
+  // only count a QUICK batch has — `doneCount` reads the plan, which a quick
+  // batch does not have, so the average would vanish on exactly the ad-hoc
+  // load this line is most useful for.
+  let loadedWeighed = 0;
   for (const code of loaded) {
     const box = weighed.get(code);
     if (!box) continue;
-    loadedKg += Number(box.perBoxKg ?? 0);
+    const kg = Number(box.perBoxKg ?? 0);
+    loadedKg += kg;
     loadedM3 += Number(box.perBoxM3 ?? 0);
+    if (kg > 0) loadedWeighed += 1;
   }
   const loadedDensity = loadedM3 > 0.0005 ? Math.round(loadedKg / loadedM3) : null;
+  const loadedAvgKg = loadedWeighed > 0 ? Math.round(loadedKg / loadedWeighed) : null;
   const unscanned = snapshot.boxes.filter((b) => !loaded.has(b.shortCode));
   // Quick batch: no plan, so "sticker lost" picks from the origin WH stock
   // instead of the (empty) plan list (owner: tap the box, don't type codes).
@@ -449,29 +492,73 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       {/* Weight and volume on board, updated with every scan — a truck is
           filled by kg and m³, and until now the loader could only count
           boxes and hope. */}
+      {/* `flex-wrap`, and each separator lives INSIDE the span that follows
+          it (round 78's rule) so a wrap can never leave a lone «·» hanging at
+          the end of a line. The line was one row of four un-wrappable spans:
+          measured at 360 it fits a 2,800 kg truck and overflows a 12,500 kg
+          one — and a row wider than the viewport makes mobile Chrome rescale
+          the WHOLE page (#400), which on a scanning screen moves every tap
+          target. A fourth number was the moment that stopped being theory. */}
       <div
         data-testid="load-totals"
-        className="flex items-baseline justify-center gap-3 text-center font-mono text-sm font-bold"
+        className="flex flex-wrap items-baseline justify-center gap-x-3 text-center font-mono text-sm font-bold"
       >
         <span>{Math.round(loadedKg)} kg</span>
-        <span className="text-ink-400">·</span>
-        <span>{Math.round(loadedM3 * 100) / 100} m³</span>
+        <span>
+          <span className="text-ink-400">· </span>
+          {Math.round(loadedM3 * 100) / 100} m³
+        </span>
         {loadedDensity !== null && (
-          <>
-            <span className="text-ink-400">·</span>
-            <span className="text-ink-700">{loadedDensity} kg/m³</span>
-          </>
+          <span className="text-ink-700">
+            <span className="text-ink-400">· </span>
+            {loadedDensity} kg/m³
+          </span>
         )}
+        {/* The average box on this truck. Density says how the truck fills;
+            this says how heavy the thing in front of you is, which is the
+            question the person loading it is asking. */}
+        {loadedAvgKg !== null && (
+          <span className="text-ink-700">
+            <span className="text-ink-400">· </span>ø{loadedAvgKg} kg
+          </span>
+        )}
+        {/* The average box on this truck. Density says how the truck fills;
+            this says how heavy the thing in front of you is, which is the
+            question the person loading it is asking. */}
       </div>
 
-      <div className="card space-y-1 !p-3">
+      {/* space-y-2, not the 1 it was: a row is TWO lines now, and at the old
+          spacing the gap inside a row equalled the gap between rows, so the
+          grey weights read as if they belonged to the code underneath them.
+          Four pixels a row, and the eye groups them correctly. */}
+      <div className="card space-y-2 !p-3">
         {[...byLot.values()].map((lot) => (
-          <div key={lot.label} className="flex items-center gap-2 text-sm">
-            <span className="font-mono font-extrabold text-brand-700">{lot.label}</span>
-            <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
-            <span className={`font-semibold ${lot.done === lot.total ? 'text-good' : ''}`}>
-              {lot.done}/{lot.total}
-            </span>
+          <div key={lot.label}>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-mono font-extrabold text-brand-700">{lot.label}</span>
+              <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
+              <span className={`font-semibold ${lot.done === lot.total ? 'text-good' : ''}`}>
+                {lot.done}/{lot.total}
+              </span>
+            </div>
+            {/* A SECOND line, not a wider first one. Measured at 360: the row is
+                302 px — code 84, product 177 (already truncating), count 25 —
+                so three more numbers would leave the product name 43 px and
+                the crate row nothing at all. The per-box weight is the number
+                a loader standing at the truck actually acts on: 24 kg is
+                carried by hand, 80 kg needs the forklift. */}
+            {lot.weighed > 0 && (
+              <p className="font-mono text-xs text-ink-500" data-testid="lot-weights">
+                {Math.round(lot.kg)} kg · {Math.round(lot.m3 * 100) / 100} m³ ·{' '}
+                {Math.round(lot.kg / lot.weighed)} {t('kgPerBox')}
+              </p>
+            )}
+            {/* A SECOND line, not a wider first one. Measured at 360: the row is
+                302 px — code 84, product 177 (already truncating), count 25 —
+                so three more numbers would leave the product name 43 px and
+                the crate row nothing at all. The per-box weight is the number
+                a loader standing at the truck actually acts on: 24 kg is
+                carried by hand, 80 kg needs the forklift. */}
           </div>
         ))}
       </div>

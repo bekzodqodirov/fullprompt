@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## Yuklash ekranida kg, kub va bitta karobkaning og'irligi — 2026-08-09 (kech)
+
+Sizning so'rovingiz: «kamera ochilganda yuklash payitida hozir GS kod, harf va
+nechtadan nechta ortilgani ko'rinyabti — shu yerda iloji bo'lsa kg, kubi va
+sredniy vesini ko'rsatishni ixcham qilib».
+
+**Har bir qatorda ikkinchi qator paydo bo'ldi.** Ro'yxatdagi har bir lot (yoki
+yashik) endi kodi va tovar nomi ostida kulrang mayda yozuvda **umumiy kg ·
+umumiy kub · bitta karobkaning og'irligi** ni ko'rsatadi. Masalan:
+`104 kg · 0.68 m³ · 26 kg/quti`.
+
+Nega ikkinchi qator? Chunki birinchi qator to'lgan — telefon ekranida (360 px)
+kod 84 px, tovar nomi 177 px oladi va tovar nomi allaqachon qisqarib turibdi.
+Uch dona raqamni o'sha qatorga tiqsak, tovar nomiga 43 px qolardi, yashik
+qatoriga esa umuman hech nima.
+
+**Yuqoridagi umumiy qatorga to'rtinchi raqam qo'shildi** — `ø26 kg`, ya'ni
+mashinaga ortilgan karobkalarning **o'rtacha og'irligi**. Endi u qator shunday
+o'qiladi: `52 kg · 0.34 m³ · 153 kg/m³ · ø26 kg`.
+
+Bu raqam nima uchun kerak: umumiy kg mashina to'ldimi degan savolga javob
+beradi, o'rtacha og'irlik esa **qo'lingizdagi karobka og'irmi** degan savolga.
+26 kg ni odam ko'taradi, 80 kg pogruzchik kutadi.
+
+**Bir nozik joy:** o'rtacha og'irlik faqat **og'irligi kiritilgan**
+karobkalarga bo'linadi. Agar bir nechta lotning kilosi kiritilmagan bo'lsa, ular
+o'rtachani pasaytirib yubormaydi. Shuning uchun bu raqam **tez partiyada**
+(plansiz, shoshilinch yuk) ham ishlaydi.
+
+Kod va bazada o'zgarish yo'q — faqat ekran. Migratsiya yo'q.
+
 ## Varonka: «Yo'qotildi» endi sababsiz qo'yilmaydi — 2026-08-09 (kech)
 
 Kod tekshiruvida topilgan ikkita xato. Ikkalasi ham lidda ham, bitimda ham bor

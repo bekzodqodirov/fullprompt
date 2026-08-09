@@ -2086,6 +2086,30 @@ db in CI's order, after merging the ads, backup and automation rounds; the
 ✏️ form verified in a browser at 360. The cleanup test's first locator was `div` soup and passed
 ALONE while failing in the full suite — `StageTools` rows carry a testid now.
 
+Round 88 — the loading scanner learns weight (#620-621, owner at a truck: «kg
+kubi va sredniy vesini ko'rsatishni ixcham qilib»). Every plan row carries a
+SECOND muted line `kg · m³ · kg/quti`, and the totals line a fourth figure
+`ø` = the average box on board. Second line, not a wider first: measured at
+360 the row is 302 px — code 84, goods 177 and already truncating, count 25 —
+so three more numbers leave the goods name 43 px and a CRATE row, whose
+«goods» is its contents list, nothing. **The divisor is boxes carrying a
+weight, never all of them** — an unweighed box adds 0 kg, so counting it makes
+the average lighter the worse the data is, and it is also the only count a
+QUICK batch has (`doneCount` reads the plan; the ø would have vanished on
+exactly the ad-hoc CEO load it is most useful for). Row spacing 1 → 2: a row
+is two lines now, and at the old gap the grey weights read as belonging to the
+code beneath. **The fourth number is the one that would have rescaled the
+page** — the totals row was four un-wrappable spans, 328 px inside a 328 px box
+at the fixture's numbers and past the viewport at 12,500 kg / 105 m³, which
+makes mobile Chrome zoom the whole page out (#400) on a SCANNING screen where
+every tap target then moves. `flex-wrap` + each «·» moved INSIDE the span that
+follows it (round 78's rule, so a wrap cannot orphan one); measured realistic
+20 px one line, absurd 40 px two lines, document 360 both. LESSON: **measure
+the widest value the field can hold, not the value the fixture happens to
+have.** m3's e2e asserts both halves; red-proven separately (ø stripped → the
+totals assertion red; the row line stripped → `lot-weights` not found). One new
+i18n key `loading.kgPerBox` ×4. No migration.
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
 **Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that

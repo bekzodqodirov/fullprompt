@@ -783,6 +783,7 @@
     "reasonRequired": "原因（必填）",
     "loadAnyway": "仍然装车",
     "stickerLost": "标签丢失/手动输入",
+    "kgPerBox": "公斤/箱",
     "stickerLostHint": "从未扫描列表选择箱子或输入编码",
     "unscannedList": "未扫描的箱子：",
     "stockList": "仓库中的箱子（点击装车）：",
