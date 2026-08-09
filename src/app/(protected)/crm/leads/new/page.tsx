@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { listSources, listStages } from '@/modules/wms/crm/service';
+import { formStages } from '@/modules/wms/crm/stage-law';
 import { blankFieldsData } from '@/modules/platform/fields/view';
 import { createLeadAction } from '../../actions';
 import { CustomFieldInputs } from '@/components/custom-fields';
@@ -25,10 +26,12 @@ export default async function NewLeadPage() {
   return (
     <div className="mx-auto max-w-lg space-y-3">
       <PageHeader icon="plus" title={t('newLead')} />
+      {/* No lost stage on a CREATE form: a lead born lost has nobody's reason
+          on it, and the service refuses that move anyway (round 83). */}
       <LeadForm
         action={createLeadAction}
         sources={sources.map((row) => ({ id: row.id, label: row.name }))}
-        stages={stages.map((row) => ({ id: row.id, label: row.name }))}
+        stages={formStages(stages, null).map((row) => ({ id: row.id, label: row.name }))}
         owners={managers.map((row) => ({ id: row.id, label: row.fullName }))}
         initial={{
           name: '',

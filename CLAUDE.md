@@ -130,14 +130,16 @@ pnpm build && pnpm e2e  # 44 e2e
 #6 = rounds 70-71; #7 = the calls day-one fixes; #13 = round 74 (capacity);
 #14 = rounds 75-76; #15 = round 77; #19 = round 79's card work; #17 = rounds 78-79 (the Telegram ↔ CRM loop);
 #20 = round 81's two login holes; #22 = round 83 (ads intake, the drain lock,
-demo data out of the seed); #24 = round 85 (the S3 backup). This branch
-carries **round 86**; everything before it is merged.
-1217 unit/integration + 141 e2e, verified in CI's order on a fresh database
+demo data out of the seed); #24 = round 85 (the S3 backup); #26 = round 86
+(automation rules). This branch carries **round 87**; everything before it is
+merged.
+1224 unit/integration + 145 e2e, verified in CI's order on a fresh database
 (the three photo-path specs — m1×2, m2×1 — are locally red by design here,
 no image service in this container; CI is the arbiter).
 Latest migration: **0067** (`automation_v2` — rule conditions, time triggers
 and `automation_fires`; 0066 `inbound_leads` was the ads round;
 0065 `tg_chat_lead` — a tray rule may point at a lead;
+
 0064 `tg_lead` was the work-account switch, lead-owned chats and the hashed
 peer index; 0063 `call_lead`, 0062 `lead_quote`, 0061 `call_dedup_by_user`,
 0060 `call_recorder` and 0059 `reply_templates` are the calls track's). Every
@@ -160,6 +162,7 @@ in one run, so the migration path itself is proven.
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations` after updating (**count must reach 68**); fix
+
 with `docker compose run --rm migrate`. Recommended order, told to the owner:
 enlarge the VPS and move the data first (`docs/DEPLOY.md` → «Yangi VPS'ga
 ko'chirish»), deploy this code there, test it, and only then move the domain.
@@ -2055,6 +2058,33 @@ need a real Telegram connection — watch the first one in
 `docker compose --profile telegram logs -f tg-listen`. Stated to the owner
 and NOT built: pulling a chat's PAST messages when «Yangi lid» is pressed —
 attaching is forward-only, exactly as «Bu mijoz» has always been.
+
+Round 87 — **the funnel's second door** (#616-619), chosen as the highest-value
+work left after the event-drain lock turned out to be in the OTHER session's
+PR #22 (since merged, its migration renumbered to 0066). `moveLead`/`moveDeal` have always
+refused a lost stage without a reason and cleared it on the way back out;
+`updateLead`/`updateDeal` — the ✏️ form on both cards, with a `<select>` of
+every stage — did NEITHER, so an ordinary press could lose a lead with
+nobody's reason on it, and a revived lead kept the reason it was lost for and
+printed it in red above an open card. Both reproduced BEFORE the fix. One
+function now answers for both doors (`crm/stage-law.ts` `stageWrite`), and the
+form's refusal needs no second condition anywhere because **the form passes no
+reason**. Only on an actual MOVE — an ordinary save on an already-lost record
+is neither a refusal nor a wipe, and that third case has its own test.
+`formStages` drops lost stages from the four create/edit pickers, KEEPING the
+record's own (filtering it out makes the select fall back to its first option,
+so Save would silently revive the lead — a worse bug, found while writing it).
+**An existing spec went red and that was the proof** (#618): m9v picked the
+LAST stage for its rule and every seeded funnel puts lost last, so it had been
+exercising the defect since it was written; it chooses by `data-kind` now, and
+the rule picker stamps it. Found on the way (#619): m8 invented a funnel column
+AND a custom field on every run and removed neither — eight extra columns on
+this container's database, which is also why a spec indexing into the stage
+list was fragile. Cleanup is a final TEST, not an `afterAll` (round 57's lie).
+Red-proofs ×3. No migration. 1224 unit/integration + 145 e2e green on a fresh
+db in CI's order, after merging the ads, backup and automation rounds; the
+✏️ form verified in a browser at 360. The cleanup test's first locator was `div` soup and passed
+ALONE while failing in the full suite — `StageTools` rows carry a testid now.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

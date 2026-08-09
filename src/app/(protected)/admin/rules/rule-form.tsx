@@ -26,6 +26,14 @@ import { saveRuleAction, type RuleFormState } from './actions';
 export interface StageOption {
   id: string;
   name: string;
+  /**
+   * Stamped onto the option as `data-kind`, the vocabulary the boards already
+   * use (#59). A rule on a LOST stage is legitimate — «when a deal is lost,
+   * tell me» — so this picker offers every stage; what the attribute buys is
+   * that a reader, human or spec, can tell WHICH is which without counting
+   * positions in a funnel the owner names himself.
+   */
+  kind: string;
 }
 export interface UserOption {
   id: string;
@@ -118,7 +126,7 @@ export function RuleForm({
         ) : (
           <select name="stageId" aria-label={t('stage')} data-testid="rule-stage" className="input">
             {stages.map((stage) => (
-              <option key={stage.id} value={stage.id}>
+              <option key={stage.id} value={stage.id} data-kind={stage.kind}>
                 {stage.name}
               </option>
             ))}
