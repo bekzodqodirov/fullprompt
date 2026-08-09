@@ -78,6 +78,21 @@ Yuqoridagi `restart` yetadi. 2026-08-03 dan boshlab tinglovchi bu holatni
   # migratsiyani qo'lda o'tkazish (seed idempotent — zarar qilmaydi)
   docker compose run --rm migrate
   ```
+- **Bir martalik buyruqlar — `migrate` orqali, `app` orqali EMAS.** `app`
+  obrazi ataylab yalang'och: unda `pnpm` ham, `tsx` ham, kodning o'zi ham yo'q
+  (faqat yig'ilgan `server.js`). Shuning uchun `docker compose run --rm app
+  pnpm ...` xato beradi — `node` obrazining kirish nuqtasi `pnpm` ni topolmay,
+  uni **fayl nomi** deb node'ga uzatadi:
+  `Error: Cannot find module '/app/pnpm'`. To'liq obraz — `migrate` servisi:
+
+  ```bash
+  # demo hisoblarni o'chirish (avval hisobot, keyin --disable bilan o'chirish)
+  docker compose run --rm migrate pnpm demo-users
+  docker compose run --rm migrate pnpm demo-users --disable
+
+  # boshqa har qanday skript ham shu yo'l bilan
+  docker compose run --rm migrate pnpm tg-doctor
+  ```
 - **Backup**: har kuni avtomatik (`backups` volume), haftalik restore-sinov
   app ichidagi job orqali; qo'lda tekshirish — `docker compose exec app node
   --version` emas, README'dagi restore bo'limiga qarang.
