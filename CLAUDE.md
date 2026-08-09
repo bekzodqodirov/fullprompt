@@ -2206,6 +2206,23 @@ RULE: **before minting a migration, `git fetch origin main` and read the tail of
 `_journal.json`** — the DECISIONS numbers have collided four times and now the
 migrations have too.
 
+Round 85 — **the off-site backup gets an S3 destination** (#609, owner:
+«google drive emas boshqa joy yo'qmi buni zahira olgani» → «1 sen tavsiya
+berganingdek» = Contabo Object Storage). `backup/s3.ts`: all four values or
+null (a half-configured destination must read as «not configured», not as a
+silent failure), `forcePathStyle` mandatory, upload then HEAD to verify the
+stored size, paged listing, prune only after a verified upload, `keep <= 0`
+refuses to delete anything. S3 WINS when both destinations are configured —
+not a fallback chain, because falling through means a night's backup landing
+where nobody looks. **THE FIND, from building a stand-in bucket rather than
+assuming:** since ~3.729 the AWS SDK sends a stream body as `aws-chunked` with
+a trailing CRC32 — no `Content-Length`, 4140 bytes on the wire for 4096 of
+dump — which Contabo and other clones REFUSE. `requestChecksumCalculation:
+'WHEN_REQUIRED'` fixes it; red-proven by removing the line (3 tests red).
+Round 9's Drive path never made one real request, which is why its seven-day
+token was learned late. `docs/BACKUP.md` rewritten S3-first, `.env.example`
+gained the four keys. 1187 unit/integration green.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 
