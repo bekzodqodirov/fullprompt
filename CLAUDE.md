@@ -2115,7 +2115,11 @@ follows it (round 78's rule, so a wrap cannot orphan one); measured realistic
 the widest value the field can hold, not the value the fixture happens to
 have.** m3's e2e asserts both halves; red-proven separately (ø stripped → the
 totals assertion red; the row line stripped → `lot-weights` not found). One new
-i18n key `loading.kgPerBox` ×4. No migration.
+i18n key `loading.kgPerBox` ×4. No migration. 1244 unit/integration + 145 e2e
+green on a fresh db in CI's order **after merging main's advert round** —
+which is also how the collision was found: GitHub runs no `pull_request` check
+at all while a PR conflicts, so the symptom of a stale branch is a PR with NO
+check rather than a red one (the recorded rule, hit again).
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
