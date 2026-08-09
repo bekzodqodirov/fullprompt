@@ -518,6 +518,11 @@ export async function convertLead(
   // dynamic import: the calls module is a leaf and this is its only door in.
   const { rekeyLeadCalls } = await import('../calls/service');
   await rekeyLeadCalls(id, client.id);
+  // …and the conversation with them (0064). Both halves of «what do we have
+  // on this person» follow the same person onto the same code, or the client
+  // card would show the calls and not the chat.
+  const { rekeyLeadChats } = await import('./chat-lead');
+  await rekeyLeadChats(id, client.id);
   if (won && won.id !== lead.stageId) await announceLeadStage(lead, won.id, ctx);
   return client;
 }

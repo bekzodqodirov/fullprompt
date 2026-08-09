@@ -1284,7 +1284,12 @@
     "quotedCurrency": "Currency",
     "quotedVolume": "Volume (m³)",
     "quotedWeight": "Weight (kg)",
-    "whoseWork": "Whose work"
+    "whoseWork": "Whose work",
+    "workTitle": "How is this number used?",
+    "workPersonal": "Personal number",
+    "workPersonalHint": "A stranger writing lands on the «which chats» tray for you to decide. Nothing is stored.",
+    "workWork": "Work number",
+    "workWorkHint": "Clients only. A stranger writing opens a lead by itself and the conversation is kept."
   },
   "navShort": {
     "home": "Home",

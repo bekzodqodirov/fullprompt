@@ -378,10 +378,14 @@ export default async function DealPage({
         revalidate={`/bitimlar/${row.deal.id}`}
       />
 
-      <Section title={tc('history')}>
-        <HistoryTab entityType="deal" entityId={row.deal.id} />
-      </Section>
           </>
+        }
+        tail={
+          /* Last on a phone: the audit trail is what you consult, never what
+             you came for (owner: «istoriya tarix mobileda eng pastda»). */
+          <Section title={tc('history')}>
+            <HistoryTab entityType="deal" entityId={row.deal.id} />
+          </Section>
         }
       />
     </div>

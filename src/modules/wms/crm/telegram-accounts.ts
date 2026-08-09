@@ -159,6 +159,8 @@ export interface AccountStatus {
    * from outside — "not connected" — and have completely different answers.
    */
   keyOpens: boolean;
+  /** Is this number used only for clients? (0064 — decides the stranger rule.) */
+  workAccount: boolean;
 }
 
 /** For the status panel. Deliberately returns no session material at all. */
@@ -173,6 +175,7 @@ export async function accountStatuses(now = new Date()): Promise<AccountStatus[]
       status: tgAccounts.status,
       lastSeenAt: tgAccounts.lastSeenAt,
       lastError: tgAccounts.lastError,
+      workAccount: tgAccounts.workAccount,
     })
     .from(tgAccounts)
     .innerJoin(users, eq(tgAccounts.managerUserId, users.id))
@@ -197,6 +200,7 @@ export async function accountStatuses(now = new Date()): Promise<AccountStatus[]
     lastError: r.lastError,
     keyOpens:
       key !== null && r.sessionEnc !== null && sessionOpens(r.sessionEnc, r.managerUserId, key),
+    workAccount: r.workAccount,
   }));
 }
 
@@ -329,7 +333,9 @@ export async function resumePoints(managerUserId: string): Promise<ResumePoint[]
  * to, and the null is what makes a replay never re-download.
  */
 export async function storeIncoming(input: {
-  clientId: string;
+  /** One of these two is set — the CHECK in 0064 says so structurally. */
+  clientId: string | null;
+  leadId?: string | null;
   managerUserId: string;
   row: MessageRow;
 }): Promise<string | null> {
@@ -337,6 +343,7 @@ export async function storeIncoming(input: {
     .insert(tgMessages)
     .values({
       clientId: input.clientId,
+      leadId: input.leadId ?? null,
       managerUserId: input.managerUserId,
       peerId: input.row.peerId,
       tgMessageId: input.row.tgMessageId,
@@ -388,4 +395,18 @@ export async function takeListenerLock(accountId: string): Promise<(() => Promis
       reserved.release();
     }
   };
+}
+
+/**
+ * Mark the actor's own connected account as a work number, or back to
+ * personal (0064). Returns false when they have no account to set it on —
+ * a refusal the screen can print, rather than a silent no-op.
+ */
+export async function setWorkAccount(managerUserId: string, work: boolean): Promise<boolean> {
+  const done = await db
+    .update(tgAccounts)
+    .set({ workAccount: work })
+    .where(eq(tgAccounts.managerUserId, managerUserId))
+    .returning({ id: tgAccounts.id });
+  return done.length > 0;
 }

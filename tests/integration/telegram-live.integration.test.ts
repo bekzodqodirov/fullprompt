@@ -128,7 +128,9 @@ describe('what the bridge writes', () => {
     const book = await clientBook();
     const verdict = decideIncoming(peer, msg, book);
     expect(verdict.store).toBe(true);
-    if (!verdict.store) throw new Error('unreachable');
+    // `store: true` is a union since round 79 (a known client, or a stranger
+    // on a work number); narrowed the way the listener narrows it.
+    if (!verdict.store || 'openLead' in verdict) throw new Error('unreachable');
     expect(verdict.clientId).toBe(clientId);
 
     // A NEW row answers with its id — the key a downloaded photo binds to.
@@ -150,10 +152,13 @@ describe('what the bridge writes', () => {
   it('writes nothing at all for a number that is not in the client book', async () => {
     const before = await db.select().from(tgMessages).where(eq(tgMessages.clientId, clientId));
     const verdict = decideIncoming({ ...peer, phone: '+998995554433' }, msg, await clientBook());
-    expect(verdict).toEqual({ store: false, reason: 'not_a_client' });
-    // There is no branch that could store it: `client_id` is NOT NULL and the
-    // verdict carries no id. Asserted anyway, because this is the promise made
-    // to twelve people about their private conversations.
+    // Round 79: on a PERSONAL account (the default, and what every connected
+    // account is today) a stranger is a question on the tray, not a refusal —
+    // but still not one word is stored until somebody answers it.
+    expect(verdict).toMatchObject({ store: false, ask: true, phone: '+998995554433' });
+    expect(verdict).not.toHaveProperty('row');
+    // The promise made to twelve people about their private conversations,
+    // asserted against the table rather than against the verdict.
     const after = await db.select().from(tgMessages).where(eq(tgMessages.clientId, clientId));
     expect(after).toHaveLength(before.length);
   });

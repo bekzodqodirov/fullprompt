@@ -5,7 +5,10 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { db } from '@/modules/platform/db/client';
-import { disconnectAccount } from '@/modules/wms/crm/telegram-accounts';
+import {
+  disconnectAccount,
+  setWorkAccount,
+} from '@/modules/wms/crm/telegram-accounts';
 import { beginTgLogin, completeTgLogin } from '@/modules/wms/crm/telegram-connect';
 
 /**
@@ -22,6 +25,8 @@ export interface ConnectState {
   stage: 'phone' | 'code' | 'done';
   needPassword?: boolean;
   error?: string;
+  /** A save that changed something — the work-account switch's ✅. */
+  ok?: boolean;
 }
 
 /** Same gate as the conversations screen — connecting is part of that job. */
@@ -105,4 +110,35 @@ export async function disconnectAction(): Promise<ConnectState> {
   revalidatePath('/suhbatlar/ulash');
   revalidatePath('/suhbatlar', 'layout');
   return { stage: 'phone' };
+}
+
+/**
+ * «Shaxsiy raqam» or «Ish raqami» for the actor's OWN connected account.
+ *
+ * Own account only, with no id in the form at all: the switch decides what a
+ * manager's private conversations become, and it is not a thing one colleague
+ * may set for another — round 20's fence, applied to the setting rather than
+ * to the messages.
+ *
+ * Audited, because turning it on starts keeping conversations that were not
+ * kept a minute ago, and «who decided that, and when» is the first question
+ * anybody will ask.
+ */
+export async function setWorkAccountAction(
+  _prev: ConnectState,
+  form: FormData,
+): Promise<ConnectState> {
+  const actor = await connector();
+  if (!actor) return { stage: 'phone', error: 'forbidden' };
+  const work = form.get('kind') === 'work';
+  const changed = await setWorkAccount(actor.id, work);
+  if (!changed) return { stage: 'phone', error: 'no_account' };
+  await writeAudit(db, { actorId: actor.id, ...(await requestMeta()) }, {
+    entityType: 'user',
+    entityId: actor.id,
+    action: 'update',
+    after: { telegramWorkAccount: work },
+  });
+  revalidatePath('/suhbatlar/ulash');
+  return { stage: 'phone', ok: true };
 }

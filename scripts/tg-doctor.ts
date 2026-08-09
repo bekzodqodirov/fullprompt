@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
 import { clients, tgAccounts, tgMessages, tgOutbox, users } from '../src/modules/platform/db/schema';
 import { getSetting } from '../src/modules/platform/settings/service';
@@ -108,15 +108,20 @@ async function main() {
     .from(tgMessages)
     .innerJoin(clients, eq(tgMessages.clientId, clients.id))
     .innerJoin(users, eq(tgMessages.managerUserId, users.id))
+    // `client_id` is nullable since 0064 — a conversation may belong to an
+    // open LEAD instead. This check is about the reply window on a CLIENT, so
+    // it says so rather than relying on the join to imply it.
+    .where(isNotNull(tgMessages.clientId))
     .orderBy(desc(tgMessages.sentAt))
     .limit(1);
 
-  if (!recent) {
+  const recentClientId = recent?.clientId;
+  if (!recent || !recentClientId) {
     console.log('   — tekshirish uchun yozishma yo‘q');
   } else {
-    const peerId = await peerForClient(recent.clientId, recent.managerUserId);
+    const peerId = await peerForClient(recentClientId, recent.managerUserId);
     const ctx = await sendContextFor({
-      clientId: recent.clientId,
+      clientId: recentClientId,
       managerUserId: recent.managerUserId,
       peerId,
     });

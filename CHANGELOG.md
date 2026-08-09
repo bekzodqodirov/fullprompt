@@ -27,6 +27,94 @@ yopildi; ilovaga endi faqat Caddy orqali (HTTPS bilan) kiriladi.
 
 Bazaga o'zgarish yo'q.
 
+## Telegram: kalit qo'yildi, notanish suhbat endi ko'rinadi (2-qism) — 2026-08-08 (kech)
+
+**Kalit ekranga chiqdi.** «Suhbatlar → Telegramga ulash» sahifasida endi
+tanlaysiz: **shaxsiy raqam** yoki **ish raqami**. Har kim o'ziniki uchun
+o'zi tanlaydi — boshqaning kalitini hech kim o'zgartira olmaydi.
+
+**Tinglovchi ulandi.** Endi notanish odam yozganda:
+- **ish raqamida** — o'zi lid ochiladi, yozishma o'sha lidga tushadi;
+- **shaxsiy raqamda** — «Qaysi chatlar» ro'yxatiga tushadi, siz hal
+  qilasiz. **Bosilmaguncha bironta so'z saqlanmaydi** — faqat kimligi
+  turadi, savol berish uchun.
+
+Bu ro'yxat ilgari faqat qo'lda skanerlaganda to'lardi. **Endi jonli
+to'ladi** — odamlar yozgan sari o'zi paydo bo'ladi.
+
+Xuddi shu qoida uzilishdan keyin qaytib olingan xabarlarga ham tegishli —
+uzilish paytida kelgan xabar bir daqiqa oldingi xabardan farq qilmasligi
+kerak.
+
+**Hali yo'q:** «Qaysi chatlar» ro'yxatidagi bitta bosishlik «Lid ochish»
+tugmasi (hozircha u yerda mijoz tanlab qo'shiladi), lid/bitim/mijoz
+ochilganda «bu raqam bilan yozishilgan» qatori, va indeksni kechasi
+yangilash.
+
+Migratsiya **0064**.
+
+
+## Telegram: yangi mijoz endi ko'rinmay qolmaydi (1-qism) — 2026-08-08 (kech)
+
+Siz aytgan ikki narsaning **poydevori** qo'yildi va to'liq test qilindi.
+Ekranlardagi tugmalar keyingi qismda.
+
+**Nega yangi mijozlar ko'rinmayotgan edi.** Tizim chatni faqat raqam
+mijozlar kitobida bo'lsa saqlardi. Yangi mijoz esa ta'rifi bo'yicha hali
+kitobda yo'q — shuning uchun hech narsa saqlanmasdi. Bu qoida bejiz emas
+edi: sizning hisobingizni import qilganda 394 ta suhbatdan 13 tasi mijoz
+chiqqan, qolgani shaxsiy. Qoidani olib tashlamadim — **savolni
+o'zgartirdim**: endi «bu raqam kimning?» deb so'raladi.
+
+**Kalit qo'shildi** (har bir ulangan hisob uchun): **shaxsiy** yoki **ish
+raqami**. Ish raqamida notanish suhbat o'zi lid ochadi; shaxsiy raqamda
+so'raladi. **Boshlang'ich holat — shaxsiy**, ya'ni hech kim hech nima
+tanlamasa ham xavfsiz.
+
+**Ikki marta lid ochilmaydi.** Bir odam yozsa, keyin qo'ng'iroq qilsa, keyin
+yana yozsa — bitta lid. Varonkada bir odam uchun uchta karta turishi
+jimlikdan ham yomon.
+
+**Lid mijozga aylanganda yozishmasi ham u bilan ko'chadi** — qo'ng'iroq
+yozuvlari qanday ko'chsa, xuddi shunday.
+
+**Raqamlar «barmoq izi» bilan saqlanadi.** Siz aytganingizdek. Bazada na ism,
+na raqam turadi — faqat «bu raqam bormi?» degan savolga javob bera oladigan
+belgi. Ya'ni xodimlarning shaxsiy kontaktlari ro'yxati bazada **hech qachon
+paydo bo'lmaydi**.
+
+Migratsiya **0064**. Serverni yangilaganda u albatta tushishi kerak.
+
+
+## CRM kartasi: bitta yozish joyi, tarix eng pastda — 2026-08-08
+
+**«Записать контакт» formasi olib tashlandi.** Endi lidga bir joyda —
+**lentada** yoziladi. Ilgari ikkita quti bor edi va qaysi biriga yozish
+kerakligi tushunarsiz edi.
+
+Olib tashlashdan **oldin** tekshirdim, keyin emas: o'sha formadagi
+**«Следующий контакт»** (keyingi aloqa sanasi) — «Bugun qo'ng'iroq» ro'yxatini
+to'ldiradigan narsa — **✏️ Tahrirlash** formasida ham bor edi va o'sha yerda
+qoladi. Yangi lidda, hali mijoz kartasi yo'q bo'lsa ham, lenta ishlaydi.
+Buni brauzerda test qilib isbotladim: lentaga yozib, ✏️ da sana qo'yib,
+lid «Bugun qo'ng'iroq» ro'yxatida chiqishini tekshirdim.
+
+**Yo'qolgan bitta narsa, ochiq aytaman:** to'rtta belgi — 📞 qo'ng'iroq,
+💬 xabar, 🤝 uchrashuv, 📝 eslatma. Endi hammasi oddiy eslatma bo'lib
+yoziladi. Agar bu belgilar kerak bo'lsa — lentaning o'z qutisiga qo'shib
+beraman, bir gapingiz. Ataylab qilmadim: oxirgi ikki round aynan bu kartani
+qisqartirishga ketdi.
+
+**Tarix (История) endi eng pastda.** U «yon panel»ning oxirida turardi — bu
+kompyuterda to'g'ri, lekin telefonda yon panel yuqorida bo'lgani uchun tarix
+o'rtada, lentadan **oldin** chiqib qolardi. Endi telefonda eng oxirgi,
+kompyuterda esa avvalgi joyida.
+
+O'lchandi: lenta **752 → 628 piksel**ga ko'tarildi, tarix eng pastda (865).
+Kompyuterda hech narsa siljimadi.
+
+Bazada hech narsa o'zgarmadi, migratsiya yo'q.
+
 ## Bitim kartasi, avtomatik chegirma va takroriy lid — 2026-08-09
 
 **1. Bitim kartasi qaytadan tuzildi.** Endi eng katta yozuv — **mijoz kodi**
