@@ -37,12 +37,14 @@ const include = (peerId: bigint, clientId: string, clientCode: string): ChatRule
   decision: 'include',
   clientId,
   clientCode,
+  leadId: null,
 });
 const exclude = (peerId: bigint): ChatRule => ({
   peerId,
   decision: 'exclude',
   clientId: null,
   clientCode: null,
+  leadId: null,
 });
 
 describe('a person overriding the automatic rule', () => {
@@ -78,7 +80,13 @@ describe('a person overriding the automatic rule', () => {
 
   it('treats a question nobody answered as no answer at all', () => {
     // `pending` is a row a scan wrote. It must not quietly behave like a yes.
-    const pending: ChatRule = { peerId: 42n, decision: 'pending', clientId: null, clientCode: null };
+    const pending: ChatRule = {
+      peerId: 42n,
+      decision: 'pending',
+      clientId: null,
+      clientCode: null,
+      leadId: null,
+    };
     expect(classifyWithRules(peer({ phone: null }), CLIENTS, rules(pending))).toEqual({
       keep: false,
       reason: 'no_phone',
@@ -108,7 +116,13 @@ describe('a person overriding the automatic rule', () => {
   it('an include with no client cannot decide anything', () => {
     // The table refuses such a row, and this is the belt to that braces: if
     // one ever existed, it must not send a message to a NULL client_id.
-    const broken: ChatRule = { peerId: 42n, decision: 'include', clientId: null, clientCode: null };
+    const broken: ChatRule = {
+      peerId: 42n,
+      decision: 'include',
+      clientId: null,
+      clientCode: null,
+      leadId: null,
+    };
     expect(classifyWithRules(peer({ phone: null }), CLIENTS, rules(broken)).keep).toBe(false);
   });
 });
@@ -140,7 +154,13 @@ describe('what a scan asks about', () => {
   });
 
   it('asks again while the answer is still pending', () => {
-    const pending: ChatRule = { peerId: 42n, decision: 'pending', clientId: null, clientCode: null };
+    const pending: ChatRule = {
+      peerId: 42n,
+      decision: 'pending',
+      clientId: null,
+      clientCode: null,
+      leadId: null,
+    };
     // So a re-scan refreshes the label on a question still on the screen.
     expect(scanVerdict(peer({ phone: null }), CLIENTS, rules(pending))).toBe('ask');
   });

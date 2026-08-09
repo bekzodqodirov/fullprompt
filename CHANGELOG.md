@@ -1,5 +1,57 @@
 # CHANGELOG
 
+## Demo ma'lumotlar koddan chiqdi · hisoblatish yopildi — 2026-08-09 (kech)
+
+**Demo ma'lumotlar endi serverga tushmaydi.** Siz aytgan muammo: serverni
+ko'targaningizda demo skladlar, demo xodimlar va demo mijozlar ham birga
+ko'chib o'tgan edi. Sababi shu ediki, ular asosiy seed faylining ichida,
+bitta shart ortida turardi — shart esa «foydalanuvchilar jadvali bo'sh» degani
+edi, bu esa yangi o'rnatishda **aynan bir marta** to'g'ri bo'ladi: siz serverni
+birinchi ko'targan kuni.
+
+Endi ular butunlay **boshqa faylda** va uni faqat test bazalari ishlatadi.
+Har deployda ishlaydigan skript endi faqat ma'lumotnoma yozadi: huquqlar,
+rollar, sozlamalar, valyutalar, xarajat turlari, voronka bosqichlari.
+Bo'sh bazada tekshirildi — 0 xodim, 0 sklad, 0 mijoz, 0 prixod.
+
+Serverdagi eski demo hisoblarni o'chirish (kod ularni qayta yaratmaydi, lekin
+allaqachon tushganlari o'z-o'zidan ketmaydi):
+
+```
+docker compose run --rm migrate pnpm demo-users            # avval ko'ring
+docker compose run --rm migrate pnpm demo-users --disable  # keyin o'chiring
+```
+
+Demo **skladlar** va **mijozlar**ni skript o'chirmaydi — ularda yuk yoki tarix
+bo'lishi mumkin. Boshqaruv → Skladlar dan o'zingiz nofaol qilasiz.
+
+**Yangi serverda birinchi hisob.** Demo hisoblar yo'qolgani uchun endi yangi
+o'rnatishda kiradigan odam bo'lmay qoladi — shuning uchun bitta buyruq
+qo'shildi. Parolni o'zi yaratadi va bir marta ekranga chiqaradi:
+
+```
+docker compose run --rm migrate pnpm create-admin +998901234567 "Ism Familiya"
+```
+
+**Hisoblatish o'lchovi yopildi.** «VEDga berildi → necha daqiqada qildi» degan
+hisob 46-raundda tugmasini yo'qotgan edi — ya'ni hech kim so'rov ocholmasdi,
+lekin ichkarida har 5 daqiqada tekshiruv aylanardi va VED xodimining ekranida
+doim nol turgan hisob bor edi. Hammasi olib tashlandi. VED xodimining asosiy
+qatori endi **hujjatlar navbati** — jo'nab ketgan, ammo hujjati agentga
+yuborilmagan partiyalar.
+
+**Botdagi «🧮 Hisoblatish» qoldi va to'ldirildi.** Karta endi siz tanlagan
+**hisoblatish bosqichiga** o'tadi. Qaysi bosqich ekanini CRM sozlamalarida va
+bitim etaplarida tanlaysiz. Faqat oldinga siljiydi — allaqachon o'tib ketgan
+karta joyida qoladi. Hech narsa tanlanmasa hech qayerga ko'chirilmaydi.
+(Botga tashlagan odamning o'ziga biriktirilishi allaqachon ishlayotgan ekan —
+tekshirdim.)
+
+**Kichik, lekin foydali:** bir martalik buyruqlar `migrate` orqali ketadi,
+`app` orqali emas — `app` obrazi ataylab yalang'och va `pnpm` unda yo'q.
+
+Migratsiya **0066** (0065 raqami boshqa ish bilan to'qnashdi).
+
 ## Reklamadan lead: Instagram, sayt va bot — 2026-08-09
 
 Uch xil yo'l bilan reklamadan kelgan odam **o'zi voronkaga tushadi**. Uchalasi
@@ -64,6 +116,44 @@ muallifini talab qilardi, mashina yozgan yozuvda esa muallif yo'q. Tuzatildi.
 **Nima ataylab qilinmagan:** Instagram va Facebookni ajratish (Meta o'zi qaysi
 ilova ekanini aytmaydi — «Instagram/Facebook reklama» deb yoziladi), va formaga
 avtomatik javob (SMS/email) — hozircha faqat menejer qo'ng'irog'i.
+
+## Telegram ↔ CRM: halqa yopildi (3-qism) — 2026-08-09
+
+Oldingi ikki qismda poydevor qo'yilgan edi. Endi ikkala tugma ham ekranda.
+
+**«Qaysi chatlar» ro'yxatida uchinchi javob: «Yangi lid».** Ilgari faqat ikki
+javob bor edi — «Bu mijoz» (kitobdan kod tanlash) va «Hech qachon». Birinchi
+marta yozayotgan odam esa na u, na bu. Endi bitta bosishda lid ochiladi va
+o'sha suhbat lidga tushadi.
+
+- **Ikkinchi lid ochilmaydi.** Shu raqam bilan ochiq lid bo'lsa, o'sha ishlatiladi.
+- **Lid — chat kimning telefonida bo'lsa, o'shanikidir.** Siz xodimning
+  ro'yxatini ko'rib turib tugmani bossangiz ham, lid o'sha xodimga biriktiriladi.
+- Keyin «Bu mijoz» desangiz, lid ko'rsatkichi o'chadi — bitta chat ikki joyga
+  tegishli bo'lib qolmaydi.
+- Raqam ko'rinmagan chatda tugma umuman chiqmaydi: qo'ng'iroq qilib
+  bo'lmaydigan lid — bu shunchaki ism yozilgan qator.
+
+**Karta ochilganda: «Bu raqam bilan yozishma bor».** Siz aytgan teskari
+tekshiruv. Lid, bitim yoki mijoz kartasida telefon raqami bo'lsa, ulangan
+Telegram akkauntlardan qidiriladi va topilsa aytiladi:
+
+- **o'zingizning** chatingiz bo'lsa — «Chatni qo'shish» tugmasi;
+- **xodimning** chati bo'lsa — faqat ismi yoziladi, «undan so'rang». Suhbatning
+  o'zi ochilmaydi: kimdir gaplashgani bilan gapning mazmuni boshqa narsa.
+- Topilmasa — hech narsa chiqmaydi, kartalarga ortiqcha qator qo'shilmaydi.
+- Bir marta javob bergan chat (qo'shilgan yoki «hech qachon») qayta so'ralmaydi.
+
+**Raqamlar ro'yxati endi haqiqatan to'ladi.** Ilgari jadval bor edi-yu, unga
+hech narsa yozilmasdi — ya'ni javob har doim «yo'q» edi. Endi tinglovchi
+kuniga bir marta o'z chatlarini ko'rib chiqib, raqamlarni **barmoq izi**
+ko'rinishida yozib qo'yadi. Bazada na ism, na raqam turadi.
+
+**Eslatib o'taman:** Telegram raqamni faqat kontaktlarga ko'rsatadi, shuning
+uchun qamrov to'liq emas — ekranda qator yo'qligi «gaplashilmagan» degani
+emas, «topilmadi» degani.
+
+Migratsiya **0065**.
 
 ## Xavfsizlik: kirish himoyasi va ochiq port — 2026-08-09 (kech)
 

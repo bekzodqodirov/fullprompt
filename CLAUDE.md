@@ -123,17 +123,22 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-08
+## State — 2026-08-09
 
-`main` is the trunk (PR #1 = rounds 1-55; PR #3 = rounds 56-69; PR #4 =
-the truck-marker follow-up; PR #5 = the calls round; PR #7 = the calls
-day-one fixes). This branch (`claude/gsr-logistics-wms-phase1-o8h4en`)
-carries rounds 70-71 on PR #6.
-1087 unit/integration + 149 e2e, verified in CI's order on a fresh database
+`main` is the trunk and **everything is merged into it** — PR #1 = rounds
+1-55; #3 = 56-69; #4 = the truck-marker follow-up; #5 = the calls round;
+#6 = rounds 70-71; #7 = the calls day-one fixes; #13 = round 74 (capacity);
+#14 = rounds 75-76; #15 = round 77; #19 = round 79's card work; #17 = rounds 78-79 (the Telegram ↔ CRM loop);
+#20 = round 81's two login holes; **round 82 = the loop's second half**. The branch
+`claude/gsr-logistics-wms-phase1-o8h4en` carries round 82; everything before
+it is merged.
+1151 unit/integration + 140 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
-Latest migration: **0063** (`call_lead`; 0062 `lead_quote`, 0061 `call_dedup_by_user`, 0060
-`call_recorder` and 0059 `reply_templates` are the other session's). Every
+Latest migration: **0065** (`tg_chat_lead` — a tray rule may point at a lead;
+0064 `tg_lead` was the work-account switch, lead-owned chats and the hashed
+peer index; 0063 `call_lead`, 0062 `lead_quote`, 0061 `call_dedup_by_user`,
+0060 `call_recorder` and 0059 `reply_templates` are the calls track's). Every
 numbered phase is shipped; rounds 56-69 + the calls round + its day-one
 fixes were built by ANOTHER session and are on main — read
 `docs/CRM-UX.md` before touching lists, search, bulk or quick-create. The
@@ -143,13 +148,19 @@ calls round needs its FIRST APK published the same way (Actions →
 calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 
 **NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
-17 audit defects (four live money bugs), the speed rounds, rounds 46-70, the
-driver app 1.3. The owner's last confirmed update was `eea3509`.
-**Deploy note:** migrations 0058-0062 MUST land — 0058 especially — the client book, the stock table
+17 audit defects (four live money bugs), the speed rounds, rounds 46-79, the
+driver app 1.3, both APKs. The owner's last confirmed update was `eea3509`,
+so the server is **~34 rounds behind** and this is now the biggest single
+risk on the project: the gap is no longer one release, it is a year of
+work landing at once. A fresh clone of production applied 0032 → **0065**
+in one run, so the migration path itself is proven.
+**Deploy note:** migrations 0058-0065 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
-`drizzle.__drizzle_migrations` after updating; fix with
-`docker compose run --rm migrate`.
+`drizzle.__drizzle_migrations` after updating (**count must reach 66**); fix
+with `docker compose run --rm migrate`. Recommended order, told to the owner:
+enlarge the VPS and move the data first (`docs/DEPLOY.md` → «Yangi VPS'ga
+ko'chirish»), deploy this code there, test it, and only then move the domain.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -2005,7 +2016,47 @@ codebase» — `platform/auth/rate-limit.ts` has been one since spec 4.1. That i
 the **fifth** false «we lack X» in this programme; the rule stands and I broke
 it again: grep before claiming absence.
 
-**Ads → CRM lead intake — SHIPPED in round 82 below; this is the review that
+Round 82 — **the Telegram loop's second half** (#595-597), the three items
+round 79 stated and did not build. **Migration 0065**: a `tg_chat_rules` row
+may point at a LEAD, the widening 0064 gave `tg_messages` and 0063 gave
+`call_logs`; the include CHECK moved with it rather than being dropped.
+(1) **«Yangi lid» on the tray** — the answer «this is business, but they are
+nobody yet», which is every first-time customer on a PERSONAL number (i.e.
+every connected account today). Through `leadForChat`, so #589's do-not-mint-
+twice is inherited; owned by the manager whose ACCOUNT it is, never the
+presser; the client door clears the lead pointer and the lead door clears the
+client one; refused (and not drawn) where Telegram gave no number.
+(2) **The lookback** — `TelegramLookback` on the lead, deal and client cards
+reads `offerableMatches`: names the MANAGER, a colleague's match is a sentence
+and not a button (round 20), renders NOTHING with no match or once somebody
+has answered `include`/`exclude` about that chat. `attachChatAction` never
+reads `managerUserId` from the form and re-derives the offer for the ACTOR, so
+a hand-posted peer id cannot attach a colleague's conversation.
+(3) **`tg_peer_index` finally has a producer** — it shipped in 0064 with no
+writer, so the lookback's answer was always no. It runs in the LISTENER (only
+that process holds a Telegram connection) at start and daily, and the
+«not more often than daily» is checked against `max(updated_at)` rather than
+trusted to the interval, because the listener restarts on every deploy.
+WHERE the lead rule is read is the design (#596): `decideIncoming`, not
+`classifyWithRules` — that one answers «whose CLIENT chat is this», the only
+question `tg-import` can act on — and BEFORE the classifier, or a lead chat
+falls through `not_a_client` back onto the tray. `isSelf` still wins.
+**`isClientVerdict` is now exported beside `LiveVerdict`**: `store: true` is a
+union of three, `if (!v.store)` narrows away none of it, and #591 was that
+exact shape reaching CI in files nobody had touched. Red-proofs ×4 (lead
+branch, self guard, the client door's `leadId: null`, the answered filter).
+1151 unit/integration + **140 e2e all green** on a fresh db in CI's order —
+the four photo-path specs passed here too this time. Screenshots at 360:
+tray 3 buttons wrapping to two 36 px rows, lookback panel 155 px, document
+360 wide. NOT verifiable here: the listener's index pass and the lead branch
+need a real Telegram connection — watch the first one in
+`docker compose --profile telegram logs -f tg-listen`. Stated to the owner
+and NOT built: pulling a chat's PAST messages when «Yangi lid» is pressed —
+attaching is forward-only, exactly as «Bu mijoz» has always been.
+
+**Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
+
+**Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that
 shaped it, kept because every item on it became a rule.** Three lenses
 (abuse / regression / product-fit) produced a build plan that kills most of the
 v1: the join rule must match on PHONE only (the name branch lets a stranger
@@ -2025,7 +2076,7 @@ Owner's answers on record: Instagram IS a business account linked to the
 Facebook page; ads run by HIM and by an AGENCY; leads assigned round-robin to
 everyone.
 
-Round 82 — **the event-drain lock and reklamadan lead** (#595-600, owner:
+Round 83 — **the event-drain lock and reklamadan lead** (#599-604, owner:
 «keyingi raundni boshla, 1 va 2 ni ham qil»).
 
 **(1) The drain has a lock.** #594's fix, made: `claimNextEvent()` stamps
@@ -2039,7 +2090,7 @@ doubling — the assertion that works is `count(*)` vs `count(DISTINCT …)`.
 Trade stated: claim-before-work loses an event if the process dies mid-batch;
 marking-after duplicated it every race, and the race is the common case.
 
-**(2) Reklamadan lead — THREE doors, one landing.** Migration **0065**:
+**(2) Reklamadan lead — THREE doors, one landing.** Migration **0066**:
 `lead_intakes` (channel/external_id/source_key/ref/phone/name/outcome/reason +
 UNIQUE (channel, external_id) — Meta re-delivers until it gets a 200),
 `lead_sources.key`, `roles.inbound_rota`, `leads.inbound_at`, and
@@ -2080,7 +2131,7 @@ while INPUT complaints stay specific.
   junk lead is visible and one tap from lost; a paid enquiry dropped in silence
   is invisible for ever, and a real robot adds a delay in one line.
 - **THE DEFECT the browser found** (#600): `clientFeed`'s note branch
-  INNER-joined the author, and 0065 made that column nullable — so the advert's
+  INNER-joined the author, and 0066 made that column nullable — so the advert's
   message vanished from the lenta while ten integration tests, all asking the
   DATABASE, stayed green. **Making a column nullable is a change to every
   reader that joins on it.** Swept: nothing else needs it.
@@ -2093,6 +2144,67 @@ while INPUT complaints stay specific.
 Setup guide for the owner: **`docs/ADS.md`**. 1173 unit/integration green;
 139/143 e2e (the four known photo-path specs; m9z-nav-progress is the
 pre-existing local failure recorded in round 78).
+
+Round 84 — the owner's five answers, taken in his order (#605-608).
+
+**Demo data left the production seed entirely** (his report: «productionga
+chiqazganimda seed bilan birga ko'chirib qo'yyabti warehouse users va boshqa
+hamma demo datalarni»). It sat in `seed.ts` behind `if (seedDemo)`, and
+`seed.ts` is what the compose `migrate` service runs on EVERY deploy; the flag
+read «the users table is empty», which is true of a real installation exactly
+once — the day it is created, which is the day he deployed. Warehouses, the
+eleven published-password accounts, the example clients, the §6.9 FX example
+and the canonical GS777 receipt are now `scripts/seed-demo.ts`, run only by CI
+and the local suite (`pnpm db:seed:demo`); `seed.ts` no longer CONTAINS the
+code, so there is no condition left to get wrong. `seed-demo.ts` keeps its own
+guard (refuses a database holding any account that is not one of its own;
+`SEED_DEMO=1` overrides). The tripwire went from «is the flag wired up» to
+reading `seed.ts` as TEXT and refusing the demo password, the demo phones, the
+demo warehouse names and the flag itself — red-proven by putting one demo
+warehouse back. Verified on a throwaway db: `db:seed` alone leaves 0 users /
+0 warehouses / 0 clients / 0 receipts with every reference table filled.
+**Consequence caught and fixed in the same round:** that took the only way IN
+with it — a fresh install had every role and nobody to sign in as, while
+`ops/bootstrap.sh` still printed the demo login. `pnpm create-admin +998… "Ism"`
+mints one super_admin and prints a GENERATED password once (an argument lands
+in the shell history; a default is a published password in a hat), and refuses
+once any account exists.
+
+**The hisoblash CLOCK closed; the bot's 🧮 stayed and got its missing half.**
+He first said «hisoblatish degan hamma narsani yop» and then narrowed it: the
+bot intake stays, the lead must belong to whoever sent it, and the card must
+land on the hisoblatish stage. The clock had had no door since round 46 —
+nothing could open a request, so the 5-minute sweep ran over rows nobody could
+create and the VED home counted a permanent zero. `calc/service.ts`,
+`actions.ts`, `jobs.ts`, both clock-stop hooks, the mute entry and
+`calc.integration.test.ts` are deleted; the `calc_requests` TABLE stays (real
+rows from before round 46, and a table is never dropped in the release that
+stops writing it). VED's hero is now the paperwork queue; `/bugun` left
+`flow.hrefs` with its row or the day screen would have vanished from that home.
+Of his two asks one was ALREADY true — `landIntake` has always created the lead
+under the sender. The stage was not: `crm_calc_stage` / `deal_calc_stage` are
+settings with a picker on both funnel-settings screens (not a name the code
+hunts for — the funnel is his to rename, `lead_sources`' lesson), empty is the
+default and means «do not move», and the move is FORWARD only by sort order
+(#392's rule) through `moveLead`/`moveDeal` so audit, stage event and automation
+rules all fire. Red-proofs ×2. The settings tripwire caught the two new keys
+needing a description in all four bundles.
+
+**One-off scripts go through `migrate`, never `app`** — his
+`docker compose run --rm app pnpm demo-users --disable` failed with
+`Cannot find module '/app/pnpm'`, because the runner image is the stripped
+standalone build with no pnpm, no tsx and no source, so node's entrypoint took
+«pnpm» for a filename. DEPLOY.md now says so with the working lines.
+
+**MIGRATION NUMBER COLLISION, the first one** (#605): the other session's
+Telegram round and this one both minted **0065**, with the same journal `when`.
+Theirs was merged first, so mine renumbered to **0066** — and the local ledger
+had to be repaired by hand (drizzle applies anything whose `when` exceeds the
+last applied `created_at`, so a rename alone would have re-run mine and skipped
+theirs). Rolled my DDL back locally, re-ran both in journal order, 68 rows.
+RULE: **before minting a migration, `git fetch origin main` and read the tail of
+`_journal.json`** — the DECISIONS numbers have collided four times and now the
+migrations have too.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
@@ -2121,16 +2233,17 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy from `main`** — migrations up to **0065** (check
-`drizzle.__drizzle_migrations` per DEPLOY.md — expect 66 rows — and run the
-`migrate` service). 0065 is what makes the ads round work at all.
+**Enlarge the VPS to 4 vCPU / 8 GB / 400 GB** and move the data
+(`docs/DEPLOY.md` → «Yangi VPS'ga ko'chirish»; round 74 measured the ceiling
+and the old «2 GB tavsiya» was wrong) · **deploy from `main`** — migrations
+**0058-0066** land together, count must reach **67** (check
+`drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
 Back up first · **release both APKs** (driver v1.3 AND the first
 GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its
 Admin page) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
 offered on anything but public HTTPS, #275) · **revoke the bot token he pasted
-in chat** and rotate `ANTHROPIC_API_KEY` · merge
-PR #1 · **switch on the Drive backup** (`docs/BACKUP.md`, ~15 min — publish the
+in chat** and rotate `ANTHROPIC_API_KEY` · **switch on the Drive backup** (`docs/BACKUP.md`, ~15 min — publish the
 app BEFORE minting the token or it dies after 7 days) · create logins for the
 17 sellers then re-run `pnpm import-clients --apply --update` · 3 rejected rows ·
 ~19 nameless clients · 2 truncated phones (GS161, GS252) · opening balances ·

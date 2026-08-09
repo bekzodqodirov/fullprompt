@@ -7,6 +7,7 @@ import {
   ChatRuleError,
   decideChat,
   listCandidates,
+  openLeadForChat,
   purgeExcludedChat,
 } from '@/modules/wms/crm/chat-rules';
 
@@ -61,6 +62,48 @@ export async function decideChatAction(
   }
   revalidatePath('/suhbatlar', 'layout');
   return { ok: true };
+}
+
+/**
+ * «Lid ochish» — the third answer, and the one the tray needed most.
+ *
+ * Same door as deciding, down to the own-account re-check: this is the same
+ * row, the same account and the same consequence (the company starts keeping
+ * a conversation). What it adds is a LEAD, which is why the answer carries
+ * one back — the screen turns it into a link, so the press that says «this is
+ * business» is one tap from the card where that business gets worked.
+ */
+export interface OpenLeadState extends ChatRuleState {
+  leadId?: string;
+}
+
+export async function openLeadAction(
+  _prev: OpenLeadState,
+  form: FormData,
+): Promise<OpenLeadState> {
+  let who;
+  try {
+    who = await authorize('clients.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+
+  const id = String(form.get('id') ?? '');
+  const canSeeEverybody = who.permissions.has('admin.settings.manage');
+  const mine = await listCandidates(canSeeEverybody ? {} : { managerUserId: who.id });
+  if (!mine.some((row) => row.id === id)) return { error: 'forbidden' };
+
+  const meta = await requestMeta();
+  try {
+    const { leadId } = await openLeadForChat(id, { actorId: who.id, ...meta });
+    revalidatePath('/suhbatlar', 'layout');
+    revalidatePath('/crm');
+    return { ok: true, leadId };
+  } catch (err) {
+    if (err instanceof ChatRuleError) return { error: err.message };
+    throw err;
+  }
 }
 
 /**

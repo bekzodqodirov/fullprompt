@@ -91,6 +91,12 @@ export type LiveVerdict =
    */
   | { store: true; openLead: true; peer: { phone: string; title: string }; row: MessageRow }
   /**
+   * A chat somebody attached to a lead by hand, from the tray (0065). The
+   * lead already exists, so unlike `openLead` there is nothing to mint and
+   * nothing to name — only where to put the message.
+   */
+  | { store: true; leadId: string; row: MessageRow }
+  /**
    * A stranger on a PERSONAL number: a question, not an answer. Carries who
    * to ask ABOUT — a tray cannot offer an anonymous row — and deliberately
    * nothing about the message itself. Until somebody answers, no word of the
@@ -115,6 +121,24 @@ export type LiveVerdict =
     };
 
 /**
+ * Is this the plain «a client we know wrote» verdict?
+ *
+ * The `store: true` side of `LiveVerdict` is a union of three now — a known
+ * client, a stranger a work account turns into a lead, and a chat somebody
+ * attached to a lead by hand — and `if (!v.store)` narrows away exactly none
+ * of that. Every consumer asking the question by hand is how a fourth
+ * variant becomes five call sites to fix, which is what #591 was: green
+ * locally, red on CI's typecheck, in files nobody had touched.
+ *
+ * So the question is asked once, here, and the guard travels with the type.
+ */
+export function isClientVerdict(
+  verdict: LiveVerdict,
+): verdict is { store: true; clientId: string; clientCode: string; row: MessageRow } {
+  return verdict.store && !('openLead' in verdict) && !('leadId' in verdict);
+}
+
+/**
  * One incoming message, decided.
  *
  * `empty` is separate from the privacy refusals: it is a client, and the
@@ -129,6 +153,28 @@ export function decideIncoming(
   rules: Map<bigint, ChatRule> = new Map(),
   workAccount = false,
 ): LiveVerdict {
+  /*
+   * A hand-attached LEAD chat is answered here rather than inside
+   * `classifyWithRules`, and the placement is the decision.
+   *
+   * That function answers «whose CLIENT chat is this», which is the only
+   * question the history import can act on — widening its verdict would
+   * ripple through every caller and teach `tg-import` a shape it has no use
+   * for. Here the answer is already actionable: the lead exists, the message
+   * has somewhere to go.
+   *
+   * It must come BEFORE the classifier, or a lead chat would fall through
+   * `not_a_client` and — on a personal account — be put back on the tray as
+   * a question somebody has already answered. `isSelf` still wins: Saved
+   * Messages is not a customer under any decision anybody could write down.
+   */
+  const rule = rules.get(peer.id);
+  if (!peer.isSelf && rule?.decision === 'include' && rule.leadId) {
+    const leadRow = toMessageRow(peer.id, msg);
+    if (!isWorthKeeping(leadRow)) return { store: false, reason: 'empty' };
+    return { store: true, leadId: rule.leadId, row: leadRow };
+  }
+
   const verdict = classifyWithRules(peer, clients, rules);
   if (!verdict.keep) {
     // Round 79: a stranger is no longer automatically nothing. Whether they

@@ -16,7 +16,7 @@ import {
   storeIncoming,
   takeListenerLock,
 } from '@/modules/wms/crm/telegram-accounts';
-import { decideIncoming } from '@/modules/wms/crm/telegram-live';
+import { decideIncoming, isClientVerdict } from '@/modules/wms/crm/telegram-live';
 import { attachMedia } from '@/modules/wms/crm/conversations';
 
 /**
@@ -128,9 +128,9 @@ describe('what the bridge writes', () => {
     const book = await clientBook();
     const verdict = decideIncoming(peer, msg, book);
     expect(verdict.store).toBe(true);
-    // `store: true` is a union since round 79 (a known client, or a stranger
-    // on a work number); narrowed the way the listener narrows it.
-    if (!verdict.store || 'openLead' in verdict) throw new Error('unreachable');
+    // `store: true` is a union of three; one exported guard answers which
+    // (round 82 — the alternative is this line in every consumer, #591).
+    if (!isClientVerdict(verdict)) throw new Error('unreachable');
     expect(verdict.clientId).toBe(clientId);
 
     // A NEW row answers with its id — the key a downloaded photo binds to.
