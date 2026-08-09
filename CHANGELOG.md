@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## Zaxira nusxa: Contabo S3 — 2026-08-09 (kech)
+
+Tungi nusxa endi **S3 omborga** ham chiqadi — siz tanlagan Contabo Object
+Storage. Google Drive yo'li ham qoldi, lekin ikkalasi to'ldirilsa **S3
+ishlaydi**.
+
+Nega S3 yaxshiroq: Drive'ning kaliti ilova «Publish» qilinmasa **7 kunda
+o'ladi** va qo'lda, brauzer orqali olinadi. S3 kaliti muddatsiz, bitta ekranda
+yaratiladi, va bizning tizim bu tilni allaqachon biladi — hamma rasm shu
+protokol bilan saqlanadi.
+
+**Sozlash 4 qator** — `docs/BACKUP.md` da qadamma-qadam yozilgan. Kalitlarni
+faqat serverdagi `.env` ga yozasiz, menga yubormang.
+
+Har kecha: nusxa yuboriladi → **ombordan hajmi qaytadan so'raladi** → mos
+kelmasa xato beriladi va sizga xabar keladi. Eskilari 30 kundan keyin
+o'chiriladi va faqat **yangisi muvaffaqiyatli tushgandan keyin**.
+
+### Yo'l-yo'lakay topilgan jiddiy narsa
+
+Bu yerda haqiqiy ombor yo'q, shuning uchun so'rovni **o'zim yozgan soxta
+serverga** yubortirib tekshirdim. Va darrov ma'lum bo'ldiki, AWS kutubxonasi
+faylni yangi usulda bo'lak-bo'lak yuboradi — **Contabo bunday so'rovni qabul
+qilmaydi**. Ya'ni tuzatmaganimda backup birinchi tundan ishlamasdi va buni
+faqat tiklash kerak bo'lgan kuni bilardik. O'lchab ko'rsatdim: 4096 baytlik
+fayl 4140 bayt bo'lib ketardi. Tuzatildi va tekshirildi.
+
+9-raundda Google Drive yo'li **bironta ham haqiqiy so'rov yubormasdan**
+yozilgan edi — 7 kunlik token muammosi ham shuning uchun keyin bilingan.
+
 ## Demo ma'lumotlar koddan chiqdi · hisoblatish yopildi — 2026-08-09 (kech)
 
 **Demo ma'lumotlar endi serverga tushmaydi.** Siz aytgan muammo: serverni

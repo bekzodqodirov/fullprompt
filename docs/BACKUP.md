@@ -1,4 +1,4 @@
-# Zaxira nusxa (backup) — Google Drive
+# Zaxira nusxa (backup)
 
 Bu hujjat egasi uchun. Bir marta sozlanadi, keyin har kecha o'zi ishlaydi.
 
@@ -8,7 +8,68 @@ Bugungacha bazaning **hamma nusxasi bitta diskda** turgan: tungi dump o'zi
 himoya qilayotgan baza bilan bir mashinada. Server yo'qolsa — baza ham, nusxasi
 ham ketadi.
 
-Endi har kecha nusxa **sizning Google Drive'ingizga** ham chiqadi.
+Endi har kecha nusxa **tashqi omborga** ham chiqadi.
+
+## Ikkita variant bor — birinchisini tanlang
+
+| | S3 ombor (tavsiya) | Google Drive (eski yo'l) |
+|---|---|---|
+| Kalit muddati | **Yo'q** | Ilova «Publish» qilinmasa **7 kunda o'ladi** |
+| Sozlash | 1 ekran, 4 qator `.env` | 8 qadam, brauzer orqali token |
+| Narxi | Contabo ~3 evro/oy 250 GB | 15 GB bepul |
+
+**Ikkalasi ham to'ldirilsa S3 ishlaydi.** Bu ataylab: ikkinchisiga o'tib ketish
+degani — bir kechalik nusxa hech kim qaramaydigan joyga tushishi va «ishladi»
+degan yozuv bir oydan beri buzuq turgan manzilni yashirishi.
+
+---
+
+# 1-variant: S3 ombor (Contabo) — tavsiya etiladi
+
+## 1-qadam. Ombor yaratish
+
+1. Contabo panelida **Object Storage** → **Create Object Storage**.
+   Region: Yevropa (server ham o'sha yerda). Hajm: 250 GB yetadi.
+2. Yaratilgach **S3 Object Storage** bo'limida:
+   - **URL** (masalan `https://eu2.contabostorage.com`) — bu `ENDPOINT`.
+   - **Access Key** va **Secret Key** — «S3 credentials» tugmasi ostida.
+3. O'sha panelda **bucket** yarating, nomi masalan `gsr`.
+
+## 2-qadam. Serverda `.env`
+
+```
+BACKUP_S3_ENDPOINT=https://eu2.contabostorage.com
+BACKUP_S3_BUCKET=gsr
+BACKUP_S3_KEY=<Access Key>
+BACKUP_S3_SECRET=<Secret Key>
+BACKUP_S3_REGION=auto
+BACKUP_S3_PREFIX=gsr-backups
+```
+
+Keyin: `docker compose up -d app`
+
+**Kalitlarni menga yubormang** — ular faqat serverdagi `.env` da turadi.
+
+## 3-qadam. Tekshirish
+
+Tungi nusxa soat 02:00 da (Toshkent) oladi. Kutmasdan tekshirish uchun
+ertasi kuni loglarga qarang:
+
+```
+docker compose logs app | grep "offsite ok"
+```
+
+`where: "s3"`, fayl nomi va **bayt soni** ko'rinishi kerak. Bayt soni ombordan
+**qaytadan so'rab** tasdiqlanadi — ya'ni yarim ketgan fayl «bo'ldi» deb
+yozilmaydi, xato beradi va sizga xabar keladi.
+
+Eskilari **30 kundan** keyin o'chiriladi (`BACKUP_RETENTION_DAYS`), va faqat
+**yangisi muvaffaqiyatli tushgandan keyin** — nusxa tushmagan kechada eski
+nusxa o'chirilmaydi.
+
+---
+
+# 2-variant: Google Drive (eski yo'l)
 
 ## ⚠️ Eng muhim qoida
 

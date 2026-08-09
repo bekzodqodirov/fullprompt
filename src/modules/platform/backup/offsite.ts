@@ -11,10 +11,27 @@ import {
   type Env,
   type Fetcher,
 } from './gdrive';
+import {
+  backupS3Client,
+  backupS3Config,
+  deleteStoredDump,
+  dumpsToPrune as s3DumpsToPrune,
+  listStoredDumps,
+  uploadDumpToS3,
+  type BackupS3Config,
+} from './s3';
 
 export type OffsiteResult =
   | { ok: true; skipped: true; reason: 'not_configured' }
-  | { ok: true; skipped: false; fileId: string; name: string; bytes: number; pruned: string[] }
+  | {
+      ok: true;
+      skipped: false;
+      /** Which destination took it — the log and the alert both say so. */
+      where: 's3' | 'drive';
+      name: string;
+      bytes: number;
+      pruned: string[];
+    }
   | { ok: false; error: string };
 
 /**
@@ -27,19 +44,29 @@ export type OffsiteResult =
  * "shipped to object storage" — a design that was never built, and a comment
  * that stopped anybody noticing for months.
  *
- * The size is checked against what Google says it stored, and a mismatch is a
- * FAILURE rather than a warning. A backup nobody has verified the size of is
- * a file; the whole point of this is to be able to say a number.
+ * The size is checked against what the destination says it stored, and a
+ * mismatch is a FAILURE rather than a warning. A backup nobody has verified
+ * the size of is a file; the whole point of this is to be able to say a number.
+ *
+ * TWO destinations, and S3 wins when both are configured (round 84, the
+ * owner's choice of Contabo Object Storage). Not a fallback chain: trying the
+ * second when the first fails would mean a night's backup landing somewhere
+ * nobody is looking, and «it worked» hiding a destination that has been broken
+ * for a month. One configured destination, one place to look, and a failure
+ * that fails.
  */
 export async function runOffsiteBackup(
   dumpPath: string,
   fetcher: Fetcher = fetch,
   env: Env = process.env,
 ): Promise<OffsiteResult> {
+  const s3 = backupS3Config(env);
+  if (s3) return runS3Backup(dumpPath, s3, env);
+
   const config = driveConfig(env);
-  // Not configured is not a failure: a server without Drive credentials must
-  // still take its local dump every night without an error in the log that
-  // teaches people to ignore errors.
+  // Not configured is not a failure: a server with no off-site credentials
+  // must still take its local dump every night without an error in the log
+  // that teaches people to ignore errors.
   if (!config) return { ok: true, skipped: true, reason: 'not_configured' };
 
   const keep = Number(env.GDRIVE_RETENTION ?? env.BACKUP_RETENTION_DAYS ?? 30);
@@ -69,12 +96,46 @@ export async function runOffsiteBackup(
     return {
       ok: true,
       skipped: false,
-      fileId: uploaded.id,
+      where: 'drive',
       name: path.basename(dumpPath),
       bytes: uploaded.size,
       pruned,
     };
   } catch (err) {
     return { ok: false, error: String((err as Error)?.message ?? err) };
+  }
+}
+
+/** The S3 half — same shape, same rules, a protocol this system already speaks. */
+async function runS3Backup(
+  dumpPath: string,
+  config: BackupS3Config,
+  env: Env,
+): Promise<OffsiteResult> {
+  const keep = Number(env.BACKUP_RETENTION_DAYS ?? 30);
+  const client = backupS3Client(config);
+  try {
+    const uploaded = await uploadDumpToS3(client, config, dumpPath);
+
+    // Prune only AFTER a verified upload — never delete an old copy on a
+    // night when the new one did not land.
+    const pruned: string[] = [];
+    for (const stale of s3DumpsToPrune(await listStoredDumps(client, config), keep)) {
+      await deleteStoredDump(client, config, stale.key);
+      pruned.push(stale.key);
+    }
+
+    return {
+      ok: true,
+      skipped: false,
+      where: 's3',
+      name: path.basename(dumpPath),
+      bytes: uploaded.bytes,
+      pruned,
+    };
+  } catch (err) {
+    return { ok: false, error: String((err as Error)?.message ?? err) };
+  } finally {
+    client.destroy();
   }
 }
