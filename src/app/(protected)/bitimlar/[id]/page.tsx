@@ -10,6 +10,7 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
+import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { stageClass } from '../../crm/stage-color';
 import {
@@ -155,6 +156,14 @@ export default async function DealPage({
       {/* The title was only in the heading and the note was nowhere — both
           meant unfolding the ✏️ form to READ them. */}
       <DealFacts title={row.deal.title ?? ''} note={row.deal.note ?? ''} />
+
+      {/* Round 82: «somebody here already has a chat with this number». About
+          the deal's CLIENT — a deal has no phone of its own — so attaching
+          lands on the client, which is where the conversation belongs. */}
+      <TelegramLookback
+        phone={(row.clientPhones as string[] | null)?.[0]}
+        clientId={row.deal.clientId}
+      />
 
       {/* ---- the two columns the whole feature exists for ---- */}
       <section className="card space-y-3" data-testid="deal-compare">

@@ -3,6 +3,7 @@ import {
   bookIsStale,
   bridgeState,
   decideIncoming,
+  isClientVerdict,
   newBook,
   secondsBehind,
   shouldRefreshOnMiss,
@@ -10,7 +11,7 @@ import {
   BOOK_STALE_MS,
   LIVE_WINDOW_S,
 } from '@/modules/wms/crm/telegram-live';
-import type { ClientPhones, DialogPeer } from '@/modules/wms/crm/telegram-import';
+import type { ChatRule, ClientPhones, DialogPeer } from '@/modules/wms/crm/telegram-import';
 
 const CLIENTS: ClientPhones[] = [
   { id: 'c-777', clientCode: 'GS777', phones: ['+998901234567'] },
@@ -37,10 +38,12 @@ describe('deciding one live message', () => {
   it('stores a client message and says which client', () => {
     const v = decideIncoming(peer(), msg(), CLIENTS);
     expect(v.store).toBe(true);
-    // Round 79 made `store: true` a union — a known client OR a stranger on a
-    // work number — so «it stored something» no longer says WHICH. The tests
-    // narrow the way the listener does, with `'openLead' in v`.
-    if (!v.store || 'openLead' in v) throw new Error('unreachable');
+    // `store: true` is a union of three since round 82 — a known client, a
+    // stranger a work account turns into a lead, and a chat attached to a
+    // lead by hand — so «it stored something» does not say WHICH. One guard
+    // answers that, and it lives beside the type so the next variant cannot
+    // quietly break these lines (#591).
+    if (!isClientVerdict(v)) throw new Error('unreachable');
     expect(v.clientId).toBe('c-777');
     expect(v.row.direction).toBe('in');
     expect(v.row.body).toBe('Yuk keldimi?');
@@ -81,6 +84,44 @@ describe('deciding one live message', () => {
     expect(v).toMatchObject({ openLead: true, peer: { phone: '+998900000000' } });
   });
 
+  it('stores onto the lead somebody attached, on a PERSONAL account', () => {
+    // Round 82. Without the rule this peer is a stranger on a personal
+    // number, so the previous line of this file is the control: the same
+    // call, one map entry apart, is a question instead of a message.
+    const stranger = peer({ phone: '+998900000000', firstName: 'Dilshod' });
+    const attached = new Map<bigint, ChatRule>([
+      [
+        stranger.id,
+        {
+          peerId: stranger.id,
+          decision: 'include',
+          clientId: null,
+          clientCode: null,
+          leadId: 'lead-1',
+        },
+      ],
+    ]);
+    const v = decideIncoming(stranger, msg({ message: 'Yuk bormi?' }), CLIENTS, attached);
+    expect(v).toMatchObject({ store: true, leadId: 'lead-1' });
+    // …and it is NOT the client verdict, so nothing downstream can read a
+    // clientId off it.
+    expect(isClientVerdict(v)).toBe(false);
+  });
+
+  it('will not let a rule turn Saved Messages into a lead', () => {
+    // `isSelf` outranks every decision anybody could write down — the same
+    // ordering `classifyWithRules` keeps, restated where the lead branch now
+    // sits ahead of it.
+    const self = peer({ isSelf: true });
+    const attached = new Map<bigint, ChatRule>([
+      [self.id, { peerId: self.id, decision: 'include', clientId: null, clientCode: null, leadId: 'lead-1' }],
+    ]);
+    expect(decideIncoming(self, msg(), CLIENTS, attached)).toEqual({
+      store: false,
+      reason: 'self',
+    });
+  });
+
   it('refuses a peer whose number Telegram will not show us', () => {
     expect(decideIncoming(peer({ phone: null }), msg(), CLIENTS)).toEqual({
       store: false,
@@ -115,7 +156,7 @@ describe('deciding one live message', () => {
     // GS555 is stored as '998 90 765 43 21'; Telegram sends '998907654321'.
     const v = decideIncoming(peer({ phone: '998907654321' }), msg(), CLIENTS);
     expect(v.store).toBe(true);
-    if (!v.store || 'openLead' in v) throw new Error('unreachable');
+    if (!isClientVerdict(v)) throw new Error('unreachable');
     expect(v.clientCode).toBe('GS555');
   });
 });

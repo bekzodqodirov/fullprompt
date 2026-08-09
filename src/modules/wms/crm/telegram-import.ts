@@ -76,9 +76,17 @@ export type DialogVerdict =
 export interface ChatRule {
   peerId: bigint;
   decision: 'pending' | 'include' | 'exclude';
-  /** Always set when `include` — the schema refuses the row otherwise. */
+  /** One of `clientId`/`leadId` is set when `include` — the schema refuses it otherwise. */
   clientId: string | null;
   clientCode: string | null;
+  /**
+   * The open lead this chat was attached to (0065). Deliberately NOT read by
+   * `classifyWithRules`: that function answers «whose CLIENT chat is this»,
+   * which is the only question the history import can act on. The live path
+   * reads it one level up, in `decideIncoming`, where a lead-owned message
+   * already has somewhere to go.
+   */
+  leadId: string | null;
 }
 
 /**

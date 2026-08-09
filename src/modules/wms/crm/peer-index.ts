@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { tgAccounts, tgPeerIndex, users } from '../../platform/db/schema';
+import { tgAccounts, tgChatRules, tgPeerIndex, users } from '../../platform/db/schema';
 import { phoneDigits } from '../../platform/clients/phone';
 
 /**
@@ -134,6 +134,60 @@ export async function managersWhoTalkedTo(
     .where(eq(tgPeerIndex.phoneHash, hash))
     .orderBy(desc(tgPeerIndex.lastMessageAt));
   return rows.map((row) => ({ ...row, own: row.managerUserId === viewerId }));
+}
+
+/**
+ * The matches worth OFFERING on a card — the ones nobody has answered yet.
+ *
+ * A chat already `include`d is being kept; a chat `exclude`d is somebody
+ * having said no, and re-offering it on every card that carries the number
+ * would turn a decision into a question that keeps coming back. Both are
+ * dropped, so the panel appears exactly when there is something to press.
+ *
+ * The rule is read per (manager, peer) — the same pair the table is unique
+ * on — because the answer is one manager's about one chat, never the
+ * company's about a number.
+ */
+export async function offerableMatches(
+  phone: string | null | undefined,
+  viewerId: string,
+): Promise<PeerMatch[]> {
+  const hits = await managersWhoTalkedTo(phone, viewerId);
+  if (hits.length === 0) return [];
+  const answered = await db
+    .select({ managerUserId: tgChatRules.managerUserId, peerId: tgChatRules.peerId })
+    .from(tgChatRules)
+    .where(
+      and(
+        inArray(
+          tgChatRules.managerUserId,
+          hits.map((hit) => hit.managerUserId),
+        ),
+        inArray(
+          tgChatRules.peerId,
+          hits.map((hit) => hit.peerId),
+        ),
+        inArray(tgChatRules.decision, ['include', 'exclude']),
+      ),
+    );
+  const decided = new Set(answered.map((row) => `${row.managerUserId}:${row.peerId}`));
+  return hits.filter((hit) => !decided.has(`${hit.managerUserId}:${hit.peerId}`));
+}
+
+/**
+ * When this account's index was last written, or null if never.
+ *
+ * The listener restarts on every deploy, and walking a manager's whole dialog
+ * list on each start is a burst Telegram has no reason to like. This is what
+ * lets the pass at startup be skipped when a recent one already covered it —
+ * the schedule is «not more often than», not «every time we boot».
+ */
+export async function lastIndexedAt(managerUserId: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: sql<Date | null>`max(${tgPeerIndex.updatedAt})` })
+    .from(tgPeerIndex)
+    .where(eq(tgPeerIndex.managerUserId, managerUserId));
+  return row?.at ? new Date(row.at) : null;
 }
 
 /** Every account whose index is worth refreshing — connected and not signed out. */

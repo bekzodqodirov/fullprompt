@@ -7,13 +7,25 @@ import {
   events,
   leads,
   roles,
+  tgChatRules,
   tgMessages,
   tgPeerIndex,
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
 import { leadForChat, rekeyLeadChats } from '@/modules/wms/crm/chat-lead';
-import { indexPeers, managersWhoTalkedTo, phoneFingerprint } from '@/modules/wms/crm/peer-index';
+import {
+  indexPeers,
+  managersWhoTalkedTo,
+  offerableMatches,
+  phoneFingerprint,
+} from '@/modules/wms/crm/peer-index';
+import {
+  ChatRuleError,
+  attachPeerToCard,
+  decideChat,
+  openLeadForChat,
+} from '@/modules/wms/crm/chat-rules';
 
 /**
  * Round 79 — the owner's report that a NEW customer writing in produced
@@ -29,6 +41,8 @@ let actorId = '';
 let otherId = '';
 const madeLeads: string[] = [];
 const madeClients: string[] = [];
+/** Peer ids this file wrote rules for — a rule is CONFIGURATION (#183). */
+const madeRules: bigint[] = [];
 
 const ctx = () => ({ actorId, ip: null, userAgent: null });
 
@@ -46,6 +60,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Rules first: a leftover `include` rule changes what the LISTENER stores
+  // and what the next spec's screens render (#183), and it points at a lead
+  // this file is about to delete.
+  if (madeRules.length > 0) {
+    await db.delete(tgChatRules).where(inArray(tgChatRules.peerId, madeRules));
+  }
   await db.delete(tgMessages).where(inArray(tgMessages.leadId, madeLeads));
   await db.delete(tgPeerIndex).where(inArray(tgPeerIndex.managerUserId, [actorId, otherId]));
   await db.delete(events).where(inArray(events.entityId, [...madeLeads, ...madeClients]));
@@ -85,6 +105,102 @@ describe('a stranger writing in gets a lead, not silence', () => {
     const [row] = await db.select().from(leads).where(eq(leads.id, id));
     // Never an empty card on the funnel.
     expect(row!.name).toBe(phone);
+  });
+});
+
+describe('«Lid ochish» — the third answer the tray could not give', () => {
+  const trayPhone = `+99893${String(Date.now()).slice(-7)}`;
+  let ruleId = '';
+
+  beforeAll(async () => {
+    const peerId = BigInt(Date.now() + 31);
+    madeRules.push(peerId);
+    const [row] = await db
+      .insert(tgChatRules)
+      .values({
+        managerUserId: otherId,
+        peerId,
+        decision: 'pending',
+        peerTitle: `${MARK} Notanish`,
+        peerPhone: trayPhone,
+      })
+      .returning({ id: tgChatRules.id });
+    ruleId = row!.id;
+  });
+
+  it('mints the lead, points the rule at it, and owns it by the ACCOUNT', async () => {
+    const { leadId } = await openLeadForChat(ruleId, ctx());
+    madeLeads.push(leadId);
+    const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+    expect(rule!.decision).toBe('include');
+    expect(rule!.leadId).toBe(leadId);
+    expect(rule!.clientId).toBeNull();
+
+    const [lead] = await db.select().from(leads).where(eq(leads.id, leadId));
+    // The manager whose Telegram it is, NOT the actor who pressed: the owner
+    // reading his staff's tray must not collect their leads.
+    expect(lead!.ownerId).toBe(otherId);
+    expect(lead!.phone).toBe(trayPhone);
+  });
+
+  it('pressing again reuses the lead rather than minting a second', async () => {
+    const { leadId } = await openLeadForChat(ruleId, ctx());
+    expect(leadId).toBe(madeLeads.at(-1));
+    const all = await db.select({ id: leads.id }).from(leads).where(eq(leads.phone, trayPhone));
+    expect(all).toHaveLength(1);
+  });
+
+  it('answering «this is a client» afterwards retires the lead pointer', async () => {
+    // Both pointers live must never happen: the listener would store onto a
+    // lead the screen has stopped showing.
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: `Y${String(Date.now()).slice(-6)}`, name: `${MARK} kod` })
+      .returning();
+    madeClients.push(client!.id);
+
+    await decideChat({ id: ruleId, decision: 'include', clientId: client!.id }, ctx());
+    const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+    expect(rule!.clientId).toBe(client!.id);
+    expect(rule!.leadId).toBeNull();
+  });
+
+  it('refuses a chat Telegram gave us no number for', async () => {
+    const peerId = BigInt(Date.now() + 33);
+    madeRules.push(peerId);
+    const [row] = await db
+      .insert(tgChatRules)
+      .values({ managerUserId: otherId, peerId, decision: 'pending', peerTitle: `${MARK} ?` })
+      .returning({ id: tgChatRules.id });
+    // A lead nobody can ring is a row with a name in it — the same refusal
+    // `unknownChatAction` makes about `no_phone`.
+    await expect(openLeadForChat(row!.id, ctx())).rejects.toThrow(ChatRuleError);
+  });
+});
+
+describe('«Chatni qo’shish» from a card', () => {
+  it('attaches the chat to the card, on the actor’s OWN account', async () => {
+    const peerId = BigInt(Date.now() + 41);
+    madeRules.push(peerId);
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: `X${String(Date.now()).slice(-6)}`, name: `${MARK} biriktir` })
+      .returning();
+    madeClients.push(client!.id);
+
+    await attachPeerToCard({ peerId, managerUserId: actorId, clientId: client!.id }, ctx());
+    const [rule] = await db
+      .select()
+      .from(tgChatRules)
+      .where(and(eq(tgChatRules.managerUserId, actorId), eq(tgChatRules.peerId, peerId)));
+    expect(rule!.decision).toBe('include');
+    expect(rule!.clientId).toBe(client!.id);
+  });
+
+  it('refuses to attach a chat to nobody', async () => {
+    await expect(
+      attachPeerToCard({ peerId: BigInt(Date.now() + 43), managerUserId: actorId }, ctx()),
+    ).rejects.toThrow(ChatRuleError);
   });
 });
 
@@ -161,6 +277,30 @@ describe('the lookback index names the manager and never the person', () => {
       .from(tgPeerIndex)
       .where(and(eq(tgPeerIndex.managerUserId, otherId), eq(tgPeerIndex.peerId, peerId)));
     expect(rows).toHaveLength(1);
+  });
+
+  it('stops offering a chat once somebody has answered about it', async () => {
+    // The panel exists to ask a question. A chat already kept, or already
+    // refused, is a question with an answer — re-offering it on every card
+    // carrying the number turns a decision into nagging.
+    const peerId = BigInt(Date.now() + 21);
+    await indexPeers(actorId, [{ peerId, phone: PHONE, lastMessageAt: new Date() }]);
+    const before = await offerableMatches(PHONE, actorId);
+    expect(before.map((hit) => hit.peerId)).toContain(peerId);
+
+    await db.insert(tgChatRules).values({
+      managerUserId: actorId,
+      peerId,
+      decision: 'exclude',
+      decidedBy: actorId,
+      decidedAt: new Date(),
+    });
+    madeRules.push(peerId);
+    const after = await offerableMatches(PHONE, actorId);
+    expect(after.map((hit) => hit.peerId)).not.toContain(peerId);
+    // The colleague's row for the SAME number is untouched: an answer is one
+    // manager's about one chat, never the company's about a number.
+    expect(after.some((hit) => hit.managerUserId === otherId)).toBe(true);
   });
 
   it('skips a peer whose number Telegram hides — nothing to match on', async () => {

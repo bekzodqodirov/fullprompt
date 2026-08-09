@@ -1491,6 +1491,11 @@ export const tgChatRules = pgTable(
     /** pending (a scan found it) · include (store it) · exclude (never ask again). */
     decision: text('decision').notNull().default('pending'),
     clientId: uuid('client_id').references(() => clients.id),
+    /**
+     * An included chat may belong to an open LEAD instead (0065) — the answer
+     * «this is business, but they are nobody yet» the tray could not give.
+     */
+    leadId: uuid('lead_id').references(() => leads.id),
     /** A snapshot for the screen, refreshed by a scan — not kept in step. */
     peerTitle: text('peer_title'),
     peerPhone: text('peer_phone'),
@@ -1500,11 +1505,12 @@ export const tgChatRules = pgTable(
   },
   (t) => [
     check('tg_chat_rules_decision_check', sql`${t.decision} IN ('pending', 'include', 'exclude')`),
-    // An included chat must name a client: `tg_messages.client_id` is NOT NULL,
-    // so without this a rule could promise a message a home it does not have.
+    // An included chat must name SOMEBODY — a client or an open lead (0065,
+    // widened from client-only). Without it a rule could promise a message a
+    // home it does not have; `tg_messages` carries the twin of this check.
     check(
       'tg_chat_rules_include_check',
-      sql`${t.decision} <> 'include' OR ${t.clientId} IS NOT NULL`,
+      sql`${t.decision} <> 'include' OR ${t.clientId} IS NOT NULL OR ${t.leadId} IS NOT NULL`,
     ),
     uniqueIndex('tg_chat_rules_unique_idx').on(t.managerUserId, t.peerId),
     index('tg_chat_rules_pending_idx').on(t.managerUserId, t.decision),

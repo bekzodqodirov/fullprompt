@@ -1,7 +1,14 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { decideChatAction, purgeChatAction, type ChatRuleState } from './actions';
+import Link from 'next/link';
+import {
+  decideChatAction,
+  openLeadAction,
+  purgeChatAction,
+  type ChatRuleState,
+  type OpenLeadState,
+} from './actions';
 
 export interface ClientOption {
   id: string;
@@ -19,6 +26,11 @@ export interface ClientOption {
  *
  * «Hech qachon» is one press and needs nothing, because it is the answer most
  * rows will get: a manager's list of unmatched chats is mostly their own life.
+ *
+ * «Lid» (round 82) is one press too, and it is the answer this screen was
+ * missing: a person writing in for the first time is neither a client in the
+ * book nor nobody. It sits between the two, because that is its frequency —
+ * commoner than finding an existing code, rarer than «not my business».
  */
 export function ChatDecision({
   row,
@@ -33,8 +45,11 @@ export function ChatDecision({
     phone: string | null;
     decision: string;
     managerName: string;
+    clientId: string | null;
     clientCode: string | null;
     clientName: string | null;
+    leadId: string | null;
+    leadName: string | null;
   };
   clients: ClientOption[];
   /**
@@ -59,9 +74,15 @@ export function ChatDecision({
     noName: string;
     purge: string;
     purgeConfirm: string;
+    openLead: string;
+    leadOpened: string;
   };
 }) {
   const [state, submit, pending] = useActionState<ChatRuleState, FormData>(decideChatAction, {});
+  const [leadState, openLead, opening] = useActionState<OpenLeadState, FormData>(
+    openLeadAction,
+    {},
+  );
   const [purgeState, purge, purging] = useActionState<ChatRuleState, FormData>(
     purgeChatAction,
     {},
@@ -89,10 +110,21 @@ export function ChatDecision({
         )}
       </div>
 
-      {row.decision === 'include' && (
+      {row.decision === 'include' && row.clientId && (
         <p className="text-sm text-good" data-testid="chat-included">
           ✓ {labels.included}: <span className="font-mono font-bold">{row.clientCode}</span>{' '}
           {row.clientName}
+        </p>
+      )}
+      {/* An included chat may belong to a LEAD instead (0065) — and the row
+          says so as a LINK, because the press that opened it is a press
+          somebody made in order to go and work that lead. */}
+      {row.decision === 'include' && row.leadId && (
+        <p className="text-sm text-good" data-testid="chat-lead">
+          ✓ {labels.leadOpened}:{' '}
+          <Link href={`/crm/leads/${row.leadId}`} className="link font-semibold">
+            {row.leadName ?? row.title ?? labels.noName}
+          </Link>
         </p>
       )}
       {row.decision === 'exclude' && (
@@ -169,6 +201,23 @@ export function ChatDecision({
               >
                 {labels.add}
               </button>
+              {/* Only where there IS a number: `leadForChat` refuses without
+                  one, and a button that can only fail is worse than no
+                  button. Same rule the listener's `no_phone` refusal keeps —
+                  a lead nobody can ring is a row with a name in it. */}
+              {row.phone && (
+                <form action={openLead}>
+                  <input type="hidden" name="id" value={row.id} />
+                  <button
+                    type="submit"
+                    className="btn-secondary !min-h-9"
+                    disabled={opening}
+                    data-testid="chat-open-lead"
+                  >
+                    {labels.openLead}
+                  </button>
+                </form>
+              )}
               <form action={submit}>
                 <input type="hidden" name="id" value={row.id} />
                 <input type="hidden" name="decision" value="exclude" />
@@ -201,8 +250,10 @@ export function ChatDecision({
         </div>
       )}
 
-      {(state.error ?? purgeState.error) && (
-        <p className="text-sm font-semibold text-bad">{state.error ?? purgeState.error}</p>
+      {(state.error ?? purgeState.error ?? leadState.error) && (
+        <p className="text-sm font-semibold text-bad">
+          {state.error ?? purgeState.error ?? leadState.error}
+        </p>
       )}
     </div>
   );

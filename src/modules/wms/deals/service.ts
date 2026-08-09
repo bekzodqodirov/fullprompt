@@ -1254,6 +1254,8 @@ export async function dealById(id: string) {
       deal: deals,
       clientCode: clients.clientCode,
       clientName: clients.name,
+      /** For the Telegram lookback panel — the card already joins the client. */
+      clientPhones: clients.phones,
       stageName: dealStages.name,
       stageKind: dealStages.kind,
       stageColor: dealStages.color,

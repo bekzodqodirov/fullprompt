@@ -45,6 +45,7 @@ import {
 } from '../src/modules/wms/crm/telegram-live';
 import { peerFromChat, tgMediaPlan, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
 import { isWorkAccount, leadForChat } from '../src/modules/wms/crm/chat-lead';
+import { indexPeers, lastIndexedAt, type PeerSeen } from '../src/modules/wms/crm/peer-index';
 import { saveAttachment } from '../src/modules/platform/files/service';
 import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
 
@@ -85,6 +86,22 @@ const CATCHUP_PER_CHAT = 200;
  * that could have raised the alarm was the database.
  */
 const DB_ALERT_AFTER_MS = 60_000;
+
+/**
+ * How often the lookback index is rebuilt from the account's own dialog list.
+ *
+ * 0064 created `tg_peer_index` and nothing has ever written to it — the table
+ * is the answer to «has anybody here talked to this number», and until this
+ * pass existed the answer was always no. It has to run HERE, in the listener,
+ * because building it needs a live Telegram connection and this process is
+ * the only thing that holds one.
+ *
+ * A day, and «not more often than a day»: the listener restarts on every
+ * deploy, and walking four hundred dialogs on each boot is a burst with no
+ * purpose. The index is a hint on a card, not a ledger — being twelve hours
+ * stale costs a manager one line they would have seen anyway.
+ */
+const INDEX_EVERY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Download an incoming photo or VOICE/AUDIO message and pin it to its row
@@ -246,6 +263,11 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           ip: null,
           userAgent: null,
         });
+        label = 'LID';
+      } else if ('leadId' in verdict) {
+        // Somebody answered «Lid ochish» on the tray (0065). The lead is
+        // already there — nothing to mint, nothing to name.
+        ownerLeadId = verdict.leadId;
         label = 'LID';
       } else {
         ownerClientId = verdict.clientId;
@@ -616,16 +638,23 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // message it would have been a minute earlier.
           const verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
           if (!verdict.store) continue;
+          // The same three owners the live path resolves, in the same order.
+          let catchUpClientId: string | null = null;
+          let catchUpLeadId: string | null = null;
+          if ('openLead' in verdict) {
+            catchUpLeadId = await leadForChat(account.managerUserId, verdict.peer, {
+              actorId: account.managerUserId,
+              ip: null,
+              userAgent: null,
+            });
+          } else if ('leadId' in verdict) {
+            catchUpLeadId = verdict.leadId;
+          } else {
+            catchUpClientId = verdict.clientId;
+          }
           const written = await storeIncoming({
-            clientId: 'openLead' in verdict ? null : verdict.clientId,
-            leadId:
-              'openLead' in verdict
-                ? await leadForChat(account.managerUserId, verdict.peer, {
-                    actorId: account.managerUserId,
-                    ip: null,
-                    userAgent: null,
-                  })
-                : null,
+            clientId: catchUpClientId,
+            leadId: catchUpLeadId,
             managerUserId: account.managerUserId,
             row: verdict.row,
           });
@@ -646,6 +675,52 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     // backfill is worse than one that starts and is a little behind.
     console.error('catch-up umuman ishlamadi:', err instanceof Error ? err.message : err);
   });
+
+  /* ---------------------------------------------------------------- *
+   * The lookback index. Fingerprints of the numbers this account knows.
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Walk the account's dialogs and record each peer's number as a HASH.
+   *
+   * Nothing about the conversation is read and nothing readable is stored —
+   * `indexPeers` keeps `sha256(pepper + last nine)` and no name, which is the
+   * whole reason the owner's «bu raqam bilan gaplashilganmi» feature can
+   * exist over people's personal accounts at all (#588).
+   *
+   * A peer whose number Telegram hides is simply not indexed: there is
+   * nothing to match on, so the screen's honest answer stays «topilmadi»
+   * rather than «yo'q».
+   */
+  const refreshIndex = async () => {
+    const last = await lastIndexedAt(account.managerUserId);
+    if (last && Date.now() - last.getTime() < INDEX_EVERY_MS) return;
+    const seen: PeerSeen[] = [];
+    for await (const dialog of client.iterDialogs({})) {
+      const peer: DialogPeer = peerFromChat(dialog.entity as never);
+      // Groups, channels and bots have no number worth asking about, and the
+      // manager's own Saved Messages is not somebody they talked to.
+      if (!peer.isPrivate || peer.isBot || peer.isSelf) continue;
+      seen.push({
+        peerId: peer.id,
+        phone: peer.phone ?? null,
+        // Telegram dates are SECONDS. Multiplying is the difference between
+        // «last spoke yesterday» and «last spoke in 1970».
+        lastMessageAt: dialog.message?.date ? new Date(dialog.message.date * 1000) : null,
+      });
+    }
+    const written = await indexPeers(account.managerUserId, seen);
+    console.log(`raqam indeksi: ${written} ta chat belgilandi (${seen.length} tadan)`);
+  };
+  await refreshIndex().catch((err) => {
+    // A hint on a card is never worth a bridge. The next tick tries again.
+    console.error('raqam indeksi yangilanmadi:', err instanceof Error ? err.message : err);
+  });
+  const indexer = setInterval(() => {
+    void refreshIndex().catch((err) => {
+      console.error('raqam indeksi yangilanmadi:', err instanceof Error ? err.message : err);
+    });
+  }, INDEX_EVERY_MS);
 
   const beat = setInterval(() => {
     // Only while the LINK is up. Writing it unconditionally would prove the
@@ -677,6 +752,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   ) => {
     clearInterval(beat);
     clearInterval(sender);
+    clearInterval(indexer);
     if (logOutOfTelegram) {
       await client.invoke(new Api.auth.LogOut()).catch((err: unknown) => {
         console.error('logout:', err instanceof Error ? err.message : err);

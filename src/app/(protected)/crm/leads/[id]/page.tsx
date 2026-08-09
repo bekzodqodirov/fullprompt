@@ -20,6 +20,7 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { HistoryTab } from '@/components/history-tab';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
+import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { CardCols } from '@/components/card-cols';
 import { conversationClientForLead } from '@/modules/wms/crm/conversations';
@@ -142,6 +143,11 @@ export default async function LeadPage({
         }
         nextAction={[lead.nextActionAt, lead.nextActionNote].filter(Boolean).join(' · ')}
       />
+
+      {/* Directly under the phone number it is about: «somebody here already
+          has a Telegram chat with this number» (round 82). Renders nothing
+          when there is no match, which is most cards. */}
+      <TelegramLookback phone={lead.phone} leadId={lead.id} clientId={lead.clientId} />
 
       {lead.clientId ? (
         <div className="flex gap-2">
