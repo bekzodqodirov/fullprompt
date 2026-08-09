@@ -1289,7 +1289,16 @@
     "workPersonal": "Personal number",
     "workPersonalHint": "A stranger writing lands on the «which chats» tray for you to decide. Nothing is stored.",
     "workWork": "Work number",
-    "workWorkHint": "Clients only. A stranger writing opens a lead by itself and the conversation is kept."
+    "workWorkHint": "Clients only. A stranger writing opens a lead by itself and the conversation is kept.",
+    "leadName": "Name",
+    "arrivals": "Inbound enquiries",
+    "arrivalsEmpty": "Nothing has arrived from an advert or the form yet.",
+    "arrivalsWhen": "When",
+    "arrivalsOutcome": "Outcome",
+    "arrivalsOutcome_created": "New lead",
+    "arrivalsOutcome_joined": "Joined an open lead",
+    "arrivalsOutcome_client": "Onto a client card",
+    "arrivalsOutcome_dropped": "Not taken"
   },
   "navShort": {
     "home": "Home",
@@ -1407,7 +1416,9 @@
       "validation": "Incomplete data"
     },
     "scoped": "Warehouse-scoped",
-    "scopedHint": "Grants apply only within the holder's assigned warehouses. Unticked, the role sees every warehouse."
+    "scopedHint": "Grants apply only within the holder's assigned warehouses. Unticked, the role sees every warehouse.",
+    "rota": "Inbound lead rota",
+    "rotaHint": "Leads from adverts and the public form are handed to holders of this role in turn."
   },
   "fields": {
     "title": "Fields and objects",

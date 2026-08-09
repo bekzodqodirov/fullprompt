@@ -1,5 +1,70 @@
 # CHANGELOG
 
+## Reklamadan lead: Instagram, sayt va bot — 2026-08-09
+
+Uch xil yo'l bilan reklamadan kelgan odam **o'zi voronkaga tushadi**. Uchalasi
+ham bir joyga — CRM voronkasiga — va hammasining ro'yxati **CRM → ⋯ → Kelgan
+arizalar**da. Sozlash yo'riqnomasi: `docs/ADS.md`.
+
+**1. Sayt / bio formasi — hoziroq ishlaydi, hech narsa sozlash kerak emas.**
+Reklamani `gsrwms.uz/ariza?manba=instagram` ga yo'naltirasiz. Odam ismi va
+raqamini yozadi, «arizangiz qabul qilindi» degan javob oladi, va lead ochiladi.
+Telefonda ochiladigan qilib yasalgan, uzbekcha va ruscha yonma-yon.
+
+**2. Telegram bot.** Reklama `t.me/<bot>?start=ad_instagram` ga qarab tursa,
+bot faqat **raqamini** so'raydi — Telegramning o'zi tasdiqlaydi, qo'lda
+yozilmaydi. Agar raqam mijozlar kitobimizda bo'lsa lead ochilmaydi, odam o'z
+kabinetiga ulanadi.
+
+**3. Instagram/Facebook «Lead form» reklamasi.** Bu bir marta sozlanadi (Meta
+tomonida webhook, serverda uchta kalit — `docs/ADS.md` da qadamma-qadam).
+Undan keyin odam Instagramdan chiqmasdan ismini va raqamini yozadi va bizga
+darhol tushadi. Kalitlar kiritilmaguncha bu eshik **butunlay yopiq turadi**.
+
+### Kim bilan ishlaydi — navbat
+
+Reklamadan kelgan lead sotuvchilarga **navbat bilan** biriktiriladi. Kim
+navbatda turishini o'zingiz belgilaysiz: **Boshqaruv → Rollar** → rolni ochib
+«Kelgan arizalar navbati» katagiga belgi qo'ying. Navbati kelgan odam — eng kam
+lead olgani; hech qachon olmagan yangi sotuvchi eng oldinda turadi.
+
+**Hech kim belgilanmasa ham lead yo'qolmaydi:** u egasiz bo'ladi va **hamma
+sotuvchining «Bugun qo'ng'iroq» ro'yxatida** turadi. Har bir kelgan lead
+bugungi kunga qo'ng'iroqqa yoziladi — reklamaga pul to'lab, keyin uni bir hafta
+hech kim ko'rmasligi eng qimmat xato.
+
+### Bir xil odam ikki marta yozsa
+
+- Raqam **mijozlar kitobida** bo'lsa — yangi lead ochilmaydi, savol **mijoz
+  kartasining lentasiga** tushadi.
+- O'sha raqamda **ochiq lead** bo'lsa (30 kun ichida) — yangi lead ochilmaydi,
+  xabar o'sha leadga qo'shiladi va **egasi o'zgarmaydi**.
+- Avval **yo'qotilgan** bo'lsa — yangi lead ochiladi: qaytib kelgan odam yangi
+  ish.
+- Bitta raqam kuniga 4-marta yozsa yoki bitta manbadan kuniga 200 dan ortiq
+  kelsa — olinmaydi, lekin ro'yxatda «Olinmadi» bo'lib **yozilib turadi**.
+
+Kelgan arizalar ro'yxati shuning uchun bor: voronka faqat leadlarni ko'rsatadi,
+shuning uchun «reklama bugun hech narsa bermadi» bilan «yigirmata ariza keldi,
+hammasi bitta raqamdan» bir xil ko'rinardi.
+
+### Yo'l-yo'lakay tuzatilgan ikkita narsa
+
+**Bitta o'zgarishdan ikkita vazifa chiqib qolardi.** Voronkada etap
+o'zgarganda ishlaydigan avtomatik qoidalar ba'zan **ikki marta** ishlab
+ketardi — bitta harakatdan ikkita vazifa yoki ikkita Telegram xabari. Sababi:
+navbatni ikkita jarayon bir vaqtda o'qiy olardi. Endi har bir hodisani faqat
+bittasi oladi. (Tekshirildi: qulf olinmaganda 1584 ta xabar o'rniga 792 tasi
+bo'lishi kerak edi.)
+
+**Reklamadan kelgan lead kartasi bo'sh ko'rinardi.** Mijoz yozgan matn lentaga
+tushar edi, lekin ekran uni ko'rsatmasdi — chunki lenta har bir yozuvning
+muallifini talab qilardi, mashina yozgan yozuvda esa muallif yo'q. Tuzatildi.
+
+**Nima ataylab qilinmagan:** Instagram va Facebookni ajratish (Meta o'zi qaysi
+ilova ekanini aytmaydi — «Instagram/Facebook reklama» deb yoziladi), va formaga
+avtomatik javob (SMS/email) — hozircha faqat menejer qo'ng'irog'i.
+
 ## Xavfsizlik: kirish himoyasi va ochiq port — 2026-08-09 (kech)
 
 Reklama ishini loyihalashda tekshiruv **ikkita jonli teshikni** topdi. Ikkalasi

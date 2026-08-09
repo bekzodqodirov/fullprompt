@@ -1289,7 +1289,16 @@
     "workPersonal": "私人号码",
     "workPersonalHint": "陌生人来信将进入\"哪些聊天\"列表，由您决定。不会保存任何内容。",
     "workWork": "工作号码",
-    "workWorkHint": "仅用于客户。陌生人来信将自动创建线索并保存对话。"
+    "workWorkHint": "仅用于客户。陌生人来信将自动创建线索并保存对话。",
+    "leadName": "姓名",
+    "arrivals": "来客咨询",
+    "arrivalsEmpty": "暂无来自广告或网页表单的咨询。",
+    "arrivalsWhen": "时间",
+    "arrivalsOutcome": "结果",
+    "arrivalsOutcome_created": "新线索",
+    "arrivalsOutcome_joined": "并入已有线索",
+    "arrivalsOutcome_client": "记入客户卡片",
+    "arrivalsOutcome_dropped": "未接收"
   },
   "navShort": {
     "home": "首页",
@@ -1407,7 +1416,9 @@
       "validation": "信息不完整"
     },
     "scoped": "仅限所属仓库",
-    "scopedHint": "权限仅在分配给员工的仓库内有效。不勾选则该角色可见所有仓库。"
+    "scopedHint": "权限仅在分配给员工的仓库内有效。不勾选则该角色可见所有仓库。",
+    "rota": "来客线索轮值",
+    "rotaHint": "来自广告和网页表单的线索会按顺序分配给拥有该角色的人。"
   },
   "fields": {
     "title": "字段与对象",

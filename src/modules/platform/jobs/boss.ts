@@ -58,6 +58,8 @@ export async function startBoss(): Promise<PgBoss> {
     await registerUnansweredWorker(boss);
     const { registerSilentTrucksWorker } = await import('../../wms/tracking/silent-jobs');
     await registerSilentTrucksWorker(boss);
+    const { registerMetaLeadWorker } = await import('../../wms/crm/meta-jobs');
+    await registerMetaLeadWorker(boss);
     /**
      * LAST, not first.
      *

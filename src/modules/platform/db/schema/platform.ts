@@ -117,6 +117,13 @@ export const roles = pgTable('roles', {
    * when INSERTING a shipped role.
    */
   warehouseScoped: boolean('warehouse_scoped').notNull().default(false),
+  /**
+   * In the rotation for leads that arrive by themselves (migration 0065). A
+   * COLUMN, like `warehouseScoped` above, and deliberately NOT the funnel's
+   * «who may be shown in a dropdown» list — that one re-adds people who have
+   * been deactivated, which is the last thing an advert lead should find.
+   */
+  inboundRota: boolean('inbound_rota').notNull().default(false),
   createdAt: createdAt(),
 });
 

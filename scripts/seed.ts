@@ -3,7 +3,7 @@
  * safe to re-run. Grows with each milestone (DECISIONS.md #21).
  */
 import 'dotenv/config';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
 import { syncEntityRegistry } from '../src/modules/platform/fields/service';
 import {
@@ -509,6 +509,42 @@ async function seedCrm() {
       { name: 'Boshqa', sortOrder: 200 },
     ]);
     console.log('lead sources seeded (editable)');
+  }
+
+  // A source an ADVERT can name needs a stable handle, because the name stays
+  // the owner's to edit (migration 0065). This runs on every seed and is
+  // idempotent in the only way that is safe on a live table: a key that
+  // already has a holder is left completely alone, a row carrying the default
+  // name is stamped, and only when neither is true is a row added. So his
+  // «Instagram» becomes the instagram key without being renamed, and a source
+  // he renamed years ago keeps its leads.
+  const KEYED: { key: string; name: string; sortOrder: number }[] = [
+    { key: 'meta', name: 'Instagram/Facebook reklama', sortOrder: 5 },
+    { key: 'instagram', name: 'Instagram', sortOrder: 10 },
+    { key: 'facebook', name: 'Facebook', sortOrder: 20 },
+    { key: 'telegram', name: 'Telegram', sortOrder: 40 },
+    { key: 'tiktok', name: 'TikTok', sortOrder: 45 },
+    { key: 'google', name: 'Google', sortOrder: 55 },
+    { key: 'sayt', name: 'Sayt', sortOrder: 80 },
+    { key: 'other', name: 'Boshqa', sortOrder: 200 },
+  ];
+  for (const want of KEYED) {
+    const [held] = await db
+      .select({ id: leadSources.id })
+      .from(leadSources)
+      .where(eq(leadSources.key, want.key))
+      .limit(1);
+    if (held) continue;
+    const [named] = await db
+      .select({ id: leadSources.id })
+      .from(leadSources)
+      .where(and(eq(leadSources.name, want.name), isNull(leadSources.key)))
+      .limit(1);
+    if (named) {
+      await db.update(leadSources).set({ key: want.key }).where(eq(leadSources.id, named.id));
+    } else {
+      await db.insert(leadSources).values(want);
+    }
   }
 
   const existingStages = await db.select({ id: leadStages.id }).from(leadStages).limit(1);

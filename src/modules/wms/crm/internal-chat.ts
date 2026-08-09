@@ -33,7 +33,9 @@ export async function noteRecipients(
     .selectDistinct({ id: crmActivities.createdBy })
     .from(crmActivities)
     .where(and(eq(crmActivities.entityType, entityType), eq(crmActivities.entityId, entityId)));
-  ids.push(...authors.map((a) => a.id));
+  // `createdBy` is nullable since 0065 — a note a MACHINE wrote has no author,
+  // and «everyone who has spoken here» cannot include nobody.
+  ids.push(...authors.map((a) => a.id).filter((id): id is string => id !== null));
 
   // And the person carrying the record, whether or not they have written yet.
   if (entityType === 'lead') {

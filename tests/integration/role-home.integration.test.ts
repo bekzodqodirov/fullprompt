@@ -17,11 +17,7 @@ import {
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
-import {
-  logistFlowCounts,
-  moneyFlowCounts,
-  salesFlowCounts,
-} from '@/modules/wms/home/role-flows';
+import { logistFlowCounts, moneyFlowCounts, salesFlowCounts } from '@/modules/wms/home/role-flows';
 
 /**
  * The three new role homes against a real database. Deltas, never absolutes:
@@ -162,9 +158,33 @@ describe('the sales home', () => {
     });
     expect((await salesFlowCounts(managerId, TODAY)).debtors).toBe(before.debtors);
 
-    // Another manager sees none of it — the scope is the whole point.
-    const stranger = await salesFlowCounts(clientId /* any uuid that owns nothing */, TODAY);
-    expect(stranger.callsDue).toBe(0);
+    // Another manager sees none of THIS manager's work — the scope is the
+    // whole point. Measured against a baseline rather than against zero,
+    // because «mine» has meant «mine OR unclaimed» since round 74 and now
+    // means it on the call list too: a lead an advert created lands with no
+    // owner when nobody is in the rotation, and a count that answered a flat
+    // zero would be hiding it from every screen in the company. What must
+    // not move is what the count sees when somebody ELSE'S lead is created.
+    const stranger = () => salesFlowCounts(clientId /* any uuid that owns nothing */, TODAY);
+    const mintLead = async (name: string, ownerId: string | null) => {
+      const [row] = await db
+        .insert(leads)
+        .values({
+          name: `${name} ${STAMP}`,
+          stageId: openStageId,
+          ownerId,
+          nextActionAt: TODAY,
+          createdBy: managerId,
+        })
+        .returning({ id: leads.id });
+      madeLeads.push(row!.id);
+    };
+
+    const base = (await stranger()).callsDue;
+    await mintLead('RH-egali', managerId);
+    expect((await stranger()).callsDue, 'somebody else’s lead is not my call').toBe(base);
+    await mintLead('RH-egasiz', null);
+    expect((await stranger()).callsDue, 'an unclaimed lead is everybody’s').toBe(base + 1);
   });
 
   it('a conversation waits on us only while the LAST word is the client’s', async () => {
@@ -296,8 +316,6 @@ describe('the accountant home', () => {
 
     await db.delete(expenses).where(eq(expenses.id, posted!.id));
     await db.delete(recurringExpenses).where(eq(recurringExpenses.id, template!.id));
-    await db
-      .delete(expenseCategories)
-      .where(and(eq(expenseCategories.id, category!.id)));
+    await db.delete(expenseCategories).where(and(eq(expenseCategories.id, category!.id)));
   });
 });

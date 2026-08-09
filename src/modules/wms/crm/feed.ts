@@ -132,7 +132,13 @@ export async function clientFeed(
           )
         )                                         AS meta
       FROM crm_activities a
-      JOIN users u ON u.id = a.created_by
+      -- LEFT, since migration 0065. A note a MACHINE wrote has no author —
+      -- an advert lead's first message is exactly that — and an inner join
+      -- here dropped it from the lenta silently: the card showed a lead with
+      -- nothing on it while the enquiry sat in the database. Every other
+      -- branch below still inner-joins because its own author column is still
+      -- NOT NULL; a person is what created those.
+      LEFT JOIN users u ON u.id = a.created_by
       WHERE (
           (a.entity_type = 'client' AND a.entity_id = ${clientId})
           OR (a.entity_type = 'lead' AND a.entity_id = ${leadId})

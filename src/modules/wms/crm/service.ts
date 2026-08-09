@@ -332,8 +332,21 @@ export async function similarLeads(input: { phone?: string | null; name?: string
     .limit(5);
 }
 
-export async function createLead(input: LeadInput, ctx: AuditContext) {
-  if (!ctx.actorId) throw new CrmError('unauthenticated');
+/**
+ * `system: true` = nobody pressed anything.
+ *
+ * An advert lead has no author, and `leads.created_by` was NOT NULL until
+ * migration 0065 precisely because until now every lead came from a person.
+ * Naming the round-robin owner as the author would put a sentence in the audit
+ * trail that nobody said, so the column is left null and the option has to be
+ * asked for explicitly — an actorless call from a screen is still a bug.
+ */
+export interface SystemOpts {
+  system?: true;
+}
+
+export async function createLead(input: LeadInput, ctx: AuditContext, opts?: SystemOpts) {
+  if (!ctx.actorId && !opts?.system) throw new CrmError('unauthenticated');
   const stageId = input.stageId || (await defaultStageId());
   const [row] = await db
     .insert(leads)
@@ -344,7 +357,9 @@ export async function createLead(input: LeadInput, ctx: AuditContext) {
       sourceId: input.sourceId || null,
       stageId,
       // An unassigned lead is the one nobody calls, so it defaults to whoever
-      // entered it rather than to nobody.
+      // entered it rather than to nobody. A machine is not a "whoever": an
+      // inbound lead with no free seller stays unowned on purpose, and
+      // `followUps` shows an unclaimed one to everybody (round 74's rule).
       ownerId: input.ownerId || ctx.actorId,
       note: input.note || null,
       ...quoteValues(input),
@@ -770,8 +785,12 @@ export const activitySchema = z.object({
   nextActionNote: z.string().trim().max(500).optional().or(z.literal('')),
 });
 
-export async function addActivity(input: z.infer<typeof activitySchema>, ctx: AuditContext) {
-  if (!ctx.actorId) throw new CrmError('unauthenticated');
+export async function addActivity(
+  input: z.infer<typeof activitySchema>,
+  ctx: AuditContext,
+  opts?: SystemOpts,
+) {
+  if (!ctx.actorId && !opts?.system) throw new CrmError('unauthenticated');
   const [row] = await db
     .insert(crmActivities)
     .values({
@@ -854,7 +873,14 @@ export async function followUps(asOf: string, ownerId?: string): Promise<FollowU
         isNotNull(leads.nextActionAt),
         lte(leads.nextActionAt, asOf),
         isNull(leads.clientId),
-        ownerId ? eq(leads.ownerId, ownerId) : undefined,
+        // Mine OR unclaimed — the board's rule (round 74), and now load-bearing:
+        // a lead that arrives from an advert is booked for today and handed to
+        // whoever's turn it is, but when nobody is in the rotation it has no
+        // owner at all, and a call list that only knows «owner_id = me» would
+        // put it on nobody's screen. The client half deliberately does NOT
+        // widen: a client follow-up is a date a person typed on a card, so it
+        // already belongs to somebody.
+        ownerId ? or(eq(leads.ownerId, ownerId), isNull(leads.ownerId)) : undefined,
       ),
     );
 
