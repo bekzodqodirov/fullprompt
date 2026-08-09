@@ -123,17 +123,22 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-08
+## State — 2026-08-09
 
-`main` is the trunk (PR #1 = rounds 1-55; PR #3 = rounds 56-69; PR #4 =
-the truck-marker follow-up; PR #5 = the calls round; PR #7 = the calls
-day-one fixes). This branch (`claude/gsr-logistics-wms-phase1-o8h4en`)
-carries rounds 70-71 on PR #6.
-1087 unit/integration + 149 e2e, verified in CI's order on a fresh database
+`main` is the trunk and **everything is merged into it** — PR #1 = rounds
+1-55; #3 = 56-69; #4 = the truck-marker follow-up; #5 = the calls round;
+#6 = rounds 70-71; #7 = the calls day-one fixes; #13 = round 74 (capacity);
+#14 = rounds 75-76; #15 = round 77; #19 = round 79's card work; **#17 =
+rounds 78-79 (the Telegram ↔ CRM loop)**. The branch
+`claude/gsr-logistics-wms-phase1-o8h4en` is reset onto `main` and carries
+nothing of its own; start the next round from there.
+1122 unit/integration + 140 e2e, verified in CI's order on a fresh database
 (in the OTHER session's container the four photo-path specs are locally red
 by design — no image service there; CI is the arbiter).
-Latest migration: **0063** (`call_lead`; 0062 `lead_quote`, 0061 `call_dedup_by_user`, 0060
-`call_recorder` and 0059 `reply_templates` are the other session's). Every
+Latest migration: **0064** (`tg_lead` — the work-account switch, lead-owned
+chats and the hashed peer index; 0063 `call_lead`, 0062 `lead_quote`, 0061
+`call_dedup_by_user`, 0060 `call_recorder` and 0059 `reply_templates` are
+the calls track's). Every
 numbered phase is shipped; rounds 56-69 + the calls round + its day-one
 fixes were built by ANOTHER session and are on main — read
 `docs/CRM-UX.md` before touching lists, search, bulk or quick-create. The
@@ -143,13 +148,19 @@ calls round needs its FIRST APK published the same way (Actions →
 calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 
 **NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
-17 audit defects (four live money bugs), the speed rounds, rounds 46-70, the
-driver app 1.3. The owner's last confirmed update was `eea3509`.
-**Deploy note:** migrations 0058-0062 MUST land — 0058 especially — the client book, the stock table
+17 audit defects (four live money bugs), the speed rounds, rounds 46-79, the
+driver app 1.3, both APKs. The owner's last confirmed update was `eea3509`,
+so the server is **~34 rounds behind** and this is now the biggest single
+risk on the project: the gap is no longer one release, it is a year of
+work landing at once. A fresh clone of production applied 0032 → **0064**
+in one run, so the migration path itself is proven.
+**Deploy note:** migrations 0058-0064 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
-`drizzle.__drizzle_migrations` after updating; fix with
-`docker compose run --rm migrate`.
+`drizzle.__drizzle_migrations` after updating (**count must reach 65**); fix
+with `docker compose run --rm migrate`. Recommended order, told to the owner:
+enlarge the VPS and move the data first (`docs/DEPLOY.md` → «Yangi VPS'ga
+ko'chirish»), deploy this code there, test it, and only then move the domain.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -2004,16 +2015,17 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Deploy from `main`** — the calls round adds migration **0060** (and 0059
-is likely still pending on the server: check
+**Enlarge the VPS to 4 vCPU / 8 GB / 400 GB** and move the data
+(`docs/DEPLOY.md` → «Yangi VPS'ga ko'chirish»; round 74 measured the ceiling
+and the old «2 GB tavsiya» was wrong) · **deploy from `main`** — migrations
+**0058-0064** land together, count must reach **65** (check
 `drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
 Back up first · **release both APKs** (driver v1.3 AND the first
 GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its
 Admin page) · set
 **`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
 offered on anything but public HTTPS, #275) · **revoke the bot token he pasted
-in chat** and rotate `ANTHROPIC_API_KEY` · merge
-PR #1 · **switch on the Drive backup** (`docs/BACKUP.md`, ~15 min — publish the
+in chat** and rotate `ANTHROPIC_API_KEY` · **switch on the Drive backup** (`docs/BACKUP.md`, ~15 min — publish the
 app BEFORE minting the token or it dies after 7 days) · create logins for the
 17 sellers then re-run `pnpm import-clients --apply --update` · 3 rejected rows ·
 ~19 nameless clients · 2 truncated phones (GS161, GS252) · opening balances ·
