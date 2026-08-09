@@ -56,6 +56,16 @@ export interface KanbanLabels {
   moveErrors: Record<string, string>;
   /** Footer of a column that is holding cards back: «+N · show all». */
   showAll: string;
+  /**
+   * «Keyingi bosqich» — the one-tap button's spoken name.
+   *
+   * The button used to be a bare stage name, which is the third printing of a
+   * stage name on the same screen (the chip strip, the column header, then
+   * this) and the only one naming a stage the card is NOT in. As an
+   * `aria-label` the word says what the control DOES, and the destination is
+   * drawn in the stage's own colours so it reads as a place, not a headline.
+   */
+  nextStage: string;
 }
 
 /** Below this the gesture is a scroll or a tap, not a drag. */
@@ -458,18 +468,40 @@ function StageView<T extends KanbanItem>({
                       {renderCard(item)}
                     </Link>
                     <div className="mt-2 flex items-center gap-2 border-t border-line pt-2">
-                      {selection && <SelectBox id={item.id} selection={selection} />}
                       {/* One tap for the move that happens ten times a day;
-                          the sheet for everything else. */}
-                      {nextStage && (
+                          the sheet for everything else.
+
+                          NEVER into a `lost` stage. The next stage is simply
+                          the one after this in sort order, and every seeded
+                          funnel puts LOST straight after WON — so the won
+                          column's cards each carried a big button reading
+                          «Yo'qotildi», which is the sharpest form of the
+                          confusion this card was rebuilt for. It was never a
+                          one-tap action anyway: a lost move demands a typed
+                          reason, so it belongs in the sheet that can ask. */}
+                      {nextStage && nextStage.kind !== 'lost' && (
                         <button
                           type="button"
                           data-testid="move-next"
+                          aria-label={labels.nextStage}
                           onClick={() => void move(item, nextStage.id)}
-                          className="btn-secondary min-w-0 flex-1 !justify-start"
+                          // `!text-xs`: `.btn` sets its own font-size AFTER the
+                          // utilities, so a bare `text-xs` here is dead CSS —
+                          // the fifth costume of #419.
+                          className="btn-secondary min-w-0 flex-1 !justify-start !text-xs"
                         >
                           <Icon name="chevronRight" className="h-4 w-4 shrink-0" />
-                          <span className="truncate">{nextStage.name}</span>
+                          {/* The destination in the stage's OWN colours: a
+                              place to go, drawn the way every other stage on
+                              this screen is drawn, rather than a second
+                              headline competing with the card's name. */}
+                          <span
+                            className={`truncate rounded-md border px-1.5 py-0.5 ${stageClass(
+                              nextStage.color,
+                            )}`}
+                          >
+                            {nextStage.name}
+                          </span>
                         </button>
                       )}
                       <button
@@ -481,6 +513,15 @@ function StageView<T extends KanbanItem>({
                       >
                         ⋯
                       </button>
+                      {/* The tick LAST, behind a divider. Beside the move
+                          button its only label was an aria-label, so a bare
+                          checkbox sat against a stage name and read as that
+                          name's caption. */}
+                      {selection && (
+                        <span className="flex shrink-0 items-center border-l border-line pl-2">
+                          <SelectBox id={item.id} selection={selection} />
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -680,35 +721,48 @@ function DragBoard<T extends KanbanItem>({
                       }`}
                       style={{ touchAction: dragId === item.id ? 'none' : undefined }}
                     >
-                      {/* The way to move a card that is NOT a drag. Load-bearing
-                          rather than a convenience: which board a viewer gets is
-                          decided by width alone, so a tablet lands here — and
-                          since the drag became a mouse's alone, without this
-                          there would be no way to move anything at all.
-                          Not gated on a pointer query: this file's own comment
-                          says a trackpad can report as touch, and a machine that
-                          answered «fine» to the query and «not a mouse» to the
-                          event would get a board with neither door. */}
-                      <span className="float-right ml-1 flex items-center gap-1">
-                        {selection && <SelectBox id={item.id} selection={selection} />}
-                        <button
-                          type="button"
-                          data-testid="move-other"
-                          aria-label={labels.moveTo}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            // The card IS the anchor and carries the drag —
-                            // SelectBox's lesson, one element over.
-                            event.stopPropagation();
-                            event.preventDefault();
-                            setSheetFor(item);
-                          }}
-                          className="btn-secondary btn-icon !min-h-7 !w-7 shrink-0 !p-0 text-xs"
-                        >
-                          ⋯
-                        </button>
-                      </span>
-                      {renderCard(item)}
+                      {/* Two columns, NOT a float. The controls used to be
+                          `float-right`, which leaves the flow and shortens only
+                          the LINE BOXES beside it: measured on the deal card,
+                          the code broke as «B-» / «000627» and the money as
+                          «200.00 USD» / «· 0.06 m³» with the separator dangling,
+                          because a flex row next to a float gets ~60 px less to
+                          lay out in and each child then wrapped inside itself.
+                          A real column gives the content a width it can trust.
+                          Both halves stay INSIDE the anchor: `cardTestId` is on
+                          the <Link>, so a spec scoping `move-other` to a card
+                          would stop finding it if the controls became a sibling. */}
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">{renderCard(item)}</div>
+                        {/* The way to move a card that is NOT a drag. Load-bearing
+                            rather than a convenience: which board a viewer gets is
+                            decided by width alone, so a tablet lands here — and
+                            since the drag became a mouse's alone, without this
+                            there would be no way to move anything at all.
+                            Not gated on a pointer query: this file's own comment
+                            says a trackpad can report as touch, and a machine that
+                            answered «fine» to the query and «not a mouse» to the
+                            event would get a board with neither door. */}
+                        <span className="flex shrink-0 items-center gap-1">
+                          {selection && <SelectBox id={item.id} selection={selection} />}
+                          <button
+                            type="button"
+                            data-testid="move-other"
+                            aria-label={labels.moveTo}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              // The card IS the anchor and carries the drag —
+                              // SelectBox's lesson, one element over.
+                              event.stopPropagation();
+                              event.preventDefault();
+                              setSheetFor(item);
+                            }}
+                            className="btn-secondary btn-icon !min-h-7 !w-7 shrink-0 !p-0 text-xs"
+                          >
+                            ⋯
+                          </button>
+                        </span>
+                      </div>
                     </Link>
                   ))}
                   {inStage.length === 0 && (hidden[stage.id] ?? 0) === 0 && (
@@ -730,12 +784,19 @@ function DragBoard<T extends KanbanItem>({
         </div>
       </div>
 
+      {/* The ghost is a PREVIEW of the card being carried, so it has to break
+          its lines where the card does: same width as the column card (w-64)
+          and the same reserved control column, empty. At w-56 with no gutter
+          it laid out to a different shape from the thing under the cursor. */}
       {dragItem && ghost && (
         <div
-          className="card pointer-events-none fixed z-50 w-56 !p-2.5 shadow-xl ring-2 ring-brand-500"
-          style={{ left: ghost.x - 112, top: ghost.y - 28 }}
+          className="card pointer-events-none fixed z-50 w-64 !p-2.5 shadow-xl ring-2 ring-brand-500"
+          style={{ left: ghost.x - 128, top: ghost.y - 28 }}
         >
-          {renderCard(dragItem)}
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">{renderCard(dragItem)}</div>
+            <span className="w-[52px] shrink-0" />
+          </div>
         </div>
       )}
     </>

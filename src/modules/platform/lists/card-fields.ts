@@ -11,9 +11,15 @@ import { cookies } from 'next/headers';
  * change's clothes (round 63 refused exactly that on the client card).
  *
  * The card's IDENTITY is not on the list and cannot be turned off — a lead's
- * name, a deal's code and title. Partly because a card with nothing on it is
+ * name, a deal's code and CLIENT. Partly because a card with nothing on it is
  * not a card, and partly because half the Playwright suite finds a board card
  * by its name; the same rule batch 1 gave the link column.
+ *
+ * A deal's own title is not identity and is not switchable either: it is the
+ * optional description of the job, drawn under the client. It used to STAND IN
+ * for the client when it was absent, which meant one column mixed two
+ * grammars — a titled card naming no client, an untitled one naming the client
+ * twice and naming no job.
  */
 
 /** One switchable line on a card. `on` is what the board shows TODAY. */

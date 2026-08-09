@@ -151,7 +151,20 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await page.getByTestId('stage-tab').nth(1).click();
   await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
 
-  // Any other stage goes through the sheet: here, back to the start.
+  // A WON card is offered no one-tap move. The next stage is whatever sorts
+  // after this one, and every funnel here puts LOST straight after WON — so
+  // without the guard each won card carried a button reading «Yo'qotildi»,
+  // which is the loudest thing on it and names a stage it is not in. Losing a
+  // lead demands a typed reason, so that move belongs in the sheet.
+  const wonCard = () =>
+    board.getByTestId('lead-card').filter({ hasText: `Sinov mijoz ${runId}` });
+  await wonCard().getByTestId('move-other').click();
+  await page.getByTestId('move-to-won').first().click();
+  await expect(wonCard().getByTestId('move-next')).toHaveCount(0);
+  await expect(wonCard().getByTestId('move-other')).toBeVisible();
+
+  // Any other stage goes through the sheet: here, back to the start — which
+  // also puts the lead back in an open stage before the rest of the spec.
   await board
     .getByTestId('lead-card')
     .filter({ hasText: `Sinov mijoz ${runId}` })
