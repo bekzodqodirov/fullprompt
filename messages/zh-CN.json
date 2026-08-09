@@ -306,7 +306,9 @@
       "deal_deviation_threshold_pct": "货物与报价相差多少百分比时向负责人发送提醒。不会阻止装车。",
       "tg_sending_enabled": "允许 CRM 通过经理的个人 Telegram 向客户发送消息（默认关闭）",
       "debt_approval_ttl_hours": "欠款客户放货批准在通过后有效多少小时",
-      "unanswered_reminder_minutes": "客户等待多少分钟后提醒其经理（0 = 关闭）"
+      "unanswered_reminder_minutes": "客户等待多少分钟后提醒其经理（0 = 关闭）",
+      "crm_calc_stage": "机器人发来「报价」时，线索移到该阶段（只向前；「—」表示不移动）",
+      "deal_calc_stage": "交易看板同理——已有客户编号的请求会落在交易上"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"
@@ -1298,7 +1300,9 @@
     "arrivalsOutcome_created": "新线索",
     "arrivalsOutcome_joined": "并入已有线索",
     "arrivalsOutcome_client": "记入客户卡片",
-    "arrivalsOutcome_dropped": "未接收"
+    "arrivalsOutcome_dropped": "未接收",
+    "calcStage": "报价阶段",
+    "calcStageHint": "机器人发来「报价」时，卡片移到该阶段。只向前移动——已经更靠后的卡片保持不变。选「—」表示不移动。"
   },
   "navShort": {
     "home": "首页",

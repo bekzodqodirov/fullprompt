@@ -46,6 +46,21 @@ export const SETTING_DEFAULTS = {
    * phone call, too long and the point of it is gone. 0 switches it off.
    */
   unanswered_reminder_minutes: 30,
+  /**
+   * The funnel stage a request for a price lands on (owner, round 83: «kim
+   * botga tashlayotgan bo'lsa o'sha odamning accountiga biriktirilishi kerak
+   * … va hisoblatish etapiga tushishi kerak»).
+   *
+   * A SETTING and not a column, because it names ONE stage — unlike
+   * `deal_stages.cargo_trigger`, which had to say a different thing about
+   * five. Empty means «leave the card where it is», which is what an
+   * installation that has never opened this screen gets. Stored as an id;
+   * a stage that is later deleted or closed simply stops matching, and the
+   * lead lands on the first open stage as it did before.
+   */
+  crm_calc_stage: '',
+  /** The same, for the DEAL board — a coded client's request lands there. */
+  deal_calc_stage: '',
   costing_base_currency: 'USD',
   client_code_prefix: 'GS',
   label_size: '100x100',

@@ -188,7 +188,6 @@ export async function quickCreateLeadAction(input: {
   return { ok: true, id: created!.id, name: created!.name };
 }
 
-
 export async function updateLeadAction(
   id: string,
   _prev: CrmFormState,
@@ -355,12 +354,28 @@ export async function saveSourceAction(
   return run('crm.manage', (ctx) => saveSource({ ...parsed.data, id }, ctx));
 }
 
+/**
+ * Which stage a request for a price lands on (round 83).
+ *
+ * A SETTING rather than a column — it names one stage — and gated on
+ * `crm.manage` like the funnel it points into. An empty value is a real
+ * answer: «leave the card where it is».
+ */
+export async function setCalcStageAction(
+  _prev: CrmFormState,
+  formData: FormData,
+): Promise<CrmFormState> {
+  const stageId = str(formData, 'stageId');
+  const board = str(formData, 'board') === 'deal' ? 'deal' : 'lead';
+  return run('crm.manage', async (ctx) => {
+    const { setSetting } = await import('@/modules/platform/settings/service');
+    await setSetting(board === 'deal' ? 'deal_calc_stage' : 'crm_calc_stage', stageId, ctx.actorId);
+  });
+}
+
 // --- People -----------------------------------------------------------------
 
-export async function groupClientsAction(
-  clientIds: string[],
-  name: string,
-): Promise<CrmFormState> {
+export async function groupClientsAction(clientIds: string[], name: string): Promise<CrmFormState> {
   return run('crm.manage', (ctx) => groupClients(clientIds, { name }, ctx));
 }
 

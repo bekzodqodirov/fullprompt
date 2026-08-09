@@ -6,6 +6,8 @@ import { Panel } from '@/components/panel';
 import { PageHeader } from '@/components/ui/page';
 import { dealStageUsage, listStages } from '@/modules/wms/deals/service';
 import { DealStageForm, DealStageTools } from './stage-form';
+import { CalcStageForm } from '@/app/(protected)/crm/(pages)/settings/forms';
+import { getSetting } from '@/modules/platform/settings/service';
 
 /**
  * The deal funnel's editor — born in round 26, because until the cargo
@@ -24,7 +26,11 @@ export default async function DealStagesPage() {
   const t = await getTranslations('deals');
   const tc = await getTranslations('crm');
 
-  const [stages, usage] = await Promise.all([listStages(true), dealStageUsage()]);
+  const [stages, usage, calcStage] = await Promise.all([
+    listStages(true),
+    dealStageUsage(),
+    getSetting('deal_calc_stage'),
+  ]);
   const rows = stages.map((stage) => ({
     id: stage.id,
     name: stage.name,
@@ -48,6 +54,15 @@ export default async function DealStagesPage() {
       <div className="card space-y-2">
         <h2 className="text-sm font-bold uppercase text-ink-500">🎯 {tc('stages')}</h2>
         <DealStageTools stages={rows} usage={usage} />
+      </div>
+
+      {/* The same picker the lead funnel has (round 83): a coded client's
+          request for a price lands on a DEAL, so the deal board needs its own
+          answer to «which column is hisoblatish». */}
+      <div className="card space-y-2">
+        <h2 className="text-sm font-bold uppercase text-ink-500">🧮 {tc('calcStage')}</h2>
+        <p className="text-xs text-ink-500">{tc('calcStageHint')}</p>
+        <CalcStageForm board="deal" stages={rows} current={calcStage} />
       </div>
 
       <Panel title={`➕ ${tc('addStage')}`}>

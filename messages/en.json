@@ -306,7 +306,9 @@
       "deal_deviation_threshold_pct": "How far the cargo may differ from the quote before the manager is alerted. Never blocks loading.",
       "tg_sending_enabled": "Allow the CRM to send messages to clients through a manager’s personal Telegram (off by default)",
       "debt_approval_ttl_hours": "How many hours an approved permission to issue cargo to a debtor stays valid",
-      "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)"
+      "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)",
+      "crm_calc_stage": "A request for a price from the bot moves the lead to this stage (forward only; «—» means do not move)",
+      "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"
@@ -1298,7 +1300,9 @@
     "arrivalsOutcome_created": "New lead",
     "arrivalsOutcome_joined": "Joined an open lead",
     "arrivalsOutcome_client": "Onto a client card",
-    "arrivalsOutcome_dropped": "Not taken"
+    "arrivalsOutcome_dropped": "Not taken",
+    "calcStage": "Quote stage",
+    "calcStageHint": "A request for a price from the bot moves the card to this stage. Forward only — a card already further along stays where it is. «—» means do not move it."
   },
   "navShort": {
     "home": "Home",

@@ -306,7 +306,9 @@
       "deal_deviation_threshold_pct": "Yuk hisob-kitobdan necha foizga farq qilsa, menejerga xabar ketadi. Yuklashni to‘xtatmaydi.",
       "tg_sending_enabled": "CRM menejerning shaxsiy Telegramidan mijozga xabar yuborishi mumkinmi (odatda o‘chirilgan)",
       "debt_approval_ttl_hours": "Qarzdorga yuk berish ruxsati tasdiqlangach necha soat amal qiladi",
-      "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)"
+      "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)",
+      "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
+      "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -1298,7 +1300,9 @@
     "arrivalsOutcome_created": "Yangi lid",
     "arrivalsOutcome_joined": "Bor lidga qo‘shildi",
     "arrivalsOutcome_client": "Mijoz kartasiga",
-    "arrivalsOutcome_dropped": "Olinmadi"
+    "arrivalsOutcome_dropped": "Olinmadi",
+    "calcStage": "Hisoblatish bosqichi",
+    "calcStageHint": "Botdan «Hisoblatish» kelganda karta shu bosqichga o'tadi. Faqat oldinga siljiydi — allaqachon o'tib ketgan karta joyida qoladi. «—» tanlansa hech qayerga ko'chirilmaydi."
   },
   "navShort": {
     "home": "Bosh",

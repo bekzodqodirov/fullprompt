@@ -35,7 +35,6 @@ export const MUTE_GROUPS = {
     'DebtApprovalDecided',
     // A calculation blew its 30–120 minute deadline (round 28) — told to the
     // waiting salesperson and the owner while chasing it still helps.
-    'CalcOverdue',
     // A customer has been waiting for an answer past the threshold (round 36).
     // An alert, not a digest: it is only worth anything before they ring.
     'ClientWaiting',

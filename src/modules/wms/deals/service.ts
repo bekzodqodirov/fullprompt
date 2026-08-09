@@ -317,17 +317,6 @@ export async function saveLines(
       after: { lines: lines.length },
     });
   });
-  // Round 28: saving the lines IS the calculation being delivered — the
-  // honest end of the hisoblash clock, not a button somebody remembers to
-  // press. Fenced: a stuck clock must never refuse the save itself.
-  if (ctx.actorId) {
-    try {
-      const { completeCalcForDeal } = await import('../calc/service');
-      await completeCalcForDeal(dealId, ctx.actorId);
-    } catch (err) {
-      logger.error({ err, dealId }, 'calc clock stop on saveLines failed');
-    }
-  }
 }
 
 /**
