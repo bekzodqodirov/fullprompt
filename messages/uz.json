@@ -1896,7 +1896,8 @@
       "forbidden": "Ruxsat yo'q",
       "code_exists": "Bunday kod bor",
       "code_format": "Kod formati noto'g'ri",
-      "failed": "Saqlanmadi"
+      "failed": "Saqlanmadi",
+      "duplicate": "Bunday lid allaqachon bor — quyida ko‘ring. Baribir yaratish uchun yana bosing."
     }
   }
 }

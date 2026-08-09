@@ -18,7 +18,14 @@ export function LinkReceipt({
   receipts,
 }: {
   dealId: string;
-  receipts: { id: string; number: string | null; receivedAt: Date }[];
+  receipts: {
+    id: string;
+    number: string | null;
+    receivedAt: Date;
+    goods: string;
+    volumeM3: number;
+    weightKg: number;
+  }[];
 }) {
   const t = useTranslations('deals');
   const tc = useTranslations('common');
@@ -38,9 +45,20 @@ export function LinkReceipt({
           className="input min-w-0 flex-1"
         >
           <option value="">—</option>
+          {/* What is IN the prixod, not when it landed: a code and a date ask
+              somebody to remember which day which cargo arrived. Anything the
+              receipt has no answer for is simply left out, so a lot-less
+              prixod still reads as its number rather than as «— · 0 m³». */}
           {receipts.map((receipt) => (
             <option key={receipt.id} value={receipt.id}>
-              {receipt.number} · {receipt.receivedAt.toISOString().slice(0, 10)}
+              {[
+                receipt.number,
+                receipt.goods,
+                receipt.volumeM3 ? `${receipt.volumeM3.toFixed(2)} m³` : '',
+                receipt.weightKg ? `${receipt.weightKg.toFixed(1)} kg` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </option>
           ))}
         </select>

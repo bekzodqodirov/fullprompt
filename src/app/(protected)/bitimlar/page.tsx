@@ -142,6 +142,8 @@ export default async function DealsPage({
       stageId: row.stageId,
       code: row.code,
       title: row.title,
+      goods: row.goods,
+      goodsExtra: row.goodsExtra,
       clientCode: row.clientCode,
       clientName: row.clientName,
       ownerName: row.ownerName,

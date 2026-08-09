@@ -274,6 +274,64 @@ function quoteValues(input: LeadInput) {
   };
 }
 
+/**
+ * Somebody already in the funnel who looks like this one.
+ *
+ * The owner: «CRM da lead dublicat bo'lmasligiga e'tibor ber, kimdir uje bor
+ * leadni kirgazsa bu uje borligini ogohlantirsin». Two sellers taking the same
+ * enquiry is not a data problem, it is two people ringing one customer about
+ * one shipment — which is the exact harm the funnel's ownership rule exists to
+ * prevent (#200).
+ *
+ * The PHONE is the only strong match and it is compared the way the whole app
+ * compares phones: the last nine digits, so «+998 90 123 45 67» and
+ * «901234567» are one person. The name is a weak match and is used only when
+ * there is no phone to go on — two «Aziz»es are common and refusing them would
+ * teach people to click past the warning.
+ *
+ * OPEN leads only: a lost lead coming back IS a new enquiry, and a won one is
+ * already a client. Never blocks — it hands back who it found and the caller
+ * decides. A duplicate that a person has looked at and still wants is a
+ * legitimate record; one nobody was told about is the bug.
+ */
+export async function similarLeads(input: { phone?: string | null; name?: string }) {
+  const digits = (input.phone ?? '').replace(/[^0-9]/g, '').slice(-9);
+  const name = (input.name ?? '').trim();
+  if (digits.length < 9 && name.length < 3) return [];
+
+  const open = await db
+    .select({ id: leadStages.id })
+    .from(leadStages)
+    .where(eq(leadStages.kind, 'open'));
+  if (open.length === 0) return [];
+
+  const match =
+    digits.length === 9
+      ? sql`right(regexp_replace(coalesce(${leads.phone}, ''), '[^0-9]', '', 'g'), 9) = ${digits}`
+      : sql`lower(${leads.name}) = lower(${name})`;
+
+  return db
+    .select({
+      id: leads.id,
+      name: leads.name,
+      phone: leads.phone,
+      ownerName: users.fullName,
+    })
+    .from(leads)
+    .leftJoin(users, eq(leads.ownerId, users.id))
+    .where(
+      and(
+        match,
+        inArray(
+          leads.stageId,
+          open.map((row) => row.id),
+        ),
+      ),
+    )
+    .orderBy(desc(leads.updatedAt))
+    .limit(5);
+}
+
 export async function createLead(input: LeadInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const stageId = input.stageId || (await defaultStageId());

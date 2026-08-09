@@ -82,7 +82,7 @@ export function FeedNoteBox({
         setFiles([]);
         setActivityId('');
       }}
-      className="rounded-2xl border border-line bg-surface-raised p-1.5 transition-colors focus-within:border-brand-500"
+      className="rounded-2xl border border-line bg-surface-raised p-1.5 transition-colors focus-within:border-line-strong"
       data-testid="feed-note-box"
     >
       <input type="hidden" name="entityType" value={entityType} />

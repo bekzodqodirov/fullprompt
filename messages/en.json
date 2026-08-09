@@ -1896,7 +1896,8 @@
       "forbidden": "Not allowed",
       "code_exists": "That code already exists",
       "code_format": "Bad code format",
-      "failed": "Could not save"
+      "failed": "Could not save",
+      "duplicate": "A lead like this already exists — see below. Press again to create it anyway."
     }
   }
 }

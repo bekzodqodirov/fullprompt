@@ -1896,7 +1896,8 @@
       "forbidden": "没有权限",
       "code_exists": "该代码已存在",
       "code_format": "代码格式不正确",
-      "failed": "保存失败"
+      "failed": "保存失败",
+      "duplicate": "已有类似线索 — 请见下方。再次点击仍可创建。"
     }
   }
 }

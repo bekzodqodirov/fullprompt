@@ -1906,8 +1906,39 @@ fails with this round's changes AND with them stashed** — pre-existing on this
 tree, CI is the arbiter (it was green on the merge commit). The four known
 photo-path specs (m1×2, m2×1, m9h) fail here as always.
 
+Round 79 — the owner's five card/CRM items (#581-584). (1) **The deal card
+re-ranked**: round 78 made the client NAME the identity line — right for a CRM,
+wrong here, because his people address cargo by CODE. Client code big + mono,
+deal number small beside it, then **tovar nomi**, then money · kub · kg, name
+down to the muted line. `listDeals` grew `goods`/`goodsExtra` = the first
+`deal_lines.description` (falling back to the title) in ONE grouped query for
+the whole board (#432/#526). (2) **The system was quietly discounting**:
+`deviation.ts` says `suggestedAmount` is «never a price the system sets by
+itself. Deliberately not written anywhere» — true of the database, FALSE of the
+screen, because the deal card fed it to the charge box as its default, so cargo
+measuring SMALLER than the quote pre-filled a bill lower than the agreed price.
+Prefill is the agreed price minus the recorded damage discount; the re-priced
+figure is off the screen entirely (a «suggestion» beside the charge box holding
+the same number is read as the answer), the % warning stays. (3) The lenta and
+contact-log composers turned **brand-RED** on focus (`focus-within:border-brand-500`,
+and `--brand-500` is 196 16 16) — now `border-line-strong`. (4) The receipt
+picker prints **tovar nomi · m³ · kg** instead of a date, from `receipt_lots`
+in one grouped query, Russian name preferred (the Uzbek office reads it).
+(5) **Duplicate leads**: `similarLeads` runs BEFORE the write and answers with
+NAMES (who, phone, whose) — phone matched on the last NINE digits like the rest
+of the app, name only when no phone was typed, **open stages only** (a lost lead
+returning IS a new enquiry), never blocks — the same press again creates it and
+any edit to name/phone retires the warning. New key `quick.error.duplicate` ×4.
+Red-proofs ×2 (open-stage filter, phone branch); 3 new integration tests.
+No migration. 1116 unit/integration green; e2e m8/m9zd/m9zg/m9zh/m9n 34 pass.
+**m9h fails locally as always** — the picker renders only when an unlinked
+receipt exists and m1's photo upload cannot run here (#509's rule); the new
+query was verified directly against `gsr_dev` instead. Answered in chat, not
+built: how Instagram ads reach the CRM (Meta Lead Ads webhook vs a public form
+vs the Telegram bot) — his choice awaited.
+
 Round 78 — the card's two writing surfaces and the history's place
-(#581-582; my round number collided with the OTHER session's round 77, and
+(#585-586; my round number collided with the OTHER session's round 77, and
 the DECISIONS numbers with its #574-576 — renumbered on merge, as every
 round this week has had to). (1) «crm kartada shu zapis yozish kerak emas,
 lenta bor»: the «Записать контакт» form is off the LEAD card. What it
