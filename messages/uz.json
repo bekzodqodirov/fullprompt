@@ -1724,7 +1724,11 @@
     "errors": {
       "validation": "Maydonlarni tekshiring: nom, bosqich/hodisa va amal majburiy",
       "forbidden": "Ruxsat yo‘q",
-      "not_found": "Qoida topilmadi"
+      "not_found": "Qoida topilmadi",
+      "stale_days_required": "Necha kun qimirlamasligini yozing",
+      "condition_field_invalid": "Bu shart bu qoidaga to'g'ri kelmaydi",
+      "trigger_target_required": "Bosqich yoki hodisani tanlang",
+      "action_config_invalid": "Amal maydonlarini to'ldiring"
     },
     "events": {
       "ReceiptConfirmed": "Yuk skladga qabul qilindi",
@@ -1737,6 +1741,35 @@
       "DealDeviation": "Yuk hisobdan farq qildi",
       "DealDeferralEnded": "To'lov kechiktirish tugadi",
       "MissingInTransit": "Tushirishda kamomad"
+    },
+    "triggerLeadStale": "Lid qotib qolganda",
+    "triggerDealStale": "Bitim qotib qolganda",
+    "staleDays": "Necha kun qimirlamasa",
+    "staleHint": "Kartaga hech kim tegmagan bo'lsa — tahrir ham, izoh ham, narx ham. Bir sukunatga bir marta eslatadi; kimdir tegib yana unutilsa, yana eslatadi.",
+    "staleFor": "{days} kun qimirlamasa",
+    "conditions": "Shartlar",
+    "conditionAdd": "Shart qo'shish",
+    "conditionField": "Nimaga qarab",
+    "conditionOp": "Qanday",
+    "conditionValue": "Qiymat",
+    "conditionsHint": "Hammasi birdan to'g'ri kelsa ishlaydi. Shart yo'q bo'lsa — bosqichdagi hamma kartaga ishlaydi.",
+    "placeholderHint": "Matnga qo'yish mumkin: {list}",
+    "fields": {
+      "source": "Manba",
+      "phone": "Telefon",
+      "clientCode": "Mijoz kodi",
+      "amount": "Summa",
+      "volumeM3": "Kub",
+      "weightKg": "Kilo",
+      "ownerId": "Mas'ul"
+    },
+    "ops": {
+      "eq": "teng",
+      "neq": "teng emas",
+      "gt": "katta",
+      "lt": "kichik",
+      "empty": "bo'sh",
+      "not_empty": "bo'sh emas"
     }
   },
   "objects": {

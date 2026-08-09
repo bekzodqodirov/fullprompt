@@ -1,5 +1,49 @@
 # CHANGELOG
 
+## Avtomatik qoidalar — to'liq kuch — 2026-08-09 (kech)
+
+Sizning «shuni maksimalna kuchli funksional qilib ber» degan gapingizga
+javoban qoidalar uchta yangi narsani o'rgandi. Boshqaruv → Avtomatlashtirish
+qoidalari.
+
+**1. Vaqt bo'yicha qoida — unutilgan karta.** Ilgari qoida faqat *biror narsa
+sodir bo'lganda* ishlar edi: karta bosqichga o'tdi, yuk keldi. Endi eng
+qimmat holat ham qamrab olindi — **hech narsa sodir bo'lmagani**. «Lid shu
+bosqichda 3 kundan beri turibdi, hech kim tegmagan → eslat» degan qoida
+yoziladi.
+
+«Tegmagan» degani: tahrir ham, izoh ham, narx ham qo'yilmagan. Agar sotuvchi
+kecha kartani ochib nimadir yozgan bo'lsa — u unutmagan, qaysi bosqichda
+turishidan qat'i nazar.
+
+**Bir sukunatga bir marta eslatadi.** Har soatda qayta-qayta vazifa ochib
+sizni bezdirmaydi. Ammo kimdir kartaga tegib, keyin yana unutib qo'ysa —
+**yana eslatadi**. Ya'ni «bir marta» degani «umr bo'yi bir marta» emas.
+
+Eslatma faqat **ish vaqtida** (09:00–19:00) yuboriladi — kechasi soat 4 da
+telefoningiz jiringlamaydi.
+
+**2. Shart qo'yish.** Endi qoidani toraytirish mumkin: «faqat 5 kubdan katta
+yuk bo'lsa», «faqat Instagramdan kelgan lidga», «telefoni yozilmaganlarga».
+Bir nechta shart qo'ysangiz — hammasi birdan to'g'ri kelishi kerak. Shart
+qo'ymasangiz — avvalgidek, bosqichdagi hamma kartaga ishlaydi.
+
+Qoidalar ro'yxatida har bir qoidaning sharti ko'rinib turadi, shunda «nega
+ishlamadi» degan savol tug'ilmaydi.
+
+**3. Matnga ism qo'yish.** Vazifa matniga yoki Telegram xabariga
+`{ism}` `{kod}` `{narx}` `{kub}` `{kg}` `{etap}` yozsangiz — tizim ularni
+kartaning o'z ma'lumoti bilan to'ldiradi. «Mijozga qo'ng'iroq qil» o'rniga
+**«Aziz aka — 900$ — qo'ng'iroq qil»**. Bu Telegram shablonlaridagi bilan
+bir xil belgilar, ikki xil tilni yodlash kerak emas.
+
+**Eski qoidalaringiz o'zgarmadi** — sharti yo'q qoida hamma narsaga ishlaydi,
+avvalgidek.
+
+**Bazaga qo'shildi:** migratsiya **0067**. Yangilashda migratsiyalar soni
+**68** ga yetishi kerak.
+
+
 ## Zaxira nusxa: Contabo S3 — 2026-08-09 (kech)
 
 Tungi nusxa endi **S3 omborga** ham chiqadi — siz tanlagan Contabo Object

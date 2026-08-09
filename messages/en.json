@@ -1724,7 +1724,11 @@
     "errors": {
       "validation": "Check the fields: name, stage/event and action are required",
       "forbidden": "No access",
-      "not_found": "Rule not found"
+      "not_found": "Rule not found",
+      "stale_days_required": "Say how many days without movement",
+      "condition_field_invalid": "That condition does not fit this rule",
+      "trigger_target_required": "Choose a stage or an event",
+      "action_config_invalid": "Fill in the action fields"
     },
     "events": {
       "ReceiptConfirmed": "Cargo received at warehouse",
@@ -1737,6 +1741,35 @@
       "DealDeviation": "Cargo differs from quote",
       "DealDeferralEnded": "Payment deferral ended",
       "MissingInTransit": "Shortage at unload"
+    },
+    "triggerLeadStale": "Lead sits still in a stage",
+    "triggerDealStale": "Deal sits still in a stage",
+    "staleDays": "Days without movement",
+    "staleHint": "Nobody has touched the card — no edit, no note, no price. One reminder per silence; if the card is worked on and forgotten again, it reminds again.",
+    "staleFor": "still for {days} d.",
+    "conditions": "Conditions",
+    "conditionAdd": "Add condition",
+    "conditionField": "Field",
+    "conditionOp": "Test",
+    "conditionValue": "Value",
+    "conditionsHint": "Fires when all of them hold at once. No conditions — every card in the stage.",
+    "placeholderHint": "You can put these in the text: {list}",
+    "fields": {
+      "source": "Source",
+      "phone": "Phone",
+      "clientCode": "Client code",
+      "amount": "Amount",
+      "volumeM3": "Volume",
+      "weightKg": "Weight",
+      "ownerId": "Owner"
+    },
+    "ops": {
+      "eq": "equals",
+      "neq": "not equal",
+      "gt": "greater than",
+      "lt": "less than",
+      "empty": "is empty",
+      "not_empty": "is not empty"
     }
   },
   "objects": {
