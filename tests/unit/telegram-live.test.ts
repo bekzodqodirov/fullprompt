@@ -37,7 +37,10 @@ describe('deciding one live message', () => {
   it('stores a client message and says which client', () => {
     const v = decideIncoming(peer(), msg(), CLIENTS);
     expect(v.store).toBe(true);
-    if (!v.store) throw new Error('unreachable');
+    // Round 79 made `store: true` a union — a known client OR a stranger on a
+    // work number — so «it stored something» no longer says WHICH. The tests
+    // narrow the way the listener does, with `'openLead' in v`.
+    if (!v.store || 'openLead' in v) throw new Error('unreachable');
     expect(v.clientId).toBe('c-777');
     expect(v.row.direction).toBe('in');
     expect(v.row.body).toBe('Yuk keldimi?');
@@ -112,7 +115,7 @@ describe('deciding one live message', () => {
     // GS555 is stored as '998 90 765 43 21'; Telegram sends '998907654321'.
     const v = decideIncoming(peer({ phone: '998907654321' }), msg(), CLIENTS);
     expect(v.store).toBe(true);
-    if (!v.store) throw new Error('unreachable');
+    if (!v.store || 'openLead' in v) throw new Error('unreachable');
     expect(v.clientCode).toBe('GS555');
   });
 });

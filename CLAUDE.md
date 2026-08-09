@@ -54,6 +54,7 @@ next-intl · Tailwind (CSS-variable tokens) · pg-boss · Playwright + Vitest.
 pnpm db:migrate         # hand-written SQL migrations
 pnpm db:seed            # idempotent; reference data, demo only on a fresh db
 pnpm lint && pnpm test  # 385 tests
+pnpm typecheck          # tsc --noEmit — the ONLY thing that types tests/
 pnpm build && pnpm e2e  # 44 e2e
 ```
 
@@ -69,6 +70,9 @@ pnpm build && pnpm e2e  # 44 e2e
 5. **Reproduce CI's order before pushing**: seed once, run vitest, then run
    Playwright *without re-seeding*. CI uses ONE database for both. This is how
    the field tests leaking definitions was found — after CI went red.
+6. **`pnpm typecheck` before every push.** `next build` types `src/` only, so a
+   widened union that breaks a TEST's narrowing is green locally and red in CI
+   (#591). Vitest transpiles without checking, so the tests pass too.
 
 ## Footguns that have cost real time
 

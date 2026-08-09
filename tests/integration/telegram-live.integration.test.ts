@@ -128,7 +128,9 @@ describe('what the bridge writes', () => {
     const book = await clientBook();
     const verdict = decideIncoming(peer, msg, book);
     expect(verdict.store).toBe(true);
-    if (!verdict.store) throw new Error('unreachable');
+    // `store: true` is a union since round 79 (a known client, or a stranger
+    // on a work number); narrowed the way the listener narrows it.
+    if (!verdict.store || 'openLead' in verdict) throw new Error('unreachable');
     expect(verdict.clientId).toBe(clientId);
 
     // A NEW row answers with its id — the key a downloaded photo binds to.
