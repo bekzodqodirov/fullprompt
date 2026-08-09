@@ -683,6 +683,14 @@ export const automationRules = pgTable(
     triggerEvent: text('trigger_event'),
     actionType: text('action_type').notNull(),
     actionConfig: jsonb('action_config').notNull().default({}),
+    /**
+     * «Only if the cargo is more than 5 kub», «only Instagram leads» — a list
+     * of {field, op, value}, ANDed (migration 0067). Empty matches everything,
+     * which is what every rule written before this had.
+     */
+    conditions: jsonb('conditions').notNull().default([]),
+    /** How long a card may sit still; only read by the two time triggers. */
+    staleDays: integer('stale_days'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -694,14 +702,41 @@ export const automationRules = pgTable(
   (t) => [
     check(
       'automation_rules_trigger_check',
-      sql`${t.triggerType} IN ('lead_stage', 'deal_stage', 'event')`,
+      sql`${t.triggerType} IN ('lead_stage', 'deal_stage', 'event', 'lead_stale', 'deal_stale')`,
     ),
     check(
       'automation_rules_trigger_target_check',
-      sql`(${t.triggerType} IN ('lead_stage', 'deal_stage') AND ${t.triggerStageId} IS NOT NULL) OR (${t.triggerType} = 'event' AND ${t.triggerEvent} IS NOT NULL)`,
+      sql`(${t.triggerType} IN ('lead_stage', 'deal_stage') AND ${t.triggerStageId} IS NOT NULL) OR (${t.triggerType} = 'event' AND ${t.triggerEvent} IS NOT NULL) OR (${t.triggerType} IN ('lead_stale', 'deal_stale') AND ${t.triggerStageId} IS NOT NULL AND ${t.staleDays} IS NOT NULL)`,
     ),
     check('automation_rules_action_check', sql`${t.actionType} IN ('create_task', 'notify')`),
     index('automation_rules_trigger_idx').on(t.triggerType, t.active),
+  ],
+);
+
+/**
+ * What a TIME trigger has already said (migration 0067).
+ *
+ * A move-triggered rule fires on an event, which happens once. A time trigger
+ * fires on a CONDITION, which stays true every hour until somebody acts — so
+ * without this the sweep would open the same task every sweep for ever, which
+ * is how people learn to ignore the thing that was meant to save them. The
+ * unique index IS the mechanism rather than a check somebody can forget: the
+ * sweep inserts first and only acts when the insert wins.
+ */
+export const automationFires = pgTable(
+  'automation_fires',
+  {
+    id: id(),
+    ruleId: uuid('rule_id')
+      .notNull()
+      .references(() => automationRules.id, { onDelete: 'cascade' }),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    firedAt: timestamp('fired_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('automation_fires_once_idx').on(t.ruleId, t.entityType, t.entityId),
+    index('automation_fires_rule_idx').on(t.ruleId, t.firedAt),
   ],
 );
 

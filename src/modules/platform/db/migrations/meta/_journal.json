@@ -470,6 +470,13 @@
       "when": 1785190000035,
       "tag": "0066_inbound_leads",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1785190000036,
+      "tag": "0067_automation_v2",
+      "breakpoints": true
     }
   ]
 }
