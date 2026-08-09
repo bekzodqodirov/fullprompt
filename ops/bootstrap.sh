@@ -70,4 +70,7 @@ if [ -n "${DOMAIN:-}" ]; then
 else
   echo "✅ http://${IP}:3000  (kamera-skaner uchun keyinroq domen + HTTPS kerak bo'ladi)"
 fi
-echo "Kirish (demo seed): +998900000001 / demo1234 — birinchi ishdan keyin parolni almashtiring!"
+echo ""
+echo "Endi BIRINCHI hisobni yarating (demo hisoblar ataylab yaratilmaydi):"
+echo "  docker compose run --rm migrate pnpm create-admin +998901234567 \"Ism Familiya\""
+echo "Parol bir marta ekranga chiqadi — yozib oling."

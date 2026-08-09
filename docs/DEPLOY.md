@@ -26,10 +26,19 @@ GitHub → Settings → Developer settings → Fine-grained token (faqat shu rep
 Contents: Read) → `https://<TOKEN>@github.com/bekzodqodirov/fullprompt.git`
 
 Skript o'zi: Docker o'rnatadi → parollarni generatsiya qilib `.env` yozadi →
-build → Postgres + MinIO + app + nightly backup ko'taradi → migratsiya + demo
-seed → manzilni chiqaradi.
+build → Postgres + MinIO + app + nightly backup ko'taradi → migratsiya va
+ma'lumotnoma (huquqlar, rollar, sozlamalar) → manzilni chiqaradi.
 
-Kirish: `+998900000001 / demo1234` (demo seed; darhol parol almashtiring).
+**Birinchi hisobni o'zingiz yaratasiz** — demo hisoblar ataylab yaratilmaydi
+(raund 83: ilgari ular productionga tushib qolar edi):
+
+```bash
+docker compose run --rm migrate pnpm create-admin +998901234567 "Ism Familiya"
+```
+
+Parol generatsiya qilinadi va **bir marta** ekranga chiqadi — yozib oling,
+kirgach Profil sahifasidan almashtiring. Qolgan xodimlarni Boshqaruv →
+Xodimlar sahifasidan qo'shasiz, skladlarni esa Boshqaruv → Skladlar dan.
 
 ## Telegram tinglovchisi (mijozlar bilan yozishmalar)
 
