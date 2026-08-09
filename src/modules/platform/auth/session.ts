@@ -11,11 +11,36 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * The caller's address, as far as it can be trusted.
+ *
+ * `X-Forwarded-For` is a LIST and every hop appends to it, so the leftmost
+ * entry is whatever the CLIENT chose to send — this used to read `[0]`, which
+ * means an attacker rotating one header got a fresh identity on every request.
+ * That is not a cosmetic bug: `isRateLimited` paired the identifier with this
+ * value, so the five-tries-per-fifteen-minutes fence on the login form could
+ * be walked around by anybody, and the address written into `sessions.ip` and
+ * into every audit row was equally the attacker's choice.
+ *
+ * The RIGHTMOST entry is the one appended by the hop closest to us — our own
+ * Caddy, on the internal docker network — so it is the only element in the
+ * list nobody outside can dictate. If a CDN is ever put in front of Caddy this
+ * has to become "the Nth from the right", counted by how many proxies we run.
+ * No header at all means the caller reached the app without the proxy, and the
+ * honest answer is «unknown» rather than a number nobody stands behind.
+ */
+export function trustedIpFrom(forwarded: string | null): string | null {
+  if (!forwarded) return null;
+  const hops = forwarded
+    .split(',')
+    .map((hop) => hop.trim())
+    .filter(Boolean);
+  return hops.length > 0 ? (hops[hops.length - 1] ?? null) : null;
+}
+
 export async function requestMeta(): Promise<{ ip: string | null; userAgent: string | null }> {
   const h = await headers();
-  const forwarded = h.get('x-forwarded-for');
-  const ip = forwarded ? (forwarded.split(',')[0]?.trim() ?? null) : null;
-  return { ip, userAgent: h.get('user-agent') };
+  return { ip: trustedIpFrom(h.get('x-forwarded-for')), userAgent: h.get('user-agent') };
 }
 
 export async function createSession(userId: string): Promise<void> {

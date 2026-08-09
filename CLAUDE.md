@@ -1937,6 +1937,53 @@ query was verified directly against `gsr_dev` instead. Answered in chat, not
 built: how Instagram ads reach the CRM (Meta Lead Ads webhook vs a public form
 vs the Telegram bot) — his choice awaited.
 
+Round 80 — **two live security holes, found by reviewing the ADS design**
+(#585-586). Not the ads feature; these were already there. (a) `requestMeta()`
+read the LEFTMOST `x-forwarded-for` hop — the one the CALLER writes, since every
+proxy appends — and `isRateLimited` counted the **(identifier, ip) PAIR**, so
+rotating one header gave every login attempt its own bucket and any staff
+password was brute-forceable without limit (~20 people on phone+password,
+30-day rolling sessions). The same forged value went into `sessions.ip` and
+every audit row. Now `trustedIpFrom` takes the RIGHTMOST entry (the one our own
+Caddy appended) and null when there is no header; the limiter counts the
+**ACCOUNT** (five/15 min, unescapable) with a twenty-per-address net as a second
+layer. Trade stated in the code: five failures lock ONE account for fifteen
+minutes whoever caused them — recoverable, unlike an unbounded guess.
+(b) `docker-compose.yml` published `3000:3000`, so the identical login form
+answered on `http://<vps>:3000` outside TLS and outside the proxy — which is
+what made (a) reachable from the open internet. Mapping removed; Caddy reaches
+`app:3000` internally. **Takes effect only when the app container is
+RECREATED**, so the plaintext door stays open until he deploys. Red-proofs ×2
+(restore the pair → the rotating-address test red; restore `[0]` → the header
+test red). New `tests/unit/trusted-ip.test.ts` (4) +
+`tests/integration/login-lockout.integration.test.ts` (3). No migration.
+TEST LESSON: the first fixture minted «victim» and «colleague» from
+`Date.now()` alone and got the SAME number twice, so the test asserted the
+opposite of its own sentence — a per-run counter beside the clock.
+CORRECTION recorded: my design claimed «there is NO shared rate limiter in this
+codebase» — `platform/auth/rate-limit.ts` has been one since spec 4.1. That is
+the **fifth** false «we lack X» in this programme; the rule stands and I broke
+it again: grep before claiming absence.
+
+**Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
+(abuse / regression / product-fit) produced a build plan that kills most of the
+v1: the join rule must match on PHONE only (the name branch lets a stranger
+write into a real customer's card), every public answer must be ONE constant
+string (created/joined/dropped differ = an enumeration oracle over the client
+book), both Meta handlers must **404 when unconfigured** (`undefined ===
+undefined` fails OPEN), the HMAC must read `await request.text()` (re-serialised
+JSON never matches) and never let `timingSafeEqual` throw on a short header,
+`createLead` needs a `system` branch (it throws without an actor and
+`leads.created_by` is NOT NULL), `addActivity` does NOT touch `updated_at` so a
+joined lead would not rise on the board, `followUps` has no `isNull(ownerId)`
+branch so an unowned inbound lead sits on nobody's /bugun, the rota belongs on
+a `roles.inbound_rota` column rather than `salesManagerOptions()` (which
+re-adds deactivated people), and `lead_sources` needs a stable `key` column
+because find-or-create by NAME splits `funnelReport` on the first rename.
+Owner's answers on record: Instagram IS a business account linked to the
+Facebook page; ads run by HIM and by an AGENCY; leads assigned round-robin to
+everyone.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 

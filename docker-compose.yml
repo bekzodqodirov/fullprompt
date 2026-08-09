@@ -4,8 +4,13 @@ services:
   app:
     build: .
     restart: unless-stopped
-    ports:
-      - '3000:3000'
+    # NO published port, deliberately. Caddy reaches the app as `app:3000` on
+    # the internal network; publishing 3000 to the host put the SAME login form
+    # on plain `http://<vps>:3000`, outside TLS and outside the proxy — so a
+    # staff password typed there travelled in the clear, and every request
+    # arrived with an `X-Forwarded-For` nobody had written but the caller.
+    # If a port has to be opened for debugging, bind it to loopback
+    # (`127.0.0.1:3000:3000`) and reach it through an SSH tunnel.
     env_file: .env
     environment:
       DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
