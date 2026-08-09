@@ -69,7 +69,7 @@ export function ActivityForm({
         ))}
       </div>
 
-      <div className="rounded-2xl border border-line bg-surface-raised p-1.5 transition-colors focus-within:border-brand-500">
+      <div className="rounded-2xl border border-line bg-surface-raised p-1.5 transition-colors focus-within:border-line-strong">
         <MentionTextarea
           bare
           name="note"

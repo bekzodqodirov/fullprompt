@@ -996,6 +996,10 @@ export interface DealRow {
   quotedCurrency: string | null;
   quotedVolumeM3: string | null;
   quotedWeightKg: string | null;
+  /** What the cargo is: the first goods line, or the typed title. */
+  goods: string | null;
+  /** How many more goods lines there are beyond the first. */
+  goodsExtra: number;
   deferred: boolean;
   createdAt: Date;
 }
@@ -1162,10 +1166,42 @@ export async function listDeals(
     .orderBy(desc(deals.createdAt))
     .limit(filters.limit ?? 300);
 
-  return rows.map(({ deferredAt, deferralEndedAt, ...row }) => ({
-    ...row,
-    deferred: Boolean(deferredAt) && !deferralEndedAt,
-  }));
+  // What the cargo IS, which the owner reads before anything else on a board
+  // card: «tovar nomi muhum». A deal says it twice — the title somebody typed
+  // when they raised it, and the goods lines the VED files during hisoblash —
+  // and neither is always there, so the card takes whichever exists and the
+  // lines win, being the priced truth. ONE grouped query for the whole board:
+  // a description per row would be a query per card (#432, #526).
+  const goods = new Map<string, { first: string; extra: number }>();
+  if (rows.length > 0) {
+    const lines = await db
+      .select({
+        dealId: dealLines.dealId,
+        first: sql<string>`(array_agg(${dealLines.description} ORDER BY ${dealLines.seq}))[1]`,
+        n: sql<number>`count(*)`,
+      })
+      .from(dealLines)
+      .where(
+        inArray(
+          dealLines.dealId,
+          rows.map((row) => row.id),
+        ),
+      )
+      .groupBy(dealLines.dealId);
+    for (const line of lines) {
+      goods.set(line.dealId, { first: line.first, extra: Number(line.n) - 1 });
+    }
+  }
+
+  return rows.map(({ deferredAt, deferralEndedAt, ...row }) => {
+    const own = goods.get(row.id);
+    return {
+      ...row,
+      goods: own?.first ?? row.title ?? null,
+      goodsExtra: own?.extra ?? 0,
+      deferred: Boolean(deferredAt) && !deferralEndedAt,
+    };
+  });
 }
 
 /**
@@ -1249,8 +1285,19 @@ export async function dealById(id: string) {
 }
 
 /** Confirmed receipts of this client that belong to no deal yet. */
+/**
+ * The client's confirmed prixods that belong to no deal yet.
+ *
+ * Each row carries WHAT IS IN IT, not when it landed. A picker reading
+ * «YW-in-001 · 2026-08-04» asks somebody to remember which day which cargo
+ * arrived; the owner: «bizga date kerak emas, shuni tovar nomi va kg kubini
+ * ko'rsatadigan qilsa bo'ladimi». The goods name is the receipt's own lots,
+ * joined in ONE grouped query rather than one per row (#432) — and it is the
+ * Russian name when there is one, because the pickers here are read by the
+ * Uzbek office and `product_name_zh` is the supplier's own label.
+ */
 export async function unlinkedReceipts(clientId: string) {
-  return db
+  const rows = await db
     .select({ id: receipts.id, number: receipts.number, receivedAt: receipts.receivedAt })
     .from(receipts)
     .where(
@@ -1263,6 +1310,34 @@ export async function unlinkedReceipts(clientId: string) {
     )
     .orderBy(desc(receipts.receivedAt))
     .limit(50);
+  if (rows.length === 0) return [];
+
+  const contents = await db
+    .select({
+      receiptId: receiptLots.receiptId,
+      goods: sql<string>`string_agg(DISTINCT coalesce(nullif(${receiptLots.productNameRu}, ''), ${receiptLots.productNameZh}), ', ')`,
+      volumeM3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
+      weightKg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
+    })
+    .from(receiptLots)
+    .where(
+      inArray(
+        receiptLots.receiptId,
+        rows.map((row) => row.id),
+      ),
+    )
+    .groupBy(receiptLots.receiptId);
+  const byReceipt = new Map(contents.map((row) => [row.receiptId, row]));
+
+  return rows.map((row) => {
+    const own = byReceipt.get(row.id);
+    return {
+      ...row,
+      goods: own?.goods ?? '',
+      volumeM3: own ? Number(own.volumeM3) : 0,
+      weightKg: own ? Number(own.weightKg) : 0,
+    };
+  });
 }
 
 /** Open deals of a client, for the receiving screen's picker. */

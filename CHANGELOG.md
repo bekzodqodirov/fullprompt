@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## Bitim kartasi, avtomatik chegirma va takroriy lid — 2026-08-09
+
+**1. Bitim kartasi qaytadan tuzildi.** Endi eng katta yozuv — **mijoz kodi**
+(GS…), yonida kichkina bizning bitim raqamimiz. Tagida **tovar nomi**, keyin
+**summa · kub · kg**, eng pastda esa mijoz ismi va sotuvchi kichik kulrang
+qatorda. Tovar nomi — hisoblatishda yozilgan tovar ro'yxatining birinchisi
+(bittadan ko'p bo'lsa «+2» deb turadi); hali hisoblatilmagan bo'lsa,
+bitimga yozilgan nom chiqadi.
+
+**2. Sistema endi o'zi chegirma bermaydi.** Yuk kub/kg bo'yicha kelishilgandan
+farq qilsa, hisob-faktura oynasi **qayta hisoblangan** summa bilan
+to'ldirilardi — yuk kichik chiqsa, mijozga kelishilgan narxdan **arzonroq**
+yozilib ketardi. Endi u yerda **doim kelishilgan narx** turadi. Farq haqidagi
+ogohlantirish (necha foiz, kub bo'yichami yoki kg bo'yicha) o'z joyida qoladi
+— narxni faqat odam o'zgartiradi.
+
+**3. Lentada yozayotganda qizil ramka chiqmaydi.** Kursorni qo'yganda ramka
+qizarib ketardi (bu bizning brend rangi), xato kabi ko'rinardi. Endi oddiy
+kulrang, biroz quyuqroq.
+
+**4. Prixodni bitimga biriktirish ro'yxatida sana o'rniga tovar.** Avval
+«YW-in-001 · 2026-08-04» edi; endi **«YW-in-001 · tovar nomi · 0.12 m³ ·
+20.0 kg»**. Qaysi kun kelganini eslash shart emas.
+
+**5. Takroriy lid ogohlantiriladi.** Yangi lid kiritayotganda o'sha telefon
+raqami bilan **ochiq** lid allaqachon bo'lsa, sistema uni ko'rsatadi: kimning
+lidi ekani, ismi va telefoni bilan, ustiga bosib ochsa ham bo'ladi. Taqiqlamaydi
+— **yana bir marta bossangiz baribir yaratiladi**. Yo'qotilgan lid qayta
+murojaat qilsa — bu yangi murojaat, ogohlantirmaydi. Telefon yozilmagan bo'lsa,
+ism bo'yicha aynan bir xil bo'lsagina ogohlantiradi.
+
+Bazaga o'zgarish yo'q (migratsiya kerak emas).
+
 ## Kanban kartalari qaytadan chizildi — 2026-08-08 (kech)
 
 Varonka va Bitimlar doskasidagi kartalar bo'yicha: «malumotlar tartibli,

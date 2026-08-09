@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
 import { Overlay } from '@/components/ui/overlay';
-import { quickCreateLeadAction } from '@/app/(protected)/crm/actions';
+import { quickCreateLeadAction, type QuickCreateResult } from '@/app/(protected)/crm/actions';
 import { quickCreateClientAction } from '@/app/(protected)/admin/clients/actions';
 
 /**
@@ -50,6 +50,13 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Open leads that look like the one being typed. Held in state rather than
+  // shown and forgotten, because the SECOND press has to mean «yes, anyway» —
+  // and clearing them on any edit is what stops that second press applying to
+  // a name the person has since changed.
+  const [dupes, setDupes] = useState<
+    { id: string; name: string; phone: string | null; ownerName: string | null }[]
+  >([]);
   const [made, setMade] = useState<{ id: string; name: string; kind: QuickKind } | null>(null);
 
   if (kinds.length === 0) return null;
@@ -60,6 +67,7 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
     setName('');
     setPhone('');
     setError(null);
+    setDupes([]);
     setBusy(false);
     setKind(kinds.length === 1 ? kinds[0]! : null);
   }
@@ -81,11 +89,12 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
     setError(null);
     const result =
       kind === 'lead'
-        ? await quickCreateLeadAction({ name, phone })
+        ? await quickCreateLeadAction({ name, phone, anyway: dupes.length > 0 })
         : await quickCreateClientAction({ name, phones: phone });
     setBusy(false);
     if (!result.ok) {
       setError(result.error ?? 'failed');
+      setDupes(kind === 'lead' ? ((result as QuickCreateResult).duplicates ?? []) : []);
       return;
     }
     // Stay put. The person is on a call looking at a board; jumping them to
@@ -144,7 +153,10 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
               data-testid="quick-name"
               aria-label={t('name')}
               placeholder={t('name')}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+                setDupes([]);
+              }}
             />
             <input
               className="input"
@@ -152,14 +164,39 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
               data-testid="quick-phone"
               aria-label={t('phone')}
               placeholder={t('phone')}
-              onChange={(event) => setPhone(event.target.value)}
+              onChange={(event) => {
+                setPhone(event.target.value);
+                setDupes([]);
+              }}
             />
             <p className="text-xs text-ink-500">{t(`hint.${kind}` as 'hint.lead')}</p>
 
             {error && (
-              <p className="text-sm text-bad" data-testid="quick-error">
+              <p
+                className={`text-sm ${dupes.length > 0 ? 'text-warn' : 'text-bad'}`}
+                data-testid="quick-error"
+              >
                 {t(`error.${error}` as 'error.failed')}
               </p>
+            )}
+
+            {/* Named, and linked. «There is already one» is a shrug; «Aziz
+                Karimov, +998…, Dilnoza's» is what stops the second call. The
+                same press again creates it anyway — the warning is there to be
+                read, not to be argued with. */}
+            {dupes.length > 0 && (
+              <ul className="space-y-1 rounded-xl border border-warn/30 bg-warn/10 p-2" data-testid="quick-dupes">
+                {dupes.map((dupe) => (
+                  <li key={dupe.id} className="text-xs">
+                    <a href={`/crm/leads/${dupe.id}`} className="font-semibold text-brand-700 underline">
+                      {dupe.name}
+                    </a>
+                    <span className="text-ink-500">
+                      {[dupe.phone, dupe.ownerName].filter(Boolean).map((part) => ` · ${part}`)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
 
             <div className="flex items-center gap-2">
