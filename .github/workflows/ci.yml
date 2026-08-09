@@ -42,6 +42,11 @@ jobs:
       # (seed is idempotent).
       - run: pnpm db:migrate
       - run: pnpm db:seed
+      # Demo warehouses, staff and the canonical receipt — a SEPARATE script
+      # since round 83, because `db:seed` runs on every production deploy and
+      # a flag inside it was one wrong condition away from putting demo data
+      # into the live company. The browser suite signs in as these accounts.
+      - run: pnpm db:seed:demo
       - run: pnpm test
       - run: pnpm build
       - name: Install Playwright chromium

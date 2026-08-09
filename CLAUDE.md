@@ -2055,6 +2055,9 @@ and NOT built: pulling a chat's PAST messages when «Yangi lid» is pressed —
 attaching is forward-only, exactly as «Bu mijoz» has always been.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
+
+**Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that
+shaped it, kept because every item on it became a rule.** Three lenses
 (abuse / regression / product-fit) produced a build plan that kills most of the
 v1: the join rule must match on PHONE only (the name branch lets a stranger
 write into a real customer's card), every public answer must be ONE constant
@@ -2073,16 +2076,135 @@ Owner's answers on record: Instagram IS a business account linked to the
 Facebook page; ads run by HIM and by an AGENCY; leads assigned round-robin to
 everyone.
 
-**FOUND, NOT FIXED — the event drain has no lock (#594).** `processPendingEvents`
-polls `processed_at IS NULL` with no `FOR UPDATE SKIP LOCKED`, so two
-overlapping drains can claim the same event: in the suite that is two
-integration files on one database, in production it is the per-minute sweep
-racing the kick every CRM action fires. Consequence: a phase-7 rule fires
-twice — a duplicate task or Telegram message from one stage move. Reproduce:
-`npx vitest run tests/integration/automation.integration.test.ts
-tests/integration/deal-auto-stage.integration.test.ts` — red on pristine `main`
-too, green when either file runs alone. Wants its own round: the claim needs
-the lock AND a test that two concurrent drains SPLIT the work.
+Round 83 — **the event-drain lock and reklamadan lead** (#599-604, owner:
+«keyingi raundni boshla, 1 va 2 ni ham qil»).
+
+**(1) The drain has a lock.** #594's fix, made: `claimNextEvent()` stamps
+`processed_at` inside a `SELECT … FOR UPDATE SKIP LOCKED`, so two overlapping
+drains split the work instead of both acting — the per-minute sweep against
+the kick every CRM action fires. Red-proof: **1584 recipient rows vs 792
+distinct** without it, equal with it. TWO false red proofs first: `InternalNote`
+has no recipients so nothing was countable (#494's lesson, third time), and
+comparing each event to the FIRST event's count is satisfied by uniform
+doubling — the assertion that works is `count(*)` vs `count(DISTINCT …)`.
+Trade stated: claim-before-work loses an event if the process dies mid-batch;
+marking-after duplicated it every race, and the race is the common case.
+
+**(2) Reklamadan lead — THREE doors, one landing.** Migration **0066**:
+`lead_intakes` (channel/external_id/source_key/ref/phone/name/outcome/reason +
+UNIQUE (channel, external_id) — Meta re-delivers until it gets a 200),
+`lead_sources.key`, `roles.inbound_rota`, `leads.inbound_at`, and
+`leads.created_by` + `crm_activities.created_by` DROP NOT NULL (an advert has
+no author). `wms/crm/inbound.ts` `landInboundLead` is the ONE landing:
+client-book first → the one open lead on that phone within 30 days (joined,
+owner untouched) → a new lead; lost leads never joined onto; **phone only,
+never name** (`similarLeads`' name branch is right for a person deciding and
+catastrophic for a machine). Caps 3/phone/day + 200/source/day, counted over
+the ARRIVALS ledger including the dropped ones. **One constant answer** for
+every outcome — created/joined/client/capped read identically to the sender —
+while INPUT complaints stay specific.
+- **Door B `/ariza`** (public group, no session, uz+ru side by side like
+  `/driver`): works the minute it deploys, `?manba=` validated against
+  `INBOUND_SOURCE_KEYS`, utm kept in `ref`.
+- **Door A `/api/leads/meta`**: `metaConfig()` null unless ALL THREE secrets →
+  route **404s** (`undefined === undefined` fails open); HMAC over
+  `await request.text()` (re-serialised JSON never matches); `timingSafeEqual`
+  length-checked first (it THROWS, and a 500 is «send it again» to Meta);
+  webhook only ENQUEUES (`JOB_META_LEAD`), the worker reads Graph and gives up
+  on a permanent error instead of retrying for ever. Source recorded as `meta`,
+  not guessed — the payload does not name the surface (`ad_id` kept in `ref`).
+- **Door C bot** `?start=ad_<key>`: `telegram/ad-intake.ts` (30-min in-memory
+  visit) → the cabinet's own contact handler lands a stranger and clears the
+  visit; an existing client still gets the cabinet.
+- **Rota**: `roles.inbound_rota` checkbox on /admin/roles (NO own-role guard —
+  unlike `warehouseScoped` it only ever gives its holder more work); fewest
+  inbound leads wins, `NULLS FIRST`. **Ships OFF**, so day one every advert
+  lead is unowned — hence `followUps` gained `isNull(ownerId)` (round 74's
+  «mine OR unclaimed», now on the call list; the CLIENT half deliberately did
+  not widen). Every inbound lead is booked for TODAY.
+- **`/crm/kelganlar`** (gate `crm.manage`) = the arrivals ledger, in the ⋯ menu
+  and the SubNav. Built as a 6-column table and REBUILT as a list: at 360 px
+  the phone showed three columns and «what became of it» was off the right
+  edge.
+- **The timing filter was built and TAKEN OUT** (#599): at 3 s the e2e's own
+  submission was eaten and answered «qabul qilindi» with nothing written. A
+  junk lead is visible and one tap from lost; a paid enquiry dropped in silence
+  is invisible for ever, and a real robot adds a delay in one line.
+- **THE DEFECT the browser found** (#600): `clientFeed`'s note branch
+  INNER-joined the author, and 0066 made that column nullable — so the advert's
+  message vanished from the lenta while ten integration tests, all asking the
+  DATABASE, stayed green. **Making a column nullable is a change to every
+  reader that joins on it.** Swept: nothing else needs it.
+- Two existing tests changed with reasons recorded: `role-home`'s «a stranger
+  sees zero» is false by design now (baseline + owned-lead-does-not-move +
+  unclaimed-lead-does), and `deal-auto-stage`'s cleanup was leaving **three
+  generations of trigger stages** behind when its events delete lost an FK race
+  — now one transaction inside a try, because **nothing that can race may stand
+  in front of the CONFIGURATION cleanup** (#183).
+Setup guide for the owner: **`docs/ADS.md`**. 1173 unit/integration green;
+139/143 e2e (the four known photo-path specs; m9z-nav-progress is the
+pre-existing local failure recorded in round 78).
+
+Round 84 — the owner's five answers, taken in his order (#605-608).
+
+**Demo data left the production seed entirely** (his report: «productionga
+chiqazganimda seed bilan birga ko'chirib qo'yyabti warehouse users va boshqa
+hamma demo datalarni»). It sat in `seed.ts` behind `if (seedDemo)`, and
+`seed.ts` is what the compose `migrate` service runs on EVERY deploy; the flag
+read «the users table is empty», which is true of a real installation exactly
+once — the day it is created, which is the day he deployed. Warehouses, the
+eleven published-password accounts, the example clients, the §6.9 FX example
+and the canonical GS777 receipt are now `scripts/seed-demo.ts`, run only by CI
+and the local suite (`pnpm db:seed:demo`); `seed.ts` no longer CONTAINS the
+code, so there is no condition left to get wrong. `seed-demo.ts` keeps its own
+guard (refuses a database holding any account that is not one of its own;
+`SEED_DEMO=1` overrides). The tripwire went from «is the flag wired up» to
+reading `seed.ts` as TEXT and refusing the demo password, the demo phones, the
+demo warehouse names and the flag itself — red-proven by putting one demo
+warehouse back. Verified on a throwaway db: `db:seed` alone leaves 0 users /
+0 warehouses / 0 clients / 0 receipts with every reference table filled.
+**Consequence caught and fixed in the same round:** that took the only way IN
+with it — a fresh install had every role and nobody to sign in as, while
+`ops/bootstrap.sh` still printed the demo login. `pnpm create-admin +998… "Ism"`
+mints one super_admin and prints a GENERATED password once (an argument lands
+in the shell history; a default is a published password in a hat), and refuses
+once any account exists.
+
+**The hisoblash CLOCK closed; the bot's 🧮 stayed and got its missing half.**
+He first said «hisoblatish degan hamma narsani yop» and then narrowed it: the
+bot intake stays, the lead must belong to whoever sent it, and the card must
+land on the hisoblatish stage. The clock had had no door since round 46 —
+nothing could open a request, so the 5-minute sweep ran over rows nobody could
+create and the VED home counted a permanent zero. `calc/service.ts`,
+`actions.ts`, `jobs.ts`, both clock-stop hooks, the mute entry and
+`calc.integration.test.ts` are deleted; the `calc_requests` TABLE stays (real
+rows from before round 46, and a table is never dropped in the release that
+stops writing it). VED's hero is now the paperwork queue; `/bugun` left
+`flow.hrefs` with its row or the day screen would have vanished from that home.
+Of his two asks one was ALREADY true — `landIntake` has always created the lead
+under the sender. The stage was not: `crm_calc_stage` / `deal_calc_stage` are
+settings with a picker on both funnel-settings screens (not a name the code
+hunts for — the funnel is his to rename, `lead_sources`' lesson), empty is the
+default and means «do not move», and the move is FORWARD only by sort order
+(#392's rule) through `moveLead`/`moveDeal` so audit, stage event and automation
+rules all fire. Red-proofs ×2. The settings tripwire caught the two new keys
+needing a description in all four bundles.
+
+**One-off scripts go through `migrate`, never `app`** — his
+`docker compose run --rm app pnpm demo-users --disable` failed with
+`Cannot find module '/app/pnpm'`, because the runner image is the stripped
+standalone build with no pnpm, no tsx and no source, so node's entrypoint took
+«pnpm» for a filename. DEPLOY.md now says so with the working lines.
+
+**MIGRATION NUMBER COLLISION, the first one** (#605): the other session's
+Telegram round and this one both minted **0065**, with the same journal `when`.
+Theirs was merged first, so mine renumbered to **0066** — and the local ledger
+had to be repaired by hand (drizzle applies anything whose `when` exceeds the
+last applied `created_at`, so a rename alone would have re-run mine and skipped
+theirs). Rolled my DDL back locally, re-ran both in journal order, 68 rows.
+RULE: **before minting a migration, `git fetch origin main` and read the tail of
+`_journal.json`** — the DECISIONS numbers have collided four times and now the
+migrations have too.
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
@@ -2114,7 +2236,7 @@ round 17.
 **Enlarge the VPS to 4 vCPU / 8 GB / 400 GB** and move the data
 (`docs/DEPLOY.md` → «Yangi VPS'ga ko'chirish»; round 74 measured the ceiling
 and the old «2 GB tavsiya» was wrong) · **deploy from `main`** — migrations
-**0058-0065** land together, count must reach **66** (check
+**0058-0066** land together, count must reach **67** (check
 `drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
 Back up first · **release both APKs** (driver v1.3 AND the first
 GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its
@@ -2126,7 +2248,10 @@ app BEFORE minting the token or it dies after 7 days) · create logins for the
 17 sellers then re-run `pnpm import-clients --apply --update` · 3 rejected rows ·
 ~19 nameless clients · 2 truncated phones (GS161, GS252) · opening balances ·
 confirm person groupings · `pnpm demo-users --disable` ·
-say which printer model he has.
+say which printer model he has ·
+**switch on the inbound rota** (Boshqaruv → Rollar → «Kelgan arizalar
+navbati») and, if he wants Instagram Lead Ads, do the 15-minute Meta setup in
+`docs/ADS.md` (three `.env` keys, then the webhook).
 
 Deferred access work, blocked on the chores above: scoping clients to their
 sales manager (needs the 17 logins first, or it hides nearly every client from

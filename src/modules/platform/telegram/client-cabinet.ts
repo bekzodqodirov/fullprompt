@@ -25,6 +25,7 @@ import {
   type ClientLabels,
 } from './client-labels';
 import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
+import { adVisitFor, clearAdVisit } from './ad-intake';
 
 /**
  * Client cabinet inside the staff bot (Phase 2.2, owner's spec 3.1/3.2):
@@ -332,11 +333,41 @@ export function registerClientCabinet(bot: Bot): void {
         () => [] as { clientCode: string; name: string }[],
       );
       if (all.length === 0) {
+        // Nobody we know — and if an ADVERT brought this chat here, that is
+        // not a dead end, it is the enquiry. Same landing as the public form
+        // and the Meta webhook, so the caps, the client-book check and the
+        // rotation are the ones already proven. The answer is the advert
+        // door's constant thank-you: what became of it is our business.
+        const adSource = adVisitFor(ctx.chat.id);
+        if (adSource) {
+          clearAdVisit(ctx.chat.id);
+          const { landInboundLead } = await import('../../wms/crm/inbound');
+          await landInboundLead({
+            channel: 'telegram',
+            sourceKey: adSource,
+            name: [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || null,
+            phone: contact.phone_number,
+            note: ctx.from?.username ? `@${ctx.from.username}` : null,
+          }).catch((err) => {
+            // A person standing in a chat must not be shown a failure they
+            // can do nothing about, and must not be invited to press again —
+            // the second press is the one that duplicates.
+            logger.error({ err }, '[ad-intake] landing failed');
+            return null;
+          });
+          await ctx.reply(clientLabels(tgLocale).adThanks, {
+            reply_markup: { remove_keyboard: true },
+          });
+          return;
+        }
         await ctx.reply(clientLabels(tgLocale).phoneNotFound, {
           reply_markup: { remove_keyboard: true },
         });
         return;
       }
+      // Already a customer, and an advert brought them back: the cabinet
+      // below is the right answer, so the visit is simply forgotten.
+      clearAdVisit(ctx.chat.id);
       const allIds = (await clientsForChat(BigInt(ctx.chat.id))).map((c) => c.id);
       const seeded = localeFromTelegram(tgLocale);
       if (seeded) {

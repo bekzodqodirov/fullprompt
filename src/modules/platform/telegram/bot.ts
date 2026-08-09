@@ -11,6 +11,7 @@ import {
   registerClientCabinet,
 } from './client-cabinet';
 import { clientLabels } from './client-labels';
+import { adSourceFromPayload, rememberAdVisit } from './ad-intake';
 import { cabinetInlineKeyboard } from './menu-button';
 import { staffForChat } from './staff-bot';
 import { entryKeyboard, registerStaffBot, staffKeyboard } from './staff-handlers';
@@ -54,6 +55,21 @@ export function startTelegramBot(): void {
 
   bot.command('start', async (ctx) => {
     const code = ctx.match?.trim();
+
+    // An ADVERT brought them here (`?start=ad_instagram`). Not a link code and
+    // not a menu: somebody who tapped an advert wants a price, so the only
+    // question is their number, and the two-door «hodim yoki mijoz» choice
+    // would be the wrong first thing to ask. A person who is ALREADY a client
+    // falls through to the cabinet from the same contact — the advert visit is
+    // remembered, not acted on.
+    const adSource = adSourceFromPayload(code);
+    if (adSource) {
+      const tg = ctx.from?.language_code;
+      rememberAdVisit(ctx.chat.id, adSource);
+      await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
+      return;
+    }
+
     if (!code) {
       // A linked member of STAFF gets the staff menu (round 35).
       const staff = await staffForChat(BigInt(ctx.chat.id));

@@ -8,7 +8,6 @@ import { entitySpec } from '../fields/registry';
 import { recordNames, resolveEntity } from '../entities/service';
 import { taskLink } from '../notifications/links';
 import { notifyStaffTelegram, userName } from '../notifications/staff';
-import { logger } from '../logger';
 
 /**
  * Work one person gives another (owner: "tasklar calendarlar").
@@ -338,17 +337,6 @@ export async function completeTask(
     before: { status: before.status },
     after: { status: 'done', result: result.trim() || null },
   });
-
-  // Round 28: if this task carries a hisoblash clock, closing it stops the
-  // clock. Reached by dynamic import — platform never imports wms statically
-  // (the startBoss crossing) — and fenced so a report row can never refuse a
-  // task being finished.
-  try {
-    const { completeCalcForTask } = await import('../../wms/calc/service');
-    await completeCalcForTask(id, ctx.actorId);
-  } catch (err) {
-    logger.error({ err, taskId: id }, 'calc clock stop on task close failed');
-  }
 
   // The person who ASKED finds out it is done — with what was done, because
   // "bajarildi" with no result is a message that starts a phone call.

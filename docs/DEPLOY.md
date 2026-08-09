@@ -26,10 +26,19 @@ GitHub → Settings → Developer settings → Fine-grained token (faqat shu rep
 Contents: Read) → `https://<TOKEN>@github.com/bekzodqodirov/fullprompt.git`
 
 Skript o'zi: Docker o'rnatadi → parollarni generatsiya qilib `.env` yozadi →
-build → Postgres + MinIO + app + nightly backup ko'taradi → migratsiya + demo
-seed → manzilni chiqaradi.
+build → Postgres + MinIO + app + nightly backup ko'taradi → migratsiya va
+ma'lumotnoma (huquqlar, rollar, sozlamalar) → manzilni chiqaradi.
 
-Kirish: `+998900000001 / demo1234` (demo seed; darhol parol almashtiring).
+**Birinchi hisobni o'zingiz yaratasiz** — demo hisoblar ataylab yaratilmaydi
+(raund 83: ilgari ular productionga tushib qolar edi):
+
+```bash
+docker compose run --rm migrate pnpm create-admin +998901234567 "Ism Familiya"
+```
+
+Parol generatsiya qilinadi va **bir marta** ekranga chiqadi — yozib oling,
+kirgach Profil sahifasidan almashtiring. Qolgan xodimlarni Boshqaruv →
+Xodimlar sahifasidan qo'shasiz, skladlarni esa Boshqaruv → Skladlar dan.
 
 ## Telegram tinglovchisi (mijozlar bilan yozishmalar)
 
@@ -77,6 +86,31 @@ Yuqoridagi `restart` yetadi. 2026-08-03 dan boshlab tinglovchi bu holatni
     -c "SELECT count(*) FROM drizzle.__drizzle_migrations;"
   # migratsiyani qo'lda o'tkazish (seed idempotent — zarar qilmaydi)
   docker compose run --rm migrate
+  ```
+- **Demo ma'lumotlar serverga TUSHMAYDI** (raund 83). `pnpm db:seed` — bu
+  `migrate` servisi har deployda ishga tushiradigan skript — endi faqat
+  ma'lumotnoma yozadi: huquqlar, rollar, sozlamalar, valyutalar, xarajat
+  turlari, voronka bosqichlari. Demo skladlar, demo xodimlar (`demo1234`
+  paroli bilan), demo mijozlar va namuna prixod **boshqa faylda**
+  (`pnpm db:seed:demo`) va uni faqat test bazalari ishlatadi. Ilgari ular shu
+  faylda, bitta shart ortida turardi — va o'sha shart yangi bazada bir marta
+  to'g'ri bo'lgani uchun ular productionga tushib qolgan edi.
+  Serverdagi eskilarini o'chirish: `docker compose run --rm migrate pnpm
+  demo-users --disable`.
+- **Bir martalik buyruqlar — `migrate` orqali, `app` orqali EMAS.** `app`
+  obrazi ataylab yalang'och: unda `pnpm` ham, `tsx` ham, kodning o'zi ham yo'q
+  (faqat yig'ilgan `server.js`). Shuning uchun `docker compose run --rm app
+  pnpm ...` xato beradi — `node` obrazining kirish nuqtasi `pnpm` ni topolmay,
+  uni **fayl nomi** deb node'ga uzatadi:
+  `Error: Cannot find module '/app/pnpm'`. To'liq obraz — `migrate` servisi:
+
+  ```bash
+  # demo hisoblarni o'chirish (avval hisobot, keyin --disable bilan o'chirish)
+  docker compose run --rm migrate pnpm demo-users
+  docker compose run --rm migrate pnpm demo-users --disable
+
+  # boshqa har qanday skript ham shu yo'l bilan
+  docker compose run --rm migrate pnpm tg-doctor
   ```
 - **Backup**: har kuni avtomatik (`backups` volume), haftalik restore-sinov
   app ichidagi job orqali; qo'lda tekshirish — `docker compose exec app node

@@ -52,12 +52,12 @@ export async function startBoss(): Promise<PgBoss> {
     await registerTaskWorkers(boss);
     const { registerDealWorkers } = await import('../../wms/deals/jobs');
     await registerDealWorkers(boss);
-    const { registerCalcWorker } = await import('../../wms/calc/jobs');
-    await registerCalcWorker(boss);
     const { registerUnansweredWorker } = await import('../../wms/crm/unanswered-jobs');
     await registerUnansweredWorker(boss);
     const { registerSilentTrucksWorker } = await import('../../wms/tracking/silent-jobs');
     await registerSilentTrucksWorker(boss);
+    const { registerMetaLeadWorker } = await import('../../wms/crm/meta-jobs');
+    await registerMetaLeadWorker(boss);
     /**
      * LAST, not first.
      *

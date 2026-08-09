@@ -220,16 +220,31 @@ afterAll(async () => {
     clientId,
     otherClientId,
   ].filter(Boolean);
+  // In ONE transaction, and inside a try. Since the drain took a lock
+  // (`claimNextEvent`), an event this file emitted and did not drain can be
+  // claimed by ANOTHER file's sweep at any moment — including between the
+  // notifications delete and the events delete, which puts a fresh FK row
+  // under a row about to go. The transaction closes most of that window; the
+  // try closes the rest, and it is the try that matters: the CONFIGURATION
+  // cleanup below is what poisons the next run if it never happens, so
+  // nothing that can race is allowed to stand in front of it. Three
+  // generations of `AS-` stages survived in the dev database before this,
+  // and each one silently answered the next run's assertions.
   if (entityIds.length > 0) {
-    const eventRows = await db
-      .select({ id: events.id })
-      .from(events)
-      .where(inArray(events.entityId, entityIds));
-    if (eventRows.length > 0) {
-      await db.delete(notifications).where(
-        inArray(notifications.eventId, eventRows.map((row) => row.id)),
-      );
-      await db.delete(events).where(inArray(events.id, eventRows.map((row) => row.id)));
+    try {
+      await db.transaction(async (tx) => {
+        const eventRows = await tx
+          .select({ id: events.id })
+          .from(events)
+          .where(inArray(events.entityId, entityIds));
+        if (eventRows.length === 0) return;
+        const ids = eventRows.map((row) => row.id);
+        await tx.delete(notifications).where(inArray(notifications.eventId, ids));
+        await tx.delete(events).where(inArray(events.id, ids));
+      });
+    } catch {
+      // Left behind, and harmless: they are already processed or will be, and
+      // an event is not configuration — it changes nothing on any screen.
     }
   }
   for (const id of madeReceipts) {
@@ -239,9 +254,17 @@ afterAll(async () => {
       .where(eq(receiptLots.receiptId, id));
     const lotIds = lots.map((lot) => lot.id);
     if (lotIds.length > 0) {
-      const rows = await db.select({ id: boxes.id }).from(boxes).where(inArray(boxes.lotId, lotIds));
+      const rows = await db
+        .select({ id: boxes.id })
+        .from(boxes)
+        .where(inArray(boxes.lotId, lotIds));
       if (rows.length > 0) {
-        await db.delete(boxMovements).where(inArray(boxMovements.boxId, rows.map((b) => b.id)));
+        await db.delete(boxMovements).where(
+          inArray(
+            boxMovements.boxId,
+            rows.map((b) => b.id),
+          ),
+        );
         await db.delete(boxes).where(inArray(boxes.lotId, lotIds));
       }
       await db.delete(attachments).where(inArray(attachments.entityId, lotIds));
@@ -345,7 +368,13 @@ describe('cargo walks a deal through the funnel', () => {
   it('ready-for-pickup is per CLIENT of the batch, not per truck', async () => {
     await emitEvent(db, {
       type: 'ReadyForPickup',
-      payload: { clientId, warehouseId, warehouseCode: 'AS', batchCode: `AS-${STAMP}`, boxCount: 1 },
+      payload: {
+        clientId,
+        warehouseId,
+        warehouseCode: 'AS',
+        batchCode: `AS-${STAMP}`,
+        boxCount: 1,
+      },
       entityType: 'batch',
       entityId: fakeBatchId,
       actorId,
@@ -452,7 +481,10 @@ describe('the editor reorders and removes (round 30)', () => {
       after.findIndex((s) => s.id === a.id),
     );
     // Moved numbers moved BACK (#154): the funnel's order is CONFIGURATION.
-    await reorderDealStages(before.map((stage) => stage.id), ctx());
+    await reorderDealStages(
+      before.map((stage) => stage.id),
+      ctx(),
+    );
 
     // Delete refuses nonsense, then moves the stage's deals before removing.
     const dealId = await createDeal({ clientId, title: `AS-del ${STAMP}` }, ctx());
@@ -475,7 +507,11 @@ describe('the editor reorders and removes (round 30)', () => {
 describe('the warehouse announces the unload', () => {
   it('finishUnload emits BatchUnloaded — the trigger that was declared but never fired', async () => {
     const dest = (
-      await db.select({ id: warehouses.id }).from(warehouses).where(ne(warehouses.id, warehouseId)).limit(1)
+      await db
+        .select({ id: warehouses.id })
+        .from(warehouses)
+        .where(ne(warehouses.id, warehouseId))
+        .limit(1)
     )[0]!.id;
     const [batch] = await db
       .insert(batches)

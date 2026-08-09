@@ -1,9 +1,17 @@
 import 'dotenv/config';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { clients, crmActivities, deals, leads, users } from '@/modules/platform/db/schema';
+import {
+  clients,
+  crmActivities,
+  deals,
+  leadStages,
+  leads,
+  users,
+} from '@/modules/platform/db/schema';
+import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import {
   intakeNoteText,
   intakeSummaryText,
@@ -27,12 +35,17 @@ import { landIntake, resolveIntakeClient } from '@/modules/wms/calc/intake-land'
 
 const STAMP = String(Date.now()).slice(-6);
 let actorId: string;
+const madeLeads: string[] = [];
 
 beforeAll(async () => {
   actorId = (await db.select().from(users).limit(1))[0]!.id;
 });
 
 afterAll(async () => {
+  if (madeLeads.length) {
+    await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
+    await db.delete(leads).where(inArray(leads.id, madeLeads));
+  }
   await pgClient.end();
 });
 
@@ -227,6 +240,81 @@ describe('where a confirmed intake lands', () => {
       .from(crmActivities)
       .where(and(eq(crmActivities.entityType, 'lead'), eq(crmActivities.entityId, target.id)));
     expect(notes).toHaveLength(2);
+  });
+
+  it('moves the card to the hisoblatish stage — forward only', async () => {
+    // The owner, round 83: «lead qilsa bo'ladimi va hisoblatish etapiga
+    // tushishi kerak». The stage is a SETTING because the funnel is his to
+    // rename and reorder, so the test configures it the way the screen does.
+    const stages = await db.select().from(leadStages).orderBy(asc(leadStages.sortOrder));
+    const open = stages.filter((row) => row.kind === 'open' && row.active);
+    const first = open[0]!;
+    const calc = open[2] ?? open[1]!;
+    const before = await getSetting('crm_calc_stage');
+    await setSetting('crm_calc_stage', calc.id, actorId);
+    try {
+      const phone = `+99897${STAMP}3`;
+      const landed = await landIntake({
+        noteId: uuidv4(),
+        section: 'rastamojka',
+        facts: { weightKg: 90, volumeM3: 1, goods: [{ name: 'Chiroq' }] },
+        steps: [],
+        fileCount: 0,
+        collectedBy: actorId,
+        collectedByName: 'Bot xodim',
+        client: null,
+        leadName: `Etap sinov ${STAMP}`,
+        leadPhone: phone,
+      });
+      madeLeads.push(landed.id);
+      const [row] = await db.select().from(leads).where(eq(leads.id, landed.id));
+      expect(row!.stageId, 'a new request lands on the hisoblatish stage').toBe(calc.id);
+      // …and it belongs to whoever sent it, which is the other half of his ask.
+      expect(row!.ownerId).toBe(actorId);
+
+      // A card already PAST that stage is a person's work in progress — a
+      // second request must not drag it backwards (#392's rule).
+      const ahead = open.at(-1)!;
+      if (ahead.id !== calc.id) {
+        await db.update(leads).set({ stageId: ahead.id }).where(eq(leads.id, landed.id));
+        await landIntake({
+          noteId: uuidv4(),
+          section: 'rastamojka',
+          facts: { weightKg: 10, volumeM3: 1, goods: [{ name: 'Yana' }] },
+          steps: [],
+          fileCount: 0,
+          collectedBy: actorId,
+          collectedByName: 'Bot xodim',
+          client: null,
+          leadName: `Etap sinov ${STAMP}`,
+          leadPhone: phone,
+        });
+        const [after] = await db.select().from(leads).where(eq(leads.id, landed.id));
+        expect(after!.stageId, 'a machine must not walk a card backwards').toBe(ahead.id);
+      }
+
+      // And with nothing configured the card stays where the funnel puts it.
+      await setSetting('crm_calc_stage', '', actorId);
+      const plain = await landIntake({
+        noteId: uuidv4(),
+        section: 'rastamojka',
+        facts: { weightKg: 5, volumeM3: 1, goods: [{ name: 'Yo' }] },
+        steps: [],
+        fileCount: 0,
+        collectedBy: actorId,
+        collectedByName: 'Bot xodim',
+        client: null,
+        leadName: `Etap sozlanmagan ${STAMP}`,
+        leadPhone: `+99897${STAMP}4`,
+      });
+      madeLeads.push(plain.id);
+      const [plainRow] = await db.select().from(leads).where(eq(leads.id, plain.id));
+      expect(plainRow!.stageId).toBe(first.id);
+    } finally {
+      // The setting is CONFIGURATION (#183): it decides where every later
+      // spec's intake lands.
+      await setSetting('crm_calc_stage', before, actorId);
+    }
   });
 
   it('an ambiguous phone names nobody, rather than the wrong somebody', async () => {

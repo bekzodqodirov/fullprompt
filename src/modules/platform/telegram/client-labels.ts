@@ -97,6 +97,17 @@ const DICT = {
     ru: 'Или отправьте свой номер кнопкой ниже — код не нужен: если номер есть у нас, кабинет подключится сам.',
     en: 'Or share your number with the button below — no code needed: if we have your number, the cabinet connects by itself.',
   },
+  /**
+   * The advert door's one answer (round 82). It says the same thing whether a
+   * lead was created, joined onto an open one, or dropped at the cap — a
+   * public surface that answers differently for a number it recognises is a
+   * way to walk a list and learn who our customers are.
+   */
+  adThanks: {
+    uz: 'Rahmat! Arizangiz qabul qilindi — menejerimiz tez orada qo‘ng‘iroq qiladi.',
+    ru: 'Спасибо! Заявка принята — наш менеджер скоро вам позвонит.',
+    en: 'Thank you! We have your enquiry — a manager will call you shortly.',
+  },
   phoneNotFound: {
     uz: 'Bu raqam bazamizda topilmadi. Menejeringizga murojaat qiling — raqamingizni kartangizga qo‘shib, sizni ulab qo‘yadi.',
     ru: 'Этот номер у нас не найден. Обратитесь к вашему менеджеру — он добавит номер в вашу карточку и подключит вас.',
