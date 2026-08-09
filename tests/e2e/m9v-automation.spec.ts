@@ -30,8 +30,13 @@ test('a rule written on the form opens a task when the deal reaches the stage', 
   }
   await page.getByTestId('rule-name').fill(`Qoida ${runId}`);
   const stagePick = page.getByTestId('rule-stage');
+  // The LAST stage used to be the pick, and every seeded funnel puts «lost»
+  // last — so this spec was moving a deal into a lost stage through the edit
+  // form, with no reason typed, which round 83 made a refusal. Choose by KIND
+  // and never by position (#59): the owner names his own funnel, and the rule
+  // being tested is about entering a stage, not about which one.
   const stageValues = await stagePick
-    .locator('option')
+    .locator('option:not([data-kind="lost"])')
     .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
   const targetStage = stageValues[stageValues.length - 1]!;
   await stagePick.selectOption(targetStage);

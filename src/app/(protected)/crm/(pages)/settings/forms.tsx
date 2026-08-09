@@ -140,6 +140,11 @@ export function StageTools({
       {stages.map((stage, index) => (
         <div
           key={stage.id}
+          // Named so a caller can reach ONE stage's controls. Without it the
+          // only handle is div-soup, and a `.filter({hasText})` over every
+          // `div` on the page picks a different element depending on what
+          // else the screen happens to be showing.
+          data-testid="stage-tool-row"
           className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm ${stageClass(
             stage.color,
           )}`}

@@ -13,6 +13,7 @@ import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/
 import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
 import { likeNeedle, parseQuery } from '../search/query';
+import { stageWrite } from './stage-law';
 
 /**
  * Phase 7 hears the funnel through this one door. Every path that changes a
@@ -395,9 +396,36 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     nextActionAt: input.nextActionAt || null,
     nextActionNote: input.nextActionNote || null,
   };
+
+  /*
+   * The funnel's law, asked by the SECOND door too.
+   *
+   * This form writes `stage_id` from a `<select>` of every stage, and until
+   * round 83 it neither demanded a reason for «Yo'qotildi» nor cleared the
+   * one a revived lead was still carrying. It carries no reason box, so
+   * passing none is what makes the shared rule refuse it — the board keeps
+   * the only door that can lose a lead, because it is the only one that asks
+   * why. Only on an actual MOVE: an ordinary save on a lead that is already
+   * lost must not be a refusal, and must not wipe its reason either.
+   */
+  let lostReason: string | null | undefined;
+  if (values.stageId !== before.stageId) {
+    const stage = await db.query.leadStages.findFirst({
+      where: eq(leadStages.id, values.stageId),
+    });
+    if (!stage) throw new CrmError('stage_not_found');
+    const law = stageWrite(stage.kind, null);
+    if (!law.ok) throw new CrmError(law.reason);
+    lostReason = law.lostReason;
+  }
+
   const [row] = await db
     .update(leads)
-    .set({ ...values, updatedAt: new Date() })
+    .set({
+      ...values,
+      ...(lostReason === undefined ? {} : { lostReason }),
+      updatedAt: new Date(),
+    })
     .where(eq(leads.id, id))
     .returning();
   // The form writes nine columns; the audit used to record three fixed ones,
@@ -459,22 +487,19 @@ export async function moveLead(
   if (!lead) throw new CrmError('not_found');
   const stage = await db.query.leadStages.findFirst({ where: eq(leadStages.id, stageId) });
   if (!stage) throw new CrmError('stage_not_found');
-  if (stage.kind === 'lost' && reason.trim().length < 2) throw new CrmError('reason_required');
+  const law = stageWrite(stage.kind, reason);
+  if (!law.ok) throw new CrmError(law.reason);
 
   await db
     .update(leads)
-    .set({
-      stageId,
-      lostReason: stage.kind === 'lost' ? reason.trim() : null,
-      updatedAt: new Date(),
-    })
+    .set({ stageId, lostReason: law.lostReason, updatedAt: new Date() })
     .where(eq(leads.id, id));
   await writeAudit(db, ctx, {
     entityType: 'lead',
     entityId: id,
     action: 'update',
     before: { stageId: lead.stageId },
-    after: { stageId, lostReason: stage.kind === 'lost' ? reason.trim() : null },
+    after: { stageId, lostReason: law.lostReason },
   });
   if (stageId !== lead.stageId) await announceLeadStage(lead, stageId, ctx);
 }

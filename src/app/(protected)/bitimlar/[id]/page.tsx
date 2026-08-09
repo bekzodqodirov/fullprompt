@@ -24,6 +24,7 @@ import {
   dealCharged,
 } from '@/modules/wms/deals/service';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
+import { formStages } from '@/modules/wms/crm/stage-law';
 import { DealForm } from '../deal-form';
 import { DealFacts } from './facts';
 import { LinesForm } from '../lines-form';
@@ -245,7 +246,7 @@ export default async function DealPage({
       <Panel title={`✏️ ${tc('edit')}`} testId="deal-edit-panel">
         <DealForm
           dealId={row.deal.id}
-          stages={stages}
+          stages={formStages(stages, row.deal.stageId)}
           managers={managers}
           initial={{
             clientId: row.deal.clientId,
