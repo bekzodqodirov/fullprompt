@@ -10,6 +10,8 @@ export interface RuleView {
   name: string;
   active: boolean;
   triggerLabel: string;
+  /** What narrows it, or null when the rule fires on everything in the stage. */
+  conditionLabel: string | null;
   actionLabel: string;
   fireCount: number;
   lastFiredAt: string | null;
@@ -69,6 +71,11 @@ export function RuleList({ rules }: { rules: RuleView[] }) {
           <p className="text-sm text-ink-700">
             {rule.triggerLabel} → {rule.actionLabel}
           </p>
+          {rule.conditionLabel && (
+            <p className="text-xs text-ink-500" data-testid="rule-conditions">
+              ⚲ {rule.conditionLabel}
+            </p>
+          )}
           <p className="text-xs text-ink-500">
             {rule.fireCount > 0
               ? t('fired', { n: rule.fireCount, at: rule.lastFiredAt ?? '' })

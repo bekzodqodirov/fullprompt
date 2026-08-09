@@ -129,14 +129,17 @@ pnpm build && pnpm e2e  # 44 e2e
 1-55; #3 = 56-69; #4 = the truck-marker follow-up; #5 = the calls round;
 #6 = rounds 70-71; #7 = the calls day-one fixes; #13 = round 74 (capacity);
 #14 = rounds 75-76; #15 = round 77; #19 = round 79's card work; #17 = rounds 78-79 (the Telegram ↔ CRM loop);
-#20 = round 81's two login holes; **round 82 = the loop's second half**. The branch
-`claude/gsr-logistics-wms-phase1-o8h4en` carries round 82; everything before
-it is merged.
-1194 unit/integration + 144 e2e, verified in CI's order on a fresh database
-(in the OTHER session's container the four photo-path specs are locally red
-by design — no image service there; CI is the arbiter).
-Latest migration: **0066** (`inbound_leads` — the ads intake, the other
-session's; 0065 `tg_chat_lead` — a tray rule may point at a lead;
+#20 = round 81's two login holes; #22 = round 83 (ads intake, the drain lock,
+demo data out of the seed); #24 = round 85 (the S3 backup); #26 = round 86
+(automation rules). This branch carries **round 87**; everything before it is
+merged.
+1224 unit/integration + 145 e2e, verified in CI's order on a fresh database
+(the three photo-path specs — m1×2, m2×1 — are locally red by design here,
+no image service in this container; CI is the arbiter).
+Latest migration: **0067** (`automation_v2` — rule conditions, time triggers
+and `automation_fires`; 0066 `inbound_leads` was the ads round;
+0065 `tg_chat_lead` — a tray rule may point at a lead;
+
 0064 `tg_lead` was the work-account switch, lead-owned chats and the hashed
 peer index; 0063 `call_lead`, 0062 `lead_quote`, 0061 `call_dedup_by_user`,
 0060 `call_recorder` and 0059 `reply_templates` are the calls track's). Every
@@ -154,11 +157,12 @@ driver app 1.3, both APKs. The owner's last confirmed update was `eea3509`,
 so the server is **~34 rounds behind** and this is now the biggest single
 risk on the project: the gap is no longer one release, it is a year of
 work landing at once. A fresh clone of production applied 0032 → **0065**
-in one run, so the migration path itself is proven (0066 landed after that run).
-**Deploy note:** migrations 0058-0066 MUST land — 0058 especially — the client book, the stock table
+in one run, so the migration path itself is proven.
+**Deploy note:** migrations 0058-0067 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
-`drizzle.__drizzle_migrations` after updating (**count must reach 67**); fix
+`drizzle.__drizzle_migrations` after updating (**count must reach 68**); fix
+
 with `docker compose run --rm migrate`. Recommended order, told to the owner:
 enlarge the VPS and move the data first (`docs/DEPLOY.md` → «Yangi VPS'ga
 ko'chirish»), deploy this code there, test it, and only then move the domain.
@@ -2055,7 +2059,7 @@ need a real Telegram connection — watch the first one in
 and NOT built: pulling a chat's PAST messages when «Yangi lid» is pressed —
 attaching is forward-only, exactly as «Bu mijoz» has always been.
 
-Round 86 — **the funnel's second door** (#610-613), chosen as the highest-value
+Round 87 — **the funnel's second door** (#616-619), chosen as the highest-value
 work left after the event-drain lock turned out to be in the OTHER session's
 PR #22 (since merged, its migration renumbered to 0066). `moveLead`/`moveDeal` have always
 refused a lost stage without a reason and cleared it on the way back out;
@@ -2070,16 +2074,16 @@ is neither a refusal nor a wipe, and that third case has its own test.
 `formStages` drops lost stages from the four create/edit pickers, KEEPING the
 record's own (filtering it out makes the select fall back to its first option,
 so Save would silently revive the lead — a worse bug, found while writing it).
-**An existing spec went red and that was the proof** (#612): m9v picked the
+**An existing spec went red and that was the proof** (#618): m9v picked the
 LAST stage for its rule and every seeded funnel puts lost last, so it had been
 exercising the defect since it was written; it chooses by `data-kind` now, and
-the rule picker stamps it. Found on the way (#613): m8 invented a funnel column
+the rule picker stamps it. Found on the way (#619): m8 invented a funnel column
 AND a custom field on every run and removed neither — eight extra columns on
 this container's database, which is also why a spec indexing into the stage
 list was fragile. Cleanup is a final TEST, not an `afterAll` (round 57's lie).
-Red-proofs ×3. No migration. 1194 unit/integration + 144 e2e green on a fresh
-db in CI's order (the merge with the ads round included); the ✏️ form verified
-in a browser at 360. The cleanup test's first locator was `div` soup and passed
+Red-proofs ×3. No migration. 1224 unit/integration + 145 e2e green on a fresh
+db in CI's order, after merging the ads, backup and automation rounds; the
+✏️ form verified in a browser at 360. The cleanup test's first locator was `div` soup and passed
 ALONE while failing in the full suite — `StageTools` rows carry a testid now.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
@@ -2251,6 +2255,49 @@ Round 9's Drive path never made one real request, which is why its seven-day
 token was learned late. `docs/BACKUP.md` rewritten S3-first, `.env.example`
 gained the four keys. 1187 unit/integration green.
 
+Round 86 — **automation rules at full strength** (#610-615, owner: «shuni
+maksimalna kuchli funksional qilib ber ozing aytgandek» = the three things
+phase 7 deferred). Migration **0067**, all additive: `conditions jsonb`
+DEFAULT `[]` (so every rule written before this keeps its meaning),
+`stale_days`, two new trigger kinds in the CHECK, and `automation_fires`.
+**TIME TRIGGERS** — `lead_stale`/`deal_stale` sweep on a clock, because a
+forgotten card produces no event and no event-built trigger could ever reach
+it. «Sitting still» is `updated_at` older than N days, deliberately NOT
+«entered the stage N days ago» (that needs `audit_log` per card, and the
+honest question is «how long since anybody did ANYTHING»). ONE reminder per
+SILENCE: `automation_fires` has a unique index on (rule, entity) and the sweep
+claims BEFORE it acts, but the claim is an UPSERT re-won when
+`fired_at < updated_at` — **which is why no hook anywhere clears anything**,
+the record's own timestamp is the fact and every write path already moves it.
+Sweep is `20 4-14 * * *` = the Tashkent office day in UTC (a rule can send
+Telegram; 04:00 is worse than 09:00), capped `STALE_PER_SWEEP` 200, and there
+is deliberately **no prune** — deleting a fire row RE-ARMS its rule.
+**CONDITIONS** — `CONDITION_FIELDS` is a curated per-board list and that is
+the whole safety (an open field name reads whatever the row carries);
+an unknown field is FALSE not skipped, `gt`/`lt` refuse a non-number on either
+side, a field the board lacks is ABSENT (absence = «does not apply», null =
+«empty»), and a condition on a warehouse-event rule is refused AT THE SAVE.
+**PLACEHOLDERS** — `{ism}{kod}{narx}{kub}{kg}{etap}`, the canned-replies
+vocabulary extended rather than a second one; unknown left alone, empty value
+blanks itself, numbers printed as a person writes them. Both triggers meet in
+ONE `applyRuleAction` (the stale path passes `actorId: null` — nobody causes a
+silence, and the form hides «whoever did it» for a time trigger);
+`ruleNeedsRecord` means the extra query is paid only by rules that filter or
+name somebody (#432). **#171's FIFTH appearance and the first where the damage
+is silent**: the three condition lists post in parallel and zip by position, so
+the valueless row's box is HIDDEN, never `disabled` — red-proven by swapping
+one word and reading the rule back as «Сумма больше » with the 500 gone; the
+e2e fixture puts the valueless condition FIRST on purpose, because last it
+falls off the end where nothing notices. Also found only at 360 px: two selects
+side by side clipped «Источни…» then «рав…» → one control per line (#421), and
+a greyed value box read as an ordinary empty one → gone rather than dimmed.
+Red-proofs ×5 (insert-only claim, no claim at all → 3 red, conditions
+unapplied, placeholders unfilled, `hidden`→`disabled`). New: 20 unit + 6
+integration + e2e m9v-automation-stale. i18n ×4 (trigger kinds, days, the six
+condition operators, seven field names, hints) — the placeholder hint passes
+its braces as a runtime VALUE, which sidesteps #520's ICU escape entirely.
+1217 unit/integration + 141 e2e on a fresh db in CI's order.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 
@@ -2281,7 +2328,7 @@ round 17.
 **Enlarge the VPS to 4 vCPU / 8 GB / 400 GB** and move the data
 (`docs/DEPLOY.md` → «Yangi VPS'ga ko'chirish»; round 74 measured the ceiling
 and the old «2 GB tavsiya» was wrong) · **deploy from `main`** — migrations
-**0058-0066** land together, count must reach **67** (check
+**0058-0067** land together, count must reach **68** (check
 `drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
 Back up first · **release both APKs** (driver v1.3 AND the first
 GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its

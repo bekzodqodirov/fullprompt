@@ -1724,7 +1724,11 @@
     "errors": {
       "validation": "请检查：名称、阶段/事件与动作为必填",
       "forbidden": "无权限",
-      "not_found": "规则不存在"
+      "not_found": "规则不存在",
+      "stale_days_required": "请填写多少天无变动",
+      "condition_field_invalid": "该条件不适用于此规则",
+      "trigger_target_required": "请选择阶段或事件",
+      "action_config_invalid": "请填写动作字段"
     },
     "events": {
       "ReceiptConfirmed": "货物已入库",
@@ -1737,6 +1741,35 @@
       "DealDeviation": "货物与报价不符",
       "DealDeferralEnded": "付款延期已到期",
       "MissingInTransit": "卸货短缺"
+    },
+    "triggerLeadStale": "线索停留在阶段未动",
+    "triggerDealStale": "交易停留在阶段未动",
+    "staleDays": "多少天无变动",
+    "staleHint": "无人处理该卡片——没有编辑、没有备注、没有报价。一次沉默提醒一次；若处理后再次被遗忘，会再次提醒。",
+    "staleFor": "已停留 {days} 天",
+    "conditions": "条件",
+    "conditionAdd": "添加条件",
+    "conditionField": "字段",
+    "conditionOp": "判断",
+    "conditionValue": "值",
+    "conditionsHint": "全部同时成立才触发。没有条件则对该阶段所有卡片生效。",
+    "placeholderHint": "可在文本中插入：{list}",
+    "fields": {
+      "source": "来源",
+      "phone": "电话",
+      "clientCode": "客户编号",
+      "amount": "金额",
+      "volumeM3": "立方",
+      "weightKg": "重量",
+      "ownerId": "负责人"
+    },
+    "ops": {
+      "eq": "等于",
+      "neq": "不等于",
+      "gt": "大于",
+      "lt": "小于",
+      "empty": "为空",
+      "not_empty": "不为空"
     }
   },
   "objects": {

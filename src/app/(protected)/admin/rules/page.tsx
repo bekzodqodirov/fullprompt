@@ -11,6 +11,7 @@ import {
   listRules,
   type RuleRow,
 } from '@/modules/platform/automation/service';
+import { conditionsSchema, ruleBoard } from '@/modules/platform/automation/conditions';
 import { listStages as listLeadStages } from '@/modules/wms/crm/service';
 import { listStages as listDealStages } from '@/modules/wms/deals/service';
 import { RuleForm } from './rule-form';
@@ -44,16 +45,46 @@ export default async function RulesPage() {
   const userNames = new Map(people.map((p) => [p.id, p.name]));
 
   const triggerLabel = (rule: RuleRow): string => {
-    if (rule.triggerType === 'lead_stage') {
-      return `${t('triggerLeadStage')}: ${leadNames.get(rule.triggerStageId ?? '') ?? '—'}`;
+    const stageName =
+      (ruleBoard(rule.triggerType) === 'lead' ? leadNames : dealNames).get(
+        rule.triggerStageId ?? '',
+      ) ?? '—';
+    switch (rule.triggerType) {
+      case 'lead_stage':
+        return `${t('triggerLeadStage')}: ${stageName}`;
+      case 'deal_stage':
+        return `${t('triggerDealStage')}: ${stageName}`;
+      case 'lead_stale':
+      case 'deal_stale':
+        return `${t(
+          rule.triggerType === 'lead_stale' ? 'triggerLeadStale' : 'triggerDealStale',
+        )}: ${stageName} · ${t('staleFor', { days: rule.staleDays ?? 0 })}`;
+      default: {
+        const event = rule.triggerEvent ?? '';
+        return (RULE_EVENTS as readonly string[]).includes(event)
+          ? t(`events.${event}` as 'events.ReceiptConfirmed')
+          : event;
+      }
     }
-    if (rule.triggerType === 'deal_stage') {
-      return `${t('triggerDealStage')}: ${dealNames.get(rule.triggerStageId ?? '') ?? '—'}`;
-    }
-    const event = rule.triggerEvent ?? '';
-    return (RULE_EVENTS as readonly string[]).includes(event)
-      ? t(`events.${event}` as 'events.ReceiptConfirmed')
-      : event;
+  };
+
+  /**
+   * A rule that quietly filters is a rule the owner will one day accuse of
+   * not working, so the conditions are printed on the row that says what it
+   * does — not hidden behind an edit screen this page does not have.
+   */
+  const conditionLabel = (rule: RuleRow): string | null => {
+    const parsed = conditionsSchema.safeParse(rule.conditions ?? []);
+    if (!parsed.success || parsed.data.length === 0) return null;
+    return parsed.data
+      .map((cond) => {
+        const field = t(`fields.${cond.field}` as 'fields.amount');
+        const op = t(`ops.${cond.op}` as 'ops.eq');
+        return cond.op === 'empty' || cond.op === 'not_empty'
+          ? `${field} ${op}`
+          : `${field} ${op} ${cond.value}`;
+      })
+      .join(' · ');
   };
   const actionLabel = (rule: RuleRow): string => {
     const config = rule.actionConfig as Record<string, unknown>;
@@ -77,6 +108,7 @@ export default async function RulesPage() {
     name: rule.name,
     active: rule.active,
     triggerLabel: triggerLabel(rule),
+    conditionLabel: conditionLabel(rule),
     actionLabel: actionLabel(rule),
     fireCount: rule.fireCount,
     lastFiredAt: rule.lastFiredAt ? rule.lastFiredAt.toISOString().slice(0, 16).replace('T', ' ') : null,

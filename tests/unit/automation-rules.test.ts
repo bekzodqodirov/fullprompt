@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { RULE_EVENTS, ruleMatches, ruleSchema } from '@/modules/platform/automation/service';
+import {
+  RULE_EVENTS,
+  ruleMatches,
+  ruleNeedsRecord,
+  ruleSchema,
+} from '@/modules/platform/automation/service';
 
 /**
  * Phase 7's matching table and the form contract, as pure predicates — the
@@ -99,5 +104,102 @@ describe('rule form contract', () => {
         triggerEvent: 'BoxLabeled',
       }).success,
     ).toBe(false);
+  });
+});
+
+/**
+ * Round 86's three additions to the form contract. Every refusal here is one
+ * the owner can actually reach on /admin/rules, and each has words of its own
+ * in all four bundles — a code with no message would print the key.
+ */
+describe('the form contract, round 86', () => {
+  const taskAction = {
+    actionType: 'create_task' as const,
+    actionConfig: { title: 'x', assignee: 'owner', dueDays: null, priority: 2 },
+  };
+
+  it('a time trigger needs BOTH halves: which column, and how long is too long', () => {
+    const base = {
+      name: 'qotgan lid',
+      triggerType: 'lead_stale' as const,
+      triggerStageId: stageId,
+      triggerEvent: null,
+      ...taskAction,
+    };
+    expect(ruleSchema.safeParse({ ...base, staleDays: 3 }).success).toBe(true);
+    const noDays = ruleSchema.safeParse({ ...base, staleDays: null });
+    expect(noDays.success).toBe(false);
+    expect(noDays.error?.issues.map((i) => i.message)).toContain('stale_days_required');
+    // No column to watch is the same refusal the move triggers already gave.
+    expect(
+      ruleSchema.safeParse({ ...base, triggerStageId: null, staleDays: 3 }).success,
+    ).toBe(false);
+    // A silence measured in zero days is not a silence.
+    expect(ruleSchema.safeParse({ ...base, staleDays: 0 }).success).toBe(false);
+  });
+
+  it('a condition must name a field the trigger’s own board carries', () => {
+    const dealRule = {
+      name: 'katta bitim',
+      triggerType: 'deal_stage' as const,
+      triggerStageId: stageId,
+      triggerEvent: null,
+      ...taskAction,
+    };
+    expect(
+      ruleSchema.safeParse({
+        ...dealRule,
+        conditions: [{ field: 'amount', op: 'gt', value: '500' }],
+      }).success,
+    ).toBe(true);
+    // `source` is a LEAD's field; a deal has none.
+    const wrongBoard = ruleSchema.safeParse({
+      ...dealRule,
+      conditions: [{ field: 'source', op: 'eq', value: 'Instagram' }],
+    });
+    expect(wrongBoard.success).toBe(false);
+    expect(wrongBoard.error?.issues.map((i) => i.message)).toContain('condition_field_invalid');
+    // And nothing may reach for a column that is not on the list at all.
+    expect(
+      ruleSchema.safeParse({
+        ...dealRule,
+        conditions: [{ field: 'password_hash', op: 'not_empty', value: '' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('a warehouse event may carry no condition — cargo belongs to no funnel', () => {
+    const eventRule = {
+      name: 'yuk keldi',
+      triggerType: 'event' as const,
+      triggerStageId: null,
+      triggerEvent: 'ReceiptConfirmed' as const,
+      ...taskAction,
+    };
+    expect(ruleSchema.safeParse(eventRule).success).toBe(true);
+    expect(
+      ruleSchema.safeParse({
+        ...eventRule,
+        conditions: [{ field: 'amount', op: 'gt', value: '5' }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('ruleNeedsRecord', () => {
+  it('only a rule that filters or names somebody pays for the extra query', () => {
+    expect(
+      ruleNeedsRecord({ conditions: [], actionConfig: { title: 'Mijozga qo‘ng‘iroq qiling' } }),
+    ).toBe(false);
+    expect(
+      ruleNeedsRecord({ conditions: [], actionConfig: { title: '{ism} ga qo‘ng‘iroq qiling' } }),
+    ).toBe(true);
+    expect(ruleNeedsRecord({ conditions: [], actionConfig: { text: '{kod} kutyapti' } })).toBe(true);
+    expect(
+      ruleNeedsRecord({
+        conditions: [{ field: 'amount', op: 'gt', value: '5' }],
+        actionConfig: { title: 'fixed' },
+      }),
+    ).toBe(true);
   });
 });
