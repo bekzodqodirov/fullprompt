@@ -225,7 +225,34 @@ bilan** tekshiring.
 
 ### Tekshirish — domenni qaratishdan OLDIN
 
-Yangi serverning IP'si bilan `http://<YANGI-IP>:3000` ni oching va:
+**Ilova porti tashqariga chiqarilmagan** (81-raund: `3000:3000` olib
+tashlangan, aks holda login formasi TLS'siz to'g'ridan-to'g'ri internetdan
+ochilardi). Domen hali eski serverda, ya'ni Caddy ham yo'q. Ko'rish uchun —
+SSH tunnel:
+
+```bash
+# YANGI serverda: vaqtincha faqat loopback'ga chiqaramiz (internetga emas)
+cat > docker-compose.override.yml <<'YML'
+services:
+  app:
+    ports: ['127.0.0.1:3000:3000']
+YML
+docker compose up -d app
+```
+
+```bash
+# O'Z KOMPYUTERINGIZDA
+ssh -L 3000:127.0.0.1:3000 root@<YANGI-IP>
+# keyin brauzerda: http://localhost:3000
+```
+
+Tekshirib bo'lgach **albatta o'chiring**:
+
+```bash
+rm docker-compose.override.yml && docker compose up -d app
+```
+
+Brauzerda quyidagilarni ko'ring:
 
 1. **Kirish** — o'z login/parolingiz bilan (seanslar ham ko'chgan).
 2. **Mijozlar soni** — eski serverdagi bilan bir xilmi (`1692` atrofida).
