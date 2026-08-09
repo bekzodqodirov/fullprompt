@@ -7,6 +7,7 @@ import { secondsBehind } from '@/modules/wms/crm/telegram-live';
 import { BRIDGE_LABELS } from '@/components/telegram-bridge-status';
 import { ConnectForm } from './connect-form';
 import { DisconnectButton } from './disconnect';
+import { WorkSwitch } from './work-switch';
 
 /**
  * «Telegram ulash» — round 21, the owner: «akkauntlarni sistemamizga
@@ -29,6 +30,7 @@ export default async function ConnectPage() {
   }
 
   const t = await getTranslations('crm');
+  const tc = await getTranslations('common');
   // Their own account's state, when one exists — the screen doubles as
   // "is MY bridge alive", and reconnecting after a sign-out starts here too.
   const ownAccount = (await accountStatuses()).find((a) => a.managerUserId === actor.id) ?? null;
@@ -52,6 +54,19 @@ export default async function ConnectPage() {
               secondsBehind(ownAccount.lastSeenAt, new Date()) !== null &&
               ` · ${t('bridgeSeconds', { n: secondsBehind(ownAccount.lastSeenAt, new Date())! })}`}
           </p>
+          {/* What a stranger's message becomes on THIS number (round 79). */}
+          <WorkSwitch
+            workAccount={ownAccount.workAccount}
+            labels={{
+              title: t('workTitle'),
+              personal: t('workPersonal'),
+              personalHint: t('workPersonalHint'),
+              work: t('workWork'),
+              workHint: t('workWorkHint'),
+              save: tc('save'),
+              saved: tc('saved'),
+            }}
+          />
           {/* Only for an account that is actually connected — a signed-out row
               has nothing left to disconnect, and the screen above it is
               already telling them to log in again. */}

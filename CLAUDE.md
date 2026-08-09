@@ -54,6 +54,7 @@ next-intl · Tailwind (CSS-variable tokens) · pg-boss · Playwright + Vitest.
 pnpm db:migrate         # hand-written SQL migrations
 pnpm db:seed            # idempotent; reference data, demo only on a fresh db
 pnpm lint && pnpm test  # 385 tests
+pnpm typecheck          # tsc --noEmit — the ONLY thing that types tests/
 pnpm build && pnpm e2e  # 44 e2e
 ```
 
@@ -69,6 +70,9 @@ pnpm build && pnpm e2e  # 44 e2e
 5. **Reproduce CI's order before pushing**: seed once, run vitest, then run
    Playwright *without re-seeding*. CI uses ONE database for both. This is how
    the field tests leaking definitions was found — after CI went red.
+6. **`pnpm typecheck` before every push.** `next build` types `src/` only, so a
+   widened union that breaks a TEST's narrowing is green locally and red in CI
+   (#591). Vitest transpiles without checking, so the tests pass too.
 
 ## Footguns that have cost real time
 
@@ -1936,6 +1940,42 @@ receipt exists and m1's photo upload cannot run here (#509's rule); the new
 query was verified directly against `gsr_dev` instead. Answered in chat, not
 built: how Instagram ads reach the CRM (Meta Lead Ads webhook vs a public form
 vs the Telegram bot) — his choice awaited.
+
+Round 78 — the card's two writing surfaces and the history's place
+(#585-586; my round number collided with the OTHER session's round 77, and
+the DECISIONS numbers with its #574-576 — renumbered on merge, as every
+round this week has had to). (1) «crm kartada shu zapis yozish kerak emas,
+lenta bor»: the «Записать контакт» form is off the LEAD card. What it
+uniquely carried was checked BEFORE it went — `nextActionAt` has always
+also lived in the ✏️ form, and `ClientFeed` renders on a lead with no
+client — and m8 was rewritten to PROVE it (note on the lenta, follow-up in
+✏️, lead still on the call list) rather than to accommodate it. STATED as a
+real loss: the four kinds go with it and `crm_activities.kind` is read by
+`client-feed.tsx` for the bubble's mark, so everything typed on a lead is
+now a note; the chips can move onto the lenta's box on his word. The CLIENT
+card keeps its log — he named the CRM card. (2) «istoriya tarix mobileda
+eng pastda»: the history sat last in the RAIL, which on a phone is the
+MIDDLE of the page, above the lenta. `CardCols` gained a `tail` slot — DOM
+order rail → main → tail so the phone needs no rule, desktop places all
+three explicitly (`md:col-start-2 md:row-start-2`) so nothing moved there.
+Measured at 360: lenta 752 → **628**, history last at 865, document 1022.
+
+**Agreed next (owner, 2026-08-08):** the Telegram ↔ CRM loop, both
+directions, his design. (a) A per-account switch «shaxsiy / ish raqami» —
+he confirmed the connected accounts are PERSONAL numbers and that both
+kinds will exist. (b) An unknown chat (incoming OR outgoing — the listener
+already sees both, #315/#476) opens a LEAD: automatic on a work account,
+one tap from a tray on a personal one. Schema mirrors the calls round
+exactly — `tg_messages.client_id` nullable + `lead_id`, as 0063 did for
+`call_logs` — and `convertLead` re-keys chats onto the minted code the way
+`rekeyLeadCalls` already does. (c) The reverse lookup he asked for: when a
+lead/deal/client is created, check the connected accounts for that phone
+and offer «Chatni qo'shish». **Stored as a HASH of the normalised last-9,
+with no name** (his choice, my recommendation): the company database must
+be able to answer «have we talked to this number» without ever holding a
+readable list of an employee's private contacts. Stated to him: coverage is
+partial because Telegram hides most numbers, the index needs a nightly
+refresh, and a colleague's chat is NAMED but not opened (round 20's fence).
 
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).

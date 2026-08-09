@@ -37,7 +37,10 @@ describe('deciding one live message', () => {
   it('stores a client message and says which client', () => {
     const v = decideIncoming(peer(), msg(), CLIENTS);
     expect(v.store).toBe(true);
-    if (!v.store) throw new Error('unreachable');
+    // Round 79 made `store: true` a union — a known client OR a stranger on a
+    // work number — so «it stored something» no longer says WHICH. The tests
+    // narrow the way the listener does, with `'openLead' in v`.
+    if (!v.store || 'openLead' in v) throw new Error('unreachable');
     expect(v.clientId).toBe('c-777');
     expect(v.row.direction).toBe('in');
     expect(v.row.body).toBe('Yuk keldimi?');
@@ -45,11 +48,37 @@ describe('deciding one live message', () => {
     expect(v.row.sentAt.getUTCFullYear()).toBe(2026);
   });
 
-  it('refuses a stranger and says nothing about them', () => {
-    // The refusal carries no id, no name and no number, deliberately: this is
-    // the manager's private life and the caller must not be ABLE to log it.
-    const v = decideIncoming(peer({ phone: '+998900000000' }), msg(), CLIENTS);
-    expect(v).toEqual({ store: false, reason: 'not_a_client' });
+  it('asks about a stranger on a PERSONAL account, and stores not one word', () => {
+    // Round 79 sharpened this promise rather than dropping it. A stranger on
+    // a personal number is now a QUESTION — so the verdict has to carry who
+    // to ask ABOUT, because a tray cannot offer an anonymous row. What it
+    // must never carry is the MESSAGE: until somebody answers, nothing of
+    // the conversation exists anywhere.
+    const stranger = peer({ phone: '+998900000000', firstName: 'Dilshod' });
+    const v = decideIncoming(stranger, msg({ message: 'Salom, yuk bormi?' }), CLIENTS);
+    expect(v).toEqual({
+      store: false,
+      ask: true,
+      peerId: 42n,
+      phone: '+998900000000',
+      title: 'Dilshod',
+    });
+    expect(
+      JSON.stringify(v, (_k, value) => (typeof value === 'bigint' ? value.toString() : value)),
+    ).not.toContain('Salom');
+    expect(v).not.toHaveProperty('row');
+  });
+
+  it('opens a lead for the same stranger on a WORK account', () => {
+    const v = decideIncoming(
+      peer({ phone: '+998900000000', firstName: 'Dilshod' }),
+      msg({ message: 'Salom, yuk bormi?' }),
+      CLIENTS,
+      new Map(),
+      true,
+    );
+    expect(v.store).toBe(true);
+    expect(v).toMatchObject({ openLead: true, peer: { phone: '+998900000000' } });
   });
 
   it('refuses a peer whose number Telegram will not show us', () => {
@@ -86,7 +115,7 @@ describe('deciding one live message', () => {
     // GS555 is stored as '998 90 765 43 21'; Telegram sends '998907654321'.
     const v = decideIncoming(peer({ phone: '998907654321' }), msg(), CLIENTS);
     expect(v.store).toBe(true);
-    if (!v.store) throw new Error('unreachable');
+    if (!v.store || 'openLead' in v) throw new Error('unreachable');
     expect(v.clientCode).toBe('GS555');
   });
 });
