@@ -131,12 +131,14 @@ pnpm build && pnpm e2e  # 44 e2e
 #14 = rounds 75-76; #15 = round 77; #19 = round 79's card work; #17 = rounds 78-79 (the Telegram ↔ CRM loop);
 #20 = round 81's two login holes; #22 = round 83 (ads intake, the drain lock,
 demo data out of the seed); #24 = round 85 (the S3 backup); #26 = round 86
-(automation rules). This branch carries **round 87**; everything before it is
-merged.
-1224 unit/integration + 145 e2e, verified in CI's order on a fresh database
+(automation rules); #25 = round 87 (the funnel's second door, built by the
+OTHER session). This branch carries **round 86b** merged on top of 87;
+everything before it is merged.
+1244 unit/integration + 142 e2e, verified in CI's order on a fresh database
 (the three photo-path specs — m1×2, m2×1 — are locally red by design here,
 no image service in this container; CI is the arbiter).
-Latest migration: **0067** (`automation_v2` — rule conditions, time triggers
+Latest migration: **0068** (`inbound_webhook` — a per-source key for every
+platform's own lead form; 0067 `automation_v2` — rule conditions, time triggers
 and `automation_fires`; 0066 `inbound_leads` was the ads round;
 0065 `tg_chat_lead` — a tray rule may point at a lead;
 
@@ -154,15 +156,18 @@ calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 **NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
 17 audit defects (four live money bugs), the speed rounds, rounds 46-79, the
 driver app 1.3, both APKs. The owner's last confirmed update was `eea3509`,
-so the server is **~34 rounds behind** and this is now the biggest single
+so the server is **~37 rounds behind** and this is now the biggest single
 risk on the project: the gap is no longer one release, it is a year of
-work landing at once. A fresh clone of production applied 0032 → **0065**
-in one run, so the migration path itself is proven.
-**Deploy note:** migrations 0058-0067 MUST land — 0058 especially — the client book, the stock table
+work landing at once. **Re-verified 2026-08-09 with the tail this branch
+adds:** a database built to his deployed level (journal truncated at 0032)
+then given the full journal applied **0033 → 0068 in ONE run** and reached
+**69** rows, with `list_views`, `lead_intakes`, `automation_fires`,
+`reply_templates`, `call_logs` and all five new columns present afterwards.
+Re-run that check whenever the tail grows — the claim is what he acts on.
+**Deploy note:** migrations 0058-0068 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
-`drizzle.__drizzle_migrations` after updating (**count must reach 68**); fix
-
+`drizzle.__drizzle_migrations` after updating (**count must reach 69**); fix
 with `docker compose run --rm migrate`. Recommended order, told to the owner:
 enlarge the VPS and move the data first (`docs/DEPLOY.md` → «Yangi VPS'ga
 ko'chirish»), deploy this code there, test it, and only then move the domain.
@@ -2298,6 +2303,47 @@ condition operators, seven field names, hints) — the placeholder hint passes
 its braces as a runtime VALUE, which sidesteps #520's ICU escape entirely.
 1217 unit/integration + 141 e2e on a fresh db in CI's order.
 
+Round 86b — **reklama: hamma platforma** (#620-623 — renumbered on merge,
+the other session's round 87 took #616-619 the same day; owner: «reklama ozimizni
+qolimizda … tiktok hamma platformalarda berishimiz mumkun … hammasi ozimizni
+qolimizda instagram web sayt tiktok youtube hammasi»). Migration **0068**
+(`lead_sources.webhook_secret`, the `lead_intakes.channel` CHECK widened to
+`webhook`). **THE ANSWER IS MOSTLY NOT CODE:** `/ariza?manba=tiktok` has
+worked since round 83 and needs no account, approval or key — it covers
+TikTok, YouTube, a website, an Instagram bio, a printed QR. What was missing
+was the ADDRESS, so `/crm/kelganlar` grew a directory printing every source's
+form link, bot deep link and webhook, each in a `readOnly` input that selects
+itself on focus (he pastes these into Google's settings on a phone). Bot name
+from the existing cached `getBotUsername()`, not a new env var. **ONE endpoint
+for the platforms that post to a URL** — `POST /api/leads/in/<source>`, a
+generated secret PER SOURCE, two readers (Google's `user_column_data`, which
+is also how a YouTube lead form arrives; and plain `{name,phone,note}` for a
+connector or a website). The key is accepted from the BODY as well as a header
+because Google's lead form has no way to set one. Meta's rules inherited whole:
+404 when the source has no secret and 404 (not 403) on a bad key, never throw
+(every platform reads a 500 as «send it again»), one constant answer for every
+outcome (#600). **THE LEAK CAUGHT BEFORE SHIPPING:** `ref` stores the sender's
+body verbatim and Google puts `google_key` IN it — `refWithoutSecret` drops
+key/secret/token case-insensitively, red-proven, then proven over real HTTP.
+**Instagram vs Facebook split** was one field: the lead object carries
+`platform`, so `fields=…,platform` does what round 83 said needed a second
+Graph call; absent stays `meta`. **`funnelReport`'s per-source half had NO
+consumer** — computed since the CRM shipped, rendered nowhere, so «which
+advert pays» was unanswerable rather than under-answered. Now a block on the
+arrivals screen: arrivals (incl. dropped) beside won money (`sum(quoted_amount)`
+over WON leads only — a quote on an open lead is a hope, on a lost one a price
+somebody refused). Red-proofs ×3 (retired-source door, secret in `ref`,
+`timingSafeEqual` length check). 14 unit + 6 integration; `docs/ADS.md` gained
+sections 4-6. TEST LESSON: a red proof whose assertion throws before the test's
+own restore line leaves CONFIGURATION behind (it deactivated `tiktok` in the
+local db) — the restore belongs in `afterAll` (#183, #523's shape). PROBE
+LESSON: `psql -tAc` on `UPDATE … RETURNING` prints the command tag too, so the
+first curl carried a newline in a header and answered 400. Left as a note, not
+fixed: deleting a lead orphans its `crm_activities` (loose `entity_id`, no FK
+— #285's shape); the app never hard-deletes a lead, only tests do.
+1237 unit/integration + 141 e2e alone; **1244 + 142 merged with round 87**,
+both on a fresh db in CI's order.
+
 **Agreed next (owner, 2026-08-01):** the SPEED round — SHIPPED in round 45
 above (and continued in round 68 with the phone-side numbers it lacked).
 
@@ -2328,7 +2374,7 @@ round 17.
 **Enlarge the VPS to 4 vCPU / 8 GB / 400 GB** and move the data
 (`docs/DEPLOY.md` → «Yangi VPS'ga ko'chirish»; round 74 measured the ceiling
 and the old «2 GB tavsiya» was wrong) · **deploy from `main`** — migrations
-**0058-0067** land together, count must reach **68** (check
+**0058-0068** land together, count must reach **69** (check
 `drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
 Back up first · **release both APKs** (driver v1.3 AND the first
 GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its

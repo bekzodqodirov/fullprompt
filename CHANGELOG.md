@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## Reklama — hamma platforma — 2026-08-09 (kech)
+
+Sizning «tiktok, youtube, sayt, instagram — hammasi o'zimizni qo'limizda»
+degan gapingizga javob. **CRM → ⋯ → Kelgan arizalar.**
+
+### Eng muhimi: hamma platforma allaqachon ishlaydi
+
+Reklamaga shu havolani qo'ysangiz, ariza to'g'ridan-to'g'ri CRM ga tushadi:
+
+```
+https://gsrwms.uz/ariza?manba=tiktok
+```
+
+TikTok, YouTube, sayt, Instagram bio, hatto bosma reklamadagi QR — hammasi
+uchun. **Hech kimdan ruxsat, tasdiq yoki kalit kerak emas.** Har manba uchun
+alohida havola bor, shunda qaysi reklama qancha olib kelgani ko'rinadi.
+
+Tayyor havolalar endi ekranda yozib qo'yilgan — **«Reklama havolalari»** —
+nusxa olib reklamaga qo'yavering. Mendan so'rab o'tirishingiz shart emas.
+
+### Platformaning o'z formasi (Google Ads, YouTube, TikTok, saytingiz)
+
+Bu — odam ilovadan chiqmay, o'sha yerning o'z formasini to'ldiradigan holat.
+Har manba uchun alohida **kalit** yaratasiz (bir tugma), URL va kalitni
+platformaning sozlamalariga qo'yasiz. Qadamma-qadam: `docs/ADS.md`, 5-bo'lim.
+
+Kalit har manba uchun alohida: bittasini o'chirsangiz qolganlari ishlayveradi.
+Kalitni qayta yaratsangiz eskisi darhol ishlamay qoladi.
+
+### Qaysi reklama pul keltiryapti — yangi hisobot
+
+Shu ekranda **«Manba bo'yicha natija»**. Har manba uchun:
+
+- **necha ta ariza keldi** (bekor bo'lganlari bilan),
+- **necha tasi yutildi** va foizi,
+- **yutilgan summa**.
+
+Ikki son ikki xil narsani aytadi: ariza soni — reklama ishlayaptimi;
+summa — qaysi reklamaga ko'proq pul tikish kerak. **Ariza ko'p, lead yo'q**
+bo'lsa forma buzilgan; **ariza kam, pul katta** bo'lsa o'sha kanalga ko'proq
+bering.
+
+Bu hisobot avval umuman ko'rsatilmagan ekan — hisoblanardi, lekin hech qaysi
+ekranda chiqmasdi.
+
+### Instagram va Facebook endi alohida
+
+Avval ikkalasi «Instagram/Facebook reklama» bo'lib bitta qatorga tushardi,
+shuning uchun qaysi biri pul keltirayotgani bilinmasdi. Endi ajratiladi.
+
+**Bazaga qo'shildi:** migratsiya **0068**. Yangilashda migratsiyalar soni
+**69** ga yetishi kerak.
+
 ## Varonka: «Yo'qotildi» endi sababsiz qo'yilmaydi — 2026-08-09 (kech)
 
 Kod tekshiruvida topilgan ikkita xato. Ikkalasi ham lidda ham, bitimda ham bor
