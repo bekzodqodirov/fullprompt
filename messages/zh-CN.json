@@ -38,7 +38,8 @@
       "stageNotFound": "阶段已删除 — 请刷新页面"
     },
     "moreActions": "更多操作",
-    "notFilled": "未填写"
+    "notFilled": "未填写",
+    "copy": "复制"
   },
   "login": {
     "title": "登录系统",
@@ -1309,7 +1310,22 @@
     "arrivalsOutcome_client": "记入客户卡片",
     "arrivalsOutcome_dropped": "未接收",
     "calcStage": "报价阶段",
-    "calcStageHint": "机器人发来「报价」时，卡片移到该阶段。只向前移动——已经更靠后的卡片保持不变。选「—」表示不移动。"
+    "calcStageHint": "机器人发来「报价」时，卡片移到该阶段。只向前移动——已经更靠后的卡片保持不变。选「—」表示不移动。",
+    "doors": "广告链接",
+    "doorsHint": "把这个链接放进广告——询盘会直接进入 CRM。适用于 TikTok、YouTube、网站、Instagram 简介，无需设置。",
+    "doorForm": "询盘表单",
+    "doorBot": "Telegram 机器人",
+    "doorWebhook": "平台自带表单",
+    "doorWebhookHint": "仅用于用户无需离开应用即可填写的表单（Google Ads、YouTube、TikTok 连接器、您的网站）。密钥填入平台设置。",
+    "doorKey": "密钥",
+    "doorOn": "已开启",
+    "doorOff": "已关闭",
+    "doorTurnOn": "开启并生成密钥",
+    "doorTurnOff": "关闭",
+    "sourceResult": "各来源结果",
+    "sourceArrivals": "询盘 {n}",
+    "sourceDropped": "丢弃 {n}",
+    "sourceWon": "成交 {n}"
   },
   "navShort": {
     "home": "首页",

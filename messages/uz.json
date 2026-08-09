@@ -38,7 +38,8 @@
       "stageNotFound": "Etap o'chirilgan — sahifani yangilang"
     },
     "moreActions": "Boshqa amallar",
-    "notFilled": "To‘ldirilmagan"
+    "notFilled": "To‘ldirilmagan",
+    "copy": "Nusxa olish"
   },
   "login": {
     "title": "Tizimga kirish",
@@ -1309,7 +1310,22 @@
     "arrivalsOutcome_client": "Mijoz kartasiga",
     "arrivalsOutcome_dropped": "Olinmadi",
     "calcStage": "Hisoblatish bosqichi",
-    "calcStageHint": "Botdan «Hisoblatish» kelganda karta shu bosqichga o'tadi. Faqat oldinga siljiydi — allaqachon o'tib ketgan karta joyida qoladi. «—» tanlansa hech qayerga ko'chirilmaydi."
+    "calcStageHint": "Botdan «Hisoblatish» kelganda karta shu bosqichga o'tadi. Faqat oldinga siljiydi — allaqachon o'tib ketgan karta joyida qoladi. «—» tanlansa hech qayerga ko'chirilmaydi.",
+    "doors": "Reklama havolalari",
+    "doorsHint": "Reklamaga shu havolani qo'ying — ariza to'g'ridan-to'g'ri CRM ga tushadi. TikTok, YouTube, sayt, Instagram bio — hammasi uchun ishlaydi, sozlash kerak emas.",
+    "doorForm": "Ariza formasi",
+    "doorBot": "Telegram bot",
+    "doorWebhook": "Platformaning o'z formasi",
+    "doorWebhookHint": "Faqat odam ilovadan chiqmay to'ldiradigan forma uchun (Google Ads, YouTube, TikTok konnektor, saytingiz). Kalitni platformaning sozlamalariga qo'yasiz.",
+    "doorKey": "Kalit",
+    "doorOn": "yoqilgan",
+    "doorOff": "o'chirilgan",
+    "doorTurnOn": "Yoqish va kalit yaratish",
+    "doorTurnOff": "O'chirish",
+    "sourceResult": "Manba bo'yicha natija",
+    "sourceArrivals": "{n} ta ariza",
+    "sourceDropped": "{n} tasi bekor",
+    "sourceWon": "{n} ta yutildi"
   },
   "navShort": {
     "home": "Bosh",

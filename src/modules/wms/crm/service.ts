@@ -1027,6 +1027,15 @@ export async function funnelReport(ownerId?: string) {
       total: sql<number>`count(*)`,
       won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
       lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
+      /**
+       * The money behind a source, added in round 86b because «which advert
+       * pays» was answerable only in lead COUNTS — and a channel bringing
+       * half as many jobs at four times the size is the one to spend on.
+       * Round 71 gave a lead its own quote; this is the first report to read
+       * it. WON only: a quote on an open lead is a hope, and on a lost one it
+       * is a price somebody refused.
+       */
+      wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
     })
     .from(leads)
     .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
@@ -1045,6 +1054,7 @@ export async function funnelReport(ownerId?: string) {
         total,
         won,
         lost: Number(row.lost),
+        wonUsd: Math.round(Number(row.wonUsd ?? 0) * 100) / 100,
         // Conversion counts only DECIDED leads: an open lead is not a failure
         // yet, and counting it as one makes a young source look terrible.
         decided: won + Number(row.lost),

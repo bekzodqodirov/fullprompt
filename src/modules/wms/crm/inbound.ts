@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { and, count, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
@@ -9,7 +10,8 @@ import {
   userRoles,
   users,
 } from '../../platform/db/schema';
-import { addActivity, createLead } from './service';
+import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { addActivity, createLead, CrmError } from './service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 
 /**
@@ -68,7 +70,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** One arrival, whatever brought it. */
 export interface InboundArrival {
-  channel: 'form' | 'meta' | 'telegram';
+  /**
+   * `webhook` is deliberately its own channel and not `form`: one was typed by
+   * a person on our own page, the other was posted by a platform — and only
+   * the second can be misconfigured, which is the first thing anybody debugging
+   * an advert wants to see in the arrivals ledger.
+   */
+  channel: 'form' | 'meta' | 'telegram' | 'webhook';
   /** Validated against the allowlist; anything else becomes 'other'. */
   sourceKey?: string | null;
   /** Meta's leadgen id — the idempotency key. Absent for a form post. */
@@ -402,4 +410,124 @@ export async function recentIntakes(limit = 50) {
     .leftJoin(users, eq(users.id, leadIntakes.assignedUserId))
     .orderBy(desc(leadIntakes.createdAt))
     .limit(limit);
+}
+
+/**
+ * The webhook secret for one source, or null when that door does not exist.
+ *
+ * Read on every POST, deliberately not cached: turning a door off has to take
+ * effect on the next request, not after a deploy. It is one indexed row.
+ */
+export async function sourceWebhookSecret(key: string): Promise<string | null> {
+  const [row] = await db
+    .select({ secret: leadSources.webhookSecret, active: leadSources.active })
+    .from(leadSources)
+    .where(eq(leadSources.key, key))
+    .limit(1);
+  // A retired source's door closes with it — the alternative is a key that
+  // goes on accepting leads into a channel nobody looks at any more.
+  return row && row.active ? (row.secret ?? null) : null;
+}
+
+/**
+ * Mint (or clear) a source's webhook secret.
+ *
+ * The value is GENERATED, never taken from the caller: a key somebody types is
+ * a key somebody reuses, and this one is pasted into a third party's settings
+ * page where it will outlive everyone's memory of it. `create-admin`'s
+ * alphabet, for the same reason — it gets read off a screen.
+ */
+export async function setSourceWebhookSecret(
+  key: string,
+  enabled: boolean,
+  ctx: AuditContext,
+): Promise<string | null> {
+  const [source] = await db
+    .select({ id: leadSources.id, name: leadSources.name })
+    .from(leadSources)
+    .where(eq(leadSources.key, key))
+    .limit(1);
+  if (!source) throw new CrmError('source_not_found');
+
+  const secret = enabled ? mintWebhookSecret() : null;
+  await db
+    .update(leadSources)
+    .set({ webhookSecret: secret })
+    .where(eq(leadSources.id, source.id));
+  // The secret itself is never audited — an audit row is readable by more
+  // people than the settings screen is, and writing it there would put the
+  // key somewhere it can never be taken back from.
+  await writeAudit(db, ctx, {
+    entityType: 'lead_source',
+    entityId: source.id,
+    action: 'update',
+    after: { name: source.name, webhook: enabled ? 'on' : 'off' },
+  });
+  return secret;
+}
+
+/** No look-alike characters: this is read off a terminal and typed on a phone. */
+const SECRET_ALPHABET = 'abcdefghjkmnpqrstuvwxyzACDEFGHJKLMNPQRSTUVWXYZ34679';
+
+function mintWebhookSecret(): string {
+  const bytes = randomBytes(32);
+  let out = '';
+  for (const byte of bytes) out += SECRET_ALPHABET[byte % SECRET_ALPHABET.length];
+  return out;
+}
+
+/**
+ * How many arrivals each source produced, and how many became nothing.
+ *
+ * ONE grouped query, never a count per source (#432): the source list grows
+ * with the owner's advertising, and a per-row aggregate on a report screen is
+ * a list's length turning into a page load.
+ *
+ * This is the number the funnel cannot give. `funnelReport` counts LEADS, so
+ * the day an advert sends twenty arrivals that were all the same number it
+ * reads exactly like the day nobody clicked — and those are a broken form and
+ * a bad campaign, which want opposite responses.
+ */
+export async function intakesBySource(sinceDays = 90) {
+  const since = new Date(Date.now() - sinceDays * DAY_MS);
+  const rows = await db
+    .select({
+      sourceKey: leadIntakes.sourceKey,
+      arrivals: count(),
+      dropped: sql<number>`count(*) FILTER (WHERE ${leadIntakes.outcome} = 'dropped')`,
+    })
+    .from(leadIntakes)
+    .where(gt(leadIntakes.createdAt, since))
+    .groupBy(leadIntakes.sourceKey);
+  return rows.map((row) => ({
+    sourceKey: row.sourceKey ?? 'other',
+    arrivals: Number(row.arrivals),
+    dropped: Number(row.dropped),
+  }));
+}
+
+/**
+ * Every door an advert can be pointed at, with its address.
+ *
+ * The owner cannot set up a campaign without the exact URL, and telling him in
+ * chat means he loses it — so the screen holds them. Only sources whose `key`
+ * the code actually understands are listed: a door we would answer 404 to is
+ * worse than no door, because it looks like one.
+ */
+export async function inboundDoors() {
+  const rows = await db
+    .select({
+      key: leadSources.key,
+      name: leadSources.name,
+      secret: leadSources.webhookSecret,
+      sortOrder: leadSources.sortOrder,
+    })
+    .from(leadSources)
+    .where(eq(leadSources.active, true))
+    .orderBy(leadSources.sortOrder, leadSources.name);
+  return rows
+    .filter((row): row is typeof row & { key: string } =>
+      Boolean(row.key) && (INBOUND_SOURCE_KEYS as readonly string[]).includes(row.key!),
+    )
+    .map((row) => ({ key: row.key, name: row.name, secret: row.secret ?? null }));
 }

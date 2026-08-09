@@ -1013,6 +1013,12 @@ export const leadSources = pgTable('lead_sources', {
    * renamed «Instagram» (migration 0065).
    */
   key: text('key'),
+  /**
+   * The shared secret for `POST /api/leads/in/<key>` (migration 0068). NULL
+   * means that door does not exist and the route 404s — a webhook that
+   * authenticates nothing is a public write into the funnel.
+   */
+  webhookSecret: text('webhook_secret'),
   sortOrder: integer('sort_order').notNull().default(100),
   active: boolean('active').notNull().default(true),
   createdAt: createdAt(),
