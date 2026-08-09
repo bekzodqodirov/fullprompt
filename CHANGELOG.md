@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## Xavfsizlik: kirish himoyasi va ochiq port — 2026-08-09 (kech)
+
+Reklama ishini loyihalashda tekshiruv **ikkita jonli teshikni** topdi. Ikkalasi
+ham reklamaga aloqador emas — ular tizim qurilganidan beri turgan.
+
+**1. Parolni cheksiz tanlash mumkin edi.** Kirish sahifasida «15 daqiqada 5
+marta» degan cheklov bor edi, lekin u **login + IP manzil** juftligi bo'yicha
+sanardi. IP manzilni esa so'rov yuboruvchining o'zi yozadi — uni har safar
+o'zgartirib turgan odam uchun har bir urinish yangi hisob bo'lardi, ya'ni
+cheklov umuman ishlamasdi. Bizda ~20 xodim telefon raqami va parol bilan
+kiradi, sessiya esa 30 kun turadi. Endi hisob **akkaunt bo'yicha** yuritiladi
+— uni hech qanday sarlavha o'zgartira olmaydi.
+
+*Buning narxi ochiq aytilsin:* endi kimdir hamkasbining telefon raqamini bilsa,
+5 marta noto'g'ri parol kiritib uni **15 daqiqaga** bloklab qo'yishi mumkin.
+Bu 15 daqiqada o'tadi; cheksiz parol tanlash esa hech qachon o'tmaydi.
+
+**2. Ilova shifrlanmagan holda ham ochiq edi.** `https://gsrwms.uz` dan
+tashqari, xuddi shu ilova **`http://<server-ip>:3000`** da ham javob berardi —
+HTTPS'siz. Ya'ni o'sha manzilda kiritilgan parol ochiq matnda ketardi. Bu port
+yopildi; ilovaga endi faqat Caddy orqali (HTTPS bilan) kiriladi.
+
+⚠️ **Bu ikkinchisi siz serverni yangilagandan keyin kuchga kiradi**
+(`docker compose up -d --build`) — shu paytgacha o'sha ochiq eshik turaveradi.
+
+Bazaga o'zgarish yo'q.
+
 ## Telegram: kalit qo'yildi, notanish suhbat endi ko'rinadi (2-qism) — 2026-08-08 (kech)
 
 **Kalit ekranga chiqdi.** «Suhbatlar → Telegramga ulash» sahifasida endi

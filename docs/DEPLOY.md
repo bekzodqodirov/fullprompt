@@ -238,3 +238,20 @@ yagona nusxangiz.
 
 Eslatma: `gsr_` prefiksi compose loyihasining nomidan keladi. O'zingizdagi
 nomni `docker volume ls` bilan tekshiring.
+
+## Faqat HTTPS orqali kirilsin (2026-08-09)
+
+`docker-compose.yml` ilova uchun `3000:3000` portini ochib qo'ygan edi, ya'ni
+`https://gsrwms.uz` dan tashqari xuddi shu ilova `http://<server-ip>:3000` da
+ham javob berardi — HTTPS'siz, Caddy'ni aylanib o'tib. Bu olib tashlandi.
+
+**Yangilagandan keyin tekshiring** (ilova konteyneri qayta yaratilgandan so'ng):
+
+```
+curl -sS -m 5 http://<server-ip>:3000/login   # javob BERMASLIGI kerak
+curl -sSI https://gsrwms.uz/login | head -1   # 200 bo'lishi kerak
+```
+
+Agar nosozlikni tekshirish uchun port kerak bo'lsa, uni faqat serverning o'ziga
+oching (`127.0.0.1:3000:3000`) va SSH tunnel orqali ulaning — hech qachon
+`0.0.0.0` ga emas.
