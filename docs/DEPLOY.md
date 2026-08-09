@@ -205,7 +205,23 @@ docker compose exec -T postgres pg_restore -U gsr -d gsr --no-owner < gsr.dump
 docker compose stop minio
 tar xzf minio.tar.gz -C /var/lib/docker/volumes/gsr_miniodata/_data
 docker compose up -d
+
+# MIGRATSIYALARNI ANIQ O'TKAZING — eng muhim qadam
+# Nusxa eski serverning sxemasini olib keladi (masalan 33 ta migratsiya).
+# `up -d` migrate'ni o'zi ishga tushiradi, lekin ishonch uchun qo'lda qiling:
+docker compose run --rm migrate
+docker compose exec -T postgres psql -U gsr -d gsr \
+  -tAc "select count(*) from drizzle.__drizzle_migrations"
+# ==> 69 chiqishi SHART. Kam bo'lsa yana `docker compose run --rm migrate`.
+docker compose up -d app
 ```
+
+**Nega bu qadam alohida yozilgan:** nusxa eski sxemani ham olib keladi, kod esa
+yangi. Yarim o'tkazilgan migratsiya — mijozlar kitobi, ombor jadvali va
+`/o/<code>` ekranlarida **xato sahifasi** demakdir (52-raundning nosozligi).
+`migrate` xizmati `restart: 'no'`, ya'ni muvaffaqiyatsiz tugasa ilova eski
+sxemada ishlab ketaveradi va hech kim sezmaydi — shuning uchun sonni **ko'z
+bilan** tekshiring.
 
 ### Tekshirish — domenni qaratishdan OLDIN
 
@@ -215,8 +231,10 @@ Yangi serverning IP'si bilan `http://<YANGI-IP>:3000` ni oching va:
 2. **Mijozlar soni** — eski serverdagi bilan bir xilmi (`1692` atrofida).
 3. **Prixod fotosi ochilsinmi** — bu MinIO ko'chganini isbotlaydi.
 4. **Migratsiyalar soni**: `docker compose exec -T postgres psql -U gsr -d gsr
-   -tAc "select count(*) from drizzle.__drizzle_migrations"` — eski serverdagi
-   bilan teng bo'lsin.
+   -tAc "select count(*) from drizzle.__drizzle_migrations"` — **69** bo'lsin.
+   Eski serverniki bilan teng BO'LMAYDI va bo'lmasligi kerak: eski server
+   ancha orqada, yangisi esa `main` dagi kodni ishlatadi. Kam chiqsa —
+   `docker compose run --rm migrate`, keyin qaytadan sanang.
 5. **Pul ekrani** (`/accounting`) — jamlanmalar eskisi bilan bir xilmi.
 
 Hammasi to'g'ri bo'lsagina domenning A-yozuvini yangi IP'ga qarating.
