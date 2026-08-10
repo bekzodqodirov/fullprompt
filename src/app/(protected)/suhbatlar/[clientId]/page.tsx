@@ -152,7 +152,9 @@ export default async function ConversationPage({
 
       {/* A sent reply must stop reading «navbatda», and a client's new
           message must appear, without anybody pulling to refresh. */}
-      <AutoRefresh ms={10_000} />
+      {/* Fast only while the queue has something in it — see the note on the
+          card panel's copy of this line. */}
+      <AutoRefresh ms={queued.length > 0 ? 2_000 : 10_000} />
     </div>
   );
 }

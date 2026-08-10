@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, sql } from 'drizzle-orm';
-import { db } from '../../platform/db/client';
+import { db, pgClient } from '../../platform/db/client';
 import { attachments, tgAccounts, tgMessages, tgOutbox, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
@@ -24,6 +24,16 @@ import {
  * is not indirection for its own sake: two connections on one personal
  * Telegram account is the thing the whole design exists to avoid.
  */
+
+/**
+ * The postgres channel the web app pokes and the listener listens on.
+ *
+ * Named in one place because the two ends live in different processes and a
+ * typo would be silent on both: the app would notify nobody and the listener
+ * would wait for a knock that never comes, and everything would still work —
+ * three seconds slower, for ever.
+ */
+export const OUTBOX_CHANNEL = 'tg_outbox_queued';
 
 export class OutboxError extends Error {}
 
@@ -237,6 +247,25 @@ export async function queueReply(
   // the queue row the photo now belongs to (server-chosen, never the client's).
   if (attachmentId) {
     await db.update(attachments).set({ entityId: row!.id }).where(eq(attachments.id, attachmentId));
+  }
+
+  // Wake the listener instead of letting it find this on its next tick.
+  //
+  // The sender polls every three seconds and sends one message per tick, on
+  // purpose: a queue that drains as fast as it can is the burst that gets a
+  // Telegram account flagged. But the poll interval and the PACING are two
+  // different things, and only the second one is load-bearing. The owner
+  // watching his own phone beside the screen saw «navbatda» for a beat that
+  // was pure polling. A postgres NOTIFY costs nothing and the listener still
+  // refuses to send faster than its own minimum gap, so the pacing survives.
+  //
+  // Fenced: this is a nicety on top of a queue that already works. A database
+  // that will not take a NOTIFY must not make a reply fail — the row is
+  // written, and the three-second tick is still there underneath.
+  try {
+    await pgClient.notify(OUTBOX_CHANNEL, row!.id);
+  } catch {
+    /* the tick will find it */
   }
 
   await writeAudit(db, ctx, {

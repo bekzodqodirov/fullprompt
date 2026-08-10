@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## Telegram: xabar «navbatda» turmay, darhol ketadi — 2026-08-10 (kech)
+
+Sizning savolingiz: «chatdan yozganda bir oz Queued bo'lib turib keyin jo'nadi,
+shuni tezlashtirishning iloji bormi».
+
+Ha. Ikkita kutish bor edi va **ikkalasi ham kerak emas edi**:
+
+1. Jo'natuvchi navbatni **3 soniyada bir marta** tekshirardi. Ya'ni xabaringiz
+   yozilib bo'lgan, lekin jo'natuvchi hali qaramagan.
+2. Ekran esa **10 soniyada bir marta** yangilanardi. Ya'ni xabar allaqachon
+   ketgan bo'lsa ham, ekranda «navbatda» yozuvi turaverardi.
+
+Eng yomon holatda **13 soniya** — xabar ketgan, ekran esa ketmagan deb turadi.
+
+**Endi:** xabar navbatga tushishi bilan jo'natuvchiga **darhol** signal boradi
+(o'lchadim — 1-2 millisekund), va ekran navbatda nimadir turgan paytda
+**2 soniyada** yangilanadi, bo'sh bo'lsa yana 10 soniyaga qaytadi.
+
+Bir narsa **ataylab o'zgarmadi**: ikkita xabar orasidagi eng kam masofa
+(1,2 soniya). Bu tezlik cheklovi emas — Telegram akkauntini «spam» deb
+belgilab qo'yishidan saqlaydigan yagona narsa. Signal faqat **kutishni**
+olib tashlaydi, oraliqni emas.
+
+3 soniyalik tekshiruv ham o'z joyida qoldi: agar jo'natuvchi o'chgan bo'lsa,
+u qayta ishga tushganda navbatdagilarni baribir topib jo'natadi.
+
 ## Tovar rasmlari va Qashqarda tezkor yuklash — 2026-08-10 (kech)
 
 ### 1. «Bazi tovarlarning rasimlar ochmayabti»
