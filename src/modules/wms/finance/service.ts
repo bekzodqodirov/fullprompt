@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -222,7 +222,7 @@ export async function deferredBalanceUsd(clientId: string): Promise<number> {
 }
 
 /** Per-client totals for the balances screen — only clients with any activity. */
-export async function clientBalances() {
+export async function clientBalances(ownerId?: string) {
   const rows = await db
     .select({
       clientId: clientTransactions.clientId,
@@ -234,7 +234,15 @@ export async function clientBalances() {
     })
     .from(clientTransactions)
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
-    .where(isNull(clientTransactions.voidedAt))
+    .where(
+      and(
+        isNull(clientTransactions.voidedAt),
+        // A seller reads their own book and nothing else. `undefined` is the
+        // only way to ask for everything, so a caller that forgets to decide
+        // gets the old behaviour visibly rather than by accident.
+        ownerId ? eq(clients.salesManagerId, ownerId) : undefined,
+      ),
+    )
     .groupBy(clientTransactions.clientId, clients.clientCode, clients.name);
   return rows
     .map((r) => ({
@@ -312,6 +320,7 @@ export interface PaymentRegisterRow {
 export async function paymentsRegister(
   from: string,
   to: string,
+  ownerId?: string,
 ): Promise<{ rows: PaymentRegisterRow[]; totalUsd: number; count: number; truncated: boolean }> {
   const rows = await db
     .select({
@@ -340,6 +349,7 @@ export async function paymentsRegister(
         isNull(clientTransactions.voidedAt),
         gte(clientTransactions.txDate, from),
         lte(clientTransactions.txDate, to),
+        ownerId ? eq(clients.salesManagerId, ownerId) : undefined,
       ),
     )
     .orderBy(desc(clientTransactions.txDate), desc(clientTransactions.createdAt))
@@ -362,6 +372,16 @@ export async function paymentsRegister(
         isNull(clientTransactions.voidedAt),
         gte(clientTransactions.txDate, from),
         lte(clientTransactions.txDate, to),
+        // The total has to be scoped with the rows or the screen contradicts
+        // itself — «jami» over the company above a list of one seller's
+        // payments. A subquery rather than a join, so the unscoped path stays
+        // byte-identical to what it has always been.
+        ownerId
+          ? inArray(
+              clientTransactions.clientId,
+              db.select({ id: clients.id }).from(clients).where(eq(clients.salesManagerId, ownerId)),
+            )
+          : undefined,
       ),
     );
   const count = Number(agg?.n ?? rows.length);

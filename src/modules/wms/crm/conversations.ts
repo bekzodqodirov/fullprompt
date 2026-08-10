@@ -268,6 +268,8 @@ export interface ThreadManager {
   id: string;
   name: string;
   messages: number;
+  /** When this manager last spoke to the client — the default's tie-break. */
+  lastAt?: string | null;
 }
 
 /**
@@ -279,13 +281,50 @@ export interface ThreadManager {
  */
 export async function threadManagers(clientId: string): Promise<ThreadManager[]> {
   const rows = await db
-    .select({ id: users.id, name: users.fullName, messages: sql<number>`count(*)` })
+    .select({
+      id: users.id,
+      name: users.fullName,
+      messages: sql<number>`count(*)`,
+      // Who spoke to this client LAST. The screen opens on that person's
+      // conversation, because merging several managers' chats into one
+      // stream shows a conversation that never happened (see the note on
+      // `defaultThreadManager`).
+      lastAt: sql<string>`max(${tgMessages.sentAt})`,
+    })
     .from(tgMessages)
     .innerJoin(users, eq(tgMessages.managerUserId, users.id))
     .where(eq(tgMessages.clientId, clientId))
     .groupBy(users.id, users.fullName)
     .orderBy(desc(sql`count(*)`));
-  return rows.map((r) => ({ id: r.id, name: r.name, messages: Number(r.messages) }));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    messages: Number(r.messages),
+    lastAt: r.lastAt,
+  }));
+}
+
+/**
+ * Whose conversation the screen opens on when the reader asked for nobody in
+ * particular.
+ *
+ * The owner: «chatni ichiga hamma odamni chatini qo'shib tashlayabti all
+ * deb». He is right, and it is worse than clutter. Two managers talking to
+ * one client from two personal Telegram accounts are two SEPARATE
+ * conversations; interleaving them by timestamp produces a thread in which a
+ * question and its answer sit next to sentences neither person ever saw —
+ * a conversation that never took place, presented as a record.
+ *
+ * So «Hammasi» stops being the default and becomes a choice. The default is
+ * the manager who spoke most RECENTLY, because a supervisor opening a client
+ * is almost always asking about the live conversation, not the busiest one
+ * historically. Null when there is nothing to choose between — a single
+ * manager, or none.
+ */
+export function defaultThreadManager(managers: ThreadManager[]): string | null {
+  if (managers.length < 2) return null;
+  const newest = [...managers].sort((a, b) => (a.lastAt ?? '') < (b.lastAt ?? '') ? 1 : -1)[0];
+  return newest?.id ?? null;
 }
 
 /**

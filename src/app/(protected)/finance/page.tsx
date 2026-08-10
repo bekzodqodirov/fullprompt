@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientBalances } from '@/modules/wms/finance/service';
+import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from './client-search';
 import { PageHeader } from '@/components/ui/page';
 
@@ -18,7 +19,10 @@ export default async function FinancePage() {
   }
   const t = await getTranslations('finance');
 
-  const rows = await clientBalances();
+  // A seller reads their own book: `finance.view` is a door, not a licence
+  // over every client's money (see finance/scope.ts). The total below sums
+  // these rows, so it narrows with them and cannot contradict the table.
+  const rows = await clientBalances(moneyOwnerFilter(actor));
   const totalDebt = rows.filter((r) => r.balanceUsd > 0).reduce((a, r) => a + r.balanceUsd, 0);
 
   return (

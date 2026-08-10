@@ -49,33 +49,80 @@ export async function TelegramBridgeStatus() {
   if (accounts.length === 0) return null;
 
   const t = await getTranslations('crm');
+
+  /**
+   * One line, not one banner per phone.
+   *
+   * The owner, with three accounts connected: «ulangan ishchilar ro'yhati
+   * juda katta joy olyabti bunday bolmasin» — and his screenshot showed three
+   * full-width coloured bars stacked above the search box, which is the whole
+   * top of a phone screen spent on something that is fine on most days. The
+   * fold idiom of this codebase (chat-menu, ThreadManagers) applies exactly:
+   * a summary that states the worst thing, and the detail one tap away.
+   *
+   * It opens ITSELF when an account needs a person — a signed-out session is
+   * not news, it is a job, and hiding a job behind a fold is how it waits a
+   * week. Everything else, including «not answering», stays folded: the
+   * listener catches up on its own and the count in the summary already says
+   * how many.
+   */
+  const needsAction = accounts.filter((a) => a.state === 'signed_out');
+  const unwell = accounts.filter((a) => a.state !== 'live');
+  const worst: BridgeState = needsAction.length > 0 ? 'signed_out' : unwell.length > 0 ? 'stale' : 'live';
+
   return (
-    <div className="space-y-1.5" data-testid="tg-bridge">
-      {accounts.map((account) => {
-        const behind = secondsBehind(account.lastSeenAt, now);
-        return (
-          <div
-            key={account.id}
-            className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-xl px-3 py-1.5 text-sm ${TONE[account.state]}`}
-            data-testid={`tg-bridge-${account.state}`}
-          >
-            <span className="font-semibold">
-              {t(BRIDGE_LABELS[account.state] as 'bridgeLive')}
-            </span>
-            <span className="min-w-0 flex-1 truncate opacity-80">
-              {account.managerName} · {account.tgPhone}
-            </span>
-            {/* Only when it is running: on a dead bridge the age of the last
-                heartbeat is the misleading number, not the useful one. */}
-            {account.state === 'live' && behind !== null && (
-              <span className="text-xs opacity-70">{t('bridgeSeconds', { n: behind })}</span>
-            )}
-            {/* A key that no longer opens the stored session is a DIFFERENT
-                problem from a dead session, and only this line separates them. */}
-            {!account.keyOpens && <span className="text-xs font-bold">{t('bridgeKeyBroken')}</span>}
-          </div>
-        );
-      })}
-    </div>
+    <details
+      className="text-sm"
+      open={needsAction.length > 0}
+      data-testid="tg-bridge"
+    >
+      <summary
+        className={`flex cursor-pointer list-none flex-wrap items-baseline gap-x-2 rounded-xl px-3 py-1.5 ${TONE[worst]}`}
+        data-testid={`tg-bridge-${worst}`}
+      >
+        <span className="font-semibold">
+          {worst === 'live'
+            ? t(BRIDGE_LABELS.live as 'bridgeLive')
+            : t(BRIDGE_LABELS[worst] as 'bridgeLive')}
+        </span>
+        <span className="min-w-0 flex-1 truncate opacity-80">
+          {/* «3 ta akkaunt» when all is well, «1 / 3» when it is not: the
+              number a reader needs is how many are broken, out of how many. */}
+          {worst === 'live'
+            ? t('bridgeAccounts', { n: accounts.length })
+            : `${unwell.length} / ${accounts.length}`}
+        </span>
+      </summary>
+
+      <div className="mt-1.5 space-y-1" data-testid="tg-bridge-detail">
+        {accounts.map((account) => {
+          const behind = secondsBehind(account.lastSeenAt, now);
+          return (
+            <div
+              key={account.id}
+              className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-xl px-3 py-1.5 ${TONE[account.state]}`}
+              data-testid={`tg-bridge-account-${account.state}`}
+            >
+              <span className="font-semibold">
+                {t(BRIDGE_LABELS[account.state] as 'bridgeLive')}
+              </span>
+              <span className="min-w-0 flex-1 truncate opacity-80">
+                {account.managerName} · {account.tgPhone}
+              </span>
+              {/* Only when it is running: on a dead bridge the age of the last
+                  heartbeat is the misleading number, not the useful one. */}
+              {account.state === 'live' && behind !== null && (
+                <span className="text-xs opacity-70">{t('bridgeSeconds', { n: behind })}</span>
+              )}
+              {/* A key that no longer opens the stored session is a DIFFERENT
+                  problem from a dead session, and only this line separates them. */}
+              {!account.keyOpens && (
+                <span className="text-xs font-bold">{t('bridgeKeyBroken')}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }

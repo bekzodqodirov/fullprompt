@@ -133,7 +133,13 @@ export async function TelegramThread({
           owner's report twice over: the message had reached the client and
           this screen still said it was waiting (round 25 gave the Suhbatlar
           screen this and the cards never got it). */}
-      <AutoRefresh ms={10_000} />
+      {/* Ten seconds is right for a quiet thread and wrong for the two
+          seconds after you press send: the queue empties on the SERVER, so
+          «navbatda» stays on screen until a refresh notices, and the owner
+          read that whole gap as the system being slow. While anything is
+          still queued the page asks every two seconds; when the queue is
+          empty it goes back to ten and costs nothing. */}
+      <AutoRefresh ms={queued.length > 0 ? 2_000 : 10_000} />
       <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
         {[...queued].reverse().map((row) => (
           <OutboxBubble

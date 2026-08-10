@@ -2209,6 +2209,35 @@ unit/integration + 145 e2e green on a fresh db in CI's order. ONE earlier full
 run had a single unidentified failure that did not recur in three later runs;
 CI is the arbiter.
 
+Round 91 — the owner testing on real accounts (#637-640). (1) **A seller could
+read every client's money.** `sales_manager` holds `finance.view` and
+`/finance` ran an UNSCOPED query — every charge, payment, balance and the
+company's total debt on a seller's screen — while the same role's other grants
+say `clients.view_own` and `reports.own_clients`. `finance/scope.ts`:
+`seesAllMoney` = `finance.manage` | `clients.manage`, everybody else carries
+`moneyOwnerFilter` = own id; `finance.view` is deliberately NOT on that list,
+being the grant that made it a bug. Two answers and no third (#199's shape).
+FOUR places, because a scoped list beside an open URL is not scoping: the
+balances, the register's rows AND its total, the XLSX (#490 one size up), and
+the per-client ledger which `notFound()`s. **Cost stated: 1,402 of his 1,692
+active clients carry no sales manager**, so a seller sees only what is
+assigned — the deferred access item, which he has now answered. Red-proven.
+(2) **Two managers' chats stopped being one.** Interleaving two personal
+accounts by `sent_at` shows a conversation that never happened; «Hammasi» is
+now `?hodim=all` and the default is `defaultThreadManager` = whoever spoke
+most RECENTLY (a supervisor opens a client to read the LIVE conversation),
+null when there is nothing to choose between. (3) **Three connected phones
+drew three full-width bars** on `/suhbatlar` — one summary line now, detail
+one tap away, self-opening ONLY for `signed_out` (not news, a job).
+(4) **«Queued» was two waits and neither was a rate limit**: a 3 s poll and a
+10 s refresh = up to 13 s of a delivered message looking undelivered. postgres
+`NOTIFY`/`LISTEN` on the exported `OUTBOX_CHANNEL` (measured **1-2 ms**;
+a naive probe said 2 s, which was the listener's own connect), `MIN_SEND_GAP_MS`
+1200 keeps the pacing, the 3 s poll STAYS underneath (a NOTIFY-only listener
+loses whatever queued while it was down), screen polls 2 s only while the
+queue is non-empty. No migration. 1278 unit/integration + 145 e2e green on a
+fresh db in CI's order.
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
 **Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that

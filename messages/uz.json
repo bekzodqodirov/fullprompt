@@ -1339,7 +1339,8 @@
     "sourceResult": "Manba bo'yicha natija",
     "sourceArrivals": "{n} ta ariza",
     "sourceDropped": "{n} tasi bekor",
-    "sourceWon": "{n} ta yutildi"
+    "sourceWon": "{n} ta yutildi",
+    "bridgeAccounts": "{n} ta akkaunt"
   },
   "navShort": {
     "home": "Bosh",

@@ -4,6 +4,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients, currencies } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { clientBalanceUsd, clientLedger } from '@/modules/wms/finance/service';
 import { listAccounts } from '@/modules/wms/accounting/service';
 import { openDealsForClient } from '@/modules/wms/deals/service';
@@ -29,6 +30,12 @@ export default async function ClientLedgerPage({
 
   const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
   if (!client) notFound();
+  // Scoping a LIST and leaving the address bar open is not scoping: the row
+  // is gone from /finance and the ledger is one typed uuid away. `notFound`
+  // rather than a refusal, so the URL cannot be used to ask whether a client
+  // exists at all.
+  const ownerFilter = moneyOwnerFilter(actor);
+  if (ownerFilter && client.salesManagerId !== ownerFilter) notFound();
 
   const [balance, ledger, currencyRows, accounts, openDeals] = await Promise.all([
     clientBalanceUsd(clientId),
