@@ -789,6 +789,29 @@ describe('the agent sheet groups a plan by the truck that brought the cargo', ()
     const afterSheet = after.getWorksheet(`План v${outbound.version.versionNo}`)!;
     expect(String(afterSheet.getRow(4).getCell(batchAt).value)).toBe(inboundBatch!.code);
     expect(String(afterSheet.getRow(3).getCell(1).value)).not.toContain(outboundBatch!.code);
+
+    // …and after the truck this plan describes has actually LEFT. The plan
+    // card keeps its download link for ever, and a document that has already
+    // been sent to the agent must not change its claims when it is fetched
+    // again. `departBatch` nulls `current_warehouse_id` on every loaded box,
+    // so a rule that asked where the cargo is STANDING would answer this
+    // second file with «received here», no truck and no date, for every
+    // carton on it.
+    for (const code of [...trucked.shortCodes, ...walkedIn.shortCodes]) {
+      await ingestLoadScans([scan(outboundBatch!.id, code)], ctx());
+    }
+    await finishLoading(outboundBatch!.id, ctx());
+    await departBatch(outboundBatch!.id, ctx());
+    const departed = new ExcelJS.Workbook();
+    await departed.xlsx.load(
+      (await buildAgentXlsx(outbound.plan.id, outbound.version.versionNo))! as unknown as ArrayBuffer,
+    );
+    const departedSheet = departed.getWorksheet(`План v${outbound.version.versionNo}`)!;
+    expect(String(departedSheet.getRow(3).getCell(1).value)).toContain(inboundBatch!.code);
+    expect(String(departedSheet.getRow(4).getCell(batchAt).value)).toBe(inboundBatch!.code);
+    expect(String(departedSheet.getRow(4).getCell(batchAt + 1).value)).toMatch(
+      /^\d{2}\.\d{2}\.\d{4}$/,
+    );
   });
 });
 

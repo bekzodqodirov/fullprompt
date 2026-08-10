@@ -165,11 +165,12 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
         kg: Number(line.plannedKg),
         m3: Number(line.plannedM3),
         density,
-        // The row repeats what its block heading says — on purpose, and it
-        // is the only duplication on the sheet. A row copied out of here, or
-        // read after the heading has scrolled away, still says which truck
-        // brought the goods; that is what the owner asked to be ADDED, and
-        // the blocks are the order he asked for, not a substitute for it.
+        // The block names ONE truck — the earliest — so this cell is where a
+        // lot that came in two halves says so, and it is the only place the
+        // split is visible at all. It also survives a row being copied out of
+        // the sheet or read after the heading has scrolled away, which is
+        // what the owner asked to be ADDED; the blocks are the order he asked
+        // for, not a substitute for it.
         arrivalBatch: arrival?.codes.join(', ') || '—',
         arrivedAt: arrival ? docDate(arrival.arrivedAt, zone) : '',
       };

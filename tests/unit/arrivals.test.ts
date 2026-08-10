@@ -44,7 +44,15 @@ describe('what a lot says about how it got here', () => {
     // and cannot be printed, but it must not blank the half that is.
     const map = foldArrivals([row('lot-c', null, '10'), row('lot-c', 'KAS-012', '20')]);
     expect(map.get('lot-c')!.codes).toEqual(['KAS-012']);
-    expect(map.get('lot-c')!.arrivedAt).toEqual(new Date('2026-07-10T08:00:00Z'));
+  });
+
+  it('dates a half-trucked lot from the TRUCK, never from the half that walked in', () => {
+    // The untrucked half landed on the 10th and the truck on the 20th. Taking
+    // the earliest row of any kind prints «KAS-012 · 10.07» — a date that
+    // truck was not here — and, because the block heading is the minimum over
+    // its rows, back-dates every OTHER client's cargo in that block with it.
+    const map = foldArrivals([row('lot-c', null, '10'), row('lot-c', 'KAS-012', '20')]);
+    expect(map.get('lot-c')!.arrivedAt).toEqual(new Date('2026-07-20T08:00:00Z'));
   });
 });
 
@@ -115,5 +123,25 @@ describe('the order the agent reads the sheet in', () => {
     // 05.07 is older than either truck. It still goes last: the sheet is read
     // to answer «which truck brought this», and «none» is not an answer to it.
     expect(groups.at(-1)!.code).toBe('');
+  });
+
+  it('files a lot that came in two halves under the EARLIEST truck, not in a block of its own', () => {
+    // Keyed on the joined list, KAS-012's cargo ends up in two places with two
+    // subtotals to add up by hand — on a sheet whose whole promise is one
+    // block per truck.
+    const split = foldArrivals([
+      row('split', 'KAS-012', '20'),
+      row('split', 'KAS-020', '25'),
+      row('plain', 'KAS-012', '20'),
+    ]);
+    const blocks = groupByArrival(
+      [
+        { lotId: 'split', code: 'GS900' },
+        { lotId: 'plain', code: 'GS100' },
+      ],
+      (l) => ({ arrival: split.get(l.lotId), within: l.code }),
+    );
+    expect(blocks.map((b) => b.code)).toEqual(['KAS-012']);
+    expect(blocks[0]!.rows.map((r) => r.lotId).sort()).toEqual(['plain', 'split']);
   });
 });

@@ -12,18 +12,19 @@ import { batches, boxes, boxMovements } from '../../platform/db/schema';
  * way it came in.
  *
  * THE RULE, one sentence: a lot's arrival at a warehouse is the NEWEST
- * movement, over the lot's boxes standing there now, that moved a box INTO
- * that warehouse; if that movement is an unload, the truck is named, and
- * otherwise the cargo was received or carried here without one.
+ * movement, over the lot's boxes, that LANDED a box in that warehouse; if that
+ * movement is an unload, the truck is named, and otherwise the cargo was
+ * received or carried here without one.
  *
  * Every clause of it is load-bearing, and the causes in the live database say
  * why:
  *
- * - «standing there now» (`current_warehouse_id`) is what keeps `batch_departed`
- *   out. That row is written with `to_warehouse_id = destination` while the
- *   box's own warehouse becomes NULL — a truck heading for Kashgar has already
- *   written its arrival row days before it arrives. An in-transit box has no
- *   warehouse, so it cannot be in the set at all.
+ * - «landed» (`to_status <> 'in_transit'`) is what keeps `batch_departed` out.
+ *   That row is written with `to_warehouse_id = destination` the moment a
+ *   truck LEAVES, so a rule trusting `to_warehouse_id` alone announces every
+ *   arrival days early. The box's own `current_warehouse_id` answers the same
+ *   question and is deliberately not asked: `departBatch` nulls it, so the
+ *   sheet would stop naming any truck the moment the plan's own truck left.
  * - «moved INTO» (`from IS DISTINCT FROM to`) is what keeps `plan_approved`,
  *   `load_scan`, `crate_packed` and the rest out. They carry the box's own
  *   warehouse on BOTH sides — they are status changes, not journeys — and
@@ -54,7 +55,13 @@ export interface ArrivalRow {
 export interface LotArrival {
   /** Every truck that brought part of this lot here, earliest first. */
   codes: string[];
-  /** When the earliest of them landed — the day this cargo started standing here. */
+  /**
+   * The day this lot landed. The earliest TRUCKED landing when there is one,
+   * and the earliest arrival of any kind when there is not — a lot whose other
+   * half was walked into the warehouse in June must not date July's truck to
+   * June, neither on its own row nor in the heading over everybody else's
+   * cargo in that block.
+   */
   arrivedAt: Date;
 }
 
@@ -62,10 +69,10 @@ export interface LotArrival {
  * Fold the per-truck rows into one answer per lot.
  *
  * A lot split across two trucks is real — a client's goods reach the Chinese
- * warehouse over a week and leave on whatever is loading. The EARLIEST arrival
- * decides where the lot is grouped, because that is the day this cargo started
- * waiting and the order a consolidator ships in; the cell names every truck so
- * the split is not hidden.
+ * warehouse over a week and leave on whatever is loading. The EARLIEST TRUCK
+ * decides where the lot is grouped, because that is the order a consolidator
+ * ships in; the row cell names every truck, which is the only place the split
+ * is visible at all.
  */
 export function foldArrivals(rows: ArrivalRow[]): Map<string, LotArrival> {
   const byLot = new Map<string, ArrivalRow[]>();
@@ -75,11 +82,12 @@ export function foldArrivals(rows: ArrivalRow[]): Map<string, LotArrival> {
   const out = new Map<string, LotArrival>();
   for (const [lotId, lotRows] of byLot) {
     const sorted = [...lotRows].sort((a, b) => a.arrivedAt.getTime() - b.arrivedAt.getTime());
+    // A lot that came partly on a truck and partly on none names the trucks it
+    // does have; the untrucked part is not a code and cannot be printed.
+    const trucked = sorted.filter((r) => r.batchCode);
     out.set(lotId, {
-      // A lot that came partly on a truck and partly on none names the trucks
-      // it does have; the untrucked part is not a code and cannot be printed.
-      codes: sorted.map((r) => r.batchCode).filter((c): c is string => Boolean(c)),
-      arrivedAt: sorted[0]!.arrivedAt,
+      codes: trucked.map((r) => r.batchCode!),
+      arrivedAt: (trucked[0] ?? sorted[0])!.arrivedAt,
     });
   }
   return out;
@@ -87,7 +95,7 @@ export function foldArrivals(rows: ArrivalRow[]): Map<string, LotArrival> {
 
 /** One block of a document: everything that came in on the same truck. */
 export interface ArrivalGroup<T> {
-  /** The trucks that brought it, joined for print. Empty = came on none. */
+  /** The truck that brought it. Empty = came on none. */
   code: string;
   /** The earliest landing in the block, or null when there is no truck. */
   arrivedAt: Date | null;
@@ -110,7 +118,11 @@ export function groupByArrival<T>(
   const groups = new Map<string, ArrivalGroup<T> & { within: Map<T, string> }>();
   for (const row of rows) {
     const { arrival, within } = of(row);
-    const code = arrival?.codes.join(', ') ?? '';
+    // The EARLIEST truck, not the joined list. Keyed on the list, a lot that
+    // came half on KAS-012 and half on KAS-020 forms a THIRD block of its own,
+    // so KAS-012's cargo appears in two places with two subtotals to add up by
+    // hand — on a sheet whose whole promise is one block per truck.
+    const code = arrival?.codes[0] ?? '';
     let group = groups.get(code);
     if (!group) {
       group = { code, arrivedAt: null, rows: [], within: new Map() };
@@ -175,14 +187,18 @@ export async function arrivalsForLots(
         .where(
           and(
             inArray(boxes.lotId, lotIds),
-            eq(boxes.currentWarehouseId, warehouseId),
             eq(boxMovements.toWarehouseId, warehouseId),
             sql`${boxMovements.fromWarehouseId} IS DISTINCT FROM ${boxMovements.toWarehouseId}`,
-            // A box in transit has not arrived. `current_warehouse_id` already
-            // says so, and this says it a second way that survives whatever
-            // cause gets added next year: `batch_departed` writes the
-            // DESTINATION days before the truck reaches it, so a rule that
+            // A box in transit has NOT arrived: `batch_departed` writes the
+            // destination days before the truck reaches it, so a rule that
             // trusts `to_warehouse_id` alone announces every arrival early.
+            // The box's own `current_warehouse_id` says the same thing and
+            // this deliberately does NOT ask it — `departBatch` nulls that
+            // column, so the moment the plan's OWN truck leaves, every box
+            // would fall out of the answer and the file the agent already
+            // holds would re-download saying every carton was walked in with
+            // no truck and no date. A document that has left the company must
+            // not change its claims when it is fetched again.
             sql`${boxMovements.toStatus} <> 'in_transit'`,
           ),
         )

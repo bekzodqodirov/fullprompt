@@ -45,6 +45,19 @@ va sana endi **skladning o'z vaqti bo'yicha** — Xitoy skladlari UTC+8 da,
 shuning uchun ertalab tushirilgan fura ilgari **bir kun oldingi sana** bilan
 chiqar edi.
 
+Kod tayyor bo'lgach uni yana bir bor tekshirdim va **uchta xato topildi, uchalasi
+ham tuzatildi**:
+
+- Fura jo'nab ketgandan keyin xuddi shu faylni qayta yuklab olsangiz, u
+  **butunlay boshqa narsa yozardi** — «hech qanday fura yo'q» deb. Ya'ni
+  agentga yuborilgan fayl bilan keyinroq yuklangani bir-biriga to'g'ri
+  kelmasdi. Endi fayl har doim bir xil.
+- Yuki ikki bo'lakda kelgan mijoz (bir qismi skladga o'zi keltirilgan, bir
+  qismi fura bilan) **furaning sanasini emas, birinchi bo'lakning sanasini**
+  ko'rsatardi — va u sana blokdagi hamma mijozning yukiga ham yozilardi.
+- Ikki xil furada kelgan bitta yuk **uchinchi alohida blok** hosil qilardi,
+  natijada bitta furaning yuki ikki joyda, ikkita jamisi bilan chiqardi.
+
 ## Sotuvchi endi faqat o'z mijozlarining pulini ko'radi + Telegram ekrani — 2026-08-10 (kech)
 
 ### 1. Pul: sotuvchiga begona mijozning hisobi ko'rinmaydi

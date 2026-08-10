@@ -2273,8 +2273,28 @@ unload is 23:00 UTC the day before, so `docDate(value, timeZone)` now, dd.mm.yyy
 as text (the packing sheet's house rule). Designed and judged by four
 adversarial lenses BEFORE any code; that pass produced the `found_here` fix, the
 `plan_approved` trap, the timezone, the merge and the reversed English headers.
-No migration. 1298 unit/integration + **145 e2e all green** on a fresh db in
+No migration. 1300 unit/integration + **146 e2e all green** on a fresh db in
 CI's order.
+
+Round 92b — **the same adversarial pass, re-run against the SHIPPED branch**
+(#645): 35 objections, 26 refuted, and 3 of the 9 survivors were defects
+already committed. (a) The arrival query asked where the cargo was STANDING
+and `departBatch` NULLS that column — the agent's sheet said «no truck, no
+date» about every carton once the truck it describes had left, i.e. a document
+that changed its claims on re-download; now `to_status <> 'in_transit'` alone,
+with an integration test that departs the batch and re-reads the file.
+(b) `foldArrivals` dated a lot from its earliest row of ANY kind, so a
+half-walked-in lot printed the truck's code against the walk-in's date and
+back-dated the whole block. (c) `groupByArrival` keyed on the JOINED code
+list, so a two-truck lot made a THIRD block and one truck's cargo appeared
+twice. Also `CardCols`: the tail moved INSIDE the main cell — a grid row of
+its own measures identical while the LENTA is taller (the lead card) and opens
+**548 px of dead space** when the RAIL is taller (the deal card), y=1129/1723
+vs y=597/1191. New `m9zl-card-history.desktop.spec.ts` SWEEPS the scroll and
+pads the history first: the broken layout reads zero overlap at rest, so an
+at-rest assertion is green on the bug — which is exactly how round 92's first
+measurement went wrong. RULE: **a rule that is right about the common case and
+silently wrong about the case the business has is the shape all three had.**
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

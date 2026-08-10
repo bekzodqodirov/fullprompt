@@ -34,13 +34,23 @@ import type { ReactNode } from 'react';
  * the history was stranded at the bottom of the 24rem column with ~450 px
  * of nothing above it. Under the lenta it simply comes next.
  *
- * Rendering it INSIDE the main cell instead was measured against this and
- * came out identical on both cases, so the simpler CSS did not decide it;
- * all three slots stay explicit, which is what the rest of the file does.
+ * It lives INSIDE the main cell rather than in a grid row of its own, and
+ * that difference is invisible until the RAIL is the taller column — which
+ * is the deal card's ordinary state, its rail carrying facts, lookback,
+ * lines, discount, receipts, charge, profit, tasks and custom fields. A row
+ * two starts below the tallest thing in row one, so measured at 1280×900
+ * with a 60 px lenta and a rail past its cap: as a grid row the history
+ * opened **548 px of nothing** above itself and sat at y=1129 in a 1723 px
+ * page; inside the cell it follows the lenta by the grid's own 16 px gap at
+ * y=597 in a 1191 px page. Same width, same column, no overlap either way —
+ * half a screen less scrolling to reach the thing he said he could not
+ * reach. (A first comparison said the two were identical. It grew the LENTA,
+ * so row one was never the rail: the same mistake as the first overlap
+ * measurement, one shape further along.)
  *
- * DOM order is rail → main → tail, so the phone needs no rules at all; the
- * desktop grid places all three explicitly. ONE markup, no duplicated node
- * for a locator to find twice (#509) and no window measuring.
+ * DOM order is still rail → main → tail, so the phone needs no rules at all.
+ * ONE markup, no duplicated node for a locator to find twice (#509) and no
+ * window measuring.
  */
 export function CardCols({
   main,
@@ -49,7 +59,7 @@ export function CardCols({
 }: {
   main: ReactNode;
   rail: ReactNode;
-  /** Rendered last on a phone; under the rail on a desktop. */
+  /** Rendered last on a phone, and last under the lenta on a desktop. */
   tail?: ReactNode;
 }) {
   return (
@@ -62,12 +72,12 @@ export function CardCols({
       </div>
       <div data-cardcols="main" className="min-w-0 space-y-4 md:col-start-1 md:row-start-1">
         {main}
+        {tail && (
+          <div data-cardcols="tail" className="min-w-0 space-y-4">
+            {tail}
+          </div>
+        )}
       </div>
-      {tail && (
-        <div data-cardcols="tail" className="min-w-0 space-y-4 md:col-start-1 md:row-start-2">
-          {tail}
-        </div>
-      )}
     </div>
   );
 }
