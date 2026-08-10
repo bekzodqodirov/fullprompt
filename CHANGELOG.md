@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## Yangi serverga ko'chdik — 2026-08-10
+
+Butun tizim kuchliroq serverga ko'chirildi (4 yadro / 8 GB) va **bir yillik
+yangilanish bir kechada tushdi**. Endi serverda `main` — ya'ni oxirgi olti
+oyda qilingan hamma ish ishlayapti.
+
+**Ko'chgan narsalar:** 328 mijoz, hamma prixod, quti, partiya, pul yozuvi,
+704 ta yozishma, 67 ta qo'ng'iroq yozuvi, 308 ta fayl. **Hech narsa
+yo'qolmadi** — nusxa ikki marta olindi va ikkinchisi orasida qo'shilgan bitta
+yangi mijozni ham olib keldi.
+
+**Telegram seanslari saqlandi** — menejerlar qaytadan ulanishi shart emas.
+
+`gsrwms.uz` va `www.gsrwms.uz` uchun sertifikat olindi.
+
+**Eski server o'chirilmadi** — bir hafta turadi, agar biror narsa chiqsa
+orqaga qaytish yo'li. O'chirishdan oldin oxirgi nusxasini oling.
+
+### Endi nima qilish kerak (muhimlik tartibida)
+
+1. **Bot tokenini yangilang** — @BotFather → `/revoke`. U chatga tushgan edi.
+2. **Fotolarni alohida diskka ko'chiring** — baza yiliga ~0,5 GB, fotolar va
+   qo'ng'iroq yozuvlari o'nlab GB. Hozir ikkovi bitta diskda; disk to'lса
+   baza ham, zaxira ham bir daqiqada to'xtaydi. **Qo'ng'iroq ilovasini
+   tarqatishdan oldin** qiling.
+3. **Zaxirani yoqing** — Contabo S3, `.env` ga 4 qator (`docs/BACKUP.md`).
+   Hozircha yagona tashqi nusxa — ko'chirish paytida olingan fayl.
+4. **Reklama navbatini yoqing** — Boshqaruv → Rollar → «Kelgan arizalar
+   navbati».
+5. **Ikkala ilovani chiqaring** — haydovchi v1.3 (2 soatdan keyin o'chib
+   qolishi tuzatilgan, lekin hali tarqatilmagan) va qo'ng'iroq ilovasi.
+
+
 ## Reklama — hamma platforma — 2026-08-09 (kech)
 
 Sizning «tiktok, youtube, sayt, instagram — hammasi o'zimizni qo'limizda»
