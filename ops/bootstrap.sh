@@ -57,8 +57,24 @@ else
 fi
 
 say "4/5 Health check"
+# Probed INSIDE the container, on purpose. Round 81 removed the `3000:3000`
+# port mapping — it served the login form over plain HTTP straight off the
+# VPS's address, outside TLS and outside the proxy — so `curl localhost:3000`
+# on the HOST has answered nothing since, and this check called every healthy
+# fresh install a failure. Nobody noticed for five rounds because nobody
+# bootstraps a new server often; the first person to hit it was the owner,
+# mid-move, on the machine where a false alarm is most expensive.
+#
+# `node -e` rather than curl or wget: the runner is node:22-slim, which ships
+# neither, and node with a global fetch is the one thing it is guaranteed to
+# have. The address is the container's OWN hostname, not 127.0.0.1: Next
+# standalone binds to `process.env.HOSTNAME`, which Docker sets to the
+# container id. The Dockerfile now pins HOSTNAME=0.0.0.0 so loopback works
+# too, and this form is correct either way — including on an image built
+# before that line existed, which is every image already deployed.
+probe='fetch("http://"+require("os").hostname()+":3000/api/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'
 for i in $(seq 1 60); do
-  if curl -sf http://localhost:3000/api/health >/dev/null; then break; fi
+  if docker compose exec -T app node -e "$probe" >/dev/null 2>&1; then break; fi
   sleep 2
   [ "$i" = 60 ] && { echo "App 120 soniyada ko'tarilmadi — docker compose logs app"; exit 1; }
 done
@@ -68,7 +84,26 @@ IP=$(curl -sf -4 https://ifconfig.me || hostname -I | awk '{print $1}')
 if [ -n "${DOMAIN:-}" ]; then
   echo "✅ https://${DOMAIN}  (DNS A-yozuvi shu serverga ko'rsatishi kerak: ${IP})"
 else
-  echo "✅ http://${IP}:3000  (kamera-skaner uchun keyinroq domen + HTTPS kerak bo'ladi)"
+  # No public address, and that is deliberate: the app port is not published
+  # (round 81), so without a domain the only way in is an SSH tunnel. Saying
+  # "open http://IP:3000" here would send the reader to a door that does not
+  # answer — which is exactly how this script's own health check went wrong.
+  echo "✅ Ilova ishlayapti, lekin TASHQARIDAN OCHIQ EMAS (bu ataylab)."
+  echo ""
+  echo "Domensiz ko'rish uchun — SSH tunnel, ikki qadam:"
+  echo "  1) SHU serverda, vaqtincha faqat loopback'ga chiqaring:"
+  echo "       cat > docker-compose.override.yml <<'YML'"
+  echo "       services:"
+  echo "         app:"
+  echo "           ports: ['127.0.0.1:3000:3000']"
+  echo "       YML"
+  echo "       docker compose up -d app"
+  echo "  2) O'Z KOMPYUTERINGIZDA:"
+  echo "       ssh -L 3000:127.0.0.1:3000 root@${IP}"
+  echo "     va brauzerda http://localhost:3000"
+  echo ""
+  echo "  Tekshirib bo'lgach o'chiring:"
+  echo "       rm docker-compose.override.yml && docker compose up -d app"
 fi
 echo ""
 echo "Endi BIRINCHI hisobni yarating (demo hisoblar ataylab yaratilmaydi):"

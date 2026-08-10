@@ -35,9 +35,27 @@ import {
 const STAMP = String(Date.now()).slice(-7);
 let actorId: string;
 
+/**
+ * A COUNTER, not the clock — #598's rule, and this file is its fifth victim.
+ *
+ * The phone used to be `Date.now() + random(0..999)` sliced to seven digits.
+ * The file runs end to end in ~130 ms, so `Date.now()` barely moves and the
+ * whole of the uniqueness rests on that random offset: mint eight employees
+ * and two of them collide often enough that CI eventually catches it, which
+ * is what happened here — `duplicate key value violates users_phone_unique`
+ * on a run that changed nothing in this file.
+ *
+ * The clock may only make an id unique across RUNS; within a run it has to be
+ * a counter.
+ */
+let staffSeq = 0;
+
 /** A fresh employee with a unique phone, linked (or not) to a unique chat. */
 async function mintStaff(opts: { active?: boolean } = {}) {
-  const phone = `+99893${String(Date.now() + Math.floor(Math.random() * 1000)).slice(-7)}`;
+  // padStart before slice: a STAMP with a leading zero would lose it through
+  // Number() and hand back a SHORTER phone, which is unique but not the shape
+  // the rest of the app matches on (the last nine digits, everywhere).
+  const phone = `+99893${String(Number(STAMP) + (staffSeq += 1)).padStart(7, '0').slice(-7)}`;
   const [user] = await db
     .insert(users)
     .values({

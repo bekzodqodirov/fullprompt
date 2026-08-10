@@ -154,24 +154,41 @@ driver app **still needs its v1.3 APK released**
 calls round needs its FIRST APK published the same way (Actions →
 calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 
-**NOT DEPLOYED as of this writing:** everything from `eea3509` onward — the
-17 audit defects (four live money bugs), the speed rounds, rounds 46-79, the
-driver app 1.3, both APKs. The owner's last confirmed update was `eea3509`,
-so the server is **~37 rounds behind** and this is now the biggest single
-risk on the project: the gap is no longer one release, it is a year of
-work landing at once. **Re-verified 2026-08-09 with the tail this branch
-adds:** a database built to his deployed level (journal truncated at 0032)
-then given the full journal applied **0033 → 0068 in ONE run** and reached
-**69** rows, with `list_views`, `lead_intakes`, `automation_fires`,
-`reply_templates`, `call_logs` and all five new columns present afterwards.
-Re-run that check whenever the tail grows — the claim is what he acts on.
-**Deploy note:** migrations 0058-0069 MUST land — 0058 especially — the client book, the stock table
-and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
-deploy shows those three the error page (round 52's failure, wider). Check
-`drizzle.__drizzle_migrations` after updating (**count must reach 70**); fix
-with `docker compose run --rm migrate`. Recommended order, told to the owner:
-enlarge the VPS and move the data first (`docs/DEPLOY.md` → «Yangi VPS'ga
-ko'chirish»), deploy this code there, test it, and only then move the domain.
+**DEPLOYED — 2026-08-10.** The year-long gap is closed. The owner moved
+production to a bigger Contabo VPS (**169.58.150.226**, 4 vCPU / 8 GB) and
+deployed `main` onto it in one evening, walked through step by step in chat.
+What the move proved and cost is in `docs/DEPLOY.md`; the three code defects it
+uncovered are #632-634.
+
+State on the live server: migrations **69** (0068 the tail), 328 clients,
+27 users, 7 warehouses, 704 tg messages, 67 call logs, 308 attachments;
+Let's Encrypt certificates for `gsrwms.uz` AND `www.gsrwms.uz`; two Telegram
+manager accounts came across **still `active` with their sessions intact**,
+which is the `.env`/`TG_SESSION_KEY` copy having been done right (the third,
+`+998900071900`, was `signed_out` by the manager himself on 08-08, before the
+move). **The old server is kept with `app` stopped as the rollback** — do not
+let it be deleted for a week, and note its dump is the only off-box copy until
+the S3 backup is switched on.
+
+NOT confirmed in chat before the session ended, and worth asking him: the
+`tg-listen` log after the move, the MinIO object count old-vs-new, and whether
+a call recording and a receipt photo actually PLAY/OPEN in the browser. The
+database rows are there; rows do not prove bytes.
+
+**HIS SERVER IS ALREADY ONE BEHIND AGAIN.** `0069_warehouse_quick_batch`
+landed on `main` from the OTHER session hours after he finished, so the live
+server sits at **69** and `main` needs **70**. That next update is a small one
+— `git pull`, rebuild, `docker compose run --rm migrate` — and it is the first
+test of whether the deploy habit sticks now that the year-long gap is gone.
+
+**Deploy note, still true for the next one:** migrations must reach the journal
+length (**70** on `main` today) — the client book, the stock table and `/o/<code>` read
+`list_views` at RENDER with no catch, so a half-applied deploy shows those
+three the error page (round 52's failure, wider). Check
+`drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
+**A restored dump carries the OLD server's schema and ledger**, so the
+migration step after a restore is not optional and its count will NOT match
+the source server.
 
 Phases **0/1/2/3/4/5/6/7/8** shipped (roles, custom fields, tasks+calendar, deals),
 plus the access/clutter pass (`MENU_BY_ROLE` #194, `rbac/scope.ts` #199,
@@ -2472,31 +2489,54 @@ round 17.
 
 ## Owner's outstanding chores
 
-**Enlarge the VPS to 4 vCPU / 8 GB / 400 GB** and move the data
-(`docs/DEPLOY.md` → «Yangi VPS'ga ko'chirish»; round 74 measured the ceiling
-and the old «2 GB tavsiya» was wrong) · **deploy from `main`** — migrations
-**0058-0069** land together, count must reach **70** (check
-`drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
-Back up first · **release both APKs** (driver v1.3 AND the first
-GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its
-Admin page) · set
-**`APP_URL=https://gsrwms.uz`** in the server `.env` (the Mini App button is not
-offered on anything but public HTTPS, #275) · **revoke the bot token he pasted
-in chat** and rotate `ANTHROPIC_API_KEY` · **switch on the Drive backup** (`docs/BACKUP.md`, ~15 min — publish the
-app BEFORE minting the token or it dies after 7 days) · create logins for the
-17 sellers then re-run `pnpm import-clients --apply --update` · 3 rejected rows ·
-~19 nameless clients · 2 truncated phones (GS161, GS252) · opening balances ·
-confirm person groupings · `pnpm demo-users --disable` ·
-say which printer model he has ·
-**switch on the inbound rota** (Boshqaruv → Rollar → «Kelgan arizalar
-navbati») and, if he wants Instagram Lead Ads, do the 15-minute Meta setup in
-`docs/ADS.md` (three `.env` keys, then the webhook).
+**DONE 2026-08-10:** the VPS move and the deploy — both were the top two on
+this list for months, and the whole gap closed in one evening.
 
-Deferred access work, blocked on the chores above: scoping clients to their
-sales manager (needs the 17 logins first, or it hides nearly every client from
-sales) · lead-mutation ownership. (Warehouse scoping as a roles column
-SHIPPED in round 23; attachment enforce flip SHIPPED in round 30 —
-`unmapped` stays log-only by design.)
+**Security, do first — three secrets reached the chat and must be treated as
+burned:** the **Telegram bot token** (@BotFather → `/revoke`, new token into
+the server `.env`, then `docker compose up -d app`), the **GitHub PAT** he
+pasted while cloning (already replaced once during the move; delete the old
+one at github.com/settings/tokens if it is still listed), and
+`ANTHROPIC_API_KEY`. The GitHub token is stripped from the new server's git
+remote already.
+
+**Then, in order of what it costs him to skip:**
+
+1. **Photos onto a second disk** (`docs/DEPLOY.md`, last section). Round 74
+   measured it: the database grows ~0.5 GB a year, photos and call recordings
+   tens of GB. They share one disk today, and a full disk stops postgres AND
+   kills the backup in the same minute. Do it **before handing out the calls
+   APK**, which is what makes recordings arrive in volume.
+2. **Switch on the off-site backup** — S3/Contabo Object Storage, four keys in
+   `.env`, `docs/BACKUP.md`. Until then the ONLY off-box copy of the business
+   is the `gsr2.dump` on his laptop from the move.
+3. **`APP_URL=https://gsrwms.uz`** in the server `.env` if it is not there —
+   the Mini App button is not offered on anything but public HTTPS (#275).
+   Asked in chat, never confirmed.
+4. **Switch on the inbound rota** (Boshqaruv → Rollar → «Kelgan arizalar
+   navbati»). Ships OFF, so every advert lead is currently unowned — it lands
+   on EVERY seller's `/bugun` rather than nobody's (#601), but nobody owns it.
+5. **Release both APKs** — driver v1.3 and the first GSR Qo'ng'iroqlar build
+   (Actions → its workflow → artifact → its Admin page). The driver fleet is
+   still on 1.2 and dies after ~2 h (round 55 fixed it; the fix is unreleased).
+6. **Old server: keep for a week, `app` stopped, then take a final dump before
+   deleting it.**
+7. Advertising, when he wants it: the three questions he has not answered
+   (Google Ads? TikTok Business Center or a link? a website with its own
+   form?) and, for Instagram Lead Ads, the 15-minute Meta setup in
+   `docs/ADS.md`. Everything else already works — `/ariza?manba=…` needs
+   nobody's permission.
+
+**Long-standing, unblocked by the move:** create logins for the 17 sellers,
+then re-run `pnpm import-clients --apply --update` · 3 rejected rows · ~19
+nameless clients · 2 truncated phones (GS161, GS252) · opening balances ·
+confirm person groupings · say which printer model he has.
+
+Deferred access work, still blocked on those logins: scoping clients to their
+sales manager (without the logins it hides nearly every client from sales) ·
+lead-mutation ownership. (Warehouse scoping as a roles column SHIPPED in round
+23; attachment enforce flip SHIPPED in round 30 — `unmapped` stays log-only by
+design.)
 
 ## How to work here
 

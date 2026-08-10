@@ -130,6 +130,23 @@ bersangiz, qolgan hamma qadamlarni Claude o'zi bajaradi va tekshiradi.
 
 ## Yangi VPS'ga ko'chirish (kattaroq serverga)
 
+> **BIR KUN OLDIN qiling: DNS TTL'ni pasaytiring.** Ko'chirish kunining eng
+> uzun qismi DNS bo'lib chiqadi. `gsrwms.uz` ning A-yozuvida TTL 14440 (4 soat)
+> turgan edi, ya'ni o'zgartirgandan keyin ham provayderlar 4 soatgacha eski
+> manzilni beradi. Ko'chirishdan **bir kun oldin** TTL'ni **300** (5 daqiqa)
+> qiling — o'shanda almashuv daqiqalarda o'tadi. Ko'chib bo'lgach yana
+> ko'tarib qo'ying.
+>
+> **Tartib ham shundan kelib chiqadi** (2026-08-09 da amalda o'rganilgan):
+> 1. Yangi serverni to'liq quring va tekshiring — eski server ishlab tursin;
+> 2. DNS'ni o'zgartiring, eski server **hali ham ishlab tursin**;
+> 3. tarqalishini `dig` bilan kuting (pastga qarang);
+> 4. **faqat shundan keyin** 5 daqiqalik almashuv: eski `app` to'xtaydi →
+>    yangi `pg_dump` → yangi serverga tiklash → Caddy.
+>
+> Eski `app` ni DNS'dan OLDIN to'xtatsangiz, domen hali eski serverga qarab
+> turganda tizim butunlay o'chib qoladi. Shunday bo'lgan.
+
 Hammasi ko'chadi: mijozlar, prixodlar, qutilar, partiyalar, pul hisobi,
 fotolar, yozishmalar, qo'ng'iroq yozuvlari. Yo'qoladigan yagona narsa — siz
 nusxa olayotgan paytda yozilgan ma'lumot, shuning uchun **tunda yoki dam
@@ -176,8 +193,25 @@ o'zingizdagini tekshiring.
 ### YANGI serverda
 
 ```bash
-apt-get update && apt-get install -y git rsync
+apt-get update && apt-get install -y git rsync dnsutils
 git clone https://<TOKEN>@github.com/bekzodqodirov/fullprompt.git gsr && cd gsr
+
+# Klon HAQIQATAN eng yangimi? Migratsiya fayllari soni jurnal bilan teng bo'lsin.
+ls src/modules/platform/db/migrations/*.sql | wc -l
+```
+
+Klon eskiroq bo'lsa (masalan siz klon qilgan payt yangi migratsiya endi
+qo'shilgan bo'lsa), keyin `git pull` kerak bo'ladi — va **tokenni remote'dan
+olib tashlagan bo'lsangiz u login so'raydi**, shuning uchun bir martalik:
+`git pull https://<TOKEN>@github.com/bekzodqodirov/fullprompt.git main`.
+
+**`git pull` dan keyin ALBATTA qayta quring.** Migratsiyalar obrazning ichiga
+ko'chiriladi (`Dockerfile`: `COPY … migrations ./migrations`), shuning uchun
+qayta qurmasdan `docker compose run --rm migrate` eski fayllar bilan ishlaydi
+va hech narsa qilmaydi:
+
+```bash
+docker compose build migrate app
 ```
 
 Endi **eski `.env`, `gsr.dump`, `minio.tar.gz` ni shu papkaga ko'chiring**
@@ -205,21 +239,89 @@ docker compose exec -T postgres pg_restore -U gsr -d gsr --no-owner < gsr.dump
 docker compose stop minio
 tar xzf minio.tar.gz -C /var/lib/docker/volumes/gsr_miniodata/_data
 docker compose up -d
+
+# MIGRATSIYALARNI ANIQ O'TKAZING — eng muhim qadam
+# Nusxa eski serverning sxemasini olib keladi (masalan 33 ta migratsiya).
+# `up -d` migrate'ni o'zi ishga tushiradi, lekin ishonch uchun qo'lda qiling:
+docker compose run --rm migrate
+docker compose exec -T postgres psql -U gsr -d gsr \
+  -tAc "select count(*) from drizzle.__drizzle_migrations"
+# ==> 69 chiqishi SHART. Kam bo'lsa yana `docker compose run --rm migrate`.
+docker compose up -d app
 ```
+
+**Nega bu qadam alohida yozilgan:** nusxa eski sxemani ham olib keladi, kod esa
+yangi. Yarim o'tkazilgan migratsiya — mijozlar kitobi, ombor jadvali va
+`/o/<code>` ekranlarida **xato sahifasi** demakdir (52-raundning nosozligi).
+`migrate` xizmati `restart: 'no'`, ya'ni muvaffaqiyatsiz tugasa ilova eski
+sxemada ishlab ketaveradi va hech kim sezmaydi — shuning uchun sonni **ko'z
+bilan** tekshiring.
 
 ### Tekshirish — domenni qaratishdan OLDIN
 
-Yangi serverning IP'si bilan `http://<YANGI-IP>:3000` ni oching va:
+**Ilova porti tashqariga chiqarilmagan** (81-raund: `3000:3000` olib
+tashlangan, aks holda login formasi TLS'siz to'g'ridan-to'g'ri internetdan
+ochilardi). Domen hali eski serverda, ya'ni Caddy ham yo'q. Ko'rish uchun —
+SSH tunnel:
+
+```bash
+# YANGI serverda: vaqtincha faqat loopback'ga chiqaramiz (internetga emas)
+cat > docker-compose.override.yml <<'YML'
+services:
+  app:
+    ports: ['127.0.0.1:3000:3000']
+YML
+docker compose up -d app
+```
+
+```bash
+# O'Z KOMPYUTERINGIZDA
+ssh -L 3000:127.0.0.1:3000 root@<YANGI-IP>
+# keyin brauzerda: http://localhost:3000
+```
+
+Tekshirib bo'lgach **albatta o'chiring**:
+
+```bash
+rm docker-compose.override.yml && docker compose up -d app
+```
+
+Brauzerda quyidagilarni ko'ring:
 
 1. **Kirish** — o'z login/parolingiz bilan (seanslar ham ko'chgan).
 2. **Mijozlar soni** — eski serverdagi bilan bir xilmi (`1692` atrofida).
 3. **Prixod fotosi ochilsinmi** — bu MinIO ko'chganini isbotlaydi.
 4. **Migratsiyalar soni**: `docker compose exec -T postgres psql -U gsr -d gsr
-   -tAc "select count(*) from drizzle.__drizzle_migrations"` — eski serverdagi
-   bilan teng bo'lsin.
+   -tAc "select count(*) from drizzle.__drizzle_migrations"` — **69** bo'lsin.
+   Eski serverniki bilan teng BO'LMAYDI va bo'lmasligi kerak: eski server
+   ancha orqada, yangisi esa `main` dagi kodni ishlatadi. Kam chiqsa —
+   `docker compose run --rm migrate`, keyin qaytadan sanang.
 5. **Pul ekrani** (`/accounting`) — jamlanmalar eskisi bilan bir xilmi.
 
 Hammasi to'g'ri bo'lsagina domenning A-yozuvini yangi IP'ga qarating.
+
+**`www` ni unutmang.** Agar `www` A-yozuvi ham bo'lsa, u ham yangi IP'ga
+qarasin — va Caddy uni bilishi uchun `.env` da:
+
+```
+DOMAIN=gsrwms.uz, www.gsrwms.uz
+```
+
+Caddy faqat `DOMAIN` da nomi bor manzillar uchun sertifikat oladi; ro'yxatda
+yo'q nom brauzerda sertifikat xatosi beradi va «ko'chirish buzildi» bo'lib
+ko'rinadi.
+
+**DNS o'zgargani-o'zgarmaganini panelga emas, `dig` ga ishonib tekshiring** —
+panel «saqlandi» deb tursa ham saqlanmagan bo'lishi mumkin (shunday bo'lgan):
+
+```bash
+dig +short NS gsrwms.uz              # domenning o'z nomlar serverlari
+dig +short gsrwms.uz @<shu-NS>       # KESHSIZ javob — haqiqat shu
+dig +short gsrwms.uz @8.8.8.8        # tarqalgan-tarqalmaganini ko'rsatadi
+```
+
+Birinchisi yangi IP'ni bersa — saqlangan. Uchinchisi hali eskisini berishi
+mumkin, bu TTL kutilishi.
 
 ### Keyin
 
