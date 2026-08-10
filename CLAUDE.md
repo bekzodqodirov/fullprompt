@@ -137,7 +137,8 @@ everything before it is merged.
 1244 unit/integration + 142 e2e, verified in CI's order on a fresh database
 (the three photo-path specs — m1×2, m2×1 — are locally red by design here,
 no image service in this container; CI is the arbiter).
-Latest migration: **0068** (`inbound_webhook` — a per-source key for every
+Latest migration: **0069** (`warehouse_quick_batch` — a per-warehouse
+switch for unplanned trucks; 0068 `inbound_webhook` — a per-source key for every
 platform's own lead form; 0067 `automation_v2` — rule conditions, time triggers
 and `automation_fires`; 0066 `inbound_leads` was the ads round;
 0065 `tg_chat_lead` — a tray rule may point at a lead;
@@ -157,7 +158,7 @@ calls-apk → artifact → Admin → Qo'ng'iroq ilovasi).
 production to a bigger Contabo VPS (**169.58.150.226**, 4 vCPU / 8 GB) and
 deployed `main` onto it in one evening, walked through step by step in chat.
 What the move proved and cost is in `docs/DEPLOY.md`; the three code defects it
-uncovered are #624-626.
+uncovered are #632-634.
 
 State on the live server: migrations **69** (0068 the tail), 328 clients,
 27 users, 7 warehouses, 704 tg messages, 67 call logs, 308 attachments;
@@ -174,8 +175,14 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
+**HIS SERVER IS ALREADY ONE BEHIND AGAIN.** `0069_warehouse_quick_batch`
+landed on `main` from the OTHER session hours after he finished, so the live
+server sits at **69** and `main` needs **70**. That next update is a small one
+— `git pull`, rebuild, `docker compose run --rm migrate` — and it is the first
+test of whether the deploy habit sticks now that the year-long gap is gone.
+
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**69** today) — the client book, the stock table and `/o/<code>` read
+length (**70** on `main` today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2101,6 +2108,106 @@ Red-proofs ×3. No migration. 1224 unit/integration + 145 e2e green on a fresh
 db in CI's order, after merging the ads, backup and automation rounds; the
 ✏️ form verified in a browser at 360. The cleanup test's first locator was `div` soup and passed
 ALONE while failing in the full suite — `StageTools` rows carry a testid now.
+
+Round 88 — the loading scanner learns weight (#624-625 — renumbered on merge,
+the other session's advert round took #620-623 the same evening, the SIXTH
+collision; owner at a truck: «kg
+kubi va sredniy vesini ko'rsatishni ixcham qilib»). Every plan row carries a
+SECOND muted line `kg · m³ · kg/quti`, and the totals line a fourth figure
+`ø` = the average box on board. Second line, not a wider first: measured at
+360 the row is 302 px — code 84, goods 177 and already truncating, count 25 —
+so three more numbers leave the goods name 43 px and a CRATE row, whose
+«goods» is its contents list, nothing. **The divisor is boxes carrying a
+weight, never all of them** — an unweighed box adds 0 kg, so counting it makes
+the average lighter the worse the data is, and it is also the only count a
+QUICK batch has (`doneCount` reads the plan; the ø would have vanished on
+exactly the ad-hoc CEO load it is most useful for). Row spacing 1 → 2: a row
+is two lines now, and at the old gap the grey weights read as belonging to the
+code beneath. **The fourth number is the one that would have rescaled the
+page** — the totals row was four un-wrappable spans, 328 px inside a 328 px box
+at the fixture's numbers and past the viewport at 12,500 kg / 105 m³, which
+makes mobile Chrome zoom the whole page out (#400) on a SCANNING screen where
+every tap target then moves. `flex-wrap` + each «·» moved INSIDE the span that
+follows it (round 78's rule, so a wrap cannot orphan one); measured realistic
+20 px one line, absurd 40 px two lines, document 360 both. LESSON: **measure
+the widest value the field can hold, not the value the fixture happens to
+have.** m3's e2e asserts both halves; red-proven separately (ø stripped → the
+totals assertion red; the row line stripped → `lot-weights` not found). One new
+i18n key `loading.kgPerBox` ×4. No migration. 1244 unit/integration + 145 e2e
+green on a fresh db in CI's order **after merging main's advert round** —
+which is also how the collision was found: GitHub runs no `pull_request` check
+at all while a PR conflicts, so the symptom of a stale branch is a PR with NO
+check rather than a red one (the recorded rule, hit again).
+
+Round 89 — the Kashgar scanner, and the audit around it (#626-628, owner:
+«fura prixod qilishni audit qil qabulda scanner ishlamayabti» → «kamera
+ochilyabti lekin qr codelarni oqimayabti» → «menda qr code ishlayabti lekin
+qashqar skladchimizda ishlamayabti»). **The third sentence is the whole
+diagnosis** — one codebase, two phones, so the difference IS the defect
+(#476). `if (DetectorCtor)` tested that `window.BarcodeDetector` EXISTS; on an
+Android without Google Play Services it exists, never throws and returns `[]`
+for ever, and the zxing fallback was reachable only in the else-branch. Now:
+`getSupportedFormats()` (never called before — grep was empty), hand over on
+the first throw, and hand over after **25 barren live frames** (~4.5 s) — that
+last rule cannot tell "broken" from "not aimed yet" and resolves it toward the
+decoder that needs nothing from the platform. zxing's chunk is fetched at
+scanner START (these are the OFFLINE screens). Decisions extracted to
+`scan/decoder-choice.ts` (#166) + 11 unit tests. **Proven end to end** by
+`scripts/dev-scan-decoder-probe.mjs` — a Y4M of a real box's QR through
+Chromium's fake camera at the real unload screen, with Kashgar's phone
+simulated as a detector that claims `qr_code` and reads nothing;
+**red-proven** by raising the threshold to `MAX_SAFE_INTEGER` (166 detect
+calls, counter never moved). **Every camera failure was also silent** — one
+empty catch made "denied", "camera busy", "insecure origin" and "decoder that
+never decodes" the same black square; there is a `cam` state and a sentence
+for each now, plus a 12-second "read nothing" hint pointing at manual entry.
+The `http://` theory was measured (`isSecureContext:false`, `mediaDevices`
+undefined) and **REFUSED as the cause**: the session cookie is Secure in
+production, so on a plaintext origin nobody gets past login at all.
+**THE AUDIT'S OWN FIND, more expensive than the reported one:** a supplier's
+QR (a 45-char tmall URL, which unload queues ON PURPOSE — reality wins) made
+`/api/scan/sync` refuse the whole 200-row body, `flushScans` sent the entire
+queue at once and threw on any non-200, so the phone's outbox jammed **for
+ever** under a **📴 offline banner while online**, the counter kept climbing
+green, and `finishUnload` then flagged every unrecorded box
+`missing_in_transit` — cargo standing in the warehouse, recorded as lost.
+Now: slice at `MAX_PER_SYNC`, **bisect on a 400** so only the truly bad rows
+are dropped, never drop on 401/403 (a re-login makes them sendable), and
+`isSendableCode` refuses at the door with a sentence. Both scan screens also
+stop sitting on «Yuklanmoqda…» for ever — a failed snapshot says why and
+offers retry. Deliberately NOT done, stated: widening the sync route's unload
+gate to match `/planned`'s read gate (an access change in a bug fix's
+clothes). 5 new i18n keys ×4. No migration. 1255 unit/integration + 145 e2e
+green on a fresh db in CI's order.
+
+Round 90 — the owner testing as the Kashgar operator (#629-631, «bazi
+tovarlarning rasimlar ochmayabti» + «qashqardagi skladchidan tezkor yuklashni
+olib tashla»). (1) **A photo belonged to the desk, not the cargo.** The
+attachment gate asked `inScope(actor, receipt.warehouseId)`, and a receipt's
+warehouse is where the goods were RECEIVED — never where they are. Measured on
+his data: of 4,403 goods photos, 737 had moved warehouse and 625 were in
+transit or issued, so **1,362 (31 %) could not be opened by the operator
+standing next to the carton**. `cargoNearActor` widens to where the cargo IS,
+restating `wms/search`'s own rule (the warehouse the box stands in, or the
+truck's TWO ends while it stands in none), filtered in SQL because a receipt
+can carry hundreds of boxes and a `limit` would answer «not yours» about the
+one box that is. NOT a permission change — the same person already saw the
+receipt card and the stock row. Red-proven: helper stripped → moved + in-transit
+red, «a third warehouse the cargo never touched» still refused. (2) **Quick
+loading is now a WAREHOUSE setting** (`warehouses.allows_quick_batch`,
+migration **0069**, additive, DEFAULT TRUE — count must reach **70**). Doing it
+by role was refused twice over: a role is company-wide (Yiwu would lose it too)
+and `batches.depart_close` is also DEPART and CLOSE. Follows
+`issues_to_clients`. Four halves pinned by `quick-batch-wire.test.ts`: form
+posts it (hidden `off`, #171's fifth), action parses it defaulting true, screen
+filters origins, **service refuses anyway** (#531). Destination list untouched.
+(3) TEST LESSONS: an unguarded `afterAll` binds undefined ids when `beforeAll`
+failed, so vitest shows «UNDEFINED_VALUE» and the real error — a #598 clock
+collision — is nowhere on screen; and the counter that fixes #598 must go at
+the FRONT of a `slice()`d string or the truncation eats it. 1264
+unit/integration + 145 e2e green on a fresh db in CI's order. ONE earlier full
+run had a single unidentified failure that did not recur in three later runs;
+CI is the arbiter.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

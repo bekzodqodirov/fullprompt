@@ -14,6 +14,7 @@ export interface WarehouseFormValues {
   address: string;
   capacityM3: string;
   issuesToClients: boolean;
+  allowsQuickBatch: boolean;
 }
 
 const TYPES = ['origin', 'hub', 'customs', 'distribution'] as const;
@@ -143,6 +144,25 @@ export function WarehouseForm({
           <span>
             <span className="font-semibold">{t('issuesToClients')}</span>
             <span className="block text-xs text-ink-500">{t('issuesToClientsHint')}</span>
+          </span>
+        </label>
+      </div>
+      {/* Round 89: a truck with no plan is the right tool for an internal
+          move and the wrong one where trucks cross a border. Ticked for every
+          warehouse until somebody unticks it. */}
+      <div>
+        <input type="hidden" name="allowsQuickBatch" value="off" />
+        <label className="flex items-start gap-2.5">
+          <input
+            type="checkbox"
+            name="allowsQuickBatch"
+            className="mt-0.5 h-5 w-5"
+            data-testid="wh-allows-quick"
+            defaultChecked={initial ? initial.allowsQuickBatch : true}
+          />
+          <span>
+            <span className="font-semibold">{t('allowsQuickBatch')}</span>
+            <span className="block text-xs text-ink-500">{t('allowsQuickBatchHint')}</span>
           </span>
         </label>
       </div>

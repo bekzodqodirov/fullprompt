@@ -484,6 +484,13 @@
       "when": 1785190000037,
       "tag": "0068_inbound_webhook",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1785190000038,
+      "tag": "0069_warehouse_quick_batch",
+      "breakpoints": true
     }
   ]
 }
