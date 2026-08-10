@@ -202,6 +202,16 @@ export const warehouses = pgTable(
      * operator a screen no client would ever stand in front of.
      */
     issuesToClients: boolean('issues_to_clients').notNull().default(false),
+    /**
+     * May a truck be started here with NO plan? (owner, round 89: take quick
+     * loading away from Kashgar.)
+     *
+     * Per warehouse rather than per role, because roles are shared across the
+     * company and `batches.depart_close` — the grant the quick button reads —
+     * is also what lets a warehouse depart and close a truck at all. Default
+     * true, so nothing changes anywhere until the box is unticked.
+     */
+    allowsQuickBatch: boolean('allows_quick_batch').notNull().default(true),
     // Letter sequencer state (spec 5.3): position is the 0-based index into
     // the A..ZZ sequence *before* blacklist skipping; cycleNo increments on
     // ZZ→A wrap. Locked with SELECT ... FOR UPDATE at receipt confirmation.

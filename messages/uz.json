@@ -4,6 +4,10 @@
     "save": "Saqlash",
     "cancel": "Bekor qilish",
     "confirm": "Tasdiqlash",
+    "scanNeedsHttps": "Kamera faqat himoyalangan (https) manzilda ishlaydi. Qulf belgisi bor manzildan kiring.",
+    "scanNoPermission": "Kameraga ruxsat berilmagan. Brauzer sozlamalaridan ruxsat bering va sahifani yangilang.",
+    "scanNoCamera": "Kamera ochilmadi. Kamerani ishlatayotgan boshqa ilovalarni yoping va sahifani yangilang.",
+    "scanNothingRead": "Kod o‘qilmayaptimi? Pastdagi tugma bilan qo‘lda kiriting.",
     "create": "Yaratish",
     "edit": "Tahrirlash",
     "delete": "O'chirish",
@@ -39,7 +43,9 @@
     },
     "moreActions": "Boshqa amallar",
     "notFilled": "To‘ldirilmagan",
-    "copy": "Nusxa olish"
+    "copy": "Nusxa olish",
+    "scanTruckForbidden": "Bu mashina sizning skladingiz uchun emas — yoki sessiya tugagan. Qayta kiring.",
+    "scanSnapshotOffline": "Karobkalar ro‘yxati yuklanmadi: aloqa yo‘q. Internetni tekshirib, qayta urinib ko‘ring."
   },
   "login": {
     "title": "Tizimga kirish",
@@ -226,7 +232,9 @@
     "codeExists": "Bunday kodli sklad allaqachon mavjud",
     "letterState": "Harf hisoblagichi",
     "issuesToClients": "Bu omborda mijozga yuk beriladi",
-    "issuesToClientsHint": "Faqat mijoz o‘z yukini olib ketadigan omborlar uchun (TAS, AND). Belgilanmasa, «Berish» ekrani bu omborda ochilmaydi."
+    "issuesToClientsHint": "Faqat mijoz o‘z yukini olib ketadigan omborlar uchun (TAS, AND). Belgilanmasa, «Berish» ekrani bu omborda ochilmaydi.",
+    "allowsQuickBatch": "Tezkor yuklashga ruxsat",
+    "allowsQuickBatchHint": "Plansiz va tasdiqsiz mashina. Yuk chegara kesib o‘tadigan skladda belgini olib tashlang."
   },
   "clients": {
     "title": "Mijozlar",
@@ -784,11 +792,15 @@
     "reasonRequired": "Sabab (majburiy)",
     "loadAnyway": "Baribir yuklash",
     "stickerLost": "Stiker yo‘qolgan / qo‘lda kiritish",
+    "kgPerBox": "kg/quti",
     "stickerLostHint": "Skanlanmagan karobkani tanlang yoki kodini kiriting",
     "unscannedList": "Skanlanmagan karobkalar:",
     "stockList": "Skladdagi karobkalar (bosib yuklang):",
     "pickSearch": "Qidirish: kod, klient, tovar…",
-    "pickFromStock": "Skladdan tanlab yuklash / qo‘lda kiritish"
+    "pickFromStock": "Skladdan tanlab yuklash / qo‘lda kiritish",
+    "foreignCode": "Bu bizning kod emas (begona QR). GSR stikerini skanerlang.",
+    "serverRefused": "Server {n} ta skanni qabul qilmadi — ular yozilmadi. Qo‘lda kiriting.",
+    "notYourTruck": "Bu mashina sizning skladingiz uchun emas yoki sessiya tugagan — qayta kiring."
   },
   "unloading": {
     "title": "Razgruzka",
@@ -816,7 +828,10 @@
     "acceptAll": "Hammasini qabul qilish ({n} ta)",
     "acceptAllConfirm": "Mashinadagi {n} ta korobkaning hammasi shu skladga tushdi deb qabul qilamizmi? Skanerlash o‘tkazib yuboriladi.",
     "acceptAllDone": "{n} ta korobka qabul qilindi",
-    "finishConfirm": "Diqqat: {n} ta korobka hali qabul qilinmagan. Yakunlasangiz, ular «yo‘lda yo‘qolgan» deb belgilanadi. Agar yuklar shu yerda bo‘lsa, avval «Hammasini qabul qilish»ni bosing. Davom etamizmi?"
+    "finishConfirm": "Diqqat: {n} ta korobka hali qabul qilinmagan. Yakunlasangiz, ular «yo‘lda yo‘qolgan» deb belgilanadi. Agar yuklar shu yerda bo‘lsa, avval «Hammasini qabul qilish»ni bosing. Davom etamizmi?",
+    "foreignCode": "Bu bizning kod emas (begona QR). GSR stikerini skanerlang.",
+    "serverRefused": "Server {n} ta skanni qabul qilmadi — ular yozilmadi. Qo‘lda kiriting.",
+    "notYourTruck": "Bu mashina sizning skladingiz uchun emas yoki sessiya tugagan — qayta kiring."
   },
   "transit": {
     "title": "Yo‘ldagi yuklar",

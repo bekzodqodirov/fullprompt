@@ -56,6 +56,7 @@ export default async function WarehouseDetailPage({
           address: wh.address ?? '',
           capacityM3: wh.capacityM3 ? String(Number(wh.capacityM3)) : '',
           issuesToClients: wh.issuesToClients,
+          allowsQuickBatch: wh.allowsQuickBatch,
         }}
       />
 

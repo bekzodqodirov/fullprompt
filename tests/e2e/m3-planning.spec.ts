@@ -67,6 +67,12 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   // Weight and volume on board, not just a box count (owner).
   await expect(page.getByTestId('load-totals')).toContainText(/[1-9]\d* kg/);
   await expect(page.getByTestId('load-totals')).toContainText('m³');
+  // …and how heavy ONE box is, on the totals line and on every plan row
+  // (owner: «kg kubi va sredniy vesini korsatishni ixcham qilib»).
+  await expect(page.getByTestId('load-totals')).toContainText(/ø[1-9]\d* kg/);
+  await expect(page.getByTestId('lot-weights').first()).toContainText(
+    /[1-9]\d* kg · [\d.]+ m³ · [1-9]\d*/,
+  );
   // Outbox drains (sync banner leaves the "syncing" state)
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
 
