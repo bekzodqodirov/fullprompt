@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## Sotuvchi endi faqat o'z mijozlarining pulini ko'radi + Telegram ekrani — 2026-08-10 (kech)
+
+### 1. Pul: sotuvchiga begona mijozning hisobi ko'rinmaydi
+
+Siz aytgan xato **tasdiqlandi va tuzatildi**. Sotuvchi rolida `finance.view`
+huquqi bor, `/moliya` ekrani esa hech qanday filtr ishlatmasdi — natijada
+sotuvchi **butun kompaniyaning qarzini** ko'rardi: har bir mijozning hisobi,
+to'lovi, qoldig'i va tepada umumiy qarz summasi.
+
+Endi:
+
+| Kim | Nima ko'radi |
+|---|---|
+| Buxgalter, siz (moliya boshqaruvi) | hammasini, avvalgidek |
+| Mijozlar kitobi administratori | hammasini |
+| **Sotuvchi** | **faqat o'ziga biriktirilgan mijozlarni** |
+
+To'rt joyda: ro'yxatda, to'lovlar reestrida, **reestrning Excel fayli**da va
+alohida mijozning hisob varag'ida. Oxirgisi muhim — ro'yxatni filtrlash yetarli
+emas edi, chunki manzilga mijoz raqamini qo'lda yozib kirish mumkin edi. Endi u
+ham yopiq.
+
+**Muhim ogohlantirish:** hozir sizda **1 692 ta mijozdan atigi 290 tasiga**
+sotuvchi biriktirilgan. Ya'ni sotuvchi qolgan 1 402 tasini **ko'rmaydi**.
+Agar sotuvchilar o'z mijozlarini ko'rishi kerak bo'lsa, mijoz kartasida
+«Sotuvchi» maydonini to'ldirish kerak.
+
+### 2. Chat: har bir menejerning suhbati alohida
+
+Bir mijoz bilan ikkita menejer o'z shaxsiy Telegramidan yozsa — bu **ikkita
+alohida suhbat**. Ilgari ular vaqt bo'yicha aralashtirilib, bitta oqim qilib
+ko'rsatilardi: savol bir menejerdan, javob boshqasidan — aslida hech kim
+ko'rmagan suhbat.
+
+Endi chat **oxirgi yozgan menejerning** suhbati bilan ochiladi. «Hammasi» —
+alohida tanlov bo'lib qoldi, kerak bo'lsa bosasiz. Bitta menejer bo'lsa hech
+nima o'zgarmaydi.
+
+### 3. Ulangan telefonlar ro'yxati — bitta qatorga yig'ildi
+
+Uchta ulangan akkaunt uchun uchta katta rangli chiziq ekranning tepasini
+egallardi. Endi **bitta qator**: eng yomon holat va nechtaligi. Batafsili
+bosgandagina ochiladi.
+
+Bitta istisno: agar akkaunt **Telegramdan chiqib ketgan** bo'lsa, ro'yxat
+**o'zi ochiladi** — chunki bu xabar emas, bajariladigan ish: kirib qayta
+ulanish kerak.
+
+Migratsiya yo'q.
+
 ## Telegram: xabar «navbatda» turmay, darhol ketadi — 2026-08-10 (kech)
 
 Sizning savolingiz: «chatdan yozganda bir oz Queued bo'lib turib keyin jo'nadi,

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  clientTransactions,
   attachments,
   batches,
   boxes,
@@ -79,6 +80,68 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await pgClient.end();
+});
+
+describe('a seller reads their own book and nobody else\'s', () => {
+  /**
+   * The owner, logged in as a seller: «menga boshqa clientlarning financi
+   * ko'rinyabti». `sales_manager` holds `finance.view`, and `/finance` ran an
+   * unscoped query — every client's charges, payments and balance, and the
+   * company's total debt at the top.
+   */
+  let mineId: string;
+  let theirsId: string;
+  let sellerId: string;
+  let otherSellerId: string;
+
+  beforeAll(async () => {
+    const people = await db.select().from(users).limit(2);
+    sellerId = people[0]!.id;
+    otherSellerId = people[1]?.id ?? people[0]!.id;
+    const tag = String(Date.now()).slice(-6);
+    const [mine] = await db
+      .insert(clients)
+      .values({ clientCode: `FM${tag}`, name: 'Mine', salesManagerId: sellerId })
+      .returning();
+    mineId = mine!.id;
+    const [theirs] = await db
+      .insert(clients)
+      .values({ clientCode: `FT${tag}`, name: 'Theirs', salesManagerId: otherSellerId })
+      .returning();
+    theirsId = theirs!.id;
+    await addTransaction(
+      { clientId: mineId, type: 'charge', amount: 10, currency: 'USD', txDate: '2026-07-10' },
+      ctx(),
+    );
+    await addTransaction(
+      { clientId: theirsId, type: 'charge', amount: 20, currency: 'USD', txDate: '2026-07-10' },
+      ctx(),
+    );
+  });
+
+  afterAll(async () => {
+    await db.delete(clientTransactions).where(eq(clientTransactions.clientId, mineId));
+    await db.delete(clientTransactions).where(eq(clientTransactions.clientId, theirsId));
+    await db.delete(clients).where(eq(clients.id, mineId));
+    await db.delete(clients).where(eq(clients.id, theirsId));
+  });
+
+  it('the seller sees their own client', async () => {
+    const rows = await clientBalances(sellerId);
+    expect(rows.some((r) => r.clientId === mineId)).toBe(true);
+  });
+
+  it('and does NOT see a client that belongs to somebody else', async () => {
+    if (otherSellerId === sellerId) return; // one-user database: nothing to prove
+    const rows = await clientBalances(sellerId);
+    expect(rows.some((r) => r.clientId === theirsId)).toBe(false);
+  });
+
+  it('an unscoped read still sees both — the accountant lost nothing', async () => {
+    const rows = await clientBalances();
+    expect(rows.some((r) => r.clientId === mineId)).toBe(true);
+    expect(rows.some((r) => r.clientId === theirsId)).toBe(true);
+  });
 });
 
 describe('client ledger', () => {

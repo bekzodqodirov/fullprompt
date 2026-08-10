@@ -245,9 +245,15 @@ export async function buildExpensesXlsx(
  * The payments register (round 29): every incoming payment of the period,
  * row for row — the file the accountant used to keep by hand.
  */
-export async function buildPaymentsXlsx(from: string, to: string, locale?: string): Promise<Buffer> {
+export async function buildPaymentsXlsx(
+  from: string,
+  to: string,
+  locale?: string,
+  /** The seller whose book this file is, or undefined for the whole company. */
+  ownerId?: string,
+): Promise<Buffer> {
   const L = reportLabels(locale);
-  const { rows, totalUsd, count, truncated } = await paymentsRegister(from, to);
+  const { rows, totalUsd, count, truncated } = await paymentsRegister(from, to, ownerId);
   const workbook = new ExcelJS.Workbook();
   const sheet = sheetSetup(workbook, 'Payments', `${L.clientPayments} · ${period(from, to)}`);
 

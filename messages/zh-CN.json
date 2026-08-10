@@ -1339,7 +1339,8 @@
     "sourceResult": "各来源结果",
     "sourceArrivals": "询盘 {n}",
     "sourceDropped": "丢弃 {n}",
-    "sourceWon": "成交 {n}"
+    "sourceWon": "成交 {n}",
+    "bridgeAccounts": "{n} 个账号"
   },
   "navShort": {
     "home": "首页",

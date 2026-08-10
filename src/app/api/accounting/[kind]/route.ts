@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AuthError, getActor } from '@/modules/platform/rbac/authorize';
+import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { db } from '@/modules/platform/db/client';
@@ -70,7 +71,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
         xlsx = await buildProfitXlsx(view, from, to, locale);
         break;
       case 'payments':
-        xlsx = await buildPaymentsXlsx(from, to, locale);
+        // Scoped exactly as the screen is: a file carrying rows the screen
+        // hid is a leak with a filename (#490's rule, one size up).
+        xlsx = await buildPaymentsXlsx(from, to, locale, moneyOwnerFilter(actor));
         break;
       case 'expenses':
         xlsx = await buildExpensesXlsx(

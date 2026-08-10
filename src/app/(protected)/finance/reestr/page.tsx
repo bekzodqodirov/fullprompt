@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 import { paymentsRegister } from '@/modules/wms/finance/service';
+import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from '../client-search';
 
 /**
@@ -33,7 +34,11 @@ export default async function PaymentsRegisterPage({
   const from = valid(params.from) ?? monthStart;
   const to = valid(params.to) ?? today;
 
-  const { rows, totalUsd, count, truncated } = await paymentsRegister(from, to);
+  const { rows, totalUsd, count, truncated } = await paymentsRegister(
+    from,
+    to,
+    moneyOwnerFilter(actor),
+  );
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">

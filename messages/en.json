@@ -1339,7 +1339,8 @@
     "sourceResult": "Result by source",
     "sourceArrivals": "{n} arrivals",
     "sourceDropped": "{n} dropped",
-    "sourceWon": "{n} won"
+    "sourceWon": "{n} won",
+    "bridgeAccounts": "{n} accounts"
   },
   "navShort": {
     "home": "Home",

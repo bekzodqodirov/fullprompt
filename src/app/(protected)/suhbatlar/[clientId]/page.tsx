@@ -8,6 +8,7 @@ import {
   conversationClient,
   conversationFor,
   tgViewerFor,
+  defaultThreadManager,
   threadManagers,
 } from '@/modules/wms/crm/conversations';
 import { pendingFor } from '@/modules/wms/crm/outbox';
@@ -61,12 +62,18 @@ export default async function ConversationPage({
   // tanlab ko'rish»). conversationFor ignores it for everyone else.
   const { hodim } = await searchParams;
   const viewer = tgViewerFor(actor);
-  const [client, messages, queued, codes, managers] = await Promise.all([
+  const managers = await threadManagers(clientId);
+  // «Hammasi» is a choice now, not the default: two managers on two personal
+  // accounts are two conversations, and interleaving them by timestamp shows
+  // a thread that never happened. `?hodim=all` is how a reader asks for the
+  // merged view on purpose.
+  const chosen =
+    hodim === 'all' ? undefined : (hodim ?? defaultThreadManager(managers) ?? undefined);
+  const [client, messages, queued, codes] = await Promise.all([
     conversationClient(clientId),
-    conversationFor(clientId, viewer, 500, hodim),
+    conversationFor(clientId, viewer, 500, chosen),
     pendingFor(clientId, viewer),
     codesSharingPhones(clientId),
-    threadManagers(clientId),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');
@@ -103,10 +110,10 @@ export default async function ConversationPage({
           as on the cards, so neither screen can grow its own answer. */}
       <ThreadManagers
         managers={managers}
-        active={hodim ?? null}
+        active={chosen ?? null}
         hrefFor={
           viewer.all
-            ? (id) => (id ? `/suhbatlar/${client.id}?hodim=${id}` : `/suhbatlar/${client.id}`)
+            ? (id) => `/suhbatlar/${client.id}?hodim=${id ?? 'all'}`
             : undefined
         }
         labels={{ who: t('whoTalked'), all: t('allManagers') }}
