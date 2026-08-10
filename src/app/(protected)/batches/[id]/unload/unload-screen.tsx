@@ -9,6 +9,7 @@ import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
 import {
   enqueueScan,
   flushScans,
+  isSendableCode,
   pendingScans,
   type SyncAck,
 } from '@/offline/scan-outbox';
@@ -38,6 +39,8 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
   const t = useTranslations('unloading');
   const tc = useTranslations('common');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  /** Why there is no snapshot yet — `null` while it is simply still loading. */
+  const [snapError, setSnapError] = useState<'forbidden' | 'offline' | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [extra, setExtra] = useState<string[]>([]);
   const [pending, setPending] = useState(0);
@@ -59,19 +62,29 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
   useEffect(() => {
     void (async () => {
+      let failure: 'forbidden' | 'offline' = 'offline';
       try {
         const res = await fetch(`/api/batches/${batchId}/planned`);
         if (res.ok) {
           const data = (await res.json()) as Snapshot;
           localStorage.setItem(cacheKey, JSON.stringify(data));
           applySnapshot(data);
+          setSnapError(null);
           return;
         }
+        // A refusal is not a bad connection, and the screen used to say
+        // neither: it sat on the word «Yuklanmoqda…» for ever, with no
+        // camera under it, which is indistinguishable from a broken scanner.
+        if (res.status === 401 || res.status === 403) failure = 'forbidden';
       } catch {
-        /* offline */
+        /* genuinely offline */
       }
       const cached = localStorage.getItem(cacheKey);
-      if (cached) applySnapshot(JSON.parse(cached) as Snapshot);
+      if (cached) {
+        applySnapshot(JSON.parse(cached) as Snapshot);
+        return;
+      }
+      setSnapError(failure);
     })();
   }, [batchId, cacheKey, applySnapshot]);
 
@@ -98,8 +111,19 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
   const flush = useCallback(async () => {
     try {
-      const acks = await flushScans();
+      const { acks, discarded, refusedForbidden } = await flushScans();
       handleAcks(acks);
+      // A body the server threw out is not a network problem, and saying
+      // «offline» about it is how a jammed queue looked like bad wifi.
+      if (discarded.length > 0) {
+        setToast({ text: `❌ ${t('serverRefused', { n: discarded.length })}` });
+        setDone((prev) => {
+          const next = new Set(prev);
+          for (const row of discarded) next.delete(row.code);
+          return next;
+        });
+      }
+      if (refusedForbidden) setToast({ text: `🚫 ${t('notYourTruck')}` });
       setOnline(true);
       // Live counter across phones: merge the server's unloaded set in.
       try {
@@ -121,7 +145,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       setOnline(false);
     }
     await refreshPending();
-  }, [handleAcks, refreshPending, batchId, cacheKey]);
+  }, [handleAcks, refreshPending, batchId, cacheKey, t]);
 
   useEffect(() => {
     const up = () => {
@@ -175,6 +199,16 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
   function onCode(code: string, method: 'qr' | 'manual' = 'qr', manualReason?: string) {
     if (!snapshot) return;
+    // A Chinese carton carries the supplier's own QR too, and that one is a
+    // URL. It is not an unknown BOX — the server cannot even parse it — and
+    // queueing it used to make the server refuse the whole body, so every
+    // good scan behind it stopped leaving the phone (silently, under an
+    // «offline» banner).
+    if (!isSendableCode(code)) {
+      feedback('bad');
+      setToast({ text: `❓ ${t('foreignCode')}` });
+      return;
+    }
     const crate = snapshot.crates.find((c) => c.code === code);
     const memberCodes = crate ? crate.boxShortCodes : [code];
     const known = new Set(snapshot.boxes.map((b) => b.shortCode));
@@ -194,7 +228,19 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
     void accept([], { code, method, manualReason });
   }
 
-  if (!snapshot) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
+  if (!snapshot) {
+    if (!snapError) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
+    return (
+      <div className="card space-y-3 !p-4 text-center" data-testid="snapshot-error">
+        <p className="font-semibold text-bad">
+          {snapError === 'forbidden' ? tc('scanTruckForbidden') : tc('scanSnapshotOffline')}
+        </p>
+        <button type="button" className="btn-primary w-full" onClick={() => location.reload()}>
+          {tc('retry')}
+        </button>
+      </div>
+    );
+  }
 
   const total = snapshot.boxes.length;
   const doneCount = snapshot.boxes.filter((b) => done.has(b.shortCode)).length;

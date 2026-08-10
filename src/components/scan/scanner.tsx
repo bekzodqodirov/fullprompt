@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { nativeUsable, shouldHandOver } from './decoder-choice';
 
 /**
  * Scan input core (spec 6.4 / §15): phone camera via the native
@@ -15,6 +17,22 @@ import { useEffect, useRef, useState } from 'react';
  * box — was picked up off screen and silently accepted. Every frame is now
  * cropped to the guide before it reaches either decoder, which turns the
  * frame on screen from decoration into a promise.
+ *
+ * WHY THE DECODER IS CHOSEN THE WAY IT IS. The owner reported the camera
+ * opening in the Kashgar warehouse and never reading a code, while the same
+ * screen on his own phone worked — one codebase, two devices, so the
+ * difference IS the defect. `window.BarcodeDetector` says only that the API
+ * is compiled into the browser; on Android the actual reading is done by a
+ * platform module that arrives through Google Play Services, which a phone
+ * bought in China does not have. There it exists, never throws, and returns
+ * an empty list for ever. So the native detector is now (a) feature-tested
+ * with the documented `getSupportedFormats()`, (b) abandoned the moment it
+ * throws, and (c) abandoned if it has not read a single code in the first few
+ * seconds of live frames — and @zxing, which needs nothing from the platform,
+ * takes over. Its module is fetched at start rather than at the moment of
+ * failure, because these are the offline screens and a chunk that has to
+ * cross the warehouse wifi exactly when the decoder gives up is a chunk that
+ * will not arrive.
  */
 
 /** Side of the read area, as a fraction of the visible square. */
@@ -29,6 +47,30 @@ const GUIDE = 0.74;
  * 640 keeps more of that sharpness for the decoder.
  */
 const ROI_PX = 640;
+/**
+ * Frames the native detector gets to prove it can read anything at all.
+ *
+ * 25 frames at 180 ms is about four and a half seconds of live picture. A
+ * detector that has not read one code in that time is either broken or
+ * pointed at nothing, and those two cases cannot be told apart from here —
+ * so we stop guessing and hand over to a decoder that needs nothing from the
+ * platform. The cost of being wrong is a little more CPU; the cost of the
+ * other answer is a warehouse that cannot scan.
+ */
+const NATIVE_TRIAL_FRAMES = 25;
+
+/** What the operator is told. `ready` says nothing — a working camera needs no caption. */
+type CamState =
+  | { kind: 'starting' }
+  | { kind: 'ready' }
+  | { kind: 'failed'; reason: 'insecure' | 'denied' | 'unavailable' };
+
+interface NativeDetector {
+  detect(source: CanvasImageSource): Promise<{ rawValue: string }[]>;
+}
+type DetectorCtorType = (new (opts: { formats: string[] }) => NativeDetector) & {
+  getSupportedFormats?: () => Promise<string[]>;
+};
 
 export function Scanner({
   active,
@@ -37,7 +79,13 @@ export function Scanner({
   active: boolean;
   onCode: (code: string) => void;
 }) {
+  const t = useTranslations('common');
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [cam, setCam] = useState<CamState>({ kind: 'starting' });
+  /** Has ANY decoder read anything since this screen was opened? */
+  const [everRead, setEverRead] = useState(false);
+  /** Live for long enough that "nothing has been read" is worth saying. */
+  const [quiet, setQuiet] = useState(false);
   const onCodeRef = useRef(onCode);
   useEffect(() => {
     onCodeRef.current = onCode;
@@ -66,6 +114,7 @@ export function Scanner({
   function emit(raw: string) {
     const code = raw.trim().toUpperCase();
     if (!code) return;
+    setEverRead(true);
     const now = Date.now();
     const last = cooldownRef.current.get(code) ?? 0;
     if (now - last < 2500) return;
@@ -124,8 +173,58 @@ export function Scanner({
       return true;
     };
 
+    // Fetched NOW, not when it is needed — see the note at the top of the file.
+    // A rejection is an answer (null), not a crash: HID and the native
+    // detector must keep working on a phone that cannot load the chunk.
+    const zxingReady = import('@zxing/browser')
+      .then((mod) => new mod.BrowserQRCodeReader())
+      .catch(() => null);
+
+    /** The zxing loop. Also the place the native detector hands over to. */
+    const runZxing = async () => {
+      const reader = await zxingReady;
+      if (stopped || !reader) return;
+      // The continuous `decodeFromVideoElement` helper reads the whole frame
+      // and cannot be told otherwise, so this drives the same cropped canvas.
+      timer = setInterval(() => {
+        if (!drawGuide()) return;
+        try {
+          const result = reader.decodeFromCanvas(canvas);
+          if (result) emit(result.getText());
+        } catch {
+          /* NotFoundException on a frame with no code — the normal case */
+        }
+      }, 200);
+    };
+
+    /**
+     * The native detector, or null if this browser only pretends to have one.
+     *
+     * `getSupportedFormats()` is the documented way to ask, and skipping it
+     * was the whole bug: the constructor happily accepts formats the platform
+     * cannot read.
+     */
+    const nativeDetector = async (): Promise<NativeDetector | null> => {
+      const Ctor = (window as unknown as { BarcodeDetector?: DetectorCtorType }).BarcodeDetector;
+      if (!Ctor) return null;
+      try {
+        if (!nativeUsable(await Ctor.getSupportedFormats?.())) return null;
+        return new Ctor({ formats: ['qr_code', 'code_128'] });
+      } catch {
+        return null;
+      }
+    };
+
     void (async () => {
       try {
+        // On a plain http:// origin `navigator.mediaDevices` does not exist at
+        // all, so this would throw a TypeError that reads like a bug in our
+        // code. It is not: it is the browser saying the page is not secure,
+        // and the operator can act on that sentence.
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setCam({ kind: 'failed', reason: 'insecure' });
+          return;
+        }
         // Ask for a REAL resolution. Without constraints iOS Safari hands
         // over 640×480, and a 10 cm label at arm's length is a handful of
         // pixels — the decoder was not slow, it was half blind. `ideal`
@@ -144,6 +243,8 @@ export function Scanner({
         }
         video.srcObject = stream;
         await video.play();
+        if (stopped) return;
+        setCam({ kind: 'ready' });
 
         const track = stream.getVideoTracks()[0] ?? null;
         trackRef.current = track;
@@ -152,53 +253,64 @@ export function Scanner({
           | undefined;
         if (capabilities?.torch) setTorchAvailable(true);
 
-        const DetectorCtor = (
-          window as unknown as {
-            BarcodeDetector?: new (opts: { formats: string[] }) => {
-              detect(source: CanvasImageSource): Promise<{ rawValue: string }[]>;
-            };
-          }
-        ).BarcodeDetector;
-
-        if (DetectorCtor) {
-          const detector = new DetectorCtor({ formats: ['qr_code', 'code_128'] });
-          timer = setInterval(async () => {
-            if (!drawGuide()) return;
-            try {
-              const found = await detector.detect(canvas);
-              for (const item of found) emit(item.rawValue);
-            } catch {
-              /* per-frame detect errors are non-fatal */
-            }
-          }, 180);
-        } else {
-          // The continuous `decodeFromVideoElement` helper reads the whole
-          // frame and cannot be told otherwise, so the fallback drives the
-          // same cropped canvas on the same interval.
-          const { BrowserQRCodeReader } = await import('@zxing/browser');
-          const reader = new BrowserQRCodeReader();
-          timer = setInterval(() => {
-            if (!drawGuide()) return;
-            try {
-              const result = reader.decodeFromCanvas(canvas);
-              if (result) emit(result.getText());
-            } catch {
-              /* NotFoundException on a frame with no code — the normal case */
-            }
-          }, 200);
+        const detector = await nativeDetector();
+        if (stopped) return;
+        if (!detector) {
+          await runZxing();
+          return;
         }
-      } catch {
-        /* camera unavailable (denied / desktop without cam) — HID still works */
+
+        let framesSeen = 0;
+        let nativeWorks = false;
+        const handOver = () => {
+          if (timer) clearInterval(timer);
+          timer = null;
+          void runZxing();
+        };
+        timer = setInterval(async () => {
+          if (!drawGuide()) return;
+          framesSeen += 1;
+          let threw = false;
+          try {
+            const found = await detector.detect(canvas);
+            if (found.length > 0) {
+              nativeWorks = true;
+              for (const item of found) emit(item.rawValue);
+            }
+          } catch {
+            threw = true;
+          }
+          if (shouldHandOver({ framesSeen, nativeWorks, threw, trialFrames: NATIVE_TRIAL_FRAMES })) {
+            handOver();
+          }
+        }, 180);
+      } catch (err) {
+        // Every one of these used to be swallowed, so a denied permission, a
+        // camera another app is holding and a browser with no camera at all
+        // looked identical: a black square and no explanation.
+        const name = err instanceof Error ? err.name : '';
+        setCam({
+          kind: 'failed',
+          reason: name === 'NotAllowedError' || name === 'SecurityError' ? 'denied' : 'unavailable',
+        });
       }
     })();
+
+    // "The camera has been open a while and has read nothing" is worth saying
+    // out loud, because the manual door is one tap away and the operator has
+    // no way to know it is the right one.
+    const quietTimer = setTimeout(() => setQuiet(true), 12_000);
 
     return () => {
       stopped = true;
       if (timer) clearInterval(timer);
+      clearTimeout(quietTimer);
       stream?.getTracks().forEach((track) => track.stop());
       trackRef.current = null;
       setTorchAvailable(false);
       setTorchOn(false);
+      setCam({ kind: 'starting' });
+      setQuiet(false);
     };
   }, [active]);
 
@@ -244,6 +356,32 @@ export function Scanner({
           <span className="absolute bottom-0 right-0 h-7 w-7 rounded-br-lg border-b-4 border-r-4 border-white/90" />
         </div>
       </div>
+
+      {/* The one thing this component never did: say what is wrong. A black
+          square means "denied", "no https", "camera busy" and "still
+          starting" all at once, and the operator cannot act on any of them.
+          The message sits over the picture rather than under it, because on
+          a phone the space under the viewfinder belongs to the counter. */}
+      {cam.kind === 'failed' && (
+        <p
+          data-testid="scan-camera-error"
+          className="absolute inset-x-2 top-1/2 -translate-y-1/2 rounded-lg bg-bad/90 p-2 text-center text-sm font-semibold text-white"
+        >
+          {cam.reason === 'insecure'
+            ? t('scanNeedsHttps')
+            : cam.reason === 'denied'
+              ? t('scanNoPermission')
+              : t('scanNoCamera')}
+        </p>
+      )}
+      {cam.kind === 'ready' && quiet && !everRead && (
+        <p
+          data-testid="scan-quiet-hint"
+          className="absolute inset-x-2 bottom-2 rounded-lg bg-black/70 p-2 text-center text-xs font-semibold text-white"
+        >
+          {t('scanNothingRead')}
+        </p>
+      )}
 
       {torchAvailable && (
         <button

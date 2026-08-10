@@ -124,22 +124,106 @@ export async function removeScans(uuids: string[]): Promise<void> {
 }
 
 /**
- * Flush the queue. Every acked item leaves the outbox (the server made its
- * decision); acks are returned so the UI can react (rollback local marks on
- * rejects, etc.). Throws only on network failure — items stay queued.
+ * The server's own ceiling: `/api/scan/sync` validates `scans` as
+ * `.min(1).max(200)`, so a 201st row makes it refuse the WHOLE body.
  */
-export async function flushScans(): Promise<SyncAck[]> {
-  const scans = await pendingScans();
-  if (scans.length === 0) return [];
-  const res = await fetch('/api/scan/sync', {
+export const MAX_PER_SYNC = 200;
+
+/**
+ * Codes the server can even consider. Mirrors `loadScanSchema`'s
+ * `min(3).max(40)` — deliberately a restatement rather than an import,
+ * because this file runs in the browser and must not pull the server's
+ * schema module into the phone's bundle.
+ *
+ * The unload screen sends codes it does not recognise ON PURPOSE (reality
+ * wins at unload: the server decides auto-transfer vs unknown). But a
+ * supplier's own QR on a Chinese carton is a URL forty or more characters
+ * long, and that one is not "unknown", it is unsendable — and queueing it
+ * used to poison every scan behind it.
+ */
+export function isSendableCode(code: string): boolean {
+  const clean = code.trim();
+  return clean.length >= 3 && clean.length <= 40;
+}
+
+export interface FlushResult {
+  acks: SyncAck[];
+  /**
+   * Rows the SERVER refused as malformed. They are out of the queue — they
+   * were never going to be accepted, and retrying them for ever is what
+   * jammed every scan behind them.
+   */
+  discarded: OutboxScan[];
+  /**
+   * The server said no to the person, not to the data (403 / session gone).
+   * These stay queued: logging in again makes them sendable, and dropping a
+   * real scan because a session expired would lose cargo.
+   */
+  refusedForbidden: boolean;
+}
+
+async function postSlice(scans: OutboxScan[]): Promise<Response> {
+  return fetch('/api/scan/sync', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ scans }),
   });
-  if (!res.ok) throw new Error(`sync ${res.status}`);
-  const { acks } = (await res.json()) as { acks: SyncAck[] };
-  await removeScans(acks.map((a) => a.clientEventUuid));
-  return acks;
+}
+
+/**
+ * Send one slice, splitting it until the rows the server refuses are alone.
+ *
+ * A 400 is a verdict on the BODY, not on a row, so the whole slice used to
+ * die together — and with it every good scan queued behind the bad one. The
+ * bisection costs at most a handful of extra requests on a slice of 200 and
+ * only happens when something is actually wrong.
+ */
+async function sendSlice(
+  slice: OutboxScan[],
+  out: { acks: SyncAck[]; discarded: OutboxScan[] },
+): Promise<'ok' | 'forbidden'> {
+  const res = await postSlice(slice);
+  if (res.ok) {
+    const { acks } = (await res.json()) as { acks: SyncAck[] };
+    out.acks.push(...acks);
+    await removeScans(acks.map((a) => a.clientEventUuid));
+    return 'ok';
+  }
+  if (res.status === 401 || res.status === 403) return 'forbidden';
+  if (res.status === 400) {
+    if (slice.length === 1) {
+      out.discarded.push(slice[0]!);
+      await removeScans([slice[0]!.clientEventUuid]);
+      return 'ok';
+    }
+    const half = Math.ceil(slice.length / 2);
+    const a = await sendSlice(slice.slice(0, half), out);
+    const b = await sendSlice(slice.slice(half), out);
+    return a === 'forbidden' || b === 'forbidden' ? 'forbidden' : 'ok';
+  }
+  // 5xx and anything else: the server is having a bad minute, not a bad
+  // opinion. Keep the rows and let the next tick try again.
+  throw new Error(`sync ${res.status}`);
+}
+
+/**
+ * Flush the queue. Every acked item leaves the outbox (the server made its
+ * decision); acks are returned so the UI can react (rollback local marks on
+ * rejects, etc.). Throws only on network failure — items stay queued.
+ */
+export async function flushScans(): Promise<FlushResult> {
+  const scans = await pendingScans();
+  const out: { acks: SyncAck[]; discarded: OutboxScan[] } = { acks: [], discarded: [] };
+  if (scans.length === 0) return { ...out, refusedForbidden: false };
+  let forbidden = false;
+  for (let i = 0; i < scans.length; i += MAX_PER_SYNC) {
+    const verdict = await sendSlice(scans.slice(i, i + MAX_PER_SYNC), out);
+    if (verdict === 'forbidden') {
+      forbidden = true;
+      break;
+    }
+  }
+  return { ...out, refusedForbidden: forbidden };
 }
 
 /**

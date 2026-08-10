@@ -2121,6 +2121,47 @@ which is also how the collision was found: GitHub runs no `pull_request` check
 at all while a PR conflicts, so the symptom of a stale branch is a PR with NO
 check rather than a red one (the recorded rule, hit again).
 
+Round 89 — the Kashgar scanner, and the audit around it (#626-628, owner:
+«fura prixod qilishni audit qil qabulda scanner ishlamayabti» → «kamera
+ochilyabti lekin qr codelarni oqimayabti» → «menda qr code ishlayabti lekin
+qashqar skladchimizda ishlamayabti»). **The third sentence is the whole
+diagnosis** — one codebase, two phones, so the difference IS the defect
+(#476). `if (DetectorCtor)` tested that `window.BarcodeDetector` EXISTS; on an
+Android without Google Play Services it exists, never throws and returns `[]`
+for ever, and the zxing fallback was reachable only in the else-branch. Now:
+`getSupportedFormats()` (never called before — grep was empty), hand over on
+the first throw, and hand over after **25 barren live frames** (~4.5 s) — that
+last rule cannot tell "broken" from "not aimed yet" and resolves it toward the
+decoder that needs nothing from the platform. zxing's chunk is fetched at
+scanner START (these are the OFFLINE screens). Decisions extracted to
+`scan/decoder-choice.ts` (#166) + 11 unit tests. **Proven end to end** by
+`scripts/dev-scan-decoder-probe.mjs` — a Y4M of a real box's QR through
+Chromium's fake camera at the real unload screen, with Kashgar's phone
+simulated as a detector that claims `qr_code` and reads nothing;
+**red-proven** by raising the threshold to `MAX_SAFE_INTEGER` (166 detect
+calls, counter never moved). **Every camera failure was also silent** — one
+empty catch made "denied", "camera busy", "insecure origin" and "decoder that
+never decodes" the same black square; there is a `cam` state and a sentence
+for each now, plus a 12-second "read nothing" hint pointing at manual entry.
+The `http://` theory was measured (`isSecureContext:false`, `mediaDevices`
+undefined) and **REFUSED as the cause**: the session cookie is Secure in
+production, so on a plaintext origin nobody gets past login at all.
+**THE AUDIT'S OWN FIND, more expensive than the reported one:** a supplier's
+QR (a 45-char tmall URL, which unload queues ON PURPOSE — reality wins) made
+`/api/scan/sync` refuse the whole 200-row body, `flushScans` sent the entire
+queue at once and threw on any non-200, so the phone's outbox jammed **for
+ever** under a **📴 offline banner while online**, the counter kept climbing
+green, and `finishUnload` then flagged every unrecorded box
+`missing_in_transit` — cargo standing in the warehouse, recorded as lost.
+Now: slice at `MAX_PER_SYNC`, **bisect on a 400** so only the truly bad rows
+are dropped, never drop on 401/403 (a re-login makes them sendable), and
+`isSendableCode` refuses at the door with a sentence. Both scan screens also
+stop sitting on «Yuklanmoqda…» for ever — a failed snapshot says why and
+offers retry. Deliberately NOT done, stated: widening the sync route's unload
+gate to match `/planned`'s read gate (an access change in a bug fix's
+clothes). 5 new i18n keys ×4. No migration. 1255 unit/integration + 145 e2e
+green on a fresh db in CI's order.
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
 **Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that

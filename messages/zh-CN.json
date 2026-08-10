@@ -4,6 +4,10 @@
     "save": "保存",
     "cancel": "取消",
     "confirm": "确认",
+    "scanNeedsHttps": "摄像头仅在安全地址（https）下可用，请使用带锁标志的网址打开。",
+    "scanNoPermission": "摄像头被拒绝。请在浏览器设置中允许使用摄像头，然后刷新页面。",
+    "scanNoCamera": "摄像头无法打开。请关闭其他正在使用摄像头的应用后刷新页面。",
+    "scanNothingRead": "扫不出来？请用下方按钮手动输入。",
     "create": "创建",
     "edit": "编辑",
     "delete": "删除",
@@ -39,7 +43,9 @@
     },
     "moreActions": "更多操作",
     "notFilled": "未填写",
-    "copy": "复制"
+    "copy": "复制",
+    "scanTruckForbidden": "这辆车不属于你的仓库，或登录已过期，请重新登录。",
+    "scanSnapshotOffline": "箱子清单未能加载：无网络。请检查网络后重试。"
   },
   "login": {
     "title": "登录系统",
@@ -789,7 +795,10 @@
     "unscannedList": "未扫描的箱子：",
     "stockList": "仓库中的箱子（点击装车）：",
     "pickSearch": "搜索：编号、客户、货名…",
-    "pickFromStock": "从仓库选择装车 / 手动输入"
+    "pickFromStock": "从仓库选择装车 / 手动输入",
+    "foreignCode": "这不是我们的编码（其他二维码）。请扫描 GSR 标签。",
+    "serverRefused": "服务器拒绝了 {n} 次扫描，未被记录。请手动输入。",
+    "notYourTruck": "这辆车不属于你的仓库，或登录已过期，请重新登录。"
   },
   "unloading": {
     "title": "卸货",
@@ -817,7 +826,10 @@
     "acceptAll": "全部接收（{n} 箱）",
     "acceptAllConfirm": "确认车上的 {n} 箱全部已到达本仓库？将跳过扫码。",
     "acceptAllDone": "已接收 {n} 箱",
-    "finishConfirm": "注意：还有 {n} 箱未接收。完成后它们将被标记为「途中丢失」。如果货物在此，请先点「全部接收」。要继续吗？"
+    "finishConfirm": "注意：还有 {n} 箱未接收。完成后它们将被标记为「途中丢失」。如果货物在此，请先点「全部接收」。要继续吗？",
+    "foreignCode": "这不是我们的编码（其他二维码）。请扫描 GSR 标签。",
+    "serverRefused": "服务器拒绝了 {n} 次扫描，未被记录。请手动输入。",
+    "notYourTruck": "这辆车不属于你的仓库，或登录已过期，请重新登录。"
   },
   "transit": {
     "title": "在途货物",

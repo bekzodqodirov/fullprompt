@@ -1,5 +1,75 @@
 # CHANGELOG
 
+## Qashqarda skaner QR o‘qimayotgani — sabab topildi va tuzatildi — 2026-08-10
+
+Sizning xabaringiz: «kamera ochilyabti lekin qr codelarni oqimayabti», keyin
+esa hal qiluvchi gap — «menda qr code ishlayabti lekin qashqar skladchimizda
+ishlamayabti».
+
+**Bitta dastur, ikki xil telefon — demak farqning o‘zi xato.**
+
+### Sabab
+
+Telefon brauzerida QR o‘qiydigan ikki xil yo‘l bor. Dastur ulardan birini
+tanlaydi. Tanlash qoidasi noto‘g‘ri edi: u «brauzerda bunday imkoniyat
+**bormi**» deb so‘rardi, «u **ishlaydimi**» deb emas.
+
+Androidda bu imkoniyat ko‘rinib turadi, lekin uning ostidagi haqiqiy o‘qish
+Google xizmatlari orqali keladi — **Xitoyda sotilgan telefonda esa u yo‘q**.
+Natijada: kamera ochiladi, rasm chiroyli, xato ham chiqmaydi — va hech qachon
+hech nima o‘qilmaydi. Sizning telefoningiz ikkinchi yo‘ldan ketgani uchun
+ishlayvergan.
+
+### Endi qanday
+
+1. Dastur avval so‘raydi: «sen QR o‘qiy olasanmi?» Javob «yo‘q» bo‘lsa,
+   darhol ikkinchi yo‘lga o‘tadi.
+2. Agar «ha» desa-yu, **4-5 soniya ichida bitta ham kod o‘qimasa**, dastur
+   unga ishonishni to‘xtatadi va ikkinchi yo‘lga o‘tadi. Ikkinchi yo‘l
+   telefondan hech nima talab qilmaydi — u har doim ishlaydi.
+3. Ikkinchi yo‘lning kutubxonasi endi **oldindan** yuklab qo‘yiladi (skladda
+   internet yo‘q paytda kerak bo‘lib qolsa, yuklab bo‘lmasdi).
+
+Uch xil telefonda haqiqiy QR bilan tekshirildi — uchalasi ham o‘qidi.
+
+### Skaner endi nima bo‘layotganini aytadi
+
+Ilgari kamera ishlamasa **qop-qora kvadrat** ko‘rinardi, xolos: ruxsat
+berilmaganmi, kamerani boshqa ilova ushlab turganmi, manzil himoyalanmaganmi
+— hammasi bir xil ko‘rinardi. Endi ekranda sabab yoziladi va nima qilish
+kerakligi aytiladi. Kamera 12 soniya ochiq turib bitta ham kod o‘qimasa,
+«qo‘lda kiritish» tugmasiga ishora qiladi.
+
+## Yuk tushirishda navbat tiqilib qolishi — tuzatildi — 2026-08-10
+
+**Buni siz emas, audit topdi, va bu ikkalasidan qimmatrog‘i.**
+
+Xitoy karobkasida bizning stikerimizdan tashqari **zavodning o‘z QR kodi** ham
+bo‘ladi — u odatda uzun havola. Skaner uni ham o‘qirdi va serverga yuborardi.
+Server esa bunday kodni qabul qila olmay, **butun to‘plamni** rad etardi.
+
+Oqibati og‘ir edi:
+
+- Telefondagi navbat **abadiy tiqilib qolardi** — undan keyingi hamma
+  skanerlar serverga hech qachon yetib bormasdi.
+- Ekranda **📴 «internet yo‘q»** deb turardi, aslida internet bor edi.
+- Hisoblagich esa o‘sib borardi — ya‘ni skladchi hammasi yozilyapti deb
+  o‘ylardi.
+- Eng yomoni: «tushirish tugadi» bosilganda tizim yozilmagan karobkalarni
+  **«yo‘lda yo‘qolgan»** deb belgilardi. Ya‘ni jismonan skladda turgan yuk
+  hujjatda yo‘qolgan bo‘lib chiqardi, mijozga «keldi» degan xabar ketmasdi va
+  uni topshirib ham bo‘lmasdi.
+
+**Endi:** begona QR eshikda «bu bizning kod emas» deb rad etiladi; navbat
+200 tadan bo‘lib yuboriladi; server bitta kodni rad etsa, faqat **o‘sha kod**
+chiqarib tashlanadi, orqasidagi to‘g‘ri skanerlar ketaveradi; va «server rad
+etdi» endi «internet yo‘q» deb yozilmaydi — nechta skan yozilmagani aytiladi.
+
+Shu bilan birga: karobkalar ro‘yxati yuklanmasa, ekran endi «Yuklanmoqda…»
+bo‘lib qotib qolmaydi — sababini yozadi va «qayta urinish» tugmasini beradi.
+
+Migratsiya yo‘q — bazada hech nima o‘zgarmadi.
+
 ## Yuklash ekranida kg, kub va bitta karobkaning og'irligi — 2026-08-09 (kech)
 
 Sizning so'rovingiz: «kamera ochilganda yuklash payitida hozir GS kod, harf va

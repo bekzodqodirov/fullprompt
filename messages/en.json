@@ -4,6 +4,10 @@
     "save": "Save",
     "cancel": "Cancel",
     "confirm": "Confirm",
+    "scanNeedsHttps": "The camera only works on a secure (https) address. Open the site at the address with the padlock.",
+    "scanNoPermission": "Camera permission was refused. Allow the camera in the browser settings and reload the page.",
+    "scanNoCamera": "The camera did not open. Close other apps using the camera and reload the page.",
+    "scanNothingRead": "Code not reading? Enter it by hand with the button below.",
     "create": "Create",
     "edit": "Edit",
     "delete": "Delete",
@@ -39,7 +43,9 @@
     },
     "moreActions": "More actions",
     "notFilled": "Not filled",
-    "copy": "Copy"
+    "copy": "Copy",
+    "scanTruckForbidden": "This truck is not for your warehouse — or the session expired. Sign in again.",
+    "scanSnapshotOffline": "The box list did not load: no connection. Check the network and try again."
   },
   "login": {
     "title": "Sign in",
@@ -789,7 +795,10 @@
     "unscannedList": "Unscanned boxes:",
     "stockList": "Boxes in the warehouse (tap to load):",
     "pickSearch": "Search: code, client, product…",
-    "pickFromStock": "Pick from the warehouse / enter by hand"
+    "pickFromStock": "Pick from the warehouse / enter by hand",
+    "foreignCode": "That is not our code (a foreign QR). Scan the GSR sticker.",
+    "serverRefused": "The server refused {n} scan(s) — they were not recorded. Enter them by hand.",
+    "notYourTruck": "This truck is not for your warehouse, or the session expired — sign in again."
   },
   "unloading": {
     "title": "Unloading",
@@ -817,7 +826,10 @@
     "acceptAll": "Accept everything ({n})",
     "acceptAllConfirm": "Accept all {n} boxes as arrived at this warehouse? Scanning will be skipped.",
     "acceptAllDone": "Boxes accepted: {n}",
-    "finishConfirm": "Careful: {n} boxes have not been accepted yet. Finishing marks them as \"lost in transit\". If the cargo is here, press \"Accept everything\" first. Continue?"
+    "finishConfirm": "Careful: {n} boxes have not been accepted yet. Finishing marks them as \"lost in transit\". If the cargo is here, press \"Accept everything\" first. Continue?",
+    "foreignCode": "That is not our code (a foreign QR). Scan the GSR sticker.",
+    "serverRefused": "The server refused {n} scan(s) — they were not recorded. Enter them by hand.",
+    "notYourTruck": "This truck is not for your warehouse, or the session expired — sign in again."
   },
   "transit": {
     "title": "Cargo in transit",
