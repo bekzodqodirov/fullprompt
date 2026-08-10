@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## Tarix pastga tushdi, «Chiqish» profilga ko'chdi, agent Exceli partiya bo'yicha guruhlandi — 2026-08-10 (kech)
+
+### 1. Kartadagi «Tarix» endi lentaning tagida
+
+Siz aytgandek: telefonda u eng pastda edi, kompyuterda esa **o'ng tomondagi
+panel ostiga tushib ketardi**. Tekshirdik — gapingiz so'zma-so'z to'g'ri
+chiqdi: o'ng paneldagi ma'lumotlar bloki joyida qotib turadi, tarix esa uning
+**tagidan o'tib ketardi** (o'lchadik: 303 piksel ustma-ust tushgan).
+
+Endi tarix **lentaning tagida**, chap ustunda — o'qish tartibi bilan bir xil.
+Telefonda hech narsa o'zgarmadi, u avvalgidek eng pastda.
+
+Bir narsani o'zingiz aytmagan bo'lsangiz ham tuzatdik: **mijoz kartasida** ham
+xuddi shu muammo bor edi (u yerda tarix o'ng panelning oxirida turardi, ya'ni
+telefonda sahifaning o'rtasida). Endi u ham lentaning tagida.
+
+### 2. «Chiqish» tugmasi profil ichiga ko'chdi
+
+Yuqoridagi qatordan olib tashlandi. Endi **Profil → ismingiz yonida
+«Chiqish»**. Yuqorida beshta tugma qoldi — telefonda ancha keng bo'ldi.
+
+Bir ehtiyot chorasi: endi tizimdan chiqishning yagona yo'li shu sahifa
+bo'lgani uchun, profildagi boshqa bo'limlar (qurilmalar, Telegram, qo'ng'iroq
+ilovasi) xato bersa ham **ismingiz va «Chiqish» tugmasi ishlayveradi**.
+
+### 3. Agent Excelida — qaysi partiyada kelgani va sanasi
+
+Plandan agentga yuboriladigan faylga ikkita ustun qo'shildi:
+
+| Ustun | Nima yozadi |
+|---|---|
+| Партия прихода | qaysi fura bu yukni shu skladga olib kelgan |
+| Дата прихода | qachon kelgani |
+
+Va qatorlar **kelgan partiyasi bo'yicha guruhlandi**: har bir furaning yuki
+alohida blok, blok boshida furaning kodi, sanasi va **jami quti / kg / m³**.
+Bloklar **eng eski furadan boshlab** teriladi — ya'ni eng uzoq turgan yuk
+tepada. Skladning o'ziga kelgan (fura bilan emas) yuk esa eng oxirgi blokda.
+
+Ikkita mayda narsa ham qo'shildi: fayl ochilganda **sarlavha qatori va mijoz
+kodi qotib turadi** (o'ngga surganda ham kimning yuki ekani ko'rinib turadi),
+va sana endi **skladning o'z vaqti bo'yicha** — Xitoy skladlari UTC+8 da,
+shuning uchun ertalab tushirilgan fura ilgari **bir kun oldingi sana** bilan
+chiqar edi.
+
 ## Sotuvchi endi faqat o'z mijozlarining pulini ko'radi + Telegram ekrani — 2026-08-10 (kech)
 
 ### 1. Pul: sotuvchiga begona mijozning hisobi ko'rinmaydi

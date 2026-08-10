@@ -17,7 +17,26 @@ import type { ReactNode } from 'react';
  * o'rtada bo'lib qolgan». It was at the BOTTOM OF THE RAIL, which on a
  * phone means the middle of the page — after the facts and the forms, but
  * still above the lenta a card is opened to read. Anything in `tail` comes
- * last on a phone and keeps its place under the rail on a desktop.
+ * last on a phone.
+ *
+ * On a DESKTOP it follows the lenta, in column one. It was first put under
+ * the rail so that nothing about the desktop moved, and that was the wrong
+ * trade: «pcda ong taraf menu orqasiga otib qolyabti pasga tushgan sari».
+ * He meant it literally. Measured at 1280×900 on a card with a short lenta
+ * and a long history, the tail and the rail are in the same column and
+ * overlap by 303 px — `elementsFromPoint` at the top of the history returns
+ * the FACTS PANEL. A sticky item's travel is NOT confined to its grid row
+ * here, so the rail stays pinned at y=64 while the history scrolls up
+ * underneath it, and a positioned element paints over a static sibling. (A
+ * first measurement said otherwise and was wrong: the local card's history
+ * is 46 px tall and can never rise high enough to reach the rail. A layout
+ * defect needs the content that provokes it.) Even where they do not touch,
+ * the history was stranded at the bottom of the 24rem column with ~450 px
+ * of nothing above it. Under the lenta it simply comes next.
+ *
+ * Rendering it INSIDE the main cell instead was measured against this and
+ * came out identical on both cases, so the simpler CSS did not decide it;
+ * all three slots stay explicit, which is what the rest of the file does.
  *
  * DOM order is rail → main → tail, so the phone needs no rules at all; the
  * desktop grid places all three explicitly. ONE markup, no duplicated node
@@ -35,11 +54,20 @@ export function CardCols({
 }) {
   return (
     <div className="space-y-4 md:grid md:grid-cols-[minmax(0,1fr)_24rem] md:items-start md:gap-4 md:space-y-0">
-      <div className="space-y-4 md:col-start-2 md:row-start-1 md:sticky md:top-16 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto md:pr-0.5">
+      <div
+        data-cardcols="rail"
+        className="space-y-4 md:col-start-2 md:row-start-1 md:sticky md:top-16 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto md:pr-0.5"
+      >
         {rail}
       </div>
-      <div className="min-w-0 space-y-4 md:col-start-1 md:row-start-1">{main}</div>
-      {tail && <div className="space-y-4 md:col-start-2 md:row-start-2">{tail}</div>}
+      <div data-cardcols="main" className="min-w-0 space-y-4 md:col-start-1 md:row-start-1">
+        {main}
+      </div>
+      {tail && (
+        <div data-cardcols="tail" className="min-w-0 space-y-4 md:col-start-1 md:row-start-2">
+          {tail}
+        </div>
+      )}
     </div>
   );
 }

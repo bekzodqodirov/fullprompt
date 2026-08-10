@@ -2238,6 +2238,44 @@ loses whatever queued while it was down), screen polls 2 s only while the
 queue is non-empty. No migration. 1278 unit/integration + 145 e2e green on a
 fresh db in CI's order.
 
+Round 92 — three more the same evening (#641-644). (1) **The facts rail was
+painted OVER the history** — and my first measurement said it was not, because
+the local card's history is 46 px and can never rise to meet a pinned rail. On
+a short lenta with a long history the two overlap by **303 px** and
+`elementsFromPoint` returns `lead-facts`; sticky travel is not confined to the
+grid row and a positioned element paints over a static sibling. `tail` moved to
+`md:col-start-1` (under the lenta); rendering it INSIDE the main cell measured
+identical, so the simpler CSS did not decide it. The CLIENT card had both
+halves of the same complaint unfixed (history last in the RAIL = middle of the
+page on a phone) and moved to the same slot. RULE: **a layout defect needs the
+content that provokes it — a fixture that cannot reach the failing geometry is
+evidence about the fixture.** `data-cardcols` on all three slots so it can be
+measured. (2) **Logout left the app bar for `/profile`** (bar 7→5 controls at
+360; language deliberately STAYS on /profile per round 60). Because that page
+is now the only door out, its five panel loads each catch and log under
+`[profile]` — the name and the button render from the session alone (#472's
+morning is exactly when somebody needs to sign in as somebody else).
+`nav.logout` reused, no new key. Source-shape tripwire `logout-door.test.ts`.
+(3) **The agent Excel groups a plan by the truck that brought the cargo** —
+`documents/arrivals.ts`, one sentence: the newest movement, over the lot's
+boxes standing there NOW, that moved a box INTO that warehouse; an unload names
+the truck. `current_warehouse_id` keeps `batch_departed` out (it stamps the
+DESTINATION the day the truck LEAVES); `from IS DISTINCT FROM to` keeps
+`plan_approved`/`load_scan`/`crate_packed` out (same warehouse both sides — and
+`plan_approved` is NEWER, so without it the sheet names the truck the cargo is
+leaving ON: that is the red proof, re-download after approval); the unload set
+includes `found_here` (round 89's failed-scanner path) and excludes
+`found_at_origin`. One grouped query — 57 ms cold / 11 ms warm on his fullest
+warehouse. Blocks with code · date · Σ, oldest truck first, truckless last;
+frozen `xSplit`+`ySplit`; headings NOT merged (Excel refuses Sort/Filter over
+unequal merges). **Dates print in the WAREHOUSE's zone** — a 07:00 Kashgar
+unload is 23:00 UTC the day before, so `docDate(value, timeZone)` now, dd.mm.yyyy
+as text (the packing sheet's house rule). Designed and judged by four
+adversarial lenses BEFORE any code; that pass produced the `found_here` fix, the
+`plan_approved` trap, the timezone, the merge and the reversed English headers.
+No migration. 1298 unit/integration + **145 e2e all green** on a fresh db in
+CI's order.
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
 **Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that
