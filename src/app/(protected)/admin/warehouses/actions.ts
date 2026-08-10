@@ -44,6 +44,7 @@ const warehouseSchema = z.object({
     .or(z.literal('')),
   /** Does a client collect cargo here? (owner: only TAS and AND.) */
   issuesToClients: z.boolean(),
+  allowsQuickBatch: z.boolean(),
 });
 
 export interface WarehouseFormState {
@@ -61,6 +62,7 @@ function parseForm(formData: FormData) {
     address: formData.get('address') ?? '',
     capacityM3: formData.get('capacityM3') ?? '',
     issuesToClients: checkbox(formData, 'issuesToClients', false),
+    allowsQuickBatch: checkbox(formData, 'allowsQuickBatch', true),
   });
 }
 

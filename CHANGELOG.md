@@ -1,5 +1,52 @@
 # CHANGELOG
 
+## Tovar rasmlari va Qashqarda tezkor yuklash — 2026-08-10 (kech)
+
+### 1. «Bazi tovarlarning rasimlar ochmayabti»
+
+Topildi. Rasm **qabul qilingan sklad**ga bog'langan edi, **yuk turgan joyga**
+emas. Ya'ni: karobka Yivudan Qashqarga kelsa, rasm Yivunikiligicha qolardi va
+Qashqar skladchisi — qo'lida o'sha karobkani ushlab turgan odam — uni ocholmasdi.
+
+Sizning haqiqiy ma'lumotingizda o'lchadim:
+
+| Holat | Soni |
+|---|---|
+| Jami tovar rasmi | 4 403 |
+| Qabul qilingan skladida turibdi | 3 041 |
+| **Boshqa skladga ko'chgan** | **737** |
+| **Yo'lda yoki topshirilgan** | **625** |
+
+Ya'ni **1 362 ta rasm (31 %)** yuk turgan joydagi skladchi uchun ochilmasdi.
+Aynan «bazi».
+
+**Endi:** rasm yukning **o'zi bilan yuradi** — karobka qaysi skladda tursa,
+o'sha skladchi ko'radi; yo'lda bo'lsa — jo'natgan va qabul qiladigan sklad
+ikkalasi ham ko'radi. Bu yangi ruxsat emas: o'sha odam allaqachon o'sha
+prixodni va o'sha qatorni ekranda ko'rib turardi, faqat rasm ochilmasdi.
+Yuk hech qachon yaqinidan o'tmagan sklad esa avvalgidek ko'ra olmaydi.
+
+### 2. Qashqarda tezkor yuklash o'chirildi
+
+**Tezkor yuklash** — bu plansiz mashina: agent tasdig'i yo'q, tasdiqlangan
+ro'yxat yo'q, rastamojka qog'ozi tayanadigan hech nima yo'q. Ichki ko'chirish
+uchun to'g'ri, chegara kesib o'tadigan yuk uchun noto'g'ri.
+
+Buni **rol**dan olib tashlab bo'lmasdi: rol butun kompaniya bo'ylab bitta, ya'ni
+Yivu ham yo'qotardi — va o'sha ruxsat ayni paytda mashinani **jo'natish va
+yopish** huquqi hamdir, uni olib tashlash ishning o'zini to'xtatardi.
+
+Shuning uchun bu endi **skladning o'z sozlamasi**: Boshqaruv → Skladlar →
+Qashqar → «Tezkor yuklashga ruxsat» belgisini olib tashlang. Boshqa skladlar
+tegilmaydi. Belgi hamma skladda **yoqilgan holda** keladi, ya'ni siz
+o'chirmaguningizcha hech nima o'zgarmaydi.
+
+Manzil ro'yxati tegilmadi — bu «kim plansiz mashina boshlashi mumkin» degan
+savol, «yuk qayerga ketishi mumkin» degan savol emas.
+
+**Bazaga qo'shildi:** migratsiya **0069**. Yangilashda migratsiyalar soni
+**70** ga yetishi kerak.
+
 ## Qashqarda skaner QR o‘qimayotgani — sabab topildi va tuzatildi — 2026-08-10
 
 Sizning xabaringiz: «kamera ochilyabti lekin qr codelarni oqimayabti», keyin

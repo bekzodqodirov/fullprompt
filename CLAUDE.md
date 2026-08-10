@@ -137,7 +137,8 @@ everything before it is merged.
 1244 unit/integration + 142 e2e, verified in CI's order on a fresh database
 (the three photo-path specs — m1×2, m2×1 — are locally red by design here,
 no image service in this container; CI is the arbiter).
-Latest migration: **0068** (`inbound_webhook` — a per-source key for every
+Latest migration: **0069** (`warehouse_quick_batch` — a per-warehouse
+switch for unplanned trucks; 0068 `inbound_webhook` — a per-source key for every
 platform's own lead form; 0067 `automation_v2` — rule conditions, time triggers
 and `automation_fires`; 0066 `inbound_leads` was the ads round;
 0065 `tg_chat_lead` — a tray rule may point at a lead;
@@ -164,10 +165,10 @@ then given the full journal applied **0033 → 0068 in ONE run** and reached
 **69** rows, with `list_views`, `lead_intakes`, `automation_fires`,
 `reply_templates`, `call_logs` and all five new columns present afterwards.
 Re-run that check whenever the tail grows — the claim is what he acts on.
-**Deploy note:** migrations 0058-0068 MUST land — 0058 especially — the client book, the stock table
+**Deploy note:** migrations 0058-0069 MUST land — 0058 especially — the client book, the stock table
 and `/o/<code>` read `list_views` at RENDER with no catch, so a half-applied
 deploy shows those three the error page (round 52's failure, wider). Check
-`drizzle.__drizzle_migrations` after updating (**count must reach 69**); fix
+`drizzle.__drizzle_migrations` after updating (**count must reach 70**); fix
 with `docker compose run --rm migrate`. Recommended order, told to the owner:
 enlarge the VPS and move the data first (`docs/DEPLOY.md` → «Yangi VPS'ga
 ko'chirish»), deploy this code there, test it, and only then move the domain.
@@ -2162,6 +2163,35 @@ gate to match `/planned`'s read gate (an access change in a bug fix's
 clothes). 5 new i18n keys ×4. No migration. 1255 unit/integration + 145 e2e
 green on a fresh db in CI's order.
 
+Round 90 — the owner testing as the Kashgar operator (#629-631, «bazi
+tovarlarning rasimlar ochmayabti» + «qashqardagi skladchidan tezkor yuklashni
+olib tashla»). (1) **A photo belonged to the desk, not the cargo.** The
+attachment gate asked `inScope(actor, receipt.warehouseId)`, and a receipt's
+warehouse is where the goods were RECEIVED — never where they are. Measured on
+his data: of 4,403 goods photos, 737 had moved warehouse and 625 were in
+transit or issued, so **1,362 (31 %) could not be opened by the operator
+standing next to the carton**. `cargoNearActor` widens to where the cargo IS,
+restating `wms/search`'s own rule (the warehouse the box stands in, or the
+truck's TWO ends while it stands in none), filtered in SQL because a receipt
+can carry hundreds of boxes and a `limit` would answer «not yours» about the
+one box that is. NOT a permission change — the same person already saw the
+receipt card and the stock row. Red-proven: helper stripped → moved + in-transit
+red, «a third warehouse the cargo never touched» still refused. (2) **Quick
+loading is now a WAREHOUSE setting** (`warehouses.allows_quick_batch`,
+migration **0069**, additive, DEFAULT TRUE — count must reach **70**). Doing it
+by role was refused twice over: a role is company-wide (Yiwu would lose it too)
+and `batches.depart_close` is also DEPART and CLOSE. Follows
+`issues_to_clients`. Four halves pinned by `quick-batch-wire.test.ts`: form
+posts it (hidden `off`, #171's fifth), action parses it defaulting true, screen
+filters origins, **service refuses anyway** (#531). Destination list untouched.
+(3) TEST LESSONS: an unguarded `afterAll` binds undefined ids when `beforeAll`
+failed, so vitest shows «UNDEFINED_VALUE» and the real error — a #598 clock
+collision — is nowhere on screen; and the counter that fixes #598 must go at
+the FRONT of a `slice()`d string or the truncation eats it. 1264
+unit/integration + 145 e2e green on a fresh db in CI's order. ONE earlier full
+run had a single unidentified failure that did not recur in three later runs;
+CI is the arbiter.
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
 **Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that
@@ -2445,7 +2475,7 @@ round 17.
 **Enlarge the VPS to 4 vCPU / 8 GB / 400 GB** and move the data
 (`docs/DEPLOY.md` → «Yangi VPS'ga ko'chirish»; round 74 measured the ceiling
 and the old «2 GB tavsiya» was wrong) · **deploy from `main`** — migrations
-**0058-0068** land together, count must reach **69** (check
+**0058-0069** land together, count must reach **70** (check
 `drizzle.__drizzle_migrations` per DEPLOY.md, run the `migrate` service).
 Back up first · **release both APKs** (driver v1.3 AND the first
 GSR Qo'ng'iroqlar build — each: Actions → its workflow → artifact → its

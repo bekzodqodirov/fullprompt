@@ -1,9 +1,11 @@
 import 'dotenv/config';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, notInArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  batches,
+  boxes,
   clients,
   customFields,
   customFieldValues,
@@ -272,6 +274,152 @@ describe('receipt photos follow the warehouse scope, nothing more', () => {
   it('an unscoped user reads it with no permission code — the TNVED editor traffic must not log', async () => {
     const decision = await decideAttachmentRead(actor([]), att('receipt_lot', lotId));
     expect(decision.allow).toBe(true);
+  });
+});
+
+describe('a photo follows the cargo, not the desk it was received at', () => {
+  /**
+   * The owner, testing as the Kashgar warehouse operator: «bazi tovarlarning
+   * rasimlar ochmayabti». A receipt's warehouse is where the goods were
+   * RECEIVED; by the time anybody wants the photograph the box is usually
+   * somewhere else, which is the entire point of the company. Measured on his
+   * real data the same day: 1,362 of 4,403 goods photos were unopenable by
+   * the operator standing next to the box.
+   */
+  let movedLotId: string;
+  let transitLotId: string;
+  let batchId: string;
+  let strangerWhId: string;
+  let receiptIds: string[] = [];
+  /**
+   * A counter, not the clock. #598: two calls in the same millisecond mint
+   * the same client code, and the unique violation then arrives disguised —
+   * see the note on the cleanup hook below.
+   */
+  let seq = 0;
+
+  const makeLot = async () => {
+    seq += 1;
+    const [client] = await db
+      .insert(clients)
+      .values({ // The counter goes FIRST: `slice(0, 12)` cut it off the end and both
+      // rows came out identical anyway.
+      clientCode: `AC${seq}${STAMP}`.slice(0, 12), name: `Cargo ${STAMP}-${seq}` })
+      .returning();
+    const [receipt] = await db
+      .insert(receipts)
+      .values({ warehouseId: ywId, clientId: client!.id, status: 'confirmed', createdBy: uploaderId })
+      .returning();
+    receiptIds.push(receipt!.id);
+    const [lot] = await db
+      .insert(receiptLots)
+      .values({
+        receiptId: receipt!.id,
+        seq: 1,
+        productNameZh: '搬运货',
+        boxCount: 1,
+        totalWeightKg: '5',
+        totalVolumeM3: '0.027',
+      })
+      .returning();
+    return { lotId: lot!.id, clientId: client!.id };
+  };
+
+  beforeAll(async () => {
+    // A warehouse the cargo never touched. TAKEN, not created: an extra
+    // active warehouse would show up in the e2e suite's dropdowns, and
+    // configuration left behind is worse than data (#183).
+    // Ordered, because an unordered read is not the same read twice (#524):
+    // this file runs beside others that mint warehouses of their own.
+    const stranger = await db.query.warehouses.findFirst({
+      where: and(eq(warehouses.active, true), notInArray(warehouses.id, [ywId, twId])),
+      orderBy: (t, { asc }) => [asc(t.code)],
+    });
+    strangerWhId = stranger!.id;
+
+    // (1) Received in Yiwu, standing in the other warehouse now.
+    const moved = await makeLot();
+    movedLotId = moved.lotId;
+    await db.insert(boxes).values({
+      lotId: movedLotId,
+      seqInLot: 1,
+      shortCode: `AAMOVED${STAMP}`.slice(0, 24),
+      status: 'in_stock',
+      currentWarehouseId: twId,
+    });
+
+    // (2) Received in Yiwu, on a truck heading to the other warehouse and
+    // standing in NO warehouse at all — the case a plain scope check cannot
+    // express.
+    const transit = await makeLot();
+    transitLotId = transit.lotId;
+    const [batch] = await db
+      .insert(batches)
+      .values({
+        code: `AAB${STAMP}`.slice(0, 24),
+        type: 'export',
+        status: 'in_transit',
+        originWarehouseId: ywId,
+        destWarehouseId: twId,
+        createdBy: uploaderId,
+      })
+      .returning();
+    batchId = batch!.id;
+    await db.insert(boxes).values({
+      lotId: transitLotId,
+      seqInLot: 1,
+      shortCode: `AATRANS${STAMP}`.slice(0, 24),
+      status: 'in_transit',
+      currentWarehouseId: null,
+      currentBatchId: batchId,
+    });
+  });
+
+  /**
+   * Guarded, and that is not tidiness. An unguarded cleanup hook binds
+   * `undefined` when the SETUP failed, postgres refuses it, and the error
+   * vitest shows is the hook's — «UNDEFINED_VALUE» — with the real failure
+   * nowhere on screen. That cost this fix twenty minutes.
+   */
+  afterAll(async () => {
+    const lots = [movedLotId, transitLotId].filter(Boolean);
+    if (lots.length) await db.delete(boxes).where(inArray(boxes.lotId, lots));
+    if (batchId) await db.delete(batches).where(eq(batches.id, batchId));
+    if (lots.length) await db.delete(receiptLots).where(inArray(receiptLots.id, lots));
+    for (const id of receiptIds) await db.delete(receipts).where(eq(receipts.id, id));
+    receiptIds = [];
+  });
+
+  it('the operator holding the box reads its photo, though it was received elsewhere', async () => {
+    const decision = await decideAttachmentRead(
+      actor(['receipts.create'], { scoped: true, warehouses: [twId] }),
+      att('receipt_lot', movedLotId),
+    );
+    expect(decision).toEqual({ allow: true, rule: 'cargo-here' });
+  });
+
+  it('the destination reads a photo of cargo still on the truck', async () => {
+    const decision = await decideAttachmentRead(
+      actor(['receipts.create'], { scoped: true, warehouses: [twId] }),
+      att('receipt_lot', transitLotId),
+    );
+    expect(decision).toEqual({ allow: true, rule: 'cargo-here' });
+  });
+
+  it('the sending warehouse keeps it too — it received the goods', async () => {
+    const decision = await decideAttachmentRead(
+      actor(['receipts.create'], { scoped: true, warehouses: [ywId] }),
+      att('receipt_lot', movedLotId),
+    );
+    expect(decision.allow).toBe(true);
+  });
+
+  it('a third warehouse the cargo never touched is still refused', async () => {
+    const decision = await decideAttachmentRead(
+      actor(['receipts.create'], { scoped: true, warehouses: [strangerWhId] }),
+      att('receipt_lot', movedLotId),
+    );
+    expect(decision).toEqual({ allow: false, rule: 'out-of-scope', enforce: true });
   });
 });
 

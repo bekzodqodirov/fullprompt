@@ -232,7 +232,9 @@
     "codeExists": "A warehouse with this code already exists",
     "letterState": "Letter counter",
     "issuesToClients": "Clients collect cargo here",
-    "issuesToClientsHint": "Only for warehouses a client actually collects from (TAS, AND). Unticked, the handover screen does not open here."
+    "issuesToClientsHint": "Only for warehouses a client actually collects from (TAS, AND). Unticked, the handover screen does not open here.",
+    "allowsQuickBatch": "Allow quick loading",
+    "allowsQuickBatchHint": "A truck with no plan and no approval. Untick it where cargo crosses a border."
   },
   "clients": {
     "title": "Clients",

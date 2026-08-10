@@ -232,7 +232,9 @@
     "codeExists": "该代码的仓库已存在",
     "letterState": "字母计数器",
     "issuesToClients": "客户在此仓提货",
-    "issuesToClientsHint": "仅适用于客户实际提货的仓库（TAS、AND）。未勾选时该仓不显示「交付」界面。"
+    "issuesToClientsHint": "仅适用于客户实际提货的仓库（TAS、AND）。未勾选时该仓不显示「交付」界面。",
+    "allowsQuickBatch": "允许快速装车",
+    "allowsQuickBatchHint": "无计划、无审批的车。货物需过境的仓库请取消勾选。"
   },
   "clients": {
     "title": "客户",

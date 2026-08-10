@@ -97,6 +97,10 @@ export async function createQuickBatchAction(
     db.query.warehouses.findFirst({ where: eq(warehouses.id, destId) }),
   ]);
   if (!origin || !dest) return;
+  // The screen hides the button for a warehouse that does not allow an
+  // unplanned truck; the service refuses it too, because a hidden control is
+  // not a rule — a hand-posted form would otherwise still create one.
+  if (!origin.allowsQuickBatch) return;
   const batch = await db.transaction(async (tx) => {
     const code = await nextBatchCode(tx, origin);
     const [row] = await tx

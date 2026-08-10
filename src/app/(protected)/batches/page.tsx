@@ -37,7 +37,11 @@ export default async function BatchesPage({
   const archiveOpen = params.archive === '1' || !!params.q;
   const canQuick = actor.permissions.has('batches.depart_close');
   const quickWhs = await db
-    .select({ id: warehouses.id, code: warehouses.code })
+    .select({
+      id: warehouses.id,
+      code: warehouses.code,
+      allowsQuickBatch: warehouses.allowsQuickBatch,
+    })
     .from(warehouses)
     .where(eq(warehouses.active, true))
     .orderBy(warehouses.code);
@@ -46,9 +50,14 @@ export default async function BatchesPage({
   // origin, but offering it in the dropdown taught people to try — and the
   // refusal looked like a bug rather than a rule. The destination stays the
   // full list: sending cargo somewhere else is the whole point.
-  const originWhs = actor.warehouseScoped
-    ? quickWhs.filter((wh) => actor.warehouseIds.includes(wh.id))
-    : quickWhs;
+  // …and only from a warehouse that is allowed to start a truck with no plan
+  // (owner, round 89: not from Kashgar). The DESTINATION list is untouched —
+  // the flag is about who may skip the plan, not about where cargo may go.
+  const originWhs = (
+    actor.warehouseScoped
+      ? quickWhs.filter((wh) => actor.warehouseIds.includes(wh.id))
+      : quickWhs
+  ).filter((wh) => wh.allowsQuickBatch);
 
   const dest = aliasedTable(warehouses, 'dest');
   const scope = warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId);

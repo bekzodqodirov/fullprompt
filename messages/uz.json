@@ -232,7 +232,9 @@
     "codeExists": "Bunday kodli sklad allaqachon mavjud",
     "letterState": "Harf hisoblagichi",
     "issuesToClients": "Bu omborda mijozga yuk beriladi",
-    "issuesToClientsHint": "Faqat mijoz o‘z yukini olib ketadigan omborlar uchun (TAS, AND). Belgilanmasa, «Berish» ekrani bu omborda ochilmaydi."
+    "issuesToClientsHint": "Faqat mijoz o‘z yukini olib ketadigan omborlar uchun (TAS, AND). Belgilanmasa, «Berish» ekrani bu omborda ochilmaydi.",
+    "allowsQuickBatch": "Tezkor yuklashga ruxsat",
+    "allowsQuickBatchHint": "Plansiz va tasdiqsiz mashina. Yuk chegara kesib o‘tadigan skladda belgini olib tashlang."
   },
   "clients": {
     "title": "Mijozlar",
