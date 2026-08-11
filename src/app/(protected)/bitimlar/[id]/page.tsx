@@ -49,16 +49,28 @@ export default async function DealPage({
 }: {
   params: Promise<{ id: string }>;
   /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
-  searchParams: Promise<{ hodim?: string }>;
+  searchParams: Promise<{ hodim?: string; chodim?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!canWriteDeal(actor.permissions)) redirect('/');
 
   const { id } = await params;
-  const { hodim } = await searchParams;
+  const { hodim, chodim } = await searchParams;
   const row = await dealById(id);
+
   if (!row) notFound();
+  // The thread's filter and the calls' filter live on the same URL; a link
+  // that changes one must carry the other (#514 — a literal string drops it).
+  const cardHref = (patch: { hodim?: string | null; chodim?: string | null }) => {
+    const q = new URLSearchParams();
+    const h = 'hodim' in patch ? patch.hodim : hodim;
+    const c = 'chodim' in patch ? patch.chodim : chodim;
+    if (h) q.set('hodim', h);
+    if (c) q.set('chodim', c);
+    const qs = q.toString();
+    return `/bitimlar/${row.deal.id}${qs ? `?${qs}` : ''}`;
+  };
 
   const t = await getTranslations('deals');
   const tc = await getTranslations('common');
@@ -145,11 +157,13 @@ export default async function DealPage({
             <TelegramThread
               clientId={row.deal.clientId}
               hodim={hodim}
-              hrefFor={(who) =>
-                who ? `/bitimlar/${row.deal.id}?hodim=${who}` : `/bitimlar/${row.deal.id}`
-              }
+              hrefFor={(who) => cardHref({ hodim: who })}
             />
-            <CallsPanel clientId={row.deal.clientId} />
+            <CallsPanel
+              clientId={row.deal.clientId}
+              hodim={chodim}
+              hrefFor={(who) => cardHref({ chodim: who })}
+            />
           </>
         }
         rail={

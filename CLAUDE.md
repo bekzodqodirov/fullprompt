@@ -134,14 +134,16 @@ demo data out of the seed); #24 = round 85 (the S3 backup); #26 = round 86
 (automation rules); #25 = round 87 (the funnel's second door, built by the
 OTHER session); #28 = the VPS move's three defects; #30 = the seller's money
 scope and the split thread; #31 = the history's place, the logout door and the
-agent sheet by truck (all three the OTHER session). This branch carries
-**round 93** (the honest «javob kutmoqda») merged on top of #31; everything
-before it is merged.
-1292 unit/integration, verified after the merge (the four known photo-path
-specs — m1×2, m2×1, m9h — stay locally red here, no image service in this
-container; CI is the arbiter).
-Latest migration: **0070** (`tg_chat_reads` — how far a manager has read a
-Telegram dialog, so «javob kutmoqda» can stop lying; 0069 `warehouse_quick_batch` — a per-warehouse
+agent sheet by truck; #32 = the tray's door, the connect-time week and the
+calls selector (all four the OTHER session). This branch carries **round 93**
+(the honest «javob kutmoqda») merged on top of #32; everything before it is
+merged.
+1318 unit/integration + 141 e2e, verified after the merge (the four known
+photo-path specs — m1×2, m2×1, m9h — plus m9z-nav-progress stay locally red
+here; CI is the arbiter).
+Latest migration: **0071** (`tg_chat_reads` — how far a manager has read a
+Telegram dialog, so «javob kutmoqda» can stop lying;
+0070 `tg_history_backfill` — the connect-time week's stamp; 0069 `warehouse_quick_batch` — a per-warehouse
 switch for unplanned trucks; 0068 `inbound_webhook` — a per-source key for every
 platform's own lead form; 0067 `automation_v2` — rule conditions, time triggers
 and `automation_fires`; 0066 `inbound_leads` was the ads round;
@@ -179,14 +181,15 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS TWO BEHIND.** `0069_warehouse_quick_batch` landed on `main`
-from the OTHER session hours after he finished, and `0070_tg_chat_reads` is
-this branch, so the live server sits at **69** and the trunk will need **71**. That next update is a small one
+**HIS SERVER IS THREE BEHIND.** `0069_warehouse_quick_batch` and
+`0070_tg_history_backfill` landed on `main` from the OTHER session after he
+finished, and `0071_tg_chat_reads` is this branch, so the live server sits at
+**69** and the trunk will need **72**. That next update is a small one
 — `git pull`, rebuild, `docker compose run --rm migrate` — and it is the first
 test of whether the deploy habit sticks now that the year-long gap is gone.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**71** with this branch, 70 on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**72** with this branch, 71 on `main` today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2300,7 +2303,34 @@ at-rest assertion is green on the bug — which is exactly how round 92's first
 measurement went wrong. RULE: **a rule that is right about the common case and
 silently wrong about the case the business has is the shape all three had.**
 
-Round 93 — «javob kutmoqda» stops lying (#646-650, owner: «habar javobsz
+Round 93 — his three answers after connecting the sellers (#646-648).
+(1) **The tray opened to the hodim**: /suhbatlar/qaysi demanded
+`clients.manage` since round 22, so a seller's unknown chats piled up on a
+screen only the admin could open. `mayDecideChats` = own connected account
+(status <> signed_out) | clients.manage, asked by the screen, the /suhbatlar
+door and all THREE actions; row scoping untouched (own rows; admin.settings
+= everybody's). Red-proof + 4-entrance source-shape tripwire
+`chat-tray-door.test.ts`. (2) **7-day history on connect** (migration
+**0070** `history_backfilled_at`, count must reach **71**): the listener's
+catch-up machinery pointed at a window — on start with a NULL stamp, walk
+dialogs, last `BACKFILL_DAYS=7` capped 500/chat, same decide-and-store path,
+stamp only at the END (killed mid-pull = owed again); `saveAccount` clears
+the stamp so a reconnect recovers the missed week. `backfillStep`: `openLead`
+= STOP (a week of strangers must not become a week of leads in one burst —
+he asked for «hozirgi bor clientlari bilan»), client `empty` service row =
+SKIP not stop. NOT verifiable here: first real connect watched in tg-listen
+logs («ulanish tarixi: N ta suhbatdan M ta xabar olindi»). (3) **Calls
+selector** = the thread's `ThreadManagers` fold reused on the calls panel,
+`?chodim=` beside `?hodim=` on all three cards, ONE `cardHref` carries the
+other filter (#514). Scoping argument differs from round 34's: the fetch is
+viewer-scoped FIRST and chips narrow fetched rows, so a hand-typed chodim
+can only shrink; red-proof strips the viewer fence in `callsForClients`.
+Offered only to viewer.all with >1 taker. STATED, not built: «notanish raqam
+tel qilsa lid ochaymi» needs a new calls-APK version (the phone today never
+uploads an unmatched call) — its own round. 1318 unit/integration + 146 e2e
+green on a fresh db in CI's order.
+
+Round 94 — «javob kutmoqda» stops lying (#649-653, owner: «habar javobsz
 qoldi deb warning berishni chatni ichiga kirgandan keyin tohtatish — negaki
 klient chatga nuqta qoygandur … javobsz qoldi degan narsa juda yomon
 korinyabti»). The mark meant «the newest message came IN» and that sentence
@@ -2312,7 +2342,7 @@ it — the alarm), **seen** (read, no answer written — «ok» needs nothing),
 `new` and nothing else, so the red badge AND the 30-minute Telegram nudge
 both narrow. «Seen» is **Telegram's own read receipt**, copied not invented:
 `UpdateReadHistoryInbox` (a Raw update — gramjs models only NewMessage and
-EditedMessage) → `recordChatRead`, migration **0070** `tg_chat_reads` keyed
+EditedMessage) → `recordChatRead`, migration **0071** `tg_chat_reads` keyed
 (manager, peer). `GREATEST` in both writes, because Telegram redelivers out
 of order after a reconnect and a stale update would resurrect a dealt-with
 alarm. Our thread screen and the dock mark it too (to him both screens are
@@ -2334,6 +2364,7 @@ alarm — that wants a «remind me» button. Also fixed, not this round's
 subject: `m3-planning` asserted `\d{3}` on a batch code that pads to three
 and does not cap, and this container's database has run past 999 trucks —
 **a long-lived local database is a different oracle, not a worse CI**.
+
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { canReadTg, listConversations, tgViewerFor } from '@/modules/wms/crm/conversations';
 import { pendingCount } from '@/modules/wms/crm/chat-rules';
+import { mayDecideChats } from '@/modules/wms/crm/telegram-accounts';
 import { PageHeader } from '@/components/ui/page';
 import { TelegramBridgeStatus } from '@/components/telegram-bridge-status';
 
@@ -47,9 +48,10 @@ export default async function ConversationsPage({
   // (his instruction, round 21: «rahbar sifatida hamma yozishmalar korinsin»).
   const rows = await listConversations(tgViewerFor(actor), q);
 
-  // Answering is gated tighter than reading (`clients.manage`), and a manager
-  // counts only their OWN waiting chats — the owner counts everybody's.
-  const canDecide = actor.permissions.has('clients.manage');
+  // The tray's door is the manager's own connected account (or the
+  // administrator's clients.manage — round 93); a manager counts only their
+  // OWN waiting chats and the owner counts everybody's.
+  const canDecide = await mayDecideChats(actor);
   const waiting = canDecide
     ? await pendingCount(actor.permissions.has('admin.settings.manage') ? undefined : actor.id)
     : 0;

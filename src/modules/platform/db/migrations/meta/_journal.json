@@ -496,7 +496,14 @@
       "idx": 70,
       "version": "7",
       "when": 1785190000039,
-      "tag": "0070_tg_chat_reads",
+      "tag": "0070_tg_history_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1785190000040,
+      "tag": "0071_tg_chat_reads",
       "breakpoints": true
     }
   ]

@@ -1443,7 +1443,7 @@ export const tgMessages = pgTable(
 
 /**
  * How far each manager has READ each of their own Telegram dialogs
- * (migration 0070).
+ * (migration 0071).
  *
  * Telegram pushes this as `UpdateReadHistoryInbox` the moment the manager
  * reads on any of their devices, so the CRM learns it without asking and
@@ -1515,6 +1515,12 @@ export const tgAccounts = pgTable(
     /** Heartbeat: a row is not a live connection, and the screen must tell them apart. */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     lastError: text('last_error'),
+    /**
+     * When the last-week history pull finished (0070). NULL = owed: the
+     * listener runs it once per CONNECT, and `saveAccount` clears it so a
+     * reconnection pulls the week the bridge missed.
+     */
+    historyBackfilledAt: timestamp('history_backfilled_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
