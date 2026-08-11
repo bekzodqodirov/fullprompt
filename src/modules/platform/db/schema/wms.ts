@@ -1422,6 +1422,15 @@ export const tgMessages = pgTable(
     direction: text('direction').notNull(),
     body: text('body'),
     hasMedia: boolean('has_media').notNull().default(false),
+    /**
+     * Which message this one answers (0072) — Telegram's own id, resolved
+     * through the (manager, peer, tg_message_id) index rather than an FK.
+     * A reply can point at a message older than anything we imported, and an
+     * FK would refuse the whole row instead of leaving one quote unresolved.
+     */
+    replyToTgMessageId: bigint('reply_to_tg_message_id', { mode: 'bigint' }),
+    /** Who it was forwarded from, in Telegram's own words (0072). */
+    fwdFrom: text('fwd_from'),
     sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
     importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
     /**
@@ -1644,8 +1653,10 @@ export const tgOutbox = pgTable(
     sentAt: timestamp('sent_at', { withTimezone: true }),
     /** Telegram's id once it exists, to reconcile with the echoed copy. */
     tgMessageId: bigint('tg_message_id', { mode: 'bigint' }),
-    /** One photo per message; body doubles as its caption (may be empty then). */
+    /** One file per message; body doubles as its caption (may be empty then). */
     attachmentId: uuid('attachment_id').references(() => attachments.id),
+    /** The message this reply quotes (0072) — Telegram's id, as incoming. */
+    replyToTgMessageId: bigint('reply_to_tg_message_id', { mode: 'bigint' }),
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
   },

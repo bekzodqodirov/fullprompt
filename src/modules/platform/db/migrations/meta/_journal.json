@@ -505,6 +505,13 @@
       "when": 1785190000040,
       "tag": "0071_tg_chat_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1785190000041,
+      "tag": "0072_tg_reply_forward",
+      "breakpoints": true
     }
   ]
 }

@@ -135,14 +135,15 @@ demo data out of the seed); #24 = round 85 (the S3 backup); #26 = round 86
 OTHER session); #28 = the VPS move's three defects; #30 = the seller's money
 scope and the split thread; #31 = the history's place, the logout door and the
 agent sheet by truck; #32 = the tray's door, the connect-time week and the
-calls selector (all four the OTHER session). This branch carries **round 93**
-(the honest «javob kutmoqda») merged on top of #32; everything before it is
-merged.
-1318 unit/integration + 141 e2e, verified after the merge (the four known
+calls selector (all four the OTHER session). This branch carries **rounds 94-95**
+(the honest «javob kutmoqda», then files/reply/forward/share) merged on top of
+#32; everything before them is merged.
+1364 unit/integration + 141 e2e, verified after the merge (the four known
 photo-path specs — m1×2, m2×1, m9h — plus m9z-nav-progress stay locally red
 here; CI is the arbiter).
-Latest migration: **0071** (`tg_chat_reads` — how far a manager has read a
-Telegram dialog, so «javob kutmoqda» can stop lying;
+Latest migration: **0072** (`tg_reply_forward` — which message a reply quotes,
+and who a message was forwarded from; 0071 `tg_chat_reads` — how far a manager
+has read a Telegram dialog, so «javob kutmoqda» can stop lying;
 0070 `tg_history_backfill` — the connect-time week's stamp; 0069 `warehouse_quick_batch` — a per-warehouse
 switch for unplanned trucks; 0068 `inbound_webhook` — a per-source key for every
 platform's own lead form; 0067 `automation_v2` — rule conditions, time triggers
@@ -181,15 +182,15 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS THREE BEHIND.** `0069_warehouse_quick_batch` and
+**HIS SERVER IS FOUR BEHIND.** `0069_warehouse_quick_batch` and
 `0070_tg_history_backfill` landed on `main` from the OTHER session after he
-finished, and `0071_tg_chat_reads` is this branch, so the live server sits at
-**69** and the trunk will need **72**. That next update is a small one
+finished, and `0071_tg_chat_reads` + `0072_tg_reply_forward` are this branch,
+so the live server sits at **69** and the trunk will need **73**. That next update is a small one
 — `git pull`, rebuild, `docker compose run --rm migrate` — and it is the first
 test of whether the deploy habit sticks now that the year-long gap is gone.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**72** with this branch, 71 on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**73** with this branch, 71 on `main` today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2365,6 +2366,40 @@ subject: `m3-planning` asserted `\d{3}` on a batch code that pads to three
 and does not cap, and this container's database has run past 999 trucks —
 **a long-lived local database is a different oracle, not a worse CI**.
 
+
+Round 95 — Telegram parity: files, reply quoting, «forwarded from» and
+showing a colleague (#654-658, his items 1-5 answered in one message).
+Migration **0072** (`reply_to_tg_message_id` on `tg_messages` AND `tg_outbox`,
+`fwd_from` on messages). **FILES**: `tgMediaPlan` takes documents — invoice,
+spreadsheet, archive, a clip of the pallet — on the photo branch's terms (size
+read before any I/O, unknown size refused, 20 MiB), and asks `isStorableType`
+(exported from the files service) rather than keeping a second list beside
+storage; stickers and round video notes deliberately still stop. Sending
+widened too: `queueReply`'s `kind !== 'photo'` refusal is gone, the cap is
+asked PER KIND at both doors, and `forceDocument` stops Telegram re-encoding a
+PDF into an unnamed picture. **QUOTES**: a plain bigint, never an FK — a reply
+can name a message older than the import (the FK would refuse the ROW) and
+`purgeExcludedChat` deletes messages while keeping the queue; `attachQuotes`
+resolves it in ONE query over the page through the (manager, peer, tg id)
+index, and an unresolvable quote renders as an EMPTY strip because «this
+answers something» is still the fact. **FORWARDED**: `fwdFromName` reads the
+resolved sender, then `fromName`, then `postAuthor` — never a network call —
+and returns `''` for «forwarded, source hidden», which the bubble tells apart
+from null. **SHARE** (his «boshqa mijozga jonatilmaydi» narrowed it): one
+message to one colleague's Telegram with a card link, audited with a new
+`share` action; the file is NOT sent, so the attachment gate keeps deciding.
+Every refusal re-derived server-side (own-account read, active user, never
+yourself). **The bubble stays a SERVER component**: 500 messages × two
+controls would be 500 hydration roots, so the buttons are plain markup with
+data attributes and the composer + share sheet find them by CAPTURE-phase
+delegation, one listener each. Found in the browser, not by a test: the ↩ was
+drawn where the composer is not (bridge down) — `canReplyNow` is the one
+predicate now and the page passes an empty label; and the share sheet had no
+panel at all, since `Overlay` owns the backdrop and nothing else. Red-proofs
+×5; 22 unit + 9 integration. Two EXISTING tests rewritten with the reason
+recorded — both asserted «a document stays a paperclip / is refused», which is
+the behaviour he asked to have removed. 1364 unit/integration + 141 e2e (the
+five known local failures) after merging main's round 93.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

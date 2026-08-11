@@ -402,6 +402,10 @@ export async function storeIncoming(input: {
       direction: input.row.direction,
       body: input.row.body,
       hasMedia: input.row.hasMedia,
+      // What it answers and where it came from (0072) — written on the same
+      // insert, because a second UPDATE would be a second chance to forget.
+      replyToTgMessageId: input.row.replyToTgMessageId,
+      fwdFrom: input.row.fwdFrom,
       sentAt: input.row.sentAt,
     })
     .onConflictDoNothing()

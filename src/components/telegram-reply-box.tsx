@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
 import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
@@ -17,10 +17,16 @@ import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
  * reason — never by a disabled box with no explanation, because "why can't I
  * type" is a question somebody will answer by restarting a server.
  *
- * ONE photo may ride along (item 15, the sending half): uploaded against a
- * minted `tg_outbox` group id before the queue row exists — the same
- * pre-binding as note files — and `queueReply` claims it. One, not an album:
- * every photo is a rate-limit slot on a personal account.
+ * ONE file may ride along (item 15, the sending half; any kind since
+ * 2026-08-11): uploaded against a minted `tg_outbox` group id before the
+ * queue row exists — the same pre-binding as note files — and `queueReply`
+ * claims it. One, not an album: every file is a rate-limit slot on a personal
+ * account.
+ *
+ * It also carries the REPLY TARGET (owner's item 3). The target is chosen on
+ * a bubble, and the bubbles are server-rendered — up to 500 of them — so the
+ * link between them is one delegated click listener here rather than a React
+ * island per message.
  */
 export function TelegramReplyBox({
   clientId,
@@ -57,8 +63,30 @@ export function TelegramReplyBox({
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const coarse = useCoarsePointer();
-  const [photo, setPhoto] = useState<{ id: string; name: string } | null>(null);
+  const [photo, setPhoto] = useState<{ id: string; name: string; kind: string } | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [replyTo, setReplyTo] = useState<{ id: string; preview: string } | null>(null);
+
+  /**
+   * «Reply» pressed on a bubble. One listener on the document, in the CAPTURE
+   * phase so a bubble inside the dock's own form cannot have its click eaten
+   * first, and scoped by the data attribute the server bubble writes — no
+   * component boundary is crossed and no bubble hydrates.
+   */
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      const pick = (event.target as HTMLElement | null)?.closest?.('[data-reply-to]');
+      if (!(pick instanceof HTMLElement)) return;
+      event.preventDefault();
+      setReplyTo({
+        id: pick.dataset.replyTo ?? '',
+        preview: pick.dataset.replyPreview ?? '',
+      });
+      bodyRef.current?.focus();
+    };
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, []);
 
   function submit() {
     const form = formRef.current;
@@ -74,6 +102,7 @@ export function TelegramReplyBox({
       if (!result.ok) return;
       form.reset();
       setPhoto(null);
+      setReplyTo(null);
       if (bodyRef.current) bodyRef.current.style.height = '';
     });
   }
@@ -88,8 +117,8 @@ export function TelegramReplyBox({
     data.set('entityId', uuidv4());
     const res = await fetch('/api/files/upload', { method: 'POST', body: data });
     if (res.ok) {
-      const { id } = (await res.json()) as { id: string };
-      setPhoto({ id, name: file.name });
+      const { id, kind } = (await res.json()) as { id: string; kind?: string };
+      setPhoto({ id, name: file.name, kind: kind ?? 'file' });
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = '';
@@ -109,10 +138,30 @@ export function TelegramReplyBox({
     >
       <input type="hidden" name="clientId" value={clientId} />
       {photo && <input type="hidden" name="attachmentId" value={photo.id} />}
+      {replyTo && <input type="hidden" name="replyToTgMessageId" value={replyTo.id} />}
+      {/* What is being answered, above the box — the same strip Telegram
+          draws, and the ✕ is the only way out of it (a reply that cannot be
+          cancelled is a trap on a phone). */}
+      {replyTo && (
+        <div className="flex items-center gap-1.5" data-testid="reply-target">
+          <span className="min-w-0 flex-1 truncate border-l-2 border-brand-500 pl-2 text-xs text-ink-500">
+            ↩ {replyTo.preview || '…'}
+          </span>
+          <button
+            type="button"
+            aria-label="✕"
+            onClick={() => setReplyTo(null)}
+            className="btn-ghost btn-icon !min-h-7 shrink-0 text-xs"
+            data-testid="reply-target-clear"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {photo && (
         <div className="flex items-center gap-1.5">
           <span className="max-w-48 truncate rounded-lg bg-surface-sunken px-2 py-1 text-xs font-semibold">
-            🖼 {photo.name}
+            {photo.kind === 'photo' ? '🖼' : '📄'} {photo.name}
           </span>
           <button
             type="button"
@@ -125,10 +174,13 @@ export function TelegramReplyBox({
         </div>
       )}
       <div className="flex items-end gap-2">
+        {/* No `accept`: the owner's «faqat rasim emas fillar ham». What may
+            actually be stored is decided by the files service on the way in,
+            which answers with a code the box prints — an `accept` list here
+            would be a second list to keep in step with it. */}
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
           hidden
           onChange={(event) => void attach(event.target.files)}
         />

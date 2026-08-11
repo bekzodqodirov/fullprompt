@@ -1,5 +1,64 @@
 # CHANGELOG
 
+## Telegramdek chat: fayl, reply, «kimdan yuborilgan» va hamkasbga ko‘rsatish — 2026-08-11 (kech)
+
+Sizning 1, 2, 3, 4 va 5-punktlaringiz. Endi CRM ichidagi chat Telegramning
+o‘ziga yaqinroq.
+
+### 1. Fayllar — ikki tomonga
+
+Ilgari faqat **rasm** olinardi; qolgan hamma narsa «📎» bo‘lib qolardi.
+Endi mijoz yuborgan **hujjat, Excel, PDF, arxiv, hatto yukning qisqa
+videosi** ham tushadi va chatda **nomi bilan, hajmi bilan** ko‘rinadi —
+bosib yuklab olasiz. Siz ham javob yozganda istalgan faylni biriktira
+olasiz (ilgari faqat rasm edi).
+
+Chegara: bitta faylga **20 MB** (rasmga eskisidek 10 MB). Undan kattasi
+Telegramda qoladi — tizim uni yarim yuklab olib xato qilmaydi.
+Ataylab olinmaydi: stikerlar va «dumaloq video» xabarlar.
+
+### 2. Qaysi xabarga javob berilgani ko‘rinadi
+
+Xabar ustidagi **↩ Javob** tugmasi — bosasiz, yozish oynasi tepasida
+«qaysi xabarga javob berayotganingiz» chiziqcha bo‘lib turadi (✕ bilan
+bekor qilsa bo‘ladi). Yuborilgandan keyin u **Telegramda ham** o‘sha
+xabarga javob bo‘lib boradi, va bizning chatda ham tepasida ko‘rinadi.
+
+Mijoz eski xabarga javob bersa, biz uni saqlamagan bo‘lsak ham chiziqcha
+turadi — «bu bir narsaga javob» degani ham ma’lumot.
+
+### 3. «Kimdan yuborilgan» yozuvi
+
+Mijoz boshqa joydan xabar forward qilsa, xabar tepasida
+**«↪ Yuborilgan: Aziz Karimov»** deb turadi. Telegram manbani yashirgan
+bo‘lsa — **«↪ Yuborilgan: yashirin»**. Ikkisi ham foydali: narx boshqa
+kompaniyadan kelganini bilib turasiz.
+
+### 4. Hamkasbga ko‘rsatish
+
+Xabar ustidagi **➦ Ko‘rsatish** tugmasi: hodimni tanlaysiz, xohlasangiz
+izoh yozasiz — u **o‘z Telegramiga** o‘sha xabarni va kartaga havolani
+oladi.
+
+Boshqa **mijozga** yuborilmaydi — siz aytgandek. Fayl ham yuborilmaydi:
+havola kartani ochadi, fayl esa joyida qoladi, ya’ni «kim nimani ochishi
+mumkin» qoidasi buzilmaydi. Kim kimga nimani ko‘rsatgani **tarixga
+yoziladi**.
+
+### Yangilash
+
+Serverda **migratsiya 0072** bor — `git pull`, qayta build, keyin
+`docker compose run --rm migrate`. Migratsiyalar soni **73** ga yetishi
+kerak.
+
+### Tekshirilmagan joyi (rostini aytamiz)
+
+Bu yerda haqiqiy Telegram ulanishi yo‘q, shuning uchun **fayl yuborish va
+reply yuborishning Telegram tomoni** birinchi marta serverda ishlaganda
+ko‘riladi:
+`docker compose --profile telegram logs -f tg-listen`.
+Qolgan hamma narsa — navbat, saqlash, ekran — testlar bilan tekshirilgan.
+
 ## «Javob kutmoqda» endi rost gapiradi — 2026-08-11
 
 Siz aytgan gap: *«habar javobsz qoldi deb warning berishni chatni ichiga

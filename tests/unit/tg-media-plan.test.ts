@@ -107,8 +107,18 @@ describe('what stays a paperclip', () => {
     expect(tgMediaPlan(media, 62).kind).toBeNull();
   });
 
-  it('a sticker, a pdf, a link preview', () => {
+  it('a link preview and no media at all', () => {
     expect(tgMediaPlan({ className: 'MessageMediaWebPage' }, 63).kind).toBeNull();
+    expect(tgMediaPlan(null, 65).kind).toBeNull();
+  });
+
+  it('a PDF no longer does — this test asserted the gap the owner reported', () => {
+    // Changed on purpose, 2026-08-11: «faqat rasim emas fillar ham … klientlar
+    // ham bizga fillar jonatishadi». The old assertion was right about what
+    // the code did and is the behaviour he asked to have removed, so it is
+    // rewritten rather than deleted — the file should say that a document
+    // used to stop here. Stickers and round video notes still do, and their
+    // cases moved to `tg-files.test.ts` beside the rest of the new branch.
     expect(
       tgMediaPlan(
         {
@@ -117,8 +127,7 @@ describe('what stays a paperclip', () => {
         },
         64,
       ).kind,
-    ).toBeNull();
-    expect(tgMediaPlan(null, 65).kind).toBeNull();
+    ).toBe('file');
   });
 });
 

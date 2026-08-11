@@ -18,7 +18,7 @@ import {
   cancelQueued,
   claimNext,
   clientHasWritten,
-  loadOutboxPhoto,
+  loadOutboxFile,
   markAttemptFailed,
   markSent,
   OutboxError,
@@ -299,7 +299,7 @@ describe('a photo rides along (item 15, the sending half)', () => {
     expect((await pendingFor(clientId, { id: managerId })).find((r) => r.id === id)?.attachmentId).toBe(file.id);
   });
 
-  it('refuses a stranger’s upload, a non-photo, and an oversized photo', async () => {
+  it('refuses a stranger’s upload and an oversized photo', async () => {
     const foreign = await photoRow({ uploadedBy: otherId });
     await expect(
       queueReply(
@@ -307,14 +307,25 @@ describe('a photo rides along (item 15, the sending half)', () => {
         ctx(),
       ),
     ).rejects.toThrow('bad_attachment');
-    const doc = await photoRow({ kind: 'file' });
-    await expect(
-      queueReply({ clientId, managerUserId: managerId, body: 'x', attachmentId: doc.id }, ctx()),
-    ).rejects.toThrow('bad_attachment');
     const fat = await photoRow({ sizeBytes: 10 * 1024 * 1024 + 1 });
     await expect(
       queueReply({ clientId, managerUserId: managerId, body: 'x', attachmentId: fat.id }, ctx()),
     ).rejects.toThrow('photo_too_big');
+  });
+
+  it('takes a DOCUMENT now, which this test used to prove it refused', async () => {
+    // Changed on purpose, 2026-08-11: «faqat rasim emas fillar ham jonatish».
+    // The old assertion («a non-photo») was right about the code and is the
+    // behaviour the owner asked to have removed, so it is rewritten rather
+    // than deleted — the file should say a document used to stop here. The
+    // ceiling did not go with it: it is asked PER KIND now, and the
+    // oversized-photo case above still holds.
+    const doc = await photoRow({ kind: 'file' });
+    const { id } = await queueReply(
+      { clientId, managerUserId: managerId, body: 'x', attachmentId: doc.id },
+      ctx(),
+    );
+    expect(id).toBeTruthy();
   });
 
   it('refuses a caption past Telegram’s own photo cap instead of truncating', async () => {
@@ -343,7 +354,7 @@ describe('a photo rides along (item 15, the sending half)', () => {
     const job = await claimNext(managerId);
     expect(job?.attachmentId).toBe(file.id);
     // No bytes → null → the listener marks photo_missing, permanently.
-    expect(await loadOutboxPhoto(file.id)).toBeNull();
+    expect(await loadOutboxFile(file.id)).toBeNull();
   });
 
   it('returns real bytes for the sender', async () => {
@@ -359,7 +370,7 @@ describe('a photo rides along (item 15, the sending half)', () => {
       { thumbnails: 'skip' },
     );
     madePhotos.push(id);
-    const photo = await loadOutboxPhoto(id);
+    const photo = await loadOutboxFile(id);
     expect(photo?.bytes.toString()).toBe('real-jpeg-bytes');
     expect(photo?.fileName).toBe('real.jpg');
   });

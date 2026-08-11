@@ -65,6 +65,11 @@ export const MUTE_GROUPS = {
     'InternalNote',
     // The personal half of the same message: a colleague named YOU with @.
     'MentionedInNote',
+    // A colleague showed you one message a client sent (2026-08-11). It sits
+    // beside the note and the mention because it is the same act — somebody
+    // deciding you need to see something — and not an alarm: nothing is on
+    // fire, a person is asking.
+    'ChatMessageShared',
     // Phase 7: a rule somebody wrote pinged you — mutable like any other
     // routine workflow message; the rule's author is not above your mutes.
     'AutomationRule',

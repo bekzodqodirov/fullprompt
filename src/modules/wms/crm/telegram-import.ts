@@ -1,4 +1,5 @@
 import { phoneBelongsToClient } from '../client-cabinet/service';
+import { isStorableType, resolveContentType } from '../../platform/files/service';
 
 /**
  * Bringing the manager's Telegram into the CRM — the deciding logic.
@@ -267,6 +268,16 @@ export interface RawMessage {
   /** Telegram stamps seconds, not milliseconds. */
   date: number;
   media?: unknown;
+  /** Set when this message answers another one in the same chat. */
+  replyTo?: { replyToMsgId?: unknown } | null;
+  /** Set when it arrived from somewhere else. */
+  fwdFrom?: { fromName?: unknown; postAuthor?: unknown } | null;
+  /**
+   * gramjs's resolved view of `fwdFrom`, filled from the entity cache the
+   * connection already holds — no network call. Absent on the history
+   * importer's raw rows, which is why the header is read as well.
+   */
+  forward?: { sender?: unknown; chat?: unknown } | null;
 }
 
 export interface MessageRow {
@@ -276,6 +287,51 @@ export interface MessageRow {
   body: string | null;
   hasMedia: boolean;
   sentAt: Date;
+  /** Which message this answers, in Telegram's numbering (0072). */
+  replyToTgMessageId: bigint | null;
+  /** Who it came from originally, in words a manager can read (0072). */
+  fwdFrom: string | null;
+}
+
+/**
+ * The name to print above a forwarded message (owner: «telegram ilovasida
+ * forvarded deb accountusername turadi»).
+ *
+ * Four shapes, in the order Telegram fills them: the resolved sender or
+ * channel gramjs already has in its entity cache; the `fromName` header,
+ * which is what a chat with hidden forwards sends INSTEAD of an id; and
+ * `postAuthor` for a channel post signed by a person. When the message is a
+ * forward and none of them says who, the answer is the empty string — NOT
+ * null, because «forwarded, source hidden» is a different fact from «not a
+ * forward», and the bubble has to be able to tell them apart.
+ *
+ * Never a network call. Resolving an unknown peer would mean one round trip
+ * per forwarded message on a personal account, which is exactly the traffic
+ * pattern that gets an account limited.
+ */
+export function fwdFromName(msg: {
+  fwdFrom?: { fromName?: unknown; postAuthor?: unknown } | null;
+  forward?: { sender?: unknown; chat?: unknown } | null;
+}): string | null {
+  if (!msg.fwdFrom) return null;
+  const named = (from: unknown): string => {
+    const e = from as
+      | { firstName?: unknown; lastName?: unknown; title?: unknown; username?: unknown }
+      | null
+      | undefined;
+    if (!e) return '';
+    if (typeof e.title === 'string' && e.title.trim()) return e.title.trim();
+    const parts = [e.firstName, e.lastName].filter((n): n is string => typeof n === 'string');
+    const full = parts.join(' ').trim();
+    if (full) return full;
+    return typeof e.username === 'string' && e.username.trim() ? `@${e.username.trim()}` : '';
+  };
+  const resolved = named(msg.forward?.sender) || named(msg.forward?.chat);
+  if (resolved) return resolved;
+  const raw = msg.fwdFrom;
+  if (typeof raw.fromName === 'string' && raw.fromName.trim()) return raw.fromName.trim();
+  if (typeof raw.postAuthor === 'string' && raw.postAuthor.trim()) return raw.postAuthor.trim();
+  return '';
 }
 
 /**
@@ -328,7 +384,19 @@ export function tgPhotoPlan(
  */
 export const MAX_TG_AUDIO_BYTES = 20 * 1024 * 1024;
 
-export type TgMediaKind = 'photo' | 'voice' | 'audio';
+/**
+ * A document — the owner's «faqat rasim emas fillar ham» (2026-08-11).
+ *
+ * Twenty megabytes is the files service's own non-photo ceiling minus room
+ * for the wrapper, and it is deliberately the same number as a voice note:
+ * a client sending an invoice, a packing list or a short video of the cargo
+ * is inside it, and a film is not. A document past the cap keeps its
+ * paperclip and its filename — the manager can still fetch it in Telegram,
+ * which is more honest than a half-download.
+ */
+export const MAX_TG_FILE_BYTES = 20 * 1024 * 1024;
+
+export type TgMediaKind = 'photo' | 'voice' | 'audio' | 'file';
 
 export interface TgMediaPlan {
   /** Null = leave it a paperclip; we do not fetch it. */
@@ -406,17 +474,24 @@ const EXT_FOR_AUDIO: Record<string, string> = {
  * size is read from the message BEFORE any network I/O, an unknown size
  * refuses (pulling blind is how a 2 GB «audio» reaches the account the
  * business runs on), and the decision is pure and structural — no gramjs
- * objects in the tests. Everything else — stickers, video, documents, link
- * previews — stays a paperclip, deliberately: this is the owner's ask, not a
- * general file sync.
+ * objects in the tests.
+ *
+ * DOCUMENTS joined them on 2026-08-11 («faqat rasim emas fillar ham … klientlar
+ * ham bizga fillar jonatishadi»): an invoice, a packing list, a spreadsheet or
+ * a clip of the pallet is the conversation, and «📎» in its place is the same
+ * hole the voice notes left. What still stays a paperclip is deliberate —
+ * stickers (a wall of them is not a record), round video notes (nothing here
+ * plays one), link previews, and anything past the cap or of a type storage
+ * would refuse, which is asked of STORAGE rather than restated here.
  */
 export function tgMediaPlan(
   media: unknown,
   msgId: number,
-  limits: { photo?: number; audio?: number } = {},
+  limits: { photo?: number; audio?: number; file?: number } = {},
 ): TgMediaPlan {
   const photoCap = limits.photo ?? MAX_TG_PHOTO_BYTES;
   const audioCap = limits.audio ?? MAX_TG_AUDIO_BYTES;
+  const fileCap = limits.file ?? MAX_TG_FILE_BYTES;
   const m = media as
     | {
         className?: string;
@@ -444,47 +519,90 @@ export function tgMediaPlan(
   const attributes = (doc.attributes ?? []) as {
     className?: string;
     voice?: boolean;
+    roundMessage?: boolean;
     duration?: unknown;
     fileName?: unknown;
   }[];
   const audioAttr = attributes.find((a) => a.className === 'DocumentAttributeAudio');
+  const videoAttr = attributes.find((a) => a.className === 'DocumentAttributeVideo');
   const declared = (doc.mimeType ?? '').toLowerCase();
-  // An audio ATTRIBUTE is the honest test: Telegram sends a voice note as a
-  // document, and some clients label an .m4a `application/octet-stream`.
-  if (!audioAttr && !declared.startsWith('audio/')) return NONE;
-  // A video note («круглое видео») also carries a duration but is not audio;
-  // its own attribute is what excludes it.
-  if (attributes.some((a) => a.className === 'DocumentAttributeVideo')) return NONE;
-
   const named = attributes.find((a) => a.className === 'DocumentAttributeFilename');
   const givenName = typeof named?.fileName === 'string' ? named.fileName : '';
-  const contentType = PLAYABLE_AUDIO.has(declared)
-    ? declared
-    : // A voice note with an odd mime is still Opus in an Ogg container.
-      audioAttr?.voice
-      ? 'audio/ogg'
-      : '';
-  if (!contentType) return NONE;
-
   const bytes = sizeOf(doc.size);
+
+  // A STICKER is a document with an image mime and nobody wants a wall of
+  // them in a cargo conversation. Its own attribute names it; excluded before
+  // anything else because it would otherwise pass the file branch below.
+  if (attributes.some((a) => a.className === 'DocumentAttributeSticker')) return NONE;
+
+  // Audio first, and by ATTRIBUTE: Telegram sends a voice note as a document
+  // and some clients label an .m4a `application/octet-stream`.
+  if (audioAttr || declared.startsWith('audio/')) {
+    // A video note («круглое видео») also carries a duration but is not audio;
+    // its own attribute is what excludes it from THIS branch.
+    if (!videoAttr) {
+      const contentType = PLAYABLE_AUDIO.has(declared)
+        ? declared
+        : // A voice note with an odd mime is still Opus in an Ogg container.
+          audioAttr?.voice
+          ? 'audio/ogg'
+          : '';
+      if (!contentType) return NONE;
+      if (bytes <= 0) return NONE;
+      const kind: TgMediaKind = audioAttr?.voice ? 'voice' : 'audio';
+      const ext = EXT_FOR_AUDIO[contentType] ?? 'oga';
+      const duration = sizeOf(audioAttr?.duration);
+      return {
+        kind,
+        download: bytes <= audioCap,
+        approxBytes: bytes,
+        contentType,
+        // The sender's own filename when they sent a FILE; a voice note has
+        // none, and «Ovozli xabar» in a file list means nothing to anybody.
+        fileName: givenName || `${kind}_${msgId}.${ext}`,
+        durationSec: duration > 0 ? Math.round(duration) : null,
+      };
+    }
+  }
+
+  // A ROUND video note stays a paperclip: it is a face talking, it has no
+  // filename, and no screen here plays one.
+  if (videoAttr?.roundMessage) return NONE;
+
+  // Everything else a client can send — invoice, packing list, spreadsheet,
+  // archive, a clip of the pallet (owner: «klientlar ham bizga fillar
+  // jonatishadi»). The size is read from the message BEFORE any I/O and an
+  // unknown size refuses, exactly as the photo branch has always done.
   if (bytes <= 0) return NONE;
-  const kind: TgMediaKind = audioAttr?.voice ? 'voice' : 'audio';
-  const ext = EXT_FOR_AUDIO[contentType] ?? 'oga';
-  const duration = sizeOf(audioAttr?.duration);
+  const fileName = givenName || `file_${msgId}`;
+  // resolveContentType, so a document Telegram labels octet-stream is judged
+  // by its extension the way an operator's own upload is — and isStorableType
+  // is the STORAGE's answer, not a second list beside it: a mime the files
+  // service would refuse is never fetched.
+  const contentType = resolveContentType(fileName, declared);
+  if (!isStorableType(contentType)) return NONE;
   return {
-    kind,
-    download: bytes <= audioCap,
+    kind: 'file',
+    download: bytes <= fileCap,
     approxBytes: bytes,
     contentType,
-    // The sender's own filename when they sent a FILE; a voice note has none,
-    // and «Ovozli xabar» in a file list means nothing to anybody.
-    fileName: givenName || `${kind}_${msgId}.${ext}`,
-    durationSec: duration > 0 ? Math.round(duration) : null,
+    fileName,
+    durationSec: null,
   };
 }
 
 export function toMessageRow(peerId: bigint, msg: RawMessage): MessageRow {
   const body = (msg.message ?? '').trim();
+  // Through the string, like every other Telegram number here: the id arrives
+  // as a JS number, a bigint or the library's big-integer object depending on
+  // the version, and `Number()` on the last one is NaN (#574's trap).
+  const repliedRaw = msg.replyTo?.replyToMsgId;
+  const replied =
+    repliedRaw == null || repliedRaw === ''
+      ? null
+      : /^[0-9]+$/.test(String(repliedRaw))
+        ? BigInt(String(repliedRaw))
+        : null;
   return {
     peerId,
     tgMessageId: BigInt(msg.id),
@@ -492,6 +610,8 @@ export function toMessageRow(peerId: bigint, msg: RawMessage): MessageRow {
     body: body.length > 0 ? body : null,
     hasMedia: msg.media != null,
     sentAt: new Date(msg.date * 1000),
+    replyToTgMessageId: replied && replied > 0n ? replied : null,
+    fwdFrom: fwdFromName(msg),
   };
 }
 

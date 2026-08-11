@@ -291,9 +291,27 @@ turadi), tinglovchi uni oladi va yuboradi. Yuborilgach oddiy xabarga aylanadi.
   uchun **taxmin qilinmaydi**: o'z Telegramingizdan qarab, kerak bo'lsa qayta
   yuborasiz.
 
+## Fayl, reply va forward (2026-08-11)
+
+- **Fayl** ikki tomonga: mijoz yuborgan hujjat/Excel/PDF/arxiv/qisqa video
+  chatda nomi va hajmi bilan chiqadi; javob yozganda ham istalgan faylni
+  biriktirasiz. Bitta faylga **20 MB** (rasmga 10 MB). Stiker va «dumaloq
+  video» ataylab olinmaydi.
+- **Reply**: xabar ustidagi **↩ Javob** — yozish oynasi tepasida qaysi
+  xabarga javob berayotganingiz turadi, va u Telegramda ham o'sha xabarga
+  javob bo'lib boradi. Mijozning eski xabariga javobi bo'lsa, biz uni
+  saqlamagan bo'lsak ham chiziqcha turadi.
+- **«Kimdan yuborilgan»**: forward qilingan xabar tepasida manba ismi, yoki
+  Telegram uni yashirgan bo'lsa «yashirin».
+- **➦ Ko'rsatish**: bitta xabarni **hodimga** ko'rsatish — u o'z Telegramiga
+  xabarni va karta havolasini oladi. Boshqa **mijozga** yuborilmaydi. Fayl
+  yuborilmaydi: havola kartani ochadi, «kim nimani ochishi mumkin» qoidasi
+  buzilmaydi. Kim kimga nimani ko'rsatgani tarixga yoziladi.
+
 ## Nima qilinmadi — ataylab
 
-- **Rasm/fayl yuborish** — hozircha faqat matn.
 - **Ommaviy tarqatma** — yo'q va bo'lmaydi. Bir xil matnni ko'p odamga yuborish
   akkauntni bloklatadigan uchinchi sabab.
 - **Avtomatik javob** — hech qanday robot mijozga o'zi yozmaydi.
+- **Albom** — bitta xabarga bitta fayl. Har bir fayl shaxsiy akkauntda
+  alohida limit o'rni.

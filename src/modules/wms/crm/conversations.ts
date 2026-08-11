@@ -248,6 +248,25 @@ export interface ConversationMessage {
   photos: { id: string }[];
   /** Downloaded voice notes / audio files (2026-08-07) — usually empty. */
   audios: { id: string; fileName: string }[];
+  /** Documents, spreadsheets, archives, clips (2026-08-11) — usually empty. */
+  files: { id: string; fileName: string; sizeBytes: number }[];
+  /** Telegram's numbering, needed to resolve a quote AT this message. */
+  managerUserId: string;
+  peerId: bigint;
+  tgMessageId: bigint;
+  replyToTgMessageId: bigint | null;
+  /** Non-null = forwarded; '' = forwarded from a source Telegram hides. */
+  fwdFrom: string | null;
+  /** The quoted message, resolved over the page; null = not a reply. */
+  quoted: QuotedMessage | null;
+}
+
+/** As much of a quoted message as a one-line strip can show. */
+export interface QuotedMessage {
+  body: string | null;
+  /** '' when the target is not stored here — the strip still draws. */
+  direction: string;
+  hasMedia: boolean;
 }
 
 /**
@@ -286,6 +305,11 @@ export async function conversationFor(
       hasMedia: tgMessages.hasMedia,
       sentAt: tgMessages.sentAt,
       manager: users.fullName,
+      managerUserId: tgMessages.managerUserId,
+      peerId: tgMessages.peerId,
+      tgMessageId: tgMessages.tgMessageId,
+      replyToTgMessageId: tgMessages.replyToTgMessageId,
+      fwdFrom: tgMessages.fwdFrom,
     })
     .from(tgMessages)
     .innerJoin(users, eq(tgMessages.managerUserId, users.id))
@@ -294,7 +318,72 @@ export async function conversationFor(
     .limit(limit);
   // The newest `limit` rows, in that order. Taking the OLDEST n would push the
   // recent end — the only part anyone reads — off a long history entirely.
-  return attachMedia(rows);
+  return attachQuotes(await attachMedia(rows));
+}
+
+/**
+ * What each quoting message is quoting (0072).
+ *
+ * ONE query for the whole page, keyed on the same triple the thread's unique
+ * index uses — (manager, peer, tg_message_id) — because a reply names its
+ * target in TELEGRAM's numbering and that number is only unique inside one
+ * manager's one dialog.
+ *
+ * An unresolved quote is normal and must stay cheap: a client can answer a
+ * message from before the import window, or one in a chat somebody purged.
+ * The bubble then draws the strip with no text rather than nothing at all —
+ * «this is an answer to something» is still the fact the reader needs.
+ */
+export async function attachQuotes<
+  T extends {
+    managerUserId: string;
+    peerId: bigint;
+    replyToTgMessageId: bigint | null;
+  },
+>(rows: T[]): Promise<(T & { quoted: QuotedMessage | null })[]> {
+  const wanted = rows.filter((r) => r.replyToTgMessageId !== null);
+  if (wanted.length === 0) return rows.map((row) => ({ ...row, quoted: null }));
+  const managers = [...new Set(wanted.map((r) => r.managerUserId))].map((id) => sql`${id}`);
+  const peers = [...new Set(wanted.map((r) => String(r.peerId)))].map((p) => sql`${p}`);
+  const ids = [...new Set(wanted.map((r) => String(r.replyToTgMessageId)))].map((i) => sql`${i}`);
+  /**
+   * The three `IN` lists are a cross product — wider than the question — and
+   * that is safe only because the answer is consumed as a map keyed on the
+   * exact triple, which is also this table's unique index (#598's reasoning,
+   * third outing).
+   */
+  const found = await db.execute<{
+    manager_user_id: string;
+    peer_id: string;
+    tg_message_id: string;
+    body: string | null;
+    direction: string;
+    has_media: boolean;
+  }>(sql`
+    SELECT manager_user_id, peer_id, tg_message_id, body, direction, has_media
+    FROM tg_messages
+    WHERE manager_user_id IN (${sql.join(managers, sql`, `)})
+      AND peer_id IN (${sql.join(peers, sql`, `)})
+      AND tg_message_id IN (${sql.join(ids, sql`, `)})
+  `);
+  const key = (m: string, p: string | bigint, t: string | bigint) => `${m}:${p}:${t}`;
+  const byKey = new Map(
+    found.map((f) => [
+      key(f.manager_user_id, f.peer_id, f.tg_message_id),
+      { body: f.body, direction: f.direction, hasMedia: f.has_media },
+    ]),
+  );
+  return rows.map((row) => ({
+    ...row,
+    quoted:
+      row.replyToTgMessageId === null
+        ? null
+        : (byKey.get(key(row.managerUserId, row.peerId, row.replyToTgMessageId)) ?? {
+            body: null,
+            direction: '',
+            hasMedia: false,
+          }),
+  }));
 }
 
 export interface ThreadManager {
@@ -371,11 +460,15 @@ export function defaultThreadManager(managers: ThreadManager[]): string | null {
  * pointed at an Ogg file — a broken picture where a client's spoken message
  * should be.
  */
-export async function attachMedia<
-  T extends { id: string },
->(
+export async function attachMedia<T extends { id: string }>(
   rows: T[],
-): Promise<(T & { photos: { id: string }[]; audios: { id: string; fileName: string }[] })[]> {
+): Promise<
+  (T & {
+    photos: { id: string }[];
+    audios: { id: string; fileName: string }[];
+    files: { id: string; fileName: string; sizeBytes: number }[];
+  })[]
+> {
   if (rows.length === 0) return [];
   const mediaRows = await db
     .select({
@@ -384,6 +477,7 @@ export async function attachMedia<
       kind: attachments.kind,
       contentType: attachments.contentType,
       fileName: attachments.fileName,
+      sizeBytes: attachments.sizeBytes,
     })
     .from(attachments)
     .where(
@@ -395,6 +489,7 @@ export async function attachMedia<
     .orderBy(attachments.createdAt);
   const photos = new Map<string, { id: string }[]>();
   const audios = new Map<string, { id: string; fileName: string }[]>();
+  const files = new Map<string, { id: string; fileName: string; sizeBytes: number }[]>();
   for (const media of mediaRows) {
     if (media.kind === 'photo') {
       photos.set(media.entityId, [...(photos.get(media.entityId) ?? []), { id: media.id }]);
@@ -403,14 +498,22 @@ export async function attachMedia<
         ...(audios.get(media.entityId) ?? []),
         { id: media.id, fileName: media.fileName },
       ]);
+    } else {
+      // Everything else is a DOWNLOAD, not a player and not a paperclip
+      // (2026-08-11: «faqat rasim emas fillar ham»). The bubble prints its
+      // name and its size, because «file» with neither is not something
+      // anybody can decide to open.
+      files.set(media.entityId, [
+        ...(files.get(media.entityId) ?? []),
+        { id: media.id, fileName: media.fileName, sizeBytes: media.sizeBytes },
+      ]);
     }
-    // Anything else stays a paperclip: the bubble says «media» rather than
-    // offering a player for a file no browser here can play.
   }
   return rows.map((row) => ({
     ...row,
     photos: photos.get(row.id) ?? [],
     audios: audios.get(row.id) ?? [],
+    files: files.get(row.id) ?? [],
   }));
 }
 

@@ -67,6 +67,9 @@ interface DockThread {
     manager: string;
     photos: { id: string }[];
     audios: { id: string; fileName: string }[];
+    files: { id: string; fileName: string; sizeBytes: number }[];
+    fwdFrom: string | null;
+    quoted: { body: string | null; direction: string; hasMedia: boolean } | null;
   }[];
   /** Replies still in the queue — the drawer must not swallow them. */
   pending: {

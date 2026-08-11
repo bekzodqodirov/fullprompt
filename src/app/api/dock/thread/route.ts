@@ -97,6 +97,12 @@ export async function GET(request: Request) {
       manager: m.manager,
       photos: m.photos,
       audios: m.audios,
+      // The drawer draws the same bubbles as the page, so a document a client
+      // sent must not turn back into a paperclip three quarters of the way
+      // across the screen (2026-08-11).
+      files: m.files,
+      fwdFrom: m.fwdFrom,
+      quoted: m.quoted,
     })),
     pending: pending.map((row) => ({
       id: row.id,

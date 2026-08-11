@@ -82,6 +82,24 @@ const EXT_TYPES: Record<string, string> = {
   wav: 'audio/wav',
 };
 
+/**
+ * Would `saveAttachment` accept this content type at all?
+ *
+ * Exported because the Telegram planner has to answer «is this document
+ * worth downloading» BEFORE any bytes move, and the only honest answer is
+ * the one storage will give. Two lists that must agree is the shape this
+ * codebase keeps paying for — the planner asks THIS one, so a mime that
+ * storage refuses is never fetched and never logged as a failure.
+ */
+export function isStorableType(contentType: string): boolean {
+  return (
+    PHOTO_TYPES.has(contentType) ||
+    DOC_TYPES.has(contentType) ||
+    VIDEO_TYPES.has(contentType) ||
+    AUDIO_TYPES.has(contentType)
+  );
+}
+
 export function resolveContentType(fileName: string, contentType: string): string {
   if (contentType && contentType !== 'application/octet-stream') return contentType;
   const ext = fileName.split('.').pop()?.toLowerCase() ?? '';

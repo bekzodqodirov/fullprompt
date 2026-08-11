@@ -12,6 +12,11 @@ export type AuditAction =
   | 'export'
   | 'login'
   | 'logout'
+  // One Telegram message handed to a named colleague (2026-08-11). Its own
+  // verb rather than `export`, which in this system means a spreadsheet
+  // leaving: what is written down here is WHO was shown WHAT, and the two
+  // read differently to anybody auditing later.
+  | 'share'
   | 'seed';
 
 export interface AuditContext {
