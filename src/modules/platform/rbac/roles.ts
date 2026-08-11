@@ -44,7 +44,6 @@ export interface RoleView {
   isSystem: boolean;
   grantsCustomised: boolean;
   warehouseScoped: boolean;
-  inboundRota: boolean;
   userCount: number;
   grants: string[];
 }
@@ -60,7 +59,6 @@ export async function listRoles(): Promise<RoleView[]> {
       isSystem: roles.isSystem,
       grantsCustomised: roles.grantsCustomised,
       warehouseScoped: roles.warehouseScoped,
-      inboundRota: roles.inboundRota,
       userCount: sql<number>`(SELECT count(*) FROM user_roles ur WHERE ur.role_id = ${roles}.id)`,
     })
     .from(roles)
@@ -254,32 +252,6 @@ export async function setRoleScoped(
     action: 'update',
     before: { warehouseScoped: role.warehouseScoped },
     after: { warehouseScoped: scoped },
-  });
-}
-
-/**
- * Put a role in — or take it out of — the rotation for leads that arrive by
- * themselves (migration 0065, «navbat bilan hammaga»).
- *
- * Deliberately WITHOUT the own-role guard that `setRoleScoped` above carries.
- * That one exists because unticking a scope on a role you hold widens your own
- * reach over the whole company; this one only ever gives its holder more
- * work to do, and the person setting up the rotation is usually in it.
- */
-export async function setRoleInboundRota(
-  roleId: string,
-  inRota: boolean,
-  ctx: AuditContext,
-): Promise<void> {
-  const role = await loadRole(roleId);
-  if (role.inboundRota === inRota) return;
-  await db.update(roles).set({ inboundRota: inRota }).where(eq(roles.id, roleId));
-  await writeAudit(db, ctx, {
-    entityType: 'role',
-    entityId: roleId,
-    action: 'update',
-    before: { inboundRota: role.inboundRota },
-    after: { inboundRota: inRota },
   });
 }
 

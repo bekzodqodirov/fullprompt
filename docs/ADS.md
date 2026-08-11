@@ -8,21 +8,29 @@ Kod tomoni: `src/modules/wms/crm/inbound.ts` (qaror), `meta-leads.ts` (Meta),
 
 ---
 
-## 0. Avval: navbatni yoqish
+## 0. Avval: taqsimotni sozlash
 
-Reklamadan kelgan lead **navbat bilan** sotuvchilarga biriktiriladi (egasining
-so'zi: «navbat bilan hammaga»). Kim navbatda turishini rol belgilaydi:
+Reklamadan kelgan lead **navbat bilan** biriktiriladi (egasining so'zi:
+«navbat bilan hammaga», keyin aniqlashtirdi: «hamma sotuvchi, lekin hamma
+lead bilan ishlamaydi»). Hammasi bitta ekranda: **Boshqaruv → Arizalar
+taqsimoti**.
 
-1. **Boshqaruv → Rollar**ni oching.
-2. Sotuvchilar roli (masalan «Sotuv menejeri») yonidagi ✏️ ni bosing.
-3. **«Kelgan arizalar navbati»** katagiga belgi qo'ying.
+1. **Navbat qatnashchilari** — hodimlar ro'yxati, kataklar bilan. Belgilangan
+   ODAM navbatda; rol emas. Adminni olib tashlash — bitta katakni bo'shatish.
+2. **Oqim qoidalari** (ixtiyoriy) — «bu manba shu odamlarga»: manba
+   (instagram/facebook/telegram/google/sayt) va/yoki matndagi so'z bo'yicha.
+   Qoidalar yuqoridan pastga o'qiladi, **birinchi mos kelgani ishlaydi** —
+   tartibni ↑↓ bilan o'zgartirasiz. Bir qoidada bir necha hodim bo'lsa, ular
+   orasida ham o'sha adolatli navbat ishlaydi.
 
-Belgilanmasa hech kim navbatda bo'lmaydi — lead baribir yaratiladi, lekin
-egasiz bo'ladi va **hamma sotuvchining «Bugun qo'ng'iroq» ro'yxatida** turadi.
-Ya'ni hech qachon yo'qolmaydi, faqat kimniki ekani aytilmaydi.
+Hech kim belgilanmasa lead baribir yaratiladi, lekin egasiz bo'ladi va
+**hamma sotuvchining «Bugun qo'ng'iroq» ro'yxatida** turadi. Ya'ni hech
+qachon yo'qolmaydi, faqat kimniki ekani aytilmaydi.
 
 Kim birinchi navbatda — eng kam lead olgan odam; teng bo'lsa eng uzoq vaqt
 lead olmagani. Hech qachon lead olmagan yangi sotuvchi eng oldinda turadi.
+Qoidadagi hodimlarning hammasi ishdan chiqarilgan bo'lsa, o'sha oqim umumiy
+navbatga qaytadi — jimgina egasiz bo'lib qolmaydi.
 
 ---
 

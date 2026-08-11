@@ -1995,5 +1995,31 @@
       "failed": "Saqlanmadi",
       "duplicate": "Bunday lid allaqachon bor — quyida ko‘ring. Baribir yaratish uchun yana bosing."
     }
+  },
+  "routing": {
+    "title": "Arizalar taqsimoti",
+    "intro": "Navbatda kim qatnashadi va qaysi reklama oqimi kimga tushadi. Qoidalar yuqoridan pastga o'qiladi — birinchi mos kelgani ishlaydi.",
+    "membersTitle": "Navbat qatnashchilari",
+    "membersHint": "Belgilanganlar kelgan arizalarni navbat bilan oladi: eng kam olgani keyingisini oladi.",
+    "rulesTitle": "Oqim qoidalari",
+    "noRules": "Qoida yo'q — hamma ariza umumiy navbatga tushadi.",
+    "add": "Qoida",
+    "source": "Manba",
+    "anySource": "Istalgan manba",
+    "keyword": "Matndagi so'z",
+    "keywordHint": "Bo'sh — shartsiz",
+    "members": "Kimga",
+    "paused": "o'chirilgan",
+    "pause": "O'chirish",
+    "resume": "Yoqish",
+    "moveUp": "Yuqoriga",
+    "moveDown": "Pastga",
+    "deleteConfirm": "Qoida o'chirilsinmi? Uning arizalari qolgan qoidalar bo'yicha yoki umumiy navbatga tushadi.",
+    "fallbackNote": "Hech bir qoidaga mos kelmagan ariza qatnashchilarning umumiy navbatiga tushadi. Qoidadagi hodimlarning hammasi o'chirilgan bo'lsa ham shunday.",
+    "errors": {
+      "forbidden": "Ruxsat yetarli emas",
+      "members_required": "Kamida bitta hodim tanlang",
+      "route_not_found": "Qoida allaqachon o'chirilgan"
+    }
   }
 }

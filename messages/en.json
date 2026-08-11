@@ -1995,5 +1995,31 @@
       "failed": "Could not save",
       "duplicate": "A lead like this already exists — see below. Press again to create it anyway."
     }
+  },
+  "routing": {
+    "title": "Lead distribution",
+    "intro": "Who takes part in the rotation and which advert stream goes to whom. Rules are read top-down — the first match wins.",
+    "membersTitle": "Rotation members",
+    "membersHint": "Ticked people take incoming leads in turn: whoever has had the fewest takes the next.",
+    "rulesTitle": "Stream rules",
+    "noRules": "No rules — every lead goes to the general rotation.",
+    "add": "Rule",
+    "source": "Source",
+    "anySource": "Any source",
+    "keyword": "Word in the text",
+    "keywordHint": "Empty — no condition",
+    "members": "Assign to",
+    "paused": "paused",
+    "pause": "Pause",
+    "resume": "Resume",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "deleteConfirm": "Delete this rule? Its leads will follow the remaining rules or the general rotation.",
+    "fallbackNote": "A lead no rule claims goes to the general rotation of members. The same happens when every person in a rule is deactivated.",
+    "errors": {
+      "forbidden": "Not enough rights",
+      "members_required": "Pick at least one member of staff",
+      "route_not_found": "The rule is already deleted"
+    }
   }
 }

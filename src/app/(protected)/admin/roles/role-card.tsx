@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl';
 import {
   deleteRoleAction,
   saveGrantsAction,
-  setRoleRotaAction,
   setRoleScopedAction,
   type RoleFormState,
 } from './actions';
@@ -18,7 +17,6 @@ export interface RoleCardProps {
   isSystem: boolean;
   grantsCustomised: boolean;
   warehouseScoped: boolean;
-  inboundRota: boolean;
   userCount: number;
   grants: string[];
   /** Areas and their permission codes, already grouped by the server. */
@@ -73,11 +71,6 @@ export function RoleCard(props: RoleCardProps) {
             🏠 {t('scoped')}
           </span>
         )}
-        {props.inboundRota && (
-          <span className="chip-neutral" data-testid={`rota-${props.code}`}>
-            📣 {t('rota')}
-          </span>
-        )}
         <button
           type="button"
           data-testid={`toggle-${props.code}`}
@@ -122,28 +115,9 @@ export function RoleCard(props: RoleCardProps) {
             </span>
           </label>
 
-          {/* Whether people holding this role take their turn at leads that
-              arrive by themselves (migration 0065). No own-role lock: unlike
-              the scope above, ticking this on a role you hold only ever gives
-              you more calls to make. */}
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={props.inboundRota}
-              data-testid={`rota-toggle-${props.code}`}
-              onChange={(e) => {
-                const form = new FormData();
-                form.set('roleId', props.id);
-                form.set('rota', e.target.checked ? 'true' : 'false');
-                void setRoleRotaAction(form);
-              }}
-              className="mt-0.5 h-5 w-5 shrink-0"
-            />
-            <span>
-              <span className="font-semibold">{t('rota')}</span>
-              <span className="block text-xs text-ink-500">{t('rotaHint')}</span>
-            </span>
-          </label>
+          {/* The inbound-lead rota left this card in round 96: the queue is
+              made of PEOPLE now («hamma sotuvchi, lekin hamma lead bilan
+              ishlamaydi»), picked on /admin/taqsimot. */}
           {props.groups.map((group) => (
             <fieldset key={group.area} className="space-y-1">
               <legend className="section-title">{group.area}</legend>

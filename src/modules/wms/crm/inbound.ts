@@ -1,18 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { and, count, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import {
-  leadIntakes,
-  leadSources,
-  leadStages,
-  leads,
-  roles,
-  userRoles,
-  users,
-} from '../../platform/db/schema';
+import { leadIntakes, leadSources, leadStages, leads, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { addActivity, createLead, CrmError } from './service';
 import { activeClientsByPhone } from '../client-cabinet/service';
+import { routeInboundOwner } from './routing';
 
 /**
  * A lead that arrived by itself — from an advert, the public form, or the bot.
@@ -169,44 +162,6 @@ export async function inboundMatch(
 }
 
 /**
- * Whose turn it is — «navbat bilan hammaga» (the owner).
- *
- * Fewest inbound leads in the window, and the longest since their last one
- * breaks a tie. No stored pointer: a counter would have to be kept correct
- * when somebody joins, leaves or is off sick, and the leads themselves already
- * know. Somebody who has never had one sorts first, which is what makes a new
- * seller's first day work.
- *
- * The rota is an explicit opt-in COLUMN on the role (`inbound_rota`, following
- * round 23's `warehouse_scoped`), NOT `salesManagerOptions()` — that one
- * answers «who may be shown in a dropdown» and deliberately re-adds people who
- * have been deactivated, which is the last thing an advert lead should find.
- */
-export async function nextInboundOwner(): Promise<string | null> {
-  const since = new Date(Date.now() - 30 * 86_400_000);
-  const rows = await db
-    .select({
-      id: users.id,
-      n: sql<number>`count(${leads.id})`,
-      last: sql<Date | null>`max(${leads.inboundAt})`,
-    })
-    .from(users)
-    .innerJoin(userRoles, eq(userRoles.userId, users.id))
-    .innerJoin(roles, eq(roles.id, userRoles.roleId))
-    .leftJoin(
-      leads,
-      and(eq(leads.ownerId, users.id), isNotNull(leads.inboundAt), gt(leads.inboundAt, since)),
-    )
-    .where(and(eq(users.active, true), eq(roles.inboundRota, true)))
-    .groupBy(users.id)
-    // NULLS FIRST is the whole point: a seller with no inbound lead yet is at
-    // the front of the queue, not sorted arbitrarily among the rest.
-    .orderBy(sql`count(${leads.id}) asc, max(${leads.inboundAt}) asc nulls first`)
-    .limit(1);
-  return rows[0]?.id ?? null;
-}
-
-/**
  * Land an arrival.
  *
  * The order is the design: a known CLIENT first (their enquiry belongs on the
@@ -333,8 +288,11 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     }
   }
 
-  // (2) A new one, to whoever's turn it is.
-  const ownerId = await nextInboundOwner();
+  // (2) A new one, to whoever's turn it is. The taqsimot rules run FIRST
+  // (round 96) and only for this branch on purpose: a client's question and a
+  // joined enquiry already have their people, and re-routing them would take
+  // work off whoever is mid-conversation.
+  const { ownerId } = await routeInboundOwner({ sourceKey, text: [name, note] });
   const lead = await createLead(
     {
       // `leadSchema` wants two characters and an advert may send none.

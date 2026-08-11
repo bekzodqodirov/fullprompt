@@ -54,6 +54,13 @@ export const users = pgTable(
     // Telegram mute list (spec §11): event type names, or 'all'. The in-app
     // bell is never muted — it mirrors everything.
     mutedNotificationTypes: jsonb('muted_notification_types').notNull().default([]),
+    /**
+     * Takes their turn at leads that arrive by themselves (migration 0073).
+     * A PERSON, not a role: «bizning firmada hamma sotuvchi, lekin hamma lead
+     * bilan ishlamaydi» — the owner, the day the first advert lead landed on
+     * the admin. `roles.inbound_rota` stays in the schema but nothing reads it.
+     */
+    inboundRota: boolean('inbound_rota').notNull().default(false),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## Arizalar taqsimoti: kim navbatda, qaysi oqim kimga — 2026-08-11 (kech)
+
+Sizning javoblaringiz bo'yicha (1a, 2a, 3): endi navbat ROL emas, **ODAM**
+bo'yicha, va reklama oqimlarini qoidalar bilan bo'lish mumkin. Hammasi bitta
+yangi ekranda: **Boshqaruv → Arizalar taqsimoti**.
+
+- **Navbat qatnashchilari** — hodimlar ro'yxati, katak bilan. Kim belgilangan
+  bo'lsa o'sha navbatda; o'zingizni olib tashlash — bitta katak («boyagi lead
+  admin»ga tushgani boshqa qaytarilmaydi). Rollar ekranidagi eski «Kelgan
+  arizalar navbati» katagi olib tashlandi — yangilanganda hozir belgilab
+  qo'ygan odamlaringiz avtomatik ko'chib o'tadi, hech narsa to'xtamaydi.
+- **Oqim qoidalari** — «instagramdan kelgani shu ikkovlonga», «matnida
+  ‹konteyner› bo'lsa falonchiga». Manba va/yoki matndagi so'z bo'yicha;
+  yuqoridan pastga o'qiladi, birinchi mos kelgani ishlaydi, tartibni ↑↓
+  bilan o'zgartirasiz. Bitta qoidada bir necha hodim bo'lsa, ular orasida
+  ham adolatli navbat (eng kam olgani oladi).
+- Hech bir qoidaga tushmagan ariza umumiy navbatga tushadi. Qoidadagi
+  hodimlarning hammasi ishdan chiqqan bo'lsa ham ariza egasiz qolmaydi —
+  umumiy navbatga qaytadi.
+- Mijoz kartasiga tushadigan savollar va ochiq leadga qo'shiladigan takroriy
+  murojaatlar avvalgidek o'z egasida qoladi — qoidalar faqat YANGI leadga
+  ishlaydi.
+
+Keyingi bosqich (kelishildi, hali qurilmadi): reklama formasining maydonlarini
+(kub, kg, shahar…) bizning lead maydonlariga bog'lash — shundan keyin «kubdan
+katta bo'lsa» degan qoidalar ham ishlaydi. Buni birga aniqlashtiramiz.
+
 ## Facebook/Instagram reklama CRMga ulandi — 2026-08-11 (kech, serverda sozlash)
 
 Kod o'zgarmadi — round 83 da qurilgan eshik serverda jonli ishga tushirildi,

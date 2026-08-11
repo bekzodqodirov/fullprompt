@@ -1181,6 +1181,33 @@ export const leadIntakes = pgTable(
 );
 
 /**
+ * One routing rule for inbound leads (migration 0073): «this stream goes to
+ * these people». Read top-down by sortOrder, first match wins; no match falls
+ * back to the general per-person rotation (`users.inbound_rota`). Inside a
+ * matched rule the same fewest-first fairness applies over its members.
+ */
+export const inboundRoutes = pgTable(
+  'inbound_routes',
+  {
+    id: id(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    /** Null = any source; otherwise one of INBOUND_SOURCE_KEYS. */
+    sourceKey: text('source_key'),
+    /** Null = no text condition; case-insensitive contains over name + note. */
+    keyword: text('keyword'),
+    /** Members, as the automation notify action stores its userIds. */
+    userIds: jsonb('user_ids').notNull().default([]),
+    active: boolean('active').notNull().default(true),
+    /** How many leads this rule has assigned — the list's fire_count. */
+    assignedCount: integer('assigned_count').notNull().default(0),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('inbound_routes_order_idx').on(t.sortOrder, t.createdAt)],
+);
+
+/**
  * One human being holding several client codes (owner: "ha birlashtiraylik").
  *
  * A layer ABOVE clients, not a merge: each code keeps its own letters, stock,

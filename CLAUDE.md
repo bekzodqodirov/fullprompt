@@ -135,13 +135,16 @@ demo data out of the seed); #24 = round 85 (the S3 backup); #26 = round 86
 OTHER session); #28 = the VPS move's three defects; #30 = the seller's money
 scope and the split thread; #31 = the history's place, the logout door and the
 agent sheet by truck; #32 = the tray's door, the connect-time week and the
-calls selector (all four the OTHER session). This branch carries **rounds 94-95**
-(the honest «javob kutmoqda», then files/reply/forward/share) merged on top of
-#32; everything before them is merged.
-1364 unit/integration + 141 e2e, verified after the merge (the four known
+calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
+«javob kutmoqda», then files/reply/forward/share). This branch carries the
+**Meta go-live docs** (PR #34) and **round 96** (taqsimot); everything before
+them is merged.
+1389 unit/integration green after round 96 (the four known
 photo-path specs — m1×2, m2×1, m9h — plus m9z-nav-progress stay locally red
 here; CI is the arbiter).
-Latest migration: **0072** (`tg_reply_forward` — which message a reply quotes,
+Latest migration: **0073** (`inbound_routing` — `users.inbound_rota` backfilled
+from the role flag, plus `inbound_routes`;
+0072 `tg_reply_forward` — which message a reply quotes,
 and who a message was forwarded from; 0071 `tg_chat_reads` — how far a manager
 has read a Telegram dialog, so «javob kutmoqda» can stop lying;
 0070 `tg_history_backfill` — the connect-time week's stamp; 0069 `warehouse_quick_batch` — a per-warehouse
@@ -182,15 +185,16 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS FOUR BEHIND.** `0069_warehouse_quick_batch` and
-`0070_tg_history_backfill` landed on `main` from the OTHER session after he
-finished, and `0071_tg_chat_reads` + `0072_tg_reply_forward` are this branch,
-so the live server sits at **69** and the trunk will need **73**. That next update is a small one
-— `git pull`, rebuild, `docker compose run --rm migrate` — and it is the first
-test of whether the deploy habit sticks now that the year-long gap is gone.
+**HE DEPLOYED AGAIN — 2026-08-11** («pull qilib deploy qildim, 71 chiqdi»):
+the live server sits at **71** (0070 the tail), so the deploy habit held.
+Since then `main` merged #33 (0071 + 0072) and this branch adds 0073, so the
+next update needs **74**. The same day, in chat, **Meta Lead Ads went live in
+production**: correct page subscribed, app published, permanent token
+(`expires_at: 0`) in the server `.env`, a test lead landed in the funnel
+end-to-end — the road and its traps are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**73** with this branch, 71 on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**74** with this branch, 73 on `main` today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2401,6 +2405,38 @@ recorded — both asserted «a document stays a paperclip / is refused», which 
 the behaviour he asked to have removed. 1364 unit/integration + 141 e2e (the
 five known local failures) after merging main's round 93.
 
+Round 96 — **taqsimot: per-person rota + routing rules** (#660-661, his
+answers 1a/2a/3 the day the first Meta lead landed on an admin: «hamma
+sotuvchi, lekin hamma lead bilan ishlamaydi … qaysi lead oqimi bilan kimlar
+ishlashi … filterlab taqsimot»). Migration **0073** (count must reach **74**):
+`users.inbound_rota` BACKFILLED from the role flag (deploy morning changes
+nothing — he then EDITS instead of discovering an empty rotation), plus
+`inbound_routes` (sort_order / source_key / keyword / user_ids jsonb /
+active / assigned_count). ONE screen `/admin/taqsimot` (gate
+`admin.settings.manage`, #170): participants = every active user with a
+checkbox (replace-all is sound because no box is disabled, #171), then an
+ORDERED rule list — source and/or case-insensitive keyword over name+note,
+first match wins, ↑↓ arrows because order IS meaning; a rule names PEOPLE
+(validated against `users` — a jsonb list has no FK) and inside its pool the
+SAME fewest-first query decides (`nextInboundOwner(pool?)` in
+`crm/routing.ts`; the old role-joined copy in inbound.ts is DELETED, as are
+the roles-screen checkbox and `setRoleInboundRota` — a control removed from a
+screen while the action still accepts it is hidden, not removed; the roles
+COLUMN stays, unread). Routes run ONLY for the new-lead branch — client
+questions and joined enquiries keep their people. A rule whose members are
+ALL deactivated falls back to the general rotation, never to unowned.
+`roles.inbound_rota` chore in ADS.md §0 rewritten to the new screen.
+Red-proofs ×2 (match stripped → 2 red; person-flag read widened to
+`active` → 4 red). TEST LESSON (#661): the fixture's phone builder sliced 14
+chars to 13 and cut the only distinguishing digit — every arrival became one
+joined-then-capped enquiry and the capped branch's undefined leadId surfaced
+as UNDEFINED_VALUE two tests later; and the file now snapshots/clears/restores
+pre-existing flagged users, because the flag is GLOBAL where the old role was
+file-scoped (#653's oracle). 1389 unit/integration green on this container's
+long-lived db; no e2e added — the screen's buttons call exactly the
+integration-proven actions (#183: a route is CONFIGURATION, and the round's
+cleanup is a final test).
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
 **Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that
@@ -2705,19 +2741,22 @@ remote already.
 3. **`APP_URL=https://gsrwms.uz`** in the server `.env` if it is not there —
    the Mini App button is not offered on anything but public HTTPS (#275).
    Asked in chat, never confirmed.
-4. **Switch on the inbound rota** (Boshqaruv → Rollar → «Kelgan arizalar
-   navbati»). Ships OFF, so every advert lead is currently unowned — it lands
-   on EVERY seller's `/bugun` rather than nobody's (#601), but nobody owns it.
+4. **DONE 2026-08-11: the inbound rota is ON** (he ticked the role checkbox
+   in production the day Meta went live). After round 96 deploys, membership
+   moves to **Boshqaruv → Arizalar taqsimoti** — migration 0073 carries his
+   ticked people across, and the admin should untick THEMSELF there («boyagi
+   lead bir admin va sotuvchi roliga tushdi»).
 5. **Release both APKs** — driver v1.3 and the first GSR Qo'ng'iroqlar build
    (Actions → its workflow → artifact → its Admin page). The driver fleet is
    still on 1.2 and dies after ~2 h (round 55 fixed it; the fix is unreleased).
 6. **Old server: keep for a week, `app` stopped, then take a final dump before
    deleting it.**
-7. Advertising, when he wants it: the three questions he has not answered
-   (Google Ads? TikTok Business Center or a link? a website with its own
-   form?) and, for Instagram Lead Ads, the 15-minute Meta setup in
-   `docs/ADS.md`. Everything else already works — `/ariza?manba=…` needs
-   nobody's permission.
+7. **DONE 2026-08-11: Instagram/Facebook Lead Ads are LIVE** — page
+   subscribed, app published, permanent token. Left in Meta when convenient:
+   delete the junk `user`-object webhook subscription and the
+   «Greenleaffamily» page's subscription (harmless). The other platforms
+   (Google Ads? TikTok? a website form?) still await his answers —
+   `/ariza?manba=…` works today with nobody's permission.
 
 **Long-standing, unblocked by the move:** create logins for the 17 sellers,
 then re-run `pnpm import-clients --apply --update` · 3 rejected rows · ~19

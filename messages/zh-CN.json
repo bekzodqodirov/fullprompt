@@ -1995,5 +1995,31 @@
       "failed": "保存失败",
       "duplicate": "已有类似线索 — 请见下方。再次点击仍可创建。"
     }
+  },
+  "routing": {
+    "title": "线索分配",
+    "intro": "谁参与轮流接单、哪个广告来源分给谁。规则自上而下读取——第一条匹配的生效。",
+    "membersTitle": "轮流接单人员",
+    "membersHint": "勾选的人按顺序接收新线索：接得最少的人先接。",
+    "rulesTitle": "分配规则",
+    "noRules": "暂无规则——所有线索进入公共队列。",
+    "add": "规则",
+    "source": "来源",
+    "anySource": "任意来源",
+    "keyword": "文本关键词",
+    "keywordHint": "留空表示无条件",
+    "members": "分给谁",
+    "paused": "已停用",
+    "pause": "停用",
+    "resume": "启用",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "deleteConfirm": "删除该规则？其线索将按其余规则或公共队列分配。",
+    "fallbackNote": "不符合任何规则的线索进入公共队列。规则内所有人员被停用时同样如此。",
+    "errors": {
+      "forbidden": "权限不足",
+      "members_required": "请至少选择一名员工",
+      "route_not_found": "规则已被删除"
+    }
   }
 }
