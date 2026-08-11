@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## Kanban: kartalar tartibi saqlanib qoladi, ustunlar balandroq — 2026-08-11 (kech)
+
+Sizning ikkita gapingiz: «cartni boshqa etapga otkazganda ularni tartibi
+ozgarib qolyabti» va «etaplarning boyi balandroq bolsin pcda … scroll chiqib
+qolyabti yonidan shu korinishi kerak emas».
+
+### 1. Qaysi tartibda qo'ysangiz — o'sha turadi
+
+Ilgari ustun ichidagi tartibni **tizim** hal qilardi: «oxirgi tegilgani
+tepada». Shuning uchun A ni ko'chirsangiz, keyin B ni ko'chirsangiz — B
+A dan tepaga chiqib qolardi. Faqat ko'chirish emas: kartani ✏️ dan
+tahrirlasangiz ham, egasini almashtirsangiz ham, avtomatik qoida
+ishlasa ham — hech kim tegmagan ustun qayta aralashib ketardi.
+
+Endi tartib **sizniki**:
+
+- **Kompyuterda** kartani sichqoncha bilan tortasiz va **xohlagan
+  joyingizga qo'yasiz** — ustun ichida ham, boshqa ustunga ham. Tortayotgan
+  paytingizda qayerga tushishini ko'rsatib turadigan **qizil chiziqcha**
+  chiqadi.
+- **Telefonda** kartaning **⋯** tugmasini bosasiz — eng tepada
+  **«↑ Yuqoriga»** va **«↓ Pastga»** paydo bo'ldi. (Telefonda barmoq bilan
+  tortish ataylab yo'q — buni siz ikki marta rad etgansiz.)
+- Sahifani yangilasangiz ham, ertaga kirsangiz ham — **o'sha tartib**.
+
+O'zgarmagan narsalar, ataylab:
+
+- **Yangi karta hamon eng tepada** paydo bo'ladi.
+- Kartani **«Keyingi bosqich»** tugmasi yoki **⋯ → etap nomi** bilan
+  ko'chirsangiz, u yangi ustunning **tepasiga** tushadi — ilgarigidek.
+  Ya'ni «qo'lda qo'yish» faqat siz sudrab qo'yganingizda ishlaydi.
+- Ustun ichida kartani ko'tarib-tushirish **tarixga yozilmaydi** va
+  avtomatik qoidalarni **uyg'otmaydi** — bu ish emas, bu sizning
+  ko'rinishingiz. Etapdan etapga ko'chirish esa avvalgidek yoziladi.
+
+Ikkala kanbanda ham ishlaydi: **lidlar (Voronka)** va **bitimlar**.
+
+### 2. Kompyuterda ustunlar balandroq, yonidagi scroll ko'rinmaydi
+
+- Ustunning bo'yi **588 → 652 piksel** (bitimlarda 540 → 604) — bir dona
+  to'liq karta ko'proq sig'adi. Bu bo'sh joy edi: taxta pastdan
+  67 piksel yetmay turardi.
+- Karta ko'payib ketganda ustun yonida chiqib turadigan **kulrang
+  scroll chizig'i endi ko'rinmaydi**. Ustun **baribir scroll bo'ladi** —
+  sichqoncha g'ildiragi bilan, avvalgidek.
+
+### 3. Bazaga o'zgarish
+
+Yangi ustun: `board_order`. **Eski ma'lumot buzilmaydi** — hamma
+kartaga bugungi tartib bo'yicha raqam qo'yib chiqiladi, ya'ni yangilanishdan
+keyin taxta **aynan hozirgidek** ko'rinadi. Farq birinchi marta karta
+sudraganingizdan boshlanadi.
+
+Migratsiya: **0073**. Serverda migratsiyalar soni **74** ga yetishi kerak.
+
 ## Telegramdek chat: fayl, reply, «kimdan yuborilgan» va hamkasbga ko‘rsatish — 2026-08-11 (kech)
 
 Sizning 1, 2, 3, 4 va 5-punktlaringiz. Endi CRM ichidagi chat Telegramning

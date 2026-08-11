@@ -24,6 +24,7 @@ import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
 import { STAGE_COLORS } from '../crm/service';
 import { stageWrite } from '../crm/stage-law';
+import { orderForMove, topOfColumn, type BoardTable } from '../crm/board-place';
 import {
   ARRIVED_BOX_STATUSES,
   SETTLED_BOX_STATUSES,
@@ -142,6 +143,9 @@ export async function createDeal(input: DealInput, ctx: AuditContext): Promise<s
         quotedBy: priced ? ctx.actorId : null,
         note: input.note || null,
         createdBy: ctx.actorId!,
+        // Top of its column, which is where a newly raised job has always
+        // appeared — see the funnel's own create (0073).
+        boardOrder: await topOfColumn(tx, DEAL_BOARD, stageId),
       })
       .returning();
 
@@ -221,6 +225,11 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
       .set({
         stageId: input.stageId ?? before.stageId,
         ...(lostReason === undefined ? {} : { lostReason }),
+        // A stage changed from the ✏️ form is an arrival with nothing said
+        // about position, so it lands at the top — the board's own rule.
+        ...((input.stageId ?? before.stageId) !== before.stageId
+          ? { boardOrder: await topOfColumn(tx, DEAL_BOARD, input.stageId!) }
+          : {}),
         ownerId: input.ownerId === undefined ? before.ownerId : input.ownerId,
         title: input.title || null,
         quotedVolumeM3: num(input.quotedVolumeM3),
@@ -281,6 +290,7 @@ export async function moveDeal(
   stageId: string,
   ctx: AuditContext,
   lostReason?: string,
+  place?: { beforeId: string | null },
 ): Promise<void> {
   const before = await db.query.deals.findFirst({ where: eq(deals.id, id) });
   if (!before) throw new DealError('not_found');
@@ -292,17 +302,23 @@ export async function moveDeal(
   if (!law.ok) throw new DealError('lost_reason_required');
 
   await db.transaction(async (tx) => {
+    // `place` is the drag and nothing else — the funnel's rule, verbatim.
+    const boardOrder = await orderForMove(tx, DEAL_BOARD, stageId, id, place);
     await tx
       .update(deals)
-      .set({ stageId, lostReason: law.lostReason })
+      .set({ stageId, lostReason: law.lostReason, boardOrder })
       .where(eq(deals.id, id));
-    await writeAudit(tx, ctx, {
-      entityType: 'deal',
-      entityId: id,
-      action: 'update',
-      before: { stage: before.stageId },
-      after: { stage: stageId, lostReason: lostReason ?? null },
-    });
+    // Only a real move is a fact about the deal; re-ordering one column is a
+    // fact about how somebody reads the board (see `moveLead`).
+    if (stageId !== before.stageId) {
+      await writeAudit(tx, ctx, {
+        entityType: 'deal',
+        entityId: id,
+        action: 'update',
+        before: { stage: before.stageId },
+        after: { stage: stageId, lostReason: lostReason ?? null },
+      });
+    }
   });
   if (stageId !== before.stageId) await announceDealStage(before, stageId, ctx);
 }
@@ -1014,6 +1030,8 @@ export interface DealRow {
   goodsExtra: number;
   deferred: boolean;
   createdAt: Date;
+  /** Where the owner put it in its column; null = nobody has (0073). */
+  boardOrder: number | null;
 }
 
 /**
@@ -1096,6 +1114,15 @@ export function dealBoardWhere(filters: DealBoardFilters) {
 /** See `OPEN_PER_STAGE` on the funnel — the same rule, the same reason. */
 export const OPEN_DEALS_PER_STAGE = 40;
 
+/**
+ * The deal board's own board-order table (0073).
+ *
+ * The tie-break is `created_at DESC` and not `updated_at`, because that is
+ * what this board has always sorted by: a deal is worked on for weeks and an
+ * edit must not shuffle it, which is the very complaint this round answers.
+ */
+const DEAL_BOARD: BoardTable = { table: deals, tieBreak: sql`created_at DESC` };
+
 export async function listDeals(
   filters: DealBoardFilters & {
     openOnly?: boolean;
@@ -1135,7 +1162,8 @@ export async function listDeals(
       SELECT id FROM (
         SELECT ${deals.id} AS id,
                row_number() OVER (
-                 PARTITION BY ${deals.stageId} ORDER BY ${deals.createdAt} DESC
+                 PARTITION BY ${deals.stageId}
+                 ORDER BY ${deals.boardOrder} ASC NULLS FIRST, ${deals.createdAt} DESC
                ) AS rn
         FROM ${deals}
         INNER JOIN ${clients} ON ${clients.id} = ${deals.clientId}
@@ -1170,12 +1198,18 @@ export async function listDeals(
       deferredAt: deals.deferredAt,
       deferralEndedAt: deals.deferralEndedAt,
       createdAt: deals.createdAt,
+      boardOrder: deals.boardOrder,
     })
     .from(deals)
     .innerJoin(clients, eq(deals.clientId, clients.id))
     .leftJoin(users, eq(deals.ownerId, users.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(deals.createdAt))
+    // The owner's own order first (0073), «newest raised» only where nobody
+    // has placed a card — and THE SAME two keys rank the per-stage cap above,
+    // or the board sends forty cards and draws a different forty. The closed
+    // slice is cut by `limit` and the numbers are per-column ranks, so what
+    // survives is the top of every closed column (the funnel's own note).
+    .orderBy(sql`${deals.boardOrder} ASC NULLS FIRST`, desc(deals.createdAt))
     .limit(filters.limit ?? 300);
 
   // What the cargo IS, which the owner reads before anything else on a board

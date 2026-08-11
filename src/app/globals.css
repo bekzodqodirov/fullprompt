@@ -193,6 +193,26 @@ h3 {
   @apply text-2xs font-bold uppercase tracking-[0.08em] text-ink-500;
 }
 
+/*
+ * A box that scrolls without saying so.
+ *
+ * For the kanban columns (round 96, the owner: «2 etapda karta kopayib ketsa
+ * scroll chiqib qolyabti yonidan shu korinishi kerak emas»). Eight columns
+ * side by side means eight bars appearing and disappearing between the cards
+ * as the work moves along the funnel, each one narrowing its own column by a
+ * few pixels as it arrives.
+ *
+ * Only where the gesture is obvious and the content is visibly cut off —
+ * hiding the bar hides an affordance, and on a page it would hide the fact
+ * that there is anything below the fold.
+ */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Small status pill; the colour comes from a modifier class. */
 .chip {
   @apply inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-semibold;

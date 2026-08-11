@@ -135,13 +135,16 @@ demo data out of the seed); #24 = round 85 (the S3 backup); #26 = round 86
 OTHER session); #28 = the VPS move's three defects; #30 = the seller's money
 scope and the split thread; #31 = the history's place, the logout door and the
 agent sheet by truck; #32 = the tray's door, the connect-time week and the
-calls selector (all four the OTHER session). This branch carries **rounds 94-95**
-(the honest «javob kutmoqda», then files/reply/forward/share) merged on top of
-#32; everything before them is merged.
-1364 unit/integration + 141 e2e, verified after the merge (the four known
+calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
+«javob kutmoqda», then files/reply/forward/share). This branch carries
+**round 96** — the board's manual card order, taller desktop columns and the
+hidden column scrollbar — on top of #33; everything before it is merged.
+1383 unit/integration + 152 e2e on a fresh-db CI-order run (the four known
 photo-path specs — m1×2, m2×1, m9h — plus m9z-nav-progress stay locally red
 here; CI is the arbiter).
-Latest migration: **0072** (`tg_reply_forward` — which message a reply quotes,
+Latest migration: **0073** (`board_order` — where the owner put a card in its
+column, on `leads` AND `deals`, backfilled from the order the board showed the
+day it deployed; 0072 `tg_reply_forward` — which message a reply quotes,
 and who a message was forwarded from; 0071 `tg_chat_reads` — how far a manager
 has read a Telegram dialog, so «javob kutmoqda» can stop lying;
 0070 `tg_history_backfill` — the connect-time week's stamp; 0069 `warehouse_quick_batch` — a per-warehouse
@@ -182,15 +185,15 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS FOUR BEHIND.** `0069_warehouse_quick_batch` and
-`0070_tg_history_backfill` landed on `main` from the OTHER session after he
-finished, and `0071_tg_chat_reads` + `0072_tg_reply_forward` are this branch,
-so the live server sits at **69** and the trunk will need **73**. That next update is a small one
-— `git pull`, rebuild, `docker compose run --rm migrate` — and it is the first
-test of whether the deploy habit sticks now that the year-long gap is gone.
+**HIS SERVER IS ONE BEHIND.** He deployed rounds 94-95 on 2026-08-11 and
+confirmed **73** in chat, which closed the four-migration gap the VPS move had
+left — the deploy habit stuck. This branch adds `0073_board_order`, so the next
+update takes him to **74**: `git pull`, rebuild,
+`docker compose run --rm migrate`. The backfill in it touches every `leads` and
+`deals` row once and is written so a re-run is a no-op.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**73** with this branch, 71 on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**74** with this branch, 73 on `main` today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2400,6 +2403,51 @@ panel at all, since `Overlay` owns the backdrop and nothing else. Red-proofs
 recorded — both asserted «a document stays a paperclip / is refused», which is
 the behaviour he asked to have removed. 1364 unit/integration + 141 e2e (the
 five known local failures) after merging main's round 93.
+
+Round 96 — the board's own order, and the height it was wasting (#659-663,
+owner: «cartni boshqa etapga otkazganda ularni tartibi ozgarib qolyabti qaysi
+ketma ketlikda qoysa usha saqlanib qoladgan qilsa boladimi?» → «2 ni qil»
+= full drag-to-position, + «etaplarning boyi balandroq bolsin pcda … scroll
+chiqib qolyabti yonidan shu korinishi kerak emas»). A column was ordered
+`updated_at DESC` (deals `created_at DESC`), so moving A then B put B above A
+and an ✏️ edit, an owner change or an automation reshuffled a column nobody
+had touched. Migration **0073** `board_order double precision` on BOTH tables,
+**backfilled from the order the board showed that day** (`row_number() OVER
+(PARTITION BY stage_id …) * 1000`), so the deploy changes nothing visible and
+the first drag is the first difference; NULL stays legal and READS as «nobody
+placed this» = sorts FIRST = where a new card has always appeared, so a write
+path that forgets the column degrades to the old behaviour. A drop takes the
+MIDPOINT of its two neighbours (one row per drag, not 4,500). **The per-stage
+cap had to learn the same ORDER BY** or a card dragged low VANISHES instead of
+sinking — forty fetched by date, a different forty drawn by hand (#513 wearing
+a slice's clothes); the closed slice moved too and keeps round 47's promise by
+different means (per-column ranks → the top of every closed column, not all of
+one). `place` is the DRAG's and nobody else's: the one-tap button, the ⋯ sheet,
+bulk, rules and the cargo trigger all pass nothing and get `topOfColumn` = «it
+just arrived», so not one existing behaviour moved; the board's `move()` still
+refuses a same-column PRESS and allows a same-column DROP because only the drop
+carries a landing place. **A pure re-order writes no audit row and emits no
+stage event** — it is the sidebar being collapsed, not a fact about the lead
+(#502's empty-diff row, and «entered stage X» must not fire on a card that
+entered nothing). The arithmetic is PURE (`crm/board-order.ts`, zero imports)
+because the browser does it too: a card that snaps back for Uzbekistan's third
+of a second reads as a refused drag, so the board keeps an optimistic
+`ordering` map filled with the same midpoint the server is about to compute.
+`'renumber'` is the server's alone (`renumberColumn`, one UPDATE per stage) and
+covers both «gaps exhausted» and «unplaced cards» — one sentence twice. PHONE:
+↑ / ↓ in the ⋯ sheet, disabled at the ends (the touch drag stays refused,
+#510). HEIGHT, measured before touching it at 1280×800: the board stopped
+**67 px** short of the window on /crm and 69 on /bitimlar, 32 px of which is
+the layout's `md:pb-8` and needs `md:-mb-8` (the vertical `-mx-4`) to spend
+without the page growing a scrollbar (#354) — `10rem`→`6rem` + `-mb-8` =
+**588→652** / 540→604, a whole extra funnel card. `.no-scrollbar` on the column
+box only (eight bars arriving and leaving between eight columns); it still
+scrolls. Red-proofs ×4 (cap ORDER BY, board ORDER BY, `place` ignored, the
+browser's `beforeId` dropped → the desktop e2e drag goes red). 9 unit + 10
+integration + e2e m9zm (4 mobile) and m9zm-desktop (2, incl. the geometry).
+1383 unit/integration + 152 e2e on a fresh-db CI-order run; screenshots at
+1280×800 (board, and a drag in flight with the drop line) and 360×800 (the
+sheet's ↑↓, document 360 wide).
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

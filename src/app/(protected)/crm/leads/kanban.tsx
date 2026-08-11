@@ -13,6 +13,8 @@ export type { KanbanStage };
 export interface KanbanLead {
   id: string;
   stageId: string;
+  /** Where the owner put it in its column; null = nobody has (0073). */
+  boardOrder: number | null;
   name: string;
   company: string | null;
   phone: string | null;
@@ -90,8 +92,8 @@ export function KanbanBoard({
         // travels with the verdict now: a card that jumps back under the word
         // «Xatolik» is the screen asking somebody to guess which of five
         // things went wrong.
-        onMove={async (id, stageId, reason) => {
-          const result = await moveLeadAction(id, stageId, reason);
+        onMove={async (id, stageId, reason, beforeId) => {
+          const result = await moveLeadAction(id, stageId, reason, beforeId);
           return { ok: Boolean(result.ok), error: result.error };
         }}
         labels={{
@@ -104,6 +106,8 @@ export function KanbanBoard({
           moveErrors,
           showAll: t('showAll'),
           nextStage: t('nextStage'),
+          moveUp: t('moveUp'),
+          moveDown: t('moveDown'),
         }}
         // Five slots, always in this order, on both board shapes: WHO / WHAT /
         // MONEY / META / WHEN. The old card put company, phone, source, owner,
