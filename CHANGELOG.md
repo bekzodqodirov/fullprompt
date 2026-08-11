@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## Facebook/Instagram reklama CRMga ulandi — 2026-08-11 (kech, serverda sozlash)
+
+Kod o'zgarmadi — round 83 da qurilgan eshik serverda jonli ishga tushirildi,
+chatda birga bosib o'tildi. Endi Meta'ning «Lead form» reklamasidan lead
+to'g'ridan-to'g'ri **Kelgan arizalar**ga va voronkaga tushadi, navbat bilan
+sotuvchiga biriktiriladi.
+
+- Yo'lda topilgan asosiy xato: token va obuna **boshqa sahifaga**
+  («Greenleaffamily») qilingan ekan — hamma tekshiruv yashil, lekin lead
+  kelmasdi. To'g'ri «Gsr logistics» sahifasiga qayta ulandi.
+- Token **doimiy** qilib olindi (`expires_at: 0`) — endi muddat tugab
+  leadlar jimgina to'xtab qolmaydi.
+- Ilova **Live/Published** qilindi; «Kelgan arizalar navbati» yoqildi.
+- Butun yo'l isbotlandi: imzolangan test xabar → navbat → Meta'dan leadni
+  o'qish → CRMda lead. Test lead voronkaga tushdi.
+- Sozlash yo'riqnomasi va tuzoqlari `docs/ADS.md` 3-bo'limga yozildi
+  (doimiy token olish, noto'g'ri sahifa tuzog'i, Testing Tool'ning
+  «Pending» injiqligi, o'z-o'zini sinash buyrug'i).
+
 ## Telegramdek chat: fayl, reply, «kimdan yuborilgan» va hamkasbga ko‘rsatish — 2026-08-11 (kech)
 
 Sizning 1, 2, 3, 4 va 5-punktlaringiz. Endi CRM ichidagi chat Telegramning
