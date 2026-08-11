@@ -35,7 +35,7 @@ import {
   finishLoading,
   ingestLoadScans,
 } from '@/modules/wms/scanning/service';
-import { cancelBatch } from '@/modules/wms/scanning/unload';
+import { cancelBatch, ingestUnloadScans } from '@/modules/wms/scanning/unload';
 import { batchRegister } from '@/modules/wms/reports/queries';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
 
@@ -49,7 +49,7 @@ let actorId: string;
 let clientId: string;
 const ctx = () => ({ actorId });
 
-async function makeLot(boxCount: number) {
+async function makeLot(boxCount: number, warehouseId?: string) {
   const receiptId = uuidv4();
   const lotId = uuidv4();
   await db.insert(attachments).values({
@@ -65,7 +65,7 @@ async function makeLot(boxCount: number) {
   await confirmReceipt(
     {
       receiptId,
-      warehouseId: originId,
+      warehouseId: warehouseId ?? originId,
       clientId,
       unclaimedMarking: '',
       lots: [
@@ -690,6 +690,133 @@ describe('customs documents still generate', () => {
       isXlsx(await buildAgentXlsx(sub.plan.id, sub.version.versionNo)),
       'agent file',
     ).toBe(true);
+  });
+});
+
+/**
+ * The agent's sheet, ordered the way the cargo came in (owner: «qaysi
+ * partiyada Qashqarga kelganini … kelgan partiyasi bo'yicha sort bo'lgan
+ * holda»). Built the long way round — a real inbound truck is unloaded into
+ * the origin warehouse — because the whole feature is a claim about
+ * `box_movements`, and nothing shorter proves it.
+ */
+describe('the agent sheet groups a plan by the truck that brought the cargo', () => {
+  it('names the inbound batch, dates it, and puts it above what was received here', async () => {
+    const { buildAgentXlsx } = await import('@/modules/wms/documents/agent-xlsx');
+    const ExcelJS = (await import('exceljs')).default;
+
+    // A truck from the other warehouse INTO the one we will plan out of.
+    const trucked = await makeLot(2, destId);
+    const inbound = await submitPlan(
+      {
+        originWarehouseId: destId,
+        destWarehouseId: originId,
+        lines: [{ lotId: trucked.lotId, boxCount: 2 }],
+      },
+      ctx(),
+    );
+    const { batch: inboundBatch } = await recordVerdict(
+      { versionId: inbound.version.id, verdict: 'approved' },
+      ctx(),
+    );
+    for (const code of trucked.shortCodes) {
+      await ingestLoadScans([scan(inboundBatch!.id, code)], ctx());
+    }
+    await finishLoading(inboundBatch!.id, ctx());
+    await departBatch(inboundBatch!.id, ctx());
+    await ingestUnloadScans(
+      trucked.shortCodes.map((code) => ({
+        clientEventUuid: uuidv4(),
+        batchId: inboundBatch!.id,
+        code,
+        method: 'qr' as const,
+        scannedAt: new Date().toISOString(),
+      })),
+      ctx(),
+    );
+
+    // …and cargo a client brought straight to this warehouse.
+    const walkedIn = await makeLot(2);
+
+    const outbound = await submitPlan(
+      {
+        originWarehouseId: originId,
+        destWarehouseId: destId,
+        lines: [
+          // Deliberately the truckless lot FIRST: `load_plan_lines` used to
+          // decide the order and would keep it here.
+          { lotId: walkedIn.lotId, boxCount: 2 },
+          { lotId: trucked.lotId, boxCount: 2 },
+        ],
+      },
+      ctx(),
+    );
+
+    const buffer = await buildAgentXlsx(outbound.plan.id, outbound.version.versionNo);
+    const parsed = new ExcelJS.Workbook();
+    await parsed.xlsx.load(buffer! as unknown as ArrayBuffer);
+    const sheet = parsed.getWorksheet(`План v${outbound.version.versionNo}`)!;
+
+    // The two new columns sit between the density and the photographs.
+    const headers = (sheet.getRow(2).values as (string | undefined)[]).map((v) => v ?? '');
+    const batchAt = headers.indexOf('Партия прихода / Arrival batch');
+    expect(batchAt).toBeGreaterThan(0);
+    expect(headers[batchAt + 1]).toBe('Дата прихода / Arrival date');
+    expect(headers[batchAt + 2]).toBe('Фото / Photo');
+
+    const text = (rowNo: number, col: number) => String(sheet.getRow(rowNo).getCell(col).value ?? '');
+
+    // Row 3 opens the trucked block and names the truck; row 4 is its cargo.
+    expect(text(3, 1)).toContain(inboundBatch!.code);
+    expect(text(3, 1)).toMatch(/\d{2}\.\d{2}\.\d{4}/);
+    expect(text(4, batchAt)).toBe(inboundBatch!.code);
+    expect(text(4, batchAt + 1)).toMatch(/^\d{2}\.\d{2}\.\d{4}$/);
+
+    // Row 5 opens the block for what no truck of ours brought — LAST, and
+    // with no code to print, however the plan's lines were ordered.
+    expect(text(5, 1)).toContain('Принято на складе');
+    expect(text(6, batchAt)).toBe('—');
+
+    // …and the same file, re-downloaded after the agent approved it, still
+    // names the truck the cargo CAME on. Approval writes a `plan_approved`
+    // movement per box carrying this warehouse on both sides, and it is newer
+    // than the arrival — a rule that read the newest row into this warehouse
+    // without asking whether the box actually MOVED would answer with the
+    // truck the cargo is leaving on.
+    const { batch: outboundBatch } = await recordVerdict(
+      { versionId: outbound.version.id, verdict: 'approved' },
+      ctx(),
+    );
+    const after = new ExcelJS.Workbook();
+    await after.xlsx.load(
+      (await buildAgentXlsx(outbound.plan.id, outbound.version.versionNo))! as unknown as ArrayBuffer,
+    );
+    const afterSheet = after.getWorksheet(`План v${outbound.version.versionNo}`)!;
+    expect(String(afterSheet.getRow(4).getCell(batchAt).value)).toBe(inboundBatch!.code);
+    expect(String(afterSheet.getRow(3).getCell(1).value)).not.toContain(outboundBatch!.code);
+
+    // …and after the truck this plan describes has actually LEFT. The plan
+    // card keeps its download link for ever, and a document that has already
+    // been sent to the agent must not change its claims when it is fetched
+    // again. `departBatch` nulls `current_warehouse_id` on every loaded box,
+    // so a rule that asked where the cargo is STANDING would answer this
+    // second file with «received here», no truck and no date, for every
+    // carton on it.
+    for (const code of [...trucked.shortCodes, ...walkedIn.shortCodes]) {
+      await ingestLoadScans([scan(outboundBatch!.id, code)], ctx());
+    }
+    await finishLoading(outboundBatch!.id, ctx());
+    await departBatch(outboundBatch!.id, ctx());
+    const departed = new ExcelJS.Workbook();
+    await departed.xlsx.load(
+      (await buildAgentXlsx(outbound.plan.id, outbound.version.versionNo))! as unknown as ArrayBuffer,
+    );
+    const departedSheet = departed.getWorksheet(`План v${outbound.version.versionNo}`)!;
+    expect(String(departedSheet.getRow(3).getCell(1).value)).toContain(inboundBatch!.code);
+    expect(String(departedSheet.getRow(4).getCell(batchAt).value)).toBe(inboundBatch!.code);
+    expect(String(departedSheet.getRow(4).getCell(batchAt + 1).value)).toMatch(
+      /^\d{2}\.\d{2}\.\d{4}$/,
+    );
   });
 });
 

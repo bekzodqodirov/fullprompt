@@ -1,4 +1,4 @@
-import { DOC } from './labels';
+import { DOC, docDate } from './labels';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
@@ -123,7 +123,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
       m3: Number(m3.toFixed(3)),
       // The document leaves the company (DOC's rule) — dd.mm.yyyy reads the
       // same at the border and in the office, no locale to guess.
-      date: `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}.${d.getUTCFullYear()}`,
+      date: docDate(d),
     };
     sheet.getRow(rowNo).height = 60;
     const photoIds = photosByLot.get(lot.id) ?? [];

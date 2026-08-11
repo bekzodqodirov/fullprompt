@@ -1,5 +1,194 @@
 # CHANGELOG
 
+## «Javob kutmoqda» endi rost gapiradi — 2026-08-11
+
+Siz aytgan gap: *«habar javobsz qoldi deb warning berishni chatni ichiga
+kirgandan keyin tohtatish — negaki klient chatga nuqta qoygandur, misol uchun
+ok yokida agree yokida got it, shunda bunga sales manager javob bermaydi lekin
+warning turibti… javobsz qoldi degan narsa juda yomon korinyabti».*
+
+### Nima o'zgardi
+
+Ilgari bu belgi faqat ikki narsani ayta olardi: **oxirgi xabar mijozdan
+kelganmi yoki yo'qmi**. Endi uchta holat bor, va ular Telegramning o'zi
+ko'rsatadigan holatlar:
+
+| Holat | Ekranda | Ma'nosi |
+|---|---|---|
+| **Yangi** | qizil «javob kutyapti» | Mijoz yozdi, **hech kim ochib ko'rmadi** |
+| **O'qilgan** | kulrang ✓ | Menejer o'qidi, javob yozmadi — «ok» ga javob shart emas |
+| **Javob berilgan** | hech narsa | Biz yozdik, yoki javob navbatda turibdi |
+
+Telegramga qo'ng'iroq qilish shart emas: menejer chatni **telefonida ochsa**,
+Telegram bizning tizimimizga darhol xabar beradi. Bizning ekranimizda
+(«Suhbatlar» yoki 💬 oynasi) ochsa ham xuddi shunday hisoblanadi.
+
+**Telegramdagi ogohlantirish ham shunga bo'ysunadi** — 30 daqiqadan keyin
+keladigan «mijoz javob kutmoqda» xabari endi faqat **hech kim ochmagan**
+suhbatlar uchun keladi. O'qib qo'yilganiga telefon jiringlamaydi.
+
+### Yo'l-yo'lakay topilgan ikkita xato
+
+1. **CRM dan yozilgan javob belgini o'chirmasdi.** Siz javobni yozib
+   yuborasiz, u navbatga tushadi — lekin «javob kutyapti» turaverardi.
+   Telegramga yuborish o'chirilgan bo'lsa esa **umuman o'chmasdi**. Endi
+   yozilgan javob — javob.
+2. **Sotuvchining bosh ekranida arvoh raqam bor edi.** Kod berilmagan
+   (lid) suhbatlarning hammasi bitta qatorga qo'shilib ketardi, natijada
+   «1 ta suhbat javob kutmoqda» deb turardi — bosib ochib bo'lmaydigan,
+   yo'qotib ham bo'lmaydigan raqam. Endi yo'q.
+
+### Kimga nima ko'rinadi
+
+Hech kimning huquqi o'zgarmadi. Rahbar (yoki VED) boshqa menejerning
+suhbatini ochib ko'rsa — **o'sha menejerning ogohlantirishi o'chmaydi**:
+belgi faqat chat kimning akkauntida bo'lsa, o'shanikidir.
+
+### Ochiq qolgan narsa (aytib qo'yamiz)
+
+Agar menejer **haqiqiy savolni** o'qib qo'yib, keyin unutsa — endi hech
+qanday ogohlantirish qolmaydi. Buni hal qiladigan «keyin eslat» tugmasi
+kerak; uni ataylab bu raundga qo'shmadik, bir vaqtda bitta yangilik.
+
+### Yangilash
+
+Serverda **migratsiya 0070** bor — `git pull`, qayta build, keyin
+`docker compose run --rm migrate`. Migratsiyalar soni **71** ga yetishi kerak.
+
+## Tarix pastga tushdi, «Chiqish» profilga ko'chdi, agent Exceli partiya bo'yicha guruhlandi — 2026-08-10 (kech)
+
+### 1. Kartadagi «Tarix» endi lentaning tagida
+
+Siz aytgandek: telefonda u eng pastda edi, kompyuterda esa **o'ng tomondagi
+panel ostiga tushib ketardi**. Tekshirdik — gapingiz so'zma-so'z to'g'ri
+chiqdi: o'ng paneldagi ma'lumotlar bloki joyida qotib turadi, tarix esa uning
+**tagidan o'tib ketardi** (o'lchadik: 303 piksel ustma-ust tushgan).
+
+Endi tarix **lentaning tagida**, chap ustunda — o'qish tartibi bilan bir xil.
+Telefonda hech narsa o'zgarmadi, u avvalgidek eng pastda.
+
+Bir narsani o'zingiz aytmagan bo'lsangiz ham tuzatdik: **mijoz kartasida** ham
+xuddi shu muammo bor edi (u yerda tarix o'ng panelning oxirida turardi, ya'ni
+telefonda sahifaning o'rtasida). Endi u ham lentaning tagida.
+
+### 2. «Chiqish» tugmasi profil ichiga ko'chdi
+
+Yuqoridagi qatordan olib tashlandi. Endi **Profil → ismingiz yonida
+«Chiqish»**. Yuqorida beshta tugma qoldi — telefonda ancha keng bo'ldi.
+
+Bir ehtiyot chorasi: endi tizimdan chiqishning yagona yo'li shu sahifa
+bo'lgani uchun, profildagi boshqa bo'limlar (qurilmalar, Telegram, qo'ng'iroq
+ilovasi) xato bersa ham **ismingiz va «Chiqish» tugmasi ishlayveradi**.
+
+### 3. Agent Excelida — qaysi partiyada kelgani va sanasi
+
+Plandan agentga yuboriladigan faylga ikkita ustun qo'shildi:
+
+| Ustun | Nima yozadi |
+|---|---|
+| Партия прихода | qaysi fura bu yukni shu skladga olib kelgan |
+| Дата прихода | qachon kelgani |
+
+Va qatorlar **kelgan partiyasi bo'yicha guruhlandi**: har bir furaning yuki
+alohida blok, blok boshida furaning kodi, sanasi va **jami quti / kg / m³**.
+Bloklar **eng eski furadan boshlab** teriladi — ya'ni eng uzoq turgan yuk
+tepada. Skladning o'ziga kelgan (fura bilan emas) yuk esa eng oxirgi blokda.
+
+Ikkita mayda narsa ham qo'shildi: fayl ochilganda **sarlavha qatori va mijoz
+kodi qotib turadi** (o'ngga surganda ham kimning yuki ekani ko'rinib turadi),
+va sana endi **skladning o'z vaqti bo'yicha** — Xitoy skladlari UTC+8 da,
+shuning uchun ertalab tushirilgan fura ilgari **bir kun oldingi sana** bilan
+chiqar edi.
+
+Kod tayyor bo'lgach uni yana bir bor tekshirdim va **uchta xato topildi, uchalasi
+ham tuzatildi**:
+
+- Fura jo'nab ketgandan keyin xuddi shu faylni qayta yuklab olsangiz, u
+  **butunlay boshqa narsa yozardi** — «hech qanday fura yo'q» deb. Ya'ni
+  agentga yuborilgan fayl bilan keyinroq yuklangani bir-biriga to'g'ri
+  kelmasdi. Endi fayl har doim bir xil.
+- Yuki ikki bo'lakda kelgan mijoz (bir qismi skladga o'zi keltirilgan, bir
+  qismi fura bilan) **furaning sanasini emas, birinchi bo'lakning sanasini**
+  ko'rsatardi — va u sana blokdagi hamma mijozning yukiga ham yozilardi.
+- Ikki xil furada kelgan bitta yuk **uchinchi alohida blok** hosil qilardi,
+  natijada bitta furaning yuki ikki joyda, ikkita jamisi bilan chiqardi.
+
+## Sotuvchi endi faqat o'z mijozlarining pulini ko'radi + Telegram ekrani — 2026-08-10 (kech)
+
+### 1. Pul: sotuvchiga begona mijozning hisobi ko'rinmaydi
+
+Siz aytgan xato **tasdiqlandi va tuzatildi**. Sotuvchi rolida `finance.view`
+huquqi bor, `/moliya` ekrani esa hech qanday filtr ishlatmasdi — natijada
+sotuvchi **butun kompaniyaning qarzini** ko'rardi: har bir mijozning hisobi,
+to'lovi, qoldig'i va tepada umumiy qarz summasi.
+
+Endi:
+
+| Kim | Nima ko'radi |
+|---|---|
+| Buxgalter, siz (moliya boshqaruvi) | hammasini, avvalgidek |
+| Mijozlar kitobi administratori | hammasini |
+| **Sotuvchi** | **faqat o'ziga biriktirilgan mijozlarni** |
+
+To'rt joyda: ro'yxatda, to'lovlar reestrida, **reestrning Excel fayli**da va
+alohida mijozning hisob varag'ida. Oxirgisi muhim — ro'yxatni filtrlash yetarli
+emas edi, chunki manzilga mijoz raqamini qo'lda yozib kirish mumkin edi. Endi u
+ham yopiq.
+
+**Muhim ogohlantirish:** hozir sizda **1 692 ta mijozdan atigi 290 tasiga**
+sotuvchi biriktirilgan. Ya'ni sotuvchi qolgan 1 402 tasini **ko'rmaydi**.
+Agar sotuvchilar o'z mijozlarini ko'rishi kerak bo'lsa, mijoz kartasida
+«Sotuvchi» maydonini to'ldirish kerak.
+
+### 2. Chat: har bir menejerning suhbati alohida
+
+Bir mijoz bilan ikkita menejer o'z shaxsiy Telegramidan yozsa — bu **ikkita
+alohida suhbat**. Ilgari ular vaqt bo'yicha aralashtirilib, bitta oqim qilib
+ko'rsatilardi: savol bir menejerdan, javob boshqasidan — aslida hech kim
+ko'rmagan suhbat.
+
+Endi chat **oxirgi yozgan menejerning** suhbati bilan ochiladi. «Hammasi» —
+alohida tanlov bo'lib qoldi, kerak bo'lsa bosasiz. Bitta menejer bo'lsa hech
+nima o'zgarmaydi.
+
+### 3. Ulangan telefonlar ro'yxati — bitta qatorga yig'ildi
+
+Uchta ulangan akkaunt uchun uchta katta rangli chiziq ekranning tepasini
+egallardi. Endi **bitta qator**: eng yomon holat va nechtaligi. Batafsili
+bosgandagina ochiladi.
+
+Bitta istisno: agar akkaunt **Telegramdan chiqib ketgan** bo'lsa, ro'yxat
+**o'zi ochiladi** — chunki bu xabar emas, bajariladigan ish: kirib qayta
+ulanish kerak.
+
+Migratsiya yo'q.
+
+## Telegram: xabar «navbatda» turmay, darhol ketadi — 2026-08-10 (kech)
+
+Sizning savolingiz: «chatdan yozganda bir oz Queued bo'lib turib keyin jo'nadi,
+shuni tezlashtirishning iloji bormi».
+
+Ha. Ikkita kutish bor edi va **ikkalasi ham kerak emas edi**:
+
+1. Jo'natuvchi navbatni **3 soniyada bir marta** tekshirardi. Ya'ni xabaringiz
+   yozilib bo'lgan, lekin jo'natuvchi hali qaramagan.
+2. Ekran esa **10 soniyada bir marta** yangilanardi. Ya'ni xabar allaqachon
+   ketgan bo'lsa ham, ekranda «navbatda» yozuvi turaverardi.
+
+Eng yomon holatda **13 soniya** — xabar ketgan, ekran esa ketmagan deb turadi.
+
+**Endi:** xabar navbatga tushishi bilan jo'natuvchiga **darhol** signal boradi
+(o'lchadim — 1-2 millisekund), va ekran navbatda nimadir turgan paytda
+**2 soniyada** yangilanadi, bo'sh bo'lsa yana 10 soniyaga qaytadi.
+
+Bir narsa **ataylab o'zgarmadi**: ikkita xabar orasidagi eng kam masofa
+(1,2 soniya). Bu tezlik cheklovi emas — Telegram akkauntini «spam» deb
+belgilab qo'yishidan saqlaydigan yagona narsa. Signal faqat **kutishni**
+olib tashlaydi, oraliqni emas.
+
+3 soniyalik tekshiruv ham o'z joyida qoldi: agar jo'natuvchi o'chgan bo'lsa,
+u qayta ishga tushganda navbatdagilarni baribir topib jo'natadi.
+
 ## Yangi serverga ko'chdik — 2026-08-10
 
 Butun tizim kuchliroq serverga ko'chirildi (4 yadro / 8 GB) va **bir yillik

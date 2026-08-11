@@ -8,6 +8,7 @@ import {
   loadOutboxPhoto,
   markAttemptFailed,
   markSent,
+  OUTBOX_CHANNEL,
   recordSent,
   recoverInFlight,
   releaseClaim,
@@ -629,13 +630,48 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   };
 
   // One message per tick, deliberately. Not a batch loop: a queue that drains
-  // as fast as it can is exactly the burst that gets an account flagged, and
-  // at three seconds a message the human on the other end cannot tell.
+  // as fast as it can is exactly the burst that gets an account flagged.
+  //
+  // The TICK is a floor, not the pacing. A manager typing a reply on the
+  // screen watched it sit at «navbatda» for a beat that was pure polling —
+  // nothing was being rate-limited, the sender simply had not looked yet. So
+  // `queueReply` now pokes a postgres channel and the poke pumps immediately,
+  // while `MIN_SEND_GAP_MS` keeps the thing that actually matters: no two
+  // messages leave closer together than that, however loud the knocking.
+  const MIN_SEND_GAP_MS = 1200;
+  let lastPumpAt = 0;
+  let pumping = false;
+  const runPump = async () => {
+    if (pumping) return;
+    pumping = true;
+    lastPumpAt = Date.now();
+    try {
+      await pump();
+    } catch (err) {
+      await noteDbFailure(err);
+    } finally {
+      pumping = false;
+    }
+  };
+
   const sender = setInterval(() => {
-    void pump().catch((err) => {
-      void noteDbFailure(err);
-    });
+    void runPump();
   }, 3000);
+
+  // The knock. Fenced end to end: a database that will not take a LISTEN
+  // leaves the three-second tick exactly as it was, which is the behaviour
+  // this listener has always had.
+  let unlistenOutbox: (() => Promise<unknown>) | null = null;
+  try {
+    const sub = await pgClient.listen(OUTBOX_CHANNEL, () => {
+      if (Date.now() - lastPumpAt < MIN_SEND_GAP_MS) return; // the tick has it
+      void runPump();
+    });
+    unlistenOutbox = sub.unlisten;
+    console.log(`navbat kanali tinglanmoqda: ${OUTBOX_CHANNEL}`);
+  } catch (err) {
+    console.error('navbat kanalini tinglab bo\'lmadi, 3 soniyalik tsikl ishlaydi:', err);
+  }
 
   /* ---------------------------------------------------------------- *
    * Catch-up. Everything sent while this listener was down.
@@ -788,6 +824,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     clearInterval(beat);
     clearInterval(sender);
     clearInterval(indexer);
+    if (unlistenOutbox) await unlistenOutbox().catch(() => undefined);
     if (logOutOfTelegram) {
       await client.invoke(new Api.auth.LogOut()).catch((err: unknown) => {
         console.error('logout:', err instanceof Error ? err.message : err);

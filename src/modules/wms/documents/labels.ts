@@ -12,6 +12,18 @@
  * this finishes the pattern across every document.
  */
 export const DOC = {
+  /**
+   * Which truck brought the cargo to the warehouse it is being loaded from —
+   * the column header and the heading of the block it opens are the same
+   * words, so they are the same key. Deliberately not «Arrived on», which an
+   * English reader takes for a date when the cell holds a batch code, and
+   * which sat one column away from a header that really is a date.
+   */
+  arrivalBatch: 'Партия прихода / Arrival batch',
+  /** When it landed. `DOC.date` says «Received» and is the RECEIPT's date. */
+  arrivalDate: 'Дата прихода / Arrival date',
+  /** The heading over the cargo that reached this warehouse on no truck. */
+  receivedHere: 'Принято на складе / Received here',
   barcode: 'Штрих-код / Barcode',
   boxes: 'Коробок / Boxes',
   code: 'Код / Code',
@@ -46,3 +58,42 @@ export const DOC = {
   unit: 'Ед.изм / Unit',
   weightKg: 'Вес, кг / Weight, kg',
 } as const;
+
+/**
+ * A date on a document that leaves the company.
+ *
+ * dd.mm.yyyy, written as TEXT: it says the same thing at the border, in the
+ * office and in a Chinese Excel, none of which agree about what a bare date
+ * cell means. The packing-photo sheet has printed dates this way since it
+ * shipped; the agent sheet needed the same rule, so it is stated once here
+ * rather than typed a second time.
+ *
+ * `timeZone` is the WAREHOUSE the thing happened in, not the reader and not
+ * the server. Every Chinese warehouse runs on UTC+8, so a truck unloaded at
+ * 07:00 in Kashgar happened at 23:00 UTC the day before — printed in UTC it
+ * carries yesterday's date, and the agent is being asked to approve cargo
+ * against a sheet that says it arrived on a day nobody was working. UTC is
+ * the default only because the older documents were written that way and a
+ * date is better than a crash: an unknown zone falls back rather than
+ * throwing in the middle of a document.
+ */
+export function docDate(value: Date, timeZone = 'UTC'): string {
+  let parts;
+  try {
+    parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).formatToParts(value);
+  } catch {
+    parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).formatToParts(value);
+  }
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('day')}.${part('month')}.${part('year')}`;
+}

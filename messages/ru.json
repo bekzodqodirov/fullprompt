@@ -1340,7 +1340,8 @@
     "sourceResult": "Результат по источникам",
     "sourceArrivals": "заявок: {n}",
     "sourceDropped": "отклонено: {n}",
-    "sourceWon": "выиграно: {n}"
+    "sourceWon": "выиграно: {n}",
+    "bridgeAccounts": "аккаунтов: {n}"
   },
   "navShort": {
     "home": "Главная",

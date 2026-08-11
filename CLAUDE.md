@@ -123,7 +123,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-09
+## State — 2026-08-11
 
 `main` is the trunk and **everything is merged into it** — PR #1 = rounds
 1-55; #3 = 56-69; #4 = the truck-marker follow-up; #5 = the calls round;
@@ -132,12 +132,16 @@ pnpm build && pnpm e2e  # 44 e2e
 #20 = round 81's two login holes; #22 = round 83 (ads intake, the drain lock,
 demo data out of the seed); #24 = round 85 (the S3 backup); #26 = round 86
 (automation rules); #25 = round 87 (the funnel's second door, built by the
-OTHER session). This branch carries **round 86b** merged on top of 87;
-everything before it is merged.
-1244 unit/integration + 142 e2e, verified in CI's order on a fresh database
-(the three photo-path specs — m1×2, m2×1 — are locally red by design here,
-no image service in this container; CI is the arbiter).
-Latest migration: **0069** (`warehouse_quick_batch` — a per-warehouse
+OTHER session); #28 = the VPS move's three defects; #30 = the seller's money
+scope and the split thread; #31 = the history's place, the logout door and the
+agent sheet by truck (all three the OTHER session). This branch carries
+**round 93** (the honest «javob kutmoqda») merged on top of #31; everything
+before it is merged.
+1292 unit/integration, verified after the merge (the four known photo-path
+specs — m1×2, m2×1, m9h — stay locally red here, no image service in this
+container; CI is the arbiter).
+Latest migration: **0070** (`tg_chat_reads` — how far a manager has read a
+Telegram dialog, so «javob kutmoqda» can stop lying; 0069 `warehouse_quick_batch` — a per-warehouse
 switch for unplanned trucks; 0068 `inbound_webhook` — a per-source key for every
 platform's own lead form; 0067 `automation_v2` — rule conditions, time triggers
 and `automation_fires`; 0066 `inbound_leads` was the ads round;
@@ -175,14 +179,14 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS ALREADY ONE BEHIND AGAIN.** `0069_warehouse_quick_batch`
-landed on `main` from the OTHER session hours after he finished, so the live
-server sits at **69** and `main` needs **70**. That next update is a small one
+**HIS SERVER IS TWO BEHIND.** `0069_warehouse_quick_batch` landed on `main`
+from the OTHER session hours after he finished, and `0070_tg_chat_reads` is
+this branch, so the live server sits at **69** and the trunk will need **71**. That next update is a small one
 — `git pull`, rebuild, `docker compose run --rm migrate` — and it is the first
 test of whether the deploy habit sticks now that the year-long gap is gone.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**70** on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**71** with this branch, 70 on `main` today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2208,6 +2212,128 @@ the FRONT of a `slice()`d string or the truncation eats it. 1264
 unit/integration + 145 e2e green on a fresh db in CI's order. ONE earlier full
 run had a single unidentified failure that did not recur in three later runs;
 CI is the arbiter.
+
+Round 91 — the owner testing on real accounts (#637-640). (1) **A seller could
+read every client's money.** `sales_manager` holds `finance.view` and
+`/finance` ran an UNSCOPED query — every charge, payment, balance and the
+company's total debt on a seller's screen — while the same role's other grants
+say `clients.view_own` and `reports.own_clients`. `finance/scope.ts`:
+`seesAllMoney` = `finance.manage` | `clients.manage`, everybody else carries
+`moneyOwnerFilter` = own id; `finance.view` is deliberately NOT on that list,
+being the grant that made it a bug. Two answers and no third (#199's shape).
+FOUR places, because a scoped list beside an open URL is not scoping: the
+balances, the register's rows AND its total, the XLSX (#490 one size up), and
+the per-client ledger which `notFound()`s. **Cost stated: 1,402 of his 1,692
+active clients carry no sales manager**, so a seller sees only what is
+assigned — the deferred access item, which he has now answered. Red-proven.
+(2) **Two managers' chats stopped being one.** Interleaving two personal
+accounts by `sent_at` shows a conversation that never happened; «Hammasi» is
+now `?hodim=all` and the default is `defaultThreadManager` = whoever spoke
+most RECENTLY (a supervisor opens a client to read the LIVE conversation),
+null when there is nothing to choose between. (3) **Three connected phones
+drew three full-width bars** on `/suhbatlar` — one summary line now, detail
+one tap away, self-opening ONLY for `signed_out` (not news, a job).
+(4) **«Queued» was two waits and neither was a rate limit**: a 3 s poll and a
+10 s refresh = up to 13 s of a delivered message looking undelivered. postgres
+`NOTIFY`/`LISTEN` on the exported `OUTBOX_CHANNEL` (measured **1-2 ms**;
+a naive probe said 2 s, which was the listener's own connect), `MIN_SEND_GAP_MS`
+1200 keeps the pacing, the 3 s poll STAYS underneath (a NOTIFY-only listener
+loses whatever queued while it was down), screen polls 2 s only while the
+queue is non-empty. No migration. 1278 unit/integration + 145 e2e green on a
+fresh db in CI's order.
+
+Round 92 — three more the same evening (#641-644). (1) **The facts rail was
+painted OVER the history** — and my first measurement said it was not, because
+the local card's history is 46 px and can never rise to meet a pinned rail. On
+a short lenta with a long history the two overlap by **303 px** and
+`elementsFromPoint` returns `lead-facts`; sticky travel is not confined to the
+grid row and a positioned element paints over a static sibling. `tail` moved to
+`md:col-start-1` (under the lenta); rendering it INSIDE the main cell measured
+identical, so the simpler CSS did not decide it. The CLIENT card had both
+halves of the same complaint unfixed (history last in the RAIL = middle of the
+page on a phone) and moved to the same slot. RULE: **a layout defect needs the
+content that provokes it — a fixture that cannot reach the failing geometry is
+evidence about the fixture.** `data-cardcols` on all three slots so it can be
+measured. (2) **Logout left the app bar for `/profile`** (bar 7→5 controls at
+360; language deliberately STAYS on /profile per round 60). Because that page
+is now the only door out, its five panel loads each catch and log under
+`[profile]` — the name and the button render from the session alone (#472's
+morning is exactly when somebody needs to sign in as somebody else).
+`nav.logout` reused, no new key. Source-shape tripwire `logout-door.test.ts`.
+(3) **The agent Excel groups a plan by the truck that brought the cargo** —
+`documents/arrivals.ts`, one sentence: the newest movement, over the lot's
+boxes standing there NOW, that moved a box INTO that warehouse; an unload names
+the truck. `current_warehouse_id` keeps `batch_departed` out (it stamps the
+DESTINATION the day the truck LEAVES); `from IS DISTINCT FROM to` keeps
+`plan_approved`/`load_scan`/`crate_packed` out (same warehouse both sides — and
+`plan_approved` is NEWER, so without it the sheet names the truck the cargo is
+leaving ON: that is the red proof, re-download after approval); the unload set
+includes `found_here` (round 89's failed-scanner path) and excludes
+`found_at_origin`. One grouped query — 57 ms cold / 11 ms warm on his fullest
+warehouse. Blocks with code · date · Σ, oldest truck first, truckless last;
+frozen `xSplit`+`ySplit`; headings NOT merged (Excel refuses Sort/Filter over
+unequal merges). **Dates print in the WAREHOUSE's zone** — a 07:00 Kashgar
+unload is 23:00 UTC the day before, so `docDate(value, timeZone)` now, dd.mm.yyyy
+as text (the packing sheet's house rule). Designed and judged by four
+adversarial lenses BEFORE any code; that pass produced the `found_here` fix, the
+`plan_approved` trap, the timezone, the merge and the reversed English headers.
+No migration. 1300 unit/integration + **146 e2e all green** on a fresh db in
+CI's order.
+
+Round 92b — **the same adversarial pass, re-run against the SHIPPED branch**
+(#645): 35 objections, 26 refuted, and 3 of the 9 survivors were defects
+already committed. (a) The arrival query asked where the cargo was STANDING
+and `departBatch` NULLS that column — the agent's sheet said «no truck, no
+date» about every carton once the truck it describes had left, i.e. a document
+that changed its claims on re-download; now `to_status <> 'in_transit'` alone,
+with an integration test that departs the batch and re-reads the file.
+(b) `foldArrivals` dated a lot from its earliest row of ANY kind, so a
+half-walked-in lot printed the truck's code against the walk-in's date and
+back-dated the whole block. (c) `groupByArrival` keyed on the JOINED code
+list, so a two-truck lot made a THIRD block and one truck's cargo appeared
+twice. Also `CardCols`: the tail moved INSIDE the main cell — a grid row of
+its own measures identical while the LENTA is taller (the lead card) and opens
+**548 px of dead space** when the RAIL is taller (the deal card), y=1129/1723
+vs y=597/1191. New `m9zl-card-history.desktop.spec.ts` SWEEPS the scroll and
+pads the history first: the broken layout reads zero overlap at rest, so an
+at-rest assertion is green on the bug — which is exactly how round 92's first
+measurement went wrong. RULE: **a rule that is right about the common case and
+silently wrong about the case the business has is the shape all three had.**
+
+Round 93 — «javob kutmoqda» stops lying (#646-650, owner: «habar javobsz
+qoldi deb warning berishni chatni ichiga kirgandan keyin tohtatish — negaki
+klient chatga nuqta qoygandur … javobsz qoldi degan narsa juda yomon
+korinyabti»). The mark meant «the newest message came IN» and that sentence
+was restated by HAND in four places — `listConversations`, `chatBadges`,
+`salesFlowCounts`, `unansweredChats` (#513 broken four ways). One pure
+predicate now (`crm/waiting.ts`) with THREE states: **new** (nobody has seen
+it — the alarm), **seen** (read, no answer written — «ok» needs nothing),
+**answered** (we replied, or a reply is on its way out); `chatNeedsAnswer` is
+`new` and nothing else, so the red badge AND the 30-minute Telegram nudge
+both narrow. «Seen» is **Telegram's own read receipt**, copied not invented:
+`UpdateReadHistoryInbox` (a Raw update — gramjs models only NewMessage and
+EditedMessage) → `recordChatRead`, migration **0070** `tg_chat_reads` keyed
+(manager, peer). `GREATEST` in both writes, because Telegram redelivers out
+of order after a reconnect and a stale update would resurrect a dealt-with
+alarm. Our thread screen and the dock mark it too (to him both screens are
+the chat) via `markThreadRead`, whose own-account fence is a **WHERE** rather
+than a check — a supervisor's glance matches no rows and silences nobody
+(red-proven). A POST from an effect, never a write in the server page: App
+Router prefetches the thread link from every hover on the list. TWO LIVE
+DEFECTS found by writing the predicate down: `tg_outbox` was never consulted,
+so a reply typed in the CRM left the alarm up until delivery — for ever while
+`tg_sending_enabled` is off, which is how it ships; and `salesFlowCounts`'
+hand-written DISTINCT ON had no `client_id IS NOT NULL`, so postgres grouped
+every lead-owned chat in the company into ONE phantom «waiting» on the
+seller's home. UI measured at 360: «✓ o'qildi» costs **71 px of the client's
+NAME** on the row nobody must act on, so below `sm` the tick carries it alone
+(#522's idiom) and the name is back at 201 px; the dock shows the alarm only
+— less, not different. Red-proofs ×4; 10 integration + 8 unit tests. STATED,
+not built: a manager who reads a real question and forgets it now leaves no
+alarm — that wants a «remind me» button. Also fixed, not this round's
+subject: `m3-planning` asserted `\d{3}` on a batch code that pads to three
+and does not cap, and this container's database has run past 999 trucks —
+**a long-lived local database is a different oracle, not a worse CI**.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
