@@ -12,6 +12,7 @@ import {
 } from '@/modules/wms/crm/conversations';
 import { pendingFor } from '@/modules/wms/crm/outbox';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { ChatMarkRead } from '@/components/chat-mark-read';
 import { OutboxBubble } from '@/components/outbox-bubble';
 import { ChatMenu } from '@/components/chat-menu';
 import { OutboxDismiss } from '@/components/outbox-dismiss';
@@ -153,6 +154,10 @@ export default async function ConversationPage({
       {/* A sent reply must stop reading «navbatda», and a client's new
           message must appear, without anybody pulling to refresh. */}
       <AutoRefresh ms={10_000} />
+
+      {/* Reading it here counts as reading it, exactly as opening it in
+          Telegram does — the owner's «chatni ichiga kirgandan keyin». */}
+      <ChatMarkRead clientId={clientId} />
     </div>
   );
 }

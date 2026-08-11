@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { getSetting } from '../../platform/settings/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { resolveChatStates } from './conversations';
+import { chatNeedsAnswer } from './waiting';
 
 /**
  * "A client is waiting and nobody has answered" (owner's item 5).
@@ -50,22 +52,51 @@ export async function unansweredChats(
     body: string | null;
     direction: string;
     reminded_at: Date | null;
+    peer_id: string;
+    tg_message_id: string;
   }>(sql`
     SELECT DISTINCT ON (m.client_id, m.manager_user_id)
       m.client_id, c.client_code, c.name AS client_name, m.manager_user_id,
-      m.id AS message_id, m.sent_at, m.body, m.direction, m.reminded_at
+      m.id AS message_id, m.sent_at, m.body, m.direction, m.reminded_at,
+      m.peer_id, m.tg_message_id
     FROM tg_messages m
     JOIN clients c ON c.id = m.client_id
     ORDER BY m.client_id, m.manager_user_id, m.sent_at DESC
   `);
 
-  return rows
-    .filter(
-      (r) =>
-        r.direction === 'in' &&
-        r.reminded_at === null &&
-        new Date(r.sent_at).toISOString() <= cutoff,
-    )
+  const overdue = rows.filter(
+    (r) =>
+      r.direction === 'in' &&
+      r.reminded_at === null &&
+      new Date(r.sent_at).toISOString() <= cutoff,
+  );
+
+  /**
+   * The state decides, not the direction (round 88).
+   *
+   * This is the owner's complaint at its source: a customer who writes «ok»
+   * is finished, and the nudge that follows thirty minutes later teaches the
+   * manager to ignore the next one — which will be a real question. Only
+   * `new` rings: nobody has read it and nothing is on its way out.
+   */
+  const states = await resolveChatStates(
+    overdue.map((r) => ({
+      clientId: r.client_id,
+      managerUserId: r.manager_user_id,
+      peerId: r.peer_id,
+      tgMessageId: r.tg_message_id,
+      direction: r.direction,
+      sentAt: new Date(r.sent_at),
+      row: r,
+    })),
+  );
+  const ringing = new Set<string>();
+  for (const [seed, state] of states) {
+    if (chatNeedsAnswer(state)) ringing.add(seed.row.message_id);
+  }
+
+  return overdue
+    .filter((r) => ringing.has(r.message_id))
     .map((r) => ({
       clientId: r.client_id,
       clientCode: r.client_code,

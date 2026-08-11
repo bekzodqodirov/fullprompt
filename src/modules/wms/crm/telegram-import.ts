@@ -198,6 +198,28 @@ export function scanVerdict(
  *
  * `telegram-peer.test.ts` pins this against the real library.
  */
+/**
+ * The peer id inside an `UpdateReadHistoryInbox` (round 88).
+ *
+ * That update does not carry a chat object the way a message does — it
+ * carries a bare `Peer`, so the id has to be read from whichever variant it
+ * is. Only `PeerUser` is answered: our stored conversations are private chats
+ * with customers (`peerFromChat` sets `isPrivate` from `className === 'User'`),
+ * and a read in a group we never kept has nothing to mark.
+ *
+ * Pure, because the listener cannot be exercised in this container and this
+ * is the one part of the read signal that can be.
+ */
+export function peerIdFromUpdate(
+  peer: { className?: string; userId?: { toString(): string } } | null | undefined,
+): bigint | null {
+  if (peer?.className !== 'PeerUser') return null;
+  const raw = peer.userId?.toString();
+  if (!raw || !/^[0-9]+$/.test(raw)) return null;
+  const id = BigInt(raw);
+  return id > 0n ? id : null;
+}
+
 export function peerFromChat(
   chat: {
     id?: { toString(): string };

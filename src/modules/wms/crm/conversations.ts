@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { chatNeedsAnswer, chatState, type ChatState } from './waiting';
 import { attachments, clients, tgMessages, users } from '../../platform/db/schema';
 import { activeClientsByPhone } from '../client-cabinet/service';
 
@@ -74,7 +75,9 @@ export interface ConversationRow {
   lastAt: Date;
   lastBody: string | null;
   lastHasMedia: boolean;
-  /** True when the client spoke last — i.e. the ball is on our side. */
+  /** new = nobody has seen it · seen = read, no answer needed · answered. */
+  state: ChatState;
+  /** True ONLY for `new` — the alarm, not «the client spoke last». */
   waitingOnUs: boolean;
   messages: number;
   /** Who holds the chat(s) — filled only on the supervision view. */
@@ -135,6 +138,9 @@ export async function listConversations(
     body: string | null;
     has_media: boolean;
     direction: string;
+    manager_user_id: string;
+    peer_id: string;
+    tg_message_id: string;
   }>(sql`
     SELECT DISTINCT ON (m.client_id)
       m.client_id,
@@ -143,7 +149,16 @@ export async function listConversations(
       m.sent_at,
       m.body,
       m.has_media,
-      m.direction
+      m.direction,
+      -- Carried so the state can be resolved AFTER the page is sliced. Round
+      -- 74 removed a correlated subquery from this very projection because a
+      -- DISTINCT ON evaluates it once per MESSAGE, not once per conversation;
+      -- the read pointer and the outbox are asked the same way the message
+      -- count now is — grouped, over the page, below. (No backticks in here:
+      -- this comment lives inside a template literal.)
+      m.manager_user_id,
+      m.peer_id,
+      m.tg_message_id
     FROM tg_messages m
     JOIN clients c ON c.id = m.client_id
     WHERE ${mine}
@@ -158,6 +173,21 @@ export async function listConversations(
     .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
     .slice(0, limit);
   const ids = page.map((r) => sql`${r.client_id}`);
+
+  // Three states, one rule, resolved over the page (round 88).
+  const states = await resolveChatStates(
+    page.map((r) => ({
+      clientId: r.client_id,
+      managerUserId: r.manager_user_id,
+      peerId: r.peer_id,
+      tgMessageId: r.tg_message_id,
+      direction: r.direction,
+      sentAt: new Date(r.sent_at),
+      row: r,
+    })),
+  );
+  const stateByClient = new Map<string, ChatState>();
+  for (const [seed, state] of states) stateByClient.set(seed.clientId, state);
 
   // Counts for the clients actually on screen — a list of ids, never the
   // whole table. An empty page asks nothing.
@@ -195,10 +225,13 @@ export async function listConversations(
       lastAt: new Date(r.sent_at),
       lastBody: r.body,
       lastHasMedia: r.has_media,
-      // The client spoke last and nobody has answered. This is the single
-      // most useful fact on the screen, so it is computed here rather than
-      // left for the eye to work out from a name.
-      waitingOnUs: r.direction === 'in',
+      // The single most useful fact on the screen, and since round 88 it has
+      // three values rather than two: a client who wrote «ok» is READ and
+      // finished, and a mark that cannot tell that from an unanswered
+      // question is a mark people stop looking at (the owner's own words).
+      state: stateByClient.get(r.client_id) ?? 'answered',
+      /** Kept so nothing that reads the old field breaks: the ALARM only. */
+      waitingOnUs: chatNeedsAnswer(stateByClient.get(r.client_id) ?? 'answered'),
       messages: counts.get(r.client_id) ?? 0,
       managers: managersByClient.get(r.client_id) ?? [],
     }));
@@ -354,13 +387,41 @@ export async function conversationClient(clientId: string) {
  */
 export async function chatBadges(viewer: TgViewer): Promise<Map<string, 'waiting' | 'yes'>> {
   const mine = viewer.all ? sql`true` : sql`manager_user_id = ${viewer.id}`;
-  const rows = await db.execute<{ client_id: string; direction: string }>(sql`
-    SELECT DISTINCT ON (client_id) client_id, direction
+  const rows = await db.execute<{
+    client_id: string;
+    direction: string;
+    manager_user_id: string;
+    peer_id: string;
+    tg_message_id: string;
+    sent_at: Date;
+  }>(sql`
+    SELECT DISTINCT ON (client_id)
+      client_id, direction, manager_user_id, peer_id, tg_message_id, sent_at
     FROM tg_messages
     WHERE ${mine}
+      -- A lead-owned chat has no client to badge (0064 relaxed the column),
+      -- and postgres groups every NULL together — so without this the whole
+      -- company's lead chats collapse into ONE phantom row.
+      AND client_id IS NOT NULL
     ORDER BY client_id, sent_at DESC
   `);
-  return new Map(rows.map((r) => [r.client_id, r.direction === 'in' ? 'waiting' : 'yes']));
+  const states = await resolveChatStates(
+    rows.map((r) => ({
+      clientId: r.client_id,
+      managerUserId: r.manager_user_id,
+      peerId: r.peer_id,
+      tgMessageId: r.tg_message_id,
+      direction: r.direction,
+      sentAt: new Date(r.sent_at),
+    })),
+  );
+  // The card keeps its two marks: 💬! only for the ALARM. A chat the manager
+  // has read and left ('seen') is an ordinary 💬 — the owner's «ok» case.
+  const out = new Map<string, 'waiting' | 'yes'>();
+  for (const [seed, state] of states) {
+    out.set(seed.clientId, chatNeedsAnswer(state) ? 'waiting' : 'yes');
+  }
+  return out;
 }
 
 /**
@@ -465,4 +526,127 @@ export async function conversationClientForLead(lead: {
   if (!phone) return null;
   const matches = await activeClientsByPhone(phone);
   return matches.length === 1 ? matches[0]!.id : null;
+}
+
+/**
+ * "I have read this here" — the second door into the same mark.
+ *
+ * Telegram's own read receipt is the primary signal and needs nobody to
+ * press anything (see the listener). This covers the manager who reads the
+ * conversation on OUR screen instead: the owner's words were «chatni ichiga
+ * kirgandan keyin tohtatish», and to him both screens are the chat.
+ *
+ * Own account only, and that is a property of the WHERE rather than a check
+ * anybody could forget: the rows counted are the ones whose
+ * `manager_user_id` IS the reader. A supervisor (round 33 `seesAllTg`) opens
+ * the same screen, matches no rows and writes nothing — their glance must
+ * never silence a colleague's alarm.
+ *
+ * `GREATEST` in the conflict clause for the same reason the listener's write
+ * has it: this can arrive after a newer Telegram receipt.
+ */
+export async function markThreadRead(clientId: string, actorId: string): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO tg_chat_reads (manager_user_id, peer_id, last_read_tg_message_id)
+    SELECT m.manager_user_id, m.peer_id, max(m.tg_message_id)
+    FROM tg_messages m
+    WHERE m.client_id = ${clientId}::uuid
+      AND m.manager_user_id = ${actorId}::uuid
+      AND m.direction = 'in'
+    GROUP BY m.manager_user_id, m.peer_id
+    ON CONFLICT (manager_user_id, peer_id) DO UPDATE
+      SET last_read_tg_message_id =
+            GREATEST(tg_chat_reads.last_read_tg_message_id, EXCLUDED.last_read_tg_message_id),
+          read_at = now()
+  `);
+}
+
+/**
+ * The two facts `chatState` needs that the newest-message row cannot carry:
+ * how far the manager has READ, and whether a reply is already on its way.
+ *
+ * Two GROUPED queries over the rows already on screen — never a subquery in
+ * a `DISTINCT ON` projection, which is what round 74 had to take back out of
+ * `listConversations` after it measured 916 ms at 100,000 messages. An empty
+ * page asks nothing.
+ *
+ * Exported because FOUR screens decide «is this waiting» and they must decide
+ * it the same way (#513): the conversations list, the funnel card badges, the
+ * seller's home counter and the Telegram reminder.
+ */
+export interface ChatStateSeed {
+  clientId: string;
+  managerUserId: string;
+  peerId: string | bigint;
+  tgMessageId: string | bigint;
+  direction: string;
+  sentAt: Date;
+}
+
+export async function resolveChatStates<T extends ChatStateSeed>(
+  seeds: T[],
+): Promise<Map<T, ChatState>> {
+  const out = new Map<T, ChatState>();
+  if (seeds.length === 0) return out;
+
+  const managers = [...new Set(seeds.map((s) => s.managerUserId))].map((id) => sql`${id}`);
+  const peers = [...new Set(seeds.map((s) => String(s.peerId)))].map((p) => sql`${p}`);
+  const clientIds = [...new Set(seeds.map((s) => s.clientId))].map((id) => sql`${id}`);
+
+  /**
+   * The read pointers. The two `IN` lists are a cross product — wider than
+   * the question — and that is safe ONLY because the answer is consumed as a
+   * map keyed on the exact (manager, peer) pair, which is also this table's
+   * primary key. The same reasoning `offerableMatches` records (#598).
+   */
+  const readRows = await db.execute<{
+    manager_user_id: string;
+    peer_id: string;
+    last_read_tg_message_id: string;
+  }>(sql`
+    SELECT manager_user_id, peer_id, last_read_tg_message_id
+    FROM tg_chat_reads
+    WHERE manager_user_id IN (${sql.join(managers, sql`, `)})
+      AND peer_id IN (${sql.join(peers, sql`, `)})
+  `);
+  const reads = new Map(
+    readRows.map((r) => [`${r.manager_user_id}:${r.peer_id}`, BigInt(r.last_read_tg_message_id)]),
+  );
+
+  /**
+   * The newest reply on its way out, per (client, manager).
+   *
+   * `queued`, `sending` and `sent` all count: a reply somebody typed IS an
+   * answer, and whether the socket has agreed yet is the listener's problem,
+   * not the alarm's. `failed` and `cancelled` deliberately do not — those are
+   * exactly the cases where the customer is still waiting and nobody knows.
+   */
+  const outRows = await db.execute<{
+    client_id: string;
+    manager_user_id: string;
+    last_out: Date;
+  }>(sql`
+    SELECT client_id, manager_user_id, max(queued_at) AS last_out
+    FROM tg_outbox
+    WHERE status IN ('queued', 'sending', 'sent')
+      AND client_id IN (${sql.join(clientIds, sql`, `)})
+    GROUP BY client_id, manager_user_id
+  `);
+  const pending = new Map(
+    outRows.map((r) => [`${r.client_id}:${r.manager_user_id}`, new Date(r.last_out)]),
+  );
+
+  for (const seed of seeds) {
+    const lastOut = pending.get(`${seed.clientId}:${seed.managerUserId}`);
+    out.set(
+      seed,
+      chatState({
+        lastDirection: seed.direction,
+        lastInboundTgId: seed.direction === 'in' ? BigInt(seed.tgMessageId) : null,
+        lastReadTgId: reads.get(`${seed.managerUserId}:${String(seed.peerId)}`) ?? null,
+        replyPending: lastOut ? lastOut > new Date(seed.sentAt) : false,
+      }),
+    );
+  }
+  return out;
 }

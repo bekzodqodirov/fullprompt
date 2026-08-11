@@ -31,6 +31,7 @@ import {
   loadAccount,
   markAccount,
   markAccountActive,
+  recordChatRead,
   resumePoints,
   storeIncoming,
   takeListenerLock,
@@ -43,7 +44,12 @@ import {
   HEARTBEAT_MS,
   type BookState,
 } from '../src/modules/wms/crm/telegram-live';
-import { peerFromChat, tgMediaPlan, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
+import {
+  peerFromChat,
+  peerIdFromUpdate,
+  tgMediaPlan,
+  type DialogPeer,
+} from '../src/modules/wms/crm/telegram-import';
 import { isWorkAccount, leadForChat } from '../src/modules/wms/crm/chat-lead';
 import { indexPeers, lastIndexedAt, type PeerSeen } from '../src/modules/wms/crm/peer-index';
 import { saveAttachment } from '../src/modules/platform/files/service';
@@ -158,7 +164,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
 
   const { Api, TelegramClient, helpers } = await import('telegram');
   const { StringSession } = await import('telegram/sessions');
-  const { NewMessage } = await import('telegram/events');
+  const { NewMessage, Raw } = await import('telegram/events');
   const { EditedMessage } = await import('telegram/events/EditedMessage');
 
   const client = new TelegramClient(new StringSession(account.session), apiId, apiHash, {
@@ -328,6 +334,35 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       console.error('tahrir ishlanmadi:', err instanceof Error ? err.message : err);
     }
   }, new EditedMessage({}));
+
+  // "The manager has read this chat" — round 88, and the reason the warning
+  // can finally stop lying. Telegram ALREADY knows this: opening a dialog on
+  // any device sends a read receipt, and every other device is told about it.
+  // So we do not invent a second notion of "seen" out of our own screens (a
+  // manager who answers on their phone would trip it, and a supervisor's
+  // glance at /suhbatlar would silence somebody else's alarm) — we copy the
+  // fact Telegram already has.
+  //
+  // A raw update, not an event: gramjs models NewMessage and EditedMessage
+  // and nothing else, so this one is matched by class.
+  client.addEventHandler(async (update: unknown) => {
+    try {
+      const read = update as { peer?: unknown; maxId?: number };
+      const peerId = peerIdFromUpdate(
+        read.peer as { className?: string; userId?: { toString(): string } } | undefined,
+      );
+      // Only a one-to-one chat can be a client's. A group's read mark says
+      // nothing about a conversation this system stores.
+      if (peerId === null || typeof read.maxId !== 'number') return;
+      await recordChatRead({
+        managerUserId: account.managerUserId,
+        peerId,
+        maxTgMessageId: BigInt(read.maxId),
+      });
+    } catch (err) {
+      console.error("o'qildi belgisi yozilmadi:", err instanceof Error ? err.message : err);
+    }
+  }, new Raw({ types: [Api.UpdateReadHistoryInbox] }));
 
   /* ---------------------------------------------------------------- *
    * The sender — phase 4. Replies queued on the screen go out here,

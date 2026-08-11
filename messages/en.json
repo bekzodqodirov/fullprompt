@@ -1179,6 +1179,7 @@
     "conversationsSearch": "Client or code…",
     "conversationsEmpty": "No conversations yet.",
     "waitingOnUs": "awaiting reply",
+    "chatSeen": "read",
     "openCard": "Card",
     "minsAgo": "{n} min",
     "hoursAgo": "{n} h",

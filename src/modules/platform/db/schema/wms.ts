@@ -1442,6 +1442,33 @@ export const tgMessages = pgTable(
 );
 
 /**
+ * How far each manager has READ each of their own Telegram dialogs
+ * (migration 0070).
+ *
+ * Telegram pushes this as `UpdateReadHistoryInbox` the moment the manager
+ * reads on any of their devices, so the CRM learns it without asking and
+ * without anybody changing how they work. It is what turns one alarm into
+ * three states — see `crm/waiting.ts` for the rule and why the signal is
+ * Telegram's rather than «somebody opened the thread here».
+ *
+ * Keyed on (manager, peer) because a read is a fact about ONE person's own
+ * dialog: two managers talking to the same customer each read their own.
+ */
+export const tgChatReads = pgTable(
+  'tg_chat_reads',
+  {
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    /** Telegram's own id — a high-water mark, so the test is `>=`. */
+    lastReadTgMessageId: bigint('last_read_tg_message_id', { mode: 'bigint' }).notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.managerUserId, t.peerId] })],
+);
+
+/**
  * A manager's stored Telegram login, for live receiving.
  *
  * One row per manager and the row IS the record: there is exactly one current
