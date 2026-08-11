@@ -71,13 +71,19 @@ export async function sendReplyAction(_prev: ReplyState, form: FormData): Promis
   // the sender's own tg_outbox upload — the id alone proves nothing.
   const rawAttachment = String(form.get('attachmentId') ?? '');
   const attachmentId = /^[0-9a-f-]{36}$/i.test(rawAttachment) ? rawAttachment : null;
+  // The message this answers (0072). Digits or nothing — it is Telegram's own
+  // id off a data attribute, so it is a forged post like any other, and a
+  // reply-to nobody can resolve is dropped rather than refused: the words
+  // still have to reach the customer.
+  const rawReply = String(form.get('replyToTgMessageId') ?? '');
+  const replyToTgMessageId = /^[0-9]{1,18}$/.test(rawReply) ? BigInt(rawReply) : null;
   const account = await replyAccountFor(clientId, who.id);
   if (!account) return { error: 'not_your_conversation' };
 
   const meta = await requestMeta();
   try {
     await queueReply(
-      { clientId, managerUserId: account.managerUserId, body, attachmentId },
+      { clientId, managerUserId: account.managerUserId, body, attachmentId, replyToTgMessageId },
       { actorId: who.id, ...meta },
     );
   } catch (err) {

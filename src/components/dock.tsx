@@ -67,6 +67,9 @@ interface DockThread {
     manager: string;
     photos: { id: string }[];
     audios: { id: string; fileName: string }[];
+    files: { id: string; fileName: string; sizeBytes: number }[];
+    fwdFrom: string | null;
+    quoted: { body: string | null; direction: string; hasMedia: boolean } | null;
   }[];
   /** Replies still in the queue — the drawer must not swallow them. */
   pending: {
@@ -137,6 +140,15 @@ export function Dock({ canChat }: { canChat: boolean }) {
     setThreadFor(clientId);
     setThread(null);
     setSendError(null);
+    // Opening the drawer's thread is opening the chat (round 88) — the same
+    // mark the page sets, and the same server-side re-derivation of what it
+    // means. Never on the LIST: a glance down a list is not reading.
+    void fetch('/api/chat/read', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clientId }),
+      keepalive: true,
+    }).catch(() => {});
     const res = await fetch(`/api/dock/thread?client=${clientId}`);
     if (res.ok) setThread((await res.json()) as DockThread);
   }, []);
@@ -486,6 +498,12 @@ export function Dock({ canChat }: { canChat: boolean }) {
                             {row.lastBody ?? `📎 ${t('telegramMedia')}`}
                           </span>
                         </span>
+                        {/* The alarm only, and by the same rule the page uses
+                            (round 88 `chatState`). The page also prints a
+                            quiet «✓ o'qildi» for a chat that is read and
+                            deliberately unanswered; this drawer is 3/4 the
+                            width and drops it — showing less is not
+                            disagreeing. */}
                         {row.waitingOnUs && (
                           <span className="shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-xs font-bold text-warn">
                             {t('waitingOnUs')}

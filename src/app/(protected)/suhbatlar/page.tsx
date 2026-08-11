@@ -153,13 +153,32 @@ export default async function ConversationsPage({
                 </span>
               </span>
               <span className="shrink-0 text-right">
-                {/* The client spoke last and nobody answered. */}
-                {row.waitingOnUs && (
+                {/* The client wrote and NOBODY has opened it — the alarm.
+                    A chat the manager has already read says so quietly
+                    instead, because «ok» needs nothing from anybody and a
+                    red badge over it is the thing the owner called out. */}
+                {row.state === 'new' && (
                   <span
                     className="mb-0.5 block rounded-full bg-warn/15 px-2 text-xs font-bold text-warn"
                     data-testid="waiting-on-us"
                   >
                     {t('waitingOnUs')}
+                  </span>
+                )}
+                {/* The word costs 71 px of the client's NAME at 360, measured
+                    — and this row is the one nobody has to act on, so it must
+                    not be the one that truncates the name. Below `sm` the
+                    tick carries it alone, the way «Yuborish» becomes ➤ in the
+                    composer (#522); the word is still there for a reader who
+                    asks. */}
+                {row.state === 'seen' && (
+                  <span
+                    className="mb-0.5 block text-xs text-ink-500"
+                    data-testid="chat-seen"
+                    title={t('chatSeen')}
+                    aria-label={t('chatSeen')}
+                  >
+                    ✓<span className="hidden sm:inline"> {t('chatSeen')}</span>
                   </span>
                 )}
                 <span className="block whitespace-nowrap text-xs text-ink-500">

@@ -11,14 +11,17 @@ import {
   defaultThreadManager,
   threadManagers,
 } from '@/modules/wms/crm/conversations';
-import { pendingFor } from '@/modules/wms/crm/outbox';
+import { canReplyNow, pendingFor } from '@/modules/wms/crm/outbox';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { ChatMarkRead } from '@/components/chat-mark-read';
 import { OutboxBubble } from '@/components/outbox-bubble';
 import { ChatMenu } from '@/components/chat-menu';
 import { OutboxDismiss } from '@/components/outbox-dismiss';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { TelegramReply } from '@/components/telegram-reply';
 import { ThreadManagers } from '@/components/thread-managers';
+import { TelegramShare } from '@/components/telegram-share';
+import { shareTargets } from '@/modules/wms/crm/share';
 
 /**
  * One client's conversation, read the way it happened — and opened where it
@@ -69,15 +72,23 @@ export default async function ConversationPage({
   // merged view on purpose.
   const chosen =
     hodim === 'all' ? undefined : (hodim ?? defaultThreadManager(managers) ?? undefined);
-  const [client, messages, queued, codes] = await Promise.all([
+  const [client, messages, queued, codes, people, canReply] = await Promise.all([
     conversationClient(clientId),
     conversationFor(clientId, viewer, 500, chosen),
     pendingFor(clientId, viewer),
     codesSharingPhones(clientId),
+    // Loaded once for the whole thread, not per bubble — the sheet is one
+    // component and the list is the same whichever message opens it.
+    shareTargets(actor.id),
+    // Whether the ↩ on each bubble has anywhere to go: the composer below is
+    // shown only when a reply can actually leave, and a button with no box
+    // under it does nothing at all. Same predicate the composer uses.
+    canReplyNow(clientId, actor.id),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
+  const tq = await getTranslations('quick');
 
   return (
     // Capped and centred: on a wide screen an 85 % bubble against each edge
@@ -148,6 +159,16 @@ export default async function ConversationPage({
               message={msg}
               clientLabel={t('telegramClient')}
               mediaLabel={t('telegramMedia')}
+              // Only HERE. The card panel and the dock show the same bubbles
+              // in a third of the width, and a reply there already has its own
+              // composer — two more controls per message would spend the room
+              // the message itself needs.
+              labels={{
+                reply: canReply ? t('bubbleReply') : '',
+                share: t('bubbleShare'),
+                forwarded: t('bubbleForwarded'),
+                hidden: t('bubbleHidden'),
+              }}
             />
           ))}
         </div>
@@ -162,6 +183,33 @@ export default async function ConversationPage({
       {/* Fast only while the queue has something in it — see the note on the
           card panel's copy of this line. */}
       <AutoRefresh ms={queued.length > 0 ? 2_000 : 10_000} />
+
+      {/* Reading it here counts as reading it, exactly as opening it in
+          Telegram does — the owner's «chatni ichiga kirgandan keyin». */}
+      <ChatMarkRead clientId={clientId} />
+
+      {/* One sheet for every ➦ in the thread; it finds its button by
+          delegation rather than being rendered inside each bubble. */}
+      <TelegramShare
+        people={people}
+        labels={{
+          title: t('shareTitle'),
+          who: t('shareWho'),
+          note: t('shareNote'),
+          send: t('shareSend'),
+          sent: t('shareSent'),
+          cancel: tc('cancel'),
+          // The ✕'s own label. `common` has no «close» — `quick.close` is the
+          // overlay scaffold's existing one, and inventing a second key for
+          // the same word is how one locale ends up without it (#163).
+          close: tq('close'),
+          errors: {
+            forbidden: t('replyNotYours'),
+            not_found: t('replyNotYours'),
+            bad_target: t('replyNotYours'),
+          },
+        }}
+      />
     </div>
   );
 }

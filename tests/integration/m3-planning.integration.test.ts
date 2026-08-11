@@ -177,7 +177,12 @@ describe('plan lifecycle', () => {
 
     const approved = await recordVerdict({ versionId: v2.version.id, verdict: 'approved' }, ctx());
     expect(approved.plan.status).toBe('approved');
-    expect(approved.batch!.code).toMatch(new RegExp(`^${WH_O}-\\d{3}$`));
+    // `\d{3,}`, not `\d{3}`: `nextBatchCode` pads to three and does not cap
+    // there, so a warehouse's thousandth truck is `-1000`. This container's
+    // database has run the suite past 999 and found the assertion, not the
+    // code — a fresh database (and CI) would have gone on agreeing with a
+    // regex that states the wrong contract.
+    expect(approved.batch!.code).toMatch(new RegExp(`^${WH_O}-\\d{3,}$`));
 
     // The driver's pairing code is born with the batch (owner) — the loader
     // reads it off the batch header instead of pressing a button at the gate.

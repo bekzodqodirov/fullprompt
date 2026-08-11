@@ -1422,6 +1422,15 @@ export const tgMessages = pgTable(
     direction: text('direction').notNull(),
     body: text('body'),
     hasMedia: boolean('has_media').notNull().default(false),
+    /**
+     * Which message this one answers (0072) — Telegram's own id, resolved
+     * through the (manager, peer, tg_message_id) index rather than an FK.
+     * A reply can point at a message older than anything we imported, and an
+     * FK would refuse the whole row instead of leaving one quote unresolved.
+     */
+    replyToTgMessageId: bigint('reply_to_tg_message_id', { mode: 'bigint' }),
+    /** Who it was forwarded from, in Telegram's own words (0072). */
+    fwdFrom: text('fwd_from'),
     sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
     importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
     /**
@@ -1439,6 +1448,33 @@ export const tgMessages = pgTable(
     // The round-20 scoped reads lead with the manager (migration 0048).
     index('tg_messages_manager_idx').on(t.managerUserId, t.clientId, t.sentAt),
   ],
+);
+
+/**
+ * How far each manager has READ each of their own Telegram dialogs
+ * (migration 0071).
+ *
+ * Telegram pushes this as `UpdateReadHistoryInbox` the moment the manager
+ * reads on any of their devices, so the CRM learns it without asking and
+ * without anybody changing how they work. It is what turns one alarm into
+ * three states — see `crm/waiting.ts` for the rule and why the signal is
+ * Telegram's rather than «somebody opened the thread here».
+ *
+ * Keyed on (manager, peer) because a read is a fact about ONE person's own
+ * dialog: two managers talking to the same customer each read their own.
+ */
+export const tgChatReads = pgTable(
+  'tg_chat_reads',
+  {
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    /** Telegram's own id — a high-water mark, so the test is `>=`. */
+    lastReadTgMessageId: bigint('last_read_tg_message_id', { mode: 'bigint' }).notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.managerUserId, t.peerId] })],
 );
 
 /**
@@ -1617,8 +1653,10 @@ export const tgOutbox = pgTable(
     sentAt: timestamp('sent_at', { withTimezone: true }),
     /** Telegram's id once it exists, to reconcile with the echoed copy. */
     tgMessageId: bigint('tg_message_id', { mode: 'bigint' }),
-    /** One photo per message; body doubles as its caption (may be empty then). */
+    /** One file per message; body doubles as its caption (may be empty then). */
     attachmentId: uuid('attachment_id').references(() => attachments.id),
+    /** The message this reply quotes (0072) — Telegram's id, as incoming. */
+    replyToTgMessageId: bigint('reply_to_tg_message_id', { mode: 'bigint' }),
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
   },

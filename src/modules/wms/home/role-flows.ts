@@ -8,6 +8,7 @@ import {
   loadPlans,
 } from '../../platform/db/schema';
 import type { ScopedActor } from '../../platform/rbac/scope';
+import { chatBadges } from '../crm/conversations';
 import { followUps, openLeadCount } from '../crm/service';
 import { managedClients } from '../finance/client-cargo';
 import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
@@ -33,7 +34,7 @@ export interface SalesFlowCounts {
   callsDue: number;
   callsOverdue: number;
   openLeads: number;
-  /** Conversations whose LAST message is the client's — waiting on us. */
+  /** Conversations that still need an answer — `new`, never merely unread. */
   waitingChats: number;
   /** Own clients currently owing money. */
   debtors: number;
@@ -44,18 +45,20 @@ export async function salesFlowCounts(actorId: string, today: string): Promise<S
   const [calls, openLeads, waiting, book, openDealRows] = await Promise.all([
     followUps(today, actorId),
     openLeadCount(actorId),
-    // The same DISTINCT ON walk `listConversations` does, reduced to one
-    // number: how many of THIS manager's own threads end with the client's
-    // word — the same rows their /suhbatlar screen shows, and no one else's
-    // (a colleague's personal Telegram is not this person's morning list).
-    db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n FROM (
-        SELECT DISTINCT ON (client_id) direction
-        FROM tg_messages
-        WHERE manager_user_id = ${actorId}
-        ORDER BY client_id, sent_at DESC
-      ) t WHERE t.direction = 'in'
-    `),
+    /**
+     * How many of THIS manager's own threads still need an answer — the same
+     * rows their /suhbatlar screen shows, and no one else's (a colleague's
+     * personal Telegram is not this person's morning list).
+     *
+     * Through `chatBadges`, deliberately, rather than the hand-written
+     * DISTINCT ON that used to live here: this was the FOURTH restatement of
+     * «is this waiting», and it disagreed with the other three the day round
+     * 88 gave the answer three values. It also carried a defect of its own —
+     * no `client_id IS NOT NULL`, and postgres groups all NULLs together, so
+     * every lead-owned chat in the company collapsed into one phantom
+     * «waiting» on this screen, openable nowhere and clearable by nothing.
+     */
+    chatBadges({ id: actorId }),
     managedClients(actorId),
     db
       .select({ n: sql<number>`count(*)` })
@@ -67,7 +70,7 @@ export async function salesFlowCounts(actorId: string, today: string): Promise<S
     callsDue: calls.length,
     callsOverdue: calls.filter((call) => call.dueOn < today).length,
     openLeads,
-    waitingChats: Number(waiting[0]?.n ?? 0),
+    waitingChats: [...waiting.values()].filter((mark) => mark === 'waiting').length,
     // The same 0.009 line the my-clients screen draws.
     debtors: book.filter((client) => client.balanceUsd > 0.009).length,
     openDeals: Number(openDealRows[0]?.n ?? 0),

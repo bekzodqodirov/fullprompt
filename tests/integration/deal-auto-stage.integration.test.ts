@@ -204,7 +204,13 @@ beforeAll(async () => {
   stReady = await mk('AS-tayyor', 9250, 'ready');
   stPartial = await mk('AS-qisman', 9280, 'handed_partial');
   stHanded = await mk('AS-topshirildi', 9300, 'handed');
-});
+  // Sixty seconds, because the drain above is UNBOUNDED work that grows with
+  // the suite: `processPendingEvents` empties whatever every other file has
+  // emitted (up to 40×50 events, each fanning out to recipients), and vitest's
+  // default is ten. It timed out on a full run and passed alone, which reads
+  // as a flake and is really the suite getting bigger — the hook cannot be
+  // made smaller without giving up the reason it exists.
+}, 60_000);
 
 afterAll(async () => {
   // Everything this file processed grew notification rows, and events hold

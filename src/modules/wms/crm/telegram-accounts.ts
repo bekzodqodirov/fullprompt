@@ -402,6 +402,10 @@ export async function storeIncoming(input: {
       direction: input.row.direction,
       body: input.row.body,
       hasMedia: input.row.hasMedia,
+      // What it answers and where it came from (0072) — written on the same
+      // insert, because a second UPDATE would be a second chance to forget.
+      replyToTgMessageId: input.row.replyToTgMessageId,
+      fwdFrom: input.row.fwdFrom,
       sentAt: input.row.sentAt,
     })
     .onConflictDoNothing()
@@ -461,4 +465,27 @@ export async function setWorkAccount(managerUserId: string, work: boolean): Prom
     .where(eq(tgAccounts.managerUserId, managerUserId))
     .returning({ id: tgAccounts.id });
   return done.length > 0;
+}
+
+/**
+ * Remember how far this manager has read their own dialog (round 88).
+ *
+ * `GREATEST`, not a plain assignment: Telegram delivers updates out of order
+ * after a reconnect, and a stale one arriving late must never move the mark
+ * BACKWARDS — that would resurrect an alarm the manager already dealt with,
+ * which is the exact behaviour this round exists to remove.
+ */
+export async function recordChatRead(input: {
+  managerUserId: string;
+  peerId: bigint;
+  maxTgMessageId: bigint;
+}): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO tg_chat_reads (manager_user_id, peer_id, last_read_tg_message_id)
+    VALUES (${input.managerUserId}::uuid, ${input.peerId.toString()}, ${input.maxTgMessageId.toString()})
+    ON CONFLICT (manager_user_id, peer_id) DO UPDATE
+      SET last_read_tg_message_id =
+            GREATEST(tg_chat_reads.last_read_tg_message_id, EXCLUDED.last_read_tg_message_id),
+          read_at = now()
+  `);
 }

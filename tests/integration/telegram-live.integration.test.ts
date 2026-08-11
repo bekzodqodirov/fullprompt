@@ -311,6 +311,8 @@ describe('media on a message is split by kind', () => {
         body: null,
         hasMedia: true,
         sentAt: new Date(),
+        replyToTgMessageId: null,
+        fwdFrom: null,
       },
     });
     expect(written, 'the fixture message must be new').toBeTruthy();

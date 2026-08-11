@@ -5,7 +5,7 @@ import { recordCandidates, rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   claimNext,
   clientHasWritten,
-  loadOutboxPhoto,
+  loadOutboxFile,
   markAttemptFailed,
   markSent,
   OUTBOX_CHANNEL,
@@ -34,6 +34,7 @@ import {
   markAccountActive,
   markHistoryBackfilled,
   needsHistoryBackfill,
+  recordChatRead,
   resumePoints,
   storeIncoming,
   takeListenerLock,
@@ -53,7 +54,12 @@ import {
   HEARTBEAT_MS,
   type BookState,
 } from '../src/modules/wms/crm/telegram-live';
-import { peerFromChat, tgMediaPlan, type DialogPeer } from '../src/modules/wms/crm/telegram-import';
+import {
+  peerFromChat,
+  peerIdFromUpdate,
+  tgMediaPlan,
+  type DialogPeer,
+} from '../src/modules/wms/crm/telegram-import';
 import { isWorkAccount, leadForChat } from '../src/modules/wms/crm/chat-lead';
 import { indexPeers, lastIndexedAt, type PeerSeen } from '../src/modules/wms/crm/peer-index';
 import { saveAttachment } from '../src/modules/platform/files/service';
@@ -114,9 +120,10 @@ const DB_ALERT_AFTER_MS = 60_000;
 const INDEX_EVERY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Download an incoming photo or VOICE/AUDIO message and pin it to its row
- * (owner, item 15: "rasimlarni ko'radigan bo'lsa ham yaxshi edi"; then
- * 2026-08-07: «audio habarlar bizni sistemada korinmayabti»).
+ * Download an incoming photo, VOICE/AUDIO message or FILE and pin it to its
+ * row (owner, item 15: "rasimlarni ko'radigan bo'lsa ham yaxshi edi"; then
+ * 2026-08-07: «audio habarlar bizni sistemada korinmayabti»; then 2026-08-11:
+ * «klientlar ham bizga fillar jonatishadi»).
  *
  * What deserves a download is decided by `tgMediaPlan` — pure, unit-tested,
  * and always from the message alone BEFORE any network I/O. Only for a NEW
@@ -168,7 +175,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
 
   const { Api, TelegramClient, helpers } = await import('telegram');
   const { StringSession } = await import('telegram/sessions');
-  const { NewMessage } = await import('telegram/events');
+  const { NewMessage, Raw } = await import('telegram/events');
   const { EditedMessage } = await import('telegram/events/EditedMessage');
 
   const client = new TelegramClient(new StringSession(account.session), apiId, apiHash, {
@@ -338,6 +345,35 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       console.error('tahrir ishlanmadi:', err instanceof Error ? err.message : err);
     }
   }, new EditedMessage({}));
+
+  // "The manager has read this chat" — round 88, and the reason the warning
+  // can finally stop lying. Telegram ALREADY knows this: opening a dialog on
+  // any device sends a read receipt, and every other device is told about it.
+  // So we do not invent a second notion of "seen" out of our own screens (a
+  // manager who answers on their phone would trip it, and a supervisor's
+  // glance at /suhbatlar would silence somebody else's alarm) — we copy the
+  // fact Telegram already has.
+  //
+  // A raw update, not an event: gramjs models NewMessage and EditedMessage
+  // and nothing else, so this one is matched by class.
+  client.addEventHandler(async (update: unknown) => {
+    try {
+      const read = update as { peer?: unknown; maxId?: number };
+      const peerId = peerIdFromUpdate(
+        read.peer as { className?: string; userId?: { toString(): string } } | undefined,
+      );
+      // Only a one-to-one chat can be a client's. A group's read mark says
+      // nothing about a conversation this system stores.
+      if (peerId === null || typeof read.maxId !== 'number') return;
+      await recordChatRead({
+        managerUserId: account.managerUserId,
+        peerId,
+        maxTgMessageId: BigInt(read.maxId),
+      });
+    } catch (err) {
+      console.error("o'qildi belgisi yozilmadi:", err instanceof Error ? err.message : err);
+    }
+  }, new Raw({ types: [Api.UpdateReadHistoryInbox] }));
 
   /* ---------------------------------------------------------------- *
    * The sender — phase 4. Replies queued on the screen go out here,
@@ -512,20 +548,31 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // already filled from the conversation itself.
       const target = helpers.returnBigInt(job.peerId.toString());
       let result: { id?: number; date?: number } | undefined;
+      // Telegram wants the quoted message's own id, which is exactly what the
+      // queue row carries (0072). A reply to a message the client has since
+      // deleted is sent as an ordinary message rather than refused — that is
+      // Telegram's own behaviour and the reply still has to reach them.
+      const replyTo = job.replyToTgMessageId ? Number(job.replyToTgMessageId) : undefined;
       if (job.attachmentId) {
-        const photo = await loadOutboxPhoto(job.attachmentId);
-        if (!photo) {
+        const upload = await loadOutboxFile(job.attachmentId);
+        if (!upload) {
           // The bytes are gone (or the row is); no retry can conjure them.
           await markAttemptFailed(job.id, 'photo_missing', true, MAX_ATTEMPTS);
           return;
         }
         const { CustomFile } = await import('telegram/client/uploads');
         result = (await client.sendFile(target, {
-          file: new CustomFile(photo.fileName, photo.bytes.length, '', photo.bytes),
+          file: new CustomFile(upload.fileName, upload.bytes.length, '', upload.bytes),
           caption: job.body || undefined,
+          // A spreadsheet must arrive AS a file. Without this gramjs offers
+          // an image-shaped document to Telegram, which re-encodes anything
+          // it decides is a picture and drops the filename — so a PDF the
+          // client needs to open becomes an unnamed blob.
+          forceDocument: upload.contentType.startsWith('image/') ? undefined : true,
+          replyTo,
         })) as { id?: number; date?: number };
       } else {
-        result = await client.sendMessage(target, { message: job.body });
+        result = await client.sendMessage(target, { message: job.body, replyTo });
       }
       // From here the message EXISTS in somebody's Telegram. Every failure
       // below is a bookkeeping failure and is treated as one.
@@ -553,6 +600,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           tgMessageId: BigInt(result.id),
           body: job.body,
           attachmentId: job.attachmentId,
+          replyToTgMessageId: job.replyToTgMessageId,
           sentAt: new Date((result.date ?? Math.floor(Date.now() / 1000)) * 1000),
         };
         await recordSent(echo).catch(async (err: unknown) => {

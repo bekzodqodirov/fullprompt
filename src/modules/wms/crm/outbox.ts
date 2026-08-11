@@ -6,7 +6,7 @@ import { getSetting } from '../../platform/settings/service';
 import { getStorage } from '../../platform/files/storage';
 import { bridgeState } from './telegram-live';
 import { storeIncoming } from './telegram-accounts';
-import { MAX_TG_PHOTO_BYTES } from './telegram-import';
+import { MAX_TG_FILE_BYTES, MAX_TG_PHOTO_BYTES } from './telegram-import';
 import {
   bodyTooLong,
   canQueue,
@@ -189,7 +189,14 @@ export interface QueuedReply {
  * must be impossible to get around by posting a form.
  */
 export async function queueReply(
-  input: { clientId: string; managerUserId: string; body: string; attachmentId?: string | null },
+  input: {
+    clientId: string;
+    managerUserId: string;
+    body: string;
+    attachmentId?: string | null;
+    /** Telegram's id of the message this answers (0072), or null. */
+    replyToTgMessageId?: bigint | null;
+  },
   ctx: AuditContext,
 ): Promise<{ id: string }> {
   const body = input.body.trim();
@@ -202,21 +209,22 @@ export async function queueReply(
   // — a 500 where the honest answer is "you are not signed in".
   if (!ctx.actorId) throw new OutboxError('no_actor');
 
-  // The photo must be the sender's OWN pre-bound upload — an arbitrary
+  // The file must be the sender's OWN pre-bound upload — an arbitrary
   // attachment uuid pasted into the form must not leave the building on a
-  // customer's phone. Same ceiling as incoming photos (10 MiB), so what we
-  // send is never bigger than what we accept.
+  // customer's phone.
+  //
+  // The KIND check went (2026-08-11: «faqat rasim emas fillar ham jonatish»);
+  // what replaces it is the same ceiling in both directions, per kind: a
+  // photo may be as big as an incoming photo, anything else as big as an
+  // incoming document. Sending something we would refuse to receive is how
+  // the two halves of one conversation stop matching.
   if (attachmentId) {
     const [file] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
-    if (
-      !file ||
-      file.uploadedBy !== ctx.actorId ||
-      file.entityType !== 'tg_outbox' ||
-      file.kind !== 'photo'
-    ) {
+    if (!file || file.uploadedBy !== ctx.actorId || file.entityType !== 'tg_outbox') {
       throw new OutboxError('bad_attachment');
     }
-    if (file.sizeBytes > MAX_TG_PHOTO_BYTES) throw new OutboxError('photo_too_big');
+    const cap = file.kind === 'photo' ? MAX_TG_PHOTO_BYTES : MAX_TG_FILE_BYTES;
+    if (file.sizeBytes > cap) throw new OutboxError('photo_too_big');
   }
 
   const peerId = await peerForClient(input.clientId, input.managerUserId);
@@ -240,6 +248,7 @@ export async function queueReply(
       status: 'queued',
       queuedBy: ctx.actorId,
       attachmentId,
+      replyToTgMessageId: input.replyToTgMessageId ?? null,
     })
     .returning({ id: tgOutbox.id });
 
@@ -347,6 +356,32 @@ export async function cancelQueued(id: string, ctx: AuditContext): Promise<void>
  * The listener's half. Called only from `scripts/tg-listen.ts`.
  * ------------------------------------------------------------------ */
 
+/**
+ * Can a reply to this client go out AT ALL, right now?
+ *
+ * Extracted because two things have to agree about it and they are not in the
+ * same component: the composer, which shows a box or says why not, and the
+ * THREAD, which draws a «↩ Javob» on every bubble. A ↩ with no composer under
+ * it is a button that does nothing, which is worse than no button — so the
+ * question is asked once, here, and both callers get the same answer (#513).
+ *
+ * The 'x' is the composer's own trick: this asks «could anything go», not
+ * «is this particular text allowed», and `canQueue` refuses an empty body.
+ */
+export async function canReplyNow(clientId: string, actorId: string): Promise<boolean> {
+  const account = await replyAccountFor(clientId, actorId);
+  if (!account) return false;
+  const verdict = canQueue(
+    'x',
+    await sendContextFor({
+      clientId,
+      managerUserId: account.managerUserId,
+      peerId: account.peerId,
+    }),
+  );
+  return verdict.ok;
+}
+
 export interface OutboxJob {
   id: string;
   clientId: string;
@@ -354,6 +389,8 @@ export interface OutboxJob {
   body: string;
   attempts: number;
   attachmentId: string | null;
+  /** Telegram's id of the message this reply quotes (0072), or null. */
+  replyToTgMessageId: bigint | null;
 }
 
 /**
@@ -378,6 +415,7 @@ export async function claimNext(managerUserId: string): Promise<OutboxJob | null
     body: string;
     attempts: number;
     attachment_id: string | null;
+    reply_to_tg_message_id: string | null;
   }>(sql`
     UPDATE tg_outbox SET status = 'sending', attempts = attempts + 1
     WHERE id = (
@@ -387,7 +425,8 @@ export async function claimNext(managerUserId: string): Promise<OutboxJob | null
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING id, client_id, peer_id, body, attempts, attachment_id
+    RETURNING id, client_id, peer_id, body, attempts, attachment_id,
+              reply_to_tg_message_id
   `);
   const row = rows[0];
   if (!row) return null;
@@ -400,6 +439,8 @@ export async function claimNext(managerUserId: string): Promise<OutboxJob | null
     body: row.body,
     attempts: row.attempts,
     attachmentId: row.attachment_id,
+    replyToTgMessageId:
+      row.reply_to_tg_message_id === null ? null : BigInt(row.reply_to_tg_message_id),
   };
 }
 
@@ -492,19 +533,25 @@ export async function sentCounts(
 }
 
 /**
- * The queued photo's bytes, for the one process that will hand them to
+ * The queued attachment's bytes, for the one process that will hand them to
  * Telegram. Null is a PERMANENT failure at the call site: a file that has
  * been deleted (or grew past the cap somehow) cannot be conjured by retrying.
+ *
+ * The cap is read PER KIND, exactly as `queueReply` sets it — one number in
+ * two places would be the shape this codebase keeps paying for, so the rule
+ * is stated once as «photos get the photo cap, everything else the file
+ * cap» and both sites ask it the same way.
  */
-export async function loadOutboxPhoto(
+export async function loadOutboxFile(
   attachmentId: string,
-): Promise<{ fileName: string; bytes: Buffer } | null> {
+): Promise<{ fileName: string; contentType: string; bytes: Buffer } | null> {
   const [file] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
   if (!file) return null;
   try {
     const bytes = await getStorage().get(file.storageKey);
-    if (bytes.length === 0 || bytes.length > MAX_TG_PHOTO_BYTES) return null;
-    return { fileName: file.fileName, bytes };
+    const cap = file.kind === 'photo' ? MAX_TG_PHOTO_BYTES : MAX_TG_FILE_BYTES;
+    if (bytes.length === 0 || bytes.length > cap) return null;
+    return { fileName: file.fileName, contentType: file.contentType, bytes };
   } catch {
     return null;
   }
@@ -539,6 +586,7 @@ export async function recordSent(input: {
   tgMessageId: bigint;
   body: string;
   attachmentId?: string | null;
+  replyToTgMessageId?: bigint | null;
   sentAt: Date;
 }): Promise<void> {
   const echoId = await storeIncoming({
@@ -551,6 +599,11 @@ export async function recordSent(input: {
       body: input.body.trim() || null,
       hasMedia: Boolean(input.attachmentId),
       sentAt: input.sentAt,
+      // Carried so OUR reply quotes on our screen too. Telegram shows it on
+      // the manager's phone either way; a thread that only quotes in one
+      // direction reads as two different conversations.
+      replyToTgMessageId: input.replyToTgMessageId ?? null,
+      fwdFrom: null,
     },
   });
   // A text reply has nothing to claim; the row IS the whole record.
