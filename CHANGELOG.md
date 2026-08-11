@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## Chat ajratish hodimning o'ziga ochildi, ulanishda 1 haftalik tarix, qo'ng'iroqlarda hodim tanlash — 2026-08-11
+
+### 1. «Bu mijoz / Yangi lid / Shaxsiy» endi hodimning o'zida
+
+Siz topgan xato tasdiqlandi: chatlarni ajratadigan ekran **«mijozlar kitobini
+boshqarish» huquqini** talab qilardi — u sizda va adminda bor, sotuvchida yo'q.
+Ma'lumot to'g'ri bog'langan edi (har kimga o'ziniki), faqat eshik noto'g'ri
+qulflangan edi.
+
+Endi: **o'z Telegramini ulagan har bir hodim** o'z chatlarini o'zi ajratadi.
+Boshqalarnikini emas — faqat o'zinikini. Siz avvalgidek hammanikini
+ko'rasiz.
+
+### 2. Ulanishda oxirgi 1 hafta tarixi o'zi tushadi
+
+Hodim Telegramini ulagan zahoti sistema **oxirgi 7 kunlik suhbatlarni** o'zi
+tortib oladi — faqat mijozlar kitobiga mos kelganlarini va lidga biriktirilgan
+chatlarni. Shaxsiy chatlar tegilmaydi. Uzilib qayta ulansa ham xuddi shunday —
+o'tkazib yuborilgan hafta tiklanadi.
+
+Ikkita halol ogohlantirish:
+- Telegram ko'p raqamlarni yashiradi, shuning uchun **hamma mijoz chati
+  topilmaydi** — raqami ko'rinadiganlari topiladi. Topilmagani «qaysi chat?»
+  ekranida qo'lda biriktiriladi.
+- Ish raqamida tarixdan **lid ochilmaydi** — bir haftalik notanishlarning
+  hammasi birdan lid bo'lib tushib qolmasligi uchun. Lid faqat jonli yozgan
+  paytda ochiladi.
+
+### 3. Qo'ng'iroqlarda ham hodim tanlash
+
+Mijoz/lid/bitim kartasidagi qo'ng'iroqlar bo'limida endi Telegramdagi kabi
+**hodim tanlagich** bor: kim gaplashganini bosasiz — faqat o'shaning
+qo'ng'iroqlari qoladi. Faqat sizga va nazorat huquqi borlarga ko'rinadi;
+sotuvchi baribir faqat o'z qo'ng'iroqlarini ko'radi.
+
+**Eslatma:** «notanish raqam tel qilsa lid ochaymi» degan so'rovingiz alohida
+ish — u telefon ilovasining yangi versiyasini talab qiladi (hozirgi ilova
+notanish qo'ng'iroqni serverga umuman yubormaydi). Keyingi bosqichda qilamiz.
+
 ## Tarix pastga tushdi, «Chiqish» profilga ko'chdi, agent Exceli partiya bo'yicha guruhlandi — 2026-08-10 (kech)
 
 ### 1. Kartadagi «Tarix» endi lentaning tagida

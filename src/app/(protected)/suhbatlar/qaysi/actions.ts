@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
   ChatRuleError,
@@ -10,14 +10,15 @@ import {
   openLeadForChat,
   purgeExcludedChat,
 } from '@/modules/wms/crm/chat-rules';
+import { mayDecideChats } from '@/modules/wms/crm/telegram-accounts';
 
 /**
  * Answering one chat: is it a client's, or is it nobody's business?
  *
- * Gated on `clients.manage` rather than `crm.leads`, which is TIGHTER than the
- * conversation screens themselves. Reading a client's thread is a sales job;
- * this decides what the company starts keeping about a person, and about a
- * manager's own account — a narrower thing, and a narrower door.
+ * The door is `mayDecideChats` — a manager's OWN connected account, or
+ * `clients.manage` for the administrator (round 93: the owner overruled the
+ * original clients.manage-only gate the day sellers connected and found their
+ * tray on a screen they could not open).
  *
  * The action also re-checks that the row belongs to somebody the actor may
  * answer for. The screen already filters, but a screen is a view and an action
@@ -33,13 +34,8 @@ export async function decideChatAction(
   _prev: ChatRuleState,
   form: FormData,
 ): Promise<ChatRuleState> {
-  let who;
-  try {
-    who = await authorize('clients.manage');
-  } catch (err) {
-    if (err instanceof AuthError) return { error: 'forbidden' };
-    throw err;
-  }
+  const who = await getActor();
+  if (!who || !(await mayDecideChats(who))) return { error: 'forbidden' };
 
   const id = String(form.get('id') ?? '');
   const decision = String(form.get('decision') ?? '') as 'include' | 'exclude' | 'pending';
@@ -81,13 +77,8 @@ export async function openLeadAction(
   _prev: OpenLeadState,
   form: FormData,
 ): Promise<OpenLeadState> {
-  let who;
-  try {
-    who = await authorize('clients.manage');
-  } catch (err) {
-    if (err instanceof AuthError) return { error: 'forbidden' };
-    throw err;
-  }
+  const who = await getActor();
+  if (!who || !(await mayDecideChats(who))) return { error: 'forbidden' };
 
   const id = String(form.get('id') ?? '');
   const canSeeEverybody = who.permissions.has('admin.settings.manage');
@@ -116,13 +107,8 @@ export async function purgeChatAction(
   _prev: ChatRuleState,
   form: FormData,
 ): Promise<ChatRuleState> {
-  let who;
-  try {
-    who = await authorize('clients.manage');
-  } catch (err) {
-    if (err instanceof AuthError) return { error: 'forbidden' };
-    throw err;
-  }
+  const who = await getActor();
+  if (!who || !(await mayDecideChats(who))) return { error: 'forbidden' };
 
   const id = String(form.get('id') ?? '');
   const canSeeEverybody = who.permissions.has('admin.settings.manage');

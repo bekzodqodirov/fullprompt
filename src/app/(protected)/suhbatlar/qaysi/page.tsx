@@ -6,6 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { clients } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { excludedLeftovers, listCandidates } from '@/modules/wms/crm/chat-rules';
+import { mayDecideChats } from '@/modules/wms/crm/telegram-accounts';
 import { PageHeader } from '@/components/ui/page';
 import { ChatDecision } from './chat-decision';
 
@@ -20,9 +21,14 @@ import { ChatDecision } from './chat-decision';
  *
  * Two access rules, and they are the design rather than a detail:
  *
- *  - it is gated on `clients.manage`, TIGHTER than the conversation screens
- *    (`crm.leads` OR `clients.manage`). Reading a client's thread is a sales
- *    job; deciding what the company starts keeping about somebody is not.
+ *  - the door is `mayDecideChats`: the manager's OWN connected account, or
+ *    `clients.manage` for the administrator. It was `clients.manage` alone
+ *    for months (round 22's «deciding what the company keeps is not a sales
+ *    job»), and the owner overruled it the day sellers connected: the tray
+ *    filled with THEIR unknown chats on a screen only the admin could open
+ *    («hodim o'zi tanlashi ... adminda chiqyapti, hodimda ko'rinmayapti»).
+ *    The person whose account a chat sits in is exactly who knows whether it
+ *    is a client, a lead or their cousin.
  *  - a manager sees only THEIR OWN chats. This list is the display names of
  *    the conversations the rule did not match, which for most managers is
  *    mostly their family and their friends. Only the owner
@@ -38,7 +44,7 @@ export default async function WhichChatsPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('clients.manage')) redirect('/');
+  if (!(await mayDecideChats(actor))) redirect('/');
 
   const t = await getTranslations('crm');
   const { show } = await searchParams;

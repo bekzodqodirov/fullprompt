@@ -33,15 +33,27 @@ export default async function LeadPage({
 }: {
   params: Promise<{ id: string }>;
   /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
-  searchParams: Promise<{ hodim?: string }>;
+  searchParams: Promise<{ hodim?: string; chodim?: string }>;
 }) {
   const { id } = await params;
-  const { hodim } = await searchParams;
+  const { hodim, chodim } = await searchParams;
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crm.leads')) redirect('/');
   const lead = await db.query.leads.findFirst({ where: eq(leads.id, id) });
+
   if (!lead) notFound();
+  // The thread's filter and the calls' filter live on the same URL; a link
+  // that changes one must carry the other (#514 — a literal string drops it).
+  const cardHref = (patch: { hodim?: string | null; chodim?: string | null }) => {
+    const q = new URLSearchParams();
+    const h = 'hodim' in patch ? patch.hodim : hodim;
+    const c = 'chodim' in patch ? patch.chodim : chodim;
+    if (h) q.set('hodim', h);
+    if (c) q.set('chodim', c);
+    const qs = q.toString();
+    return `/crm/leads/${lead.id}${qs ? `?${qs}` : ''}`;
+  };
   // A sales manager works their own leads; seeing someone else's would let
   // two people call the same person about the same cargo.
   if (!actor.permissions.has('crm.leads.view_all') && lead.ownerId !== actor.id) redirect('/crm');
@@ -106,9 +118,14 @@ export default async function LeadPage({
               clientId={dockClientId}
               hodim={hodim}
               // `who` and not `id`: this page already has an `id` (the lead's).
-              hrefFor={(who) => (who ? `/crm/leads/${lead.id}?hodim=${who}` : `/crm/leads/${lead.id}`)}
+              hrefFor={(who) => cardHref({ hodim: who })}
             />
-            <CallsPanel clientId={dockClientId} lead={{ id: lead.id, phone: lead.phone }} />
+            <CallsPanel
+              clientId={dockClientId}
+              lead={{ id: lead.id, phone: lead.phone }}
+              hodim={chodim}
+              hrefFor={(who) => cardHref({ chodim: who })}
+            />
           </>
         }
         rail={

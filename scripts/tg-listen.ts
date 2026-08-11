@@ -32,10 +32,19 @@ import {
   loadAccount,
   markAccount,
   markAccountActive,
+  markHistoryBackfilled,
+  needsHistoryBackfill,
   resumePoints,
   storeIncoming,
   takeListenerLock,
 } from '../src/modules/wms/crm/telegram-accounts';
+import {
+  backfillCutoff,
+  backfillStep,
+  withinWindow,
+  BACKFILL_DAYS,
+  BACKFILL_PER_CHAT,
+} from '../src/modules/wms/crm/history-backfill';
 import {
   bookIsStale,
   decideIncoming,
@@ -710,6 +719,73 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     // Never fatal: a bridge that refuses to start because it could not
     // backfill is worse than one that starts and is a little behind.
     console.error('catch-up umuman ishlamadi:', err instanceof Error ? err.message : err);
+  });
+
+  /* ---------------------------------------------------------------- *
+   * The connect-time week. Owed once per connect, stamped when done.
+   * ---------------------------------------------------------------- */
+
+  /**
+   * The last BACKFILL_DAYS of this account's CLIENT conversations, pulled
+   * the first time the listener starts after a connect (owner: «1 haftalik
+   * tarixi bilan tushsin yangi ulanganda»).
+   *
+   * Same decide-and-store path as a live message, so the unique index makes
+   * a re-run idempotent — which is why the stamp is written only at the END:
+   * a listener killed mid-pull simply owes the walk again. The one verdict
+   * history refuses is `openLead` (see `backfillOwner`): a week of strangers
+   * must not become a week of leads in one silent burst.
+   */
+  const historyBackfill = async () => {
+    if (!(await needsHistoryBackfill(account.id))) return;
+    const cutoff = backfillCutoff(new Date());
+    let kept = 0;
+    let chats = 0;
+    for await (const dialog of client.iterDialogs({})) {
+      const peer: DialogPeer = peerFromChat(dialog.entity as never);
+      if (!peer.isPrivate || peer.isBot || peer.isSelf) continue;
+      // A chat whose NEWEST message is older than the window has nothing in
+      // the window — skipped before a single message is fetched.
+      if (!withinWindow(dialog.message?.date, cutoff)) continue;
+      try {
+        let inChat = 0;
+        for await (const msg of client.iterMessages(
+          helpers.returnBigInt(peer.id.toString()),
+          { limit: BACKFILL_PER_CHAT },
+        )) {
+          // Newest first; the first message past the cutoff ends the chat.
+          if (!withinWindow(msg.date, cutoff)) break;
+          const step = backfillStep(
+            decideIncoming(peer, msg, book.clients, rules, workAccount),
+          );
+          if (step.kind === 'stop') break; // the whole chat is not ours
+          if (step.kind === 'skip') continue; // a client's service row
+          const written = await storeIncoming({
+            clientId: step.clientId,
+            leadId: step.leadId,
+            managerUserId: account.managerUserId,
+            row: step.row,
+          });
+          if (written) {
+            inChat += 1;
+            await saveMediaFor(written, msg, account.managerUserId).catch(() => {});
+          }
+        }
+        if (inChat > 0) {
+          kept += inChat;
+          chats += 1;
+        }
+      } catch (err) {
+        // One unreachable chat must not cost the rest of the week.
+        console.error('tarix:', err instanceof Error ? err.message : err);
+      }
+    }
+    await markHistoryBackfilled(account.id);
+    console.log(`ulanish tarixi: ${chats} ta suhbatdan ${kept} ta xabar olindi (oxirgi ${BACKFILL_DAYS} kun)`);
+  };
+  await historyBackfill().catch((err) => {
+    // Not stamped on failure, so the next start owes it again.
+    console.error('ulanish tarixi olinmadi:', err instanceof Error ? err.message : err);
   });
 
   /* ---------------------------------------------------------------- *

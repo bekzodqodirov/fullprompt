@@ -257,6 +257,7 @@ export interface CallRow {
   startedAt: Date;
   durationSec: number;
   attachmentId: string | null;
+  takerId: string;
   takerName: string | null;
 }
 
@@ -292,6 +293,10 @@ async function callsForClients(
       startedAt: callLogs.startedAt,
       durationSec: callLogs.durationSec,
       attachmentId: callLogs.attachmentId,
+      // Who took the call, id AND name: the panel's per-manager selector
+      // (round 93, «telefonda gaplashgani ham userlar aro tanlash») filters
+      // over rows this viewer already holds, so it can never widen anything.
+      takerId: callLogs.userId,
       takerName: users.fullName,
     })
     .from(callLogs)

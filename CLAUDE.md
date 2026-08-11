@@ -137,7 +137,7 @@ everything before it is merged.
 1244 unit/integration + 142 e2e, verified in CI's order on a fresh database
 (the three photo-path specs — m1×2, m2×1 — are locally red by design here,
 no image service in this container; CI is the arbiter).
-Latest migration: **0069** (`warehouse_quick_batch` — a per-warehouse
+Latest migration: **0070** (`tg_history_backfill` — the connect-time week's stamp; 0069 `warehouse_quick_batch` — a per-warehouse
 switch for unplanned trucks; 0068 `inbound_webhook` — a per-source key for every
 platform's own lead form; 0067 `automation_v2` — rule conditions, time triggers
 and `automation_fires`; 0066 `inbound_leads` was the ads round;
@@ -2295,6 +2295,33 @@ pads the history first: the broken layout reads zero overlap at rest, so an
 at-rest assertion is green on the bug — which is exactly how round 92's first
 measurement went wrong. RULE: **a rule that is right about the common case and
 silently wrong about the case the business has is the shape all three had.**
+
+Round 93 — his three answers after connecting the sellers (#646-648).
+(1) **The tray opened to the hodim**: /suhbatlar/qaysi demanded
+`clients.manage` since round 22, so a seller's unknown chats piled up on a
+screen only the admin could open. `mayDecideChats` = own connected account
+(status <> signed_out) | clients.manage, asked by the screen, the /suhbatlar
+door and all THREE actions; row scoping untouched (own rows; admin.settings
+= everybody's). Red-proof + 4-entrance source-shape tripwire
+`chat-tray-door.test.ts`. (2) **7-day history on connect** (migration
+**0070** `history_backfilled_at`, count must reach **71**): the listener's
+catch-up machinery pointed at a window — on start with a NULL stamp, walk
+dialogs, last `BACKFILL_DAYS=7` capped 500/chat, same decide-and-store path,
+stamp only at the END (killed mid-pull = owed again); `saveAccount` clears
+the stamp so a reconnect recovers the missed week. `backfillStep`: `openLead`
+= STOP (a week of strangers must not become a week of leads in one burst —
+he asked for «hozirgi bor clientlari bilan»), client `empty` service row =
+SKIP not stop. NOT verifiable here: first real connect watched in tg-listen
+logs («ulanish tarixi: N ta suhbatdan M ta xabar olindi»). (3) **Calls
+selector** = the thread's `ThreadManagers` fold reused on the calls panel,
+`?chodim=` beside `?hodim=` on all three cards, ONE `cardHref` carries the
+other filter (#514). Scoping argument differs from round 34's: the fetch is
+viewer-scoped FIRST and chips narrow fetched rows, so a hand-typed chodim
+can only shrink; red-proof strips the viewer fence in `callsForClients`.
+Offered only to viewer.all with >1 taker. STATED, not built: «notanish raqam
+tel qilsa lid ochaymi» needs a new calls-APK version (the phone today never
+uploads an unmatched call) — its own round. 1318 unit/integration + 146 e2e
+green on a fresh db in CI's order.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
