@@ -4,7 +4,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { users } from '@/modules/platform/db/schema';
 import { getSessionUser, listSessions } from '@/modules/platform/auth/session';
-import { logoutOtherDevicesAction } from '@/modules/platform/auth/actions';
+import { logoutAction, logoutOtherDevicesAction } from '@/modules/platform/auth/actions';
 import { createTelegramLinkAction, telegramLinkStatus } from '@/modules/platform/telegram/actions';
 import { groupsFromList } from '@/modules/platform/notifications/mutes';
 import { currentCallsApk } from '@/modules/wms/calls/apk';
@@ -12,29 +12,61 @@ import { callDevicesFor } from '@/modules/wms/calls/service';
 import { setNotificationMutesAction } from './actions';
 import { CallRecorderSection } from './call-recorder';
 import { LocaleSwitcher } from '@/components/locale-switcher';
+import { Icon } from '@/components/ui/icon';
 
 export default async function ProfilePage() {
   const user = await getSessionUser();
   if (!user) redirect('/login');
   const t = await getTranslations('profile');
   const tc = await getTranslations('common');
+  const tNav = await getTranslations('nav');
   const format = await getFormatter();
-  const devices = await listSessions(user.id);
-  const telegramLink = await telegramLinkStatus(user.id);
-  const callDevices = await callDevicesFor(user.id);
-  const callsApk = await currentCallsApk();
-  const userRow = await db.query.users.findFirst({
-    columns: { mutedNotificationTypes: true },
-    where: eq(users.id, user.id),
-  });
+  // Everything below the name is a PANEL, and this page is now the only way
+  // out of the app. A panel that throws used to cost a screen; it would now
+  // cost the session — and the one morning this codebase has watched a page
+  // 500 was a deploy where the schema was ahead of the code (#472), which is
+  // exactly when somebody wants to sign in as somebody else. The error still
+  // goes to the log; only the panel is lost.
+  const panel = async <T,>(load: Promise<T>, fallback: T): Promise<T> => {
+    try {
+      return await load;
+    } catch (err) {
+      console.error('[profile]', err);
+      return fallback;
+    }
+  };
+  const devices = await panel(listSessions(user.id), []);
+  const telegramLink = await panel(telegramLinkStatus(user.id), null);
+  const callDevices = await panel(callDevicesFor(user.id), []);
+  const callsApk = await panel(currentCallsApk(), null);
+  const userRow = await panel(
+    db.query.users.findFirst({
+      columns: { mutedNotificationTypes: true },
+      where: eq(users.id, user.id),
+    }),
+    undefined,
+  );
   const mutes = groupsFromList(userRow?.mutedNotificationTypes);
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">{t('title')}</h1>
-      <div className="card">
-        <p className="font-semibold">{user.fullName}</p>
-        <p className="text-sm text-ink-700">{user.phone}</p>
+      {/* Signing out is HERE now, not in the app bar (owner: «logoutni profil
+          ichiga kirgaz»). It belongs beside the name it ends the session of,
+          and it is the same card «Boshqa qurilmalardan chiqish» already
+          answers for further down. `nav.logout` is reused — the words exist in
+          all four bundles and a second key for the same button is how a
+          locale ends up missing one (#163). */}
+      <div className="card flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold">{user.fullName}</p>
+          <p className="text-sm text-ink-700">{user.phone}</p>
+        </div>
+        <form action={logoutAction}>
+          <button type="submit" className="btn-secondary" data-testid="profile-logout">
+            <Icon name="logout" /> {tNav('logout')}
+          </button>
+        </form>
       </div>
 
       {/* The language lives HERE on a phone: the app bar ran out of room when

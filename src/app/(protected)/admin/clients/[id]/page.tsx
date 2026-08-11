@@ -210,11 +210,17 @@ export default async function ClientDetailPage({
           codes the same person holds. */}
       <ClientCrmSections clientId={client.id} clientName={client.name} />
 
-      <section>
-        <h2 className="mb-2 text-lg font-bold">{tc('history')}</h2>
-        <HistoryTab entityType="client" entityId={client.id} />
-      </section>
           </>
+        }
+        tail={
+          /* The same place the lead and deal cards keep it: last on a phone,
+             under the lenta on a desktop. It was the last thing in the RAIL
+             here, which is the middle of the page on a phone and, on a
+             desktop, the one column a pinned facts panel scrolls over. */
+          <section>
+            <h2 className="mb-2 text-lg font-bold">{tc('history')}</h2>
+            <HistoryTab entityType="client" entityId={client.id} />
+          </section>
         }
       />
     </div>

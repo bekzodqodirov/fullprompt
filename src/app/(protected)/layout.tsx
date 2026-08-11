@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { logoutAction } from '@/modules/platform/auth/actions';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { SearchPalette } from '@/components/search-palette';
@@ -117,18 +116,13 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           <span className="hidden sm:inline-flex">
             <LocaleSwitcher current={actor.locale} />
           </span>
+          {/* Signing out lives on /profile now (owner: «logoutni profil ichiga
+              kirgaz»). It sat here as the rightmost 44 px target on every
+              screen — a thumb's width from the theme toggle, and the one
+              control in the bar that ends the session. */}
           <Link href="/profile" aria-label={t('profile')} className="btn-ghost btn-icon text-ink-700">
             <Icon name="user" />
           </Link>
-          <form action={logoutAction}>
-            <button
-              type="submit"
-              aria-label={t('logout')}
-              className="btn-ghost btn-icon text-ink-700"
-            >
-              <Icon name="logout" />
-            </button>
-          </form>
         </div>
       </header>
 
