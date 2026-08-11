@@ -28,10 +28,10 @@ export default async function ClientDetailPage({
 }: {
   params: Promise<{ id: string }>;
   /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
-  searchParams: Promise<{ hodim?: string }>;
+  searchParams: Promise<{ hodim?: string; chodim?: string }>;
 }) {
   const { id } = await params;
-  const { hodim } = await searchParams;
+  const { hodim, chodim } = await searchParams;
   const actor = await getActor();
   if (!actor) redirect('/login');
   // Sales staff read the card their CRM sends them to; only an admin edits
@@ -64,6 +64,18 @@ export default async function ClientDetailPage({
   const botUsername = canEdit ? await getBotUsername() : null;
   const update = updateClientAction.bind(null, id);
   const toggle = toggleClientActiveAction.bind(null, id);
+
+  // The thread's filter and the calls' filter live on the same URL; a link
+  // that changes one must carry the other (#514 — a literal string drops it).
+  const cardHref = (patch: { hodim?: string | null; chodim?: string | null }) => {
+    const q = new URLSearchParams();
+    const h = 'hodim' in patch ? patch.hodim : hodim;
+    const c = 'chodim' in patch ? patch.chodim : chodim;
+    if (h) q.set('hodim', h);
+    if (c) q.set('chodim', c);
+    const qs = q.toString();
+    return `/admin/clients/${client.id}${qs ? `?${qs}` : ''}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -100,11 +112,13 @@ export default async function ClientDetailPage({
             <TelegramThread
               clientId={client.id}
               hodim={hodim}
-              hrefFor={(who) =>
-                who ? `/admin/clients/${client.id}?hodim=${who}` : `/admin/clients/${client.id}`
-              }
+              hrefFor={(who) => cardHref({ hodim: who })}
             />
-            <CallsPanel clientId={client.id} />
+            <CallsPanel
+              clientId={client.id}
+              hodim={chodim}
+              hrefFor={(who) => cardHref({ chodim: who })}
+            />
           </>
         }
         rail={

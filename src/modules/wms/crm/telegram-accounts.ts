@@ -39,9 +39,61 @@ export async function saveAccount(input: {
         status: 'active',
         lastError: null,
         lastSeenAt: null,
+        // Every connect owes a fresh last-week pull (owner: «1 haftalik
+        // tarixi bilan tushsin yangi ulanganda») — including a REconnect,
+        // which is how the week an account spent signed out gets recovered.
+        historyBackfilledAt: null,
         updatedAt: new Date(),
       },
     });
+}
+
+/**
+ * Does this person hold a connected Telegram account — signed out not
+ * counting, because a signed-out row has no session and no chats to answer
+ * for. This is the tray's door (round 93): the person who decides whether a
+ * chat is a client, a lead or private is first of all the OWNER of the
+ * account it sits in, and for months the screen demanded `clients.manage`
+ * instead — so a seller's tray filled up where only the admin could see it
+ * (owner: «hodim o'zi tanlashi ... adminda chiqyapti, hodimda ko'rinmayapti»).
+ */
+export async function hasOwnTgAccount(userId: string): Promise<boolean> {
+  const row = await db.query.tgAccounts.findFirst({
+    columns: { id: true },
+    where: sql`${tgAccounts.managerUserId} = ${userId} AND ${tgAccounts.status} <> 'signed_out'`,
+  });
+  return Boolean(row);
+}
+
+/**
+ * May this person open the chat tray at all? Their own connected account is
+ * the ordinary door; `clients.manage` is the administrator's, kept so the
+ * owner can finish anybody's list. What each of them SEES stays scoped
+ * elsewhere — this only answers whether the screen opens.
+ */
+export async function mayDecideChats(actor: {
+  id: string;
+  permissions: Set<string>;
+}): Promise<boolean> {
+  if (actor.permissions.has('clients.manage')) return true;
+  return hasOwnTgAccount(actor.id);
+}
+
+/** The listener asks once per start; NULL means a connect still owes a pull. */
+export async function needsHistoryBackfill(accountId: string): Promise<boolean> {
+  const row = await db.query.tgAccounts.findFirst({
+    columns: { historyBackfilledAt: true },
+    where: eq(tgAccounts.id, accountId),
+  });
+  return Boolean(row) && row!.historyBackfilledAt === null;
+}
+
+/** Stamped only when the walk FINISHED — a listener killed mid-pull re-runs it. */
+export async function markHistoryBackfilled(accountId: string): Promise<void> {
+  await db
+    .update(tgAccounts)
+    .set({ historyBackfilledAt: new Date(), updatedAt: new Date() })
+    .where(eq(tgAccounts.id, accountId));
 }
 
 /**
