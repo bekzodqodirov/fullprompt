@@ -2000,5 +2000,46 @@
       "failed": "保存失败",
       "duplicate": "已有类似线索 — 请见下方。再次点击仍可创建。"
     }
+  },
+  "routing": {
+    "title": "线索分配",
+    "intro": "谁参与轮流接单、哪个广告来源分给谁。规则自上而下读取——第一条匹配的生效。",
+    "membersTitle": "轮流接单人员",
+    "membersHint": "勾选的人按顺序接收新线索：接得最少的人先接。",
+    "rulesTitle": "分配规则",
+    "noRules": "暂无规则——所有线索进入公共队列。",
+    "add": "规则",
+    "source": "来源",
+    "anySource": "任意来源",
+    "keyword": "文本关键词",
+    "keywordHint": "留空表示无条件",
+    "members": "分给谁",
+    "paused": "已停用",
+    "pause": "停用",
+    "resume": "启用",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "deleteConfirm": "删除该规则？其线索将按其余规则或公共队列分配。",
+    "fallbackNote": "不符合任何规则的线索进入公共队列。规则内所有人员被停用时同样如此。",
+    "errors": {
+      "forbidden": "权限不足",
+      "members_required": "请至少选择一名员工",
+      "route_not_found": "规则已被删除",
+      "key_required": "请输入问题名",
+      "field_invalid": "字段不合适——需要线索的启用文本字段或复选框",
+      "mapping_not_found": "已删除"
+    },
+    "minM3": "方数（从）",
+    "maxM3": "方数（到）",
+    "m3Hint": "留空为不限。带方数的规则仅在线索方数已知时生效。",
+    "mapTitle": "表单问题",
+    "mapHint": "广告表单会问自己的问题（«几方»、«仓库有货吗»）——在此一次性指定答案写入位置。未绑定前，答案作为备注留在动态里。",
+    "targetKub": "方数（m³）",
+    "targetKg": "重量（kg）",
+    "targetNote": "留在备注",
+    "mapStale": "近期未出现",
+    "mapUnmapped": "广告中出现的新问题",
+    "mapManual": "手动添加问题",
+    "mapKeyPlaceholder": "表单里的问题名"
   }
 }

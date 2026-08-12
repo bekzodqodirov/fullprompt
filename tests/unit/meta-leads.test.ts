@@ -131,7 +131,7 @@ describe('the advert form’s answers', () => {
       { name: 'full_name', values: ['Aziz Karimov'] },
       { name: 'phone_number', values: ['+998901234567'] },
     ]);
-    expect(fields).toEqual({ name: 'Aziz Karimov', phone: '+998901234567', note: null });
+    expect(fields).toEqual({ name: 'Aziz Karimov', phone: '+998901234567', note: null, fields: [] });
   });
 
   it('joins a split name', () => {
@@ -154,14 +154,18 @@ describe('the advert form’s answers', () => {
     ]);
     expect(fields.note).toContain('qanday_yuk: 2 kub kiyim');
     expect(fields.note).toContain('email: d@example.com');
+    // …and since round 97 the question ALSO travels as a pair — the
+    // tarjimon's raw material, beside the note line, never instead of it.
+    expect(fields.fields).toEqual([{ key: 'qanday_yuk', value: '2 kub kiyim' }]);
   });
 
   it('answers three nulls rather than throwing on rubbish', () => {
-    expect(mapFieldData(null)).toEqual({ name: null, phone: null, note: null });
+    expect(mapFieldData(null)).toEqual({ name: null, phone: null, note: null, fields: [] });
     expect(mapFieldData([{ name: 'phone', values: [] }])).toEqual({
       name: null,
       phone: null,
       note: null,
+      fields: [],
     });
   });
 });

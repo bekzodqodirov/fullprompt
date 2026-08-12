@@ -11,7 +11,7 @@ import { BOARD_SPACING, slotBetween } from './board-order';
  * and a module reaching for `db` cannot be imported by a client component.
  *
  * Generic over the TABLE rather than written twice: `leads` and `deals` carry
- * the same two columns under the same names (0073), and the funnel and the
+ * the same two columns under the same names (0075), and the funnel and the
  * deal board are one story the owner reads the same way. What genuinely
  * differs is how a column breaks a tie between two cards nobody has placed —
  * the funnel by when it was last touched, the deal board by when it was

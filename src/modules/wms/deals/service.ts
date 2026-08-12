@@ -144,7 +144,7 @@ export async function createDeal(input: DealInput, ctx: AuditContext): Promise<s
         note: input.note || null,
         createdBy: ctx.actorId!,
         // Top of its column, which is where a newly raised job has always
-        // appeared — see the funnel's own create (0073).
+        // appeared — see the funnel's own create (0075).
         boardOrder: await topOfColumn(tx, DEAL_BOARD, stageId),
       })
       .returning();
@@ -1030,7 +1030,7 @@ export interface DealRow {
   goodsExtra: number;
   deferred: boolean;
   createdAt: Date;
-  /** Where the owner put it in its column; null = nobody has (0073). */
+  /** Where the owner put it in its column; null = nobody has (0075). */
   boardOrder: number | null;
 }
 
@@ -1115,7 +1115,7 @@ export function dealBoardWhere(filters: DealBoardFilters) {
 export const OPEN_DEALS_PER_STAGE = 40;
 
 /**
- * The deal board's own board-order table (0073).
+ * The deal board's own board-order table (0075).
  *
  * The tie-break is `created_at DESC` and not `updated_at`, because that is
  * what this board has always sorted by: a deal is worked on for weeks and an
@@ -1204,7 +1204,7 @@ export async function listDeals(
     .innerJoin(clients, eq(deals.clientId, clients.id))
     .leftJoin(users, eq(deals.ownerId, users.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    // The owner's own order first (0073), «newest raised» only where nobody
+    // The owner's own order first (0075), «newest raised» only where nobody
     // has placed a card — and THE SAME two keys rank the per-stage cap above,
     // or the board sends forty cards and draws a different forty. The closed
     // slice is cut by `limit` and the numbers are per-column ranks, so what

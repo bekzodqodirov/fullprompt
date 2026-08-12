@@ -132,6 +132,76 @@ keyin taxta **aynan hozirgidek** ko'rinadi. Farq birinchi marta karta
 sudraganingizdan boshlanadi.
 
 Migratsiya: **0073**. Serverda migratsiyalar soni **74** ga yetishi kerak.
+## Forma savollari lead maydonlariga ulanadi — 2026-08-12
+
+Savolingiz bo'yicha: «reklama formasi har xil savol beradi — necha kub,
+bazada yuk bormi — buni leadga qanday ulayman?» Endi **Boshqaruv → Arizalar
+taqsimoti** ekranida uchinchi bo'lim bor: **«Forma savollari»**.
+
+- Reklamadan kelgan har bir savol NOMI ro'yxatda o'zi paydo bo'ladi (oxirgi
+  javob namunasi bilan). Har biriga bir marta aytasiz: bu — **kub**, bu —
+  **kg**, bu — **leadning maxsus maydoni** (masalan «Bazada yuk bor»
+  katakchasi), yoki «izohda qolsin». Shundan keyin javoblar kartaga o'zi
+  yoziladi. Savolni qo'lda ham qo'shsa bo'ladi — birinchi lead kelishini
+  kutish shart emas.
+- «Ha/yo'q» savollar katakcha-maydonga tushadi (ha/bor/да — hammasi
+  tushuniladi); raqamlar «5 kub», «10,5» ko'rinishida ham o'qiladi. Tushunib
+  bo'lmagan javob yo'qolmaydi — lentada izoh bo'lib qolaveradi.
+- **Taqsimot qoidalari endi kubni ham biladi**: «10 kubdan katta — shu
+  odamlarga» degan qoida qo'shasiz (qoida formasida ikkita yangi katak).
+  Kubi noma'lum ariza bunday qoidaga tushmaydi. /ariza formasining izohiga
+  «25 kub» deb yozilgan bo'lsa ham qoida o'qiy oladi.
+- Uzoq vaqt kelmay qo'ygan savol yonida ⚠ chiqadi — reklama agentligi
+  formani o'zgartirsa bog'lanish eskirganini shu yerdan bilasiz.
+- Yo'lda topilgan va tuzatilgan eski xatolik: sayt/Zapier webhook kaliti
+  tanada yuborilsa, u leadning lentasiga yozilib qolarkan — endi hech qaerga
+  yozilmaydi.
+
+## Arizalar taqsimoti: kim navbatda, qaysi oqim kimga — 2026-08-11 (kech)
+
+Sizning javoblaringiz bo'yicha (1a, 2a, 3): endi navbat ROL emas, **ODAM**
+bo'yicha, va reklama oqimlarini qoidalar bilan bo'lish mumkin. Hammasi bitta
+yangi ekranda: **Boshqaruv → Arizalar taqsimoti**.
+
+- **Navbat qatnashchilari** — hodimlar ro'yxati, katak bilan. Kim belgilangan
+  bo'lsa o'sha navbatda; o'zingizni olib tashlash — bitta katak («boyagi lead
+  admin»ga tushgani boshqa qaytarilmaydi). Rollar ekranidagi eski «Kelgan
+  arizalar navbati» katagi olib tashlandi — yangilanganda hozir belgilab
+  qo'ygan odamlaringiz avtomatik ko'chib o'tadi, hech narsa to'xtamaydi.
+- **Oqim qoidalari** — «instagramdan kelgani shu ikkovlonga», «matnida
+  ‹konteyner› bo'lsa falonchiga». Manba va/yoki matndagi so'z bo'yicha;
+  yuqoridan pastga o'qiladi, birinchi mos kelgani ishlaydi, tartibni ↑↓
+  bilan o'zgartirasiz. Bitta qoidada bir necha hodim bo'lsa, ular orasida
+  ham adolatli navbat (eng kam olgani oladi).
+- Hech bir qoidaga tushmagan ariza umumiy navbatga tushadi. Qoidadagi
+  hodimlarning hammasi ishdan chiqqan bo'lsa ham ariza egasiz qolmaydi —
+  umumiy navbatga qaytadi.
+- Mijoz kartasiga tushadigan savollar va ochiq leadga qo'shiladigan takroriy
+  murojaatlar avvalgidek o'z egasida qoladi — qoidalar faqat YANGI leadga
+  ishlaydi.
+
+Keyingi bosqich (kelishildi, hali qurilmadi): reklama formasining maydonlarini
+(kub, kg, shahar…) bizning lead maydonlariga bog'lash — shundan keyin «kubdan
+katta bo'lsa» degan qoidalar ham ishlaydi. Buni birga aniqlashtiramiz.
+
+## Facebook/Instagram reklama CRMga ulandi — 2026-08-11 (kech, serverda sozlash)
+
+Kod o'zgarmadi — round 83 da qurilgan eshik serverda jonli ishga tushirildi,
+chatda birga bosib o'tildi. Endi Meta'ning «Lead form» reklamasidan lead
+to'g'ridan-to'g'ri **Kelgan arizalar**ga va voronkaga tushadi, navbat bilan
+sotuvchiga biriktiriladi.
+
+- Yo'lda topilgan asosiy xato: token va obuna **boshqa sahifaga**
+  («Greenleaffamily») qilingan ekan — hamma tekshiruv yashil, lekin lead
+  kelmasdi. To'g'ri «Gsr logistics» sahifasiga qayta ulandi.
+- Token **doimiy** qilib olindi (`expires_at: 0`) — endi muddat tugab
+  leadlar jimgina to'xtab qolmaydi.
+- Ilova **Live/Published** qilindi; «Kelgan arizalar navbati» yoqildi.
+- Butun yo'l isbotlandi: imzolangan test xabar → navbat → Meta'dan leadni
+  o'qish → CRMda lead. Test lead voronkaga tushdi.
+- Sozlash yo'riqnomasi va tuzoqlari `docs/ADS.md` 3-bo'limga yozildi
+  (doimiy token olish, noto'g'ri sahifa tuzog'i, Testing Tool'ning
+  «Pending» injiqligi, o'z-o'zini sinash buyrug'i).
 
 ## Telegramdek chat: fayl, reply, «kimdan yuborilgan» va hamkasbga ko‘rsatish — 2026-08-11 (kech)
 

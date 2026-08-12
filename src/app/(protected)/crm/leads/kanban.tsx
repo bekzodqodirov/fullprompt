@@ -13,7 +13,7 @@ export type { KanbanStage };
 export interface KanbanLead {
   id: string;
   stageId: string;
-  /** Where the owner put it in its column; null = nobody has (0073). */
+  /** Where the owner put it in its column; null = nobody has (0075). */
   boardOrder: number | null;
   name: string;
   company: string | null;

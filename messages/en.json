@@ -2000,5 +2000,46 @@
       "failed": "Could not save",
       "duplicate": "A lead like this already exists — see below. Press again to create it anyway."
     }
+  },
+  "routing": {
+    "title": "Lead distribution",
+    "intro": "Who takes part in the rotation and which advert stream goes to whom. Rules are read top-down — the first match wins.",
+    "membersTitle": "Rotation members",
+    "membersHint": "Ticked people take incoming leads in turn: whoever has had the fewest takes the next.",
+    "rulesTitle": "Stream rules",
+    "noRules": "No rules — every lead goes to the general rotation.",
+    "add": "Rule",
+    "source": "Source",
+    "anySource": "Any source",
+    "keyword": "Word in the text",
+    "keywordHint": "Empty — no condition",
+    "members": "Assign to",
+    "paused": "paused",
+    "pause": "Pause",
+    "resume": "Resume",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "deleteConfirm": "Delete this rule? Its leads will follow the remaining rules or the general rotation.",
+    "fallbackNote": "A lead no rule claims goes to the general rotation of members. The same happens when every person in a rule is deactivated.",
+    "errors": {
+      "forbidden": "Not enough rights",
+      "members_required": "Pick at least one member of staff",
+      "route_not_found": "The rule is already deleted",
+      "key_required": "Type the question key",
+      "field_invalid": "The field does not fit — an active lead text field or checkbox is needed",
+      "mapping_not_found": "Already deleted"
+    },
+    "minM3": "Volume from",
+    "maxM3": "Volume to",
+    "m3Hint": "Empty — no limit. A volume rule fires only when the lead's volume is known.",
+    "mapTitle": "Form questions",
+    "mapHint": "An advert asks its own questions («how many m³», «goods in stock?») — here you say once where the answer goes. Until mapped, the answer stays on the feed as a note.",
+    "targetKub": "Volume (m³)",
+    "targetKg": "Weight (kg)",
+    "targetNote": "Keep in the note",
+    "mapStale": "not seen lately",
+    "mapUnmapped": "New questions from adverts",
+    "mapManual": "Add a question by hand",
+    "mapKeyPlaceholder": "the question key from the form"
   }
 }

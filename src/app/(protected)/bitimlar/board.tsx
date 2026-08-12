@@ -11,7 +11,7 @@ import { bulkMoveDealsAction, moveDealAction } from './actions';
 export interface BoardDeal {
   id: string;
   stageId: string;
-  /** Where the owner put it in its column; null = nobody has (0073). */
+  /** Where the owner put it in its column; null = nobody has (0075). */
   boardOrder: number | null;
   code: string;
   title: string | null;

@@ -40,7 +40,7 @@ export interface KanbanItem {
   id: string;
   stageId: string;
   /**
-   * Where the owner put this card in its column (migration 0073). NULL means
+   * Where the owner put this card in its column (migration 0075). NULL means
    * nobody has placed it, which sorts FIRST — the top, where a new card has
    * always appeared.
    */

@@ -1,4 +1,4 @@
--- The order the owner puts the cards in (round 96).
+-- The order the owner puts the cards in (round 96; minted as 0073, renumbered to 0075 on merge).
 --
 -- He: «cartni boshqa etapga otkazganda ularni tartibi ozgarib qolyabti qaysi
 -- ketma ketlikda qoysa usha saqlanib qoladgan qilsa boladimi?» — and he was

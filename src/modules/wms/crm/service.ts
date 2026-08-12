@@ -17,7 +17,7 @@ import { stageWrite } from './stage-law';
 import { orderForMove, topOfColumn, type BoardTable } from './board-place';
 
 /**
- * The funnel's own board-order table (0073).
+ * The funnel's own board-order table (0075).
  *
  * The tie-break is `updated_at DESC` because that is the order this board has
  * always shown, and it is what an unplaced card still falls back to — the
@@ -583,7 +583,7 @@ export async function convertLead(
       stageId,
       nextActionAt: null,
       nextActionNote: null,
-      // A conversion is an arrival in the won column like any other (0073).
+      // A conversion is an arrival in the won column like any other (0075).
       ...(stageId !== lead.stageId
         ? { boardOrder: await topOfColumn(db, LEAD_BOARD, stageId) }
         : {}),
@@ -785,7 +785,7 @@ export async function listLeads(
     .leftJoin(clients, eq(leads.clientId, clients.id))
     .where(where.length ? and(...where) : undefined)
     .orderBy(
-      // The owner's own order first (0073), «last touched» only where nobody
+      // The owner's own order first (0075), «last touched» only where nobody
       // has placed a card. THE SAME two keys rank the per-stage cap above — a
       // cap ordered differently from the board sends forty cards and then
       // draws a different forty, so a card dragged low would vanish rather

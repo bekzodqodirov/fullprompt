@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   clients,
@@ -8,11 +8,10 @@ import {
   leadIntakes,
   leadStages,
   leads,
-  roles,
-  userRoles,
   users,
 } from '@/modules/platform/db/schema';
-import { PHONE_CAP_PER_DAY, landInboundLead, nextInboundOwner } from '@/modules/wms/crm/inbound';
+import { PHONE_CAP_PER_DAY, landInboundLead } from '@/modules/wms/crm/inbound';
+import { nextInboundOwner } from '@/modules/wms/crm/routing';
 import { followUps } from '@/modules/wms/crm/service';
 import { clientFeed } from '@/modules/wms/crm/feed';
 import { createClient } from '@/modules/platform/clients/service';
@@ -38,28 +37,17 @@ const P2 = `+9989${STAMP}22`.slice(0, 13);
 const P3 = `+9989${STAMP}33`.slice(0, 13);
 const P4 = `+9989${STAMP}44`.slice(0, 13);
 
-let rotaRoleId = '';
 let sellerA = '';
 let sellerB = '';
 let outsiderId = '';
 let clientId = '';
 
 beforeAll(async () => {
-  const [role] = await db
-    .insert(roles)
-    .values({
-      code: `rota_${STAMP}`,
-      name: `Navbat ${STAMP}`,
-      isSystem: false,
-      // OFF to start with: the first thing this file asks is what happens when
-      // nobody is in the rotation, which is the state on the morning of the
-      // deploy.
-      inboundRota: false,
-    })
-    .returning({ id: roles.id });
-  rotaRoleId = role!.id;
-
-  const mint = async (suffix: string, roleId: string | null) => {
+  // Every mint starts OUTSIDE the rotation: the first thing this file asks is
+  // what happens when nobody is in it, which is the state on deploy morning.
+  // Membership is the PERSON's own flag since round 96 («hamma sotuvchi,
+  // lekin hamma lead bilan ishlamaydi») — no role carries it any more.
+  const mint = async (suffix: string) => {
     const [row] = await db
       .insert(users)
       .values({
@@ -69,14 +57,13 @@ beforeAll(async () => {
         active: true,
       })
       .returning({ id: users.id });
-    if (roleId) await db.insert(userRoles).values({ userId: row!.id, roleId });
     return row!.id;
   };
-  sellerA = await mint('01', rotaRoleId);
-  sellerB = await mint('02', rotaRoleId);
-  // Holds no rota role: the rotation must not reach him, and he is the one who
+  sellerA = await mint('01');
+  sellerB = await mint('02');
+  // Never ticked: the rotation must not reach him, and he is the one who
   // proves an unclaimed lead shows on somebody else's call list.
-  outsiderId = await mint('03', null);
+  outsiderId = await mint('03');
 
   // Authored by somebody who was already here: `audit_log` refuses DELETE by
   // database rule, so a user this file minted and then named as an actor could
@@ -101,10 +88,9 @@ afterAll(async () => {
   await db.delete(crmActivities).where(eq(crmActivities.entityId, clientId));
   await db.delete(leads).where(like(leads.name, `%${STAMP}%`));
   await db.delete(clients).where(eq(clients.id, clientId));
-  // A ROLE is configuration (#183): while it exists with the flag on it takes
-  // part in every rotation the next spec runs.
-  await db.delete(userRoles).where(eq(userRoles.roleId, rotaRoleId));
-  await db.delete(roles).where(eq(roles.id, rotaRoleId));
+  // A ticked user is configuration (#183): while the flag is on, this file's
+  // sellers take part in every rotation the next spec runs. Deleting them
+  // deletes the flag with them.
   await db.delete(users).where(like(users.fullName, `Sotuvchi %${STAMP}`));
   await pgClient.end();
 });
@@ -277,7 +263,10 @@ describe('a lead nobody typed', () => {
 
 describe('whose turn it is', () => {
   beforeAll(async () => {
-    await db.update(roles).set({ inboundRota: true }).where(eq(roles.id, rotaRoleId));
+    await db
+      .update(users)
+      .set({ inboundRota: true })
+      .where(inArray(users.id, [sellerA, sellerB]));
   });
 
   it('never reaches somebody who is not in the rotation', async () => {

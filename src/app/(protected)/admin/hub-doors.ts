@@ -49,6 +49,7 @@ export const HUB_DOORS: HubDoor[] = [
   { href: '/admin/driver-app', label: 'settings.driverApp', icon: 'truck', allow: ['admin.settings.manage'] },
   { href: '/admin/calls-app', label: 'settings.callsApp', icon: 'phone', allow: ['admin.settings.manage'] },
   { href: '/admin/rules', label: 'automation.title', icon: 'target', allow: ['admin.settings.manage'] },
+  { href: '/admin/taqsimot', label: 'routing.title', icon: 'user', allow: ['admin.settings.manage'] },
   { href: '/admin/audit', label: 'nav.audit', icon: 'clipboard', allow: ['admin.audit.browse'] },
   { href: '/admin/notifications', label: 'nav.notifications', icon: 'alert', allow: ['admin.audit.browse'] },
 ];

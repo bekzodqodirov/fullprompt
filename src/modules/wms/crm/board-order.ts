@@ -7,7 +7,7 @@
  * A and then B put B above A — and an ✏️ edit, an owner change or an
  * automation rule reshuffled a column nobody had touched at all.
  *
- * A card now carries a NUMBER (migration 0073) and a drop takes the midpoint
+ * A card now carries a NUMBER (migration 0075) and a drop takes the midpoint
  * between its two new neighbours: one row written per drag, whatever the
  * column's length. The cost of midpoints is that the gaps halve, so the rule
  * says when a column has to be renumbered — and says it HERE, once, because

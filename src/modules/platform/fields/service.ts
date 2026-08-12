@@ -253,8 +253,12 @@ export async function setFieldValues(
   entityId: string,
   raw: Record<string, unknown>,
   ctx: AuditContext,
+  // `system: true` = nobody pressed anything — an advert answered a mapped
+  // question (round 97). The same branch createLead and addActivity grew in
+  // round 83, for the same reason: leads arrive with no author now.
+  opts?: { system?: true },
 ): Promise<void> {
-  if (!ctx.actorId) throw new FieldError('unauthenticated');
+  if (!ctx.actorId && !opts?.system) throw new FieldError('unauthenticated');
   const fields = await listFields(entityType, true);
   const touched: Record<string, unknown> = {};
 

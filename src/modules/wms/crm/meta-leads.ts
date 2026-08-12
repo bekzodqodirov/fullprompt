@@ -103,6 +103,8 @@ export interface MetaLeadFields {
   name: string | null;
   phone: string | null;
   note: string | null;
+  /** The unrecognised questions as PAIRS — the tarjimon's raw material. */
+  fields: { key: string; value: string }[];
 }
 
 /**
@@ -112,7 +114,9 @@ export interface MetaLeadFields {
  * an agency's — so nothing may be assumed about them beyond the standard
  * prefixes Meta itself documents. A question we do not recognise is not thrown
  * away: it is written into the note, because «what did they ask for» is the
- * first thing the seller wants and the second thing the form was for.
+ * first thing the seller wants and the second thing the form was for — and
+ * since round 97 it ALSO travels as a pair, so a mapped question can land as
+ * a structured value beside its note line, never instead of it.
  */
 export function mapFieldData(fieldData: unknown): MetaLeadFields {
   let name: string | null = null;
@@ -120,6 +124,7 @@ export function mapFieldData(fieldData: unknown): MetaLeadFields {
   let lastName: string | null = null;
   let phone: string | null = null;
   const extras: string[] = [];
+  const fields: { key: string; value: string }[] = [];
 
   for (const field of asArray(fieldData)) {
     const key = (str(pick(field, 'name')) ?? '').toLowerCase();
@@ -135,7 +140,10 @@ export function mapFieldData(fieldData: unknown): MetaLeadFields {
     else if (key === 'last_name') lastName ??= value;
     else if (key.includes('phone')) phone ??= value;
     else if (key === 'email') extras.push(`email: ${value}`);
-    else extras.push(`${key}: ${value}`);
+    else {
+      extras.push(`${key}: ${value}`);
+      fields.push({ key, value });
+    }
   }
 
   const joined = [firstName, lastName].filter(Boolean).join(' ').trim();
@@ -143,6 +151,7 @@ export function mapFieldData(fieldData: unknown): MetaLeadFields {
     name: name ?? (joined || null),
     phone,
     note: extras.length ? extras.join('\n') : null,
+    fields,
   };
 }
 
