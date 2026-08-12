@@ -202,12 +202,21 @@ export async function updateLeadAction(
   });
 }
 
+/**
+ * `beforeId` is the DRAG saying where the card landed: the id of the card it
+ * must sit directly above, or `null` for the end of the column (round 96).
+ * `undefined` — every other door — means «say nothing about position», and
+ * the service puts the card at the top of wherever it arrived.
+ */
 export async function moveLeadAction(
   id: string,
   stageId: string,
   reason: string,
+  beforeId?: string | null,
 ): Promise<CrmFormState> {
-  return run('crm.leads', (ctx) => moveLead(id, stageId, reason, ctx));
+  return run('crm.leads', (ctx) =>
+    moveLead(id, stageId, reason, ctx, beforeId === undefined ? undefined : { beforeId }),
+  );
 }
 
 /**

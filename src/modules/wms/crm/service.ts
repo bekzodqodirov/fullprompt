@@ -14,6 +14,16 @@ import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
 import { likeNeedle, parseQuery } from '../search/query';
 import { stageWrite } from './stage-law';
+import { orderForMove, topOfColumn, type BoardTable } from './board-place';
+
+/**
+ * The funnel's own board-order table (0075).
+ *
+ * The tie-break is `updated_at DESC` because that is the order this board has
+ * always shown, and it is what an unplaced card still falls back to — the
+ * numbers took over the ordering, they did not change what «unordered» means.
+ */
+const LEAD_BOARD: BoardTable = { table: leads, tieBreak: sql`updated_at DESC` };
 
 /**
  * Phase 7 hears the funnel through this one door. Every path that changes a
@@ -367,6 +377,12 @@ export async function createLead(input: LeadInput, ctx: AuditContext, opts?: Sys
       nextActionAt: input.nextActionAt || null,
       nextActionNote: input.nextActionNote || null,
       createdBy: ctx.actorId,
+      // A new lead belongs at the top of its column — which is where it has
+      // always appeared, back when «top» only meant «most recently touched».
+      // Numbering it here rather than leaving it NULL keeps the whole column
+      // comparable, so the first card somebody drags past it lands where they
+      // dropped it instead of under everything unplaced.
+      boardOrder: await topOfColumn(db, LEAD_BOARD, stageId),
     })
     .returning();
   await writeAudit(db, ctx, {
@@ -424,6 +440,13 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     .set({
       ...values,
       ...(lostReason === undefined ? {} : { lostReason }),
+      // A stage changed from the ✏️ form is still an arrival: this door says
+      // nothing about position, so the card goes to the top of where it lands
+      // exactly as the board's own move does. Left alone otherwise — an
+      // ordinary save must not reshuffle the column somebody arranged.
+      ...(values.stageId !== before.stageId
+        ? { boardOrder: await topOfColumn(db, LEAD_BOARD, values.stageId) }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(leads.id, id))
@@ -475,12 +498,19 @@ export async function setLeadOwner(id: string, ownerId: string | null, ctx: Audi
  * A lost stage demands a reason — "why did we lose them" is the only thing
  * that makes a lost-deal list worth reading a year later — and moving back
  * out of lost clears it rather than leaving a stale explanation attached.
+ *
+ * `place` is the DRAG, and only the drag: it names the card the moved one
+ * landed above, so a drop inside one column is a real move (round 96, the
+ * owner's «qaysi ketma ketlikda qoysa usha saqlanib qoladgan»). Every other
+ * caller — the one-tap button, the ⋯ sheet, a bulk sweep, an automation rule,
+ * the cargo trigger — passes nothing and lands at the top of the destination.
  */
 export async function moveLead(
   id: string,
   stageId: string,
   reason: string,
   ctx: AuditContext,
+  place?: { beforeId: string | null },
 ) {
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const lead = await db.query.leads.findFirst({ where: eq(leads.id, id) });
@@ -490,18 +520,26 @@ export async function moveLead(
   const law = stageWrite(stage.kind, reason);
   if (!law.ok) throw new CrmError(law.reason);
 
+  const boardOrder = await orderForMove(db, LEAD_BOARD, stageId, id, place);
   await db
     .update(leads)
-    .set({ stageId, lostReason: law.lostReason, updatedAt: new Date() })
+    .set({ stageId, lostReason: law.lostReason, boardOrder, updatedAt: new Date() })
     .where(eq(leads.id, id));
-  await writeAudit(db, ctx, {
-    entityType: 'lead',
-    entityId: id,
-    action: 'update',
-    before: { stageId: lead.stageId },
-    after: { stageId, lostReason: law.lostReason },
-  });
-  if (stageId !== lead.stageId) await announceLeadStage(lead, stageId, ctx);
+  // Only a real move is a fact about the lead. A card dragged one place up its
+  // own column is a fact about how somebody likes to look at the board — the
+  // sidebar being collapsed, not the stage changing — and auditing it would
+  // write a row whose before equals its after, which the history renders as a
+  // change with no lines in it (#502).
+  if (stageId !== lead.stageId) {
+    await writeAudit(db, ctx, {
+      entityType: 'lead',
+      entityId: id,
+      action: 'update',
+      before: { stageId: lead.stageId },
+      after: { stageId, lostReason: law.lostReason },
+    });
+    await announceLeadStage(lead, stageId, ctx);
+  }
 }
 
 /**
@@ -537,13 +575,18 @@ export async function convertLead(
 
   const stages = await listStages();
   const won = stages.find((stage) => stage.kind === 'won');
+  const stageId = won?.id ?? lead.stageId;
   await db
     .update(leads)
     .set({
       clientId: client.id,
-      stageId: won?.id ?? lead.stageId,
+      stageId,
       nextActionAt: null,
       nextActionNote: null,
+      // A conversion is an arrival in the won column like any other (0075).
+      ...(stageId !== lead.stageId
+        ? { boardOrder: await topOfColumn(db, LEAD_BOARD, stageId) }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(leads.id, id));
@@ -707,7 +750,8 @@ export async function listLeads(
       SELECT id FROM (
         SELECT ${leads.id} AS id,
                row_number() OVER (
-                 PARTITION BY ${leads.stageId} ORDER BY ${leads.updatedAt} DESC
+                 PARTITION BY ${leads.stageId}
+                 ORDER BY ${leads.boardOrder} ASC NULLS FIRST, ${leads.updatedAt} DESC
                ) AS rn
         FROM ${leads}
         INNER JOIN ${leadStages} ON ${leadStages.id} = ${leads.stageId}
@@ -741,12 +785,24 @@ export async function listLeads(
     .leftJoin(clients, eq(leads.clientId, clients.id))
     .where(where.length ? and(...where) : undefined)
     .orderBy(
-      // Closed cards are cut by `limit`, so the ORDER decides which ones
-      // survive: newest first, or the slice on the board would be whichever
-      // leads happen to sit in the earliest column.
+      // The owner's own order first (0075), «last touched» only where nobody
+      // has placed a card. THE SAME two keys rank the per-stage cap above — a
+      // cap ordered differently from the board sends forty cards and then
+      // draws a different forty, so a card dragged low would vanish rather
+      // than sink (#513's rule wearing a slice's clothes).
+      //
+      // The closed half is cut by `limit`, so its order also decides which
+      // cards survive. Round 47 sorted it by date to stop the slice being
+      // «whichever leads sit in the earliest column» — and the numbers are
+      // per-column ranks, so that stays true: what arrives is the top of
+      // every closed column rather than all of one.
       ...(filters.closedOnly
-        ? [desc(leads.updatedAt)]
-        : [asc(leadStages.sortOrder), desc(leads.updatedAt)]),
+        ? [sql`${leads.boardOrder} ASC NULLS FIRST`, desc(leads.updatedAt)]
+        : [
+            asc(leadStages.sortOrder),
+            sql`${leads.boardOrder} ASC NULLS FIRST`,
+            desc(leads.updatedAt),
+          ]),
     )
     .limit(filters.limit ?? 300);
 }

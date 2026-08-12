@@ -1,5 +1,137 @@
 # CHANGELOG
 
+## Yuk qabulida rasm: topildi va tuzatildi — 2026-08-12
+
+Sizning xabaringiz: «yuk qabul qilganda rasimni kirgizgandan keyin prixodga
+ruxsat chiqmayabti».
+
+### Nima bo'lgan edi
+
+Rasmni kichraytiradigan dastur **har bir rasm uchun chet eldagi serverdan
+(`cdn.jsdelivr.net`) o'zini yuklab olishga urinar ekan**. Ya'ni skladchi
+rasmni qo'yadi — telefon avval chet el serveriga ulanishga urinadi, va faqat
+shundan keyin rasm siqiladi va yuboriladi.
+
+O'lchab ko'rdim: bu konteynerda internet yo'q, **12.7 soniya** kutdi, keyin
+xato berdi va o'zi boshqa yo'l bilan davom etdi. **Xitoyda esa u server
+umuman ochilmaydi** — Yiwu, Guanjou, Qashqar, ya'ni aynan yuk qabul
+qilinadigan joylar. O'sha yerda skladchi kutadi, ekranda hech narsa
+o'zgarmaydi, «Tasdiqlash» tugmasi kulrangligicha qoladi va **sabab ham
+yozilmaydi**.
+
+### Nima qilindi
+
+1. **Chet el serveriga murojaat butunlay olib tashlandi.** Endi o'sha dastur
+   bizning o'z serverimizdan olinadi. O'lchov: **12.7 soniya → 0.5 soniya**,
+   va internetga hech qanday so'rov ketmaydi. Ilova telefonga o'rnatilgan
+   bo'lsa, u hatto **internetsiz** ham ishlaydi (oflayn keshga tushadi).
+
+2. **Ekran endi gapiradi.** Rasm yuborilayotganda:
+   - 📷 tugma **⏳** ga aylanadi va yangi rasm olmaydi (ikki marta bosib
+     yubormaslik uchun);
+   - pastda **«Rasm yuborilmoqda…»** yozuvi chiqadi;
+   - «Tasdiqlash» shu paytda bosilmaydi — aks holda prixod rasmsiz yopilib
+     ketishi mumkin edi.
+
+   Ilgari bu yerda **hech narsa** yozilmasdi — shuning uchun sekin telefonda
+   ekran o'lgandek ko'rinardi.
+
+3. Bu tuzatish **uchala joyda** ishlaydi: yuk qabuli, karta ilovalari va
+   «egasiga qaytarish».
+
+### Bir muhim narsa
+
+Bizda **11 raunddan beri** «bu konteynerda rasm xizmati yo'q» deb yozib
+qo'yilgan, doim yiqiladigan 4 ta test bor edi. Ular yolg'on emas ekan —
+**aynan shu xatoni ko'rsatib turgan ekan**. Tuzatgandan keyin **to'rttasi
+ham o'tdi**. Ya'ni bu muammo yangi emas, faqat Xitoydagi tarmoqda ochiq
+ko'rinib qolgan.
+
+### Shu bilan birga: yana 5 ta nuqson
+
+Xuddi shu ekranni **43 ta tekshiruvchi** bilan chuqur audit qildim. Ular
+mening tashxisimni mustaqil tasdiqladi va bir muhim narsani qo'shdi:
+
+**Nega ilgari ishlagan edi?** Chunki o'sha chet el fayli telefon keshida
+saqlanib qolgan edi. **Yangilanish keshni tozalaydi** — shuning uchun aynan
+deploydan keyin ochilib qoldi. Yangi telefonda ham xuddi shunday bo'lardi.
+
+Yana topilgan va tuzatilganlari:
+
+1. **Bitta uzilish butun kunni buzardi.** Agar deploydan keyingi birinchi
+   rasm yuklashda fayl ombori (MinIO) bir soniyaga javob bermasa, tizim uni
+   «tekshirdim» deb belgilab qo'yar va **konteyner qayta ishga tushmaguncha
+   hamma rasm yuklanmay qolardi**. Endi bunday emas.
+2. **Yuklangan rasm «yuklanmadi» deb ko'rsatilardi.** Rasm serverga tushib
+   bo'lgan, bazaga ham yozilgan — lekin ichki navbat xizmati qoqilsa, ekranda
+   xato chiqardi. Skladchi rasmni qaytadan olardi va prixodda **ikkita bir xil
+   rasm** qolardi.
+3. **Bitta rasmni o'chirsa, ikkitasi o'chib ketishi mumkin edi** — o'chirish
+   paytida yangi rasm kelib qolsa.
+4. **Xato matnlari yolg'on gapirardi.** Har qanday nosozlik uchun «aloqani
+   tekshiring» deb yozilardi. Endi seans tugagan bo'lsa «qaytadan kiring»,
+   server aybdor bo'lsa «administratorga ayting» deb yozadi.
+5. **Rasm yuklash cheksiz kutardi.** Endi 2 daqiqadan keyin to'xtaydi va
+   sababini aytadi (ilgari ekran shunchaki qotib turardi).
+
+### Bazaga
+
+Hech narsa o'zgarmadi — bu faqat brauzer va server kodidagi tuzatish.
+
+## Kanban: kartalar tartibi saqlanib qoladi, ustunlar balandroq — 2026-08-11 (kech)
+
+Sizning ikkita gapingiz: «cartni boshqa etapga otkazganda ularni tartibi
+ozgarib qolyabti» va «etaplarning boyi balandroq bolsin pcda … scroll chiqib
+qolyabti yonidan shu korinishi kerak emas».
+
+### 1. Qaysi tartibda qo'ysangiz — o'sha turadi
+
+Ilgari ustun ichidagi tartibni **tizim** hal qilardi: «oxirgi tegilgani
+tepada». Shuning uchun A ni ko'chirsangiz, keyin B ni ko'chirsangiz — B
+A dan tepaga chiqib qolardi. Faqat ko'chirish emas: kartani ✏️ dan
+tahrirlasangiz ham, egasini almashtirsangiz ham, avtomatik qoida
+ishlasa ham — hech kim tegmagan ustun qayta aralashib ketardi.
+
+Endi tartib **sizniki**:
+
+- **Kompyuterda** kartani sichqoncha bilan tortasiz va **xohlagan
+  joyingizga qo'yasiz** — ustun ichida ham, boshqa ustunga ham. Tortayotgan
+  paytingizda qayerga tushishini ko'rsatib turadigan **qizil chiziqcha**
+  chiqadi.
+- **Telefonda** kartaning **⋯** tugmasini bosasiz — eng tepada
+  **«↑ Yuqoriga»** va **«↓ Pastga»** paydo bo'ldi. (Telefonda barmoq bilan
+  tortish ataylab yo'q — buni siz ikki marta rad etgansiz.)
+- Sahifani yangilasangiz ham, ertaga kirsangiz ham — **o'sha tartib**.
+
+O'zgarmagan narsalar, ataylab:
+
+- **Yangi karta hamon eng tepada** paydo bo'ladi.
+- Kartani **«Keyingi bosqich»** tugmasi yoki **⋯ → etap nomi** bilan
+  ko'chirsangiz, u yangi ustunning **tepasiga** tushadi — ilgarigidek.
+  Ya'ni «qo'lda qo'yish» faqat siz sudrab qo'yganingizda ishlaydi.
+- Ustun ichida kartani ko'tarib-tushirish **tarixga yozilmaydi** va
+  avtomatik qoidalarni **uyg'otmaydi** — bu ish emas, bu sizning
+  ko'rinishingiz. Etapdan etapga ko'chirish esa avvalgidek yoziladi.
+
+Ikkala kanbanda ham ishlaydi: **lidlar (Voronka)** va **bitimlar**.
+
+### 2. Kompyuterda ustunlar balandroq, yonidagi scroll ko'rinmaydi
+
+- Ustunning bo'yi **588 → 652 piksel** (bitimlarda 540 → 604) — bir dona
+  to'liq karta ko'proq sig'adi. Bu bo'sh joy edi: taxta pastdan
+  67 piksel yetmay turardi.
+- Karta ko'payib ketganda ustun yonida chiqib turadigan **kulrang
+  scroll chizig'i endi ko'rinmaydi**. Ustun **baribir scroll bo'ladi** —
+  sichqoncha g'ildiragi bilan, avvalgidek.
+
+### 3. Bazaga o'zgarish
+
+Yangi ustun: `board_order`. **Eski ma'lumot buzilmaydi** — hamma
+kartaga bugungi tartib bo'yicha raqam qo'yib chiqiladi, ya'ni yangilanishdan
+keyin taxta **aynan hozirgidek** ko'rinadi. Farq birinchi marta karta
+sudraganingizdan boshlanadi.
+
+Migratsiya: **0073**. Serverda migratsiyalar soni **74** ga yetishi kerak.
 ## Forma savollari lead maydonlariga ulanadi — 2026-08-12
 
 Savolingiz bo'yicha: «reklama formasi har xil savol beradi — necha kub,

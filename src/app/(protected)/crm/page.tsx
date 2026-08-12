@@ -331,6 +331,7 @@ export default async function LeadsPage({
         leads={rows.map(({ lead, sourceName, ownerName, clientCode }) => ({
           id: lead.id,
           stageId: lead.stageId,
+          boardOrder: lead.boardOrder,
           name: lead.name,
           company: lead.company,
           phone: lead.phone,

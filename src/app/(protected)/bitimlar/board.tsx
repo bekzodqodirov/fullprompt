@@ -11,6 +11,8 @@ import { bulkMoveDealsAction, moveDealAction } from './actions';
 export interface BoardDeal {
   id: string;
   stageId: string;
+  /** Where the owner put it in its column; null = nobody has (0075). */
+  boardOrder: number | null;
   code: string;
   title: string | null;
   clientCode: string;
@@ -79,8 +81,8 @@ export function DealBoard({
         cardTestId="deal-card"
         selection={{ store: selection, label: tl('select') }}
         hrefOf={(deal) => `/bitimlar/${deal.id}`}
-        onMove={async (id, stageId, reason) => {
-          const result = await moveDealAction(id, stageId, reason);
+        onMove={async (id, stageId, reason, beforeId) => {
+          const result = await moveDealAction(id, stageId, reason, beforeId);
           return { ok: Boolean(result.ok), error: result.error };
         }}
         labels={{
@@ -93,6 +95,8 @@ export function DealBoard({
           moveErrors,
           showAll: tcrm('showAll'),
           nextStage: t('nextStage'),
+          moveUp: tcrm('moveUp'),
+          moveDown: tcrm('moveDown'),
         }}
         // The same five slots as the funnel card, so a person who works both
         // boards in one hour forms ONE habit for where each thing lives.

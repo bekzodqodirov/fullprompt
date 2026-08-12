@@ -91,6 +91,14 @@ pnpm build && pnpm e2e  # 44 e2e
   and it refuses to send it. Bind an ISO string with `::timestamptz` (#156).
 - **A JS array bound into a raw `sql` fragment** does not become a postgres
   array. Use `inArray`/`notInArray`, or `sql.join`.
+- **A dependency may fetch ITSELF from a CDN at runtime.**
+  `browser-image-compression` builds a Web Worker that `importScripts` the
+  library from `cdn.jsdelivr.net` on every photo — 12.7 s of silence here, and
+  unreachable in the Chinese warehouses where the cargo is received (#664).
+  Pinned by `tests/unit/vendored-lib.test.ts`: the copy in `public/vendor/`
+  must be byte-identical to the installed package, and `compress-photo.ts`
+  must be the ONLY importer. Sweep the built bundle for foreign hosts before
+  adding any browser library: `grep -rhoE "https://[a-z.]+/" .next/static/`.
 - **Tailwind only compiles classes it can literally see** — a colour class built
   at runtime does not exist. Hence lookup maps like `STAGE_CLASS`.
 - **Playwright file names carry the run order** and sort lexicographically, so
@@ -136,15 +144,22 @@ OTHER session); #28 = the VPS move's three defects; #30 = the seller's money
 scope and the split thread; #31 = the history's place, the logout door and the
 agent sheet by truck; #32 = the tray's door, the connect-time week and the
 calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
-«javob kutmoqda», then files/reply/forward/share). This branch carries the
-**Meta go-live docs** (PR #34) and **round 96** (taqsimot); everything before
-them is merged.
-1389 unit/integration green after round 96 (the four known
-photo-path specs — m1×2, m2×1, m9h — plus m9z-nav-progress stay locally red
-here; CI is the arbiter).
-Latest migration: **0074** (`lead_field_map` — the tarjimon, `lead_intakes.fields`
-and the routes' kub window; 0073 `inbound_routing` — `users.inbound_rota` backfilled
-from the role flag, plus `inbound_routes`;
+«javob kutmoqda», then files/reply/forward/share); **#34 = the Meta go-live
+docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97). This
+branch carries **rounds 96-97 of THIS session** — the board's manual card order
+with taller desktop columns, then the receive screen's photo — on top of #34;
+everything before them is merged.
+1386 unit/integration + 154 e2e here. **The four «known failing» photo-path
+specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
+had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
+Latest migration: **0075** (`board_order` — where the owner put a card in its
+column, on `leads` AND `deals`, backfilled from the order the board showed the
+day it deployed; **renumbered from 0073 on merge, the NINTH collision** — the
+other session took 0073 `inbound_routing` and 0074 `lead_field_map` with the
+same `when`, so mine also had to move its timestamp, not just its name;
+0074 `lead_field_map` — the tarjimon, `lead_intakes.fields` and the routes'
+kub window; 0073 `inbound_routing` — `users.inbound_rota` backfilled from the
+role flag, plus `inbound_routes`;
 0072 `tg_reply_forward` — which message a reply quotes,
 and who a message was forwarded from; 0071 `tg_chat_reads` — how far a manager
 has read a Telegram dialog, so «javob kutmoqda» can stop lying;
@@ -186,16 +201,23 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HE DEPLOYED AGAIN — 2026-08-11** («pull qilib deploy qildim, 71 chiqdi»):
-the live server sits at **71** (0070 the tail), so the deploy habit held.
-Since then `main` merged #33 (0071 + 0072) and this branch adds 0073 + 0074,
-so the next update needs **75**. The same day, in chat, **Meta Lead Ads went live in
-production**: correct page subscribed, app published, permanent token
-(`expires_at: 0`) in the server `.env`, a test lead landed in the funnel
-end-to-end — the road and its traps are `docs/ADS.md` §3 and DECISIONS #659.
+**HIS SERVER IS AT 75, AND THIS BRANCH TAKES IT TO 76.** He deployed
+`main` on 2026-08-12 (Meta go-live + the taqsimot + the tarjimon), which is
+journal length **75**. He then reported the receive screen's photo defect,
+pulled `main` again looking for the fix and found nothing — because **this
+branch was never merged**: `git pull` on production takes `main`, and rounds
+96-97 of THIS session live only on `claude/frappe-crm-full-prompt-vempoq`.
+RULE, learned the expensive way: **telling him to deploy is telling him to
+merge first.** After PR #35 is merged: `git pull`, `docker compose build app`,
+`docker compose run --rm migrate` → **76**. The backfill in 0075 touches every
+`leads` and `deals` row once and is written so a re-run is a no-op.
+The same week, in chat, **Meta Lead Ads went live in production**: correct page
+subscribed, app published, permanent token (`expires_at: 0`) in the server
+`.env`, a test lead landed in the funnel end-to-end — the road and its traps
+are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**75** with this branch, 73 on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**76** with this branch, 75 on `main` today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2473,6 +2495,98 @@ integration (mapped landing beside note lines, poisoned-answer ledger
 survival + replay fence, volume routing incl. the /ariza text fallback,
 seen/decided keys). Red-proofs ×2. 1400 unit/integration green on fresh
 gsr_ci in CI's order.
+
+Round 96 (this session) — the board's own order, and the height it was wasting (#664-668,
+owner: «cartni boshqa etapga otkazganda ularni tartibi ozgarib qolyabti qaysi
+ketma ketlikda qoysa usha saqlanib qoladgan qilsa boladimi?» → «2 ni qil»
+= full drag-to-position, + «etaplarning boyi balandroq bolsin pcda … scroll
+chiqib qolyabti yonidan shu korinishi kerak emas»). A column was ordered
+`updated_at DESC` (deals `created_at DESC`), so moving A then B put B above A
+and an ✏️ edit, an owner change or an automation reshuffled a column nobody
+had touched. Migration **0075** `board_order double precision` on BOTH tables
+(minted as 0073 and renumbered on merge — the other session took that number
+the same day, with the same `when`, so the timestamp moved too),
+**backfilled from the order the board showed that day** (`row_number() OVER
+(PARTITION BY stage_id …) * 1000`), so the deploy changes nothing visible and
+the first drag is the first difference; NULL stays legal and READS as «nobody
+placed this» = sorts FIRST = where a new card has always appeared, so a write
+path that forgets the column degrades to the old behaviour. A drop takes the
+MIDPOINT of its two neighbours (one row per drag, not 4,500). **The per-stage
+cap had to learn the same ORDER BY** or a card dragged low VANISHES instead of
+sinking — forty fetched by date, a different forty drawn by hand (#513 wearing
+a slice's clothes); the closed slice moved too and keeps round 47's promise by
+different means (per-column ranks → the top of every closed column, not all of
+one). `place` is the DRAG's and nobody else's: the one-tap button, the ⋯ sheet,
+bulk, rules and the cargo trigger all pass nothing and get `topOfColumn` = «it
+just arrived», so not one existing behaviour moved; the board's `move()` still
+refuses a same-column PRESS and allows a same-column DROP because only the drop
+carries a landing place. **A pure re-order writes no audit row and emits no
+stage event** — it is the sidebar being collapsed, not a fact about the lead
+(#502's empty-diff row, and «entered stage X» must not fire on a card that
+entered nothing). The arithmetic is PURE (`crm/board-order.ts`, zero imports)
+because the browser does it too: a card that snaps back for Uzbekistan's third
+of a second reads as a refused drag, so the board keeps an optimistic
+`ordering` map filled with the same midpoint the server is about to compute.
+`'renumber'` is the server's alone (`renumberColumn`, one UPDATE per stage) and
+covers both «gaps exhausted» and «unplaced cards» — one sentence twice. PHONE:
+↑ / ↓ in the ⋯ sheet, disabled at the ends (the touch drag stays refused,
+#510). HEIGHT, measured before touching it at 1280×800: the board stopped
+**67 px** short of the window on /crm and 69 on /bitimlar, 32 px of which is
+the layout's `md:pb-8` and needs `md:-mb-8` (the vertical `-mx-4`) to spend
+without the page growing a scrollbar (#354) — `10rem`→`6rem` + `-mb-8` =
+**588→652** / 540→604, a whole extra funnel card. `.no-scrollbar` on the column
+box only (eight bars arriving and leaving between eight columns); it still
+scrolls. Red-proofs ×4 (cap ORDER BY, board ORDER BY, `place` ignored, the
+browser's `beforeId` dropped → the desktop e2e drag goes red). 9 unit + 10
+integration + e2e m9zm (4 mobile) and m9zm-desktop (2, incl. the geometry).
+1383 unit/integration + 152 e2e on a fresh-db CI-order run; screenshots at
+1280×800 (board, and a drag in flight with the drop line) and 360×800 (the
+sheet's ↑↓, document 360 wide).
+
+Round 97 (this session) — the receive screen's photo, and eleven rounds of a believed excuse
+(#669-671, owner: «yuk qabul qilganda rasimni kirgizgandan keyin prixodga
+ruxsat chiqmayabti»). `browser-image-compression` runs in a Web Worker and the
+worker does not CONTAIN the library — it `importScripts` it from
+**cdn.jsdelivr.net at runtime, on every photograph**. So `addPhotos` awaits a
+57 KB third-party download before compressing a byte, and until it resolves
+there is no thumbnail, no error, and a confirm button that stays grey because
+`lotsValid()` wants a photo. Measured here (no route to the public internet):
+**12.7 s** to fail, then a silent fall-back — FLAT across photo sizes and
+barely moved by a 4× CPU throttle, which is what proved it a wait and not a
+computation. In Yiwu/Guangzhou/Kashgar, where every receipt is created,
+jsDelivr is not reliably reachable at all. Fix = `libURL` → `public/vendor/`
+(byte-identical copy, pinned by `tests/unit/vendored-lib.test.ts`, and the
+build's service worker PRECACHES it so it works with no network at all):
+**0.5 s, zero foreign requests.** Red-proven by deleting the line and watching
+both come back. **THE FOUR «known failing» photo specs were this** — dismissed
+since round 57 as «no image service in this container», a sentence invented to
+explain a red test and then believed because it was written down; all four pass
+now (5 local failures → 1). RULE: an explanation for a failing test that nobody
+has re-run against the failure is a guess with a citation. Second half, because
+a fixed slow path is still a silent one: `busyLots` is a COUNTER per lot (the
+📷 takes several files), the tile goes ⏳ and refuses another, the sticky bar
+says «Rasm yuborilmoqda…» INSTEAD of «no photo yet» (both leave the button
+grey; only one is the operator's to act on), confirm is disabled while anything
+is in flight, and the decrement is in `finally` or a refusal leaves the screen
+stuck on «working». Also swept: the built client bundle reaches NO other
+foreign host (the OSM basemap is already self-hosted). Three new i18n keys ×4.
+No migration. **The 43-agent adversarial sweep this round launched confirmed
+the diagnosis independently and made it WORSE** (#672): here the connection is
+REFUSED, so the library falls back after 12.7 s and merely gets slow — a
+connection that HANGS matches neither of `compressOnWebWorker`'s two exits and
+there is no timeout in it, so the promise **never resolves** (proven by holding
+the route open). That is what a blocked host in China does, and it also
+explains «it worked before»: the service worker's StaleWhileRevalidate bucket
+matches `/\.(?:js)$/i`, so a phone that had fetched the script once kept
+working from cache, and the deploy that reinstalled the worker took the cache
+away. Four more fixed from the same sweep: `ensureBucket` latched on SILENCE
+(one storage blip after a deploy → every upload skips the check until the
+container restarts; it now latches on an ANSWER, any status); a pg-boss hiccup
+500'd an upload already committed to storage AND the database (the operator
+re-took the photo → two on the receipt); deleting one photo wrote back a
+render-time `photoIds` snapshot and took any photo that landed meanwhile;
+and the upload had no deadline at ANY layer — survivable while the screen was
+silent, not once it shows ⏳ (120 s + a sentence).
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

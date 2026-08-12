@@ -140,12 +140,16 @@ export async function bulkMoveDealsAction(
   return { ok: failed === 0, done, failed, ...(error ? { error } : {}) };
 }
 
+/** `beforeId`: see `moveLeadAction` — the drag's landing place, and only its. */
 export async function moveDealAction(
   id: string,
   stageId: string,
   reason: string,
+  beforeId?: string | null,
 ): Promise<DealFormState> {
-  return run((ctx) => moveDeal(id, stageId, ctx, reason));
+  return run((ctx) =>
+    moveDeal(id, stageId, ctx, reason, beforeId === undefined ? undefined : { beforeId }),
+  );
 }
 
 /**

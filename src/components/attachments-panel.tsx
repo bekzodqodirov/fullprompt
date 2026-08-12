@@ -1,6 +1,6 @@
 'use client';
 
-import imageCompression from 'browser-image-compression';
+import { compressPhoto } from '@/components/compress-photo';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
@@ -71,11 +71,11 @@ export function AttachmentsPanel({
     try {
       for (const file of Array.from(files)) {
         const isImage = file.type.startsWith('image/');
-        const body = isImage
-          ? await imageCompression(file, { maxSizeMB: 0.3, maxWidthOrHeight: 1600, useWebWorker: true })
-          : file;
+        // A photo is shrunk before it leaves the phone; anything else — an
+        // invoice, a declaration — goes up as it is.
+        const body = isImage ? await compressPhoto(file) : file;
         const formData = new FormData();
-        formData.set('file', new File([body], file.name, { type: body.type || file.type }));
+        formData.set('file', body);
         formData.set('entityType', entityType);
         formData.set('entityId', entityId);
         const res = await fetch('/api/files/upload', { method: 'POST', body: formData });

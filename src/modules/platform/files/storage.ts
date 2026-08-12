@@ -12,6 +12,18 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 /**
+ * Did the object store ANSWER, or did nothing come back at all?
+ *
+ * The AWS SDK carries the service's HTTP status on every error it was given
+ * one for; a refused connection, a DNS failure or a timeout carries none.
+ * That is the difference between «the store is up and said no» and «the store
+ * is not there», and `ensureBucket` is the one place it decides something.
+ */
+function answeredStatus(err: unknown): number | undefined {
+  return (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+}
+
+/**
  * Storage abstraction (spec 4.8): S3/MinIO in production, local disk in dev
  * environments without object storage. All reads go through signed URLs.
  */
@@ -45,17 +57,35 @@ class S3Driver implements StorageDriver {
 
   private ensured = false;
 
-  /** Fresh MinIO ships without our bucket — create it on first write. */
+  /**
+   * Fresh MinIO ships without our bucket — create it on first write.
+   *
+   * The latch is set only when this process has actually SEEN the bucket.
+   * It used to be set unconditionally, so a storage blip during the first
+   * upload after a deploy — MinIO still starting, a network hiccup — latched
+   * «ensured» on a failure and every upload for the life of the container
+   * then went straight to a `put` against a bucket nobody had confirmed.
+   * The cure was restarting the app, which is not a thing a warehouse knows
+   * to do at seven in the morning (round 97).
+   */
   private async ensureBucket(): Promise<void> {
     if (this.ensured) return;
     try {
       await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
-    } catch {
-      // On real AWS restricted creds may forbid CreateBucket — ignore and let
-      // the actual put surface the error if the bucket truly doesn't exist.
-      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket })).catch(() => {});
+      this.ensured = true;
+      return;
+    } catch (err) {
+      // The store ANSWERED — 403 from restricted AWS creds, 404 for a bucket
+      // that is genuinely missing. Either way it is up, so the latch may close
+      // and the `put` that follows says whether the bucket works. A network
+      // error carries no status: nothing answered, and latching on that is
+      // what wedged the container.
+      const answered = typeof answeredStatus(err) === 'number';
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket })).catch((e) => {
+        if (!answered && typeof answeredStatus(e) !== 'number') throw e;
+      });
+      this.ensured = true;
     }
-    this.ensured = true;
   }
 
   /**

@@ -140,6 +140,7 @@ export default async function DealsPage({
     return {
       id: row.id,
       stageId: row.stageId,
+      boardOrder: row.boardOrder,
       code: row.code,
       title: row.title,
       goods: row.goods,

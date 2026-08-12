@@ -1,6 +1,6 @@
 'use client';
 
-import imageCompression from 'browser-image-compression';
+import { compressPhoto } from '@/components/compress-photo';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
@@ -95,6 +95,15 @@ export interface ArrivalPrefill {
 
 const DRAFT_KEY = 'gsr-receipt-draft';
 
+/**
+ * The busy slot the two RECEIPT-level uploaders share (round 97).
+ *
+ * A lot's spinner is keyed by its own id; the general box photos and the
+ * receipt's files belong to no lot and sit on the same card, so one key for
+ * both is what the eye expects — and a uuid cannot collide with it.
+ */
+const RECEIPT_SLOT = 'receipt';
+
 function newLot(): LotDraft {
   return {
     id: uuidv4(),
@@ -185,6 +194,21 @@ export function ReceiveWizard({
   const [searching, setSearching] = useState(false);
   const [letterPreview, setLetterPreview] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  /**
+   * How many photographs are being shrunk and sent RIGHT NOW, per lot.
+   *
+   * The screen used to say nothing at all between «I chose a photo» and «a
+   * thumbnail appeared», and that gap is where the owner's report lives: on a
+   * warehouse phone it was thirteen seconds and more, so the operator saw a
+   * dead screen, a confirm button that stayed grey, and no reason for either.
+   * A counter rather than a boolean because the 📷 takes several files at
+   * once, and the last one to land must be the one that clears it.
+   */
+  const [busyLots, setBusyLots] = useState<Record<string, number>>({});
+  const photoBusy = (lotId: string) => (busyLots[lotId] ?? 0) > 0;
+  const anyPhotoBusy = Object.values(busyLots).some((n) => n > 0);
+  const markBusy = (lotId: string, delta: 1 | -1) =>
+    setBusyLots((current) => ({ ...current, [lotId]: Math.max(0, (current[lotId] ?? 0) + delta) }));
   const [result, setResult] = useState<SubmitReceiptResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -329,16 +353,55 @@ export function ReceiveWizard({
   const warehouse = warehouses.find((w) => w.id === draft.warehouseId);
   const defaultCurrency = warehouse?.country === 'CN' ? 'CNY' : 'USD';
 
-  /** Server rejection → human message (file type / size), not just "failed". */
+  /**
+   * Server rejection → human message (file type / size), not just "failed".
+   *
+   * The fall-through used to be «check the connection» for EVERY answer the
+   * route gave, which sends the operator — and whoever they telephone — in the
+   * wrong direction. The one that matters is 401: on a deploy morning a
+   * session can expire while the page still looks signed in, and the screen
+   * was telling a warehouse with perfect wifi that its wifi was broken
+   * (round 97). A 5xx is ours, and saying so is what gets it reported.
+   */
   async function uploadErrorText(res: Response): Promise<string> {
+    if (res.status === 401 || res.status === 403) return t('photoUploadSignedOut');
     try {
       const body = (await res.json()) as { error?: string };
       if (body.error === 'unsupported_type') return t('fileTypeUnsupported');
       if (body.error === 'too_large') return t('fileTooLarge');
     } catch {
-      /* non-JSON reply — fall through to the generic message */
+      /* non-JSON reply — fall through */
     }
+    if (res.status >= 500) return t('photoUploadServer');
     return t('photoUploadFailed');
+  }
+
+  /**
+   * The upload, with an end to it.
+   *
+   * Nothing between the browser and MinIO imposes a deadline — not `fetch`,
+   * not the route, not the S3 client — so a wedged object store used to leave
+   * the request hanging for as long as the operator was willing to stare at
+   * it. That was survivable while the screen said nothing; now that it shows
+   * ⏳ it would show ⏳ for ever, and a spinner that never stops is a worse lie
+   * than no spinner at all.
+   *
+   * Two minutes: long enough for a large photograph over a bad warehouse
+   * connection, short enough that the operator gets a sentence and a retry
+   * rather than a shift.
+   */
+  async function uploadWithDeadline(formData: FormData): Promise<Response> {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 120_000);
+    try {
+      return await fetch('/api/files/upload', {
+        method: 'POST',
+        body: formData,
+        signal: abort.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function removeAttachment(id: string, apply: () => void) {
@@ -365,22 +428,14 @@ export function ReceiveWizard({
     if (!files?.length) return;
     setError(null);
     for (const file of Array.from(files)) {
+      markBusy(lot.id, 1);
       try {
-        const compressed = await imageCompression(file, {
-          maxSizeMB: 0.3,
-          maxWidthOrHeight: 1600,
-          useWebWorker: true,
-        });
+        const compressed = await compressPhoto(file);
         const formData = new FormData();
-        formData.set(
-          'file',
-          new File([compressed], file.name || 'photo.jpg', {
-            type: compressed.type || 'image/jpeg',
-          }),
-        );
+        formData.set('file', compressed);
         formData.set('entityType', 'receipt_lot');
         formData.set('entityId', lot.id);
-        const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+        const res = await uploadWithDeadline(formData);
         if (res.ok) {
           const { id } = (await res.json()) as { id: string };
           setDraft((d) =>
@@ -398,6 +453,11 @@ export function ReceiveWizard({
         }
       } catch {
         setError(t('photoUploadFailed'));
+      } finally {
+        // In `finally`, not after the write: a refusal or a dropped connection
+        // must clear the spinner too, or the screen is stuck on «working» and
+        // the operator is back where this round started.
+        markBusy(lot.id, -1);
       }
     }
   }
@@ -406,16 +466,15 @@ export function ReceiveWizard({
     if (!files?.length) return;
     setError(null);
     for (const file of Array.from(files)) {
+      markBusy(RECEIPT_SLOT, 1);
       try {
         const isImage = file.type.startsWith('image/');
-        const body = isImage
-          ? await imageCompression(file, { maxSizeMB: 0.3, maxWidthOrHeight: 1600, useWebWorker: true })
-          : file;
+        const body = isImage ? await compressPhoto(file) : file;
         const formData = new FormData();
-        formData.set('file', new File([body], file.name, { type: body.type || file.type }));
+        formData.set('file', body);
         formData.set('entityType', 'receipt');
         formData.set('entityId', draft!.receiptId);
-        const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+        const res = await uploadWithDeadline(formData);
         if (res.ok) {
           const { id } = (await res.json()) as { id: string };
           const item = {
@@ -430,6 +489,8 @@ export function ReceiveWizard({
         }
       } catch {
         setError(t('photoUploadFailed'));
+      } finally {
+        markBusy(RECEIPT_SLOT, -1);
       }
     }
   }
@@ -438,22 +499,14 @@ export function ReceiveWizard({
     if (!files?.length) return;
     setError(null);
     for (const file of Array.from(files)) {
+      markBusy(RECEIPT_SLOT, 1);
       try {
-        const compressed = await imageCompression(file, {
-          maxSizeMB: 0.3,
-          maxWidthOrHeight: 1600,
-          useWebWorker: true,
-        });
+        const compressed = await compressPhoto(file);
         const formData = new FormData();
-        formData.set(
-          'file',
-          new File([compressed], file.name || 'photo.jpg', {
-            type: compressed.type || 'image/jpeg',
-          }),
-        );
+        formData.set('file', compressed);
         formData.set('entityType', 'receipt');
         formData.set('entityId', draft!.receiptId);
-        const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+        const res = await uploadWithDeadline(formData);
         if (res.ok) {
           const { id } = (await res.json()) as { id: string };
           setDraft((d) => (d ? { ...d, generalPhotoIds: [...d.generalPhotoIds, id] } : d));
@@ -462,6 +515,8 @@ export function ReceiveWizard({
         }
       } catch {
         setError(t('photoUploadFailed'));
+      } finally {
+        markBusy(RECEIPT_SLOT, -1);
       }
     }
   }
@@ -609,15 +664,30 @@ export function ReceiveWizard({
   );
 
   function photosField(lot: LotDraft) {
+    const busy = photoBusy(lot.id);
     return (
       <div className="flex flex-wrap items-center gap-1.5">
-        <label className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-dashed border-line-strong text-base hover:bg-surface-sunken">
-          📷
+        {/* While a photo is on its way the tile says so and stops taking
+            another. Silence here was the whole defect: a photograph off a
+            warehouse phone takes seconds to shrink and send, and a tile that
+            looks exactly the same before and during reads as «my tap did
+            nothing» — so the operator taps again, and again. */}
+        <label
+          data-testid="lot-photo-tile"
+          aria-busy={busy}
+          className={`flex h-9 w-9 items-center justify-center rounded-md border border-dashed text-base ${
+            busy
+              ? 'animate-pulse cursor-wait border-brand-500 bg-brand-50'
+              : 'cursor-pointer border-line-strong hover:bg-surface-sunken'
+          }`}
+        >
+          {busy ? '⏳' : '📷'}
           <input
             type="file"
             accept="image/*"
             capture="environment"
             multiple
+            disabled={busy}
             className="hidden"
             onChange={(e) => addPhotos(lot, e.target.files)}
           />
@@ -627,9 +697,25 @@ export function ReceiveWizard({
             key={photoId}
             attachmentId={photoId}
             className="h-9 w-9 rounded-md object-cover"
+            // Read the list at the moment the DELETE lands, not at render:
+            // `lot.photoIds` is this render's snapshot, so a photo that
+            // finished uploading while the ✕ was in flight was written back
+            // out of existence — the operator deletes one picture and loses
+            // two, with nothing to say so (round 97).
             onDelete={() =>
               removeAttachment(photoId, () =>
-                updateLot(lot.id, { photoIds: lot.photoIds.filter((id) => id !== photoId) }),
+                setDraft((d) =>
+                  d
+                    ? {
+                        ...d,
+                        lots: d.lots.map((l) =>
+                          l.id === lot.id
+                            ? { ...l, photoIds: l.photoIds.filter((id) => id !== photoId) }
+                            : l,
+                        ),
+                      }
+                    : d,
+                ),
               )
             }
           />
@@ -891,22 +977,37 @@ export function ReceiveWizard({
           </div>
         </div>
       </details>
+      {/* The same busy rule as a lot's 📷: these two live on the receipt rather
+          than on a line, so they share one slot. Half a fix here would be the
+          original defect wearing the other two tiles. */}
       <div data-testid="receipt-files-row" className="flex flex-wrap items-center gap-1.5">
-        <label className="btn-secondary !min-h-10 cursor-pointer gap-1.5 px-3 text-sm">
-          📷 {t('generalPhotos')}
+        <label
+          aria-busy={photoBusy(RECEIPT_SLOT)}
+          className={`btn-secondary !min-h-10 gap-1.5 px-3 text-sm ${
+            photoBusy(RECEIPT_SLOT) ? 'animate-pulse cursor-wait' : 'cursor-pointer'
+          }`}
+        >
+          {photoBusy(RECEIPT_SLOT) ? '⏳' : '📷'} {t('generalPhotos')}
           <input
             data-testid="general-photo-input"
             type="file"
             accept="image/*"
             capture="environment"
             multiple
+            disabled={photoBusy(RECEIPT_SLOT)}
             className="hidden"
             onChange={(e) => addGeneralPhotos(e.target.files)}
           />
         </label>
-        <label className="btn-secondary !min-h-10 cursor-pointer gap-1.5 px-3 text-sm">
-          📎 {t('attachments')}
+        <label
+          aria-busy={photoBusy(RECEIPT_SLOT)}
+          className={`btn-secondary !min-h-10 gap-1.5 px-3 text-sm ${
+            photoBusy(RECEIPT_SLOT) ? 'animate-pulse cursor-wait' : 'cursor-pointer'
+          }`}
+        >
+          {photoBusy(RECEIPT_SLOT) ? '⏳' : '📎'} {t('attachments')}
           <input
+            disabled={photoBusy(RECEIPT_SLOT)}
             type="file"
             multiple
             className="hidden"
@@ -1196,10 +1297,22 @@ export function ReceiveWizard({
 
       {/* ===== Sticky totals + confirm ===== */}
       <div className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface-raised shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
-        {(!clientChosen || !lotsValid()) && (
-          <p className="mx-auto max-w-4xl px-4 pt-1.5 text-xs font-semibold text-warn">
-            ⚠️ {firstProblem()}
+        {/* «A photo is still going up» beats «you have not added a photo»:
+            both leave the button grey, and only one of them is the operator's
+            to do something about. */}
+        {anyPhotoBusy ? (
+          <p
+            data-testid="photo-uploading"
+            className="mx-auto max-w-4xl animate-pulse px-4 pt-1.5 text-xs font-semibold text-brand-700"
+          >
+            ⏳ {t('photoUploading')}
           </p>
+        ) : (
+          (!clientChosen || !lotsValid()) && (
+            <p className="mx-auto max-w-4xl px-4 pt-1.5 text-xs font-semibold text-warn">
+              ⚠️ {firstProblem()}
+            </p>
+          )
         )}
         <div className="mx-auto flex max-w-4xl items-center gap-4 px-4 py-2.5">
           <div className="whitespace-nowrap text-sm leading-tight">
@@ -1212,7 +1325,10 @@ export function ReceiveWizard({
             type="button"
             data-testid="confirm-receipt"
             className="btn-primary flex-1 disabled:opacity-50"
-            disabled={submitting || !clientChosen || !lotsValid()}
+            // …and never while a photograph is still on its way: confirming
+            // now would file the receipt without the picture that is seconds
+            // from landing on it.
+            disabled={submitting || anyPhotoBusy || !clientChosen || !lotsValid()}
             onClick={confirm}
           >
             {submitting ? tc('loading') : `✅ ${t('confirm')}`}

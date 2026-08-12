@@ -5,6 +5,7 @@ import {
   check,
   type AnyPgColumn,
   date,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -1104,11 +1105,19 @@ export const leads = pgTable(
     createdBy: uuid('created_by').references(() => users.id),
     /** Set when a machine created it; what the inbound rotation counts. */
     inboundAt: timestamp('inbound_at', { withTimezone: true }),
+    /**
+     * Where the card sits in its column, by the owner's own hand (0075).
+     *
+     * NULL means nobody has placed it, which sorts FIRST — the top of the
+     * column, where a brand-new lead has always appeared.
+     */
+    boardOrder: doublePrecision('board_order'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index('leads_stage_idx').on(t.stageId),
+    index('leads_board_order_idx').on(t.stageId, t.boardOrder),
     index('leads_owner_idx').on(t.ownerId),
     index('leads_person_idx').on(t.personId),
     index('leads_next_action_idx').on(t.nextActionAt),
@@ -1363,10 +1372,13 @@ export const deals = pgTable(
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
+    /** See `leads.boardOrder` — the same column, the same rule (0075). */
+    boardOrder: doublePrecision('board_order'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    index('deals_board_order_idx').on(t.stageId, t.boardOrder),
     check(
       'deals_quote_currency_check',
       sql`(${t.quotedAmount} IS NULL) OR (${t.quotedCurrency} IS NOT NULL)`,

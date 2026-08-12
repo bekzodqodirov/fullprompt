@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import type { Selection as SelectionStore } from '@/components/list/selection';
+import { compareBoardOrder, slotBetween } from '@/modules/wms/crm/board-order';
 import { stageClass } from '@/app/(protected)/crm/stage-color';
 
 /**
@@ -38,6 +39,12 @@ export interface KanbanStage {
 export interface KanbanItem {
   id: string;
   stageId: string;
+  /**
+   * Where the owner put this card in its column (migration 0075). NULL means
+   * nobody has placed it, which sorts FIRST — the top, where a new card has
+   * always appeared.
+   */
+  boardOrder: number | null;
 }
 
 export interface KanbanLabels {
@@ -66,6 +73,9 @@ export interface KanbanLabels {
    * drawn in the stage's own colours so it reads as a place, not a headline.
    */
   nextStage: string;
+  /** «Yuqoriga» / «Pastga» — the phone's ordering, the drag it cannot do. */
+  moveUp: string;
+  moveDown: string;
 }
 
 /** Below this the gesture is a scroll or a tap, not a drag. */
@@ -80,7 +90,19 @@ interface BoardProps<T extends KanbanItem> {
   labels: KanbanLabels;
   renderCard: (item: T) => ReactNode;
   hrefOf: (item: T) => string;
-  onMove: (id: string, stageId: string, reason: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * `beforeId` is the DRAG's answer: the card the moved one landed directly
+   * above, or `null` for the end of the column. Omitted by every other door —
+   * the one-tap button and the ⋯ sheet's stage list say nothing about
+   * position, and the service then puts the card at the top of where it
+   * arrived, which is what those buttons have always done.
+   */
+  onMove: (
+    id: string,
+    stageId: string,
+    reason: string,
+    beforeId?: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
   /** Distinguishes the two boards in the e2e without a second selector scheme. */
   cardTestId?: string;
   /**
@@ -128,6 +150,16 @@ export function KanbanBoard<T extends KanbanItem>({
   archiveHref,
 }: BoardProps<T>) {
   const [placement, setPlacement] = useState<Record<string, string>>({});
+  /**
+   * The optimistic ORDER, beside the optimistic column (round 96).
+   *
+   * A card dropped one place up its own column changes no stage, so
+   * `placement` alone would leave it looking exactly where it was until the
+   * server answered — a third of a second from Uzbekistan (round 45), which
+   * reads as a drag that was refused. The number is computed with the SAME
+   * `slotBetween` the service uses, so the guess and the answer agree.
+   */
+  const [ordering, setOrdering] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   // ONE move sheet for both shapes. It used to live inside the phone view,
   // which was fine while the desktop board's only way to move a card was a
@@ -143,8 +175,25 @@ export function KanbanBoard<T extends KanbanItem>({
   if (rendered !== items) {
     setRendered(items);
     setPlacement({});
+    setOrdering({});
   }
   const stageOf = useCallback((item: T) => placement[item.id] ?? item.stageId, [placement]);
+  const orderOf = useCallback((item: T) => ordering[item.id] ?? item.boardOrder, [ordering]);
+
+  /**
+   * One column's cards, in the order the board draws them.
+   *
+   * Both shapes ask this, and the ⋯ sheet asks it too so «Yuqoriga» knows
+   * which card is above. The comparator answers 0 for two unplaced cards and
+   * `sort` is stable, so the server's own ORDER BY survives underneath.
+   */
+  const columnOf = useCallback(
+    (stageId: string) =>
+      items
+        .filter((item) => stageOf(item) === stageId)
+        .sort((a, b) => compareBoardOrder(orderOf(a), orderOf(b))),
+    [items, stageOf, orderOf],
+  );
 
   /**
    * Move a card, optimistically. Shared by the drag board and the phone's move
@@ -152,9 +201,13 @@ export function KanbanBoard<T extends KanbanItem>({
    * has to say why, and refusing the prompt leaves the card alone.
    */
   const move = useCallback(
-    async (item: T, stageId: string) => {
+    async (item: T, stageId: string, beforeId?: string | null) => {
       const stage = stages.find((row) => row.id === stageId);
-      if (!stage || stage.id === (placement[item.id] ?? item.stageId)) return;
+      if (!stage) return;
+      // Without a landing place a same-column move is not a move at all —
+      // that is the button's refusal and it stays. WITH one it is a reorder,
+      // which is the whole of this round.
+      if (beforeId === undefined && stage.id === (placement[item.id] ?? item.stageId)) return;
 
       let reason = '';
       if (stage.kind === 'lost') {
@@ -162,11 +215,36 @@ export function KanbanBoard<T extends KanbanItem>({
         if (reason.trim().length < 2) return;
       }
 
+      // The number the server is about to compute, computed here from the
+      // neighbours already on screen. They are the database's neighbours too:
+      // the per-stage cap takes a prefix of this very order.
+      let slot: number | undefined;
+      if (beforeId !== undefined) {
+        const column = columnOf(stageId).filter((row) => row.id !== item.id);
+        const at = beforeId === null ? column.length : column.findIndex((r) => r.id === beforeId);
+        if (at >= 0) {
+          const guess = slotBetween(
+            at > 0 ? (orderOf(column[at - 1]!) ?? null) : null,
+            at < column.length ? (orderOf(column[at]!) ?? null) : null,
+          );
+          // 'renumber' is the server's job — it is the one that can write the
+          // whole column. Here it just means «no better guess than the order
+          // already on screen», so nothing is claimed.
+          if (guess !== 'renumber') slot = guess;
+        }
+      }
+
       setPlacement((current) => ({ ...current, [item.id]: stageId }));
+      if (slot !== undefined) setOrdering((current) => ({ ...current, [item.id]: slot }));
       setError(null);
-      const result = await onMove(item.id, stageId, reason);
+      const result = await onMove(item.id, stageId, reason, beforeId);
       if (!result.ok) {
         setPlacement((current) => {
+          const next = { ...current };
+          delete next[item.id];
+          return next;
+        });
+        setOrdering((current) => {
           const next = { ...current };
           delete next[item.id];
           return next;
@@ -178,7 +256,7 @@ export function KanbanBoard<T extends KanbanItem>({
         setError(result.error ?? 'failed');
       }
     },
-    [placement, stages, labels.lostReason, onMove],
+    [placement, stages, labels.lostReason, onMove, columnOf, orderOf],
   );
 
   const counts = Object.fromEntries(
@@ -189,10 +267,10 @@ export function KanbanBoard<T extends KanbanItem>({
   );
   const view = {
     stages,
-    items,
     counts,
     hidden,
     archiveHref,
+    columnOf,
     stageOf,
     move,
     labels,
@@ -201,6 +279,30 @@ export function KanbanBoard<T extends KanbanItem>({
     cardTestId,
     selection,
     setSheetFor,
+  };
+
+  /**
+   * The sheet's ↑ / ↓ — the drag, for a machine that has no mouse.
+   *
+   * The desktop board's reorder is a mouse gesture and stays one (the owner
+   * refused a touch drag twice, #510), so the phone needs its own door or the
+   * order is a thing only half the company can set. Up means «above the card
+   * currently above me», down means «below the one below me», both expressed
+   * in the same `beforeId` the drag sends.
+   */
+  const nudge = (item: T, direction: -1 | 1) => {
+    const column = columnOf(placement[item.id] ?? item.stageId);
+    const at = column.findIndex((row) => row.id === item.id);
+    if (at < 0) return;
+    const target = at + direction;
+    if (target < 0 || target >= column.length) return;
+    setSheetFor(null);
+    // Down is «past the card below», so the landing place is the one AFTER it.
+    void move(
+      item,
+      column[at]!.stageId,
+      direction < 0 ? column[target]!.id : (column[target + 1]?.id ?? null),
+    );
   };
 
   return (
@@ -231,6 +333,30 @@ export function KanbanBoard<T extends KanbanItem>({
             className="pb-safe max-h-[80vh] w-full space-y-1.5 overflow-y-auto rounded-t-2xl bg-surface-raised p-4 md:mx-auto md:mb-auto md:mt-24 md:max-w-sm md:rounded-2xl"
             onClick={(event) => event.stopPropagation()}
           >
+            {/* Ordering FIRST, and separated: it acts inside the column the
+                card is already in, while everything under it takes the card
+                somewhere else. Both are disabled at the ends rather than
+                hidden — a control that appears and disappears under the thumb
+                is a different button every time the sheet opens. */}
+            <div className="flex gap-1.5 pb-1.5">
+              {([-1, 1] as const).map((direction) => {
+                const column = columnOf(placement[sheetFor.id] ?? sheetFor.stageId);
+                const at = column.findIndex((row) => row.id === sheetFor.id);
+                const stuck = direction < 0 ? at <= 0 : at < 0 || at >= column.length - 1;
+                return (
+                  <button
+                    key={direction}
+                    type="button"
+                    disabled={stuck}
+                    data-testid={direction < 0 ? 'card-up' : 'card-down'}
+                    onClick={() => nudge(sheetFor, direction)}
+                    className="btn-secondary flex-1 disabled:opacity-40"
+                  >
+                    {direction < 0 ? '↑' : '↓'} {direction < 0 ? labels.moveUp : labels.moveDown}
+                  </button>
+                );
+              })}
+            </div>
             <p className="section-title">{labels.moveTo}</p>
             {stages
               .filter((stage) => stage.id !== (placement[sheetFor.id] ?? sheetFor.stageId))
@@ -251,7 +377,11 @@ export function KanbanBoard<T extends KanbanItem>({
                   {stage.name}
                 </button>
               ))}
-            <button type="button" onClick={() => setSheetFor(null)} className="btn-secondary w-full">
+            <button
+              type="button"
+              onClick={() => setSheetFor(null)}
+              className="btn-secondary w-full"
+            >
               {labels.cancelMove}
             </button>
           </div>
@@ -263,12 +393,13 @@ export function KanbanBoard<T extends KanbanItem>({
 
 interface ViewProps<T extends KanbanItem> {
   stages: KanbanStage[];
-  items: T[];
   counts: Record<string, number>;
   hidden: Record<string, number>;
   archiveHref?: string;
+  /** One column's cards, in the order the board draws them (round 96). */
+  columnOf: (stageId: string) => T[];
   stageOf: (item: T) => string;
-  move: (item: T, stageId: string) => void | Promise<void>;
+  move: (item: T, stageId: string, beforeId?: string | null) => void | Promise<void>;
   labels: KanbanLabels;
   renderCard: (item: T) => ReactNode;
   hrefOf: (item: T) => string;
@@ -325,11 +456,10 @@ function SelectBox({
  */
 function StageView<T extends KanbanItem>({
   stages,
-  items,
   counts,
   hidden,
   archiveHref,
-  stageOf,
+  columnOf,
   move,
   labels,
   renderCard,
@@ -440,7 +570,7 @@ function StageView<T extends KanbanItem>({
         className="-mx-4 flex h-[calc(100dvh-12rem-var(--board-extra,0px))] min-h-[18rem] snap-x snap-mandatory gap-3 overflow-x-auto px-4"
       >
         {stages.map((stage) => {
-          const inStage = items.filter((item) => stageOf(item) === stage.id);
+          const inStage = columnOf(stage.id);
           const nextStage = stages[stages.indexOf(stage) + 1];
           return (
             <section
@@ -556,10 +686,10 @@ function StageView<T extends KanbanItem>({
  */
 function DragBoard<T extends KanbanItem>({
   stages,
-  items,
   counts,
   hidden,
   archiveHref,
+  columnOf,
   stageOf,
   move,
   labels,
@@ -569,8 +699,18 @@ function DragBoard<T extends KanbanItem>({
   selection,
   setSheetFor,
 }: ViewProps<T>) {
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overStage, setOverStage] = useState<string | null>(null);
+  // The ITEM, not just its id: the ghost renders the card being carried, and
+  // hunting it back out of a list the board no longer holds was the only
+  // reason this component ever wanted the flat `items` array.
+  const [dragItem, setDragItem] = useState<T | null>(null);
+  const dragId = dragItem?.id ?? null;
+  /**
+   * Where the card would land: the column, and the card it would sit above
+   * (null = the end of that column). One piece of state, because a column
+   * without a slot and a slot without a column are both meaningless.
+   */
+  const [drop, setDrop] = useState<{ stageId: string; beforeId: string | null } | null>(null);
+  const overStage = drop?.stageId ?? null;
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
 
   const boardRef = useRef<HTMLDivElement>(null);
@@ -585,18 +725,41 @@ function DragBoard<T extends KanbanItem>({
 
   const cleanup = useCallback(() => {
     stopScrolling();
-    setDragId(null);
-    setOverStage(null);
+    setDragItem(null);
+    setDrop(null);
     setGhost(null);
     start.current = null;
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
 
-  /** Which column is under the pointer right now. */
-  const stageUnder = (x: number, y: number) => {
+  /**
+   * Which column, and WHERE IN IT, is under the pointer right now.
+   *
+   * The card the pointer is over decides the slot by its own midpoint: above
+   * the middle means «in front of this one», below means «behind it», which
+   * is the rule every list that can be reordered has used since before there
+   * were browsers. Over a column but over no card at all — the empty space
+   * under the last one — is the end.
+   *
+   * The ghost is `pointer-events-none`, so `elementFromPoint` reads the board
+   * underneath it rather than the thing being carried. The dragged card
+   * ITSELF is still in the flow at 30 % opacity and can be the answer: that
+   * is correct, and it resolves to «where it already is».
+   */
+  const dropUnder = (x: number, y: number) => {
     const element = document.elementFromPoint(x, y);
-    return element?.closest<HTMLElement>('[data-stage-id]')?.dataset.stageId ?? null;
+    const stageId = element?.closest<HTMLElement>('[data-stage-id]')?.dataset.stageId ?? null;
+    if (!stageId) return null;
+    const card = element?.closest<HTMLElement>('[data-card-id]') ?? null;
+    if (!card) return { stageId, beforeId: null };
+    const box = card.getBoundingClientRect();
+    if (y < box.top + box.height / 2) return { stageId, beforeId: card.dataset.cardId! };
+    // Not `nextElementSibling`: the drop line, the empty-column sentence and
+    // the «+N» archive link are siblings too, so the walk asks for a CARD.
+    let next = card.nextElementSibling as HTMLElement | null;
+    while (next && !next.dataset.cardId) next = next.nextElementSibling as HTMLElement | null;
+    return { stageId, beforeId: next?.dataset.cardId ?? null };
   };
 
   const edgeScroll = (x: number) => {
@@ -629,7 +792,7 @@ function DragBoard<T extends KanbanItem>({
 
   const onPointerMove = (event: React.PointerEvent, item: T) => {
     if (event.pointerType !== 'mouse') return;
-    
+
     if (!start.current) return;
     const dx = event.clientX - start.current.x;
     const dy = event.clientY - start.current.y;
@@ -638,25 +801,25 @@ function DragBoard<T extends KanbanItem>({
     if (dragId !== item.id) {
       if (moved < MOVE_THRESHOLD) return;
       dragged.current = true;
-      setDragId(item.id);
-      setOverStage(stageOf(item));
+      setDragItem(item);
+      setDrop({ stageId: stageOf(item), beforeId: item.id });
       (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
     }
 
     event.preventDefault();
     setGhost({ x: event.clientX, y: event.clientY });
-    setOverStage(stageUnder(event.clientX, event.clientY));
+    setDrop(dropUnder(event.clientX, event.clientY));
     edgeScroll(event.clientX);
   };
 
   const onPointerUp = (item: T) => {
-    const target = overStage;
+    const target = drop;
     const wasDragging = dragId === item.id;
     cleanup();
-    if (wasDragging && target) void move(item, target);
+    // `beforeId` travels even when the column did not change: a drop inside
+    // one column IS the move now, which is what this round is for.
+    if (wasDragging && target) void move(item, target.stageId, target.beforeId);
   };
-
-  const dragItem = items.find((item) => item.id === dragId) ?? null;
 
   return (
     <>
@@ -668,7 +831,20 @@ function DragBoard<T extends KanbanItem>({
         // pastidan scroll chiqib qolmasdi" — the amoCRM shape). The page
         // never grows below the board, so its scrollbar disappears; a long
         // column scrolls inside itself with the header staying put.
-        className="-mx-4 h-[calc(100dvh-10rem-var(--board-extra,0px))] min-h-[20rem] overflow-x-auto px-4"
+        //
+        // 10rem → 6rem (round 96, «etaplarning boyi balandroq bolsin pcda ular
+        // uzunroq koproq karta korinsin»). MEASURED at 1280×800 rather than
+        // guessed: the board ended 67 px above the window's bottom on /crm and
+        // 69 px on /bitimlar, and everything above it — app bar, toolbar, the
+        // deal board's fold, this hint — is content somebody asked for.
+        //
+        // 32 px of that gap is the layout's `md:pb-8`, which clears the phone's
+        // tab bar and on a desktop board clears nothing at all. `-mb-8` eats it
+        // the way `-mx-4` already eats the side padding, so the height can
+        // spend it without the page growing a scrollbar under a board built not
+        // to have one (#354). Together: **588 → 652 px** on /crm and 540 → 604
+        // on /bitimlar, which is a whole extra funnel card in every column.
+        className="-mx-4 h-[calc(100dvh-6rem-var(--board-extra,0px))] min-h-[20rem] overflow-x-auto px-4 md:-mb-8"
         // While a card is in the air the board must not pan under it: the
         // pointer is already down, so the browser would otherwise treat the
         // same gesture as a scroll.
@@ -676,8 +852,17 @@ function DragBoard<T extends KanbanItem>({
       >
         <div className="flex h-full gap-3">
           {stages.map((stage) => {
-            const inStage = items.filter((item) => stageOf(item) === stage.id);
+            const inStage = columnOf(stage.id);
             const isTarget = dragId !== null && overStage === stage.id;
+            /** The line the card would drop onto — drawn above this card. */
+            const marker = (id: string | null) =>
+              isTarget && drop?.beforeId === id && drop.beforeId !== dragId ? (
+                <div
+                  data-testid="drop-marker"
+                  className="h-0.5 rounded-full bg-brand-500"
+                  aria-hidden
+                />
+              ) : null;
             return (
               <section
                 key={stage.id}
@@ -696,32 +881,40 @@ function DragBoard<T extends KanbanItem>({
                   <span className="ml-2 opacity-70">{counts[stage.id]}</span>
                 </header>
                 {/* pb-24: same spare scroll as the phone board — the bulk
-                    bar floats over the column bottom on desktop too. */}
-                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 pb-24">
+                    bar floats over the column bottom on desktop too.
+                    `no-scrollbar`: the owner, on a column that had filled up,
+                    «scroll chiqib qolyabti yonidan shu korinishi kerak emas»
+                    — a bar between every two columns, eight times across the
+                    board. It still scrolls, by wheel and by drag. */}
+                <div className="no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-2 pb-24">
                   {inStage.map((item) => (
-                    <Link
-                      key={item.id}
-                      href={hrefOf(item)}
-                      data-testid={cardTestId}
-                      // An anchor is natively draggable, and that native drag
-                      // fires pointercancel — which killed the gesture the
-                      // moment the card started to move.
-                      draggable={false}
-                      onDragStart={(event) => event.preventDefault()}
-                      onPointerDown={onPointerDown}
-                      onPointerMove={(event) => onPointerMove(event, item)}
-                      onPointerUp={() => onPointerUp(item)}
-                      onPointerCancel={cleanup}
-                      onClick={(event) => {
-                        // A drag must not also open the card underneath it.
-                        if (dragged.current) event.preventDefault();
-                      }}
-                      className={`card block !p-2.5 select-none hover:bg-surface-sunken ${
-                        dragId === item.id ? 'opacity-30' : ''
-                      }`}
-                      style={{ touchAction: dragId === item.id ? 'none' : undefined }}
-                    >
-                      {/* Two columns, NOT a float. The controls used to be
+                    <Fragment key={item.id}>
+                      {marker(item.id)}
+                      <Link
+                        href={hrefOf(item)}
+                        data-testid={cardTestId}
+                        // The drag reads the slot off the DOM, so a card has to
+                        // be able to name itself where `elementFromPoint` lands.
+                        data-card-id={item.id}
+                        // An anchor is natively draggable, and that native drag
+                        // fires pointercancel — which killed the gesture the
+                        // moment the card started to move.
+                        draggable={false}
+                        onDragStart={(event) => event.preventDefault()}
+                        onPointerDown={onPointerDown}
+                        onPointerMove={(event) => onPointerMove(event, item)}
+                        onPointerUp={() => onPointerUp(item)}
+                        onPointerCancel={cleanup}
+                        onClick={(event) => {
+                          // A drag must not also open the card underneath it.
+                          if (dragged.current) event.preventDefault();
+                        }}
+                        className={`card block !p-2.5 select-none hover:bg-surface-sunken ${
+                          dragId === item.id ? 'opacity-30' : ''
+                        }`}
+                        style={{ touchAction: dragId === item.id ? 'none' : undefined }}
+                      >
+                        {/* Two columns, NOT a float. The controls used to be
                           `float-right`, which leaves the flow and shortens only
                           the LINE BOXES beside it: measured on the deal card,
                           the code broke as «B-» / «000627» and the money as
@@ -732,9 +925,9 @@ function DragBoard<T extends KanbanItem>({
                           Both halves stay INSIDE the anchor: `cardTestId` is on
                           the <Link>, so a spec scoping `move-other` to a card
                           would stop finding it if the controls became a sibling. */}
-                      <div className="flex items-start gap-2">
-                        <div className="min-w-0 flex-1">{renderCard(item)}</div>
-                        {/* The way to move a card that is NOT a drag. Load-bearing
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">{renderCard(item)}</div>
+                          {/* The way to move a card that is NOT a drag. Load-bearing
                             rather than a convenience: which board a viewer gets is
                             decided by width alone, so a tablet lands here — and
                             since the drag became a mouse's alone, without this
@@ -743,28 +936,30 @@ function DragBoard<T extends KanbanItem>({
                             says a trackpad can report as touch, and a machine that
                             answered «fine» to the query and «not a mouse» to the
                             event would get a board with neither door. */}
-                        <span className="flex shrink-0 items-center gap-1">
-                          {selection && <SelectBox id={item.id} selection={selection} />}
-                          <button
-                            type="button"
-                            data-testid="move-other"
-                            aria-label={labels.moveTo}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              // The card IS the anchor and carries the drag —
-                              // SelectBox's lesson, one element over.
-                              event.stopPropagation();
-                              event.preventDefault();
-                              setSheetFor(item);
-                            }}
-                            className="btn-secondary btn-icon !min-h-7 !w-7 shrink-0 !p-0 text-xs"
-                          >
-                            ⋯
-                          </button>
-                        </span>
-                      </div>
-                    </Link>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {selection && <SelectBox id={item.id} selection={selection} />}
+                            <button
+                              type="button"
+                              data-testid="move-other"
+                              aria-label={labels.moveTo}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                // The card IS the anchor and carries the drag —
+                                // SelectBox's lesson, one element over.
+                                event.stopPropagation();
+                                event.preventDefault();
+                                setSheetFor(item);
+                              }}
+                              className="btn-secondary btn-icon !min-h-7 !w-7 shrink-0 !p-0 text-xs"
+                            >
+                              ⋯
+                            </button>
+                          </span>
+                        </div>
+                      </Link>
+                    </Fragment>
                   ))}
+                  {marker(null)}
                   {inStage.length === 0 && (hidden[stage.id] ?? 0) === 0 && (
                     <p className="px-1 text-xs text-ink-400">{labels.empty}</p>
                   )}

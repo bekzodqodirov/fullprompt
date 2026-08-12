@@ -4,6 +4,7 @@ import { db } from '../db/client';
 import { attachments } from '../db/schema';
 import { writeAudit } from '../audit/service';
 import { enqueue, JOB_THUMBNAILS } from '../jobs/boss';
+import { logger } from '../logger';
 import { getStorage } from './storage';
 
 const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -173,7 +174,17 @@ export async function saveAttachment(
     .returning({ id: attachments.id });
 
   if (isPhoto && row && opts.thumbnails !== 'skip') {
-    await enqueue(JOB_THUMBNAILS, { attachmentId: row.id });
+    // The bytes are in storage and the row is committed: the upload HAS
+    // succeeded. Letting a pg-boss hiccup throw here answered the browser 500
+    // for a photograph that is already saved — so the operator sees «the photo
+    // did not upload», takes it again, and the receipt ends up with two
+    // (round 97). A missing thumbnail is a slower list, not a lost photo, and
+    // the full-size image serves either way.
+    try {
+      await enqueue(JOB_THUMBNAILS, { attachmentId: row.id });
+    } catch (err) {
+      logger.warn({ err, attachmentId: row.id }, 'thumbnail job not queued; the photo is saved');
+    }
   }
   return { id: row!.id };
 }
