@@ -1355,7 +1355,9 @@
     "sourceArrivals": "заявок: {n}",
     "sourceDropped": "отклонено: {n}",
     "sourceWon": "выиграно: {n}",
-    "bridgeAccounts": "аккаунтов: {n}"
+    "bridgeAccounts": "аккаунтов: {n}",
+    "chatBookMatch": "код клиента",
+    "chatBookMatchHint": "Этот исключённый чат — номер клиента из базы. Возможно, исключён по ошибке."
   },
   "navShort": {
     "home": "Главная",

@@ -30,12 +30,20 @@ const warehouseSvg = `
   <path d="M7 18 L7 11 L13 7 L19 11 L19 18 Z" fill="#fff" opacity="0.92"/>
 </svg>`;
 
+// A clearer lorry (round 98, owner: «mapdagi mashinalar conka bo'lib partiyalar
+// yaxshiroq ko'rinishi kerak»): a coloured rounded badge with a white cab-and-
+// trailer silhouette, bigger than the old 26px dot so a truck on the corridor
+// reads as a truck at a glance. Still a distinct SHAPE from the warehouse
+// square, so the two stay apart when they overlap (DECISIONS #137).
 const truckSvg = (color: string) => `
-<svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="13" cy="13" r="11" fill="${color}" stroke="#fff" stroke-width="2"/>
-  <rect x="7" y="8" width="12" height="7" rx="1.5" fill="#fff"/>
-  <circle cx="10" cy="17" r="2" fill="#fff"/>
-  <circle cx="16" cy="17" r="2" fill="#fff"/>
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1.5" y="1.5" width="29" height="29" rx="9" fill="${color}" stroke="#fff" stroke-width="2.5"/>
+  <g fill="#fff">
+    <rect x="6" y="12" width="12" height="8" rx="1"/>
+    <path d="M18 14 h4.5 l3 3 v3 H18 Z"/>
+    <circle cx="10" cy="21.5" r="2.3" fill="${color}" stroke="#fff" stroke-width="1.6"/>
+    <circle cx="22" cy="21.5" r="2.3" fill="${color}" stroke="#fff" stroke-width="1.6"/>
+  </g>
 </svg>`;
 
 export function LeafletCorridor({
@@ -107,9 +115,9 @@ export function LeafletCorridor({
         className: '',
         // The label goes ABOVE a truck and BELOW a warehouse, so a truck
         // standing at a warehouse does not print its code over the other's.
-        html: `<div style="position:relative;width:80px;margin-left:-27px;text-align:center"><div style="font-family:monospace;font-weight:800;font-size:12px;color:${text};-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(tr.code)}</div>${truckSvg(color)}</div>`,
-        iconSize: [26, 26],
-        iconAnchor: [13, 13],
+        html: `<div style="position:relative;width:80px;margin-left:-24px;text-align:center"><div style="font-family:monospace;font-weight:800;font-size:12px;color:${text};-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(tr.code)}</div>${truckSvg(color)}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
       });
       L.marker([tr.y, tr.x], { icon, zIndexOffset: 1000 })
         .addTo(map)

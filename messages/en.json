@@ -1355,7 +1355,9 @@
     "sourceArrivals": "{n} arrivals",
     "sourceDropped": "{n} dropped",
     "sourceWon": "{n} won",
-    "bridgeAccounts": "{n} accounts"
+    "bridgeAccounts": "{n} accounts",
+    "chatBookMatch": "client code",
+    "chatBookMatchHint": "This excluded chat is a client's number from the book — possibly excluded by mistake."
   },
   "navShort": {
     "home": "Home",

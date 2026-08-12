@@ -2588,6 +2588,38 @@ render-time `photoIds` snapshot and took any photo that landed meanwhile;
 and the upload had no deadline at ANY layer — survivable while the screen was
 silent, not once it shows ⏳ (120 s + a sentence).
 
+Round 98 (part 1) — **the owner's 8-item list, the six unambiguous ones**
+(#673 — my draft minted #664 and the OTHER session's board round took
+#664-672 first, the SEVENTH collision; item 4 was its kanban work, untouched
+here;
+item 8, the sales analytics page + lost-reason dictionary, is part 2, agreed
+«dunyo standartlarida hammasini» + reasons picked from a LIST). (1) The
+dark-mode invisible chat input was a PHANTOM CLASS: `input-sm` used in four
+places, defined nowhere — browser `field` white under inherited dark-mode
+ink. Defined now; `style-cascade.test.ts` grew the vocabulary fence (every
+used `input-*`/`btn-*`/`chip-*`/`card*`/`label*`/`num`/`section-title` class
+must exist in globals.css or print.css), red-proven, and its dry run
+correctly found print.css's own `label-frame`/`label-svg`. (2) The bridge
+fold no longer self-opens on `signed_out` — his production has one signed-out
+manager, so it stood open EVERY visit; the summary line alone carries the red
+alarm. (3) `excludedBookMatches` — an excluded chat whose last-nine matches
+an active client's `phones` renders «⚠ mijoz kodi: <code>» in the tray's
+decided list. (5) `assignReceiptClient` KEEPS `unclaimedMarking` (was
+nulled): the box physically says `GS500MANIKEN-AL`, so the label sheet and
+the stock table now print the marking first with the client code small
+beneath; safe because unclaimed = `clientId IS NULL` everywhere (grepped,
+not assumed). (6) `/api/attachments` sends `Content-Disposition`: inline for
+pdf/image/audio/video/plain-text (PDF opens in the tab), attachment for the
+rest — html/svg/xml deliberately NEVER inline (stored upload must not become
+a script on our origin), pinned by `attachment-disposition.test.ts`.
+(7) The map's silence after the VPS move = `.data/basemap/corridor.pmtiles`
+is per-server and was never fetched on the new box — owner given
+`docker compose --profile basemap run --rm basemap`; truck marker redrawn
+32px cab-and-trailer; the corridor gained the BETWEEN towns (Dingxi, Shandan,
+Jiayuguan, Xingxingxia, Yanqi, Taldyk pass, Kamchik pass) so the mountain
+stretches bend like the road. No migration in part 1 — part 2's lost-reason
+dictionary mints **0076** (0075 is the board order's).
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
 **Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that

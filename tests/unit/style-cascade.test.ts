@@ -149,3 +149,40 @@ describe('the lightbox thumbnail owns its minimal width', () => {
     expect(thumb).toContain('shrink-0');
   });
 });
+
+/**
+ * A component class that is USED must be DEFINED (round 98).
+ *
+ * `input-sm` sat on the chat composers and the tray for months without
+ * existing anywhere — so those fields kept the browser's own white `field`
+ * background under the app's inherited ink, which in dark mode is near-white
+ * text on a white box: the owner's «dark modeda yozishganda hech nima
+ * ko'rinmayapti». Tailwind cannot warn (it ignores unknown classes), and no
+ * behaviour test can see it, because the markup is exactly what was intended.
+ *
+ * The check is scoped to the house component vocabulary — Tailwind's own
+ * utilities are unknowable here, but `input-*`/`btn-*`/`chip-*`/`card*` and
+ * friends are OURS, and one of them missing from both stylesheets is always
+ * this bug.
+ */
+describe('every house component class that is used exists', () => {
+  it('finds no phantom class in the component vocabulary', () => {
+    const css =
+      readFileSync('src/app/globals.css', 'utf8') +
+      readFileSync('src/app/(print)/print.css', 'utf8');
+    const defined = new Set(
+      [...css.matchAll(/^\.([a-z][a-z0-9-]*)\s*[{,]/gm)].map((m) => m[1]!),
+    );
+    const VOCAB = /^(?:input|btn|chip|card|label|section-title|num)(?:-[a-z0-9-]+)?$/;
+    const offenders: string[] = [];
+    for (const file of globSync('src/**/*.tsx')) {
+      const source = readFileSync(file, 'utf8');
+      for (const list of classLists(source)) {
+        for (const cls of list.split(/\s+/)) {
+          if (VOCAB.test(cls) && !defined.has(cls)) offenders.push(`${file}: ${cls}`);
+        }
+      }
+    }
+    expect(offenders, 'a used component class no stylesheet defines').toEqual([]);
+  });
+});

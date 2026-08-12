@@ -60,22 +60,20 @@ export async function TelegramBridgeStatus() {
    * fold idiom of this codebase (chat-menu, ThreadManagers) applies exactly:
    * a summary that states the worst thing, and the detail one tap away.
    *
-   * It opens ITSELF when an account needs a person — a signed-out session is
-   * not news, it is a job, and hiding a job behind a fold is how it waits a
-   * week. Everything else, including «not answering», stays folded: the
-   * listener catches up on its own and the count in the summary already says
-   * how many.
+   * It used to open ITSELF for a signed-out account, on the reasoning that a
+   * job hidden behind a fold waits a week. The owner overruled it from his own
+   * screen (round 98: «ulangan akkauntlar ro'yxati boshidan folded turishi
+   * kerak») — one manager had been signed_out for days, so the panel stood
+   * open on EVERY visit, which is the round-91 complaint reborn. The alarm
+   * does not need the fold: the summary line itself goes red and counts the
+   * broken accounts, so the job still shouts — it just does it in one line.
    */
   const needsAction = accounts.filter((a) => a.state === 'signed_out');
   const unwell = accounts.filter((a) => a.state !== 'live');
   const worst: BridgeState = needsAction.length > 0 ? 'signed_out' : unwell.length > 0 ? 'stale' : 'live';
 
   return (
-    <details
-      className="text-sm"
-      open={needsAction.length > 0}
-      data-testid="tg-bridge"
-    >
+    <details className="text-sm" data-testid="tg-bridge">
       <summary
         className={`flex cursor-pointer list-none flex-wrap items-baseline gap-x-2 rounded-xl px-3 py-1.5 ${TONE[worst]}`}
         data-testid={`tg-bridge-${worst}`}

@@ -1355,7 +1355,9 @@
     "sourceArrivals": "询盘 {n}",
     "sourceDropped": "丢弃 {n}",
     "sourceWon": "成交 {n}",
-    "bridgeAccounts": "{n} 个账号"
+    "bridgeAccounts": "{n} 个账号",
+    "chatBookMatch": "客户编号",
+    "chatBookMatchHint": "这个被排除的聊天是客户名册里的号码，可能被误排除。"
   },
   "navShort": {
     "home": "首页",

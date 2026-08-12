@@ -289,10 +289,15 @@ export async function assignReceiptClient(
   }
 
   await db.transaction(async (tx) => {
-    await tx
-      .update(receipts)
-      .set({ clientId, unclaimedMarking: null })
-      .where(eq(receipts.id, receiptId));
+    // The marking is KEPT, not nulled (round 98, owner: «gs500maniken-al
+    // shaklida qolib, client faqat gs500 ni yuki deb belgilay olamizmi»). The
+    // sticker on the box physically says `GS500MANIKEN-AL`; nulling the
+    // marking made the system print `GS500-AL` instead, so the label and the
+    // box disagreed. Now the printed code stays the marking and the client
+    // owns the cargo underneath it. Safe because «unclaimed» is decided by
+    // `clientId IS NULL` everywhere, never by the marking's presence — so a
+    // claimed receipt that keeps its marking is still counted as claimed.
+    await tx.update(receipts).set({ clientId }).where(eq(receipts.id, receiptId));
 
     await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
       entityType: 'receipt',

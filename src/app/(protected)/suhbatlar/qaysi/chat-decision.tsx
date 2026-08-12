@@ -38,6 +38,7 @@ export function ChatDecision({
   labels,
   showManager,
   leftovers = 0,
+  bookMatch = null,
 }: {
   row: {
     id: string;
@@ -61,6 +62,9 @@ export function ChatDecision({
   showManager: boolean;
   /** Rows still stored for an EXCLUDED chat — 0 hides the purge button. */
   leftovers?: number;
+  /** The client code an excluded chat's phone matches — «you said no to a
+   * customer» (round 98). Null when the phone is nobody's in the book. */
+  bookMatch?: string | null;
   labels: {
     add: string;
     never: string;
@@ -76,6 +80,8 @@ export function ChatDecision({
     purgeConfirm: string;
     openLead: string;
     leadOpened: string;
+    bookMatch: string;
+    bookMatchHint: string;
   };
 }) {
   const [state, submit, pending] = useActionState<ChatRuleState, FormData>(decideChatAction, {});
@@ -132,6 +138,18 @@ export function ChatDecision({
           <p className="text-sm text-ink-500" data-testid="chat-excluded">
             ✕ {labels.excluded}
           </p>
+          {/* This excluded chat's phone is a real client's — probably a
+              mistake, so the archive says so instead of letting it sit
+              unremarked (round 98). */}
+          {bookMatch && (
+            <span
+              className="chip-warn"
+              data-testid="chat-book-match"
+              title={labels.bookMatchHint}
+            >
+              ⚠ {labels.bookMatch}: <span className="font-mono font-bold">{bookMatch}</span>
+            </span>
+          )}
           {/* The SEPARATE second decision (#388): what was stored before the
               exclude does not vanish with it — deleting the past takes its
               own press, its own confirm, and leaves an audit row. */}

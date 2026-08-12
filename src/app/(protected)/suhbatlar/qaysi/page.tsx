@@ -5,7 +5,11 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { excludedLeftovers, listCandidates } from '@/modules/wms/crm/chat-rules';
+import {
+  excludedBookMatches,
+  excludedLeftovers,
+  listCandidates,
+} from '@/modules/wms/crm/chat-rules';
 import { mayDecideChats } from '@/modules/wms/crm/telegram-accounts';
 import { PageHeader } from '@/components/ui/page';
 import { ChatDecision } from './chat-decision';
@@ -56,12 +60,20 @@ export default async function WhichChatsPage({
     decision,
   })).filter((row) => (show === 'done' ? row.decision !== 'pending' : true));
 
+  const excluded = rows.filter((row) => row.decision === 'exclude');
   // What still stands behind each EXCLUDED chat, so the purge button can
   // carry its number and vanish once there is nothing left to delete.
   const leftovers = await excludedLeftovers(
-    rows
-      .filter((row) => row.decision === 'exclude')
-      .map((row) => ({ id: row.id, managerUserId: row.managerUserId, peerId: BigInt(row.peerId) })),
+    excluded.map((row) => ({
+      id: row.id,
+      managerUserId: row.managerUserId,
+      peerId: BigInt(row.peerId),
+    })),
+  );
+  // An excluded chat whose phone is a real client's code — «you said no to a
+  // customer's chat» (round 98). The archive should say so, not hide it.
+  const bookMatch = await excludedBookMatches(
+    excluded.map((row) => ({ id: row.id, phone: row.phone })),
   );
 
   // The client list for the picker. Active only: a chat is being attached to
@@ -108,6 +120,7 @@ export default async function WhichChatsPage({
               clients={book}
               showManager={seeAll}
               leftovers={leftovers.get(row.id) ?? 0}
+              bookMatch={bookMatch.get(row.id) ?? null}
               labels={{
                 add: t('chatAdd'),
                 never: t('chatNever'),
@@ -123,6 +136,8 @@ export default async function WhichChatsPage({
                 purgeConfirm: t('chatPurgeConfirm'),
                 openLead: t('chatOpenLead'),
                 leadOpened: t('chatLeadOpened'),
+                bookMatch: t('chatBookMatch'),
+                bookMatchHint: t('chatBookMatchHint'),
               }}
             />
           ))}

@@ -1355,7 +1355,9 @@
     "sourceArrivals": "{n} ta ariza",
     "sourceDropped": "{n} tasi bekor",
     "sourceWon": "{n} ta yutildi",
-    "bridgeAccounts": "{n} ta akkaunt"
+    "bridgeAccounts": "{n} ta akkaunt",
+    "chatBookMatch": "mijoz kodi",
+    "chatBookMatchHint": "Bu olinmagan chat — bazadagi mijozning raqami. Ehtimol xato olinmagan."
   },
   "navShort": {
     "home": "Bosh",

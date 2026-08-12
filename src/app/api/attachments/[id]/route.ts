@@ -10,6 +10,38 @@ import { decideAttachmentRead } from '@/modules/wms/attachments/access';
 const variantSchema = z.enum(['original', 'thumb200', 'thumb800']).default('original');
 
 /**
+ * Which types a browser can render itself, so the tab OPENS the file instead
+ * of downloading it (round 98, owner: «fayllarni skachat qilib ochib
+ * ko'rmasdan ustiga bosganda o'zidan ochilsin»). A PDF, an image, plain text,
+ * audio and video all render inline; a Word or Excel document cannot be shown
+ * by the browser and stays a download, which is the honest limit — showing it
+ * would need a heavy viewer this does not carry.
+ *
+ * The disposition also matters for SAFETY: `inline` is only ever sent for
+ * types that render as data, never for anything a browser might execute
+ * (html/svg/xml), so a stored file cannot become a script running on our
+ * origin — those fall through to `attachment`.
+ */
+function inlineDisposition(contentType: string): boolean {
+  const t = contentType.toLowerCase();
+  return (
+    t === 'application/pdf' ||
+    t.startsWith('image/') ||
+    t.startsWith('audio/') ||
+    t.startsWith('video/') ||
+    t === 'text/plain'
+  );
+}
+
+/** RFC 5987 filename, so a Cyrillic or Chinese name survives the header. */
+function contentDisposition(fileName: string | null, inline: boolean): string {
+  const kind = inline ? 'inline' : 'attachment';
+  const name = (fileName ?? 'file').replace(/["\r\n]/g, '');
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_');
+  return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
+
+/**
  * Serve an attachment (original or thumbnail) by streaming the bytes through
  * the app — never a redirect to the storage host (minio:9000 / a LAN IP is
  * often unreachable from the viewer's browser).
@@ -61,11 +93,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   // presigned URL breaks whenever the storage host isn't reachable from the
   // browser — http://minio:9000 exists only inside the Docker network, and a
   // LAN-IP phone session has the same problem with any absolute host.
+  // A thumbnail always renders inline; an original opens inline when the
+  // browser can show it, and downloads otherwise.
+  const inline = variant !== 'original' || inlineDisposition(contentType);
+
   try {
     const body = await getStorage().get(key);
     return new Response(new Uint8Array(body), {
       headers: {
         'content-type': contentType,
+        'content-disposition': contentDisposition(attachment.fileName, inline),
         'cache-control': 'private, max-age=600',
       },
     });

@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## 8 talik ro'yxatning birinchi qismi — 2026-08-12
+
+Sizning ro'yxatingizdan 6 tasi (4-band boshqa sessiyada, 8-band — tahlil
+sahifasi — keyingi bosqichda):
+
+1. **Dark mode'da chat yozish oynasi** tuzatildi — matn ko'rinmasligining
+   sababi topildi (uslub sinfi umuman e'lon qilinmagan ekan) va bunday xato
+   qaytib kirolmasligi uchun avtomatik tekshiruv qo'shildi.
+2. **Ulangan akkauntlar ro'yxati** endi doim yig'ilgan turadi — muammo bo'lsa
+   sarlavhaning o'zi qizarib, nechta akkaunt buzilganini aytadi.
+3. **Olinmagan chatlar arxivi**: «Qaysi chatlar» ekranida olinmagan chatlar
+   saqlanib turadi (avvaldan shunday edi), endi ustiga — olinmagan chatning
+   raqami bazadagi MIJOZNIKI bo'lsa, yonida **«⚠ mijoz kodi: GS500»** degan
+   ogohlantirish chiqadi. Xato rad etilgan mijozni darrov ko'rasiz.
+5. **GS500MANIKEN-AL masalasi**: endi mijoz biriktirilganda qutidagi yozuv
+   o'zgarmaydi — stikerdagi kod tizimda ham shu ko'rinishda qoladi, sklad
+   jadvalida tagida kichik qilib mijoz kodi (gs500) ko'rinadi. Yorliq bilan
+   tizim endi hech qachon bir-biriga zid gapirmaydi.
+6. **PDF fayllar** endi yuklab olinmasdan brauzerning o'zida ochiladi (rasm,
+   audio, video allaqachon shunday edi). Word/Excel yuklab olinishda qoladi —
+   brauzer ularni o'zi ko'rsata olmaydi.
+7. **Xarita**: yangi serverga xarita fayli ko'chmagan ekan — bitta buyruq
+   bilan tiklanadi (aytib berdim); yuk mashinasi belgisi kattaroq va aniqroq
+   qilib qayta chizildi.
+
 ## Yuk qabulida rasm: topildi va tuzatildi — 2026-08-12
 
 Sizning xabaringiz: «yuk qabul qilganda rasimni kirgizgandan keyin prixodga
