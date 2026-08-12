@@ -451,6 +451,7 @@
     "photos": "Rasmlar",
     "photoRequired": "Kamida 1 ta rasm kerak",
     "photoUploadFailed": "Rasm yuklanmadi — aloqani tekshiring",
+    "photoUploading": "Rasm yuborilmoqda…",
     "fileTypeUnsupported": "Bu fayl turi qo‘llab-quvvatlanmaydi (rasm, PDF, Excel, Word, TXT, CSV, ZIP, RAR, video mumkin)",
     "fileTooLarge": "Fayl juda katta (rasm 15 MB, fayl 25 MB, video 60 MB gacha)",
     "warehouseForbidden": "Bu sklad sizga biriktirilmagan — sklad tanlovini tekshiring",

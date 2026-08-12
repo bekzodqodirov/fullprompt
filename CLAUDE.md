@@ -91,6 +91,14 @@ pnpm build && pnpm e2e  # 44 e2e
   and it refuses to send it. Bind an ISO string with `::timestamptz` (#156).
 - **A JS array bound into a raw `sql` fragment** does not become a postgres
   array. Use `inArray`/`notInArray`, or `sql.join`.
+- **A dependency may fetch ITSELF from a CDN at runtime.**
+  `browser-image-compression` builds a Web Worker that `importScripts` the
+  library from `cdn.jsdelivr.net` on every photo — 12.7 s of silence here, and
+  unreachable in the Chinese warehouses where the cargo is received (#664).
+  Pinned by `tests/unit/vendored-lib.test.ts`: the copy in `public/vendor/`
+  must be byte-identical to the installed package, and `compress-photo.ts`
+  must be the ONLY importer. Sweep the built bundle for foreign hosts before
+  adding any browser library: `grep -rhoE "https://[a-z.]+/" .next/static/`.
 - **Tailwind only compiles classes it can literally see** — a colour class built
   at runtime does not exist. Hence lookup maps like `STAGE_CLASS`.
 - **Playwright file names carry the run order** and sort lexicographically, so
@@ -139,9 +147,9 @@ calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
 «javob kutmoqda», then files/reply/forward/share). This branch carries
 **round 96** — the board's manual card order, taller desktop columns and the
 hidden column scrollbar — on top of #33; everything before it is merged.
-1383 unit/integration + 152 e2e on a fresh-db CI-order run (the four known
-photo-path specs — m1×2, m2×1, m9h — plus m9z-nav-progress stay locally red
-here; CI is the arbiter).
+1386 unit/integration + 154 e2e. **The four «known failing» photo-path specs
+(m1×2, m2×1, m9h) now PASS** — round 97 found what they had been reporting for
+eleven rounds; only m9z-nav-progress stays locally red.
 Latest migration: **0073** (`board_order` — where the owner put a card in its
 column, on `leads` AND `deals`, backfilled from the order the board showed the
 day it deployed; 0072 `tg_reply_forward` — which message a reply quotes,
@@ -2448,6 +2456,35 @@ integration + e2e m9zm (4 mobile) and m9zm-desktop (2, incl. the geometry).
 1383 unit/integration + 152 e2e on a fresh-db CI-order run; screenshots at
 1280×800 (board, and a drag in flight with the drop line) and 360×800 (the
 sheet's ↑↓, document 360 wide).
+
+Round 97 — the receive screen's photo, and eleven rounds of a believed excuse
+(#664-666, owner: «yuk qabul qilganda rasimni kirgizgandan keyin prixodga
+ruxsat chiqmayabti»). `browser-image-compression` runs in a Web Worker and the
+worker does not CONTAIN the library — it `importScripts` it from
+**cdn.jsdelivr.net at runtime, on every photograph**. So `addPhotos` awaits a
+57 KB third-party download before compressing a byte, and until it resolves
+there is no thumbnail, no error, and a confirm button that stays grey because
+`lotsValid()` wants a photo. Measured here (no route to the public internet):
+**12.7 s** to fail, then a silent fall-back — FLAT across photo sizes and
+barely moved by a 4× CPU throttle, which is what proved it a wait and not a
+computation. In Yiwu/Guangzhou/Kashgar, where every receipt is created,
+jsDelivr is not reliably reachable at all. Fix = `libURL` → `public/vendor/`
+(byte-identical copy, pinned by `tests/unit/vendored-lib.test.ts`, and the
+build's service worker PRECACHES it so it works with no network at all):
+**0.5 s, zero foreign requests.** Red-proven by deleting the line and watching
+both come back. **THE FOUR «known failing» photo specs were this** — dismissed
+since round 57 as «no image service in this container», a sentence invented to
+explain a red test and then believed because it was written down; all four pass
+now (5 local failures → 1). RULE: an explanation for a failing test that nobody
+has re-run against the failure is a guess with a citation. Second half, because
+a fixed slow path is still a silent one: `busyLots` is a COUNTER per lot (the
+📷 takes several files), the tile goes ⏳ and refuses another, the sticky bar
+says «Rasm yuborilmoqda…» INSTEAD of «no photo yet» (both leave the button
+grey; only one is the operator's to act on), confirm is disabled while anything
+is in flight, and the decrement is in `finally` or a refusal leaves the screen
+stuck on «working». Also swept: the built client bundle reaches NO other
+foreign host (the OSM basemap is already self-hosted). One new i18n key ×4.
+No migration.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

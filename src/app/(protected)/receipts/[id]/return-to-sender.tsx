@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
-import imageCompression from 'browser-image-compression';
+import { compressPhoto } from '@/components/compress-photo';
 import { returnToSenderAction } from './actions';
 
 /**
@@ -31,13 +31,9 @@ export function ReturnToSender({ receiptId }: { receiptId: string }) {
     setUploading(true);
     setError(null);
     try {
-      const compressed = await imageCompression(file, {
-        maxSizeMB: 0.3,
-        maxWidthOrHeight: 1600,
-        useWebWorker: true,
-      });
+      const compressed = await compressPhoto(file);
       const formData = new FormData();
-      formData.set('file', new File([compressed], file.name || 'handover.jpg', { type: compressed.type || 'image/jpeg' }));
+      formData.set('file', compressed);
       formData.set('entityType', 'handover');
       formData.set('entityId', handoverId);
       const res = await fetch('/api/files/upload', { method: 'POST', body: formData });

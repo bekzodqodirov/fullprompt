@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## Yuk qabulida rasm: topildi va tuzatildi — 2026-08-12
+
+Sizning xabaringiz: «yuk qabul qilganda rasimni kirgizgandan keyin prixodga
+ruxsat chiqmayabti».
+
+### Nima bo'lgan edi
+
+Rasmni kichraytiradigan dastur **har bir rasm uchun chet eldagi serverdan
+(`cdn.jsdelivr.net`) o'zini yuklab olishga urinar ekan**. Ya'ni skladchi
+rasmni qo'yadi — telefon avval chet el serveriga ulanishga urinadi, va faqat
+shundan keyin rasm siqiladi va yuboriladi.
+
+O'lchab ko'rdim: bu konteynerda internet yo'q, **12.7 soniya** kutdi, keyin
+xato berdi va o'zi boshqa yo'l bilan davom etdi. **Xitoyda esa u server
+umuman ochilmaydi** — Yiwu, Guanjou, Qashqar, ya'ni aynan yuk qabul
+qilinadigan joylar. O'sha yerda skladchi kutadi, ekranda hech narsa
+o'zgarmaydi, «Tasdiqlash» tugmasi kulrangligicha qoladi va **sabab ham
+yozilmaydi**.
+
+### Nima qilindi
+
+1. **Chet el serveriga murojaat butunlay olib tashlandi.** Endi o'sha dastur
+   bizning o'z serverimizdan olinadi. O'lchov: **12.7 soniya → 0.5 soniya**,
+   va internetga hech qanday so'rov ketmaydi. Ilova telefonga o'rnatilgan
+   bo'lsa, u hatto **internetsiz** ham ishlaydi (oflayn keshga tushadi).
+
+2. **Ekran endi gapiradi.** Rasm yuborilayotganda:
+   - 📷 tugma **⏳** ga aylanadi va yangi rasm olmaydi (ikki marta bosib
+     yubormaslik uchun);
+   - pastda **«Rasm yuborilmoqda…»** yozuvi chiqadi;
+   - «Tasdiqlash» shu paytda bosilmaydi — aks holda prixod rasmsiz yopilib
+     ketishi mumkin edi.
+
+   Ilgari bu yerda **hech narsa** yozilmasdi — shuning uchun sekin telefonda
+   ekran o'lgandek ko'rinardi.
+
+3. Bu tuzatish **uchala joyda** ishlaydi: yuk qabuli, karta ilovalari va
+   «egasiga qaytarish».
+
+### Bir muhim narsa
+
+Bizda **11 raunddan beri** «bu konteynerda rasm xizmati yo'q» deb yozib
+qo'yilgan, doim yiqiladigan 4 ta test bor edi. Ular yolg'on emas ekan —
+**aynan shu xatoni ko'rsatib turgan ekan**. Tuzatgandan keyin **to'rttasi
+ham o'tdi**. Ya'ni bu muammo yangi emas, faqat Xitoydagi tarmoqda ochiq
+ko'rinib qolgan.
+
+### Bazaga
+
+Hech narsa o'zgarmadi — bu faqat brauzer tomonidagi tuzatish.
+
 ## Kanban: kartalar tartibi saqlanib qoladi, ustunlar balandroq — 2026-08-11 (kech)
 
 Sizning ikkita gapingiz: «cartni boshqa etapga otkazganda ularni tartibi
