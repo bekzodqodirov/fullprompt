@@ -191,12 +191,19 @@ describe('linking (two-step, phone-verified)', () => {
 });
 
 describe('cabinet views', () => {
-  it('cargo overview groups the client boxes by lot with statuses and photos flag', async () => {
+  it('cargo overview groups the client boxes by lot with the journey rung and photos flag', async () => {
     const lots = await cargoOverview(clientId);
     const lot = lots.find((l) => l.lotId === lotId)!;
     expect(lot.total).toBe(3);
-    expect(lot.statuses.in_stock).toBe(3);
-    expect(lot.warehouseCodes).toContain(WH);
+    // The rung, not the raw box status. This fixture's warehouse is an UZBEK
+    // distribution one, so three boxes on its shelf are «O'zbekistonda —
+    // rasmiylashtirilmoqda»: they landed here and nobody has released them.
+    expect(lot.groups).toHaveLength(1);
+    expect(lot.groups[0]!.stage).toBe('in_uz');
+    expect(lot.groups[0]!.n).toBe(3);
+    // Standing still is never given a date.
+    expect(lot.groups[0]!.eta).toBeNull();
+    expect(lot.warehousePlaces).toContain('Cabinet WH');
     expect(lot.hasPhotos).toBe(true);
   });
 

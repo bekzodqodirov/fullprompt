@@ -6,7 +6,7 @@ import {
   clientLabels,
   isClientLocale,
   localeFromTelegram,
-  statusLabel,
+  stageLabel,
 } from '@/modules/platform/telegram/client-labels';
 
 /**
@@ -106,15 +106,19 @@ describe('the client’s language', () => {
     expect(clientLabels('zh-CN').btnCargo).toBe(clientLabels('ru').btnCargo);
   });
 
-  it('names every box status a client can be shown', () => {
+  /*
+   * REWRITTEN in round 98 with its subject.
+   *
+   * It used to check that every raw BOX STATUS had a client word — warehouse
+   * vocabulary («planned», «in_stock») answering a question no customer
+   * asked. The cabinet now speaks the owner's own ladder; every rung having a
+   * sentence is asserted in `cargo-stages.test.ts`, which can see both halves.
+   * What is left here is the fallback, which is a fact about this function.
+   */
+  it('an unknown rung shows its own name rather than crashing a reply', () => {
     const labels = clientLabels('uz');
-    for (const status of ['in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup']) {
-      const word = statusLabel(status, labels);
-      expect(word, status).not.toBe(status);
-      expect(word.length, status).toBeGreaterThan(2);
-    }
-    // An unknown status shows its raw name rather than crashing a reply.
-    expect(statusLabel('teleported', labels)).toBe('teleported');
+    expect(stageLabel('ready', labels)).not.toBe('ready');
+    expect(stageLabel('teleported', labels)).toBe('teleported');
   });
 });
 

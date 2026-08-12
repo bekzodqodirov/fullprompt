@@ -28,16 +28,59 @@ const DICT = {
   btnHistory: { uz: '🗄 Tarix', ru: '🗄 История', en: '🗄 History' },
   btnLanguage: { uz: '🌐 Til', ru: '🌐 Язык', en: '🌐 Language' },
 
-  // --- box statuses, as a client should understand them ---
-  stIn_stock: { uz: 'skladda', ru: 'на складе', en: 'at the warehouse' },
-  stPlanned: { uz: 'jo‘natishga tayyorlandi', ru: 'готов к отправке', en: 'ready to ship' },
-  stLoading: { uz: 'mashinaga yuklanmoqda', ru: 'грузится в машину', en: 'being loaded' },
-  stIn_transit: { uz: 'yo‘lda 🚛', ru: 'в пути 🚛', en: 'in transit 🚛' },
-  stReady_for_pickup: {
-    uz: 'olib ketishga tayyor ✅',
-    ru: 'готов к выдаче ✅',
-    en: 'ready for pickup ✅',
+  /*
+   * --- the journey, in the owner's own words (round 98) ---
+   *
+   * These REPLACED a set of raw box statuses («skladda», «jo'natishga
+   * tayyorlandi») which is warehouse vocabulary answering a question no
+   * customer asked. He wrote the ladder out himself — «htoyda qabul → htoy
+   * sklatdan yolga chiqdi → htoy qirgiz chegara sklatda → sklatdan yuklandi
+   * eksport bolti → transitda → ozbga kirdi → rastamojka → olib
+   * ketishingizga tayyor → olib ketdingiz» — and this is that list.
+   *
+   * The keys come from `wms/client-cabinet/stages.ts`; a test outside the
+   * bundles anchors them, since `platform` may not import `wms` (#163).
+   *
+   * Note `stgHub` names no city. The rung is derived from a warehouse of type
+   * `hub`, so the wording has to be true of the second one he opens.
+   */
+  stgCn_warehouse: {
+    uz: 'Xitoydagi omborimizda qabul qilindi',
+    ru: 'Принят на наш склад в Китае',
+    en: 'Received at our warehouse in China',
   },
+  stgCn_loading: {
+    uz: 'Xitoyda mashinaga yuklanmoqda',
+    ru: 'Грузится в машину в Китае',
+    en: 'Being loaded in China',
+  },
+  stgCn_transit: { uz: 'Xitoy ichida yo‘lda 🚛', ru: 'В пути по Китаю 🚛', en: 'In transit inside China 🚛' },
+  stgHub: {
+    uz: 'Chegara oldidagi omborimizda',
+    ru: 'На нашем складе у границы',
+    en: 'At our warehouse near the border',
+  },
+  stgHub_loading: {
+    uz: 'Eksportga yuklanmoqda',
+    ru: 'Грузится на экспорт',
+    en: 'Being loaded for export',
+  },
+  stgExport_transit: { uz: 'Yo‘lda 🚛', ru: 'В пути 🚛', en: 'In transit 🚛' },
+  stgIn_uz: {
+    uz: 'O‘zbekistonda — rasmiylashtirilmoqda',
+    ru: 'В Узбекистане — оформление',
+    en: 'In Uzbekistan — customs clearance',
+  },
+  stgReady: {
+    uz: 'Olib ketishga tayyor ✅',
+    ru: 'Готов к выдаче ✅',
+    en: 'Ready for pickup ✅',
+  },
+  stgIssued: { uz: 'Olib ketildi 🤝', ru: 'Выдан 🤝', en: 'Handed over 🤝' },
+
+  /** Always beside a date, never without it — the schedule is an estimate. */
+  etaAbout: { uz: 'taxminan', ru: 'примерно', en: 'about' },
+  journey: { uz: 'Yukingiz yo‘li', ru: 'Путь вашего груза', en: 'Your cargo’s journey' },
 
   pieces: { uz: 'dona', ru: 'шт', en: 'pcs' },
   kg: { uz: 'kg', ru: 'кг', en: 'kg' },
@@ -273,8 +316,40 @@ export function allLabelVariants(key: 'btnCargo' | 'btnBalance' | 'btnHistory' |
   return CLIENT_LOCALES.map((locale) => DICT[key][locale]);
 }
 
-/** Status word for a box state, in the client's language. */
-export function statusLabel(status: string, labels: ClientLabels): string {
-  const key = `st${status.charAt(0).toUpperCase()}${status.slice(1)}` as keyof ClientLabels;
-  return (labels[key] as string | undefined) ?? status;
+/** The rung's sentence, in the client's language. */
+export function stageLabel(stage: string, labels: ClientLabels): string {
+  const key = `stg${stage.charAt(0).toUpperCase()}${stage.slice(1)}` as keyof ClientLabels;
+  return (labels[key] as string | undefined) ?? stage;
+}
+
+/**
+ * «14.08 – 16.08» — the estimated arrival, as two dates and never one.
+ *
+ * The schedule itself is a range, and printing its midpoint turns an estimate
+ * into a promise the office then has to explain. Same day at both ends prints
+ * once.
+ *
+ * NUMERIC on purpose, and this was found by looking rather than by a test:
+ * `Intl` with a month NAME renders Uzbek as «M08 14» — Chromium ships no
+ * Uzbek month names and falls back to a machine format — which is the main
+ * language this app's customers read. dd.MM needs no locale data at all, is
+ * the same in all three languages, and is the house convention every printed
+ * document here already uses.
+ *
+ * The zone is Tashkent, so a truck landing at 02:00 local is not announced for
+ * the day before.
+ */
+export function formatEtaRange(fromIso: string, toIso: string, _locale?: string | null): string {
+  const day = (iso: string) => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'Asia/Tashkent',
+    }).formatToParts(new Date(iso));
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+    return `${get('day')}.${get('month')}`;
+  };
+  const from = day(fromIso);
+  const to = day(toIso);
+  return from === to ? from : `${from} – ${to}`;
 }

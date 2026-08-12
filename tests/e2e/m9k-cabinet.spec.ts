@@ -151,9 +151,20 @@ const PAYLOAD = {
           letter: 'A',
           productNameZh: '手机壳',
           productNameRu: 'Чехлы',
-          statuses: { in_stock: 4, in_transit: 6 },
+          groups: [
+            {
+              stage: 'export_transit',
+              n: 6,
+              eta: {
+                fromIso: '2030-08-14T00:00:00Z',
+                toIso: '2030-08-16T00:00:00Z',
+                toPlace: 'Andijan',
+              },
+            },
+            { stage: 'cn_warehouse', n: 4, eta: null },
+          ],
           total: 10,
-          warehouseCodes: ['YW'],
+          warehousePlaces: ['Yiwu'],
           hasPhotos: true,
           weightKg: 68.5,
           volumeM3: 1.02,
@@ -202,17 +213,27 @@ test('the cargo screen shows the count, the kilos and the cubes', async ({ page 
 
   const lot = page.getByTestId('cab-lot');
   await expect(lot).toContainText('Чехлы');
-  await expect(lot).toContainText('YW');
+  // The place by NAME, not the warehouse code: staff jargon has no business
+  // on the one screen a customer opens.
+  await expect(lot).toContainText('Yiwu');
 
-  // Two stages, so the bar is drawn — and drawn to scale: 4 of 10 and 6 of 10.
-  const segments = page.getByTestId('cab-bar').locator('i');
-  await expect(segments).toHaveCount(2);
-  await expect(segments.first()).toHaveAttribute('style', /40%/);
-  await expect(segments.last()).toHaveAttribute('style', /60%/);
+  // The owner's nine-rung ladder, filled to where the bulk of the cargo is —
+  // six of the ten boxes are on the export road, which is rung six.
+  const rungs = page.getByTestId('cab-track').locator('i');
+  await expect(rungs).toHaveCount(9);
+  await expect(rungs.nth(5)).toHaveClass(/now/);
+  await expect(rungs.nth(4)).toHaveClass(/done/);
+  await expect(rungs.nth(6)).not.toHaveClass(/done|now/);
 
-  // And said in words too, because a bar alone does not say WHICH stage.
-  await expect(lot).toContainText('на складе');
-  await expect(lot).toContainText('в пути');
+  // And said in words, because a bar alone does not say WHICH rung. Russian,
+  // because this fixture's client reads Russian.
+  await expect(page.getByTestId('cab-stage')).toContainText('В пути');
+  // The estimate names its destination, so it cannot be read as a promise
+  // about somewhere else, and it always says «примерно».
+  await expect(page.getByTestId('cab-eta')).toContainText('Andijan');
+  await expect(page.getByTestId('cab-eta')).toContainText('примерно');
+  // The remainder is named under it rather than left unexplained.
+  await expect(lot).toContainText('Принят на наш склад в Китае');
 });
 
 test('a photograph opens full screen and closes again', async ({ page }) => {

@@ -21,7 +21,8 @@ import {
   clientLabels,
   isClientLocale,
   localeFromTelegram,
-  statusLabel,
+  formatEtaRange,
+  stageLabel,
   type ClientLabels,
 } from './client-labels';
 import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
@@ -70,16 +71,24 @@ function chatLocale(linked: { locale: string | null }[]): string | null {
   return linked.find((c) => c.locale)?.locale ?? null;
 }
 
-function lotLine(lot: CabinetLot, t: ClientLabels): string {
+function lotLine(lot: CabinetLot, t: ClientLabels, locale: string | null): string {
   // The translated name first: the client asked for their goods in a language
   // they read, and the Chinese original is only useful when there is nothing
   // else. (The staff screens keep zh-first — a Yiwu operator needs it.)
   const name = lot.productNameRu?.trim() || lot.productNameZh;
-  const statuses = Object.entries(lot.statuses)
-    .map(([s, n]) => `${n} ${t.pieces} ${statusLabel(s, t)}`)
-    .join(', ');
-  const wh = lot.warehouseCodes.length ? ` · 📍 ${lot.warehouseCodes.join(', ')}` : '';
-  return `${lot.letter ?? '·'} — ${name}\n   ${statuses}${wh}`;
+  // One line per rung, because a customer whose lot is split reads two
+  // different facts and «6 dona skladda, 4 dona yo'lda» on one line hides the
+  // date that belongs to only one of them.
+  const groups = lot.groups
+    .map((g) => {
+      const eta = g.eta
+        ? ` · ${g.eta.toPlace}: ${t.etaAbout} ${formatEtaRange(g.eta.fromIso, g.eta.toIso, locale)}`
+        : '';
+      return `   ${g.n} ${t.pieces} — ${stageLabel(g.stage, t)}${eta}`;
+    })
+    .join('\n');
+  const wh = lot.warehousePlaces.length ? `\n   📍 ${lot.warehousePlaces.join(', ')}` : '';
+  return `${lot.letter ?? '·'} — ${name}\n${groups}${wh}`;
 }
 
 /**
@@ -452,7 +461,8 @@ export function registerClientCabinet(bot: Bot): void {
   bot.hears(allLabelVariants('btnCargo'), async (ctx) => {
     const linked = await clientsForChat(BigInt(ctx.chat.id));
     if (!linked.length) return;
-    const t = clientLabels(chatLocale(linked));
+    const locale = chatLocale(linked);
+    const t = clientLabels(locale);
     for (const client of linked) {
       const lots = await cargoOverview(client.id);
       if (!lots.length) {
@@ -460,7 +470,7 @@ export function registerClientCabinet(bot: Bot): void {
         continue;
       }
       const header = `📦 ${client.clientCode} — ${client.name}\n\n`;
-      const text = header + lots.map((lot) => lotLine(lot, t)).join('\n\n');
+      const text = header + lots.map((lot) => lotLine(lot, t, locale)).join('\n\n');
       const kb = new InlineKeyboard();
       let buttons = 0;
       for (const lot of lots) {
