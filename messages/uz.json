@@ -1384,7 +1384,9 @@
     "periodPrevMonth": "O'tgan oy",
     "addLostReason": "Yo'qotish sababini qo'shish",
     "lostReasonLabel": "Sabab",
-    "lostReasonsSetupHint": "Ro'yxat bo'sh bo'lsa sabab erkin matnda so'raladi; ro'yxat to'ldirilgach faqat undan tanlanadi."
+    "lostReasonsSetupHint": "Ro'yxat bo'sh bo'lsa sabab erkin matnda so'raladi; ro'yxat to'ldirilgach faqat undan tanlanadi.",
+    "unowned": "Egasiz",
+    "dealsNoSource": "Manba filtri bitimlarga tegishli emas — bitimda manba yo'q."
   },
   "navShort": {
     "home": "Bosh",

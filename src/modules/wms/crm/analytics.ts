@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { deals, dealStages, leads, leadSources, leadStages, users } from '../../platform/db/schema';
 
@@ -23,6 +23,127 @@ import { deals, dealStages, leads, leadSources, leadStages, users } from '../../
 
 export type Period = { from: Date; to: Date };
 
+/**
+ * The page's filters beyond the period (owner: «filterlarni maximalna qoyish
+ * mumkun bolgan narsalarga qoyib ber, source sotuvchi va boshqalar»).
+ *
+ * The shape is deliberately NARROW — no createdFrom/createdTo can exist in
+ * it. The board's filter vocabulary carries `dan/gacha` as a created_at
+ * range, and on THIS screen those two names are the period, applied to two
+ * different clocks; a created_at bound smuggled into the closed-clock
+ * queries would silently drop every lead that arrived before the period and
+ * closed inside it.
+ *
+ * `source`/`owner` take a uuid or the literal 'none' — «—» is a first-class
+ * row in both tables (no source = hand-entered; no owner = unclaimed), so it
+ * must be a first-class filter too.
+ */
+export type AnalyticsFilters = {
+  source?: string;
+  owner?: string;
+  amountMin?: number;
+  amountMax?: number;
+  volMin?: number;
+  volMax?: number;
+  kgMin?: number;
+  kgMax?: number;
+};
+
+/**
+ * `?manba/hodim/narx_min…` → validated filters, the board vocabulary's names
+ * with the board's own rules (#514: everything out of a URL is checked or
+ * dropped — a garbage `hodim` reaching `eq(uuid_col, …)` is a 22P02 500, not
+ * a filter). `carried` echoes ONLY the validated values serialized back, so
+ * links built from it cannot walk unparseable garbage from URL to URL.
+ */
+export function readAnalyticsFilters(params: Record<string, string | string[] | undefined>) {
+  const get = (key: string) => {
+    const value = params[key];
+    return (Array.isArray(value) ? value[0] : value)?.trim() ?? '';
+  };
+  const num = (key: string) => {
+    const text = get(key).replace(',', '.');
+    if (!text) return undefined;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  };
+  const pick = (key: string) => {
+    const value = get(key);
+    if (value === 'none') return 'none';
+    return /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value) ? value : undefined;
+  };
+
+  const filters: AnalyticsFilters = {
+    source: pick('manba'),
+    owner: pick('hodim'),
+    amountMin: num('narx_min'),
+    amountMax: num('narx_max'),
+    volMin: num('kub_min'),
+    volMax: num('kub_max'),
+    kgMin: num('kg_min'),
+    kgMax: num('kg_max'),
+  };
+
+  const carried: Record<string, string> = {};
+  if (filters.source) carried.manba = filters.source;
+  if (filters.owner) carried.hodim = filters.owner;
+  for (const [param, value] of [
+    ['narx_min', filters.amountMin],
+    ['narx_max', filters.amountMax],
+    ['kub_min', filters.volMin],
+    ['kub_max', filters.volMax],
+    ['kg_min', filters.kgMin],
+    ['kg_max', filters.kgMax],
+  ] as const) {
+    if (value !== undefined) carried[param] = String(value);
+  }
+
+  return { ...filters, carried, active: Object.keys(carried).length };
+}
+
+/**
+ * The filter, said once and heard by every lead query (#513).
+ *
+ * The owner branch deliberately DIFFERS from `leadBoardWhere`: the board's
+ * ownerId means «mine OR unclaimed» (round 74's shared-inbox rule — work
+ * routing), while here a seller's numbers are that seller's ALONE. Copy the
+ * board's or() and every seller's filtered scoreboard is inflated by the
+ * same unowned pile, disagreeing with their own row in the table beneath it,
+ * and «Egasiz» double-counts with every name. Analytics is attribution.
+ *
+ * A range condition drops leads whose quote is NULL (SQL: NULL >= x is not
+ * true) — the board's ranges behave identically, and «leads above 10 kub»
+ * honestly cannot include a lead nobody measured.
+ */
+function leadFilterConds(f: AnalyticsFilters): SQL[] {
+  const conds: SQL[] = [];
+  if (f.owner === 'none') conds.push(isNull(leads.ownerId));
+  else if (f.owner) conds.push(eq(leads.ownerId, f.owner));
+  if (f.source === 'none') conds.push(isNull(leads.sourceId));
+  else if (f.source) conds.push(eq(leads.sourceId, f.source));
+  if (f.amountMin !== undefined) conds.push(sql`${leads.quotedAmount} >= ${f.amountMin}`);
+  if (f.amountMax !== undefined) conds.push(sql`${leads.quotedAmount} <= ${f.amountMax}`);
+  if (f.volMin !== undefined) conds.push(sql`${leads.quotedVolumeM3} >= ${f.volMin}`);
+  if (f.volMax !== undefined) conds.push(sql`${leads.quotedVolumeM3} <= ${f.volMax}`);
+  if (f.kgMin !== undefined) conds.push(sql`${leads.quotedWeightKg} >= ${f.kgMin}`);
+  if (f.kgMax !== undefined) conds.push(sql`${leads.quotedWeightKg} <= ${f.kgMax}`);
+  return conds;
+}
+
+/** The deals' halves of the same filters. A deal carries no source at all. */
+function dealFilterConds(f: AnalyticsFilters): SQL[] {
+  const conds: SQL[] = [];
+  if (f.owner === 'none') conds.push(isNull(deals.ownerId));
+  else if (f.owner) conds.push(eq(deals.ownerId, f.owner));
+  if (f.amountMin !== undefined) conds.push(sql`${deals.quotedAmount} >= ${f.amountMin}`);
+  if (f.amountMax !== undefined) conds.push(sql`${deals.quotedAmount} <= ${f.amountMax}`);
+  if (f.volMin !== undefined) conds.push(sql`${deals.quotedVolumeM3} >= ${f.volMin}`);
+  if (f.volMax !== undefined) conds.push(sql`${deals.quotedVolumeM3} <= ${f.volMax}`);
+  if (f.kgMin !== undefined) conds.push(sql`${deals.quotedWeightKg} >= ${f.kgMin}`);
+  if (f.kgMax !== undefined) conds.push(sql`${deals.quotedWeightKg} <= ${f.kgMax}`);
+  return conds;
+}
+
 function pct(part: number, whole: number): number {
   return whole ? Math.round((part / whole) * 1000) / 10 : 0;
 }
@@ -33,13 +154,22 @@ function money(value: unknown): number {
 
 export type SalesAnalytics = Awaited<ReturnType<typeof salesAnalytics>>;
 
-export async function salesAnalytics({ from, to }: Period) {
-  const created = and(gte(leads.createdAt, from), lt(leads.createdAt, to));
+export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters = {}) {
+  const extra = leadFilterConds(f);
+  const created = and(gte(leads.createdAt, from), lt(leads.createdAt, to), ...extra);
   const closed = and(
     isNotNull(leads.closedAt),
     gte(leads.closedAt, from),
     lt(leads.closedAt, to),
+    ...extra,
   );
+  // The snapshots (open now, funnel) take the filters but deliberately not
+  // the period — «what is in hand» has no date range.
+  const openWhere = and(eq(leadStages.kind, 'open'), ...extra);
+  // A deal has no source column: under a source filter the block would be
+  // numbers that ignore the active filter, which is read as filtered. It is
+  // hidden instead, and the page says why.
+  const dealsApply = !f.source;
 
   const [arrived, decided, openNow, perDayNew, perDayWon, sourceNew, sourceDecided, sellerNew, sellerDecided, sellerOpen, reasons, stageRows, dealsRow, people] =
     await Promise.all([
@@ -65,7 +195,7 @@ export async function salesAnalytics({ from, to }: Period) {
         .select({ n: sql<number>`count(*)` })
         .from(leads)
         .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
-        .where(eq(leadStages.kind, 'open')),
+        .where(openWhere),
 
       // The trend: arrivals and wins per UTC day, drawn as bars.
       db
@@ -89,18 +219,23 @@ export async function salesAnalytics({ from, to }: Period) {
         .groupBy(sql`1`)
         .orderBy(sql`1`),
 
+      // Grouped by ID beside the name: the id is what a row's filter link
+      // carries, and grouping by name alone would fold two renamed sources'
+      // histories into one row.
       db
         .select({
+          id: leads.sourceId,
           name: sql<string>`coalesce(${leadSources.name}, '—')`,
           n: sql<number>`count(*)`,
         })
         .from(leads)
         .leftJoin(leadSources, eq(leads.sourceId, leadSources.id))
         .where(created)
-        .groupBy(sql`1`),
+        .groupBy(leads.sourceId, sql`2`),
 
       db
         .select({
+          id: leads.sourceId,
           name: sql<string>`coalesce(${leadSources.name}, '—')`,
           won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
           lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
@@ -110,7 +245,7 @@ export async function salesAnalytics({ from, to }: Period) {
         .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
         .leftJoin(leadSources, eq(leads.sourceId, leadSources.id))
         .where(closed)
-        .groupBy(sql`1`),
+        .groupBy(leads.sourceId, sql`2`),
 
       // The sellers' table. `owner_id` NULL is a real row — an unclaimed lead
       // is nobody's work and hiding it would make the totals disagree with
@@ -138,7 +273,7 @@ export async function salesAnalytics({ from, to }: Period) {
         .select({ ownerId: leads.ownerId, n: sql<number>`count(*)` })
         .from(leads)
         .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
-        .where(eq(leadStages.kind, 'open'))
+        .where(openWhere)
         .groupBy(leads.ownerId),
 
       // Why we lose — grouped on the recorded TEXT, which after 0076 is a
@@ -157,6 +292,9 @@ export async function salesAnalytics({ from, to }: Period) {
 
       // Where the OPEN work sits right now — a snapshot, deliberately not
       // period-bound: the funnel today is the answer to «what is in hand».
+      // The filters ride in the JOIN, not the WHERE: an empty stage must
+      // keep its row, or a narrow filter makes columns vanish instead of
+      // reading zero.
       db
         .select({
           id: leadStages.id,
@@ -165,7 +303,7 @@ export async function salesAnalytics({ from, to }: Period) {
           n: sql<number>`count(${leads.id})`,
         })
         .from(leadStages)
-        .leftJoin(leads, eq(leads.stageId, leadStages.id))
+        .leftJoin(leads, and(eq(leads.stageId, leadStages.id), ...extra))
         .where(eq(leadStages.kind, 'open'))
         .groupBy(leadStages.id, leadStages.name, leadStages.color, leadStages.sortOrder)
         .orderBy(asc(leadStages.sortOrder), asc(leadStages.name)),
@@ -173,18 +311,28 @@ export async function salesAnalytics({ from, to }: Period) {
       // The deals' half of the same month: jobs decided, and the agreed
       // service price they carried. Quoted money, not the ledger — the charge
       // engine owns real revenue and `dealProfit` already reports it.
-      db
-        .select({
-          won: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} = 'won')`,
-          lost: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} = 'lost')`,
-          wonUsd: sql<string>`coalesce(sum(${deals.quotedAmount}) FILTER (WHERE ${dealStages.kind} = 'won'), 0)`,
-          open: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} NOT IN ('won','lost'))`,
-        })
-        .from(deals)
-        .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
-        .where(
-          sql`(${dealStages.kind} NOT IN ('won','lost')) OR (${deals.closedAt} >= ${from.toISOString()}::timestamptz AND ${deals.closedAt} < ${to.toISOString()}::timestamptz)`,
-        ),
+      // The OR wears its own parentheses: and() embeds members verbatim, so
+      // a bare `open OR closed` ANDed with a filter renders
+      // `(filter AND open) OR closed` — measured, not assumed — and the WON
+      // cells quietly count the whole company while the open cell looks
+      // filtered.
+      dealsApply
+        ? db
+            .select({
+              won: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} = 'won')`,
+              lost: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} = 'lost')`,
+              wonUsd: sql<string>`coalesce(sum(${deals.quotedAmount}) FILTER (WHERE ${dealStages.kind} = 'won'), 0)`,
+              open: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} NOT IN ('won','lost'))`,
+            })
+            .from(deals)
+            .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+            .where(
+              and(
+                ...dealFilterConds(f),
+                sql`((${dealStages.kind} NOT IN ('won','lost')) OR (${deals.closedAt} >= ${from.toISOString()}::timestamptz AND ${deals.closedAt} < ${to.toISOString()}::timestamptz))`,
+              ),
+            )
+        : Promise.resolve([]),
 
       db
         .select({ id: users.id, name: users.fullName })
@@ -195,13 +343,14 @@ export async function salesAnalytics({ from, to }: Period) {
 
   const sellers = new Map<
     string,
-    { name: string; fresh: number; won: number; lost: number; wonUsd: number; cycleDays: number; open: number }
+    { id: string | null; name: string; fresh: number; won: number; lost: number; wonUsd: number; cycleDays: number; open: number }
   >();
   const seller = (ownerId: string | null) => {
     const key = ownerId ?? '';
     let row = sellers.get(key);
     if (!row) {
       row = {
+        id: ownerId,
         name: ownerId ? (nameOf.get(ownerId) ?? '?') : '—',
         fresh: 0,
         won: 0,
@@ -224,18 +373,22 @@ export async function salesAnalytics({ from, to }: Period) {
   }
   for (const row of sellerOpen) seller(row.ownerId).open = Number(row.n);
 
-  const sources = new Map<string, { name: string; fresh: number; won: number; lost: number; wonUsd: number }>();
-  const source = (name: string) => {
-    let row = sources.get(name);
+  const sources = new Map<
+    string,
+    { id: string | null; name: string; fresh: number; won: number; lost: number; wonUsd: number }
+  >();
+  const source = (id: string | null, name: string) => {
+    const key = id ?? '';
+    let row = sources.get(key);
     if (!row) {
-      row = { name, fresh: 0, won: 0, lost: 0, wonUsd: 0 };
-      sources.set(name, row);
+      row = { id, name, fresh: 0, won: 0, lost: 0, wonUsd: 0 };
+      sources.set(key, row);
     }
     return row;
   };
-  for (const row of sourceNew) source(row.name).fresh = Number(row.n);
+  for (const row of sourceNew) source(row.id, row.name).fresh = Number(row.n);
   for (const row of sourceDecided) {
-    const s = source(row.name);
+    const s = source(row.id, row.name);
     s.won = Number(row.won);
     s.lost = Number(row.lost);
     s.wonUsd = money(row.wonUsd);
@@ -284,13 +437,17 @@ export async function salesAnalytics({ from, to }: Period) {
       n: Number(row.n),
       share: pct(Number(row.n), stageTotal),
     })),
-    deals: {
-      won: Number(d?.won ?? 0),
-      lost: Number(d?.lost ?? 0),
-      wonUsd: money(d?.wonUsd),
-      open: Number(d?.open ?? 0),
-      winRate: pct(Number(d?.won ?? 0), Number(d?.won ?? 0) + Number(d?.lost ?? 0)),
-    },
+    // null = «a deal has no source, so this block has no honest answer under
+    // a source filter» — the page prints the sentence instead of numbers.
+    deals: dealsApply
+      ? {
+          won: Number(d?.won ?? 0),
+          lost: Number(d?.lost ?? 0),
+          wonUsd: money(d?.wonUsd),
+          open: Number(d?.open ?? 0),
+          winRate: pct(Number(d?.won ?? 0), Number(d?.won ?? 0) + Number(d?.lost ?? 0)),
+        }
+      : null,
   };
 }
 
@@ -299,18 +456,25 @@ export async function salesAnalytics({ from, to }: Period) {
  * filters' way (#514: everything out of a URL is checked or dropped). The
  * screen's `gacha` is INCLUSIVE — a person asking «up to the 12th» means the
  * 12th's evening — so the query bound is the next midnight, exclusive.
- * Default: the current UTC month.
+ * Default: the current UTC month. An impossible calendar day ('2026-02-30')
+ * is DROPPED, not parsed: V8 quietly rolls it over to March 2nd, so without
+ * the round-trip check a typo'd date read as a silently shifted period.
  */
 export function readPeriod(params: { dan?: string; gacha?: string }): Period & { dan: string; gacha: string } {
-  const DAY = /^\d{4}-\d{2}-\d{2}$/;
+  const dayOf = (value: string | undefined) => {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+      ? parsed
+      : undefined;
+  };
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-  const fromDay = params.dan && DAY.test(params.dan) ? new Date(`${params.dan}T00:00:00Z`) : monthStart;
-  let toDay = params.gacha && DAY.test(params.gacha) ? new Date(`${params.gacha}T00:00:00Z`) : today;
-  if (Number.isNaN(fromDay.getTime())) return readPeriod({});
-  if (Number.isNaN(toDay.getTime()) || toDay < fromDay) toDay = fromDay;
+  const fromDay = dayOf(params.dan) ?? monthStart;
+  let toDay = dayOf(params.gacha) ?? today;
+  if (toDay < fromDay) toDay = fromDay;
 
   return {
     from: fromDay,

@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## Tahlil sahifasiga to'liq filtrlar — 2026-08-12
+
+So'rovingiz: «filterlarni maximalna qoyish mumkun bolgan narsalarga qoyib
+ber, source sotuvchi va boshqalar».
+
+Endi Tahlil sahifasida davrdan tashqari hamma narsa filtrlash mumkin:
+
+- **Manba** — bitta reklama kanali bo'yicha butun sahifa. «—» ham
+  tanlanadi (manbasiz, qo'lda kiritilgan lidlar). O'chirilgan eski
+  manbalar ham ro'yxatda — tarixini o'qish uchun.
+- **Sotuvchi** — bitta hodim bo'yicha, «Egasiz» ham alohida tanlanadi.
+  Ishdan ketgan sotuvchining tarixi ham filtrlash mumkin.
+- **Narx / kub / kg oraliqlari** — masalan «10 kubdan katta lidlar
+  bo'yicha tahlil».
+- Filtrlar davr qatorining ostidagi yig'iladigan bo'limda; nechta filtr
+  faolligi belgida ko'rinadi, faol filtrlar sahifada chips bo'lib turadi
+  (har birini bir bosishda olib tashlaysiz).
+- **Jadval qatorlari ham filtr**: manbalar yoki sotuvchilar jadvalida
+  nomni bossangiz — sahifa shu qator bo'yicha filtrlanadi. Telefonda eng
+  qulay yo'li shu.
+- Sotuvchi filtri qat'iy: hodimni tanlasangiz FAQAT uning lidlari —
+  egasizlar qo'shilmaydi (doskadagi «Meniki» boshqacha ishlaydi, u ish
+  taqsimoti; bu yerda hisob).
+- Manba filtri yoqilganda bitimlar qatori raqam o'rniga sabab yozadi —
+  bitimda manba yo'q, boshqa raqam yolg'on bo'lardi.
+
+Yo'lda topilgan va tuzatilgan: ikkala doskada ham sana filtriga mavjud
+bo'lmagan kun (masalan 30-fevral) kiritilsa xato sahifa chiqardi; endi
+bunday qiymat shunchaki tashlab yuboriladi.
+
 ## Sotuv tahlili sahifasi va yo'qotish sabablari ro'yxati — 2026-08-12
 
 8 talik ro'yxatning 8-bandi: «dunyo standartlarida qanday malumotlar tahlili

@@ -56,7 +56,17 @@ export function readBoardFilters(params: Record<string, string | string[] | unde
     const parsed = Number(text);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
   };
-  const date = (key: string) => (/^\d{4}-\d{2}-\d{2}$/.test(get(key)) ? get(key) : undefined);
+  const date = (key: string) => {
+    const value = get(key);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+    // The regex admits impossible calendar days ('2026-02-30'), and these
+    // values reach a raw `::date` cast — a forged URL was a 500, not a
+    // dropped filter (#514). The round-trip is the calendar check.
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+      ? value
+      : undefined;
+  };
 
   const raw: Partial<Record<BoardFilterKey, string>> = {};
   for (const key of BOARD_FILTER_KEYS) if (get(key)) raw[key] = get(key);

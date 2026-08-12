@@ -77,7 +77,11 @@ export default async function DealsPage({
   const mine = !seesAll || params.scope !== 'all';
   // A `hodim` from somebody who may not see everybody's jobs is ignored, not
   // obeyed — the same rule the funnel, the search and the bot all ask.
-  const hodim = seesAll ? (params.hodim ?? '') : '';
+  // Format-checked, not just permission-checked: this lands in
+  // `eq(leads.ownerId, …)`, and a hand-typed non-uuid was a 22P02 500
+  // for a view_all holder rather than a dropped filter (#514).
+  const hodim =
+    seesAll && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(params.hodim ?? '') ? params.hodim! : '';
   const scope = hodim || (mine ? actor.id : undefined);
   const q = (params.q ?? '').trim();
   const carried = {

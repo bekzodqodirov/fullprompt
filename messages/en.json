@@ -1384,7 +1384,9 @@
     "periodPrevMonth": "Last month",
     "addLostReason": "Add a lost reason",
     "lostReasonLabel": "Reason",
-    "lostReasonsSetupHint": "While the list is empty the reason is asked as free text; once filled, it is chosen from the list only."
+    "lostReasonsSetupHint": "While the list is empty the reason is asked as free text; once filled, it is chosen from the list only.",
+    "unowned": "Unassigned",
+    "dealsNoSource": "The source filter does not apply to deals — a deal carries no source."
   },
   "navShort": {
     "home": "Home",

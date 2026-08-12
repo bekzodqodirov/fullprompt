@@ -2657,6 +2657,40 @@ the dialog is now kept mounted and toggled like every other Overlay caller.
 order (vitest, then Playwright without re-seeding); screenshots at 360
 (tahlil, settings panel, the dialog over the funnel) and 1280.
 
+Round 99 — **tahlil filtrlari** (#675, owner: «filterlarni maximalna qoyish
+mumkun bolgan narsalarga qoyib ber, source sotuvchi va boshqalar»).
+Designed, then judged by a THREE-LENS adversarial workflow BEFORE any code
+— two blockers absorbed. /crm/tahlil filters: manba + sotuvchi (both with
+'none' = the «—» cohort) + narx/kub/kg ranges, ONE GET form (period row
+visible, the rest in a badge-counted fold that self-opens when active),
+chips row echoing active filters (each chip removes its own; clear keeps
+the period), preset/clear/chip/row links ALL via `hrefWith` over
+validated-then-reserialized values. `readAnalyticsFilters` in analytics.ts
+(#514: hodim/manba = uuid|'none'|dropped — a garbage hodim was a 22P02
+500); `AnalyticsFilters` is structurally unable to carry createdFrom/To
+(the board's dan/gacha = a created_at range; HERE the period on two
+clocks). `leadFilterConds` owner branch is STRICT eq/isNull — deliberately
+NOT leadBoardWhere's «mine OR unclaimed» (attribution vs work routing;
+comment states it, red-proven by swapping the or() in). Deals: filters AND
+onto the OR fragment which now wears its OWN parens — drizzle and() embeds
+members verbatim, so the bare fragment rendered `(filter AND open) OR
+closed` and the WON cells escaped; the first red-proof asserted the open
+cell and stayed GREEN — printing the generated SQL found the truth, and
+the test now pins the won cell (#166: a red proof that will not go red is
+evidence about the fixture). Under a source filter the deals block hides
+with a sentence (a deal has no source; unfiltered numbers read as
+filtered). Pickers render HISTORY: listSources(true) + sellers = active
+options ∪ data owners (#171 — a value the form cannot render is deleted on
+the next submit); source/seller table rows are themselves filter links,
+active row highlighted. Swept while in the area, live on the boards since
+round 71: date() was regex-only — ?dan=2026-02-30 was a ::date 500 on
+/crm and /bitimlar, and in readPeriod V8 ROLLS it to March 2nd (a silently
+shifted period, worse than the crash); both round-trip now. Both boards'
+hodim gained the uuid format check. Refused with reasons: lost-reason and
+stage filters (five of seven cells zero by construction / contradicts the
+two-clock design). 10 new unit + 5 integration (fixtures in April 2020 —
+March is the lost-reasons file's); red-proofs ×2. No migration.
+
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 
 **Ads → CRM lead intake — SHIPPED in round 83 below; this is the review that

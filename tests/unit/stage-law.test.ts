@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { closedAtFor, reasonAllowed, stageWrite } from '@/modules/wms/crm/stage-law';
-import { readPeriod } from '@/modules/wms/crm/analytics';
+import { readAnalyticsFilters, readPeriod } from '@/modules/wms/crm/analytics';
 
 /**
  * Round 98 part 2 — the pure halves of the analytics round: when `closed_at`
@@ -66,5 +66,46 @@ describe('readPeriod', () => {
     const p = readPeriod({ dan: '2026-08-10', gacha: '2026-08-01' });
     expect(p.dan).toBe('2026-08-10');
     expect(p.gacha).toBe('2026-08-10');
+  });
+
+  it('an impossible calendar day falls back instead of reaching the SQL', () => {
+    const p = readPeriod({ dan: '2026-02-30', gacha: '2026-02-30' });
+    expect(p.dan).toBe(readPeriod({}).dan);
+  });
+});
+
+describe('readAnalyticsFilters', () => {
+  const UUID = '019ff7ca-a06e-77fd-be1e-7024630bc56d';
+
+  it('takes a uuid or the literal none, and drops everything else (#514)', () => {
+    expect(readAnalyticsFilters({ hodim: UUID }).owner).toBe(UUID);
+    expect(readAnalyticsFilters({ hodim: 'none' }).owner).toBe('none');
+    // A garbage hodim reaching eq(uuid_col, …) is a 22P02 500, not a filter.
+    expect(readAnalyticsFilters({ hodim: 'Karim' }).owner).toBeUndefined();
+    expect(readAnalyticsFilters({ hodim: ['a', 'b'] }).owner).toBeUndefined();
+    expect(readAnalyticsFilters({ manba: 'none' }).source).toBe('none');
+    expect(readAnalyticsFilters({ manba: 'tiktok' }).source).toBeUndefined();
+  });
+
+  it('numbers: comma decimals in, negatives and NaN out', () => {
+    const f = readAnalyticsFilters({ kub_min: '2,5', narx_min: '-3', kg_max: 'abc' });
+    expect(f.volMin).toBe(2.5);
+    expect(f.amountMin).toBeUndefined();
+    expect(f.kgMax).toBeUndefined();
+  });
+
+  it('carried echoes ONLY validated values, so links cannot walk garbage', () => {
+    const f = readAnalyticsFilters({ hodim: UUID, narx_min: 'abc', kub_max: '10' });
+    expect(f.carried).toEqual({ hodim: UUID, kub_max: '10' });
+    expect(f.active).toBe(2);
+  });
+
+  it('the period cannot leak in: dan/gacha are not filter keys', () => {
+    // The filter shape must be structurally unable to carry a created_at
+    // range — the closed-clock queries would silently drop leads that
+    // arrived before the period and closed inside it (the two-clock rule).
+    const f = readAnalyticsFilters({ dan: '2026-01-01', gacha: '2026-02-01' });
+    expect(f.active).toBe(0);
+    expect(f.carried).toEqual({});
   });
 });
