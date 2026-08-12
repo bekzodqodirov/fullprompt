@@ -329,15 +329,23 @@ describe('the Mini App door', () => {
 });
 
 describe('client-facing notifications', () => {
-  it('renders uz texts for ReadyForPickup and BoxIssued, nothing for staff events', () => {
-    const ready = renderClientCabinetText('ReadyForPickup', {
-      clientCode: 'GS777',
-      boxCount: 13,
-      warehouseCode: 'TAS1',
-    });
-    expect(ready).toContain('GS777');
-    expect(ready).toContain('13');
-    expect(ready).toContain('TAS1');
+  /*
+   * REWRITTEN in round 98, and the change of subject is the point.
+   *
+   * This used to assert that `ReadyForPickup` renders a customer's message.
+   * That event fires once per unload SCAN, which is exactly the defect the
+   * owner reported — one «yukingiz keldi» per carton. The customer's copy is
+   * now a claimed notice (`wms/notices/arrival.ts`), so the assertion here is
+   * that this event says NOTHING to the client, and the event stays for staff.
+   */
+  it('says nothing to the client for ReadyForPickup; renders BoxIssued; nothing for staff events', () => {
+    expect(
+      renderClientCabinetText('ReadyForPickup', {
+        clientCode: 'GS777',
+        boxCount: 13,
+        warehouseCode: 'TAS1',
+      }),
+    ).toBeNull();
     const issued = renderClientCabinetText('BoxIssued', {
       clientCode: 'GS777',
       boxCount: 2,

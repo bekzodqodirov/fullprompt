@@ -153,6 +153,31 @@ const DICT = {
     en: 'Details: 📦 My cargo',
   },
 
+  // --- cargo landed in Uzbekistan (round 98) ---
+  //
+  // The Uzbek-side arrival used to be ONE hardcoded Uzbek sentence carrying a
+  // box count and nothing else — no kilos, no cubic metres, no goods, and no
+  // translation, so a Russian-reading customer got Uzbek. It says what the
+  // Chinese-side arrival says, in the customer's own language, because it is
+  // the same question asked at the other end of the road.
+  readyTitle: {
+    uz: '🇺🇿 Yukingiz yetib keldi',
+    ru: '🇺🇿 Ваш груз прибыл',
+    en: '🇺🇿 Your cargo has arrived',
+  },
+  readyNote: {
+    uz: 'Rasmiylashtiruv tugagach olib ketish vaqtini kelishamiz.',
+    ru: 'Согласуем выдачу после оформления.',
+    en: 'We will agree a pickup time once the paperwork is done.',
+  },
+  issuedTitle: {
+    uz: '🤝 Yukingiz berildi',
+    ru: '🤝 Груз выдан',
+    en: '🤝 Your cargo has been handed over',
+  },
+  issuedTo: { uz: 'Oluvchi', ru: 'Получатель', en: 'Received by' },
+  issuedLeft: { uz: 'Omborda qoldi', ru: 'Осталось на складе', en: 'Left in stock' },
+
   // --- the Mini App ---
   appTitle: { uz: 'Mening yuklarim', ru: 'Мои грузы', en: 'My cargo' },
   /**

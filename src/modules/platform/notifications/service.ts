@@ -403,17 +403,37 @@ export function renderClientCabinetText(
         t.seeDetails
       );
     }
+    /*
+     * NOT sent from here any more (round 98).
+     *
+     * This event fires once per unload SCAN, so the customer got one «yukingiz
+     * keldi» per carton — the owner's report — and the «accept the rest»
+     * button could send two hundred. The client's copy is now a claimed notice
+     * (`wms/notices/arrival.ts`): one per customer per truck, sent minutes
+     * later with the goods, the kilos and the cubic metres, in their own
+     * language. The EVENT stays exactly as it was for the staff side, which is
+     * what it was written for.
+     */
     case 'ReadyForPickup':
-      // Owner's Q5 wording: arrived, being cleared — pickup after paperwork.
-      return (
-        `📦 Assalomu alaykum! ${payload.clientCode} kodli yukingiz (${payload.boxCount} karobka) ` +
-        `${payload.warehouseCode} omboriga yetib keldi. Rasmiylashtiruv tugagach olib ketish vaqtini kelishamiz.`
-      );
+      return null;
+    /*
+     * Handover — the last thing a customer hears about a delivery, and until
+     * round 98 the ONE message on this path written straight into the file in
+     * Uzbek: a Russian-reading customer was told «karobka yukingiz berildi»
+     * and a box count with no kilos and no goods. It now uses the client
+     * dictionary like every sentence around it and carries the shape the two
+     * arrivals carry.
+     */
     case 'BoxIssued':
       return (
-        `🤝 ${payload.clientCode}: ${payload.boxCount} karobka yukingiz berildi (sklad ${payload.warehouseCode}). ` +
-        `Oluvchi: ${payload.personName}.` +
-        (Number(payload.remaining) > 0 ? `\nSkladda qoldi: ${payload.remaining} karobka.` : '')
+        `${t.issuedTitle}\n` +
+        `${payload.clientCode}\n` +
+        `${t.arrivedWarehouse}: ${payload.warehouseCode}\n\n` +
+        `${t.arrivedTotal}: ${payload.boxCount} ${t.pieces}\n` +
+        `${t.issuedTo}: ${payload.personName}` +
+        (Number(payload.remaining) > 0
+          ? `\n${t.issuedLeft}: ${payload.remaining} ${t.pieces}`
+          : '')
       );
     default:
       return null;
