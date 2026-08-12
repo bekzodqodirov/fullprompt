@@ -40,6 +40,29 @@ export function stageWrite(targetKind: string, typedReason?: string | null): Sta
 }
 
 /**
+ * Whether a typed reason is one the owner's list allows (round 98, «yopilish
+ * sababini listdan belgilaydigan qilishimiz kerak»). An EMPTY list means the
+ * dictionary has not been set up and free text stays legal — day one must not
+ * make losing a lead impossible. Non-empty, the reason must be one of the
+ * listed labels: the pickers only offer those, so anything else is a forged
+ * post, not a person's choice (#514's rule about URL params, on a form body).
+ */
+export function reasonAllowed(label: string, activeLabels: string[]): boolean {
+  return activeLabels.length === 0 || activeLabels.includes(label);
+}
+
+/**
+ * What `closed_at` must become when a card MOVES to a stage of this kind
+ * (0076). Only on an actual move — an ordinary save of an already-closed
+ * record keeps the stamp it has, which every caller already guarantees by
+ * applying stage law only when the stage changed. A move between two closed
+ * kinds (lost → won) re-stamps: it is a new decision.
+ */
+export function closedAtFor(targetKind: string, now: Date): Date | null {
+  return targetKind === 'won' || targetKind === 'lost' ? now : null;
+}
+
+/**
  * The stages an edit FORM may offer.
  *
  * A screen must not offer what the service refuses — the person would press

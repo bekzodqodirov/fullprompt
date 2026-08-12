@@ -152,7 +152,8 @@ everything before them is merged.
 1386 unit/integration + 154 e2e here. **The four «known failing» photo-path
 specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
 had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
-Latest migration: **0075** (`board_order` — where the owner put a card in its
+Latest migration: **0076** (`sales_analytics` — the `lost_reasons` dictionary
+and `closed_at` on leads+deals; 0075 `board_order` — where the owner put a card in its
 column, on `leads` AND `deals`, backfilled from the order the board showed the
 day it deployed; **renumbered from 0073 on merge, the NINTH collision** — the
 other session took 0073 `inbound_routing` and 0074 `lead_field_map` with the
@@ -209,8 +210,9 @@ branch was never merged**: `git pull` on production takes `main`, and rounds
 96-97 of THIS session live only on `claude/frappe-crm-full-prompt-vempoq`.
 RULE, learned the expensive way: **telling him to deploy is telling him to
 merge first.** After PR #35 is merged: `git pull`, `docker compose build app`,
-`docker compose run --rm migrate` → **76**. The backfill in 0075 touches every
-`leads` and `deals` row once and is written so a re-run is a no-op.
+`docker compose run --rm migrate` → **76** (or **77** once this branch's
+round 98 / 0076 is merged too). The backfills in 0075 and 0076 touch every
+`leads` and `deals` row once and are written so a re-run is a no-op.
 The same week, in chat, **Meta Lead Ads went live in production**: correct page
 subscribed, app published, permanent token (`expires_at: 0`) in the server
 `.env`, a test lead landed in the funnel end-to-end — the road and its traps
@@ -2619,6 +2621,41 @@ is per-server and was never fetched on the new box — owner given
 Jiayuguan, Xingxingxia, Yanqi, Taldyk pass, Kamchik pass) so the mountain
 stretches bend like the road. No migration in part 1 — part 2's lost-reason
 dictionary mints **0076** (0075 is the board order's).
+
+Round 98 (part 2) — **item 8: /crm/tahlil + the lost-reason dictionary**
+(#674, owner: «dunyo standartlarida qanday malumotlar tahlili bolsa hammasini
+hohlayman va … yopilish sababini listdan belgilaydigan qilishimiz kerak»).
+Migration **0076** (count must reach **77**): `lost_reasons` (label/sort/
+active, unique lower(label)) + `closed_at` on leads AND deals, backfilled
+from `updated_at` for already-closed cards (approximation, stated).
+`closedAtFor` + `reasonAllowed` live in stage-law beside `stageWrite` (a
+unit test pins that the law and the stamp agree about what a decision is);
+every stage door stamps: moveLead/moveDeal, both ✏️ forms, convertLead —
+only on a real MOVE (a drag inside the won column re-orders, never
+re-stamps; a revival clears, like the reason). `crm/analytics.ts`
+`salesAnalytics` = one Promise.all of grouped queries, TWO CLOCKS (new by
+created_at, won/lost by closed_at); `readPeriod` validates `?dan/gacha` out
+of the URL (#514), gacha inclusive. Screen: 7-cell scoreboard, per-day
+bars, funnel snapshot (deliberately unperioded), sources/sellers tables
+(owner NULL = a real «—» row), lost-reason breakdown, deals block; SubNav +
+funnel ⋯ under `crm.manage`. THE DICTIONARY: rows edited on /crm/settings
+(SourceForm's shape; deactivate is the only removal), offered by the
+kanban's `LostReasonDialog` sheet, StageMover and the bulk bar's select;
+moveLead/moveDeal REFUSE an unlisted reason once the list exists
+(`lost_reason_not_listed`, in useMoveErrors + i18n ×4) — the stored value
+stays TEXT (a rename never rewrites a record), and an EMPTY list keeps free
+text everywhere, so day one and every pre-dictionary spec behave exactly as
+before (zero e2e changes). Red-proofs ×2 (gate stripped → listed-labels
+test red; stamp stripped → 2 red). New `tests/unit/stage-law.test.ts` (8) +
+`tests/integration/lost-reasons.integration.test.ts` (8, snapshots/clears/
+restores the GLOBAL dictionary per #653, analytics fixtures parked in
+March 2020). ~26 i18n keys ×4. FOUND BY THE SCREENSHOT, not by any locator:
+`Overlay`'s close-on-navigation effect runs once on MOUNT, so a dialog
+conditionally rendered already-open closed itself the frame it appeared —
+the dialog is now kept mounted and toggled like every other Overlay caller.
+1440 unit/integration + **154 e2e all green** on a fresh gsr_ci in CI's
+order (vitest, then Playwright without re-seeding); screenshots at 360
+(tahlil, settings panel, the dialog over the funnel) and 1280.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import {
   deleteStageAction,
   reorderStagesAction,
+  saveLostReasonAction,
   saveSourceAction,
   saveStageAction,
   setCalcStageAction,
@@ -194,6 +195,69 @@ export function StageTools({
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * One row of the lost-reason dictionary (round 98) — the SourceForm's shape
+ * exactly, because it answers the same kind of question: a label the owner
+ * words himself, an order, and «still offered?». Deactivating is the only
+ * removal; the text already recorded on old cards outlives the row.
+ */
+export function LostReasonForm({
+  reason,
+}: {
+  reason?: { id: string; label: string; sortOrder: number; active: boolean };
+}) {
+  const t = useTranslations('crm');
+  const tc = useTranslations('common');
+  const [state, formAction, pending] = useActionState<CrmFormState, FormData>(
+    saveLostReasonAction,
+    {},
+  );
+
+  return (
+    <form action={formAction} className="space-y-2 border-t border-line pt-2 first:border-0">
+      {reason && <input type="hidden" name="id" value={reason.id} />}
+      <div className="flex flex-wrap gap-2">
+        <input
+          name="label"
+          defaultValue={reason?.label}
+          placeholder={t('lostReasonLabel')}
+          aria-label={t('lostReasonLabel')}
+          data-testid="lost-reason-label"
+          className="input min-w-40 flex-1"
+          required
+        />
+        <input
+          name="sortOrder"
+          type="number"
+          defaultValue={reason?.sortOrder ?? 100}
+          aria-label="#"
+          className="input !w-20"
+        />
+        <label className="flex items-center gap-1 self-center text-sm">
+          <input type="hidden" name="active" value="off" />
+          <input
+            type="checkbox"
+            name="active"
+            value="on"
+            defaultChecked={reason ? reason.active : true}
+            className="h-4 w-4"
+          />
+          {tc('active')}
+        </label>
+        <button
+          type="submit"
+          data-testid={reason ? 'update-lost-reason' : 'save-lost-reason'}
+          className={reason ? 'btn-secondary' : 'btn-primary'}
+          disabled={pending}
+        >
+          {pending ? tc('loading') : tc('save')}
+        </button>
+      </div>
+      <Feedback state={state} />
+    </form>
   );
 }
 

@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## Sotuv tahlili sahifasi va yo'qotish sabablari ro'yxati — 2026-08-12
+
+8 talik ro'yxatning 8-bandi: «dunyo standartlarida qanday malumotlar tahlili
+bo'lsa hammasini hohlayman va yopilish sababini listdan belgilaydigan
+qilishimiz kerak».
+
+**Yangi sahifa: CRM → Tahlil** (faqat CRM boshqaruvchilarga ko'rinadi):
+
+- Davr tanlanadi (dan/gacha + 7 kun / 30 kun / bu oy / o'tgan oy tugmalari),
+  har bir tanlangan davr — ulashsa bo'ladigan manzil.
+- Bir qatorda: yangi lidlar, yutilgan, yo'qotilgan, yutish foizi, yutilgan
+  summa, o'rtacha yopilish muddati (kunlarda), hozir ochiq turganlar.
+- Kunlik oqim: har kun nechta lid keldi va nechta yutildi — ustunchalar.
+- Voronka hozir qanday turibti (har etapda nechta karta).
+- Manbalar jadvali: qaysi reklama nechta lid berdi, nechtasi yutildi,
+  qancha pul keltirdi.
+- Sotuvchilar jadvali: har kim nechta oldi, yutdi, yo'qotdi, qancha summa,
+  qancha tez yopadi. Egasiz lidlar ham alohida qatorda ko'rinadi.
+- Yo'qotish sabablari: qaysi sabab necha marta — endi sanash mumkin.
+- Bitimlar ham shu davr bo'yicha bir qatorda.
+
+Hisob ikkita soat bilan yuritiladi: «yangi» — lid KELGAN kun bo'yicha,
+«yutildi/yo'qotildi» — QAROR qilingan kun bo'yicha. Buning uchun bazaga
+yopilish sanasi qo'shildi (avval yo'q edi — «bu oy nimani yopdik» degan
+savolga javob berib bo'lmasdi). Eski yopiq kartalarga taxminiy sana
+qo'yildi (oxirgi o'zgargan kuni); aniq hisob deploydan keyingi birinchi
+ko'chirishdan boshlanadi.
+
+**Yo'qotish sabablari endi ro'yxatdan tanlanadi:**
+
+- CRM → Sozlamalar'da o'z ro'yxatingizni yozasiz («Narx qimmat», «Javob
+  bermadi», …), tartibini va faolligini boshqarasiz.
+- Kartani yo'qotilganga o'tkazganda erkin matn o'rniga shu ro'yxatdan
+  tanlanadi — telefonda ham, kompyuterda ham, ommaviy ko'chirishda ham.
+- Ro'yxat BO'SH bo'lsa hammasi avvalgidek erkin matnda qoladi — deploy
+  kuni hech nima o'zgarmaydi, ro'yxatni to'ldirganingizdan keyin ishga
+  tushadi.
+- Eski kartalardagi yozilgan sabablar o'z holicha qoladi; sababni keyin
+  qayta nomlasangiz ham tarix o'zgarmaydi.
+
+Bazaga yangilik qo'shildi: deploy qilganda migratsiyalar soni **77** ga
+yetishi kerak.
+
 ## 8 talik ro'yxatning birinchi qismi — 2026-08-12
 
 Sizning ro'yxatingizdan 6 tasi (4-band boshqa sessiyada, 8-band — tahlil

@@ -31,5 +31,9 @@ export function useMoveErrors(): Record<string, string> {
     stage_not_found: t('moveErrors.stageNotFound'),
     reason_required: t('moveErrors.reasonRequired'),
     lost_reason_required: t('moveErrors.reasonRequired'),
+    // Round 98: once the owner's lost-reason dictionary has rows, the reason
+    // must be one of them. A person picking from the sheet cannot hit this —
+    // it answers a forged or stale post in words instead of «Xatolik».
+    lost_reason_not_listed: t('moveErrors.reasonNotListed'),
   };
 }

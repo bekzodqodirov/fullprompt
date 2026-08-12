@@ -7,13 +7,14 @@ import {
   leads,
   leadSources,
   leadStages,
+  lostReasons,
   users,
 } from '../../platform/db/schema';
 import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
 import { likeNeedle, parseQuery } from '../search/query';
-import { stageWrite } from './stage-law';
+import { closedAtFor, reasonAllowed, stageWrite } from './stage-law';
 import { orderForMove, topOfColumn, type BoardTable } from './board-place';
 
 /**
@@ -121,6 +122,45 @@ export async function saveSource(
   if (!row) throw new CrmError('not_found');
   await writeAudit(db, ctx, {
     entityType: 'lead_source',
+    entityId: row.id,
+    action: input.id ? 'update' : 'create',
+    after: values,
+  });
+  return row;
+}
+
+/**
+ * The lost-reason dictionary (0076). One list for BOTH funnels — «narx
+ * qimmat» kills a lead and a deal the same way, and two lists would make the
+ * analytics page's breakdown add across two spellings of one answer.
+ */
+export async function listLostReasons(includeInactive = false) {
+  return db
+    .select()
+    .from(lostReasons)
+    .where(includeInactive ? undefined : eq(lostReasons.active, true))
+    .orderBy(asc(lostReasons.sortOrder), asc(lostReasons.label));
+}
+
+export async function activeLostReasonLabels(): Promise<string[]> {
+  const rows = await listLostReasons();
+  return rows.map((row) => row.label);
+}
+
+export async function saveLostReason(
+  input: { id?: string; label: string; sortOrder: number; active: boolean },
+  ctx: AuditContext,
+) {
+  if (!ctx.actorId) throw new CrmError('unauthenticated');
+  const label = input.label.trim();
+  if (label.length < 2) throw new CrmError('reason_required');
+  const values = { label, sortOrder: input.sortOrder, active: input.active };
+  const [row] = input.id
+    ? await db.update(lostReasons).set(values).where(eq(lostReasons.id, input.id)).returning()
+    : await db.insert(lostReasons).values(values).returning();
+  if (!row) throw new CrmError('not_found');
+  await writeAudit(db, ctx, {
+    entityType: 'lost_reason',
     entityId: row.id,
     action: input.id ? 'update' : 'create',
     after: values,
@@ -425,6 +465,7 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
    * lost must not be a refusal, and must not wipe its reason either.
    */
   let lostReason: string | null | undefined;
+  let closedAt: Date | null | undefined;
   if (values.stageId !== before.stageId) {
     const stage = await db.query.leadStages.findFirst({
       where: eq(leadStages.id, values.stageId),
@@ -433,6 +474,7 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     const law = stageWrite(stage.kind, null);
     if (!law.ok) throw new CrmError(law.reason);
     lostReason = law.lostReason;
+    closedAt = closedAtFor(stage.kind, new Date());
   }
 
   const [row] = await db
@@ -440,6 +482,7 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     .set({
       ...values,
       ...(lostReason === undefined ? {} : { lostReason }),
+      ...(closedAt === undefined ? {} : { closedAt }),
       // A stage changed from the ✏️ form is still an arrival: this door says
       // nothing about position, so the card goes to the top of where it lands
       // exactly as the board's own move does. Left alone otherwise — an
@@ -519,11 +562,25 @@ export async function moveLead(
   if (!stage) throw new CrmError('stage_not_found');
   const law = stageWrite(stage.kind, reason);
   if (!law.ok) throw new CrmError(law.reason);
+  // Once the owner has written his list, «why we lost» is one of ITS answers —
+  // the pickers offer only those, so anything else arriving here is a forged
+  // post. An empty list keeps free text legal (day one, and every test fixture
+  // written before the dictionary existed).
+  if (law.lostReason !== null && !reasonAllowed(law.lostReason, await activeLostReasonLabels()))
+    throw new CrmError('lost_reason_not_listed');
 
   const boardOrder = await orderForMove(db, LEAD_BOARD, stageId, id, place);
   await db
     .update(leads)
-    .set({ stageId, lostReason: law.lostReason, boardOrder, updatedAt: new Date() })
+    .set({
+      stageId,
+      lostReason: law.lostReason,
+      boardOrder,
+      // Only a real move decides anything: a drag inside the won column is a
+      // re-order, not a second win, and must not move the month it counts in.
+      ...(stageId !== lead.stageId ? { closedAt: closedAtFor(stage.kind, new Date()) } : {}),
+      updatedAt: new Date(),
+    })
     .where(eq(leads.id, id));
   // Only a real move is a fact about the lead. A card dragged one place up its
   // own column is a fact about how somebody likes to look at the board — the
@@ -583,9 +640,13 @@ export async function convertLead(
       stageId,
       nextActionAt: null,
       nextActionNote: null,
-      // A conversion is an arrival in the won column like any other (0075).
+      // A conversion is an arrival in the won column like any other (0075),
+      // and a decision like any other (0076).
       ...(stageId !== lead.stageId
-        ? { boardOrder: await topOfColumn(db, LEAD_BOARD, stageId) }
+        ? {
+            boardOrder: await topOfColumn(db, LEAD_BOARD, stageId),
+            closedAt: closedAtFor(won?.kind ?? 'open', new Date()),
+          }
         : {}),
       updatedAt: new Date(),
     })

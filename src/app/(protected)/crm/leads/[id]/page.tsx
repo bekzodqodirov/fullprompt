@@ -8,7 +8,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { getSetting } from '@/modules/platform/settings/service';
 import { Panel } from '@/components/panel';
-import { listSources, listStages } from '@/modules/wms/crm/service';
+import { activeLostReasonLabels, listSources, listStages } from '@/modules/wms/crm/service';
 import { formStages } from '@/modules/wms/crm/stage-law';
 import { customFieldsData } from '@/modules/platform/fields/view';
 import { convertLeadAction, updateLeadAction } from '../../actions';
@@ -60,7 +60,7 @@ export default async function LeadPage({
 
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
-  const [sources, stages, managers, custom, codePrefix] = await Promise.all([
+  const [sources, stages, managers, custom, codePrefix, lostReasonList] = await Promise.all([
     listSources(),
     listStages(),
     // The lead's current owner too: the same bare <select> that erased
@@ -71,6 +71,7 @@ export default async function LeadPage({
     // rather than the standalone panel.
     customFieldsData('lead', id),
     getSetting('client_code_prefix'),
+    activeLostReasonLabels(),
   ]);
 
   const update = updateLeadAction.bind(null, id);
@@ -94,6 +95,7 @@ export default async function LeadPage({
       <StageMover
         leadId={id}
         currentId={lead.stageId}
+        lostReasons={lostReasonList}
         stages={stages.map((stage) => ({
           id: stage.id,
           name: stage.name,

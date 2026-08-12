@@ -2,10 +2,10 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
-import { listSources, listStages, stageUsage } from '@/modules/wms/crm/service';
+import { listLostReasons, listSources, listStages, stageUsage } from '@/modules/wms/crm/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import Link from 'next/link';
-import { CalcStageForm, SourceForm, StageForm, StageTools } from './forms';
+import { CalcStageForm, LostReasonForm, SourceForm, StageForm, StageTools } from './forms';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -18,11 +18,12 @@ export default async function CrmSettingsPage() {
   if (!actor.permissions.has('crm.manage')) redirect('/crm');
   const t = await getTranslations('crm');
 
-  const [stages, sources, usage, calcStage] = await Promise.all([
+  const [stages, sources, usage, calcStage, reasons] = await Promise.all([
     listStages(true),
     listSources(true),
     stageUsage(),
     getSetting('crm_calc_stage'),
+    listLostReasons(true),
   ]);
 
   const stageRows = stages.map((stage) => ({
@@ -55,6 +56,27 @@ export default async function CrmSettingsPage() {
       <Panel title={`✏️ ${t('stages')}`} badge={stageRows.length}>
         {stageRows.map((stage) => (
           <StageForm key={stage.id} stage={stage} />
+        ))}
+      </Panel>
+
+      {/* Why jobs die, as the owner's own list (round 98). While this list
+          is EMPTY the boards keep asking in free text — day one must not make
+          losing a lead impossible — and the hint says so. */}
+      <Panel title={`➕ ${t('addLostReason')}`}>
+        <p className="pb-2 text-xs text-ink-500">{t('lostReasonsSetupHint')}</p>
+        <LostReasonForm />
+      </Panel>
+      <Panel title={`🚫 ${t('lostReasonsTitle')}`} badge={reasons.length}>
+        {reasons.map((reason) => (
+          <LostReasonForm
+            key={reason.id}
+            reason={{
+              id: reason.id,
+              label: reason.label,
+              sortOrder: reason.sortOrder,
+              active: reason.active,
+            }}
+          />
         ))}
       </Panel>
 

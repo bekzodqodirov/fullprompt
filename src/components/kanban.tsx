@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } fr
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import type { Selection as SelectionStore } from '@/components/list/selection';
+import { LostReasonDialog } from '@/components/lost-reason-dialog';
 import { compareBoardOrder, slotBetween } from '@/modules/wms/crm/board-order';
 import { stageClass } from '@/app/(protected)/crm/stage-color';
 
@@ -88,6 +89,13 @@ interface BoardProps<T extends KanbanItem> {
   stages: KanbanStage[];
   items: T[];
   labels: KanbanLabels;
+  /**
+   * The owner's lost-reason dictionary (round 98). Non-empty, a move into a
+   * lost column asks with a sheet of these instead of the free-text prompt;
+   * empty or absent keeps the prompt — the dictionary not being set up must
+   * not change how the board behaves.
+   */
+  lostReasons?: string[];
   renderCard: (item: T) => ReactNode;
   hrefOf: (item: T) => string;
   /**
@@ -141,6 +149,7 @@ export function KanbanBoard<T extends KanbanItem>({
   stages,
   items,
   labels,
+  lostReasons,
   renderCard,
   hrefOf,
   onMove,
@@ -165,6 +174,12 @@ export function KanbanBoard<T extends KanbanItem>({
   // which was fine while the desktop board's only way to move a card was a
   // drag — and a drag is now a mouse's alone.
   const [sheetFor, setSheetFor] = useState<T | null>(null);
+  // A lost move waiting for its reason to be picked from the dictionary.
+  const [pendingLost, setPendingLost] = useState<{
+    item: T;
+    stageId: string;
+    beforeId?: string | null;
+  } | null>(null);
 
   // The server is the truth; `placement` only holds a card in its new column
   // between the move and the revalidation, so the card never jumps back for
@@ -200,21 +215,8 @@ export function KanbanBoard<T extends KanbanItem>({
    * buttons so the two can never disagree about what a move means — a lost job
    * has to say why, and refusing the prompt leaves the card alone.
    */
-  const move = useCallback(
-    async (item: T, stageId: string, beforeId?: string | null) => {
-      const stage = stages.find((row) => row.id === stageId);
-      if (!stage) return;
-      // Without a landing place a same-column move is not a move at all —
-      // that is the button's refusal and it stays. WITH one it is a reorder,
-      // which is the whole of this round.
-      if (beforeId === undefined && stage.id === (placement[item.id] ?? item.stageId)) return;
-
-      let reason = '';
-      if (stage.kind === 'lost') {
-        reason = window.prompt(labels.lostReason) ?? '';
-        if (reason.trim().length < 2) return;
-      }
-
+  const commitMove = useCallback(
+    async (item: T, stageId: string, reason: string, beforeId?: string | null) => {
       // The number the server is about to compute, computed here from the
       // neighbours already on screen. They are the database's neighbours too:
       // the per-stage cap takes a prefix of this very order.
@@ -256,7 +258,37 @@ export function KanbanBoard<T extends KanbanItem>({
         setError(result.error ?? 'failed');
       }
     },
-    [placement, stages, labels.lostReason, onMove, columnOf, orderOf],
+    [onMove, columnOf, orderOf],
+  );
+
+  /**
+   * The reason step in front of `commitMove`. With a dictionary (round 98)
+   * the question is a sheet of the owner's own answers; with none it stays
+   * the free-text prompt, so day one — and every spec written before the
+   * dictionary existed — behaves exactly as before. Cancelling either leaves
+   * the card alone.
+   */
+  const move = useCallback(
+    async (item: T, stageId: string, beforeId?: string | null) => {
+      const stage = stages.find((row) => row.id === stageId);
+      if (!stage) return;
+      // Without a landing place a same-column move is not a move at all —
+      // that is the button's refusal and it stays. WITH one it is a reorder,
+      // which is the whole of round 96.
+      if (beforeId === undefined && stage.id === (placement[item.id] ?? item.stageId)) return;
+
+      if (stage.kind === 'lost') {
+        if (lostReasons && lostReasons.length > 0) {
+          setPendingLost({ item, stageId, beforeId });
+          return;
+        }
+        const reason = window.prompt(labels.lostReason) ?? '';
+        if (reason.trim().length < 2) return;
+        return commitMove(item, stageId, reason, beforeId);
+      }
+      return commitMove(item, stageId, '', beforeId);
+    },
+    [placement, stages, labels.lostReason, lostReasons, commitMove],
   );
 
   const counts = Object.fromEntries(
@@ -386,6 +418,21 @@ export function KanbanBoard<T extends KanbanItem>({
             </button>
           </div>
         </div>
+      )}
+
+      {lostReasons && lostReasons.length > 0 && (
+        <LostReasonDialog
+          open={Boolean(pendingLost)}
+          reasons={lostReasons}
+          title={labels.lostReason}
+          closeLabel={labels.cancelMove}
+          onPick={(reason) => {
+            const pending = pendingLost;
+            setPendingLost(null);
+            if (pending) void commitMove(pending.item, pending.stageId, reason, pending.beforeId);
+          }}
+          onCancel={() => setPendingLost(null)}
+        />
       )}
     </>
   );

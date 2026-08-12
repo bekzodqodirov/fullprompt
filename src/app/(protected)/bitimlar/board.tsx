@@ -50,12 +50,15 @@ export function DealBoard({
   hidden,
   archiveHref,
   fields,
+  lostReasons,
 }: {
   stages: KanbanStage[];
   deals: BoardDeal[];
   /** Finished deals left off the board, per stage (round 47). */
   hidden?: Record<string, number>;
   archiveHref?: string;
+  /** The owner's lost-reason list; non-empty replaces the free-text prompt. */
+  lostReasons?: string[];
   /** Which switchable lines this browser wants; code + title are never in it. */
   fields: Set<string>;
 }) {
@@ -77,6 +80,7 @@ export function DealBoard({
         stages={stages}
         hidden={hidden}
         archiveHref={archiveHref}
+        lostReasons={lostReasons}
         items={deals}
         cardTestId="deal-card"
         selection={{ store: selection, label: tl('select') }}
@@ -190,6 +194,7 @@ export function DealBoard({
 
       <BulkBar
         selection={selection}
+        lostReasons={lostReasons}
         stages={stages}
         onMove={(ids, stageId, reason) => bulkMoveDealsAction(ids, stageId, reason)}
       />
