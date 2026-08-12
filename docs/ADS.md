@@ -8,21 +8,41 @@ Kod tomoni: `src/modules/wms/crm/inbound.ts` (qaror), `meta-leads.ts` (Meta),
 
 ---
 
-## 0. Avval: navbatni yoqish
+## 0. Avval: taqsimotni sozlash
 
-Reklamadan kelgan lead **navbat bilan** sotuvchilarga biriktiriladi (egasining
-so'zi: «navbat bilan hammaga»). Kim navbatda turishini rol belgilaydi:
+Reklamadan kelgan lead **navbat bilan** biriktiriladi (egasining so'zi:
+«navbat bilan hammaga», keyin aniqlashtirdi: «hamma sotuvchi, lekin hamma
+lead bilan ishlamaydi»). Hammasi bitta ekranda: **Boshqaruv → Arizalar
+taqsimoti**.
 
-1. **Boshqaruv → Rollar**ni oching.
-2. Sotuvchilar roli (masalan «Sotuv menejeri») yonidagi ✏️ ni bosing.
-3. **«Kelgan arizalar navbati»** katagiga belgi qo'ying.
+1. **Navbat qatnashchilari** — hodimlar ro'yxati, kataklar bilan. Belgilangan
+   ODAM navbatda; rol emas. Adminni olib tashlash — bitta katakni bo'shatish.
+2. **Oqim qoidalari** (ixtiyoriy) — «bu manba shu odamlarga»: manba
+   (instagram/facebook/telegram/google/sayt) va/yoki matndagi so'z bo'yicha.
+   Qoidalar yuqoridan pastga o'qiladi, **birinchi mos kelgani ishlaydi** —
+   tartibni ↑↓ bilan o'zgartirasiz. Bir qoidada bir necha hodim bo'lsa, ular
+   orasida ham o'sha adolatli navbat ishlaydi.
 
-Belgilanmasa hech kim navbatda bo'lmaydi — lead baribir yaratiladi, lekin
-egasiz bo'ladi va **hamma sotuvchining «Bugun qo'ng'iroq» ro'yxatida** turadi.
-Ya'ni hech qachon yo'qolmaydi, faqat kimniki ekani aytilmaydi.
+Hech kim belgilanmasa lead baribir yaratiladi, lekin egasiz bo'ladi va
+**hamma sotuvchining «Bugun qo'ng'iroq» ro'yxatida** turadi. Ya'ni hech
+qachon yo'qolmaydi, faqat kimniki ekani aytilmaydi.
 
 Kim birinchi navbatda — eng kam lead olgan odam; teng bo'lsa eng uzoq vaqt
 lead olmagani. Hech qachon lead olmagan yangi sotuvchi eng oldinda turadi.
+Qoidadagi hodimlarning hammasi ishdan chiqarilgan bo'lsa, o'sha oqim umumiy
+navbatga qaytadi — jimgina egasiz bo'lib qolmaydi.
+
+### 0.1 Forma savollarini ulash («tarjimon»)
+
+Reklama formasi o'z savolini so'raydi — «necha kub», «bazada yukingiz
+bormi». Sh u ekranning **«Forma savollari»** bo'limida har savolga bir marta
+aytasiz: bu — kub / kg / leadning maxsus maydoni / izohda qolsin. Kelgan
+savollar ro'yxatda o'zi paydo bo'ladi (namuna javobi bilan); qo'lda ham
+qo'shsa bo'ladi. Bog'langach, qoidalarga **kub oynasi** («10 kubdan katta —
+shu odamlarga») qo'shish mumkin; kubi noma'lum ariza bunday qoidaga
+tushmaydi, /ariza izohidagi «25 kub» esa o'qiladi. Uzoq kelmay qo'ygan
+savol yonida ⚠ turadi — agentlik formani o'zgartirganda bog'lanish
+eskirganining belgisi.
 
 ---
 
@@ -75,6 +95,9 @@ Egasining javobi bo'yicha: Instagram **biznes akkaunt** va Facebook sahifasiga
 ulangan, reklamani **o'zi ham, agentlik ham** yuritadi — ikkalasi ham shu bitta
 kanal orqali keladi.
 
+> **2026-08-11 da jonli sozlandi** (ilova: GSR CRM). Quyidagi bosqichlar o'sha
+> kuni bosib o'tilgan yo'l; 3.5-bo'limdagi tuzoqlar ham o'sha kuni topilgan.
+
 ### 3.1 Meta tomonida
 
 1. [developers.facebook.com](https://developers.facebook.com) → **My Apps** →
@@ -82,11 +105,29 @@ kanal orqali keladi.
 2. Ilovaga **Webhooks** va **Facebook Login for Business** mahsulotlarini
    qo'shing.
 3. **App Settings → Basic** dan **App Secret**ni oling.
-4. Sahifa uchun **Page Access Token** oling (`leads_retrieval`,
-   `pages_show_list`, `pages_manage_metadata` ruxsatlari bilan). Tokenni
-   **uzoq muddatli** qilib oling — qisqasi 1-2 soatda o'ladi.
-5. Ilovani **Live** rejimiga o'tkazing va `leads_retrieval` uchun App Review'dan
-   o'tkazing (agentlik odatda buni biladi).
+4. **Doimiy** Page Access Token oling — bosqichlari:
+   1. Graph API Explorer'da (**Meta App = bizning ilova!**) **User Token**
+      tanlab, ruxsatlarga `leads_retrieval`, `pages_show_list`,
+      `pages_read_engagement`, `pages_manage_metadata` ni qo'shing →
+      **Generate Access Token**.
+   2. Serverda o'sha user tokenni uzoq muddatlisiga almashtiring va sahifa
+      tokenini oling (APPID/SECRET — ilovaniki):
+      ```bash
+      read -r USERTOKEN   # Explorer'dagi tokenni shu yerga qo'yib Enter
+      LL=$(curl -s "https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=$APPID&client_secret=$SECRET&fb_exchange_token=$USERTOKEN" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+      curl -s "https://graph.facebook.com/v21.0/me/accounts?fields=name,id,access_token&access_token=$LL"
+      ```
+      Ro'yxatdan **kerakli sahifaning** `access_token`ini oling — uzoq muddatli
+      user tokendan chiqqan sahifa tokeni **muddatsiz** bo'ladi.
+   3. Isbot — `debug_token`da **`"expires_at":0`** turishi shart:
+      ```bash
+      curl -s "https://graph.facebook.com/v21.0/debug_token?input_token=$TOKEN&access_token=$APPID|$SECRET" | grep -o '"expires_at":[0-9]*'
+      ```
+      Nol bo'lmasa token muddatli — o'sha kuni leadlar **jimgina to'xtaydi**.
+5. Ilovani **Live/Published** qiling (Dashboard → Publish; Privacy Policy URL
+   va ikonka so'raydi). O'z sahifamiz uchun App Review shart bo'lmadi —
+   «Become a Tech Provider» taklifi ham kerak emas, u boshqa bizneslarga
+   xizmat ko'rsatuvchilar uchun.
 
 ### 3.2 Serverda
 
@@ -116,15 +157,63 @@ qo'ymasligi kerak.
 
 «Verify and Save» bosilganda Meta bizga bir marta murojaat qiladi va yashil
 belgi chiqishi kerak. Chiqmasa — token mos emas yoki `.env` o'qilmagan
-(konteynerni qayta ishga tushiring).
+(konteynerni qayta ishga tushiring). Obyekt **Page** bo'lsin — `user`
+obyektiga yozilgan callback leadgen uchun hech narsa qilmaydi.
 
-Oxirida sahifani ilovaga **subscribe** qiling (Page → Subscribed Apps).
+Oxirida sahifani ilovaga **subscribe** qiling — sahifa TOKENI bilan, shunda
+sahifa adashmaydi:
+
+```bash
+curl -s -X POST "https://graph.facebook.com/v21.0/me/subscribed_apps?subscribed_fields=leadgen&access_token=$TOKEN"
+```
+
+va o'qib tasdiqlang: `me/subscribed_apps` ilovani `subscribed_fields:
+["leadgen"]` bilan ko'rsatsin. Yana bir eshik: **Business Settings →
+Integrations → Leads Access** (Lead Access Manager yoqilgan sahifada) —
+ilova **CRMs** ro'yxatida turishi kerak, aks holda Meta hodisani atayin
+yubormaydi.
 
 ### 3.4 Tekshirish
 
 Meta'ning **Lead Ads Testing Tool** orqali test lead yuboring →
 `docker compose logs -f app | grep meta-leads` da `landed` yozuvi ko'rinadi →
 **CRM → ⋯ → Kelgan arizalar**da qator paydo bo'ladi.
+
+Testing Tool'ning ikki injiqligi (2026-08-11 da ko'rildi): «Track status»
+Development rejimda **«Pending»da abadiy qotib qolishi mumkin** — bu bizning
+nosozlik emas; va Webhooks sahifasidagi «Test» tugmasi soxta `444444444444`
+raqamini yuboradi, log'dagi «does not exist» xatosi o'sha soxta raqam haqida
+(qabul yo'li ishlayotganining isboti). Hal qiluvchi sinov — haqiqiy test
+leadni O'ZIMIZ imzolab eshigimizga yuborish:
+
+```bash
+LEADID=$(curl -s "https://graph.facebook.com/v21.0/<FORMA_ID>/leads?access_token=$TOKEN" | grep -o '"id":"[0-9]*"' | head -1 | grep -o '[0-9]*')
+BODY='{"object":"page","entry":[{"id":"<SAHIFA_ID>","time":0,"changes":[{"field":"leadgen","value":{"leadgen_id":"'$LEADID'","page_id":"<SAHIFA_ID>","form_id":"<FORMA_ID>"}}]}]}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $NF}')
+curl -s -X POST "https://gsrwms.uz/api/leads/meta" -H "content-type: application/json" -H "x-hub-signature-256: sha256=$SIG" --data-binary "$BODY"
+```
+
+Bu butun zanjirni (imzo → navbat → Graph'dan o'qish → CRM'ga tushish)
+oxirigacha sinaydi; Meta keyin o'sha leadni o'zi ham yuborsa, baza takror
+deb rad etadi.
+
+### 3.5 Eng qimmat tuzoq: NOTO'G'RI SAHIFA
+
+2026-08-11 dagi «hamma narsa yashil, lead kelmayapti»ning sababi: Explorer'da
+token **boshqa sahifa** uchun olingan bo'lib, `subscribed_apps` o'sha begona
+sahifaga yozilgan edi — webhook to'g'ri, token yaroqli, obuna «active», lekin
+kerakli sahifadan hodisa kelmaydi va hech bir xato ko'rinmaydi (Testing Tool
+faqat «Pending» deydi, `leadgen_forms` esa `(#10) insufficient privileges`
+qaytaradi). Tekshiruv bitta savol:
+
+```bash
+curl -s "https://graph.facebook.com/v21.0/me?fields=id,name&access_token=$TOKEN"
+```
+
+**Chiqqan id/nomi aynan reklama yuradigan sahifa bo'lishi shart.** Boshqa
+nom chiqsa — Explorer'da to'g'ri sahifani tanlab tokenni qaytadan oling;
+`me/…` bilan ishlangan har buyruq shu tokenning sahifasiga tegishli bo'ladi,
+shuning uchun sahifa id'sini qo'lda yozishdan ko'ra `me` ishonchliroq.
 
 ---
 

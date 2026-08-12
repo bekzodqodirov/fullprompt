@@ -19,7 +19,15 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
-import { attachments, clients, currencies, tasks, users, warehouses } from './platform';
+import {
+  attachments,
+  clients,
+  currencies,
+  customFields,
+  tasks,
+  users,
+  warehouses,
+} from './platform';
 
 const id = () =>
   uuid('id')
@@ -1159,6 +1167,12 @@ export const leadIntakes = pgTable(
     outcome: text('outcome').notNull(),
     /** 'no_contact' / 'replay' / 'capped' — only when nothing was created. */
     reason: text('reason'),
+    /**
+     * The form's raw question/answer pairs (0074), capped in code — the
+     * «seen questions» the mapping screen lists. Null for doors that carry
+     * no questions and for every row before the column existed.
+     */
+    fields: jsonb('fields'),
     leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }),
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
     assignedUserId: uuid('assigned_user_id').references(() => users.id, { onDelete: 'set null' }),
@@ -1177,6 +1191,64 @@ export const leadIntakes = pgTable(
       .on(t.phone, t.createdAt)
       .where(sql`${t.phone} IS NOT NULL`),
     index('lead_intakes_source_idx').on(t.sourceKey, t.createdAt),
+  ],
+);
+
+/**
+ * One routing rule for inbound leads (migration 0073): «this stream goes to
+ * these people». Read top-down by sortOrder, first match wins; no match falls
+ * back to the general per-person rotation (`users.inbound_rota`). Inside a
+ * matched rule the same fewest-first fairness applies over its members.
+ */
+export const inboundRoutes = pgTable(
+  'inbound_routes',
+  {
+    id: id(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    /** Null = any source; otherwise one of INBOUND_SOURCE_KEYS. */
+    sourceKey: text('source_key'),
+    /** Null = no text condition; case-insensitive contains over name + note. */
+    keyword: text('keyword'),
+    /**
+     * The volume window (0074): matched against the mapped kub answer or a
+     * volume read from the arrival's own text; a rule with a window set does
+     * NOT match an arrival whose volume is unknown.
+     */
+    minM3: numeric('min_m3', { precision: 12, scale: 3 }),
+    maxM3: numeric('max_m3', { precision: 12, scale: 3 }),
+    /** Members, as the automation notify action stores its userIds. */
+    userIds: jsonb('user_ids').notNull().default([]),
+    active: boolean('active').notNull().default(true),
+    /** How many leads this rule has assigned — the list's fire_count. */
+    assignedCount: integer('assigned_count').notNull().default(0),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('inbound_routes_order_idx').on(t.sortOrder, t.createdAt)],
+);
+
+/**
+ * The tarjimon (0074): one decision per advert-form question key. `note` is a
+ * stored decision too — a key somebody answered «leave it in the note» about
+ * must stop reappearing in the unmapped list (round 82's include/exclude
+ * shape). The field FK CASCADEs because a mapping is derived configuration:
+ * deleting its field must not strand a row that 23503s the fields admin.
+ */
+export const leadFieldMap = pgTable(
+  'lead_field_map',
+  {
+    id: id(),
+    key: text('key').notNull().unique(),
+    target: text('target').notNull(),
+    fieldId: uuid('field_id').references(() => customFields.id, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('lead_field_map_target_check', sql`${t.target} IN ('kub', 'kg', 'field', 'note')`),
+    check('lead_field_map_field_check', sql`(${t.target} = 'field') = (${t.fieldId} IS NOT NULL)`),
   ],
 );
 

@@ -81,6 +81,7 @@ export async function registerMetaLeadWorker(boss: PgBoss): Promise<void> {
         name: fields.name,
         phone: fields.phone,
         note: fields.note,
+        fields: fields.fields,
       });
       logger.info(
         { leadgenId: event.leadgenId, outcome: result.outcome, reason: result.reason },

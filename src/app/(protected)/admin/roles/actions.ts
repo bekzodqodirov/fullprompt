@@ -10,7 +10,6 @@ import {
   renameRole,
   roleSchema,
   setRoleGrants,
-  setRoleInboundRota,
   setRoleScoped,
 } from '@/modules/platform/rbac/roles';
 
@@ -87,18 +86,6 @@ export async function setRoleScopedAction(formData: FormData): Promise<void> {
   const { actor, editor: who, meta } = await editor();
   try {
     await setRoleScoped(roleId, scoped, who, { actorId: actor.id, ...meta });
-  } catch (err) {
-    if (!(err instanceof RoleError)) throw err;
-  }
-  revalidatePath('/admin/roles');
-}
-
-export async function setRoleRotaAction(formData: FormData): Promise<void> {
-  const roleId = String(formData.get('roleId') ?? '');
-  const inRota = String(formData.get('rota') ?? '') === 'true';
-  const { actor, meta } = await editor();
-  try {
-    await setRoleInboundRota(roleId, inRota, { actorId: actor.id, ...meta });
   } catch (err) {
     if (!(err instanceof RoleError)) throw err;
   }
