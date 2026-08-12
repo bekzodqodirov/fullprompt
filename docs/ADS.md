@@ -32,6 +32,18 @@ lead olmagani. Hech qachon lead olmagan yangi sotuvchi eng oldinda turadi.
 Qoidadagi hodimlarning hammasi ishdan chiqarilgan bo'lsa, o'sha oqim umumiy
 navbatga qaytadi — jimgina egasiz bo'lib qolmaydi.
 
+### 0.1 Forma savollarini ulash («tarjimon»)
+
+Reklama formasi o'z savolini so'raydi — «necha kub», «bazada yukingiz
+bormi». Sh u ekranning **«Forma savollari»** bo'limida har savolga bir marta
+aytasiz: bu — kub / kg / leadning maxsus maydoni / izohda qolsin. Kelgan
+savollar ro'yxatda o'zi paydo bo'ladi (namuna javobi bilan); qo'lda ham
+qo'shsa bo'ladi. Bog'langach, qoidalarga **kub oynasi** («10 kubdan katta —
+shu odamlarga») qo'shish mumkin; kubi noma'lum ariza bunday qoidaga
+tushmaydi, /ariza izohidagi «25 kub» esa o'qiladi. Uzoq kelmay qo'ygan
+savol yonida ⚠ turadi — agentlik formani o'zgartirganda bog'lanish
+eskirganining belgisi.
+
 ---
 
 ## 1. Sayt / Instagram bio formasi — hoziroq ishlaydi

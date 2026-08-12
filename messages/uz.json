@@ -2019,7 +2019,22 @@
     "errors": {
       "forbidden": "Ruxsat yetarli emas",
       "members_required": "Kamida bitta hodim tanlang",
-      "route_not_found": "Qoida allaqachon o'chirilgan"
-    }
+      "route_not_found": "Qoida allaqachon o'chirilgan",
+      "key_required": "Savol nomini yozing",
+      "field_invalid": "Maydon mos emas — leadning faol matn maydoni yoki katakchasi kerak",
+      "mapping_not_found": "Allaqachon o'chirilgan"
+    },
+    "minM3": "Kub (dan)",
+    "maxM3": "Kub (gacha)",
+    "m3Hint": "Bo'sh — cheklovsiz. Kubli qoida faqat arizaning kubi ma'lum bo'lganda ishlaydi.",
+    "mapTitle": "Forma savollari",
+    "mapHint": "Reklama o'z savolini so'raydi («necha kub», «bazada yuk bormi») — shu yerda javob qayerga yozilishini bir marta aytasiz. Bog'lamaguningizcha javob lentada izoh bo'lib qoladi.",
+    "targetKub": "Kub (m³)",
+    "targetKg": "Og'irlik (kg)",
+    "targetNote": "Izohda qolsin",
+    "mapStale": "ancha keldi kelmayapti",
+    "mapUnmapped": "Reklamadan kelgan yangi savollar",
+    "mapManual": "Savolni qo'lda qo'shish",
+    "mapKeyPlaceholder": "formadagi savol nomi"
   }
 }

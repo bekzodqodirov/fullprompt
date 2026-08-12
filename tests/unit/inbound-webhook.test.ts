@@ -74,6 +74,27 @@ describe('parseInboundPayload — the plain shape', () => {
     });
     expect(fields.note).toContain('Yiwudan');
     expect(fields.note).toContain('bahor');
+    // …and as pairs, the tarjimon's raw material.
+    expect(fields.fields).toEqual([{ key: 'utm_campaign', value: 'bahor' }]);
+  });
+
+  it('NEVER copies the shared secret into the note or the pairs', () => {
+    // `secretFrom` READS the key from these very body fields — a documented,
+    // first-class way to authenticate. Until round 97 that same key then fell
+    // through to the note as «key: …» and sat on the lead's lenta, where
+    // refWithoutSecret's fence never reaches. Same names, same
+    // case-insensitivity, both fences.
+    const fields = parseInboundPayload({
+      name: 'Aziz',
+      phone: '901112233',
+      key: 'THE-SECRET',
+      google_key: 'THE-SECRET',
+      Token: 'THE-SECRET',
+      secret: 'THE-SECRET',
+      utm_campaign: 'bahor',
+    });
+    expect(JSON.stringify(fields)).not.toContain('THE-SECRET');
+    expect(fields.note).toContain('bahor');
   });
 
   it('throws on nothing — a stranger may post anything at all', () => {

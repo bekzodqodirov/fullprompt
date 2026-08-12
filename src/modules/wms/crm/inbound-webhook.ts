@@ -26,6 +26,8 @@ export interface InboundFields {
   note: string | null;
   /** The sender's own id for this lead, when it has one — the retry fence. */
   externalId: string | null;
+  /** The unrecognised questions as PAIRS — the tarjimon's raw material. */
+  fields: { key: string; value: string }[];
 }
 
 /**
@@ -62,6 +64,7 @@ function fromGoogle(columns: unknown[], body: unknown): InboundFields {
   let last: string | null = null;
   let phone: string | null = null;
   const extras: string[] = [];
+  const fields: { key: string; value: string }[] = [];
 
   for (const column of columns) {
     const id = (str(pick(column, 'column_id')) ?? '').toUpperCase();
@@ -71,7 +74,10 @@ function fromGoogle(columns: unknown[], body: unknown): InboundFields {
     else if (id === 'FIRST_NAME') first ??= value;
     else if (id === 'LAST_NAME') last ??= value;
     else if (id.includes('PHONE')) phone ??= value;
-    else if (!GOOGLE_NAME.includes(id)) extras.push(`${id.toLowerCase()}: ${value}`);
+    else if (!GOOGLE_NAME.includes(id)) {
+      extras.push(`${id.toLowerCase()}: ${value}`);
+      fields.push({ key: id.toLowerCase(), value });
+    }
   }
 
   const joined = [first, last].filter(Boolean).join(' ').trim();
@@ -81,19 +87,43 @@ function fromGoogle(columns: unknown[], body: unknown): InboundFields {
     note: extras.length ? extras.join('\n') : null,
     // Google's own lead id, so its retries land on one lead.
     externalId: str(pick(body, 'lead_id')),
+    fields,
   };
 }
 
+/**
+ * The names a shared secret travels under. They are in `known` because
+ * `secretFrom` READS the secret from these very body keys — so until round 97
+ * a sender authenticating in the body had its key copied into the lead's
+ * lenta note as «key: …», where `refWithoutSecret`'s fence never reaches.
+ * The same names, the same case-insensitivity, in both fences.
+ */
+const SECRET_BODY_KEYS = ['google_key', 'key', 'secret', 'token'];
+
 function fromPlain(body: unknown): InboundFields {
   const extras: string[] = [];
+  const fields: { key: string; value: string }[] = [];
   // Anything the sender added beyond the three we name is kept, exactly as the
-  // Meta reader keeps an unrecognised question.
-  const known = new Set(['name', 'ism', 'phone', 'telefon', 'note', 'izoh', 'id', 'external_id']);
+  // Meta reader keeps an unrecognised question — EXCEPT the secret's own keys.
+  const known = new Set([
+    'name',
+    'ism',
+    'phone',
+    'telefon',
+    'note',
+    'izoh',
+    'id',
+    'external_id',
+    ...SECRET_BODY_KEYS,
+  ]);
   if (body && typeof body === 'object' && !Array.isArray(body)) {
     for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
       if (known.has(key.toLowerCase())) continue;
       const text = str(value);
-      if (text) extras.push(`${key}: ${text}`);
+      if (text) {
+        extras.push(`${key}: ${text}`);
+        fields.push({ key, value: text });
+      }
     }
   }
   const note = str(pick(body, 'note')) ?? str(pick(body, 'izoh'));
@@ -102,6 +132,7 @@ function fromPlain(body: unknown): InboundFields {
     phone: str(pick(body, 'phone')) ?? str(pick(body, 'telefon')),
     note: [note, extras.join('\n')].filter(Boolean).join('\n') || null,
     externalId: str(pick(body, 'external_id')) ?? str(pick(body, 'id')),
+    fields,
   };
 }
 

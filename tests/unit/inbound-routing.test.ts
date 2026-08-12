@@ -13,6 +13,8 @@ const route = (over: Partial<RouteRow>): RouteRow => ({
   sortOrder: seq,
   sourceKey: null,
   keyword: null,
+  minM3: null,
+  maxM3: null,
   userIds: ['u1'],
   active: true,
   ...over,
@@ -69,5 +71,25 @@ describe('which rule claims an arrival', () => {
 
   it('answers null over an empty list — the general rotation is the fallback, not a rule', () => {
     expect(matchRoute([], { sourceKey: 'instagram', text: ['hech narsa'] })).toBeNull();
+  });
+
+  it('a volume window compares as NUMBERS and skips an arrival whose volume is unknown', () => {
+    const big = route({ minM3: 10 });
+    // «katta yuk shu odamga» must not receive every lead that simply never
+    // said its size — unknown volume falls past the rule, not into it.
+    expect(matchRoute([big], { sourceKey: 'sayt', text: [], volumeM3: null })).toBeNull();
+    expect(matchRoute([big], { sourceKey: 'sayt', text: [], volumeM3: 9 })).toBeNull();
+    expect(matchRoute([big], { sourceKey: 'sayt', text: [], volumeM3: 10 })).toBe(big);
+    // '10' <= '9' is true as STRINGS — the silent version listRoutes converts
+    // away; the pure half must be handed numbers and behave like it.
+    expect(matchRoute([big], { sourceKey: 'sayt', text: [], volumeM3: 9.5 })).toBeNull();
+
+    const small = route({ maxM3: 5 });
+    expect(matchRoute([small], { sourceKey: 'sayt', text: [], volumeM3: 4 })).toBe(small);
+    expect(matchRoute([small], { sourceKey: 'sayt', text: [], volumeM3: 6 })).toBeNull();
+
+    const window = route({ minM3: 5, maxM3: 10 });
+    expect(matchRoute([window], { sourceKey: 'sayt', text: [], volumeM3: 7 })).toBe(window);
+    expect(matchRoute([window], { sourceKey: 'sayt', text: [], volumeM3: 11 })).toBeNull();
   });
 });

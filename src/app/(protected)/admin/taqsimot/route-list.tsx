@@ -14,6 +14,8 @@ export interface RouteView {
   id: string;
   sourceKey: string | null;
   keyword: string | null;
+  minM3: number | null;
+  maxM3: number | null;
   active: boolean;
   memberNames: string[];
 }
@@ -71,6 +73,9 @@ export function RouteList(props: {
               <span className="font-semibold">
                 {route.sourceKey ?? t('anySource')}
                 {route.keyword ? ` · «${route.keyword}»` : ''}
+                {route.minM3 !== null || route.maxM3 !== null
+                  ? ` · ${route.minM3 ?? 0}–${route.maxM3 ?? '∞'} m³`
+                  : ''}
               </span>
               {!route.active && <span className="text-xs text-warn">{t('paused')}</span>}
             </div>
@@ -132,6 +137,15 @@ export function RouteList(props: {
           <label className="block text-sm">
             <span className="font-semibold">{t('keyword')}</span>
             <input name="keyword" className="input mt-1" placeholder={t('keywordHint')} />
+          </label>
+          <label className="block text-sm">
+            <span className="font-semibold">{t('minM3')}</span>
+            <input name="minM3" type="number" step="0.1" min="0" className="input mt-1" />
+          </label>
+          <label className="block text-sm">
+            <span className="font-semibold">{t('maxM3')}</span>
+            <input name="maxM3" type="number" step="0.1" min="0" className="input mt-1" />
+            <span className="mt-0.5 block text-xs text-ink-500">{t('m3Hint')}</span>
           </label>
           <fieldset className="space-y-1">
             <legend className="text-sm font-semibold">{t('members')}</legend>

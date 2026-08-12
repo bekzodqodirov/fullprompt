@@ -142,7 +142,8 @@ them is merged.
 1389 unit/integration green after round 96 (the four known
 photo-path specs — m1×2, m2×1, m9h — plus m9z-nav-progress stay locally red
 here; CI is the arbiter).
-Latest migration: **0073** (`inbound_routing` — `users.inbound_rota` backfilled
+Latest migration: **0074** (`lead_field_map` — the tarjimon, `lead_intakes.fields`
+and the routes' kub window; 0073 `inbound_routing` — `users.inbound_rota` backfilled
 from the role flag, plus `inbound_routes`;
 0072 `tg_reply_forward` — which message a reply quotes,
 and who a message was forwarded from; 0071 `tg_chat_reads` — how far a manager
@@ -187,14 +188,14 @@ database rows are there; rows do not prove bytes.
 
 **HE DEPLOYED AGAIN — 2026-08-11** («pull qilib deploy qildim, 71 chiqdi»):
 the live server sits at **71** (0070 the tail), so the deploy habit held.
-Since then `main` merged #33 (0071 + 0072) and this branch adds 0073, so the
-next update needs **74**. The same day, in chat, **Meta Lead Ads went live in
+Since then `main` merged #33 (0071 + 0072) and this branch adds 0073 + 0074,
+so the next update needs **75**. The same day, in chat, **Meta Lead Ads went live in
 production**: correct page subscribed, app published, permanent token
 (`expires_at: 0`) in the server `.env`, a test lead landed in the funnel
 end-to-end — the road and its traps are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**74** with this branch, 73 on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**75** with this branch, 73 on `main` today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2436,6 +2437,42 @@ file-scoped (#653's oracle). 1389 unit/integration green on this container's
 long-lived db; no e2e added — the screen's buttons call exactly the
 integration-proven actions (#183: a route is CONFIGURATION, and the round's
 cleanup is a final test).
+
+Round 97 — **the tarjimon: forma savollari → lead maydonlari** (#662-663,
+owner: «bazan targetda yukingiz bormi, necha kub yokida boshqa har hil
+savollar beriladi — qanday qilib leaddagi fieldlarga ulayman?», then «boshla
+o'zing to'g'ri deb bilganingni»). Designed, then judged by a THREE-LENS
+adversarial workflow BEFORE any code — 20 agents, **15 confirmed findings,
+2 refuted**, and the build absorbed every one. Migration **0074** (count must
+reach **75**): `lead_field_map` (key UNIQUE → kub/kg/field/note; field FK
+CASCADEs — a mapping is derived config and must not 23503 the fields admin),
+`lead_intakes.fields` jsonb (capped capture 30×80×300, secret key-names
+dropped), `inbound_routes.min_m3/max_m3`. ONE module `crm/field-map.ts`:
+pure `parseMeasure` (comma decimal, **refuses ≥100 000** — numeric(12,3)
+holds nine digits and a pasted phone number must not abort a landing),
+`parseYesNo` (ha/bor/да/是), `applyFieldMap` (inactive-field targets degrade
+to note-only), `textVolume` (unit-anchored «25 kub» out of free text — routes
+the lead, never fills the card), `seenKeys` (one grouped
+jsonb_array_elements). THE BLOCKER, made structural: `record()` runs last, so
+structured writes sit in their own catch — a poisoned answer (pattern rule,
+overflow) degrades to note-only and the LEDGER ROW still exists, keeping the
+replay fence and both caps closed; red-proven by turning the catch into a
+rethrow. LIVE pre-existing leak fixed: the plain webhook's body-key secret
+(`key`/`google_key` — the documented auth path) fell through to the lenta
+note past `refWithoutSecret`'s fence; `SECRET_BODY_KEYS` now sits in the
+parser's known-set, red-proven. Both parsers return `fields` PAIRS beside the
+unchanged note (the lenta stays the full record; every mapping reversible);
+`setFieldValues` grew round 83's `{system: true}` branch; checkbox answers
+skip unreadable rather than writing «no». `matchRoute` compares volume as
+NUMBERS (drizzle numeric = string, '10'<='9' — listRoutes converts once);
+a volume rule skips an arrival whose volume is unknown. Screen: third panel
+on /admin/taqsimot (mapped list with ⚠ decay hint, auto-discovered unmapped
+keys with samples, manual key row) + min/max kub on the rule form. i18n ×4.
+Tests: 21 unit (field-map) + routing volume matrix + webhook leak test + 5
+integration (mapped landing beside note lines, poisoned-answer ledger
+survival + replay fence, volume routing incl. the /ariza text fallback,
+seen/decided keys). Red-proofs ×2. 1400 unit/integration green on fresh
+gsr_ci in CI's order.
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

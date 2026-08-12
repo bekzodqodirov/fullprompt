@@ -81,6 +81,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ source: st
       name: fields.name,
       phone: fields.phone,
       note: fields.note,
+      fields: fields.fields,
     });
     logger.info({ source, outcome: result.outcome, reason: result.reason }, '[leads-in] landed');
   } catch (err) {

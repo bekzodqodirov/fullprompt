@@ -2019,7 +2019,22 @@
     "errors": {
       "forbidden": "权限不足",
       "members_required": "请至少选择一名员工",
-      "route_not_found": "规则已被删除"
-    }
+      "route_not_found": "规则已被删除",
+      "key_required": "请输入问题名",
+      "field_invalid": "字段不合适——需要线索的启用文本字段或复选框",
+      "mapping_not_found": "已删除"
+    },
+    "minM3": "方数（从）",
+    "maxM3": "方数（到）",
+    "m3Hint": "留空为不限。带方数的规则仅在线索方数已知时生效。",
+    "mapTitle": "表单问题",
+    "mapHint": "广告表单会问自己的问题（«几方»、«仓库有货吗»）——在此一次性指定答案写入位置。未绑定前，答案作为备注留在动态里。",
+    "targetKub": "方数（m³）",
+    "targetKg": "重量（kg）",
+    "targetNote": "留在备注",
+    "mapStale": "近期未出现",
+    "mapUnmapped": "广告中出现的新问题",
+    "mapManual": "手动添加问题",
+    "mapKeyPlaceholder": "表单里的问题名"
   }
 }

@@ -24,6 +24,13 @@ export interface RouteRow {
   sortOrder: number;
   sourceKey: string | null;
   keyword: string | null;
+  /**
+   * The volume window, as NUMBERS. The columns are pg `numeric` and drizzle
+   * hands those over as strings — compared as strings, '10' <= '9' is true,
+   * which is the silent version of the bug. `listRoutes` converts once.
+   */
+  minM3: number | null;
+  maxM3: number | null;
   userIds: string[];
   active: boolean;
 }
@@ -48,9 +55,10 @@ const SETTINGS_ENTITY_ID = '00000000-0000-0000-0000-000000000001';
  */
 export function matchRoute(
   routes: RouteRow[],
-  arrival: { sourceKey: string; text: (string | null | undefined)[] },
+  arrival: { sourceKey: string; text: (string | null | undefined)[]; volumeM3?: number | null },
 ): RouteRow | null {
   const haystack = arrival.text.filter(Boolean).join('\n').toLowerCase();
+  const volume = arrival.volumeM3 ?? null;
   for (const route of routes) {
     if (!route.active) continue;
     if (route.userIds.length === 0) continue;
@@ -58,6 +66,14 @@ export function matchRoute(
     if (route.keyword) {
       const needle = route.keyword.trim().toLowerCase();
       if (!needle || !haystack.includes(needle)) continue;
+    }
+    if (route.minM3 !== null || route.maxM3 !== null) {
+      // A rule with a volume window does NOT match an arrival whose volume is
+      // unknown — «katta yuk shu odamga» must not receive every lead that
+      // simply never said its size.
+      if (volume === null) continue;
+      if (route.minM3 !== null && volume < route.minM3) continue;
+      if (route.maxM3 !== null && volume > route.maxM3) continue;
     }
     return route;
   }
@@ -78,6 +94,8 @@ export async function listRoutes(): Promise<RouteRow[]> {
     sortOrder: row.sortOrder,
     sourceKey: row.sourceKey,
     keyword: row.keyword,
+    minM3: row.minM3 === null ? null : Number(row.minM3),
+    maxM3: row.maxM3 === null ? null : Number(row.maxM3),
     userIds: userIdList(row.userIds),
     active: row.active,
   }));
@@ -127,6 +145,7 @@ export async function nextInboundOwner(pool?: string[]): Promise<string | null> 
 export async function routeInboundOwner(arrival: {
   sourceKey: string;
   text: (string | null | undefined)[];
+  volumeM3?: number | null;
 }): Promise<{ ownerId: string | null; routeId: string | null }> {
   const route = matchRoute(await listRoutes(), arrival);
   if (route) {
@@ -186,9 +205,22 @@ export async function setRotaMembers(userIds: string[], ctx: AuditContext): Prom
   }
 }
 
+/** A rule's volume bound, validated: a forged post is dropped, not stored. */
+const boundM3 = (value: number | null | undefined): number | null => {
+  if (value === null || value === undefined) return null;
+  if (!Number.isFinite(value) || value <= 0 || value >= 100_000) return null;
+  return value;
+};
+
 /** A new rule, appended at the end of the reading order. */
 export async function createRoute(
-  input: { sourceKey: string | null; keyword: string | null; userIds: string[] },
+  input: {
+    sourceKey: string | null;
+    keyword: string | null;
+    minM3?: number | null;
+    maxM3?: number | null;
+    userIds: string[];
+  },
   ctx: AuditContext,
 ): Promise<string> {
   const sourceKey =
@@ -196,6 +228,11 @@ export async function createRoute(
       ? input.sourceKey
       : null;
   const keyword = input.keyword?.trim().slice(0, 120) || null;
+  let minM3 = boundM3(input.minM3);
+  let maxM3 = boundM3(input.maxM3);
+  // A window typed backwards is the person's mistake, not a dead rule waiting
+  // to be debugged — swap rather than refuse over an obvious intent.
+  if (minM3 !== null && maxM3 !== null && minM3 > maxM3) [minM3, maxM3] = [maxM3, minM3];
   if (input.userIds.length === 0) throw new RoutingError('members_required');
   // Members validated against the users table: a picker's bad value is a
   // forged post, and a jsonb list has no FK to refuse it unreadably later.
@@ -214,6 +251,8 @@ export async function createRoute(
       sortOrder: Number(last?.max ?? 0) + 1,
       sourceKey,
       keyword,
+      minM3: minM3 === null ? null : minM3.toFixed(3),
+      maxM3: maxM3 === null ? null : maxM3.toFixed(3),
       userIds: members.map((m) => m.id),
       createdBy: ctx.actorId ?? null,
     })
@@ -222,7 +261,7 @@ export async function createRoute(
     entityType: 'inbound_route',
     entityId: row!.id,
     action: 'create',
-    after: { sourceKey, keyword, members: members.length },
+    after: { sourceKey, keyword, minM3, maxM3, members: members.length },
   });
   return row!.id;
 }

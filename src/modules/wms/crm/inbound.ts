@@ -3,9 +3,19 @@ import { and, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { leadIntakes, leadSources, leadStages, leads, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { logger } from '../../platform/logger';
+import { listFields, setFieldValues } from '../../platform/fields/service';
 import { addActivity, createLead, CrmError } from './service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { routeInboundOwner } from './routing';
+import {
+  applyFieldMap,
+  capturePairs,
+  listFieldMap,
+  MAPPABLE_FIELD_TYPES,
+  parseYesNo,
+  textVolume,
+} from './field-map';
 
 /**
  * A lead that arrived by itself — from an advert, the public form, or the bot.
@@ -79,6 +89,8 @@ export interface InboundArrival {
   name?: string | null;
   phone?: string | null;
   note?: string | null;
+  /** The form's own questions as pairs — the tarjimon's raw material (0074). */
+  fields?: { key: string; value: string }[] | null;
 }
 
 export type InboundOutcome = 'created' | 'joined' | 'client' | 'dropped';
@@ -181,6 +193,10 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     ? arrival.sourceKey!
     : 'other';
 
+  // Capped, normalized, secret-named keys dropped — what of the form's own
+  // questions is worth keeping and worth showing the mapping screen.
+  const pairs = capturePairs(arrival.fields);
+
   const record = async (
     outcome: InboundOutcome,
     extra: { reason?: string; leadId?: string; clientId?: string; assignedUserId?: string },
@@ -196,6 +212,7 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
         name,
         outcome,
         reason: extra.reason ?? null,
+        fields: pairs,
         leadId: extra.leadId ?? null,
         clientId: extra.clientId ?? null,
         assignedUserId: extra.assignedUserId ?? null,
@@ -288,11 +305,26 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     }
   }
 
+  // The tarjimon (round 97). Loaded only when the arrival actually carried
+  // questions; the two lookups are one indexed read each. The mapped kub wins
+  // for routing, and a volume typed into free text («25 kub yuk bor» on
+  // /ariza) is the fallback — good enough to pick whose phone rings, and
+  // deliberately NOT good enough to print on the card as a fact.
+  const mappableFields = pairs
+    ? (await listFields('lead')).filter((f) => MAPPABLE_FIELD_TYPES.has(f.type))
+    : [];
+  const mapped = applyFieldMap(
+    pairs,
+    pairs ? await listFieldMap() : [],
+    new Set(mappableFields.map((f) => f.id)),
+  );
+  const volumeM3 = mapped.volumeM3 ?? textVolume(name, note);
+
   // (2) A new one, to whoever's turn it is. The taqsimot rules run FIRST
   // (round 96) and only for this branch on purpose: a client's question and a
   // joined enquiry already have their people, and re-routing them would take
   // work off whoever is mid-conversation.
-  const { ownerId } = await routeInboundOwner({ sourceKey, text: [name, note] });
+  const { ownerId } = await routeInboundOwner({ sourceKey, text: [name, note], volumeM3 });
   const lead = await createLead(
     {
       // `leadSchema` wants two characters and an advert may send none.
@@ -317,6 +349,48 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     { system: true },
   );
   await db.update(leads).set({ inboundAt: new Date() }).where(eq(leads.id, lead.id));
+
+  // The structured copies of mapped answers. In a catch of their own, because
+  // every value here came off a public form: a target field's pattern rule, a
+  // coercion refusal — none of it may abort the landing, or the arrival dies
+  // BEFORE its ledger row and the replay fence opens (the design review's
+  // blocker). A failure degrades to note-only, which the lenta already holds.
+  try {
+    const quoted: { quotedVolumeM3?: string; quotedWeightKg?: string } = {};
+    // toFixed = quoteValues' own canonical spelling (#503), and the parser has
+    // already refused anything numeric(12,3) could not hold.
+    if (mapped.volumeM3 !== null) quoted.quotedVolumeM3 = mapped.volumeM3.toFixed(3);
+    if (mapped.weightKg !== null) quoted.quotedWeightKg = mapped.weightKg.toFixed(3);
+    if (Object.keys(quoted).length) {
+      await db.update(leads).set(quoted).where(eq(leads.id, lead.id));
+    }
+    if (mapped.custom.length) {
+      const typeById = new Map(mappableFields.map((f) => [f.id, f.type]));
+      const raw: Record<string, unknown> = {};
+      for (const entry of mapped.custom) {
+        if (typeById.get(entry.fieldId) === 'checkbox') {
+          // «Ha» in any of the form's languages; an unreadable answer is
+          // SKIPPED (absent key), never written as «no».
+          const yes = parseYesNo(entry.value);
+          if (yes !== null) raw[entry.fieldId] = yes;
+        } else {
+          raw[entry.fieldId] = entry.value;
+        }
+      }
+      if (Object.keys(raw).length) {
+        await setFieldValues(
+          'lead',
+          lead.id,
+          raw,
+          { actorId: null, ip: null, userAgent: null },
+          { system: true },
+        );
+      }
+    }
+  } catch (err) {
+    logger.error({ err, leadId: lead.id }, '[inbound] mapped answers not written; note keeps them');
+  }
+
   await addActivity(
     { entityType: 'lead', entityId: lead.id, kind: 'note', note: inboundNote(sourceKey, text) },
     { actorId: null },

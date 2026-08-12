@@ -2019,7 +2019,22 @@
     "errors": {
       "forbidden": "Not enough rights",
       "members_required": "Pick at least one member of staff",
-      "route_not_found": "The rule is already deleted"
-    }
+      "route_not_found": "The rule is already deleted",
+      "key_required": "Type the question key",
+      "field_invalid": "The field does not fit — an active lead text field or checkbox is needed",
+      "mapping_not_found": "Already deleted"
+    },
+    "minM3": "Volume from",
+    "maxM3": "Volume to",
+    "m3Hint": "Empty — no limit. A volume rule fires only when the lead's volume is known.",
+    "mapTitle": "Form questions",
+    "mapHint": "An advert asks its own questions («how many m³», «goods in stock?») — here you say once where the answer goes. Until mapped, the answer stays on the feed as a note.",
+    "targetKub": "Volume (m³)",
+    "targetKg": "Weight (kg)",
+    "targetNote": "Keep in the note",
+    "mapStale": "not seen lately",
+    "mapUnmapped": "New questions from adverts",
+    "mapManual": "Add a question by hand",
+    "mapKeyPlaceholder": "the question key from the form"
   }
 }

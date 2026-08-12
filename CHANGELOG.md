@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## Forma savollari lead maydonlariga ulanadi — 2026-08-12
+
+Savolingiz bo'yicha: «reklama formasi har xil savol beradi — necha kub,
+bazada yuk bormi — buni leadga qanday ulayman?» Endi **Boshqaruv → Arizalar
+taqsimoti** ekranida uchinchi bo'lim bor: **«Forma savollari»**.
+
+- Reklamadan kelgan har bir savol NOMI ro'yxatda o'zi paydo bo'ladi (oxirgi
+  javob namunasi bilan). Har biriga bir marta aytasiz: bu — **kub**, bu —
+  **kg**, bu — **leadning maxsus maydoni** (masalan «Bazada yuk bor»
+  katakchasi), yoki «izohda qolsin». Shundan keyin javoblar kartaga o'zi
+  yoziladi. Savolni qo'lda ham qo'shsa bo'ladi — birinchi lead kelishini
+  kutish shart emas.
+- «Ha/yo'q» savollar katakcha-maydonga tushadi (ha/bor/да — hammasi
+  tushuniladi); raqamlar «5 kub», «10,5» ko'rinishida ham o'qiladi. Tushunib
+  bo'lmagan javob yo'qolmaydi — lentada izoh bo'lib qolaveradi.
+- **Taqsimot qoidalari endi kubni ham biladi**: «10 kubdan katta — shu
+  odamlarga» degan qoida qo'shasiz (qoida formasida ikkita yangi katak).
+  Kubi noma'lum ariza bunday qoidaga tushmaydi. /ariza formasining izohiga
+  «25 kub» deb yozilgan bo'lsa ham qoida o'qiy oladi.
+- Uzoq vaqt kelmay qo'ygan savol yonida ⚠ chiqadi — reklama agentligi
+  formani o'zgartirsa bog'lanish eskirganini shu yerdan bilasiz.
+- Yo'lda topilgan va tuzatilgan eski xatolik: sayt/Zapier webhook kaliti
+  tanada yuborilsa, u leadning lentasiga yozilib qolarkan — endi hech qaerga
+  yozilmaydi.
+
 ## Arizalar taqsimoti: kim navbatda, qaysi oqim kimga — 2026-08-11 (kech)
 
 Sizning javoblaringiz bo'yicha (1a, 2a, 3): endi navbat ROL emas, **ODAM**
