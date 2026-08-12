@@ -47,9 +47,36 @@ qo'yilgan, doim yiqiladigan 4 ta test bor edi. Ular yolg'on emas ekan —
 ham o'tdi**. Ya'ni bu muammo yangi emas, faqat Xitoydagi tarmoqda ochiq
 ko'rinib qolgan.
 
+### Shu bilan birga: yana 5 ta nuqson
+
+Xuddi shu ekranni **43 ta tekshiruvchi** bilan chuqur audit qildim. Ular
+mening tashxisimni mustaqil tasdiqladi va bir muhim narsani qo'shdi:
+
+**Nega ilgari ishlagan edi?** Chunki o'sha chet el fayli telefon keshida
+saqlanib qolgan edi. **Yangilanish keshni tozalaydi** — shuning uchun aynan
+deploydan keyin ochilib qoldi. Yangi telefonda ham xuddi shunday bo'lardi.
+
+Yana topilgan va tuzatilganlari:
+
+1. **Bitta uzilish butun kunni buzardi.** Agar deploydan keyingi birinchi
+   rasm yuklashda fayl ombori (MinIO) bir soniyaga javob bermasa, tizim uni
+   «tekshirdim» deb belgilab qo'yar va **konteyner qayta ishga tushmaguncha
+   hamma rasm yuklanmay qolardi**. Endi bunday emas.
+2. **Yuklangan rasm «yuklanmadi» deb ko'rsatilardi.** Rasm serverga tushib
+   bo'lgan, bazaga ham yozilgan — lekin ichki navbat xizmati qoqilsa, ekranda
+   xato chiqardi. Skladchi rasmni qaytadan olardi va prixodda **ikkita bir xil
+   rasm** qolardi.
+3. **Bitta rasmni o'chirsa, ikkitasi o'chib ketishi mumkin edi** — o'chirish
+   paytida yangi rasm kelib qolsa.
+4. **Xato matnlari yolg'on gapirardi.** Har qanday nosozlik uchun «aloqani
+   tekshiring» deb yozilardi. Endi seans tugagan bo'lsa «qaytadan kiring»,
+   server aybdor bo'lsa «administratorga ayting» deb yozadi.
+5. **Rasm yuklash cheksiz kutardi.** Endi 2 daqiqadan keyin to'xtaydi va
+   sababini aytadi (ilgari ekran shunchaki qotib turardi).
+
 ### Bazaga
 
-Hech narsa o'zgarmadi — bu faqat brauzer tomonidagi tuzatish.
+Hech narsa o'zgarmadi — bu faqat brauzer va server kodidagi tuzatish.
 
 ## Kanban: kartalar tartibi saqlanib qoladi, ustunlar balandroq — 2026-08-11 (kech)
 

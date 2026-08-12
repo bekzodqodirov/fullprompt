@@ -452,6 +452,8 @@
     "photoRequired": "Нужно минимум 1 фото",
     "photoUploadFailed": "Фото не загрузилось — проверьте связь",
     "photoUploading": "Фото загружается…",
+    "photoUploadSignedOut": "Сессия истекла — войдите заново",
+    "photoUploadServer": "Сервер не принял фото — сообщите администратору",
     "fileTypeUnsupported": "Этот тип файла не поддерживается (можно: фото, PDF, Excel, Word, TXT, CSV, ZIP, RAR, видео)",
     "fileTooLarge": "Файл слишком большой (фото до 15 МБ, файл до 25 МБ, видео до 60 МБ)",
     "warehouseForbidden": "Этот склад вам не назначен — проверьте выбор склада",

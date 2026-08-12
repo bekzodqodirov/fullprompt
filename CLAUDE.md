@@ -2483,8 +2483,24 @@ says «Rasm yuborilmoqda…» INSTEAD of «no photo yet» (both leave the button
 grey; only one is the operator's to act on), confirm is disabled while anything
 is in flight, and the decrement is in `finally` or a refusal leaves the screen
 stuck on «working». Also swept: the built client bundle reaches NO other
-foreign host (the OSM basemap is already self-hosted). One new i18n key ×4.
-No migration.
+foreign host (the OSM basemap is already self-hosted). Three new i18n keys ×4.
+No migration. **The 43-agent adversarial sweep this round launched confirmed
+the diagnosis independently and made it WORSE** (#667): here the connection is
+REFUSED, so the library falls back after 12.7 s and merely gets slow — a
+connection that HANGS matches neither of `compressOnWebWorker`'s two exits and
+there is no timeout in it, so the promise **never resolves** (proven by holding
+the route open). That is what a blocked host in China does, and it also
+explains «it worked before»: the service worker's StaleWhileRevalidate bucket
+matches `/\.(?:js)$/i`, so a phone that had fetched the script once kept
+working from cache, and the deploy that reinstalled the worker took the cache
+away. Four more fixed from the same sweep: `ensureBucket` latched on SILENCE
+(one storage blip after a deploy → every upload skips the check until the
+container restarts; it now latches on an ANSWER, any status); a pg-boss hiccup
+500'd an upload already committed to storage AND the database (the operator
+re-took the photo → two on the receipt); deleting one photo wrote back a
+render-time `photoIds` snapshot and took any photo that landed meanwhile;
+and the upload had no deadline at ANY layer — survivable while the screen was
+silent, not once it shows ⏳ (120 s + a sentence).
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

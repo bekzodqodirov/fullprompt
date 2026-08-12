@@ -452,6 +452,8 @@
     "photoRequired": "At least 1 photo is required",
     "photoUploadFailed": "The photo did not upload — check the connection",
     "photoUploading": "Sending the photo…",
+    "photoUploadSignedOut": "The session has expired — sign in again",
+    "photoUploadServer": "The server refused the photo — tell an administrator",
     "fileTypeUnsupported": "This file type is not supported (allowed: photo, PDF, Excel, Word, TXT, CSV, ZIP, RAR, video)",
     "fileTooLarge": "The file is too large (photo up to 15 MB, file up to 25 MB, video up to 60 MB)",
     "warehouseForbidden": "This warehouse is not assigned to you — check the selected warehouse",
