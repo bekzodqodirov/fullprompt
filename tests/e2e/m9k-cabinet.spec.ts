@@ -217,10 +217,10 @@ test('the cargo screen shows the count, the kilos and the cubes', async ({ page 
   // on the one screen a customer opens.
   await expect(lot).toContainText('Yiwu');
 
-  // The owner's nine-rung ladder, filled to where the bulk of the cargo is —
-  // six of the ten boxes are on the export road, which is rung six.
+  // The owner's ladder, filled to where the bulk of the cargo is — six of the
+  // ten boxes are on the export road, which is rung six.
   const rungs = page.getByTestId('cab-track').locator('i');
-  await expect(rungs).toHaveCount(9);
+  await expect(rungs).toHaveCount(10);
   await expect(rungs.nth(5)).toHaveClass(/now/);
   await expect(rungs.nth(4)).toHaveClass(/done/);
   await expect(rungs.nth(6)).not.toHaveClass(/done|now/);

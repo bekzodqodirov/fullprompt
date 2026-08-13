@@ -19,6 +19,7 @@ const truck = (over: Partial<StageBatch> = {}): StageBatch => ({
   destCountry: 'UZ',
   status: 'in_transit',
   checkpointKey: null,
+  customsCleared: false,
   ...over,
 });
 
@@ -37,6 +38,33 @@ describe('cargoStage — the owner’s ladder, derived', () => {
     expect(cargoStage('in_transit', NOWHERE, truck({ checkpointKey: 'in_uz' }))).toBe('in_uz');
     expect(cargoStage('ready_for_pickup', UZ_CUSTOMS, null)).toBe('ready');
     expect(cargoStage('issued', UZ_CUSTOMS, null)).toBe('issued');
+  });
+
+  it('«rastamojka tugadi» is its own rung, and only a person can set it', () => {
+    // The owner chose the tap after being told the cost: «ha rastamojka
+    // tugadi tugmasini qo'sh».
+    const arrived = truck({ status: 'arrived' });
+    expect(cargoStage('in_transit', NOWHERE, arrived)).toBe('in_uz');
+    expect(cargoStage('in_transit', NOWHERE, { ...arrived, customsCleared: true })).toBe(
+      'customs_done',
+    );
+    // All three ways of knowing the truck is in Uzbekistan get the same split,
+    // so a declaration cleared while it is still driving to Tashkent shows.
+    for (const inUz of [
+      truck({ checkpointKey: 'in_uz' }),
+      truck({ status: 'unloaded' }),
+      truck({ originCountry: 'UZ', destCountry: 'UZ' }),
+    ]) {
+      expect(cargoStage('in_transit', NOWHERE, inUz)).toBe('in_uz');
+      expect(cargoStage('in_transit', NOWHERE, { ...inUz, customsCleared: true })).toBe(
+        'customs_done',
+      );
+    }
+    // NULL means «nobody has said», never «not cleared» — a truck still on the
+    // export road is not on either Uzbek rung whatever the stamp says.
+    expect(cargoStage('in_transit', NOWHERE, truck({ customsCleared: true }))).toBe(
+      'export_transit',
+    );
   });
 
   it('the operator’s pin outranks the schedule', () => {

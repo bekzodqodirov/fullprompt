@@ -139,6 +139,25 @@ describe('the cabinet timeline', () => {
     expect(lot.groups[0]!.eta).toBeNull();
   });
 
+  it('«rastamojka tugadi» moves the rung, and clearing it takes the rung back', async () => {
+    // The button's own action needs a request scope (it calls `authorize`),
+    // so the two halves are proven separately: the STAMP's effect here, and
+    // that the button really writes this column in
+    // `tests/unit/customs-cleared-wire.test.ts` (#531's rule — a
+    // service-level test of a form-fed path proves the service, not the
+    // system).
+    await db
+      .update(batches)
+      .set({ customsClearedAt: new Date() })
+      .where(eq(batches.id, batchId));
+    expect((await stageOf()).groups[0]!.stage).toBe('customs_done');
+
+    // A person who marked the wrong truck must be able to say so, and NULL
+    // reads as «nobody has said» rather than «not cleared».
+    await db.update(batches).set({ customsClearedAt: null }).where(eq(batches.id, batchId));
+    expect((await stageOf()).groups[0]!.stage).toBe('in_uz');
+  });
+
   it('a split lot reports both rungs, biggest first', async () => {
     const rows = await db.select().from(boxes).where(eq(boxes.lotId, lotId));
     // One box unloaded at Andijan, one still on the truck.

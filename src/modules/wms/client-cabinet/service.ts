@@ -180,6 +180,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
       status: batches.status,
       departedAt: batches.departedAt,
       checkpoint: batches.trackingCheckpoint,
+      customsClearedAt: batches.customsClearedAt,
       originCode: origin.code,
       originCountry: origin.country,
       destCode: dest.code,
@@ -201,6 +202,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
         destCountry: r.destCountry,
         status: r.status,
         checkpointKey: (r.checkpoint as { key?: string } | null)?.key ?? null,
+        customsCleared: r.customsClearedAt !== null,
       },
       eta: window ? { ...window, toPlace: r.destName } : null,
     });

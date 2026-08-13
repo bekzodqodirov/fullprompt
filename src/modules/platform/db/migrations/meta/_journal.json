@@ -540,6 +540,13 @@
       "when": 1785190000045,
       "tag": "0076_client_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1785190000046,
+      "tag": "0077_batch_customs_cleared",
+      "breakpoints": true
     }
   ]
 }

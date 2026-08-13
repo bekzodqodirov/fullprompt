@@ -195,6 +195,38 @@ export async function setReceiptCustomsAction(
 }
 
 /**
+ * «Rastamojka tugadi» — the owner's answer to the cabinet's one folded rung.
+ *
+ * The customer's timeline had «ozbga kirdi» and «rastamojka» as ONE stage,
+ * because nothing recorded when a declaration cleared and a stage that only
+ * advances when somebody remembers is a stage that lies. He chose to add the
+ * remembering: «ha rastamojka tugadi tugmasini qo'sh».
+ *
+ * `ved.docs`, because this is the customs manager's fact and not the
+ * warehouse's — the same gate the firm picker beside it uses. Pressing again
+ * clears it, exactly as the position pins do: the person who marked the wrong
+ * truck must be able to say so, and NULL reads honestly as «nobody has said».
+ */
+export async function setCustomsClearedAction(formData: FormData): Promise<void> {
+  const batchId = String(formData.get('batchId') ?? '');
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return;
+  const actor = await authorize('ved.docs', {});
+  const meta = await requestMeta();
+  const next = batch.customsClearedAt ? null : new Date();
+  await db.update(batches).set({ customsClearedAt: next }).where(eq(batches.id, batchId));
+  const { writeAudit } = await import('@/modules/platform/audit/service');
+  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.destWarehouseId }, {
+    entityType: 'batch',
+    entityId: batchId,
+    action: 'update',
+    before: { customsClearedAt: batch.customsClearedAt },
+    after: { customsClearedAt: next },
+  });
+  revalidatePath(`/batches/${batchId}`);
+}
+
+/**
  * Manual position pin for the tracking map ("still at the border") — the
  * simulation re-anchors from this moment. Tapping the active pin clears it.
  */

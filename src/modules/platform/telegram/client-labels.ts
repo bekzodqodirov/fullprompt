@@ -67,9 +67,14 @@ const DICT = {
   },
   stgExport_transit: { uz: 'Yo‘lda 🚛', ru: 'В пути 🚛', en: 'In transit 🚛' },
   stgIn_uz: {
-    uz: 'O‘zbekistonda — rasmiylashtirilmoqda',
-    ru: 'В Узбекистане — оформление',
-    en: 'In Uzbekistan — customs clearance',
+    uz: 'O‘zbekistonga kirdi — rasmiylashtirilmoqda',
+    ru: 'Прибыл в Узбекистан — оформление',
+    en: 'Arrived in Uzbekistan — customs clearance',
+  },
+  stgCustoms_done: {
+    uz: 'Rastamojka tugadi',
+    ru: 'Растаможен',
+    en: 'Customs cleared',
   },
   stgReady: {
     uz: 'Olib ketishga tayyor ✅',

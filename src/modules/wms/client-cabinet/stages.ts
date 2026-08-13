@@ -13,14 +13,14 @@
  * Deriving the ladder from those means it stays right when he opens a second
  * hub or renames a warehouse.
  *
- * TWO of his nine are one stage here, and it is worth knowing why. «ozbga
- * kirdi» and «rastamojka» are the same recorded fact — the truck is in
- * Uzbekistan and the cargo has not been handed to the warehouse yet — because
- * nothing in the system stamps the moment a declaration clears. Splitting them
- * would mean inventing a button somebody has to remember to press, and a stage
- * that only advances when a human remembers is a stage that lies. Stated to
- * the owner: the two can be split the day he wants a “rastamojka tugadi” tap
- * on the batch card.
+ * «ozbga kirdi» and «rastamojka» were ONE rung at first, because nothing in
+ * the system stamped the moment a declaration cleared and a stage that
+ * advances only when a human remembers is a stage that lies. That was stated
+ * to the owner with the cost, and he took the trade: «ha rastamojka tugadi
+ * tugmasini qo'sh». So the batch card now carries the tap, `customs_cleared_at`
+ * carries the answer, and the two rungs are separate — with the honest
+ * default intact, since NULL means «nobody has said» and leaves the cargo on
+ * «kirdi» rather than claiming either way.
  *
  * Pure — no database, no clock — so the whole ladder is testable by table.
  */
@@ -38,9 +38,11 @@ export const CARGO_STAGES = [
   'hub_loading',
   /** On the export road. */
   'export_transit',
-  /** In Uzbekistan, paperwork not finished. */
+  /** In Uzbekistan, the declaration not yet cleared (or nobody has said). */
   'in_uz',
-  /** Cleared and waiting for the customer. */
+  /** Cleared — the operator pressed «rastamojka tugadi» on the truck. */
+  'customs_done',
+  /** Off the truck, on our shelf, the customer may come for it. */
   'ready',
   /** Handed over. */
   'issued',
@@ -60,6 +62,8 @@ export interface StageBatch {
   destCountry: string | null;
   status: string;
   checkpointKey: string | null;
+  /** Has somebody pressed «rastamojka tugadi»? Absent = nobody has said. */
+  customsCleared: boolean;
 }
 
 const LOADING = new Set(['planned', 'loading']);
@@ -82,26 +86,33 @@ export function cargoStage(
   if (status === 'ready_for_pickup') return 'ready';
 
   if (status === 'in_transit') {
-    // The pin the logist puts on the batch card outranks the schedule: a
-    // person who has seen the truck in Uzbekistan knows more than we do.
-    if (batch?.checkpointKey === 'in_uz') return 'in_uz';
-    if (batch?.destCountry === 'CN') return 'cn_transit';
     /*
-     * The truck has reached its Uzbek destination and this box has not been
-     * scanned off it yet. That IS «ozbga kirdi / rastamojka» — the cargo is
-     * here, the paperwork is not done — and it is the stage he asked for by
-     * name. The Chinese leg deliberately gets no equivalent: his ladder has
-     * no rung for «the truck reached Kashgar but nothing is unloaded», and a
-     * box still sitting on a lorry is honestly described as being on the road.
+     * Three ways to know the truck is in Uzbekistan, and the customs stamp
+     * decides between the two rungs for all of them at once — so a declaration
+     * cleared while the truck is still driving to Tashkent shows as cleared,
+     * which is what actually happens.
+     *
+     * The pin the logist puts on the batch card outranks the schedule: a
+     * person who has seen the truck in Uzbekistan knows more than we do. The
+     * `arrived`/`unloaded` branch is the truck standing at its Uzbek
+     * destination with this box not yet scanned off. The Chinese leg
+     * deliberately gets no equivalent: his ladder has no rung for «the truck
+     * reached Kashgar but nothing is unloaded», and a box still sitting on a
+     * lorry is honestly described as being on the road.
      */
-    if (batch && ['arrived', 'unloaded', 'closed'].includes(batch.status)) return 'in_uz';
-    if (batch?.originCountry === 'UZ') return 'in_uz';
+    const inUzbekistan =
+      batch?.checkpointKey === 'in_uz' ||
+      (batch?.destCountry !== 'CN' &&
+        (batch?.originCountry === 'UZ' ||
+          (batch !== null && ['arrived', 'unloaded', 'closed'].includes(batch.status))));
+    if (inUzbekistan) return batch?.customsCleared ? 'customs_done' : 'in_uz';
+    if (batch?.destCountry === 'CN') return 'cn_transit';
     return 'export_transit';
   }
 
   // Standing somewhere. `in_stock` in Uzbekistan means it landed at a
   // warehouse that does not hand cargo straight over — still ours, not yet
-  // theirs.
+  // theirs. No truck to read a stamp from, so it stays on the earlier rung.
   if (place.country === 'UZ') return 'in_uz';
   if (place.type === 'hub') return LOADING.has(status) ? 'hub_loading' : 'hub';
   return LOADING.has(status) ? 'cn_loading' : 'cn_warehouse';

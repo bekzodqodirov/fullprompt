@@ -72,13 +72,28 @@ yoziladi.
   ular sklad tili, mijoz tili emas. Endi bot ham, ilova ham **bir xil** so'z
   bilan gapiradi.
 
-### Nima QILINMADI (bilib turishingiz uchun)
+### 4. «Rastamojka tugadi» tugmasi (sizning javobingiz bo'yicha)
 
-**«O'zbekistonga kirdi»** va **«rastamojka»** — bitta bosqich qilib
-birlashtirildi. Sababi: tizimda «deklaratsiya tugadi» degan payt hech qayerda
-belgilanmaydi. Agar ularni ajratsak, kimdir har safar tugma bosishi kerak
-bo'ladi — va bir marta unutilsa, mijozga yolg'on ko'rsatiladi. Xohlasangiz,
-partiya kartasiga «rastamojka tugadi» tugmasini qo'shamiz — o'shanda ajraladi.
+Avval **«O'zbekistonga kirdi»** va **«rastamojka»** ni bitta bosqich qilgan
+edim — chunki tizimda «deklaratsiya tugadi» degan payt hech qayerda
+belgilanmasdi. Siz «ha rastamojka tugadi tugmasini qo'sh» dedingiz, qo'shildi:
+
+- Partiya kartasida **🛃 Rastamojka** panelida yangi tugma:
+  **«Rastamojka tugadi deb belgilash»**.
+- Bosilgach tugma yashil bo'ladi va **sanani o'zida ko'rsatadi**
+  («✅ Rastamojka tugadi · 13.08.2026»), panelning yopiq holatida ham **✅**
+  chiqadi — ochmasdan ko'rinadi.
+- **Xato bosilsa yana bosib bekor qilinadi.**
+- Kim bosgani va qachon bosgani **tarixga yoziladi**.
+- Tugmani **VED (rastamojka) hodimi** bosadi — firma tanlaydigan panel bilan
+  bir xil ruxsat.
+
+Mijozning ilovasida endi bosqichlar **10 ta**: «O'zbekistonga kirdi —
+rasmiylashtirilmoqda» va **«Rastamojka tugadi»** alohida.
+
+**Muhim:** hech kim bosmagan bo'lsa — hech narsa buzilmaydi. Bo'sh qiymat
+«hali aytilmagan» degani, «rastamojka tugamagan» degani emas, shuning uchun
+bugungacha ketgan hamma mashinalar avvalgidek ko'rinadi.
 
 
 ## Yuk qabulida rasm: topildi va tuzatildi — 2026-08-12

@@ -411,6 +411,7 @@ const STAGE_HUE: Record<string, string> = {
   cn_transit: 'in_transit',
   export_transit: 'in_transit',
   in_uz: 'planned',
+  customs_done: 'planned',
   ready: 'ready_for_pickup',
   issued: 'ready_for_pickup',
 };
