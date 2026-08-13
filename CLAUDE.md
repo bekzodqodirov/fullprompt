@@ -146,14 +146,25 @@ agent sheet by truck; #32 = the tray's door, the connect-time week and the
 calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
 «javob kutmoqda», then files/reply/forward/share); **#34 = the Meta go-live
 docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97). This
-branch carries **rounds 96-97 of THIS session** — the board's manual card order
-with taller desktop columns, then the receive screen's photo — on top of #34;
-everything before them is merged.
-1386 unit/integration + 154 e2e here. **The four «known failing» photo-path
+branch is EMPTY — round 98 (the customer's arrival message, the cabinet
+timeline and «rastamojka tugadi») went in as PR #37 and is deployed; rounds
+96-97 were PR #35. Everything is merged.
+1449 unit/integration + 154 e2e here. **The four «known failing» photo-path
 specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
 had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
-Latest migration: **0076** (`sales_analytics` — the `lost_reasons` dictionary
-and `closed_at` on leads+deals; 0075 `board_order` — where the owner put a card in its
+Latest migration: **0078** (`sales_analytics` — the `lost_reasons` dictionary
+and `closed_at` on leads+deals; **renumbered from 0076 on merge, the TENTH
+collision** — the other session took 0076 `client_notices` and 0077
+`batch_customs_cleared` with the neighbouring `when`s, so mine moved its
+timestamp too; count must reach **79**;
+0077 `batch_customs_cleared` — `batches.customs_cleared_at`,
+the «rastamojka tugadi» tap, additive and nullable so NULL reads «nobody has
+said»;
+0076 `client_notices` — the claim ledger behind «one
+«yukingiz keldi» per customer per truck»: kind + ref, one row per (client,
+kind, ref_type, ref_id), pending until the window closes or `finishUnload`
+releases it;
+0075 `board_order` — where the owner put a card in its
 column, on `leads` AND `deals`, backfilled from the order the board showed the
 day it deployed; **renumbered from 0073 on merge, the NINTH collision** — the
 other session took 0073 `inbound_routing` and 0074 `lead_field_map` with the
@@ -202,24 +213,33 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 75, AND THIS BRANCH TAKES IT TO 76.** He deployed
-`main` on 2026-08-12 (Meta go-live + the taqsimot + the tarjimon), which is
-journal length **75**. He then reported the receive screen's photo defect,
-pulled `main` again looking for the fix and found nothing — because **this
-branch was never merged**: `git pull` on production takes `main`, and rounds
-96-97 of THIS session live only on `claude/frappe-crm-full-prompt-vempoq`.
-RULE, learned the expensive way: **telling him to deploy is telling him to
-merge first.** After PR #35 is merged: `git pull`, `docker compose build app`,
-`docker compose run --rm migrate` → **76** (or **77** once this branch's
-round 98 / 0076 is merged too). The backfills in 0075 and 0076 touch every
-`leads` and `deals` row once and are written so a re-run is a no-op.
+**HIS SERVER IS AT 78 — the OTHER session's round 98 is DEPLOYED
+(2026-08-13); THIS branch (PR #36) takes it to 79.** PR #37 merged and
+on production the same hour, confirmed **78** by counting
+`drizzle.__drizzle_migrations`. He hit trap (1) again the same morning: he
+merged #37 believing it carried the tahlil round, deployed, and looked for
+the lost-reasons panel that lives only on PR #36 — an unmerged PR's screens
+do not exist on production, however green its CI is.
+
+**Three deploy traps, all hit in two days, all the same mistake one step
+apart — the count is the only thing that catches any of them.**
+(1) Rounds 96-97: he pulled while the branch was UNMERGED, and `git pull` on
+production takes `main`. **Telling him to deploy is telling him to merge
+first.** (2) The command is `docker compose build migrate app`, never
+`build app`: `migrate` is a SEPARATE image (`target: build`), so rebuilding
+only the app leaves the migration runner on yesterday's code. (3) Round 98:
+he pulled BEFORE the merge landed — same trap as (1), one step later — and got
+76 back. Re-pulling and re-running fixed it. The `migrate` service is
+`restart: 'no'`, so a failure there leaves the app up on the old schema with
+NOTHING on screen; the fix is to read that container's own output, not to
+trust «tugadi». Always end a deploy by counting the ledger.
 The same week, in chat, **Meta Lead Ads went live in production**: correct page
 subscribed, app published, permanent token (`expires_at: 0`) in the server
 `.env`, a test lead landed in the funnel end-to-end — the road and its traps
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**76** with this branch, 75 on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**78** today, on `main` and on his server) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2591,8 +2611,9 @@ and the upload had no deadline at ANY layer — survivable while the screen was
 silent, not once it shows ⏳ (120 s + a sentence).
 
 Round 98 (part 1) — **the owner's 8-item list, the six unambiguous ones**
-(#673 — my draft minted #664 and the OTHER session's board round took
-#664-672 first, the SEVENTH collision; item 4 was its kanban work, untouched
+(#680 — my draft minted #664 and the OTHER session's board round took
+#664-672 first; renumbered AGAIN on the next merge when its round 98 took
+#673-679; item 4 was its kanban work, untouched
 here;
 item 8, the sales analytics page + lost-reason dictionary, is part 2, agreed
 «dunyo standartlarida hammasini» + reasons picked from a LIST). (1) The
@@ -2620,12 +2641,14 @@ is per-server and was never fetched on the new box — owner given
 32px cab-and-trailer; the corridor gained the BETWEEN towns (Dingxi, Shandan,
 Jiayuguan, Xingxingxia, Yanqi, Taldyk pass, Kamchik pass) so the mountain
 stretches bend like the road. No migration in part 1 — part 2's lost-reason
-dictionary mints **0076** (0075 is the board order's).
+dictionary mints **0078** (renumbered from 0076 on merge; 0076/0077 are the
+other session's client_notices and batch_customs_cleared).
 
 Round 98 (part 2) — **item 8: /crm/tahlil + the lost-reason dictionary**
-(#674, owner: «dunyo standartlarida qanday malumotlar tahlili bolsa hammasini
+(#681, owner: «dunyo standartlarida qanday malumotlar tahlili bolsa hammasini
 hohlayman va … yopilish sababini listdan belgilaydigan qilishimiz kerak»).
-Migration **0076** (count must reach **77**): `lost_reasons` (label/sort/
+Migration **0078** (minted as 0076 and renumbered on merge, the TENTH
+collision; count must reach **79**): `lost_reasons` (label/sort/
 active, unique lower(label)) + `closed_at` on leads AND deals, backfilled
 from `updated_at` for already-closed cards (approximation, stated).
 `closedAtFor` + `reasonAllowed` live in stage-law beside `stageWrite` (a
@@ -2657,7 +2680,7 @@ the dialog is now kept mounted and toggled like every other Overlay caller.
 order (vitest, then Playwright without re-seeding); screenshots at 360
 (tahlil, settings panel, the dialog over the funnel) and 1280.
 
-Round 99 — **tahlil filtrlari** (#675, owner: «filterlarni maximalna qoyish
+Round 99 — **tahlil filtrlari** (#682, owner: «filterlarni maximalna qoyish
 mumkun bolgan narsalarga qoyib ber, source sotuvchi va boshqalar»).
 Designed, then judged by a THREE-LENS adversarial workflow BEFORE any code
 — two blockers absorbed. /crm/tahlil filters: manba + sotuvchi (both with
@@ -2690,6 +2713,55 @@ hodim gained the uuid format check. Refused with reasons: lost-reason and
 stage filters (five of seven cells zero by construction / contradicts the
 two-clock design). 10 new unit + 5 integration (fixtures in April 2020 —
 March is the lost-reasons file's); red-proofs ×2. No migration.
+
+Round 98 (this session) — the customer's two messages, both about Telegram
+(#673-678, owner: «har br karobka uchun habar jonatyabti» and «telegram appda
+u yuk qaysi etapdaligini korsin … ui uc ham juda tushunarli bolishi kerak»).
+(1) **One arrival message per client per TRUCK.** `ingestUnloadScans` walks the
+phone's queue one input per TRANSACTION (deliberately — that is what makes the
+offline queue replayable) and the client's copy rode `ReadyForPickup` inside
+it: one carton = one message, and «accept the rest» feeds one input per short
+code, so one press on a 200-box truck was 200. His CHINESE arrival was right
+and is the control group (#476) — one per RECEIPT, with the goods. Migration
+**0076** `client_notices`: the first landed box CLAIMS the right to speak
+(`ON CONFLICT DO NOTHING` on (client, kind, ref), inside the movement's own
+transaction — round 83's rule), and the TOTALS are read minutes later when the
+truck has been scanned. A row and not a timer, or a deploy in that window loses
+the message; 20 min is a CEILING and `finishUnload` releases early. kg/m³ are a
+SHARE of the lot; membership through `box_movements` (#440 — the live pointer
+red-proves three tests red). The truck is never named: a batch code is the
+company's throughput and 20 other customers' dates. `BoxIssued` was the last
+sentence on this path hardcoded in Uzbek — now the client dictionary.
+(2) **The cabinet timeline**, his nine rungs, DERIVED from
+`warehouses.country` + `warehouses.type` + `boxes.status` + the batch's two
+ends and the operator's pin (`client-cabinet/stages.ts`) — nothing hunts a
+warehouse by name, so a second hub just works. **The ETA needed no
+new table** — `tracking/map-data.ts` has held his own per-route hours since the
+map shipped (YW→KA 144-168 h, «border 1-3 days», Osh→TAS 36-48) and
+`engine.ts` already anchors them to the checkpoint pin; only the map ever asked.
+`tracking/eta.ts` is now the ONE assembler (#513) and `truckFor` reads it too.
+A date only on a moving rung, only with a route, always a range, always with
+its DESTINATION in the sentence, and nothing once the schedule is spent. Raw
+box statuses left both surfaces (bot text + Mini App now share one ladder) and
+`📍 YW` became `📍 Yiwu`. FOUND BY LOOKING, not by a test (#678): `Intl` prints
+a short month in Uzbek as «M08 14» — Chromium ships no Uzbek month names, and
+Uzbek is what most of his customers read; the estimate is numeric `dd.MM` now.
+Red-proofs ×6. Screenshots at 360×800 in uz and ru, document 360 wide.
+(2b, his answer «ha rastamojka tugadi tugmasini qo'sh», #679): «ozbga kirdi»
+and «rastamojka» were ONE rung — nothing stamps a cleared declaration and a
+stage that advances only when a human remembers is a stage that lies — so the
+cost was STATED and he took the trade. Migration **0077**
+`batches.customs_cleared_at`, tap on the batch card's customs panel, gate
+`ved.docs`, toggles, ✅ on the collapsed FACE (round 43's own lesson, same
+panel). A COLUMN and not a fourth `tracking_checkpoint` key: those three are
+POSITIONS and re-anchor the map's clock through `CHECKPOINT_SEGMENTS`.
+NULL = «nobody has said», so every truck that departed before the deploy keeps
+one rung. The stamp splits all THREE in-Uzbekistan branches at once. The action
+calls `authorize` so no integration test can press it — four halves pinned in
+`customs-cleared-wire.test.ts` (#531's third outing), browser half in m9y which
+puts the stamp back (#183). Red-proofs ×2 more. 1456 unit/integration;
+152/154 e2e (m9z-nav-progress is the known local red; m9r-dock flaked in the
+full run and passes alone).
 
 **Ads → CRM lead intake: DESIGNED and REVIEWED, not yet built.** Three lenses
 

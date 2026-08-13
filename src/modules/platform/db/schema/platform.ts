@@ -812,3 +812,51 @@ export const replyTemplates = pgTable(
   },
   (t) => [index('reply_templates_owner_idx').on(t.userId, t.sortOrder)],
 );
+
+/**
+ * One customer message per thing that happened, claimed before it is sent
+ * (migration 0076, round 98).
+ *
+ * The owner: «mashinadan yuk tushganda yukingiz keldi deb har bir karobka
+ * uchun habar jonatyabti». The client's arrival notice was emitted inside the
+ * unload scanner's per-scan transaction, so one carton was one message — and
+ * the «accept the rest» button, which feeds one input per short code through
+ * the same door, could send a customer two hundred.
+ *
+ * The unique index on (client, kind, ref) is the guarantee: the first box that
+ * lands claims the notice with `ON CONFLICT DO NOTHING` inside the movement's
+ * own transaction, and every box after it finds the claim taken. `send_after`
+ * is the window that lets the rest of the truck be scanned before the message
+ * goes, so the totals it prints are the real ones — and because the claim is a
+ * ROW rather than something held in memory, a restart in that window delays
+ * the message instead of losing it.
+ */
+export const clientNotices = pgTable(
+  'client_notices',
+  {
+    id: id(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    /** What happened — `arrived_uz` today. */
+    kind: text('kind').notNull(),
+    /** What it happened TO: a batch for an arrival, so one truck notifies once. */
+    refType: text('ref_type').notNull(),
+    refId: uuid('ref_id').notNull(),
+    status: text('status').notNull().default('pending'),
+    /** Not before this; `finishUnload` pulls it forward to now. */
+    sendAfter: timestamp('send_after', { withTimezone: true }).notNull().defaultNow(),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('client_notices_once').on(t.clientId, t.kind, t.refType, t.refId),
+    index('client_notices_due').on(t.sendAfter).where(sql`status = 'pending'`),
+    check(
+      'client_notices_status_check',
+      sql`${t.status} IN ('pending', 'sent', 'failed', 'skipped')`,
+    ),
+  ],
+);

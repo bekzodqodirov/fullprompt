@@ -1,0 +1,11 @@
+-- Round 98b: «rastamojka tugadi» becomes a recorded fact.
+--
+-- The cabinet timeline folded «ozbga kirdi» and «rastamojka» into one rung
+-- because nothing in the system stamped the moment a declaration cleared, and
+-- a stage that advances only when a human remembers is a stage that lies. The
+-- owner's answer was to add the tap: «ha rastamojka tugadi tugmasini qo'sh».
+--
+-- Additive and nullable, which is also the honest reading of the old rows —
+-- NULL means «nobody has said», not «not cleared». Every truck that departed
+-- before this deploy keeps the single rung it had.
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS customs_cleared_at timestamptz;

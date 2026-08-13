@@ -258,6 +258,20 @@ test('one prixod inside a truck is cleared by the client, and it sticks', async 
   }
   expect(found, 'some truck on the board must carry a prixod').not.toBe('');
 
+  /*
+   * «Rastamojka tugadi» (round 98b, owner: «ha rastamojka tugadi tugmasini
+   * qo'sh») — the only thing in the system that knows a declaration cleared,
+   * and what splits two rungs of the customer's own timeline. Pressed and put
+   * straight back: a customs answer on a real truck is read by every screen
+   * that draws it, including a client's Mini App (#183).
+   */
+  const cleared = page.getByTestId('customs-cleared');
+  await expect(cleared).toHaveText(/🛃/);
+  await cleared.click();
+  await expect(cleared).toHaveText(/✅/, { timeout: 15_000 });
+  await cleared.click();
+  await expect(cleared).toHaveText(/🛃/, { timeout: 15_000 });
+
   // Readable, not merely present: the picker shared its row with the client
   // code and rendered as «Ка».
   const pick = page.getByTestId('receipt-customs-pick').first();

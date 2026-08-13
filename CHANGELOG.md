@@ -70,8 +70,8 @@ ko'chirishdan boshlanadi.
 - Eski kartalardagi yozilgan sabablar o'z holicha qoladi; sababni keyin
   qayta nomlasangiz ham tarix o'zgarmaydi.
 
-Bazaga yangilik qo'shildi: deploy qilganda migratsiyalar soni **77** ga
-yetishi kerak.
+Bazaga yangilik qo'shildi: deploy qilganda migratsiyalar soni **79** ga
+yetishi kerak (boshqa sessiyaning ishi bilan birga hisoblaganda).
 
 ## 8 talik ro'yxatning birinchi qismi — 2026-08-12
 
@@ -97,6 +97,101 @@ sahifasi — keyingi bosqichda):
 7. **Xarita**: yangi serverga xarita fayli ko'chmagan ekan — bitta buyruq
    bilan tiklanadi (aytib berdim); yuk mashinasi belgisi kattaroq va aniqroq
    qilib qayta chizildi.
+
+## Telegram: bitta yuk — bitta habar, va yuk qayerdaligi — 2026-08-12
+
+Sizning ikkita xabaringiz: «har br karobka uchun habar jonatyabti» va
+«telegram appda u yuk qaysi etapdaligini korsin».
+
+### 1. Mijozga endi bitta habar boradi — mashina bo'yicha
+
+**Nima bo'lgan edi.** Skladchi mashinani tushirayotganda har bir karobkani
+skanerlaydi, va har bir skanerdan keyin mijozga alohida «yukingiz keldi»
+ketardi. «Qolganini qabul qilish» tugmasi ham xuddi shunday ishlagan — 200
+karobkalik mashinada bitta bosishdan 200 ta habar.
+
+**Endi qanday.** Birinchi karobka tushganda tizim mijoz uchun **bitta habar
+joyini band qiladi** va darhol yubormaydi. Mashina to'liq tushirilgach (yoki
+eng ko'pi bilan 20 daqiqadan keyin) **bitta habar** ketadi va unda:
+
+- qaysi tovarlar keldi (har biri o'z harfi bilan),
+- jami necha karobka,
+- jami necha kg va necha kub,
+- qaysi omborga kelgani.
+
+Ya'ni **Xitoyda qabul qilinganda ketadigan habar bilan bir xil shakl** — siz
+o'sha habardan norozi emas edingiz, shuning uchun O'zbekiston tomoni ham
+o'shanga o'xshatildi. Mijozning **o'z tilida** (o'zbekcha / ruscha /
+inglizcha).
+
+**Mashina raqami habarda yo'q va bo'lmaydi** — bitta mashinada 20 ta mijozning
+yuki bor, partiya kodi esa bizning ish hajmimiz.
+
+Yuk topshirilganda ketadigan habar ham shu shaklga o'tkazildi (ilgari u faqat
+o'zbekcha yozilgan edi — ruscha o'qiydigan mijoz o'zbekcha habar olardi).
+
+### 2. Telegram ilovada — yuk qaysi bosqichda
+
+Har bir tovar uchun **9 bo'g'inli yo'l chizig'i** chiqadi, siz aytgan
+ketma-ketlikda:
+
+1. Xitoydagi omborimizda qabul qilindi
+2. Xitoyda mashinaga yuklanmoqda
+3. Xitoy ichida yo'lda
+4. Chegara oldidagi omborimizda (Qashqar)
+5. Eksportga yuklanmoqda
+6. Yo'lda
+7. O'zbekistonda — rasmiylashtirilmoqda
+8. Olib ketishga tayyor
+9. Olib ketildi
+
+Chiziq yukning hozirgi joyigacha bo'yaladi, ostida esa **so'z bilan** yozilgan
+bo'ladi. Agar yukning bir qismi bir joyda, bir qismi boshqa joyda bo'lsa —
+ikkalasi ham ko'rsatiladi (masalan «6 dona Yo'lda», «4 dona Xitoydagi
+omborimizda»).
+
+**Taxminiy yetib kelish sanasi.** Yuk yo'lda bo'lganda:
+«🗓 Andijan: taxminan 14.08 – 16.08».
+
+Bu sana **allaqachon tizimda bor bo'lgan sizning o'z raqamlaringizdan**
+olinadi (Yiwu→Qashqar 6-7 kun, chegarada 1-3 kun kutish, Osh→Toshkent 1.5
+kun) — hech narsa kiritishingiz shart emas. Logist «mashina chegarada» yoki
+«O'zbekistonga kirdi» deb belgilaganda sana **o'zi qayta hisoblanadi**.
+
+Sana **faqat yuk harakatda bo'lganda** chiqadi — omborda turgan yuk uchun sana
+va'da bo'lib qolardi. Har doim «taxminan» so'zi va **qaysi shaharga** ekani
+yoziladi.
+
+### 3. Kichik, lekin muhim
+
+- Ilovada endi **«YW», «KA»** kabi ombor kodlari emas, **«Yiwu»,
+  «Kashgar»** deb yoziladi — mijoz uchun kod hech narsa anglatmaydi.
+- «skladda», «jo'natishga tayyorlandi» kabi ichki so'zlar olib tashlandi —
+  ular sklad tili, mijoz tili emas. Endi bot ham, ilova ham **bir xil** so'z
+  bilan gapiradi.
+
+### 4. «Rastamojka tugadi» tugmasi (sizning javobingiz bo'yicha)
+
+Avval **«O'zbekistonga kirdi»** va **«rastamojka»** ni bitta bosqich qilgan
+edim — chunki tizimda «deklaratsiya tugadi» degan payt hech qayerda
+belgilanmasdi. Siz «ha rastamojka tugadi tugmasini qo'sh» dedingiz, qo'shildi:
+
+- Partiya kartasida **🛃 Rastamojka** panelida yangi tugma:
+  **«Rastamojka tugadi deb belgilash»**.
+- Bosilgach tugma yashil bo'ladi va **sanani o'zida ko'rsatadi**
+  («✅ Rastamojka tugadi · 13.08.2026»), panelning yopiq holatida ham **✅**
+  chiqadi — ochmasdan ko'rinadi.
+- **Xato bosilsa yana bosib bekor qilinadi.**
+- Kim bosgani va qachon bosgani **tarixga yoziladi**.
+- Tugmani **VED (rastamojka) hodimi** bosadi — firma tanlaydigan panel bilan
+  bir xil ruxsat.
+
+Mijozning ilovasida endi bosqichlar **10 ta**: «O'zbekistonga kirdi —
+rasmiylashtirilmoqda» va **«Rastamojka tugadi»** alohida.
+
+**Muhim:** hech kim bosmagan bo'lsa — hech narsa buzilmaydi. Bo'sh qiymat
+«hali aytilmagan» degani, «rastamojka tugamagan» degani emas, shuning uchun
+bugungacha ketgan hamma mashinalar avvalgidek ko'rinadi.
 
 ## Yuk qabulida rasm: topildi va tuzatildi — 2026-08-12
 

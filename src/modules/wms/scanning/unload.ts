@@ -19,6 +19,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
 import { emitEvent } from '../../platform/events/service';
+import { claimArrivalNotice, releaseArrivalNotices } from '../notices/arrival';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { ScanError } from './service';
@@ -213,8 +214,26 @@ export async function ingestUnloadScans(
           .where(and(inArray(crates.id, landedCrateIds), eq(crates.status, 'active')));
       }
 
-      // Client arrival summary (spec 6.6): emit per client so sales managers
-      // get the ready-for-pickup draft message.
+      /*
+       * Client arrival summary (spec 6.6) — and the owner's report, round 98:
+       * «mashinadan yuk tushganda yukingiz keldi deb har bir karobka uchun
+       * habar jonatyabti».
+       *
+       * This block runs inside the per-SCAN transaction, so it used to emit
+       * `ReadyForPickup` once for every carton the phone sent — and
+       * `unloadRemaining` feeds one input per short code through this same
+       * door, so one press of «accept the rest» could send a customer two
+       * hundred messages.
+       *
+       * The event still fires per scan for the STAFF side, which is what it
+       * was written for (the sales manager's ready-for-pickup draft). What
+       * changed is that the CLIENT's copy no longer rides on it: the first
+       * landed box claims one notice per (client, truck), and a worker sends
+       * it once the truck has been scanned, with the totals as they really
+       * are (`wms/notices/arrival.ts`). Claiming here rather than in the
+       * worker is deliberate — inside this transaction, so a rolled-back
+       * unload cannot silence the real one that follows.
+       */
       if (landedStatus === 'ready_for_pickup' && toMove.length > 0) {
         const lotRows = await tx
           .select({ lotId: receiptLots.id, clientId: receipts.clientId })
@@ -228,6 +247,7 @@ export async function ingestUnloadScans(
           if (cid) perClient.set(cid, (perClient.get(cid) ?? 0) + 1);
         }
         for (const [cid, n] of perClient) {
+          await claimArrivalNotice(tx, cid, input.batchId);
           await emitEvent(tx, {
             type: 'ReadyForPickup',
             payload: {
@@ -236,6 +256,9 @@ export async function ingestUnloadScans(
               warehouseCode: destWh.code,
               batchCode: batch.code,
               boxCount: n,
+              // The client's copy is the claimed notice, not this event. Read
+              // by `renderClientCabinetText`, which returns null for it.
+              staffOnly: true,
             },
             entityType: 'batch',
             entityId: input.batchId,
@@ -433,6 +456,11 @@ export async function finishUnload(batchId: string, ctx: AuditContext) {
       action: 'status_change',
       after: { status: 'unloaded', missing: missing.length },
     });
+    // The truck is closed, so the clients waiting for their «yukingiz keldi»
+    // have nothing left to wait for. The window in `claimArrivalNotice` is a
+    // CEILING for the warehouse that never presses this button, not a delay
+    // this one has to serve out.
+    await releaseArrivalNotices(tx, batchId);
     const accepted = await tx
       .select({ n: sql<number>`count(DISTINCT box_id)` })
       .from(sql`box_movements bm`)

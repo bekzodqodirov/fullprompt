@@ -1,8 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, boxes, boxMovements, clients, receiptLots, receipts } from '../../platform/db/schema';
-import { estimateTransit } from './engine';
-import { CHECKPOINT_SEGMENTS, routeFor } from './map-data';
+import { scheduleEstimate } from './eta';
 import type { LatestPosition } from './devices';
 
 /** The marker /map draws — structurally the component's MapTruck. */
@@ -45,9 +44,11 @@ export async function truckFor(
   destCode: string,
   fix?: LatestPosition,
 ): Promise<TruckMarker | null> {
-  const route = routeFor(originCode, destCode);
-  const canEstimate = route !== null && batch.departedAt !== null;
-  if (!canEstimate && !fix) return null;
+  // One assembler for the whole app (`tracking/eta.ts`): the customer's
+  // cabinet reads the same schedule through the same anchoring, so the truck
+  // on the map and the date in the client's phone cannot disagree.
+  const schedule = scheduleEstimate(originCode, destCode, batch.departedAt, batch.trackingCheckpoint);
+  if (!schedule && !fix) return null;
 
   const contents = await db
     .select({
@@ -73,7 +74,7 @@ export async function truckFor(
 
   const cp = batch.trackingCheckpoint as { key?: string; at?: string } | null;
 
-  if (!canEstimate) {
+  if (!schedule) {
     // No route (or no departure stamp) — the phone's own word is all there
     // is, fresh or stale, and it is enough to put the truck on the map.
     const live = fix!;
@@ -99,16 +100,7 @@ export async function truckFor(
     };
   }
 
-  const anchorSeg = cp?.key ? CHECKPOINT_SEGMENTS[cp.key] : undefined;
-  const anchor =
-    anchorSeg && cp?.at
-      ? { segKey: anchorSeg, elapsedInSegHours: (Date.now() - new Date(cp.at).getTime()) / 3_600_000 }
-      : null;
-  const est = estimateTransit(
-    route!,
-    (Date.now() - new Date(batch.departedAt!).getTime()) / 3_600_000,
-    anchor,
-  );
+  const { route, est } = schedule;
 
   // A fresh fix from the driver's phone replaces the estimated dot; a stale
   // one is kept as information but the schedule drives the marker again.
@@ -134,7 +126,7 @@ export async function truckFor(
     departedAt: batch.departedAt!.toISOString(),
     checkpointKey: cp?.key ?? null,
     vehiclePlate: batch.vehiclePlate,
-    routePoints: route!.points,
+    routePoints: route.points,
     contents: sortedContents,
   };
 }

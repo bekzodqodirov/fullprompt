@@ -1,7 +1,9 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import {
   attachments,
+  batches,
   boxes,
   clients,
   clientTelegramLinks,
@@ -10,6 +12,14 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
+import { etaWindow, scheduleEstimate } from '../tracking/eta';
+import {
+  cargoStage,
+  isMovingStage,
+  stageIndex,
+  type CargoStage,
+  type StageBatch,
+} from './stages';
 
 /**
  * Telegram client cabinet (Phase 2.2, owner's spec): the client sees cargo
@@ -80,15 +90,52 @@ export async function clientsForChat(chatId: bigint) {
     .then((rows) => rows.map((r) => r.client));
 }
 
+export interface CargoEta {
+  fromIso: string;
+  toIso: string;
+  /** The place that date is about — «Qashqarga 14-16 avg.» cannot be misread. */
+  toPlace: string;
+}
+
+export interface CargoGroup {
+  stage: CargoStage;
+  n: number;
+  /**
+   * Only ever on a moving stage, and only when the schedule can answer.
+   *
+   * A date beside «skladda» would be a promise about a truck that has not
+   * left; a date on a truck whose route we do not know would be invented.
+   */
+  eta: CargoEta | null;
+}
+
 export interface CabinetLot {
   lotId: string;
   letter: string | null;
   productNameZh: string;
   productNameRu: string | null;
-  /** status → box count (active statuses only). */
-  statuses: Record<string, number>;
+  /**
+   * Where this lot's boxes are on the customer's ladder, biggest group first.
+   *
+   * It replaced a `statuses` map — the raw box status, which is warehouse
+   * vocabulary («planned», «in_stock») and answers a question the customer did
+   * not ask. The owner's ladder («htoyda qabul → … → olib ketdingiz») is one
+   * derivation away from the same rows, and now both the Mini App and the bot
+   * message read the SAME one, so a customer cannot be told two different
+   * things about the same carton on two screens.
+   */
+  groups: CargoGroup[];
   total: number;
-  warehouseCodes: string[];
+  /**
+   * Where the boxes physically are, by NAME — «Kashgar», not «KA».
+   *
+   * It used to print the warehouse CODE, which is staff jargon on the one
+   * screen in this system a customer opens, and the owner asked for this app
+   * to be «juda tushunarli». The name still earns its line once the cargo is
+   * ready: which of Tashkent 1, Tashkent 2 or Andijan they drive to is the
+   * only thing the rung's wording cannot say.
+   */
+  warehousePlaces: string[];
   hasPhotos: boolean;
   /**
    * The client's own cargo in the units they think in (owner: "kubi kilosi
@@ -109,6 +156,60 @@ export interface CabinetLot {
 
 const ACTIVE_STATUSES = ['in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup'];
 
+interface CabinetTruck {
+  stage: StageBatch;
+  eta: CargoEta | null;
+}
+
+/**
+ * The trucks a client's cargo is riding: what rung they put it on, and when
+ * the schedule says it lands.
+ *
+ * What this deliberately does NOT read is the batch CODE, the plate or the
+ * driver. A truck's identity is the company's business and twenty other
+ * customers' delivery dates; the customer is told a stage and a date.
+ */
+async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>> {
+  const out = new Map<string, CabinetTruck>();
+  if (batchIds.length === 0) return out;
+  const origin = alias(warehouses, 'eta_origin');
+  const dest = alias(warehouses, 'eta_dest');
+  const rows = await db
+    .select({
+      id: batches.id,
+      status: batches.status,
+      departedAt: batches.departedAt,
+      checkpoint: batches.trackingCheckpoint,
+      customsClearedAt: batches.customsClearedAt,
+      originCode: origin.code,
+      originCountry: origin.country,
+      destCode: dest.code,
+      destCountry: dest.country,
+      destName: dest.name,
+    })
+    .from(batches)
+    .innerJoin(origin, eq(batches.originWarehouseId, origin.id))
+    .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
+    .where(inArray(batches.id, batchIds));
+
+  const now = new Date();
+  for (const r of rows) {
+    const schedule = scheduleEstimate(r.originCode, r.destCode, r.departedAt, r.checkpoint, now);
+    const window = schedule ? etaWindow(schedule.est, now) : null;
+    out.set(r.id, {
+      stage: {
+        originCountry: r.originCountry,
+        destCountry: r.destCountry,
+        status: r.status,
+        checkpointKey: (r.checkpoint as { key?: string } | null)?.key ?? null,
+        customsCleared: r.customsClearedAt !== null,
+      },
+      eta: window ? { ...window, toPlace: r.destName } : null,
+    });
+  }
+  return out;
+}
+
 /** The client's active (not yet issued) cargo, one entry per lot. */
 export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   const rows = await db
@@ -118,7 +219,21 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
       productNameZh: receiptLots.productNameZh,
       productNameRu: receiptLots.productNameRu,
       status: boxes.status,
-      warehouseCode: warehouses.code,
+      warehousePlace: warehouses.name,
+      // The ladder is derived from WHERE the box stands, never from a list of
+      // warehouse codes written into the code: «qirgiz chegara sklat» is a
+      // `hub` row today and stays one when he opens a second.
+      warehouseCountry: warehouses.country,
+      warehouseType: warehouses.type,
+      /*
+       * The live pointer, and the ONE place it is the right question.
+       *
+       * `current_batch_id` is NULLed at landing (#440), which is exactly why
+       * every historical read goes through `box_movements` — but this column
+       * is asked only about boxes that are STILL `in_transit`, and for those
+       * it is the truck they are on right now.
+       */
+      batchId: boxes.currentBatchId,
       n: sql<number>`count(*)`,
       // A box has no weight of its own — the lot's total divided by its box
       // count is what every other screen means by "per box" (#152 area,
@@ -140,11 +255,22 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
       receiptLots.boxCount,
       receiptLots.totalVolumeM3,
       boxes.status,
-      warehouses.code,
+      warehouses.name,
+      warehouses.country,
+      warehouses.type,
+      boxes.currentBatchId,
     )
     .orderBy(asc(receiptLots.letter));
 
+  // ONE query for every truck this client's cargo is riding, not one per row
+  // (#432): a client with cargo on three lorries pays for three joins, not for
+  // three hundred.
+  const trucks = await trucksFor([
+    ...new Set(rows.map((r) => r.batchId).filter((id): id is string => !!id)),
+  ]);
+
   const byLot = new Map<string, CabinetLot>();
+  const stageCounts = new Map<string, Map<CargoStage, { n: number; eta: CargoEta | null }>>();
   for (const r of rows) {
     let lot = byLot.get(r.lotId);
     if (!lot) {
@@ -153,9 +279,9 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
         letter: r.letter,
         productNameZh: r.productNameZh,
         productNameRu: r.productNameRu,
-        statuses: {},
+        groups: [],
         total: 0,
-        warehouseCodes: [],
+        warehousePlaces: [],
         hasPhotos: false,
         weightKg: 0,
         volumeM3: 0,
@@ -164,16 +290,37 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
         photoCount: 0,
       };
       byLot.set(r.lotId, lot);
+      stageCounts.set(r.lotId, new Map());
     }
-    lot.statuses[r.status] = (lot.statuses[r.status] ?? 0) + Number(r.n);
+    const truck = r.batchId ? (trucks.get(r.batchId) ?? null) : null;
+    const stage = cargoStage(
+      r.status,
+      { country: r.warehouseCountry, type: r.warehouseType },
+      truck?.stage ?? null,
+    );
+    const counts = stageCounts.get(r.lotId)!;
+    const prev = counts.get(stage);
+    // Two trucks landing on the same rung keep the LATER date: the group is
+    // not complete until the last of it arrives.
+    const eta = isMovingStage(stage) ? (truck?.eta ?? null) : null;
+    const keep =
+      !prev?.eta || (eta && eta.toIso > prev.eta.toIso) ? (eta ?? prev?.eta ?? null) : prev.eta;
+    counts.set(stage, { n: (prev?.n ?? 0) + Number(r.n), eta: keep });
     lot.total += Number(r.n);
     lot.weightKg += Number(r.n) * Number(r.perBoxKg ?? 0);
     lot.volumeM3 += Number(r.n) * Number(r.perBoxM3 ?? 0);
-    if (r.warehouseCode && !lot.warehouseCodes.includes(r.warehouseCode)) {
-      lot.warehouseCodes.push(r.warehouseCode);
+    if (r.warehousePlace && !lot.warehousePlaces.includes(r.warehousePlace)) {
+      lot.warehousePlaces.push(r.warehousePlace);
     }
   }
   const lots = [...byLot.values()];
+  for (const lot of lots) {
+    // Biggest group first: the ladder is drawn for the bulk of the cargo and
+    // the rest is named under it, so the order IS the screen.
+    lot.groups = [...(stageCounts.get(lot.lotId) ?? new Map())]
+      .map(([stage, v]) => ({ stage, n: v.n, eta: v.eta }))
+      .sort((a, b) => b.n - a.n || stageIndex(a.stage) - stageIndex(b.stage));
+  }
   if (lots.length) {
     const withPhotos = await db
       .select({ entityId: attachments.entityId, n: sql<number>`count(*)` })
