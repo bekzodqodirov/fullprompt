@@ -131,7 +131,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-11
+## State — 2026-08-13
 
 `main` is the trunk and **everything is merged into it** — PR #1 = rounds
 1-55; #3 = 56-69; #4 = the truck-marker follow-up; #5 = the calls round;
@@ -170,8 +170,10 @@ claude-sonnet-5, tier 2 claude-opus-5. Found by the review, fixed here:
 `botLookup`'s balance line had never learned round 91's money scope (#702).
 **His server needs the NEW `ANTHROPIC_API_KEY` in `.env`** (the old one is
 burned) — without it everything deploys and the assistant honestly says
-«sozlanmagan». Rounds 98/99 and both sessions' PRs ≤#40 are merged;
-rounds ≤98 are DEPLOYED.
+«sozlanmagan». PR #41 (this round) is MERGED and **DEPLOYED — he confirmed
+81 on 2026-08-13 evening**; whether the key is in and the first live answer
+worked has NOT been confirmed in chat — ask, and watch the first real
+question in docker logs.
 1563 unit/integration + 155 e2e green on a fresh db in CI's order,
 re-run in full after merging #40's round.
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
@@ -239,8 +241,9 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 79 — rounds 98-99 of BOTH sessions are DEPLOYED
-(2026-08-13).** PR #36 (tahlil + lost reasons + filters, migration 0078)
+**HIS SERVER IS AT 81 — EVERYTHING is deployed, including both sessions'
+round 100 and the AI round (2026-08-13 evening, he confirmed «81 chiqdi»).**
+The trail there: PR #36 (tahlil + lost reasons + filters, migration 0078)
 merged and deployed the same morning, confirmed **79** by counting
 `drizzle.__drizzle_migrations`. Getting there hit trap (1) twice more in one
 morning: he merged #37 believing it carried the tahlil round, deployed, and
@@ -250,9 +253,10 @@ the tell — no new code arrived) — and the third confusion was pressing into
 the already-merged #35's page, where the purple «Merged» badge reads like a
 button that was pressed. An unmerged PR's screens do not exist on
 production, however green its CI is; the walk that works is Pull requests →
-the OPEN one → Merge → then pull. Since that deploy `main` has taken the
-other session's round 100 (PR #40, migration 0079) and this branch's AI
-round (0080), so **the next deploy must land at 81**.
+the OPEN one → Merge → then pull. The same evening `main` took the other
+session's round 100 (PR #40, migration 0079) and the AI round (PR #41,
+0080), he deployed again and the count landed at **81** — the first deploy
+of this whole week with no trap hit.
 
 **Three deploy traps, all hit in two days, all the same mistake one step
 apart — the count is the only thing that catches any of them.**
@@ -272,8 +276,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**81** with this branch; **80** on `main`, **79** on his server
-today) — the client book, the stock table and `/o/<code>` read
+length (**81** — on `main` AND on his server since 2026-08-13 evening) —
+the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
