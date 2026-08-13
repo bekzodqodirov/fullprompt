@@ -87,6 +87,48 @@ const DICT = {
   etaAbout: { uz: 'taxminan', ru: 'примерно', en: 'about' },
   journey: { uz: 'Yukingiz yo‘li', ru: 'Путь вашего груза', en: 'Your cargo’s journey' },
 
+  /*
+   * --- the dated history (round 99, owner: «qaysi etap qacon nima bolganini
+   * koradgan qilish kerak») ---
+   *
+   * EVENT sentences, separate from the stg* stage sentences on purpose: a
+   * stage answers «where is it now» and reads stative («yuklanmoqda»), a
+   * history line answers «what happened then» and needs a finished verb. The
+   * keys come from `wms/client-cabinet/journey.ts`; the same outside-the-fence
+   * test that anchors the stages anchors these (#163).
+   */
+  jrnReceived: {
+    uz: 'Omborimizga qabul qilindi',
+    ru: 'Принят на наш склад',
+    en: 'Received at our warehouse',
+  },
+  jrnToHub: {
+    uz: 'Chegara ombori tomon yo‘lga chiqdi',
+    ru: 'Выехал к складу у границы',
+    en: 'Set off toward the border warehouse',
+  },
+  jrnAtHub: {
+    uz: 'Chegara omboriga yetib keldi',
+    ru: 'Прибыл на склад у границы',
+    en: 'Reached the border warehouse',
+  },
+  jrnExport: {
+    uz: 'Eksport — yo‘lga chiqdi',
+    ru: 'Экспорт — выехал',
+    en: 'Export — departed',
+  },
+  jrnInUz: {
+    uz: 'O‘zbekistonga kirdi',
+    ru: 'Прибыл в Узбекистан',
+    en: 'Entered Uzbekistan',
+  },
+  jrnCustoms: { uz: 'Rastamojka tugadi', ru: 'Растаможен', en: 'Customs cleared' },
+  jrnReady: {
+    uz: 'Olib ketishga tayyor',
+    ru: 'Готов к выдаче',
+    en: 'Ready for pickup',
+  },
+
   pieces: { uz: 'dona', ru: 'шт', en: 'pcs' },
   kg: { uz: 'kg', ru: 'кг', en: 'kg' },
   m3: { uz: 'm³', ru: 'м³', en: 'm³' },
@@ -319,6 +361,12 @@ function fallback(locale?: string | null): ClientLocale {
  */
 export function allLabelVariants(key: 'btnCargo' | 'btnBalance' | 'btnHistory' | 'btnLanguage'): string[] {
   return CLIENT_LOCALES.map((locale) => DICT[key][locale]);
+}
+
+/** A history line's sentence, in the client's language. */
+export function journeyLabel(key: string, labels: ClientLabels): string {
+  const k = `jrn${key.charAt(0).toUpperCase()}${key.slice(1)}` as keyof ClientLabels;
+  return (labels[k] as string | undefined) ?? key;
 }
 
 /** The rung's sentence, in the client's language. */

@@ -155,13 +155,21 @@ const PAYLOAD = {
             {
               stage: 'export_transit',
               n: 6,
-              eta: {
-                fromIso: '2030-08-14T00:00:00Z',
-                toIso: '2030-08-16T00:00:00Z',
+              transit: {
+                fromPlace: 'Kashgar',
                 toPlace: 'Andijan',
+                progress: 0.64,
+                etaFromIso: '2030-08-14T00:00:00Z',
+                etaToIso: '2030-08-16T00:00:00Z',
               },
             },
-            { stage: 'cn_warehouse', n: 4, eta: null },
+            { stage: 'cn_warehouse', n: 4, transit: null },
+          ],
+          journey: [
+            { key: 'received', atIso: '2030-08-01T05:00:00Z' },
+            { key: 'toHub', atIso: '2030-08-03T05:00:00Z' },
+            { key: 'atHub', atIso: '2030-08-09T05:00:00Z' },
+            { key: 'export', atIso: '2030-08-11T05:00:00Z' },
           ],
           total: 10,
           warehousePlaces: ['Yiwu'],
@@ -217,21 +225,30 @@ test('the cargo screen shows the count, the kilos and the cubes', async ({ page 
   // on the one screen a customer opens.
   await expect(lot).toContainText('Yiwu');
 
-  // The owner's ladder, filled to where the bulk of the cargo is — six of the
-  // ten boxes are on the export road, which is rung six.
-  const rungs = page.getByTestId('cab-track').locator('i');
-  await expect(rungs).toHaveCount(10);
-  await expect(rungs.nth(5)).toHaveClass(/now/);
-  await expect(rungs.nth(4)).toHaveClass(/done/);
-  await expect(rungs.nth(6)).not.toHaveClass(/done|now/);
-
-  // And said in words, because a bar alone does not say WHICH rung. Russian,
-  // because this fixture's client reads Russian.
+  // Said in words first. Russian, because this fixture's client reads Russian.
   await expect(page.getByTestId('cab-stage')).toContainText('В пути');
-  // The estimate names its destination, so it cannot be read as a promise
-  // about somewhere else, and it always says «примерно».
+
+  // The ROAD, named at both ends and filled to the schedule's own figure —
+  // the owner's rejection of the first version was exactly that an unlabelled
+  // strip means nothing («yolni qanchasini bosib otganini korsatadgan …»).
+  const road = page.getByTestId('cab-road');
+  await expect(road).toContainText('Kashgar');
+  await expect(road).toContainText('Andijan');
+  await expect(road).toContainText('64%');
+  await expect(road.locator('.cab-road-bar i')).toHaveAttribute('style', /64%/);
+
+  // The estimate names its destination and always says «примерно».
   await expect(page.getByTestId('cab-eta')).toContainText('Andijan');
   await expect(page.getByTestId('cab-eta')).toContainText('примерно');
+
+  // «Qachon nima bo'lgan» — the dated history, with real dates on every line.
+  const journey = page.getByTestId('cab-journey');
+  await expect(journey.locator('li')).toHaveCount(4);
+  await expect(journey.locator('li').first()).toContainText('01.08');
+  await expect(journey.locator('li').first()).toContainText('Принят на наш склад');
+  await expect(journey.locator('li').last()).toContainText('11.08');
+  await expect(journey.locator('li').last()).toContainText('Экспорт');
+
   // The remainder is named under it rather than left unexplained.
   await expect(lot).toContainText('Принят на наш склад в Китае');
 });

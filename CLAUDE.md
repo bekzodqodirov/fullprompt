@@ -146,9 +146,12 @@ agent sheet by truck; #32 = the tray's door, the connect-time week and the
 calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
 «javob kutmoqda», then files/reply/forward/share); **#34 = the Meta go-live
 docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97). This
-branch is EMPTY — round 98 (the customer's arrival message, the cabinet
-timeline and «rastamojka tugadi») went in as PR #37 and is deployed; rounds
-96-97 were PR #35. Everything is merged.
+branch carries **round 99** — the timeline redesigned after the owner's
+rejection («etaplaring hech nimani bildirmaydiku»): dated journey from
+`box_movements` (`client-cabinet/journey.ts`, jrn* labels ×3) + a NAMED
+road-progress bar from the map engine's own `progress` on both legs, in the
+Mini App and the bot text; `CargoGroup.eta` became `transit`. Round 98
+(PR #37) and the deploy record (PR #38) are merged and DEPLOYED.
 1449 unit/integration + 154 e2e here. **The four «known failing» photo-path
 specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
 had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
@@ -2611,9 +2614,9 @@ and the upload had no deadline at ANY layer — survivable while the screen was
 silent, not once it shows ⏳ (120 s + a sentence).
 
 Round 98 (part 1) — **the owner's 8-item list, the six unambiguous ones**
-(#680 — my draft minted #664 and the OTHER session's board round took
-#664-672 first; renumbered AGAIN on the next merge when its round 98 took
-#673-679; item 4 was its kanban work, untouched
+(#683 — my draft minted #664 and the OTHER session's board round took
+#664-672 first; renumbered TWICE more on merges as its rounds 98-99 took
+#673-682; item 4 was its kanban work, untouched
 here;
 item 8, the sales analytics page + lost-reason dictionary, is part 2, agreed
 «dunyo standartlarida hammasini» + reasons picked from a LIST). (1) The
@@ -2645,7 +2648,7 @@ dictionary mints **0078** (renumbered from 0076 on merge; 0076/0077 are the
 other session's client_notices and batch_customs_cleared).
 
 Round 98 (part 2) — **item 8: /crm/tahlil + the lost-reason dictionary**
-(#681, owner: «dunyo standartlarida qanday malumotlar tahlili bolsa hammasini
+(#684, owner: «dunyo standartlarida qanday malumotlar tahlili bolsa hammasini
 hohlayman va … yopilish sababini listdan belgilaydigan qilishimiz kerak»).
 Migration **0078** (minted as 0076 and renumbered on merge, the TENTH
 collision; count must reach **79**): `lost_reasons` (label/sort/
@@ -2680,7 +2683,7 @@ the dialog is now kept mounted and toggled like every other Overlay caller.
 order (vitest, then Playwright without re-seeding); screenshots at 360
 (tahlil, settings panel, the dialog over the funnel) and 1280.
 
-Round 99 — **tahlil filtrlari** (#682, owner: «filterlarni maximalna qoyish
+Round 99 — **tahlil filtrlari** (#685, owner: «filterlarni maximalna qoyish
 mumkun bolgan narsalarga qoyib ber, source sotuvchi va boshqalar»).
 Designed, then judged by a THREE-LENS adversarial workflow BEFORE any code
 — two blockers absorbed. /crm/tahlil filters: manba + sotuvchi (both with

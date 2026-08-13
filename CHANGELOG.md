@@ -98,6 +98,47 @@ sahifasi — keyingi bosqichda):
    bilan tiklanadi (aytib berdim); yuk mashinasi belgisi kattaroq va aniqroq
    qilib qayta chizildi.
 
+## Telegram ilova: haqiqiy timeline — sanalar va yo'l chizig'i — 2026-08-13
+
+Sizning gapingiz: «sen qilgan etaplar timeline emasku, hech nima korinmaydi —
+qaysi etap qachon nima bolganini koradgan qilish kerak, yolni qanchasini bosib
+otganini korsatadgan bolishi kerak». To'g'ri edi — chiziqchalar hech narsa
+aytmasdi. Qaytadan qilindi:
+
+### 1. Sanali tarix — «qachon nima bo'lgan»
+
+Har bir tovar ostida endi pochta kuzatuvidagidek ro'yxat:
+
+- **01.08** — Omborimizga qabul qilindi
+- **03.08** — Chegara ombori tomon yo'lga chiqdi
+- **09.08** — Chegara omboriga yetib keldi
+- **11.08** — Eksport — yo'lga chiqdi ← (hozirgi, ajralib turadi)
+
+Bu sanalar hech qayerdan o'ylab topilmaydi — har bir karobkaning har bir
+harakati tizimda sanasi bilan yozilgan edi, faqat ekranga chiqarilmagan edi.
+«Rastamojka tugadi» bosilgan bo'lsa u ham sanasi bilan tushadi.
+
+### 2. Yo'l chizig'i — «yo'lning qanchasi bosib o'tildi»
+
+Yuk yo'lda bo'lganda ikki uchi NOMLANGAN chiziq chiqadi, foizi bilan:
+
+**Yiwu ——————🚛—————— Kashgar · 31%**
+**Kashgar ————————🚛—— Andijan · 64%**
+
+Ya'ni Xitoy ichidagi yo'lda ham, eksport yo'lida ham — aynan siz aytgandek.
+Foiz jadval-grafik bo'yicha hisoblanadi (xaritadagi mashina qayerda tursa,
+shu); logist «chegarada» deb belgilasa foiz ham o'zi to'g'irlanadi. Ostida
+avvalgidek «🗓 Andijan: taxminan 15.08 – 16.08».
+
+### 3. Bot habarida ham
+
+«📦 Yuklarim» tugmasi javobida ham endi foiz ko'rinadi:
+«10 dona — Yo'lda 🚛 · 64% · Andijan: taxminan 15.08 – 16.08».
+
+Yorug' va qorong'u rejimda tekshirildi (siz yuborgan skrinshot qorong'u rejim
+edi), 360 px ekranda hech narsa siqilmaydi. Migratsiya YO'Q — deploy'da
+raqam 78 ligicha qoladi.
+
 ## Telegram: bitta yuk — bitta habar, va yuk qayerdaligi — 2026-08-12
 
 Sizning ikkita xabaringiz: «har br karobka uchun habar jonatyabti» va
