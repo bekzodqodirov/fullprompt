@@ -216,13 +216,18 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 78 — the OTHER session's round 98 is DEPLOYED
-(2026-08-13); THIS branch (PR #36) takes it to 79.** PR #37 merged and
-on production the same hour, confirmed **78** by counting
-`drizzle.__drizzle_migrations`. He hit trap (1) again the same morning: he
-merged #37 believing it carried the tahlil round, deployed, and looked for
-the lost-reasons panel that lives only on PR #36 — an unmerged PR's screens
-do not exist on production, however green its CI is.
+**HIS SERVER IS AT 79 — rounds 98-99 of BOTH sessions are DEPLOYED
+(2026-08-13).** PR #36 (tahlil + lost reasons + filters, migration 0078)
+merged and deployed the same morning, confirmed **79** by counting
+`drizzle.__drizzle_migrations`. Getting there hit trap (1) twice more in one
+morning: he merged #37 believing it carried the tahlil round, deployed, and
+looked for the lost-reasons panel that lives only on PR #36; then pulled and
+re-deployed AGAIN with #36 still unmerged (a fully-cached `docker build` is
+the tell — no new code arrived) — and the third confusion was pressing into
+the already-merged #35's page, where the purple «Merged» badge reads like a
+button that was pressed. An unmerged PR's screens do not exist on
+production, however green its CI is; the walk that works is Pull requests →
+the OPEN one → Merge → then pull.
 
 **Three deploy traps, all hit in two days, all the same mistake one step
 apart — the count is the only thing that catches any of them.**
