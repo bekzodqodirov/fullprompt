@@ -146,9 +146,9 @@ agent sheet by truck; #32 = the tray's door, the connect-time week and the
 calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
 «javob kutmoqda», then files/reply/forward/share); **#34 = the Meta go-live
 docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97). This
-branch carries **round 98 of THIS session** — the customer's arrival message
-and the cabinet timeline — on top of everything, which is all merged (rounds
-96-97 went in as PR #35).
+branch is EMPTY — round 98 (the customer's arrival message, the cabinet
+timeline and «rastamojka tugadi») went in as PR #37 and is deployed; rounds
+96-97 were PR #35. Everything is merged.
 1449 unit/integration + 154 e2e here. **The four «known failing» photo-path
 specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
 had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
@@ -208,24 +208,29 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 76, AND THIS BRANCH TAKES IT TO 78.** He deployed
-rounds 96-97 (PR #35) on 2026-08-12 and confirmed **76**. Before that he had
-pulled `main` looking for the photo fix and found nothing, because that branch
-was not merged yet — `git pull` on production takes `main`. RULE, learned the
-expensive way: **telling him to deploy is telling him to merge first.** And
-the deploy command is `docker compose build migrate app`, not `build app`:
-`migrate` is a SEPARATE image (`target: build`), so rebuilding only `app`
-leaves the migration runner on yesterday's code and the count short.
-After this branch is merged: `git pull`, `docker compose build migrate app`,
-`docker compose run --rm migrate` → **78**. 0076 creates one empty table and
-0077 adds one nullable column; neither touches an existing row.
+**HIS SERVER IS AT 78 — round 98 is DEPLOYED (2026-08-13).** PR #37 merged and
+on production the same hour, confirmed **78** by counting
+`drizzle.__drizzle_migrations`.
+
+**Three deploy traps, all hit in two days, all the same mistake one step
+apart — the count is the only thing that catches any of them.**
+(1) Rounds 96-97: he pulled while the branch was UNMERGED, and `git pull` on
+production takes `main`. **Telling him to deploy is telling him to merge
+first.** (2) The command is `docker compose build migrate app`, never
+`build app`: `migrate` is a SEPARATE image (`target: build`), so rebuilding
+only the app leaves the migration runner on yesterday's code. (3) Round 98:
+he pulled BEFORE the merge landed — same trap as (1), one step later — and got
+76 back. Re-pulling and re-running fixed it. The `migrate` service is
+`restart: 'no'`, so a failure there leaves the app up on the old schema with
+NOTHING on screen; the fix is to read that container's own output, not to
+trust «tugadi». Always end a deploy by counting the ledger.
 The same week, in chat, **Meta Lead Ads went live in production**: correct page
 subscribed, app published, permanent token (`expires_at: 0`) in the server
 `.env`, a test lead landed in the funnel end-to-end — the road and its traps
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**78** with this branch, 76 on `main` today) — the client book, the stock table and `/o/<code>` read
+length (**78** today, on `main` and on his server) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
