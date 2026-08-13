@@ -4,7 +4,13 @@ import { db } from '@/modules/platform/db/client';
 import { clients, clientTelegramLinks, warehouses } from '@/modules/platform/db/schema';
 import { logger } from '@/modules/platform/logger';
 import { cabinetInlineKeyboard } from '@/modules/platform/telegram/menu-button';
-import { arrivedSummary, dueArrivalNotices, settleArrivalNotice } from './arrival';
+import {
+  arrivedSummary,
+  dueArrivalNotices,
+  isPermanentNoticeFailure,
+  MAX_NOTICE_ATTEMPTS,
+  settleArrivalNotice,
+} from './arrival';
 import { arrivalText } from './arrival-text';
 
 export const JOB_CLIENT_NOTICES = 'notices.client';
@@ -87,6 +93,9 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
 
       const app = cabinetInlineKeyboard(process.env.APP_URL, client.locale);
       let delivered = 0;
+      // Every refusal so far permanent? Only then is giving up honest.
+      let allPermanent = true;
+      let lastDetail = '';
       for (const chatId of chats) {
         const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
           method: 'POST',
@@ -100,6 +109,8 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
         if (res.ok) delivered += 1;
         else {
           const detail = await res.text().catch(() => '');
+          if (!isPermanentNoticeFailure(res.status)) allPermanent = false;
+          lastDetail = `${res.status} ${detail.slice(0, 200)}`;
           // A client who BLOCKED the bot looks exactly like a client who was
           // reached unless the answer is read (#268).
           logger.warn(
@@ -109,12 +120,29 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
         }
       }
       // Reaching one of a person's chats is reaching the person. Zero is a
-      // retry — the bot may have been rate-limited or briefly unreachable.
-      await settleArrivalNotice(notice.id, delivered > 0 ? 'sent' : 'failed');
+      // RETRY when anything about it was transient — a 429 during the burst
+      // that follows a truck landing is the likeliest failure there is, and
+      // `dueArrivalNotices` only ever re-reads 'pending', so writing 'failed'
+      // here is the customer never being told. Permanent refusals (blocked,
+      // no such chat) and a spent attempt budget settle for good.
+      const outcome =
+        delivered > 0
+          ? 'sent'
+          : allPermanent || notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS
+            ? 'failed'
+            : 'pending';
+      await settleArrivalNotice(notice.id, outcome, delivered > 0 ? undefined : lastDetail);
       if (delivered > 0) sent += 1;
     } catch (err) {
+      // The throw is almost always the network or the database, i.e. this
+      // moment rather than this message — keep it queued until the budget
+      // runs out.
       logger.warn({ err, noticeId: notice.id }, 'client arrival notice failed');
-      await settleArrivalNotice(notice.id, 'failed', String(err)).catch(() => {});
+      await settleArrivalNotice(
+        notice.id,
+        notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS ? 'failed' : 'pending',
+        String(err),
+      ).catch(() => {});
     }
   }
   return sent;

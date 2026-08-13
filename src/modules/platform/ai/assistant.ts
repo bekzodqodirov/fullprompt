@@ -91,9 +91,22 @@ ${schemaCard(ANALYST_ROW_CAP)}`;
 }
 
 /**
- * Reserve today's slot: the INSERT itself checks the cap, so the count and
- * the write are one statement and two racing questions cannot both pass. The
- * day boundary is Tashkent's, like every «today» this system shows people.
+ * Reserve today's slot — a per-person advisory lock, then count and insert.
+ *
+ * The lock must be its OWN statement, and that is the whole subtlety. Under
+ * READ COMMITTED a statement's snapshot is taken when the statement starts,
+ * so folding the lock into the same INSERT (a `WITH claim AS (SELECT
+ * pg_advisory_xact_lock(…))`) buys nothing: every waiter still counts the
+ * rows as they were before it waited. MEASURED, not reasoned — ten parallel
+ * asks against a limit of three granted all ten that way, and three the way
+ * it is written now. A cap that does not hold under a burst is not a cap on
+ * a frontier model's bill.
+ *
+ * Serialising per USER costs nothing real: one person cannot type two
+ * questions at once, so the lock only ever contends with their own
+ * duplicates, and being transaction-scoped it is released whatever happens.
+ *
+ * The day boundary is Tashkent's, like every «today» this system shows.
  */
 async function reserveQuestion(
   actor: AssistantActor,
@@ -101,17 +114,20 @@ async function reserveQuestion(
   question: string,
   limit: number,
 ): Promise<string | null> {
-  const rows = (await db.execute(sql`
-    INSERT INTO ai_questions (user_id, surface, question)
-    SELECT ${actor.id}, ${surface}, ${question}
-    WHERE (
-      SELECT count(*) FROM ai_questions
-      WHERE user_id = ${actor.id}
-        AND created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
-    ) < ${limit}
-    RETURNING id
-  `)) as unknown as { id: string }[];
-  return rows[0]?.id ?? null;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${actor.id}::text, 0))`);
+    const rows = (await tx.execute(sql`
+      INSERT INTO ai_questions (user_id, surface, question)
+      SELECT ${actor.id}, ${surface}, ${question}
+      WHERE (
+        SELECT count(*) FROM ai_questions
+        WHERE user_id = ${actor.id}
+          AND created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
+      ) < ${limit}
+      RETURNING id
+    `)) as unknown as { id: string }[];
+    return rows[0]?.id ?? null;
+  });
 }
 
 export async function askAssistant(

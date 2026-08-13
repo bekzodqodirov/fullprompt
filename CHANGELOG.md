@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## Ishga tushirishdan oldingi audit: 6 ta xato topildi va tuzatildi — 2026-08-13
+
+So'rovingiz: «avval audit qilib chiq performance bug analis securitylarni
+tekshirib chiq hamma uje ishlatishni boshlaydi ertada».
+
+Sistema olti tomondan tekshirildi (AI xavfsizligi, kirish/ochiq sahifalar,
+huquqlar, tezlik, pul hisobi va poyga holatlari, har bir API yo'li). Har bir
+topilma alohida tekshiruvchiga «buni rad et» deb berildi — ya'ni kodda
+haqiqatan takrorlanmasa, hisobga olinmadi. **Oltitasi haqiqiy chiqdi,
+hammasi tuzatildi.**
+
+**Maxfiylik (ikkita, ikkalasi ham darhol yopildi):**
+
+- **Kontragentlar ro'yxati sotuvchilarga ochiq edi.** Sotuvchi manzil
+  qatoriga `/kontragentlar` yozsa — butun kompaniyaning kimga qancha
+  qarzdorligi, har bir firma bo'yicha hisob va bank kvitansiyalari
+  ko'rinardi. Endi bu sahifa faqat moliya boshqaruvchilariga (buxgalter,
+  admin, VED, logist) ochiq — moliya ekranlarida bu qoida allaqachon bor
+  edi, kontragentlar tomoni uni olmagan ekan.
+- **Topshirish akti va mashina manifesti faqat login talab qilardi.** Ya'ni
+  har qanday xodim, hatto boshqa davlatdagi skladchi ham, id bilan istalgan
+  mijozning topshirish aktini (ismi, telefoni, qutilar ro'yxati) yoki
+  istalgan mashinaning to'liq yuk ro'yxatini ochib olardi. Endi ikkalasi ham
+  o'z huquqini va o'z skladini so'raydi — qolgan hujjatlar allaqachon
+  shunday edi.
+
+**Ishonchlilik va tezlik:**
+
+- **Bitta AI savoli butun botni to'xtatib turardi.** Telegram boti
+  navbatma-navbat ishlaydi, ya'ni bir vaqtda bitta xabar — AI javobi
+  kutilayotganda mijozlarning kabineti, `/start` va «yukingiz keldi»
+  xabarlari ham navbatda turardi (20-120 soniya, ulanish osilsa 10 daqiqagacha).
+  Endi AI javobi alohida ishlaydi va tayyor bo'lgach yuboriladi — bot hech
+  qachon kutmaydi. Qo'shimcha: AI so'roviga o'z muddati qo'yildi.
+- **«Yukingiz keldi» xabari yo'qolib ketishi mumkin edi.** Mashina
+  tushirilganda o'nlab xabar bir vaqtda ketadi; Telegram bir zumga
+  «sekinlashtiring» desa, xabar butunlay bekor qilinardi va qayta
+  urinilmasdi — mijoz yukining kelganini bilmay qolardi. Endi vaqtinchalik
+  xato (band, ulanish) qayta urinadi, doimiy xato (bot bloklangan) esa
+  to'xtaydi. 5 martagacha urinadi.
+
+**Kichikroq ikkitasi ham tuzatildi:** birov sizning telefon raqamingizga 5
+marta noto'g'ri parol kiritsa, siz TO'G'RI parol bilan ham 15 daqiqa kira
+olmasdingiz — endi to'g'ri parol har doim kiritadi (noto'g'ri urinishlar
+avvalgidek cheklanadi); va AI ning kunlik chegarasi bir vaqtda kelgan
+savollarda ishlamas edi (o'lchab tekshirildi: 3 chegara bilan 10 ta savol
+o'tib ketardi — endi aynan 3 tasi o'tadi).
+
+Kodda o'zgarish bor, bazada yo'q — **migratsiya yo'q, sanash 81 da qoladi.**
+
 ## AI yordamchi: savol berasiz, sistema javob beradi — 2026-08-13
 
 So'rovingiz: «biz sistemamizga AI ulay olamizmi bizni sistemadagi

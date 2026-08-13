@@ -51,8 +51,17 @@ export function aiConfigured(): boolean {
 export const ANALYST_MODEL = 'claude-opus-5';
 export const STAFF_MODEL = 'claude-sonnet-5';
 
+/**
+ * One model call's ceiling. The SDK's own default is ~10 minutes, which is
+ * far too long for a question a person is waiting on — and round 97's lesson
+ * is that an un-deadlined network call is the failure that looks like a hang
+ * rather than an error. Sized so the loop's whole wall clock (120 s) is still
+ * the outer bound.
+ */
+const CALL_TIMEOUT_MS = 60_000;
+
 export const realCallModel: CallModel = async (req) => {
-  const client = new Anthropic();
+  const client = new Anthropic({ timeout: CALL_TIMEOUT_MS, maxRetries: 1 });
   const response = await client.messages.create({
     model: req.model,
     max_tokens: req.maxTokens,

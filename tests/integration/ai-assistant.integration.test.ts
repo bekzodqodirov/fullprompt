@@ -192,6 +192,41 @@ describe('askAssistant', () => {
     await db.delete(settings).where(eq(settings.key, 'ai_daily_limit'));
   });
 
+  it('the cap holds under a BURST, not just in sequence', async () => {
+    // The pre-go-live audit's find, and the reason `reserveQuestion` takes an
+    // advisory lock as its own statement: under READ COMMITTED every racing
+    // count reads its own pre-insert snapshot, so ten simultaneous questions
+    // all saw «limit - 1» and all passed. Measured before the fix: 10 of 10
+    // granted against a limit of 3.
+    await db.execute(dsql`DELETE FROM ai_questions WHERE user_id = ${staffUserId}`);
+    const LIMIT = 3;
+    await db
+      .insert(settings)
+      .values({ key: 'ai_daily_limit', value: LIMIT })
+      .onConflictDoUpdate({ target: settings.key, set: { value: LIMIT } });
+
+    const asks = Array.from({ length: 10 }, (_unused, i) =>
+      askAssistant(
+        { actor: staffActor(), question: `burst ${STAMP} #${i}`, surface: 'web' },
+        {
+          callModel: scripted([
+            { stopReason: 'end_turn', content: [{ type: 'text', text: 'javob' }] },
+          ]),
+        },
+      ),
+    );
+    const outcomes = await Promise.all(asks);
+    const allowed = outcomes.filter((o) => o.status === 'ok').length;
+    const refused = outcomes.filter((o) => o.status === 'limit').length;
+    expect(allowed, 'exactly the cap got through').toBe(LIMIT);
+    expect(refused).toBe(10 - LIMIT);
+    // And the ledger agrees — every granted slot is a row, no more.
+    expect((await questionRows()).length).toBe(LIMIT);
+
+    await db.delete(settings).where(eq(settings.key, 'ai_daily_limit'));
+    await db.execute(dsql`DELETE FROM ai_questions WHERE user_id = ${staffUserId}`);
+  });
+
   it('unconfigured (no key, no scripted model) answers honestly and writes nothing', async () => {
     const saved = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;

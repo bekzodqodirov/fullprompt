@@ -327,22 +327,52 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
     await ctx.reply('🤖 O‘ylayapman…');
-    const outcome = await assistantFromBot(chatId, text).catch((err: unknown) => {
-      logger.warn({ err }, 'bot assistant failed');
-      return { status: 'error' as const };
-    });
-    const replies: Record<string, string> = {
-      not_configured:
-        'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
-      limit: 'Bugungi AI savollar chegarasi tugadi — ertaga yana so‘rang.',
-      error: 'AI javob berolmadi. Keyinroq urinib ko‘ring.',
-    };
-    if (!outcome) return;
-    if (outcome.status === 'ok') await ctx.reply(outcome.answer);
-    else if (outcome.status === 'gave_up') {
-      await ctx.reply(outcome.answer ?? 'Oxirigacha yetolmadim — savolni soddaroq berib ko‘ring.');
-    } else await ctx.reply(replies[outcome.status] ?? replies.error!);
+    // NOT awaited, and that is the whole point: grammy's built-in poller is
+    // SEQUENTIAL — it handles one update at a time — so awaiting a model
+    // loop here would hold the CUSTOMER bot for as long as the answer takes.
+    // One admin asking «bu oy qancha pul kirdi» would freeze every cabinet
+    // tap, every /start and every arrival flow for tens of seconds, and the
+    // owner's own words are that 95 % of customer contact is this channel.
+    // The answer is delivered by chat id when it lands, exactly as the
+    // notification path already sends unsolicited messages.
+    void answerWithAssistant(ctx, chatId, text);
   });
+}
+
+/**
+ * Ask the assistant OFF the middleware chain and deliver the answer when it
+ * arrives (see the call site: the poller is sequential, so this must not be
+ * awaited). Everything is caught — a rejection here would be an unhandled
+ * promise, which is the one way a background answer could take the process
+ * down rather than merely fail.
+ */
+async function answerWithAssistant(
+  ctx: { api: { sendMessage: (chatId: number | string, text: string) => Promise<unknown> } },
+  chatId: bigint,
+  text: string,
+): Promise<void> {
+  const replies: Record<string, string> = {
+    not_configured:
+      'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
+    limit: 'Bugungi AI savollar chegarasi tugadi — ertaga yana so‘rang.',
+    error: 'AI javob berolmadi. Keyinroq urinib ko‘ring.',
+  };
+  try {
+    const outcome = await assistantFromBot(chatId, text);
+    if (!outcome) return;
+    const answer =
+      outcome.status === 'ok'
+        ? outcome.answer
+        : outcome.status === 'gave_up'
+          ? (outcome.answer ?? 'Oxirigacha yetolmadim — savolni soddaroq berib ko‘ring.')
+          : (replies[outcome.status] ?? replies.error!);
+    await ctx.api.sendMessage(String(chatId), answer);
+  } catch (err) {
+    logger.warn({ err }, 'bot assistant failed');
+    await ctx.api
+      .sendMessage(String(chatId), replies.error!)
+      .catch((sendErr: unknown) => logger.warn({ err: sendErr }, 'bot assistant reply failed'));
+  }
 }
 
 /**

@@ -174,8 +174,25 @@ burned) — without it everything deploys and the assistant honestly says
 81 on 2026-08-13 evening, put the NEW key in, and confirmed the assistant
 ANSWERS LIVE («ishlayabti»)** — the AI round is fully in production on both
 surfaces.
-1563 unit/integration + 155 e2e green on a fresh db in CI's order,
-re-run in full after merging #40's round.
+**Round 101 — the pre-go-live audit** (his «avval audit qilib chiq …
+hamma uje ishlatishni boshlaydi ertada»): six lenses, verify-to-refute,
+**six confirmed defects, all fixed** (#705-709). The two leaks: the partner
+screens + the partner-receipt attachment branch had never learned round
+91's money scope (a seller read the whole creditor ledger by URL), and
+`handovers/[id]/act` + `batches/[id]/manifest` gated on a LOGIN alone while
+their four siblings gated on permission + warehouse. The availability one
+is the AI round's own: grammy's poller is SEQUENTIAL and the handler
+AWAITED the model, so one admin's question froze every customer's cabinet
+for 20-120 s (10 min on a hang — `new Anthropic()` had no timeout); the
+answer now dispatches off the middleware and the call carries a 60 s
+deadline. Plus: a transient Telegram 429 permanently DROPPED a «yukingiz
+keldi» (settled `failed`, and `dueArrivalNotices` reads only `pending`) —
+now transient-vs-permanent with a 5-attempt budget; login is verify-then-
+throttle (a wrong-guess lockout no longer refuses the owner's correct
+password); and the AI daily cap is a real lock — MEASURED, 10 parallel asks
+against a limit of 3 granted all ten before the fix. Red proofs ×6, two of
+which first stayed GREEN and were re-anchored (#709). No migration.
+1580 unit/integration + 155 e2e green on a fresh db in CI's order.
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
 `v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
 its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —
