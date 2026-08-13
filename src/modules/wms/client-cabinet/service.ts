@@ -5,6 +5,7 @@ import {
   attachments,
   batches,
   boxes,
+  boxMovements,
   clients,
   clientTelegramLinks,
   receiptLots,
@@ -13,6 +14,7 @@ import {
 } from '../../platform/db/schema';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, scheduleEstimate } from '../tracking/eta';
+import { journeyFromEvents, type JourneyStep } from './journey';
 import {
   cargoStage,
   isMovingStage,
@@ -90,23 +92,31 @@ export async function clientsForChat(chatId: bigint) {
     .then((rows) => rows.map((r) => r.client));
 }
 
-export interface CargoEta {
-  fromIso: string;
-  toIso: string;
-  /** The place that date is about — «Qashqarga 14-16 avg.» cannot be misread. */
+export interface CargoTransit {
+  /** The road's two ends by NAME — «Yiwu → Kashgar», never a truck's code. */
+  fromPlace: string;
   toPlace: string;
+  /**
+   * How much of the road the schedule says is behind — 0..1, the map
+   * engine's own figure. The owner's ask verbatim: «yolni qanchasini bosib
+   * otganini korsatadgan … bolishi kerak».
+   */
+  progress: number;
+  /** Null once the schedule is spent — no honest date left to print. */
+  etaFromIso: string | null;
+  etaToIso: string | null;
 }
 
 export interface CargoGroup {
   stage: CargoStage;
   n: number;
   /**
-   * Only ever on a moving stage, and only when the schedule can answer.
+   * Only ever on a moving stage, and only when a route exists.
    *
-   * A date beside «skladda» would be a promise about a truck that has not
-   * left; a date on a truck whose route we do not know would be invented.
+   * A road bar beside «skladda» would be a promise about a truck that has
+   * not left; one on a truck whose route we do not know would be invented.
    */
-  eta: CargoEta | null;
+  transit: CargoTransit | null;
 }
 
 export interface CabinetLot {
@@ -125,6 +135,12 @@ export interface CabinetLot {
    * things about the same carton on two screens.
    */
   groups: CargoGroup[];
+  /**
+   * What happened and WHEN, oldest first (`journey.ts`) — derived from the
+   * lot's own `box_movements`, which have carried these timestamps since M2;
+   * only the screen was missing them.
+   */
+  journey: JourneyStep[];
   total: number;
   /**
    * Where the boxes physically are, by NAME — «Kashgar», not «KA».
@@ -158,7 +174,10 @@ const ACTIVE_STATUSES = ['in_stock', 'planned', 'loading', 'in_transit', 'ready_
 
 interface CabinetTruck {
   stage: StageBatch;
-  eta: CargoEta | null;
+  transit: CargoTransit | null;
+  /** When the truck was first known to be in Uzbekistan (pin or arrival). */
+  inUzAt: Date | null;
+  customsClearedAt: Date | null;
 }
 
 /**
@@ -181,8 +200,10 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
       departedAt: batches.departedAt,
       checkpoint: batches.trackingCheckpoint,
       customsClearedAt: batches.customsClearedAt,
+      arrivedAt: batches.arrivedAt,
       originCode: origin.code,
       originCountry: origin.country,
+      originName: origin.name,
       destCode: dest.code,
       destCountry: dest.country,
       destName: dest.name,
@@ -194,6 +215,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
 
   const now = new Date();
   for (const r of rows) {
+    const cp = r.checkpoint as { key?: string; at?: string } | null;
     const schedule = scheduleEstimate(r.originCode, r.destCode, r.departedAt, r.checkpoint, now);
     const window = schedule ? etaWindow(schedule.est, now) : null;
     out.set(r.id, {
@@ -201,11 +223,88 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
         originCountry: r.originCountry,
         destCountry: r.destCountry,
         status: r.status,
-        checkpointKey: (r.checkpoint as { key?: string } | null)?.key ?? null,
+        checkpointKey: cp?.key ?? null,
         customsCleared: r.customsClearedAt !== null,
       },
-      eta: window ? { ...window, toPlace: r.destName } : null,
+      transit: schedule
+        ? {
+            fromPlace: r.originName,
+            toPlace: r.destName,
+            progress: Math.min(1, schedule.est.progress),
+            etaFromIso: window?.fromIso ?? null,
+            etaToIso: window?.toIso ?? null,
+          }
+        : null,
+      inUzAt:
+        cp?.key === 'in_uz' && cp.at ? new Date(cp.at) : (r.arrivedAt ?? null),
+      customsClearedAt: r.customsClearedAt,
     });
+  }
+  return out;
+}
+
+/**
+ * The dated history of each lot, in ONE query for the whole cabinet (#432).
+ *
+ * The rows have existed since M2 — every scan, every departure, every landing
+ * is a `box_movements` row with a timestamp — so «qachon nima bo'lgan» is a
+ * read, not a schema change. Causes are filtered in SQL: a box accumulates
+ * plenty of movements (plans, crates, inventory) that say nothing a customer
+ * asked about.
+ */
+async function lotJourneys(
+  lotIds: string[],
+  lotTruck: Map<string, CabinetTruck | null>,
+): Promise<Map<string, JourneyStep[]>> {
+  const out = new Map<string, JourneyStep[]>();
+  if (lotIds.length === 0) return out;
+  const to = alias(warehouses, 'jrn_to');
+  const rows = await db
+    .select({
+      lotId: boxes.lotId,
+      cause: boxMovements.cause,
+      at: boxMovements.createdAt,
+      toStatus: boxMovements.toStatus,
+      toCountry: to.country,
+      toType: to.type,
+    })
+    .from(boxMovements)
+    .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
+    .leftJoin(to, eq(boxMovements.toWarehouseId, to.id))
+    .where(
+      and(
+        inArray(boxes.lotId, lotIds),
+        inArray(boxMovements.cause, [
+          'receipt',
+          'batch_departed',
+          'unload_scan',
+          'undocumented_transfer',
+          'found_here',
+          'receipt_moved',
+        ]),
+      ),
+    );
+
+  const byLot = new Map<string, typeof rows>();
+  for (const r of rows) {
+    if (!byLot.has(r.lotId)) byLot.set(r.lotId, []);
+    byLot.get(r.lotId)!.push(r);
+  }
+  for (const lotId of lotIds) {
+    const truck = lotTruck.get(lotId) ?? null;
+    out.set(
+      lotId,
+      journeyFromEvents(
+        (byLot.get(lotId) ?? []).map((r) => ({
+          cause: r.cause,
+          at: r.at,
+          toStatus: r.toStatus,
+          toCountry: r.toCountry,
+          toType: r.toType,
+        })),
+        truck ? { inUzAt: truck.inUzAt, customsClearedAt: truck.customsClearedAt } : null,
+      ),
+    );
   }
   return out;
 }
@@ -270,7 +369,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   ]);
 
   const byLot = new Map<string, CabinetLot>();
-  const stageCounts = new Map<string, Map<CargoStage, { n: number; eta: CargoEta | null }>>();
+  const stageCounts = new Map<string, Map<CargoStage, { n: number; transit: CargoTransit | null }>>();
   for (const r of rows) {
     let lot = byLot.get(r.lotId);
     if (!lot) {
@@ -280,6 +379,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
         productNameZh: r.productNameZh,
         productNameRu: r.productNameRu,
         groups: [],
+        journey: [],
         total: 0,
         warehousePlaces: [],
         hasPhotos: false,
@@ -300,12 +400,16 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
     );
     const counts = stageCounts.get(r.lotId)!;
     const prev = counts.get(stage);
-    // Two trucks landing on the same rung keep the LATER date: the group is
-    // not complete until the last of it arrives.
-    const eta = isMovingStage(stage) ? (truck?.eta ?? null) : null;
+    // Two trucks on the same rung keep the LATER-arriving one's road: the
+    // group is not complete until the last of it lands.
+    const transit = isMovingStage(stage) ? (truck?.transit ?? null) : null;
     const keep =
-      !prev?.eta || (eta && eta.toIso > prev.eta.toIso) ? (eta ?? prev?.eta ?? null) : prev.eta;
-    counts.set(stage, { n: (prev?.n ?? 0) + Number(r.n), eta: keep });
+      !prev?.transit ||
+      (transit &&
+        (transit.etaToIso ?? '9999') > (prev.transit.etaToIso ?? '9999'))
+        ? (transit ?? prev?.transit ?? null)
+        : prev.transit;
+    counts.set(stage, { n: (prev?.n ?? 0) + Number(r.n), transit: keep });
     lot.total += Number(r.n);
     lot.weightKg += Number(r.n) * Number(r.perBoxKg ?? 0);
     lot.volumeM3 += Number(r.n) * Number(r.perBoxM3 ?? 0);
@@ -314,12 +418,23 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
     }
   }
   const lots = [...byLot.values()];
+  // Which truck answers for a lot's truck-level history (the pin, the customs
+  // stamp): the one its bulk is riding — for landed cargo, the one it rode.
+  const lotTruck = new Map<string, CabinetTruck | null>();
+  for (const r of rows) {
+    if (r.batchId && !lotTruck.get(r.lotId)) lotTruck.set(r.lotId, trucks.get(r.batchId) ?? null);
+  }
+  const journeys = await lotJourneys(
+    lots.map((l) => l.lotId),
+    lotTruck,
+  );
   for (const lot of lots) {
     // Biggest group first: the ladder is drawn for the bulk of the cargo and
     // the rest is named under it, so the order IS the screen.
     lot.groups = [...(stageCounts.get(lot.lotId) ?? new Map())]
-      .map(([stage, v]) => ({ stage, n: v.n, eta: v.eta }))
+      .map(([stage, v]) => ({ stage, n: v.n, transit: v.transit }))
       .sort((a, b) => b.n - a.n || stageIndex(a.stage) - stageIndex(b.stage));
+    lot.journey = journeys.get(lot.lotId) ?? [];
   }
   if (lots.length) {
     const withPhotos = await db

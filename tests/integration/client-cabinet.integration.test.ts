@@ -201,8 +201,10 @@ describe('cabinet views', () => {
     expect(lot.groups).toHaveLength(1);
     expect(lot.groups[0]!.stage).toBe('in_uz');
     expect(lot.groups[0]!.n).toBe(3);
-    // Standing still is never given a date.
-    expect(lot.groups[0]!.eta).toBeNull();
+    // Standing still is never given a road.
+    expect(lot.groups[0]!.transit).toBeNull();
+    // And the history knows when it was received — the receipt's own movement.
+    expect(lot.journey.map((s) => s.key)).toEqual(['received']);
     expect(lot.warehousePlaces).toContain('Cabinet WH');
     expect(lot.hasPhotos).toBe(true);
   });

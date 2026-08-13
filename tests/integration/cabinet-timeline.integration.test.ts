@@ -104,9 +104,9 @@ describe('the cabinet timeline', () => {
     const lot = await stageOf();
     expect(lot.groups).toHaveLength(1);
     expect(lot.groups[0]!.stage).toBe('hub');
-    // A date beside «skladda» would be a promise about a truck that has not
-    // left yet.
-    expect(lot.groups[0]!.eta).toBeNull();
+    // A road bar beside «skladda» would be a promise about a truck that has
+    // not left yet.
+    expect(lot.groups[0]!.transit).toBeNull();
   });
 
   it('once it is on the export truck it carries the schedule’s own estimate', async () => {
@@ -114,16 +114,33 @@ describe('the cabinet timeline', () => {
       .update(boxes)
       .set({ status: 'in_transit', currentBatchId: batchId, currentWarehouseId: null })
       .where(eq(boxes.lotId, lotId));
+    // The departure movement the real `departBatch` writes — this fixture
+    // fakes the departure by hand, and the journey reads the LEDGER, not the
+    // live pointer.
+    const rows = await db.select().from(boxes).where(eq(boxes.lotId, lotId));
+    const dest = await db.query.warehouses.findFirst({ where: eq(warehouses.code, 'AND') });
+    await db.execute(sql`
+      INSERT INTO box_movements (box_id, from_warehouse_id, to_warehouse_id, from_status, to_status, cause, ref_type, ref_id, actor_id)
+      SELECT b.id, ${hubId}::uuid, ${dest!.id}::uuid, 'in_stock', 'in_transit', 'batch_departed', 'batch', ${batchId}::uuid, ${actorId}::uuid
+      FROM boxes b WHERE b.lot_id = ${lotId}
+    `);
+    expect(rows.length).toBeGreaterThan(0);
 
     const lot = await stageOf();
     expect(lot.groups[0]!.stage).toBe('export_transit');
-    const eta = lot.groups[0]!.eta!;
-    expect(eta).not.toBeNull();
-    // The place is IN the sentence: «Andijan: taxminan …» cannot be misread as
-    // a date about somewhere else.
-    expect(eta.toPlace).toBe('Andijan');
-    expect(new Date(eta.fromIso).getTime()).toBeGreaterThan(Date.now());
-    expect(new Date(eta.toIso).getTime()).toBeGreaterThanOrEqual(new Date(eta.fromIso).getTime());
+    const road = lot.groups[0]!.transit!;
+    expect(road).not.toBeNull();
+    // The road's two ends by NAME: «Kashgar → Andijan» — a date or a percent
+    // with no place cannot be misread, and the truck is never named.
+    expect(road.fromPlace).toBe('Kashgar');
+    expect(road.toPlace).toBe('Andijan');
+    // A day into a 3-6 day road: some of it behind, not all of it.
+    expect(road.progress).toBeGreaterThan(0.05);
+    expect(road.progress).toBeLessThan(0.95);
+    expect(new Date(road.etaFromIso!).getTime()).toBeGreaterThan(Date.now());
+    expect(new Date(road.etaToIso!).getTime()).toBeGreaterThanOrEqual(
+      new Date(road.etaFromIso!).getTime(),
+    );
   });
 
   it('the operator’s «in Uzbekistan» pin moves the rung and drops the date', async () => {
@@ -134,9 +151,9 @@ describe('the cabinet timeline', () => {
 
     const lot = await stageOf();
     expect(lot.groups[0]!.stage).toBe('in_uz');
-    // Standing still again — the estimate belongs to the road, not to the
+    // Standing still again — the road bar belongs to the road, not to the
     // paperwork, and nothing here can say when a declaration clears.
-    expect(lot.groups[0]!.eta).toBeNull();
+    expect(lot.groups[0]!.transit).toBeNull();
   });
 
   it('«rastamojka tugadi» moves the rung, and clearing it takes the rung back', async () => {
@@ -156,6 +173,18 @@ describe('the cabinet timeline', () => {
     // reads as «nobody has said» rather than «not cleared».
     await db.update(batches).set({ customsClearedAt: null }).where(eq(batches.id, batchId));
     expect((await stageOf()).groups[0]!.stage).toBe('in_uz');
+  });
+
+  it('the history reads down the road with real dates', async () => {
+    // Everything above walked this lot Kashgar → export → in-UZ; the journey
+    // must have picked those up from the movements and the truck's own facts.
+    const lot = await stageOf();
+    const keys = lot.journey.map((s) => s.key);
+    // The receipt's movement + the export departure + entering Uzbekistan
+    // (the pin) — in ladder order whatever order they were written.
+    expect(keys).toEqual(['received', 'export', 'inUz']);
+    const dates = lot.journey.map((s) => new Date(s.atIso).getTime());
+    expect(dates[0]).toBeLessThanOrEqual(dates[1]!);
   });
 
   it('a split lot reports both rungs, biggest first', async () => {

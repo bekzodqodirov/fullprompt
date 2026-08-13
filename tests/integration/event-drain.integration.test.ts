@@ -31,8 +31,12 @@ beforeAll(async () => {
   actorId = staff!.id;
   // Drain whatever the rest of the suite left pending, so the count below is
   // about THIS file's events and nothing else (#183's rule, one table over).
+  // Draining a deep backlog is this hook's legitimate job, and on a
+  // long-lived local database (#653's oracle) it measures ~8 s under full-
+  // suite load — the default 10 s hook timeout flakes exactly there. CI's
+  // fresh database never comes close.
   await processPendingEvents();
-});
+}, 60_000);
 
 afterAll(async () => {
   if (madeIds.length > 0) {
