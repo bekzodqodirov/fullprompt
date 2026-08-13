@@ -171,9 +171,9 @@ claude-sonnet-5, tier 2 claude-opus-5. Found by the review, fixed here:
 **His server needs the NEW `ANTHROPIC_API_KEY` in `.env`** (the old one is
 burned) — without it everything deploys and the assistant honestly says
 «sozlanmagan». PR #41 (this round) is MERGED and **DEPLOYED — he confirmed
-81 on 2026-08-13 evening**; whether the key is in and the first live answer
-worked has NOT been confirmed in chat — ask, and watch the first real
-question in docker logs.
+81 on 2026-08-13 evening, put the NEW key in, and confirmed the assistant
+ANSWERS LIVE («ishlayabti»)** — the AI round is fully in production on both
+surfaces.
 1563 unit/integration + 155 e2e green on a fresh db in CI's order,
 re-run in full after merging #40's round.
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
