@@ -1343,7 +1343,44 @@ export async function dealById(id: string) {
     .from(receipts)
     .where(eq(receipts.dealId, id))
     .orderBy(desc(receipts.receivedAt));
-  return { ...row, lines, receipts: linked };
+  // The same contents the PICKER prints (round 79): linking a prixod must
+  // not cost it its goods/kg/m³ — the enrichment had been written into one
+  // of the two readers only (round 100, owner's item 2).
+  const contents = await receiptContents(linked.map((r) => r.id));
+  return {
+    ...row,
+    lines,
+    receipts: linked.map((r) => {
+      const own = contents.get(r.id);
+      return {
+        ...r,
+        goods: own?.goods ?? '',
+        volumeM3: own ? Number(own.volumeM3) : 0,
+        weightKg: own ? Number(own.weightKg) : 0,
+      };
+    }),
+  };
+}
+
+/**
+ * What a set of prixods CONTAINS — goods (ru name preferred), kg, m³ — in
+ * ONE grouped query (#432). The picker and the linked list both read this,
+ * so the two say the same words about the same cargo.
+ */
+async function receiptContents(receiptIds: string[]) {
+  if (receiptIds.length === 0)
+    return new Map<string, { goods: string; volumeM3: string; weightKg: string }>();
+  const rows = await db
+    .select({
+      receiptId: receiptLots.receiptId,
+      goods: sql<string>`string_agg(DISTINCT coalesce(nullif(${receiptLots.productNameRu}, ''), ${receiptLots.productNameZh}), ', ')`,
+      volumeM3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
+      weightKg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
+    })
+    .from(receiptLots)
+    .where(inArray(receiptLots.receiptId, receiptIds))
+    .groupBy(receiptLots.receiptId);
+  return new Map(rows.map((row) => [row.receiptId, row]));
 }
 
 /** Confirmed receipts of this client that belong to no deal yet. */
@@ -1374,22 +1411,7 @@ export async function unlinkedReceipts(clientId: string) {
     .limit(50);
   if (rows.length === 0) return [];
 
-  const contents = await db
-    .select({
-      receiptId: receiptLots.receiptId,
-      goods: sql<string>`string_agg(DISTINCT coalesce(nullif(${receiptLots.productNameRu}, ''), ${receiptLots.productNameZh}), ', ')`,
-      volumeM3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
-      weightKg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
-    })
-    .from(receiptLots)
-    .where(
-      inArray(
-        receiptLots.receiptId,
-        rows.map((row) => row.id),
-      ),
-    )
-    .groupBy(receiptLots.receiptId);
-  const byReceipt = new Map(contents.map((row) => [row.receiptId, row]));
+  const byReceipt = await receiptContents(rows.map((row) => row.id));
 
   return rows.map((row) => {
     const own = byReceipt.get(row.id);

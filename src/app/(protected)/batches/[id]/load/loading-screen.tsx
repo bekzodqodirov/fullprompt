@@ -15,6 +15,7 @@ import {
   scanWasRecorded,
   type SyncAck,
 } from '@/offline/scan-outbox';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
 
 interface PlannedBox {
   shortCode: string;
@@ -412,6 +413,8 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     string,
     {
       label: string;
+      /** The claimed client's code when the box carries a marking (round 100). */
+      sub: string | null;
       product: string;
       total: number;
       done: number;
@@ -424,13 +427,15 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     }
   >();
   for (const box of snapshot.boxes) {
-    const codeLabel = `${box.clientCode ?? box.marking ?? '?'}-${box.letter}`;
+    const identity = codeIdentity(box.marking, box.clientCode);
+    const codeLabel = `${identity.main}-${box.letter}`;
     const key = box.crateCode ? `crate:${box.crateCode}` : box.lotId;
     const entry =
       byLot.get(key) ??
       (box.crateCode
         ? {
             label: `🧰 ${box.crateCode}`,
+            sub: null,
             product: '',
             total: 0,
             done: 0,
@@ -441,6 +446,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
           }
         : {
             label: codeLabel,
+            sub: identity.sub,
             product: box.productNameZh,
             total: 0,
             done: 0,
@@ -506,7 +512,10 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         b.shortCode.includes(q) ||
         (b.clientCode ?? '').toUpperCase().includes(q) ||
         (b.marking ?? '').toUpperCase().includes(q) ||
-        `${b.clientCode ?? b.marking ?? ''}-${b.letter ?? ''}`.toUpperCase().includes(q) ||
+        // Both compositions: the operator may type what the BOX says
+        // (marking-letter) or what the client's papers say (code-letter).
+        `${b.marking ?? ''}-${b.letter ?? ''}`.toUpperCase().includes(q) ||
+        `${b.clientCode ?? ''}-${b.letter ?? ''}`.toUpperCase().includes(q) ||
         b.productNameZh.toUpperCase().includes(q),
     );
 
@@ -578,7 +587,14 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         {[...byLot.values()].map((lot) => (
           <div key={lot.label}>
             <div className="flex items-center gap-2 text-sm">
-              <span className="font-mono font-extrabold text-brand-700">{lot.label}</span>
+              <span className="font-mono font-extrabold text-brand-700">
+                {lot.label}
+                {lot.sub && (
+                  <span className="block font-sans text-2xs font-normal text-ink-500">
+                    {lot.sub}
+                  </span>
+                )}
+              </span>
               <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
               <span className={`font-semibold ${lot.done === lot.total ? 'text-good' : ''}`}>
                 {lot.done}/{lot.total}
@@ -714,7 +730,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
               >
                 <span className="font-mono font-bold">{box.shortCode}</span>
                 <span className="font-mono font-extrabold text-brand-700">
-                  {box.clientCode ?? box.marking ?? '?'}-{box.letter}
+                  {codeIdentity(box.marking, box.clientCode).main}-{box.letter}
                 </span>
                 {box.crateCode && (
                   <span className="whitespace-nowrap rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn">

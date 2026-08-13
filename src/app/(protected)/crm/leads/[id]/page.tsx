@@ -118,6 +118,8 @@ export default async function LeadPage({
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
               clientId={dockClientId}
+              // A lead the chat itself opened (round 82) shows that chat here.
+              leadId={lead.id}
               hodim={hodim}
               // `who` and not `id`: this page already has an `id` (the lead's).
               hrefFor={(who) => cardHref({ hodim: who })}

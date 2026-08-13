@@ -3,7 +3,12 @@ import en from '../../messages/en.json';
 import ru from '../../messages/ru.json';
 import uz from '../../messages/uz.json';
 import zh from '../../messages/zh-CN.json';
-import { AUDIT_FIELD_LABELS } from '@/modules/platform/audit/fields';
+import {
+  AUDIT_FIELD_LABELS,
+  AUDIT_FIELD_REFS,
+  collectAuditRefs,
+  isUuidShaped,
+} from '@/modules/platform/audit/fields';
 
 /**
  * The History tab builds its key at runtime (`t(\`fields.${label}\`)`), which
@@ -57,5 +62,46 @@ describe('every audit field label the tab can ask for', () => {
     ]) {
       expect(AUDIT_FIELD_LABELS[key], `no label for ${key}`).toBeTruthy();
     }
+  });
+});
+
+describe('the reference columns (round 100, item 4)', () => {
+  it('every ref column also carries a human label', () => {
+    // A looked-up NAME under a raw column heading is half a fix: `stageId:
+    // Yangi → Yutildi` still starts with «stageId» unless the label map knows
+    // the column too.
+    for (const key of Object.keys(AUDIT_FIELD_REFS)) {
+      expect(AUDIT_FIELD_LABELS[key], `ref column ${key} has no label`).toBeTruthy();
+    }
+  });
+
+  it('only a uuid is ever looked up — codes and names pass through', () => {
+    // The stored vocabulary is mixed: older writers put `warehouse: 'YW'` and
+    // `stage: 'Yangi'` in the same columns the pickers now fill with ids. A
+    // lookup keyed on those would print a wrong name over a right value.
+    expect(isUuidShaped('a3f1c2d4-0000-4abc-8def-123456789abc')).toBe(true);
+    expect(isUuidShaped('YW')).toBe(false);
+    expect(isUuidShaped('GS777')).toBe(false);
+    expect(isUuidShaped(null)).toBe(false);
+    expect(isUuidShaped(42)).toBe(false);
+    // Close but not a uuid — a truncated id must not be looked up either.
+    expect(isUuidShaped('a3f1c2d4-0000-4abc-8def-123456789ab')).toBe(false);
+  });
+
+  it('collects both sides of a change, per domain, uuids only', () => {
+    const stageA = '11111111-1111-4111-8111-111111111111';
+    const stageB = '22222222-2222-4222-8222-222222222222';
+    const owner = '33333333-3333-4333-8333-333333333333';
+    const wanted = collectAuditRefs([
+      { key: 'stageId', before: stageA, after: stageB },
+      { key: 'ownerId', before: null, after: owner },
+      // A code in a ref column stays uncollected…
+      { key: 'warehouse', before: 'YW', after: 'KA' },
+      // …and a non-ref column is never collected, uuid or not.
+      { key: 'note', before: stageA, after: 'text' },
+    ]);
+    expect([...(wanted.get('stage') ?? [])].sort()).toEqual([stageA, stageB]);
+    expect([...(wanted.get('user') ?? [])]).toEqual([owner]);
+    expect(wanted.has('warehouse')).toBe(false);
   });
 });

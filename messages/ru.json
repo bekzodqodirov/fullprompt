@@ -259,7 +259,10 @@
     "cabinetRevoke": "Отключить",
     "cabinetNewCode": "Создать ссылку",
     "shownOf": "{shown} из {total}",
-    "refineSearch": "показаны не все — уточните поиск"
+    "refineSearch": "показаны не все — уточните поиск",
+    "pageOf": "{from}–{to} / {total}",
+    "pagePrev": "← Назад",
+    "pageNext": "Дальше →"
   },
   "users": {
     "title": "Сотрудники",

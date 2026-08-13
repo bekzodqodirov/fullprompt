@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
 import { DensityBadge } from '@/components/density-badge';
 import { submitPlanAction } from '../actions';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
 
 interface WarehouseOption {
   id: string;
@@ -328,6 +329,7 @@ export function PlanEditor({
                 const kg = lot.perBoxKg * shown;
                 const m3 = lot.perBoxM3 * shown;
                 const density = lot.perBoxM3 > 0 ? lot.perBoxKg / lot.perBoxM3 : null;
+                const id = codeIdentity(lot.marking, lot.clientCode);
                 return (
                   <tr
                     key={lot.lotId}
@@ -341,7 +343,12 @@ export function PlanEditor({
                       )}
                     </td>
                     <td className="whitespace-nowrap p-2 font-mono font-extrabold text-brand-700">
-                      {lot.clientCode ?? lot.marking ?? '?'}-{lot.letter}
+                      {id.main}-{lot.letter}
+                      {id.sub && (
+                        <span className="block font-sans text-2xs font-normal text-ink-500">
+                          {id.sub}
+                        </span>
+                      )}
                     </td>
                     <td className="max-w-44 truncate p-2">
                       {lot.productNameZh}

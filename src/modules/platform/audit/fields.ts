@@ -80,6 +80,7 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   warehouses: 'warehouses',
   typeId: 'type',
   deal: 'deal',
+  dealId: 'deal',
   partnerId: 'partner',
 
   // Housekeeping
@@ -94,3 +95,69 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   dueAt: 'dueAt',
   date: 'date',
 };
+
+/** The domains an audit value can point INTO (round 100, owner's item 4). */
+export type AuditRefKind =
+  | 'stage'
+  | 'user'
+  | 'client'
+  | 'warehouse'
+  | 'source'
+  | 'deal'
+  | 'partner';
+
+/**
+ * Which recorded columns hold a REFERENCE rather than a value.
+ *
+ * An audit row records what the form posted, and for a picker that is an id —
+ * so the History tab printed `stage: 4f2a… → 91bc…` to a reader who was told
+ * it is «Aziz changed weight 25 → 28». The tab looks these up and prints the
+ * thing's NAME, with the raw id kept in the tooltip.
+ *
+ * The stored vocabulary is MIXED on purpose: older writers put codes and
+ * names in the same columns (`warehouse: 'YW'`), so only a uuid-shaped value
+ * is ever looked up and everything else passes through untouched. A uuid the
+ * lookup cannot find (a deleted stage, a foreign table's id under a shared
+ * key) also passes through — a raw id is honest, a wrong name is not.
+ */
+export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
+  stageId: 'stage',
+  stage: 'stage',
+  ownerId: 'user',
+  salesManagerId: 'user',
+  clientId: 'client',
+  client: 'client',
+  warehouseId: 'warehouse',
+  warehouse: 'warehouse',
+  sourceId: 'source',
+  source: 'source',
+  deal: 'deal',
+  dealId: 'deal',
+  partnerId: 'partner',
+};
+
+/** Only a uuid is looked up; codes and names in the same columns pass through. */
+export function isUuidShaped(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
+/** Every uuid a change list points at, by domain. Pure — the tab's collector. */
+export function collectAuditRefs(
+  changes: { key: string; before: unknown; after: unknown }[],
+): Map<AuditRefKind, Set<string>> {
+  const wanted = new Map<AuditRefKind, Set<string>>();
+  for (const change of changes) {
+    const kind = AUDIT_FIELD_REFS[change.key];
+    if (!kind) continue;
+    for (const value of [change.before, change.after]) {
+      if (!isUuidShaped(value)) continue;
+      const set = wanted.get(kind) ?? new Set<string>();
+      set.add(value);
+      wanted.set(kind, set);
+    }
+  }
+  return wanted;
+}

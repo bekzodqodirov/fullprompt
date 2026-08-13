@@ -2722,6 +2722,37 @@ stage filters (five of seven cells zero by construction / contradicts the
 two-clock design). 10 new unit + 5 integration (fixtures in April 2020 —
 March is the lost-reasons file's); red-proofs ×2. No migration.
 
+Round 100 part 1 — the owner's 14-item list, the eight no-question fixes
+(#686-691; the list came with his instruction to CONSULT on trade-offs first —
+the consultation went out, his answers came back, part 2 holds the agreed
+designs). (11) **The board tick never drew**: round 59's `SelectBox` called
+`preventDefault` on the checkbox's click, which cancels the browser's
+ACTIVATION behaviour — React stored the id, the browser reverted the pixel, and
+every count-based assertion stayed green for a year; `stopPropagation` stays
+(the card is an anchor), default is the control's, m9zc now asserts
+`toBeChecked()` — the only oracle that looks at the pixel (#686). (8) One rule
+for whose-cargo cells — `labels/code-identity.ts`, marking big / client code
+small — consumed by plan view, plan editor, loading, unload, batch card AND
+stock (#687); the pick-search matches both compositions. (6) `BoxIssued`
+carries `lots` in the ArrivedLot wire shape (share-of-lot in-tx, one grouped
+query) so the client's «yuk berildi» names goods·kg·m³ like the arrival does;
+`Array.isArray` keeps years of old events rendering as they did (#688).
+(2) `receiptContents()` — ONE grouped query behind the deal card's picker AND
+its linked rows. (12) `conversationForLead` + a read-only `leadId` branch on
+`TelegramThread`: a lead born from a chat finally shows it; own-account fence
+verbatim, used only when no client resolves or a converted lead's bubbles
+render twice (#689). (4) History prints NAMES behind recorded ids
+(`AUDIT_FIELD_REFS` + `resolveAuditRefs`, uuid-shaped only over a mixed
+vocabulary, miss prints raw, id in the tooltip; the new fence found `dealId`
+unlabelled on its dry run) (#690). (14) `/admin/clients` pages the RENDER at
+120 over a full fetch — SQL OFFSET refused, the in-memory sort would order
+each page separately (round 68); `CLIENT_LIST_CAP` deleted, screen and XLSX
+finally cover the same set (#691). (9c) The map's warehouse popup links
+`/stock?wh=<id>` — `?warehouse=<code>` was silently ignored. No migration.
+Red-proofs ×5 by string edit; item 7 (quick-batch error, digest #2832070603)
+awaits his server log; item 10 answered in chat (kelganlar is a LEDGER — the
+replay fence and the daily caps read it; the screen may get paging later).
+
 Round 98 (this session) — the customer's two messages, both about Telegram
 (#673-678, owner: «har br karobka uchun habar jonatyabti» and «telegram appda
 u yuk qaysi etapdaligini korsin … ui uc ham juda tushunarli bolishi kerak»).

@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 14 talik ro'yxat, 1-qism: sakkiz aniq tuzatish — 2026-08-13
+
+14 talik ro'yxatingizdagi savolsiz qilinadigan sakkiz band (qolganlari —
+kelishilgan dizaynlar bilan — keyingi qismda):
+
+- **11 — belgilash katakchasi endi ✓ ko'rsatadi.** CRM va bitimlar
+  doskasida kartani belgilaganingizda pastdagi panel ishlayverardi, lekin
+  katakchada belgi ko'rinmasdi. Belgilashning o'zi doim ishlagan — faqat
+  chizilmasdi. Tuzatildi.
+- **8 — planda notanish kod tepada, klient kodi tagida kichkina.** Yuk
+  qabulda notanish marking bilan kirgan bo'lsa (masalan GS500MANIKEN-AL),
+  skladda qanday ko'rinsa, endi plan berishda, yuklashda, tushirishda va
+  fura kartasida ham shunday: karobkada yozilgan kod katta, klient kodi
+  tagida kichkina. Qidiruvda ikkalasi ham topiladi.
+- **6 — «Yuk berildi» xabari endi to'liq.** Klientga topshirilganda
+  Telegram xabarida tovar nomlari, necha karobka, necha kg, necha kub
+  yoziladi — hoydagi «yuk keldi» xabari qanday bo'lsa, shunday.
+- **2 — bitimga biriktirilgan prixod tovarini yo'qotmaydi.** Ro'yxatdan
+  tanlaganda «tovar · kub · kg» ko'rinardi, biriktirilgandan keyin faqat
+  raqam qolardi. Endi biriktirilgan qatorda ham xuddi shu ma'lumot turadi.
+- **12 — Telegramdan ochilgan lidning chati kartasida ko'rinadi.** Chat
+  orqali lid ochilganda yozishmalar lid kartasiga tushmasdi — endi o'sha
+  suhbat kartada ko'rinadi (har kim faqat o'z akkauntining chatini
+  ko'radi, rahbar hammasini — avvalgi qoidalar bilan).
+- **4 — Istoriyada kod emas, nom.** Etap, hodim, klient, sklad, manba,
+  bitim, kontragent o'zgarganda endi uzun texnik kod emas, odam
+  tushunadigan nom yoziladi (eski kod sichqonchani ustiga olib borsangiz
+  ko'rinadi).
+- **14 — Mijozlar ro'yxatida hammasi ochiladi.** 200 tadan keyin ro'yxat
+  to'xtab qolardi; endi sahifalab (120 tadan) hammasini ko'rish mumkin,
+  «Oldingi / Keyingi» tugmalari bilan. Excel fayl bilan ro'yxat endi bir
+  xil to'plamni qamraydi.
+- **9c — xaritada sklad ustiga bossangiz, «Qoldiq» tugmasi endi aynan shu
+  sklad bo'yicha filtrlangan qoldiqqa olib boradi** (avval filtr ishlamay,
+  hamma sklad ko'rinardi).
+
 ## Tahlil sahifasiga to'liq filtrlar — 2026-08-12
 
 So'rovingiz: «filterlarni maximalna qoyish mumkun bolgan narsalarga qoyib

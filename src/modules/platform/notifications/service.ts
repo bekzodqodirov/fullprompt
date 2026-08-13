@@ -308,7 +308,12 @@ export function renderTelegramText(
       );
     case 'BoxIssued':
       return (
-        `🤝 ${L.issuedTo} ${payload.clientCode} (${payload.clientName}): ${payload.boxCount} ${L.boxesShort} · ${L.warehouse} ${payload.warehouseCode}\n` +
+        `🤝 ${L.issuedTo} ${payload.clientCode} (${payload.clientName}): ${payload.boxCount} ${L.boxesShort}` +
+        // Only events emitted since round 100 carry the totals.
+        (payload.weightKg !== undefined
+          ? ` · ${round(Number(payload.weightKg))} kg · ${round(Number(payload.volumeM3))} m³`
+          : '') +
+        ` · ${L.warehouse} ${payload.warehouseCode}\n` +
         `${L.receivedBy}: ${payload.personName}${payload.personPhone ? ` (${payload.personPhone})` : ''}` +
         (payload.remaining ? `\n${L.leftInStock}: ${payload.remaining} ${L.boxesShort}` : '')
       );
@@ -424,17 +429,31 @@ export function renderClientCabinetText(
      * dictionary like every sentence around it and carries the shape the two
      * arrivals carry.
      */
-    case 'BoxIssued':
+    case 'BoxIssued': {
+      // Round 100 (owner's item 6): the handover message carries WHAT was
+      // handed — goods, kilos, cubes — in the arrival message's own shape.
+      // Events emitted before this round have no `lots`, so the guard keeps
+      // their replays rendering exactly as they always did.
+      const lots = Array.isArray(payload.lots) ? (payload.lots as ArrivedLot[]) : [];
+      const kg = lots.reduce((sum, lot) => sum + Number(lot.totalWeightKg ?? 0), 0);
+      const m3 = lots.reduce((sum, lot) => sum + Number(lot.totalVolumeM3 ?? 0), 0);
+      const lines = lots.map((lot) => {
+        const name = lot.productNameRu?.trim() || lot.productNameZh;
+        return `· ${lot.letter ?? ''} ${name} — ${lot.boxCount} ${t.pieces}`;
+      });
       return (
         `${t.issuedTitle}\n` +
         `${payload.clientCode}\n` +
         `${t.arrivedWarehouse}: ${payload.warehouseCode}\n\n` +
-        `${t.arrivedTotal}: ${payload.boxCount} ${t.pieces}\n` +
-        `${t.issuedTo}: ${payload.personName}` +
+        (lines.length > 0 ? `${lines.join('\n')}\n\n` : '') +
+        `${t.arrivedTotal}: ${payload.boxCount} ${t.pieces}` +
+        (lots.length > 0 ? ` · ${round(kg)} ${t.kg} · ${round(m3)} ${t.m3}` : '') +
+        `\n${t.issuedTo}: ${payload.personName}` +
         (Number(payload.remaining) > 0
           ? `\n${t.issuedLeft}: ${payload.remaining} ${t.pieces}`
           : '')
       );
+    }
     default:
       return null;
   }

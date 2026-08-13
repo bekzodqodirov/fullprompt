@@ -141,6 +141,49 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
     const wh = (await tx.query.warehouses.findFirst({
       where: eq(warehouses.id, input.warehouseId),
     }))!;
+    // What was HANDED, by goods. The payload feeds the client's Telegram
+    // message, and «yukingiz berildi» with a bare box count was the owner's
+    // complaint — the client wants the goods, the kilos and the cubes on the
+    // record they screenshot. Weight and volume are a SHARE of the lot,
+    // exactly as the arrival notice computes them: a box carries no weight of
+    // its own, the lot does, so three boxes of a twenty-box lot are three
+    // twentieths of its kilos.
+    const issuedRows = await tx
+      .select({
+        letter: receiptLots.letter,
+        nameRu: receiptLots.productNameRu,
+        nameZh: receiptLots.productNameZh,
+        lotBoxes: receiptLots.boxCount,
+        lotKg: receiptLots.totalWeightKg,
+        lotM3: receiptLots.totalVolumeM3,
+        issued: sql<number>`count(${boxes.id})`,
+      })
+      .from(boxes)
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .where(inArray(boxes.id, input.boxIds))
+      .groupBy(
+        receiptLots.id,
+        receiptLots.letter,
+        receiptLots.productNameRu,
+        receiptLots.productNameZh,
+        receiptLots.boxCount,
+        receiptLots.totalWeightKg,
+        receiptLots.totalVolumeM3,
+      )
+      .orderBy(receiptLots.letter);
+    // The ArrivedLot wire shape, so the cabinet renderer draws a handover the
+    // way it already draws an arrival.
+    const issuedLots = issuedRows.map((row) => {
+      const share = Number(row.lotBoxes) > 0 ? Number(row.issued) / Number(row.lotBoxes) : 0;
+      return {
+        letter: row.letter,
+        productNameZh: row.nameZh,
+        productNameRu: row.nameRu,
+        boxCount: Number(row.issued),
+        totalWeightKg: Number(row.lotKg ?? 0) * share,
+        totalVolumeM3: Number(row.lotM3 ?? 0) * share,
+      };
+    });
     const remainingRow = await tx
       .select({ n: sql<number>`count(*)` })
       .from(boxes)
@@ -176,6 +219,9 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
         warehouseId: input.warehouseId,
         warehouseCode: wh.code,
         boxCount: rows.length,
+        lots: issuedLots,
+        weightKg: issuedLots.reduce((sum, lot) => sum + lot.totalWeightKg, 0),
+        volumeM3: issuedLots.reduce((sum, lot) => sum + lot.totalVolumeM3, 0),
         remaining: Number(remainingRow[0]!.n),
         personName: input.personName,
         personPhone: input.personPhone,

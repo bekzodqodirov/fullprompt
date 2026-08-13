@@ -259,7 +259,10 @@
     "cabinetRevoke": "断开",
     "cabinetNewCode": "生成链接",
     "shownOf": "{total} 中的 {shown}",
-    "refineSearch": "未显示全部 — 请细化搜索"
+    "refineSearch": "未显示全部 — 请细化搜索",
+    "pageOf": "{from}–{to} / {total}",
+    "pagePrev": "← 上一页",
+    "pageNext": "下一页 →"
   },
   "users": {
     "title": "员工",

@@ -20,16 +20,23 @@ import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { CustomFilters } from './custom-filters';
 import { phoneNeedle } from '@/modules/platform/clients/phone';
-import { CLIENT_COLUMNS, CLIENT_LIST_CAP } from '@/modules/platform/clients/list';
+import { CLIENT_COLUMNS, CLIENT_EXPORT_CAP } from '@/modules/platform/clients/list';
 
 /**
  * The client book, filterable and sortable by the owner's own fields.
  *
  * Filtering happens in SQL and sorting in memory, which is not an oversight:
- * the list is capped at 200 rows, so filtering after the cap would search the
- * first 200 clients rather than all of them, while sorting after it orders
- * exactly the rows being shown. This is the same `sortRows` every other table
- * in the app uses — a custom column is just another allowed sort key.
+ * the fetch is capped, so filtering after the cap would search the fetched
+ * clients rather than all of them, while sorting after it orders the whole
+ * set being shown. This is the same `sortRows` every other table in the app
+ * uses — a custom column is just another allowed sort key.
+ *
+ * The RENDER is paged and the FETCH covers the book (/stock's split, round
+ * 68): a page cap in SQL would make the in-memory sort order each page
+ * separately, and a render cap with no pager is how the owner asked «nega
+ * hamma royhat korinmayabti» — 200 rows of 1,692 with nothing but «refine
+ * the search» to reach the rest. The fetch cap is the EXPORT's, so the
+ * screen and the file finally cover the same set.
  *
  * Round 57 made this the first screen on the shared list engine: the columns
  * are data rather than JSX, so they can be chosen, and everything the screen
@@ -111,11 +118,11 @@ export default async function ClientsPage({
     .leftJoin(users, eq(clients.salesManagerId, users.id))
     .where(where)
     .orderBy(asc(clients.clientCode))
-    .limit(CLIENT_LIST_CAP);
+    .limit(CLIENT_EXPORT_CAP);
 
-  // The list stops at CLIENT_LIST_CAP and used to print that number as the total, so
-  // the screen told the owner he had 200 clients. A cap that does not say it
-  // is a cap is a screen quietly lying about the size of the business.
+  // The fetch used to stop at 200 and print that number as the total, so the
+  // screen told the owner he had 200 clients. A cap that does not say it is a
+  // cap is a screen quietly lying about the size of the business.
   const [totals] = await db
     .select({ n: sql<number>`count(*)` })
     .from(clients)
@@ -136,6 +143,23 @@ export default async function ClientsPage({
   );
   const sortable = allColumns.map((column) => column.key);
   const rows = sortRows(decorated, sort, dir, sortable);
+
+  // The render is paged AFTER the sort, so page 2 continues page 1's order
+  // instead of re-sorting its own slice. Plain links: they walk with the back
+  // button, and a saved view never stores a position ('page' is a control
+  // param, dropped by normalizeQuery).
+  const PAGE_ROWS = 120;
+  const page = Math.max(1, Math.floor(Number(params.page)) || 1);
+  const pageRows = rows.slice((page - 1) * PAGE_ROWS, page * PAGE_ROWS);
+  const pageHref = (target: number) => {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === 'string' && value !== '' && key !== 'page') search.set(key, value);
+    }
+    if (target > 1) search.set('page', String(target));
+    const qs = search.toString();
+    return qs ? `/admin/clients?${qs}` : '/admin/clients';
+  };
 
   // Carry every filter through a sort click, and vice versa.
   const carried: Record<string, string | undefined> = { q };
@@ -233,7 +257,7 @@ export default async function ClientsPage({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {pageRows.map((row) => (
               <tr key={row.id} className={row.active ? '' : 'opacity-50'}>
                 {columns.map((column) =>
                   column.key === 'code' ? (
@@ -259,6 +283,33 @@ export default async function ClientsPage({
         </table>
       </div>
       {rows.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
+      {rows.length > PAGE_ROWS && (
+        <div className="flex items-center justify-between text-sm" data-testid="clients-pager">
+          <span className="text-ink-500">
+            {t('pageOf', {
+              from: (page - 1) * PAGE_ROWS + 1,
+              to: Math.min(page * PAGE_ROWS, rows.length),
+              total,
+            })}
+          </span>
+          <span className="flex gap-2">
+            {page > 1 && (
+              <Link href={pageHref(page - 1)} className="btn-secondary !min-h-9 px-3">
+                {t('pagePrev')}
+              </Link>
+            )}
+            {page * PAGE_ROWS < rows.length && (
+              <Link
+                href={pageHref(page + 1)}
+                className="btn-secondary !min-h-9 px-3"
+                data-testid="clients-next-page"
+              >
+                {t('pageNext')}
+              </Link>
+            )}
+          </span>
+        </div>
+      )}
       {customColumns.length === 0 && (
         <p className="text-xs text-ink-400">
           {tf('noColumnsHint')}{' '}

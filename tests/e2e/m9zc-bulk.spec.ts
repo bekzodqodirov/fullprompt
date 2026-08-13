@@ -54,6 +54,11 @@ test('two leads are ticked and moved together', async ({ page }) => {
   await expect(cards).toHaveCount(2);
   await cards.nth(0).getByTestId('card-select').click();
   await cards.nth(1).getByTestId('card-select').click();
+  // The ✓ must DRAW, not just count: preventDefault on this box once made the
+  // browser revert the tick after React's flush, so selection worked while
+  // every box rendered unchecked (round 100). Only this assertion sees it.
+  await expect(cards.nth(0).getByTestId('card-select')).toBeChecked();
+  await expect(cards.nth(1).getByTestId('card-select')).toBeChecked();
 
   const bar = page.getByTestId('bulk-bar');
   await expect(bar).toBeVisible();

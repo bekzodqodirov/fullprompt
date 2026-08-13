@@ -330,6 +330,20 @@ export default async function DealPage({
               {receipt.receivedAt.toISOString().slice(0, 10)}
             </span>
             {receipt.voidedAt && <span className="ml-2 text-xs font-bold text-bad">✕</span>}
+            {/* The picker's exact words (round 79) survive the link: a prixod
+                must not lose its goods/kg/m³ the moment it is attached —
+                that asymmetry is what the owner reported (round 100 item 2). */}
+            {(receipt.goods || receipt.volumeM3 || receipt.weightKg) && (
+              <span className="block truncate text-xs text-ink-700">
+                {[
+                  receipt.goods,
+                  receipt.volumeM3 ? `${receipt.volumeM3.toFixed(2)} m³` : '',
+                  receipt.weightKg ? `${receipt.weightKg.toFixed(1)} kg` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            )}
           </Link>
         ))}
         {unlinked.length > 0 && <LinkReceipt dealId={row.deal.id} receipts={unlinked} />}

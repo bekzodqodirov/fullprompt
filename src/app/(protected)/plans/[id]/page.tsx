@@ -22,6 +22,7 @@ import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
 
 export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -119,10 +120,15 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
 
       <div className="card space-y-1">
         <h2 className="text-lg font-bold">{t('lines')}</h2>
-        {lines.map(({ line, lot, clientCode, marking, crateCode }) => (
+        {lines.map(({ line, lot, clientCode, marking, crateCode }) => {
+          const id = codeIdentity(marking, clientCode);
+          return (
           <div key={line.id} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
             <span className="font-mono font-extrabold text-brand-700">
-              {clientCode ?? marking ?? '?'}-{lot.letter}
+              {id.main}-{lot.letter}
+              {id.sub && (
+                <span className="block font-sans text-2xs font-normal text-ink-500">{id.sub}</span>
+              )}
             </span>
             {crateCode && (
               <span className="whitespace-nowrap rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn">
@@ -140,7 +146,8 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
               {line.plannedKg} kg · {line.plannedM3} m³
             </span>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="card space-y-2">

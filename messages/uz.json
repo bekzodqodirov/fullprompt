@@ -259,7 +259,10 @@
     "cabinetRevoke": "Uzish",
     "cabinetNewCode": "Yangi havola yaratish",
     "shownOf": "{total} tadan {shown} tasi",
-    "refineSearch": "hammasi emas — qidiruvni aniqlashtiring"
+    "refineSearch": "hammasi emas — qidiruvni aniqlashtiring",
+    "pageOf": "{from}–{to} / {total}",
+    "pagePrev": "← Oldingi",
+    "pageNext": "Keyingi →"
   },
   "users": {
     "title": "Xodimlar",

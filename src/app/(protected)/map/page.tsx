@@ -66,6 +66,7 @@ export default async function MapPage() {
   const mapWarehouses: MapWarehouse[] = mapped.map((w) => {
     const stock = (stockByWh.get(w.id) ?? []).sort((a, b) => b.n - a.n);
     return {
+      id: w.id,
       code: w.code,
       name: w.name,
       x: WAREHOUSE_POINTS[w.code.toUpperCase()]!.x,

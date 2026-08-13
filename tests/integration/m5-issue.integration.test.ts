@@ -167,6 +167,25 @@ describe('UZ side', () => {
     const saved = await db.query.handovers.findFirst({ where: eq(handovers.id, handoverId) });
     expect(saved?.debtOk).toBe(true);
     expect(saved?.clientId).toBe(clientId);
+
+    // Round 100, item 6: the event carries WHAT was handed — the client's
+    // Telegram message is built from this payload, and a bare box count was
+    // the owner's complaint. One of two 5 kg / 0.027 m³ boxes = half the lot.
+    const [issuedEvent] = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.type, 'BoxIssued'), eq(events.entityId, handoverId)));
+    const payload = issuedEvent!.payload as {
+      lots: { letter: string | null; productNameZh: string; boxCount: number; totalWeightKg: number; totalVolumeM3: number }[];
+      weightKg: number;
+      volumeM3: number;
+    };
+    expect(payload.lots).toHaveLength(1);
+    expect(payload.lots[0]!.productNameZh).toBe('出口货');
+    expect(payload.lots[0]!.boxCount).toBe(1);
+    expect(payload.lots[0]!.totalWeightKg).toBeCloseTo(5, 3);
+    expect(payload.lots[0]!.totalVolumeM3).toBeCloseTo(0.027, 3);
+    expect(payload.weightKg).toBeCloseTo(5, 3);
   });
 
   /**

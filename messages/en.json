@@ -259,7 +259,10 @@
     "cabinetRevoke": "Disconnect",
     "cabinetNewCode": "Create link",
     "shownOf": "{shown} of {total}",
-    "refineSearch": "not all shown — narrow the search"
+    "refineSearch": "not all shown — narrow the search",
+    "pageOf": "{from}–{to} / {total}",
+    "pagePrev": "← Previous",
+    "pageNext": "Next →"
   },
   "users": {
     "title": "Employees",

@@ -22,6 +22,7 @@ import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -263,7 +264,7 @@ export default async function StockPage({
       line,
       // The printed code first (round 98); the export names the client in its
       // own column, so the code cell is the box's marking where there is one.
-      code: `${line.marking ?? line.clientCode ?? '❓'}-${line.lot.letter}`,
+      code: `${codeIdentity(line.marking, line.clientCode).main}-${line.lot.letter}`,
       product: `${line.lot.productNameZh} ${line.lot.productNameRu ?? ''}`.trim(),
       boxes: boxCount,
       perBoxKg,
@@ -460,10 +461,11 @@ export default async function StockPage({
                         {/* The MARKING is the box's printed code (round 98):
                             it wins, and the claimed client's code sits small
                             beneath it — `GS500MANIKEN-AL` over `gs500`. */}
-                        {row.line.marking ?? row.line.clientCode ?? '❓'}-{row.line.lot.letter}
-                        {row.line.marking && row.line.clientCode && (
+                        {codeIdentity(row.line.marking, row.line.clientCode).main}-
+                        {row.line.lot.letter}
+                        {codeIdentity(row.line.marking, row.line.clientCode).sub && (
                           <span className="block font-sans text-2xs font-normal text-ink-500">
-                            {row.line.clientCode}
+                            {codeIdentity(row.line.marking, row.line.clientCode).sub}
                           </span>
                         )}
                       </Link>
