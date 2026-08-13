@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -7,6 +7,8 @@ import {
   clients,
   clientTransactions,
   crmActivities,
+  receiptLots,
+  receipts,
   dealStages,
   deals,
   leads,
@@ -221,5 +223,116 @@ describe('the deal’s own chat — per job, not per client', () => {
     // one must not surface everywhere the client appears.
     const items = await clientFeed(clientId);
     expect(items.map((i) => i.body)).not.toContain('bitim bo‘yicha izoh');
+  });
+});
+
+/**
+ * Round 100 (1A): the cargo entry carries the goods, and a note knows its
+ * author.
+ *
+ * Its OWN client on purpose: the shared fixture above is read by exact
+ * kind-sequence assertions (['charge','note'] …), and a confirmed receipt on
+ * that client would add a 'cargo' row to every one of them — the design
+ * review caught exactly that. The fixture is raw rows because the feed reads
+ * tables; confirmReceipt's own rules are proven in its own files.
+ */
+describe('cargo detail and note authorship (round 100, 1A)', () => {
+  let cargoClientId = '';
+  let receiptId = '';
+  const noteIds: string[] = [];
+
+  beforeAll(async () => {
+    const [c] = await db
+      .insert(clients)
+      .values({ clientCode: `FC${STAMP}`.slice(0, 12), name: `FeedCargo ${STAMP}`, phones: [] })
+      .returning({ id: clients.id });
+    cargoClientId = c!.id;
+
+    const wh = (await db.query.warehouses.findFirst())!;
+    receiptId = crypto.randomUUID();
+    await db.insert(receipts).values({
+      id: receiptId,
+      number: `FC-${STAMP}`,
+      warehouseId: wh.id,
+      clientId: cargoClientId,
+      status: 'confirmed',
+      confirmedAt: at(10),
+      confirmedBy: managerId,
+      createdBy: managerId,
+    });
+    await db.insert(receiptLots).values([
+      {
+        receiptId,
+        seq: 1,
+        letter: 'A',
+        productNameZh: '手机壳',
+        productNameRu: 'Чехлы',
+        boxCount: 6,
+        dimsMode: 'mixed',
+        totalWeightKg: '48.5',
+        totalVolumeM3: '0.6',
+      },
+      {
+        receiptId,
+        seq: 2,
+        letter: 'B',
+        productNameZh: '杂货',
+        boxCount: 4,
+        dimsMode: 'mixed',
+        totalWeightKg: '20',
+        totalVolumeM3: '0.4',
+      },
+    ]);
+
+    const [mine] = await db
+      .insert(crmActivities)
+      .values({
+        entityType: 'client',
+        entityId: cargoClientId,
+        kind: 'note',
+        note: 'mening izohim',
+        happenedAt: at(5),
+        createdBy: managerId,
+      })
+      .returning({ id: crmActivities.id });
+    const [machine] = await db
+      .insert(crmActivities)
+      .values({
+        entityType: 'client',
+        entityId: cargoClientId,
+        kind: 'note',
+        note: 'reklamadan kelgan xabar',
+        happenedAt: at(4),
+        createdBy: null,
+      })
+      .returning({ id: crmActivities.id });
+    noteIds.push(mine!.id, machine!.id);
+  });
+
+  afterAll(async () => {
+    await db.delete(crmActivities).where(inArray(crmActivities.id, noteIds));
+    await db.delete(receiptLots).where(eq(receiptLots.receiptId, receiptId));
+    await db.delete(receipts).where(eq(receipts.id, receiptId));
+    await db.delete(clients).where(eq(clients.id, cargoClientId));
+  });
+
+  it('the arrival names WHAT arrived — goods, kilos, cubes — not just a box count', async () => {
+    const items = await clientFeed(cargoClientId);
+    const cargo = items.find((i) => i.kind === 'cargo')!;
+    expect(cargo).toBeTruthy();
+    // Russian name preferred; Chinese kept only where nothing else exists.
+    expect(String(cargo.meta.goods)).toContain('Чехлы');
+    expect(String(cargo.meta.goods)).toContain('杂货');
+    expect(String(cargo.meta.goods)).not.toContain('手机壳');
+    expect(Number(cargo.meta.boxes)).toBe(10);
+    expect(Number(cargo.meta.kg)).toBeCloseTo(68.5, 1);
+    expect(Number(cargo.meta.m3)).toBeCloseTo(1, 2);
+  });
+
+  it('a note carries its author id, and a machine note carries none', async () => {
+    const items = await clientFeed(cargoClientId);
+    const notes = items.filter((i) => i.kind === 'note');
+    expect(notes.map((n) => n.meta.authorId)).toContain(managerId);
+    expect(notes.map((n) => n.meta.authorId)).toContain(null);
   });
 });

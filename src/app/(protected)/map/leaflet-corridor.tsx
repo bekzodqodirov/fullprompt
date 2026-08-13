@@ -60,6 +60,7 @@ export function LeafletCorridor({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const overlayRef = useRef<L.LayerGroup | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -80,12 +81,35 @@ export function LeafletCorridor({
       attribution: '© OpenStreetMap',
     });
     basemap.addTo(map);
+    // The overlays live in ONE group so the refresh effect below can clear
+    // and redraw them without touching the basemap or the viewport (round
+    // 100, 9a — the page refreshes itself now, and rebuilding the whole map
+    // every minute would flash the tiles and reset the user's zoom).
+    overlayRef.current = L.layerGroup().addTo(map);
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      overlayRef.current = null;
+    };
+    // The map itself mounts once; the DATA is drawn by the effect below.
+  }, []);
+
+  // Markers and route lines follow the data: the map page refreshes itself
+  // every minute (AutoRefresh + force-dynamic), so a truck moves without
+  // anybody reloading. The effect keys on the props — a new server render
+  // hands down new arrays, and redrawing a few dozen layers is cheap.
+  useEffect(() => {
+    const map = mapRef.current;
+    const overlay = overlayRef.current;
+    if (!map || !overlay) return;
+    overlay.clearLayers();
 
     for (const tr of trucks) {
       L.polyline(
         tr.routePoints.map((p) => [p.y, p.x] as [number, number]),
         { color: '#3b82f6', weight: 3, dashArray: '7 6', opacity: 0.7 },
-      ).addTo(map);
+      ).addTo(overlay);
     }
 
     for (const w of warehouses) {
@@ -104,7 +128,7 @@ export function LeafletCorridor({
         iconAnchor: [13, 13],
       });
       L.marker([w.y, w.x], { icon })
-        .addTo(map)
+        .addTo(overlay)
         .on('click', () => onSelect({ kind: 'wh', code: w.code }));
     }
 
@@ -120,17 +144,10 @@ export function LeafletCorridor({
         iconAnchor: [16, 16],
       });
       L.marker([tr.y, tr.x], { icon, zIndexOffset: 1000 })
-        .addTo(map)
+        .addTo(overlay)
         .on('click', () => onSelect({ kind: 'truck', batchId: tr.batchId }));
     }
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
-    // Markers are rebuilt only on remount — the data is a per-load snapshot.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [warehouses, trucks, onSelect]);
 
   // Leaflet caches the container size and draws tiles for it; growing the
   // element without telling it leaves grey gaps where the old edge was.

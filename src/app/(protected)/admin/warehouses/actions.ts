@@ -10,6 +10,7 @@ import { authorize } from '@/modules/platform/rbac/authorize';
 import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { checkbox } from '@/modules/platform/forms/checkbox';
+import { coordField } from '@/modules/platform/forms/coord';
 
 const warehouseSchema = z.object({
   code: z
@@ -45,6 +46,10 @@ const warehouseSchema = z.object({
   /** Does a client collect cargo here? (owner: only TAS and AND.) */
   issuesToClients: z.boolean(),
   allowsQuickBatch: z.boolean(),
+  /** Where the warehouse stands (round 100, 9B) — see coordField for why
+   * emptiness is decided BEFORE coercion. */
+  lat: coordField(-90, 90),
+  lon: coordField(-180, 180),
 });
 
 export interface WarehouseFormState {
@@ -63,6 +68,8 @@ function parseForm(formData: FormData) {
     capacityM3: formData.get('capacityM3') ?? '',
     issuesToClients: checkbox(formData, 'issuesToClients', false),
     allowsQuickBatch: checkbox(formData, 'allowsQuickBatch', true),
+    lat: formData.get('lat') ?? '',
+    lon: formData.get('lon') ?? '',
   });
 }
 
@@ -71,6 +78,9 @@ function toValues(data: z.infer<typeof warehouseSchema>) {
     ...data,
     address: data.address || null,
     capacityM3: data.capacityM3 ? String(data.capacityM3) : null,
+    // `!== undefined`, not truthiness: 0 is a legal coordinate.
+    lat: data.lat !== undefined ? String(data.lat) : null,
+    lon: data.lon !== undefined ? String(data.lon) : null,
   };
 }
 

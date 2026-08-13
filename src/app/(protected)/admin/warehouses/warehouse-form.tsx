@@ -13,6 +13,8 @@ export interface WarehouseFormValues {
   batchPrefix: string;
   address: string;
   capacityM3: string;
+  lat: string;
+  lon: string;
   issuesToClients: boolean;
   allowsQuickBatch: boolean;
 }
@@ -128,6 +130,42 @@ export function WarehouseForm({
           defaultValue={initial?.capacityM3}
         />
         <p className="mt-1 text-xs text-ink-500">{t('capacityHint')}</p>
+      </div>
+      {/* Where the warehouse stands on the map (round 100, 9B). Empty = the
+          map's built-in point — typing a coordinate is how the owner corrects
+          a dot that sits in the wrong place. */}
+      <div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="lat">
+              {t('lat')}
+            </label>
+            <input
+              id="lat"
+              name="lat"
+              className="input"
+              inputMode="decimal"
+              placeholder="41.311081"
+              data-testid="wh-lat"
+              defaultValue={initial?.lat}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="lon">
+              {t('lon')}
+            </label>
+            <input
+              id="lon"
+              name="lon"
+              className="input"
+              inputMode="decimal"
+              placeholder="69.240562"
+              data-testid="wh-lon"
+              defaultValue={initial?.lon}
+            />
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-ink-500">{t('coordsHint')}</p>
       </div>
       {/* Owner: only TAS and AND hand cargo to a client. The hidden "off"
           before the box is how an unticked checkbox reaches the server at

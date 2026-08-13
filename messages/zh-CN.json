@@ -224,6 +224,9 @@
     "address": "地址",
     "capacityM3": "容量（m³）",
     "capacityHint": "留空则不显示占用指示。60% 起黄色，80% 起红色。",
+    "lat": "纬度",
+    "lon": "经度",
+    "coordsHint": "仓库在地图上的坐标。留空则使用地图内置位置。",
     "types": {
       "origin": "收货仓（中国）",
       "hub": "集运中转仓",
@@ -550,6 +553,7 @@
       "void": "作废"
     },
     "allWh": "全部仓库",
+    "onRoad": "在途",
     "filterPlaceholder": "代码、标记、货物…",
     "colCode": "代码",
     "colProduct": "货物",
@@ -1726,10 +1730,6 @@
       "fx_missing": "该货币没有汇率",
       "discount_reason_required": "折扣需要填写原因"
     },
-    "postCharge": "记入客户账户",
-    "charge": "客户账单",
-    "chargeHint": "延期仅适用于此处按交易记入的金额。",
-    "charged": "已记入",
     "discountTitle": "折扣（货损）",
     "discountAmount": "折扣金额",
     "discountHint": "货物受损=交易折扣，须注明原因。填 0 取消折扣。已开账单由财务调整。",

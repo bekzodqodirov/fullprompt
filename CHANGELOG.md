@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## 14 talik ro'yxat, 2-qism: kelishilgan dizaynlar — 2026-08-13
+
+Maslahatlashuvda bergan javoblaringiz bo'yicha olti band:
+
+- **1A — Lenta to'liq gapiradi.** Yuk kelganda endi «1 box» emas — tovar
+  nomlari (ruschasi bor bo'lsa ruscha), jami kg va kub ham yoziladi. Va o'z
+  izohlaringiz o'ng tarafda (messenjerdagidek), boshqalarniki chapda — har
+  kim o'zinikini o'ngda ko'radi.
+- **3 — Bitim kartasidan hisob qo'yish yopildi.** Narxni endi faqat admin
+  qo'yadi: mijoz kassasida (u yerdagi bitim tanlagichi endi yopilgan
+  bitimlarni ham 60 kungacha ko'rsatadi — topshirilgandan keyingi hisob ham
+  bitimiga bog'lanadi) va partiya narxlashda. Otsrochka mexanizmi ishlashda
+  davom etadi.
+- **5A — Qoldiqda «Yo'lda» qatori.** Sklad qoldig'i tepasida yo'ldagi
+  furalar: kod, qayerdan→qayerga, necha karobka, kg, kub — bosilsa fura
+  kartasi ochiladi. Ikkala tomon skladi ham ko'radi; jami (Σ) va Excel
+  bunga aralashmaydi — ular tokchadagi yukni aytadi.
+- **9A — Mashina yo'ldan yurmaydigan bo'ldi... endi yuradi.** GPS nuqtasi
+  yo'l chizig'iga «yopishtiriladi» (haqiqiy chetlanish esa ko'rsatiladi),
+  simulyatsiya tezligi to'g'irlandi, xarita endi har daqiqada o'zi
+  yangilanadi — sahifani qayta ochish shart emas. Yo'lga Artux burilishi
+  qo'shildi.
+- **9B — Sklad koordinatalari endi sizniki.** Boshqaruv → Sklad formasida
+  kenglik/uzunlik maydonlari: yozsangiz nuqta o'sha yerga ko'chadi, bo'sh
+  qolsa xaritaning o'z nuqtasi ishlaydi. (Migratsiya 0079 — hisob endi
+  **80** ga chiqishi kerak.)
+- **13A — Hodim ham klient bo'lsa, bot ikkalasiga xizmat qiladi.** /start
+  bitta qo'shma klaviatura beradi (hodim tugmalari + kabinet tugmalari),
+  kabinet tugmalari hodim rejimida ham ishlaydi, til almashtirilganda ham
+  qo'shma klaviatura yo'qolmaydi. Yo'lda topilgan teshik ham yopildi:
+  boshqa hodimga ulangan chatda link ochilsa endi jim qolmaydi, sabab
+  aytadi.
+
 ## 14 talik ro'yxat, 1-qism: sakkiz aniq tuzatish — 2026-08-13
 
 14 talik ro'yxatingizdagi savolsiz qilinadigan sakkiz band (qolganlari —

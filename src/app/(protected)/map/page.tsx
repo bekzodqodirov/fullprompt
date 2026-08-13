@@ -17,6 +17,7 @@ import { latestPositions } from '@/modules/wms/tracking/devices';
 import { WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 import { truckFor } from '@/modules/wms/tracking/truck';
 import { TrackingMap, type MapTruck, type MapWarehouse } from './tracking-map';
+import { AutoRefresh } from '@/components/auto-refresh';
 import { PageHeader } from '@/components/ui/page';
 
 export const dynamic = 'force-dynamic';
@@ -35,8 +36,16 @@ export default async function MapPage() {
   const t = await getTranslations('map');
 
   // Warehouses that exist on the corridor drawing, with per-client stock.
+  // A warehouse is drawable when the OWNER typed its coordinates (round 100,
+  // 9B) or when the built-in dictionary knows its code — db wins, because the
+  // whole point of the column is correcting a dot the dictionary put in the
+  // wrong place.
   const whRows = await db.select().from(warehouses);
-  const mapped = whRows.filter((w) => WAREHOUSE_POINTS[w.code.toUpperCase()]);
+  const pointFor = (w: (typeof whRows)[number]) =>
+    w.lat !== null && w.lon !== null
+      ? { x: Number(w.lon), y: Number(w.lat) }
+      : (WAREHOUSE_POINTS[w.code.toUpperCase()] ?? null);
+  const mapped = whRows.filter((w) => pointFor(w) !== null);
   const stockRows = mapped.length
     ? await db
         .select({
@@ -65,12 +74,13 @@ export default async function MapPage() {
   }
   const mapWarehouses: MapWarehouse[] = mapped.map((w) => {
     const stock = (stockByWh.get(w.id) ?? []).sort((a, b) => b.n - a.n);
+    const point = pointFor(w)!;
     return {
       id: w.id,
       code: w.code,
       name: w.name,
-      x: WAREHOUSE_POINTS[w.code.toUpperCase()]!.x,
-      y: WAREHOUSE_POINTS[w.code.toUpperCase()]!.y,
+      x: point.x,
+      y: point.y,
       totalBoxes: stock.reduce((a, s) => a + s.n, 0),
       stock: stock.slice(0, 12),
     };
@@ -104,6 +114,11 @@ export default async function MapPage() {
     <div className="mx-auto max-w-5xl space-y-3">
       <PageHeader icon="map" title={t('title')} />
       <p className="text-xs text-ink-500">{t('disclaimer')}</p>
+      {/* The lorry moves without a reload (round 100, 9a): the page is
+          force-dynamic, so a refresh recomputes every position server-side,
+          and the Leaflet layer redraws its markers from the new props while
+          the basemap and the user's zoom stay put. */}
+      <AutoRefresh ms={60_000} />
       <TrackingMap warehouses={mapWarehouses} trucks={trucks} basemap={basemapAvailable()} />
     </div>
   );

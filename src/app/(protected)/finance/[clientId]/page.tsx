@@ -7,7 +7,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { clientBalanceUsd, clientLedger } from '@/modules/wms/finance/service';
 import { listAccounts } from '@/modules/wms/accounting/service';
-import { openDealsForClient } from '@/modules/wms/deals/service';
+import { ledgerDealsForClient } from '@/modules/wms/deals/service';
 import { BackLink } from '@/components/back-link';
 import { CargoSummary } from '@/components/cargo-summary';
 import { TxForm } from './tx-form';
@@ -42,7 +42,7 @@ export default async function ClientLedgerPage({
     clientLedger(clientId),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
     listAccounts(),
-    canManage ? openDealsForClient(clientId) : Promise.resolve([]),
+    canManage ? ledgerDealsForClient(clientId) : Promise.resolve([]),
   ]);
 
   return (

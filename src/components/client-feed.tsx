@@ -126,7 +126,7 @@ export async function ClientFeed({
           data-testid="feed-list"
         >
           {items.map((item) => (
-            <FeedRow key={item.id} item={item} t={t} />
+            <FeedRow key={item.id} item={item} t={t} viewerId={actor.id} />
           ))}
         </div>
       )}
@@ -158,9 +158,11 @@ export async function ClientFeed({
 function FeedRow({
   item,
   t,
+  viewerId,
 }: {
   item: FeedItem;
   t: Awaited<ReturnType<typeof getTranslations<'crm'>>>;
+  viewerId: string;
 }) {
   const label = t(FEED_LABELS[item.kind] as 'feedNote');
   const voided = item.meta.voided === true;
@@ -170,12 +172,21 @@ function FeedRow({
   const ACTIVITY_MARK: Record<string, string> = { call: '📞', meeting: '🤝', message: '💬' };
   const mark =
     item.kind === 'note' ? (ACTIVITY_MARK[String(item.meta.kind)] ?? MARK.note) : MARK[item.kind];
+  // The reader's OWN notes sit on the right, like any messenger (round 100,
+  // owner's 1A). Only the note kind aligns — cargo and money are the record,
+  // not a conversation — and a machine's note (authorId NULL) is nobody's, so
+  // it stays left. The own case REPLACES the tone rather than decorating it:
+  // two background utilities on one element are resolved by stylesheet order,
+  // not className order, and `bg-warn/10` compiles later than `bg-brand-50` —
+  // an appended brand tint would be dead CSS (telegram-bubble's ternary is
+  // the idiom).
+  const own = item.kind === 'note' && item.meta.authorId === viewerId;
 
   return (
     <div
-      className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${TONE[item.kind]} ${
-        voided ? 'opacity-60' : ''
-      }`}
+      className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${
+        own ? 'ml-auto bg-brand-50' : TONE[item.kind]
+      } ${voided ? 'opacity-60' : ''}`}
       data-testid={`feed-${item.kind}`}
     >
       <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-ink-500">
@@ -192,10 +203,21 @@ function FeedRow({
       </div>
 
       {item.kind === 'cargo' && (
-        <p className="font-semibold">
-          {String(item.meta.number ?? '')} · {String(item.meta.warehouse ?? '')} ·{' '}
-          {String(item.meta.boxes ?? 0)} {t('feedBoxes')}
-        </p>
+        <>
+          <p className="font-semibold">
+            {String(item.meta.number ?? '')} · {String(item.meta.warehouse ?? '')} ·{' '}
+            {String(item.meta.boxes ?? 0)} {t('feedBoxes')}
+          </p>
+          {/* The goods, the kilos and the cubes (round 100, owner's 1A):
+              «YW_IN-… 1 box» told him nothing about WHAT arrived. A second
+              muted line, not a wider first — the number stays scannable. */}
+          {typeof item.meta.goods === 'string' && item.meta.goods && (
+            <p className="truncate text-xs text-ink-700">
+              {item.meta.goods} · {Math.round(Number(item.meta.kg ?? 0))} kg ·{' '}
+              {Math.round(Number(item.meta.m3 ?? 0) * 100) / 100} m³
+            </p>
+          )}
+        </>
       )}
       {(item.kind === 'departed' ||
         item.kind === 'arrived' ||

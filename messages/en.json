@@ -224,6 +224,9 @@
     "address": "Address",
     "capacityM3": "Capacity (m³)",
     "capacityHint": "Leave empty and no indicator is shown. Yellow from 60%, red from 80%.",
+    "lat": "Latitude",
+    "lon": "Longitude",
+    "coordsHint": "The warehouse's point on the map. Empty = the map's built-in point.",
     "types": {
       "origin": "Receiving (China)",
       "hub": "Consolidation hub",
@@ -550,6 +553,7 @@
       "void": "Voided"
     },
     "allWh": "All warehouses",
+    "onRoad": "On the road",
     "filterPlaceholder": "Code, marking, product…",
     "colCode": "Code",
     "colProduct": "Product",
@@ -1726,10 +1730,6 @@
       "fx_missing": "No exchange rate for that currency",
       "discount_reason_required": "A discount needs a reason"
     },
-    "postCharge": "Post to the client’s account",
-    "charge": "Charge the client",
-    "chargeHint": "A deferral only covers an amount posted here, against the deal.",
-    "charged": "Posted",
     "discountTitle": "Discount (damage)",
     "discountAmount": "Discount amount",
     "discountHint": "Damaged cargo = a discount on the deal, with a reason. 0 removes the discount. An already-posted charge is adjusted by finance.",

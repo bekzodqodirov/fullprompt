@@ -11,6 +11,7 @@ import {
 import { writeAudit } from '../audit/service';
 import { loadUserRoles } from '../rbac/authorize';
 import { completeTask, TaskError } from '../tasks/service';
+import { allLabelVariants } from './client-labels';
 
 /**
  * The cabinet's phone rule, restated here because platform must never import
@@ -111,6 +112,38 @@ export async function linkStaffChat(
 // ---------------------------------------------------------------------------
 // Callback data — kept tiny (Telegram caps callback_data at 64 bytes).
 // ---------------------------------------------------------------------------
+
+/**
+ * Is this text one of the CLIENT cabinet's buttons, in any language?
+ *
+ * The cabinet's button labels ARE its router (#264), and a chat that is both
+ * staff and client (round 100, 13A) used to type them into the staff
+ * catch-all, which answered «Topilmadi» and starved the cabinet for ever.
+ * The match derives from the same dictionary as the keyboard, so a new
+ * language joins both sides in one edit.
+ */
+export function isCabinetText(text: string): boolean {
+  const wanted = text.trim();
+  return (['btnCargo', 'btnBalance', 'btnHistory', 'btnLanguage'] as const).some((key) =>
+    allLabelVariants(key).includes(wanted),
+  );
+}
+
+/**
+ * Which menu /start owes this chat — decided in one testable place (round
+ * 100, 13A). 'both' is the owner's own people who also ship cargo: reply
+ * keyboards are exclusive in Telegram, so the only way both jobs stay on the
+ * phone is ONE merged keyboard.
+ */
+export function startMenuFor(
+  staff: StaffChat | null,
+  clientCount: number,
+): 'staff' | 'cabinet' | 'both' | 'entry' {
+  if (staff && clientCount > 0) return 'both';
+  if (staff) return 'staff';
+  if (clientCount > 0) return 'cabinet';
+  return 'entry';
+}
 
 export type BotCallback =
   | { kind: 'task_done'; taskId: string }

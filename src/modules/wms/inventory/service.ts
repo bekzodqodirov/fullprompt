@@ -1,7 +1,8 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { aliasedTable, and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
+  batches,
   boxes,
   boxMovements,
   clients,
@@ -10,6 +11,7 @@ import {
   receipts,
   warehouses,
 } from '../../platform/db/schema';
+import { warehouseScopeEither } from '../../platform/rbac/scope';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 
@@ -213,4 +215,71 @@ export async function reconcileInventory(
     });
     return summary;
   });
+}
+
+/**
+ * The trucks on the road, for the stock screen's «Yo'lda» strip (round 100,
+ * owner's 5A: «mashinalar korinib tursa qaysi mashinada qanchayuk borligi va
+ * … ochib korish imkoni»).
+ *
+ * Membership is the LIVE pointer, `in_transit` only, and that is deliberate:
+ * while a truck is genuinely on the road `current_batch_id` is exact, and the
+ * moment it lands the unload screen and the batch card take over — an
+ * `arrived` batch counted here through the live pointer would shrink towards
+ * «Σ 0» exactly as boxes are scanned off it (#440's trap, refused here rather
+ * than repeated). Weight and volume are a SHARE of the lot, as everywhere.
+ *
+ * Scope is the batch's TWO ends (`warehouseScopeEither`) — a truck belongs to
+ * its origin until it arrives, and both warehouses have a reason to see it.
+ * The `wh` filter matches EITHER end for the same reason: on the origin's
+ * screen it is «what left us», on the destination's «what is coming».
+ *
+ * Deliberately NOT part of the Σ line, the table, the sort, the views or the
+ * XLSX — those agree with each other about what is ON THE SHELF, and a truck
+ * is not.
+ */
+export async function transitTrucks(
+  actor: Parameters<typeof warehouseScopeEither>[0],
+  wh?: string,
+) {
+  const dest = aliasedTable(warehouses, 'dest');
+  const onBoard = (expr: ReturnType<typeof sql.raw>) => sql<string>`coalesce((
+    SELECT ${expr} FROM boxes b JOIN receipt_lots l ON l.id = b.lot_id
+    WHERE b.current_batch_id = ${batches.id} AND b.status = 'in_transit'
+  ), 0)`;
+  const rows = await db
+    .select({
+      id: batches.id,
+      code: batches.code,
+      originCode: warehouses.code,
+      destCode: dest.code,
+      departedAt: batches.departedAt,
+      boxCount: onBoard(sql.raw('count(*)')),
+      kg: onBoard(sql.raw('sum(l.total_weight_kg / l.box_count)')),
+      m3: onBoard(sql.raw('sum(l.total_volume_m3 / l.box_count)')),
+    })
+    .from(batches)
+    .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
+    .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
+    .where(
+      and(
+        eq(batches.status, 'in_transit'),
+        warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId),
+        wh
+          ? or(eq(batches.originWarehouseId, wh), eq(batches.destWarehouseId, wh))
+          : undefined,
+      ),
+    )
+    .orderBy(desc(batches.departedAt))
+    .limit(20);
+  // Numeric aggregates arrive as strings (or the coalesced 0); the screen
+  // wants numbers, and an empty truck is nothing to announce.
+  return rows
+    .map((row) => ({
+      ...row,
+      boxCount: Number(row.boxCount),
+      kg: Math.round(Number(row.kg)),
+      m3: Math.round(Number(row.m3) * 100) / 100,
+    }))
+    .filter((row) => row.boxCount > 0);
 }

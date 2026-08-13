@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -1448,6 +1448,43 @@ export async function openDealsForClient(clientId: string) {
     )
     .orderBy(desc(deals.createdAt))
     .limit(20);
+}
+
+/**
+ * The deals the LEDGER may attach money to (round 100 item 3).
+ *
+ * Wider than the receiving picker on purpose: the cargo triggers walk a deal
+ * into its won column the moment the last box is handed over, so a charge
+ * posted the day after delivery — the commonest correction there is — would
+ * find an open-only list empty and silently land with no deal, which the
+ * deferral gate and dealProfit can never see. Open deals, anything decided
+ * in the last 60 days, and anything with a LIVE deferral (whatever its age —
+ * that deferral exists to cover exactly this charge).
+ */
+export async function ledgerDealsForClient(clientId: string) {
+  const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000);
+  return db
+    .select({
+      id: deals.id,
+      code: deals.code,
+      title: deals.title,
+      quotedAmount: deals.quotedAmount,
+      quotedCurrency: deals.quotedCurrency,
+    })
+    .from(deals)
+    .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+    .where(
+      and(
+        eq(deals.clientId, clientId),
+        or(
+          eq(dealStages.kind, 'open'),
+          gte(deals.closedAt, cutoff),
+          and(isNotNull(deals.deferredAt), isNull(deals.deferralEndedAt)),
+        ),
+      ),
+    )
+    .orderBy(desc(deals.createdAt))
+    .limit(40);
 }
 
 /**

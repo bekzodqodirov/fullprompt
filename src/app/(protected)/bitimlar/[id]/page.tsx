@@ -21,7 +21,6 @@ import {
   deviationThreshold,
   listStages,
   unlinkedReceipts,
-  dealCharged,
 } from '@/modules/wms/deals/service';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { formStages } from '@/modules/wms/crm/stage-law';
@@ -31,7 +30,6 @@ import { LinesForm } from '../lines-form';
 import { ImportLines } from '../import-lines';
 import { LinkReceipt } from '../link-receipt';
 import { DeferForm } from '../defer-form';
-import { ChargeForm } from '../charge-form';
 import { DiscountForm } from '../discount-form';
 
 /**
@@ -85,21 +83,8 @@ export default async function DealPage({
   const quotedAmount = row.deal.quotedAmount === null ? null : Number(row.deal.quotedAmount);
   const discount = Number(row.deal.discountAmount);
   const deferred = Boolean(row.deal.deferredAt) && !row.deal.deferralEndedAt;
-  const charged = await dealCharged(id);
   // Profit is tannarx territory: same gate as the accounting reports.
   const profit = actor.permissions.has('finance.reports') ? await dealProfit(id) : null;
-  // The AGREED price, minus the recorded damage discount. Never the re-priced
-  // figure: it used to prefill the charge box with the quote scaled by however
-  // the cargo actually measured, so a shipment that came out smaller billed
-  // the client LESS than the price they agreed to — the system quietly giving
-  // a discount nobody granted. The owner: «kg kubda farq bo'ladigan bo'lsa
-  // kelishilgan narxni o'zidan o'zi skidka bermasin, faqat tafovutni
-  // ogohlantirishi yetarli». The gap is still stated, loudly, above; what to
-  // do about it is a conversation with the client, and then a person types it.
-  const netSuggested =
-    quotedAmount === null
-      ? null
-      : String(Math.max(0, Math.round((quotedAmount - discount) * 100) / 100));
 
   // Three states, and the wording has to be honest about which one it is:
   // nothing arrived yet, nothing to compare against, or a real gap.
@@ -349,25 +334,11 @@ export default async function DealPage({
         {unlinked.length > 0 && <LinkReceipt dealId={row.deal.id} receipts={unlinked} />}
       </Section>
 
-      {/* Money on the job. The charge comes first because the deferral below
-          can only ever cover an amount posted HERE — a charge raised from
-          batch pricing carries no deal and keeps blocking the handover. */}
-      {actor.permissions.has('finance.manage') && (
-        <Panel title={`💵 ${t('charge')}`} testId="deal-charge-panel">
-          <p className="mb-2 text-xs text-ink-500">{t('chargeHint')}</p>
-          {charged > 0 && (
-            <p className="mb-2 text-sm font-bold text-good">
-              {t('charged')}: {charged.toFixed(2)} $
-            </p>
-          )}
-          <ChargeForm
-            dealId={row.deal.id}
-            clientId={row.deal.clientId}
-            suggested={netSuggested}
-            currency={row.deal.quotedCurrency}
-          />
-        </Panel>
-      )}
+      {/* The charge panel stood here from phase 5 to round 100. The owner
+          closed it — pricing a client is the admin's call, made on the ledger
+          («sotuvchi narx qoyib qoyadi … yop bitimdan yop buni») — and the
+          ledger's own form carries the deal picker, so a deferral-covered
+          charge is still one screen away. */}
 
       {/* Per deal, never per line (DEALS.md answer 7). Revenue is what was
           CHARGED — the discount already flowed into the lower charge, so
