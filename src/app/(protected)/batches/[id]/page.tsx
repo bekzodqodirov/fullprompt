@@ -38,6 +38,7 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { listPartners } from '@/modules/wms/partners/service';
 import { AttachmentsPanel } from '@/components/attachments-panel';
+import { CustomsCleared } from './customs-cleared';
 import { CustomsFirm } from './customs-firm';
 import { CustomsPerReceipt } from './customs-per-receipt';
 import { batchCustomsRows } from '@/modules/wms/partners/customs';
@@ -198,6 +199,10 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // shut door among seven and nobody opens it (round 43).
   const customsOwnAnswers = customsRows.filter((row) => !row.fromBatch).length;
   const customsBadge = [
+    // The stamp goes on the FOLD's face, because a collapsed panel with
+    // nothing on it is invisible whatever it holds — round 43's own lesson,
+    // learned on this very panel.
+    batch.customsClearedAt ? '✅' : null,
     batch.customsByClient
       ? t('customsByClient')
       : (customsPartners.find((row) => row.id === batch.customsPartnerId)?.name ?? '—'),
@@ -612,6 +617,15 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             batchId={batch.id}
             rows={customsRows}
             partners={customsPartners}
+            canEdit={actor.permissions.has('ved.docs')}
+          />
+          {/* The one thing in the system that knows a declaration cleared —
+              which is what splits «O'zbekistonga kirdi» from «Rastamojka
+              tugadi» on the customer's own timeline (owner: «ha rastamojka
+              tugadi tugmasini qo'sh»). */}
+          <CustomsCleared
+            batchId={batch.id}
+            clearedAt={batch.customsClearedAt}
             canEdit={actor.permissions.has('ved.docs')}
           />
         </Panel>

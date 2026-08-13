@@ -1,7 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { clientLabels, statusLabel, type ClientLabels } from '@/modules/platform/telegram/client-labels';
+import {
+  clientLabels,
+  formatEtaRange,
+  stageLabel,
+  type ClientLabels,
+} from '@/modules/platform/telegram/client-labels';
+import { CARGO_STAGES, stageIndex } from '@/modules/wms/client-cabinet/stages';
 import type { CabinetPayload } from '@/modules/wms/client-cabinet/miniapp';
 
 /**
@@ -236,7 +242,14 @@ export function CabinetApp() {
                 </p>
               ) : (
                 client.cargo.map((lot) => (
-                  <Lot key={lot.lotId} lot={lot} t={t} initData={blob} onZoom={setZoom} />
+                  <Lot
+                    key={lot.lotId}
+                    lot={lot}
+                    t={t}
+                    locale={data.locale}
+                    initData={blob}
+                    onZoom={setZoom}
+                  />
                 ))
               ))}
 
@@ -287,15 +300,29 @@ type CabinetLotView = CabinetPayload['clients'][number]['cargo'][number];
 function Lot({
   lot,
   t,
+  locale,
   initData,
   onZoom,
 }: {
   lot: CabinetLotView;
   t: ClientLabels;
+  locale: string | null;
   initData: string;
   onZoom: (url: string) => void;
 }) {
-  const stages = Object.entries(lot.statuses);
+  // Sorted biggest-first by the service, so the ladder is drawn for the bulk
+  // of the cargo and any remainder is named under it.
+  const main = lot.groups[0];
+  const at = main ? stageIndex(main.stage) : 0;
+  // One 🗓 line per distinct date, not per group: two lots on the same truck
+  // would otherwise print the same sentence twice.
+  const etas = [
+    ...new Map(
+      lot.groups
+        .filter((g) => g.eta)
+        .map((g) => [`${g.eta!.toPlace}|${g.eta!.fromIso}|${g.eta!.toIso}`, g.eta!]),
+    ).values(),
+  ];
   return (
     <article className="cab-lot" data-testid="cab-lot">
       <div className="cab-lot-top">
@@ -318,35 +345,47 @@ function Lot({
         </div>
       </div>
 
-      {lot.warehouseCodes.length > 0 && (
-        <div className="cab-where">📍 {lot.warehouseCodes.join(', ')}</div>
+      {lot.warehousePlaces.length > 0 && (
+        <div className="cab-where">📍 {lot.warehousePlaces.join(', ')}</div>
       )}
 
-      {/* The journey, drawn to scale. Only worth a bar when the boxes are in
-          more than one place — otherwise it is a solid line saying nothing the
-          chip below does not already say. */}
-      {stages.length > 1 && (
-        <div className="cab-bar" data-testid="cab-bar">
-          {stages.map(([status, n]) => (
-            <i
-              key={status}
-              style={{ width: `${(n / lot.total) * 100}%`, background: stageColor(status) }}
-            />
-          ))}
+      {/* The owner's own ladder — «htoyda qabul → … → olib ketdingiz» — as
+          nine segments filled up to where the cargo stands. It replaced a
+          proportional bar of BOX STATUSES, which showed how the boxes were
+          split without ever saying how far along the road any of them were:
+          the question every customer opens this screen to ask. */}
+      <div className="cab-track" data-testid="cab-track" title={t.journey}>
+        {CARGO_STAGES.map((stage, i) => (
+          <i key={stage} className={i < at ? 'done' : i === at ? 'now' : ''} />
+        ))}
+      </div>
+
+      {main && (
+        <div className="cab-stage" data-testid="cab-stage">
+          {stageLabel(main.stage, t)}
         </div>
       )}
 
-      <div className="cab-chips">
-        {stages.map(([status, n]) => (
-          <span
-            className="cab-chip"
-            key={status}
-            style={{ '--chip': stageColor(status) } as React.CSSProperties}
-          >
-            <b>{n}</b> {statusLabel(status, t)}
-          </span>
-        ))}
-      </div>
+      {etas.map((eta) => (
+        <div className="cab-eta" key={eta.toIso} data-testid="cab-eta">
+          🗓 {eta.toPlace}: {t.etaAbout} {formatEtaRange(eta.fromIso, eta.toIso, locale)}
+        </div>
+      ))}
+
+      {/* Only when the lot is split. One chip is the sentence above, repeated. */}
+      {lot.groups.length > 1 && (
+        <div className="cab-chips">
+          {lot.groups.map((g) => (
+            <span
+              className="cab-chip"
+              key={g.stage}
+              style={{ '--chip': stageColor(g.stage) } as React.CSSProperties}
+            >
+              <b>{g.n}</b> {stageLabel(g.stage, t)}
+            </span>
+          ))}
+        </div>
+      )}
 
       {lot.photoCount > 0 && (
         <Photos lotId={lot.lotId} count={lot.photoCount} initData={initData} onZoom={onZoom} />
@@ -356,14 +395,29 @@ function Lot({
 }
 
 /**
- * A stage's colour, read from the stylesheet rather than repeated here.
+ * A rung's colour, read from the stylesheet rather than repeated here.
  *
- * The palette belongs with the rest of the design, and a second copy in the
- * component is a copy that goes stale — the bar and the chip beside it would
- * disagree about what "in transit" looks like.
+ * Nine rungs share the five hues the palette already carries, by KIND —
+ * standing still is grey, being loaded amber, on the road purple, in
+ * Uzbekistan blue, in the customer's hands green. That keeps the stylesheet's
+ * own «cool → warm → green reads as progress» promise true without inventing
+ * nine colours a customer would have to learn.
  */
-function stageColor(status: string): string {
-  return `var(--st-${status}, var(--muted))`;
+const STAGE_HUE: Record<string, string> = {
+  cn_warehouse: 'in_stock',
+  hub: 'in_stock',
+  cn_loading: 'loading',
+  hub_loading: 'loading',
+  cn_transit: 'in_transit',
+  export_transit: 'in_transit',
+  in_uz: 'planned',
+  customs_done: 'planned',
+  ready: 'ready_for_pickup',
+  issued: 'ready_for_pickup',
+};
+
+function stageColor(stage: string): string {
+  return `var(--st-${STAGE_HUE[stage] ?? 'in_stock'}, var(--muted))`;
 }
 
 /**

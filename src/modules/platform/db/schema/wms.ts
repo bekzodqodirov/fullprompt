@@ -538,6 +538,18 @@ export const batches = pgTable(
     customsByClient: boolean('customs_by_client').notNull().default(false),
     /** Latest manual position pin: {key: at_border|in_kg|in_uz, at: ISO} — re-anchors the map estimate. */
     trackingCheckpoint: jsonb('tracking_checkpoint'),
+    /**
+     * When the customs declaration cleared (owner: «ha rastamojka tugadi
+     * tugmasini qo'sh»).
+     *
+     * Deliberately NOT a fourth `tracking_checkpoint` key: that jsonb is a
+     * POSITION and `CHECKPOINT_SEGMENTS` maps each of its keys onto a leg of
+     * the route to re-anchor the map's clock. Clearing customs is not a place.
+     *
+     * NULL means «nobody has said», which is what every truck that departed
+     * before this column existed honestly is — never «not cleared».
+     */
+    customsClearedAt: timestamp('customs_cleared_at', { withTimezone: true }),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
