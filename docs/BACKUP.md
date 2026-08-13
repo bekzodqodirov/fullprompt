@@ -210,8 +210,19 @@ docker compose exec -T postgres pg_restore -U gsr -d gsr --clean --if-exists /tm
 docker compose start app
 ```
 
+4. **Migratsiyani qayta yuriting** (yangi klasterda bu majburiy):
+
+```bash
+docker compose run --rm migrate
+```
+
 > `--no-owner` bilan olingan dump har qanday postgres'ga tushadi — `gsr`
 > roli bo'lmagan mashinaga ham.
+
+> Dump ichida jadval huquqlari bor, lekin **`gsr_ai_reader` roli klasterga
+> tegishli** va dump bilan ko'chmaydi — 4-qadam usha rolni qayta yaratadi.
+> U bo'lmasa AI yordamchining tahlil (SQL) qismi ishlamaydi va buni o'zi
+> halol aytadi («fence unavailable»); qolgan hamma narsa ishlayveradi.
 
 Har yakshanba tizim o'zi **tiklash mashqi** o'tkazadi: oxirgi dump'ni
 alohida bazaga tiklab, jadvallarni tekshiradi. Xato bo'lsa Telegram'ga

@@ -83,6 +83,13 @@ export const SETTING_DEFAULTS = {
   ved_transport: 'авто транспорт',
   ved_delivery_terms: 'CIP Андижан',
   ved_customs_post: 'Андижон ВЭД / 03011',
+  /**
+   * AI questions per person per day, both doors together (bot + /ai). A
+   * backstop against a runaway loop or a bored thumb, not a meter: the count
+   * lives in `ai_questions`, so it survives restarts and is shared by every
+   * process. 0 switches the assistant off without touching the key.
+   */
+  ai_daily_limit: 40,
 };
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

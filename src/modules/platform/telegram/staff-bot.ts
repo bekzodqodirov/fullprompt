@@ -217,6 +217,7 @@ async function permissionsOf(userId: string): Promise<Set<string>> {
 export async function botActorFor(chatId: bigint): Promise<
   | (StaffChat & {
       permissions: Set<string>;
+      roles: string[];
       warehouseScoped: boolean;
       warehouseIds: string[];
     })
@@ -232,6 +233,10 @@ export async function botActorFor(chatId: bigint): Promise<
   return {
     ...staff,
     permissions: await permissionsOf(staff.id),
+    // The role CODES ride along for the one decision made on a role rather
+    // than a grant: whether the AI assistant's analyst tier opens (round 21's
+    // shape — supervision breadth is super_admin/admin, not a permission).
+    roles: roleRows.map((r) => r.code),
     warehouseScoped: roleRows.some((r) => r.warehouseScoped),
     warehouseIds: whRows.map((w) => w.warehouseId),
   };
@@ -246,6 +251,22 @@ export async function lookupFromBot(chatId: bigint, query: string): Promise<stri
   if (!actor) return null;
   const { botLookup } = await import('../../wms/bot/lookup');
   return botLookup(actor, query);
+}
+
+/**
+ * A staff question the free paths could not answer, put to the AI assistant
+ * under the chat's honest actor. Null when the chat is not a linked member of
+ * staff — a customer's text must never reach the model or the question
+ * ledger (their AI is the cabinet, and there deliberately is none).
+ */
+export async function assistantFromBot(
+  chatId: bigint,
+  question: string,
+): Promise<import('../ai/assistant').AskOutcome | null> {
+  const actor = await botActorFor(chatId);
+  if (!actor) return null;
+  const { askAssistant } = await import('../ai/assistant');
+  return askAssistant({ actor, question, surface: 'bot' });
 }
 
 /**

@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## AI yordamchi: savol berasiz, sistema javob beradi — 2026-08-13
+
+So'rovingiz: «biz sistemamizga AI ulay olamizmi bizni sistemadagi
+malumotlarni tahlil qilib savollarga javob beradgan qilsak», javoblaringiz:
+ikkala rejim ham, ikkala joy ham, mijozlarga hozircha yo'q.
+
+**Ikki daraja, bitta yordamchi:**
+
+- **Hamma hodim uchun**: oddiy tilda savol — «GS777 qayerda», «menda bugun
+  nima bor» — yordamchi hodimning O'ZIGA ochiq ma'lumotlardan javob beradi.
+  Skladchi boshqa sklad yukini ko'rmaydi, sotuvchi faqat o'z mijozining
+  pulini ko'radi — ekranlardagi qoidalar aynan shu holicha ishlaydi, AI
+  ularni chetlab o'ta olmaydi.
+- **Siz va admin uchun (tahlilchi rejim)**: butun sistema bo'yicha tahlil —
+  «bu oy qancha pul kirdi», «eng katta qarzi bor 5 mijoz kim», «Kashg'ardan
+  shu hafta nechta partiya keldi». Pul savollariga javob tayyor hisobot
+  funksiyalaridan olinadi (kassa hisoboti, balans, mijoz qarzi) — qo'lda
+  qo'shib chiqarilgan «taxminiy» raqam emas.
+
+**Ikkala joyda ham:**
+
+- **Telegram botda**: hodim botga oddiy savol yozadi. Kod yozsangiz —
+  avvalgidek bepul va bir zumda (AI ishlatilmaydi); savol yozsangiz — AI
+  javob beradi.
+- **Saytda**: menyuda «AI yordamchi» sahifasi (kalit kiritilgandan keyin
+  paydo bo'ladi).
+
+**Himoya va tartib:**
+
+- AI faqat O'QIYDI — hech narsani o'zgartira olmaydi, hech kimga hech
+  narsa yubormaydi.
+- Parollar, sessiyalar, Telegram kalitlari — AI uchun baza darajasida
+  yopiq (alohida cheklangan Postgres roli orqali), so'rasa ham ololmaydi.
+- Har bir savol-javob yozib boriladi; kuniga bir kishiga 40 savol chegara
+  (sozlamalarda o'zgartiriladi, 0 — o'chirish).
+- Mijozlarga AI yo'q — sizning javobingiz bo'yicha.
+
+**Ishga tushirish uchun sizdan bitta narsa kerak:** serverdagi `.env`
+fayliga YANGI `ANTHROPIC_API_KEY` kiritish (eskisi kuygan ro'yxatda edi —
+almashtirish shart) va `docker compose build migrate app`, keyin
+`docker compose up -d` + migratsiya. Kalitsiz ham hammasi ishlayveradi,
+faqat AI «sozlanmagan» deb halol aytadi.
+
+Yo'lda topilgan va tuzatilgan xato: botda mijoz kodini yozganda sotuvchiga
+BOSHQA sotuvchining mijozi balansi ham ko'rinar edi — endi faqat o'z
+mijozlariniki (moliya ekranlaridagi qoida botda ham ishlaydi).
+
+Migratsiya: **0079** — jurnal soni **80** ga yetishi kerak.
+
 ## Tahlil sahifasiga to'liq filtrlar — 2026-08-12
 
 So'rovingiz: «filterlarni maximalna qoyish mumkun bolgan narsalarga qoyib
