@@ -86,10 +86,13 @@ export async function labelsForReceipt(
       warehouseCode: warehouse.code,
       dateLocal,
       receiptNumber: receipt.number ?? '',
-      clientCodeWithLetter: client
-        ? `${client.clientCode}-${lot.letter}`
-        : receipt.unclaimedMarking
-          ? `${receipt.unclaimedMarking}-${lot.letter}`
+      // The MARKING wins when there is one — the box physically carries it, so
+      // once written it is the box's code for life (round 98). A receipt
+      // claimed from birth has no marking and prints the client code as before.
+      clientCodeWithLetter: receipt.unclaimedMarking
+        ? `${receipt.unclaimedMarking}-${lot.letter}`
+        : client
+          ? `${client.clientCode}-${lot.letter}`
           : '#UNKNOWN',
       unclaimed: !client,
       productZh: lot.productNameZh,

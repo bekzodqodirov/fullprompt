@@ -22,8 +22,8 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
-import { STAGE_COLORS } from '../crm/service';
-import { stageWrite } from '../crm/stage-law';
+import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
+import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
 import { orderForMove, topOfColumn, type BoardTable } from '../crm/board-place';
 import {
   ARRIVED_BOX_STATUSES,
@@ -209,6 +209,7 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
    * the reason it was lost for.
    */
   let lostReason: string | null | undefined;
+  let closedAt: Date | null | undefined;
   if ((input.stageId ?? before.stageId) !== before.stageId) {
     const stage = await db.query.dealStages.findFirst({
       where: eq(dealStages.id, input.stageId!),
@@ -217,6 +218,7 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
     const law = stageWrite(stage.kind, null);
     if (!law.ok) throw new DealError('lost_reason_required');
     lostReason = law.lostReason;
+    closedAt = closedAtFor(stage.kind, new Date());
   }
 
   await db.transaction(async (tx) => {
@@ -225,6 +227,7 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
       .set({
         stageId: input.stageId ?? before.stageId,
         ...(lostReason === undefined ? {} : { lostReason }),
+        ...(closedAt === undefined ? {} : { closedAt }),
         // A stage changed from the ✏️ form is an arrival with nothing said
         // about position, so it lands at the top — the board's own rule.
         ...((input.stageId ?? before.stageId) !== before.stageId
@@ -300,13 +303,24 @@ export async function moveDeal(
   // won, and only if somebody wrote down why.
   const law = stageWrite(stage.kind, lostReason);
   if (!law.ok) throw new DealError('lost_reason_required');
+  // The owner's list, when he has written one — the funnel's rule, verbatim
+  // (see `moveLead`). One dictionary serves both boards.
+  if (law.lostReason !== null && !reasonAllowed(law.lostReason, await activeLostReasonLabels()))
+    throw new DealError('lost_reason_not_listed');
 
   await db.transaction(async (tx) => {
     // `place` is the drag and nothing else — the funnel's rule, verbatim.
     const boardOrder = await orderForMove(tx, DEAL_BOARD, stageId, id, place);
     await tx
       .update(deals)
-      .set({ stageId, lostReason: law.lostReason, boardOrder })
+      .set({
+        stageId,
+        lostReason: law.lostReason,
+        boardOrder,
+        ...(stageId !== before.stageId
+          ? { closedAt: closedAtFor(stage.kind, new Date()) }
+          : {}),
+      })
       .where(eq(deals.id, id));
     // Only a real move is a fact about the deal; re-ordering one column is a
     // fact about how somebody reads the board (see `moveLead`).

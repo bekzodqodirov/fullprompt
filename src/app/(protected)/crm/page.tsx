@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import {
+  activeLostReasonLabels,
   closedLeadCounts,
   listLeads,
   listSources,
@@ -84,7 +85,11 @@ export default async function LeadsPage({
   // who may NOT see everybody's leads is ignored rather than obeyed: the
   // funnel's ownership rule is also the search's and the bot's, and a fourth
   // door has to ask the same question.
-  const hodim = seesAll ? (params.hodim ?? '') : '';
+  // Format-checked, not just permission-checked: this lands in
+  // `eq(leads.ownerId, …)`, and a hand-typed non-uuid was a 22P02 500
+  // for a view_all holder rather than a dropped filter (#514).
+  const hodim =
+    seesAll && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(params.hodim ?? '') ? params.hodim! : '';
   const scope = hodim || (mine ? actor.id : undefined);
   const q = (params.q ?? '').trim();
   // What every link on this screen has to carry, or the first tap on «all» or
@@ -118,7 +123,7 @@ export default async function LeadsPage({
   // that opens the lot. A won lead from March is a record, not a task, and a
   // board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, sources, views, open, closed, openTotals, closedTotals, badges, managers] =
+  const [stages, sources, views, open, closed, openTotals, closedTotals, badges, managers, lostReasonList] =
     await Promise.all([
     listStages(),
     listSources(),
@@ -138,6 +143,9 @@ export default async function LeadsPage({
     // lead to a colleague is a supervisor's act, and a seller who cannot see
     // the board they would be moving it onto should not be doing it.
     seesAll ? salesManagerOptions() : Promise.resolve([]),
+    // The owner's lost-reason list (round 98): non-empty, the board asks with
+    // a sheet of these instead of the free-text prompt.
+    activeLostReasonLabels(),
   ]);
   const rows = [...open, ...closed];
   // What each column HOLDS versus what it was handed — one map for both
@@ -268,6 +276,10 @@ export default async function LeadsPage({
           </Link>
           {actor.permissions.has('crm.manage') && (
             <>
+              <Link href="/crm/tahlil" className={boardMenuItem}>
+                <Icon name="report" className="h-4 w-4 text-ink-500" />
+                {t('analytics')}
+              </Link>
               <Link href="/crm/kelganlar" className={boardMenuItem}>
                 <Icon name="target" className="h-4 w-4 text-ink-500" />
                 {t('arrivals')}
@@ -313,6 +325,7 @@ export default async function LeadsPage({
 
       <KanbanBoard
         fields={cardFields}
+        lostReasons={lostReasonList}
         // The follow-up date is coloured against the SERVER's today, so the
         // first HTML and the browser's first render agree (UTC days — the
         // convention `/bugun` already measures against, round 47).

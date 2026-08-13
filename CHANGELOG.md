@@ -1,5 +1,103 @@
 # CHANGELOG
 
+## Tahlil sahifasiga to'liq filtrlar — 2026-08-12
+
+So'rovingiz: «filterlarni maximalna qoyish mumkun bolgan narsalarga qoyib
+ber, source sotuvchi va boshqalar».
+
+Endi Tahlil sahifasida davrdan tashqari hamma narsa filtrlash mumkin:
+
+- **Manba** — bitta reklama kanali bo'yicha butun sahifa. «—» ham
+  tanlanadi (manbasiz, qo'lda kiritilgan lidlar). O'chirilgan eski
+  manbalar ham ro'yxatda — tarixini o'qish uchun.
+- **Sotuvchi** — bitta hodim bo'yicha, «Egasiz» ham alohida tanlanadi.
+  Ishdan ketgan sotuvchining tarixi ham filtrlash mumkin.
+- **Narx / kub / kg oraliqlari** — masalan «10 kubdan katta lidlar
+  bo'yicha tahlil».
+- Filtrlar davr qatorining ostidagi yig'iladigan bo'limda; nechta filtr
+  faolligi belgida ko'rinadi, faol filtrlar sahifada chips bo'lib turadi
+  (har birini bir bosishda olib tashlaysiz).
+- **Jadval qatorlari ham filtr**: manbalar yoki sotuvchilar jadvalida
+  nomni bossangiz — sahifa shu qator bo'yicha filtrlanadi. Telefonda eng
+  qulay yo'li shu.
+- Sotuvchi filtri qat'iy: hodimni tanlasangiz FAQAT uning lidlari —
+  egasizlar qo'shilmaydi (doskadagi «Meniki» boshqacha ishlaydi, u ish
+  taqsimoti; bu yerda hisob).
+- Manba filtri yoqilganda bitimlar qatori raqam o'rniga sabab yozadi —
+  bitimda manba yo'q, boshqa raqam yolg'on bo'lardi.
+
+Yo'lda topilgan va tuzatilgan: ikkala doskada ham sana filtriga mavjud
+bo'lmagan kun (masalan 30-fevral) kiritilsa xato sahifa chiqardi; endi
+bunday qiymat shunchaki tashlab yuboriladi.
+
+## Sotuv tahlili sahifasi va yo'qotish sabablari ro'yxati — 2026-08-12
+
+8 talik ro'yxatning 8-bandi: «dunyo standartlarida qanday malumotlar tahlili
+bo'lsa hammasini hohlayman va yopilish sababini listdan belgilaydigan
+qilishimiz kerak».
+
+**Yangi sahifa: CRM → Tahlil** (faqat CRM boshqaruvchilarga ko'rinadi):
+
+- Davr tanlanadi (dan/gacha + 7 kun / 30 kun / bu oy / o'tgan oy tugmalari),
+  har bir tanlangan davr — ulashsa bo'ladigan manzil.
+- Bir qatorda: yangi lidlar, yutilgan, yo'qotilgan, yutish foizi, yutilgan
+  summa, o'rtacha yopilish muddati (kunlarda), hozir ochiq turganlar.
+- Kunlik oqim: har kun nechta lid keldi va nechta yutildi — ustunchalar.
+- Voronka hozir qanday turibti (har etapda nechta karta).
+- Manbalar jadvali: qaysi reklama nechta lid berdi, nechtasi yutildi,
+  qancha pul keltirdi.
+- Sotuvchilar jadvali: har kim nechta oldi, yutdi, yo'qotdi, qancha summa,
+  qancha tez yopadi. Egasiz lidlar ham alohida qatorda ko'rinadi.
+- Yo'qotish sabablari: qaysi sabab necha marta — endi sanash mumkin.
+- Bitimlar ham shu davr bo'yicha bir qatorda.
+
+Hisob ikkita soat bilan yuritiladi: «yangi» — lid KELGAN kun bo'yicha,
+«yutildi/yo'qotildi» — QAROR qilingan kun bo'yicha. Buning uchun bazaga
+yopilish sanasi qo'shildi (avval yo'q edi — «bu oy nimani yopdik» degan
+savolga javob berib bo'lmasdi). Eski yopiq kartalarga taxminiy sana
+qo'yildi (oxirgi o'zgargan kuni); aniq hisob deploydan keyingi birinchi
+ko'chirishdan boshlanadi.
+
+**Yo'qotish sabablari endi ro'yxatdan tanlanadi:**
+
+- CRM → Sozlamalar'da o'z ro'yxatingizni yozasiz («Narx qimmat», «Javob
+  bermadi», …), tartibini va faolligini boshqarasiz.
+- Kartani yo'qotilganga o'tkazganda erkin matn o'rniga shu ro'yxatdan
+  tanlanadi — telefonda ham, kompyuterda ham, ommaviy ko'chirishda ham.
+- Ro'yxat BO'SH bo'lsa hammasi avvalgidek erkin matnda qoladi — deploy
+  kuni hech nima o'zgarmaydi, ro'yxatni to'ldirganingizdan keyin ishga
+  tushadi.
+- Eski kartalardagi yozilgan sabablar o'z holicha qoladi; sababni keyin
+  qayta nomlasangiz ham tarix o'zgarmaydi.
+
+Bazaga yangilik qo'shildi: deploy qilganda migratsiyalar soni **79** ga
+yetishi kerak (boshqa sessiyaning ishi bilan birga hisoblaganda).
+
+## 8 talik ro'yxatning birinchi qismi — 2026-08-12
+
+Sizning ro'yxatingizdan 6 tasi (4-band boshqa sessiyada, 8-band — tahlil
+sahifasi — keyingi bosqichda):
+
+1. **Dark mode'da chat yozish oynasi** tuzatildi — matn ko'rinmasligining
+   sababi topildi (uslub sinfi umuman e'lon qilinmagan ekan) va bunday xato
+   qaytib kirolmasligi uchun avtomatik tekshiruv qo'shildi.
+2. **Ulangan akkauntlar ro'yxati** endi doim yig'ilgan turadi — muammo bo'lsa
+   sarlavhaning o'zi qizarib, nechta akkaunt buzilganini aytadi.
+3. **Olinmagan chatlar arxivi**: «Qaysi chatlar» ekranida olinmagan chatlar
+   saqlanib turadi (avvaldan shunday edi), endi ustiga — olinmagan chatning
+   raqami bazadagi MIJOZNIKI bo'lsa, yonida **«⚠ mijoz kodi: GS500»** degan
+   ogohlantirish chiqadi. Xato rad etilgan mijozni darrov ko'rasiz.
+5. **GS500MANIKEN-AL masalasi**: endi mijoz biriktirilganda qutidagi yozuv
+   o'zgarmaydi — stikerdagi kod tizimda ham shu ko'rinishda qoladi, sklad
+   jadvalida tagida kichik qilib mijoz kodi (gs500) ko'rinadi. Yorliq bilan
+   tizim endi hech qachon bir-biriga zid gapirmaydi.
+6. **PDF fayllar** endi yuklab olinmasdan brauzerning o'zida ochiladi (rasm,
+   audio, video allaqachon shunday edi). Word/Excel yuklab olinishda qoladi —
+   brauzer ularni o'zi ko'rsata olmaydi.
+7. **Xarita**: yangi serverga xarita fayli ko'chmagan ekan — bitta buyruq
+   bilan tiklanadi (aytib berdim); yuk mashinasi belgisi kattaroq va aniqroq
+   qilib qayta chizildi.
+
 ## Telegram ilova: haqiqiy timeline — sanalar va yo'l chizig'i — 2026-08-13
 
 Sizning gapingiz: «sen qilgan etaplar timeline emasku, hech nima korinmaydi —
@@ -40,7 +138,6 @@ avvalgidek «🗓 Andijan: taxminan 15.08 – 16.08».
 Yorug' va qorong'u rejimda tekshirildi (siz yuborgan skrinshot qorong'u rejim
 edi), 360 px ekranda hech narsa siqilmaydi. Migratsiya YO'Q — deploy'da
 raqam 78 ligicha qoladi.
-
 
 ## Telegram: bitta yuk — bitta habar, va yuk qayerdaligi — 2026-08-12
 
@@ -136,7 +233,6 @@ rasmiylashtirilmoqda» va **«Rastamojka tugadi»** alohida.
 **Muhim:** hech kim bosmagan bo'lsa — hech narsa buzilmaydi. Bo'sh qiymat
 «hali aytilmagan» degani, «rastamojka tugamagan» degani emas, shuning uchun
 bugungacha ketgan hamma mashinalar avvalgidek ko'rinadi.
-
 
 ## Yuk qabulida rasm: topildi va tuzatildi — 2026-08-12
 

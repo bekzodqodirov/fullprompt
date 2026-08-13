@@ -18,6 +18,7 @@ import {
   moveLead,
   setLeadOwner,
   reorderStages,
+  saveLostReason,
   saveSource,
   saveStage,
   sourceSchema,
@@ -361,6 +362,31 @@ export async function saveSourceAction(
   if (!parsed.success) return { error: 'validation' };
   const id = str(formData, 'id') || undefined;
   return run('crm.manage', (ctx) => saveSource({ ...parsed.data, id }, ctx));
+}
+
+/**
+ * The lost-reason dictionary (round 98). Same door as the sources — a list
+ * the owner edits, `crm.manage`, and deactivating is the only removal: the
+ * recorded text on old cards outlives the row that offered it.
+ */
+export async function saveLostReasonAction(
+  _prev: CrmFormState,
+  formData: FormData,
+): Promise<CrmFormState> {
+  const label = str(formData, 'label');
+  if (label.trim().length < 2) return { error: 'validation' };
+  const id = str(formData, 'id') || undefined;
+  return run('crm.manage', (ctx) =>
+    saveLostReason(
+      {
+        id,
+        label,
+        sortOrder: Number(formData.get('sortOrder')) || 100,
+        active: formData.getAll('active').at(-1) !== 'off',
+      },
+      ctx,
+    ),
+  );
 }
 
 /**

@@ -87,16 +87,24 @@ const W = {
   // G30, Xi'an → Lanzhou.
   BAO: { x: 107.14, y: 34.36 }, // Baoji
   TSN: { x: 105.72, y: 34.58 }, // Tianshui
-  // G30, the Hexi corridor: Lanzhou → Hami.
+  DNX: { x: 104.62, y: 35.58 }, // Dingxi
+  // G30, the Hexi corridor: Lanzhou → Hami. Round 98 added the towns BETWEEN
+  // the round-47 anchors («faqat 5-6 shahar bo'yicha to'g'ri chiziq» — he was
+  // right): the corridor's own line of oasis towns, so the arc bends where
+  // the road does instead of jumping 200 km at a time.
   WUW: { x: 102.63, y: 37.93 }, // Wuwei
+  SDN: { x: 101.09, y: 38.79 }, // Shandan
   ZHY: { x: 100.45, y: 38.93 }, // Zhangye
   JIQ: { x: 98.51, y: 39.73 }, // Jiuquan
+  JYG: { x: 98.29, y: 39.77 }, // Jiayuguan
   GUA: { x: 95.78, y: 40.52 }, // Guazhou
+  XXX: { x: 94.85, y: 41.75 }, // Xingxingxia (the Gansu/Xinjiang gorge)
   // G30, Hami → Urumqi.
   SHS: { x: 90.21, y: 42.87 }, // Shanshan
   TFU: { x: 89.18, y: 42.95 }, // Turpan
   // G3012, around the Tian Shan: Urumqi → Aksu.
   TOK: { x: 88.65, y: 42.79 }, // Toksun
+  YNQ: { x: 86.57, y: 42.06 }, // Yanqi
   KRL: { x: 86.15, y: 41.73 }, // Korla
   LUN: { x: 84.25, y: 41.78 }, // Luntai
   KCA: { x: 82.96, y: 41.72 }, // Kuqa
@@ -104,11 +112,13 @@ const W = {
   BCH: { x: 78.55, y: 39.8 }, // Bachu
   // Kashgar → the Irkeshtam border.
   WUQ: { x: 75.02, y: 39.72 }, // Wuqia
-  // M41 through Kyrgyzstan.
+  // M41 through Kyrgyzstan: over the Taldyk pass down to the Gulcha valley.
   SRT: { x: 73.26, y: 39.72 }, // Sary-Tash
+  TLD: { x: 73.2, y: 39.85 }, // Taldyk pass
   GUL: { x: 73.44, y: 40.31 }, // Gulcha
   // The Kamchik pass road, Andijan → Tashkent.
   FEG: { x: 70.94, y: 40.53 }, // Kokand
+  KMC: { x: 70.55, y: 41.13 }, // Kamchik pass
   ANG: { x: 70.14, y: 41.02 }, // Angren
 } satisfies Record<string, RoutePoint>;
 
@@ -170,14 +180,14 @@ export const MAP_BOUNDS: [[number, number], [number, number]] = [
 
 /** Xi'an → Kashgar: the G30 and G3012, the way a truck really drives it. */
 const CN_SPINE = [
-  P.XIA, W.BAO, W.TSN, P.LAN,
-  W.WUW, W.ZHY, W.JIQ, W.GUA, P.HAM,
+  P.XIA, W.BAO, W.TSN, W.DNX, P.LAN,
+  W.WUW, W.SDN, W.ZHY, W.JIQ, W.JYG, W.GUA, W.XXX, P.HAM,
   W.SHS, W.TFU, P.UCH,
-  W.TOK, W.KRL, W.LUN, W.KCA, P.AKS,
+  W.TOK, W.YNQ, W.KRL, W.LUN, W.KCA, P.AKS,
   W.BCH, P.KA,
 ];
 /** Andijan → Tashkent over the Kamchik pass. */
-const AND_TAS = (dest: RoutePoint) => [P.AND, W.FEG, W.ANG, dest];
+const AND_TAS = (dest: RoutePoint) => [P.AND, W.FEG, W.KMC, W.ANG, dest];
 
 function ka2uz(dest: RoutePoint, uzHours: [number, number]): RouteDef {
   return build([

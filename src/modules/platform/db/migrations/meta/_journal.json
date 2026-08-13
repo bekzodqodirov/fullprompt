@@ -547,6 +547,13 @@
       "when": 1785190000046,
       "tag": "0077_batch_customs_cleared",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1785190000047,
+      "tag": "0078_sales_analytics",
+      "breakpoints": true
     }
   ]
 }

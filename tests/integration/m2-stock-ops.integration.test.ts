@@ -18,7 +18,7 @@ import {
 import { sendDailyDigest } from '@/modules/platform/jobs/digest';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
-import { editLot } from '@/modules/wms/receipts/edit';
+import { assignReceiptClient, editLot } from '@/modules/wms/receipts/edit';
 import { moveReceipt, MoveError } from '@/modules/wms/receipts/move';
 import { addCostEntry, recomputeEntry, voidCostEntry } from '@/modules/wms/costing/service';
 import { createCrate, dissolveCrate, resolveCrate, CrateError } from '@/modules/wms/crates/service';
@@ -286,6 +286,20 @@ describe('crates', () => {
         ctx(),
       ),
     ).rejects.toThrowError(new CrateError('unclaimed_not_allowed'));
+  });
+});
+
+describe('claiming unclaimed cargo keeps the printed code', () => {
+  it('assigns the client but leaves the marking on the receipt (round 98)', async () => {
+    // «gs500maniken-al shaklida qolib, client faqat gs500 ni yuki» — the box
+    // physically says the marking, so claiming it must not erase that code.
+    const { receiptId } = await makeReceipt({ clientId: null, marking: 'GS500MANIKEN' });
+    await assignReceiptClient(receiptId, clientAId, ctx());
+    const [receipt] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
+    expect(receipt!.clientId).toBe(clientAId);
+    // The marking survives — the stock table and the label read it first, and
+    // the client's code sits beneath. Nulling it made the two disagree.
+    expect(receipt!.unclaimedMarking).toBe('GS500MANIKEN');
   });
 });
 

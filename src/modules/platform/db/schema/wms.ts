@@ -1046,6 +1046,25 @@ export const leadSources = pgTable('lead_sources', {
 });
 
 /**
+ * The owner's list of why a job dies (round 98, «yopilish sababini listdan
+ * belgilaydigan qilishimiz kerak»). The pickers offer these; the record on
+ * the lead/deal stays TEXT — the label at the moment of choosing — so a
+ * rename never rewrites what somebody recorded, and reasons typed before the
+ * list existed keep their words.
+ */
+export const lostReasons = pgTable(
+  'lost_reasons',
+  {
+    id: id(),
+    label: text('label').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('lost_reasons_label_unique').on(sql`lower(${t.label})`)],
+);
+
+/**
  * Funnel stages as data, not an enum: every company words its funnel
  * differently. `kind` is the only part the code reasons about — a stage is
  * still open, a won deal, or a lost one.
@@ -1110,6 +1129,12 @@ export const leads = pgTable(
     personId: uuid('person_id'),
     lostReason: text('lost_reason'),
     /**
+     * When the card was DECIDED — stamped on a move into won/lost, cleared
+     * by a revival (0076). `updated_at` moves on every edit and cannot
+     * answer «what did we close this month».
+     */
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    /**
      * Null when the lead arrived by itself — an advert, the public form, the
      * bot. Naming the round-robin owner as its author would put a sentence in
      * the audit trail that nobody said (migration 0065).
@@ -1133,6 +1158,7 @@ export const leads = pgTable(
     index('leads_owner_idx').on(t.ownerId),
     index('leads_person_idx').on(t.personId),
     index('leads_next_action_idx').on(t.nextActionAt),
+    index('leads_closed_idx').on(t.closedAt),
     uniqueIndex('leads_client_unique').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
   ],
 );
@@ -1381,6 +1407,8 @@ export const deals = pgTable(
 
     note: text('note'),
     lostReason: text('lost_reason'),
+    /** See `leads.closedAt` — the same column, the same rule (0076). */
+    closedAt: timestamp('closed_at', { withTimezone: true }),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -1391,6 +1419,7 @@ export const deals = pgTable(
   },
   (t) => [
     index('deals_board_order_idx').on(t.stageId, t.boardOrder),
+    index('deals_closed_idx').on(t.closedAt),
     check(
       'deals_quote_currency_check',
       sql`(${t.quotedAmount} IS NULL) OR (${t.quotedCurrency} IS NOT NULL)`,

@@ -23,6 +23,7 @@ export default async function CrmPagesLayout({ children }: { children: React.Rea
     { href: '/crm/dormant', label: t('dormant'), icon: 'sleep' },
     ...(actor.permissions.has('crm.manage')
       ? ([
+          { href: '/crm/tahlil', label: t('analytics'), icon: 'report' },
           { href: '/crm/kelganlar', label: t('arrivals'), icon: 'target' },
           { href: '/crm/people', label: t('people'), icon: 'users' },
           { href: '/crm/settings', label: t('settings'), icon: 'settings' },

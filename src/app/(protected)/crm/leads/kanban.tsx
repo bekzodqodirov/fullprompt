@@ -48,6 +48,7 @@ export function KanbanBoard({
   owners,
   fields,
   today,
+  lostReasons,
 }: {
   stages: KanbanStage[];
   leads: KanbanLead[];
@@ -56,6 +57,8 @@ export function KanbanBoard({
   archiveHref?: string;
   /** Who a lead may be handed to; absent means no bulk assign is offered. */
   owners?: { id: string; name: string }[];
+  /** The owner's lost-reason list; non-empty replaces the free-text prompt. */
+  lostReasons?: string[];
   /** Which switchable lines this browser wants; the name is never in it. */
   fields: Set<string>;
   /**
@@ -84,6 +87,7 @@ export function KanbanBoard({
         stages={stages}
         hidden={hidden}
         archiveHref={archiveHref}
+        lostReasons={lostReasons}
         items={leads}
         cardTestId="lead-card"
         selection={{ store: selection, label: tl('select') }}
@@ -200,6 +204,7 @@ export function KanbanBoard({
 
       <BulkBar
         selection={selection}
+        lostReasons={lostReasons}
         stages={stages}
         owners={owners}
         onMove={(ids, stageId, reason) => bulkMoveLeadsAction(ids, stageId, reason)}

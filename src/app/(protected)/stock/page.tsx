@@ -261,7 +261,9 @@ export default async function StockPage({
     const boxCount = Number(line.inStock);
     return {
       line,
-      code: `${line.clientCode ?? line.marking ?? '❓'}-${line.lot.letter}`,
+      // The printed code first (round 98); the export names the client in its
+      // own column, so the code cell is the box's marking where there is one.
+      code: `${line.marking ?? line.clientCode ?? '❓'}-${line.lot.letter}`,
       product: `${line.lot.productNameZh} ${line.lot.productNameRu ?? ''}`.trim(),
       boxes: boxCount,
       perBoxKg,
@@ -455,7 +457,15 @@ export default async function StockPage({
                         href={`/stock?lot=${row.line.lot.id}`}
                         className="font-mono font-extrabold text-brand-700"
                       >
-                        {row.line.clientCode ?? row.line.marking ?? '❓'}-{row.line.lot.letter}
+                        {/* The MARKING is the box's printed code (round 98):
+                            it wins, and the claimed client's code sits small
+                            beneath it — `GS500MANIKEN-AL` over `gs500`. */}
+                        {row.line.marking ?? row.line.clientCode ?? '❓'}-{row.line.lot.letter}
+                        {row.line.marking && row.line.clientCode && (
+                          <span className="block font-sans text-2xs font-normal text-ink-500">
+                            {row.line.clientCode}
+                          </span>
+                        )}
                       </Link>
                     ) : column.key === 'product' ? (
                       <Link href={`/receipts/${row.line.receiptId}`} className="block truncate">

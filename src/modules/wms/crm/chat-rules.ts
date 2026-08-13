@@ -409,6 +409,48 @@ export async function pendingCount(managerUserId?: string): Promise<number> {
 }
 
 /**
+ * For each EXCLUDED chat whose phone matches a client in the book, the code it
+ * matches (round 98, owner: «klient kodi bor chat olinmagan bo'lsa buni
+ * bilishimiz uchun»). Excluding a chat is right for a friend or a wrong
+ * number, but a chat carrying a real client's phone that was said no to is
+ * probably a mistake, and the archive should say so rather than let it sit
+ * unremarked. Phone identity is the app's usual last-nine (#598's rule).
+ * One grouped query.
+ */
+export async function excludedBookMatches(
+  rules: { id: string; phone: string | null }[],
+): Promise<Map<string, string>> {
+  const last9 = (raw: string | null) => {
+    const d = (raw ?? '').replace(/[^0-9]/g, '');
+    return d.length >= 9 ? d.slice(-9) : null;
+  };
+  const wanted = new Set(rules.map((r) => last9(r.phone)).filter(Boolean) as string[]);
+  if (wanted.size === 0) return new Map();
+
+  // The book is small (a couple of thousand rows) and `phones` is a jsonb
+  // ARRAY, so the tail index lives in JS: build code-by-last-nine once, then
+  // look each excluded chat up. One query, no per-row scan (#432).
+  const book = await db
+    .select({ code: clients.clientCode, phones: clients.phones })
+    .from(clients)
+    .where(eq(clients.active, true));
+  const byTail = new Map<string, string>();
+  for (const row of book) {
+    for (const raw of Array.isArray(row.phones) ? row.phones : []) {
+      const tail = last9(typeof raw === 'string' ? raw : null);
+      if (tail && wanted.has(tail) && !byTail.has(tail)) byTail.set(tail, row.code);
+    }
+  }
+  const out = new Map<string, string>();
+  for (const rule of rules) {
+    const tail = last9(rule.phone);
+    const code = tail ? byTail.get(tail) : undefined;
+    if (code) out.set(rule.id, code);
+  }
+  return out;
+}
+
+/**
  * Stored rows still standing behind each EXCLUDED chat — so the screen can
  * offer the purge only where there is something to purge, with the number
  * on the button. One grouped query for the whole list.

@@ -36,6 +36,7 @@ export function BulkBar({
   owners,
   onMove,
   onAssign,
+  lostReasons,
 }: {
   /**
    * The tick store (round 70). The bar reads the COUNT from it and the ids at
@@ -48,6 +49,12 @@ export function BulkBar({
   owners?: { id: string; name: string }[];
   onMove: (ids: string[], stageId: string, reason: string) => Promise<BulkOutcome>;
   onAssign?: (ids: string[], ownerId: string) => Promise<BulkOutcome>;
+  /**
+   * The owner's lost-reason list (round 98). Non-empty, the reason box is a
+   * select of these — the service refuses anything else once the list exists,
+   * so a free box here would be an input that can only fail.
+   */
+  lostReasons?: string[];
 }) {
   const t = useTranslations('lists');
   const count = selection.useCount();
@@ -110,16 +117,32 @@ export function BulkBar({
           ))}
         </select>
 
-        {needsReason && (
-          <input
-            className="input !w-44"
-            value={reason}
-            placeholder={t('lostReason')}
-            aria-label={t('lostReason')}
-            data-testid="bulk-reason"
-            onChange={(event) => setReason(event.target.value)}
-          />
-        )}
+        {needsReason &&
+          (lostReasons && lostReasons.length > 0 ? (
+            <select
+              className="input !w-44"
+              value={reason}
+              aria-label={t('lostReason')}
+              data-testid="bulk-reason"
+              onChange={(event) => setReason(event.target.value)}
+            >
+              <option value="">{t('lostReason')}</option>
+              {lostReasons.map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="input !w-44"
+              value={reason}
+              placeholder={t('lostReason')}
+              aria-label={t('lostReason')}
+              data-testid="bulk-reason"
+              onChange={(event) => setReason(event.target.value)}
+            />
+          ))}
 
         <button
           type="button"

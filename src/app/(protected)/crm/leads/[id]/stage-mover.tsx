@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
+import { LostReasonDialog } from '@/components/lost-reason-dialog';
 import { useMoveErrors } from '@/components/move-errors';
 import { moveLeadAction } from '../../actions';
 import { stageClass } from '../../stage-color';
@@ -29,15 +30,20 @@ export function StageMover({
   leadId,
   currentId,
   stages,
+  lostReasons,
 }: {
   leadId: string;
   currentId: string;
   stages: { id: string; name: string; kind: string; color: string }[];
+  /** The owner's lost-reason list; non-empty replaces the free-text prompt. */
+  lostReasons?: string[];
 }) {
   const t = useTranslations('crm');
   const moveErrors = useMoveErrors();
   const [pending, start] = useTransition();
   const [error, setError] = useState('');
+  // A lost move waiting for its reason to be picked from the dictionary.
+  const [pendingLostId, setPendingLostId] = useState<string | null>(null);
 
   const current = stages.find((stage) => stage.id === currentId);
   const next = stages[stages.findIndex((stage) => stage.id === currentId) + 1];
@@ -45,15 +51,23 @@ export function StageMover({
   function go(stage: { id: string; kind: string }) {
     let reason = '';
     if (stage.kind === 'lost') {
+      if (lostReasons && lostReasons.length > 0) {
+        setPendingLostId(stage.id);
+        return;
+      }
       reason = window.prompt(t('lostReason')) ?? '';
       if (reason.trim().length < 2) return;
     }
+    commit(stage.id, reason);
+  }
+
+  function commit(stageId: string, reason: string) {
     setError('');
     start(async () => {
       // A refused move used to be a tap that did nothing: the action's coded
       // refusal was awaited and thrown away. The boards learned to say it in
       // #512 and this door was not included.
-      const res = await moveLeadAction(leadId, stage.id, reason);
+      const res = await moveLeadAction(leadId, stageId, reason);
       if (res?.error) setError(moveErrors[res.error] ?? res.error);
     });
   }
@@ -127,6 +141,20 @@ export function StageMover({
         <p className="text-sm font-semibold text-bad" data-testid="stage-move-error">
           {error}
         </p>
+      )}
+      {lostReasons && lostReasons.length > 0 && (
+        <LostReasonDialog
+          open={Boolean(pendingLostId)}
+          reasons={lostReasons}
+          title={t('lostReason')}
+          closeLabel={t('cancelMove')}
+          onPick={(reason) => {
+            const stageId = pendingLostId;
+            setPendingLostId(null);
+            if (stageId) commit(stageId, reason);
+          }}
+          onCancel={() => setPendingLostId(null)}
+        />
       )}
     </div>
   );

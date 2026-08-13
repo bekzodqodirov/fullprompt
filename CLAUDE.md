@@ -155,9 +155,14 @@ Mini App and the bot text; `CargoGroup.eta` became `transit`. Round 98
 1449 unit/integration + 154 e2e here. **The four «known failing» photo-path
 specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
 had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
-Latest migration: **0077** (`batch_customs_cleared` — `batches.customs_cleared_at`,
+Latest migration: **0078** (`sales_analytics` — the `lost_reasons` dictionary
+and `closed_at` on leads+deals; **renumbered from 0076 on merge, the TENTH
+collision** — the other session took 0076 `client_notices` and 0077
+`batch_customs_cleared` with the neighbouring `when`s, so mine moved its
+timestamp too; count must reach **79**;
+0077 `batch_customs_cleared` — `batches.customs_cleared_at`,
 the «rastamojka tugadi» tap, additive and nullable so NULL reads «nobody has
-said»; count must reach **78**;
+said»;
 0076 `client_notices` — the claim ledger behind «one
 «yukingiz keldi» per customer per truck»: kind + ref, one row per (client,
 kind, ref_type, ref_id), pending until the window closes or `finishUnload`
@@ -211,9 +216,13 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 78 — round 98 is DEPLOYED (2026-08-13).** PR #37 merged and
+**HIS SERVER IS AT 78 — the OTHER session's round 98 is DEPLOYED
+(2026-08-13); THIS branch (PR #36) takes it to 79.** PR #37 merged and
 on production the same hour, confirmed **78** by counting
-`drizzle.__drizzle_migrations`.
+`drizzle.__drizzle_migrations`. He hit trap (1) again the same morning: he
+merged #37 believing it carried the tahlil round, deployed, and looked for
+the lost-reasons panel that lives only on PR #36 — an unmerged PR's screens
+do not exist on production, however green its CI is.
 
 **Three deploy traps, all hit in two days, all the same mistake one step
 apart — the count is the only thing that catches any of them.**
@@ -2603,6 +2612,110 @@ re-took the photo → two on the receipt); deleting one photo wrote back a
 render-time `photoIds` snapshot and took any photo that landed meanwhile;
 and the upload had no deadline at ANY layer — survivable while the screen was
 silent, not once it shows ⏳ (120 s + a sentence).
+
+Round 98 (part 1) — **the owner's 8-item list, the six unambiguous ones**
+(#683 — my draft minted #664 and the OTHER session's board round took
+#664-672 first; renumbered TWICE more on merges as its rounds 98-99 took
+#673-682; item 4 was its kanban work, untouched
+here;
+item 8, the sales analytics page + lost-reason dictionary, is part 2, agreed
+«dunyo standartlarida hammasini» + reasons picked from a LIST). (1) The
+dark-mode invisible chat input was a PHANTOM CLASS: `input-sm` used in four
+places, defined nowhere — browser `field` white under inherited dark-mode
+ink. Defined now; `style-cascade.test.ts` grew the vocabulary fence (every
+used `input-*`/`btn-*`/`chip-*`/`card*`/`label*`/`num`/`section-title` class
+must exist in globals.css or print.css), red-proven, and its dry run
+correctly found print.css's own `label-frame`/`label-svg`. (2) The bridge
+fold no longer self-opens on `signed_out` — his production has one signed-out
+manager, so it stood open EVERY visit; the summary line alone carries the red
+alarm. (3) `excludedBookMatches` — an excluded chat whose last-nine matches
+an active client's `phones` renders «⚠ mijoz kodi: <code>» in the tray's
+decided list. (5) `assignReceiptClient` KEEPS `unclaimedMarking` (was
+nulled): the box physically says `GS500MANIKEN-AL`, so the label sheet and
+the stock table now print the marking first with the client code small
+beneath; safe because unclaimed = `clientId IS NULL` everywhere (grepped,
+not assumed). (6) `/api/attachments` sends `Content-Disposition`: inline for
+pdf/image/audio/video/plain-text (PDF opens in the tab), attachment for the
+rest — html/svg/xml deliberately NEVER inline (stored upload must not become
+a script on our origin), pinned by `attachment-disposition.test.ts`.
+(7) The map's silence after the VPS move = `.data/basemap/corridor.pmtiles`
+is per-server and was never fetched on the new box — owner given
+`docker compose --profile basemap run --rm basemap`; truck marker redrawn
+32px cab-and-trailer; the corridor gained the BETWEEN towns (Dingxi, Shandan,
+Jiayuguan, Xingxingxia, Yanqi, Taldyk pass, Kamchik pass) so the mountain
+stretches bend like the road. No migration in part 1 — part 2's lost-reason
+dictionary mints **0078** (renumbered from 0076 on merge; 0076/0077 are the
+other session's client_notices and batch_customs_cleared).
+
+Round 98 (part 2) — **item 8: /crm/tahlil + the lost-reason dictionary**
+(#684, owner: «dunyo standartlarida qanday malumotlar tahlili bolsa hammasini
+hohlayman va … yopilish sababini listdan belgilaydigan qilishimiz kerak»).
+Migration **0078** (minted as 0076 and renumbered on merge, the TENTH
+collision; count must reach **79**): `lost_reasons` (label/sort/
+active, unique lower(label)) + `closed_at` on leads AND deals, backfilled
+from `updated_at` for already-closed cards (approximation, stated).
+`closedAtFor` + `reasonAllowed` live in stage-law beside `stageWrite` (a
+unit test pins that the law and the stamp agree about what a decision is);
+every stage door stamps: moveLead/moveDeal, both ✏️ forms, convertLead —
+only on a real MOVE (a drag inside the won column re-orders, never
+re-stamps; a revival clears, like the reason). `crm/analytics.ts`
+`salesAnalytics` = one Promise.all of grouped queries, TWO CLOCKS (new by
+created_at, won/lost by closed_at); `readPeriod` validates `?dan/gacha` out
+of the URL (#514), gacha inclusive. Screen: 7-cell scoreboard, per-day
+bars, funnel snapshot (deliberately unperioded), sources/sellers tables
+(owner NULL = a real «—» row), lost-reason breakdown, deals block; SubNav +
+funnel ⋯ under `crm.manage`. THE DICTIONARY: rows edited on /crm/settings
+(SourceForm's shape; deactivate is the only removal), offered by the
+kanban's `LostReasonDialog` sheet, StageMover and the bulk bar's select;
+moveLead/moveDeal REFUSE an unlisted reason once the list exists
+(`lost_reason_not_listed`, in useMoveErrors + i18n ×4) — the stored value
+stays TEXT (a rename never rewrites a record), and an EMPTY list keeps free
+text everywhere, so day one and every pre-dictionary spec behave exactly as
+before (zero e2e changes). Red-proofs ×2 (gate stripped → listed-labels
+test red; stamp stripped → 2 red). New `tests/unit/stage-law.test.ts` (8) +
+`tests/integration/lost-reasons.integration.test.ts` (8, snapshots/clears/
+restores the GLOBAL dictionary per #653, analytics fixtures parked in
+March 2020). ~26 i18n keys ×4. FOUND BY THE SCREENSHOT, not by any locator:
+`Overlay`'s close-on-navigation effect runs once on MOUNT, so a dialog
+conditionally rendered already-open closed itself the frame it appeared —
+the dialog is now kept mounted and toggled like every other Overlay caller.
+1440 unit/integration + **154 e2e all green** on a fresh gsr_ci in CI's
+order (vitest, then Playwright without re-seeding); screenshots at 360
+(tahlil, settings panel, the dialog over the funnel) and 1280.
+
+Round 99 — **tahlil filtrlari** (#685, owner: «filterlarni maximalna qoyish
+mumkun bolgan narsalarga qoyib ber, source sotuvchi va boshqalar»).
+Designed, then judged by a THREE-LENS adversarial workflow BEFORE any code
+— two blockers absorbed. /crm/tahlil filters: manba + sotuvchi (both with
+'none' = the «—» cohort) + narx/kub/kg ranges, ONE GET form (period row
+visible, the rest in a badge-counted fold that self-opens when active),
+chips row echoing active filters (each chip removes its own; clear keeps
+the period), preset/clear/chip/row links ALL via `hrefWith` over
+validated-then-reserialized values. `readAnalyticsFilters` in analytics.ts
+(#514: hodim/manba = uuid|'none'|dropped — a garbage hodim was a 22P02
+500); `AnalyticsFilters` is structurally unable to carry createdFrom/To
+(the board's dan/gacha = a created_at range; HERE the period on two
+clocks). `leadFilterConds` owner branch is STRICT eq/isNull — deliberately
+NOT leadBoardWhere's «mine OR unclaimed» (attribution vs work routing;
+comment states it, red-proven by swapping the or() in). Deals: filters AND
+onto the OR fragment which now wears its OWN parens — drizzle and() embeds
+members verbatim, so the bare fragment rendered `(filter AND open) OR
+closed` and the WON cells escaped; the first red-proof asserted the open
+cell and stayed GREEN — printing the generated SQL found the truth, and
+the test now pins the won cell (#166: a red proof that will not go red is
+evidence about the fixture). Under a source filter the deals block hides
+with a sentence (a deal has no source; unfiltered numbers read as
+filtered). Pickers render HISTORY: listSources(true) + sellers = active
+options ∪ data owners (#171 — a value the form cannot render is deleted on
+the next submit); source/seller table rows are themselves filter links,
+active row highlighted. Swept while in the area, live on the boards since
+round 71: date() was regex-only — ?dan=2026-02-30 was a ::date 500 on
+/crm and /bitimlar, and in readPeriod V8 ROLLS it to March 2nd (a silently
+shifted period, worse than the crash); both round-trip now. Both boards'
+hodim gained the uuid format check. Refused with reasons: lost-reason and
+stage filters (five of seven cells zero by construction / contradicts the
+two-clock design). 10 new unit + 5 integration (fixtures in April 2020 —
+March is the lost-reasons file's); red-proofs ×2. No migration.
 
 Round 98 (this session) — the customer's two messages, both about Telegram
 (#673-678, owner: «har br karobka uchun habar jonatyabti» and «telegram appda

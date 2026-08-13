@@ -27,6 +27,7 @@ import {
   listStages,
   openDealCounts,
 } from '@/modules/wms/deals/service';
+import { activeLostReasonLabels } from '@/modules/wms/crm/service';
 import { DealBoard, type BoardDeal } from './board';
 
 /**
@@ -76,7 +77,11 @@ export default async function DealsPage({
   const mine = !seesAll || params.scope !== 'all';
   // A `hodim` from somebody who may not see everybody's jobs is ignored, not
   // obeyed — the same rule the funnel, the search and the bot all ask.
-  const hodim = seesAll ? (params.hodim ?? '') : '';
+  // Format-checked, not just permission-checked: this lands in
+  // `eq(leads.ownerId, …)`, and a hand-typed non-uuid was a 22P02 500
+  // for a view_all holder rather than a dropped filter (#514).
+  const hodim =
+    seesAll && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(params.hodim ?? '') ? params.hodim! : '';
   const scope = hodim || (mine ? actor.id : undefined);
   const q = (params.q ?? '').trim();
   const carried = {
@@ -104,7 +109,7 @@ export default async function DealsPage({
   // columns keep the recent cards and say how many more they hold. A closed
   // job is a record; a board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, views, open, closed, openTotals, closedTotals, attention, badges, managers] =
+  const [stages, views, open, closed, openTotals, closedTotals, attention, badges, managers, lostReasonList] =
     await Promise.all([
     listStages(),
     listViewsFor('bitimlar', actor.id),
@@ -122,6 +127,9 @@ export default async function DealsPage({
     // work — and never derived from the loaded rows, which once filtered to
     // one person would collapse to that person with no way back.
     seesAll ? salesManagerOptions() : Promise.resolve([]),
+    // The owner's lost-reason list (round 98): non-empty, the board asks with
+    // a sheet of these instead of the free-text prompt.
+    activeLostReasonLabels(),
   ]);
   const rows = [...open, ...closed];
   const shownClosed = new Map<string, number>();
@@ -321,6 +329,7 @@ export default async function DealsPage({
         stages={stages}
         deals={deals}
         fields={cardFields}
+        lostReasons={lostReasonList}
         hidden={hidden}
         archiveHref={`/bitimlar${hrefWith(carried, { arxiv: '1' })}`}
       />
