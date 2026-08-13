@@ -10,6 +10,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
+import { seesAllMoney } from '../finance/scope';
 import { clientBalanceUsd } from '../finance/service';
 
 /**
@@ -235,10 +236,15 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
     .map((r) => `· ${r.whCode ?? 'yo‘lda'}: ${Number(r.n)} — ${STATUS_UZ[r.status] ?? r.status}`)
     .sort();
 
-  // Money is a permission, not a courtesy: the same gate the finance screens
-  // use decides whether the balance line exists at all.
+  // Money is a permission, not a courtesy — and since round 91 it is also
+  // OWNED: `finance.view` alone is a seller, and a seller reads only their
+  // own book (`finance/scope.ts`). This line had kept the pre-91 two-grant
+  // check, so the bot answered a balance the /finance screen refuses — found
+  // by the AI round's review, because a conversational door makes a quiet
+  // leak a loud one.
   const canSeeMoney =
-    actor.permissions.has('finance.view') || actor.permissions.has('finance.manage');
+    (actor.permissions.has('finance.view') || actor.permissions.has('finance.manage')) &&
+    (seesAllMoney(actor) || client.salesManagerId === actor.id);
   const balance = canSeeMoney ? await clientBalanceUsd(client.id) : null;
 
   const [lastReceipt] = await db

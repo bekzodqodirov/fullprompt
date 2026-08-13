@@ -110,7 +110,15 @@ beforeAll(async () => {
   destId = await ensureWarehouse(WH_D);
   actorId = (await db.select().from(users).limit(1))[0]!.id;
   clientCode = `BL${String(Date.now()).slice(-6)}`;
-  const [c] = await db.insert(clients).values({ clientCode, name: 'Bot lookup mijoz' }).returning();
+  // The client is ASSIGNED to the asking actor: since the AI round brought
+  // this lookup to round 91's money scope, `finance.view` alone shows a
+  // balance only for one's own book (the unassigned case is pinned in
+  // ai-assistant.integration.test.ts) — this file's question stays what it
+  // was, «does the grant gate the line at all».
+  const [c] = await db
+    .insert(clients)
+    .values({ clientCode, name: 'Bot lookup mijoz', salesManagerId: actorId })
+    .returning();
   clientId = c!.id;
 });
 

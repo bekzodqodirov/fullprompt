@@ -2,6 +2,7 @@ import type { Bot } from 'grammy';
 import { composeMyDayText } from '../tasks/digest';
 import { logger } from '../logger';
 import {
+  assistantFromBot,
   completeTaskFromBot,
   decideApprovalFromBot,
   isCabinetText,
@@ -16,6 +17,8 @@ import {
   takeStaffEntry,
   takeTaskPending,
 } from './staff-bot';
+import { aiConfigured } from '../ai/model';
+import { codeCandidates } from '../ai/route-text';
 import { clientLabels } from './client-labels';
 import {
   activeIntake,
@@ -291,17 +294,54 @@ export function registerStaffBot(bot: Bot): void {
 
     // Anything else a MEMBER OF STAFF types is a lookup: a client code, a box
     // label, a crate or a truck (owner's item 2). A customer's text still
-    // falls through — the cabinet answers those.
+    // falls through — the cabinet answers those, and it must be the LAST
+    // fence before the AI: a stranger's words never reach the model or the
+    // question ledger.
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    const answer = await lookupFromBot(chatId, ctx.message.text).catch((err) => {
-      logger.warn({ err }, 'bot lookup failed');
-      return null;
-    });
-    await ctx.reply(
-      answer ??
+    const text = ctx.message.text;
+    const freeLookup = async (query: string) =>
+      lookupFromBot(chatId, query).catch((err) => {
+        logger.warn({ err }, 'bot lookup failed');
+        return null;
+      });
+    // Free first, and free again: the whole text as a code (today's exact
+    // behaviour), then any code-shaped word inside a sentence — «GS777
+    // qayerda» is answered for nothing before the paid model is considered.
+    let answer = await freeLookup(text);
+    if (!answer) {
+      for (const candidate of codeCandidates(text)) {
+        answer = await freeLookup(candidate);
+        if (answer) break;
+      }
+    }
+    if (answer) {
+      await ctx.reply(answer);
+      return;
+    }
+    if (!aiConfigured()) {
+      // No key = exactly the day before the AI shipped.
+      await ctx.reply(
         'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
-    );
+      );
+      return;
+    }
+    await ctx.reply('🤖 O‘ylayapman…');
+    const outcome = await assistantFromBot(chatId, text).catch((err: unknown) => {
+      logger.warn({ err }, 'bot assistant failed');
+      return { status: 'error' as const };
+    });
+    const replies: Record<string, string> = {
+      not_configured:
+        'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
+      limit: 'Bugungi AI savollar chegarasi tugadi — ertaga yana so‘rang.',
+      error: 'AI javob berolmadi. Keyinroq urinib ko‘ring.',
+    };
+    if (!outcome) return;
+    if (outcome.status === 'ok') await ctx.reply(outcome.answer);
+    else if (outcome.status === 'gave_up') {
+      await ctx.reply(outcome.answer ?? 'Oxirigacha yetolmadim — savolni soddaroq berib ko‘ring.');
+    } else await ctx.reply(replies[outcome.status] ?? replies.error!);
   });
 }
 

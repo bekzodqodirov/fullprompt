@@ -69,7 +69,8 @@
     "logout": "Chiqish",
     "notifications": "Xabarlar",
     "homeTile": "Bosh sahifa",
-    "customLists": "O'z ro'yxatlarim"
+    "customLists": "O'z ro'yxatlarim",
+    "ai": "AI yordamchi"
   },
   "home": {
     "receiving": "Qabul",
@@ -324,7 +325,8 @@
       "debt_approval_ttl_hours": "Qarzdorga yuk berish ruxsati tasdiqlangach necha soat amal qiladi",
       "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)",
       "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
-      "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi"
+      "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi",
+      "ai_daily_limit": "Bir kishiga kuniga AI savollar chegarasi (bot + AI ekrani birga; 0 — o'chirilgan)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -2078,5 +2080,17 @@
     "mapUnmapped": "Reklamadan kelgan yangi savollar",
     "mapManual": "Savolni qo'lda qo'shish",
     "mapKeyPlaceholder": "formadagi savol nomi"
+  },
+  "assistant": {
+    "title": "AI yordamchi",
+    "intro": "Savolingizni oddiy tilda yozing — yordamchi sizga ochiq bo'lgan ma'lumotlardan javob topadi (yuk, mijoz, vazifalar).",
+    "introAnalyst": "Savolingizni oddiy tilda yozing — yordamchi butun tizim ma'lumotlaridan tahlil qilib javob beradi (pul, mijozlar, partiyalar).",
+    "placeholder": "Savol yozing…",
+    "send": "Yuborish",
+    "thinking": "O'ylayapman…",
+    "notConfigured": "AI hali sozlanmagan — serverdagi .env fayliga ANTHROPIC_API_KEY kiritilishi kerak.",
+    "limit": "Bugungi AI savollar chegarasi tugadi — ertaga yana so'rang.",
+    "gaveUp": "Oxirigacha yetolmadim — savolni soddaroq berib ko'ring.",
+    "error": "AI javob berolmadi. Keyinroq urinib ko‘ring."
   }
 }

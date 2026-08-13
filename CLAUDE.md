@@ -145,23 +145,44 @@ scope and the split thread; #31 = the history's place, the logout door and the
 agent sheet by truck; #32 = the tray's door, the connect-time week and the
 calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
 «javob kutmoqda», then files/reply/forward/share); **#34 = the Meta go-live
-docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97). This
-branch carries **round 99** — the timeline redesigned after the owner's
-rejection («etaplaring hech nimani bildirmaydiku»): dated journey from
-`box_movements` (`client-cabinet/journey.ts`, jrn* labels ×3) + a NAMED
-road-progress bar from the map engine's own `progress` on both legs, in the
-Mini App and the bot text; `CargoGroup.eta` became `transit`. Round 98
-(PR #37) and the deploy record (PR #38) are merged and DEPLOYED.
-1449 unit/integration + 154 e2e here. **The four «known failing» photo-path
-specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
-had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
-Latest migration: **0079** (`warehouse_coords` — round 100's lat/lon
-columns; count must reach **80** after this branch deploys);
-0078 (`sales_analytics` — the `lost_reasons` dictionary
-and `closed_at` on leads+deals; **renumbered from 0076 on merge, the TENTH
-collision** — the other session took 0076 `client_notices` and 0077
-`batch_customs_cleared` with the neighbouring `when`s, so mine moved its
-timestamp too; count must reach **79**;
+docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97);
+#39 = round 99 (the timeline redesigned after the owner's rejection —
+dated journey from `box_movements` + the named road bar); **#36 = the OTHER
+session's analytics round** (`/crm/tahlil`, `lost_reasons`, its 0078);
+**#40 = the OTHER session's round 100** (his 14-item list's fixes, the
+staff+client merged bot keyboard 13A, warehouse lat/lon = its
+`0079_warehouse_coords`). This branch carries **round 100 (this session) —
+the AI yordamchi** (his «sistemamizga AI ulay olamizmi», answers: both
+tiers, both surfaces, no client-facing AI, read-only v1): tier 1 for every
+staff member = a tool loop over the SAME scoped functions the screens use
+(`platform/ai/tools.ts` — botLookup/globalSearch/composeMyDayText, actor
+threaded, toolset built per actor); tier 2 for the super_admin/admin ROLE
+adds `run_sql` under the **`gsr_ai_reader` Postgres role** (0080: allowlist
+default-deny, column-grants minus password/secret columns, four probed
+fences, everything on the ONE `.begin` connection — the module `db` runs
+UNFENCED, red-proven) plus `cash_flow`/`company_balance` tools, because
+money from raw columns is confidently wrong (#701). Surfaces: the staff
+bot's text fallback (free lookup first — `codeCandidates` — then the model;
+strangers never reach it, and 13A's cabinet buttons next() BEFORE it) and
+`/ai` (menu entry only when the key is configured). `ai_questions` = the
+audit AND the atomic daily cap (`ai_daily_limit`, 40). Tier 1 runs
+claude-sonnet-5, tier 2 claude-opus-5. Found by the review, fixed here:
+`botLookup`'s balance line had never learned round 91's money scope (#702).
+**His server needs the NEW `ANTHROPIC_API_KEY` in `.env`** (the old one is
+burned) — without it everything deploys and the assistant honestly says
+«sozlanmagan». Rounds 98/99 and both sessions' PRs ≤#40 are merged;
+rounds ≤98 are DEPLOYED.
+1563 unit/integration + 155 e2e green on a fresh db in CI's order,
+re-run in full after merging #40's round.
+Latest migration: **0080** (`ai_assistant` — `ai_questions`,
+`v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
+its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —
+the other session's `0079_warehouse_coords` took the same number AND the
+same `when` 1785190000048 and merged first, so mine moved to `when` …049;
+count must reach **81**;
+0079 `warehouse_coords` — the OTHER session's lat/lon on warehouses;
+0078 `sales_analytics` — the OTHER session's `lost_reasons` dictionary
+and `closed_at` on leads+deals; count 79;
 0077 `batch_customs_cleared` — `batches.customs_cleared_at`,
 the «rastamojka tugadi» tap, additive and nullable so NULL reads «nobody has
 said»;
@@ -229,7 +250,9 @@ the tell — no new code arrived) — and the third confusion was pressing into
 the already-merged #35's page, where the purple «Merged» badge reads like a
 button that was pressed. An unmerged PR's screens do not exist on
 production, however green its CI is; the walk that works is Pull requests →
-the OPEN one → Merge → then pull.
+the OPEN one → Merge → then pull. Since that deploy `main` has taken the
+other session's round 100 (PR #40, migration 0079) and this branch's AI
+round (0080), so **the next deploy must land at 81**.
 
 **Three deploy traps, all hit in two days, all the same mistake one step
 apart — the count is the only thing that catches any of them.**
@@ -249,7 +272,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**80** with this branch; **79** on main and his server today) — the client book, the stock table and `/o/<code>` read
+length (**81** with this branch; **80** on `main`, **79** on his server
+today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -3139,7 +3163,10 @@ the server `.env`, then `docker compose up -d app`), the **GitHub PAT** he
 pasted while cloning (already replaced once during the move; delete the old
 one at github.com/settings/tokens if it is still listed), and
 `ANTHROPIC_API_KEY`. The GitHub token is stripped from the new server's git
-remote already.
+remote already. **The AI round (0079) gives the key a second job**: mint a
+NEW key at console.anthropic.com, put it in the server `.env`, and both the
+AI assistant and the goods-import/hisoblatish features come alive — until
+then every one of them says «sozlanmagan» honestly.
 
 **Then, in order of what it costs him to skip:**
 

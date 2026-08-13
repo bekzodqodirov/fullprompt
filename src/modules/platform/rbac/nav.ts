@@ -142,6 +142,19 @@ export const NAV: NavGroupSpec[] = [
       { href: '/unclaimed', labelKey: 'unclaimedTitle', namespace: 'receipts', icon: 'alert' },
       { href: '/trucks', shortKey: 'trucks', labelKey: 'title', namespace: 'trucks', icon: 'truck' },
       { href: '/map', labelKey: 'title', namespace: 'map', icon: 'map' },
+      {
+        // The AI assistant (owner: «sistemamizga AI ulay olamizmi»). No
+        // permission — every member of staff may ASK, and what the assistant
+        // may answer is decided per actor inside the service (the analyst
+        // tier is the super_admin/admin role). The two NAV consumers also
+        // hide this entry entirely while no server key is configured: a menu
+        // door to a «not configured» sentence is clutter, and deploy morning
+        // is exactly when it would be everyone's first tap.
+        href: '/ai',
+        labelKey: 'ai',
+        namespace: 'nav',
+        icon: 'sparkle',
+      },
       // Phase 8's «Свои списки» is deliberately NOT here. The owner looked at
       // it and said «kerak emas, olib tashla» — nobody was keeping a list in
       // it. The screens and the two tables stay (a table with rows is not
@@ -414,7 +427,7 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
     '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
-    '/suhbatlar', '/approvals',
+    '/suhbatlar', '/approvals', '/ai',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
   // is here because recalculating a job the client was mis-quoted for is a VED
@@ -425,17 +438,20 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     '/', '/bugun', '/kalendar', '/bitimlar', '/batches', '/stock', '/receipts', '/reports',
     // Kontragentlar joined in round 39, his instruction: the VED manager
     // arranges the customs firms and knows what each one is owed.
-    '/finance', '/kontragentlar', '/suhbatlar',
+    '/finance', '/kontragentlar', '/suhbatlar', '/ai',
   ],
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.
+  // The AI door is in the office menus and deliberately NOT in the warehouse
+  // or viewer ones: a packer's questions are codes, which the free bot lookup
+  // and /stock already answer faster than a model would.
   sales_manager: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/suhbatlar', '/my-clients',
-    '/finance', '/pipeline', '/arrivals', '/approvals',
+    '/finance', '/pipeline', '/arrivals', '/approvals', '/ai',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/kontragentlar', '/reports',
-    '/dashboard', '/admin', '/receipts', '/stock', '/approvals',
+    '/dashboard', '/admin', '/receipts', '/stock', '/approvals', '/ai',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

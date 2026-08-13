@@ -69,7 +69,8 @@
     "logout": "Sign out",
     "notifications": "Notifications",
     "homeTile": "Home",
-    "customLists": "Custom lists"
+    "customLists": "Custom lists",
+    "ai": "AI assistant"
   },
   "home": {
     "receiving": "Receiving",
@@ -324,7 +325,8 @@
       "debt_approval_ttl_hours": "How many hours an approved permission to issue cargo to a debtor stays valid",
       "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)",
       "crm_calc_stage": "A request for a price from the bot moves the lead to this stage (forward only; «—» means do not move)",
-      "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal"
+      "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal",
+      "ai_daily_limit": "AI questions per person per day (bot + AI screen together; 0 — off)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"
@@ -2078,5 +2080,17 @@
     "mapUnmapped": "New questions from adverts",
     "mapManual": "Add a question by hand",
     "mapKeyPlaceholder": "the question key from the form"
+  },
+  "assistant": {
+    "title": "AI assistant",
+    "intro": "Ask in plain words — the assistant answers from the data already open to you (cargo, clients, tasks).",
+    "introAnalyst": "Ask in plain words — the assistant analyses data across the whole system (money, clients, batches).",
+    "placeholder": "Type a question…",
+    "send": "Send",
+    "thinking": "Thinking…",
+    "notConfigured": "AI is not configured yet — the server .env needs ANTHROPIC_API_KEY.",
+    "limit": "Today’s AI question limit is spent — ask again tomorrow.",
+    "gaveUp": "Could not get to the end — try asking more simply.",
+    "error": "AI did not answer. Try again later."
   }
 }

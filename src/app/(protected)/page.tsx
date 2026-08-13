@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { menuItems, NAV } from '@/modules/platform/rbac/nav';
+import { aiConfigured } from '@/modules/platform/ai/model';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { Section } from '@/components/ui/page';
 import { myDay } from '@/modules/platform/tasks/service';
@@ -52,6 +53,9 @@ export default async function HomePage() {
       // workflow steps are drawn once, above, not repeated as tiles.
       if (item.href === '/' || !menuItems(item, viewer)) continue;
       if (flow && flow.hrefs.includes(item.href)) continue;
+      // Same rule as the sidebar: the AI tile exists only once the server
+      // key does — a tile to a «not configured» sentence is clutter.
+      if (item.href === '/ai' && !aiConfigured()) continue;
       items.push({
         href: item.href,
         label: await label(item.namespace, item.labelKey),
