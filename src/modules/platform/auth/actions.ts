@@ -8,7 +8,7 @@ import { users } from '../db/schema';
 import { writeAudit } from '../audit/service';
 import { findUserByIdentifier } from './identify';
 import { verifyPassword } from './password';
-import { isRateLimited, recordLoginAttempt } from './rate-limit';
+import { accountLocked, addressBlocked, recordLoginAttempt } from './rate-limit';
 import {
   createSession,
   destroySession,
@@ -37,7 +37,12 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   const { ip, userAgent } = await requestMeta();
   const ipForLimit = ip ?? '0.0.0.0';
 
-  if (await isRateLimited(identifier, ipForLimit)) {
+  // VERIFY, then throttle. The address net comes first because argon2 is
+  // expensive and a flood of guesses would otherwise tie up the one Node
+  // process; the ACCOUNT lock is consulted only once a password has actually
+  // failed, so the account's own owner is never refused a correct password
+  // by somebody else's wrong ones (the pre-go-live audit's find).
+  if (await addressBlocked(ipForLimit)) {
     return { error: 'rate_limited' };
   }
 
@@ -45,7 +50,9 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   const valid = user && user.active && (await verifyPassword(user.passwordHash, password));
   await recordLoginAttempt(identifier, ipForLimit, Boolean(valid));
-  if (!valid || !user) return { error: 'invalid' };
+  if (!valid || !user) {
+    return { error: (await accountLocked(identifier)) ? 'rate_limited' : 'invalid' };
+  }
 
   await createSession(user.id);
   await writeAudit(

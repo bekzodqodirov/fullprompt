@@ -460,3 +460,26 @@ describe('everything else', () => {
     expect((await decideAttachmentRead(actor([], { id: uploaderId }), legacy)).allow).toBe(true);
   });
 });
+
+describe('a partner bank receipt is company money, not a seller’s book', () => {
+  it('refuses finance.view, allows the money managers', async () => {
+    // The pre-go-live audit's find: this branch still asked the round-90
+    // question (`finance.view || finance.manage`), and round 91 had since
+    // made `finance.view` a SELLER's own-book grant. A counterparty receipt
+    // names another client and a sum and belongs to no seller's book — so
+    // the file must ask the same predicate its screen does (`seesAllMoney`),
+    // or a scoped screen sits beside an open file, which is round 91's own
+    // lesson one level down.
+    const proof = att('partner_transaction', uuidv4());
+
+    expect(await decideAttachmentRead(actor(['finance.view']), proof)).toEqual({
+      allow: false,
+      rule: 'partner-tx-no-permission',
+      enforce: true,
+    });
+    expect((await decideAttachmentRead(actor(['finance.manage']), proof)).allow).toBe(true);
+    expect((await decideAttachmentRead(actor(['clients.manage']), proof)).allow).toBe(true);
+    // The uploader keeps their own file, as every branch allows.
+    expect((await decideAttachmentRead(actor([], { id: uploaderId }), proof)).allow).toBe(true);
+  });
+});

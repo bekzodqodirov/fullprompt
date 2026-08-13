@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { seesAllMoney } from '@/modules/wms/finance/scope';
 import {
   groupPartnersByType,
   listPartnerTypes,
@@ -24,9 +25,13 @@ import { asc, eq } from 'drizzle-orm';
 export default async function PartnersPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) {
-    redirect('/');
-  }
+  // Round 91's rule, applied to the OTHER side of the money: `finance.view`
+  // alone is a seller, and a seller reads their own book — but a counterparty
+  // balance is company-wide by construction (what GSR owes the transport and
+  // customs firms; there is no «own» partner). So this screen asks the
+  // MANAGEMENT predicate, not the viewing grant. The seller menu already
+  // omitted this page; the gate now agrees with the menu.
+  if (!seesAllMoney(actor)) redirect('/');
   const t = await getTranslations('partners');
   const canManage = actor.permissions.has('finance.manage');
 

@@ -5,6 +5,7 @@ import { asc, eq, or } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { clients, currencies, moneyAccounts } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { seesAllMoney } from '@/modules/wms/finance/scope';
 import {
   listPartnerTypes,
   partnerBalanceUsd,
@@ -34,9 +35,9 @@ export default async function PartnerCardPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) {
-    redirect('/');
-  }
+  // The list screen's gate, restated: a partner ledger is company money and
+  // has no owner to scope it to, so it belongs to the money MANAGERS.
+  if (!seesAllMoney(actor)) redirect('/');
   const { id } = await params;
   const row = await partnerById(id);
   if (!row) notFound();
