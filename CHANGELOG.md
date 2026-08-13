@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 7-band: YW/GZ tezkor yuklashdagi xatolik (partiya kodi) — 2026-08-13
+
+Server logingiz sababni aniq ko'rsatdi: partiya kodining HISOBLAGICHI
+jadvaldan ortda qolgan — u YW-019 ni taklif qiladi, lekin bazada YW-019
+allaqachon bor. Yozuv yiqilganda butun tranzaksiya (hisoblagich qadami bilan
+birga) orqaga qaytadi, shuning uchun har urinish yana o'sha kodni chiqarardi —
+tezkor yuklash YW va GZ da butunlay to'xtab qolgan edi. Endi kod generatori
+band kodlardan O'ZI hatlab o'tadi: birinchi muvaffaqiyatli partiya
+hisoblagichni ham davolaydi, hech qanday qo'l amali kerak emas. Migratsiya
+yo'q — deploy qilinishi bilan tugma yana ishlaydi.
+
 ## 14 talik ro'yxat, 2-qism: kelishilgan dizaynlar — 2026-08-13
 
 Maslahatlashuvda bergan javoblaringiz bo'yicha olti band:
