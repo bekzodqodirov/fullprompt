@@ -92,6 +92,9 @@ const W = {
   // the round-47 anchors («faqat 5-6 shahar bo'yicha to'g'ri chiziq» — he was
   // right): the corridor's own line of oasis towns, so the arc bends where
   // the road does instead of jumping 200 km at a time.
+  // Round 100 (9a): the Wushaoling pass town — LAN→WUW was the longest chord
+  // left, and it is exactly a mountain crossing.
+  TZU: { x: 103.14, y: 36.97 }, // Tianzhu
   WUW: { x: 102.63, y: 37.93 }, // Wuwei
   SDN: { x: 101.09, y: 38.79 }, // Shandan
   ZHY: { x: 100.45, y: 38.93 }, // Zhangye
@@ -110,6 +113,9 @@ const W = {
   KCA: { x: 82.96, y: 41.72 }, // Kuqa
   // G3012, Aksu → Kashgar.
   BCH: { x: 78.55, y: 39.8 }, // Bachu
+  // Round 100 (9a): the last bend before Kashgar — without it the BCH→KA
+  // chord cut across the Kashgar range's foothills.
+  ATX: { x: 76.17, y: 39.72 }, // Artux
   // Kashgar → the Irkeshtam border.
   WUQ: { x: 75.02, y: 39.72 }, // Wuqia
   // M41 through Kyrgyzstan: over the Taldyk pass down to the Gulcha valley.
@@ -181,10 +187,10 @@ export const MAP_BOUNDS: [[number, number], [number, number]] = [
 /** Xi'an → Kashgar: the G30 and G3012, the way a truck really drives it. */
 const CN_SPINE = [
   P.XIA, W.BAO, W.TSN, W.DNX, P.LAN,
-  W.WUW, W.SDN, W.ZHY, W.JIQ, W.JYG, W.GUA, W.XXX, P.HAM,
+  W.TZU, W.WUW, W.SDN, W.ZHY, W.JIQ, W.JYG, W.GUA, W.XXX, P.HAM,
   W.SHS, W.TFU, P.UCH,
   W.TOK, W.YNQ, W.KRL, W.LUN, W.KCA, P.AKS,
-  W.BCH, P.KA,
+  W.BCH, W.ATX, P.KA,
 ];
 /** Andijan → Tashkent over the Kamchik pass. */
 const AND_TAS = (dest: RoutePoint) => [P.AND, W.FEG, W.KMC, W.ANG, dest];

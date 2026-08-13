@@ -155,7 +155,9 @@ Mini App and the bot text; `CargoGroup.eta` became `transit`. Round 98
 1449 unit/integration + 154 e2e here. **The four «known failing» photo-path
 specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
 had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
-Latest migration: **0078** (`sales_analytics` — the `lost_reasons` dictionary
+Latest migration: **0079** (`warehouse_coords` — round 100's lat/lon
+columns; count must reach **80** after this branch deploys);
+0078 (`sales_analytics` — the `lost_reasons` dictionary
 and `closed_at` on leads+deals; **renumbered from 0076 on merge, the TENTH
 collision** — the other session took 0076 `client_notices` and 0077
 `batch_customs_cleared` with the neighbouring `when`s, so mine moved its
@@ -216,13 +218,18 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 78 — the OTHER session's round 98 is DEPLOYED
-(2026-08-13); THIS branch (PR #36) takes it to 79.** PR #37 merged and
-on production the same hour, confirmed **78** by counting
-`drizzle.__drizzle_migrations`. He hit trap (1) again the same morning: he
-merged #37 believing it carried the tahlil round, deployed, and looked for
-the lost-reasons panel that lives only on PR #36 — an unmerged PR's screens
-do not exist on production, however green its CI is.
+**HIS SERVER IS AT 79 — rounds 98-99 of BOTH sessions are DEPLOYED
+(2026-08-13).** PR #36 (tahlil + lost reasons + filters, migration 0078)
+merged and deployed the same morning, confirmed **79** by counting
+`drizzle.__drizzle_migrations`. Getting there hit trap (1) twice more in one
+morning: he merged #37 believing it carried the tahlil round, deployed, and
+looked for the lost-reasons panel that lives only on PR #36; then pulled and
+re-deployed AGAIN with #36 still unmerged (a fully-cached `docker build` is
+the tell — no new code arrived) — and the third confusion was pressing into
+the already-merged #35's page, where the purple «Merged» badge reads like a
+button that was pressed. An unmerged PR's screens do not exist on
+production, however green its CI is; the walk that works is Pull requests →
+the OPEN one → Merge → then pull.
 
 **Three deploy traps, all hit in two days, all the same mistake one step
 apart — the count is the only thing that catches any of them.**
@@ -242,7 +249,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**78** today, on `main` and on his server) — the client book, the stock table and `/o/<code>` read
+length (**80** with this branch; **79** on main and his server today) — the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -2716,6 +2723,83 @@ hodim gained the uuid format check. Refused with reasons: lost-reason and
 stage filters (five of seven cells zero by construction / contradicts the
 two-clock design). 10 new unit + 5 integration (fixtures in April 2020 —
 March is the lost-reasons file's); red-proofs ×2. No migration.
+
+Round 100 part 1 — the owner's 14-item list, the eight no-question fixes
+(#686-691; the list came with his instruction to CONSULT on trade-offs first —
+the consultation went out, his answers came back, part 2 holds the agreed
+designs). (11) **The board tick never drew**: round 59's `SelectBox` called
+`preventDefault` on the checkbox's click, which cancels the browser's
+ACTIVATION behaviour — React stored the id, the browser reverted the pixel, and
+every count-based assertion stayed green for a year; `stopPropagation` stays
+(the card is an anchor), default is the control's, m9zc now asserts
+`toBeChecked()` — the only oracle that looks at the pixel (#686). (8) One rule
+for whose-cargo cells — `labels/code-identity.ts`, marking big / client code
+small — consumed by plan view, plan editor, loading, unload, batch card AND
+stock (#687); the pick-search matches both compositions. (6) `BoxIssued`
+carries `lots` in the ArrivedLot wire shape (share-of-lot in-tx, one grouped
+query) so the client's «yuk berildi» names goods·kg·m³ like the arrival does;
+`Array.isArray` keeps years of old events rendering as they did (#688).
+(2) `receiptContents()` — ONE grouped query behind the deal card's picker AND
+its linked rows. (12) `conversationForLead` + a read-only `leadId` branch on
+`TelegramThread`: a lead born from a chat finally shows it; own-account fence
+verbatim, used only when no client resolves or a converted lead's bubbles
+render twice (#689). (4) History prints NAMES behind recorded ids
+(`AUDIT_FIELD_REFS` + `resolveAuditRefs`, uuid-shaped only over a mixed
+vocabulary, miss prints raw, id in the tooltip; the new fence found `dealId`
+unlabelled on its dry run) (#690). (14) `/admin/clients` pages the RENDER at
+120 over a full fetch — SQL OFFSET refused, the in-memory sort would order
+each page separately (round 68); `CLIENT_LIST_CAP` deleted, screen and XLSX
+finally cover the same set (#691). (9c) The map's warehouse popup links
+`/stock?wh=<id>` — `?warehouse=<code>` was silently ignored. No migration.
+Red-proofs ×5 by string edit; item 7 (quick-batch error, digest #2832070603)
+awaits his server log; item 10 answered in chat (kelganlar is a LEDGER — the
+replay fence and the daily caps read it; the screen may get paging later).
+
+Round 100 part 2 — the owner's approved designs (#692-697; his answers 1A /
+3-yop / 5A / 9A+9B / 13A). Designed, scouted by five parallel readers, then
+judged by a 19-agent adversarial workflow BEFORE any code — **14 confirmed
+findings, several of them blockers, every one absorbed.** (3) The deal-card
+charge door DELETED (form+action+panel+4 i18n keys); the review's find: the
+fallback ledger picker was open-stages-only while cargo triggers auto-win a
+deal at handover, so a day-after charge would silently lose its deal —
+`ledgerDealsForClient` (open ∪ closed<60d ∪ live deferral) now feeds
+/finance/<client>. (1A) clientFeed's cargo branch gains a LATERAL over
+receipt_lots (goods ru-preferred · kg · m³ in META — the union is positional
+past branch one); notes carry authorId and the reader's OWN notes sit right
+(`own ? 'ml-auto bg-brand-50' : TONE[kind]` — REPLACING the tone: two bg
+utilities resolve by stylesheet order and warn/10 compiles later, the
+appended version was right-aligned but warn-tinted with dead brand CSS);
+cargo test mints its OWN client (the shared fixture's exact kind-sequences
+were the review's first blocker). (5A) `transitTrucks` in inventory/service:
+live-pointer membership, in_transit ONLY («arrived» through the live pointer
+shrinks to Σ0 during unload — #440 refused a second time), two-ends scope +
+either-end wh filter, SQL-coalesced sums Number()ed, cap 20, zero-box rows
+dropped; strip renders between Σ and the table, outside Σ/sort/views/XLSX.
+(9a) `snapToRoute` (0.15°, farther = a real detour stays raw) wired into
+truck.ts's live branch; `chordDeg` = cos(lat)-weighted pacing IN RADIANS
+(the unit test asserts the weight itself — cos40°≈0.766, a radians slip goes
+negative); map self-refreshes (AutoRefresh 60s + Leaflet overlays in ONE
+LayerGroup so the basemap and zoom stay put); Tianzhu+Artux joined the
+spine — Artux pinned at 0.1° (chord passes 0.225° away, red-provable),
+Tianzhu deliberately UNPINNED (0.055° from the chord it divides — no honest
+threshold sees it; #166 applies to mountain towns). (9b) Migration **0079**
+`warehouses.lat/lon` (count must reach **80**): db wins, WAREHOUSE_POINTS
+fallback; `coordField` decides emptiness BEFORE coercion (`z.coerce.number('')`
+is 0 and 0°N0°E is a real place — the review's Atlantic-warehouse blocker);
+form inputs on the capacityM3 template. (13A) `startMenuFor` + merged
+`bothKeyboard` (reply keyboards are exclusive); `isCabinetText` (derived from
+allLabelVariants — the labels ARE the router #264) lets cabinet buttons
+through the staff catch-all BEFORE the «Bajarildi» capture; the three
+keyboard-naming replies (lang switch, calc-save, staff-link) now ask
+`replyKeyboardFor(chatId)` — the review traced the merged keyboard dying on
+the first ordinary press; the /start deep link goes through `linkStaffChat`
+(raw UPDATE skipped the holder check; unique-violation vanished into
+bot.catch as silence), own-chat re-link stays a re-link. Red-proofs ×7 by
+string edit (incl. one that WOULD NOT go red and was rewritten). New tests:
+coord-field ×4, tracking-snap ×4, bot-both-modes ×7 (3 source-shape),
+transit-strip ×3, feed 1A ×2, staff-bot own-relink, route-shape Artux.
+NOT verifiable here: the bot halves against real Telegram (no network) —
+watch the first /start of a both-chat in docker logs.
 
 Round 98 (this session) — the customer's two messages, both about Telegram
 (#673-678, owner: «har br karobka uchun habar jonatyabti» and «telegram appda

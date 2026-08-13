@@ -1,5 +1,85 @@
 # CHANGELOG
 
+## 7-band: YW/GZ tezkor yuklashdagi xatolik (partiya kodi) — 2026-08-13
+
+Server logingiz sababni aniq ko'rsatdi: partiya kodining HISOBLAGICHI
+jadvaldan ortda qolgan — u YW-019 ni taklif qiladi, lekin bazada YW-019
+allaqachon bor. Yozuv yiqilganda butun tranzaksiya (hisoblagich qadami bilan
+birga) orqaga qaytadi, shuning uchun har urinish yana o'sha kodni chiqarardi —
+tezkor yuklash YW va GZ da butunlay to'xtab qolgan edi. Endi kod generatori
+band kodlardan O'ZI hatlab o'tadi: birinchi muvaffaqiyatli partiya
+hisoblagichni ham davolaydi, hech qanday qo'l amali kerak emas. Migratsiya
+yo'q — deploy qilinishi bilan tugma yana ishlaydi.
+
+## 14 talik ro'yxat, 2-qism: kelishilgan dizaynlar — 2026-08-13
+
+Maslahatlashuvda bergan javoblaringiz bo'yicha olti band:
+
+- **1A — Lenta to'liq gapiradi.** Yuk kelganda endi «1 box» emas — tovar
+  nomlari (ruschasi bor bo'lsa ruscha), jami kg va kub ham yoziladi. Va o'z
+  izohlaringiz o'ng tarafda (messenjerdagidek), boshqalarniki chapda — har
+  kim o'zinikini o'ngda ko'radi.
+- **3 — Bitim kartasidan hisob qo'yish yopildi.** Narxni endi faqat admin
+  qo'yadi: mijoz kassasida (u yerdagi bitim tanlagichi endi yopilgan
+  bitimlarni ham 60 kungacha ko'rsatadi — topshirilgandan keyingi hisob ham
+  bitimiga bog'lanadi) va partiya narxlashda. Otsrochka mexanizmi ishlashda
+  davom etadi.
+- **5A — Qoldiqda «Yo'lda» qatori.** Sklad qoldig'i tepasida yo'ldagi
+  furalar: kod, qayerdan→qayerga, necha karobka, kg, kub — bosilsa fura
+  kartasi ochiladi. Ikkala tomon skladi ham ko'radi; jami (Σ) va Excel
+  bunga aralashmaydi — ular tokchadagi yukni aytadi.
+- **9A — Mashina yo'ldan yurmaydigan bo'ldi... endi yuradi.** GPS nuqtasi
+  yo'l chizig'iga «yopishtiriladi» (haqiqiy chetlanish esa ko'rsatiladi),
+  simulyatsiya tezligi to'g'irlandi, xarita endi har daqiqada o'zi
+  yangilanadi — sahifani qayta ochish shart emas. Yo'lga Artux burilishi
+  qo'shildi.
+- **9B — Sklad koordinatalari endi sizniki.** Boshqaruv → Sklad formasida
+  kenglik/uzunlik maydonlari: yozsangiz nuqta o'sha yerga ko'chadi, bo'sh
+  qolsa xaritaning o'z nuqtasi ishlaydi. (Migratsiya 0079 — hisob endi
+  **80** ga chiqishi kerak.)
+- **13A — Hodim ham klient bo'lsa, bot ikkalasiga xizmat qiladi.** /start
+  bitta qo'shma klaviatura beradi (hodim tugmalari + kabinet tugmalari),
+  kabinet tugmalari hodim rejimida ham ishlaydi, til almashtirilganda ham
+  qo'shma klaviatura yo'qolmaydi. Yo'lda topilgan teshik ham yopildi:
+  boshqa hodimga ulangan chatda link ochilsa endi jim qolmaydi, sabab
+  aytadi.
+
+## 14 talik ro'yxat, 1-qism: sakkiz aniq tuzatish — 2026-08-13
+
+14 talik ro'yxatingizdagi savolsiz qilinadigan sakkiz band (qolganlari —
+kelishilgan dizaynlar bilan — keyingi qismda):
+
+- **11 — belgilash katakchasi endi ✓ ko'rsatadi.** CRM va bitimlar
+  doskasida kartani belgilaganingizda pastdagi panel ishlayverardi, lekin
+  katakchada belgi ko'rinmasdi. Belgilashning o'zi doim ishlagan — faqat
+  chizilmasdi. Tuzatildi.
+- **8 — planda notanish kod tepada, klient kodi tagida kichkina.** Yuk
+  qabulda notanish marking bilan kirgan bo'lsa (masalan GS500MANIKEN-AL),
+  skladda qanday ko'rinsa, endi plan berishda, yuklashda, tushirishda va
+  fura kartasida ham shunday: karobkada yozilgan kod katta, klient kodi
+  tagida kichkina. Qidiruvda ikkalasi ham topiladi.
+- **6 — «Yuk berildi» xabari endi to'liq.** Klientga topshirilganda
+  Telegram xabarida tovar nomlari, necha karobka, necha kg, necha kub
+  yoziladi — hoydagi «yuk keldi» xabari qanday bo'lsa, shunday.
+- **2 — bitimga biriktirilgan prixod tovarini yo'qotmaydi.** Ro'yxatdan
+  tanlaganda «tovar · kub · kg» ko'rinardi, biriktirilgandan keyin faqat
+  raqam qolardi. Endi biriktirilgan qatorda ham xuddi shu ma'lumot turadi.
+- **12 — Telegramdan ochilgan lidning chati kartasida ko'rinadi.** Chat
+  orqali lid ochilganda yozishmalar lid kartasiga tushmasdi — endi o'sha
+  suhbat kartada ko'rinadi (har kim faqat o'z akkauntining chatini
+  ko'radi, rahbar hammasini — avvalgi qoidalar bilan).
+- **4 — Istoriyada kod emas, nom.** Etap, hodim, klient, sklad, manba,
+  bitim, kontragent o'zgarganda endi uzun texnik kod emas, odam
+  tushunadigan nom yoziladi (eski kod sichqonchani ustiga olib borsangiz
+  ko'rinadi).
+- **14 — Mijozlar ro'yxatida hammasi ochiladi.** 200 tadan keyin ro'yxat
+  to'xtab qolardi; endi sahifalab (120 tadan) hammasini ko'rish mumkin,
+  «Oldingi / Keyingi» tugmalari bilan. Excel fayl bilan ro'yxat endi bir
+  xil to'plamni qamraydi.
+- **9c — xaritada sklad ustiga bossangiz, «Qoldiq» tugmasi endi aynan shu
+  sklad bo'yicha filtrlangan qoldiqqa olib boradi** (avval filtr ishlamay,
+  hamma sklad ko'rinardi).
+
 ## Tahlil sahifasiga to'liq filtrlar — 2026-08-12
 
 So'rovingiz: «filterlarni maximalna qoyish mumkun bolgan narsalarga qoyib

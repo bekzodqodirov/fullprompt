@@ -14,6 +14,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { leadForChat, rekeyLeadChats } from '@/modules/wms/crm/chat-lead';
+import { conversationForLead } from '@/modules/wms/crm/conversations';
 import {
   indexPeers,
   managersWhoTalkedTo,
@@ -246,6 +247,60 @@ describe('the conversation follows the person onto their client code', () => {
     expect(row!.clientId).toBe(client!.id);
     // The lead card keeps showing it — the twin of rekeyLeadCalls.
     expect(row!.leadId).toBe(leadId);
+  });
+});
+
+describe('the lead card reads its own chat rows (round 100, item 12)', () => {
+  let chattyLead = '';
+
+  beforeAll(async () => {
+    // A lead born from a chat: rows keyed to the LEAD, client NULL — on TWO
+    // managers' accounts, because the scoping is the thing under test.
+    chattyLead = await leadForChat(
+      actorId,
+      { phone: `+99894${String(Date.now()).slice(-7)}`, title: `${MARK} chatty` },
+      ctx(),
+    );
+    madeLeads.push(chattyLead);
+    await db.insert(tgMessages).values([
+      {
+        leadId: chattyLead,
+        managerUserId: actorId,
+        peerId: nextPeer(),
+        tgMessageId: nextPeer(),
+        direction: 'in',
+        body: `${MARK} lead savol`,
+        sentAt: new Date(),
+      },
+      {
+        leadId: chattyLead,
+        managerUserId: otherId,
+        peerId: nextPeer(),
+        tgMessageId: nextPeer(),
+        direction: 'in',
+        body: `${MARK} kollega savol`,
+        sentAt: new Date(),
+      },
+    ]);
+  });
+
+  it('shows the manager their own account’s rows and nobody else’s', async () => {
+    const own = await conversationForLead(chattyLead, { id: actorId, all: false });
+    expect(own.map((row) => row.body)).toContain(`${MARK} lead savol`);
+    // Round 20's fence holds on the lead card too: a colleague's personal
+    // Telegram is not a shared record.
+    expect(own.map((row) => row.body)).not.toContain(`${MARK} kollega savol`);
+  });
+
+  it('the supervision view reads both accounts', async () => {
+    const all = await conversationForLead(chattyLead, { id: actorId, all: true });
+    const bodies = all.map((row) => row.body);
+    expect(bodies).toContain(`${MARK} lead savol`);
+    expect(bodies).toContain(`${MARK} kollega savol`);
+  });
+
+  it('answers nothing about a lead with no chat', async () => {
+    expect(await conversationForLead(madeLeads[1]!, { id: actorId, all: true })).toEqual([]);
   });
 });
 

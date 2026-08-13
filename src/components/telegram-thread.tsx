@@ -6,6 +6,7 @@ import {
   canReadTg,
   conversationClient,
   conversationFor,
+  conversationForLead,
   tgViewerFor,
   threadClientFor,
   threadManagers,
@@ -45,11 +46,20 @@ import { TelegramReply } from './telegram-reply';
  */
 export async function TelegramThread({
   clientId,
+  leadId,
   limit = 200,
   hodim,
   hrefFor,
 }: {
   clientId: string | null;
+  /**
+   * Round 100: a chat that OPENED a lead (0064 gave `tg_messages` a
+   * `lead_id`) was invisible on the very card it minted. When no client
+   * resolves, the panel shows the lead's own rows instead — read-only,
+   * because the outbox is keyed to the client book and the conversation
+   * lives on the manager's own phone.
+   */
+  leadId?: string;
   limit?: number;
   /**
    * Whose conversation to read (owner, 2026-08-07). The card PAGE takes it off
@@ -62,10 +72,6 @@ export async function TelegramThread({
   /** How this card's URL carries the choice; absent ⇒ names, no selector. */
   hrefFor?: (managerId: string | null) => string;
 }) {
-  // A lead that is nobody's client yet has no thread, and that is correct: the
-  // import only ever keeps conversations matching the client book.
-  if (!clientId) return null;
-
   const actor = await getActor();
   // The CRM grants, or the supervision view (round 33: vedchi and admin read
   // every chat — the calc files arrive in whichever manager's chat the
@@ -76,6 +82,31 @@ export async function TelegramThread({
   // The same read the «Suhbatlar» screen makes — own account only, or the
   // whole company for the owner's supervision view (#383, round 21).
   const viewer = tgViewerFor(actor);
+
+  if (!clientId) {
+    // Nobody's client yet — but a lead born from a chat HAS a conversation,
+    // keyed to the lead itself (round 82). Without this branch the card that
+    // exists BECAUSE somebody wrote showed no trace of what they wrote.
+    if (!leadId) return null;
+    const rows = await conversationForLead(leadId, viewer, limit);
+    if (rows.length === 0) return null;
+    return (
+      <section className="card space-y-2" data-testid="tg-thread">
+        <h2 className="text-lg font-bold">✈️ {t('telegramThread')}</h2>
+        <AutoRefresh ms={10_000} />
+        <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
+          {rows.map((row) => (
+            <TelegramBubble
+              key={row.id}
+              message={row}
+              clientLabel={t('telegramClient')}
+              mediaLabel={t('telegramMedia')}
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
   // The thread may live under a phone-sibling GS code (one person, several
   // codes; the import pinned the chat to whichever code the phone matched) —
   // the card must find it there too, or a deal on the sibling code shows an

@@ -4,6 +4,7 @@ import { logger } from '../logger';
 import {
   completeTaskFromBot,
   decideApprovalFromBot,
+  isCabinetText,
   landCollectedIntake,
   linkStaffChat,
   lookupFromBot,
@@ -15,6 +16,7 @@ import {
   takeStaffEntry,
   takeTaskPending,
 } from './staff-bot';
+import { clientLabels } from './client-labels';
 import {
   activeIntake,
   analyzeCollected,
@@ -24,6 +26,7 @@ import {
   updateIntake,
 } from './calc-intake';
 import { phoneKeyboard } from './client-cabinet';
+import { replyKeyboardFor } from './keyboards';
 
 /**
  * The grammy shell of the staff bot — thin on purpose: every decision lives
@@ -45,6 +48,27 @@ const HISOBLATISH = '🧮 Hisoblatish';
 export function staffKeyboard() {
   return {
     keyboard: [[{ text: BUGUN }, { text: HISOBLATISH }]],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
+/**
+ * The merged keyboard for a chat that is BOTH staff and client (round 100,
+ * 13A). Telegram reply keyboards are exclusive — sending the staff one
+ * physically removes the cabinet's buttons from the phone — so a both-chat
+ * gets ONE keyboard carrying the staff row above the cabinet rows. The
+ * cabinet labels come from the same dictionary its own keyboard and its
+ * router read.
+ */
+export function bothKeyboard(locale?: string | null) {
+  const t = clientLabels(locale);
+  return {
+    keyboard: [
+      [{ text: BUGUN }, { text: HISOBLATISH }],
+      [{ text: t.btnCargo }, { text: t.btnBalance }],
+      [{ text: t.btnHistory }, { text: t.btnLanguage }],
+    ],
     resize_keyboard: true,
     is_persistent: true,
   };
@@ -165,7 +189,8 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
     await ctx.reply(`✅ Ulandi: ${staff.fullName}. Xabarnomalar shu yerga keladi.`, {
-      reply_markup: staffKeyboard(),
+      // A client who just became staff keeps their cabinet rows (13A).
+      reply_markup: await replyKeyboardFor(chatId),
     });
   });
 
@@ -228,6 +253,14 @@ export function registerStaffBot(bot: Bot): void {
       await ctx.reply('Nimani hisoblatamiz?', { reply_markup: sectionKeyboard() });
       return;
     }
+
+    // A cabinet button belongs to the CABINET, whoever else this chat is
+    // (round 100, 13A): before this line a staff+client chat pressing
+    // «📦 Yuklarim» reached the lookup below and heard «Topilmadi». Checked
+    // BEFORE the task-result capture too, so pressing a cabinet button while
+    // a «Bajarildi» answer is awaited serves the cabinet and leaves the
+    // capture armed instead of eating the button as the result.
+    if (isCabinetText(ctx.message.text)) return next();
 
     // Step 2 of «Bajarildi»: this text IS the result.
     const pendingTask = takeTaskPending(chatId);
@@ -404,7 +437,9 @@ async function handleCalcCallback(
     `✅ Saqlandi — ${target.kind === 'deal' ? 'bitim' : 'lead'}: ${target.label}\n` +
       `${appUrl}/${path}/${target.id}\n\n` +
       'Hisoblashga berish kartaning o‘zida — VED xodimini tanlaysiz.',
-    { reply_markup: staffKeyboard() },
+    // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
+    // took the cabinet buttons off a both-chat's phone.
+    { reply_markup: await replyKeyboardFor(chatId) },
   );
 }
 

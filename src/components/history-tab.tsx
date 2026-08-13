@@ -2,7 +2,13 @@ import { and, desc, eq } from 'drizzle-orm';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { auditLog, users } from '@/modules/platform/db/schema';
-import { AUDIT_FIELD_LABELS } from '@/modules/platform/audit/fields';
+import {
+  AUDIT_FIELD_LABELS,
+  collectAuditRefs,
+  isUuidShaped,
+  AUDIT_FIELD_REFS,
+} from '@/modules/platform/audit/fields';
+import { resolveAuditRefs } from '@/modules/platform/audit/refs';
 import {
   groupHistory,
   visibleChanges,
@@ -57,6 +63,15 @@ export async function HistoryTab({
   const fieldLabel = (key: string) =>
     AUDIT_FIELD_LABELS[key] ? t(`fields.${AUDIT_FIELD_LABELS[key]}`) : key;
 
+  // The NAMES behind the recorded ids (round 100, owner's item 4: «qandaydur
+  // codelar emas odam tushunadgan nomlar bilan»). Collected over the folded
+  // rows too, so opening a fold shows the same words as the summary line.
+  const refIds = collectAuditRefs([
+    ...groups.flatMap((group) => group.changes),
+    ...groups.flatMap((group) => group.rows.flatMap((row) => visibleChanges(row.before, row.after))),
+  ]);
+  const refNames = await resolveAuditRefs(refIds);
+
   return (
     <ol className="space-y-3" data-testid="history-list">
       {groups.map((group) => (
@@ -72,7 +87,9 @@ export async function HistoryTab({
             <span className="ml-auto text-xs text-ink-500">{when(group.at)}</span>
           </div>
 
-          {group.changes.length > 0 && <ChangeList changes={group.changes} label={fieldLabel} />}
+          {group.changes.length > 0 && (
+            <ChangeList changes={group.changes} label={fieldLabel} names={refNames} />
+          )}
 
           {/* Merged rows keep their own times and their own fields, because a
               net is a summary and an audit trail may not only be summarised. */}
@@ -88,6 +105,7 @@ export async function HistoryTab({
                     <ChangeList
                       changes={visibleChanges(row.before, row.after)}
                       label={fieldLabel}
+                      names={refNames}
                       bare
                     />
                   </li>
@@ -111,27 +129,50 @@ export async function HistoryTab({
 function ChangeList({
   changes,
   label,
+  names,
   bare = false,
 }: {
   changes: HistoryChange[];
   label: (key: string) => string;
+  /** uuid → the thing's name, resolved once for the whole page. */
+  names: Map<string, string>;
   bare?: boolean;
 }) {
   if (changes.length === 0) return null;
+  // A resolved reference prints its NAME and keeps the id in the tooltip; a
+  // uuid the lookup could not name stays on screen as it is — a raw id is
+  // honest, a wrong name is not.
+  const shown = (key: string, value: unknown) => {
+    if (AUDIT_FIELD_REFS[key] && isUuidShaped(value)) {
+      const name = names.get(value);
+      if (name) return { text: name, title: value };
+    }
+    return { text: formatValue(value), title: undefined };
+  };
   return (
     <ul className={bare ? 'space-y-1' : 'mt-2 space-y-1 border-t border-line pt-2'}>
-      {changes.map((change) => (
-        <li key={change.key} className="flex flex-wrap gap-x-2">
-          <span className="text-xs text-ink-500">{label(change.key)}:</span>
-          <span className="min-w-0 text-bad line-through [overflow-wrap:anywhere]">
-            {formatValue(change.before)}
-          </span>
-          <span aria-hidden>→</span>
-          <span className="min-w-0 font-semibold text-good [overflow-wrap:anywhere]">
-            {formatValue(change.after)}
-          </span>
-        </li>
-      ))}
+      {changes.map((change) => {
+        const before = shown(change.key, change.before);
+        const after = shown(change.key, change.after);
+        return (
+          <li key={change.key} className="flex flex-wrap gap-x-2">
+            <span className="text-xs text-ink-500">{label(change.key)}:</span>
+            <span
+              className="min-w-0 text-bad line-through [overflow-wrap:anywhere]"
+              title={before.title}
+            >
+              {before.text}
+            </span>
+            <span aria-hidden>→</span>
+            <span
+              className="min-w-0 font-semibold text-good [overflow-wrap:anywhere]"
+              title={after.title}
+            >
+              {after.text}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

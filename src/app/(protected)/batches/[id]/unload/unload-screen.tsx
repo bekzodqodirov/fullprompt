@@ -13,6 +13,7 @@ import {
   pendingScans,
   type SyncAck,
 } from '@/offline/scan-outbox';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
 
 interface MemberBox {
   shortCode: string;
@@ -245,11 +246,16 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
   const total = snapshot.boxes.length;
   const doneCount = snapshot.boxes.filter((b) => done.has(b.shortCode)).length;
   const unscanned = snapshot.boxes.filter((b) => !done.has(b.shortCode));
-  const byLot = new Map<string, { label: string; product: string; total: number; done: number }>();
+  const byLot = new Map<
+    string,
+    { label: string; sub: string | null; product: string; total: number; done: number }
+  >();
   for (const box of snapshot.boxes) {
+    const identity = codeIdentity(box.marking, box.clientCode);
     const entry =
       byLot.get(box.lotId) ?? {
-        label: `${box.clientCode ?? box.marking ?? '?'}-${box.letter}`,
+        label: `${identity.main}-${box.letter}`,
+        sub: identity.sub,
         product: box.productNameZh,
         total: 0,
         done: 0,
@@ -281,7 +287,12 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       <div className="card space-y-1 !p-3">
         {[...byLot.values()].map((lot) => (
           <div key={lot.label} className="flex items-center gap-2 text-sm">
-            <span className="font-mono font-extrabold text-brand-700">{lot.label}</span>
+            <span className="font-mono font-extrabold text-brand-700">
+              {lot.label}
+              {lot.sub && (
+                <span className="block font-sans text-2xs font-normal text-ink-500">{lot.sub}</span>
+              )}
+            </span>
             <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
             <span className={`font-semibold ${lot.done === lot.total ? 'text-good' : ''}`}>
               {lot.done}/{lot.total}
@@ -349,7 +360,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
               >
                 <span className="font-mono font-bold">{box.shortCode}</span>
                 <span className="font-mono font-extrabold text-brand-700">
-                  {box.clientCode ?? box.marking ?? '?'}-{box.letter}
+                  {codeIdentity(box.marking, box.clientCode).main}-{box.letter}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-ink-500">{box.productNameZh}</span>
               </button>

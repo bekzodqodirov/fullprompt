@@ -224,6 +224,9 @@
     "address": "Manzil",
     "capacityM3": "Sig‘im (m³)",
     "capacityHint": "Bo‘sh qoldirsangiz to‘lganlik indikatori ko‘rinmaydi. 60% dan sariq, 80% dan qizil.",
+    "lat": "Kenglik (lat)",
+    "lon": "Uzunlik (lon)",
+    "coordsHint": "Skladning xaritadagi nuqtasi. Bo'sh qolsa — xaritaning o'z nuqtasi ishlatiladi.",
     "types": {
       "origin": "Qabul (Xitoy)",
       "hub": "Konsolidatsiya habi",
@@ -259,7 +262,10 @@
     "cabinetRevoke": "Uzish",
     "cabinetNewCode": "Yangi havola yaratish",
     "shownOf": "{total} tadan {shown} tasi",
-    "refineSearch": "hammasi emas — qidiruvni aniqlashtiring"
+    "refineSearch": "hammasi emas — qidiruvni aniqlashtiring",
+    "pageOf": "{from}–{to} / {total}",
+    "pagePrev": "← Oldingi",
+    "pageNext": "Keyingi →"
   },
   "users": {
     "title": "Xodimlar",
@@ -547,6 +553,7 @@
       "void": "Bekor qilingan"
     },
     "allWh": "Barcha skladlar",
+    "onRoad": "Yo'lda",
     "filterPlaceholder": "Kod, markirovka, tovar…",
     "colCode": "Kod",
     "colProduct": "Tovar",
@@ -1723,10 +1730,6 @@
       "fx_missing": "Bu valyutaga kurs yo‘q",
       "discount_reason_required": "Chegirma uchun sabab kerak"
     },
-    "postCharge": "Mijoz hisobiga yozish",
-    "charge": "Mijozga hisob",
-    "chargeHint": "Kechiktirish faqat shu yerda, bitim bo‘yicha yozilgan summaga ishlaydi.",
-    "charged": "Yozilgan",
     "discountTitle": "Chegirma (shikast)",
     "discountAmount": "Chegirma summasi",
     "discountHint": "Yuk shikastlansa — bitimga chegirma, sababi bilan. 0 — chegirmani olib tashlash. Yozilgan hisobni moliyachi to'g'irlaydi.",

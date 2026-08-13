@@ -13,8 +13,8 @@ import {
 import { clientLabels } from './client-labels';
 import { adSourceFromPayload, rememberAdVisit } from './ad-intake';
 import { cabinetInlineKeyboard } from './menu-button';
-import { staffForChat } from './staff-bot';
-import { entryKeyboard, registerStaffBot, staffKeyboard } from './staff-handlers';
+import { linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
+import { bothKeyboard, entryKeyboard, registerStaffBot, staffKeyboard } from './staff-handlers';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -71,15 +71,30 @@ export function startTelegramBot(): void {
     }
 
     if (!code) {
-      // A linked member of STAFF gets the staff menu (round 35).
+      // One decision, made in the testable layer (round 100, 13A): the
+      // owner's own people also ship cargo, and the staff menu used to
+      // REPLACE their cabinet buttons — reply keyboards are exclusive.
       const staff = await staffForChat(BigInt(ctx.chat.id));
-      if (staff) {
-        await ctx.reply(`👋 ${staff.fullName}`, { reply_markup: staffKeyboard() });
+      const linkedClients = await clientsForChat(BigInt(ctx.chat.id));
+      const menu = startMenuFor(staff, linkedClients.length);
+      if (menu === 'both') {
+        const locale = linkedClients.find((c) => c.locale)?.locale ?? null;
+        const t = clientLabels(locale);
+        await ctx.reply(
+          `👋 ${staff!.fullName}\n${t.yourCodes}: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
+          { reply_markup: bothKeyboard(locale) },
+        );
+        const app = cabinetInlineKeyboard(process.env.APP_URL, locale);
+        if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
+        return;
+      }
+      // A linked member of STAFF gets the staff menu (round 35).
+      if (menu === 'staff') {
+        await ctx.reply(`👋 ${staff!.fullName}`, { reply_markup: staffKeyboard() });
         return;
       }
       // A linked client without a code gets the cabinet menu back.
-      const linkedClients = await clientsForChat(BigInt(ctx.chat.id));
-      if (linkedClients.length) {
+      if (menu === 'cabinet') {
         const locale = linkedClients.find((c) => c.locale)?.locale ?? null;
         const t = clientLabels(locale);
         await ctx.reply(
@@ -122,15 +137,17 @@ export function startTelegramBot(): void {
       await ctx.reply(clientLabels(tg).linkExpired);
       return;
     }
-    await db
-      .update(telegramLinks)
-      .set({
-        telegramChatId: BigInt(ctx.chat.id),
-        status: 'linked',
-        linkedAt: new Date(),
-        linkCode: null,
-      })
-      .where(eq(telegramLinks.id, link.id));
+    // Through the same door the contact path uses (round 100, 13A): this
+    // raw UPDATE used to skip the holder check, so a chat already held by
+    // another colleague hit the column's UNIQUE index, the throw vanished
+    // into bot.catch, and the person got silence. `linkStaffChat` refuses
+    // only when the holder is a DIFFERENT user — re-opening your own link
+    // from your own chat stays a re-link, not a refusal.
+    const outcome = await linkStaffChat(link.userId, BigInt(ctx.chat.id));
+    if (outcome === 'chat_taken') {
+      await ctx.reply('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
+      return;
+    }
     const user = await db.query.users.findFirst({ where: eq(users.id, link.userId) });
     await ctx.reply(`✅ Telegram подключён: ${user?.fullName ?? ''}. Уведомления будут приходить сюда.`);
   });
