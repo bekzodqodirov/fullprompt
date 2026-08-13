@@ -81,10 +81,15 @@ function lotLine(lot: CabinetLot, t: ClientLabels, locale: string | null): strin
   // date that belongs to only one of them.
   const groups = lot.groups
     .map((g) => {
-      const eta = g.eta
-        ? ` · ${g.eta.toPlace}: ${t.etaAbout} ${formatEtaRange(g.eta.fromIso, g.eta.toIso, locale)}`
+      // The road as words, since a bot message has no bar: how much is behind,
+      // and when the schedule says it lands.
+      const road = g.transit
+        ? ` · ${Math.round(g.transit.progress * 100)}%` +
+          (g.transit.etaFromIso && g.transit.etaToIso
+            ? ` · ${g.transit.toPlace}: ${t.etaAbout} ${formatEtaRange(g.transit.etaFromIso, g.transit.etaToIso, locale)}`
+            : '')
         : '';
-      return `   ${g.n} ${t.pieces} — ${stageLabel(g.stage, t)}${eta}`;
+      return `   ${g.n} ${t.pieces} — ${stageLabel(g.stage, t)}${road}`;
     })
     .join('\n');
   const wh = lot.warehousePlaces.length ? `\n   📍 ${lot.warehousePlaces.join(', ')}` : '';

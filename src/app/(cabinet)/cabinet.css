@@ -196,41 +196,113 @@
   color: var(--muted);
 }
 
-/* The owner's nine-rung ladder, filled to where the cargo stands.
-   Segments rather than dots: at 360 px nine dots and eight connectors leave
-   3 px of dot, while nine equal bars read as a progress line at any width and
-   need no geometry to line up. */
-.cab-track {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  margin-top: 12px;
-}
-.cab-track i {
-  flex: 1;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--raise);
-}
-.cab-track i.done { background: color-mix(in srgb, var(--ok) 45%, transparent); }
-.cab-track i.now { background: var(--accent); }
-
-/* The rung in words. Bigger than the chips under it because it is the answer
+/* The rung in words. Bigger than everything under it because it is the answer
    to the question the client opened the app to ask. */
 .cab-stage {
-  margin-top: 8px;
+  margin-top: 11px;
   font-size: 0.85rem;
   font-weight: 600;
   line-height: 1.3;
 }
 
+/* The road itself — two named ends and how much of it is behind. It replaced
+   an unlabelled segment strip the owner read as meaning nothing, because
+   without names it meant nothing. */
+.cab-road { margin-top: 8px; }
+.cab-road-ends {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.cab-road-ends b {
+  font-size: 0.8rem;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.cab-road-bar {
+  position: relative;
+  height: 7px;
+  margin-top: 17px;
+  border-radius: 999px;
+  background: var(--raise);
+  /* The little truck rides ABOVE the bar; the bar must not clip it. */
+}
+.cab-road-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ok) 70%, transparent), var(--ok));
+  min-width: 7px;
+}
+.cab-road-bar u {
+  position: absolute;
+  top: -15px;
+  font-size: 13px;
+  line-height: 1;
+  text-decoration: none;
+  transform: translateX(-55%) scaleX(-1); /* the truck drives left→right */
+}
+
 /* Always «taxminan», always a range, and always with the place in it — a bare
    date on the Kashgar leg reads as the delivery date. */
 .cab-eta {
-  margin-top: 4px;
+  margin-top: 6px;
   font-size: 0.78rem;
   color: var(--muted);
 }
+
+/* «Qachon nima bo'lgan» — the dated history, oldest first, drawn as the
+   package-tracking list every customer already knows how to read: a dot, a
+   line, a date, a sentence. The newest line is the highlighted one, because
+   that is where the headline above picks up. */
+.cab-journey {
+  margin-top: 11px;
+  padding-left: 2px;
+  list-style: none;
+}
+.cab-journey li {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 0 3px 18px;
+  font-size: 0.78rem;
+}
+.cab-journey li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  /* Anchored to the FIRST line, not the row's middle: a sentence that wraps
+     must not drag its dot down between the lines. */
+  top: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ok) 75%, transparent);
+}
+/* The connecting thread between the dots — drawn on every row but the last. */
+.cab-journey li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 17px;
+  bottom: -10px;
+  width: 1px;
+  background: var(--line);
+}
+.cab-journey li.now::before { background: var(--accent); }
+.cab-journey li.now { font-weight: 600; }
+.cab-journey time {
+  flex-shrink: 0;
+  width: 44px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cab-journey li.now time { color: var(--fg); }
+.cab-journey span { min-width: 0; overflow-wrap: anywhere; }
 
 .cab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .cab-chip {

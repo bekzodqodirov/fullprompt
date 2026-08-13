@@ -146,9 +146,12 @@ agent sheet by truck; #32 = the tray's door, the connect-time week and the
 calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
 «javob kutmoqda», then files/reply/forward/share); **#34 = the Meta go-live
 docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97). This
-branch is EMPTY — round 98 (the customer's arrival message, the cabinet
-timeline and «rastamojka tugadi») went in as PR #37 and is deployed; rounds
-96-97 were PR #35. Everything is merged.
+branch carries **round 99** — the timeline redesigned after the owner's
+rejection («etaplaring hech nimani bildirmaydiku»): dated journey from
+`box_movements` (`client-cabinet/journey.ts`, jrn* labels ×3) + a NAMED
+road-progress bar from the map engine's own `progress` on both legs, in the
+Mini App and the bot text; `CargoGroup.eta` became `transit`. Round 98
+(PR #37) and the deploy record (PR #38) are merged and DEPLOYED.
 1449 unit/integration + 154 e2e here. **The four «known failing» photo-path
 specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
 had been reporting for eleven rounds; only m9z-nav-progress stays locally red.

@@ -4,10 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   clientLabels,
   formatEtaRange,
+  journeyLabel,
   stageLabel,
   type ClientLabels,
 } from '@/modules/platform/telegram/client-labels';
-import { CARGO_STAGES, stageIndex } from '@/modules/wms/client-cabinet/stages';
 import type { CabinetPayload } from '@/modules/wms/client-cabinet/miniapp';
 
 /**
@@ -310,19 +310,10 @@ function Lot({
   initData: string;
   onZoom: (url: string) => void;
 }) {
-  // Sorted biggest-first by the service, so the ladder is drawn for the bulk
-  // of the cargo and any remainder is named under it.
+  // Sorted biggest-first by the service, so the headline and the road are
+  // drawn for the bulk of the cargo and any remainder is named under it.
   const main = lot.groups[0];
-  const at = main ? stageIndex(main.stage) : 0;
-  // One 🗓 line per distinct date, not per group: two lots on the same truck
-  // would otherwise print the same sentence twice.
-  const etas = [
-    ...new Map(
-      lot.groups
-        .filter((g) => g.eta)
-        .map((g) => [`${g.eta!.toPlace}|${g.eta!.fromIso}|${g.eta!.toIso}`, g.eta!]),
-    ).values(),
-  ];
+  const road = main?.transit ?? null;
   return (
     <article className="cab-lot" data-testid="cab-lot">
       <div className="cab-lot-top">
@@ -349,28 +340,50 @@ function Lot({
         <div className="cab-where">📍 {lot.warehousePlaces.join(', ')}</div>
       )}
 
-      {/* The owner's own ladder — «htoyda qabul → … → olib ketdingiz» — as
-          nine segments filled up to where the cargo stands. It replaced a
-          proportional bar of BOX STATUSES, which showed how the boxes were
-          split without ever saying how far along the road any of them were:
-          the question every customer opens this screen to ask. */}
-      <div className="cab-track" data-testid="cab-track" title={t.journey}>
-        {CARGO_STAGES.map((stage, i) => (
-          <i key={stage} className={i < at ? 'done' : i === at ? 'now' : ''} />
-        ))}
-      </div>
-
       {main && (
         <div className="cab-stage" data-testid="cab-stage">
           {stageLabel(main.stage, t)}
         </div>
       )}
 
-      {etas.map((eta) => (
-        <div className="cab-eta" key={eta.toIso} data-testid="cab-eta">
-          🗓 {eta.toPlace}: {t.etaAbout} {formatEtaRange(eta.fromIso, eta.toIso, locale)}
+      {/* The road, when the cargo is ON one: its two ends by name and how
+          much of it the schedule says is behind — the owner's ask verbatim,
+          «yolni qanchasini bosib otganini korsatadgan». It replaced an
+          unlabelled ten-segment strip, which he read as meaning nothing —
+          because without names and dates it meant nothing. */}
+      {road && (
+        <div className="cab-road" data-testid="cab-road">
+          <div className="cab-road-ends">
+            <span>{road.fromPlace}</span>
+            <b>{Math.round(road.progress * 100)}%</b>
+            <span>{road.toPlace}</span>
+          </div>
+          <div className="cab-road-bar">
+            <i style={{ width: `${Math.round(road.progress * 100)}%` }} />
+            <u style={{ left: `${Math.round(road.progress * 100)}%` }}>🚛</u>
+          </div>
+          {road.etaFromIso && road.etaToIso && (
+            <div className="cab-eta" data-testid="cab-eta">
+              🗓 {road.toPlace}: {t.etaAbout}{' '}
+              {formatEtaRange(road.etaFromIso, road.etaToIso, locale)}
+            </div>
+          )}
         </div>
-      ))}
+      )}
+
+      {/* What happened and when — dates the database has carried since the
+          first scan, finally on the one screen a customer opens. Oldest
+          first; the newest line is where the headline above picks up. */}
+      {lot.journey.length > 0 && (
+        <ol className="cab-journey" data-testid="cab-journey">
+          {lot.journey.map((step, i) => (
+            <li key={step.key} className={i === lot.journey.length - 1 ? 'now' : ''}>
+              <time>{formatEtaRange(step.atIso, step.atIso, locale)}</time>
+              <span>{journeyLabel(step.key, t)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
 
       {/* Only when the lot is split. One chip is the sentence above, repeated. */}
       {lot.groups.length > 1 && (
