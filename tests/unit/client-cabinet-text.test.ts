@@ -116,7 +116,8 @@ describe('cargo handed to the client (round 100, item 6)', () => {
   it('an event from before this round still renders, without inventing totals', () => {
     // The events table holds years of BoxIssued rows with no `lots` — a
     // replay or late worker must not crash or print «0 kg» about them.
-    const { lots: _lots, ...old } = ISSUED;
+    const old: Record<string, unknown> = { ...ISSUED };
+    delete old.lots;
     const text = renderClientCabinetText('BoxIssued', old, 'uz')!;
     expect(text).toContain('GS777');
     expect(text).toContain('Oluvchi Aka');
