@@ -9,12 +9,12 @@ import * as schema from '../db/schema';
  * column added next month is in the card the same day and a hand-written list
  * can never rot into hallucinated columns. Only the TRAP PROSE is written by
  * hand — the house rules a correct-looking query silently breaks — and the
- * allowlist itself, which must match migration 0079's GRANT statement
+ * allowlist itself, which must match migration 0080's GRANT statement
  * word for word (`tests/unit/ai-schema-card.test.ts` reads the migration and
  * says so).
  */
 
-/** Every table the role may read, keyed by its SQL name — 0079's allowlist. */
+/** Every table the role may read, keyed by its SQL name — 0080's allowlist. */
 export const ANALYST_TABLES: Record<string, AnyPgTable> = Object.fromEntries(
   (
     [
@@ -43,7 +43,7 @@ export const ANALYST_TABLES: Record<string, AnyPgTable> = Object.fromEntries(
 /**
  * Tables that must NEVER be granted — credentials, session blobs, and the
  * blobs that may CONTAIN them (audit_log's before/after). The unit test
- * asserts none of these appears in 0079's GRANT and the integration test
+ * asserts none of these appears in 0080's GRANT and the integration test
  * asserts the live role holds zero privilege on them.
  */
 export const EXCLUDED_TABLES = [

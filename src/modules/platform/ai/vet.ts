@@ -2,7 +2,7 @@
  * The gate in front of model-written SQL.
  *
  * This vet is NOT the confidentiality boundary — that is the `gsr_ai_reader`
- * role's grants (migration 0079) — but it is load-bearing for one specific
+ * role's grants (migration 0080) — but it is load-bearing for one specific
  * thing: postgres.js `unsafe` executes a multi-statement string, so
  * `x) __ai LIMIT 1; RESET ROLE; SELECT … --` smuggled into the runner's wrap
  * would climb back out of the role. Refusing every semicolon and both comment

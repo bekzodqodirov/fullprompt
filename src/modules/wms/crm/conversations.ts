@@ -322,6 +322,46 @@ export async function conversationFor(
 }
 
 /**
+ * The conversation a LEAD's own chat rows form.
+ *
+ * Round 82 gave `tg_messages` a `lead_id` so an unknown chat could open a
+ * lead; nothing ever drew those rows on the lead's card, which is the owner's
+ * report verbatim: «telegramdan yozgan odamni lead qilib olingandan keyin…
+ * chatlar tushmayabti lead kartasiga». Same projection, scoping and ordering
+ * as `conversationFor` — to the reader it is the same panel, only the key
+ * differs. A converted lead keeps its `lead_id` (rekeyLeadChats), so the card
+ * asks this only when no CLIENT resolves, or the same bubbles would render
+ * twice.
+ */
+export async function conversationForLead(
+  leadId: string,
+  viewer: TgViewer,
+  limit = 200,
+): Promise<ConversationMessage[]> {
+  const accountFilter = viewer.all ? undefined : eq(tgMessages.managerUserId, viewer.id);
+  const rows = await db
+    .select({
+      id: tgMessages.id,
+      direction: tgMessages.direction,
+      body: tgMessages.body,
+      hasMedia: tgMessages.hasMedia,
+      sentAt: tgMessages.sentAt,
+      manager: users.fullName,
+      managerUserId: tgMessages.managerUserId,
+      peerId: tgMessages.peerId,
+      tgMessageId: tgMessages.tgMessageId,
+      replyToTgMessageId: tgMessages.replyToTgMessageId,
+      fwdFrom: tgMessages.fwdFrom,
+    })
+    .from(tgMessages)
+    .innerJoin(users, eq(tgMessages.managerUserId, users.id))
+    .where(and(eq(tgMessages.leadId, leadId), accountFilter))
+    .orderBy(desc(tgMessages.sentAt))
+    .limit(limit);
+  return attachQuotes(await attachMedia(rows));
+}
+
+/**
  * What each quoting message is quoting (0072).
  *
  * ONE query for the whole page, keyed on the same triple the thread's unique

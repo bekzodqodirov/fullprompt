@@ -26,7 +26,7 @@ import { buildTools, isAnalyst, type AssistantActor } from './tools';
  * web screen speaks the viewer's locale, and the service must not pick for
  * them.
  *
- * The question ledger (`ai_questions`, 0079) is written BEFORE the model is
+ * The question ledger (`ai_questions`, 0080) is written BEFORE the model is
  * called, atomically against the daily cap — the reservation is the row, so
  * two simultaneous questions cannot both slip under the limit, a crash still
  * spends a slot, and the ledger doubles as the audit of every tool call and

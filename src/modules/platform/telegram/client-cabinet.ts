@@ -577,7 +577,10 @@ export function registerClientCabinet(bot: Bot): void {
     // is the one bit of the cabinet a language switch would visibly miss.
     await setCabinetMenuButton(ctx.chat!.id, picked);
     await ctx.answerCallbackQuery(t.languageSet);
-    await ctx.reply(t.languageSet, { reply_markup: cabinetKeyboard(picked) });
+    // Re-derived (round 100, 13A): a staff+client chat switching language
+    // used to get the bare cabinet keyboard and lose its staff row.
+    const { replyKeyboardFor } = await import('./keyboards');
+    await ctx.reply(t.languageSet, { reply_markup: await replyKeyboardFor(BigInt(ctx.chat!.id), picked) });
   });
 
   bot.callbackQuery(/^ph:(.+)$/, async (ctx) => {

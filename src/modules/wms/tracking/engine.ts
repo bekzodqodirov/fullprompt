@@ -39,13 +39,26 @@ export interface TransitEstimate {
 
 const mid = (h: [number, number]) => (h[0] + h[1]) / 2;
 
+/**
+ * The length of one chord, in degrees, with the east-west axis weighted by
+ * cos(lat) — IN RADIANS, which is the half of this formula a slip cannot
+ * survive (round 100, 9a). Unweighted, a degree of longitude counted like a
+ * degree of latitude, so the pacing along the corridor under-weighted the
+ * east-west stretches by ~23 % at 40°N: the dot stayed ON the line but sat
+ * the wrong distance along it.
+ */
+export function chordDeg(a: RoutePoint, b: RoutePoint): number {
+  const midLatRad = (((a.y + b.y) / 2) * Math.PI) / 180;
+  return Math.hypot((b.x - a.x) * Math.cos(midLatRad), b.y - a.y);
+}
+
 function pointAlong(points: RoutePoint[], from: number, to: number, frac: number): RoutePoint {
   if (to <= from) return points[from]!;
   const seg = points.slice(from, to + 1);
   const dists: number[] = [];
   let total = 0;
   for (let i = 0; i < seg.length - 1; i += 1) {
-    const d = Math.hypot(seg[i + 1]!.x - seg[i]!.x, seg[i + 1]!.y - seg[i]!.y);
+    const d = chordDeg(seg[i]!, seg[i + 1]!);
     dists.push(d);
     total += d;
   }
@@ -110,4 +123,42 @@ export function estimateTransit(
   // Unreachable (last segment handled above), but keep TS satisfied.
   const last = route.points[route.points.length - 1]!;
   return { x: last.x, y: last.y, segKey: 'transit', progress: 1, overdue: true, remainingHours: [0, 0] };
+}
+
+/**
+ * The nearest point ON the route to a GPS fix — or null when the fix is
+ * genuinely off the corridor (round 100, 9a).
+ *
+ * A phone's fix lands tens of metres off the drawn line as a matter of
+ * course, and painted raw it puts the lorry on a mountainside beside the
+ * road the polyline draws. Within `tolDeg` the truth is «on this road, here»
+ * and the marker snaps; beyond it the raw fix wins, because a real detour is
+ * information the map must not iron flat. The tolerance is degrees for the
+ * same reason the whole engine is: this is a drawing, not surveying.
+ */
+export function snapToRoute(
+  points: RoutePoint[],
+  fix: RoutePoint,
+  tolDeg = 0.15,
+): RoutePoint | null {
+  let best: RoutePoint | null = null;
+  let bestDist = Infinity;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    const t =
+      lenSq === 0
+        ? 0
+        : Math.max(0, Math.min(1, ((fix.x - a.x) * dx + (fix.y - a.y) * dy) / lenSq));
+    const candidate = { x: a.x + dx * t, y: a.y + dy * t };
+    const dist = chordDeg(candidate, fix);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = candidate;
+    }
+  }
+  return best !== null && bestDist <= tolDeg ? best : null;
 }

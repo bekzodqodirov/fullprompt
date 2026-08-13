@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, boxes, boxMovements, clients, receiptLots, receipts } from '../../platform/db/schema';
 import { scheduleEstimate } from './eta';
+import { snapToRoute } from './engine';
 import type { LatestPosition } from './devices';
 
 /** The marker /map draws — structurally the component's MapTruck. */
@@ -105,14 +106,20 @@ export async function truckFor(
   // A fresh fix from the driver's phone replaces the estimated dot; a stale
   // one is kept as information but the schedule drives the marker again.
   const live = fix?.fresh ? fix : null;
+  // A fix near the corridor is drawn ON it (round 100, 9a — the owner:
+  // «mashina kordinatsiyalari toglar ustiga chiqib ketyabti»): a phone's
+  // fix is honestly tens of metres off the drawn line, and painted raw it
+  // parks the lorry on the mountainside beside the road. A fix genuinely OFF
+  // the corridor stays raw — a detour is information, not noise.
+  const snapped = live ? snapToRoute(route.points, { x: live.lon, y: live.lat }) : null;
 
   return {
     batchId: batch.id,
     code: batch.code,
     originCode,
     destCode,
-    x: live ? live.lon : est.x,
-    y: live ? live.lat : est.y,
+    x: live ? (snapped?.x ?? live.lon) : est.x,
+    y: live ? (snapped?.y ?? live.lat) : est.y,
     live: live !== null,
     fixAgeMinutes: fix?.ageMinutes ?? null,
     fixSource: fix?.source ?? null,

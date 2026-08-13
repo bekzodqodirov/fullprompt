@@ -88,6 +88,43 @@ describe('cargo arrived at the Chinese warehouse', () => {
   });
 });
 
+describe('cargo handed to the client (round 100, item 6)', () => {
+  const ISSUED = {
+    clientCode: 'GS777',
+    warehouseCode: 'TAS',
+    boxCount: 3,
+    personName: 'Oluvchi Aka',
+    remaining: 2,
+    lots: [
+      { letter: 'A', productNameZh: '手机壳', productNameRu: 'Чехлы', boxCount: 2, totalWeightKg: 16, totalVolumeM3: 0.2 },
+      { letter: 'B', productNameZh: '杂货', productNameRu: null, boxCount: 1, totalWeightKg: 5, totalVolumeM3: 0.027 },
+    ],
+  };
+
+  it('carries the goods, the kilos and the cubes — not a bare box count', () => {
+    // Owner: «Yukingiz berildi degandan keyin toliq necha dona necha kub
+    // necha kg nima tovar berilganini telegram jonatsin».
+    const text = renderClientCabinetText('BoxIssued', ISSUED, 'uz')!;
+    expect(text).toContain('Чехлы');
+    expect(text).toContain('杂货');
+    expect(text).toContain('21'); // 16 + 5 kg
+    expect(text).toContain('0.23'); // 0.2 + 0.027 m³, two decimals
+    expect(text).toContain('Oluvchi Aka');
+    expect(text).toContain('3');
+  });
+
+  it('an event from before this round still renders, without inventing totals', () => {
+    // The events table holds years of BoxIssued rows with no `lots` — a
+    // replay or late worker must not crash or print «0 kg» about them.
+    const old: Record<string, unknown> = { ...ISSUED };
+    delete old.lots;
+    const text = renderClientCabinetText('BoxIssued', old, 'uz')!;
+    expect(text).toContain('GS777');
+    expect(text).toContain('Oluvchi Aka');
+    expect(text).not.toContain('kg');
+  });
+});
+
 describe('the client’s language', () => {
   it('takes the primary subtag from Telegram, and only if we speak it', () => {
     expect(localeFromTelegram('ru')).toBe('ru');

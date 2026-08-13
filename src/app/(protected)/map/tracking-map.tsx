@@ -8,6 +8,8 @@ import { graticule, LANDMARKS, toSvg, VIEWBOX } from '@/modules/wms/tracking/map
 import { Icon } from '@/components/ui/icon';
 
 export interface MapWarehouse {
+  /** The warehouses row id — what /stock's `wh` filter actually reads. */
+  id: string;
   code: string;
   name: string;
   /** lon */
@@ -166,8 +168,11 @@ export function TrackingMap({
               </span>
             ))}
           </div>
+          {/* `wh` + the row id: /stock reads no other spelling — the old
+              `?warehouse=<code>` was silently ignored and opened the whole
+              book (round 100, the owner's item 9c). */}
           <Link
-            href={`/stock?warehouse=${selWh.code}`}
+            href={`/stock?wh=${selWh.id}`}
             className="text-sm font-semibold text-brand-700 underline"
           >
             {t('openStock')} →

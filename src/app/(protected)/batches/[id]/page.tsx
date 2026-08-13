@@ -42,6 +42,7 @@ import { CustomsCleared } from './customs-cleared';
 import { CustomsFirm } from './customs-firm';
 import { CustomsPerReceipt } from './customs-per-receipt';
 import { batchCustomsRows } from '@/modules/wms/partners/customs';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -374,7 +375,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             missing={missingRows.map(({ box, letter, clientCode, marking }) => ({
               boxId: box.id,
               shortCode: box.shortCode,
-              label: `${clientCode ?? marking ?? '?'}-${letter}`,
+              label: `${codeIdentity(marking, clientCode).main}-${letter}`,
             }))}
             remaining={remainingToAccept}
             canUnload={canUnload}
@@ -411,7 +412,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               </tr>
             </thead>
             <tbody>
-              {contents.map((lot) => (
+              {contents.map((lot) => {
+                const id = codeIdentity(lot.marking, lot.clientCode);
+                return (
                 <tr key={lot.lotId} className="border-b border-line last:border-0">
                   <td className="p-1.5">
                     <div className="flex items-center gap-1">
@@ -435,7 +438,12 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                       href={`/stock?lot=${lot.lotId}`}
                       className="font-mono font-extrabold text-brand-700"
                     >
-                      {lot.clientCode ?? lot.marking ?? '?'}-{lot.letter}
+                      {id.main}-{lot.letter}
+                      {id.sub && (
+                        <span className="block font-sans text-2xs font-normal text-ink-500">
+                          {id.sub}
+                        </span>
+                      )}
                     </Link>
                   </td>
                   <td className="max-w-56 p-2">
@@ -455,7 +463,8 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                   <td className="p-2 text-right">{Math.round(lot.kg)}</td>
                   <td className="p-2 text-right">{Math.round(lot.m3 * 100) / 100}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -470,7 +479,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <div className="mt-2 space-y-1 text-sm">
             {[...loadedBoxes
               .reduce((acc, b) => {
-                const label = `${b.clientCode ?? b.marking ?? '?'}-${b.letter}`;
+                const label = `${codeIdentity(b.marking, b.clientCode).main}-${b.letter}`;
                 acc.set(label, [...(acc.get(label) ?? []), b.shortCode]);
                 return acc;
               }, new Map<string, string[]>())

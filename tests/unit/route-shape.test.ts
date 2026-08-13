@@ -94,6 +94,17 @@ describe('the corridor a truck is drawn on', () => {
     expect(nearest(path, { x: 95.78, y: 40.52 })).toBeLessThan(0.4); // Guazhou
   });
 
+  it('turns before Kashgar at Artux (round 100)', () => {
+    // 0.1, not the 0.4 the older pins use: the straight BCH→KA chord passes
+    // 0.225° from Artux, so a loose pin would stay green with the bend
+    // removed — a red proof that will not go red is evidence about the
+    // fixture (#166). (Tianzhu, added in the same round, gets NO pin: it
+    // sits 0.055° from the old chord — it paces the Wushaoling climb, it
+    // does not bend the drawing, and no honest threshold can see it.)
+    const path = walk(routeFor('YW', 'KA')!);
+    expect(nearest(path, { x: 76.17, y: 39.72 })).toBeLessThan(0.1); // Artux
+  });
+
   it('never leaves the drawn line — the estimate IS a point on the road', () => {
     for (const [origin, dest] of PAIRS) {
       const route = routeFor(origin, dest)!;

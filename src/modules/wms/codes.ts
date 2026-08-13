@@ -53,8 +53,23 @@ export async function nextBatchCode(
   warehouse: { code: string; batchPrefix: string | null },
 ): Promise<string> {
   const prefix = warehouse.batchPrefix || warehouse.code;
-  const seq = await bumpCounter(tx, 'batch_seq', prefix);
-  return `${prefix}-${String(seq).padStart(3, '0')}`;
+  // The counter says which number is NEXT; the table says which are TAKEN —
+  // and the two can disagree (round 100, the owner's item 7): production's
+  // YW counter stood BEHIND the existing codes, the insert hit the unique
+  // index, the whole transaction — counter bump included — rolled back, and
+  // every retry minted the same taken code for ever. Walking past taken
+  // codes heals the counter permanently: each loop step consumes a number,
+  // so after one successful mint the counter stands clear of the collision
+  // block. Concurrent minters serialize on the counter row's lock, and the
+  // unique index stays the final arbiter.
+  for (;;) {
+    const seq = await bumpCounter(tx, 'batch_seq', prefix);
+    const code = `${prefix}-${String(seq).padStart(3, '0')}`;
+    const taken = (await tx.execute(
+      sql`SELECT 1 FROM batches WHERE code = ${code} LIMIT 1`,
+    )) as unknown as unknown[];
+    if (taken.length === 0) return code;
+  }
 }
 
 /** Crate code `CR-{WH}{YY}-{00000}`, per-WH-per-year sequence (DECISIONS #19). */

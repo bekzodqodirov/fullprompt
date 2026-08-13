@@ -21,7 +21,6 @@ import {
   setDealDiscount,
   updateDeal,
 } from '@/modules/wms/deals/service';
-import { FinanceError, addTransaction } from '@/modules/wms/finance/service';
 import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
 
 export interface DealFormState {
@@ -269,50 +268,14 @@ export async function linkReceiptAction(
   return state;
 }
 
-/**
- * Post the agreed price of this job to the client's account.
- *
- * The deal is where the number was negotiated, so this is where it should be
- * raised — and only a charge that carries its deal can ever be covered by that
- * deal's payment deferral. A charge posted from batch pricing has no deal and
- * keeps blocking the handover exactly as it should.
- *
- * Gated on `finance.manage`, not on the deal-write list: agreeing a price and
- * putting money on a client's account are different powers, and the second one
- * already has a permission that means exactly this.
+/*
+ * `chargeDealAction` lived here from phase 5 to round 100. The owner closed
+ * the door — «sotuvchi narx qoyib qoyadi, buni adminga qoldir … yop bitimdan
+ * yop buni» — so charging happens on the ledger (/finance/<client>, whose
+ * deal picker covers open AND recently-decided deals) and on batch pricing.
+ * Deleted, not hidden: a control removed from a screen while the action
+ * still accepts posts is hidden, not removed (round 70's rule).
  */
-export async function chargeDealAction(
-  dealId: string,
-  clientId: string,
-  _prev: DealFormState,
-  form: FormData,
-): Promise<DealFormState> {
-  const actor = await getActor();
-  if (!actor?.permissions.has('finance.manage')) return { error: 'forbidden' };
-  const amount = optionalNumber(form.get('amount'));
-  if (!amount || amount <= 0) return { error: 'validation' };
-  const meta = await requestMeta();
-  try {
-    await addTransaction(
-      {
-        clientId,
-        dealId,
-        type: 'charge',
-        amount,
-        currency: String(form.get('currency') ?? 'USD'),
-        txDate: new Date().toISOString().slice(0, 10),
-        note: String(form.get('note') ?? ''),
-      },
-      { actorId: actor.id, ...meta },
-    );
-  } catch (err) {
-    if (err instanceof FinanceError) return { error: err.code };
-    throw err;
-  }
-  revalidatePath(`/bitimlar/${dealId}`);
-  revalidatePath(`/finance/${clientId}`);
-  return { ok: true };
-}
 
 export async function deferPaymentAction(
   dealId: string,

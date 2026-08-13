@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -1343,7 +1343,44 @@ export async function dealById(id: string) {
     .from(receipts)
     .where(eq(receipts.dealId, id))
     .orderBy(desc(receipts.receivedAt));
-  return { ...row, lines, receipts: linked };
+  // The same contents the PICKER prints (round 79): linking a prixod must
+  // not cost it its goods/kg/m³ — the enrichment had been written into one
+  // of the two readers only (round 100, owner's item 2).
+  const contents = await receiptContents(linked.map((r) => r.id));
+  return {
+    ...row,
+    lines,
+    receipts: linked.map((r) => {
+      const own = contents.get(r.id);
+      return {
+        ...r,
+        goods: own?.goods ?? '',
+        volumeM3: own ? Number(own.volumeM3) : 0,
+        weightKg: own ? Number(own.weightKg) : 0,
+      };
+    }),
+  };
+}
+
+/**
+ * What a set of prixods CONTAINS — goods (ru name preferred), kg, m³ — in
+ * ONE grouped query (#432). The picker and the linked list both read this,
+ * so the two say the same words about the same cargo.
+ */
+async function receiptContents(receiptIds: string[]) {
+  if (receiptIds.length === 0)
+    return new Map<string, { goods: string; volumeM3: string; weightKg: string }>();
+  const rows = await db
+    .select({
+      receiptId: receiptLots.receiptId,
+      goods: sql<string>`string_agg(DISTINCT coalesce(nullif(${receiptLots.productNameRu}, ''), ${receiptLots.productNameZh}), ', ')`,
+      volumeM3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
+      weightKg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
+    })
+    .from(receiptLots)
+    .where(inArray(receiptLots.receiptId, receiptIds))
+    .groupBy(receiptLots.receiptId);
+  return new Map(rows.map((row) => [row.receiptId, row]));
 }
 
 /** Confirmed receipts of this client that belong to no deal yet. */
@@ -1374,22 +1411,7 @@ export async function unlinkedReceipts(clientId: string) {
     .limit(50);
   if (rows.length === 0) return [];
 
-  const contents = await db
-    .select({
-      receiptId: receiptLots.receiptId,
-      goods: sql<string>`string_agg(DISTINCT coalesce(nullif(${receiptLots.productNameRu}, ''), ${receiptLots.productNameZh}), ', ')`,
-      volumeM3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
-      weightKg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
-    })
-    .from(receiptLots)
-    .where(
-      inArray(
-        receiptLots.receiptId,
-        rows.map((row) => row.id),
-      ),
-    )
-    .groupBy(receiptLots.receiptId);
-  const byReceipt = new Map(contents.map((row) => [row.receiptId, row]));
+  const byReceipt = await receiptContents(rows.map((row) => row.id));
 
   return rows.map((row) => {
     const own = byReceipt.get(row.id);
@@ -1426,6 +1448,43 @@ export async function openDealsForClient(clientId: string) {
     )
     .orderBy(desc(deals.createdAt))
     .limit(20);
+}
+
+/**
+ * The deals the LEDGER may attach money to (round 100 item 3).
+ *
+ * Wider than the receiving picker on purpose: the cargo triggers walk a deal
+ * into its won column the moment the last box is handed over, so a charge
+ * posted the day after delivery — the commonest correction there is — would
+ * find an open-only list empty and silently land with no deal, which the
+ * deferral gate and dealProfit can never see. Open deals, anything decided
+ * in the last 60 days, and anything with a LIVE deferral (whatever its age —
+ * that deferral exists to cover exactly this charge).
+ */
+export async function ledgerDealsForClient(clientId: string) {
+  const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000);
+  return db
+    .select({
+      id: deals.id,
+      code: deals.code,
+      title: deals.title,
+      quotedAmount: deals.quotedAmount,
+      quotedCurrency: deals.quotedCurrency,
+    })
+    .from(deals)
+    .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+    .where(
+      and(
+        eq(deals.clientId, clientId),
+        or(
+          eq(dealStages.kind, 'open'),
+          gte(deals.closedAt, cutoff),
+          and(isNotNull(deals.deferredAt), isNull(deals.deferralEndedAt)),
+        ),
+      ),
+    )
+    .orderBy(desc(deals.createdAt))
+    .limit(40);
 }
 
 /**

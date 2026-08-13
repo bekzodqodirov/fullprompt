@@ -15,7 +15,7 @@ import * as schema from '@/modules/platform/db/schema';
  * (#163's shape — the anchor lives outside the artifact it checks):
  *  - every table the card offers is really in the Drizzle schema, under the
  *    name the card uses;
- *  - migration 0079's GRANT names exactly the card's allowlist — a table
+ *  - migration 0080's GRANT names exactly the card's allowlist — a table
  *    granted but not described would be dead capability, a table described
  *    but not granted teaches the model to write queries that always fail;
  *  - no excluded table is granted OR described, and the two column-granted
@@ -23,7 +23,7 @@ import * as schema from '@/modules/platform/db/schema';
  */
 
 const MIGRATION = readFileSync(
-  'src/modules/platform/db/migrations/0079_ai_assistant.sql',
+  'src/modules/platform/db/migrations/0080_ai_assistant.sql',
   'utf8',
 );
 const grantOn = /GRANT SELECT ON\s+([\s\S]*?)\s+TO gsr_ai_reader/.exec(MIGRATION)?.[1] ?? '';
@@ -39,7 +39,7 @@ describe('the analyst schema card', () => {
     }
   });
 
-  it('matches migration 0079’s GRANT list exactly, both directions', () => {
+  it('matches migration 0080’s GRANT list exactly, both directions', () => {
     const cardTables = [...Object.keys(ANALYST_TABLES), 'v_client_balance_usd'].sort();
     expect(grantedTables.slice().sort()).toEqual(cardTables);
   });

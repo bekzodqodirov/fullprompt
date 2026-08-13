@@ -200,6 +200,14 @@ export const warehouses = pgTable(
     timezone: text('timezone').notNull(),
     batchPrefix: text('batch_prefix').notNull(),
     address: text('address'),
+    /**
+     * Where the warehouse actually stands (round 100, owner's 9B). NULL means
+     * «use the map's built-in point» — the dictionary the map has always
+     * drawn from stays as the fallback, so nothing moves until he types a
+     * coordinate on the admin form.
+     */
+    lat: numeric('lat', { precision: 9, scale: 6 }),
+    lon: numeric('lon', { precision: 9, scale: 6 }),
     /** Optional storage capacity for the fill indicator (owner request, M6). */
     capacityM3: numeric('capacity_m3', { precision: 12, scale: 2 }),
     /**
@@ -233,6 +241,8 @@ export const warehouses = pgTable(
       'warehouses_type_check',
       sql`${t.type} IN ('origin', 'hub', 'customs', 'distribution')`,
     ),
+    check('warehouses_lat_check', sql`${t.lat} IS NULL OR ${t.lat} BETWEEN -90 AND 90`),
+    check('warehouses_lon_check', sql`${t.lon} IS NULL OR ${t.lon} BETWEEN -180 AND 180`),
   ],
 );
 

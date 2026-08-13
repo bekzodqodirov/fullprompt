@@ -459,9 +459,13 @@ interface ViewProps<T extends KanbanItem> {
 /**
  * The tick in the corner of a card.
  *
- * `stopPropagation` AND `preventDefault`, because on the desktop board the
- * card itself IS the anchor and also carries the drag's pointer handlers: a
- * bare checkbox there would navigate to the card and start a drag on the way.
+ * `stopPropagation` only — on the desktop board the card IS the anchor and
+ * carries the drag's pointer handlers, and BUBBLING is what would navigate
+ * or arm a drag. `preventDefault` here cancelled the checkbox's own
+ * activation: the browser pre-toggles `checked`, and a cancelled click
+ * REVERTS it after React's flush — so the tick worked (the store toggled,
+ * bulk actions ran) while the ✓ itself never drew, on either board, since
+ * round 59 (owner: «checked bolgani korinmayabti»).
  */
 function SelectBox({
   id,
@@ -480,12 +484,8 @@ function SelectBox({
       aria-label={selection.label}
       data-testid="card-select"
       onPointerDown={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        event.stopPropagation();
-        event.preventDefault();
-        selection.store.toggle(id);
-      }}
-      onChange={() => {}}
+      onClick={(event) => event.stopPropagation()}
+      onChange={() => selection.store.toggle(id)}
       className="h-5 w-5 shrink-0 accent-brand-600"
     />
   );

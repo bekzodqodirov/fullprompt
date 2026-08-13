@@ -107,6 +107,12 @@ describe('who is behind a chat', () => {
     const newChat = chat + 1n;
     expect(await linkStaffChat(a.id, newChat)).toBe('linked');
     expect((await staffForChat(newChat))?.id).toBe(a.id);
+
+    // Re-opening your own link from the chat that already holds it is a
+    // re-link, never a refusal — the deep-link door now goes through this
+    // function (round 100, 13A), and a naive «if (holder)» would have turned
+    // every second tap on one's own code into «chat_taken».
+    expect(await linkStaffChat(a.id, newChat)).toBe('linked');
   });
 
   it('the «Hodim» intent is one-shot — a customer contact never staff-links', async () => {

@@ -9,7 +9,7 @@ import type { ModelToolSpec } from './model';
  * bot already answer with, actor threaded through (round 36's rule: the bot
  * may know only what the person already knows). Tier 2 — the super_admin /
  * admin ROLE, round 21's shape, a stated reversible widening — adds raw SQL
- * under the 0079 fence and the two report functions that make money answers
+ * under the 0080 fence and the two report functions that make money answers
  * true.
  *
  * The wms wrappers are reached by dynamic import: platform never imports wms

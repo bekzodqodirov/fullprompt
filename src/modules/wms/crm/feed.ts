@@ -123,6 +123,11 @@ export async function clientFeed(
         a.note                                    AS body,
         jsonb_build_object(
           'kind', a.kind,
+          -- WHO wrote it, as an id — round 100 (owner's 1A): the reader's own
+          -- notes sit on the right like any messenger, and only an id can
+          -- answer «is this mine». NULL for a machine's note, which is
+          -- nobody's and stays on the left.
+          'authorId', a.created_by,
           'files', (
             SELECT coalesce(jsonb_agg(jsonb_build_object(
               'id', att.id, 'name', att.file_name, 'image', att.content_type LIKE 'image/%'
@@ -149,17 +154,34 @@ export async function clientFeed(
       UNION ALL
 
       -- Cargo, at the moment a person cares about: it arrived and was booked.
+      -- The lots ride along (round 100, owner's 1A: «tovar nomi rus
+      -- tilidagisiham bor shu kg kubi bn toliq yozilsa») — one LATERAL over
+      -- receipt_lots instead of a subquery per figure, because this branch
+      -- already runs inside a six-way union. Meta only: the union is
+      -- POSITIONAL past the first branch, so a new top-level column would
+      -- have to be added to all six at the same ordinal.
       SELECT
         'rc-' || r.id::text, 'cargo', r.confirmed_at, u.full_name, r.source_note,
         jsonb_build_object(
           'number', r.number,
           'warehouse', w.code,
-          'boxes', (SELECT coalesce(sum(l.box_count), 0) FROM receipt_lots l WHERE l.receipt_id = r.id),
+          'boxes', lots.boxes,
+          'goods', lots.goods,
+          'kg', lots.kg,
+          'm3', lots.m3,
           'voided', r.voided_at IS NOT NULL
         )
       FROM receipts r
       JOIN warehouses w ON w.id = r.warehouse_id
       LEFT JOIN users u ON u.id = r.confirmed_by
+      LEFT JOIN LATERAL (
+        SELECT
+          coalesce(sum(l.box_count), 0)                        AS boxes,
+          string_agg(DISTINCT coalesce(nullif(l.product_name_ru, ''), l.product_name_zh), ', ') AS goods,
+          coalesce(sum(l.total_weight_kg), 0)                  AS kg,
+          coalesce(sum(l.total_volume_m3), 0)                  AS m3
+        FROM receipt_lots l WHERE l.receipt_id = r.id
+      ) lots ON true
       WHERE r.client_id = ${clientId} AND r.confirmed_at IS NOT NULL
         AND r.confirmed_at < ${cutoff}
 

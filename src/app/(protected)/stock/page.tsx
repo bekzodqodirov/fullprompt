@@ -22,6 +22,8 @@ import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
+import { transitTrucks } from '@/modules/wms/inventory/service';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -174,6 +176,10 @@ export default async function StockPage({
       sql`(${clients.clientCode} ILIKE ${'%' + params.q + '%'} OR ${receiptLots.productNameZh} ILIKE ${'%' + params.q + '%'} OR ${receiptLots.productNameRu} ILIKE ${'%' + params.q + '%'} OR ${receipts.unclaimedMarking} ILIKE ${'%' + params.q + '%'})`,
     );
   }
+  // The trucks on the road (round 100, owner's 5A). Its own query with its
+  // own scope: `scopeFilter` is built on `currentWarehouseId`, which is NULL
+  // for every in-transit box — reusing it would answer zero for ever.
+  const onRoad = await transitTrucks(actor, params.wh);
   const lines = await db
     .select({
       lot: receiptLots,
@@ -263,7 +269,7 @@ export default async function StockPage({
       line,
       // The printed code first (round 98); the export names the client in its
       // own column, so the code cell is the box's marking where there is one.
-      code: `${line.marking ?? line.clientCode ?? '❓'}-${line.lot.letter}`,
+      code: `${codeIdentity(line.marking, line.clientCode).main}-${line.lot.letter}`,
       product: `${line.lot.productNameZh} ${line.lot.productNameRu ?? ''}`.trim(),
       boxes: boxCount,
       perBoxKg,
@@ -389,6 +395,31 @@ export default async function StockPage({
         )}
       </p>
 
+      {/* What is ON THE ROAD to or from these warehouses (round 100, 5A).
+          Deliberately outside the Σ, the table, the sort and the XLSX — those
+          agree about the shelf, and a truck is not a shelf. Renders only when
+          something is actually driving. */}
+      {onRoad.length > 0 && (
+        <div className="space-y-1" data-testid="stock-onroad">
+          <p className="text-xs font-semibold text-ink-500">🚛 {t('onRoad')}</p>
+          <div className="flex flex-wrap gap-2">
+            {onRoad.map((truck) => (
+              <Link
+                key={truck.id}
+                href={`/batches/${truck.id}`}
+                className="card-tap block !py-1.5 px-3 text-sm"
+              >
+                <span className="font-mono font-bold text-brand-700">{truck.code}</span>{' '}
+                <span className="text-ink-500">
+                  {truck.originCode}→{truck.destCode}
+                </span>{' '}
+                · {truck.boxCount} 📦 · {truck.kg} kg · {truck.m3} m³
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-xl border border-line bg-surface-raised">
         <table className="w-full min-w-[860px] text-sm">
           <thead>
@@ -460,10 +491,11 @@ export default async function StockPage({
                         {/* The MARKING is the box's printed code (round 98):
                             it wins, and the claimed client's code sits small
                             beneath it — `GS500MANIKEN-AL` over `gs500`. */}
-                        {row.line.marking ?? row.line.clientCode ?? '❓'}-{row.line.lot.letter}
-                        {row.line.marking && row.line.clientCode && (
+                        {codeIdentity(row.line.marking, row.line.clientCode).main}-
+                        {row.line.lot.letter}
+                        {codeIdentity(row.line.marking, row.line.clientCode).sub && (
                           <span className="block font-sans text-2xs font-normal text-ink-500">
-                            {row.line.clientCode}
+                            {codeIdentity(row.line.marking, row.line.clientCode).sub}
                           </span>
                         )}
                       </Link>

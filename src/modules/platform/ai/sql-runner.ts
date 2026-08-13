@@ -13,7 +13,7 @@ import { vetAnalystSql } from './vet';
  *  3. `BEGIN READ ONLY` — a CTE hiding DML dies with 25006 even though the
  *     vet cannot parse it out.
  *  4. `SET LOCAL ROLE gsr_ai_reader` — the confidentiality boundary: the
- *     role's explicit grants (0079) are what keep sessions, password hashes
+ *     role's explicit grants (0080) are what keep sessions, password hashes
  *     and Telegram session blobs out of the model's context. permission
  *     denied (42501) comes back as an ordinary error the model can read.
  *

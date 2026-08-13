@@ -28,6 +28,7 @@ import { worthAlerting } from '@/modules/wms/deals/deviation';
 import {
   activeDeferrals,
   createDeal,
+  dealById,
   dealDeviation,
   dealReality,
   deferPayment,
@@ -304,6 +305,19 @@ describe('the reality side is summed from the receipts, never typed in', () => {
     await linkReceipt(receiptId, null, ctx());
     expect((await dealReality(right)).receiptCount).toBe(0);
     expect(await unlinkedFor(clientId, receiptId)).toBe(true);
+  });
+
+  it('a linked prixod keeps its goods, kg and m³ on the card (round 100, item 2)', async () => {
+    // The owner: after linking, «yana faqat id korinib qolyabti» — the picker
+    // said «货 · 1.2 m³ · 80 kg» and the linked row above it said only the
+    // number. Both must read from the same grouped query.
+    const id = await newDeal();
+    await receiveCargo(1.2, 80, 8, id);
+    const card = (await dealById(id))!;
+    expect(card.receipts).toHaveLength(1);
+    expect(card.receipts[0]!.goods).toContain('货');
+    expect(card.receipts[0]!.volumeM3).toBeCloseTo(1.2, 3);
+    expect(card.receipts[0]!.weightKg).toBeCloseTo(80, 3);
   });
 
   it('refuses to file one client’s cargo under another client’s job', async () => {
