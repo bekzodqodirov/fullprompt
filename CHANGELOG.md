@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## «Bugun qo'ng'iroq» tozalanadigan bo'ldi, rasm yuklash tezlashdi — 2026-08-15
+
+Ishga tushirilgan kuni aytgan ikkita muammoyingiz.
+
+**1. «Bugun qo'ng'iroq» ro'yxati yig'ilib qolayotgani.** Sababi topildi va uch
+joyda tuzatildi:
+
+- **Yopilgan lidlar chiqmay qolardi** — bu xato edi. Ro'yxat lidning
+  bosqichini umuman tekshirmagan, ya'ni «yutildi» yoki «yo'qotildi» ga
+  o'tkazilgan lid ham abadiy turaverardi. Endi faqat OCHIQ lidlar ko'rinadi.
+  Hozir yig'ilib qolgan yopiq lidlar deploydan keyin o'zi yo'qoladi.
+- **Bosqichni o'zgartirsangiz — «qo'ng'iroq qildim» deb hisoblanadi.** Lidni
+  keyingi bosqichga surganingizda sana avtomatik tozalanadi, endi ✏️ formani
+  ochib qo'lda o'zgartirish shart emas.
+- **Har bir qatorda ikkita tugma:** «✓ Bajarildi» (ro'yxatdan olib tashlaydi)
+  va «Ertaga» (bir kunga suradi). Bir bosishda.
+
+Siz aytganingizdek, **kechikkan ochiq lidlar ro'yxatda qoladi** — ular
+qilinmagan ish, ko'rinib turgani to'g'ri.
+
+**2. Xitoydagi skladchilarda rasm yuklash sekinligi.** Avval tekshirdik:
+kichraytirilgan nusxalar ishlayapti (406 tadan 401 tasi tayyor), demak sabab
+u emas edi. Haqiqiy sabab: **rasmlar birin-ketin yuklanardi** — 15 ta rasm
+bo'lsa, 15 marta navbat bilan. Endi **bir vaqtda 4 tadan** ketadi. Prixod
+ekranidagi uchala rasm/fayl qo'shish joyi ham shunday.
+
+Nega 4 ta, hammasi emas: arzon telefon 20 ta katta rasmni bir vaqtda
+siqishga urinsa xotirasi tugaydi, va sekin internetda 20 ta bir vaqtda
+yuborish 4 tadan sekinroq tugaydi.
+
+Migratsiya yo'q — **sanash 81 da qoladi.**
+
 ## Ishga tushirishdan oldingi audit: 6 ta xato topildi va tuzatildi — 2026-08-13
 
 So'rovingiz: «avval audit qilib chiq performance bug analis securitylarni

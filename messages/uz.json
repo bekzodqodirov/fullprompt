@@ -1398,7 +1398,10 @@
     "lostReasonLabel": "Sabab",
     "lostReasonsSetupHint": "Ro'yxat bo'sh bo'lsa sabab erkin matnda so'raladi; ro'yxat to'ldirilgach faqat undan tanlanadi.",
     "unowned": "Egasiz",
-    "dealsNoSource": "Manba filtri bitimlarga tegishli emas — bitimda manba yo'q."
+    "dealsNoSource": "Manba filtri bitimlarga tegishli emas — bitimda manba yo'q.",
+    "followUpDone": "Bajarildi",
+    "followUpTomorrow": "Ertaga",
+    "followUpFailed": "Saqlanmadi"
   },
   "navShort": {
     "home": "Bosh",

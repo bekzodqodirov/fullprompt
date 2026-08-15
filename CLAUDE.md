@@ -193,6 +193,28 @@ password); and the AI daily cap is a real lock — MEASURED, 10 parallel asks
 against a limit of 3 granted all ten before the fix. Red proofs ×6, two of
 which first stayed GREEN and were re-anchored (#709). No migration.
 1580 unit/integration + 155 e2e green on a fresh db in CI's order.
+
+**Round 102 — the first two reports from the floor** (#710-712, the day the
+whole staff started). (1) «Bugun qo'ng'iroq» filled up and never emptied:
+`followUps` had NO stage filter, so a lead moved to won/lost kept its date
+and stayed for ever — and every advert lead arrives booked for TODAY, so the
+pile grew by itself. Three parts, two of them his call: the list joins
+`lead_stages` and takes `kind='open'` (the bug); a real stage MOVE clears
+the follow-up («bosqichni o'zgartirgan zahoti avtomatik tushsin»); and every
+day-screen row carries «✓ Bajarildi» / «Ertaga» (`setFollowUp`, ownership
+re-derived server-side — the row arrived as an id in a form post). Overdue
+OPEN leads deliberately STAY, his answer: late work must not hide.
+(2) Photo upload slow in the Chinese warehouses: the interesting theory
+(thumbnails silently missing → the serve path falls back to full-size) was
+REFUTED by one query on his data — **401 of 406 photos have thumbnails** —
+and the real cause was the `for` loop that uploaded 10-20 photos one at a
+time from China to Europe. `components/pooled.ts` runs four at once; all
+three wizard upload paths use it. Red proofs ×4, one of which first stayed
+GREEN because the two lead fixes mask each other (#711 — the fixture now
+writes the closed stage directly, which is also what production's existing
+rows look like). No migration. 1587 unit/integration + 155 e2e green on a
+fresh db in CI's order; one unnamed failure in the first full run did not
+recur in the re-run or in three repeats of the touched files.
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
 `v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
 its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —
