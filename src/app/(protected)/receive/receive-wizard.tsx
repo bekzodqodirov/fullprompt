@@ -1,6 +1,7 @@
 'use client';
 
 import { compressPhoto } from '@/components/compress-photo';
+import { PHOTO_UPLOAD_CONCURRENCY, runPooled } from '@/components/pooled';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
@@ -427,7 +428,9 @@ export function ReceiveWizard({
   async function addPhotos(lot: LotDraft, files: FileList | null) {
     if (!files?.length) return;
     setError(null);
-    for (const file of Array.from(files)) {
+    const chosen = Array.from(files);
+
+    async function sendOne(file: File) {
       markBusy(lot.id, 1);
       try {
         const compressed = await compressPhoto(file);
@@ -460,12 +463,26 @@ export function ReceiveWizard({
         markBusy(lot.id, -1);
       }
     }
+
+    // A POOL, not a loop (owner, go-live day: «rasimlarni yuklaganda juda
+    // sekin»). The photos used to go one at a time, so a receipt's ten to
+    // twenty pictures cost the sum of ten to twenty compress-then-upload
+    // round trips — and the operators who take them are in China while the
+    // server is in Europe, which is exactly the case where latency, not
+    // bandwidth, is the bill. Sending several at once overlaps that wait.
+    //
+    // Bounded rather than all-at-once for two reasons that pull the same way:
+    // a warehouse phone compressing twenty 12-megapixel photographs in
+    // parallel runs out of memory, and twenty simultaneous uploads on a thin
+    // connection are slower than four, not faster.
+    await runPooled(chosen, PHOTO_UPLOAD_CONCURRENCY, sendOne);
   }
 
   async function addReceiptFiles(files: FileList | null) {
     if (!files?.length) return;
     setError(null);
-    for (const file of Array.from(files)) {
+    // Same pool as the lot photos: the papers arrive in handfuls too.
+    await runPooled(Array.from(files), PHOTO_UPLOAD_CONCURRENCY, async (file) => {
       markBusy(RECEIPT_SLOT, 1);
       try {
         const isImage = file.type.startsWith('image/');
@@ -492,13 +509,13 @@ export function ReceiveWizard({
       } finally {
         markBusy(RECEIPT_SLOT, -1);
       }
-    }
+    });
   }
 
   async function addGeneralPhotos(files: FileList | null) {
     if (!files?.length) return;
     setError(null);
-    for (const file of Array.from(files)) {
+    await runPooled(Array.from(files), PHOTO_UPLOAD_CONCURRENCY, async (file) => {
       markBusy(RECEIPT_SLOT, 1);
       try {
         const compressed = await compressPhoto(file);
@@ -518,7 +535,7 @@ export function ReceiveWizard({
       } finally {
         markBusy(RECEIPT_SLOT, -1);
       }
-    }
+    });
   }
 
   const clientChosen = draft.clientId !== null || (draft.unclaimed && draft.unclaimedMarking.trim());

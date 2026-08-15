@@ -14,8 +14,10 @@ import {
   similarLeads,
   CrmError,
   deleteStage,
+  FollowUpError,
   leadSchema,
   moveLead,
+  setFollowUp,
   setLeadOwner,
   reorderStages,
   saveLostReason,
@@ -209,6 +211,42 @@ export async function updateLeadAction(
  * `undefined` — every other door — means «say nothing about position», and
  * the service puts the card at the top of wherever it arrived.
  */
+/**
+ * «Bajarildi» / «Ertaga» on a day-screen call row.
+ *
+ * Its own action rather than `run()`: the day screen is not `/crm`, so the
+ * revalidate target differs, and the service needs to know whether this
+ * person may act on somebody else's row (`crm.leads.view_all`, the same grant
+ * that decides whose calls they were shown in the first place).
+ */
+export async function setFollowUpAction(
+  kind: 'lead' | 'client',
+  id: string,
+  until: string | null,
+): Promise<CrmFormState> {
+  let who;
+  try {
+    who = await authorize('crm.leads');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    await setFollowUp(kind, id, until, {
+      actorId: who.id,
+      ...meta,
+      viewAll: who.permissions.has('crm.leads.view_all'),
+    });
+  } catch (err) {
+    if (err instanceof FollowUpError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/bugun');
+  revalidatePath('/crm', 'layout');
+  return { ok: true };
+}
+
 export async function moveLeadAction(
   id: string,
   stageId: string,

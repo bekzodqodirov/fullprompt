@@ -578,7 +578,20 @@ export async function moveLead(
       boardOrder,
       // Only a real move decides anything: a drag inside the won column is a
       // re-order, not a second win, and must not move the month it counts in.
-      ...(stageId !== lead.stageId ? { closedAt: closedAtFor(stage.kind, new Date()) } : {}),
+      ...(stageId !== lead.stageId
+        ? {
+            closedAt: closedAtFor(stage.kind, new Date()),
+            nextActionAt: null,
+            nextActionNote: null,
+            // Moving the card IS the work (owner's answer, go-live day):
+            // «bosqichni o'zgartirgan zahoti avtomatik tushsin — bugun
+            // qo'ng'iroq qildim deb hisoblansin». So a real move clears the
+            // follow-up, and the lead leaves «bugun qo'ng'iroq» without
+            // anybody opening the ✏️ form to re-date it by hand. Setting a
+            // NEW date is the seller's own decision, made from the day
+            // screen's «ertaga» or on the card.
+          }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(leads.id, id));
@@ -1010,11 +1023,20 @@ export async function followUps(asOf: string, ownerId?: string): Promise<FollowU
       ownerId: leads.ownerId,
     })
     .from(leads)
+    // The stage is joined for ONE reason, and it is the defect the owner
+    // reported on go-live day («call today bo'lib yig'ilib turibti … ular
+    // bilan ishlash boshlagandan keyin ham o'sha yerda turibti»): this list
+    // had no stage filter at all, so a lead moved to WON or LOST — a job
+    // finished, a customer gone — kept its old follow-up date and sat on the
+    // call list for ever. Every advert lead arrives booked for TODAY
+    // (`inbound.ts`), so the pile grows by itself.
+    .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
     .where(
       and(
         isNotNull(leads.nextActionAt),
         lte(leads.nextActionAt, asOf),
         isNull(leads.clientId),
+        eq(leadStages.kind, 'open'),
         // Mine OR unclaimed — the board's rule (round 74), and now load-bearing:
         // a lead that arrives from an advert is booked for today and handed to
         // whoever's turn it is, but when nobody is in the rotation it has no
@@ -1065,6 +1087,67 @@ export async function followUps(asOf: string, ownerId?: string): Promise<FollowU
       ownerId: row.ownerId,
     })),
   ].sort((a, b) => a.dueOn.localeCompare(b.dueOn));
+}
+
+export class FollowUpError extends Error {
+  constructor(public readonly code: 'not_found' | 'not_yours') {
+    super(code);
+  }
+}
+
+/**
+ * Close or postpone one row of «bugun qo'ng'iroq», from the day screen.
+ *
+ * The list had no action at all: the only way to take a name off it was to
+ * open the card, unfold the ✏️ form and re-date it by hand, which is why the
+ * owner watched it fill up instead of empty («yig'ilib turibti»). One tap is
+ * the whole fix — `until: null` means «done, nothing scheduled», a date means
+ * «not today, then».
+ *
+ * Ownership is re-derived here rather than trusted from the screen: the row
+ * arrived as an id in a form post, and the list this action serves is
+ * per-person. The rule matches `followUps`' own — mine, or unclaimed for a
+ * lead — so the button can never reach a colleague's call.
+ */
+export async function setFollowUp(
+  kind: 'lead' | 'client',
+  id: string,
+  until: string | null,
+  ctx: AuditContext & { viewAll?: boolean },
+): Promise<void> {
+  if (!ctx.actorId) throw new CrmError('unauthenticated');
+  const row =
+    kind === 'lead'
+      ? await db.query.leads.findFirst({ where: eq(leads.id, id) })
+      : await db.query.clients.findFirst({ where: eq(clients.id, id) });
+  if (!row) throw new FollowUpError('not_found');
+
+  const owner = 'ownerId' in row ? row.ownerId : row.salesManagerId;
+  // A lead nobody has claimed is on everybody's list (round 74), so anyone
+  // whose list showed it may also clear it.
+  const mine = owner === ctx.actorId || (kind === 'lead' && owner === null);
+  if (!ctx.viewAll && !mine) throw new FollowUpError('not_yours');
+
+  const table = kind === 'lead' ? leads : clients;
+  await db
+    .update(table)
+    .set({
+      nextActionAt: until,
+      // The note belongs to the date that carried it: keeping «call about the
+      // Guangzhou quote» against a cleared follow-up would put a stale
+      // sentence on the card for ever.
+      ...(until === null ? { nextActionNote: null } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(table.id, id));
+
+  await writeAudit(db, ctx, {
+    entityType: kind,
+    entityId: id,
+    action: 'update',
+    before: { nextActionAt: row.nextActionAt },
+    after: { nextActionAt: until },
+  });
 }
 
 /**

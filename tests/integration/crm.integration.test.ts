@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -30,6 +30,7 @@ import {
   deleteStage,
   dormantClients,
   followUps,
+  setFollowUp,
   funnelReport,
   listActivities,
   listLeads,
@@ -94,7 +95,25 @@ beforeAll(async () => {
   stageLostId = stages.find((stage) => stage.kind === 'lost')!.id;
 });
 
+/**
+ * Leads the follow-up tests create and must take away again.
+ *
+ * This file has never cleaned up after itself, and the funnel-archive test
+ * reads a SHARED list — the newest closed leads across the whole funnel,
+ * ordered `board_order ASC NULLS FIRST`. `createLead` leaves `board_order`
+ * NULL, so a lead this file closes sorts to the very TOP of that archive
+ * slice and pushes the archive test's own rows out of it. Round 102's lost-
+ * lead fixture did exactly that and turned a fragile test red in CI (#380:
+ * leftovers in an integration file are worse than in Playwright, because
+ * vitest orders files by a duration cache and the next reader is
+ * unpredictable).
+ */
+const followUpLeads: string[] = [];
+
 afterAll(async () => {
+  if (followUpLeads.length > 0) {
+    await db.delete(leads).where(inArray(leads.id, followUpLeads));
+  }
   await pgClient.end();
 });
 
@@ -238,6 +257,100 @@ describe('contact history and follow-ups', () => {
     expect(due.some((entry) => entry.id === later.id)).toBe(false);
     // Oldest first — the one waiting longest is the one to call.
     expect(due.map((entry) => entry.dueOn)).toEqual([...due.map((entry) => entry.dueOn)].sort());
+  });
+
+  it('a CLOSED lead leaves the call list — won or lost is not a call', async () => {
+    // The owner's go-live report: «call today bo'lib yig'ilib turibti … ular
+    // bilan ishlash boshlagandan keyin ham o'sha yerda turibti». The list had
+    // no stage filter at all, so a finished lead kept its old date and sat
+    // there for ever — and every advert lead arrives booked for TODAY, so the
+    // pile grew by itself.
+    const lead = await createLead(
+      { name: `Yopiladi ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1) },
+      ctx(),
+    );
+    followUpLeads.push(lead.id);
+    expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(true);
+
+    // The stage is written DIRECTLY, not through `moveLead`, and that is the
+    // whole point of this test: `moveLead` now also clears the date, so
+    // closing the lead through it would take the row off the list for the
+    // other fix's reason and this filter would never be exercised — the first
+    // version of this test did exactly that and stayed green with the filter
+    // stripped out (#166: a red proof that will not go red is evidence about
+    // the fixture). What this pins is the state PRODUCTION is already in:
+    // leads closed before the fix shipped, still carrying an old call date.
+    await db
+      .update(leads)
+      // `board_order` is set as `moveLead` would, so this fixture cannot
+      // jump to the top of the shared closed slice the way a NULL does
+      // (`ASC NULLS FIRST`) and disturb the funnel-archive test.
+      .set({ stageId: stageLostId, lostReason: 'qimmat', boardOrder: 900_000 })
+      .where(eq(leads.id, lead.id));
+    expect(
+      (await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id),
+      'a lost lead is not a call to make',
+    ).toBe(false);
+  });
+
+  it('moving the card counts as the call — the follow-up clears itself', async () => {
+    // The owner's answer to «when should it drop off»: moving the stage IS
+    // the work, so the seller should not have to open the ✏️ form and re-date
+    // the lead by hand just to empty their own day screen.
+    const lead = await createLead(
+      { name: `Ko‘chdi ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1), nextActionNote: 'qo‘ng‘iroq' },
+      ctx(),
+    );
+    followUpLeads.push(lead.id);
+    expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(true);
+
+    // To a DIFFERENT open stage: a drag inside the same column is a
+    // re-order, and re-ordering a card is not «I called them» (#502's rule,
+    // the same reason it writes no audit row).
+    const openStages = (await listStages()).filter((stage) => stage.kind === 'open');
+    const nextOpen = openStages.find((stage) => stage.id !== lead.stageId) ?? openStages[0]!;
+    await moveLead(lead.id, nextOpen.id, '', ctx());
+    const after = await db.query.leads.findFirst({ where: eq(leads.id, lead.id) });
+    expect(after!.nextActionAt, 'the date is cleared by the move').toBeNull();
+    expect(after!.nextActionNote).toBeNull();
+    expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(false);
+  });
+
+  it('«bajarildi» and «ertaga» clear or postpone one row, and only my own', async () => {
+    const mine = await createLead(
+      { name: `Bajardim ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1), nextActionNote: 'eslatma' },
+      ctx(),
+    );
+    followUpLeads.push(mine.id);
+    await setFollowUp('lead', mine.id, null, { actorId });
+    const cleared = await db.query.leads.findFirst({ where: eq(leads.id, mine.id) });
+    expect(cleared!.nextActionAt).toBeNull();
+    // The note belonged to the date it carried.
+    expect(cleared!.nextActionNote).toBeNull();
+
+    const later = await createLead(
+      { name: `Ertaga ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1) },
+      ctx(),
+    );
+    followUpLeads.push(later.id);
+    await setFollowUp('lead', later.id, iso(1), { actorId });
+    expect((await followUps(iso(0), actorId)).some((entry) => entry.id === later.id)).toBe(false);
+    expect((await followUps(iso(2), actorId)).some((entry) => entry.id === later.id)).toBe(true);
+
+    // A colleague's call is not mine to close — the id arrived in a form post
+    // and the list this serves is per-person.
+    if (managerId !== actorId) {
+      const theirs = await createLead(
+        { name: `Ularniki ${SUFFIX}`, ownerId: managerId, nextActionAt: iso(-1) },
+        ctx(),
+      );
+      followUpLeads.push(theirs.id);
+      await expect(setFollowUp('lead', theirs.id, null, { actorId })).rejects.toThrow('not_yours');
+      // …unless this person is allowed to see everyone's anyway.
+      await setFollowUp('lead', theirs.id, null, { actorId, viewAll: true });
+      const closed = await db.query.leads.findFirst({ where: eq(leads.id, theirs.id) });
+      expect(closed!.nextActionAt).toBeNull();
+    }
   });
 
   it('another manager’s follow-ups stay out of my list', async () => {

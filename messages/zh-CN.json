@@ -1398,7 +1398,10 @@
     "lostReasonLabel": "原因",
     "lostReasonsSetupHint": "列表为空时原因以自由文本填写；填好后只能从列表中选择。",
     "unowned": "无负责人",
-    "dealsNoSource": "来源筛选不适用于交易——交易没有来源。"
+    "dealsNoSource": "来源筛选不适用于交易——交易没有来源。",
+    "followUpDone": "已完成",
+    "followUpTomorrow": "明天",
+    "followUpFailed": "未保存"
   },
   "navShort": {
     "home": "首页",
