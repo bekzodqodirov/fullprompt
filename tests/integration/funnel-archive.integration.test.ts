@@ -83,8 +83,32 @@ describe('the funnel keeps its finished cards without showing all of them', () =
     const slice = await listLeads({ closedOnly: true, limit: 2 });
     expect(slice).toHaveLength(2);
     expect(slice.map((row) => row.lead.id)).not.toContain(live.id);
-    expect(slice.map((row) => row.lead.name)).toContain(names[2]);
     for (const row of slice) expect(row.stageKind).not.toBe('open');
+
+    // «Keeps the newest» is asserted about THIS test's own three wins, in
+    // their own order — not by demanding that they top a two-row window.
+    //
+    // The closed slice is one FLAT limit ordered by `board_order` across
+    // every finished column, and each column is numbered independently
+    // (0075: a move goes to the top of ITS column). So a lead another file
+    // has just lost legitimately outranks a lead this file has just won, and
+    // the old assertion — «my third win is in the newest TWO closed rows» —
+    // was really a claim about what every other integration file had done
+    // first. That made it hostage to vitest's duration-cache file order
+    // (#380): adding tests anywhere could reshuffle the run and turn this
+    // red, which is exactly what round 102 did.
+    const wide = await listLeads({ closedOnly: true, limit: 200 });
+    const mine = wide.filter((row) => names.includes(row.lead.name)).map((row) => row.lead.name);
+    expect(mine, 'all three wins are in the archive').toEqual([names[2], names[1], names[0]]);
+
+    // And the kind filter itself, asserted where it can actually be seen.
+    // The two-row window above cannot prove it: an open lead only surfaces
+    // there if it happens to outrank every other closed row, which is again a
+    // claim about the rest of the database. Over the WIDE slice it is a claim
+    // about the query — with the filter stripped, `live` is in here and so
+    // are hundreds of open leads.
+    expect(wide.map((row) => row.lead.id), 'no open lead in the archive').not.toContain(live.id);
+    for (const row of wide) expect(row.stageKind).not.toBe('open');
 
     // The open list is the complement: a won lead is not on it.
     const open = await listLeads({ openOnly: true });

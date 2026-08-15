@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -95,7 +95,25 @@ beforeAll(async () => {
   stageLostId = stages.find((stage) => stage.kind === 'lost')!.id;
 });
 
+/**
+ * Leads the follow-up tests create and must take away again.
+ *
+ * This file has never cleaned up after itself, and the funnel-archive test
+ * reads a SHARED list — the newest closed leads across the whole funnel,
+ * ordered `board_order ASC NULLS FIRST`. `createLead` leaves `board_order`
+ * NULL, so a lead this file closes sorts to the very TOP of that archive
+ * slice and pushes the archive test's own rows out of it. Round 102's lost-
+ * lead fixture did exactly that and turned a fragile test red in CI (#380:
+ * leftovers in an integration file are worse than in Playwright, because
+ * vitest orders files by a duration cache and the next reader is
+ * unpredictable).
+ */
+const followUpLeads: string[] = [];
+
 afterAll(async () => {
+  if (followUpLeads.length > 0) {
+    await db.delete(leads).where(inArray(leads.id, followUpLeads));
+  }
   await pgClient.end();
 });
 
@@ -251,6 +269,7 @@ describe('contact history and follow-ups', () => {
       { name: `Yopiladi ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1) },
       ctx(),
     );
+    followUpLeads.push(lead.id);
     expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(true);
 
     // The stage is written DIRECTLY, not through `moveLead`, and that is the
@@ -263,7 +282,10 @@ describe('contact history and follow-ups', () => {
     // leads closed before the fix shipped, still carrying an old call date.
     await db
       .update(leads)
-      .set({ stageId: stageLostId, lostReason: 'qimmat' })
+      // `board_order` is set as `moveLead` would, so this fixture cannot
+      // jump to the top of the shared closed slice the way a NULL does
+      // (`ASC NULLS FIRST`) and disturb the funnel-archive test.
+      .set({ stageId: stageLostId, lostReason: 'qimmat', boardOrder: 900_000 })
       .where(eq(leads.id, lead.id));
     expect(
       (await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id),
@@ -279,6 +301,7 @@ describe('contact history and follow-ups', () => {
       { name: `Ko‘chdi ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1), nextActionNote: 'qo‘ng‘iroq' },
       ctx(),
     );
+    followUpLeads.push(lead.id);
     expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(true);
 
     // To a DIFFERENT open stage: a drag inside the same column is a
@@ -298,6 +321,7 @@ describe('contact history and follow-ups', () => {
       { name: `Bajardim ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1), nextActionNote: 'eslatma' },
       ctx(),
     );
+    followUpLeads.push(mine.id);
     await setFollowUp('lead', mine.id, null, { actorId });
     const cleared = await db.query.leads.findFirst({ where: eq(leads.id, mine.id) });
     expect(cleared!.nextActionAt).toBeNull();
@@ -308,6 +332,7 @@ describe('contact history and follow-ups', () => {
       { name: `Ertaga ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1) },
       ctx(),
     );
+    followUpLeads.push(later.id);
     await setFollowUp('lead', later.id, iso(1), { actorId });
     expect((await followUps(iso(0), actorId)).some((entry) => entry.id === later.id)).toBe(false);
     expect((await followUps(iso(2), actorId)).some((entry) => entry.id === later.id)).toBe(true);
@@ -319,6 +344,7 @@ describe('contact history and follow-ups', () => {
         { name: `Ularniki ${SUFFIX}`, ownerId: managerId, nextActionAt: iso(-1) },
         ctx(),
       );
+      followUpLeads.push(theirs.id);
       await expect(setFollowUp('lead', theirs.id, null, { actorId })).rejects.toThrow('not_yours');
       // …unless this person is allowed to see everyone's anyway.
       await setFollowUp('lead', theirs.id, null, { actorId, viewAll: true });
