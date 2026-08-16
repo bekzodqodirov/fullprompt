@@ -176,7 +176,18 @@ export async function updateClientAction(
 
   const values = toValues(parsed.data);
   const diff = diffFields(before as unknown as Record<string, unknown>, values);
-  await db.update(clients).set(values).where(eq(clients.id, id));
+  try {
+    await db.update(clients).set(values).where(eq(clients.id, id));
+  } catch (err) {
+    // The duplicate check above is a read, so two people renaming two cards
+    // onto the same code both pass it and the index refuses the second. That
+    // refusal is «this code is taken» — the same sentence the create path
+    // gives — and never a white page (#472).
+    if (typeof err === 'object' && err !== null && 'code' in err && err.code === '23505') {
+      return { error: 'code_exists' };
+    }
+    throw err;
+  }
   if (diff) {
     const meta = await requestMeta();
     await writeAudit(

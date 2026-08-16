@@ -215,6 +215,37 @@ writes the closed stage directly, which is also what production's existing
 rows look like). No migration. 1587 unit/integration + 155 e2e green on a
 fresh db in CI's order; one unnamed failure in the first full run did not
 recur in the re-run or in three repeats of the touched files.
+
+**Round 103 — the client-code review** (#714-716, his «yangi klientga kod
+berishni korib chiq hatolik ketmayabtimi»). The generator itself is SOUND
+and that is a finding: the 50-gap main-sequence rule, the lowercase prefix,
+a prefix ending in a digit, regex metacharacters, leading zeros, and «a code
+is never reused, inactive clients included» all hold — verified, not assumed.
+The defects were around it. **The serious one is not about codes at all:**
+`createClient` called `getSetting('client_code_prefix')` from INSIDE its
+transaction, and `getSetting` runs on the module `db`, i.e. the POOL — so a
+transaction already holding one of the ten connections asked for an
+eleventh. **MEASURED: 9 simultaneous creates finished in 121 ms, 12 never
+returned, `pg_stat_activity` showing exactly ten backends parked on `begin`
+/ ClientRead** — a permanent, unrecoverable freeze of the WHOLE app (the
+pool is every page's), not a slowdown. One line moved up eleven. Swept
+`src/`: the only instance in all 25 files that open a transaction, so the
+tripwire `tests/unit/tx-pool.test.ts` guards the RULE (every transaction
+body × every pooled name) rather than the function; source-shape on purpose
+— a behavioural test for a deadlock takes its own vitest worker down.
+Second: the advisory lock serialises the generator against ITSELF (10 at
+once → 10 distinct codes; lock stripped → only 2 of 10 survive), but a
+MANUAL code takes no lock, so the auto path could lose to it and tell
+somebody who typed nothing «bu kod band» — it retries (3) and takes the
+next free number, while a TYPED code that is taken is still refused, because
+retrying there hands a person a different code from the one on the carton.
+Proven deterministically with a held-open second connection, not a burst.
+Third: `updateClientAction` had no 23505 catch — a rename race was a white
+page (#472's rule). No migration. 1616 unit/integration + **155 e2e all
+green** on a fresh gsr_ci in CI's order. TEST LESSON (#716): the race file's first version
+re-read the prefix setting at the top of EVERY test, so the «original» it
+restored was its own `ZZR` — caught by reading the database after the run,
+not by an assertion; snapshot once in `beforeAll`.
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
 `v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
 its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —
