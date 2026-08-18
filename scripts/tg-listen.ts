@@ -407,7 +407,20 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
    * tick, and nothing else is claimed while it is outstanding — which also
    * keeps the queue in order.
    */
-  let unsettled: { id: string; tgMessageId: bigint | null } | null = null;
+  let unsettled: {
+    id: string;
+    tgMessageId: bigint | null;
+    /**
+     * The thread's copy rides WITH the queue-row fact, or a db blip in the
+     * gap between them loses it (the audit's find): markSent threw, the
+     * catch returned before the echo block, and the retry re-ran markSent
+     * alone — so the outbox read «sent», the «navbatda» bubble vanished, and
+     * the CRM thread never got the reply the customer already has. One
+     * outage, one message, gone for good — Telegram will not echo it back
+     * on this connection (round 53), so nothing else can ever write it.
+     */
+    echo: Parameters<typeof recordSent>[0] | null;
+  } | null = null;
   /**
    * The echo row for a message that HAS gone out, not yet written down.
    *
@@ -492,8 +505,19 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       try {
         await markSent(unsettled.id, unsettled.tgMessageId);
         console.log(`  → ${unsettled.id.slice(0, 8)} nihoyat yozildi`);
+        const echo = unsettled.echo;
         unsettled = null;
         noteDbOk();
+        // The echo travels to its own retry slot rather than being dropped —
+        // settling the queue row is half the bookkeeping, not all of it.
+        if (echo) {
+          try {
+            await recordSent(echo);
+          } catch (err) {
+            unrecorded = echo;
+            await noteDbFailure(err);
+          }
+        }
       } catch (err) {
         await noteDbFailure(err);
       }
@@ -577,32 +601,31 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // From here the message EXISTS in somebody's Telegram. Every failure
       // below is a bookkeeping failure and is treated as one.
       const tgMessageId = result?.id ? BigInt(result.id) : null;
+      // The echo is BUILT before the first database write, because it has to
+      // survive that write failing (round 53: Telegram does not deliver a
+      // NewMessage back for a message sent on this same connection, so this
+      // object is the only record a text reply has).
+      const echo = result?.id
+        ? {
+            clientId: job.clientId,
+            managerUserId: account.managerUserId,
+            peerId: job.peerId,
+            tgMessageId: BigInt(result.id),
+            body: job.body,
+            attachmentId: job.attachmentId,
+            replyToTgMessageId: job.replyToTgMessageId,
+            sentAt: new Date((result.date ?? Math.floor(Date.now() / 1000)) * 1000),
+          }
+        : null;
       try {
         await markSent(job.id, tgMessageId);
         noteDbOk();
       } catch (err) {
-        unsettled = { id: job.id, tgMessageId };
+        unsettled = { id: job.id, tgMessageId, echo };
         await noteDbFailure(err);
         return;
       }
-      // The echo is written HERE, for EVERY send (round 53). Telegram does not
-      // deliver a NewMessage back for a message sent on this same connection,
-      // so a text reply left the building and was never recorded — the queue
-      // row went to 'sent', its «navbatda» bubble vanished with it, and the
-      // thread showed nothing. A photo was fine only because this branch used
-      // to exist for photos alone, which is why the owner could see the
-      // picture and not the words.
-      if (result?.id) {
-        const echo = {
-          clientId: job.clientId,
-          managerUserId: account.managerUserId,
-          peerId: job.peerId,
-          tgMessageId: BigInt(result.id),
-          body: job.body,
-          attachmentId: job.attachmentId,
-          replyToTgMessageId: job.replyToTgMessageId,
-          sentAt: new Date((result.date ?? Math.floor(Date.now() / 1000)) * 1000),
-        };
+      if (echo) {
         await recordSent(echo).catch(async (err: unknown) => {
           // Retried on the next tick rather than lost: this row IS the thread's
           // copy of a message the client already has.

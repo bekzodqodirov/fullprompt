@@ -764,6 +764,18 @@ export async function priceControlOnReceipt(
     volumeM3: number;
     weightKg: number;
     boxCount: number;
+    /**
+     * Read by the CALLER, before its transaction opened.
+     *
+     * This used to be a `getSetting` right here, and `getSetting` runs on the
+     * pooled `db` handle — so a receipt confirm, which is the busiest button
+     * in the warehouse, asked for an eleventh connection while its
+     * transaction already held one of the ten. That is #714's total freeze in
+     * the receive path: ten simultaneous confirms and every screen in the
+     * company stops. The value is a number now, and the door is shut for
+     * anything else this function grows.
+     */
+    deviationThreshold: number;
   },
   ctx: AuditContext,
 ): Promise<void> {
@@ -809,7 +821,7 @@ export async function priceControlOnReceipt(
     // days is only over the threshold once both halves are in, and alerting on
     // the first half alone would cry wolf on every split job.
     const reality = await dealRealityIn(tx, dealId);
-    const threshold = await getSetting('deal_deviation_threshold_pct');
+    const threshold = input.deviationThreshold;
     const deviation = compareQuote(
       {
         volumeM3: deal.quotedVolumeM3 === null ? null : Number(deal.quotedVolumeM3),

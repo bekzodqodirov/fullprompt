@@ -1,5 +1,290 @@
 # CHANGELOG
 
+## Auditning qolgan dumi — yettita ochiq topilma yopildi — 2026-08-18
+
+Siz «ha tuzat» dedingiz — auditda topilib, o'sha roundda tegilmagan
+narsalarning hammasi shu yerda.
+
+**1. Xodim xabarlari endi IKKI MARTA ketolmaydi.** Uch qavatli himoya:
+
+- Xabar navbati endi «band qilish» bilan ishlaydi (bazada bitta yangi ustun,
+  0082): bir xabarni faqat BITTA jarayon oladi. O'lchab tekshirildi: himoyasiz
+  variantda ikki jarayon **600 ta xabarni ikki marta olar edi**, himoya bilan —
+  nol.
+- Server qiyin ko'tarilganda (deploy tongi) ishchilar ikki marta
+  ro'yxatga olinishi mumkin edi — «takrorlanmaydi» degan izoh bor edi, lekin
+  hech kim tekshirmagan ekan. Endi har biri nomi bilan bir marta.
+- Telegram ko'prigi (tg-listen) xato signal berganda **butun ishchi flotini
+  o'zining ichida yoqib yuborardi** — jumladan tungi zaxirani, zaxira papkasi
+  yo'q konteynerda. Endi u faqat xabar qo'yadi, ishchi bo'lmaydi.
+
+**2. Ishdan bo'shatilgan xodimga xabar kelishi TO'XTAYDI.** Bugungacha
+«Deaktivatsiya» sessiyani o'chirardi, lekin Telegram xabarlari kelaverар edi —
+jumladan qarzdor mijozning ismi va summasi, kompaniya nazorat qilmaydigan
+telefonga, abadiy. Endi ikki joyda tekshiriladi: ro'yxat tuzilganda ham,
+yuborish paytida ham (avval navbatga tushib qolganlari ham to'xtaydi).
+
+**3. Yuborilgan javob endi yo'qolmaydi.** Mijozga xabar ketdi, shu zahoti
+baza bir soniya uzilib qolsa — navbat «yuborildi» derdi, lekin suhbatlar
+ekranida o'sha xabar YO'Q edi, abadiy. Endi ikkala yozuv ham uzilishdan omon
+qoladi va navbatdagi urinishda yoziladi.
+
+**4. Telegram ko'prigi endi ulanishlarni yemaydi.** Har ulangan menejer
+akkaunti bazaga BITTA ulanishni band qilardi (jami o'nta bor) — sotuvchilar
+ulangani sari ko'prik sekinlashib, 10-akkauntda butunlay to'xtab qolardi,
+jimgina. Endi hammasi bitta ulanishda.
+
+**5. /map va /trucks endi ruxsat so'raydi.** Har qanday login butun
+kompaniyaning hamma mashinasini (raqami, yo'nalishi, ichidagi yuk kimniki)
+va har bir skladning mijoz-kod bo'yicha zaxirasini ko'rardi. Endi partiya
+ekranining o'zi bilan bir xil eshik + sklad chegarasi. Menyu ham faqat
+kiraoladigan odamga ko'rsatadi.
+
+**6. Kutilayotgan yukka boshqa sklad aralasholmaydi.** Qashqar skladchisi
+formani qayta yuborib Yiwu ro'yxatiga va'da qo'shishi yoki Yiwu va'dasini
+«keldi»/«bekor» qilishi mumkin edi — menejerga hech narsa aytilmasdan. Endi
+sklad chegarasi bilan rad etiladi.
+
+**7. «Yo'ldagi yuk» hisoboti endi yolg'on gapirmaydi.** Mashina tushirilayotgan
+paytda hisobot 180 → 0 gacha «kamayib» borardi — mashina darvoza oldida yarim
+to'la turgan paytda. Endi nima JO'NAGANI hisoblanadi.
+
+**Bazada bitta yangi ustun** (0082) — deploydan keyin **83** bo'lishi kerak.
+
+---
+
+## To'liq audit — 19 ta xato topildi va tuzatildi — 2026-08-18
+
+«Systemani toliq audit qil … hatoliklar yoqligini oylab analyz qb chiq».
+
+Sistemani **yettita yo'nalish bo'yicha** tekshirdim: zaxira, pul, ruxsatlar,
+yuk, ishonchlilik, Telegram, baza. Har bir topilma **ikki marta mustaqil
+tekshirildi** — biri «bu xato emas» deb rad etishga urindi, ikkinchisi esa
+haqiqiy tugmadan boshlab xatogacha yurib ko'rdi. Ikkalasi ham rad eta
+olmaganlari qoldi: **26 tadan 19 tasi tasdiqlandi.** Hammasi tuzatildi.
+
+### Yukka tegishli — eng muhimi
+
+**1. Bekor qilingan prixodda tahrir yangi qutilar yaratardi.** Kimdir prixodni
+bekor qilsa, ikkinchi xodim esa o'sha paytda tahrir formasini ochib turgan
+bo'lsa — «Saqlash» bosganda sistema **yangi, tirik qutilar yasardi** va «5 ta
+etiketka chop eting» derdi. Ya'ni rasman mavjud bo'lmagan prixodga bog'langan,
+rejaga tushadigan, yuklanadigan yuk. Yopildi.
+
+**2. Bitta yo'qolgan karobka butun prixodni qulflab qo'yardi.** 20 tadan 1
+tasi yo'qolgan (yoki 20→18 tuzatishda ortiqchasi bekor qilingan) bo'lsa —
+o'sha prixodni **umuman bekor qilib bo'lmasdi**, boshqa skladga ko'chirib ham
+bo'lmasdi, egasiz yukni jo'natuvchiga **qaytarib ham bo'lmasdi**. Abadiy.
+Endi bunday karobkalar to'sib qo'ymaydi (va ularning holati o'zgarmaydi —
+yo'qolgan karobka «yo'qolgan» bo'lib qolaveradi).
+
+**3. Server rad etgan skanerlash ekranda yashil bo'lib qolardi.** Telefon
+oflayn skanerlaydi, keyin internet kelganda yuboradi. Agar shu orada logist
+«Tushirish tugadi» bosgan bo'lsa — server hammasini rad etadi, lekin ekranda
+**150/150, hammasi yashil** bo'lib turardi. Skladchi yukni qabul qilindi deb
+o'ylab ketardi, holbuki 150 ta karobka «yo'lda yo'qolgan» deb yozilgan
+bo'lardi. Endi rad etilgani ekrandan **o'chadi** va nechtasi rad etilgani
+yoziladi.
+
+### Pulga tegishli
+
+**4. Sotuvchi har qanday mijozning balansini ko'rardi.** Mijoz kartasidagi pul
+bloki eski qoidani so'rardi. Endi sotuvchi faqat **o'ziga biriktirilgan**
+mijozning pulini ko'radi — /finance da bu allaqachon shunday edi, karta esa
+qolib ketgan ekan.
+
+**5. Egasiz yuk kimgadir biriktirilganda xarajat o'sha mijozga o'tmasdi.**
+Rastamojka/yo'lkira egasi noma'lum paytda kiritiladi, keyin mijoz topiladi —
+lekin xarajat «hech kimniki» bo'lib qolardi. Natijada o'sha mijoz hisobotda
+**xarajatsiz, ya'ni sof foyda** bo'lib ko'rinardi, va sizning eng ko'p
+ishlatadigan «tannarx» hisobotingizdan o'sha qator umuman tushib qolardi.
+Endi xarajat mijoz bilan birga ko'chadi.
+
+**6. Bitta noto'g'ri doimiy xarajat butun oyni to'xtatardi.** «Oylik doimiy
+xarajatlarni yarat» bosilganda, agar bitta shablonda kassa valyutasi mos
+kelmasa — undan keyingi **hamma shablonlar jimgina o'tmay qolardi**, va har
+oy o'sha joyda to'xtardi. Endi: (a) noto'g'ri kassa **saqlashda** rad etiladi,
+(b) bittasi o'tmasa qolganlari o'taveradi va ekranda «N tasi o'tmadi»
+yoziladi.
+
+### Ruxsatlar
+
+**7.** `/transit` (yo'ldagi yuklar) sahifasi **faqat login** talab qilardi —
+har qanday xodim butun kompaniyaning hamma mashinasini, hamma mijoz kodini
+ko'rardi. Endi ruxsat + sklad chegarasi.
+
+**8.** Partiya hujjatlarining uchtasi (packing, invoice, rasm bilan packing)
+ruxsatni tekshirardi, **skladni esa yo'q** — Xitoydagi skladchi boshqa
+davlatning butun yuk ro'yxatini yuklab olishi mumkin edi. Endi to'rttasi ham
+**bitta qoidadan** o'tadi, ya'ni yana ajralib keta olmaydi.
+
+### Ishonchlilik
+
+**9. Yana bitta «sistema qotib qolishi».** Prixodni tasdiqlash — skladdagi eng
+ko'p bosiladigan tugma — bazaga noto'g'ri joydan murojaat qilardi. Bir vaqtda
+o'nta tasdiqlash butun sistemani to'xtatishi mumkin edi. Bu mijoz kodidagi va
+reja yuborishdagi xatoning **uchinchi ko'rinishi** — endi testi butun kodni
+kuzatadi, shuning uchun to'rtinchisi bo'lmaydi.
+
+**10. «Hisoblatish» AI tahlili botni muzlatardi.** Bitta xodim tahlil bosса,
+tahlil tugaguncha **hamma mijozning boti javob bermay turardi** (va uzilib
+qolgan ulanishda 10 daqiqagacha). Endi tahlil alohida ketadi va 60 soniyalik
+chegara bor.
+
+### Mayda, lekin oq sahifa chiqarardiganlar
+
+**11.** Mijozlar ro'yxatidagi raqamli filtrga `5..` deb yarim yozilsa — butun
+sahifa xato berardi. **12.** Ro'yxatga bor nomni qayta qo'shsangiz («Narx»
+va «narx») — xato sahifasi. Endi «bu nom band» deb yoziladi. **13.** Xuddi
+shu narsa qo'shimcha maydonlar ekranida ham.
+
+---
+
+**Bazada o'zgarish yo'q** (0081 dan boshqa, u kechagi zaxira uchun edi).
+1630 ta test yashil.
+
+---
+
+## Zaxira (backup) — jiddiy xato topildi va tuzatildi, endi suratlar ham chiqadi — 2026-08-18
+
+Siz aytdingiz: «systemani toliq audit qil, backup olishni systemasini oylab
+chiq, rasimlar va hamma back up google drivega back olamiz».
+
+### 🔴 Avval eng muhimi: tashqi zaxira hech qachon ishlamagan
+
+Auditning birinchi topilmasi shu. Har kecha ilova zaxira olishga urinadi,
+lekin **ilova konteynerida `pg_dump` dasturi yo'q** — u boshqa konteynerda.
+Shuning uchun ish har kecha xato bilan to'xtagan, va **tashqi omborga
+yuborish o'sha xatodan KEYIN turgani uchun umuman ishga tushmagan.**
+
+Ya'ni: siz S3 yoki Google Drive kalitlarini qo'yganingizda ham **hech narsa
+chiqmasdi**. Buni faqat tiklash kerak bo'lgan kuni bilib qolardingiz.
+
+Xabar ham kelmagan: xato haqidagi Telegram xabari, agar admin xodimning
+Telegram'i ulanmagan bo'lsa, **«muted» deb belgilanib jimgina o'chib
+ketardi** — ya'ni signal berilgan, lekin hech kimga bormagan.
+
+**Yaxshi tomoni:** alohida `backup` konteyneri (postgres:16) har kuni to'g'ri
+dump olib turgan. Ya'ni **serveringizda nusxa bor**, faqat u serverdan
+tashqariga chiqmagan.
+
+**Tuzatildi:** endi ilova o'zi dump ololmasa, o'sha konteyner olgan
+(24 soatdan yangi) dump'ni oladi va tashqariga yuboradi. Va agar u konteyner
+ham buzilsa — 26 soat ichida yangi dump topilmasa — Telegram'ga xato keladi.
+Ya'ni ikkinchisi birinchisini kuzatib turadi.
+
+### 🖼 Endi suratlar ham chiqadi
+
+Bugungacha **suratlar, qo'ng'iroq yozuvlari, Telegram fayllari va biriktirilgan
+hujjatlar hech qayerga zaxiralanmagan** — na tashqariga, na ichkariga. Server
+yo'qolsa, har bir karobkaning har bir surati ketardi va bazani tiklash ularni
+qaytarmasdi.
+
+Endi har kecha **02:30** da alohida ish ishga tushadi:
+
+- **Har bir fayl bir marta** ko'chadi (baza eslab qoladi, qayta yuborilmaydi).
+- **Birinchi safar bir necha kun davom etadi** — o'n minglab fayl bor.
+- Har kecha «qolgani nechta» yoziladi — shu raqam kamayib borsa, ishlayapti.
+- **Bazaga ustunlik beriladi:** Drive'da 2 GB doim baza uchun band turadi.
+  Joy tugasa suratlar to'xtaydi va sizga Telegram'ga xabar keladi.
+- Fayli yo'qolib ketgan eski yozuvlar **boshqa fayllarni to'sib qo'ymaydi**
+  (bu xatoni yozayotib topdim va tuzatdim).
+
+Kichraytirilgan nusxalar (thumbnail) ataylab zaxiraga olinmaydi — ular asl
+rasmdan qayta yasaladi, shuning uchun zaxira ikki barobar kichik. Tiklashda
+`--thumbs` bilan o'zi qayta yasaydi.
+
+### 📊 Yangi ekran: Boshqaruv sahifasida zaxira holati
+
+Endi **Boshqaruv** sahifasining pastida ko'rasiz: baza oxirgi marta qachon va
+qancha hajmda chiqqan, nechta fayl ko'chirilgan, nechtasi qolgan. Loglarga
+kirish shart emas.
+
+### ⚠️ Sizdan kerak bo'ladigan narsalar
+
+**1. Google Drive kalitlari.** `docs/BACKUP.md` da 8 qadam yozilgan. Eng
+muhim qoida: **ilovani «Publish» qilib, ANDAN KEYIN token oling** — aks holda
+token 7 kunda o'ladi.
+
+**2. Hajm masalasi — bu yerda sizning qaroringiz kerak.** Bepul Google Drive
+**15 GB** va u Gmail'ingiz bilan umumiy. Baza kichkina (yiliga ~0.5 GB), lekin
+suratlar va qo'ng'iroq yozuvlari **yiliga o'nlab GB**. Serveringizda hozir
+qancha borligini ko'ring:
+
+```
+docker compose exec minio du -sh /data
+```
+
+15 GB dan kam bo'lsa hozircha yetadi. Ko'p bo'lsa — Google One 100 GB
+(~2 dollar/oy) yoki S3 (Contabo, ~3 evro/oy). Menga ayting.
+
+**3. `.env` faylining nusxasini saqlang** (parol menejerida yoki qog'ozda).
+Uni zaxiraga qo'ymayapmiz — ichida bot tokeni va parollar bor, hammasini
+bitta joyga qo'yish to'g'ri emas. Lekin unda `TG_SESSION_KEY` bor va **u
+yo'qolsa, tiklangan bazadagi Telegram akkauntlari ochilmaydi.**
+
+### Auditda topilgan boshqa narsalar
+
+Bir vaqtda o'nta prixod rejasi yuborilsa **butun sistema qotib qolishi**
+mumkin edi — mijoz ochishdagi o'sha xatoning aynan o'zi, endi sklad tomonida
+topildi va tuzatildi. Ustiga, o'sha joyda «yetarli quti bormi» degan
+tekshiruv **noto'g'ri ulanish orqali** so'ralardi — ya'ni javob ham ishonchsiz
+edi. Ikkalasi ham yopildi va endi bu xatoni qaytadan yozib bo'lmaydi: test
+butun kodni tekshiradi.
+
+**Bazada bitta yangi jadval** (0081) — nima ko'chirilganini eslab qolish
+uchun. Deploydan keyin **82** bo'lishi kerak.
+
+---
+
+## Yangi mijozga kod berish — tekshirildi, uchta narsa tuzatildi — 2026-08-16
+
+Siz aytdingiz: «yangi klientga kod berishni korib chiq hatolik
+ketmayabtimi». Kod berish mexanizmini boshidan oxirigacha o'qib chiqdim va
+haqiqiy ma'lumot ustida **o'lchab** ko'rdim.
+
+**Avvalo yaxshi xabar: kod tanlash qoidasining o'zi to'g'ri ishlayapti.**
+Ya'ni asosiy qatorni davom ettirish (1..425 va alohida 777 / 5564 / 5909
+bo'lsa, keyingisi 5910 emas, 426 bo'lishi) — bu qoida sinovdan o'tdi:
+prefiks kichik harfda bo'lsa ham, prefiks raqam bilan tugasa ham, kodda
+boshida nol bo'lsa ham to'g'ri javob berdi. **Kod hech qachon qayta
+ishlatilmaydi** — o'chirilgan (nofaol) mijozning kodi ham band bo'lib
+qoladi. Bu yerda xato yo'q.
+
+Uchta narsa tuzatildi:
+
+**1. Eng jiddiysi — bir vaqtda 10 kishi mijoz ochsa, BUTUN SISTEMA
+qotib qolardi.** Faqat mijoz ochish emas — hamma ekran, hamma xodim uchun,
+serverni qayta ishga tushirmaguncha. Sababi bitta qator kod edi: mijoz
+ochilayotganda bazaga «prefiks nima?» degan savol noto'g'ri joydan
+so'ralardi va bazaga ulanish o'rni bo'shamay qolardi. **O'lchandi:** 9 ta
+bir vaqtda — 121 millisekundda tayyor; 12 ta bir vaqtda — umuman javob
+qaytmadi. Tuzatildi.
+
+Rostini aytsam: sizda bir vaqtda 10 kishi mijoz ochishi kam uchraydi, ya'ni
+bu hali sodir bo'lmagan bo'lishi mumkin. Lekin sodir bo'lsa — sekinlashuv
+emas, to'liq to'xtash bo'lardi, shuning uchun yopdim. Butun sistemani
+tekshirdim: bunday joy boshqa **yo'q** (25 ta joydan bittasi shu edi), va
+endi shu xatoni qaytadan yozib bo'lmaydi — test to'xtatadi.
+
+**2. Kod yozmagan odamga «bu kod band» deyilardi.** Agar siz kod
+maydonini bo'sh qoldirsangiz (sistema o'zi bersin deb), va aynan o'sha
+lahzada boshqa xodim qo'lda o'sha raqamni yozsa — sizga «kod band» degan
+xato chiqardi, holbuki siz hech qanday kod yozmagansiz. Endi sistema
+shunchaki **keyingi bo'sh raqamni** oladi. Qo'lda yozilgan kod band bo'lsa
+— avvalgidek rad etiladi, chunki u yerda «band» degani rost gap (siz
+qutiga yozib qo'ygan raqamni sistema o'zboshimchalik bilan almashtirmasligi
+kerak).
+
+**3. Mijoz kodini o'zgartirayotganda oq sahifa chiqishi mumkin edi.**
+Ikki xodim ikkita kartani bir vaqtda bir xil kodga o'zgartirsa, ikkinchisi
+xato sahifasini ko'rardi. Endi oddiy «bu kod band» yozuvi chiqadi.
+
+**Bazada hech narsa o'zgarmadi** — migratsiya yo'q, deploydan keyin ham
+**81** bo'lib qolaveradi.
+
+---
+
 ## «Bugun qo'ng'iroq» tozalanadigan bo'ldi, rasm yuklash tezlashdi — 2026-08-15
 
 Ishga tushirilgan kuni aytgan ikkita muammoyingiz.

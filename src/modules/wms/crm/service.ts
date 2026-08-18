@@ -16,6 +16,7 @@ import { createClient } from '../../platform/clients/service';
 import { likeNeedle, parseQuery } from '../search/query';
 import { closedAtFor, reasonAllowed, stageWrite } from './stage-law';
 import { orderForMove, topOfColumn, type BoardTable } from './board-place';
+import { isUniqueViolation } from '../../platform/db/errors';
 
 /**
  * The funnel's own board-order table (0075).
@@ -116,9 +117,12 @@ export async function saveSource(
 ) {
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const values = { name: input.name, sortOrder: input.sortOrder, active: input.active };
-  const [row] = input.id
-    ? await db.update(leadSources).set(values).where(eq(leadSources.id, input.id)).returning()
-    : await db.insert(leadSources).values(values).returning();
+  const sourceId = input.id;
+  const [row] = await catchTakenName(() =>
+    sourceId
+      ? db.update(leadSources).set(values).where(eq(leadSources.id, sourceId)).returning()
+      : db.insert(leadSources).values(values).returning(),
+  );
   if (!row) throw new CrmError('not_found');
   await writeAudit(db, ctx, {
     entityType: 'lead_source',
@@ -147,6 +151,16 @@ export async function activeLostReasonLabels(): Promise<string[]> {
   return rows.map((row) => row.label);
 }
 
+/** Any dictionary write, with a taken name turned into a coded refusal. */
+async function catchTakenName<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new CrmError('name_taken');
+    throw err;
+  }
+}
+
 export async function saveLostReason(
   input: { id?: string; label: string; sortOrder: number; active: boolean },
   ctx: AuditContext,
@@ -155,9 +169,15 @@ export async function saveLostReason(
   const label = input.label.trim();
   if (label.length < 2) throw new CrmError('reason_required');
   const values = { label, sortOrder: input.sortOrder, active: input.active };
-  const [row] = input.id
-    ? await db.update(lostReasons).set(values).where(eq(lostReasons.id, input.id)).returning()
-    : await db.insert(lostReasons).values(values).returning();
+  // `lost_reasons_label_unique` is ON lower(label), so «Narx» collides with
+  // «narx» — which is precisely the pair the owner cannot tell apart on his
+  // own screen, and precisely why the answer must be a sentence and not the
+  // error page (#472).
+  const [row] = await catchTakenName(() =>
+    input.id
+      ? db.update(lostReasons).set(values).where(eq(lostReasons.id, input.id)).returning()
+      : db.insert(lostReasons).values(values).returning(),
+  );
   if (!row) throw new CrmError('not_found');
   await writeAudit(db, ctx, {
     entityType: 'lost_reason',

@@ -9,6 +9,7 @@ import { latestPositions } from '@/modules/wms/tracking/devices';
 import { Icon } from '@/components/ui/icon';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
+import { mayReadBatches } from '@/modules/wms/batches/read-door';
 
 /**
  * Where every truck is (owner: "/trucks o'rniga «qaysi partiya qayerga yetib
@@ -28,6 +29,9 @@ export default async function TrucksPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
+  // The batches screen's own door (wms/batches/read-door.ts) — this page is
+  // the same trucks one route over, and it answered to a bare login.
+  if (!mayReadBatches(actor.permissions)) redirect('/');
   const t = await getTranslations('trucks');
   const tb = await getTranslations('batches');
   const format = await getFormatter();

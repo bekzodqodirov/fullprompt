@@ -15,6 +15,7 @@ import {
 import { inScope, warehouseScope, warehouseScopeEither } from '../../platform/rbac/scope';
 import { canWriteDeal } from '../deals/service';
 import { likeNeedle, parseQuery } from './query';
+import { mayReadBatches } from '../batches/read-door';
 
 /**
  * One search box for the whole system.
@@ -228,17 +229,11 @@ async function searchDeals(actor: SearchActor, like: string): Promise<SearchHit[
   }));
 }
 
-/** The batches screen's own door list, and its own two-ended fence. */
-const BATCH_READERS = [
-  'scan.load',
-  'scan.unload',
-  'ved.docs',
-  'plans.manage',
-  'batches.depart_close',
-];
-
 async function searchBatches(actor: SearchActor, like: string): Promise<SearchHit[]> {
-  if (!BATCH_READERS.some((code) => actor.permissions.has(code))) return [];
+  // The batches screen's own door, shared with /transit, /trucks and /map —
+  // it was copied here first and restated twice more before it became one
+  // list (wms/batches/read-door.ts).
+  if (!mayReadBatches(actor.permissions)) return [];
   const scope = warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId);
   const rows = await db
     .select({

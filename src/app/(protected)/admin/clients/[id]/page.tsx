@@ -4,6 +4,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients, clientTelegramLinks } from '@/modules/platform/db/schema';
 import { getSetting } from '@/modules/platform/settings/service';
+import { seesAllMoney } from '@/modules/wms/finance/scope';
 import { getBotUsername } from '@/modules/platform/telegram/bot';
 import { CardCols } from '@/components/card-cols';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
@@ -47,8 +48,22 @@ export default async function ClientDetailPage({
   const tcab = await getTranslations('clients');
   const tcargo = await getTranslations('cargo');
   const format = await getFormatter();
+  /**
+   * The money block asks round 91's question, not the pre-91 one.
+   *
+   * `finance.view` is a SELLER's own-book grant — `sales_manager` holds it
+   * alongside `clients.view_own` — so `finance.view || finance.manage` meant
+   * any seller reading any client's card saw that client's charged, paid and
+   * outstanding totals, and every trip's money line with them. #638 closed
+   * exactly this on /finance and #702 closed it in the bot's lookup; the
+   * client card is the one door that never learned. It is reachable by
+   * clicking, not only by typing a uuid: /suhbatlar links straight here, and
+   * a Telegram conversation is scoped to the manager's ACCOUNT, never to who
+   * owns the client.
+   */
   const canSeeMoney =
-    actor.permissions.has('finance.view') || actor.permissions.has('finance.manage');
+    (actor.permissions.has('finance.view') || actor.permissions.has('finance.manage')) &&
+    (seesAllMoney(actor) || client.salesManagerId === actor.id);
   // Only the admin half of the card needs these — a sales manager reading a
   // card should not cost a settings read and a call to Telegram.
   const managers = canEdit ? await salesManagerOptions(client.salesManagerId) : [];

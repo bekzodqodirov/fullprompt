@@ -1,8 +1,4 @@
-import { eq } from 'drizzle-orm';
-import { db } from '@/modules/platform/db/client';
-import { batches } from '@/modules/platform/db/schema';
-import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
-import { inScope } from '@/modules/platform/rbac/scope';
+import { guardBatchDocument } from '@/modules/wms/documents/route-guard';
 import { buildManifestXlsx } from '@/modules/wms/documents/manifest-xlsx';
 
 /**
@@ -16,26 +12,9 @@ import { buildManifestXlsx } from '@/modules/wms/documents/manifest-xlsx';
  * client code, marking and weight — with a batch id.
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  let actor;
-  try {
-    actor = await requireActor();
-  } catch (err) {
-    if (err instanceof AuthError) return new Response('Unauthorized', { status: 401 });
-    throw err;
-  }
   const { id } = await params;
-
-  const row = await db.query.batches.findFirst({
-    where: eq(batches.id, id),
-    columns: { originWarehouseId: true, destWarehouseId: true },
-  });
-  if (!row) return new Response('Not found', { status: 404 });
-  const mayRead =
-    (actor.permissions.has('ved.docs') || actor.permissions.has('plans.manage')) &&
-    // Both ends, as the batch card and the bot lookup judge it: a truck
-    // between two countries belongs to nobody's floor and both ends care.
-    (inScope(actor, row.originWarehouseId) || inScope(actor, row.destWarehouseId));
-  if (!mayRead) return new Response('Forbidden', { status: 403 });
+  const refused = await guardBatchDocument(id, ['ved.docs', 'plans.manage']);
+  if (refused) return refused;
 
   const buffer = await buildManifestXlsx(id);
   if (!buffer) return new Response('Not found', { status: 404 });

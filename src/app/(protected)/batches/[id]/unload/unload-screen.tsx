@@ -14,6 +14,7 @@ import {
   type SyncAck,
 } from '@/offline/scan-outbox';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { codesToUnmark } from '@/offline/ack-verdict';
 
 interface MemberBox {
   shortCode: string;
@@ -95,6 +96,20 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
   const handleAcks = useCallback(
     (acks: SyncAck[]) => {
+      /**
+       * A scan the server REFUSED must stop being green.
+       *
+       * The counter and the lot lines are driven by `done`, which the screen
+       * fills the moment a code is scanned — right, because the phone is
+       * meant to work with no network. What was missing is the other half:
+       * every path that puts a code in has to have a path that takes it back
+       * out. A queue flushed after the logist pressed «Tushirish tugadi»
+       * comes back `rejected / batch_not_unloading` for EVERY row, and the
+       * screen went on reading 150/150 with every line green while those 150
+       * cartons stood in the warehouse recorded as missing in transit. One
+       * toast (a single slot, overwritten by the next) was the whole of the
+       * telling.
+       */
       for (const ack of acks) {
         if (ack.result === 'auto_transfer') {
           setToast({
@@ -105,6 +120,16 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
         } else if (ack.result === 'rejected') {
           setToast({ text: `❌ ${ack.detail ?? 'rejected'}` });
         }
+      }
+      const refused = codesToUnmark(acks);
+      if (refused.length) {
+        setDone((prev) => {
+          const next = new Set(prev);
+          for (const code of refused) next.delete(code);
+          return next;
+        });
+        // Counted, because one toast cannot report a hundred and fifty.
+        setToast({ text: `❌ ${t('serverRefused', { n: refused.length })}` });
       }
     },
     [t],

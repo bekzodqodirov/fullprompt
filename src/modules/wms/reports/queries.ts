@@ -108,7 +108,17 @@ export async function inTransitBatches(warehouseIds?: string[]) {
       originCode: warehouses.code,
       destCode: dest.code,
       departedAt: batches.departedAt,
-      boxCount: sql<number>`(SELECT count(*) FROM ${boxes} b WHERE b.current_batch_id = ${batches.id})`,
+      /**
+       * What DEPARTED on this truck — never the live pointer. Landing NULLs
+       * `current_batch_id` box by box, so the old count drained 180 → 0 while
+       * the truck stood half-unloaded at the gate, and stayed 0 for as long
+       * as the batch was `arrived` but not closed. #440's trap, recorded on
+       * the batch card and in the arrival notices, reached its last consumer.
+       */
+      boxCount: sql<number>`(
+        SELECT count(DISTINCT bm.box_id) FROM box_movements bm
+        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id}
+          AND bm.cause = 'batch_departed')`,
     })
     .from(batches)
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))

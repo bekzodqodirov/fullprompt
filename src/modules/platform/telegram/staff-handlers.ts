@@ -340,6 +340,35 @@ export function registerStaffBot(bot: Bot): void {
 }
 
 /**
+ * Analyse the collected material off the middleware chain, and send the
+ * summary when it lands. Everything is caught: a rejection here would be an
+ * unhandled promise, and the person is left with «⏳ Tahlil qilinmoqda…» and
+ * no answer, so the failure has to say so in the chat.
+ */
+async function analyseIntakeAndReply(
+  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
+  chatId: bigint,
+  state: Parameters<typeof analyzeCollected>[0],
+): Promise<void> {
+  try {
+    const analysed = await analyzeCollected(state);
+    updateIntake(chatId, analysed);
+    const { intakeSummaryText } = await import('../../wms/calc/intake');
+    await ctx.reply(
+      intakeSummaryText({
+        section: analysed.section,
+        facts: analysed.facts,
+        clientLabel: analysed.clientHintRaw || null,
+        fileCount: analysed.fileCount,
+      }) + (analysed.aiUsed ? '' : '\n\n(AI mavjud emas — faqat yozilganidan o‘qildi)'),
+      { reply_markup: confirmKeyboard },
+    );
+  } catch {
+    await ctx.reply('Tahlil qilib bo‘lmadi. Qaytadan urinib ko‘ring.').catch(() => {});
+  }
+}
+
+/**
  * Ask the assistant OFF the middleware chain and deliver the answer when it
  * arrives (see the call site: the poller is sequential, so this must not be
  * awaited). Everything is caught — a rejection here would be an unhandled
@@ -469,18 +498,12 @@ async function handleCalcCallback(
       return;
     }
     await ctx.reply('⏳ Tahlil qilinmoqda…');
-    const analysed = await analyzeCollected(state);
-    updateIntake(chatId, analysed);
-    const { intakeSummaryText } = await import('../../wms/calc/intake');
-    await ctx.reply(
-      intakeSummaryText({
-        section: analysed.section,
-        facts: analysed.facts,
-        clientLabel: analysed.clientHintRaw || null,
-        fileCount: analysed.fileCount,
-      }) + (analysed.aiUsed ? '' : '\n\n(AI mavjud emas — faqat yozilganidan o‘qildi)'),
-      { reply_markup: confirmKeyboard },
-    );
+    // OFF the middleware chain, exactly like the assistant's answer (#706):
+    // grammy's poller is sequential and the same bot serves every customer,
+    // so awaiting an Opus call over twenty thousand characters here freezes
+    // every cabinet tap, every /start and every «yukingiz keldi» until it
+    // returns.
+    void analyseIntakeAndReply(ctx, chatId, state);
     return;
   }
 

@@ -124,7 +124,7 @@ export function GenerateRecurringButton({ month }: { month: string }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
   const [state, formAction, pending] = useActionState<
-    AccountingFormState & { created?: number; skipped?: number },
+    AccountingFormState & { created?: number; skipped?: number; failed?: number },
     FormData
   >(async (_prev, formData) => generateRecurringAction(String(formData.get('month') ?? month)), {});
 
@@ -146,6 +146,12 @@ export function GenerateRecurringButton({ month }: { month: string }) {
         <p className="w-full text-sm font-semibold text-good">
           ✅ {t('generated', { n: state.created ?? 0 })}
           {state.skipped ? ` · ${t('alreadyPosted', { n: state.skipped })}` : ''}
+          {/* One template that could not post no longer takes the rest of the
+              month with it — but it must be SAID, or the missing rent is
+              found in the P&L months later. */}
+          {state.failed ? (
+            <span className="text-bad"> · {t('generateFailed', { n: state.failed })}</span>
+          ) : null}
         </p>
       )}
       {state.error && (

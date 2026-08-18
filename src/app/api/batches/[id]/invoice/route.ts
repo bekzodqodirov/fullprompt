@@ -1,19 +1,13 @@
-import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
+import { guardBatchDocument } from '@/modules/wms/documents/route-guard';
 import { buildInvoiceXlsx } from '@/modules/wms/documents/ved-xlsx';
 
 /** Invoice draft XLSX (W6). */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  let actor;
-  try {
-    actor = await requireActor();
-  } catch (err) {
-    if (err instanceof AuthError) return new Response('Unauthorized', { status: 401 });
-    throw err;
-  }
-  if (!actor.permissions.has('ved.docs') && !actor.permissions.has('plans.manage')) {
-    return new Response('Forbidden', { status: 403 });
-  }
   const { id } = await params;
+  // Permission AND warehouse, in one place for all four batch documents.
+  const refused = await guardBatchDocument(id, ['ved.docs', 'plans.manage']);
+  if (refused) return refused;
+
   const buffer = await buildInvoiceXlsx(id);
   if (!buffer) return new Response('Not found', { status: 404 });
   return new Response(new Uint8Array(buffer), {

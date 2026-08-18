@@ -215,6 +215,158 @@ writes the closed stage directly, which is also what production's existing
 rows look like). No migration. 1587 unit/integration + 155 e2e green on a
 fresh db in CI's order; one unnamed failure in the first full run did not
 recur in the re-run or in three repeats of the touched files.
+
+**Round 103 — the client-code review** (#714-716, his «yangi klientga kod
+berishni korib chiq hatolik ketmayabtimi»). The generator itself is SOUND
+and that is a finding: the 50-gap main-sequence rule, the lowercase prefix,
+a prefix ending in a digit, regex metacharacters, leading zeros, and «a code
+is never reused, inactive clients included» all hold — verified, not assumed.
+The defects were around it. **The serious one is not about codes at all:**
+`createClient` called `getSetting('client_code_prefix')` from INSIDE its
+transaction, and `getSetting` runs on the module `db`, i.e. the POOL — so a
+transaction already holding one of the ten connections asked for an
+eleventh. **MEASURED: 9 simultaneous creates finished in 121 ms, 12 never
+returned, `pg_stat_activity` showing exactly ten backends parked on `begin`
+/ ClientRead** — a permanent, unrecoverable freeze of the WHOLE app (the
+pool is every page's), not a slowdown. One line moved up eleven. Swept
+`src/`: the only instance in all 25 files that open a transaction, so the
+tripwire `tests/unit/tx-pool.test.ts` guards the RULE (every transaction
+body × every pooled name) rather than the function; source-shape on purpose
+— a behavioural test for a deadlock takes its own vitest worker down.
+Second: the advisory lock serialises the generator against ITSELF (10 at
+once → 10 distinct codes; lock stripped → only 2 of 10 survive), but a
+MANUAL code takes no lock, so the auto path could lose to it and tell
+somebody who typed nothing «bu kod band» — it retries (3) and takes the
+next free number, while a TYPED code that is taken is still refused, because
+retrying there hands a person a different code from the one on the carton.
+Proven deterministically with a held-open second connection, not a burst.
+Third: `updateClientAction` had no 23505 catch — a rename race was a white
+page (#472's rule). No migration. 1616 unit/integration + **155 e2e all
+green** on a fresh gsr_ci in CI's order. TEST LESSON (#716): the race file's first version
+re-read the prefix setting at the top of EVERY test, so the «original» it
+restored was its own `ZZR` — caught by reading the database after the run,
+not by an assertion; snapshot once in `beforeAll`.
+**Round 104 — the backup round** (#717-720, his «systemani toliq audit qil,
+backup olishni systemasini oylab chiq, rasimlar va hamma back up google
+drivega back olamiz»). **THE HEADLINE: the off-site backup had never run
+once.** `runBackup` shells out to `pg_dump`; the app image is `node:22-slim`
+with no postgres client, so every night = ENOENT → alarm → thrown job, and
+`runOffsiteBackup` sits BEHIND that in the same function. Whichever
+destination was configured, nothing has ever left the machine. The alarm was
+silent too: `sendPendingTelegram` settles a notification as **`muted` with
+«telegram not linked»** for an admin with no linked staff chat. The compose
+`backup` service (postgres:16) HAS been taking a good dump all along, into
+the same volume. Fix, deliberately WITHOUT a Dockerfile change (an
+apt.postgresql.org dependency on deploy morning is #472's trap, and it cannot
+be tested from this container): `runBackup` ADOPTS a dump written in the last
+26 h when it cannot take its own, and names which happened; that also gives
+`ops/backup.sh` the alarm it never had — if IT stops, no fresh dump is found
+and the failure is raised. `ops/backup.sh` also refuses to prune when its own
+dump comes out under 4 KB. **OBJECTS: migration 0081** `backup_objects`
+(key + DESTINATION as the PK, so a new destination reads «nothing there
+yet»); `backup/objects.ts` copies originals only (thumbnails are derived —
+`pnpm restore-objects --thumbs` rebuilds them), holds **2 GB back for the
+dump** and alarms rather than crowding it out, verifies the size the
+destination reports BEFORE writing the ledger row, and is bounded by a wall
+clock so the first night does not run until morning. `pnpm backup-objects` /
+`pnpm restore-objects` for the backfill and the recovery; a `BackupPanel` on
+/admin so the state is visible without a log. **The jam (#719):** the first
+version stopped a run when a batch all failed, so ONE attachment whose bytes
+are gone blocked every photograph behind it for ever — found because my own
+three test photos never moved in a database holding 100 such rows; the window
+now skips past the failures. **The fence (#720):** `tests/unit/tx-pool.test.ts`
+now DERIVES the pooled set from the code and follows calls — the audit's
+availability lens found `submitPlan` calling `availableByLot()` on the pool
+inside its transaction (#714's total freeze, in the warehouse's plan path,
+AND a correctness bug: the stock check answered from a connection holding
+none of the transaction's locks). Two red proofs stayed GREEN first — a
+parameterised handle left the function out of the set, and a generic
+signature (`getSetting<K …>`) hid it entirely — so the fence is anchored on
+names it must find. 1613 unit/integration green on a fresh gsr_ci.
+Ledger must reach **82** (now **83** — round 106's 0082). **Owner still has to: put the Drive credentials in
+`.env` (docs/BACKUP.md, publish BEFORE minting the token), decide the 15 GB
+question (Google One 100 GB ~$2/mo, or the S3 bucket from round 85), and keep
+a copy of `.env` off the server — `TG_SESSION_KEY` is what decrypts the
+managers' Telegram sessions.**
+
+**Round 105 — the full-system audit** (#721-726, his «systemani toliq audit
+qil … hatoliklar yoqligini oylab analyz qb chiq»). Sixty agents, seven lenses,
+every finding given a SKEPTIC and a REPRODUCER and kept only if neither could
+refute it: **26 candidates → 19 confirmed, all fixed.** (The five backup
+findings read REFUTED in the run because the verifiers read the tree after
+round 104 had landed.) CARGO: `editLot` on a VOIDED receipt minted brand-new
+live boxes and offered to print their labels — the structural lock reads «no
+ACTIVE box has left in_stock» and on a voided receipt the active list is
+EMPTY, so `[].some()` passed it (#723); one `lost` or `void` carton blocked
+voidReceipt / moveReceipt / returnUnclaimedToSender FOR EVER, so
+`splitForCorrection` gives all three the same three sets and leaves terminal
+boxes strictly alone (#722); and the unload screen never took back a mark the
+server refused — a queue flushed after «Tushirish tugadi» read 150/150 all
+green while those cartons were recorded missing, and the fix needed the SERVER
+to start naming the refused code first, or it would have done nothing (#724).
+MONEY: the client CARD still asked the pre-round-91 money question (a seller
+read any customer's balance, reachable by clicking from /suhbatlar);
+`cost_allocations.client_id` never followed `assignReceiptClient`, so claimed
+unclaimed cargo showed revenue with no cost and vanished from
+`landedCostByClient`; a recurring template with a wrong-currency till aborted
+the WHOLE monthly run part-way, every month — now refused at save and
+per-template caught, with «N tasi o'tmadi» on screen. ACCESS: `/transit` was
+gated on a login alone; the other three batch documents checked permission and
+not warehouse — all four go through one `guardBatchDocument` now.
+AVAILABILITY: **#714's shape a third time** — `confirmReceipt` →
+`priceControlOnReceipt(tx)` → `getSetting` on the pool, in the warehouse's
+busiest button; and the hisoblatish AI analysis was still awaited on the
+sequential bot poller with an Anthropic client built with no timeout.
+INTEGRITY: three uncaught 23505/22P02 white pages (`5..` in a number filter,
+a duplicate dictionary name, a duplicate field label). **The fence itself
+grew twice**: `tx-pool.test.ts` now closes the pooled set TRANSITIVELY and
+strips comments first — my own sentence «ONE function for all four…» minted a
+pooled function called `for` and every loop in `src/` counted as calling it
+(#725). TWO red proofs stayed green before it worked, and #726 records the
+worse mistake: I undid one with `git checkout` and took two uncommitted fixes
+with it, which is exactly what #430 forbids. 1630 unit/integration + **155
+e2e all green** on a fresh gsr_ci in CI's order. Still OPEN from the audit and
+stated to him: the tg-listen container holds a pool connection per account,
+`sendPendingTelegram` has no claim (a double send is possible if two drains
+overlap), a db blip after a successful send can still lose the thread's copy,
+and four second-pass candidates the completeness critic named (/map is open to
+any login; deactivated staff keep getting notifications; expected-arrival
+actions check permission but not warehouse; the in-transit report counts by
+the live pointer).
+
+**Round 106 — the audit's open tail** (#727-730, his «ha tuzat» on the
+stated-open list). **Migration 0082** (`notify_claim` — `claimed_at` +
+'sending' in the status CHECK; count must reach **83**). The drain has a
+CLAIM: one `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)
+RETURNING`, ten-minute reclaim for a dead drain's rows (attempt counted,
+terminal at the cap) — measured, two exhaustive claimers overlap on 0 rows,
+600 with the clause stripped. The two double-send SOURCES are dead too:
+`startBoss`'s registrations are NAMED with a per-process done-set (the old
+«registration is idempotent» comment was false — `boss.work` mints a worker
+per call), and `enqueue` is a SENDER (`ensureListening()` = boss.start + a
+queue upsert) so tg-listen no longer boots the fleet — which was also
+running the nightly backup in a container with no backups volume.
+Deactivated staff leave EVERY recipient list (`usersWithPermission`/
+`usersWithRoles` ask `users.active`; delivery settles queued rows as
+`muted / user deactivated` — user_roles survives deactivation BY DESIGN, so
+the filter lives in the lists). `takeListenerLock` holds every account's
+advisory lock on ONE shared reserved connection (per-account reservations
+would have eaten the pool of ten by the 10th manager, silently); in-process
+exclusivity restated as a held-keys set because advisory locks are
+reentrant per session. tg-listen's `unsettled` CARRIES the echo, built
+BEFORE `markSent` — a db blip between the two writes used to lose the
+thread's only copy of a reply the customer already has. The batch-reader
+door is ONE list (`wms/batches/read-door.ts`) with four consumers —
+/transit, /trucks, /map, search — /map's per-client stock scoped like the
+stock screen, trucks by two ends, nav items promising exactly the door's
+list (spelled out in nav.ts, platform must not import wms; unit fence pins
+the two lists). Expected-arrival services take the writer's scope and
+refuse `wrong_warehouse` judged by the ROW. `inTransitBatches` counts
+`batch_departed` movements, not the live pointer (#440's last consumer —
+a half-unloaded truck drained 180 → 0 on the report). Red proofs ×6;
+TEST LESSON (#730): a claim test on a shared queue claims to EXHAUSTION and
+restores the foreign rows it parked, or it asserts about strangers (#713).
+
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
 `v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
 its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —

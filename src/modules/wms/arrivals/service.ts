@@ -12,6 +12,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 
 /**
  * What is coming TO a warehouse (owner: "«Qabul» — Xitoy skladlari CRM'dan
@@ -53,9 +54,16 @@ export const expectedArrivalSchema = z
 
 export async function createExpectedArrival(
   input: z.infer<typeof expectedArrivalSchema>,
+  actor: ScopedActor,
   ctx: AuditContext,
 ) {
   if (!ctx.actorId) throw new ArrivalError('unauthenticated');
+  // The picker offers a scoped operator only their own warehouses; the wire
+  // does not (#171's rule about re-posted forms, worn by a promise): a
+  // re-posted warehouseId planted a promise on another country's arrivals
+  // list, with nothing telling the manager who wrote it.
+  if (!inScope(actor, input.warehouseId)) throw new ArrivalError('wrong_warehouse');
+
   const [row] = await db
     .insert(expectedArrivals)
     .values({
@@ -86,11 +94,20 @@ export async function createExpectedArrival(
   return row!;
 }
 
-export async function cancelExpectedArrival(id: string, reason: string, ctx: AuditContext) {
+export async function cancelExpectedArrival(
+  id: string,
+  reason: string,
+  actor: ScopedActor,
+  ctx: AuditContext,
+) {
   if (!ctx.actorId) throw new ArrivalError('unauthenticated');
   if (reason.trim().length < 2) throw new ArrivalError('reason_required');
   const row = await db.query.expectedArrivals.findFirst({ where: eq(expectedArrivals.id, id) });
   if (!row) throw new ArrivalError('not_found');
+  // Judged by the ROW's warehouse, not the form's: the id arrived in a form
+  // post, and a promise belonging to another country must not be closable by
+  // whoever read its id off a shared screen.
+  if (!inScope(actor, row.warehouseId)) throw new ArrivalError('wrong_warehouse');
   if (row.status !== 'waiting') throw new ArrivalError('not_waiting');
   await db
     .update(expectedArrivals)
@@ -105,10 +122,12 @@ export async function cancelExpectedArrival(id: string, reason: string, ctx: Aud
 }
 
 /** Closed by hand when the cargo turned up without a receipt of its own. */
-export async function markArrived(id: string, ctx: AuditContext) {
+export async function markArrived(id: string, actor: ScopedActor, ctx: AuditContext) {
   if (!ctx.actorId) throw new ArrivalError('unauthenticated');
   const row = await db.query.expectedArrivals.findFirst({ where: eq(expectedArrivals.id, id) });
   if (!row) throw new ArrivalError('not_found');
+  // Same fence as the cancel above.
+  if (!inScope(actor, row.warehouseId)) throw new ArrivalError('wrong_warehouse');
   if (row.status !== 'waiting') return;
   await db
     .update(expectedArrivals)
