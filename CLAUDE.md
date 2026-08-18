@@ -151,7 +151,9 @@ dated journey from `box_movements` + the named road bar); **#36 = the OTHER
 session's analytics round** (`/crm/tahlil`, `lost_reasons`, its 0078);
 **#40 = the OTHER session's round 100** (his 14-item list's fixes, the
 staff+client merged bot keyboard 13A, warehouse lat/lon = its
-`0079_warehouse_coords`). This branch carries **round 100 (this session) —
+`0079_warehouse_coords`); **#45 = rounds 103-106** (client codes, the backup
+round, the full audit, its open tail — merged AND deployed 2026-08-18,
+ledger 83). This branch carries **round 100 (this session) —
 the AI yordamchi** (his «sistemamizga AI ulay olamizmi», answers: both
 tiers, both surfaces, no client-facing AI, read-only v1): tier 1 for every
 staff member = a tool loop over the SAME scoped functions the screens use
@@ -432,8 +434,14 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 81 — EVERYTHING is deployed, including both sessions'
-round 100 and the AI round (2026-08-13 evening, he confirmed «81 chiqdi»).**
+**HIS SERVER IS AT 83 — EVERYTHING is deployed, including rounds 103-106
+(PR #45, merged and deployed 2026-08-18 evening, he confirmed «83 chiqdi»;
+migrations 0081 `backup_objects` + 0082 `notify_claim`). The tg-listen
+container was rebuilt in the same deploy. Trap (1) was hit a FOURTH time on
+the way: his `git pull` answered «up to date» and the count stayed 81,
+because the PR was still open — verified `merged: false` via the API, merged
+it for him, and the next pull carried the 85 files.** Before that: both
+sessions' round 100 and the AI round landed 2026-08-13 evening at **81**.
 The trail there: PR #36 (tahlil + lost reasons + filters, migration 0078)
 merged and deployed the same morning, confirmed **79** by counting
 `drizzle.__drizzle_migrations`. Getting there hit trap (1) twice more in one
@@ -467,7 +475,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**81** — on `main` AND on his server since 2026-08-13 evening) —
+length (**83** — on `main` AND on his server since 2026-08-18 evening) —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
