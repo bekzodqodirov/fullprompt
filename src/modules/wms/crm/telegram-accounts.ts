@@ -422,33 +422,61 @@ export async function storeIncoming(input: {
  * CONNECTION and released when it closes — including when the process dies
  * badly, which a "who is running" table would not survive.
  *
- * It takes a RESERVED connection rather than borrowing one from the pool: a
+ * It holds the locks on a RESERVED connection rather than a pooled one: a
  * pooled connection can be closed underneath us and would take the lock with
- * it silently, which is the one failure this must not have. The reservation is
- * held for the life of the listener, so the lock's lifetime is the process's.
+ * it silently, which is the one failure this must not have.
  *
- * Releasing UNLOCKS before handing the connection back. `release()` alone
- * returns the connection to the pool without closing it, so the lock rides
- * along on an idle connection and the account stays locked for a process that
- * has already let it go — proved by the integration test, which could not take
- * the lock again after a clean release.
+ * ONE reserved connection for ALL accounts, and that is the audit's finding
+ * made structural. The first version reserved a connection PER listener, and
+ * `pgClient` is a pool of ten shared with every pump, claim and store in the
+ * process — so the 8th connected manager left two connections for the work
+ * of all eight listeners, and the 10th left none: every query in tg-listen
+ * would block for ever, silently, while the screen read «live» because the
+ * Telegram heartbeat needs no database. Advisory locks are per SESSION and a
+ * session holds any number of them, so one connection carries every
+ * account's lock and the cost stops growing with the staff.
+ *
+ * Postgres advisory locks are REENTRANT within a session — the same key
+ * taken twice on one connection succeeds — so in-process exclusivity, which
+ * the per-connection version got for free, is restated here as `heldKeys`:
+ * the same account asked for twice in this process is refused without asking
+ * postgres a question whose answer would be a lie.
+ *
+ * Releasing UNLOCKS on the shared session; the reservation itself goes back
+ * to the pool only when the LAST lock leaves, so tests (and a supervisor
+ * shutting down) do not strand a connection.
  */
+let lockSession: Awaited<ReturnType<typeof pgClient.reserve>> | null = null;
+const heldKeys = new Set<string>();
+
+/** What the lock is holding right now — the test's window into the sharing. */
+export function listenerLockDiagnostics(): { held: number; sessions: number } {
+  return { held: heldKeys.size, sessions: lockSession ? 1 : 0 };
+}
+
 export async function takeListenerLock(accountId: string): Promise<(() => Promise<void>) | null> {
-  const reserved = await pgClient.reserve();
+  if (heldKeys.has(accountId)) return null;
+  const reserved = lockSession ?? (await pgClient.reserve());
   // The key is spelled out at both call sites rather than built as a fragment:
   // this is a postgres.js template, not a drizzle one, and a fragment from the
   // wrong library interpolates as a value instead of as SQL.
   const [row] = await reserved<{ locked: boolean }[]>`
     SELECT pg_try_advisory_lock(hashtext('gsr-tg-listen'), hashtext(${accountId})) AS locked`;
   if (row?.locked !== true) {
-    reserved.release();
+    if (lockSession === null) reserved.release();
     return null;
   }
+  lockSession = reserved;
+  heldKeys.add(accountId);
   return async () => {
     try {
       await reserved`SELECT pg_advisory_unlock(hashtext('gsr-tg-listen'), hashtext(${accountId}))`;
     } finally {
-      reserved.release();
+      heldKeys.delete(accountId);
+      if (heldKeys.size === 0 && lockSession === reserved) {
+        lockSession = null;
+        reserved.release();
+      }
     }
   };
 }

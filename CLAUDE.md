@@ -283,7 +283,7 @@ none of the transaction's locks). Two red proofs stayed GREEN first — a
 parameterised handle left the function out of the set, and a generic
 signature (`getSetting<K …>`) hid it entirely — so the fence is anchored on
 names it must find. 1613 unit/integration green on a fresh gsr_ci.
-Ledger must reach **82**. **Owner still has to: put the Drive credentials in
+Ledger must reach **82** (now **83** — round 106's 0082). **Owner still has to: put the Drive credentials in
 `.env` (docs/BACKUP.md, publish BEFORE minting the token), decide the 15 GB
 question (Google One 100 GB ~$2/mo, or the S3 bucket from round 85), and keep
 a copy of `.env` off the server — `TG_SESSION_KEY` is what decrypts the
@@ -333,6 +333,39 @@ and four second-pass candidates the completeness critic named (/map is open to
 any login; deactivated staff keep getting notifications; expected-arrival
 actions check permission but not warehouse; the in-transit report counts by
 the live pointer).
+
+**Round 106 — the audit's open tail** (#727-730, his «ha tuzat» on the
+stated-open list). **Migration 0082** (`notify_claim` — `claimed_at` +
+'sending' in the status CHECK; count must reach **83**). The drain has a
+CLAIM: one `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)
+RETURNING`, ten-minute reclaim for a dead drain's rows (attempt counted,
+terminal at the cap) — measured, two exhaustive claimers overlap on 0 rows,
+600 with the clause stripped. The two double-send SOURCES are dead too:
+`startBoss`'s registrations are NAMED with a per-process done-set (the old
+«registration is idempotent» comment was false — `boss.work` mints a worker
+per call), and `enqueue` is a SENDER (`ensureListening()` = boss.start + a
+queue upsert) so tg-listen no longer boots the fleet — which was also
+running the nightly backup in a container with no backups volume.
+Deactivated staff leave EVERY recipient list (`usersWithPermission`/
+`usersWithRoles` ask `users.active`; delivery settles queued rows as
+`muted / user deactivated` — user_roles survives deactivation BY DESIGN, so
+the filter lives in the lists). `takeListenerLock` holds every account's
+advisory lock on ONE shared reserved connection (per-account reservations
+would have eaten the pool of ten by the 10th manager, silently); in-process
+exclusivity restated as a held-keys set because advisory locks are
+reentrant per session. tg-listen's `unsettled` CARRIES the echo, built
+BEFORE `markSent` — a db blip between the two writes used to lose the
+thread's only copy of a reply the customer already has. The batch-reader
+door is ONE list (`wms/batches/read-door.ts`) with four consumers —
+/transit, /trucks, /map, search — /map's per-client stock scoped like the
+stock screen, trucks by two ends, nav items promising exactly the door's
+list (spelled out in nav.ts, platform must not import wms; unit fence pins
+the two lists). Expected-arrival services take the writer's scope and
+refuse `wrong_warehouse` judged by the ROW. `inTransitBatches` counts
+`batch_departed` movements, not the live pointer (#440's last consumer —
+a half-unloaded truck drained 180 → 0 on the report). Red proofs ×6;
+TEST LESSON (#730): a claim test on a shared queue claims to EXHAUSTION and
+restores the foreign rows it parked, or it asserts about strangers (#713).
 
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
 `v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and

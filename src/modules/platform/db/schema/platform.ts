@@ -393,6 +393,8 @@ export const notifications = pgTable(
     status: text('status').notNull().default('pending'),
     /** Telegram sends that failed; at the cap the row goes terminal. */
     attempts: integer('attempts').notNull().default(0),
+    /** When a drain took this row (0082) — a stale claim is put back. */
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     error: text('error'),
     readAt: timestamp('read_at', { withTimezone: true }),
@@ -402,7 +404,7 @@ export const notifications = pgTable(
     check('notifications_channel_check', sql`${t.channel} IN ('in_app', 'telegram')`),
     check(
       'notifications_status_check',
-      sql`${t.status} IN ('pending', 'sent', 'failed', 'muted')`,
+      sql`${t.status} IN ('pending', 'sending', 'sent', 'failed', 'muted')`,
     ),
     index('notifications_user_idx').on(t.userId, t.createdAt),
     index('notifications_pending_idx')

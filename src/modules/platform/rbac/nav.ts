@@ -140,8 +140,25 @@ export const NAV: NavGroupSpec[] = [
       { href: '/stock', labelKey: 'title', namespace: 'stock', icon: 'boxes', primary: 3, shortKey: 'stock' },
       { href: '/receipts', labelKey: 'title', namespace: 'receipts', icon: 'doc' },
       { href: '/unclaimed', labelKey: 'unclaimedTitle', namespace: 'receipts', icon: 'alert' },
-      { href: '/trucks', shortKey: 'trucks', labelKey: 'title', namespace: 'trucks', icon: 'truck' },
-      { href: '/map', labelKey: 'title', namespace: 'map', icon: 'map' },
+      {
+        href: '/trucks',
+        shortKey: 'trucks',
+        labelKey: 'title',
+        namespace: 'trucks',
+        icon: 'truck',
+        // The trucks door (wms/batches/read-door.ts) — spelled out here
+        // because platform must not import wms; the unit fence pins the two
+        // lists against each other. Without it an owner-invented role got a
+        // menu entry that bounced to the home screen.
+        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close'],
+      },
+      {
+        href: '/map',
+        labelKey: 'title',
+        namespace: 'map',
+        icon: 'map',
+        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close'],
+      },
       {
         // The AI assistant (owner: «sistemamizga AI ulay olamizmi»). No
         // permission — every member of staff may ASK, and what the assistant

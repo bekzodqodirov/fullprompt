@@ -6,7 +6,17 @@ export const JOB_PROCESS_EVENTS = 'events.process';
 export const JOB_SEND_TELEGRAM = 'notify.telegram';
 export const JOB_RECOMPUTE_COSTS = 'costs.recompute';
 
-const globalForBoss = globalThis as unknown as { boss?: PgBoss; bossStarted?: boolean };
+const globalForBoss = globalThis as unknown as {
+  boss?: PgBoss;
+  /** boss.start() has run — enough to SEND jobs. */
+  bossListening?: boolean;
+  /** Every worker registration succeeded — this process WORKS jobs. */
+  bossStarted?: boolean;
+  /** Which registrations have succeeded, so a boot retry never re-runs one. */
+  bossRegistered?: Set<string>;
+  /** Queues this process has ensured exist, so enqueue pays the upsert once. */
+  bossQueues?: Set<string>;
+};
 
 export function getBoss(): PgBoss {
   if (!globalForBoss.boss) {
@@ -29,41 +39,65 @@ export function isBossStarted(): boolean {
   return globalForBoss.bossStarted === true;
 }
 
-export async function startBoss(): Promise<PgBoss> {
+/** boss.start() alone — the half that both senders and workers need. */
+async function ensureListening(): Promise<PgBoss> {
   const boss = getBoss();
-  if (!globalForBoss.bossStarted) {
+  if (!globalForBoss.bossListening) {
     await boss.start();
-    // Worker registration lives next to each job's implementation.
-    const { registerThumbnailWorker } = await import('./thumbnails');
-    await registerThumbnailWorker(boss);
-    const { registerNotificationWorkers } = await import('./notifications');
-    await registerNotificationWorkers(boss);
-    const { registerDigestWorker } = await import('./digest');
-    await registerDigestWorker(boss);
-    const { registerCostRecomputeWorker } = await import('./cost-recompute');
-    await registerCostRecomputeWorker(boss);
-    const { registerBackupWorker } = await import('./backup');
-    await registerBackupWorker(boss);
-    const { registerObjectBackupWorker } = await import('./object-backup');
-    await registerObjectBackupWorker(boss);
-    const { registerRestoreTestWorker } = await import('./restore-test');
-    await registerRestoreTestWorker(boss);
-    const { registerCrmWorkers } = await import('../../wms/crm/digest');
-    await registerCrmWorkers(boss);
-    const { registerTaskWorkers } = await import('../tasks/digest');
-    await registerTaskWorkers(boss);
-    const { registerDealWorkers } = await import('../../wms/deals/jobs');
-    await registerDealWorkers(boss);
-    const { registerUnansweredWorker } = await import('../../wms/crm/unanswered-jobs');
-    await registerUnansweredWorker(boss);
-    const { registerSilentTrucksWorker } = await import('../../wms/tracking/silent-jobs');
-    await registerSilentTrucksWorker(boss);
-    const { registerMetaLeadWorker } = await import('../../wms/crm/meta-jobs');
-    await registerMetaLeadWorker(boss);
-    const { registerStaleAutomationWorker } = await import('../automation/stale-jobs');
-    await registerStaleAutomationWorker(boss);
-    const { registerClientNoticeWorker } = await import('../../wms/notices/arrival-jobs');
-    await registerClientNoticeWorker(boss);
+    globalForBoss.bossListening = true;
+  }
+  return boss;
+}
+
+/**
+ * Every worker this application runs, BY NAME.
+ *
+ * Named so a partially-failed boot can retry without doubling anybody: the
+ * old code re-ran the whole list from the top when one registration threw,
+ * and `boss.work` is NOT idempotent — each call adds a fresh worker, so the
+ * queues registered before the failure got a second worker on the retry and
+ * every staff notification went out twice. The completed set survives the
+ * retry; only the failed-and-after entries run again, each at most once.
+ *
+ * Exported for the test that proves exactly that with a boss that fails on
+ * purpose — the real one cannot be made to fail on demand.
+ */
+export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] = [
+  ['thumbnails', async (b) => (await import('./thumbnails')).registerThumbnailWorker(b)],
+  ['notifications', async (b) => (await import('./notifications')).registerNotificationWorkers(b)],
+  ['digest', async (b) => (await import('./digest')).registerDigestWorker(b)],
+  ['cost-recompute', async (b) => (await import('./cost-recompute')).registerCostRecomputeWorker(b)],
+  ['backup', async (b) => (await import('./backup')).registerBackupWorker(b)],
+  ['object-backup', async (b) => (await import('./object-backup')).registerObjectBackupWorker(b)],
+  ['restore-test', async (b) => (await import('./restore-test')).registerRestoreTestWorker(b)],
+  ['crm', async (b) => (await import('../../wms/crm/digest')).registerCrmWorkers(b)],
+  ['tasks', async (b) => (await import('../tasks/digest')).registerTaskWorkers(b)],
+  ['deals', async (b) => (await import('../../wms/deals/jobs')).registerDealWorkers(b)],
+  ['unanswered', async (b) => (await import('../../wms/crm/unanswered-jobs')).registerUnansweredWorker(b)],
+  ['silent-trucks', async (b) => (await import('../../wms/tracking/silent-jobs')).registerSilentTrucksWorker(b)],
+  ['meta-leads', async (b) => (await import('../../wms/crm/meta-jobs')).registerMetaLeadWorker(b)],
+  ['stale-automation', async (b) => (await import('../automation/stale-jobs')).registerStaleAutomationWorker(b)],
+  ['client-notices', async (b) => (await import('../../wms/notices/arrival-jobs')).registerClientNoticeWorker(b)],
+];
+
+/** Run each registration at most once per process, whatever failed before. */
+export async function registerAllWorkers(
+  boss: PgBoss,
+  registrations: [string, (boss: PgBoss) => Promise<void>][],
+  registered: Set<string>,
+): Promise<void> {
+  for (const [name, register] of registrations) {
+    if (registered.has(name)) continue;
+    await register(boss);
+    registered.add(name);
+  }
+}
+
+export async function startBoss(): Promise<PgBoss> {
+  const boss = await ensureListening();
+  if (!globalForBoss.bossStarted) {
+    globalForBoss.bossRegistered ??= new Set();
+    await registerAllWorkers(boss, WORKER_REGISTRATIONS, globalForBoss.bossRegistered);
     /**
      * LAST, not first.
      *
@@ -77,8 +111,10 @@ export async function startBoss(): Promise<PgBoss> {
      * digest were quietly dead.
      *
      * Setting it after the registrations means a failure is retried properly
-     * and stays loud. Registration is idempotent, so a retry that re-runs
-     * some of them is safe.
+     * and stays loud. The per-name set above is what makes the retry safe —
+     * `boss.work` mints a fresh worker on every call, so «idempotent» has to
+     * be built, not assumed (the audit measured the assumption: a partial
+     * boot left two workers on notify.telegram and every message went twice).
      */
     globalForBoss.bossStarted = true;
     logger.info('pg-boss started');
@@ -86,7 +122,27 @@ export async function startBoss(): Promise<PgBoss> {
   return boss;
 }
 
+/**
+ * Put a job on a queue — WITHOUT becoming a worker.
+ *
+ * This used to call `startBoss()`, which registers every worker in the
+ * process that happens to enqueue. The place that mattered is the tg-listen
+ * container: a session-dead alarm there called notifyStaffTelegram →
+ * enqueue → the whole fleet, and from then on TWO processes worked
+ * notify.telegram (every staff message twice) and the nightly backup ran in
+ * a container with no backups volume — #253's «dump into a container thrown
+ * away on every deploy», resurrected by an alarm. Sending needs only
+ * `boss.start()` plus the queue existing; working jobs stays the app's.
+ */
 export async function enqueue<T extends object>(name: string, data: T): Promise<void> {
-  const boss = await startBoss();
+  const boss = await ensureListening();
+  globalForBoss.bossQueues ??= new Set();
+  if (!globalForBoss.bossQueues.has(name)) {
+    // pg-boss v10 refuses a send onto a queue nobody has created. The worker
+    // side creates its queues at registration; a pure sender (tg-listen) has
+    // to ensure them itself. createQueue is an upsert, paid once per process.
+    await boss.createQueue(name);
+    globalForBoss.bossQueues.add(name);
+  }
   await boss.send(name, data, { retryLimit: 5, retryBackoff: true });
 }

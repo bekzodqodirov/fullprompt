@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## Auditning qolgan dumi — yettita ochiq topilma yopildi — 2026-08-18
+
+Siz «ha tuzat» dedingiz — auditda topilib, o'sha roundda tegilmagan
+narsalarning hammasi shu yerda.
+
+**1. Xodim xabarlari endi IKKI MARTA ketolmaydi.** Uch qavatli himoya:
+
+- Xabar navbati endi «band qilish» bilan ishlaydi (bazada bitta yangi ustun,
+  0082): bir xabarni faqat BITTA jarayon oladi. O'lchab tekshirildi: himoyasiz
+  variantda ikki jarayon **600 ta xabarni ikki marta olar edi**, himoya bilan —
+  nol.
+- Server qiyin ko'tarilganda (deploy tongi) ishchilar ikki marta
+  ro'yxatga olinishi mumkin edi — «takrorlanmaydi» degan izoh bor edi, lekin
+  hech kim tekshirmagan ekan. Endi har biri nomi bilan bir marta.
+- Telegram ko'prigi (tg-listen) xato signal berganda **butun ishchi flotini
+  o'zining ichida yoqib yuborardi** — jumladan tungi zaxirani, zaxira papkasi
+  yo'q konteynerda. Endi u faqat xabar qo'yadi, ishchi bo'lmaydi.
+
+**2. Ishdan bo'shatilgan xodimga xabar kelishi TO'XTAYDI.** Bugungacha
+«Deaktivatsiya» sessiyani o'chirardi, lekin Telegram xabarlari kelaverар edi —
+jumladan qarzdor mijozning ismi va summasi, kompaniya nazorat qilmaydigan
+telefonga, abadiy. Endi ikki joyda tekshiriladi: ro'yxat tuzilganda ham,
+yuborish paytida ham (avval navbatga tushib qolganlari ham to'xtaydi).
+
+**3. Yuborilgan javob endi yo'qolmaydi.** Mijozga xabar ketdi, shu zahoti
+baza bir soniya uzilib qolsa — navbat «yuborildi» derdi, lekin suhbatlar
+ekranida o'sha xabar YO'Q edi, abadiy. Endi ikkala yozuv ham uzilishdan omon
+qoladi va navbatdagi urinishda yoziladi.
+
+**4. Telegram ko'prigi endi ulanishlarni yemaydi.** Har ulangan menejer
+akkaunti bazaga BITTA ulanishni band qilardi (jami o'nta bor) — sotuvchilar
+ulangani sari ko'prik sekinlashib, 10-akkauntda butunlay to'xtab qolardi,
+jimgina. Endi hammasi bitta ulanishda.
+
+**5. /map va /trucks endi ruxsat so'raydi.** Har qanday login butun
+kompaniyaning hamma mashinasini (raqami, yo'nalishi, ichidagi yuk kimniki)
+va har bir skladning mijoz-kod bo'yicha zaxirasini ko'rardi. Endi partiya
+ekranining o'zi bilan bir xil eshik + sklad chegarasi. Menyu ham faqat
+kiraoladigan odamga ko'rsatadi.
+
+**6. Kutilayotgan yukka boshqa sklad aralasholmaydi.** Qashqar skladchisi
+formani qayta yuborib Yiwu ro'yxatiga va'da qo'shishi yoki Yiwu va'dasini
+«keldi»/«bekor» qilishi mumkin edi — menejerga hech narsa aytilmasdan. Endi
+sklad chegarasi bilan rad etiladi.
+
+**7. «Yo'ldagi yuk» hisoboti endi yolg'on gapirmaydi.** Mashina tushirilayotgan
+paytda hisobot 180 → 0 gacha «kamayib» borardi — mashina darvoza oldida yarim
+to'la turgan paytda. Endi nima JO'NAGANI hisoblanadi.
+
+**Bazada bitta yangi ustun** (0082) — deploydan keyin **83** bo'lishi kerak.
+
+---
+
 ## To'liq audit — 19 ta xato topildi va tuzatildi — 2026-08-18
 
 «Systemani toliq audit qil … hatoliklar yoqligini oylab analyz qb chiq».

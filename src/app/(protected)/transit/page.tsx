@@ -3,6 +3,7 @@ import { desc, eq, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { and } from 'drizzle-orm';
 import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
+import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -28,18 +29,10 @@ import { PageHeader } from '@/components/ui/page';
  * on the truck's TWO ends since round 58; this page is the same data one
  * route over.
  */
-const TRANSIT_READERS = [
-  'scan.load',
-  'scan.unload',
-  'ved.docs',
-  'plans.manage',
-  'batches.depart_close',
-] as const;
-
 export default async function TransitPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!TRANSIT_READERS.some((code) => actor.permissions.has(code))) redirect('/');
+  if (!mayReadBatches(actor.permissions)) redirect('/');
   // In transit belongs to no warehouse, so the fence is either END of the
   // trip — the rule `wms/search` states for exactly this table.
   const batchScope = warehouseScopeEither(
