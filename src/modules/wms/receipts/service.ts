@@ -17,6 +17,7 @@ import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import { assignLetters } from '../sequencer';
 import { nextBoxCodes, nextReceiptNumber } from '../codes';
+import { splitForCorrection } from './box-state';
 import {
   announceArrivalDiff,
   closeExpectedById,
@@ -150,6 +151,10 @@ export async function confirmReceipt(
   }
 
   const chargeableFactor = await getSetting('chargeable_weight_factor');
+  // Read here and not where it is used: `priceControlOnReceipt` runs INSIDE
+  // the transaction below, and a settings read from in there goes through the
+  // pool for a connection the transaction is already holding one of (#714).
+  const deviationThreshold = await getSetting('deal_deviation_threshold_pct');
 
   // The promise this receipt answers, when it names one — read inside the
   // transaction, told about OUTSIDE it: a Telegram row must not be able to
@@ -343,6 +348,7 @@ export async function confirmReceipt(
       {
         receiptId: receipt!.id,
         receiptNumber: number,
+        deviationThreshold,
         clientId: input.clientId,
         warehouseCode: warehouse.code,
         volumeM3: summaries.reduce((sum, s) => sum + s.totalVolumeM3, 0),
@@ -437,32 +443,32 @@ export async function voidReceipt(
         .from(boxes)
         .where(inArray(boxes.lotId, lotIds))
         .for('update');
-      // A receipt may be voided only while every box is still ON THE SHELF.
-      // The old code voided whatever state the boxes were in: cargo on a
-      // departed truck became unscannable at unload (void is rejected
-      // there), and cargo already HANDED TO THE CLIENT was un-happened on
-      // paper. Anything that left in_stock is resolved by the load/unload/
-      // issue machinery, not by void — same rule as moveReceipt.
-      for (const box of boxRows) {
-        if (box.status !== 'in_stock') throw new VoidError('box_not_in_stock');
+      // A receipt may be voided only while every box is still ON THE SHELF —
+      // cargo that has been loaded, departed or handed over is resolved by
+      // the load/unload/issue machinery, not by void. Boxes already in a
+      // TERMINAL state (a lot-edit's surplus `void`, a `lost` carton) neither
+      // block that nor take part in it: see box-state.ts.
+      const { act, blocked } = splitForCorrection(boxRows);
+      if (blocked.length) throw new VoidError('box_not_in_stock');
+      if (act.length) {
+        // crateId goes with the void: a crate holding a voided member could
+        // neither be dissolved nor scanned again (both refuse non-in_stock).
+        await tx
+          .update(boxes)
+          .set({ status: 'void', statusReason: `receipt voided: ${reason}`, crateId: null })
+          .where(inArray(boxes.id, act.map((b) => b.id)));
+        await tx.insert(boxMovements).values(
+          act.map((b) => ({
+            boxId: b.id,
+            fromStatus: b.status,
+            toStatus: 'void',
+            cause: 'receipt_void',
+            refType: 'receipt',
+            refId: receiptId,
+            actorId: ctx.actorId,
+          })),
+        );
       }
-      // crateId goes with the void: a crate holding a voided member could
-      // neither be dissolved nor scanned again (both refuse non-in_stock).
-      await tx
-        .update(boxes)
-        .set({ status: 'void', statusReason: `receipt voided: ${reason}`, crateId: null })
-        .where(inArray(boxes.lotId, lotIds));
-      await tx.insert(boxMovements).values(
-        boxRows.map((b) => ({
-          boxId: b.id,
-          fromStatus: b.status,
-          toStatus: 'void',
-          cause: 'receipt_void',
-          refType: 'receipt',
-          refId: receiptId,
-          actorId: ctx.actorId,
-        })),
-      );
     }
 
     await writeAudit(tx, { ...ctx, warehouseId: receipt.warehouseId }, {

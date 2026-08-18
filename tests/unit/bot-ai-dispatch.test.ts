@@ -52,3 +52,45 @@ describe('the AI answer never holds the Telegram poller', () => {
     expect(model).toMatch(/new Anthropic\(\{[^}]*timeout/);
   });
 });
+
+/**
+ * The hisoblatish analysis is the same call on the same poller.
+ *
+ * `analyzeIntake` is an Opus call over up to twenty thousand characters, and
+ * the audit found it awaited straight inside the «✅ Bo'ldi» handler — so one
+ * staff member pressing analyse froze the customer bot for as long as it
+ * took, and on a hung socket for the SDK's default ten minutes, because the
+ * client was constructed with no timeout at all.
+ */
+describe('the hisoblatish analysis never holds the poller either', () => {
+  const source = readFileSync('src/modules/platform/telegram/staff-handlers.ts', 'utf8');
+  // The helper sits ABOVE its own call site in this file, so «everything
+  // before the helper» is the wrong slice — it excludes the very line under
+  // test and the assertion passes on nothing. Anchor on POSITIONS instead:
+  // the one legitimate await lives inside the helper's body and nowhere else.
+  const helperStart = source.indexOf('async function analyseIntakeAndReply');
+  const helperEnd = source.indexOf('\n}\n', helperStart);
+
+  it('dispatches the analysis off the middleware chain', () => {
+    expect(helperStart, 'the helper exists').toBeGreaterThan(0);
+    expect(source, 'fire-and-deliver, not await').toContain('void analyseIntakeAndReply(');
+    const awaits = [...source.matchAll(/await\s+analyzeCollected\(/g)].map((m) => m.index ?? -1);
+    expect(awaits.length, 'somebody still calls it').toBeGreaterThan(0);
+    for (const at of awaits) {
+      expect(at, 'awaited only inside the off-chain helper').toBeGreaterThan(helperStart);
+      expect(at, 'and inside its body, not after it').toBeLessThan(helperEnd);
+    }
+  });
+
+  it('the model call carries a deadline of its own', () => {
+    // Without one the SDK waits about ten minutes, and the loop's own wall
+    // clock is only consulted between rounds — so the socket outlives it.
+    const ai = readFileSync('src/modules/wms/calc/intake-ai.ts', 'utf8');
+    expect(ai).toMatch(/new Anthropic\(\{[^}]*timeout:/);
+  });
+
+  it('cannot leave the person on «⏳» with no answer', () => {
+    expect(source.slice(helperStart, helperEnd), 'catches and says so').toContain('catch');
+  });
+});
+

@@ -289,6 +289,51 @@ question (Google One 100 GB ~$2/mo, or the S3 bucket from round 85), and keep
 a copy of `.env` off the server — `TG_SESSION_KEY` is what decrypts the
 managers' Telegram sessions.**
 
+**Round 105 — the full-system audit** (#721-726, his «systemani toliq audit
+qil … hatoliklar yoqligini oylab analyz qb chiq»). Sixty agents, seven lenses,
+every finding given a SKEPTIC and a REPRODUCER and kept only if neither could
+refute it: **26 candidates → 19 confirmed, all fixed.** (The five backup
+findings read REFUTED in the run because the verifiers read the tree after
+round 104 had landed.) CARGO: `editLot` on a VOIDED receipt minted brand-new
+live boxes and offered to print their labels — the structural lock reads «no
+ACTIVE box has left in_stock» and on a voided receipt the active list is
+EMPTY, so `[].some()` passed it (#723); one `lost` or `void` carton blocked
+voidReceipt / moveReceipt / returnUnclaimedToSender FOR EVER, so
+`splitForCorrection` gives all three the same three sets and leaves terminal
+boxes strictly alone (#722); and the unload screen never took back a mark the
+server refused — a queue flushed after «Tushirish tugadi» read 150/150 all
+green while those cartons were recorded missing, and the fix needed the SERVER
+to start naming the refused code first, or it would have done nothing (#724).
+MONEY: the client CARD still asked the pre-round-91 money question (a seller
+read any customer's balance, reachable by clicking from /suhbatlar);
+`cost_allocations.client_id` never followed `assignReceiptClient`, so claimed
+unclaimed cargo showed revenue with no cost and vanished from
+`landedCostByClient`; a recurring template with a wrong-currency till aborted
+the WHOLE monthly run part-way, every month — now refused at save and
+per-template caught, with «N tasi o'tmadi» on screen. ACCESS: `/transit` was
+gated on a login alone; the other three batch documents checked permission and
+not warehouse — all four go through one `guardBatchDocument` now.
+AVAILABILITY: **#714's shape a third time** — `confirmReceipt` →
+`priceControlOnReceipt(tx)` → `getSetting` on the pool, in the warehouse's
+busiest button; and the hisoblatish AI analysis was still awaited on the
+sequential bot poller with an Anthropic client built with no timeout.
+INTEGRITY: three uncaught 23505/22P02 white pages (`5..` in a number filter,
+a duplicate dictionary name, a duplicate field label). **The fence itself
+grew twice**: `tx-pool.test.ts` now closes the pooled set TRANSITIVELY and
+strips comments first — my own sentence «ONE function for all four…» minted a
+pooled function called `for` and every loop in `src/` counted as calling it
+(#725). TWO red proofs stayed green before it worked, and #726 records the
+worse mistake: I undid one with `git checkout` and took two uncommitted fixes
+with it, which is exactly what #430 forbids. 1630 unit/integration + **155
+e2e all green** on a fresh gsr_ci in CI's order. Still OPEN from the audit and
+stated to him: the tg-listen container holds a pool connection per account,
+`sendPendingTelegram` has no claim (a double send is possible if two drains
+overlap), a db blip after a successful send can still lose the thread's copy,
+and four second-pass candidates the completeness critic named (/map is open to
+any login; deactivated staff keep getting notifications; expected-arrival
+actions check permission but not warehouse; the in-transit report counts by
+the live pointer).
+
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
 `v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
 its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —

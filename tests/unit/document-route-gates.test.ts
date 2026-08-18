@@ -15,6 +15,13 @@ import { describe, expect, it } from 'vitest';
  * the session through `requireActor`, which needs a request scope (#531's
  * rule, fourth outing). The GATE is what this pins; the predicates it names
  * are tested for real where they live.
+ *
+ * The full audit then found the OTHER three batch documents — packing,
+ * packing-photos and invoice — asking for a permission and never for the
+ * warehouse, which is how a scoped operator in Yiwu could pull another
+ * country's whole cargo list with a batch id. Fixing them one file at a time
+ * is what let them drift apart in the first place, so all four now ask one
+ * helper and this file pins that they do.
  */
 
 const routes = [
@@ -25,11 +32,16 @@ const routes = [
     permissions: ['scan.issue', 'receipts.unclaimed.resolve'],
     scopeColumn: 'warehouseId',
   },
+];
+
+/** The four that share `guardBatchDocument`. */
+const batchDocumentRoutes = [
+  { file: 'src/app/api/batches/[id]/manifest/route.ts', permissions: ['ved.docs', 'plans.manage'] },
+  { file: 'src/app/api/batches/[id]/packing/route.ts', permissions: ['ved.docs', 'plans.manage'] },
+  { file: 'src/app/api/batches/[id]/invoice/route.ts', permissions: ['ved.docs', 'plans.manage'] },
   {
-    file: 'src/app/api/batches/[id]/manifest/route.ts',
-    // What the invoice and packing siblings ask.
-    permissions: ['ved.docs', 'plans.manage'],
-    scopeColumn: 'originWarehouseId',
+    file: 'src/app/api/batches/[id]/packing-photos/route.ts',
+    permissions: ['ved.docs', 'plans.manage', 'scan.load'],
   },
 ];
 
@@ -56,6 +68,31 @@ describe('document routes gate on permission AND warehouse, not just a session',
       expect(source, 'still answers 401 unauthenticated').toContain('401');
     });
   }
+
+  for (const route of batchDocumentRoutes) {
+    it(`${route.file} goes through the shared batch-document guard`, () => {
+      const source = readFileSync(route.file, 'utf8');
+      // Anchored on the CALL and on the RETURN, because an import that
+      // survives a stripped check is how the first version of this file
+      // passed while the gate was gone (#166).
+      expect(source, 'asks the guard').toMatch(/const refused = await guardBatchDocument\(/);
+      expect(source, 'and actually refuses').toMatch(/if \(refused\) return refused;/);
+      for (const permission of route.permissions) {
+        expect(source, `asks ${permission}`).toContain(`'${permission}'`);
+      }
+    });
+  }
+
+  it('the guard itself fences on both ends of the trip', () => {
+    // A truck between two countries stands on nobody's floor, so either end
+    // may read it — the rule the batch card and the bot lookup already use.
+    const guard = readFileSync('src/modules/wms/documents/route-guard.ts', 'utf8');
+    expect(guard).toMatch(/inScope\(actor,\s*row\.originWarehouseId\)/);
+    expect(guard).toMatch(/inScope\(actor,\s*row\.destWarehouseId\)/);
+    expect(guard, 'refuses with 403').toContain('403');
+    expect(guard, 'still answers 401 unauthenticated').toContain('401');
+    expect(guard, 'and 404s a batch that is not there').toContain('404');
+  });
 
   it('the builders themselves stay unauthorized — the ROUTE is the gate', () => {
     // Stated rather than asserted-away: `buildHandoverAct(id)` and

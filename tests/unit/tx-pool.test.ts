@@ -18,13 +18,22 @@ import { describe, expect, it } from 'vitest';
  * creations finished in 121 ms, twelve never returned at all, and
  * pg_stat_activity showed exactly ten backends parked on `begin`.
  *
- * IT FOLLOWS THE CALL, and that is the whole difference between this test and
- * the first version of it. A list of known pooled NAMES (`getSetting`, `db.`)
- * passed clean over `submitPlan`, which calls `availableByLot(...)` — an
- * ordinary project function two files away whose body happens to run on the
- * pool. A rule that only sees what it was told to look for is not a fence.
- * So: find every function whose body touches the module `db` handle, then
- * refuse any transaction body that calls one of them by name.
+ * IT FOLLOWS THE CALL, AS FAR AS THE CALL GOES, and that is the whole
+ * difference between this test and the two versions before it. A list of
+ * known pooled NAMES (`getSetting`, `db.`) passed clean over `submitPlan`,
+ * which calls `availableByLot(...)` — an ordinary project function whose body
+ * happens to run on the pool. Following one hop then passed clean over
+ * `confirmReceipt`, which calls `priceControlOnReceipt(tx, …)` — a function
+ * that dutifully takes the transaction and then calls `getSetting` two lines
+ * from the bottom. A rule that only sees what it was told to look for is not
+ * a fence, and neither is one that stops looking after a single step.
+ *
+ * So the pooled set is closed TRANSITIVELY: seeded with every function whose
+ * body touches the module handle, then grown with everything that calls one,
+ * until it stops growing. 497 seeds become 714 of the 1,258 functions in
+ * `src/` — and exactly one of them was reachable from inside a transaction,
+ * which is what makes a closure this wide usable as a fence rather than a
+ * source of noise.
  *
  * Source-shape deliberately: the behaviour that proves it is a deadlock, and
  * a test that deadlocks the pool takes its own worker's remaining files with
@@ -32,6 +41,56 @@ import { describe, expect, it } from 'vitest';
  */
 
 const ROOT = process.cwd();
+
+/**
+ * Comments out, before anything is read as code.
+ *
+ * Without this the declaration scan matched the words «function for» in a
+ * prose sentence, minted a pooled function called `for`, and then every
+ * `for (` loop in the codebase counted as calling it — which is how a fence
+ * meant to catch one deadlock reported the client-code generator instead. A
+ * scan that reads comments as code is a scan that reads the codebase's own
+ * explanations of the bug as the bug.
+ */
+function stripComments(source: string): string {
+  let out = '';
+  let i = 0;
+  let quote: string | null = null;
+  while (i < source.length) {
+    const ch = source[i]!;
+    const next = source[i + 1];
+    if (quote) {
+      if (ch === '\\') {
+        out += '  ';
+        i += 2;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      i += 2;
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
 
 /** The braces-balanced block starting at the first `{` at or after `from`. */
 function blockAt(source: string, from: number): string {
@@ -108,13 +167,19 @@ interface Pooled {
   kind: 'always' | 'unlessGivenTx';
 }
 
-/** name → how it reaches the database, for every function that can run pooled. */
-function pooledFunctions(): Map<string, Pooled> {
-  const found = new Map<string, Pooled>();
+interface Declared {
+  file: string;
+  body: string;
+  signature: string;
+  holdsDb: boolean;
+}
+
+/** Every named function in `src/`, with the text of its body and signature. */
+function declaredFunctions(): Map<string, Declared> {
+  const out = new Map<string, Declared>();
   for (const file of files) {
-    const source = readFileSync(file, 'utf8');
-    // Only files that actually hold the module handle can run on the pool.
-    if (!/import\s*\{[^}]*\bdb\b[^}]*\}\s*from\s*['"][^'"]*db\/client['"]/.test(source)) continue;
+    const source = stripComments(readFileSync(file, 'utf8'));
+    const holdsDb = /import\s*\{[^}]*\bdb\b[^}]*\}\s*from\s*['"][^'"]*db\/client['"]/.test(source);
     // `function NAME` and nothing more: a generic parameter list may sit
     // between the name and its arguments, and requiring the `(` immediately
     // after the name is how `getSetting<K extends SettingKey>` — the exact
@@ -122,18 +187,48 @@ function pooledFunctions(): Map<string, Pooled> {
     const declaration = /(?:export\s+)?(?:async\s+)?function\s+(\w+)\b/g;
     let match: RegExpExecArray | null;
     while ((match = declaration.exec(source))) {
-      const name = match[1]!;
-      const signature = parensAt(source, match.index);
       const bodyStart = afterParens(source, match.index);
       if (bodyStart === -1) continue;
-      if (/=\s*db\b/.test(signature)) {
-        found.set(name, { file, kind: 'unlessGivenTx' });
-      } else if (usesPool(blockAt(source, bodyStart))) {
-        found.set(name, { file, kind: 'always' });
-      }
+      out.set(match[1]!, {
+        file,
+        holdsDb,
+        signature: parensAt(source, match.index),
+        body: blockAt(source, bodyStart),
+      });
     }
   }
-  return found;
+  return out;
+}
+
+/** name → how it reaches the database, closed transitively. */
+function pooledFunctions(declared: Map<string, Declared>): {
+  pooled: Map<string, Pooled>;
+  seeds: number;
+} {
+  const found = new Map<string, Pooled>();
+  for (const [name, fn] of declared) {
+    if (!fn.holdsDb) continue;
+    if (/=\s*db\b/.test(fn.signature)) found.set(name, { file: fn.file, kind: 'unlessGivenTx' });
+    else if (usesPool(fn.body)) found.set(name, { file: fn.file, kind: 'always' });
+  }
+  const seeds = found.size;
+  // …then everything that calls one of them, until nothing new is added.
+  for (let pass = 0; pass < 20; pass += 1) {
+    let added = 0;
+    for (const [name, fn] of declared) {
+      if (found.has(name)) continue;
+      for (const reached of found.keys()) {
+        if (reached === name) continue;
+        if (new RegExp(`(?<![.\\w])${reached}\\s*\\(`).test(fn.body)) {
+          found.set(name, { file: fn.file, kind: 'always' });
+          added += 1;
+          break;
+        }
+      }
+    }
+    if (added === 0) break;
+  }
+  return { pooled: found, seeds };
 }
 
 /** Every call of `name` in this body, as its argument text. */
@@ -166,7 +261,8 @@ function transactionBodies(source: string): { line: number; body: string }[] {
 }
 
 describe('a transaction never reaches back into the pool', () => {
-  const pooled = pooledFunctions();
+  const declared = declaredFunctions();
+  const { pooled, seeds } = pooledFunctions(declared);
 
   it('finds the transactions and the pooled functions at all', () => {
     // A rule nobody is subject to is not a rule — if either scan stops
@@ -182,15 +278,26 @@ describe('a transaction never reaches back into the pool', () => {
     expect([...pooled.keys()], 'the plain kind').toContain('getSetting');
     expect([...pooled.keys()], 'the handle-taking kind').toContain('availableByLot');
     expect(pooled.get('availableByLot')?.kind).toBe('unlessGivenTx');
+    // …and that the closure ACTUALLY RAN. Naming one transitive example here
+    // was the obvious anchor and it is the wrong one: the first candidate was
+    // `priceControlOnReceipt`, and fixing that very function took the anchor
+    // down with it. What must stay true is that following calls finds
+    // functions the direct scan does not.
+    expect(pooled.size, 'the closure adds reachers the seeds do not have').toBeGreaterThan(seeds);
     expect(
       files.filter((f) => readFileSync(f, 'utf8').includes('db.transaction(')).length,
     ).toBeGreaterThan(10);
+    // And nothing that is not a function: `for`, `if` and friends can only
+    // get in through prose, and once in they taint everything that loops.
+    for (const reserved of ['for', 'if', 'while', 'switch', 'catch', 'return']) {
+      expect([...pooled.keys()], `${reserved} is not a function`).not.toContain(reserved);
+    }
   });
 
   it('no transaction body calls anything that runs on the pool', () => {
     const offenders: string[] = [];
     for (const file of files) {
-      const source = readFileSync(file, 'utf8');
+      const source = stripComments(readFileSync(file, 'utf8'));
       if (!source.includes('db.transaction(')) continue;
       for (const { line, body } of transactionBodies(source)) {
         // Direct use of the module handle.

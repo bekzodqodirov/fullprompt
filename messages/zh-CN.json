@@ -1094,7 +1094,8 @@
     "noRate": "无汇率",
     "partnerIn": "合作方转入",
     "partnerOut": "支付给合作方",
-    "accountCurrencyMismatch": "账户币种与金额币种不符"
+    "accountCurrencyMismatch": "账户币种与金额币种不符",
+    "generateFailed": "{n} 项未过账 — 请检查设置"
   },
   "crm": {
     "title": "CRM",
@@ -1401,7 +1402,8 @@
     "dealsNoSource": "来源筛选不适用于交易——交易没有来源。",
     "followUpDone": "已完成",
     "followUpTomorrow": "明天",
-    "followUpFailed": "未保存"
+    "followUpFailed": "未保存",
+    "nameTaken": "列表中已有该名称（不区分大小写）"
   },
   "navShort": {
     "home": "首页",
@@ -1605,7 +1607,8 @@
       "too_big": "大于最大值",
       "too_short": "太短",
       "too_long": "太长",
-      "pattern": "不符合格式"
+      "pattern": "不符合格式",
+      "label_taken": "该名称已被占用 — 请换一个"
     }
   },
   "tasks": {

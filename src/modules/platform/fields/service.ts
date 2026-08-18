@@ -14,6 +14,7 @@ import {
   type FieldDef,
   type FieldInput,
 } from './types';
+import { isUniqueViolation } from '../db/errors';
 
 /**
  * Custom fields, for every object rather than two.
@@ -101,9 +102,21 @@ export async function saveField(
     sortOrder: input.sortOrder,
     active: input.active,
   };
-  const [row] = input.id
-    ? await db.update(customFields).set(values).where(eq(customFields.id, input.id)).returning()
-    : await db.insert(customFields).values(values).returning();
+  // `custom_fields_label_unique` is (entity_type, lower(label)), so a second
+  // «Город» — or a rename onto a label another field holds in a different
+  // case — is a 23505. `saveFieldAction` maps `FieldError` and rethrows
+  // everything else, so without this the dictionary screen went to the error
+  // boundary and the admin's only clue was that the field did not appear.
+  const fieldId = input.id;
+  let row;
+  try {
+    [row] = await (fieldId
+      ? db.update(customFields).set(values).where(eq(customFields.id, fieldId)).returning()
+      : db.insert(customFields).values(values).returning());
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new FieldError('label_taken', values.label);
+    throw err;
+  }
   if (!row) throw new FieldError('not_found');
 
   await writeAudit(db, ctx, {

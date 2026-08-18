@@ -81,6 +81,17 @@ export function fieldFilterSql(
  * everyone shipping more than ten cubes a month" is the question the owner
  * actually asked, and a dropdown of exact amounts cannot answer it.
  */
+/**
+ * A real number, not merely digits and dots.
+ *
+ * Anything this refuses becomes «no filter» rather than a malformed cast: a
+ * half-typed box is a person still typing, and the honest answer to that is
+ * the unfiltered list, never an error page.
+ */
+export function isNumeric(value: string): boolean {
+  return /^-?\d+(\.\d+)?$/.test(value);
+}
+
 function valuePredicate(field: FieldDef, raw: string): SQL | undefined {
   const value = raw.trim();
   if (!value) return undefined;
@@ -96,14 +107,20 @@ function valuePredicate(field: FieldDef, raw: string): SQL | undefined {
         return sql`v.value_num BETWEEN ${range[1]} AND ${range[2]}`;
       }
       const cmp = value.match(/^([<>]=?)\s*(-?[\d.]+)$/);
-      if (cmp) {
+      if (cmp && isNumeric(cmp[2]!)) {
         const num = cmp[2]!;
         if (cmp[1] === '>') return sql`v.value_num > ${num}`;
         if (cmp[1] === '>=') return sql`v.value_num >= ${num}`;
         if (cmp[1] === '<') return sql`v.value_num < ${num}`;
         return sql`v.value_num <= ${num}`;
       }
-      if (!/^-?[\d.]+$/.test(value)) return undefined;
+      // `[\d.]+` is a character CLASS, not a number: it accepts «5..», which
+      // is exactly what a manager types halfway through the range syntax the
+      // filter box's own placeholder teaches them (`Kub (>10, 5..9)`). That
+      // reached postgres as `value_num = '5..'` → 22P02, and /admin/clients
+      // is a server component with no catch, so the whole client book became
+      // the error page until the box was cleared.
+      if (!isNumeric(value)) return undefined;
       return sql`v.value_num = ${value}`;
     }
 

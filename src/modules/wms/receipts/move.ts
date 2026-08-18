@@ -9,6 +9,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { splitForCorrection } from './box-state';
 
 export class MoveError extends Error {
   constructor(public readonly code: string) {
@@ -43,35 +44,40 @@ export async function moveReceipt(receiptId: string, toWarehouseId: string, ctx:
       .from(boxes)
       .where(inArray(boxes.lotId, lotIds))
       .for('update');
-    for (const box of memberBoxes) {
-      if (box.status !== 'in_stock') throw new MoveError('box_not_in_stock');
-      if (box.crateId) throw new MoveError('box_in_crate');
-    }
+    // Terminal boxes (a lot-edit's surplus `void`, a `lost` carton) neither
+    // block the correction nor travel with it — see receipts/box-state.ts.
+    // Before this, one lost carton out of twenty meant a receipt filed
+    // against the wrong warehouse could never be corrected, for ever.
+    const { act, blocked } = splitForCorrection(memberBoxes);
+    if (blocked.length) throw new MoveError('box_not_in_stock');
+    if (act.some((box) => box.crateId)) throw new MoveError('box_in_crate');
 
     await tx.update(receipts).set({ warehouseId: toWarehouseId }).where(eq(receipts.id, receiptId));
-    await tx
-      .update(boxes)
-      .set({ currentWarehouseId: toWarehouseId })
-      .where(inArray(boxes.lotId, lotIds));
-    await tx.insert(boxMovements).values(
-      memberBoxes.map((box) => ({
-        boxId: box.id,
-        fromWarehouseId: box.currentWarehouseId,
-        toWarehouseId,
-        fromStatus: box.status,
-        toStatus: box.status,
-        cause: 'receipt_moved',
-        refType: 'receipt',
-        refId: receiptId,
-        actorId: ctx.actorId,
-      })),
-    );
+    if (act.length) {
+      await tx
+        .update(boxes)
+        .set({ currentWarehouseId: toWarehouseId })
+        .where(inArray(boxes.id, act.map((b) => b.id)));
+      await tx.insert(boxMovements).values(
+        act.map((box) => ({
+          boxId: box.id,
+          fromWarehouseId: box.currentWarehouseId,
+          toWarehouseId,
+          fromStatus: box.status,
+          toStatus: box.status,
+          cause: 'receipt_moved',
+          refType: 'receipt',
+          refId: receiptId,
+          actorId: ctx.actorId,
+        })),
+      );
+    }
     await writeAudit(tx, { ...ctx, warehouseId: receipt.warehouseId }, {
       entityType: 'receipt',
       entityId: receiptId,
       action: 'update',
       before: { warehouseId: receipt.warehouseId },
-      after: { warehouseId: toWarehouseId, movedBoxes: memberBoxes.length },
+      after: { warehouseId: toWarehouseId, movedBoxes: act.length },
     });
     await emitEvent(tx, {
       type: 'ReceiptMoved',
@@ -86,6 +92,9 @@ export async function moveReceipt(receiptId: string, toWarehouseId: string, ctx:
       entityId: receiptId,
       actorId: ctx.actorId,
     });
-    return { boxCount: memberBoxes.length, toCode: target.code };
+    // What actually MOVED, not what the receipt holds: a voided surplus
+    // carton stays where it was, and telling the operator otherwise is a
+    // number they would go looking for on the other shelf.
+    return { boxCount: act.length, toCode: target.code };
   });
 }

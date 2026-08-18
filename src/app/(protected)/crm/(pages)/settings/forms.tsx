@@ -28,7 +28,11 @@ function Feedback({ state }: { state: CrmFormState }) {
           ? t('needsWon')
           : state.error === 'needs_open'
             ? t('needsOpen')
-            : tc('error');
+            : // The dictionary indexes are on lower(label), so «Narx» collides
+              // with «narx» — the pair he cannot tell apart on his own screen.
+              state.error === 'name_taken'
+              ? t('nameTaken')
+              : tc('error');
   return <p className="text-sm font-semibold text-bad">{message}</p>;
 }
 

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client';
+import { isUniqueViolation } from '../db/errors';
 import { clients } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { getSetting } from '../settings/service';
@@ -41,11 +42,6 @@ export type NewClientInput = z.input<typeof newClientSchema>;
  */
 export function isValidClientCode(code: string): boolean {
   return /^[A-Z0-9]{2,10}$/.test(code);
-}
-
-/** Postgres unique_violation (23505) — the client_code unique index. */
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
 }
 
 /**

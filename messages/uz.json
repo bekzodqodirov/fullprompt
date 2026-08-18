@@ -1094,7 +1094,8 @@
     "noRate": "kurs yo‘q",
     "partnerIn": "Kontragentdan tushdi",
     "partnerOut": "Kontragentga to‘landi",
-    "accountCurrencyMismatch": "Kassa valyutasi summaga mos emas"
+    "accountCurrencyMismatch": "Kassa valyutasi summaga mos emas",
+    "generateFailed": "{n} tasi o‘tmadi — sozlamalarini tekshiring"
   },
   "crm": {
     "title": "CRM",
@@ -1401,7 +1402,8 @@
     "dealsNoSource": "Manba filtri bitimlarga tegishli emas — bitimda manba yo'q.",
     "followUpDone": "Bajarildi",
     "followUpTomorrow": "Ertaga",
-    "followUpFailed": "Saqlanmadi"
+    "followUpFailed": "Saqlanmadi",
+    "nameTaken": "Bu nom ro‘yxatda bor (katta-kichik harf hisobga olinmaydi)"
   },
   "navShort": {
     "home": "Bosh",
@@ -1605,7 +1607,8 @@
       "too_big": "Maksimumdan katta",
       "too_short": "Juda qisqa",
       "too_long": "Juda uzun",
-      "pattern": "Shablonga mos emas"
+      "pattern": "Shablonga mos emas",
+      "label_taken": "Bu nom band — boshqa nom yozing"
     }
   },
   "tasks": {

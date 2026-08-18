@@ -1,5 +1,97 @@
 # CHANGELOG
 
+## To'liq audit — 19 ta xato topildi va tuzatildi — 2026-08-18
+
+«Systemani toliq audit qil … hatoliklar yoqligini oylab analyz qb chiq».
+
+Sistemani **yettita yo'nalish bo'yicha** tekshirdim: zaxira, pul, ruxsatlar,
+yuk, ishonchlilik, Telegram, baza. Har bir topilma **ikki marta mustaqil
+tekshirildi** — biri «bu xato emas» deb rad etishga urindi, ikkinchisi esa
+haqiqiy tugmadan boshlab xatogacha yurib ko'rdi. Ikkalasi ham rad eta
+olmaganlari qoldi: **26 tadan 19 tasi tasdiqlandi.** Hammasi tuzatildi.
+
+### Yukka tegishli — eng muhimi
+
+**1. Bekor qilingan prixodda tahrir yangi qutilar yaratardi.** Kimdir prixodni
+bekor qilsa, ikkinchi xodim esa o'sha paytda tahrir formasini ochib turgan
+bo'lsa — «Saqlash» bosganda sistema **yangi, tirik qutilar yasardi** va «5 ta
+etiketka chop eting» derdi. Ya'ni rasman mavjud bo'lmagan prixodga bog'langan,
+rejaga tushadigan, yuklanadigan yuk. Yopildi.
+
+**2. Bitta yo'qolgan karobka butun prixodni qulflab qo'yardi.** 20 tadan 1
+tasi yo'qolgan (yoki 20→18 tuzatishda ortiqchasi bekor qilingan) bo'lsa —
+o'sha prixodni **umuman bekor qilib bo'lmasdi**, boshqa skladga ko'chirib ham
+bo'lmasdi, egasiz yukni jo'natuvchiga **qaytarib ham bo'lmasdi**. Abadiy.
+Endi bunday karobkalar to'sib qo'ymaydi (va ularning holati o'zgarmaydi —
+yo'qolgan karobka «yo'qolgan» bo'lib qolaveradi).
+
+**3. Server rad etgan skanerlash ekranda yashil bo'lib qolardi.** Telefon
+oflayn skanerlaydi, keyin internet kelganda yuboradi. Agar shu orada logist
+«Tushirish tugadi» bosgan bo'lsa — server hammasini rad etadi, lekin ekranda
+**150/150, hammasi yashil** bo'lib turardi. Skladchi yukni qabul qilindi deb
+o'ylab ketardi, holbuki 150 ta karobka «yo'lda yo'qolgan» deb yozilgan
+bo'lardi. Endi rad etilgani ekrandan **o'chadi** va nechtasi rad etilgani
+yoziladi.
+
+### Pulga tegishli
+
+**4. Sotuvchi har qanday mijozning balansini ko'rardi.** Mijoz kartasidagi pul
+bloki eski qoidani so'rardi. Endi sotuvchi faqat **o'ziga biriktirilgan**
+mijozning pulini ko'radi — /finance da bu allaqachon shunday edi, karta esa
+qolib ketgan ekan.
+
+**5. Egasiz yuk kimgadir biriktirilganda xarajat o'sha mijozga o'tmasdi.**
+Rastamojka/yo'lkira egasi noma'lum paytda kiritiladi, keyin mijoz topiladi —
+lekin xarajat «hech kimniki» bo'lib qolardi. Natijada o'sha mijoz hisobotda
+**xarajatsiz, ya'ni sof foyda** bo'lib ko'rinardi, va sizning eng ko'p
+ishlatadigan «tannarx» hisobotingizdan o'sha qator umuman tushib qolardi.
+Endi xarajat mijoz bilan birga ko'chadi.
+
+**6. Bitta noto'g'ri doimiy xarajat butun oyni to'xtatardi.** «Oylik doimiy
+xarajatlarni yarat» bosilganda, agar bitta shablonda kassa valyutasi mos
+kelmasa — undan keyingi **hamma shablonlar jimgina o'tmay qolardi**, va har
+oy o'sha joyda to'xtardi. Endi: (a) noto'g'ri kassa **saqlashda** rad etiladi,
+(b) bittasi o'tmasa qolganlari o'taveradi va ekranda «N tasi o'tmadi»
+yoziladi.
+
+### Ruxsatlar
+
+**7.** `/transit` (yo'ldagi yuklar) sahifasi **faqat login** talab qilardi —
+har qanday xodim butun kompaniyaning hamma mashinasini, hamma mijoz kodini
+ko'rardi. Endi ruxsat + sklad chegarasi.
+
+**8.** Partiya hujjatlarining uchtasi (packing, invoice, rasm bilan packing)
+ruxsatni tekshirardi, **skladni esa yo'q** — Xitoydagi skladchi boshqa
+davlatning butun yuk ro'yxatini yuklab olishi mumkin edi. Endi to'rttasi ham
+**bitta qoidadan** o'tadi, ya'ni yana ajralib keta olmaydi.
+
+### Ishonchlilik
+
+**9. Yana bitta «sistema qotib qolishi».** Prixodni tasdiqlash — skladdagi eng
+ko'p bosiladigan tugma — bazaga noto'g'ri joydan murojaat qilardi. Bir vaqtda
+o'nta tasdiqlash butun sistemani to'xtatishi mumkin edi. Bu mijoz kodidagi va
+reja yuborishdagi xatoning **uchinchi ko'rinishi** — endi testi butun kodni
+kuzatadi, shuning uchun to'rtinchisi bo'lmaydi.
+
+**10. «Hisoblatish» AI tahlili botni muzlatardi.** Bitta xodim tahlil bosса,
+tahlil tugaguncha **hamma mijozning boti javob bermay turardi** (va uzilib
+qolgan ulanishda 10 daqiqagacha). Endi tahlil alohida ketadi va 60 soniyalik
+chegara bor.
+
+### Mayda, lekin oq sahifa chiqarardiganlar
+
+**11.** Mijozlar ro'yxatidagi raqamli filtrga `5..` deb yarim yozilsa — butun
+sahifa xato berardi. **12.** Ro'yxatga bor nomni qayta qo'shsangiz («Narx»
+va «narx») — xato sahifasi. Endi «bu nom band» deb yoziladi. **13.** Xuddi
+shu narsa qo'shimcha maydonlar ekranida ham.
+
+---
+
+**Bazada o'zgarish yo'q** (0081 dan boshqa, u kechagi zaxira uchun edi).
+1630 ta test yashil.
+
+---
+
 ## Zaxira (backup) — jiddiy xato topildi va tuzatildi, endi suratlar ham chiqadi — 2026-08-18
 
 Siz aytdingiz: «systemani toliq audit qil, backup olishni systemasini oylab
