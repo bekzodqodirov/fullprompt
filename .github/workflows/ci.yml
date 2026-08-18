@@ -8,6 +8,11 @@ on:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    # A green run takes ~35 minutes. Without a ceiling, one hung step holds
+    # the job until GitHub's six-hour kill: the browser download below once
+    # sat 3h45m doing nothing, and the PR showed a red X that had nothing to
+    # say about the code.
+    timeout-minutes: 90
     services:
       postgres:
         image: postgres:16
@@ -50,7 +55,10 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - name: Install Playwright chromium
-        run: pnpm exec playwright install --with-deps chromium
+        # Its own short leash + one retry: this step is a CDN download, and a
+        # hung download is the one failure a retry actually fixes.
+        timeout-minutes: 10
+        run: pnpm exec playwright install --with-deps chromium || pnpm exec playwright install --with-deps chromium
       - name: E2E smoke (mobile viewport)
         run: CI=1 pnpm e2e
       - name: Upload Playwright report on failure
