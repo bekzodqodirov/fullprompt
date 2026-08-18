@@ -2,7 +2,7 @@
   "name": "gsr-erp",
   "version": "0.1.0",
   "private": true,
-  "description": "GSR LOGISTICS ERP — Phase 1: WMS",
+  "description": "GSR LOGISTICS ERP \u2014 Phase 1: WMS",
   "scripts": {
     "dev": "node scripts/heal-storage.mjs && next dev",
     "build": "node scripts/heal-storage.mjs && next build",
@@ -22,6 +22,8 @@
     "backup": "tsx scripts/backup.ts",
     "gdrive-auth": "tsx scripts/gdrive-auth.ts",
     "restore-test": "tsx scripts/restore-test.ts",
+    "backup-objects": "tsx scripts/backup-objects.ts",
+    "restore-objects": "tsx scripts/restore-objects.ts",
     "refresh": "pnpm install && pnpm db:migrate && pnpm build",
     "start:https": "node scripts/start-https.mjs",
     "dev:https": "node scripts/heal-storage.mjs && next dev --experimental-https",

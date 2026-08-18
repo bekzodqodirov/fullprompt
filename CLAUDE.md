@@ -246,6 +246,49 @@ green** on a fresh gsr_ci in CI's order. TEST LESSON (#716): the race file's fir
 re-read the prefix setting at the top of EVERY test, so the «original» it
 restored was its own `ZZR` — caught by reading the database after the run,
 not by an assertion; snapshot once in `beforeAll`.
+**Round 104 — the backup round** (#717-720, his «systemani toliq audit qil,
+backup olishni systemasini oylab chiq, rasimlar va hamma back up google
+drivega back olamiz»). **THE HEADLINE: the off-site backup had never run
+once.** `runBackup` shells out to `pg_dump`; the app image is `node:22-slim`
+with no postgres client, so every night = ENOENT → alarm → thrown job, and
+`runOffsiteBackup` sits BEHIND that in the same function. Whichever
+destination was configured, nothing has ever left the machine. The alarm was
+silent too: `sendPendingTelegram` settles a notification as **`muted` with
+«telegram not linked»** for an admin with no linked staff chat. The compose
+`backup` service (postgres:16) HAS been taking a good dump all along, into
+the same volume. Fix, deliberately WITHOUT a Dockerfile change (an
+apt.postgresql.org dependency on deploy morning is #472's trap, and it cannot
+be tested from this container): `runBackup` ADOPTS a dump written in the last
+26 h when it cannot take its own, and names which happened; that also gives
+`ops/backup.sh` the alarm it never had — if IT stops, no fresh dump is found
+and the failure is raised. `ops/backup.sh` also refuses to prune when its own
+dump comes out under 4 KB. **OBJECTS: migration 0081** `backup_objects`
+(key + DESTINATION as the PK, so a new destination reads «nothing there
+yet»); `backup/objects.ts` copies originals only (thumbnails are derived —
+`pnpm restore-objects --thumbs` rebuilds them), holds **2 GB back for the
+dump** and alarms rather than crowding it out, verifies the size the
+destination reports BEFORE writing the ledger row, and is bounded by a wall
+clock so the first night does not run until morning. `pnpm backup-objects` /
+`pnpm restore-objects` for the backfill and the recovery; a `BackupPanel` on
+/admin so the state is visible without a log. **The jam (#719):** the first
+version stopped a run when a batch all failed, so ONE attachment whose bytes
+are gone blocked every photograph behind it for ever — found because my own
+three test photos never moved in a database holding 100 such rows; the window
+now skips past the failures. **The fence (#720):** `tests/unit/tx-pool.test.ts`
+now DERIVES the pooled set from the code and follows calls — the audit's
+availability lens found `submitPlan` calling `availableByLot()` on the pool
+inside its transaction (#714's total freeze, in the warehouse's plan path,
+AND a correctness bug: the stock check answered from a connection holding
+none of the transaction's locks). Two red proofs stayed GREEN first — a
+parameterised handle left the function out of the set, and a generic
+signature (`getSetting<K …>`) hid it entirely — so the fence is anchored on
+names it must find. 1613 unit/integration green on a fresh gsr_ci.
+Ledger must reach **82**. **Owner still has to: put the Drive credentials in
+`.env` (docs/BACKUP.md, publish BEFORE minting the token), decide the 15 GB
+question (Google One 100 GB ~$2/mo, or the S3 bucket from round 85), and keep
+a copy of `.env` off the server — `TG_SESSION_KEY` is what decrypts the
+managers' Telegram sessions.**
+
 Latest migration: **0080** (`ai_assistant` — `ai_questions`,
 `v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
 its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —

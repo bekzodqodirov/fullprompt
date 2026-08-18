@@ -1,5 +1,97 @@
 # CHANGELOG
 
+## Zaxira (backup) — jiddiy xato topildi va tuzatildi, endi suratlar ham chiqadi — 2026-08-18
+
+Siz aytdingiz: «systemani toliq audit qil, backup olishni systemasini oylab
+chiq, rasimlar va hamma back up google drivega back olamiz».
+
+### 🔴 Avval eng muhimi: tashqi zaxira hech qachon ishlamagan
+
+Auditning birinchi topilmasi shu. Har kecha ilova zaxira olishga urinadi,
+lekin **ilova konteynerida `pg_dump` dasturi yo'q** — u boshqa konteynerda.
+Shuning uchun ish har kecha xato bilan to'xtagan, va **tashqi omborga
+yuborish o'sha xatodan KEYIN turgani uchun umuman ishga tushmagan.**
+
+Ya'ni: siz S3 yoki Google Drive kalitlarini qo'yganingizda ham **hech narsa
+chiqmasdi**. Buni faqat tiklash kerak bo'lgan kuni bilib qolardingiz.
+
+Xabar ham kelmagan: xato haqidagi Telegram xabari, agar admin xodimning
+Telegram'i ulanmagan bo'lsa, **«muted» deb belgilanib jimgina o'chib
+ketardi** — ya'ni signal berilgan, lekin hech kimga bormagan.
+
+**Yaxshi tomoni:** alohida `backup` konteyneri (postgres:16) har kuni to'g'ri
+dump olib turgan. Ya'ni **serveringizda nusxa bor**, faqat u serverdan
+tashqariga chiqmagan.
+
+**Tuzatildi:** endi ilova o'zi dump ololmasa, o'sha konteyner olgan
+(24 soatdan yangi) dump'ni oladi va tashqariga yuboradi. Va agar u konteyner
+ham buzilsa — 26 soat ichida yangi dump topilmasa — Telegram'ga xato keladi.
+Ya'ni ikkinchisi birinchisini kuzatib turadi.
+
+### 🖼 Endi suratlar ham chiqadi
+
+Bugungacha **suratlar, qo'ng'iroq yozuvlari, Telegram fayllari va biriktirilgan
+hujjatlar hech qayerga zaxiralanmagan** — na tashqariga, na ichkariga. Server
+yo'qolsa, har bir karobkaning har bir surati ketardi va bazani tiklash ularni
+qaytarmasdi.
+
+Endi har kecha **02:30** da alohida ish ishga tushadi:
+
+- **Har bir fayl bir marta** ko'chadi (baza eslab qoladi, qayta yuborilmaydi).
+- **Birinchi safar bir necha kun davom etadi** — o'n minglab fayl bor.
+- Har kecha «qolgani nechta» yoziladi — shu raqam kamayib borsa, ishlayapti.
+- **Bazaga ustunlik beriladi:** Drive'da 2 GB doim baza uchun band turadi.
+  Joy tugasa suratlar to'xtaydi va sizga Telegram'ga xabar keladi.
+- Fayli yo'qolib ketgan eski yozuvlar **boshqa fayllarni to'sib qo'ymaydi**
+  (bu xatoni yozayotib topdim va tuzatdim).
+
+Kichraytirilgan nusxalar (thumbnail) ataylab zaxiraga olinmaydi — ular asl
+rasmdan qayta yasaladi, shuning uchun zaxira ikki barobar kichik. Tiklashda
+`--thumbs` bilan o'zi qayta yasaydi.
+
+### 📊 Yangi ekran: Boshqaruv sahifasida zaxira holati
+
+Endi **Boshqaruv** sahifasining pastida ko'rasiz: baza oxirgi marta qachon va
+qancha hajmda chiqqan, nechta fayl ko'chirilgan, nechtasi qolgan. Loglarga
+kirish shart emas.
+
+### ⚠️ Sizdan kerak bo'ladigan narsalar
+
+**1. Google Drive kalitlari.** `docs/BACKUP.md` da 8 qadam yozilgan. Eng
+muhim qoida: **ilovani «Publish» qilib, ANDAN KEYIN token oling** — aks holda
+token 7 kunda o'ladi.
+
+**2. Hajm masalasi — bu yerda sizning qaroringiz kerak.** Bepul Google Drive
+**15 GB** va u Gmail'ingiz bilan umumiy. Baza kichkina (yiliga ~0.5 GB), lekin
+suratlar va qo'ng'iroq yozuvlari **yiliga o'nlab GB**. Serveringizda hozir
+qancha borligini ko'ring:
+
+```
+docker compose exec minio du -sh /data
+```
+
+15 GB dan kam bo'lsa hozircha yetadi. Ko'p bo'lsa — Google One 100 GB
+(~2 dollar/oy) yoki S3 (Contabo, ~3 evro/oy). Menga ayting.
+
+**3. `.env` faylining nusxasini saqlang** (parol menejerida yoki qog'ozda).
+Uni zaxiraga qo'ymayapmiz — ichida bot tokeni va parollar bor, hammasini
+bitta joyga qo'yish to'g'ri emas. Lekin unda `TG_SESSION_KEY` bor va **u
+yo'qolsa, tiklangan bazadagi Telegram akkauntlari ochilmaydi.**
+
+### Auditda topilgan boshqa narsalar
+
+Bir vaqtda o'nta prixod rejasi yuborilsa **butun sistema qotib qolishi**
+mumkin edi — mijoz ochishdagi o'sha xatoning aynan o'zi, endi sklad tomonida
+topildi va tuzatildi. Ustiga, o'sha joyda «yetarli quti bormi» degan
+tekshiruv **noto'g'ri ulanish orqali** so'ralardi — ya'ni javob ham ishonchsiz
+edi. Ikkalasi ham yopildi va endi bu xatoni qaytadan yozib bo'lmaydi: test
+butun kodni tekshiradi.
+
+**Bazada bitta yangi jadval** (0081) — nima ko'chirilganini eslab qolish
+uchun. Deploydan keyin **82** bo'lishi kerak.
+
+---
+
 ## Yangi mijozga kod berish — tekshirildi, uchta narsa tuzatildi — 2026-08-16
 
 Siz aytdingiz: «yangi klientga kod berishni korib chiq hatolik

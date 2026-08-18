@@ -2095,5 +2095,14 @@
     "limit": "Bugungi AI savollar chegarasi tugadi — ertaga yana so'rang.",
     "gaveUp": "Oxirigacha yetolmadim — savolni soddaroq berib ko'ring.",
     "error": "AI javob berolmadi. Keyinroq urinib ko‘ring."
+  },
+  "backup": {
+    "title": "Zaxira nusxa",
+    "database": "Baza",
+    "files": "Fayllar",
+    "notConfigured": "Tashqi zaxira sozlanmagan — hamma narsa faqat shu serverda",
+    "never": "hali chiqmagan",
+    "remaining": "{n} ta qoldi",
+    "copied": "{n} ta fayl ko‘chirilgan"
   }
 }

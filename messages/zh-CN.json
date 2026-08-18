@@ -2095,5 +2095,14 @@
     "limit": "今天的 AI 提问次数已用完——明天再问。",
     "gaveUp": "没能完成——请把问题问得简单一些。",
     "error": "AI 未能回答。请稍后再试。"
+  },
+  "backup": {
+    "title": "备份",
+    "database": "数据库",
+    "files": "文件",
+    "notConfigured": "未配置异地备份 — 所有数据仅存于本服务器",
+    "never": "尚未上传",
+    "remaining": "剩余 {n}",
+    "copied": "已复制 {n} 个文件"
   }
 }

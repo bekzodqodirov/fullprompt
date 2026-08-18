@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   batches,
   boxes,
@@ -54,9 +54,24 @@ export type SubmitPlanInput = z.infer<typeof submitPlanSchema>;
  * origin WH, not reserved by another batch and not packed in a crate (crated
  * cargo is planned as whole crates — one place each).
  */
-export async function availableByLot(originWarehouseId: string, lotIds: string[]) {
+/**
+ * How many boxes of each lot are free to plan, right now.
+ *
+ * Takes the handle rather than reaching for `db`, and both halves of that
+ * matter. `submitPlan` calls this from INSIDE its transaction, so on the
+ * module handle it asked the pool for an eleventh connection while holding
+ * one of the ten — the deadlock of #714, in the warehouse's plan-submit
+ * path. And it read a snapshot on a connection that holds none of the
+ * transaction's locks, so the «insufficient_stock» check was answered from
+ * outside the very transaction that is supposed to make it true.
+ */
+export async function availableByLot(
+  originWarehouseId: string,
+  lotIds: string[],
+  handle: Db | Tx = db,
+) {
   if (lotIds.length === 0) return new Map<string, number>();
-  const rows = await db
+  const rows = await handle
     .select({ lotId: boxes.lotId, n: sql<number>`count(*)` })
     .from(boxes)
     .where(
@@ -158,6 +173,7 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
     const available = await availableByLot(
       input.originWarehouseId,
       input.lines.map((l) => l.lotId),
+      tx,
     );
     for (const line of input.lines) {
       const free = available.get(line.lotId) ?? 0;
