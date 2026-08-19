@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## Tezlik: ochiq chat oynalari serverni yeb qo'yayotgan edi — 2026-08-19
+
+«Sistema sekin ishlayabti, ayniqsa CRMda» xabaringiz bo'yicha o'lchab chiqildi.
+Alohida olganda har bir ekran tez (0.1–0.2 soniya), lekin server bir vaqtda
+ko'p so'rov kelganda navbat hosil qiladi: 16 kishi parallel bosganda har
+sahifa 1 soniyadan oshadi — sizning holatingiz aynan shu. Navbatni esa
+ko'zga ko'rinmas yuk to'ldirib turgan ekan:
+
+- **Ochiq turgan har bir mijoz/lid/bitim kartasi** (Telegram paneli borlari)
+  har 10 soniyada BUTUN sahifani serverdan qayta chizdirar edi — navbatda
+  xabar turganda esa har 2 soniyada. Eng yomoni: «yuborilmadi» (failed)
+  bo'lib qolgan bitta xabar shu 2-soniyalik rejimni ABADIY yoqib qo'yardi —
+  uni faqat qo'lda ✕ bosish tozalaydi. 4–5 ta shunday ochiq tab server
+  sig'imining yarmini yeb turadi.
+- Endi ochiq oyna serverdan faqat MITTI savol so'raydi («yangilik bormi?»)
+  va faqat haqiqatan yangilik bo'lsa sahifani yangilaydi. Yangi xabar,
+  tahrirlangan xabar, kech yetib kelgan rasm, «yuborildi/yuborilmadi»
+  o'zgarishi — hammasi 2–5 soniyada ekranga chiqadi, avvalgidan kech emas,
+  lekin server uchun ~50 barobar arzon.
+- **Kanban doskalardagi 💬 belgilari** admin uchun har ochilishda BUTUN
+  yozishmalar jadvalini saralar edi — endi faqat ekranda turgan kartalar
+  haqida so'raydi.
+- **Telefon bo'yicha mijoz qidirish** har safar butun mijoz kitobini yuklab
+  olar edi — endi bazaning o'zi saralab, bir nechtasini qaytaradi.
+- **Fondagi tozalash ishlari** har daqiqada 680 mingqatorlik jadvalni
+  boshdan-oyoq o'qir edi — ikkita kichik indeks qo'shildi (migratsiya 0084,
+  hisob **85** ga chiqishi kerak).
+- Tahrirlangan Telegram xabari endi tizimda ham yangilanganini bildiradi
+  (avval eski matn qolib ketishi mumkin edi).
+
 ## Admin dashboard — chiroyliroq va ixcham — 2026-08-19
 
 «Buni chroyliroq ihcham qilib ber» so'rovingiz bo'yicha glavni dashboard

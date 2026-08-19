@@ -567,8 +567,26 @@ export async function conversationClient(clientId: string) {
  * last — one query for a whole kanban board (owner, round 25: «varonkadagi
  * kartochkalarda ham chat ko'rinsa»). A Map so a card asks by client id.
  */
-export async function chatBadges(viewer: TgViewer): Promise<Map<string, 'waiting' | 'yes'>> {
+export async function chatBadges(
+  viewer: TgViewer,
+  /**
+   * The client ids actually on the screen asking. Without it, a viewer.all
+   * supervisor's board sorted the ENTIRE tg_messages table per render
+   * (measured: the whole-table DISTINCT ON was the /crm board's biggest
+   * statement at production scale, round 108) — a board only ever badges
+   * the cards it drew, so it must only ask about them. The sales home's
+   * waiting COUNT passes nothing: its question really is «all my chats»,
+   * and that one is bounded by the manager filter instead.
+   */
+  clientIds?: string[],
+): Promise<Map<string, 'waiting' | 'yes'>> {
+  if (clientIds && clientIds.length === 0) return new Map();
   const mine = viewer.all ? sql`true` : sql`manager_user_id = ${viewer.id}`;
+  // sql.join, never a bare array: a JS array bound into a raw fragment does
+  // not become a postgres array (the house footgun).
+  const bounded = clientIds
+    ? sql`AND client_id IN (${sql.join(clientIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql``;
   const rows = await db.execute<{
     client_id: string;
     direction: string;
@@ -585,6 +603,7 @@ export async function chatBadges(viewer: TgViewer): Promise<Map<string, 'waiting
       -- and postgres groups every NULL together — so without this the whole
       -- company's lead chats collapse into ONE phantom row.
       AND client_id IS NOT NULL
+      ${bounded}
     ORDER BY client_id, sent_at DESC
   `);
   const states = await resolveChatStates(

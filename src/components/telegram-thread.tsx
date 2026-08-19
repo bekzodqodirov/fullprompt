@@ -11,7 +11,8 @@ import {
   threadClientFor,
   threadManagers,
 } from '@/modules/wms/crm/conversations';
-import { AutoRefresh } from './auto-refresh';
+import { chatPulseForClient, chatPulseForLead } from '@/modules/wms/crm/pulse';
+import { ChatPulse } from './chat-pulse';
 import { OutboxBubble } from './outbox-bubble';
 import { TelegramBubble } from './telegram-bubble';
 import { ThreadManagers } from './thread-managers';
@@ -90,10 +91,15 @@ export async function TelegramThread({
     if (!leadId) return null;
     const rows = await conversationForLead(leadId, viewer, limit);
     if (rows.length === 0) return null;
+    const pulse = await chatPulseForLead(actor, leadId);
     return (
       <section className="card space-y-2" data-testid="tg-thread">
         <h2 className="text-lg font-bold">✈️ {t('telegramThread')}</h2>
-        <AutoRefresh ms={10_000} />
+        {/* Refresh only when the thread MOVED — the blind 10 s full-page
+            loop was round 108's headline load (the token is computed in
+            THIS render, so nothing between render and first poll is
+            swallowed). */}
+        {pulse && <ChatPulse query={`lead=${leadId}`} initial={pulse.t} fast={pulse.fast} />}
         <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
           {rows.map((row) => (
             <TelegramBubble
@@ -133,6 +139,11 @@ export async function TelegramThread({
   // otherwise the panel looks exactly as it did before they typed.
   const queued = await pendingFor(threadClientId, viewer);
 
+  // The baseline for the pulse, computed in the SAME render that drew the
+  // rows above — the poller compares against what this screen shows, never
+  // against a token it invented after mounting.
+  const pulse = await chatPulseForClient(actor, clientId, { sibling: true });
+
   return (
     <section className="card space-y-2" data-testid="tg-thread">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -161,16 +172,21 @@ export async function TelegramThread({
       {/* The queue moves while this card is open — the listener sends within
           seconds — so the panel refreshes itself. Without it the «navbatda»
           line sat there until somebody reloaded the page, which is the
-          owner's report twice over: the message had reached the client and
-          this screen still said it was waiting (round 25 gave the Suhbatlar
-          screen this and the cards never got it). */}
-      {/* Ten seconds is right for a quiet thread and wrong for the two
-          seconds after you press send: the queue empties on the SERVER, so
-          «navbatda» stays on screen until a refresh notices, and the owner
-          read that whole gap as the system being slow. While anything is
-          still queued the page asks every two seconds; when the queue is
-          empty it goes back to ten and costs nothing. */}
-      <AutoRefresh ms={queued.length > 0 ? 2_000 : 10_000} />
+          owner's report twice over (round 25). HOW it refreshes changed in
+          round 108: the old loop re-rendered this whole page blind — every
+          2 s while pendingFor returned rows, and pendingFor includes
+          `failed`, which only a human's ✕ clears, so ONE bad reply pinned
+          an open card at half a heavy render per second for ever. The pulse
+          asks a cheap token instead and refreshes only when the thread
+          actually moved; the fast beat survives inside it, priced at a few
+          indexed counts instead of a full page. */}
+      {pulse && (
+        <ChatPulse
+          query={`client=${clientId}&sibling=1`}
+          initial={pulse.t}
+          fast={pulse.fast}
+        />
+      )}
       <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
         {[...queued].reverse().map((row) => (
           <OutboxBubble

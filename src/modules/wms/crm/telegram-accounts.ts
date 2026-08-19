@@ -334,7 +334,9 @@ export async function applyEdit(input: {
 }): Promise<boolean> {
   const rows = await db
     .update(tgMessages)
-    .set({ body: input.body })
+    // The stamp is the pulse's only way to see this UPDATE (0084): counts
+    // and sent_at maxima don't move when a body is rewritten in place.
+    .set({ body: input.body, editedAt: new Date() })
     .where(
       sql`${tgMessages.managerUserId} = ${input.managerUserId}
         AND ${tgMessages.peerId} = ${input.peerId}

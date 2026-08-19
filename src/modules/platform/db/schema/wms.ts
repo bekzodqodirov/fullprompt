@@ -1616,6 +1616,13 @@ export const tgMessages = pgTable(
      * unanswered (migration 0053). Once per silence, never per sweep.
      */
     remindedAt: timestamp('reminded_at', { withTimezone: true }),
+    /**
+     * When the stored copy was last rewritten by a Telegram edit (0084).
+     * NULL = never. The chat pulse watches maxima and counts, and an edit
+     * is an UPDATE that would otherwise move neither — a corrected number
+     * must reach the screen without waiting for an unrelated message.
+     */
+    editedAt: timestamp('edited_at', { withTimezone: true }),
   },
   (t) => [
     check('tg_messages_direction_check', sql`${t.direction} IN ('in', 'out')`),

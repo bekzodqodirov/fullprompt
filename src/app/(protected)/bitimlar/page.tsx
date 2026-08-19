@@ -109,7 +109,7 @@ export default async function DealsPage({
   // columns keep the recent cards and say how many more they hold. A closed
   // job is a record; a board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, views, open, closed, openTotals, closedTotals, attention, badges, managers, lostReasonList] =
+  const [stages, views, open, closed, openTotals, closedTotals, attention, managers, lostReasonList] =
     await Promise.all([
     listStages(),
     listViewsFor('bitimlar', actor.id),
@@ -121,8 +121,6 @@ export default async function DealsPage({
     // The SAME filters as the rows, or the «+N · show all» footer lies.
     closedDealCounts(boardFilters),
     dealsNeedingAttention(scope, q),
-    // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
-    chatBadges(tgViewerFor(actor)),
     // The picker's options. Offered only to somebody who may see everybody's
     // work — and never derived from the loaded rows, which once filtered to
     // one person would collapse to that person with no way back.
@@ -132,6 +130,14 @@ export default async function DealsPage({
     activeLostReasonLabels(),
   ]);
   const rows = [...open, ...closed];
+  // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
+  // AFTER the rows on purpose: bounded to the clients this board actually
+  // drew, so a supervisor's badge query stops sorting the whole company's
+  // message history per render (round 108).
+  const badges = await chatBadges(
+    tgViewerFor(actor),
+    [...new Set(rows.map((row) => row.clientId).filter((id): id is string => Boolean(id)))],
+  );
   const shownClosed = new Map<string, number>();
   for (const row of rows) {
     shownClosed.set(row.stageId, (shownClosed.get(row.stageId) ?? 0) + 1);

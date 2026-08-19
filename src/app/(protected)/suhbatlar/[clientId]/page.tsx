@@ -12,7 +12,8 @@ import {
   threadManagers,
 } from '@/modules/wms/crm/conversations';
 import { canReplyNow, pendingFor } from '@/modules/wms/crm/outbox';
-import { AutoRefresh } from '@/components/auto-refresh';
+import { chatPulseForClient } from '@/modules/wms/crm/pulse';
+import { ChatPulse } from '@/components/chat-pulse';
 import { ChatMarkRead } from '@/components/chat-mark-read';
 import { OutboxBubble } from '@/components/outbox-bubble';
 import { ChatMenu } from '@/components/chat-menu';
@@ -72,7 +73,7 @@ export default async function ConversationPage({
   // merged view on purpose.
   const chosen =
     hodim === 'all' ? undefined : (hodim ?? defaultThreadManager(managers) ?? undefined);
-  const [client, messages, queued, codes, people, canReply] = await Promise.all([
+  const [client, messages, queued, codes, people, canReply, pulse] = await Promise.all([
     conversationClient(clientId),
     conversationFor(clientId, viewer, 500, chosen),
     pendingFor(clientId, viewer),
@@ -84,6 +85,8 @@ export default async function ConversationPage({
     // shown only when a reply can actually leave, and a button with no box
     // under it does nothing at all. Same predicate the composer uses.
     canReplyNow(clientId, actor.id),
+    // The pulse baseline, computed with the rows it describes (round 108).
+    chatPulseForClient(actor, clientId, { sibling: false }),
   ]);
   if (!client) notFound();
   const t = await getTranslations('crm');
@@ -179,10 +182,11 @@ export default async function ConversationPage({
       <TelegramReply clientId={clientId} />
 
       {/* A sent reply must stop reading «navbatda», and a client's new
-          message must appear, without anybody pulling to refresh. */}
-      {/* Fast only while the queue has something in it — see the note on the
-          card panel's copy of this line. */}
-      <AutoRefresh ms={queued.length > 0 ? 2_000 : 10_000} />
+          message must appear, without anybody pulling to refresh. Since
+          round 108 the asking is a cheap token poll, not a blind full-page
+          re-render — see the note on the card panel's copy of this line.
+          This screen shows exactly the ASKED client (no sibling walk). */}
+      {pulse && <ChatPulse query={`client=${clientId}`} initial={pulse.t} fast={pulse.fast} />}
 
       {/* Reading it here counts as reading it, exactly as opening it in
           Telegram does — the owner's «chatni ichiga kirgandan keyin». */}
