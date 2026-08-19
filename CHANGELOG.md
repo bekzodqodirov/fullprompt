@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## Dashboard, yashiklar va yo'l xaritasi — 2026-08-19
+
+Uch so'rovingiz bo'yicha.
+
+**1. Dashboard nega ko'rinmasdi.** Dashboard «faqat ishchi roli
+bo'lmaganlarga» qilib qo'yilgan edi: agar odamda super admin bilan birga
+sotuvchi (yoki logist, buxgalter, skladchi) roli ham bo'lsa, unga o'sha
+rolning kunlik ekrani chiqib, dashboard umuman chizilmasdi. Sizning
+akkauntingizda sotuvchi roli ham bor bo'lsa kerak — reklamadan kelgan lid
+«bir admin va sotuvchi»ga tushgani shundan edi. Endi ikkalasi ham chiqadi:
+tepada kunlik ishingiz (bugun qo'ng'iroq, bitimlar, voronka), uning tagida
+firmaning umumiy holati. Boshqa hech narsa o'zgargani yo'q.
+
+**2. Taxta yashik — endi «mesta» bo'lib turadi.** Sklad qoldiqlarida ham,
+MASHINA ro'yxatida ham har yashik bitta qator: kodi · mijoz kodi ·
+«1 mesta» · yashikning O'ZINING kubi va kilosi. Tagida kichkina yozuv bilan
+ichida nima borligi: nechta quti, umumiy kub, umumiy kilo. O'lchanmagan
+yashik «—» yozadi (nol emas — nolga qarab reja tuzilmasin).
+
+Ogohlantirish siz aytgandek: ichidagi yuk yashikdan katta bo'lsa, o'sha
+yashik ro'yxatning ENG TEPASIDA turadi va yonida «sig'magan» degan qizil
+belgi chiqadi. Qolganlari kod tartibida.
+
+Muhimi: yashik qatorlari umumiy Σ ga QO'SHILMAYDI — ichidagi qutilar yuqoridagi
+jadvalda allaqachon sanalgan, qo'shilsa kub ikki barobar bo'lib ketardi va
+tannarx ham shu raqamlarni o'qiydi. Mashina kartasida yashik ro'yxati
+mashina bo'shatilganidan keyin ham qoladi (hujjat sifatida), va boshqa
+mashinada qolib ketgan quti bu mashinaga yozilmaydi.
+
+**3. Xarita — endi haqiqiy yo'l bo'ylab.** Yo'nalishlar bir marta
+yuklab olindi (siz tanlagan «B» varianti): Yiwu→Qashqar, Guanchjou→Qashqar,
+Urumchi→Qashqar, Qashqar→Irkeshtam, Irkeshtam→O'sh, O'sh→Andijon,
+Andijon→Toshkent va O'sh→Toshkent. Server hech qanday tashqi xizmatga
+murojaat qilmaydi — yo'l tizim ichida saqlanadi, pulsiz va uzilishsiz.
+
+- Xitoy yo'li endi **Urumchiga kirmaydi** — siz aytgandek, to'g'ri
+  Qashqarga ketadi.
+- Xitoydan to'g'ri O'zbekistonga (bir partiya bilan) ketadigan mashina ham
+  shu yo'l bo'ylab chiziladi — avval to'g'ri chiziq edi.
+- **Mashina belgisi** endi hamma xaritada fura ko'rinishida.
+- **Sklad yonidagi son** belgining o'ziga yopishib turadi (uzoqda emas).
+
+Eslatma: agar xarita hali ham sxema (och pushti fon) bo'lib tursa, serverda
+bir marta `docker compose --profile basemap run --rm basemap` buyrug'ini
+ishlatish kerak — bu haqiqiy xarita rasmini yuklab beradi. Yo'l chizig'i
+ikkala holatda ham to'g'ri.
+
+Bazada o'zgarish yo'q — migratsiya hisobi **85** ligicha qoladi.
+
 ## Tezlik: ochiq chat oynalari serverni yeb qo'yayotgan edi — 2026-08-19
 
 «Sistema sekin ishlayabti, ayniqsa CRMda» xabaringiz bo'yicha o'lchab chiqildi.

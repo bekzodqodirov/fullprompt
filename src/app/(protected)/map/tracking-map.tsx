@@ -395,10 +395,12 @@ function SvgCorridor({
             </text>
             {w.totalBoxes > 0 && (
               <>
-                <circle cx={s.x + 12} cy={s.y - 12} r={9} className="fill-brand-800" stroke="#fff" strokeWidth={1.5} />
+                {/* On the square's CORNER, not floating beside it (round
+                    109's complaint, the same one the Leaflet badge had). */}
+                <circle cx={s.x + 10} cy={s.y - 10} r={8.5} className="fill-brand-800" stroke="#fff" strokeWidth={1.5} />
                 <text
-                  x={s.x + 12}
-                  y={s.y - 8}
+                  x={s.x + 10}
+                  y={s.y - 6.5}
                   fontSize={10}
                   fontWeight={700}
                   textAnchor="middle"
@@ -424,21 +426,47 @@ function SvgCorridor({
             <circle cx={s.x} cy={s.y} r={13} className={tr.overdue ? 'fill-bad' : 'fill-warn'} opacity={0.25}>
               <animate attributeName="r" values="12;18;12" dur="2.2s" repeatCount="indefinite" />
             </circle>
-            <circle
-              cx={s.x}
-              cy={s.y}
-              r={10}
+            {/* The SAME cab-and-trailer the Leaflet marker draws (owner,
+                round 109: «mashina iconini truck iconi bn ozgartirish
+                kerak»). This fallback still drew the old 10px dot with a
+                box on it, and this renderer is what a server WITHOUT the
+                basemap tiles shows — so the two maps disagreed about what a
+                truck looks like, and the one he sees was the poorer. Kept a
+                rounded SQUARE against the warehouse's square-with-a-roof:
+                shape, not colour, is what tells them apart (#137). */}
+            <rect
+              x={s.x - 13}
+              y={s.y - 13}
+              width={26}
+              height={26}
+              rx={8}
               className={tr.overdue ? 'fill-bad' : 'fill-warn'}
               stroke="#fff"
-              strokeWidth={2}
+              strokeWidth={2.5}
             />
-            {/* A box on wheels: two circles under a rectangle. */}
-            <rect x={s.x - 5} y={s.y - 5} width={10} height={6} rx={1.5} fill="#fff" />
-            <circle cx={s.x - 3} cy={s.y + 3} r={1.8} fill="#fff" />
-            <circle cx={s.x + 3} cy={s.y + 3} r={1.8} fill="#fff" />
+            <g fill="#fff">
+              <rect x={s.x - 8} y={s.y - 4} width={10} height={7} rx={1} />
+              <path d={`M ${s.x + 2} ${s.y - 2} h 3.6 l 2.4 2.4 v 2.6 H ${s.x + 2} Z`} />
+              <circle
+                cx={s.x - 4.5}
+                cy={s.y + 4.5}
+                r={2}
+                className={tr.overdue ? 'fill-bad' : 'fill-warn'}
+                stroke="#fff"
+                strokeWidth={1.4}
+              />
+              <circle
+                cx={s.x + 5}
+                cy={s.y + 4.5}
+                r={2}
+                className={tr.overdue ? 'fill-bad' : 'fill-warn'}
+                stroke="#fff"
+                strokeWidth={1.4}
+              />
+            </g>
             <text
               x={s.x}
-              y={s.y - 15}
+              y={s.y - 18}
               fontSize={12}
               fontWeight={800}
               textAnchor="middle"

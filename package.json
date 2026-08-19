@@ -2,7 +2,7 @@
   "name": "gsr-erp",
   "version": "0.1.0",
   "private": true,
-  "description": "GSR LOGISTICS ERP \u2014 Phase 1: WMS",
+  "description": "GSR LOGISTICS ERP — Phase 1: WMS",
   "scripts": {
     "dev": "node scripts/heal-storage.mjs && next dev",
     "build": "node scripts/heal-storage.mjs && next build",
@@ -33,7 +33,8 @@
     "tg-scan": "tsx scripts/tg-scan.ts",
     "tg-login": "tsx scripts/tg-login.ts",
     "tg-listen": "tsx scripts/tg-listen.ts",
-    "tg-doctor": "tsx scripts/tg-doctor.ts"
+    "tg-doctor": "tsx scripts/tg-doctor.ts",
+    "fetch-road-geometry": "node scripts/fetch-road-geometry.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.114.0",

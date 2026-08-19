@@ -558,6 +558,7 @@
     "allWh": "All warehouses",
     "onRoad": "On the road",
     "cratesTitle": "Crates",
+    "cratePlace": "place",
     "crateInside": "inside",
     "crateOver": "over capacity",
     "filterPlaceholder": "Code, marking, product…",
