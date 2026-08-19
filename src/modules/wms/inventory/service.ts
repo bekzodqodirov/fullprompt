@@ -327,11 +327,15 @@ export async function crateStock(
   const mapped = rows.slice(0, CRATE_STRIP_CAP).map((row) => {
     const kg = Math.round(Number(row.kg));
     const m3 = Math.round(Number(row.m3) * 100) / 100;
+    // A dimension typed as 0 is storable (the crate EDIT path has no min) —
+    // a non-positive measure is «unmeasured», never a permanent ⚠ against a
+    // 0 m³ box.
     const statedM3 =
-      row.lengthCm && row.widthCm && row.heightCm
+      row.lengthCm && row.widthCm && row.heightCm && row.lengthCm > 0 && row.widthCm > 0 && row.heightCm > 0
         ? Math.round(((row.lengthCm * row.widthCm * row.heightCm) / 1e6) * 100) / 100
         : null;
-    const statedKg = row.weightKg === null ? null : Math.round(Number(row.weightKg));
+    const measuredKg = row.weightKg === null ? null : Number(row.weightKg);
+    const statedKg = measuredKg !== null && measuredKg > 0 ? Math.round(measuredKg) : null;
     return {
       id: row.id,
       code: row.code,

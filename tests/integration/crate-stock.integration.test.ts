@@ -183,6 +183,24 @@ describe('crateStock', () => {
     expect(bare.over).toBe(false);
   });
 
+  it('a zero measure reads as unmeasured, never as a permanent ⚠', async () => {
+    // The crate EDIT path can store 0 (no min on update) — a 0 m³ «size»
+    // must not flag every carton inside as overflow.
+    await db
+      .update(crates)
+      .set({ lengthCm: 0, weightKg: '0' })
+      .where(eq(crates.id, crateFull));
+    const { rows } = await crateStock(UNSCOPED, whA);
+    const full = rows.find((row) => row.id === crateFull)!;
+    expect(full.statedM3).toBeNull();
+    expect(full.statedKg).toBeNull();
+    expect(full.over).toBe(false);
+    await db
+      .update(crates)
+      .set({ lengthCm: 100, weightKg: '500' })
+      .where(eq(crates.id, crateFull));
+  });
+
   it('an empty crate and a dissolved one produce no row', async () => {
     const { rows } = await crateStock(UNSCOPED, whA);
     expect(rows.some((row) => row.id === crateEmpty)).toBe(false);
