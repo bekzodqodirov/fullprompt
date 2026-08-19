@@ -7,7 +7,10 @@ import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
 import { Overlay } from '@/components/ui/overlay';
 import { quickCreateLeadAction, type QuickCreateResult } from '@/app/(protected)/crm/actions';
-import { quickCreateClientAction } from '@/app/(protected)/admin/clients/actions';
+import {
+  quickCreateClientAction,
+  type QuickClientResult,
+} from '@/app/(protected)/admin/clients/actions';
 
 /**
  * «+» — a lead or a client in five seconds, from wherever you are.
@@ -58,6 +61,15 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
     { id: string; name: string; phone: string | null; ownerName: string | null }[]
   >([]);
   const [made, setMade] = useState<{ id: string; name: string; kind: QuickKind } | null>(null);
+  // A NEW CLIENT keeps the panel open on a code banner instead of closing to
+  // a toast (round 107, owner's 1B): the code goes on cartons in Yiwu the same
+  // day, and «GS527» folded into one grey toast line was being missed. Held
+  // separately from `made` because the toast's job — survive the close — is
+  // exactly what this state must not do.
+  const [madeClient, setMadeClient] = useState<{ id: string; code: string; name: string } | null>(
+    null,
+  );
+  const [copied, setCopied] = useState(false);
 
   if (kinds.length === 0) return null;
 
@@ -79,6 +91,7 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
     // confirm dialog there would be a trap rather than a safeguard.
     if (reason !== 'route' && dirty && !window.confirm(t('discard'))) return false;
     setOpen(false);
+    setMadeClient(null);
     reset();
     return true;
   }
@@ -97,6 +110,18 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
       setDupes(kind === 'lead' ? ((result as QuickCreateResult).duplicates ?? []) : []);
       return;
     }
+    if (kind === 'client') {
+      // The panel STAYS OPEN on the minted code, big and copyable — the one
+      // thing the person came for and the one thing the old toast buried.
+      setMadeClient({
+        id: result.id!,
+        code: (result as QuickClientResult).code ?? '',
+        name: result.name!,
+      });
+      reset();
+      router.refresh();
+      return;
+    }
     // Stay put. The person is on a call looking at a board; jumping them to
     // the new card is the interruption this button exists to avoid. The link
     // in the confirmation is there for when they do want it.
@@ -104,6 +129,18 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
     setOpen(false);
     reset();
     router.refresh();
+  }
+
+  async function copyCode() {
+    if (!madeClient) return;
+    try {
+      await navigator.clipboard.writeText(madeClient.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // No clipboard permission (an old WebView): selecting the code is the
+      // honest fallback — the person long-presses it like any other text.
+    }
   }
 
   return (
@@ -114,6 +151,7 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
         data-testid="quick-create"
         onClick={() => {
           setMade(null);
+          setMadeClient(null);
           setOpen(true);
         }}
         className="btn-ghost btn-icon text-ink-700"
@@ -128,7 +166,48 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
         testId="quick-panel"
         className="absolute inset-x-3 top-3 space-y-3 rounded-2xl bg-surface-raised p-3 shadow-pop md:inset-x-auto md:left-1/2 md:w-[26rem] md:-translate-x-1/2"
       >
-        {kind === null ? (
+        {madeClient ? (
+          <div className="space-y-3" data-testid="quick-client-made">
+            <p className="text-sm font-semibold text-ink-700">{t('codeTitle')}</p>
+            <div className="rounded-2xl border-2 border-good bg-good/10 p-4 text-center">
+              <p
+                className="font-mono text-3xl font-bold tracking-widest text-good"
+                data-testid="quick-client-code"
+              >
+                {madeClient.code}
+              </p>
+              <p className="mt-1 truncate text-sm text-ink-500">{madeClient.name}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="quick-copy-code"
+                onClick={() => void copyCode()}
+                className="btn-secondary !min-h-10 flex-1"
+              >
+                {copied ? t('copied') : t('copy')}
+              </button>
+              <Link
+                href={`/admin/clients/${madeClient.id}`}
+                data-testid="quick-to-card"
+                className="btn-ghost !min-h-10 text-xs"
+              >
+                {t('toCard')}
+              </Link>
+            </div>
+            <button
+              type="button"
+              data-testid="quick-done"
+              onClick={() => {
+                setMadeClient(null);
+                setOpen(false);
+              }}
+              className="btn-primary w-full"
+            >
+              {t('done')}
+            </button>
+          </div>
+        ) : kind === null ? (
           <div className="space-y-2">
             <p className="text-sm font-semibold text-ink-700">{t('title')}</p>
             {kinds.map((one) => (

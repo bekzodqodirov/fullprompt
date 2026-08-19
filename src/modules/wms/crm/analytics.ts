@@ -154,6 +154,33 @@ function money(value: unknown): number {
 
 export type SalesAnalytics = Awaited<ReturnType<typeof salesAnalytics>>;
 
+/**
+ * Won/lost by the DECISION clock, for the admin home (round 107). The same
+ * predicate as the scoreboard's `decided` cell above and — since round 107
+ * moved it — `salesSnapshot`'s month counts: `closed_at` + the stage's kind,
+ * never `updated_at` (round 98's two clocks). One lean query, because the
+ * home page is the most-opened screen and `salesAnalytics` is ~14.
+ *
+ * `wonUsd` is safe unfiltered here: a LEAD's quote currency is USD-only when
+ * priced (round 71) — unlike deals, where the sum must filter.
+ */
+export async function decidedLeadCounts(from: Date, to: Date) {
+  const [row] = await db
+    .select({
+      won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
+      lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
+      wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+    })
+    .from(leads)
+    .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
+    .where(and(isNotNull(leads.closedAt), gte(leads.closedAt, from), lt(leads.closedAt, to)));
+  return {
+    won: Number(row?.won ?? 0),
+    lost: Number(row?.lost ?? 0),
+    wonUsd: money(row?.wonUsd),
+  };
+}
+
 export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters = {}) {
   const extra = leadFilterConds(f);
   const created = and(gte(leads.createdAt, from), lt(leads.createdAt, to), ...extra);

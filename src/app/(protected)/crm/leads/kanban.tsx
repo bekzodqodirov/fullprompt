@@ -1,11 +1,14 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { KanbanBoard as Board, type KanbanStage } from '@/components/kanban';
 import { MetaLine } from '@/components/board-meta';
 import { useMoveErrors } from '@/components/move-errors';
 import { BulkBar } from '@/components/list/bulk-bar';
 import { useSelection } from '@/components/list/selection';
+import { WonDialog, type WonDialogLead } from '@/components/won-dialog';
 import { bulkAssignLeadsAction, bulkMoveLeadsAction, moveLeadAction } from '../actions';
 
 export type { KanbanStage };
@@ -80,6 +83,10 @@ export function KanbanBoard({
   // state, every tick re-rendered this component and through it all 596 live
   // cards, which is the freeze the owner reported.
   const selection = useSelection();
+  const router = useRouter();
+  // The won ceremony (round 107): a drag or a sheet tap into a won column
+  // holds here until the dialog settles the client and the deal.
+  const [pendingWon, setPendingWon] = useState<WonDialogLead | null>(null);
 
   return (
     <>
@@ -90,6 +97,14 @@ export function KanbanBoard({
         lostReasons={lostReasons}
         items={leads}
         cardTestId="lead-card"
+        onWon={(lead, stageId) =>
+          setPendingWon({
+            id: lead.id,
+            defaultName: lead.company || lead.name,
+            clientCode: lead.clientCode,
+            stageId,
+          })
+        }
         selection={{ store: selection, label: tl('select') }}
         hrefOf={(lead) => `/crm/leads/${lead.id}`}
         // The action answers `{ ok?: boolean; error?: string }`. The CODE
@@ -205,10 +220,26 @@ export function KanbanBoard({
       <BulkBar
         selection={selection}
         lostReasons={lostReasons}
-        stages={stages}
+        // No bulk door into won (round 107, owner: «har biriga kerak») — each
+        // win settles ITS client and ITS deal in the dialog, which a sweep
+        // cannot answer. The service refuses regardless (#531): a forged post
+        // comes back as counts, not as twenty silent wins.
+        stages={stages.filter((stage) => stage.kind !== 'won')}
         owners={owners}
         onMove={(ids, stageId, reason) => bulkMoveLeadsAction(ids, stageId, reason)}
         onAssign={owners ? (ids, ownerId) => bulkAssignLeadsAction(ids, ownerId) : undefined}
+      />
+
+      <WonDialog
+        open={Boolean(pendingWon)}
+        lead={pendingWon}
+        onClose={() => setPendingWon(null)}
+        onWon={() => {
+          setPendingWon(null);
+          // No optimistic move for a win: the server minted a client and a
+          // deal, and the board re-reads rather than guessing at all three.
+          router.refresh();
+        }}
       />
     </>
   );

@@ -17,6 +17,7 @@ import {
   closedLeadCounts,
   createLead,
   listLeads,
+  moveLead,
   updateLead,
 } from '@/modules/wms/crm/service';
 
@@ -56,7 +57,10 @@ beforeAll(async () => {
   actorId = admins[0]!.id;
   const stages = await db.select().from(leadStages).orderBy(asc(leadStages.sortOrder));
   openStageId = stages.find((row) => row.kind === 'open')!.id;
-  closedStageId = stages.find((row) => row.kind !== 'open')!.id;
+  // The WON stage specifically: round 107 made a lead unable to be BORN
+  // closed, so the fixture below wins its closed lead through moveLead's
+  // internal door — deterministic only against a stage that needs no reason.
+  closedStageId = stages.find((row) => row.kind === 'won')!.id;
 
   // Three quoted leads and an unquoted one; the cheap CLOSED one is what the
   // counts assertion leans on.
@@ -74,10 +78,14 @@ beforeAll(async () => {
     },
     ctx(),
   );
+  // Born OPEN, then won through the service's own internal door: a lead can
+  // no longer be created straight into a closed stage (round 107), and this
+  // file's subject is the FILTERS, not the win ceremony.
   const closedCheap = await createLead(
-    { name: `${MARK} yopiq arzon`, stageId: closedStageId, quotedAmount: 200 },
+    { name: `${MARK} yopiq arzon`, stageId: openStageId, quotedAmount: 200 },
     ctx(),
   );
+  await moveLead(closedCheap.id, closedStageId, '', ctx(), undefined, { viaConvert: true });
   const bare = await createLead({ name: `${MARK} narxsiz`, stageId: openStageId }, ctx());
   made.push(cheap.id, dear.id, closedCheap.id, bare.id);
 

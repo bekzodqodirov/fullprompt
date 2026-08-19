@@ -111,6 +111,14 @@ interface BoardProps<T extends KanbanItem> {
     reason: string,
     beforeId?: string | null,
   ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Intercept a REAL move into a won column (round 107). Passed only by the
+   * leads board, where winning demands the convert dialog — a client and a
+   * deal — before the stage may change; the deal board keeps its plain won
+   * move. A drag INSIDE a won column never reaches this: deciding nothing is
+   * exactly what a reorder does.
+   */
+  onWon?: (item: T, stageId: string) => void;
   /** Distinguishes the two boards in the e2e without a second selector scheme. */
   cardTestId?: string;
   /**
@@ -153,6 +161,7 @@ export function KanbanBoard<T extends KanbanItem>({
   renderCard,
   hrefOf,
   onMove,
+  onWon,
   cardTestId = 'kanban-card',
   selection,
   hidden = {},
@@ -277,6 +286,16 @@ export function KanbanBoard<T extends KanbanItem>({
       // which is the whole of round 96.
       if (beforeId === undefined && stage.id === (placement[item.id] ?? item.stageId)) return;
 
+      // The won ceremony (round 107): a REAL arrival in a won column goes to
+      // the convert dialog instead of the server. AFTER the same-column check
+      // above, and re-checked against the optimistic stage — a drag inside
+      // the won column is a reorder and must stay one (the round-64 lesson
+      // about guards armed in the wrong order).
+      if (onWon && stage.kind === 'won' && stage.id !== (placement[item.id] ?? item.stageId)) {
+        onWon(item, stageId);
+        return;
+      }
+
       if (stage.kind === 'lost') {
         if (lostReasons && lostReasons.length > 0) {
           setPendingLost({ item, stageId, beforeId });
@@ -288,7 +307,7 @@ export function KanbanBoard<T extends KanbanItem>({
       }
       return commitMove(item, stageId, '', beforeId);
     },
-    [placement, stages, labels.lostReason, lostReasons, commitMove],
+    [placement, stages, labels.lostReason, lostReasons, commitMove, onWon],
   );
 
   const counts = Object.fromEntries(

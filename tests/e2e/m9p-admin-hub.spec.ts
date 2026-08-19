@@ -78,8 +78,10 @@ test('Bitimlar and CRM sit side by side on the home screen', async ({ page }) =>
   // Measured in the browser rather than reasoned about, because the unit
   // fence names the column counts and only the real stylesheet knows them.
   await login(page, OWNER);
+  // Scoped to the TILE GRID: the admin dashboard above it (round 107) also
+  // links /bitimlar, and a bare `.first()` would measure the wrong element.
   const box = async (href: string) =>
-    page.locator(`main a[href="${href}"]`).first().boundingBox();
+    page.locator(`[data-testid="home-tiles"] a[href="${href}"]`).first().boundingBox();
   const deals = await box('/bitimlar');
   const crm = await box('/crm');
   expect(deals).not.toBeNull();

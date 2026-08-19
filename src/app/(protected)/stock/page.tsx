@@ -22,7 +22,7 @@ import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
-import { transitTrucks } from '@/modules/wms/inventory/service';
+import { crateStock, transitTrucks } from '@/modules/wms/inventory/service';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 
 /** Owner's request: order the stock table by any column, filters kept. */
@@ -180,6 +180,14 @@ export default async function StockPage({
   // own scope: `scopeFilter` is built on `currentWarehouseId`, which is NULL
   // for every in-transit box — reusing it would answer zero for ever.
   const onRoad = await transitTrucks(actor, params.wh);
+  // The yashik layer (round 107, item 6). Gated on `crates.manage` — every
+  // crate surface is (list, card, print, even attachments), and /stock's own
+  // gate is a bare login: sellers and accountants read the shelf here, but
+  // the crate layer is the warehouse's, and a link they cannot open is a
+  // teleport to the home page.
+  const crateStrip = actor.permissions.has('crates.manage')
+    ? await crateStock(actor, params.wh)
+    : null;
   const lines = await db
     .select({
       lot: receiptLots,
@@ -394,6 +402,59 @@ export default async function StockPage({
           </span>
         )}
       </p>
+
+      {/* The yashik layer (round 107, owner's item 6): each active crate with
+          cargo standing HERE, its measured size, and beneath it what is
+          inside — count, kub, kg. Unlike the on-road strip this is a
+          RE-GROUPING of cargo the Σ and the table already count, nothing
+          additive; and it deliberately ignores `q` the way it sits outside
+          the sort, the views and the XLSX. The ⚠ is screen-only («faqat
+          ekranda»). */}
+      {crateStrip && crateStrip.rows.length > 0 && (
+        <div className="space-y-1" data-testid="stock-crates">
+          <p className="text-xs font-semibold text-ink-500">
+            🧰 {t('cratesTitle')} ({crateStrip.more ? `${crateStrip.rows.length}+` : crateStrip.rows.length})
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {crateStrip.rows.map((crate) => (
+              <Link
+                key={crate.id}
+                href={`/crates/${crate.id}`}
+                className="card-tap block !py-1.5 px-3 text-sm"
+                data-testid="stock-crate-row"
+              >
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="font-mono font-bold text-brand-700">{crate.code}</span>
+                  <span className="font-mono font-semibold">{crate.clientCode}</span>
+                  {!params.wh && <span className="text-ink-500">{crate.whCode}</span>}
+                  {(crate.statedM3 !== null || crate.statedKg !== null) && (
+                    <span className="text-ink-500">
+                      {crate.statedM3 !== null ? `${crate.statedM3} m³` : '—'}
+                      {' · '}
+                      {crate.statedKg !== null ? `${crate.statedKg} kg` : '—'}
+                    </span>
+                  )}
+                  {crate.over && (
+                    <span className="chip-warn" data-testid="crate-over">
+                      ⚠ {t('crateOver')}
+                    </span>
+                  )}
+                </span>
+                {/* The second line is the CONTENTS — round 88's two-line row,
+                    each «·» inside the span that follows so a wrap cannot
+                    orphan it. */}
+                <span className="flex flex-wrap text-xs text-ink-500">
+                  <span className="whitespace-nowrap">
+                    {t('crateInside')}: {crate.boxCount} 📦
+                  </span>
+                  <span className="whitespace-nowrap">&nbsp;· {crate.m3} m³</span>
+                  <span className="whitespace-nowrap">&nbsp;· {crate.kg} kg</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* What is ON THE ROAD to or from these warehouses (round 100, 5A).
           Deliberately outside the Σ, the table, the sort and the XLSX — those

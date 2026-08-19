@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
@@ -73,6 +73,33 @@ export async function usersWithPermission(code: string): Promise<string[]> {
   return [...new Set(rows.map((r) => r.userId))];
 }
 
+/**
+ * How many staff messages actually FAILED to leave in the window (round 107,
+ * the admin home's «yuborilmagan» signal). Deliberately narrower than the
+ * /admin/notifications list's own marker: `muted` there includes by-design
+ * settlements — a user's own mute, «telegram not linked», «user deactivated»
+ * — which on this production are never zero, and a warn that never clears
+ * teaches the eye to skip it. Failed, a pending row that already errored,
+ * or a claim stuck in 'sending' past the reclaim window (0082) — those are
+ * the three that mean somebody should look.
+ */
+export async function notificationProblemCount(sinceDays = 7): Promise<number> {
+  const since = new Date(Date.now() - sinceDays * 86_400_000);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.channel, 'telegram'),
+        gte(notifications.createdAt, since),
+        sql`(${notifications.status} = 'failed'
+          OR (${notifications.status} = 'pending' AND ${notifications.error} IS NOT NULL)
+          OR (${notifications.status} = 'sending' AND ${notifications.claimedAt} < now() - interval '10 minutes'))`,
+      ),
+    );
+  return Number(row?.n ?? 0);
+}
+
 async function buildRecipients(event: {
   type: string;
   payload: Record<string, unknown>;
@@ -96,6 +123,10 @@ async function buildRecipients(event: {
     // it goes to the deal's owner if it has one, otherwise to the client's
     // sales manager — never broadcast, because a list of somebody else's
     // pricing problems is a message people learn to swipe away.
+    // «Attach it» rides the same road as «price it» (round 107, item 3): the
+    // deal exists, the receipt just was not linked — same seller, same
+    // fallback to the admins when the client has no seller.
+    case 'UnlinkedCargo':
     case 'UnquotedCargo':
     case 'DealDeviation':
     case 'DealDeferralEnded': {
@@ -172,6 +203,22 @@ async function buildRecipients(event: {
       if (!requestedBy) return [];
       return [{ userId: requestedBy, type: event.type, payload: event.payload }];
     }
+    // Round 107: the rasxod xabari reaches everyone who may enter the
+    // expense — minus the reporter, when an admin reports their own (round
+    // 36's exceptUserId, one layer down) — and the decision reaches exactly
+    // the reporter.
+    case 'ExpenseRequested': {
+      const requestedBy = event.payload.requestedBy as string | null;
+      const userIds = await usersWithPermission('finance.expenses');
+      return userIds
+        .filter((userId) => userId !== requestedBy)
+        .map((userId) => ({ userId, type: event.type, payload: event.payload }));
+    }
+    case 'ExpenseRequestDecided': {
+      const requestedBy = event.payload.requestedBy as string | null;
+      if (!requestedBy) return [];
+      return [{ userId: requestedBy, type: event.type, payload: event.payload }];
+    }
     default:
       return [];
   }
@@ -224,18 +271,46 @@ export function renderTelegramText(
   if (preRendered) return preRendered;
 
   switch (type) {
-    case 'ReceiptConfirmed':
+    case 'ReceiptConfirmed': {
+      // The deal marker (round 107, item 3): the owner reads the prixod
+      // message and wants to see «bitimi yo'q» right there. Strict === false,
+      // so the years of events that predate the field render exactly as they
+      // always did (#688's Array.isArray rule).
+      const dealMark =
+        payload.dealLinked === false
+          ? Array.isArray(payload.openDealCodes) && payload.openDealCodes.length > 0
+            ? `📎 ${L.unlinkedMark}\n`
+            : `⚠️ ${L.noDealMark}\n`
+          : '';
       return (
         `📥 ${L.receiptConfirmed} ${payload.number}\n` +
         `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        dealMark +
         `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
+    }
     case 'UnknownCargoReceived':
       return (
         `❓ ${L.unknownCargo} ${payload.number}\n` +
         (payload.unclaimedMarking ? `${L.marking}: ${payload.unclaimedMarking}\n` : '') +
         `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
+    // The deal exists and the receipt was not linked to it — the seller's job
+    // is one tap on the receipt card, and the message says which deals are
+    // open so they know it is an attach, not a pricing exercise (round 107).
+    case 'UnlinkedCargo': {
+      const openCodes = Array.isArray(payload.openDealCodes)
+        ? (payload.openDealCodes as string[]).join(', ')
+        : '';
+      return (
+        `📎 ${L.unlinkedCargo} — ${payload.number}\n` +
+        `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        `${L.warehouse}: ${payload.warehouseCode}\n` +
+        `${payload.volumeM3} ${L.m3} · ${payload.weightKg} ${L.kg} · ${payload.boxCount} ${L.boxesShort}\n` +
+        (openCodes ? `${L.openDealsWord}: ${openCodes}\n` : '') +
+        `\n${L.attachDeal}\n${link}`
+      );
+    }
     // Cargo that landed with no agreed price — the single biggest source of
     // "it came out expensive" arguments, caught while it is still in China.
     case 'UnquotedCargo':
@@ -344,6 +419,19 @@ export function renderTelegramText(
         (payload.note ? `\n${L.comment}: ${payload.note}` : '') +
         `\n\n${appUrl}/issue`
       );
+    // Round 107: the rasxod xabari and its answer.
+    case 'ExpenseRequested':
+      return (
+        `💸 ${L.expenseRequested} — ${payload.warehouseCode}\n` +
+        `${L.requestedByWord}: ${payload.requesterName}\n` +
+        `${payload.amount} ${payload.currency}\n` +
+        `${payload.note}\n\n${appUrl}/accounting/expenses`
+      );
+    case 'ExpenseRequestDecided':
+      return payload.verdict === 'rejected'
+        ? `⛔ ${L.expenseRejected}\n${payload.amount} ${payload.currency} — ${payload.note}\n` +
+            `${L.comment}: ${payload.rejectReason}`
+        : `✅ ${L.expenseEntered}\n${payload.amount} ${payload.currency} — ${payload.note}`;
     case 'RestoreTestFailed':
       return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;
     // Without this case the most important alert in the system fell to the

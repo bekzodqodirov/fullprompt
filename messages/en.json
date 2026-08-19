@@ -40,7 +40,8 @@
       "notFound": "Card not found — reload the page",
       "reasonRequired": "A reason is required",
       "stageNotFound": "Stage deleted — reload the page",
-      "reasonNotListed": "The reason must be chosen from the list"
+      "reasonNotListed": "The reason must be chosen from the list",
+      "convertRequired": "Won goes through the dialog: client code and deal"
     },
     "moreActions": "More actions",
     "notFilled": "Not filled",
@@ -556,6 +557,9 @@
     },
     "allWh": "All warehouses",
     "onRoad": "On the road",
+    "cratesTitle": "Crates",
+    "crateInside": "inside",
+    "crateOver": "over capacity",
     "filterPlaceholder": "Code, marking, product…",
     "colCode": "Code",
     "colProduct": "Product",
@@ -1095,7 +1099,14 @@
     "partnerIn": "Received from a counterparty",
     "partnerOut": "Paid to a counterparty",
     "accountCurrencyMismatch": "The cash box's currency does not match the amount's",
-    "generateFailed": "{n} could not be posted — check their settings"
+    "generateFailed": "{n} could not be posted — check their settings",
+    "requestsTitle": "Warehouse expenses — waiting to be entered",
+    "enterRequest": "Enter",
+    "requestStuck": "entry did not finish — check the expense list",
+    "reject": "Reject",
+    "rejectReason": "Why reject? The operator sees the answer.",
+    "fromRequest": "Filled from the warehouse report — check it and pick a category and till.",
+    "requestTaken": "Someone else already entered this one"
   },
   "crm": {
     "title": "CRM",
@@ -1403,7 +1414,29 @@
     "followUpDone": "Done",
     "followUpTomorrow": "Tomorrow",
     "followUpFailed": "Not saved",
-    "nameTaken": "That name is already in the list (case is ignored)"
+    "nameTaken": "That name is already in the list (case is ignored)",
+    "won": {
+      "title": "Lead won — who is the client?",
+      "mint": "New code",
+      "attach": "Existing client",
+      "name": "Client name",
+      "codeOptional": "Code (empty — assigned automatically)",
+      "attachCode": "Client code (GS…)",
+      "check": "Check",
+      "confirm": "Open the deal",
+      "confirmExisting": "A new deal opens for this client.",
+      "existing": "Client",
+      "deal": "Deal",
+      "errors": {
+        "clientNotFound": "No such code",
+        "clientInactive": "This client is deactivated",
+        "codeExists": "That code is taken",
+        "codeFormat": "Bad code format",
+        "stageGone": "Stage not found — refresh the page",
+        "forbidden": "No permission",
+        "failed": "Could not save"
+      }
+    }
   },
   "navShort": {
     "home": "Home",
@@ -1830,6 +1863,7 @@
       "BoxIssued": "Cargo issued to client",
       "UnknownCargoReceived": "Unclaimed cargo received",
       "UnquotedCargo": "Unpriced cargo (in China)",
+      "UnlinkedCargo": "Cargo not linked to a deal",
       "DealDeviation": "Cargo differs from quote",
       "DealDeferralEnded": "Payment deferral ended",
       "MissingInTransit": "Shortage at unload"
@@ -2032,6 +2066,11 @@
     "full": "Full form →",
     "close": "Close",
     "created": "Added:",
+    "codeTitle": "New client added",
+    "copy": "Copy code",
+    "copied": "Copied ✓",
+    "toCard": "Card →",
+    "done": "Done",
     "discard": "Close without saving? What you typed will be lost.",
     "hint": {
       "lead": "Lands on the first stage and belongs to you — the rest on the card.",
@@ -2107,5 +2146,44 @@
     "never": "not yet sent",
     "remaining": "{n} left",
     "copied": "{n} files copied"
+  },
+  "rasxod": {
+    "title": "Report an expense",
+    "warehouse": "Warehouse",
+    "amount": "Amount",
+    "note": "What it was spent on",
+    "photo": "Receipt",
+    "send": "Send",
+    "sent": "Sent — finance will enter it",
+    "photoFailed": "Photo failed to upload — try again",
+    "errors": {
+      "forbidden": "No rights for this warehouse",
+      "validation": "Check the amount and the note",
+      "failed": "Could not send"
+    }
+  },
+  "adminHome": {
+    "money": "Money",
+    "todayFlow": "Today",
+    "debtors": "Debtors",
+    "clientsShort": "clients",
+    "partnerDebt": "Partners",
+    "monthMoney": "Month: charged / paid",
+    "cargo": "Cargo",
+    "stock": "In stock",
+    "onRoad": "On the road",
+    "todayReceipts": "Today's receipts",
+    "trucksShort": "trucks",
+    "sales": "Sales",
+    "otherCurrency": "in other currencies",
+    "monthDecided": "This month",
+    "signals": "Signals",
+    "backup": "Backup",
+    "backupOk": "fresh",
+    "backupOff": "not configured",
+    "backupStale": "MISSING",
+    "unsent": "Undelivered (7 d)",
+    "overdueTasks": "Overdue tasks",
+    "dueTodayShort": "due today"
   }
 }

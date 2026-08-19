@@ -40,7 +40,8 @@
       "notFound": "Kartochka topilmadi — sahifani yangilang",
       "reasonRequired": "Sababini yozish kerak",
       "stageNotFound": "Etap o'chirilgan — sahifani yangilang",
-      "reasonNotListed": "Sabab ro'yxatdan tanlanishi kerak"
+      "reasonNotListed": "Sabab ro'yxatdan tanlanishi kerak",
+      "convertRequired": "«Yutildi» — faqat oyna orqali: mijoz kodi va bitim"
     },
     "moreActions": "Boshqa amallar",
     "notFilled": "To‘ldirilmagan",
@@ -556,6 +557,9 @@
     },
     "allWh": "Barcha skladlar",
     "onRoad": "Yo'lda",
+    "cratesTitle": "Yashiklar",
+    "crateInside": "ichida",
+    "crateOver": "sig'magan",
     "filterPlaceholder": "Kod, markirovka, tovar…",
     "colCode": "Kod",
     "colProduct": "Tovar",
@@ -1095,7 +1099,14 @@
     "partnerIn": "Kontragentdan tushdi",
     "partnerOut": "Kontragentga to‘landi",
     "accountCurrencyMismatch": "Kassa valyutasi summaga mos emas",
-    "generateFailed": "{n} tasi o‘tmadi — sozlamalarini tekshiring"
+    "generateFailed": "{n} tasi o‘tmadi — sozlamalarini tekshiring",
+    "requestsTitle": "Skladlardan rasxodlar — kiritish kutilmoqda",
+    "enterRequest": "Kiritish",
+    "requestStuck": "kiritish tugamagan — rasxodlar ro'yxatini tekshiring",
+    "reject": "Rad etish",
+    "rejectReason": "Nega rad etyapsiz? Skladchi javobni ko'radi.",
+    "fromRequest": "Sklad xabaridan to'ldirildi — tekshirib, kategoriya va kassani tanlang.",
+    "requestTaken": "Bu xabarni boshqa birov kiritib bo'ldi"
   },
   "crm": {
     "title": "CRM",
@@ -1403,7 +1414,29 @@
     "followUpDone": "Bajarildi",
     "followUpTomorrow": "Ertaga",
     "followUpFailed": "Saqlanmadi",
-    "nameTaken": "Bu nom ro‘yxatda bor (katta-kichik harf hisobga olinmaydi)"
+    "nameTaken": "Bu nom ro‘yxatda bor (katta-kichik harf hisobga olinmaydi)",
+    "won": {
+      "title": "Lid yutildi — mijoz kim?",
+      "mint": "Yangi kod",
+      "attach": "Mavjud mijozga",
+      "name": "Mijoz nomi",
+      "codeOptional": "Kod (bo'sh — o'zi beriladi)",
+      "attachCode": "Mijoz kodi (GS…)",
+      "check": "Tekshirish",
+      "confirm": "Bitim ochish",
+      "confirmExisting": "Shu mijoz uchun yangi bitim ochiladi.",
+      "existing": "Mijoz",
+      "deal": "Bitim",
+      "errors": {
+        "clientNotFound": "Bunday kod yo'q",
+        "clientInactive": "Bu mijoz nofaol qilingan",
+        "codeExists": "Bu kod band",
+        "codeFormat": "Kod formati noto'g'ri",
+        "stageGone": "Bosqich topilmadi — sahifani yangilang",
+        "forbidden": "Huquq yo'q",
+        "failed": "Saqlab bo'lmadi"
+      }
+    }
   },
   "navShort": {
     "home": "Bosh",
@@ -1830,6 +1863,7 @@
       "BoxIssued": "Yuk mijozga berildi",
       "UnknownCargoReceived": "Egasi noma'lum yuk keldi",
       "UnquotedCargo": "Narxsiz yuk (Xitoyda)",
+      "UnlinkedCargo": "Bitimga biriktirilmagan yuk",
       "DealDeviation": "Yuk hisobdan farq qildi",
       "DealDeferralEnded": "To'lov kechiktirish tugadi",
       "MissingInTransit": "Tushirishda kamomad"
@@ -2032,6 +2066,11 @@
     "full": "Batafsil →",
     "close": "Yopish",
     "created": "Qo'shildi:",
+    "codeTitle": "Yangi mijoz qo'shildi",
+    "copy": "Kodni nusxalash",
+    "copied": "Nusxalandi ✓",
+    "toCard": "Kartaga →",
+    "done": "Tayyor",
     "discard": "Saqlamasdan yopilsinmi? Yozganingiz yo'qoladi.",
     "hint": {
       "lead": "Birinchi bosqichga tushadi va o'zingizga biriktiriladi — qolgani kartada.",
@@ -2107,5 +2146,44 @@
     "never": "hali chiqmagan",
     "remaining": "{n} ta qoldi",
     "copied": "{n} ta fayl ko‘chirilgan"
+  },
+  "rasxod": {
+    "title": "Rasxod xabari",
+    "warehouse": "Sklad",
+    "amount": "Summa",
+    "note": "Nimaga sarflandi",
+    "photo": "Chek",
+    "send": "Yuborish",
+    "sent": "Yuborildi — moliya kiritadi",
+    "photoFailed": "Rasm yuklanmadi — qayta urinib ko'ring",
+    "errors": {
+      "forbidden": "Bu skladga huquq yo'q",
+      "validation": "Summa va izohni tekshiring",
+      "failed": "Yuborib bo'lmadi"
+    }
+  },
+  "adminHome": {
+    "money": "Pul",
+    "todayFlow": "Bugun",
+    "debtors": "Debitorlar",
+    "clientsShort": "mijoz",
+    "partnerDebt": "Kontragentlar",
+    "monthMoney": "Oy: hisoblangan / to'lov",
+    "cargo": "Yuk",
+    "stock": "Skladlarda",
+    "onRoad": "Yo'lda",
+    "todayReceipts": "Bugungi prixodlar",
+    "trucksShort": "fura",
+    "sales": "Savdo",
+    "otherCurrency": "boshqa valyutada",
+    "monthDecided": "Shu oy",
+    "signals": "Signallar",
+    "backup": "Zaxira nusxa",
+    "backupOk": "bor",
+    "backupOff": "sozlanmagan",
+    "backupStale": "OLINMAGAN",
+    "unsent": "Yuborilmagan (7 kun)",
+    "overdueTasks": "Kechikkan vazifalar",
+    "dueTodayShort": "bugunga"
   }
 }

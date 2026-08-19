@@ -9,7 +9,6 @@ import { ClientError } from '@/modules/platform/clients/service';
 import {
   activitySchema,
   addActivity,
-  convertLead,
   createLead,
   similarLeads,
   CrmError,
@@ -26,7 +25,12 @@ import {
   sourceSchema,
   stageSchema,
   updateLead,
+  winLead,
+  type WinLeadResult,
 } from '@/modules/wms/crm/service';
+import { db } from '@/modules/platform/db/client';
+import { clients } from '@/modules/platform/db/schema';
+import { sql } from 'drizzle-orm';
 import { setFieldValues, validateValues } from '@/modules/platform/fields/service';
 import { customValues } from '@/modules/platform/fields/actions';
 import { FieldError } from '@/modules/platform/fields/types';
@@ -317,15 +321,75 @@ export async function convertLeadAction(
 ): Promise<CrmFormState> {
   let clientId = '';
   const state = await run('crm.leads', async (ctx) => {
-    const client = await convertLead(
+    // Round 107: converting IS winning now — the same landing as the board's
+    // dialog, so this door also opens the deal the owner's rule demands.
+    const won = await winLead(
       id,
       { clientCode: str(formData, 'clientCode'), name: str(formData, 'clientName') },
       ctx,
     );
-    clientId = client.id;
+    clientId = won.clientId;
   });
   if (!state.ok) return state;
   redirect(`/admin/clients/${clientId}`);
+}
+
+export interface WinLeadState {
+  ok?: boolean;
+  error?: string;
+  result?: WinLeadResult;
+}
+
+/**
+ * The won dialog's confirm (round 107). Its OWN action on purpose: wiring a
+ * `viaConvert` flag through `moveLeadAction` would let any hand-crafted POST
+ * skip the mandatory convert — a public action's arguments are the caller's
+ * to invent (#514's rule, one layer down).
+ */
+export async function winLeadAction(
+  id: string,
+  input: { stageId?: string; attachCode?: string; clientCode?: string; name?: string },
+): Promise<WinLeadState> {
+  let result: WinLeadResult | undefined;
+  const state = await run('crm.leads', async (ctx) => {
+    result = await winLead(
+      id,
+      {
+        stageId: String(input?.stageId ?? '') || undefined,
+        attachCode: String(input?.attachCode ?? '') || undefined,
+        clientCode: String(input?.clientCode ?? '') || undefined,
+        name: String(input?.name ?? '') || undefined,
+      },
+      ctx,
+    );
+  });
+  if (!state.ok) return state;
+  return { ok: true, result };
+}
+
+/**
+ * «GS777 — kim u?» for the dialog's attach step: the typed code is echoed
+ * back as a NAME so a typo'd but existing code is caught by the person, not
+ * by the customer whose chat it would re-key. Within precedent: the deal form
+ * already prints the whole client book to the same permission.
+ */
+export async function resolveClientCodeAction(
+  code: string,
+): Promise<{ ok?: boolean; error?: string; name?: string; clientCode?: string }> {
+  try {
+    await authorize('crm.leads');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const clean = String(code ?? '').trim().toUpperCase();
+  if (!clean) return { error: 'client_not_found' };
+  const row = await db.query.clients.findFirst({
+    where: sql`upper(${clients.clientCode}) = ${clean}`,
+  });
+  if (!row) return { error: 'client_not_found' };
+  if (!row.active) return { error: 'client_inactive' };
+  return { ok: true, name: row.name, clientCode: row.clientCode };
 }
 
 export async function addActivityAction(

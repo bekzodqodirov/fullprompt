@@ -298,6 +298,17 @@ async function decide(
         ? { allow: true, rule: 'partner-tx-finance' }
         : { allow: false, rule: 'partner-tx-no-permission' };
     }
+    // The chek behind a rasxod xabari (round 107). The screen it backs is
+    // /accounting/expenses, gated `finance.expenses` alone — NOT
+    // finance.manage, which the customs manager holds without being able to
+    // open that screen (the round-91 rule about matching the door). The
+    // uploader's own claim is the global rule above; a not-yet-saved request
+    // has no row, so only its uploader can see the photo until it lands.
+    case 'expense_request': {
+      return actor.permissions.has('finance.expenses')
+        ? { allow: true, rule: 'expense-request-finance' }
+        : { allow: false, rule: 'expense-request-no-permission' };
+    }
     // entityType was free-form before the upload allowlist, so production may
     // hold strings no code writes today — in log-only mode this branch IS the
     // inventory of them.

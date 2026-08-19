@@ -369,7 +369,59 @@ a half-unloaded truck drained 180 → 0 on the report). Red proofs ×6;
 TEST LESSON (#730): a claim test on a shared queue claims to EXHAUSTION and
 restores the foreign rows it parked, or it asserts about strangers (#713).
 
-Latest migration: **0080** (`ai_assistant` — `ai_questions`,
+**Round 107 — the owner's six answered items** (#731-738, his answers
+«1b / 2a har biriga / 3 / 4 ha yetarli / 5 sen aytgandek lekin kompakt /
+6 faqat ekranda»; the four bigger designs were judged by a 12-agent
+adversarial workflow BEFORE code and fourteen decisions were overturned —
+every one recorded). **Migration 0083** `expense_requests` (count must reach
+**84**). (1) The quick «+» client modal stays OPEN on the minted code — big
+mono banner + copy + card link (`QuickClientResult.code`); a `CopyChip`
+joined the client card's h1. (2) **Winning a lead is a ceremony**: `winLead`
+subsumes convertLead (mint OR attach-by-typed-CODE with the name echoed back
+before anything is written — the attach has no undo; client written onto the
+lead FIRST so a retry mints nothing twice; ALWAYS a deal carrying the lead's
+quote with per-column null mapping — `Number(null)` is a $0 quote; manager =
+lead.ownerId or round 91 hides the client from its winner) and every other
+door refuses `convert_required`: moveLead (internal `viaConvert` NO action
+exposes), updateLead (change-gated), createLead born-won, deleteStage into a
+closed target, the bulk bar (won options dropped; «har biriga» = bulk-to-won
+refused). `leadFormStages` drops won from LEAD pickers only — deals keep
+their plain won move (m9v). A re-win opens a SECOND deal deliberately
+(confirm names it); won-without-client legacy leads keep the ConvertForm
+door. WonDialog ends in the item-1 banner; m8 rewired; won-law.test.ts pins
+the wiring. (3) `priceControlOnReceipt`'s no-deal branch SPLIT: open deals
+exist → new `UnlinkedCargo` («biriktiring», naming codes), none →
+UnquotedCargo; the prixod staff text carries «bitimga biriktirilmagan» /
+«bitimi yo'q — narxlatib qo'ying» via `dealLinked === false` strictly (old
+events render unchanged, #688). (4) **Admin home dashboard**
+(`admin-dashboard.tsx`): Pul/Yuk/Savdo/Signallar off the screens' own
+exported functions; EXCLUSIVE with role flows (both-hats admin keeps the
+working home, stated); isAnalyst ROLE + each block's DESTINATION permission;
+`salesSnapshot`'s month counts moved to the closed_at clock (it disagreed
+with tahlil); open-deals sum FILTERS USD + names the other-currency count;
+zaxira = three states (sozlanmagan/bor/OLINMAGAN); `notificationProblemCount`
+excludes by-design muted; m9p's tile fence scoped to new `home-tiles` testid.
+(5) **Rasxod xabari**: fold on /receive (summa+izoh+chek, photos pre-bound
+#180, authorize AT the posted warehouse #514) → event to finance.expenses
+holders minus the reporter → queue panel on /accounting/expenses where
+«Kiritish» CLAIMS (`WHERE status='open'` — one press wins), a refusal
+releases, a crash shows as ⚠ done-with-nothing, voidExpense RE-OPENS the
+request (#528 pair). STATED: finance.expenses = buxgalter/admin today; the
+logist gets it only if he grants the role «Xarajatlar» on /admin/roles,
+which opens the whole expense book — his call. (6) **/stock's yashik
+layer**: `crateStock` — member = crate_id + the page's four statuses +
+`current_warehouse_id = crates.warehouse_id` (round 31's short-loaded
+member red-proven), gated `crates.manage` (every crate surface is; /stock
+is a bare login), overflow ⚠ compares values AS PRINTED (numeric strings,
+#663), q never reaches the strip, «faqat ekranda» — no Telegram, no XLSX.
+Process notes (#738): `pnpm typecheck | tail` reports TAIL's exit code —
+two red gates slipped into commits before being caught; a warehouse an
+audited action touched can only be DEACTIVATED in cleanup (audit_log FK).
+
+Latest migration: **0083** (`expense_requests` — the rasxod xabari queue;
+count must reach **84**;
+0082 `notify_claim`, 0081 `backup_objects` — round 104/106, count 83;
+0080 `ai_assistant` — `ai_questions`,
 `v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
 its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —
 the other session's `0079_warehouse_coords` took the same number AND the

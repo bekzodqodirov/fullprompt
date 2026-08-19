@@ -3,13 +3,13 @@ import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import { leads } from '@/modules/platform/db/schema';
+import { clients, leads } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { getSetting } from '@/modules/platform/settings/service';
 import { Panel } from '@/components/panel';
 import { activeLostReasonLabels, listSources, listStages } from '@/modules/wms/crm/service';
-import { formStages } from '@/modules/wms/crm/stage-law';
+import { leadFormStages } from '@/modules/wms/crm/stage-law';
 import { customFieldsData } from '@/modules/platform/fields/view';
 import { convertLeadAction, updateLeadAction } from '../../actions';
 import { CustomFieldInputs } from '@/components/custom-fields';
@@ -79,6 +79,13 @@ export default async function LeadPage({
   // The conversation this lead belongs to, when there is one — shared by the
   // lenta and the dock's card marker.
   const dockClientId = await conversationClientForLead(lead);
+  // The lead's own client CODE, for the won dialog's confirm-only mode: a
+  // lead that already carries a client wins by opening a new deal, and the
+  // dialog names whose (round 107).
+  const clientCodeOnLead = lead.clientId
+    ? ((await db.query.clients.findFirst({ where: eq(clients.id, lead.clientId) }))?.clientCode ??
+      null)
+    : null;
 
   return (
     // Wide like the funnel it came from: the amoCRM card shape (owner,
@@ -96,6 +103,8 @@ export default async function LeadPage({
         leadId={id}
         currentId={lead.stageId}
         lostReasons={lostReasonList}
+        defaultName={lead.company || lead.name}
+        clientCode={clientCodeOnLead}
         stages={stages.map((stage) => ({
           id: stage.id,
           name: stage.name,
@@ -215,7 +224,7 @@ export default async function LeadPage({
         <LeadForm
           action={update}
           sources={sources.map((row) => ({ id: row.id, label: row.name }))}
-          stages={formStages(stages, lead.stageId).map((row) => ({ id: row.id, label: row.name }))}
+          stages={leadFormStages(stages, lead.stageId).map((row) => ({ id: row.id, label: row.name }))}
           owners={managers.map((row) => ({ id: row.id, label: row.fullName }))}
           initial={{
             name: lead.name,

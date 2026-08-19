@@ -55,10 +55,19 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - name: Install Playwright chromium
-        # Its own short leash + one retry: this step is a CDN download, and a
-        # hung download is the one failure a retry actually fixes.
+        # Its own short leash + bounded retries. The old `a || a` retry was
+        # unreachable: `timeout-minutes` kills the STEP, so one hung attempt
+        # ate the whole leash before the second could run — proven 2026-08-19
+        # when archive.ubuntu.com stalled `--with-deps`'s apt round twice in a
+        # row. Each attempt is now bounded so the next one is reachable, and
+        # the last skips apt entirely: the hosted runner image already carries
+        # Chromium's system libraries, so a dead ubuntu mirror must not fail
+        # the run while the browser CDN is fine.
         timeout-minutes: 10
-        run: pnpm exec playwright install --with-deps chromium || pnpm exec playwright install --with-deps chromium
+        run: >-
+          timeout 240 pnpm exec playwright install --with-deps chromium ||
+          timeout 240 pnpm exec playwright install --with-deps chromium ||
+          pnpm exec playwright install chromium
       - name: E2E smoke (mobile viewport)
         run: CI=1 pnpm e2e
       - name: Upload Playwright report on failure

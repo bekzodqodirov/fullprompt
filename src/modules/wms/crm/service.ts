@@ -4,6 +4,7 @@ import { db } from '../../platform/db/client';
 import {
   clients,
   crmActivities,
+  deals,
   leads,
   leadSources,
   leadStages,
@@ -263,6 +264,10 @@ export async function deleteStage(id: string, moveToId: string, ctx: AuditContex
   if (id === moveToId) throw new CrmError('same_stage');
   const target = await db.query.leadStages.findFirst({ where: eq(leadStages.id, moveToId) });
   if (!target) throw new CrmError('stage_not_found');
+  // Deleting a column must not silently DECIDE its leads: a won landing needs
+  // a client and a deal per lead, a lost one a reason — neither can be
+  // answered by a mass move (round 107).
+  if (target.kind !== 'open') throw new CrmError('move_target_closed');
 
   await db.transaction(async (tx) => {
     await tx.update(leads).set({ stageId: moveToId }).where(eq(leads.stageId, id));
@@ -419,6 +424,16 @@ export interface SystemOpts {
 export async function createLead(input: LeadInput, ctx: AuditContext, opts?: SystemOpts) {
   if (!ctx.actorId && !opts?.system) throw new CrmError('unauthenticated');
   const stageId = input.stageId || (await defaultStageId());
+  // A lead cannot be BORN decided (round 107). Won demands the convert dialog
+  // — a client and a deal — and lost demands a written reason; the create form
+  // offers neither, so a closed stageId arriving here is a forged post (#514),
+  // not a person's choice. The picker stopped offering them in the same round.
+  if (input.stageId) {
+    const stage = await db.query.leadStages.findFirst({ where: eq(leadStages.id, stageId) });
+    if (!stage) throw new CrmError('stage_not_found');
+    if (stage.kind === 'won') throw new CrmError('convert_required');
+    if (stage.kind === 'lost') throw new CrmError('reason_required');
+  }
   const [row] = await db
     .insert(leads)
     .values({
@@ -493,6 +508,10 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     if (!stage) throw new CrmError('stage_not_found');
     const law = stageWrite(stage.kind, null);
     if (!law.ok) throw new CrmError(law.reason);
+    // Winning demands the dialog — a client and a deal — and this form has
+    // neither (round 107). The picker stopped offering won stages in the same
+    // round, so reaching this line is a forged post, not a person's choice.
+    if (stage.kind === 'won') throw new CrmError('convert_required');
     lostReason = law.lostReason;
     closedAt = closedAtFor(stage.kind, new Date());
   }
@@ -574,6 +593,15 @@ export async function moveLead(
   reason: string,
   ctx: AuditContext,
   place?: { beforeId: string | null },
+  opts?: {
+    /**
+     * Only `winLead` sets this, and no server ACTION exposes it (a public
+     * action taking a `viaConvert` argument would BE the bypass — any browser
+     * can call an action with arbitrary arguments). The guard below is what
+     * makes the convert dialog mandatory rather than polite.
+     */
+    viaConvert?: boolean;
+  },
 ) {
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const lead = await db.query.leads.findFirst({ where: eq(leads.id, id) });
@@ -582,6 +610,13 @@ export async function moveLead(
   if (!stage) throw new CrmError('stage_not_found');
   const law = stageWrite(stage.kind, reason);
   if (!law.ok) throw new CrmError(law.reason);
+  // Winning is not a drag, it is a handover (round 107, owner: «kod ochish
+  // majburiy bo'lsin yokida eski klient kodga biriktirib bitimga o'tish
+  // kerak»): a real move into a won stage must come through `winLead`, which
+  // settles the client and opens the deal first. A same-column drag inside
+  // won stays a reorder — deciding nothing is exactly what it does.
+  if (stage.kind === 'won' && stage.id !== lead.stageId && !opts?.viaConvert)
+    throw new CrmError('convert_required');
   // Once the owner has written his list, «why we lost» is one of ITS answers —
   // the pickers offer only those, so anything else arriving here is a forged
   // post. An empty list keeps free text legal (day one, and every test fixture
@@ -633,75 +668,142 @@ export async function moveLead(
 }
 
 /**
- * Turn a lead into a real client card.
+ * Winning a lead, whole (round 107, owner: «yutdi deganda bitim yangi ochilib
+ * ketsin … kod ochish majburiy bo'lsin yokida eski klient kodga biriktirib
+ * bitimga o'tish kerak»). ONE landing for every won door — the board's drag,
+ * the ⋯ sheet, the card's stage fold and the card's convert panel — because
+ * `moveLead` refuses a won stage that did not come through here.
  *
- * The client code is left to the existing generator (DECISIONS #115) unless
- * one is typed, and the lead row survives the conversion pointing at the
- * client — that link is what lets the funnel report say which source actually
- * produced paying customers, months later.
+ * The order of the writes is the recovery story, not tidiness: the client is
+ * settled and written onto the lead FIRST, so a failure after that point
+ * (a deleted stage, a network blink) leaves a lead whose retry lands in the
+ * «already has a client» path and mints nothing twice. Deliberately NOT one
+ * transaction — `createClient` and `createDeal` each open their own, and a
+ * wrapper holding a connection across them is #714's freeze.
+ *
+ * A lead that already carries a client (born from the Telegram tray, or won
+ * once and revived) skips the mint and STILL opens a deal: a re-won enquiry
+ * is a new job, and pressing the dialog's confirm is what says so.
  */
-export async function convertLead(
+export interface WinLeadResult {
+  clientId: string;
+  clientCode: string;
+  dealId: string;
+  dealCode: string;
+  /** True when a brand-new client card was created (the banner leads with the code). */
+  minted: boolean;
+}
+
+export async function winLead(
   id: string,
-  input: { clientCode?: string; name?: string; salesManagerId?: string },
+  input: {
+    /** The won stage pressed; defaults to the funnel's won stage. */
+    stageId?: string;
+    /** Attach to an existing client by the CODE a person typed (mode B). */
+    attachCode?: string;
+    /** Mint (mode A): optional typed code + editable name. */
+    clientCode?: string;
+    name?: string;
+    salesManagerId?: string;
+  },
   ctx: AuditContext,
-) {
+): Promise<WinLeadResult> {
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const lead = await db.query.leads.findFirst({ where: eq(leads.id, id) });
   if (!lead) throw new CrmError('not_found');
-  if (lead.clientId) throw new CrmError('already_converted');
 
-  const client = await createClient(
+  const stages = await listStages();
+  const won = input.stageId
+    ? stages.find((stage) => stage.id === input.stageId && stage.kind === 'won')
+    : stages.find((stage) => stage.kind === 'won');
+  if (!won) throw new CrmError('stage_not_found');
+
+  let clientId = lead.clientId;
+  let clientCode: string;
+  let minted = false;
+  if (clientId) {
+    const existing = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+    if (!existing) throw new CrmError('client_not_found');
+    clientCode = existing.clientCode;
+  } else if (input.attachCode?.trim()) {
+    // Attach by CODE, resolved here and only here: the form posts the code a
+    // person typed, never a uuid it could forge (#514). Inactive is a refusal
+    // — a retired code taking a new job is exactly the mistake being typed.
+    const code = input.attachCode.trim().toUpperCase();
+    const existing = await db.query.clients.findFirst({
+      where: sql`upper(${clients.clientCode}) = ${code}`,
+    });
+    if (!existing) throw new CrmError('client_not_found');
+    if (!existing.active) throw new CrmError('client_inactive');
+    clientId = existing.id;
+    clientCode = existing.clientCode;
+  } else {
+    const client = await createClient(
+      {
+        clientCode: input.clientCode?.trim() ?? '',
+        name: input.name?.trim() || lead.company || lead.name,
+        phones: lead.phone ? [lead.phone] : [],
+        // Round 91's money scope keys every seller read on this column — a
+        // client minted without it is invisible to the seller who just won it.
+        salesManagerId: input.salesManagerId || lead.ownerId || ctx.actorId,
+        messengerNote: '',
+        notes: lead.note ?? '',
+        active: true,
+      },
+      ctx,
+    );
+    clientId = client.id;
+    clientCode = client.clientCode;
+    minted = true;
+  }
+
+  if (!lead.clientId) {
+    // The client lands on the lead BEFORE the deal and the move, so a failure
+    // in either leaves a retry that finds the client and mints nothing twice.
+    await db
+      .update(leads)
+      .set({ clientId, updatedAt: new Date() })
+      .where(eq(leads.id, id));
+    await writeAudit(db, ctx, {
+      entityType: 'lead',
+      entityId: id,
+      action: 'update',
+      after: minted ? { convertedTo: clientId, clientCode } : { attachedTo: clientId, clientCode },
+    });
+    // The prospect's kept calls (0063) follow the person onto the code —
+    // dynamic import: the calls module is a leaf and this is its only door in.
+    const { rekeyLeadCalls } = await import('../calls/service');
+    await rekeyLeadCalls(id, clientId);
+    // …and the conversation with them (0064). Both halves of «what do we have
+    // on this person» follow the same person onto the same code, or the client
+    // card would show the calls and not the chat.
+    const { rekeyLeadChats } = await import('./chat-lead');
+    await rekeyLeadChats(id, clientId);
+  }
+
+  // ALWAYS a deal — that is the owner's sentence, and the lead's quote is the
+  // price it opens with. Per-column null mapping, because numeric comes back
+  // a string and `Number(null)` is 0: a lead with NO price must not become a
+  // deal «quoted $0 by <actor> today» (quotedAt/quotedBy stamp on priced).
+  const { createDeal } = await import('../deals/service');
+  const dealId = await createDeal(
     {
-      clientCode: input.clientCode?.trim() ?? '',
-      name: input.name?.trim() || lead.company || lead.name,
-      phones: lead.phone ? [lead.phone] : [],
-      salesManagerId: input.salesManagerId || lead.ownerId || undefined,
-      messengerNote: '',
-      notes: lead.note ?? '',
-      active: true,
+      clientId,
+      ownerId: lead.ownerId ?? undefined,
+      quotedAmount: lead.quotedAmount === null ? null : Number(lead.quotedAmount),
+      quotedCurrency: lead.quotedAmount === null ? null : (lead.quotedCurrency ?? 'USD'),
+      quotedVolumeM3: lead.quotedVolumeM3 === null ? null : Number(lead.quotedVolumeM3),
+      quotedWeightKg: lead.quotedWeightKg === null ? null : Number(lead.quotedWeightKg),
     },
     ctx,
   );
+  const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
 
-  const stages = await listStages();
-  const won = stages.find((stage) => stage.kind === 'won');
-  const stageId = won?.id ?? lead.stageId;
-  await db
-    .update(leads)
-    .set({
-      clientId: client.id,
-      stageId,
-      nextActionAt: null,
-      nextActionNote: null,
-      // A conversion is an arrival in the won column like any other (0075),
-      // and a decision like any other (0076).
-      ...(stageId !== lead.stageId
-        ? {
-            boardOrder: await topOfColumn(db, LEAD_BOARD, stageId),
-            closedAt: closedAtFor(won?.kind ?? 'open', new Date()),
-          }
-        : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(leads.id, id));
+  if (lead.stageId !== won.id) {
+    await moveLead(id, won.id, '', ctx, undefined, { viaConvert: true });
+  }
 
-  await writeAudit(db, ctx, {
-    entityType: 'lead',
-    entityId: id,
-    action: 'update',
-    after: { convertedTo: client.id, clientCode: client.clientCode },
-  });
-  // The prospect's kept calls (0063) follow the person onto the new code —
-  // dynamic import: the calls module is a leaf and this is its only door in.
-  const { rekeyLeadCalls } = await import('../calls/service');
-  await rekeyLeadCalls(id, client.id);
-  // …and the conversation with them (0064). Both halves of «what do we have
-  // on this person» follow the same person onto the same code, or the client
-  // card would show the calls and not the chat.
-  const { rekeyLeadChats } = await import('./chat-lead');
-  await rekeyLeadChats(id, client.id);
-  if (won && won.id !== lead.stageId) await announceLeadStage(lead, won.id, ctx);
-  return client;
+  return { clientId, clientCode, dealId, dealCode: deal?.code ?? '', minted };
 }
 
 /**

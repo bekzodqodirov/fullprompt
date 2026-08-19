@@ -22,6 +22,7 @@ import { TelegramThread } from '@/components/telegram-thread';
 import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { ClientDeals } from '@/components/client-deals';
+import { CopyChip } from '@/components/copy-chip';
 
 export default async function ClientDetailPage({
   params,
@@ -45,6 +46,7 @@ export default async function ClientDetailPage({
   if (!client) notFound();
 
   const tc = await getTranslations('common');
+  const tq = await getTranslations('quick');
   const tcab = await getTranslations('clients');
   const tcargo = await getTranslations('cargo');
   const format = await getFormatter();
@@ -102,6 +104,9 @@ export default async function ClientDetailPage({
         <h1 className="min-w-0 text-xl font-bold [overflow-wrap:anywhere]">
           <span className="font-mono text-brand-700">{client.clientCode}</span> — {client.name}
         </h1>
+        {/* The code goes onto cartons and into Telegram all day — one tap
+            beats selecting a mono span by thumb (round 107, item 1). */}
+        <CopyChip value={client.clientCode} label={tq('copy')} copiedLabel={tq('copied')} />
         {canEdit && (
           <form action={toggle}>
             <button type="submit" className={client.active ? 'btn-danger' : 'btn-primary'}>

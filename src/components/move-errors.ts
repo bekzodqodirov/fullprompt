@@ -35,5 +35,9 @@ export function useMoveErrors(): Record<string, string> {
     // must be one of them. A person picking from the sheet cannot hit this —
     // it answers a forged or stale post in words instead of «Xatolik».
     lost_reason_not_listed: t('moveErrors.reasonNotListed'),
+    // Round 107: winning goes through the convert dialog — a client and a
+    // deal. A person on the board cannot hit this (the dialog intercepts);
+    // it answers a forged or stale post, and the bulk bar's counts.
+    convert_required: t('moveErrors.convertRequired'),
   };
 }
