@@ -13,6 +13,8 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { ReceiveWizard, type ArrivalPrefill } from './receive-wizard';
+import { ExpenseRequestFold } from './expense-request-fold';
+import { myExpenseRequests } from '@/modules/wms/accounting/expense-requests';
 
 export default async function ReceivePage({
   searchParams,
@@ -87,9 +89,29 @@ export default async function ReceivePage({
     }
   }
 
+  // The operator's own recent rasxod reports, for the fold's status list.
+  // Caught, deliberately: the table is minted THIS release, and a
+  // half-applied deploy must not take down RECEIVING for a status list
+  // (round 52's failure, on the warehouse's busiest screen).
+  const recentRequests = await myExpenseRequests(actor.id).catch(() => null);
+
   return (
     <div className="mx-auto max-w-lg md:max-w-none">
       <h1 className="mb-3 text-xl font-bold">{t('title')}</h1>
+      {recentRequests !== null && (
+        <ExpenseRequestFold
+          warehouses={whs.map((wh) => ({ id: wh.id, code: wh.code }))}
+          currencies={currencyRows.map((c) => c.code)}
+          recent={recentRequests.map((row) => ({
+            id: row.id,
+            amount: row.amount,
+            currency: row.currency,
+            note: row.note,
+            status: row.status,
+            rejectReason: row.rejectReason,
+          }))}
+        />
+      )}
       <ReceiveWizard
         warehouses={whs}
         costTypes={types}

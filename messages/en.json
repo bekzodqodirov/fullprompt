@@ -1099,7 +1099,14 @@
     "partnerIn": "Received from a counterparty",
     "partnerOut": "Paid to a counterparty",
     "accountCurrencyMismatch": "The cash box's currency does not match the amount's",
-    "generateFailed": "{n} could not be posted — check their settings"
+    "generateFailed": "{n} could not be posted — check their settings",
+    "requestsTitle": "Warehouse expenses — waiting to be entered",
+    "enterRequest": "Enter",
+    "requestStuck": "entry did not finish — check the expense list",
+    "reject": "Reject",
+    "rejectReason": "Why reject? The operator sees the answer.",
+    "fromRequest": "Filled from the warehouse report — check it and pick a category and till.",
+    "requestTaken": "Someone else already entered this one"
   },
   "crm": {
     "title": "CRM",
@@ -2139,5 +2146,20 @@
     "never": "not yet sent",
     "remaining": "{n} left",
     "copied": "{n} files copied"
+  },
+  "rasxod": {
+    "title": "Report an expense",
+    "warehouse": "Warehouse",
+    "amount": "Amount",
+    "note": "What it was spent on",
+    "photo": "Receipt",
+    "send": "Send",
+    "sent": "Sent — finance will enter it",
+    "photoFailed": "Photo failed to upload — try again",
+    "errors": {
+      "forbidden": "No rights for this warehouse",
+      "validation": "Check the amount and the note",
+      "failed": "Could not send"
+    }
   }
 }

@@ -154,6 +154,26 @@ const DICT = {
     en: 'Check the backups on the server (BACKUP_DIR).',
   },
 
+  // Rasxod xabari (round 107)
+  expenseRequested: {
+    ru: 'Расход со склада — нужно провести',
+    uz: 'Skladdan rasxod xabari — kiritish kerak',
+    'zh-CN': '仓库支出报告——需要入账',
+    en: 'Warehouse expense reported — needs entering',
+  },
+  expenseEntered: {
+    ru: 'Ваш расход проведён',
+    uz: 'Rasxodingiz kiritildi',
+    'zh-CN': '您的支出已入账',
+    en: 'Your expense was entered',
+  },
+  expenseRejected: {
+    ru: 'Ваш расход отклонён',
+    uz: 'Rasxodingiz rad etildi',
+    'zh-CN': '您的支出被拒绝',
+    en: 'Your expense was rejected',
+  },
+
   // Price control (docs/DEALS.md)
   unquotedCargo: {
     ru: 'Груз без цены',

@@ -36,6 +36,10 @@ export const MUTE_GROUPS = {
     // only worth anything while they are still standing there.
     'DebtApprovalRequested',
     'DebtApprovalDecided',
+    // Round 107: money already left the warehouse's pocket — entering it is
+    // work waiting, and the reporter deserves the answer. Same pair shape.
+    'ExpenseRequested',
+    'ExpenseRequestDecided',
     // A calculation blew its 30–120 minute deadline (round 28) — told to the
     // waiting salesperson and the owner while chasing it still helps.
     // A customer has been waiting for an answer past the threshold (round 36).

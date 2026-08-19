@@ -176,6 +176,22 @@ async function buildRecipients(event: {
       if (!requestedBy) return [];
       return [{ userId: requestedBy, type: event.type, payload: event.payload }];
     }
+    // Round 107: the rasxod xabari reaches everyone who may enter the
+    // expense — minus the reporter, when an admin reports their own (round
+    // 36's exceptUserId, one layer down) — and the decision reaches exactly
+    // the reporter.
+    case 'ExpenseRequested': {
+      const requestedBy = event.payload.requestedBy as string | null;
+      const userIds = await usersWithPermission('finance.expenses');
+      return userIds
+        .filter((userId) => userId !== requestedBy)
+        .map((userId) => ({ userId, type: event.type, payload: event.payload }));
+    }
+    case 'ExpenseRequestDecided': {
+      const requestedBy = event.payload.requestedBy as string | null;
+      if (!requestedBy) return [];
+      return [{ userId: requestedBy, type: event.type, payload: event.payload }];
+    }
     default:
       return [];
   }
@@ -376,6 +392,19 @@ export function renderTelegramText(
         (payload.note ? `\n${L.comment}: ${payload.note}` : '') +
         `\n\n${appUrl}/issue`
       );
+    // Round 107: the rasxod xabari and its answer.
+    case 'ExpenseRequested':
+      return (
+        `💸 ${L.expenseRequested} — ${payload.warehouseCode}\n` +
+        `${L.requestedByWord}: ${payload.requesterName}\n` +
+        `${payload.amount} ${payload.currency}\n` +
+        `${payload.note}\n\n${appUrl}/accounting/expenses`
+      );
+    case 'ExpenseRequestDecided':
+      return payload.verdict === 'rejected'
+        ? `⛔ ${L.expenseRejected}\n${payload.amount} ${payload.currency} — ${payload.note}\n` +
+            `${L.comment}: ${payload.rejectReason}`
+        : `✅ ${L.expenseEntered}\n${payload.amount} ${payload.currency} — ${payload.note}`;
     case 'RestoreTestFailed':
       return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;
     // Without this case the most important alert in the system fell to the

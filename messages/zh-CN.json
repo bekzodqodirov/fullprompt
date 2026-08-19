@@ -1099,7 +1099,14 @@
     "partnerIn": "合作方转入",
     "partnerOut": "支付给合作方",
     "accountCurrencyMismatch": "账户币种与金额币种不符",
-    "generateFailed": "{n} 项未过账 — 请检查设置"
+    "generateFailed": "{n} 项未过账 — 请检查设置",
+    "requestsTitle": "仓库支出——待入账",
+    "enterRequest": "入账",
+    "requestStuck": "入账未完成——请检查支出列表",
+    "reject": "拒绝",
+    "rejectReason": "为什么拒绝？仓管员会看到回复。",
+    "fromRequest": "已从仓库报告填充——请核对并选择类别和账户。",
+    "requestTaken": "该报告已被他人入账"
   },
   "crm": {
     "title": "CRM",
@@ -2139,5 +2146,20 @@
     "never": "尚未上传",
     "remaining": "剩余 {n}",
     "copied": "已复制 {n} 个文件"
+  },
+  "rasxod": {
+    "title": "报告支出",
+    "warehouse": "仓库",
+    "amount": "金额",
+    "note": "花在什么上",
+    "photo": "小票",
+    "send": "发送",
+    "sent": "已发送——财务将入账",
+    "photoFailed": "照片上传失败——请重试",
+    "errors": {
+      "forbidden": "没有该仓库的权限",
+      "validation": "请检查金额和说明",
+      "failed": "发送失败"
+    }
   }
 }

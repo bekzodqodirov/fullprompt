@@ -37,6 +37,10 @@ export type DomainEventType =
   // Phase 6: issuing to a debtor goes through a recorded request/decision.
   | 'DebtApprovalRequested'
   | 'DebtApprovalDecided'
+  // Round 107: the warehouse reports money spent; finance enters the real
+  // expense. The same request/decision pair, one floor down.
+  | 'ExpenseRequested'
+  | 'ExpenseRequestDecided'
   // Phase 7: funnel movement becomes an event, so automation rules can hear
   // it. Emitted from EVERY stage write path, not just the board's move.
   | 'LeadStageChanged'

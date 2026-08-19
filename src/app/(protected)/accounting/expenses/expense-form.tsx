@@ -22,6 +22,7 @@ export function ExpenseForm({
   currencies,
   today,
   partners = [],
+  prefill,
 }: {
   categories: Option[];
   accounts: Option[];
@@ -35,6 +36,14 @@ export function ExpenseForm({
    * staff are paid through it. Picking one means no cash box moves.
    */
   partners?: Option[];
+  /**
+   * A rasxod xabari being entered (round 107): the REQUEST ROW's own values,
+   * loaded server-side by id — never amounts out of a URL, which would be a
+   * forged sum under the accountant's rubber stamp. The page keys this form
+   * on the request id, so the defaults actually land (the round-61 keyed-
+   * inputs trap).
+   */
+  prefill?: { requestId: string; amount: string; currency: string; note: string; warehouseId: string };
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
@@ -53,6 +62,14 @@ export function ExpenseForm({
   return (
     <form action={formAction} className="card space-y-2">
       <h2 className="text-sm font-bold uppercase text-ink-500">🧾 {t('addExpense')}</h2>
+      {prefill && (
+        <>
+          <input type="hidden" name="requestId" value={prefill.requestId} />
+          <p className="rounded-lg bg-warn/10 p-2 text-xs font-semibold" data-testid="expense-request-hint">
+            💸 {t('fromRequest')}
+          </p>
+        </>
+      )}
       <div className="flex flex-wrap gap-2">
         <select name="categoryId" aria-label={t('category')} className="input min-w-44 flex-1" required>
           {categories.map((option) => (
@@ -67,10 +84,16 @@ export function ExpenseForm({
           inputMode="decimal"
           placeholder={t('amount')}
           aria-label={t('amount')}
+          defaultValue={prefill ? prefill.amount : undefined}
           className="input !w-32"
           required
         />
-        <select name="currency" aria-label={t('currency')} className="input !w-24">
+        <select
+          name="currency"
+          aria-label={t('currency')}
+          defaultValue={prefill?.currency}
+          className="input !w-24"
+        >
           {currencies.map((code) => (
             <option key={code}>{code}</option>
           ))}
@@ -97,7 +120,12 @@ export function ExpenseForm({
             ))}
           </select>
         )}
-        <select name="warehouseId" aria-label={t('warehouse')} className="input !w-32">
+        <select
+          name="warehouseId"
+          aria-label={t('warehouse')}
+          defaultValue={prefill?.warehouseId}
+          className="input !w-32"
+        >
           <option value="">— {t('warehouse')} —</option>
           {warehouses.map((option) => (
             <option key={option.id} value={option.id}>
@@ -134,7 +162,13 @@ export function ExpenseForm({
       {/* Already translated in all four bundles and never rendered until now:
           the rule was implied by a disappearing field instead of stated. */}
       {partnerId && <p className="text-xs text-ink-500">{t('paidByHint')}</p>}
-      <input name="note" placeholder={t('note')} aria-label={t('note')} className="input" />
+      <input
+        name="note"
+        placeholder={t('note')}
+        aria-label={t('note')}
+        defaultValue={prefill ? prefill.note : undefined}
+        className="input"
+      />
       <button
         type="submit"
         data-testid="save-expense"
@@ -150,7 +184,9 @@ export function ExpenseForm({
             ? t('fxMissing')
             : state.error === 'account_currency_mismatch'
               ? t('accountCurrencyMismatch')
-              : tc('error')}
+              : state.error === 'already_decided'
+                ? t('requestTaken')
+                : tc('error')}
         </p>
       )}
     </form>

@@ -1099,7 +1099,14 @@
     "partnerIn": "Kontragentdan tushdi",
     "partnerOut": "Kontragentga to‘landi",
     "accountCurrencyMismatch": "Kassa valyutasi summaga mos emas",
-    "generateFailed": "{n} tasi o‘tmadi — sozlamalarini tekshiring"
+    "generateFailed": "{n} tasi o‘tmadi — sozlamalarini tekshiring",
+    "requestsTitle": "Skladlardan rasxodlar — kiritish kutilmoqda",
+    "enterRequest": "Kiritish",
+    "requestStuck": "kiritish tugamagan — rasxodlar ro'yxatini tekshiring",
+    "reject": "Rad etish",
+    "rejectReason": "Nega rad etyapsiz? Skladchi javobni ko'radi.",
+    "fromRequest": "Sklad xabaridan to'ldirildi — tekshirib, kategoriya va kassani tanlang.",
+    "requestTaken": "Bu xabarni boshqa birov kiritib bo'ldi"
   },
   "crm": {
     "title": "CRM",
@@ -2139,5 +2146,20 @@
     "never": "hali chiqmagan",
     "remaining": "{n} ta qoldi",
     "copied": "{n} ta fayl ko‘chirilgan"
+  },
+  "rasxod": {
+    "title": "Rasxod xabari",
+    "warehouse": "Sklad",
+    "amount": "Summa",
+    "note": "Nimaga sarflandi",
+    "photo": "Chek",
+    "send": "Yuborish",
+    "sent": "Yuborildi — moliya kiritadi",
+    "photoFailed": "Rasm yuklanmadi — qayta urinib ko'ring",
+    "errors": {
+      "forbidden": "Bu skladga huquq yo'q",
+      "validation": "Summa va izohni tekshiring",
+      "failed": "Yuborib bo'lmadi"
+    }
   }
 }

@@ -223,6 +223,11 @@ export async function voidExpense(id: string, reason: string, ctx: AuditContext)
     const { voidChargeForExpense } = await import('../partners/link');
     await voidChargeForExpense(id, reason.trim(), ctx);
   }
+  // The pair rule (#528): a rasxod xabari answered by this expense must not
+  // keep reading «kiritildi» about money that was taken back — it re-opens
+  // on the decider's panel (round 107).
+  const { reopenRequestsForExpense } = await import('./expense-requests');
+  await reopenRequestsForExpense(id);
   await writeAudit(db, ctx, {
     entityType: 'expense',
     entityId: id,
