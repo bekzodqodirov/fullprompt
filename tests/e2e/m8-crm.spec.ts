@@ -159,7 +159,7 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await testCard().getByTestId('move-other').click();
   await page.getByTestId('move-to-won').first().click();
   await expect(page.getByTestId('won-dialog')).toBeVisible();
-  await page.locator('[data-testid="won-dialog"] > button').first().click();
+  await page.getByTestId('won-cancel').click();
   await expect(page.getByTestId('won-dialog')).toBeHidden();
   await expect(
     mobileColumns.nth(1).getByText(`Sinov mijoz ${runId}`),

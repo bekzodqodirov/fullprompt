@@ -303,7 +303,7 @@ export function WonDialog({
           >
             {t('won.confirm')}
           </button>
-          <button type="button" className="btn-ghost w-full" onClick={onClose}>
+          <button type="button" data-testid="won-cancel" className="btn-ghost w-full" onClick={onClose}>
             {t('cancelMove')}
           </button>
         </div>
