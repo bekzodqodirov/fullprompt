@@ -1830,6 +1830,7 @@
       "BoxIssued": "货物已交付客户",
       "UnknownCargoReceived": "收到无主货物",
       "UnquotedCargo": "未报价货物（在中国）",
+      "UnlinkedCargo": "未关联交易的货物",
       "DealDeviation": "货物与报价不符",
       "DealDeferralEnded": "付款延期已到期",
       "MissingInTransit": "卸货短缺"
@@ -2032,6 +2033,11 @@
     "full": "详细 →",
     "close": "关闭",
     "created": "已添加：",
+    "codeTitle": "新客户已添加",
+    "copy": "复制编号",
+    "copied": "已复制 ✓",
+    "toCard": "客户卡 →",
+    "done": "完成",
     "discard": "不保存就关闭吗？已输入的内容会丢失。",
     "hint": {
       "lead": "进入第一阶段并归属于您——其余在卡片上填写。",

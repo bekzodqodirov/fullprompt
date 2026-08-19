@@ -147,8 +147,11 @@ async function newDeal(over: Record<string, unknown> = {}): Promise<string> {
 let counter = 0;
 async function freshClient(): Promise<string> {
   counter += 1;
+  // Counter at the FRONT (#631): codes cap at 10 chars, and a counter that
+  // crosses into two digits at the END is what silently exceeds it — round
+  // 107's two extra freshClient calls found exactly that.
   const row = await createClient(
-    { clientCode: `BQ${SUFFIX}${counter}`, name: `Pul mijoz ${SUFFIX}-${counter}`, phones: [] },
+    { clientCode: `BQ${counter}${SUFFIX.slice(-6)}`, name: `Pul mijoz ${SUFFIX}-${counter}`, phones: [] },
     ctx(),
   );
   madeClients.push(row.id);
@@ -331,12 +334,47 @@ describe('the reality side is summed from the receipts, never typed in', () => {
 
 describe('price control fires while the cargo is still in China', () => {
   it('shouts when cargo arrives under no job at all', async () => {
-    const receiptId = await receiveCargo(1.4, 180, 10, null);
+    // A client with NO deals: «set a price» is only the honest ask when there
+    // is nothing to attach to — round 107 split the other half off, so this
+    // fixture must be a client the rest of the file has not opened deals for.
+    const lonely = await freshClient();
+    const receiptId = await receiveCargo(1.4, 180, 10, null, lonely);
     const alerts = await eventsFor(receiptId, 'UnquotedCargo');
     expect(alerts).toHaveLength(1);
     const payload = alerts[0]!.payload as Record<string, unknown>;
     expect(payload.volumeM3).toBeCloseTo(1.4, 3);
     expect(payload.boxCount).toBe(10);
+    // …and the prixod message's marker has what it needs to say «bitimi yo'q».
+    const confirmed = await eventsFor(receiptId, 'ReceiptConfirmed');
+    expect(confirmed).toHaveLength(1);
+    const cp = confirmed[0]!.payload as Record<string, unknown>;
+    expect(cp.dealLinked).toBe(false);
+    expect(cp.openDealCodes).toEqual([]);
+  });
+
+  it('asks for an ATTACH, not a price, when the client has an open deal (round 107)', async () => {
+    const cl = await freshClient();
+    const dealId = await newDeal({ clientId: cl });
+    const dealCode = (await db.query.deals.findFirst({ where: eq(deals.id, dealId) }))!.code;
+    const receiptId = await receiveCargo(1.4, 180, 10, null, cl);
+    const attach = await eventsFor(receiptId, 'UnlinkedCargo');
+    expect(attach).toHaveLength(1);
+    expect((attach[0]!.payload as Record<string, unknown>).openDealCodes).toEqual([dealCode]);
+    // One alarm, the right one — never both.
+    expect(await eventsFor(receiptId, 'UnquotedCargo')).toHaveLength(0);
+    const confirmed = await eventsFor(receiptId, 'ReceiptConfirmed');
+    expect((confirmed[0]!.payload as Record<string, unknown>).dealLinked).toBe(false);
+    expect((confirmed[0]!.payload as Record<string, unknown>).openDealCodes).toEqual([dealCode]);
+  });
+
+  it('says nothing about deals when the receipt IS linked to one', async () => {
+    const cl = await freshClient();
+    const dealId = await newDeal({ clientId: cl });
+    const receiptId = await receiveCargo(1.02, 100, 10, dealId, cl);
+    expect(await eventsFor(receiptId, 'UnlinkedCargo')).toHaveLength(0);
+    expect(await eventsFor(receiptId, 'UnquotedCargo')).toHaveLength(0);
+    const confirmed = await eventsFor(receiptId, 'ReceiptConfirmed');
+    expect((confirmed[0]!.payload as Record<string, unknown>).dealLinked).toBe(true);
   });
 
   it('shouts when the cargo is more than the threshold away from the quote', async () => {

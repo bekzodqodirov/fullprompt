@@ -96,6 +96,10 @@ async function buildRecipients(event: {
     // it goes to the deal's owner if it has one, otherwise to the client's
     // sales manager — never broadcast, because a list of somebody else's
     // pricing problems is a message people learn to swipe away.
+    // «Attach it» rides the same road as «price it» (round 107, item 3): the
+    // deal exists, the receipt just was not linked — same seller, same
+    // fallback to the admins when the client has no seller.
+    case 'UnlinkedCargo':
     case 'UnquotedCargo':
     case 'DealDeviation':
     case 'DealDeferralEnded': {
@@ -224,18 +228,46 @@ export function renderTelegramText(
   if (preRendered) return preRendered;
 
   switch (type) {
-    case 'ReceiptConfirmed':
+    case 'ReceiptConfirmed': {
+      // The deal marker (round 107, item 3): the owner reads the prixod
+      // message and wants to see «bitimi yo'q» right there. Strict === false,
+      // so the years of events that predate the field render exactly as they
+      // always did (#688's Array.isArray rule).
+      const dealMark =
+        payload.dealLinked === false
+          ? Array.isArray(payload.openDealCodes) && payload.openDealCodes.length > 0
+            ? `📎 ${L.unlinkedMark}\n`
+            : `⚠️ ${L.noDealMark}\n`
+          : '';
       return (
         `📥 ${L.receiptConfirmed} ${payload.number}\n` +
         `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        dealMark +
         `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
+    }
     case 'UnknownCargoReceived':
       return (
         `❓ ${L.unknownCargo} ${payload.number}\n` +
         (payload.unclaimedMarking ? `${L.marking}: ${payload.unclaimedMarking}\n` : '') +
         `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
+    // The deal exists and the receipt was not linked to it — the seller's job
+    // is one tap on the receipt card, and the message says which deals are
+    // open so they know it is an attach, not a pricing exercise (round 107).
+    case 'UnlinkedCargo': {
+      const openCodes = Array.isArray(payload.openDealCodes)
+        ? (payload.openDealCodes as string[]).join(', ')
+        : '';
+      return (
+        `📎 ${L.unlinkedCargo} — ${payload.number}\n` +
+        `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        `${L.warehouse}: ${payload.warehouseCode}\n` +
+        `${payload.volumeM3} ${L.m3} · ${payload.weightKg} ${L.kg} · ${payload.boxCount} ${L.boxesShort}\n` +
+        (openCodes ? `${L.openDealsWord}: ${openCodes}\n` : '') +
+        `\n${L.attachDeal}\n${link}`
+      );
+    }
     // Cargo that landed with no agreed price — the single biggest source of
     // "it came out expensive" arguments, caught while it is still in China.
     case 'UnquotedCargo':

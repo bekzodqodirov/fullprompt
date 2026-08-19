@@ -25,6 +25,9 @@ export const MUTE_GROUPS = {
     'UndocumentedTransfer',
     'MissingInTransit',
     'UnquotedCargo',
+    // Same alarm one step earlier: the deal exists, the receipt is not on it
+    // (round 107) — muting one and not the other would make no sense.
+    'UnlinkedCargo',
     'DealDeviation',
     'DealDeferralEnded',
     // A promise landed at a different size to the one the client stated.

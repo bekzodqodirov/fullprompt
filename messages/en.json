@@ -1830,6 +1830,7 @@
       "BoxIssued": "Cargo issued to client",
       "UnknownCargoReceived": "Unclaimed cargo received",
       "UnquotedCargo": "Unpriced cargo (in China)",
+      "UnlinkedCargo": "Cargo not linked to a deal",
       "DealDeviation": "Cargo differs from quote",
       "DealDeferralEnded": "Payment deferral ended",
       "MissingInTransit": "Shortage at unload"
@@ -2032,6 +2033,11 @@
     "full": "Full form →",
     "close": "Close",
     "created": "Added:",
+    "codeTitle": "New client added",
+    "copy": "Copy code",
+    "copied": "Copied ✓",
+    "toCard": "Card →",
+    "done": "Done",
     "discard": "Close without saving? What you typed will be lost.",
     "hint": {
       "lead": "Lands on the first stage and belongs to you — the rest on the card.",

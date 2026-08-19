@@ -7,6 +7,8 @@ import {
   boxMovements,
   clients,
   costEntries,
+  dealStages,
+  deals,
   productDictionary,
   receiptLots,
   receipts,
@@ -325,6 +327,24 @@ export async function confirmReceipt(
       });
     }
 
+    // Whether this prixod already belongs to a bitim, and which open deals
+    // the client has if not (round 107, owner's item 3): the seller's copy of
+    // the arrival must say «attach it» when there is something to attach to,
+    // and «no deal — set a price» when there is not. Read on the TRANSACTION's
+    // own handle — the pool is off-limits here (#714).
+    const dealLinked = Boolean(input.clientId && input.dealId);
+    const openDealCodes =
+      input.clientId && !dealLinked
+        ? (
+            await tx
+              .select({ code: deals.code })
+              .from(deals)
+              .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+              .where(and(eq(deals.clientId, input.clientId), eq(dealStages.kind, 'open')))
+              .limit(4)
+          ).map((row) => row.code)
+        : [];
+
     await emitEvent(tx, {
       type: input.clientId ? 'ReceiptConfirmed' : 'UnknownCargoReceived',
       payload: {
@@ -335,6 +355,8 @@ export async function confirmReceipt(
         clientId: input.clientId,
         unclaimedMarking: input.clientId ? null : input.unclaimedMarking || null,
         lots: summaries,
+        dealLinked,
+        openDealCodes,
       },
       entityType: 'receipt',
       entityId: receipt!.id,
@@ -349,6 +371,7 @@ export async function confirmReceipt(
         receiptId: receipt!.id,
         receiptNumber: number,
         deviationThreshold,
+        openDealCodes,
         clientId: input.clientId,
         warehouseCode: warehouse.code,
         volumeM3: summaries.reduce((sum, s) => sum + s.totalVolumeM3, 0),

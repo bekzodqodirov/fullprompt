@@ -29,6 +29,9 @@ export type DomainEventType =
   // Chinese warehouse, which is the only moment the client can still say
   // "then send it back".
   | 'UnquotedCargo'
+  // Round 107: the deal exists, the receipt just was not linked to it — a
+  // different job for the seller than pricing (attach, not quote).
+  | 'UnlinkedCargo'
   | 'DealDeviation'
   | 'DealDeferralEnded'
   // Phase 6: issuing to a debtor goes through a recorded request/decision.

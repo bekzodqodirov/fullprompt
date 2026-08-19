@@ -776,6 +776,14 @@ export async function priceControlOnReceipt(
      * anything else this function grows.
      */
     deviationThreshold: number;
+    /**
+     * The client's open-deal codes, read by the caller inside its own
+     * transaction. Splits the no-deal branch (round 107, owner's item 3): a
+     * receipt that COULD be attached to an open deal gets «biriktir», one
+     * that has nothing to attach to keeps «narx qo'ying» — they are
+     * different jobs for the seller.
+     */
+    openDealCodes: string[];
   },
   ctx: AuditContext,
 ): Promise<void> {
@@ -793,10 +801,13 @@ export async function priceControlOnReceipt(
 
     if (!dealId) {
       // Case 1. The single biggest source of "it came out expensive"
-      // complaints is cargo that was never quoted at all.
+      // complaints is cargo that was never quoted at all — unless the deal
+      // EXISTS and simply was not linked, where the honest ask is «attach
+      // it», not «set a price» (the price already lives on the deal).
       await emitEvent(tx, {
-        type: 'UnquotedCargo',
+        type: input.openDealCodes.length > 0 ? 'UnlinkedCargo' : 'UnquotedCargo',
         payload: {
+          openDealCodes: input.openDealCodes,
           receiptId: input.receiptId,
           number: input.receiptNumber,
           clientId: input.clientId,

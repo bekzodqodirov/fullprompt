@@ -1830,6 +1830,7 @@
       "BoxIssued": "Yuk mijozga berildi",
       "UnknownCargoReceived": "Egasi noma'lum yuk keldi",
       "UnquotedCargo": "Narxsiz yuk (Xitoyda)",
+      "UnlinkedCargo": "Bitimga biriktirilmagan yuk",
       "DealDeviation": "Yuk hisobdan farq qildi",
       "DealDeferralEnded": "To'lov kechiktirish tugadi",
       "MissingInTransit": "Tushirishda kamomad"
@@ -2032,6 +2033,11 @@
     "full": "Batafsil →",
     "close": "Yopish",
     "created": "Qo'shildi:",
+    "codeTitle": "Yangi mijoz qo'shildi",
+    "copy": "Kodni nusxalash",
+    "copied": "Nusxalandi ✓",
+    "toCard": "Kartaga →",
+    "done": "Tayyor",
     "discard": "Saqlamasdan yopilsinmi? Yozganingiz yo'qoladi.",
     "hint": {
       "lead": "Birinchi bosqichga tushadi va o'zingizga biriktiriladi — qolgani kartada.",

@@ -167,6 +167,37 @@ const DICT = {
     'zh-CN': '货物仍在中国时请先定价。',
     en: 'Set a price while the cargo is still in China.',
   },
+  // Round 107, item 3: the split of «no deal» into its two honest halves.
+  unlinkedCargo: {
+    ru: 'Груз не привязан к сделке',
+    uz: 'Yuk bitimga biriktirilmagan',
+    'zh-CN': '货物未关联交易',
+    en: 'Cargo not linked to a deal',
+  },
+  attachDeal: {
+    ru: 'Привяжите приход к сделке на карточке прихода.',
+    uz: 'Prixodni bitimga biriktirib qo‘ying (prixod kartasida).',
+    'zh-CN': '请在入库单卡片上将其关联到交易。',
+    en: 'Attach the receipt to the deal on the receipt card.',
+  },
+  openDealsWord: {
+    ru: 'Открытые сделки',
+    uz: 'Ochiq bitimlar',
+    'zh-CN': '进行中的交易',
+    en: 'Open deals',
+  },
+  unlinkedMark: {
+    ru: 'Не привязан к сделке — привяжите',
+    uz: 'Bitimga biriktirilmagan — biriktirib qo‘ying',
+    'zh-CN': '未关联交易——请关联',
+    en: 'Not linked to a deal — attach it',
+  },
+  noDealMark: {
+    ru: 'Сделки нет — назначьте цену',
+    uz: 'Bitimi yo‘q — narxlatib qo‘ying',
+    'zh-CN': '没有交易——请定价',
+    en: 'No deal — set a price',
+  },
   dealDeviation: {
     ru: 'Груз не совпал с расчётом',
     uz: 'Yuk hisob-kitobga to‘g‘ri kelmadi',
