@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## Olti punktlik ro'yxatingiz — kod ko'rinadi, yutuq bitim ochadi, sklad xabar beradi — 2026-08-19
+
+Sizning javoblaringiz bo'yicha (1b / 2a har biriga / 3 / 4 yetarli / 5 / 6):
+
+**1. Yangi mijoz kodi endi KO'ZGA TASHLANADI.** Tez «+» oynasi endi yopilib
+ketmaydi — kod katta harflar bilan chiqadi, yonida «Nusxalash» tugmasi va
+kartaga havola. Mijoz kartasining tepasida ham endi bir bosishda kodni
+nusxalash tugmasi bor (kartonga yozish, Telegramga tashlash uchun).
+
+**2. «Yutildi» endi MAROSIM.** Lidni yutildi ustuniga o'tkazganda oyna
+chiqadi: yangi mijoz kodi ochiladi (nomi lidnikidan to'lib turadi) YOKI
+mavjud mijoz kodiga biriktiriladi — kodni yozasiz, tizim «bu kim» deb ismini
+ko'rsatadi, keyin tasdiqlaysiz (xato kod boshqa mijozning suhbatini olib
+ketmasin deb). Va HAR DOIM bitim ochiladi — liddagi narx/kub/kg bitimga
+o'tadi. Boshqa hech qanday yo'l bilan yutildi bo'lmaydi: ✏️ forma, guruh
+bilan ko'chirish, bosqich o'chirish — hammasi rad etadi. Yutuq oynasi oxirida
+xuddi 1-punktdagi kod bannerini ko'rsatadi.
+
+**3. Bitimsiz yuk kelsa — sotuvchi BILADI.** Prixod tasdiqlanganda:
+mijozning ochiq bitimi bo'lsa-yu prixod unga biriktirilmagan bo'lsa —
+sotuvchiga «yuk bitimga biriktirilmagan, biriktirib qo'ying» (qaysi bitimlar
+ochiqligi bilan); bitimi umuman bo'lmasa — prixod xabarining o'zida «Bitimi
+yo'q — narxlatib qo'ying» belgisi. Sotuvchisi yo'q mijozda xabar adminlarga
+boradi.
+
+**4. Admin bosh ekranda DASHBOARD.** Pul (kassalar, bugungi kirim/chiqim,
+debitorlar, kontragent qarzlari, oy), Yuk (ostatka, yo'ldagi mashinalar,
+bugungi prixodlar), Savdo (ochiq bitimlar soni va summasi, shu oy yutilgan/
+yo'qotilgan), Signallar (zaxira nusxa holati, yuborilmagan xabarlar,
+kechikkan vazifalar). Har raqam o'z ekraniga havola. Muhim tuzatish yo'lda
+topildi: /dashboard'dagi «bu oy yutilgan» boshqa soat bilan sanardi
+(qo'l tekkizilgan yutuq yana sanalardi) — endi ikkala ekran ham yopilish
+sanasi bilan bir xil sanaydi.
+
+**5. Skladchi RASXOD XABARI beradi, moliya kiritadi.** Qabul ekranining
+tepasida bitta yig'ilgan qator: summa + izoh + chek rasmi. Yuborilgach
+«Xarajatlar» huquqi borlarga Telegram boradi va /accounting/expenses
+tepasida navbat paydo bo'ladi — «Kiritish» formani xabardan to'ldiradi,
+«Rad etish» sababi bilan skladchiga qaytadi. Bir xabarni ikki kishi ikki
+marta kirita olmaydi; xarajat keyin bekor qilinsa, xabar yana ochiladi.
+DIQQAT: hozir bu huquq buxgalter/adminda. Logist o'zi kiritsin desangiz —
+/admin/roles da logist roliga «Xarajatlar»ni belgilang (lekin bu unga butun
+xarajatlar bo'limini ham ochadi — sizning qaroringiz).
+
+**6. Sklad ostatkada YASHIKLAR ko'rinadi.** Jadval tepasida har bir faol
+yashik: kodi, mijozi, o'lchangan hajmi/og'irligi — va tagida ichidagilar:
+nechta karobka, jami kub, jami kg. Ichidagi yuk yashik o'lchamidan katta
+bo'lsa — ⚠ «sig'magan» belgisi (siz aytganday faqat ekranda, hech qanday
+xabar ketmaydi). Yashik qatlami sklad rollariga ko'rinadi.
+
+Bazada bitta yangi jadval (rasxod xabarlari) — deploy'dan keyin migratsiyalar
+soni **84** bo'lishi kerak.
+
 ## Auditning qolgan dumi — yettita ochiq topilma yopildi — 2026-08-18
 
 Siz «ha tuzat» dedingiz — auditda topilib, o'sha roundda tegilmagan
