@@ -40,7 +40,8 @@
       "notFound": "Card not found — reload the page",
       "reasonRequired": "A reason is required",
       "stageNotFound": "Stage deleted — reload the page",
-      "reasonNotListed": "The reason must be chosen from the list"
+      "reasonNotListed": "The reason must be chosen from the list",
+      "convertRequired": "Won goes through the dialog: client code and deal"
     },
     "moreActions": "More actions",
     "notFilled": "Not filled",
@@ -1403,7 +1404,29 @@
     "followUpDone": "Done",
     "followUpTomorrow": "Tomorrow",
     "followUpFailed": "Not saved",
-    "nameTaken": "That name is already in the list (case is ignored)"
+    "nameTaken": "That name is already in the list (case is ignored)",
+    "won": {
+      "title": "Lead won — who is the client?",
+      "mint": "New code",
+      "attach": "Existing client",
+      "name": "Client name",
+      "codeOptional": "Code (empty — assigned automatically)",
+      "attachCode": "Client code (GS…)",
+      "check": "Check",
+      "confirm": "Open the deal",
+      "confirmExisting": "A new deal opens for this client.",
+      "existing": "Client",
+      "deal": "Deal",
+      "errors": {
+        "clientNotFound": "No such code",
+        "clientInactive": "This client is deactivated",
+        "codeExists": "That code is taken",
+        "codeFormat": "Bad code format",
+        "stageGone": "Stage not found — refresh the page",
+        "forbidden": "No permission",
+        "failed": "Could not save"
+      }
+    }
   },
   "navShort": {
     "home": "Home",

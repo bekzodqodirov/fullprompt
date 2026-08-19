@@ -151,59 +151,54 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await page.getByTestId('stage-tab').nth(1).click();
   await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
 
-  // A WON card is offered no one-tap move. The next stage is whatever sorts
-  // after this one, and every funnel here puts LOST straight after WON — so
-  // without the guard each won card carried a button reading «Yo'qotildi»,
-  // which is the loudest thing on it and names a stage it is not in. Losing a
-  // lead demands a typed reason, so that move belongs in the sheet.
-  const wonCard = () =>
+  // Round 107: a won move is a CEREMONY. The sheet's won tap opens the
+  // convert dialog instead of moving anything, and cancelling it leaves the
+  // card exactly where it was — the mandatory half of «kod ochish majburiy».
+  const testCard = () =>
     board.getByTestId('lead-card').filter({ hasText: `Sinov mijoz ${runId}` });
-  await wonCard().getByTestId('move-other').click();
+  await testCard().getByTestId('move-other').click();
   await page.getByTestId('move-to-won').first().click();
-  await expect(wonCard().getByTestId('move-next')).toHaveCount(0);
-  await expect(wonCard().getByTestId('move-other')).toBeVisible();
+  await expect(page.getByTestId('won-dialog')).toBeVisible();
+  await page.locator('[data-testid="won-dialog"] > button').first().click();
+  await expect(page.getByTestId('won-dialog')).toBeHidden();
+  await expect(
+    mobileColumns.nth(1).getByText(`Sinov mijoz ${runId}`),
+  ).toBeVisible();
 
-  // Any other stage goes through the sheet: here, back to the start — which
-  // also puts the lead back in an open stage before the rest of the spec.
-  await board
-    .getByTestId('lead-card')
-    .filter({ hasText: `Sinov mijoz ${runId}` })
-    .getByTestId('move-other')
-    .click();
-  await page.getByTestId('move-to-open').first().click();
-  await page.getByTestId('stage-tab').first().click();
-  await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
-
-  // ...and it really landed, not just on screen. The board moves a card the
-  // moment it is tapped and reconciles afterwards, so the assertion above is
-  // satisfied by optimistic placement alone — a reload is what asks the
-  // SERVER. Skipping it let the next navigation race the write: green here,
-  // red on a slower runner (#154 family, but timing rather than leftovers).
-  await page.reload();
-  await page.getByTestId('stage-tab').first().click();
-  await expect(board.getByText(`Sinov mijoz ${runId}`)).toBeVisible();
-
-  // Won → convert. The convert panel opens by itself on a won stage, so the
-  // last step of a deal is never a tap away from being forgotten.
-  // Both funnel shapes are in the DOM (CSS decides which one is on screen),
-  // so a click has to say which one it means.
+  // Won → the dialog, from the card's stage fold. Mint mode is prefilled
+  // with the lead's company, the confirm mints the code AND opens the deal,
+  // and the banner answers with both (items 1+2 of the owner's list).
   await page.goto('/crm?scope=all');
   // Say which stage, rather than trusting the one the funnel opens on: that
   // default is "the first stage that has anything in it", which depends on
   // what every other lead in the database is doing — and under `scope=all`
   // that includes leads this test never created.
-  await page.getByTestId('stage-tab').first().click();
+  await page.getByTestId('stage-tab').nth(1).click();
   await page.getByTestId('funnel-mobile').getByText(`Sinov mijoz ${runId}`).click();
   await expect(page.getByLabel(`Shahar ${runId}`)).toHaveValue('Andijon');
   // «Sotuv» is not the next stage, so it lives behind the fold — open it the
   // way a finger would.
   await page.getByTestId('stage-fold').click();
   await page.getByTestId('stage-won').click();
-  await expect(page.getByTestId('convert-lead')).toBeVisible();
-  await page.getByTestId('convert-lead').click();
+  await expect(page.getByTestId('won-dialog')).toBeVisible();
+  // The mint mode's name arrives prefilled from the lead.
+  await expect(page.getByTestId('won-name')).toHaveValue(new RegExp(runId));
+  await page.getByTestId('won-confirm').click();
+  const code = (await page.getByTestId('won-client-code').textContent({ timeout: 15_000 }))?.trim();
+  expect(code).toMatch(/^[A-Z0-9]{2,10}$/);
+  await expect(page.getByTestId('won-deal-code')).toContainText('B-');
+  // The banner's card link lands on the minted client, CRM half included.
+  await page.getByTestId('won-to-card').click();
   await expect(page).toHaveURL(/\/admin\/clients\/[0-9a-f-]+$/);
-  // The new client card carries the CRM half too.
+  await expect(page.locator('h1')).toContainText(code!);
   await expect(page.getByTestId('activity-note')).toBeVisible();
+
+  // Back on the funnel the lead really is WON on the server — and a won card
+  // is offered no one-tap move (round 78: the next stage after won is lost,
+  // and losing demands a reason, so that move belongs in the sheet).
+  await page.goto('/crm?scope=all');
+  await expect(testCard().getByTestId('move-next')).toHaveCount(0);
+  await expect(testCard().getByTestId('move-other')).toBeVisible();
 });
 
 test('a sales manager works leads but cannot reshape the funnel', async ({ page }) => {

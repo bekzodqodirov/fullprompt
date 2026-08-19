@@ -40,7 +40,8 @@
       "notFound": "Kartochka topilmadi — sahifani yangilang",
       "reasonRequired": "Sababini yozish kerak",
       "stageNotFound": "Etap o'chirilgan — sahifani yangilang",
-      "reasonNotListed": "Sabab ro'yxatdan tanlanishi kerak"
+      "reasonNotListed": "Sabab ro'yxatdan tanlanishi kerak",
+      "convertRequired": "«Yutildi» — faqat oyna orqali: mijoz kodi va bitim"
     },
     "moreActions": "Boshqa amallar",
     "notFilled": "To‘ldirilmagan",
@@ -1403,7 +1404,29 @@
     "followUpDone": "Bajarildi",
     "followUpTomorrow": "Ertaga",
     "followUpFailed": "Saqlanmadi",
-    "nameTaken": "Bu nom ro‘yxatda bor (katta-kichik harf hisobga olinmaydi)"
+    "nameTaken": "Bu nom ro‘yxatda bor (katta-kichik harf hisobga olinmaydi)",
+    "won": {
+      "title": "Lid yutildi — mijoz kim?",
+      "mint": "Yangi kod",
+      "attach": "Mavjud mijozga",
+      "name": "Mijoz nomi",
+      "codeOptional": "Kod (bo'sh — o'zi beriladi)",
+      "attachCode": "Mijoz kodi (GS…)",
+      "check": "Tekshirish",
+      "confirm": "Bitim ochish",
+      "confirmExisting": "Shu mijoz uchun yangi bitim ochiladi.",
+      "existing": "Mijoz",
+      "deal": "Bitim",
+      "errors": {
+        "clientNotFound": "Bunday kod yo'q",
+        "clientInactive": "Bu mijoz nofaol qilingan",
+        "codeExists": "Bu kod band",
+        "codeFormat": "Kod formati noto'g'ri",
+        "stageGone": "Bosqich topilmadi — sahifani yangilang",
+        "forbidden": "Huquq yo'q",
+        "failed": "Saqlab bo'lmadi"
+      }
+    }
   },
   "navShort": {
     "home": "Bosh",

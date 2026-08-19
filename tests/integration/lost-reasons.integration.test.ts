@@ -114,7 +114,10 @@ describe('closed_at — when the card was decided (0076)', () => {
     const id = await newLead();
     expect((await leadRow(id)).closedAt).toBeNull();
 
-    await moveLead(id, wonStage, '', ctx());
+    // `viaConvert` — this file's subject is the CLOCK, not the win ceremony
+    // (round 107 made bare won moves a refusal; the ceremony has its own
+    // tests in crm.integration).
+    await moveLead(id, wonStage, '', ctx(), undefined, { viaConvert: true });
     const won = await leadRow(id);
     expect(won.closedAt).not.toBeNull();
 
@@ -124,7 +127,7 @@ describe('closed_at — when the card was decided (0076)', () => {
 
   it('an ordinary save on a decided card does not move the month it counts in', async () => {
     const id = await newLead();
-    await moveLead(id, wonStage, '', ctx());
+    await moveLead(id, wonStage, '', ctx(), undefined, { viaConvert: true });
     const stamped = (await leadRow(id)).closedAt!;
 
     await updateLead(id, formInput({ stageId: wonStage, phone: '+998907770001' }) as never, ctx());
@@ -133,10 +136,16 @@ describe('closed_at — when the card was decided (0076)', () => {
     expect(after.closedAt?.getTime()).toBe(stamped.getTime());
   });
 
-  it('the ✏️ form’s move to won stamps exactly as the board’s does', async () => {
+  it('the ✏️ form can no longer win — the dialog owns that door (round 107)', async () => {
+    // This test used to pin the OPPOSITE («the form's move to won stamps
+    // exactly as the board's does»). Winning now demands a client and a deal,
+    // which the form cannot supply, so its won move is the same coded refusal
+    // the board gives without the dialog.
     const id = await newLead();
-    await updateLead(id, formInput({ stageId: wonStage }) as never, ctx());
-    expect((await leadRow(id)).closedAt).not.toBeNull();
+    await expect(
+      updateLead(id, formInput({ stageId: wonStage }) as never, ctx()),
+    ).rejects.toThrow('convert_required');
+    expect((await leadRow(id)).closedAt).toBeNull();
   });
 });
 
@@ -211,7 +220,7 @@ describe('salesAnalytics reads the two clocks', () => {
   it('counts arrivals by created_at and decisions by closed_at', async () => {
     // Arrived + won inside the window, 3 days apart → the cycle.
     const wonId = await newLead();
-    await moveLead(wonId, wonStage, '', ctx());
+    await moveLead(wonId, wonStage, '', ctx(), undefined, { viaConvert: true });
     await db
       .update(leads)
       .set({
@@ -238,7 +247,7 @@ describe('salesAnalytics reads the two clocks', () => {
     // Arrived BEFORE the window, won inside it: a decision this month about
     // last month's enquiry — counts as won here, not as new.
     const oldWonId = await newLead();
-    await moveLead(oldWonId, wonStage, '', ctx());
+    await moveLead(oldWonId, wonStage, '', ctx(), undefined, { viaConvert: true });
     await db
       .update(leads)
       .set({

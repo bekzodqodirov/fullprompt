@@ -7,12 +7,13 @@ import {
   callLogs,
   callRecorderDevices,
   clients,
+  deals,
   leads,
   leadStages,
   users,
 } from '@/modules/platform/db/schema';
 import { createClient } from '@/modules/platform/clients/service';
-import { convertLead } from '@/modules/wms/crm/service';
+import { winLead } from '@/modules/wms/crm/service';
 import {
   attachCallAudio,
   callDeviceForToken,
@@ -70,6 +71,8 @@ afterAll(async () => {
   if (attachmentId) await db.delete(attachments).where(eq(attachments.id, attachmentId));
   await db.delete(callRecorderDevices).where(inArray(callRecorderDevices.userId, [sellerId]));
   if (leadId) await db.delete(leads).where(eq(leads.id, leadId));
+  // winLead opens a deal per win (round 107) — its FK holds the client row.
+  if (convertedClientId) await db.delete(deals).where(eq(deals.clientId, convertedClientId));
   await db
     .delete(clients)
     .where(inArray(clients.id, [clientId, siblingId, convertedClientId].filter(Boolean)));
@@ -242,8 +245,10 @@ describe("an open lead's phone is the second door (0063)", () => {
   });
 
   it('converting the lead moves its calls onto the new code', async () => {
-    const client = await convertLead(leadId, {}, ctx(sellerId));
-    convertedClientId = client.id;
+    // Round 107: conversion goes through winLead (won = client + deal, one
+    // landing). What this test proves — the rekey — rides the same path.
+    const won = await winLead(leadId, {}, ctx(sellerId));
+    convertedClientId = won.clientId;
     // The call follows the person: readable by the CLIENT card's exact read.
     const onClient = await callsFor(convertedClientId, { id: sellerId, all: false });
     expect(onClient).toHaveLength(1);

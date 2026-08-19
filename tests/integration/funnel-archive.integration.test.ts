@@ -62,7 +62,9 @@ describe('the funnel keeps its finished cards without showing all of them', () =
       names.push(name);
       const lead = await createLead({ name, stageId: openStageId, ownerId }, ctx);
       madeLeads.push(lead.id);
-      await moveLead(lead.id, wonStageId, '', ctx);
+      // `viaConvert`: the archive mechanics are this file's subject, not the
+      // win ceremony (round 107 made bare won moves a refusal).
+      await moveLead(lead.id, wonStageId, '', ctx, undefined, { viaConvert: true });
     }
 
     // The column really holds three more than it did.
