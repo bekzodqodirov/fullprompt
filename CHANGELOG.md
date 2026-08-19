@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## Admin dashboard — chiroyliroq va ixcham — 2026-08-19
+
+«Buni chroyliroq ihcham qilib ber» so'rovingiz bo'yicha glavni dashboard
+qayta chizildi:
+
+- **Har blokning sarlavhasi endi asosiy raqamni ko'rsatadi** va o'zi havola:
+  Pul → kassalar jami (bosilsa balans ekrani), Yuk → skladlardagi jami kub,
+  Savdo → ochiq bitimlar soni va summasi. Sarlavhani takrorlab turgan ikki
+  qator olib tashlandi.
+- Qatorlar ixchamroq, har biri bosiladigan havola — kichik ekranda hech
+  narsa ikki qatorga o'ralmaydi, ortiqcha matn «…» bilan qisqaradi.
+- **Signallar ro'yxati rangli nuqta bilan**: yashil — joyida, sariq/qizil —
+  e'tibor kerak; so'zlar o'z rangida qoladi.
+- Yozuvlar to'rt tilda ham qisqartirildi («Bugun», «Yo'lda», «Skladlarda»…).
+- Kassa minusda bo'lsa endi to'g'ri o'qiladi: «−$1,875» (avval «$-1,875»).
+- O'lchandi: telefonda dashboard ~700 px dan **523 px** ga tushdi;
+  kompyuterda to'rt blok bitta ixcham lentada (291 px).
+
 ## Olti punktlik ro'yxatingiz — kod ko'rinadi, yutuq bitim ochadi, sklad xabar beradi — 2026-08-19
 
 Sizning javoblaringiz bo'yicha (1b / 2a har biriga / 3 / 4 yetarli / 5 / 6):
