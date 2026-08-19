@@ -129,16 +129,26 @@ describe('one answer about a reply that has not left', () => {
   it('the two page surfaces refresh themselves, and the dock polls its open thread', () => {
     // A queue that moves within seconds behind a screen that never re-reads is
     // the whole of the owner's report: round 25 gave «Suhbatlar» AutoRefresh
-    // and the cards went four rounds without it.
+    // and the cards went four rounds without it. Round 108 replaced the blind
+    // loop with the PULSE — the surfaces still refresh themselves, but only
+    // when the thread's token moved, because the blind version re-rendered
+    // the whole page every 2 s for as long as one FAILED row sat undismissed.
     for (const file of [
       'src/components/telegram-thread.tsx',
       'src/app/(protected)/suhbatlar/[clientId]/page.tsx',
     ]) {
-      // The ELEMENT, not the import: a file that imports AutoRefresh and never
+      const source = read(file);
+      // The ELEMENT, not the import: a file that imports the poller and never
       // renders it refreshes nothing, and the first version of this assertion
       // passed against exactly that (the lesson of #494 — a test that passes
       // because the thing under test never appeared proves nothing).
-      expect(read(file), file).toContain('<AutoRefresh');
+      expect(source, file).toContain('<ChatPulse');
+      // The baseline must be the SERVER's, computed with the rows it
+      // describes — a client-invented baseline swallows anything that landed
+      // between render and first poll (the design review's first blocker).
+      expect(source, file).toContain('initial={pulse.t}');
+      // And the blind loop must not quietly return beside it.
+      expect(source, file).not.toContain('<AutoRefresh');
     }
     const dock = read('src/components/dock.tsx');
     expect(dock).toContain('refreshThread');

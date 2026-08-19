@@ -123,7 +123,7 @@ export default async function LeadsPage({
   // that opens the lot. A won lead from March is a record, not a task, and a
   // board is a list of work.
   const archive = params.arxiv === '1';
-  const [stages, sources, views, open, closed, openTotals, closedTotals, badges, managers, lostReasonList] =
+  const [stages, sources, views, open, closed, openTotals, closedTotals, managers, lostReasonList] =
     await Promise.all([
     listStages(),
     listSources(),
@@ -137,8 +137,6 @@ export default async function LeadsPage({
     // shows a slice, so counts filtered differently from rows make the
     // footer lie.
     closedLeadCounts(boardFilters),
-    // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
-    chatBadges(tgViewerFor(actor)),
     // Only offered to somebody who may see everybody's leads: handing YOUR
     // lead to a colleague is a supervisor's act, and a seller who cannot see
     // the board they would be moving it onto should not be doing it.
@@ -148,6 +146,14 @@ export default async function LeadsPage({
     activeLostReasonLabels(),
   ]);
   const rows = [...open, ...closed];
+  // Whose card carries a chat — per viewer, same rule as /suhbatlar (#383).
+  // AFTER the rows on purpose: bounded to the clients this board actually
+  // drew, so a supervisor's badge query stops sorting the whole company's
+  // message history per render (round 108).
+  const badges = await chatBadges(
+    tgViewerFor(actor),
+    [...new Set(rows.map((row) => row.lead.clientId).filter((id): id is string => Boolean(id)))],
+  );
   // What each column HOLDS versus what it was handed — one map for both
   // halves, so an open column that was capped says «+N» exactly as a closed
   // one always did.
