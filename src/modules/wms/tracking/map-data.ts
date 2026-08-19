@@ -1,3 +1,4 @@
+import { ROAD_LEG_POINTS } from './road-geometry';
 import type { RouteDef, RoutePoint, RouteSegment } from './engine';
 
 /**
@@ -161,6 +162,26 @@ function build(legs: RouteLeg[]): RouteDef {
   return { points, segments };
 }
 
+/**
+ * The REAL road for a leg, when it has been fetched (round 109, the owner's
+ * «B»): stored geometry, never a runtime call. A leg with no stored road
+ * falls back to its hand-drawn town chain, so an un-fetched or newly-added
+ * corridor still draws — degraded, never missing.
+ */
+function road(key: string): RoutePoint[] | null {
+  const pts = ROAD_LEG_POINTS[key];
+  return pts && pts.length > 1 ? pts.map(([x, y]) => ({ x, y })) : null;
+}
+
+/** The stored road, with a destination dot appended when it ends elsewhere —
+ *  TAS2 sits beside TAS1, and the road stops at the city, not at our yard. */
+function roadTo(key: string, dest: RoutePoint, fallback: RoutePoint[]): RoutePoint[] {
+  const pts = road(key);
+  if (!pts) return fallback;
+  const last = pts[pts.length - 1]!;
+  return last.x === dest.x && last.y === dest.y ? pts : [...pts, dest];
+}
+
 /** Warehouse code → map dot. TAS2 sits beside TAS1 so both stay clickable. */
 export const WAREHOUSE_POINTS: Record<string, RoutePoint> = {
   YW: P.YW,
@@ -188,28 +209,82 @@ export const MAP_BOUNDS: [[number, number], [number, number]] = [
 const CN_SPINE = [
   P.XIA, W.BAO, W.TSN, W.DNX, P.LAN,
   W.TZU, W.WUW, W.SDN, W.ZHY, W.JIQ, W.JYG, W.GUA, W.XXX, P.HAM,
-  W.SHS, W.TFU, P.UCH,
+  // Turpan → TOKSUN, never Urumqi (owner, round 109: «YW GZ dan ketadgan yol
+  // urumchiga kirmaydi togri qashqarga ketadi»). The G3012 turns south-west
+  // at Toksun; going up to Urumqi and back down is ~300 km the road does not
+  // drive — and the fetched geometry confirms it, never rising above 43.4°N.
+  W.SHS, W.TFU,
   W.TOK, W.YNQ, W.KRL, W.LUN, W.KCA, P.AKS,
   W.BCH, W.ATX, P.KA,
 ];
 /** Andijan → Tashkent over the Kamchik pass. */
 const AND_TAS = (dest: RoutePoint) => [P.AND, W.FEG, W.KMC, W.ANG, dest];
 
-function ka2uz(dest: RoutePoint, uzHours: [number, number]): RouteDef {
-  return build([
-    { key: 'to_border', hours: [12, 24], points: [P.KA, W.WUQ, P.IRK] },
+/**
+ * The legs from Kashgar to an Uzbek warehouse. Split out of `ka2uz` so a
+ * THROUGH truck — one batch booked Yiwu → Tashkent, which the app has always
+ * allowed — can be drawn as the road it actually takes instead of a straight
+ * line across the Taklamakan. It also gives that batch the three checkpoint
+ * segments (`border_wait`/`kg`/`uz`), so the card's «где машина» pins have
+ * something to re-anchor.
+ */
+function ka2uzLegs(dest: RoutePoint, uzHours: [number, number]): RouteLeg[] {
+  const toBorder = road('ka_irk') ?? [P.KA, W.WUQ, P.IRK];
+  // WHERE THE ROAD ENDS, not our own Irkeshtam dot: the stored geometry snaps
+  // to the real post a few hundred metres away, and a wait leg holding a
+  // DIFFERENT point is a two-point leg the engine walks along — the truck
+  // would creep across the border through the whole three-day wait
+  // (route-shape's stationary fence caught exactly that).
+  const atBorder = toBorder[toBorder.length - 1]!;
+  return [
+    { key: 'to_border', hours: [12, 24], points: toBorder },
     // Owner: the truck waits at the Chinese border 1–3 days (sometimes more
     // — the manual checkpoint on the batch card corrects this).
-    { key: 'border_wait', hours: [24, 72], points: [P.IRK] },
-    { key: 'kg', hours: [36, 48], points: [P.IRK, W.SRT, W.GUL, P.OSH] },
+    { key: 'border_wait', hours: [24, 72], points: [atBorder] },
+    // Prefixed with the wait's own point so the seam dedupes and the drawn
+    // line has no gap, whichever half is the stored road.
+    { key: 'kg', hours: [36, 48], points: [atBorder, ...(road('irk_osh') ?? [P.IRK, W.SRT, W.GUL, P.OSH])] },
     {
       key: 'uz',
       hours: uzHours,
       // Andijan IS the destination on the short leg — no need to leave it and
       // come back, which is what the old hand-counted spans had to fake.
-      points: dest === P.AND ? [P.OSH, P.AND] : [P.OSH, ...AND_TAS(dest)],
+      points:
+        dest === P.AND
+          ? roadTo('osh_and', P.AND, [P.OSH, P.AND])
+          : roadTo('osh_tas', dest, [P.OSH, ...AND_TAS(dest)]),
     },
-  ]);
+  ];
+}
+
+function ka2uz(dest: RoutePoint, uzHours: [number, number]): RouteDef {
+  return build(ka2uzLegs(dest, uzHours));
+}
+
+/** The Chinese leg of a truck that starts at one of the three CN warehouses. */
+function cnLeg(origin: string): RouteLeg | null {
+  if (origin === 'YW') {
+    return {
+      key: 'cn_transit',
+      hours: [144, 168],
+      points: road('yw_ka') ?? [P.YW, W.HGH, W.NKG, W.CGO, ...CN_SPINE],
+    };
+  }
+  if (origin === 'GZ') {
+    return {
+      key: 'cn_transit',
+      hours: [120, 144],
+      points: road('gz_ka') ?? [P.GZ, W.SHG, W.HNY, P.CSX, W.XFN, W.ANK, ...CN_SPINE],
+    };
+  }
+  if (origin === 'UCH') {
+    return {
+      key: 'cn_transit',
+      hours: [48, 72],
+      points: road('uch_ka') ?? [P.UCH, W.TOK, W.KRL, W.LUN, W.KCA, P.AKS, W.BCH, P.KA],
+    };
+  }
+  return null;
 }
 
 /** Typical corridor schedule per origin→dest pair (owner's numbers). */
@@ -219,39 +294,30 @@ export function routeFor(originCode: string, destCode: string): RouteDef | null 
   const destPoint = WAREHOUSE_POINTS[d];
   if (!destPoint || !WAREHOUSE_POINTS[o]) return null;
 
-  if (o === 'YW' && d === 'KA') {
-    return build([
-      {
-        key: 'cn_transit',
-        hours: [144, 168],
-        points: [P.YW, W.HGH, W.NKG, W.CGO, ...CN_SPINE],
-      },
-    ]);
-  }
-  if (o === 'GZ' && d === 'KA') {
-    return build([
-      {
-        key: 'cn_transit',
-        hours: [120, 144],
-        points: [P.GZ, W.SHG, W.HNY, P.CSX, W.XFN, W.ANK, ...CN_SPINE],
-      },
-    ]);
-  }
-  if (o === 'UCH' && d === 'KA') {
-    return build([
-      {
-        key: 'cn_transit',
-        hours: [48, 72],
-        points: [P.UCH, W.TOK, W.KRL, W.LUN, W.KCA, P.AKS, W.BCH, P.KA],
-      },
-    ]);
-  }
+  const cn = cnLeg(o);
+  if (cn && d === 'KA') return build([cn]);
   if (o === 'KA' && d === 'AND') return ka2uz(P.AND, [12, 24]);
   if (o === 'KA' && (d === 'TAS1' || d === 'TAS2')) {
     return ka2uz(WAREHOUSE_POINTS[d]!, [36, 48]);
   }
+  // A through truck: booked in China, unloaded in Uzbekistan, no transfer at
+  // Kashgar. Same road, same border wait, hours added rather than invented —
+  // and drawn as the road (owner, round 109: «hamma yonalish boyicha va
+  // toshkent yonalishi boyicha ham kerak boladi»).
+  if (cn && (d === 'AND' || d === 'TAS1' || d === 'TAS2')) {
+    return build([
+      cn,
+      ...ka2uzLegs(d === 'AND' ? P.AND : WAREHOUSE_POINTS[d]!, d === 'AND' ? [12, 24] : [36, 48]),
+    ]);
+  }
   if (o === 'AND' && (d === 'TAS1' || d === 'TAS2')) {
-    return build([{ key: 'uz', hours: [12, 24], points: AND_TAS(WAREHOUSE_POINTS[d]!) }]);
+    return build([
+      {
+        key: 'uz',
+        hours: [12, 24],
+        points: roadTo('and_tas', WAREHOUSE_POINTS[d]!, AND_TAS(WAREHOUSE_POINTS[d]!)),
+      },
+    ]);
   }
   // Any other pair between mapped warehouses: straight line, generic timing.
   // Honest rather than invented — we do not know the road, so we do not draw

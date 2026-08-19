@@ -118,13 +118,19 @@ export default async function HomePage() {
         ) : (
           <AccountantFlow flow={flow.counts} />
         )
-      ) : isAnalyst(actor) ? (
-        // The admin's working home (round 107, item 4). EXCLUSIVE with the
-        // role flows on purpose: an admin who also carries a working role
-        // keeps that role's day (narrowest job wins, round 15) — stated to
-        // the owner rather than stacking two homes.
-        <AdminDashboard actor={actor} />
       ) : null}
+
+      {/* The company's own numbers, for whoever runs it (round 107, item 4).
+          NO LONGER exclusive with the role flows (round 109, the owner:
+          «dashboard menda korinmadiku super adminda nega unday bolyabti»).
+          The exclusivity WAS the cause: `buildHomeFlow` answers for any
+          working role a person also carries, and an admin who sells too —
+          which is how his own accounts are set up, one advert lead having
+          landed on «bir admin va sotuvchi» — got the seller's day and no
+          dashboard at all. The one person it was built for was the one
+          person who could not see it. Both now, in the order they are used:
+          the day's work above, the company below it. */}
+      {isAnalyst(actor) ? <AdminDashboard actor={actor} /> : null}
 
       {/* The testid fences m9p's tile-pair measurement to the GRID — the
           dashboard above also links /bitimlar, and a bare `.first()` would

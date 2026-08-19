@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { estimateTransit, type RouteDef, type RoutePoint } from '@/modules/wms/tracking/engine';
 import { routeFor } from '@/modules/wms/tracking/map-data';
+import { ROAD_LEG_POINTS } from '@/modules/wms/tracking/road-geometry';
 
 /**
  * The corridor has to be the ROAD (round 47, owner's item 10: «to'g'ri liniya
@@ -122,6 +123,75 @@ describe('the corridor a truck is drawn on', () => {
         }
         expect(best, `${origin}→${dest}`).toBeLessThan(0.001);
       }
+    }
+  });
+});
+
+/**
+ * The stored road geometry (round 109) is fetched by a script with the
+ * corridor's endpoints typed by hand — and the FIRST run typed Irkeshtam
+ * 0.95° east of the border post, so Kashgar→border stopped 80 km short and
+ * the Kyrgyz leg began inside China. Nothing on any screen would have said
+ * so: the line still drew, the wait still waited, the ETA still counted.
+ * This is the fence: every stored leg must begin and end on the point the
+ * app itself calls that place.
+ */
+describe('the stored road geometry ends where the app says the place is', () => {
+  const NEAR = 0.15; // ~15 km — a road snaps to the highway, not to our dot.
+  const P = {
+    YW: { x: 120.07, y: 29.31 },
+    GZ: { x: 113.26, y: 23.13 },
+    KA: { x: 75.98, y: 39.47 },
+    UCH: { x: 87.62, y: 43.83 },
+    IRK: { x: 73.91, y: 39.68 },
+    OSH: { x: 72.8, y: 40.53 },
+    AND: { x: 72.34, y: 40.78 },
+    TAS: { x: 69.24, y: 41.31 },
+  };
+  const ENDS: Record<string, [keyof typeof P, keyof typeof P]> = {
+    yw_ka: ['YW', 'KA'],
+    gz_ka: ['GZ', 'KA'],
+    uch_ka: ['UCH', 'KA'],
+    ka_irk: ['KA', 'IRK'],
+    irk_osh: ['IRK', 'OSH'],
+    osh_and: ['OSH', 'AND'],
+    and_tas: ['AND', 'TAS'],
+    osh_tas: ['OSH', 'TAS'],
+  };
+
+  it('every leg starts and ends on its named place', () => {
+    for (const [key, [from, to]] of Object.entries(ENDS)) {
+      const pts = ROAD_LEG_POINTS[key];
+      expect(pts, key).toBeDefined();
+      const first = pts![0]!;
+      const last = pts![pts!.length - 1]!;
+      expect(Math.hypot(first[0] - P[from].x, first[1] - P[from].y), `${key} start`).toBeLessThan(NEAR);
+      expect(Math.hypot(last[0] - P[to].x, last[1] - P[to].y), `${key} end`).toBeLessThan(NEAR);
+    }
+  });
+
+  it('a through truck drives the same road as the two-leg journey', () => {
+    // Round 109: one batch booked Yiwu → Tashkent is drawn as the China road
+    // plus the Kashgar–Tashkent road, not as a straight line across the
+    // Taklamakan. Composed, never re-typed — so the two can never disagree.
+    const through = routeFor('YW', 'TAS1')!;
+    const cn = routeFor('YW', 'KA')!;
+    const uz = routeFor('KA', 'TAS1')!;
+    // The seam is deduped by `build`, so the whole is one point shorter than
+    // the sum — and that missing point is the shared Kashgar node.
+    expect(through.points.length).toBe(cn.points.length + uz.points.length - 1);
+    expect(through.points[0]).toEqual(cn.points[0]);
+    expect(through.points[through.points.length - 1]).toEqual(uz.points[uz.points.length - 1]);
+    // Every kilometre of the Chinese half is the Chinese half.
+    expect(through.points.slice(0, cn.points.length)).toEqual(cn.points);
+  });
+
+  it('the China corridor never climbs to Urumqi', () => {
+    // The owner's correction (round 109): the road turns south-west at
+    // Toksun; Urumqi is 43.83°N and a ~300 km detour the truck does not make.
+    for (const key of ['yw_ka', 'gz_ka']) {
+      const top = Math.max(...ROAD_LEG_POINTS[key]!.map((p) => p[1]));
+      expect(top, key).toBeLessThan(43.5);
     }
   });
 });

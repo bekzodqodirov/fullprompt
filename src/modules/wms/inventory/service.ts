@@ -14,6 +14,7 @@ import {
 import { warehouseScope, warehouseScopeEither } from '../../platform/rbac/scope';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { batchMemberFilter } from '../scanning/unload';
 
 export class InventoryError extends Error {
   constructor(public readonly code: string) {
@@ -324,7 +325,18 @@ export async function crateStock(
     // One extra row = the honest «50+» without a second count query.
     .limit(CRATE_STRIP_CAP + 1);
 
-  const mapped = rows.slice(0, CRATE_STRIP_CAP).map((row) => {
+  return { rows: mapCrateRows(rows.slice(0, CRATE_STRIP_CAP)), more: rows.length > CRATE_STRIP_CAP };
+}
+
+/**
+ * The raw crate aggregate → the row a screen draws, in the order it should be
+ * read: **the over-capacity ones first** (owner, round 109: «agar
+ * ogohlantirish … spiskani tepasida tursa boladi, bolmasam shar etmas») —
+ * the rest keep their code order, because he said plainly that beyond the
+ * warning the order does not matter.
+ */
+function mapCrateRows(rows: CrateAggregate[]): CrateStockRow[] {
+  const mapped = rows.map((row) => {
     const kg = Math.round(Number(row.kg));
     const m3 = Math.round(Number(row.m3) * 100) / 100;
     // A dimension typed as 0 is storable (the crate EDIT path has no min) —
@@ -349,7 +361,59 @@ export async function crateStock(
       over: (statedM3 !== null && m3 > statedM3) || (statedKg !== null && kg > statedKg),
     };
   });
-  return { rows: mapped, more: rows.length > CRATE_STRIP_CAP };
+  return [...mapped].sort((a, b) => Number(b.over) - Number(a.over) || a.code.localeCompare(b.code));
+}
+
+/** What the two crate queries select — one shape, one mapper. */
+interface CrateAggregate {
+  id: string;
+  code: string;
+  clientCode: string;
+  whCode: string;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  weightKg: string | null;
+  boxCount: string;
+  kg: string | null;
+  m3: string | null;
+}
+
+/**
+ * The crates riding THIS truck, as places (owner, round 109: «mashina
+ * spiskasida ham tahta yashikni mestasi kubi kg si korinsin»).
+ *
+ * Membership is `batchMemberFilter`, never the live pointer (#440) — a truck
+ * that has been unloaded no longer has a box pointing at it, and the crate
+ * would vanish from the document exactly when somebody looks up what came.
+ * The contents are the boxes that RODE this batch: round 31's short-loaded
+ * member stayed at the origin and must not be counted onto the truck it
+ * missed.
+ */
+export async function batchCrates(batchId: string): Promise<CrateStockRow[]> {
+  const rows = await db
+    .select({
+      id: crates.id,
+      code: crates.code,
+      clientCode: clients.clientCode,
+      whCode: warehouses.code,
+      lengthCm: crates.lengthCm,
+      widthCm: crates.widthCm,
+      heightCm: crates.heightCm,
+      weightKg: crates.weightKg,
+      boxCount: sql<string>`count(*)`,
+      kg: sql<string>`sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount})`,
+      m3: sql<string>`sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount})`,
+    })
+    .from(boxes)
+    .innerJoin(crates, eq(boxes.crateId, crates.id))
+    .innerJoin(clients, eq(crates.clientId, clients.id))
+    .innerJoin(warehouses, eq(crates.warehouseId, warehouses.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .where(batchMemberFilter(batchId))
+    .groupBy(crates.id, clients.clientCode, warehouses.code)
+    .orderBy(asc(crates.code));
+  return mapCrateRows(rows);
 }
 
 export async function transitTrucks(

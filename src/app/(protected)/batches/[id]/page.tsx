@@ -43,6 +43,8 @@ import { CustomsFirm } from './customs-firm';
 import { CustomsPerReceipt } from './customs-per-receipt';
 import { batchCustomsRows } from '@/modules/wms/partners/customs';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { CrateRows } from '@/components/crate-rows';
+import { batchCrates } from '@/modules/wms/inventory/service';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -143,6 +145,12 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const totalKg = contents.reduce((acc, row) => acc + row.kg, 0);
   const totalM3 = contents.reduce((acc, row) => acc + row.m3, 0);
   const totalBoxes = contents.reduce((acc, row) => acc + row.onBatch, 0);
+
+  // The crates riding this truck, as PLACES beneath the cargo table (round
+  // 109). Gated on `crates.manage` like every other crate surface — the
+  // batch card itself is open to five permissions, and the row is a door to
+  // the crate card, which redirects whoever may not open it.
+  const crateRows = actor.permissions.has('crates.manage') ? await batchCrates(id) : [];
 
   const onSpotCount = (
     await db
@@ -469,6 +477,15 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           </table>
         </div>
         )}
+        <CrateRows
+          rows={crateRows}
+          labels={{
+            title: tstock('cratesTitle'),
+            inside: tstock('crateInside'),
+            over: tstock('crateOver'),
+            place: tstock('cratePlace'),
+          }}
+        />
       </div>
 
       {loadedBoxes.length > 0 && (

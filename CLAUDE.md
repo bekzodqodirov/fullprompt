@@ -418,7 +418,72 @@ Process notes (#738): `pnpm typecheck | tail` reports TAIL's exit code —
 two red gates slipped into commits before being caught; a warehouse an
 audited action touched can only be DEACTIVATED in cleanup (audit_log FK).
 
-Latest migration: **0083** (`expense_requests` — the rasxod xabari queue;
+**Round 108 — the third speed round** (#740-742, his «sistema sekin
+ishlayabti … ayniqsa crmda»). **Migration 0084** (count must reach **85**).
+The slowness was QUEUEING, not any screen: measured on a clone, /crm renders
+in 130 ms alone and every statement is under 0.4 ms warm, but the ONE Node
+process saturates — 16 concurrent requests = p50 1,070 ms, his sentence
+reproduced. What fed the concurrency all day: every open card with a
+Telegram panel re-rendered its WHOLE page every 10 s (every 2 s while
+`pendingFor` returned rows — and that includes `failed`, which only a human's
+✕ clears, so ONE bad reply pinned a tab at half a heavy render per second
+FOR EVER); `chatBadges` sorted the entire `tg_messages` table per board
+render for a supervision viewer (74.5 ms disk-spill → 1.5 ms index-only);
+`activeClientsByPhone` hydrated the whole client book per call per tick;
+and the notifications reclaim scanned 680k rows every minute. Fixes: the
+**chat pulse** (`/api/chat/pulse` + `ChatPulse` — a token of indexed counts
+computed behind the pages' OWN fences, `router.refresh()` only on change,
+2 s beat kept for queued/sending only, 120 s floor for what no token sees;
+judged by three lenses before code and carrying their six corrections —
+`edited_at`, the late-attachment pair, per-status outbox counts +
+`max(queued_at)`, the server-evaluated stuck bucket, the account-state word,
+and a server-computed BASELINE prop), `chatBadges(viewer, clientIds)`
+bounded to the drawn cards, a last-SEVEN-digit SQL prefilter (a strict
+superset of `phonesMatch`'s last-nine rule, so JS stays the arbiter), and
+two partial indexes. Proven live: a SQL-inserted message reached an open
+thread in 4.1 s with no navigation. **#430 broken a THIRD time** (#742): a
+red proof reverted with `git checkout` took the round's own uncommitted fix
+with it; every later proof used paired `replace()` edits.
+
+**Round 109 — his three items** (#743-746). NO migration (85 stands).
+(1) **The dashboard was invisible to him** because round 107 mounted it in
+the ELSE of `buildHomeFlow` — and any admin who also carries a working role
+HAS a flow, which is how his own accounts are set up («bir admin va
+sotuvchi»). Both now: the day's work above, the company below;
+`home-dashboard.test.ts` is source-shape (the only behavioural oracle needs
+a role grant every later spec would inherit, #183). (2) **A crate is a
+PLACE on both screens** — `components/crate-rows.tsx`, one list for /stock
+AND the truck card: code · client · «1 mesta» · the crate's OWN m³/kg, with
+what is inside on a small second line; over-capacity crates sort FIRST (his
+«ogohlantirish spiskani tepasida tursa»), and the rows stay OUTSIDE the
+screens' Σ or every crated cube doubles on a number the tannarx reads.
+`batchCrates` takes membership from `batchMemberFilter` (#440 — an unloaded
+truck's boxes point at nothing, and round 31's short-loaded member must not
+ride a truck it missed); gated `crates.manage` like every crate surface.
+(3) **The road is DOWNLOADED once** (his «B»): `pnpm fetch-road-geometry`
+writes `tracking/road-geometry.ts` — 8 legs, ~12 KB, simplified at 0.02°,
+and the running app never calls a routing service; `road(key)` falls back to
+the hand-drawn corridor, so the file is an improvement and never a
+dependency. Border legs fetched SEPARATELY (no engine drives through a
+closed post) and the wait pinned to the ROAD's last point, or the stationary
+leg creeps across the border. MY MISTAKE, recorded: the first fetch used a
+hand-typed Irkeshtam 0.95° off the app's own, so the Chinese leg stopped
+80 km short — endpoints now copied verbatim from map-data's `P` block and
+fenced (every leg starts/ends within 0.15° of its named place; the China
+corridor never climbs above 43.5°N = his «urumchiga kirmaydi»). A truck
+booked China → Uzbekistan in ONE batch is composed of the same legs
+(`cnLeg` + `ka2uzLegs`) instead of a straight line, and gains the three
+checkpoint segments. Marker work: the warehouse count badge anchors to its
+icon, and the SVG fallback finally draws the same cab-and-trailer Leaflet
+has had since round 98. **NOTE for the next map round: which renderer he
+sees depends on the SERVER** — with `.data/basemap/corridor.pmtiles` absent
+the page draws the SVG schematic (round 98 told him to fetch it on the new
+VPS; never confirmed). Both renderers read the same `routePoints`.
+1705 unit/integration + 157 e2e green on a fresh gsr_ci in CI's order.
+
+Latest migration: **0084** (`speed_round` — two partial `notifications`
+indexes + `tg_messages.edited_at`; count must reach **85**);
+0083 (`expense_requests` — the rasxod xabari queue;
 count must reach **84**;
 0082 `notify_claim`, 0081 `backup_objects` — round 104/106, count 83;
 0080 `ai_assistant` — `ai_questions`,
@@ -486,7 +551,11 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 83 — EVERYTHING is deployed, including rounds 103-106
+**HIS SERVER IS AT 84** (he confirmed «84 chiqdi» on 2026-08-19 after PR
+#47 — round 107). **Round 108's PR #48 is MERGED and NOT YET DEPLOYED: his
+next deploy must land migration 0084 and the ledger must read 85.** Round
+109 mints none, so 85 covers both.
+Before that: **83 — everything through rounds 103-106
 (PR #45, merged and deployed 2026-08-18 evening, he confirmed «83 chiqdi»;
 migrations 0081 `backup_objects` + 0082 `notify_claim`). The tg-listen
 container was rebuilt in the same deploy. Trap (1) was hit a FOURTH time on
@@ -527,7 +596,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**83** — on `main` AND on his server since 2026-08-18 evening) —
+length (**85** on `main` since round 108; his server was at 84 on
+2026-08-19) —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check

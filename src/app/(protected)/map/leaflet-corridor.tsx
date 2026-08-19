@@ -117,13 +117,19 @@ export function LeafletCorridor({
       // label wrapper (owner, item 12: "icon va karobka sonlari birga, bir
       // butun"). The wrapper is 72px wide for the code label; the icon is a
       // centred 26px — its right shoulder is at 50% + 13px.
+      // The count sits ON the icon's own corner (owner, round 109: «iconlarni
+      // yonidagi soni icondan uzoq bolib ketgan»). It used to be positioned
+      // against the 72px LABEL box — `left: calc(50% + 6px)` inside a wrapper
+      // nearly three times the icon's width put it 13px clear of the square,
+      // floating in the map with nothing under it. It is anchored to the
+      // 26px icon below, so no wrapper width can move it again.
       const badge =
         w.totalBoxes > 0
-          ? `<span style="position:absolute;top:-7px;left:calc(50% + 6px);background:#1e3a8a;color:#fff;border:1.5px solid #fff;border-radius:10px;padding:0 5px;font-size:10px;font-weight:700;line-height:15px">${w.totalBoxes}</span>`
+          ? `<span style="position:absolute;top:-6px;right:-9px;background:#1e3a8a;color:#fff;border:1.5px solid #fff;border-radius:10px;padding:0 5px;font-size:10px;font-weight:700;line-height:15px">${w.totalBoxes}</span>`
           : '';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="position:relative;width:72px;margin-left:-23px;text-align:center">${warehouseSvg}${badge}<div style="font-family:monospace;font-weight:800;font-size:12px;color:#1e3a8a;-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(w.code)}</div></div>`,
+        html: `<div style="width:72px;margin-left:-23px;text-align:center"><span style="position:relative;display:inline-block;line-height:0">${warehouseSvg}${badge}</span><div style="font-family:monospace;font-weight:800;font-size:12px;color:#1e3a8a;-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(w.code)}</div></div>`,
         iconSize: [26, 26],
         iconAnchor: [13, 13],
       });

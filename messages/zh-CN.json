@@ -558,6 +558,7 @@
     "allWh": "全部仓库",
     "onRoad": "在途",
     "cratesTitle": "木箱",
+    "cratePlace": "件",
     "crateInside": "箱内",
     "crateOver": "超出箱体",
     "filterPlaceholder": "代码、标记、货物…",
