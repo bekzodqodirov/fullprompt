@@ -2161,5 +2161,31 @@
       "validation": "请检查金额和说明",
       "failed": "发送失败"
     }
+  },
+  "adminHome": {
+    "money": "资金",
+    "cash": "账户余额",
+    "todayFlow": "今日收/支",
+    "debtors": "应收客户",
+    "clientsShort": "客户",
+    "partnerDebt": "合作方：我们欠 / 欠我们",
+    "monthMoney": "本月：应收 / 已收",
+    "cargo": "货物",
+    "stock": "仓库库存",
+    "onRoad": "在途车辆",
+    "todayReceipts": "今日入库",
+    "trucksShort": "辆",
+    "sales": "销售",
+    "openDeals": "进行中的交易",
+    "otherCurrency": "其他币种",
+    "monthDecided": "本月：成交 / 流失",
+    "signals": "信号",
+    "backup": "备份",
+    "backupOk": "正常",
+    "backupOff": "未配置",
+    "backupStale": "未完成",
+    "unsent": "未送达的消息（7天）",
+    "overdueTasks": "逾期任务",
+    "dueTodayShort": "今天到期"
   }
 }

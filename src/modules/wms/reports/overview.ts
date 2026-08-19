@@ -217,8 +217,12 @@ export async function salesSnapshot(ownerId?: string): Promise<SalesSnapshot> {
       sortOrder: leadStages.sortOrder,
       n: sql<number>`count(${leads.id})`,
       // Won and lost are counted for the MONTH — a lifetime "lost" column
-      // grows for ever and stops meaning anything.
-      recent: sql<number>`count(${leads.id}) filter (where ${leads.updatedAt} >= ${monthStart}::timestamptz)`,
+      // grows for ever and stops meaning anything. By the DECISION clock
+      // (`closed_at`, round 98): `updated_at` counted a won lead merely
+      // re-touched this month as won again, so /dashboard and the admin
+      // home's decided cells printed two different «bu oy yutilgan» for the
+      // same month (round 107 — #513 across screens).
+      recent: sql<number>`count(${leads.id}) filter (where ${leads.closedAt} >= ${monthStart}::timestamptz)`,
     })
     .from(leadStages)
     .leftJoin(leads, and(eq(leads.stageId, leadStages.id), mine))

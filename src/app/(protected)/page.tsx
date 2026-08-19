@@ -4,6 +4,8 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { menuItems, NAV } from '@/modules/platform/rbac/nav';
 import { aiConfigured } from '@/modules/platform/ai/model';
+import { isAnalyst } from '@/modules/platform/ai/tools';
+import { AdminDashboard } from './admin-dashboard';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { Section } from '@/components/ui/page';
 import { myDay } from '@/modules/platform/tasks/service';
@@ -116,17 +118,28 @@ export default async function HomePage() {
         ) : (
           <AccountantFlow flow={flow.counts} />
         )
+      ) : isAnalyst(actor) ? (
+        // The admin's working home (round 107, item 4). EXCLUSIVE with the
+        // role flows on purpose: an admin who also carries a working role
+        // keeps that role's day (narrowest job wins, round 15) — stated to
+        // the owner rather than stacking two homes.
+        <AdminDashboard actor={actor} />
       ) : null}
 
-      {groups.map((group) => (
-        <Section key={group.title} title={group.title}>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-            {group.items.map((item) => (
-              <Tile key={item.href} {...item} />
-            ))}
-          </div>
-        </Section>
-      ))}
+      {/* The testid fences m9p's tile-pair measurement to the GRID — the
+          dashboard above also links /bitimlar, and a bare `.first()` would
+          measure the wrong element. */}
+      <div data-testid="home-tiles" className="space-y-6">
+        {groups.map((group) => (
+          <Section key={group.title} title={group.title}>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {group.items.map((item) => (
+                <Tile key={item.href} {...item} />
+              ))}
+            </div>
+          </Section>
+        ))}
+      </div>
     </div>
   );
 }

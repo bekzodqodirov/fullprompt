@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
@@ -71,6 +71,33 @@ export async function usersWithPermission(code: string): Promise<string[]> {
     .innerJoin(users, eq(userRoles.userId, users.id))
     .where(and(eq(permissions.code, code), eq(users.active, true)));
   return [...new Set(rows.map((r) => r.userId))];
+}
+
+/**
+ * How many staff messages actually FAILED to leave in the window (round 107,
+ * the admin home's «yuborilmagan» signal). Deliberately narrower than the
+ * /admin/notifications list's own marker: `muted` there includes by-design
+ * settlements — a user's own mute, «telegram not linked», «user deactivated»
+ * — which on this production are never zero, and a warn that never clears
+ * teaches the eye to skip it. Failed, a pending row that already errored,
+ * or a claim stuck in 'sending' past the reclaim window (0082) — those are
+ * the three that mean somebody should look.
+ */
+export async function notificationProblemCount(sinceDays = 7): Promise<number> {
+  const since = new Date(Date.now() - sinceDays * 86_400_000);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.channel, 'telegram'),
+        gte(notifications.createdAt, since),
+        sql`(${notifications.status} = 'failed'
+          OR (${notifications.status} = 'pending' AND ${notifications.error} IS NOT NULL)
+          OR (${notifications.status} = 'sending' AND ${notifications.claimedAt} < now() - interval '10 minutes'))`,
+      ),
+    );
+  return Number(row?.n ?? 0);
 }
 
 async function buildRecipients(event: {

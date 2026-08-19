@@ -2161,5 +2161,31 @@
       "validation": "Summa va izohni tekshiring",
       "failed": "Yuborib bo'lmadi"
     }
+  },
+  "adminHome": {
+    "money": "Pul",
+    "cash": "Kassalar",
+    "todayFlow": "Bugun kirim/chiqim",
+    "debtors": "Debitorlar",
+    "clientsShort": "mijoz",
+    "partnerDebt": "Kontragentlar: qarzimiz / haqimiz",
+    "monthMoney": "Oy: hisoblangan / to'langan",
+    "cargo": "Yuk",
+    "stock": "Skladlarda ostatka",
+    "onRoad": "Yo'ldagi mashinalar",
+    "todayReceipts": "Bugungi prixodlar",
+    "trucksShort": "fura",
+    "sales": "Savdo",
+    "openDeals": "Ochiq bitimlar",
+    "otherCurrency": "boshqa valyutada",
+    "monthDecided": "Shu oy: yutildi / yo'qotildi",
+    "signals": "Signallar",
+    "backup": "Zaxira nusxa",
+    "backupOk": "bor",
+    "backupOff": "sozlanmagan",
+    "backupStale": "OLINMAGAN",
+    "unsent": "Yuborilmagan xabarlar (7 kun)",
+    "overdueTasks": "Kechikkan vazifalar",
+    "dueTodayShort": "bugunga"
   }
 }

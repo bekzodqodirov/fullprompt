@@ -1511,6 +1511,32 @@ export async function ledgerDealsForClient(clientId: string) {
 }
 
 /**
+ * The open book, in two honest numbers (round 107, the admin home): how many
+ * jobs are open, and what the USD-quoted ones add up to. The sum FILTERS on
+ * currency — a CNY quote added at face value to dollars is #701's «money
+ * from raw columns is confidently wrong» — and the non-USD leftovers are
+ * counted so the card can say «+N boshqa valyutada» instead of lying by
+ * omission. A quote on an open deal is a pipeline figure, not cash; the
+ * label's job, stated here so it stays that way.
+ */
+export async function openDealsSummary() {
+  const [row] = await db
+    .select({
+      n: sql<number>`count(*)`,
+      usd: sql<string>`coalesce(sum(${deals.quotedAmount}) FILTER (WHERE ${deals.quotedCurrency} = 'USD'), 0)`,
+      otherCurrency: sql<number>`count(*) FILTER (WHERE ${deals.quotedAmount} IS NOT NULL AND ${deals.quotedCurrency} <> 'USD')`,
+    })
+    .from(deals)
+    .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+    .where(eq(dealStages.kind, 'open'));
+  return {
+    count: Number(row?.n ?? 0),
+    usdSum: Math.round(Number(row?.usd ?? 0) * 100) / 100,
+    otherCurrency: Number(row?.otherCurrency ?? 0),
+  };
+}
+
+/**
  * Deals that need somebody's attention right now, for the client card and the
  * sales manager's day: quoted but the cargo is over the threshold, or landed
  * with no price at all.

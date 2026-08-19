@@ -2161,5 +2161,31 @@
       "validation": "Check the amount and the note",
       "failed": "Could not send"
     }
+  },
+  "adminHome": {
+    "money": "Money",
+    "cash": "Tills",
+    "todayFlow": "Today in/out",
+    "debtors": "Debtors",
+    "clientsShort": "clients",
+    "partnerDebt": "Partners: we owe / owed to us",
+    "monthMoney": "Month: charged / paid",
+    "cargo": "Cargo",
+    "stock": "Stock on hand",
+    "onRoad": "Trucks on the road",
+    "todayReceipts": "Today's receipts",
+    "trucksShort": "trucks",
+    "sales": "Sales",
+    "openDeals": "Open deals",
+    "otherCurrency": "in other currencies",
+    "monthDecided": "This month: won / lost",
+    "signals": "Signals",
+    "backup": "Backup",
+    "backupOk": "fresh",
+    "backupOff": "not configured",
+    "backupStale": "MISSING",
+    "unsent": "Undelivered messages (7 d)",
+    "overdueTasks": "Overdue tasks",
+    "dueTodayShort": "due today"
   }
 }
