@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## Xaritadagi mashina belgisi — 2026-08-20
+
+«Mashinalar iconkasini ozgartirmabsan va mashinalar iconi bn soni alohida
+turibti, skladlarniki yaxshi chiqibti» — ikkalasi ham to'g'ri edi, va
+skladniki yaxshi chiqqani aynan sababni ko'rsatdi.
+
+- **Mashina belgisi endi haqiqiy fura ko'rinishida** — oldin rangli kvadrat
+  ichida kichkina mashina chizilgan edi, xarita masshtabida ko'z faqat
+  kvadratni ko'rardi (skladnikiga o'xshab). Endi furaning o'z shakli —
+  kabina, kuzov, g'ildiraklar; oq hoshiya bilan, shuning uchun haqiqiy xarita
+  ustida ham aniq ko'rinadi. Fura **chapga qarab** turadi — yuk shu
+  tomonga, Xitoydan O'zbekistonga yuradi.
+- **Partiya kodi endi belgining o'ziga yopishib turadi.** Sababi o'lchab
+  topildi: kod belgidan yuqorida alohida qator bo'lib turgani uchun furani
+  o'z joyidan **24 piksel chapga va 18 piksel pastga** surib yuborar edi —
+  ya'ni fura aslida turgan joyidan sal narida chizilardi, kod esa bo'sh
+  joyda osilib qolardi. Endi ikkalasi bir butun va fura yo'lning aynan
+  o'zida turadi.
+- Ikkala xaritada ham (haqiqiy xarita va sxema) endi **bir xil** fura
+  chiziladi — qaysi biri chiqishi serverdagi xarita fayliga bog'liq,
+  shuning uchun ikkitasi bir xil ko'rinishi shart.
+
+Kichik eslatma: endigina yo'lga chiqqan mashina o'z skladining ustida
+turadi va bosilganda mashina ochiladi (sklad emas) — bu ataylab shunday.
+
+Bazada o'zgarish yo'q, migratsiya hisobi **85** ligicha.
+
 ## Dashboard, yashiklar va yo'l xaritasi — 2026-08-19
 
 Uch so'rovingiz bo'yicha.

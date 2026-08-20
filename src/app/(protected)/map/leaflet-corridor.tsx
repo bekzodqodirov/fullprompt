@@ -30,20 +30,25 @@ const warehouseSvg = `
   <path d="M7 18 L7 11 L13 7 L19 11 L19 18 Z" fill="#fff" opacity="0.92"/>
 </svg>`;
 
-// A clearer lorry (round 98, owner: «mapdagi mashinalar conka bo'lib partiyalar
-// yaxshiroq ko'rinishi kerak»): a coloured rounded badge with a white cab-and-
-// trailer silhouette, bigger than the old 26px dot so a truck on the corridor
-// reads as a truck at a glance. Still a distinct SHAPE from the warehouse
-// square, so the two stay apart when they overlap (DECISIONS #137).
+/**
+ * The lorry itself, not a badge with a lorry drawn inside it (owner, round
+ * 109 after seeing the deploy: «mashinalar iconkasini ozgartirmabsan» — the
+ * round-98 marker was a coloured rounded SQUARE holding a 12px white
+ * silhouette, and at map scale the square is what the eye reads: a button,
+ * a warehouse's twin). A silhouette is also the stronger answer to #137,
+ * because nothing about it can be confused with the warehouse's square.
+ *
+ * It faces LEFT, the way every loaded truck on this corridor travels:
+ * China → Uzbekistan is right-to-left on every screen this app draws.
+ * The white stroke is a HALO (`paint-order: stroke`), so the shape stays
+ * legible over a dark road or a green field on the real basemap.
+ */
 const truckSvg = (color: string) => `
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <rect x="1.5" y="1.5" width="29" height="29" rx="9" fill="${color}" stroke="#fff" stroke-width="2.5"/>
-  <g fill="#fff">
-    <rect x="6" y="12" width="12" height="8" rx="1"/>
-    <path d="M18 14 h4.5 l3 3 v3 H18 Z"/>
-    <circle cx="10" cy="21.5" r="2.3" fill="${color}" stroke="#fff" stroke-width="1.6"/>
-    <circle cx="22" cy="21.5" r="2.3" fill="${color}" stroke="#fff" stroke-width="1.6"/>
-  </g>
+<svg width="38" height="28" viewBox="0 0 38 28" xmlns="http://www.w3.org/2000/svg">
+  <path d="M35 5 H17 V11 H12 L6 17 V22 H35 Z" fill="${color}" stroke="#fff" stroke-width="3"
+        paint-order="stroke" stroke-linejoin="round"/>
+  <circle cx="13" cy="22" r="3.6" fill="#1f2937" stroke="#fff" stroke-width="1.6"/>
+  <circle cx="29" cy="22" r="3.6" fill="#1f2937" stroke="#fff" stroke-width="1.6"/>
 </svg>`;
 
 export function LeafletCorridor({
@@ -141,13 +146,22 @@ export function LeafletCorridor({
     for (const tr of trucks) {
       const color = tr.overdue ? '#dc2626' : '#f59e0b';
       const text = tr.overdue ? '#b91c1c' : '#92400e';
+      // MEASURED, and the reason he saw the code floating away from the
+      // lorry: the label was a BLOCK above the svg inside an 80px wrapper,
+      // and Tailwind's preflight makes every `svg` display:block — so
+      // `text-align:center` moved the TEXT and left the icon pinned to the
+      // wrapper's left edge. The lorry was drawn 24px left and 18px BELOW
+      // its own coordinate, with the code centred over open map. The label
+      // is absolute now (it cannot push the icon anywhere) and the svg sits
+      // in an inline-block box like the warehouse's, so the marker lands
+      // exactly on the road it is driving. The label still goes ABOVE a
+      // truck and BELOW a warehouse, so a truck standing at a warehouse
+      // does not print its code over the other's.
       const icon = L.divIcon({
         className: '',
-        // The label goes ABOVE a truck and BELOW a warehouse, so a truck
-        // standing at a warehouse does not print its code over the other's.
-        html: `<div style="position:relative;width:80px;margin-left:-24px;text-align:center"><div style="font-family:monospace;font-weight:800;font-size:12px;color:${text};-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(tr.code)}</div>${truckSvg(color)}</div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
+        html: `<div style="position:relative;width:38px;height:28px;line-height:0"><div style="position:absolute;bottom:100%;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:monospace;font-weight:800;font-size:12px;line-height:14px;color:${text};-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(tr.code)}</div>${truckSvg(color)}</div>`,
+        iconSize: [38, 28],
+        iconAnchor: [19, 14],
       });
       L.marker([tr.y, tr.x], { icon, zIndexOffset: 1000 })
         .addTo(overlay)
