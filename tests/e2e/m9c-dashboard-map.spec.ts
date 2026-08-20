@@ -66,7 +66,21 @@ test('the map fills the screen and says which mark is which', async ({ page }) =
   // Tapping a warehouse answers INSIDE the map (owner, item 12): the popup
   // is a child of the canvas, so it also survives fullscreen — the old cards
   // below the map were exactly what fullscreen buried.
-  await page.getByTestId('map-warehouse').first().click();
+  // A truck that has just departed stands ON its origin warehouse, and the
+  // truck mark takes the tap (deliberately — Leaflet gives it zIndexOffset
+  // 1000, the schematic draws it last). Round 109's bigger lorry made that
+  // overlap likelier, so the spec picks a pin nothing is covering instead of
+  // trusting the first one; if every pin were covered it still fails loudly.
+  const pins = page.getByTestId('map-warehouse');
+  const free = await pins.evaluateAll((nodes) =>
+    nodes.findIndex((node) => {
+      const r = node.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return hit ? node.contains(hit) : false;
+    }),
+  );
+  expect(free, 'no warehouse mark is clickable — every one is under a truck').toBeGreaterThan(-1);
+  await pins.nth(free).click();
   const popup = page.getByTestId('map-popup');
   await expect(popup).toBeVisible();
   await expect(popup.locator('a[href^="/stock"]')).toBeVisible();

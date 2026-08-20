@@ -426,47 +426,27 @@ function SvgCorridor({
             <circle cx={s.x} cy={s.y} r={13} className={tr.overdue ? 'fill-bad' : 'fill-warn'} opacity={0.25}>
               <animate attributeName="r" values="12;18;12" dur="2.2s" repeatCount="indefinite" />
             </circle>
-            {/* The SAME cab-and-trailer the Leaflet marker draws (owner,
-                round 109: «mashina iconini truck iconi bn ozgartirish
-                kerak»). This fallback still drew the old 10px dot with a
-                box on it, and this renderer is what a server WITHOUT the
-                basemap tiles shows — so the two maps disagreed about what a
-                truck looks like, and the one he sees was the poorer. Kept a
-                rounded SQUARE against the warehouse's square-with-a-roof:
-                shape, not colour, is what tells them apart (#137). */}
-            <rect
-              x={s.x - 13}
-              y={s.y - 13}
-              width={26}
-              height={26}
-              rx={8}
-              className={tr.overdue ? 'fill-bad' : 'fill-warn'}
-              stroke="#fff"
-              strokeWidth={2.5}
-            />
-            <g fill="#fff">
-              <rect x={s.x - 8} y={s.y - 4} width={10} height={7} rx={1} />
-              <path d={`M ${s.x + 2} ${s.y - 2} h 3.6 l 2.4 2.4 v 2.6 H ${s.x + 2} Z`} />
-              <circle
-                cx={s.x - 4.5}
-                cy={s.y + 4.5}
-                r={2}
+            {/* The SAME lorry the Leaflet marker draws — one shape, both
+                renderers, because which one a person sees depends on the
+                SERVER (the basemap file), not on anything they chose. Drawn
+                in local coordinates and translated, so the two SVGs can be
+                compared line by line. Left-facing: China → Uzbekistan is
+                right-to-left on every screen here. */}
+            <g transform={`translate(${s.x - 19} ${s.y - 14})`}>
+              <path
+                d="M35 5 H17 V11 H12 L6 17 V22 H35 Z"
                 className={tr.overdue ? 'fill-bad' : 'fill-warn'}
                 stroke="#fff"
-                strokeWidth={1.4}
+                strokeWidth={3}
+                paintOrder="stroke"
+                strokeLinejoin="round"
               />
-              <circle
-                cx={s.x + 5}
-                cy={s.y + 4.5}
-                r={2}
-                className={tr.overdue ? 'fill-bad' : 'fill-warn'}
-                stroke="#fff"
-                strokeWidth={1.4}
-              />
+              <circle cx={13} cy={22} r={3.6} fill="#1f2937" stroke="#fff" strokeWidth={1.6} />
+              <circle cx={29} cy={22} r={3.6} fill="#1f2937" stroke="#fff" strokeWidth={1.6} />
             </g>
             <text
               x={s.x}
-              y={s.y - 18}
+              y={s.y - 17}
               fontSize={12}
               fontWeight={800}
               textAnchor="middle"

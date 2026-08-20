@@ -480,6 +480,25 @@ sees depends on the SERVER** — with `.data/basemap/corridor.pmtiles` absent
 the page draws the SVG schematic (round 98 told him to fetch it on the new
 VPS; never confirmed). Both renderers read the same `routePoints`.
 1705 unit/integration + 157 e2e green on a fresh gsr_ci in CI's order.
+**Round 109b — his report AFTER the deploy** (#747): «mashinalar iconkasini
+ozgartirmabsan va mashinalar iconi bn soni alohida turibti, skladlarniki
+yaxshi chiqibti» — the last clause is the diagnosis (#476). The warehouse
+read right because 109's badge fix wrapped its icon in an inline-block span;
+the truck had none, and **Tailwind's preflight sets `svg {display:block}`**,
+so in the marker's 80 px `text-align:center` box the label centred as TEXT
+while the lorry stayed at the left edge — and the label being a BLOCK above
+it pushed the icon out of Leaflet's anchored box. MEASURED in a browser: the
+lorry was drawn **24 px left and 18 px below its own coordinate**. Now the
+label is `position:absolute`, the svg sits in the icon's own 38×28 box, and
+`iconSize`/`iconAnchor` agree — re-measured, every marker's centre equals its
+point exactly. The ICON is a lorry SILHOUETTE (round 98's was a rounded
+SQUARE with a 12 px truck inside, which at map scale reads as a square),
+facing left because the corridor runs right-to-left, white halo, drawn
+identically in BOTH renderers. `tests/unit/map-markers.test.ts` pins the
+shared path, the absolute label and the three numbers. CONSEQUENCE: a
+just-departed truck stands ON its origin warehouse and takes the tap
+(deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
+`elementFromPoint` says is free instead of `.first()`.
 
 Latest migration: **0084** (`speed_round` — two partial `notifications`
 indexes + `tg_messages.edited_at`; count must reach **85**);
