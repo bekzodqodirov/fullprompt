@@ -29,11 +29,18 @@ export type DomainEventType =
   // Chinese warehouse, which is the only moment the client can still say
   // "then send it back".
   | 'UnquotedCargo'
+  // Round 107: the deal exists, the receipt just was not linked to it — a
+  // different job for the seller than pricing (attach, not quote).
+  | 'UnlinkedCargo'
   | 'DealDeviation'
   | 'DealDeferralEnded'
   // Phase 6: issuing to a debtor goes through a recorded request/decision.
   | 'DebtApprovalRequested'
   | 'DebtApprovalDecided'
+  // Round 107: the warehouse reports money spent; finance enters the real
+  // expense. The same request/decision pair, one floor down.
+  | 'ExpenseRequested'
+  | 'ExpenseRequestDecided'
   // Phase 7: funnel movement becomes an event, so automation rules can hear
   // it. Emitted from EVERY stage write path, not just the board's move.
   | 'LeadStageChanged'

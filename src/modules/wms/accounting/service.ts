@@ -17,6 +17,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
+import { logger } from '../../platform/logger';
 
 /**
  * Management accounting (Phase 2.4, owner's answers).
@@ -222,6 +223,11 @@ export async function voidExpense(id: string, reason: string, ctx: AuditContext)
     const { voidChargeForExpense } = await import('../partners/link');
     await voidChargeForExpense(id, reason.trim(), ctx);
   }
+  // The pair rule (#528): a rasxod xabari answered by this expense must not
+  // keep reading «kiritildi» about money that was taken back — it re-opens
+  // on the decider's panel (round 107).
+  const { reopenRequestsForExpense } = await import('./expense-requests');
+  await reopenRequestsForExpense(id);
   await writeAudit(db, ctx, {
     entityType: 'expense',
     entityId: id,
@@ -290,6 +296,20 @@ export async function saveRecurring(
   ctx: AuditContext,
 ) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
+  // The same pair rule `addExpense` enforces, asked HERE — where the person
+  // who picked the wrong till is still looking at the form. The two selects
+  // are unrelated controls over 86 cash boxes, so choosing a USD till for a
+  // som rent is an ordinary slip; it used to be stored without a word and
+  // only refused on the 1st, from inside the monthly run.
+  if (input.accountId) {
+    const [account] = await db
+      .select({ currency: moneyAccounts.currency })
+      .from(moneyAccounts)
+      .where(eq(moneyAccounts.id, input.accountId));
+    if (account && account.currency !== input.currency) {
+      throw new AccountingError('account_currency_mismatch');
+    }
+  }
   const values = {
     categoryId: input.categoryId,
     amount: String(input.amount),
@@ -338,6 +358,18 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
 
   let created = 0;
   const skipped: string[] = [];
+  /**
+   * Templates that could not be posted, by id.
+   *
+   * The loop used to have no catch and is not a transaction, so ONE bad
+   * template — a till in the wrong currency, an FX rate missing for the day —
+   * posted everything before it, silently posted nothing after it, and
+   * returned a bare error the button rendered as «Xatolik». Pressing again
+   * skipped the rows that had landed and died in the same place, so that rent
+   * and every template ordered behind it never entered the P&L in any month.
+   * The rest of the month's fixed costs are not hostage to one of them.
+   */
+  const failed: string[] = [];
   for (const template of templates) {
     const date = `${month}-${String(template.dayOfMonth).padStart(2, '0')}`;
     // The slot is (category, date, employee, WAREHOUSE) — the warehouse is
@@ -367,22 +399,30 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
       skipped.push(template.id);
       continue;
     }
-    await addExpense(
-      {
-        categoryId: template.categoryId,
-        amount: Number(template.amount),
-        currency: template.currency,
-        expenseDate: date,
-        warehouseId: template.warehouseId ?? '',
-        employeeId: template.employeeId ?? '',
-        accountId: template.accountId ?? '',
-        note: template.note ?? '',
-      },
-      ctx,
-    );
-    created += 1;
+    try {
+      await addExpense(
+        {
+          categoryId: template.categoryId,
+          amount: Number(template.amount),
+          currency: template.currency,
+          expenseDate: date,
+          warehouseId: template.warehouseId ?? '',
+          employeeId: template.employeeId ?? '',
+          accountId: template.accountId ?? '',
+          note: template.note ?? '',
+        },
+        ctx,
+      );
+      created += 1;
+    } catch (err) {
+      failed.push(template.id);
+      logger.warn(
+        { err, templateId: template.id, month },
+        'recurring expense could not be posted — the rest of the month continues',
+      );
+    }
   }
-  return { created, skipped: skipped.length };
+  return { created, skipped: skipped.length, failed: failed.length };
 }
 
 // --- Transfers between our own accounts -------------------------------------

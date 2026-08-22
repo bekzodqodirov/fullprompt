@@ -49,7 +49,8 @@ export type IconName =
   | 'exchange'
   | 'maximize'
   | 'chat'
-  | 'doc';
+  | 'doc'
+  | 'sparkle';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   home: <path d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5M9.5 20v-6h5v6" />,
@@ -208,6 +209,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M6 3.5h8l4 4v13H6z" />
       <path d="M14 3.5v4h4" />
+    </>
+  ),
+  sparkle: (
+    <>
+      <path d="M12 3.5 13.8 9 19.5 11 13.8 13 12 18.5 10.2 13 4.5 11 10.2 9z" />
+      <path d="M18.5 16.5v4M16.5 18.5h4" />
     </>
   ),
 };

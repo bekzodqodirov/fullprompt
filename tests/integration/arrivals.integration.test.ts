@@ -13,9 +13,13 @@ import {
   cancelExpectedArrival,
   createExpectedArrival,
   incomingTrucks,
+  markArrived,
   issuingWarehouseIds,
   listExpected,
 } from '@/modules/wms/arrivals/service';
+
+/** The services now take the writer's scope; these tests write company-wide. */
+const UNSCOPED = { warehouseScoped: false, warehouseIds: [] as string[] };
 
 /**
  * What is coming to a warehouse: the cargo a client promised, and the truck
@@ -103,9 +107,8 @@ afterAll(async () => {
 
 describe('cargo a client promised', () => {
   it('is listed until the real receipt closes it', async () => {
-    const promise = await createExpectedArrival(
-      { warehouseId: whFrom, clientId, boxCount: 5, expectedOn: '2026-08-01', note: 'kuryer' },
-      ctx(),
+    const promise = await createExpectedArrival({ warehouseId: whFrom, clientId, boxCount: 5, expectedOn: '2026-08-01', note: 'kuryer' }, UNSCOPED,
+ctx(),
     );
 
     const waiting = await listExpected([whFrom]);
@@ -123,8 +126,10 @@ describe('cargo a client promised', () => {
   });
 
   it('leaves BOTH promises open when two could match the same receipt', async () => {
-    const a = await createExpectedArrival({ warehouseId: whFrom, clientId, boxCount: 1 }, ctx());
-    const b = await createExpectedArrival({ warehouseId: whFrom, clientId, boxCount: 2 }, ctx());
+    const a = await createExpectedArrival({ warehouseId: whFrom, clientId, boxCount: 1 }, UNSCOPED,
+ctx());
+    const b = await createExpectedArrival({ warehouseId: whFrom, clientId, boxCount: 2 }, UNSCOPED,
+ctx());
     await makeLot(whFrom, 1);
     // Guessing which one the receipt answered would close a promise that is
     // still genuinely outstanding.
@@ -132,11 +137,11 @@ describe('cargo a client promised', () => {
     expect(open).toContain(a.id);
     expect(open).toContain(b.id);
 
-    await cancelExpectedArrival(a.id, 'mijoz jo‘natmadi', ctx());
-    await cancelExpectedArrival(b.id, 'mijoz jo‘natmadi', ctx());
+    await cancelExpectedArrival(a.id, 'mijoz jo‘natmadi', UNSCOPED, ctx());
+    await cancelExpectedArrival(b.id, 'mijoz jo‘natmadi', UNSCOPED, ctx());
     expect(await listExpected([whFrom])).toHaveLength(0);
     // A cancellation has to say why, and a closed row cannot be closed twice.
-    await expect(cancelExpectedArrival(b.id, 'x', ctx())).rejects.toThrow(ArrivalError);
+    await expect(cancelExpectedArrival(b.id, 'x', UNSCOPED, ctx())).rejects.toThrow(ArrivalError);
   });
 
   it('needs a client or a marking', async () => {
@@ -197,5 +202,40 @@ describe('handover is a warehouse setting', () => {
     expect(ids).not.toContain(whFrom);
     // Scoped to an operator who works at the sending warehouse: nothing.
     expect(await issuingWarehouseIds([whFrom])).toHaveLength(0);
+  });
+});
+
+describe('a scoped operator cannot reach another warehouse\'s promises', () => {
+  // The picker offers a Kashgar operator only Kashgar; the WIRE offered him
+  // everything. A re-posted warehouseId planted a promise on another
+  // country's arrivals list, and a promise id read off a shared screen let
+  // him close another warehouse's promise as arrived or cancelled — with the
+  // manager who wrote it told nothing.
+  const scopedTo = (warehouseId: string) => ({ warehouseScoped: true, warehouseIds: [warehouseId] });
+
+  it('creating for a foreign warehouse is refused', async () => {
+    await expect(
+      createExpectedArrival({ warehouseId: whTo, clientId, boxCount: 1 }, scopedTo(whFrom), ctx()),
+    ).rejects.toMatchObject({ code: 'wrong_warehouse' });
+  });
+
+  it('closing or cancelling a foreign promise is refused, judged by the ROW', async () => {
+    const foreign = await createExpectedArrival(
+      { warehouseId: whTo, clientId, boxCount: 1 },
+      UNSCOPED,
+      ctx(),
+    );
+    await expect(
+      markArrived(foreign.id, scopedTo(whFrom), ctx()),
+    ).rejects.toMatchObject({ code: 'wrong_warehouse' });
+    await expect(
+      cancelExpectedArrival(foreign.id, 'begona', scopedTo(whFrom), ctx()),
+    ).rejects.toMatchObject({ code: 'wrong_warehouse' });
+    // …and the promise is untouched by either refusal.
+    const row = await db.query.expectedArrivals.findFirst({
+      where: (t, { eq: e }) => e(t.id, foreign.id),
+    });
+    expect(row!.status).toBe('waiting');
+    await cancelExpectedArrival(foreign.id, 'tozalash', UNSCOPED, ctx());
   });
 });

@@ -14,6 +14,7 @@ import { MobileNav, Sidebar, type NavGroup, type NavItem } from '@/components/ui
 import { Dock } from '@/components/dock';
 import { canReadTg } from '@/modules/wms/crm/conversations';
 import { menuItems, NAV, primaryItems } from '@/modules/platform/rbac/nav';
+import { aiConfigured } from '@/modules/platform/ai/model';
 
 /**
  * The app shell.
@@ -46,6 +47,9 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     const items: NavItem[] = [];
     for (const item of group.items) {
       if (!menuItems(item, viewer)) continue;
+      // A menu door to «AI sozlanmagan» is clutter — the entry appears the
+      // day the server key does. The ROUTE answers regardless (honestly).
+      if (item.href === '/ai' && !aiConfigured()) continue;
       items.push({
         href: item.href,
         label: await label(item.namespace, item.labelKey),

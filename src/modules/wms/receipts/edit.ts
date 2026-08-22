@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -40,7 +40,8 @@ export class EditError extends Error {
       | 'edit_window_closed'
       | 'structural_locked'
       | 'boxes_not_editable'
-      | 'boxes_crated',
+      | 'boxes_crated'
+      | 'receipt_not_confirmed',
   ) {
     super(code);
   }
@@ -79,6 +80,20 @@ export async function editLot(
   const lot = await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, input.lotId) });
   if (!lot) throw new EditError('not_found');
   const receipt = (await db.query.receipts.findFirst({ where: eq(receipts.id, lot.receiptId) }))!;
+  /**
+   * A VOIDED receipt is not editable, and the structural lock below cannot
+   * say so on its own.
+   *
+   * That guard reads «no ACTIVE box has left in_stock», and on a voided
+   * receipt every box is `void`, so the active list is EMPTY and
+   * `[].some(...)` is false — the lock passes by being asked about nothing.
+   * The grow branch then inserted brand-new `in_stock` boxes with fresh short
+   * codes and printed labels for them: live, plannable, loadable cargo hanging
+   * off a prixod that officially never happened. Reachable with no race at
+   * all — a manager voids the receipt while a colleague has the lot form open,
+   * and the colleague presses Save.
+   */
+  if (receipt.status !== 'confirmed') throw new EditError('receipt_not_confirmed');
   const warehouse = (await db.query.warehouses.findFirst({
     where: eq(warehouses.id, receipt.warehouseId),
   }))!;
@@ -263,6 +278,8 @@ export async function assignReceiptClient(
 ): Promise<void> {
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
   if (!receipt) throw new EditError('not_found');
+  // Same rule as the lot form: a voided intake takes no more corrections.
+  if (receipt.status !== 'confirmed') throw new EditError('receipt_not_confirmed');
   const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
   if (!client) throw new EditError('not_found');
   const warehouse = (await db.query.warehouses.findFirst({
@@ -298,6 +315,30 @@ export async function assignReceiptClient(
     // `clientId IS NULL` everywhere, never by the marking's presence — so a
     // claimed receipt that keeps its marking is still counted as claimed.
     await tx.update(receipts).set({ clientId }).where(eq(receipts.id, receiptId));
+
+    /**
+     * The money follows the cargo.
+     *
+     * `cost_allocations.client_id` is a denormalised SNAPSHOT of the
+     * receipt's client, taken when the cost was allocated — and unclaimed
+     * cargo is exactly the case where costs (customs, freight) are entered
+     * BEFORE anybody knows whose it is, so those rows carry NULL. Nothing
+     * re-derived them, so every report keyed on that column went on saying
+     * the money belongs to nobody: the client showed revenue with no cost and
+     * read as pure profit, `landedCostByClient` — the owner's most-used
+     * report — inner-joins `clients` and dropped the row entirely, and the
+     * pricing screen's total stopped agreeing with the breakdown it opens,
+     * because one groups by the allocation and the other by the receipt.
+     * A correction from GS500 to GS501 left the cost on GS500 for ever.
+     */
+    await tx.execute(sql`
+      UPDATE cost_allocations SET client_id = ${clientId}
+      WHERE box_id IN (
+        SELECT b.id FROM boxes b
+        JOIN receipt_lots rl ON rl.id = b.lot_id
+        WHERE rl.receipt_id = ${receiptId}
+      )
+    `);
 
     await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
       entityType: 'receipt',

@@ -67,7 +67,11 @@ export async function analyzeIntake(input: {
   if (!material) return null;
 
   try {
-    const client = new Anthropic();
+    // A deadline of its own, for the same reason round 101 gave the
+    // assistant one: the SDK's default is about ten minutes, and this call
+    // is made from the staff bot, whose poller is sequential — a hung socket
+    // there is a customer bot that answers nobody until it clears.
+    const client = new Anthropic({ timeout: 60_000, maxRetries: 1 });
     const response = await client.messages.create({
       model: 'claude-opus-5',
       max_tokens: 4096,

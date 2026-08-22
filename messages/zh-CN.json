@@ -40,7 +40,8 @@
       "notFound": "找不到卡片 — 请刷新页面",
       "reasonRequired": "需要填写原因",
       "stageNotFound": "阶段已删除 — 请刷新页面",
-      "reasonNotListed": "原因必须从列表中选择"
+      "reasonNotListed": "原因必须从列表中选择",
+      "convertRequired": "“已成交”只能通过对话框：客户编号和交易"
     },
     "moreActions": "更多操作",
     "notFilled": "未填写",
@@ -69,7 +70,8 @@
     "logout": "退出",
     "notifications": "通知",
     "homeTile": "首页",
-    "customLists": "自定义列表"
+    "customLists": "自定义列表",
+    "ai": "AI 助手"
   },
   "home": {
     "receiving": "收货",
@@ -324,7 +326,8 @@
       "debt_approval_ttl_hours": "欠款客户放货批准在通过后有效多少小时",
       "unanswered_reminder_minutes": "客户等待多少分钟后提醒其经理（0 = 关闭）",
       "crm_calc_stage": "机器人发来「报价」时，线索移到该阶段（只向前；「—」表示不移动）",
-      "deal_calc_stage": "交易看板同理——已有客户编号的请求会落在交易上"
+      "deal_calc_stage": "交易看板同理——已有客户编号的请求会落在交易上",
+      "ai_daily_limit": "每人每天的 AI 提问上限（机器人 + AI 页面合计；0 为关闭）"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"
@@ -554,6 +557,10 @@
     },
     "allWh": "全部仓库",
     "onRoad": "在途",
+    "cratesTitle": "木箱",
+    "cratePlace": "件",
+    "crateInside": "箱内",
+    "crateOver": "超出箱体",
     "filterPlaceholder": "代码、标记、货物…",
     "colCode": "代码",
     "colProduct": "货物",
@@ -1092,7 +1099,15 @@
     "noRate": "无汇率",
     "partnerIn": "合作方转入",
     "partnerOut": "支付给合作方",
-    "accountCurrencyMismatch": "账户币种与金额币种不符"
+    "accountCurrencyMismatch": "账户币种与金额币种不符",
+    "generateFailed": "{n} 项未过账 — 请检查设置",
+    "requestsTitle": "仓库支出——待入账",
+    "enterRequest": "入账",
+    "requestStuck": "入账未完成——请检查支出列表",
+    "reject": "拒绝",
+    "rejectReason": "为什么拒绝？仓管员会看到回复。",
+    "fromRequest": "已从仓库报告填充——请核对并选择类别和账户。",
+    "requestTaken": "该报告已被他人入账"
   },
   "crm": {
     "title": "CRM",
@@ -1396,7 +1411,33 @@
     "lostReasonLabel": "原因",
     "lostReasonsSetupHint": "列表为空时原因以自由文本填写；填好后只能从列表中选择。",
     "unowned": "无负责人",
-    "dealsNoSource": "来源筛选不适用于交易——交易没有来源。"
+    "dealsNoSource": "来源筛选不适用于交易——交易没有来源。",
+    "followUpDone": "已完成",
+    "followUpTomorrow": "明天",
+    "followUpFailed": "未保存",
+    "nameTaken": "列表中已有该名称（不区分大小写）",
+    "won": {
+      "title": "线索已成交——客户是谁？",
+      "mint": "新编号",
+      "attach": "关联现有客户",
+      "name": "客户名称",
+      "codeOptional": "编号（留空自动分配）",
+      "attachCode": "客户编号（GS…）",
+      "check": "查询",
+      "confirm": "开立交易",
+      "confirmExisting": "将为该客户开立一笔新交易。",
+      "existing": "客户",
+      "deal": "交易",
+      "errors": {
+        "clientNotFound": "没有这个编号",
+        "clientInactive": "该客户已停用",
+        "codeExists": "该编号已被占用",
+        "codeFormat": "编号格式不正确",
+        "stageGone": "阶段不存在——请刷新页面",
+        "forbidden": "没有权限",
+        "failed": "保存失败"
+      }
+    }
   },
   "navShort": {
     "home": "首页",
@@ -1600,7 +1641,8 @@
       "too_big": "大于最大值",
       "too_short": "太短",
       "too_long": "太长",
-      "pattern": "不符合格式"
+      "pattern": "不符合格式",
+      "label_taken": "该名称已被占用 — 请换一个"
     }
   },
   "tasks": {
@@ -1822,6 +1864,7 @@
       "BoxIssued": "货物已交付客户",
       "UnknownCargoReceived": "收到无主货物",
       "UnquotedCargo": "未报价货物（在中国）",
+      "UnlinkedCargo": "未关联交易的货物",
       "DealDeviation": "货物与报价不符",
       "DealDeferralEnded": "付款延期已到期",
       "MissingInTransit": "卸货短缺"
@@ -2024,6 +2067,11 @@
     "full": "详细 →",
     "close": "关闭",
     "created": "已添加：",
+    "codeTitle": "新客户已添加",
+    "copy": "复制编号",
+    "copied": "已复制 ✓",
+    "toCard": "客户卡 →",
+    "done": "完成",
     "discard": "不保存就关闭吗？已输入的内容会丢失。",
     "hint": {
       "lead": "进入第一阶段并归属于您——其余在卡片上填写。",
@@ -2078,5 +2126,65 @@
     "mapUnmapped": "广告中出现的新问题",
     "mapManual": "手动添加问题",
     "mapKeyPlaceholder": "表单里的问题名"
+  },
+  "assistant": {
+    "title": "AI 助手",
+    "intro": "用平常的话提问——助手会从您本来就能看到的数据中作答（货物、客户、任务）。",
+    "introAnalyst": "用平常的话提问——助手会分析整个系统的数据作答（资金、客户、车次）。",
+    "placeholder": "输入问题…",
+    "send": "发送",
+    "thinking": "思考中…",
+    "notConfigured": "AI 尚未配置——服务器 .env 需要 ANTHROPIC_API_KEY。",
+    "limit": "今天的 AI 提问次数已用完——明天再问。",
+    "gaveUp": "没能完成——请把问题问得简单一些。",
+    "error": "AI 未能回答。请稍后再试。"
+  },
+  "backup": {
+    "title": "备份",
+    "database": "数据库",
+    "files": "文件",
+    "notConfigured": "未配置异地备份 — 所有数据仅存于本服务器",
+    "never": "尚未上传",
+    "remaining": "剩余 {n}",
+    "copied": "已复制 {n} 个文件"
+  },
+  "rasxod": {
+    "title": "报告支出",
+    "warehouse": "仓库",
+    "amount": "金额",
+    "note": "花在什么上",
+    "photo": "小票",
+    "send": "发送",
+    "sent": "已发送——财务将入账",
+    "photoFailed": "照片上传失败——请重试",
+    "errors": {
+      "forbidden": "没有该仓库的权限",
+      "validation": "请检查金额和说明",
+      "failed": "发送失败"
+    }
+  },
+  "adminHome": {
+    "money": "资金",
+    "todayFlow": "今日",
+    "debtors": "应收客户",
+    "clientsShort": "客户",
+    "partnerDebt": "合作方",
+    "monthMoney": "本月：应收 / 已收",
+    "cargo": "货物",
+    "stock": "库存",
+    "onRoad": "在途",
+    "todayReceipts": "今日入库",
+    "trucksShort": "辆",
+    "sales": "销售",
+    "otherCurrency": "其他币种",
+    "monthDecided": "本月",
+    "signals": "信号",
+    "backup": "备份",
+    "backupOk": "正常",
+    "backupOff": "未配置",
+    "backupStale": "未完成",
+    "unsent": "未送达（7天）",
+    "overdueTasks": "逾期任务",
+    "dueTodayShort": "今天到期"
   }
 }

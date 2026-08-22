@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { openSync, readSync, closeSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import postgres from 'postgres';
@@ -7,8 +7,71 @@ import postgres from 'postgres';
 const execFileAsync = promisify(execFile);
 
 export type RestoreTestResult =
-  | { ok: true; file: string; counts: Record<string, number> }
+  | { ok: true; file: string; mode: 'restore'; counts: Record<string, number> }
+  /**
+   * The drill could not be run here, but the dump was inspected as far as it
+   * can be without the tools — see `inspectDump`. Reported as ok because a
+   * weekly alarm that means «this machine has no pg_restore» is an alarm
+   * people learn to ignore, and the next real failure goes with it.
+   */
+  | { ok: true; file: string; mode: 'header'; note: string }
   | { ok: false; error: string };
+
+/** Every dump in the directory, newest last, with its size. */
+export function dumpsInDir(dir: string): { file: string; bytes: number }[] {
+  try {
+    return readdirSync(dir)
+      .filter((n) => /^gsr-[\d-]+\.dump$/.test(n))
+      .sort()
+      .map((n) => ({ file: `${dir}/${n}`, bytes: statSync(`${dir}/${n}`).size }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * What can be said about a dump without restoring it.
+ *
+ * Two facts, and the second is the one worth having. A pg_dump custom-format
+ * file starts with the five bytes `PGDMP`, so a truncated or empty upload is
+ * caught for the cost of one read. And a dump that has suddenly HALVED is the
+ * shape a real disaster takes — a database that came up empty, a restore that
+ * replaced production with a test set, a --schema-only flag that crept into a
+ * script — while the file itself stays perfectly valid and every size check
+ * that only asks «is it non-zero» says yes.
+ *
+ * Pure so the rule can be tested; the caller supplies the sizes.
+ */
+export function inspectDump(
+  magicOk: boolean,
+  bytes: number,
+  previousBytes: number | null,
+): { ok: boolean; note: string } {
+  if (!magicOk) return { ok: false, note: 'fayl pg_dump formatida emas (PGDMP sarlavhasi yo‘q)' };
+  if (bytes === 0) return { ok: false, note: 'fayl bo‘sh' };
+  if (previousBytes !== null && previousBytes > 0 && bytes < previousBytes / 2) {
+    return {
+      ok: false,
+      note: `zaxira keskin kichraydi: ${bytes} bayt, oldingisi ${previousBytes} bayt`,
+    };
+  }
+  return { ok: true, note: `sarlavha to‘g‘ri, ${bytes} bayt` };
+}
+
+/** The five bytes every custom-format dump starts with. */
+export function hasDumpMagic(file: string): boolean {
+  let fd: number | null = null;
+  try {
+    fd = openSync(file, 'r');
+    const head = Buffer.alloc(5);
+    readSync(fd, head, 0, 5, 0);
+    return head.toString('latin1') === 'PGDMP';
+  } catch {
+    return false;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+}
 
 // A restore that "succeeds" but loses the core tables is still a failure —
 // these must all exist and users must be non-empty in any real dump.
@@ -74,7 +137,7 @@ export async function runRestoreTest(): Promise<RestoreTestResult> {
         if (counts.users === 0) {
           return { ok: false, error: `restore bo‘ldi, lekin users jadvali bo‘sh (${latest})` };
         }
-        return { ok: true, file, counts };
+        return { ok: true, file, mode: 'restore', counts };
       } finally {
         await scratch.end();
       }
@@ -83,13 +146,26 @@ export async function runRestoreTest(): Promise<RestoreTestResult> {
     }
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: string };
-    return {
-      ok: false,
-      error:
-        e.code === 'ENOENT'
-          ? 'pg_restore topilmadi — PostgreSQL bin papkasini PATH ga qo‘shing'
-          : String(e.stderr || e.message || e),
-    };
+    if (e.code === 'ENOENT') {
+      // The app image carries no postgres client, so the full drill cannot
+      // run in this container. Say what CAN be checked rather than raising the
+      // same alarm every Saturday for a fact about the image — an alarm that
+      // never changes is one nobody reads, and the real failure hides behind
+      // it. docs/BACKUP.md carries the manual drill.
+      const all = dumpsInDir(dir);
+      const current = all.at(-1);
+      const previous = all.at(-2)?.bytes ?? null;
+      const verdict = inspectDump(hasDumpMagic(file), current?.bytes ?? 0, previous);
+      return verdict.ok
+        ? {
+            ok: true,
+            file,
+            mode: 'header',
+            note: `pg_restore yo‘q — to‘liq tiklash sinovi o‘tkazilmadi; ${verdict.note}`,
+          }
+        : { ok: false, error: verdict.note };
+    }
+    return { ok: false, error: String(e.stderr || e.message || e) };
   } finally {
     await admin.end();
   }

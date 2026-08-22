@@ -22,8 +22,9 @@ import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
-import { transitTrucks } from '@/modules/wms/inventory/service';
+import { crateStock, transitTrucks } from '@/modules/wms/inventory/service';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { CrateRows } from '@/components/crate-rows';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -180,6 +181,14 @@ export default async function StockPage({
   // own scope: `scopeFilter` is built on `currentWarehouseId`, which is NULL
   // for every in-transit box — reusing it would answer zero for ever.
   const onRoad = await transitTrucks(actor, params.wh);
+  // The yashik layer (round 107, item 6). Gated on `crates.manage` — every
+  // crate surface is (list, card, print, even attachments), and /stock's own
+  // gate is a bare login: sellers and accountants read the shelf here, but
+  // the crate layer is the warehouse's, and a link they cannot open is a
+  // teleport to the home page.
+  const crateStrip = actor.permissions.has('crates.manage')
+    ? await crateStock(actor, params.wh)
+    : null;
   const lines = await db
     .select({
       lot: receiptLots,
@@ -394,6 +403,25 @@ export default async function StockPage({
           </span>
         )}
       </p>
+
+      {/* The yashik layer (round 107 item 6, re-shaped in round 109 to what
+          he actually asked for: a LIST of places, not a chip strip, and the
+          over-capacity ones at the top). Unlike the on-road strip this is a
+          RE-GROUPING of cargo the Σ and the table already count, nothing
+          additive; it deliberately ignores `q` the way it sits outside the
+          sort, the views and the XLSX. Screen-only («faqat ekranda»). */}
+      {crateStrip && (
+        <CrateRows
+          rows={crateStrip.rows}
+          more={crateStrip.more}
+          labels={{
+            title: t('cratesTitle'),
+            inside: t('crateInside'),
+            over: t('crateOver'),
+            place: t('cratePlace'),
+          }}
+        />
+      )}
 
       {/* What is ON THE ROAD to or from these warehouses (round 100, 5A).
           Deliberately outside the Σ, the table, the sort and the XLSX — those

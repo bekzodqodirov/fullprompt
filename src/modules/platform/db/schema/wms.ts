@@ -951,6 +951,59 @@ export const expenses = pgTable(
 );
 
 /**
+ * Rasxod xabari (round 107, migration 0083) — a warehouse operator's «men
+ * pul sarfladim» with the chek photo, waiting for whoever holds
+ * `finance.expenses` to enter the REAL expense with the right kontragent.
+ * The skladchi never touches the expense book; the request row is the queue
+ * and the audit. `expense_id` lands only after the expense saved — a claim
+ * that crashes between the two shows as done-with-nothing on the panel
+ * rather than being silently re-enterable (the double-money race is the
+ * common case, the crash is not).
+ */
+export const expenseRequests = pgTable(
+  'expense_requests',
+  {
+    id: id(),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    currency: varchar('currency', { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    /** What the money bought — mandatory, it becomes the expense's note. */
+    note: text('note').notNull(),
+    status: text('status').notNull().default('open'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    expenseId: uuid('expense_id').references(() => expenses.id),
+    rejectReason: text('reject_reason'),
+  },
+  (t) => [
+    check('expense_requests_amount_check', sql`${t.amount} > 0`),
+    check(
+      'expense_requests_status_check',
+      sql`${t.status} IN ('open', 'done', 'rejected')`,
+    ),
+    // The 0054 paired-CHECK idiom: a rejection is exactly a written reason.
+    check(
+      'expense_requests_reject_check',
+      sql`(${t.status} = 'rejected') = (${t.rejectReason} IS NOT NULL)`,
+    ),
+    // One request per expense — the claim's second half.
+    uniqueIndex('expense_requests_expense_unique')
+      .on(t.expenseId)
+      .where(sql`expense_id IS NOT NULL`),
+    index('expense_requests_status_idx').on(t.status, t.createdAt),
+    index('expense_requests_author_idx').on(t.createdBy, t.createdAt),
+  ],
+);
+
+/**
  * Rent, salaries and the like. A template, not an automatic posting: the
  * accountant presses "create this month's fixed costs" and reviews what
  * landed — a silent monthly insert would quietly falsify a P&L the month
@@ -1563,6 +1616,13 @@ export const tgMessages = pgTable(
      * unanswered (migration 0053). Once per silence, never per sweep.
      */
     remindedAt: timestamp('reminded_at', { withTimezone: true }),
+    /**
+     * When the stored copy was last rewritten by a Telegram edit (0084).
+     * NULL = never. The chat pulse watches maxima and counts, and an edit
+     * is an UPDATE that would otherwise move neither — a corrected number
+     * must reach the screen without waiting for an unrelated message.
+     */
+    editedAt: timestamp('edited_at', { withTimezone: true }),
   },
   (t) => [
     check('tg_messages_direction_check', sql`${t.direction} IN ('in', 'out')`),

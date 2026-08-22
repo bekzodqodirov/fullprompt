@@ -30,20 +30,46 @@ const WINDOW_MINUTES = 15;
  * unbounded password guess is not recoverable at all.
  */
 export async function isRateLimited(identifier: string, ip: string): Promise<boolean> {
-  const windowStart = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000);
-  const failed = and(eq(loginAttempts.success, false), gt(loginAttempts.createdAt, windowStart));
+  return (await addressBlocked(ip)) || (await accountLocked(identifier));
+}
 
-  const [byAccount] = await db
-    .select({ n: count() })
-    .from(loginAttempts)
-    .where(and(eq(loginAttempts.identifier, identifier), failed));
-  if ((byAccount?.n ?? 0) >= MAX_ATTEMPTS) return true;
-
+/**
+ * The wide net, and the one that must be asked BEFORE the password is
+ * verified: argon2 is deliberately expensive, and this app is a single Node
+ * process, so an unauthenticated flood of guesses is a CPU denial of service
+ * whatever it does to any one account.
+ */
+export async function addressBlocked(ip: string): Promise<boolean> {
   const [byIp] = await db
     .select({ n: count() })
     .from(loginAttempts)
-    .where(and(eq(loginAttempts.ip, ip), failed));
+    .where(and(eq(loginAttempts.ip, ip), failedRecently()));
   return (byIp?.n ?? 0) >= MAX_PER_IP;
+}
+
+/**
+ * The account fence, asked only AFTER a password has failed to validate.
+ *
+ * The order is the whole fix (found by the pre-go-live audit): asked FIRST,
+ * as it was, five wrong guesses locked the account against its own owner
+ * typing the right password — so anyone who knows a colleague's phone number
+ * could hold them out of a fresh login for fifteen minutes at a time, and
+ * staff phones are guessable. Asked after the check, a correct password is
+ * never refused, while a wrong one still counts and still caps: the
+ * unbounded guess round 81 closed stays closed, because every failure is
+ * recorded before this is consulted.
+ */
+export async function accountLocked(identifier: string): Promise<boolean> {
+  const [byAccount] = await db
+    .select({ n: count() })
+    .from(loginAttempts)
+    .where(and(eq(loginAttempts.identifier, identifier), failedRecently()));
+  return (byAccount?.n ?? 0) >= MAX_ATTEMPTS;
+}
+
+function failedRecently() {
+  const windowStart = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000);
+  return and(eq(loginAttempts.success, false), gt(loginAttempts.createdAt, windowStart));
 }
 
 export async function recordLoginAttempt(

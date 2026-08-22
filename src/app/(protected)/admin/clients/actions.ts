@@ -74,6 +74,13 @@ export interface QuickClientResult {
   ok: boolean;
   id?: string;
   name?: string;
+  /**
+   * The minted code on its own, because the code IS the answer (round 107,
+   * owner: «yangi client ochganda qanday kod berilganini bilish imkoni
+   * yo'qku»). It goes on cartons in Yiwu the same day, so the modal shows it
+   * big and copyable rather than folded into a toast line.
+   */
+  code?: string;
   error?: string;
 }
 
@@ -107,7 +114,7 @@ export async function quickCreateClientAction(input: {
       { actorId: actor.id, ...meta },
     );
     revalidatePath('/admin/clients');
-    return { ok: true, id: row.id, name: `${row.clientCode} · ${row.name}` };
+    return { ok: true, id: row.id, code: row.clientCode, name: row.name };
   } catch (err) {
     if (err instanceof ClientError) return { ok: false, error: err.code };
     // The deploy-morning rule (#473): an action that touches the database
@@ -176,7 +183,18 @@ export async function updateClientAction(
 
   const values = toValues(parsed.data);
   const diff = diffFields(before as unknown as Record<string, unknown>, values);
-  await db.update(clients).set(values).where(eq(clients.id, id));
+  try {
+    await db.update(clients).set(values).where(eq(clients.id, id));
+  } catch (err) {
+    // The duplicate check above is a read, so two people renaming two cards
+    // onto the same code both pass it and the index refuses the second. That
+    // refusal is «this code is taken» — the same sentence the create path
+    // gives — and never a white page (#472).
+    if (typeof err === 'object' && err !== null && 'code' in err && err.code === '23505') {
+      return { error: 'code_exists' };
+    }
+    throw err;
+  }
   if (diff) {
     const meta = await requestMeta();
     await writeAudit(

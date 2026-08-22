@@ -17,7 +17,10 @@ import { PeriodForm } from '../period-form';
 import { ExpenseForm } from './expense-form';
 import { GenerateRecurringButton, RecurringForm } from './recurring-form';
 import { VoidExpenseButton } from './void-expense-button';
+import { RejectRequestButton } from './reject-request-button';
 import { PageHeader } from '@/components/ui/page';
+import { LightboxImg } from '@/components/lightbox-img';
+import { openExpenseRequests } from '@/modules/wms/accounting/expense-requests';
 
 /**
  * The expense book: what the company spent that is not cargo cost.
@@ -29,7 +32,7 @@ import { PageHeader } from '@/components/ui/page';
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; categoryId?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; categoryId?: string; request?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -73,14 +76,84 @@ export default async function ExpensesPage({
   const totalUsd =
     Math.round(rows.reduce((acc, row) => acc + Number(row.expense.amountUsd), 0) * 100) / 100;
 
+  // The rasxod xabari queue (round 107). Caught: the table is minted this
+  // release, and a half-applied deploy must not white-page the expense book
+  // (#472's morning).
+  const requests = await openExpenseRequests().catch(() => []);
+  // «Kiritish» = the SAME form, prefilled from the REQUEST ROW loaded here by
+  // id — never amounts from the URL, which would be a forged sum under the
+  // accountant's rubber stamp (#514).
+  const requestParam = /^[0-9a-f-]{36}$/i.test(params.request ?? '') ? params.request : undefined;
+  const prefillRow = requestParam
+    ? requests.find((row) => row.id === requestParam && row.status === 'open')
+    : undefined;
+
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-4xl">
       <PageHeader icon="doc" title={t('expenses')} />
 
+      {requests.length > 0 && (
+        <div className="card space-y-2" data-testid="expense-requests">
+          <h2 className="text-sm font-bold uppercase text-ink-500">
+            💸 {t('requestsTitle')} ({requests.length})
+          </h2>
+          {requests.map((request) => (
+            <div
+              key={request.id}
+              className="flex flex-wrap items-center gap-2 border-b border-line py-1.5 text-sm last:border-0"
+              data-testid="expense-request-row"
+            >
+              <span className="font-mono text-xs text-ink-500">{request.warehouseCode}</span>
+              <span className="text-ink-700">{request.requesterName}</span>
+              <span className="font-mono font-bold">
+                {Number(request.amount).toLocaleString('ru-RU')} {request.currency}
+              </span>
+              <span className="min-w-0 flex-1 text-ink-700 [overflow-wrap:anywhere]">
+                {request.note}
+              </span>
+              {request.photoIds.map((photoId) => (
+                <LightboxImg key={photoId} attachmentId={photoId} className="h-10 w-10 rounded object-cover" />
+              ))}
+              {request.status === 'open' ? (
+                <span className="ml-auto flex shrink-0 items-center gap-3">
+                  <a
+                    href={`/accounting/expenses?request=${request.id}`}
+                    className="text-xs font-bold text-brand-700 underline"
+                    data-testid="enter-request"
+                  >
+                    ✍️ {t('enterRequest')}
+                  </a>
+                  <RejectRequestButton id={request.id} />
+                </span>
+              ) : (
+                // The claim landed and the expense never did (a crash between
+                // the two): visible, never silently re-enterable.
+                <span className="ml-auto text-xs font-semibold text-warn">⚠ {t('requestStuck')}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {categories.length === 0 ? (
         <p className="card text-sm text-ink-700">{t('noCategories')}</p>
       ) : (
-        <ExpenseForm {...options} today={today} />
+        <ExpenseForm
+          key={prefillRow?.id ?? 'plain'}
+          {...options}
+          today={today}
+          prefill={
+            prefillRow
+              ? {
+                  requestId: prefillRow.id,
+                  amount: prefillRow.amount,
+                  currency: prefillRow.currency,
+                  note: prefillRow.note,
+                  warehouseId: prefillRow.warehouseId,
+                }
+              : undefined
+          }
+        />
       )}
 
       <Panel title={`🔁 ${t('recurring')}`} badge={recurring.length || undefined}>

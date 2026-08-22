@@ -1,4 +1,4 @@
-import { aliasedTable, and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { aliasedTable, and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -11,9 +11,10 @@ import {
   receipts,
   warehouses,
 } from '../../platform/db/schema';
-import { warehouseScopeEither } from '../../platform/rbac/scope';
+import { warehouseScope, warehouseScopeEither } from '../../platform/rbac/scope';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { batchMemberFilter } from '../scanning/unload';
 
 export class InventoryError extends Error {
   constructor(public readonly code: string) {
@@ -238,6 +239,183 @@ export async function reconcileInventory(
  * XLSX — those agree with each other about what is ON THE SHELF, and a truck
  * is not.
  */
+/**
+ * The yashik layer of the stock screen (round 107, owner: «sklad ostatkada
+ * yashiklar soni hajmi og'irligi tursa va uni tagida karobkalar soni,
+ * karobkalarning umumiy hajmi kg-mi tursa»).
+ *
+ * One row per ACTIVE crate with members physically present: `boxes.crate_id`
+ * + the stock page's own four statuses + `current_warehouse_id =
+ * crates.warehouse_id` — round 31's short-loaded member keeps its crateId at
+ * the ORIGIN while the crate itself follows the landed boxes, so the bare
+ * pointer would count a carton standing in Yiwu into a Tashkent row. The
+ * INNER JOIN makes an empty crate produce no row structurally.
+ *
+ * Unlike the on-road strip this is a RE-GROUPING of cargo the Σ and the
+ * table already count — nothing here is additive. Scope and the `wh` filter
+ * live INSIDE, so no caller can forget them (#514); `q` deliberately does
+ * not reach it — the strip sits outside the sort, the views and the XLSX,
+ * and outside the search for the same reason (stated divergence: a product
+ * search narrows the table, never the yashik list).
+ *
+ * The overflow flag compares the values AS PRINTED (kg to the integer, m³ to
+ * two decimals) — numeric arrives as a STRING and `'300' > '1000.000'` is
+ * true lexicographically (#663's shape), and a raw-float compare can flag ⚠
+ * between two numbers that print identically. Screen-only by the owner's
+ * word («faqat ekranda») — no Telegram, no export.
+ */
+const CRATE_STRIP_CAP = 50;
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface CrateStockRow {
+  id: string;
+  code: string;
+  clientCode: string;
+  whCode: string;
+  boxCount: number;
+  kg: number;
+  m3: number;
+  /** l×w×h when all three were measured; the ⚠ can only fire against these. */
+  statedM3: number | null;
+  statedKg: number | null;
+  over: boolean;
+}
+
+export async function crateStock(
+  actor: Parameters<typeof warehouseScope>[0],
+  wh?: string,
+): Promise<{ rows: CrateStockRow[]; more: boolean }> {
+  const rows = await db
+    .select({
+      id: crates.id,
+      code: crates.code,
+      clientCode: clients.clientCode,
+      whCode: warehouses.code,
+      lengthCm: crates.lengthCm,
+      widthCm: crates.widthCm,
+      heightCm: crates.heightCm,
+      weightKg: crates.weightKg,
+      boxCount: sql<string>`count(*)`,
+      kg: sql<string>`sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount})`,
+      m3: sql<string>`sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount})`,
+    })
+    .from(crates)
+    .innerJoin(clients, eq(crates.clientId, clients.id))
+    .innerJoin(warehouses, eq(crates.warehouseId, warehouses.id))
+    .innerJoin(
+      boxes,
+      and(
+        eq(boxes.crateId, crates.id),
+        inArray(boxes.status, ['in_stock', 'planned', 'loading', 'ready_for_pickup']),
+        eq(boxes.currentWarehouseId, crates.warehouseId),
+      ),
+    )
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .where(
+      and(
+        eq(crates.status, 'active'),
+        warehouseScope(actor, crates.warehouseId),
+        // A malformed wh would be a 22P02 error page; treated as absent, the
+        // same answer the strip gives about a filter it does not understand.
+        wh && UUID_SHAPE.test(wh) ? eq(crates.warehouseId, wh) : undefined,
+      ),
+    )
+    .groupBy(crates.id, clients.clientCode, warehouses.code)
+    .orderBy(asc(crates.code))
+    // One extra row = the honest «50+» without a second count query.
+    .limit(CRATE_STRIP_CAP + 1);
+
+  return { rows: mapCrateRows(rows.slice(0, CRATE_STRIP_CAP)), more: rows.length > CRATE_STRIP_CAP };
+}
+
+/**
+ * The raw crate aggregate → the row a screen draws, in the order it should be
+ * read: **the over-capacity ones first** (owner, round 109: «agar
+ * ogohlantirish … spiskani tepasida tursa boladi, bolmasam shar etmas») —
+ * the rest keep their code order, because he said plainly that beyond the
+ * warning the order does not matter.
+ */
+function mapCrateRows(rows: CrateAggregate[]): CrateStockRow[] {
+  const mapped = rows.map((row) => {
+    const kg = Math.round(Number(row.kg));
+    const m3 = Math.round(Number(row.m3) * 100) / 100;
+    // A dimension typed as 0 is storable (the crate EDIT path has no min) —
+    // a non-positive measure is «unmeasured», never a permanent ⚠ against a
+    // 0 m³ box.
+    const statedM3 =
+      row.lengthCm && row.widthCm && row.heightCm && row.lengthCm > 0 && row.widthCm > 0 && row.heightCm > 0
+        ? Math.round(((row.lengthCm * row.widthCm * row.heightCm) / 1e6) * 100) / 100
+        : null;
+    const measuredKg = row.weightKg === null ? null : Number(row.weightKg);
+    const statedKg = measuredKg !== null && measuredKg > 0 ? Math.round(measuredKg) : null;
+    return {
+      id: row.id,
+      code: row.code,
+      clientCode: row.clientCode,
+      whCode: row.whCode,
+      boxCount: Number(row.boxCount),
+      kg,
+      m3,
+      statedM3,
+      statedKg,
+      over: (statedM3 !== null && m3 > statedM3) || (statedKg !== null && kg > statedKg),
+    };
+  });
+  return [...mapped].sort((a, b) => Number(b.over) - Number(a.over) || a.code.localeCompare(b.code));
+}
+
+/** What the two crate queries select — one shape, one mapper. */
+interface CrateAggregate {
+  id: string;
+  code: string;
+  clientCode: string;
+  whCode: string;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  weightKg: string | null;
+  boxCount: string;
+  kg: string | null;
+  m3: string | null;
+}
+
+/**
+ * The crates riding THIS truck, as places (owner, round 109: «mashina
+ * spiskasida ham tahta yashikni mestasi kubi kg si korinsin»).
+ *
+ * Membership is `batchMemberFilter`, never the live pointer (#440) — a truck
+ * that has been unloaded no longer has a box pointing at it, and the crate
+ * would vanish from the document exactly when somebody looks up what came.
+ * The contents are the boxes that RODE this batch: round 31's short-loaded
+ * member stayed at the origin and must not be counted onto the truck it
+ * missed.
+ */
+export async function batchCrates(batchId: string): Promise<CrateStockRow[]> {
+  const rows = await db
+    .select({
+      id: crates.id,
+      code: crates.code,
+      clientCode: clients.clientCode,
+      whCode: warehouses.code,
+      lengthCm: crates.lengthCm,
+      widthCm: crates.widthCm,
+      heightCm: crates.heightCm,
+      weightKg: crates.weightKg,
+      boxCount: sql<string>`count(*)`,
+      kg: sql<string>`sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount})`,
+      m3: sql<string>`sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount})`,
+    })
+    .from(boxes)
+    .innerJoin(crates, eq(boxes.crateId, crates.id))
+    .innerJoin(clients, eq(crates.clientId, clients.id))
+    .innerJoin(warehouses, eq(crates.warehouseId, warehouses.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .where(batchMemberFilter(batchId))
+    .groupBy(crates.id, clients.clientCode, warehouses.code)
+    .orderBy(asc(crates.code));
+  return mapCrateRows(rows);
+}
+
 export async function transitTrucks(
   actor: Parameters<typeof warehouseScopeEither>[0],
   wh?: string,

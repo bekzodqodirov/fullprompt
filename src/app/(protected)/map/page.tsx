@@ -19,6 +19,8 @@ import { truckFor } from '@/modules/wms/tracking/truck';
 import { TrackingMap, type MapTruck, type MapWarehouse } from './tracking-map';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { PageHeader } from '@/components/ui/page';
+import { inScope, warehouseScopeEither } from '@/modules/platform/rbac/scope';
+import { mayReadBatches } from '@/modules/wms/batches/read-door';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,11 @@ const STOCK_STATUSES = ['in_stock', 'planned', 'loading', 'ready_for_pickup'];
 export default async function MapPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
+  // The trucks door, because this page IS the trucks plus every warehouse's
+  // stock broken down by client code — the audit found it answering all of
+  // that to any signed-in login, including a seller round 91 deliberately
+  // scoped to his own clients.
+  if (!mayReadBatches(actor.permissions)) redirect('/');
   const t = await getTranslations('map');
 
   // Warehouses that exist on the corridor drawing, with per-client stock.
@@ -40,7 +47,11 @@ export default async function MapPage() {
   // 9B) or when the built-in dictionary knows its code — db wins, because the
   // whole point of the column is correcting a dot the dictionary put in the
   // wrong place.
-  const whRows = await db.select().from(warehouses);
+  const allWh = await db.select().from(warehouses);
+  // A scoped operator's map is his own floor(s): the dots stay (geography is
+  // not a secret) but the per-client stock is exactly what the stock screen
+  // would refuse him, so it follows the stock screen's fence.
+  const whRows = allWh.filter((w) => inScope(actor, w.id));
   const pointFor = (w: (typeof whRows)[number]) =>
     w.lat !== null && w.lon !== null
       ? { x: Number(w.lon), y: Number(w.lat) }
@@ -98,7 +109,14 @@ export default async function MapPage() {
     .from(batches)
     .innerJoin(origin, eq(batches.originWarehouseId, origin.id))
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
-    .where(eq(batches.status, 'in_transit'));
+    .where(
+      and(
+        eq(batches.status, 'in_transit'),
+        // A truck between two countries is judged by its TWO ends — the rule
+        // every batch reader states (wms/search, /transit, the documents).
+        warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId),
+      ),
+    );
 
   // Real fixes from paired driver phones win over the schedule estimate
   // while they are fresh (owner's flow: Android streams, other phones don't).

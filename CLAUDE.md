@@ -132,7 +132,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
-## State — 2026-08-11
+## State — 2026-08-13
 
 `main` is the trunk and **everything is merged into it** — PR #1 = rounds
 1-55; #3 = 56-69; #4 = the truck-marker follow-up; #5 = the calls round;
@@ -146,23 +146,375 @@ scope and the split thread; #31 = the history's place, the logout door and the
 agent sheet by truck; #32 = the tray's door, the connect-time week and the
 calls selector (all four the OTHER session); #33 = rounds 94-95 (the honest
 «javob kutmoqda», then files/reply/forward/share); **#34 = the Meta go-live
-docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97). This
-branch carries **round 99** — the timeline redesigned after the owner's
-rejection («etaplaring hech nimani bildirmaydiku»): dated journey from
-`box_movements` (`client-cabinet/journey.ts`, jrn* labels ×3) + a NAMED
-road-progress bar from the map engine's own `progress` on both legs, in the
-Mini App and the bot text; `CargoGroup.eta` became `transit`. Round 98
-(PR #37) and the deploy record (PR #38) are merged and DEPLOYED.
-1449 unit/integration + 154 e2e here. **The four «known failing» photo-path
-specs (m1×2, m2×1, m9h) now PASS** — this session's round 97 found what they
-had been reporting for eleven rounds; only m9z-nav-progress stays locally red.
-Latest migration: **0079** (`warehouse_coords` — round 100's lat/lon
-columns; count must reach **80** after this branch deploys);
-0078 (`sales_analytics` — the `lost_reasons` dictionary
-and `closed_at` on leads+deals; **renumbered from 0076 on merge, the TENTH
-collision** — the other session took 0076 `client_notices` and 0077
-`batch_customs_cleared` with the neighbouring `when`s, so mine moved its
-timestamp too; count must reach **79**;
+docs, the taqsimot and the tarjimon** (the OTHER session's rounds 96-97);
+#39 = round 99 (the timeline redesigned after the owner's rejection —
+dated journey from `box_movements` + the named road bar); **#36 = the OTHER
+session's analytics round** (`/crm/tahlil`, `lost_reasons`, its 0078);
+**#40 = the OTHER session's round 100** (his 14-item list's fixes, the
+staff+client merged bot keyboard 13A, warehouse lat/lon = its
+`0079_warehouse_coords`); **#45 = rounds 103-106** (client codes, the backup
+round, the full audit, its open tail — merged AND deployed 2026-08-18,
+ledger 83). This branch carries **round 100 (this session) —
+the AI yordamchi** (his «sistemamizga AI ulay olamizmi», answers: both
+tiers, both surfaces, no client-facing AI, read-only v1): tier 1 for every
+staff member = a tool loop over the SAME scoped functions the screens use
+(`platform/ai/tools.ts` — botLookup/globalSearch/composeMyDayText, actor
+threaded, toolset built per actor); tier 2 for the super_admin/admin ROLE
+adds `run_sql` under the **`gsr_ai_reader` Postgres role** (0080: allowlist
+default-deny, column-grants minus password/secret columns, four probed
+fences, everything on the ONE `.begin` connection — the module `db` runs
+UNFENCED, red-proven) plus `cash_flow`/`company_balance` tools, because
+money from raw columns is confidently wrong (#701). Surfaces: the staff
+bot's text fallback (free lookup first — `codeCandidates` — then the model;
+strangers never reach it, and 13A's cabinet buttons next() BEFORE it) and
+`/ai` (menu entry only when the key is configured). `ai_questions` = the
+audit AND the atomic daily cap (`ai_daily_limit`, 40). Tier 1 runs
+claude-sonnet-5, tier 2 claude-opus-5. Found by the review, fixed here:
+`botLookup`'s balance line had never learned round 91's money scope (#702).
+**His server needs the NEW `ANTHROPIC_API_KEY` in `.env`** (the old one is
+burned) — without it everything deploys and the assistant honestly says
+«sozlanmagan». PR #41 (this round) is MERGED and **DEPLOYED — he confirmed
+81 on 2026-08-13 evening, put the NEW key in, and confirmed the assistant
+ANSWERS LIVE («ishlayabti»)** — the AI round is fully in production on both
+surfaces.
+**Round 101 — the pre-go-live audit** (his «avval audit qilib chiq …
+hamma uje ishlatishni boshlaydi ertada»): six lenses, verify-to-refute,
+**six confirmed defects, all fixed** (#705-709). The two leaks: the partner
+screens + the partner-receipt attachment branch had never learned round
+91's money scope (a seller read the whole creditor ledger by URL), and
+`handovers/[id]/act` + `batches/[id]/manifest` gated on a LOGIN alone while
+their four siblings gated on permission + warehouse. The availability one
+is the AI round's own: grammy's poller is SEQUENTIAL and the handler
+AWAITED the model, so one admin's question froze every customer's cabinet
+for 20-120 s (10 min on a hang — `new Anthropic()` had no timeout); the
+answer now dispatches off the middleware and the call carries a 60 s
+deadline. Plus: a transient Telegram 429 permanently DROPPED a «yukingiz
+keldi» (settled `failed`, and `dueArrivalNotices` reads only `pending`) —
+now transient-vs-permanent with a 5-attempt budget; login is verify-then-
+throttle (a wrong-guess lockout no longer refuses the owner's correct
+password); and the AI daily cap is a real lock — MEASURED, 10 parallel asks
+against a limit of 3 granted all ten before the fix. Red proofs ×6, two of
+which first stayed GREEN and were re-anchored (#709). No migration.
+1580 unit/integration + 155 e2e green on a fresh db in CI's order.
+
+**Round 102 — the first two reports from the floor** (#710-712, the day the
+whole staff started). (1) «Bugun qo'ng'iroq» filled up and never emptied:
+`followUps` had NO stage filter, so a lead moved to won/lost kept its date
+and stayed for ever — and every advert lead arrives booked for TODAY, so the
+pile grew by itself. Three parts, two of them his call: the list joins
+`lead_stages` and takes `kind='open'` (the bug); a real stage MOVE clears
+the follow-up («bosqichni o'zgartirgan zahoti avtomatik tushsin»); and every
+day-screen row carries «✓ Bajarildi» / «Ertaga» (`setFollowUp`, ownership
+re-derived server-side — the row arrived as an id in a form post). Overdue
+OPEN leads deliberately STAY, his answer: late work must not hide.
+(2) Photo upload slow in the Chinese warehouses: the interesting theory
+(thumbnails silently missing → the serve path falls back to full-size) was
+REFUTED by one query on his data — **401 of 406 photos have thumbnails** —
+and the real cause was the `for` loop that uploaded 10-20 photos one at a
+time from China to Europe. `components/pooled.ts` runs four at once; all
+three wizard upload paths use it. Red proofs ×4, one of which first stayed
+GREEN because the two lead fixes mask each other (#711 — the fixture now
+writes the closed stage directly, which is also what production's existing
+rows look like). No migration. 1587 unit/integration + 155 e2e green on a
+fresh db in CI's order; one unnamed failure in the first full run did not
+recur in the re-run or in three repeats of the touched files.
+
+**Round 103 — the client-code review** (#714-716, his «yangi klientga kod
+berishni korib chiq hatolik ketmayabtimi»). The generator itself is SOUND
+and that is a finding: the 50-gap main-sequence rule, the lowercase prefix,
+a prefix ending in a digit, regex metacharacters, leading zeros, and «a code
+is never reused, inactive clients included» all hold — verified, not assumed.
+The defects were around it. **The serious one is not about codes at all:**
+`createClient` called `getSetting('client_code_prefix')` from INSIDE its
+transaction, and `getSetting` runs on the module `db`, i.e. the POOL — so a
+transaction already holding one of the ten connections asked for an
+eleventh. **MEASURED: 9 simultaneous creates finished in 121 ms, 12 never
+returned, `pg_stat_activity` showing exactly ten backends parked on `begin`
+/ ClientRead** — a permanent, unrecoverable freeze of the WHOLE app (the
+pool is every page's), not a slowdown. One line moved up eleven. Swept
+`src/`: the only instance in all 25 files that open a transaction, so the
+tripwire `tests/unit/tx-pool.test.ts` guards the RULE (every transaction
+body × every pooled name) rather than the function; source-shape on purpose
+— a behavioural test for a deadlock takes its own vitest worker down.
+Second: the advisory lock serialises the generator against ITSELF (10 at
+once → 10 distinct codes; lock stripped → only 2 of 10 survive), but a
+MANUAL code takes no lock, so the auto path could lose to it and tell
+somebody who typed nothing «bu kod band» — it retries (3) and takes the
+next free number, while a TYPED code that is taken is still refused, because
+retrying there hands a person a different code from the one on the carton.
+Proven deterministically with a held-open second connection, not a burst.
+Third: `updateClientAction` had no 23505 catch — a rename race was a white
+page (#472's rule). No migration. 1616 unit/integration + **155 e2e all
+green** on a fresh gsr_ci in CI's order. TEST LESSON (#716): the race file's first version
+re-read the prefix setting at the top of EVERY test, so the «original» it
+restored was its own `ZZR` — caught by reading the database after the run,
+not by an assertion; snapshot once in `beforeAll`.
+**Round 104 — the backup round** (#717-720, his «systemani toliq audit qil,
+backup olishni systemasini oylab chiq, rasimlar va hamma back up google
+drivega back olamiz»). **THE HEADLINE: the off-site backup had never run
+once.** `runBackup` shells out to `pg_dump`; the app image is `node:22-slim`
+with no postgres client, so every night = ENOENT → alarm → thrown job, and
+`runOffsiteBackup` sits BEHIND that in the same function. Whichever
+destination was configured, nothing has ever left the machine. The alarm was
+silent too: `sendPendingTelegram` settles a notification as **`muted` with
+«telegram not linked»** for an admin with no linked staff chat. The compose
+`backup` service (postgres:16) HAS been taking a good dump all along, into
+the same volume. Fix, deliberately WITHOUT a Dockerfile change (an
+apt.postgresql.org dependency on deploy morning is #472's trap, and it cannot
+be tested from this container): `runBackup` ADOPTS a dump written in the last
+26 h when it cannot take its own, and names which happened; that also gives
+`ops/backup.sh` the alarm it never had — if IT stops, no fresh dump is found
+and the failure is raised. `ops/backup.sh` also refuses to prune when its own
+dump comes out under 4 KB. **OBJECTS: migration 0081** `backup_objects`
+(key + DESTINATION as the PK, so a new destination reads «nothing there
+yet»); `backup/objects.ts` copies originals only (thumbnails are derived —
+`pnpm restore-objects --thumbs` rebuilds them), holds **2 GB back for the
+dump** and alarms rather than crowding it out, verifies the size the
+destination reports BEFORE writing the ledger row, and is bounded by a wall
+clock so the first night does not run until morning. `pnpm backup-objects` /
+`pnpm restore-objects` for the backfill and the recovery; a `BackupPanel` on
+/admin so the state is visible without a log. **The jam (#719):** the first
+version stopped a run when a batch all failed, so ONE attachment whose bytes
+are gone blocked every photograph behind it for ever — found because my own
+three test photos never moved in a database holding 100 such rows; the window
+now skips past the failures. **The fence (#720):** `tests/unit/tx-pool.test.ts`
+now DERIVES the pooled set from the code and follows calls — the audit's
+availability lens found `submitPlan` calling `availableByLot()` on the pool
+inside its transaction (#714's total freeze, in the warehouse's plan path,
+AND a correctness bug: the stock check answered from a connection holding
+none of the transaction's locks). Two red proofs stayed GREEN first — a
+parameterised handle left the function out of the set, and a generic
+signature (`getSetting<K …>`) hid it entirely — so the fence is anchored on
+names it must find. 1613 unit/integration green on a fresh gsr_ci.
+Ledger must reach **82** (now **83** — round 106's 0082). **Owner still has to: put the Drive credentials in
+`.env` (docs/BACKUP.md, publish BEFORE minting the token), decide the 15 GB
+question (Google One 100 GB ~$2/mo, or the S3 bucket from round 85), and keep
+a copy of `.env` off the server — `TG_SESSION_KEY` is what decrypts the
+managers' Telegram sessions.**
+
+**Round 105 — the full-system audit** (#721-726, his «systemani toliq audit
+qil … hatoliklar yoqligini oylab analyz qb chiq»). Sixty agents, seven lenses,
+every finding given a SKEPTIC and a REPRODUCER and kept only if neither could
+refute it: **26 candidates → 19 confirmed, all fixed.** (The five backup
+findings read REFUTED in the run because the verifiers read the tree after
+round 104 had landed.) CARGO: `editLot` on a VOIDED receipt minted brand-new
+live boxes and offered to print their labels — the structural lock reads «no
+ACTIVE box has left in_stock» and on a voided receipt the active list is
+EMPTY, so `[].some()` passed it (#723); one `lost` or `void` carton blocked
+voidReceipt / moveReceipt / returnUnclaimedToSender FOR EVER, so
+`splitForCorrection` gives all three the same three sets and leaves terminal
+boxes strictly alone (#722); and the unload screen never took back a mark the
+server refused — a queue flushed after «Tushirish tugadi» read 150/150 all
+green while those cartons were recorded missing, and the fix needed the SERVER
+to start naming the refused code first, or it would have done nothing (#724).
+MONEY: the client CARD still asked the pre-round-91 money question (a seller
+read any customer's balance, reachable by clicking from /suhbatlar);
+`cost_allocations.client_id` never followed `assignReceiptClient`, so claimed
+unclaimed cargo showed revenue with no cost and vanished from
+`landedCostByClient`; a recurring template with a wrong-currency till aborted
+the WHOLE monthly run part-way, every month — now refused at save and
+per-template caught, with «N tasi o'tmadi» on screen. ACCESS: `/transit` was
+gated on a login alone; the other three batch documents checked permission and
+not warehouse — all four go through one `guardBatchDocument` now.
+AVAILABILITY: **#714's shape a third time** — `confirmReceipt` →
+`priceControlOnReceipt(tx)` → `getSetting` on the pool, in the warehouse's
+busiest button; and the hisoblatish AI analysis was still awaited on the
+sequential bot poller with an Anthropic client built with no timeout.
+INTEGRITY: three uncaught 23505/22P02 white pages (`5..` in a number filter,
+a duplicate dictionary name, a duplicate field label). **The fence itself
+grew twice**: `tx-pool.test.ts` now closes the pooled set TRANSITIVELY and
+strips comments first — my own sentence «ONE function for all four…» minted a
+pooled function called `for` and every loop in `src/` counted as calling it
+(#725). TWO red proofs stayed green before it worked, and #726 records the
+worse mistake: I undid one with `git checkout` and took two uncommitted fixes
+with it, which is exactly what #430 forbids. 1630 unit/integration + **155
+e2e all green** on a fresh gsr_ci in CI's order. Still OPEN from the audit and
+stated to him: the tg-listen container holds a pool connection per account,
+`sendPendingTelegram` has no claim (a double send is possible if two drains
+overlap), a db blip after a successful send can still lose the thread's copy,
+and four second-pass candidates the completeness critic named (/map is open to
+any login; deactivated staff keep getting notifications; expected-arrival
+actions check permission but not warehouse; the in-transit report counts by
+the live pointer).
+
+**Round 106 — the audit's open tail** (#727-730, his «ha tuzat» on the
+stated-open list). **Migration 0082** (`notify_claim` — `claimed_at` +
+'sending' in the status CHECK; count must reach **83**). The drain has a
+CLAIM: one `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)
+RETURNING`, ten-minute reclaim for a dead drain's rows (attempt counted,
+terminal at the cap) — measured, two exhaustive claimers overlap on 0 rows,
+600 with the clause stripped. The two double-send SOURCES are dead too:
+`startBoss`'s registrations are NAMED with a per-process done-set (the old
+«registration is idempotent» comment was false — `boss.work` mints a worker
+per call), and `enqueue` is a SENDER (`ensureListening()` = boss.start + a
+queue upsert) so tg-listen no longer boots the fleet — which was also
+running the nightly backup in a container with no backups volume.
+Deactivated staff leave EVERY recipient list (`usersWithPermission`/
+`usersWithRoles` ask `users.active`; delivery settles queued rows as
+`muted / user deactivated` — user_roles survives deactivation BY DESIGN, so
+the filter lives in the lists). `takeListenerLock` holds every account's
+advisory lock on ONE shared reserved connection (per-account reservations
+would have eaten the pool of ten by the 10th manager, silently); in-process
+exclusivity restated as a held-keys set because advisory locks are
+reentrant per session. tg-listen's `unsettled` CARRIES the echo, built
+BEFORE `markSent` — a db blip between the two writes used to lose the
+thread's only copy of a reply the customer already has. The batch-reader
+door is ONE list (`wms/batches/read-door.ts`) with four consumers —
+/transit, /trucks, /map, search — /map's per-client stock scoped like the
+stock screen, trucks by two ends, nav items promising exactly the door's
+list (spelled out in nav.ts, platform must not import wms; unit fence pins
+the two lists). Expected-arrival services take the writer's scope and
+refuse `wrong_warehouse` judged by the ROW. `inTransitBatches` counts
+`batch_departed` movements, not the live pointer (#440's last consumer —
+a half-unloaded truck drained 180 → 0 on the report). Red proofs ×6;
+TEST LESSON (#730): a claim test on a shared queue claims to EXHAUSTION and
+restores the foreign rows it parked, or it asserts about strangers (#713).
+
+**Round 107 — the owner's six answered items** (#731-738, his answers
+«1b / 2a har biriga / 3 / 4 ha yetarli / 5 sen aytgandek lekin kompakt /
+6 faqat ekranda»; the four bigger designs were judged by a 12-agent
+adversarial workflow BEFORE code and fourteen decisions were overturned —
+every one recorded). **Migration 0083** `expense_requests` (count must reach
+**84**). (1) The quick «+» client modal stays OPEN on the minted code — big
+mono banner + copy + card link (`QuickClientResult.code`); a `CopyChip`
+joined the client card's h1. (2) **Winning a lead is a ceremony**: `winLead`
+subsumes convertLead (mint OR attach-by-typed-CODE with the name echoed back
+before anything is written — the attach has no undo; client written onto the
+lead FIRST so a retry mints nothing twice; ALWAYS a deal carrying the lead's
+quote with per-column null mapping — `Number(null)` is a $0 quote; manager =
+lead.ownerId or round 91 hides the client from its winner) and every other
+door refuses `convert_required`: moveLead (internal `viaConvert` NO action
+exposes), updateLead (change-gated), createLead born-won, deleteStage into a
+closed target, the bulk bar (won options dropped; «har biriga» = bulk-to-won
+refused). `leadFormStages` drops won from LEAD pickers only — deals keep
+their plain won move (m9v). A re-win opens a SECOND deal deliberately
+(confirm names it); won-without-client legacy leads keep the ConvertForm
+door. WonDialog ends in the item-1 banner; m8 rewired; won-law.test.ts pins
+the wiring. (3) `priceControlOnReceipt`'s no-deal branch SPLIT: open deals
+exist → new `UnlinkedCargo` («biriktiring», naming codes), none →
+UnquotedCargo; the prixod staff text carries «bitimga biriktirilmagan» /
+«bitimi yo'q — narxlatib qo'ying» via `dealLinked === false` strictly (old
+events render unchanged, #688). (4) **Admin home dashboard**
+(`admin-dashboard.tsx`): Pul/Yuk/Savdo/Signallar off the screens' own
+exported functions; EXCLUSIVE with role flows (both-hats admin keeps the
+working home, stated); isAnalyst ROLE + each block's DESTINATION permission;
+`salesSnapshot`'s month counts moved to the closed_at clock (it disagreed
+with tahlil); open-deals sum FILTERS USD + names the other-currency count;
+zaxira = three states (sozlanmagan/bor/OLINMAGAN); `notificationProblemCount`
+excludes by-design muted; m9p's tile fence scoped to new `home-tiles` testid.
+(5) **Rasxod xabari**: fold on /receive (summa+izoh+chek, photos pre-bound
+#180, authorize AT the posted warehouse #514) → event to finance.expenses
+holders minus the reporter → queue panel on /accounting/expenses where
+«Kiritish» CLAIMS (`WHERE status='open'` — one press wins), a refusal
+releases, a crash shows as ⚠ done-with-nothing, voidExpense RE-OPENS the
+request (#528 pair). STATED: finance.expenses = buxgalter/admin today; the
+logist gets it only if he grants the role «Xarajatlar» on /admin/roles,
+which opens the whole expense book — his call. (6) **/stock's yashik
+layer**: `crateStock` — member = crate_id + the page's four statuses +
+`current_warehouse_id = crates.warehouse_id` (round 31's short-loaded
+member red-proven), gated `crates.manage` (every crate surface is; /stock
+is a bare login), overflow ⚠ compares values AS PRINTED (numeric strings,
+#663), q never reaches the strip, «faqat ekranda» — no Telegram, no XLSX.
+Process notes (#738): `pnpm typecheck | tail` reports TAIL's exit code —
+two red gates slipped into commits before being caught; a warehouse an
+audited action touched can only be DEACTIVATED in cleanup (audit_log FK).
+
+**Round 108 — the third speed round** (#740-742, his «sistema sekin
+ishlayabti … ayniqsa crmda»). **Migration 0084** (count must reach **85**).
+The slowness was QUEUEING, not any screen: measured on a clone, /crm renders
+in 130 ms alone and every statement is under 0.4 ms warm, but the ONE Node
+process saturates — 16 concurrent requests = p50 1,070 ms, his sentence
+reproduced. What fed the concurrency all day: every open card with a
+Telegram panel re-rendered its WHOLE page every 10 s (every 2 s while
+`pendingFor` returned rows — and that includes `failed`, which only a human's
+✕ clears, so ONE bad reply pinned a tab at half a heavy render per second
+FOR EVER); `chatBadges` sorted the entire `tg_messages` table per board
+render for a supervision viewer (74.5 ms disk-spill → 1.5 ms index-only);
+`activeClientsByPhone` hydrated the whole client book per call per tick;
+and the notifications reclaim scanned 680k rows every minute. Fixes: the
+**chat pulse** (`/api/chat/pulse` + `ChatPulse` — a token of indexed counts
+computed behind the pages' OWN fences, `router.refresh()` only on change,
+2 s beat kept for queued/sending only, 120 s floor for what no token sees;
+judged by three lenses before code and carrying their six corrections —
+`edited_at`, the late-attachment pair, per-status outbox counts +
+`max(queued_at)`, the server-evaluated stuck bucket, the account-state word,
+and a server-computed BASELINE prop), `chatBadges(viewer, clientIds)`
+bounded to the drawn cards, a last-SEVEN-digit SQL prefilter (a strict
+superset of `phonesMatch`'s last-nine rule, so JS stays the arbiter), and
+two partial indexes. Proven live: a SQL-inserted message reached an open
+thread in 4.1 s with no navigation. **#430 broken a THIRD time** (#742): a
+red proof reverted with `git checkout` took the round's own uncommitted fix
+with it; every later proof used paired `replace()` edits.
+
+**Round 109 — his three items** (#743-746). NO migration (85 stands).
+(1) **The dashboard was invisible to him** because round 107 mounted it in
+the ELSE of `buildHomeFlow` — and any admin who also carries a working role
+HAS a flow, which is how his own accounts are set up («bir admin va
+sotuvchi»). Both now: the day's work above, the company below;
+`home-dashboard.test.ts` is source-shape (the only behavioural oracle needs
+a role grant every later spec would inherit, #183). (2) **A crate is a
+PLACE on both screens** — `components/crate-rows.tsx`, one list for /stock
+AND the truck card: code · client · «1 mesta» · the crate's OWN m³/kg, with
+what is inside on a small second line; over-capacity crates sort FIRST (his
+«ogohlantirish spiskani tepasida tursa»), and the rows stay OUTSIDE the
+screens' Σ or every crated cube doubles on a number the tannarx reads.
+`batchCrates` takes membership from `batchMemberFilter` (#440 — an unloaded
+truck's boxes point at nothing, and round 31's short-loaded member must not
+ride a truck it missed); gated `crates.manage` like every crate surface.
+(3) **The road is DOWNLOADED once** (his «B»): `pnpm fetch-road-geometry`
+writes `tracking/road-geometry.ts` — 8 legs, ~12 KB, simplified at 0.02°,
+and the running app never calls a routing service; `road(key)` falls back to
+the hand-drawn corridor, so the file is an improvement and never a
+dependency. Border legs fetched SEPARATELY (no engine drives through a
+closed post) and the wait pinned to the ROAD's last point, or the stationary
+leg creeps across the border. MY MISTAKE, recorded: the first fetch used a
+hand-typed Irkeshtam 0.95° off the app's own, so the Chinese leg stopped
+80 km short — endpoints now copied verbatim from map-data's `P` block and
+fenced (every leg starts/ends within 0.15° of its named place; the China
+corridor never climbs above 43.5°N = his «urumchiga kirmaydi»). A truck
+booked China → Uzbekistan in ONE batch is composed of the same legs
+(`cnLeg` + `ka2uzLegs`) instead of a straight line, and gains the three
+checkpoint segments. Marker work: the warehouse count badge anchors to its
+icon, and the SVG fallback finally draws the same cab-and-trailer Leaflet
+has had since round 98. **NOTE for the next map round: which renderer he
+sees depends on the SERVER** — with `.data/basemap/corridor.pmtiles` absent
+the page draws the SVG schematic (round 98 told him to fetch it on the new
+VPS; never confirmed). Both renderers read the same `routePoints`.
+1705 unit/integration + 157 e2e green on a fresh gsr_ci in CI's order.
+**Round 109b — his report AFTER the deploy** (#747): «mashinalar iconkasini
+ozgartirmabsan va mashinalar iconi bn soni alohida turibti, skladlarniki
+yaxshi chiqibti» — the last clause is the diagnosis (#476). The warehouse
+read right because 109's badge fix wrapped its icon in an inline-block span;
+the truck had none, and **Tailwind's preflight sets `svg {display:block}`**,
+so in the marker's 80 px `text-align:center` box the label centred as TEXT
+while the lorry stayed at the left edge — and the label being a BLOCK above
+it pushed the icon out of Leaflet's anchored box. MEASURED in a browser: the
+lorry was drawn **24 px left and 18 px below its own coordinate**. Now the
+label is `position:absolute`, the svg sits in the icon's own 38×28 box, and
+`iconSize`/`iconAnchor` agree — re-measured, every marker's centre equals its
+point exactly. The ICON is a lorry SILHOUETTE (round 98's was a rounded
+SQUARE with a 12 px truck inside, which at map scale reads as a square),
+facing left because the corridor runs right-to-left, white halo, drawn
+identically in BOTH renderers. `tests/unit/map-markers.test.ts` pins the
+shared path, the absolute label and the three numbers. CONSEQUENCE: a
+just-departed truck stands ON its origin warehouse and takes the tap
+(deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
+`elementFromPoint` says is free instead of `.first()`.
+
+Latest migration: **0084** (`speed_round` — two partial `notifications`
+indexes + `tg_messages.edited_at`; count must reach **85**);
+0083 (`expense_requests` — the rasxod xabari queue;
+count must reach **84**;
+0082 `notify_claim`, 0081 `backup_objects` — round 104/106, count 83;
+0080 `ai_assistant` — `ai_questions`,
+`v_client_balance_usd` + its equivalence test, the `gsr_ai_reader` role and
+its allowlist; **renumbered from 0079 on merge, the ELEVENTH collision** —
+the other session's `0079_warehouse_coords` took the same number AND the
+same `when` 1785190000048 and merged first, so mine moved to `when` …049;
+count must reach **81**;
+0079 `warehouse_coords` — the OTHER session's lat/lon on warehouses;
+0078 `sales_analytics` — the OTHER session's `lost_reasons` dictionary
+and `closed_at` on leads+deals; count 79;
 0077 `batch_customs_cleared` — `batches.customs_cleared_at`,
 the «rastamojka tugadi» tap, additive and nullable so NULL reads «nobody has
 said»;
@@ -219,8 +571,19 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 79 — rounds 98-99 of BOTH sessions are DEPLOYED
-(2026-08-13).** PR #36 (tahlil + lost reasons + filters, migration 0078)
+**HIS SERVER IS AT 84** (he confirmed «84 chiqdi» on 2026-08-19 after PR
+#47 — round 107). **Round 108's PR #48 is MERGED and NOT YET DEPLOYED: his
+next deploy must land migration 0084 and the ledger must read 85.** Round
+109 mints none, so 85 covers both.
+Before that: **83 — everything through rounds 103-106
+(PR #45, merged and deployed 2026-08-18 evening, he confirmed «83 chiqdi»;
+migrations 0081 `backup_objects` + 0082 `notify_claim`). The tg-listen
+container was rebuilt in the same deploy. Trap (1) was hit a FOURTH time on
+the way: his `git pull` answered «up to date» and the count stayed 81,
+because the PR was still open — verified `merged: false` via the API, merged
+it for him, and the next pull carried the 85 files.** Before that: both
+sessions' round 100 and the AI round landed 2026-08-13 evening at **81**.
+The trail there: PR #36 (tahlil + lost reasons + filters, migration 0078)
 merged and deployed the same morning, confirmed **79** by counting
 `drizzle.__drizzle_migrations`. Getting there hit trap (1) twice more in one
 morning: he merged #37 believing it carried the tahlil round, deployed, and
@@ -230,7 +593,10 @@ the tell — no new code arrived) — and the third confusion was pressing into
 the already-merged #35's page, where the purple «Merged» badge reads like a
 button that was pressed. An unmerged PR's screens do not exist on
 production, however green its CI is; the walk that works is Pull requests →
-the OPEN one → Merge → then pull.
+the OPEN one → Merge → then pull. The same evening `main` took the other
+session's round 100 (PR #40, migration 0079) and the AI round (PR #41,
+0080), he deployed again and the count landed at **81** — the first deploy
+of this whole week with no trap hit.
 
 **Three deploy traps, all hit in two days, all the same mistake one step
 apart — the count is the only thing that catches any of them.**
@@ -250,7 +616,9 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**80** with this branch; **79** on main and his server today) — the client book, the stock table and `/o/<code>` read
+length (**85** on `main` since round 108; his server was at 84 on
+2026-08-19) —
+the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
 `drizzle.__drizzle_migrations`; fix with `docker compose run --rm migrate`.
@@ -3140,7 +3508,10 @@ the server `.env`, then `docker compose up -d app`), the **GitHub PAT** he
 pasted while cloning (already replaced once during the move; delete the old
 one at github.com/settings/tokens if it is still listed), and
 `ANTHROPIC_API_KEY`. The GitHub token is stripped from the new server's git
-remote already.
+remote already. **The AI round (0079) gives the key a second job**: mint a
+NEW key at console.anthropic.com, put it in the server `.env`, and both the
+AI assistant and the goods-import/hisoblatish features come alive — until
+then every one of them says «sozlanmagan» honestly.
 
 **Then, in order of what it costs him to skip:**
 

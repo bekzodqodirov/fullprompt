@@ -121,6 +121,37 @@ export async function uploadDumpToS3(
   return { key, bytes };
 }
 
+/**
+ * The same upload for something already in memory — one photograph, one call
+ * recording, one attached document.
+ *
+ * A Buffer rather than a path because objects come back from MinIO as bytes,
+ * and writing them to a temporary file first would put a disk that can run
+ * out between the object store and its backup. The size check is the dump's
+ * rule, unchanged: what the bucket says it stored, never what was sent.
+ */
+export async function uploadBufferToS3(
+  client: S3Client,
+  config: BackupS3Config,
+  key: string,
+  body: Buffer,
+): Promise<number> {
+  await client.send(
+    new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: key,
+      Body: body,
+      ContentLength: body.length,
+      ContentType: 'application/octet-stream',
+    }),
+  );
+  const head = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: key }));
+  if (head.ContentLength !== body.length) {
+    throw new Error(`hajm mos kelmadi: ${body.length} bayt yuborildi, ${head.ContentLength} saqlandi`);
+  }
+  return head.ContentLength ?? 0;
+}
+
 export interface StoredDump {
   key: string;
   bytes: number;

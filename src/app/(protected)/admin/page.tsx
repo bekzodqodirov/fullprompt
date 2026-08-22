@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/ui/page';
 import { openDoors } from './hub-doors';
+import { BackupPanel } from './backup-panel';
 
 /**
  * The administration HUB (owner, 2026-07-28): "administrativniyga kirsa
@@ -54,6 +55,9 @@ export default async function AdminHubPage() {
           </Link>
         ))}
       </div>
+      {/* Only for whoever can act on it: a red line about backups on the
+          screen of somebody with no way to fix it is noise, not information. */}
+      {actor.permissions.has('admin.settings.manage') && <BackupPanel />}
     </div>
   );
 }

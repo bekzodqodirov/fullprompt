@@ -228,15 +228,44 @@ export async function dueArrivalNotices(limit = 50, now = new Date()) {
 }
 
 /**
+ * How many times a notice may be attempted before we stop trying. A chat
+ * that is simply unreachable must not sit in the queue for ever, and the
+ * sweep runs every two minutes — five attempts is ten minutes of patience.
+ */
+export const MAX_NOTICE_ATTEMPTS = 5;
+
+/**
+ * Is this Telegram Bot-API refusal about THIS message (give up), or about
+ * this MOMENT (try again)?
+ *
+ * The bot API answers with HTTP status codes rather than the gramjs strings
+ * `isPermanentSendError` reads, so this is its own predicate — but the rule
+ * is the same one rounds 48-49 settled: 429 (rate limited) and 5xx are the
+ * world being busy, and retrying is right; 403 (the customer blocked the
+ * bot) and 400 (no such chat) are facts about the recipient that will not
+ * change, and knocking again is noise.
+ */
+export function isPermanentNoticeFailure(status: number): boolean {
+  return status === 400 || status === 401 || status === 403 || status === 404;
+}
+
+/**
  * Settle a notice.
  *
  * `skipped` is a real outcome and not a failure: a truck whose boxes were all
  * voided or moved on before the window closed has nothing to announce, and
  * retrying that for ever would be a queue that never empties.
+ *
+ * `pending` is settling too — it is what a TRANSIENT failure earns. The
+ * status column is also the retry queue (`dueArrivalNotices` selects
+ * `pending` and nothing else), so writing 'failed' after one 429 is the same
+ * as telling the customer nothing, for ever. That is the defect this
+ * argument exists to prevent: the burst where every truck lands at once is
+ * exactly when Telegram throttles.
  */
 export async function settleArrivalNotice(
   id: string,
-  outcome: 'sent' | 'failed' | 'skipped',
+  outcome: 'sent' | 'failed' | 'skipped' | 'pending',
   error?: string,
 ): Promise<void> {
   await db

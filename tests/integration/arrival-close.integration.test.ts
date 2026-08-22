@@ -17,6 +17,9 @@ import {
 } from '@/modules/wms/arrivals/service';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 
+/** The services now take the writer's scope; these tests write company-wide. */
+const UNSCOPED = { warehouseScoped: false, warehouseIds: [] as string[] };
+
 /**
  * «Qabul qilish» on a promise closes THAT promise, and its author hears
  * about a difference (owner, 2026-07-28: item 9 — "qabul qilgandan keyin
@@ -131,9 +134,8 @@ describe('is the difference worth a message (pure)', () => {
 
 describe('the tapped promise closes itself, and the author hears of the gap', () => {
   it('closes exactly that promise and notifies on a short delivery', async () => {
-    const promise = await createExpectedArrival(
-      { warehouseId: whId, clientId, weightKg: 100, volumeM3: 1, boxCount: 3 },
-      { actorId: authorId, ip: null, userAgent: null },
+    const promise = await createExpectedArrival({ warehouseId: whId, clientId, weightKg: 100, volumeM3: 1, boxCount: 3 }, UNSCOPED,
+{ actorId: authorId, ip: null, userAgent: null },
     );
     const result = await receive({ boxes: 2, kg: 80, m3: 1, arrivalId: promise.id });
 
@@ -156,9 +158,8 @@ describe('the tapped promise closes itself, and the author hears of the gap', ()
   });
 
   it('a delivery matching the promise closes it silently', async () => {
-    const promise = await createExpectedArrival(
-      { warehouseId: whId, clientId, weightKg: 100, volumeM3: 1, boxCount: 2 },
-      { actorId: authorId, ip: null, userAgent: null },
+    const promise = await createExpectedArrival({ warehouseId: whId, clientId, weightKg: 100, volumeM3: 1, boxCount: 2 }, UNSCOPED,
+{ actorId: authorId, ip: null, userAgent: null },
     );
     const result = await receive({ boxes: 2, kg: 102, m3: 1.01, arrivalId: promise.id });
 
@@ -178,9 +179,8 @@ describe('the tapped promise closes itself, and the author hears of the gap', ()
   it('refuses a promise that belongs to another warehouse', async () => {
     // A stale tab, a forwarded link — the id arrives but the promise is not
     // this warehouse's to close. The receipt itself must still go through.
-    const foreign = await createExpectedArrival(
-      { warehouseId: otherWhId, clientId, boxCount: 5 },
-      { actorId: authorId, ip: null, userAgent: null },
+    const foreign = await createExpectedArrival({ warehouseId: otherWhId, clientId, boxCount: 5 }, UNSCOPED,
+{ actorId: authorId, ip: null, userAgent: null },
     );
     const result = await receive({ boxes: 5, kg: 10, m3: 0.1, arrivalId: foreign.id });
     expect(result.receiptId).toBeTruthy();

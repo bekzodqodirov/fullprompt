@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client';
+import { isUniqueViolation } from '../db/errors';
 import { clients } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { getSetting } from '../settings/service';
@@ -43,9 +44,42 @@ export function isValidClientCode(code: string): boolean {
   return /^[A-Z0-9]{2,10}$/.test(code);
 }
 
-/** Postgres unique_violation (23505) — the client_code unique index. */
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
+/**
+ * The insert, retried when the code it minted turned out to be taken.
+ *
+ * The generator serialises against ITSELF with an advisory lock, so two
+ * automatic creates can never pick the same number (measured: ten at once,
+ * ten different codes; without the lock only two of the ten survived). What
+ * the lock cannot cover is a MANUAL code typed at the same instant — that
+ * path takes no lock, because a typed code is a fact rather than a draw from
+ * a sequence. Losing that race used to tell somebody who typed nothing at
+ * all that «this code is taken»; the honest answer is to take the next one.
+ *
+ * A typed code that is taken is still refused, first time and every time —
+ * there the message is the truth and retrying would silently hand the person
+ * a different code from the one they wrote on the carton.
+ */
+const CODE_ATTEMPTS = 3;
+
+async function insertWithFreeCode(
+  values: typeof clients.$inferInsert,
+  manual: boolean,
+  prefix: string,
+) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await db.transaction(async (tx) => {
+        if (!manual) values.clientCode = await nextClientCode(tx, prefix);
+        const [inserted] = await tx.insert(clients).values(values).returning();
+        return inserted;
+      });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      // Two people typing the same manual code at once both pass the
+      // pre-check above; the loser must see "code taken", not a crash page.
+      if (manual || attempt >= CODE_ATTEMPTS) throw new ClientError('code_exists');
+    }
+  }
 }
 
 export async function createClient(rawInput: NewClientInput, ctx: AuditContext) {
@@ -64,6 +98,19 @@ export async function createClient(rawInput: NewClientInput, ctx: AuditContext) 
     if (existing) throw new ClientError('code_exists');
   }
 
+  // Read BEFORE the transaction opens, and that is the whole point of the
+  // line: getSetting() runs on the POOL, so asking for it while already
+  // holding a transaction's connection needs a SECOND one. The pool is
+  // max: 10 and it belongs to the whole application — so ten people creating
+  // a client in the same moment left all ten connections `idle in
+  // transaction` waiting for an eleventh that can never come, and every
+  // other screen for every other person stopped with them, permanently.
+  // MEASURED against this code: nine at once finished in 121 ms, twelve
+  // never returned and pg_stat_activity showed exactly ten backends parked
+  // on `begin`. Nothing else in src/ asks for a second connection inside a
+  // transaction — tests/unit/tx-pool.test.ts keeps it that way.
+  const prefix = manual ? '' : await getSetting('client_code_prefix');
+
   const values = {
     clientCode: code,
     name: input.name,
@@ -74,22 +121,7 @@ export async function createClient(rawInput: NewClientInput, ctx: AuditContext) 
     active: input.active,
   };
 
-  let row;
-  try {
-    row = await db.transaction(async (tx) => {
-      if (!manual) {
-        const prefix = await getSetting('client_code_prefix');
-        values.clientCode = await nextClientCode(tx, prefix);
-      }
-      const [inserted] = await tx.insert(clients).values(values).returning();
-      return inserted;
-    });
-  } catch (err) {
-    // Two people typing the same manual code at once both pass the check
-    // above; the loser must see "code taken", not a crash page.
-    if (isUniqueViolation(err)) throw new ClientError('code_exists');
-    throw err;
-  }
+  const row = await insertWithFreeCode(values, manual, prefix);
   if (!row) throw new ClientError('validation');
 
   await writeAudit(db, ctx, {

@@ -30,6 +30,8 @@ export type OffsiteResult =
       where: 's3' | 'drive';
       name: string;
       bytes: number;
+      /** Drive file id or S3 object key — what a restore needs to fetch it. */
+      remoteRef: string;
       pruned: string[];
     }
   | { ok: false; error: string };
@@ -99,6 +101,7 @@ export async function runOffsiteBackup(
       where: 'drive',
       name: path.basename(dumpPath),
       bytes: uploaded.size,
+      remoteRef: uploaded.id,
       pruned,
     };
   } catch (err) {
@@ -131,6 +134,7 @@ async function runS3Backup(
       where: 's3',
       name: path.basename(dumpPath),
       bytes: uploaded.bytes,
+      remoteRef: uploaded.key,
       pruned,
     };
   } catch (err) {

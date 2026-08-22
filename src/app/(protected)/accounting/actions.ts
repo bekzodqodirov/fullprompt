@@ -20,6 +20,14 @@ import {
   voidTransfer,
 } from '@/modules/wms/accounting/service';
 import { checkbox } from '@/modules/platform/forms/checkbox';
+import {
+  claimExpenseRequest,
+  ExpenseRequestError,
+  finishExpenseRequest,
+  rejectExpenseRequest,
+  releaseExpenseRequest,
+} from '@/modules/wms/accounting/expense-requests';
+import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 
 export interface AccountingFormState {
   ok?: boolean;
@@ -53,7 +61,8 @@ async function run<T>(
     revalidatePath('/accounting', 'layout');
     return { ok: true };
   } catch (err) {
-    if (err instanceof AccountingError) return { error: err.code };
+    if (err instanceof AccountingError || err instanceof ExpenseRequestError)
+      return { error: err.code };
     throw err;
   }
 }
@@ -74,7 +83,39 @@ export async function addExpenseAction(
     note: String(formData.get('note') ?? ''),
   });
   if (!parsed.success) return { error: 'validation' };
-  return run('finance.expenses', (ctx) => addExpense(parsed.data, ctx));
+  // The rasxod xabari this expense answers, if any (round 107). The CLAIM
+  // comes first — «one Kiritish wins» — and a refused expense releases it,
+  // typed inputs and all. A crash between the claim and the save leaves a
+  // visible done-with-nothing row on the panel rather than a silently
+  // re-enterable one: the double-entry race is the common case.
+  const rawRequest = String(formData.get('requestId') ?? '');
+  const requestId = /^[0-9a-f-]{36}$/i.test(rawRequest) ? rawRequest : null;
+  return run('finance.expenses', async (ctx) => {
+    if (!requestId) {
+      await addExpense(parsed.data, ctx);
+      return;
+    }
+    await claimExpenseRequest(requestId, ctx);
+    let expenseId: string;
+    try {
+      expenseId = (await addExpense(parsed.data, ctx)).id;
+    } catch (err) {
+      await releaseExpenseRequest(requestId).catch(() => {});
+      throw err;
+    }
+    await finishExpenseRequest(requestId, expenseId, ctx);
+    await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
+  });
+}
+
+/** «Rad etish» on a rasxod xabari — a written reason, back to the reporter. */
+export async function rejectExpenseRequestAction(
+  id: string,
+  reason: string,
+): Promise<AccountingFormState> {
+  const state = await run('finance.expenses', (ctx) => rejectExpenseRequest(id, reason, ctx));
+  if (state.ok) await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
+  return state;
 }
 
 export async function voidExpenseAction(id: string, reason: string): Promise<AccountingFormState> {

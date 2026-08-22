@@ -1,11 +1,12 @@
 import 'dotenv/config';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
   clients,
+  deals,
   leads,
   tgMessages,
   users,
@@ -24,12 +25,12 @@ import {
 } from '@/modules/wms/crm/conversations';
 import {
   addActivity,
-  convertLead,
   createLead,
   CrmError,
   deleteStage,
   dormantClients,
   followUps,
+  setFollowUp,
   funnelReport,
   listActivities,
   listLeads,
@@ -42,6 +43,7 @@ import {
   stageUsage,
   similarLeads,
   updateLead,
+  winLead,
 } from '@/modules/wms/crm/service';
 import {
   groupClients,
@@ -94,7 +96,30 @@ beforeAll(async () => {
   stageLostId = stages.find((stage) => stage.kind === 'lost')!.id;
 });
 
+/**
+ * Leads the follow-up tests create and must take away again.
+ *
+ * This file has never cleaned up after itself, and the funnel-archive test
+ * reads a SHARED list — the newest closed leads across the whole funnel,
+ * ordered `board_order ASC NULLS FIRST`. `createLead` leaves `board_order`
+ * NULL, so a lead this file closes sorts to the very TOP of that archive
+ * slice and pushes the archive test's own rows out of it. Round 102's lost-
+ * lead fixture did exactly that and turned a fragile test red in CI (#380:
+ * leftovers in an integration file are worse than in Playwright, because
+ * vitest orders files by a duration cache and the next reader is
+ * unpredictable).
+ */
+const followUpLeads: string[] = [];
+/** Deals `winLead` opens (round 107) — their FK holds the client rows. */
+const wonDeals: string[] = [];
+
 afterAll(async () => {
+  if (followUpLeads.length > 0) {
+    await db.delete(leads).where(inArray(leads.id, followUpLeads));
+  }
+  if (wonDeals.length > 0) {
+    await db.delete(deals).where(inArray(deals.id, wonDeals));
+  }
   await pgClient.end();
 });
 
@@ -148,36 +173,129 @@ describe('leads', () => {
     expect(back!.lostReason).toBeNull();
   });
 
-  it('converting mints a client card and keeps the link for the funnel report', async () => {
+  it('winning mints a client card, opens the deal, and keeps the link', async () => {
     const lead = await createLead(
       { name: `Dilshod ${SUFFIX}`, phone: '+998907778899', sourceId, ownerId: managerId },
       ctx(),
     );
-    const client = await convertLead(lead.id, {}, ctx());
-    expect(client.clientCode).toMatch(/^[A-Z0-9]{2,10}$/);
-    expect(client.phones).toEqual(['+998907778899']);
-    expect(client.salesManagerId).toBe(managerId);
+    const won = await winLead(lead.id, {}, ctx());
+    wonDeals.push(won.dealId);
+    expect(won.minted).toBe(true);
+    expect(won.clientCode).toMatch(/^[A-Z0-9]{2,10}$/);
+    const client = await db.query.clients.findFirst({ where: eq(clients.id, won.clientId) });
+    expect(client!.phones).toEqual(['+998907778899']);
+    // Round 91's money scope keys on this column — the winner must see their
+    // own new client's money.
+    expect(client!.salesManagerId).toBe(managerId);
 
     const after = await db.query.leads.findFirst({ where: eq(leads.id, lead.id) });
-    expect(after!.clientId).toBe(client.id);
-    // Conversion lands on the won stage, so the funnel counts it.
+    expect(after!.clientId).toBe(won.clientId);
+    // Winning lands on the won stage, so the funnel counts it — and stamps
+    // the decision clock (0078).
     const stages = await listStages();
     expect(after!.stageId).toBe(stages.find((stage) => stage.kind === 'won')!.id);
+    expect(after!.closedAt).not.toBeNull();
 
-    // Converting twice would mint a second code for the same person.
-    await expect(convertLead(lead.id, {}, ctx())).rejects.toThrow('already_converted');
+    // ALWAYS a deal (round 107) — an unquoted lead opens an unpriced one,
+    // never «quoted $0 today» (Number(null) is 0; the mapping is per column).
+    const deal = await db.query.deals.findFirst({ where: eq(deals.id, won.dealId) });
+    expect(deal!.clientId).toBe(won.clientId);
+    expect(deal!.ownerId).toBe(managerId);
+    expect(deal!.quotedAmount).toBeNull();
+    expect(deal!.quotedAt).toBeNull();
+
+    // Winning AGAIN mints no second code — and opens a second deal, which is
+    // the deliberate answer for a revived enquiry: a new job.
+    const again = await winLead(lead.id, {}, ctx());
+    wonDeals.push(again.dealId);
+    expect(again.minted).toBe(false);
+    expect(again.clientId).toBe(won.clientId);
+    expect(again.dealId).not.toBe(won.dealId);
+  });
+
+  it('the quote rides onto the deal, in the database’s own spelling', async () => {
+    const lead = await createLead(
+      {
+        name: `Narxli ${SUFFIX}`,
+        ownerId: managerId,
+        quotedAmount: 900,
+        quotedVolumeM3: 5,
+        quotedWeightKg: 1200,
+      },
+      ctx(),
+    );
+    const won = await winLead(lead.id, {}, ctx());
+    wonDeals.push(won.dealId);
+    const deal = await db.query.deals.findFirst({ where: eq(deals.id, won.dealId) });
+    expect(deal!.quotedAmount).toBe('900.00');
+    expect(deal!.quotedCurrency).toBe('USD');
+    expect(deal!.quotedVolumeM3).toBe('5.000');
+    expect(deal!.quotedWeightKg).toBe('1200.000');
+    // Priced ⇒ the quote clock stamps, as if it were typed on the deal form.
+    expect(deal!.quotedAt).not.toBeNull();
   });
 
   it('a typed client code is honoured, and a taken one is refused', async () => {
     const taken = `CRM${SUFFIX}`.slice(0, 10);
     const first = await createLead({ name: `Kod egasi ${SUFFIX}` }, ctx());
-    await convertLead(first.id, { clientCode: taken }, ctx());
+    const won = await winLead(first.id, { clientCode: taken }, ctx());
+    wonDeals.push(won.dealId);
+    expect(won.clientCode).toBe(taken);
 
     const second = await createLead({ name: `Ikkinchi ${SUFFIX}` }, ctx());
-    await expect(convertLead(second.id, { clientCode: taken }, ctx())).rejects.toThrow('code_exists');
+    await expect(winLead(second.id, { clientCode: taken }, ctx())).rejects.toThrow('code_exists');
     // The refused conversion must not have half-converted the lead.
     const row = await db.query.leads.findFirst({ where: eq(leads.id, second.id) });
     expect(row!.clientId).toBeNull();
+  });
+
+  it('attaching to an existing client goes by CODE, and a wrong one is a refusal', async () => {
+    const holder = await db
+      .insert(clients)
+      .values({ clientCode: `CRA${SUFFIX}`.slice(0, 10), name: `Bor mijoz ${SUFFIX}` })
+      .returning();
+    const lead = await createLead({ name: `Biriktiriladi ${SUFFIX}` }, ctx());
+    await expect(winLead(lead.id, { attachCode: 'YOQKOD1' }, ctx())).rejects.toThrow(
+      'client_not_found',
+    );
+    const won = await winLead(lead.id, { attachCode: holder[0]!.clientCode.toLowerCase() }, ctx());
+    wonDeals.push(won.dealId);
+    expect(won.minted).toBe(false);
+    expect(won.clientId).toBe(holder[0]!.id);
+    const after = await db.query.leads.findFirst({ where: eq(leads.id, lead.id) });
+    expect(after!.clientId).toBe(holder[0]!.id);
+
+    // …and a retired code taking a new job is exactly the typo being caught.
+    await db.update(clients).set({ active: false }).where(eq(clients.id, holder[0]!.id));
+    const another = await createLead({ name: `Yana biri ${SUFFIX}` }, ctx());
+    await expect(
+      winLead(another.id, { attachCode: holder[0]!.clientCode }, ctx()),
+    ).rejects.toThrow('client_inactive');
+  });
+
+  it('every other door into won is shut', async () => {
+    const stages = await listStages();
+    const wonStage = stages.find((stage) => stage.kind === 'won')!;
+    const lead = await createLead({ name: `Eshiklar ${SUFFIX}` }, ctx());
+    // The board without the dialog:
+    await expect(moveLead(lead.id, wonStage.id, '', ctx())).rejects.toThrow('convert_required');
+    // The ✏️ form:
+    await expect(
+      updateLead(lead.id, { name: `Eshiklar ${SUFFIX}`, stageId: wonStage.id }, ctx()),
+    ).rejects.toThrow('convert_required');
+    // Born won:
+    await expect(
+      createLead({ name: `Tug‘ma ${SUFFIX}`, stageId: wonStage.id }, ctx()),
+    ).rejects.toThrow('convert_required');
+    // Deleting a column into won would silently decide its leads:
+    await expect(deleteStage(stageNewId, wonStage.id, ctx())).rejects.toThrow(
+      'move_target_closed',
+    );
+    // …while the dialog's own path still works.
+    const won = await winLead(lead.id, { stageId: wonStage.id }, ctx());
+    wonDeals.push(won.dealId);
+    const after = await db.query.leads.findFirst({ where: eq(leads.id, lead.id) });
+    expect(after!.stageId).toBe(wonStage.id);
   });
 });
 
@@ -212,7 +330,8 @@ describe('contact history and follow-ups', () => {
       ctx(),
     );
     expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(true);
-    await convertLead(lead.id, {}, ctx());
+    const won = await winLead(lead.id, {}, ctx());
+    wonDeals.push(won.dealId);
     // It is a client now — chasing it as a lead would be a duplicate task.
     expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(false);
   });
@@ -238,6 +357,100 @@ describe('contact history and follow-ups', () => {
     expect(due.some((entry) => entry.id === later.id)).toBe(false);
     // Oldest first — the one waiting longest is the one to call.
     expect(due.map((entry) => entry.dueOn)).toEqual([...due.map((entry) => entry.dueOn)].sort());
+  });
+
+  it('a CLOSED lead leaves the call list — won or lost is not a call', async () => {
+    // The owner's go-live report: «call today bo'lib yig'ilib turibti … ular
+    // bilan ishlash boshlagandan keyin ham o'sha yerda turibti». The list had
+    // no stage filter at all, so a finished lead kept its old date and sat
+    // there for ever — and every advert lead arrives booked for TODAY, so the
+    // pile grew by itself.
+    const lead = await createLead(
+      { name: `Yopiladi ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1) },
+      ctx(),
+    );
+    followUpLeads.push(lead.id);
+    expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(true);
+
+    // The stage is written DIRECTLY, not through `moveLead`, and that is the
+    // whole point of this test: `moveLead` now also clears the date, so
+    // closing the lead through it would take the row off the list for the
+    // other fix's reason and this filter would never be exercised — the first
+    // version of this test did exactly that and stayed green with the filter
+    // stripped out (#166: a red proof that will not go red is evidence about
+    // the fixture). What this pins is the state PRODUCTION is already in:
+    // leads closed before the fix shipped, still carrying an old call date.
+    await db
+      .update(leads)
+      // `board_order` is set as `moveLead` would, so this fixture cannot
+      // jump to the top of the shared closed slice the way a NULL does
+      // (`ASC NULLS FIRST`) and disturb the funnel-archive test.
+      .set({ stageId: stageLostId, lostReason: 'qimmat', boardOrder: 900_000 })
+      .where(eq(leads.id, lead.id));
+    expect(
+      (await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id),
+      'a lost lead is not a call to make',
+    ).toBe(false);
+  });
+
+  it('moving the card counts as the call — the follow-up clears itself', async () => {
+    // The owner's answer to «when should it drop off»: moving the stage IS
+    // the work, so the seller should not have to open the ✏️ form and re-date
+    // the lead by hand just to empty their own day screen.
+    const lead = await createLead(
+      { name: `Ko‘chdi ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1), nextActionNote: 'qo‘ng‘iroq' },
+      ctx(),
+    );
+    followUpLeads.push(lead.id);
+    expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(true);
+
+    // To a DIFFERENT open stage: a drag inside the same column is a
+    // re-order, and re-ordering a card is not «I called them» (#502's rule,
+    // the same reason it writes no audit row).
+    const openStages = (await listStages()).filter((stage) => stage.kind === 'open');
+    const nextOpen = openStages.find((stage) => stage.id !== lead.stageId) ?? openStages[0]!;
+    await moveLead(lead.id, nextOpen.id, '', ctx());
+    const after = await db.query.leads.findFirst({ where: eq(leads.id, lead.id) });
+    expect(after!.nextActionAt, 'the date is cleared by the move').toBeNull();
+    expect(after!.nextActionNote).toBeNull();
+    expect((await followUps(iso(0), actorId)).some((entry) => entry.id === lead.id)).toBe(false);
+  });
+
+  it('«bajarildi» and «ertaga» clear or postpone one row, and only my own', async () => {
+    const mine = await createLead(
+      { name: `Bajardim ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1), nextActionNote: 'eslatma' },
+      ctx(),
+    );
+    followUpLeads.push(mine.id);
+    await setFollowUp('lead', mine.id, null, { actorId });
+    const cleared = await db.query.leads.findFirst({ where: eq(leads.id, mine.id) });
+    expect(cleared!.nextActionAt).toBeNull();
+    // The note belonged to the date it carried.
+    expect(cleared!.nextActionNote).toBeNull();
+
+    const later = await createLead(
+      { name: `Ertaga ${SUFFIX}`, ownerId: actorId, nextActionAt: iso(-1) },
+      ctx(),
+    );
+    followUpLeads.push(later.id);
+    await setFollowUp('lead', later.id, iso(1), { actorId });
+    expect((await followUps(iso(0), actorId)).some((entry) => entry.id === later.id)).toBe(false);
+    expect((await followUps(iso(2), actorId)).some((entry) => entry.id === later.id)).toBe(true);
+
+    // A colleague's call is not mine to close — the id arrived in a form post
+    // and the list this serves is per-person.
+    if (managerId !== actorId) {
+      const theirs = await createLead(
+        { name: `Ularniki ${SUFFIX}`, ownerId: managerId, nextActionAt: iso(-1) },
+        ctx(),
+      );
+      followUpLeads.push(theirs.id);
+      await expect(setFollowUp('lead', theirs.id, null, { actorId })).rejects.toThrow('not_yours');
+      // …unless this person is allowed to see everyone's anyway.
+      await setFollowUp('lead', theirs.id, null, { actorId, viewAll: true });
+      const closed = await db.query.leads.findFirst({ where: eq(leads.id, theirs.id) });
+      expect(closed!.nextActionAt).toBeNull();
+    }
   });
 
   it('another manager’s follow-ups stay out of my list', async () => {

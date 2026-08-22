@@ -26,7 +26,16 @@ export async function registerBackupWorker(boss: PgBoss): Promise<void> {
       await alertAdmins('BackupFailed', { error: result.error });
       throw new Error(result.error);
     }
-    logger.info({ file: result.file, bytes: result.bytes, pruned: result.pruned }, 'db backup ok');
+    logger.info(
+      { file: result.file, bytes: result.bytes, pruned: result.pruned, source: result.source },
+      'db backup ok',
+    );
+    if (result.source === 'compose') {
+      // Worth a line of its own every night: the copy going off-site is the
+      // one the separate postgres container took, so it can be up to a day
+      // old. Silence here would make «backup ok» mean two different things.
+      logger.warn('this container cannot run pg_dump — shipped the compose backup instead');
+    }
 
     const { runOffsiteBackup } = await import('../backup/offsite');
     const offsite = await runOffsiteBackup(result.file);
@@ -42,6 +51,15 @@ export async function registerBackupWorker(boss: PgBoss): Promise<void> {
         { where: offsite.where, name: offsite.name, bytes: offsite.bytes, pruned: offsite.pruned },
         'offsite ok',
       );
+      // Recorded so a screen can say when anything last left this machine —
+      // the log line above is true and invisible to the person who needs it.
+      const { recordDumpUpload } = await import('../backup/objects');
+      await recordDumpUpload({
+        name: offsite.name,
+        destination: offsite.where,
+        bytes: offsite.bytes,
+        remoteRef: offsite.remoteRef,
+      }).catch((err) => logger.warn({ err }, 'could not record the dump upload'));
     }
   });
 }
@@ -50,7 +68,7 @@ export async function registerBackupWorker(boss: PgBoss): Promise<void> {
  * Tell somebody. The dump failing is the one thing nobody finds out about by
  * using the app — every screen keeps working exactly as before.
  */
-async function alertAdmins(type: string, payload: Record<string, unknown>): Promise<void> {
+export async function alertAdmins(type: string, payload: Record<string, unknown>): Promise<void> {
   try {
     const { db } = await import('../db/client');
     const { notifications, roles, userRoles } = await import('../db/schema');

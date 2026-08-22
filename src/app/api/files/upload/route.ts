@@ -40,6 +40,9 @@ const ATTACHABLE = [
   // mints so a receipt photo can be attached before the entry is saved.
   'batch',
   'partner_transaction',
+  // 'expense_request': the chek behind a rasxod xabari (round 107), pre-bound
+  // to the id the fold mints before the request is saved.
+  'expense_request',
 ] as const;
 
 const metaSchema = z.object({

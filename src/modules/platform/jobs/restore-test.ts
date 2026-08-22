@@ -19,7 +19,11 @@ export async function registerRestoreTestWorker(boss: PgBoss): Promise<void> {
     const { runRestoreTest } = await import('../backup/restore-test');
     const result = await runRestoreTest();
     if (result.ok) {
-      logger.info({ file: result.file, counts: result.counts }, 'restore test ok');
+      if (result.mode === 'header') {
+        logger.warn({ file: result.file, note: result.note }, 'restore test: header check only');
+      } else {
+        logger.info({ file: result.file, counts: result.counts }, 'restore test ok');
+      }
       return;
     }
     logger.error({ error: result.error }, 'restore test FAILED');

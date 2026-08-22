@@ -40,7 +40,8 @@
       "notFound": "Kartochka topilmadi — sahifani yangilang",
       "reasonRequired": "Sababini yozish kerak",
       "stageNotFound": "Etap o'chirilgan — sahifani yangilang",
-      "reasonNotListed": "Sabab ro'yxatdan tanlanishi kerak"
+      "reasonNotListed": "Sabab ro'yxatdan tanlanishi kerak",
+      "convertRequired": "«Yutildi» — faqat oyna orqali: mijoz kodi va bitim"
     },
     "moreActions": "Boshqa amallar",
     "notFilled": "To‘ldirilmagan",
@@ -69,7 +70,8 @@
     "logout": "Chiqish",
     "notifications": "Xabarlar",
     "homeTile": "Bosh sahifa",
-    "customLists": "O'z ro'yxatlarim"
+    "customLists": "O'z ro'yxatlarim",
+    "ai": "AI yordamchi"
   },
   "home": {
     "receiving": "Qabul",
@@ -324,7 +326,8 @@
       "debt_approval_ttl_hours": "Qarzdorga yuk berish ruxsati tasdiqlangach necha soat amal qiladi",
       "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)",
       "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
-      "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi"
+      "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi",
+      "ai_daily_limit": "Bir kishiga kuniga AI savollar chegarasi (bot + AI ekrani birga; 0 — o'chirilgan)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -554,6 +557,10 @@
     },
     "allWh": "Barcha skladlar",
     "onRoad": "Yo'lda",
+    "cratesTitle": "Yashiklar",
+    "cratePlace": "mesta",
+    "crateInside": "ichida",
+    "crateOver": "sig'magan",
     "filterPlaceholder": "Kod, markirovka, tovar…",
     "colCode": "Kod",
     "colProduct": "Tovar",
@@ -1092,7 +1099,15 @@
     "noRate": "kurs yo‘q",
     "partnerIn": "Kontragentdan tushdi",
     "partnerOut": "Kontragentga to‘landi",
-    "accountCurrencyMismatch": "Kassa valyutasi summaga mos emas"
+    "accountCurrencyMismatch": "Kassa valyutasi summaga mos emas",
+    "generateFailed": "{n} tasi o‘tmadi — sozlamalarini tekshiring",
+    "requestsTitle": "Skladlardan rasxodlar — kiritish kutilmoqda",
+    "enterRequest": "Kiritish",
+    "requestStuck": "kiritish tugamagan — rasxodlar ro'yxatini tekshiring",
+    "reject": "Rad etish",
+    "rejectReason": "Nega rad etyapsiz? Skladchi javobni ko'radi.",
+    "fromRequest": "Sklad xabaridan to'ldirildi — tekshirib, kategoriya va kassani tanlang.",
+    "requestTaken": "Bu xabarni boshqa birov kiritib bo'ldi"
   },
   "crm": {
     "title": "CRM",
@@ -1396,7 +1411,33 @@
     "lostReasonLabel": "Sabab",
     "lostReasonsSetupHint": "Ro'yxat bo'sh bo'lsa sabab erkin matnda so'raladi; ro'yxat to'ldirilgach faqat undan tanlanadi.",
     "unowned": "Egasiz",
-    "dealsNoSource": "Manba filtri bitimlarga tegishli emas — bitimda manba yo'q."
+    "dealsNoSource": "Manba filtri bitimlarga tegishli emas — bitimda manba yo'q.",
+    "followUpDone": "Bajarildi",
+    "followUpTomorrow": "Ertaga",
+    "followUpFailed": "Saqlanmadi",
+    "nameTaken": "Bu nom ro‘yxatda bor (katta-kichik harf hisobga olinmaydi)",
+    "won": {
+      "title": "Lid yutildi — mijoz kim?",
+      "mint": "Yangi kod",
+      "attach": "Mavjud mijozga",
+      "name": "Mijoz nomi",
+      "codeOptional": "Kod (bo'sh — o'zi beriladi)",
+      "attachCode": "Mijoz kodi (GS…)",
+      "check": "Tekshirish",
+      "confirm": "Bitim ochish",
+      "confirmExisting": "Shu mijoz uchun yangi bitim ochiladi.",
+      "existing": "Mijoz",
+      "deal": "Bitim",
+      "errors": {
+        "clientNotFound": "Bunday kod yo'q",
+        "clientInactive": "Bu mijoz nofaol qilingan",
+        "codeExists": "Bu kod band",
+        "codeFormat": "Kod formati noto'g'ri",
+        "stageGone": "Bosqich topilmadi — sahifani yangilang",
+        "forbidden": "Huquq yo'q",
+        "failed": "Saqlab bo'lmadi"
+      }
+    }
   },
   "navShort": {
     "home": "Bosh",
@@ -1600,7 +1641,8 @@
       "too_big": "Maksimumdan katta",
       "too_short": "Juda qisqa",
       "too_long": "Juda uzun",
-      "pattern": "Shablonga mos emas"
+      "pattern": "Shablonga mos emas",
+      "label_taken": "Bu nom band — boshqa nom yozing"
     }
   },
   "tasks": {
@@ -1822,6 +1864,7 @@
       "BoxIssued": "Yuk mijozga berildi",
       "UnknownCargoReceived": "Egasi noma'lum yuk keldi",
       "UnquotedCargo": "Narxsiz yuk (Xitoyda)",
+      "UnlinkedCargo": "Bitimga biriktirilmagan yuk",
       "DealDeviation": "Yuk hisobdan farq qildi",
       "DealDeferralEnded": "To'lov kechiktirish tugadi",
       "MissingInTransit": "Tushirishda kamomad"
@@ -2024,6 +2067,11 @@
     "full": "Batafsil →",
     "close": "Yopish",
     "created": "Qo'shildi:",
+    "codeTitle": "Yangi mijoz qo'shildi",
+    "copy": "Kodni nusxalash",
+    "copied": "Nusxalandi ✓",
+    "toCard": "Kartaga →",
+    "done": "Tayyor",
     "discard": "Saqlamasdan yopilsinmi? Yozganingiz yo'qoladi.",
     "hint": {
       "lead": "Birinchi bosqichga tushadi va o'zingizga biriktiriladi — qolgani kartada.",
@@ -2078,5 +2126,65 @@
     "mapUnmapped": "Reklamadan kelgan yangi savollar",
     "mapManual": "Savolni qo'lda qo'shish",
     "mapKeyPlaceholder": "formadagi savol nomi"
+  },
+  "assistant": {
+    "title": "AI yordamchi",
+    "intro": "Savolingizni oddiy tilda yozing — yordamchi sizga ochiq bo'lgan ma'lumotlardan javob topadi (yuk, mijoz, vazifalar).",
+    "introAnalyst": "Savolingizni oddiy tilda yozing — yordamchi butun tizim ma'lumotlaridan tahlil qilib javob beradi (pul, mijozlar, partiyalar).",
+    "placeholder": "Savol yozing…",
+    "send": "Yuborish",
+    "thinking": "O'ylayapman…",
+    "notConfigured": "AI hali sozlanmagan — serverdagi .env fayliga ANTHROPIC_API_KEY kiritilishi kerak.",
+    "limit": "Bugungi AI savollar chegarasi tugadi — ertaga yana so'rang.",
+    "gaveUp": "Oxirigacha yetolmadim — savolni soddaroq berib ko'ring.",
+    "error": "AI javob berolmadi. Keyinroq urinib ko‘ring."
+  },
+  "backup": {
+    "title": "Zaxira nusxa",
+    "database": "Baza",
+    "files": "Fayllar",
+    "notConfigured": "Tashqi zaxira sozlanmagan — hamma narsa faqat shu serverda",
+    "never": "hali chiqmagan",
+    "remaining": "{n} ta qoldi",
+    "copied": "{n} ta fayl ko‘chirilgan"
+  },
+  "rasxod": {
+    "title": "Rasxod xabari",
+    "warehouse": "Sklad",
+    "amount": "Summa",
+    "note": "Nimaga sarflandi",
+    "photo": "Chek",
+    "send": "Yuborish",
+    "sent": "Yuborildi — moliya kiritadi",
+    "photoFailed": "Rasm yuklanmadi — qayta urinib ko'ring",
+    "errors": {
+      "forbidden": "Bu skladga huquq yo'q",
+      "validation": "Summa va izohni tekshiring",
+      "failed": "Yuborib bo'lmadi"
+    }
+  },
+  "adminHome": {
+    "money": "Pul",
+    "todayFlow": "Bugun",
+    "debtors": "Debitorlar",
+    "clientsShort": "mijoz",
+    "partnerDebt": "Kontragentlar",
+    "monthMoney": "Oy: hisoblangan / to'lov",
+    "cargo": "Yuk",
+    "stock": "Skladlarda",
+    "onRoad": "Yo'lda",
+    "todayReceipts": "Bugungi prixodlar",
+    "trucksShort": "fura",
+    "sales": "Savdo",
+    "otherCurrency": "boshqa valyutada",
+    "monthDecided": "Shu oy",
+    "signals": "Signallar",
+    "backup": "Zaxira nusxa",
+    "backupOk": "bor",
+    "backupOff": "sozlanmagan",
+    "backupStale": "OLINMAGAN",
+    "unsent": "Yuborilmagan (7 kun)",
+    "overdueTasks": "Kechikkan vazifalar",
+    "dueTodayShort": "bugunga"
   }
 }

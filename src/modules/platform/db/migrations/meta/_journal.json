@@ -561,6 +561,41 @@
       "when": 1785190000048,
       "tag": "0079_warehouse_coords",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1785190000049,
+      "tag": "0080_ai_assistant",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1785190000050,
+      "tag": "0081_backup_objects",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1785190000052,
+      "tag": "0082_notify_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1785190000053,
+      "tag": "0083_expense_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1785190000054,
+      "tag": "0084_speed_round",
+      "breakpoints": true
     }
   ]
 }

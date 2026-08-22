@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icon';
 import { LostReasonDialog } from '@/components/lost-reason-dialog';
+import { WonDialog, type WonDialogLead } from '@/components/won-dialog';
 import { useMoveErrors } from '@/components/move-errors';
 import { moveLeadAction } from '../../actions';
 import { stageClass } from '../../stage-color';
@@ -31,25 +33,38 @@ export function StageMover({
   currentId,
   stages,
   lostReasons,
+  defaultName,
+  clientCode,
 }: {
   leadId: string;
   currentId: string;
   stages: { id: string; name: string; kind: string; color: string }[];
   /** The owner's lost-reason list; non-empty replaces the free-text prompt. */
   lostReasons?: string[];
+  /** Prefill for the won dialog's mint mode (round 107). */
+  defaultName: string;
+  /** The lead's client code when it already has one — confirm-only win. */
+  clientCode: string | null;
 }) {
   const t = useTranslations('crm');
+  const router = useRouter();
   const moveErrors = useMoveErrors();
   const [pending, start] = useTransition();
   const [error, setError] = useState('');
   // A lost move waiting for its reason to be picked from the dictionary.
   const [pendingLostId, setPendingLostId] = useState<string | null>(null);
+  // A won move waiting for its ceremony — the client and the deal (round 107).
+  const [pendingWon, setPendingWon] = useState<WonDialogLead | null>(null);
 
   const current = stages.find((stage) => stage.id === currentId);
   const next = stages[stages.findIndex((stage) => stage.id === currentId) + 1];
 
   function go(stage: { id: string; kind: string }) {
     let reason = '';
+    if (stage.kind === 'won') {
+      setPendingWon({ id: leadId, defaultName, clientCode, stageId: stage.id });
+      return;
+    }
     if (stage.kind === 'lost') {
       if (lostReasons && lostReasons.length > 0) {
         setPendingLostId(stage.id);
@@ -156,6 +171,15 @@ export function StageMover({
           onCancel={() => setPendingLostId(null)}
         />
       )}
+      <WonDialog
+        open={Boolean(pendingWon)}
+        lead={pendingWon}
+        onClose={() => setPendingWon(null)}
+        onWon={() => {
+          setPendingWon(null);
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

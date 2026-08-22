@@ -764,6 +764,26 @@ export async function priceControlOnReceipt(
     volumeM3: number;
     weightKg: number;
     boxCount: number;
+    /**
+     * Read by the CALLER, before its transaction opened.
+     *
+     * This used to be a `getSetting` right here, and `getSetting` runs on the
+     * pooled `db` handle — so a receipt confirm, which is the busiest button
+     * in the warehouse, asked for an eleventh connection while its
+     * transaction already held one of the ten. That is #714's total freeze in
+     * the receive path: ten simultaneous confirms and every screen in the
+     * company stops. The value is a number now, and the door is shut for
+     * anything else this function grows.
+     */
+    deviationThreshold: number;
+    /**
+     * The client's open-deal codes, read by the caller inside its own
+     * transaction. Splits the no-deal branch (round 107, owner's item 3): a
+     * receipt that COULD be attached to an open deal gets «biriktir», one
+     * that has nothing to attach to keeps «narx qo'ying» — they are
+     * different jobs for the seller.
+     */
+    openDealCodes: string[];
   },
   ctx: AuditContext,
 ): Promise<void> {
@@ -781,10 +801,13 @@ export async function priceControlOnReceipt(
 
     if (!dealId) {
       // Case 1. The single biggest source of "it came out expensive"
-      // complaints is cargo that was never quoted at all.
+      // complaints is cargo that was never quoted at all — unless the deal
+      // EXISTS and simply was not linked, where the honest ask is «attach
+      // it», not «set a price» (the price already lives on the deal).
       await emitEvent(tx, {
-        type: 'UnquotedCargo',
+        type: input.openDealCodes.length > 0 ? 'UnlinkedCargo' : 'UnquotedCargo',
         payload: {
+          openDealCodes: input.openDealCodes,
           receiptId: input.receiptId,
           number: input.receiptNumber,
           clientId: input.clientId,
@@ -809,7 +832,7 @@ export async function priceControlOnReceipt(
     // days is only over the threshold once both halves are in, and alerting on
     // the first half alone would cry wolf on every split job.
     const reality = await dealRealityIn(tx, dealId);
-    const threshold = await getSetting('deal_deviation_threshold_pct');
+    const threshold = input.deviationThreshold;
     const deviation = compareQuote(
       {
         volumeM3: deal.quotedVolumeM3 === null ? null : Number(deal.quotedVolumeM3),
@@ -1485,6 +1508,32 @@ export async function ledgerDealsForClient(clientId: string) {
     )
     .orderBy(desc(deals.createdAt))
     .limit(40);
+}
+
+/**
+ * The open book, in two honest numbers (round 107, the admin home): how many
+ * jobs are open, and what the USD-quoted ones add up to. The sum FILTERS on
+ * currency — a CNY quote added at face value to dollars is #701's «money
+ * from raw columns is confidently wrong» — and the non-USD leftovers are
+ * counted so the card can say «+N boshqa valyutada» instead of lying by
+ * omission. A quote on an open deal is a pipeline figure, not cash; the
+ * label's job, stated here so it stays that way.
+ */
+export async function openDealsSummary() {
+  const [row] = await db
+    .select({
+      n: sql<number>`count(*)`,
+      usd: sql<string>`coalesce(sum(${deals.quotedAmount}) FILTER (WHERE ${deals.quotedCurrency} = 'USD'), 0)`,
+      otherCurrency: sql<number>`count(*) FILTER (WHERE ${deals.quotedAmount} IS NOT NULL AND ${deals.quotedCurrency} <> 'USD')`,
+    })
+    .from(deals)
+    .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
+    .where(eq(dealStages.kind, 'open'));
+  return {
+    count: Number(row?.n ?? 0),
+    usdSum: Math.round(Number(row?.usd ?? 0) * 100) / 100,
+    otherCurrency: Number(row?.otherCurrency ?? 0),
+  };
 }
 
 /**

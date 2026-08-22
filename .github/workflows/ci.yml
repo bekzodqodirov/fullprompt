@@ -8,6 +8,11 @@ on:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    # A green run takes ~35 minutes. Without a ceiling, one hung step holds
+    # the job until GitHub's six-hour kill: the browser download below once
+    # sat 3h45m doing nothing, and the PR showed a red X that had nothing to
+    # say about the code.
+    timeout-minutes: 90
     services:
       postgres:
         image: postgres:16
@@ -50,7 +55,19 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - name: Install Playwright chromium
-        run: pnpm exec playwright install --with-deps chromium
+        # Its own short leash + bounded retries. The old `a || a` retry was
+        # unreachable: `timeout-minutes` kills the STEP, so one hung attempt
+        # ate the whole leash before the second could run — proven 2026-08-19
+        # when archive.ubuntu.com stalled `--with-deps`'s apt round twice in a
+        # row. Each attempt is now bounded so the next one is reachable, and
+        # the last skips apt entirely: the hosted runner image already carries
+        # Chromium's system libraries, so a dead ubuntu mirror must not fail
+        # the run while the browser CDN is fine.
+        timeout-minutes: 10
+        run: >-
+          timeout 240 pnpm exec playwright install --with-deps chromium ||
+          timeout 240 pnpm exec playwright install --with-deps chromium ||
+          pnpm exec playwright install chromium
       - name: E2E smoke (mobile viewport)
         run: CI=1 pnpm e2e
       - name: Upload Playwright report on failure

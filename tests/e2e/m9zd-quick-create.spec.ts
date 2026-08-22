@@ -74,6 +74,57 @@ test('a half-typed name is not thrown away by a stray tap', async ({ page }) => 
   await expect(page.getByTestId('quick-panel')).toHaveCount(0);
 });
 
+/**
+ * The CLIENT path answers with the CODE, big and copyable (round 107, owner:
+ * «yangi client ochganda qanday kod berilganini bilish imkoni yo'qku»). The
+ * panel stays open on a banner instead of closing to a toast — the code goes
+ * on cartons the same day, so it must be unmissable and one tap to copy.
+ */
+const CLIENT_NAME = `Tez mijoz ${String(Date.now()).slice(-6)}`;
+let mintedCode = '';
+let cardUrl = '';
+
+test('a client is added and the minted code is shown big, with a copy button', async ({ page }) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/stock');
+  await page.getByTestId('quick-create').click();
+  await page.getByTestId('quick-kind-client').click();
+  await page.getByTestId('quick-name').fill(CLIENT_NAME);
+  await page.getByTestId('quick-phone').fill('+998907654321');
+  await page.getByTestId('quick-save').click();
+
+  // The panel did NOT close — it answers with the code.
+  await expect(page.getByTestId('quick-client-made')).toBeVisible({ timeout: 15_000 });
+  const code = (await page.getByTestId('quick-client-code').textContent())?.trim() ?? '';
+  expect(code).toMatch(/^[A-Z0-9]{2,10}$/);
+  mintedCode = code;
+
+  // One tap = on the clipboard, and the button says so.
+  await page.getByTestId('quick-copy-code').click();
+  await expect(page.getByTestId('quick-copy-code')).toContainText('✓');
+  const onClipboard = await page.evaluate(() => navigator.clipboard.readText());
+  expect(onClipboard).toBe(code);
+
+  // The card link carries the person to the same code, where the copy chip
+  // lives for every later visit.
+  await page.getByTestId('quick-to-card').click();
+  await expect(page.locator('h1')).toContainText(code);
+  await expect(page.getByTestId('copy-chip')).toBeVisible();
+  cardUrl = page.url();
+});
+
+test('the client it created is deactivated (cleanup as a test)', async ({ page }) => {
+  // Reach the card by the URL captured at creation, never through a list an
+  // earlier spec may have reshaped (m9ze's rule) — and assert it was captured,
+  // or a failed create would make this pass by doing nothing.
+  expect(mintedCode, 'the create test must have minted a code').not.toBe('');
+  await page.goto(cardUrl);
+  await expect(page.locator('h1')).toContainText(mintedCode);
+  // The header's toggle: btn-danger while the client is active.
+  await page.locator('button.btn-danger').first().click();
+  await expect(page.locator('button.btn-primary').first()).toBeVisible();
+});
+
 test('the lead it created is closed, so it leaves the board', async ({ page }) => {
   await page.goto('/crm?scope=all');
   const card = page.locator(BOARD).getByTestId('lead-card').filter({ hasText: NAME }).first();

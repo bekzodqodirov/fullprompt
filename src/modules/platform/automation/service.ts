@@ -54,6 +54,9 @@ export const RULE_EVENTS = [
   'BoxIssued',
   'UnknownCargoReceived',
   'UnquotedCargo',
+  // Round 107 split «no deal» in two: a rule listening to UnquotedCargo no
+  // longer hears the has-an-open-deal case, so the sibling must be offerable.
+  'UnlinkedCargo',
   'DealDeviation',
   'DealDeferralEnded',
   'MissingInTransit',

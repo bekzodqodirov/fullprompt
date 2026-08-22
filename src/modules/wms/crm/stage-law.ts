@@ -82,3 +82,19 @@ export function formStages<T extends { id: string; kind: string }>(
 ): T[] {
   return stages.filter((stage) => stage.kind !== 'lost' || stage.id === currentId);
 }
+
+/**
+ * The stages a LEAD form may offer (round 107). Won leaves the pickers too:
+ * winning demands the convert dialog — a client and a deal — which no form
+ * supplies, so offering it would be a Save the service refuses. Same
+ * fall-back trap as above: the record's own stage always stays, or opening
+ * the ✏️ on a won lead would silently move it.
+ *
+ * Deals deliberately keep `formStages`: a deal's won move needs no ceremony.
+ */
+export function leadFormStages<T extends { id: string; kind: string }>(
+  stages: T[],
+  currentId: string | null | undefined,
+): T[] {
+  return stages.filter((stage) => stage.kind === 'open' || stage.id === currentId);
+}

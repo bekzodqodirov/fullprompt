@@ -2,6 +2,7 @@ import type { Bot } from 'grammy';
 import { composeMyDayText } from '../tasks/digest';
 import { logger } from '../logger';
 import {
+  assistantFromBot,
   completeTaskFromBot,
   decideApprovalFromBot,
   isCabinetText,
@@ -16,6 +17,8 @@ import {
   takeStaffEntry,
   takeTaskPending,
 } from './staff-bot';
+import { aiConfigured } from '../ai/model';
+import { codeCandidates } from '../ai/route-text';
 import { clientLabels } from './client-labels';
 import {
   activeIntake,
@@ -291,18 +294,114 @@ export function registerStaffBot(bot: Bot): void {
 
     // Anything else a MEMBER OF STAFF types is a lookup: a client code, a box
     // label, a crate or a truck (owner's item 2). A customer's text still
-    // falls through — the cabinet answers those.
+    // falls through — the cabinet answers those, and it must be the LAST
+    // fence before the AI: a stranger's words never reach the model or the
+    // question ledger.
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    const answer = await lookupFromBot(chatId, ctx.message.text).catch((err) => {
-      logger.warn({ err }, 'bot lookup failed');
-      return null;
-    });
-    await ctx.reply(
-      answer ??
+    const text = ctx.message.text;
+    const freeLookup = async (query: string) =>
+      lookupFromBot(chatId, query).catch((err) => {
+        logger.warn({ err }, 'bot lookup failed');
+        return null;
+      });
+    // Free first, and free again: the whole text as a code (today's exact
+    // behaviour), then any code-shaped word inside a sentence — «GS777
+    // qayerda» is answered for nothing before the paid model is considered.
+    let answer = await freeLookup(text);
+    if (!answer) {
+      for (const candidate of codeCandidates(text)) {
+        answer = await freeLookup(candidate);
+        if (answer) break;
+      }
+    }
+    if (answer) {
+      await ctx.reply(answer);
+      return;
+    }
+    if (!aiConfigured()) {
+      // No key = exactly the day before the AI shipped.
+      await ctx.reply(
         'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
-    );
+      );
+      return;
+    }
+    await ctx.reply('🤖 O‘ylayapman…');
+    // NOT awaited, and that is the whole point: grammy's built-in poller is
+    // SEQUENTIAL — it handles one update at a time — so awaiting a model
+    // loop here would hold the CUSTOMER bot for as long as the answer takes.
+    // One admin asking «bu oy qancha pul kirdi» would freeze every cabinet
+    // tap, every /start and every arrival flow for tens of seconds, and the
+    // owner's own words are that 95 % of customer contact is this channel.
+    // The answer is delivered by chat id when it lands, exactly as the
+    // notification path already sends unsolicited messages.
+    void answerWithAssistant(ctx, chatId, text);
   });
+}
+
+/**
+ * Analyse the collected material off the middleware chain, and send the
+ * summary when it lands. Everything is caught: a rejection here would be an
+ * unhandled promise, and the person is left with «⏳ Tahlil qilinmoqda…» and
+ * no answer, so the failure has to say so in the chat.
+ */
+async function analyseIntakeAndReply(
+  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
+  chatId: bigint,
+  state: Parameters<typeof analyzeCollected>[0],
+): Promise<void> {
+  try {
+    const analysed = await analyzeCollected(state);
+    updateIntake(chatId, analysed);
+    const { intakeSummaryText } = await import('../../wms/calc/intake');
+    await ctx.reply(
+      intakeSummaryText({
+        section: analysed.section,
+        facts: analysed.facts,
+        clientLabel: analysed.clientHintRaw || null,
+        fileCount: analysed.fileCount,
+      }) + (analysed.aiUsed ? '' : '\n\n(AI mavjud emas — faqat yozilganidan o‘qildi)'),
+      { reply_markup: confirmKeyboard },
+    );
+  } catch {
+    await ctx.reply('Tahlil qilib bo‘lmadi. Qaytadan urinib ko‘ring.').catch(() => {});
+  }
+}
+
+/**
+ * Ask the assistant OFF the middleware chain and deliver the answer when it
+ * arrives (see the call site: the poller is sequential, so this must not be
+ * awaited). Everything is caught — a rejection here would be an unhandled
+ * promise, which is the one way a background answer could take the process
+ * down rather than merely fail.
+ */
+async function answerWithAssistant(
+  ctx: { api: { sendMessage: (chatId: number | string, text: string) => Promise<unknown> } },
+  chatId: bigint,
+  text: string,
+): Promise<void> {
+  const replies: Record<string, string> = {
+    not_configured:
+      'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
+    limit: 'Bugungi AI savollar chegarasi tugadi — ertaga yana so‘rang.',
+    error: 'AI javob berolmadi. Keyinroq urinib ko‘ring.',
+  };
+  try {
+    const outcome = await assistantFromBot(chatId, text);
+    if (!outcome) return;
+    const answer =
+      outcome.status === 'ok'
+        ? outcome.answer
+        : outcome.status === 'gave_up'
+          ? (outcome.answer ?? 'Oxirigacha yetolmadim — savolni soddaroq berib ko‘ring.')
+          : (replies[outcome.status] ?? replies.error!);
+    await ctx.api.sendMessage(String(chatId), answer);
+  } catch (err) {
+    logger.warn({ err }, 'bot assistant failed');
+    await ctx.api
+      .sendMessage(String(chatId), replies.error!)
+      .catch((sendErr: unknown) => logger.warn({ err: sendErr }, 'bot assistant reply failed'));
+  }
 }
 
 /**
@@ -399,18 +498,12 @@ async function handleCalcCallback(
       return;
     }
     await ctx.reply('⏳ Tahlil qilinmoqda…');
-    const analysed = await analyzeCollected(state);
-    updateIntake(chatId, analysed);
-    const { intakeSummaryText } = await import('../../wms/calc/intake');
-    await ctx.reply(
-      intakeSummaryText({
-        section: analysed.section,
-        facts: analysed.facts,
-        clientLabel: analysed.clientHintRaw || null,
-        fileCount: analysed.fileCount,
-      }) + (analysed.aiUsed ? '' : '\n\n(AI mavjud emas — faqat yozilganidan o‘qildi)'),
-      { reply_markup: confirmKeyboard },
-    );
+    // OFF the middleware chain, exactly like the assistant's answer (#706):
+    // grammy's poller is sequential and the same bot serves every customer,
+    // so awaiting an Opus call over twenty thousand characters here freezes
+    // every cabinet tap, every /start and every «yukingiz keldi» until it
+    // returns.
+    void analyseIntakeAndReply(ctx, chatId, state);
     return;
   }
 

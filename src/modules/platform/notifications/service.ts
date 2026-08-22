@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
@@ -44,7 +44,14 @@ async function usersWithRoles(roleCodes: string[]): Promise<string[]> {
     .select({ userId: userRoles.userId })
     .from(userRoles)
     .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(inArray(roles.code, roleCodes));
+    // Deactivation is the only removal the app offers, and it must mean
+    // removed: a logist who left the company kept receiving every alarm —
+    // debt approvals with the client's name and figure on them — because the
+    // recipient lists asked who holds the ROLE and never who still works
+    // here. Their user_roles rows survive deactivation by design (a
+    // reactivated person gets their job back), so the filter lives HERE.
+    .innerJoin(users, eq(userRoles.userId, users.id))
+    .where(and(inArray(roles.code, roleCodes), eq(users.active, true)));
   return [...new Set(rows.map((r) => r.userId))];
 }
 
@@ -59,8 +66,38 @@ export async function usersWithPermission(code: string): Promise<string[]> {
     .from(userRoles)
     .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-    .where(eq(permissions.code, code));
+    // Same rule as usersWithRoles above: a grant belongs to the role, but a
+    // notification belongs to a person who still works here.
+    .innerJoin(users, eq(userRoles.userId, users.id))
+    .where(and(eq(permissions.code, code), eq(users.active, true)));
   return [...new Set(rows.map((r) => r.userId))];
+}
+
+/**
+ * How many staff messages actually FAILED to leave in the window (round 107,
+ * the admin home's «yuborilmagan» signal). Deliberately narrower than the
+ * /admin/notifications list's own marker: `muted` there includes by-design
+ * settlements — a user's own mute, «telegram not linked», «user deactivated»
+ * — which on this production are never zero, and a warn that never clears
+ * teaches the eye to skip it. Failed, a pending row that already errored,
+ * or a claim stuck in 'sending' past the reclaim window (0082) — those are
+ * the three that mean somebody should look.
+ */
+export async function notificationProblemCount(sinceDays = 7): Promise<number> {
+  const since = new Date(Date.now() - sinceDays * 86_400_000);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.channel, 'telegram'),
+        gte(notifications.createdAt, since),
+        sql`(${notifications.status} = 'failed'
+          OR (${notifications.status} = 'pending' AND ${notifications.error} IS NOT NULL)
+          OR (${notifications.status} = 'sending' AND ${notifications.claimedAt} < now() - interval '10 minutes'))`,
+      ),
+    );
+  return Number(row?.n ?? 0);
 }
 
 async function buildRecipients(event: {
@@ -86,6 +123,10 @@ async function buildRecipients(event: {
     // it goes to the deal's owner if it has one, otherwise to the client's
     // sales manager — never broadcast, because a list of somebody else's
     // pricing problems is a message people learn to swipe away.
+    // «Attach it» rides the same road as «price it» (round 107, item 3): the
+    // deal exists, the receipt just was not linked — same seller, same
+    // fallback to the admins when the client has no seller.
+    case 'UnlinkedCargo':
     case 'UnquotedCargo':
     case 'DealDeviation':
     case 'DealDeferralEnded': {
@@ -162,6 +203,22 @@ async function buildRecipients(event: {
       if (!requestedBy) return [];
       return [{ userId: requestedBy, type: event.type, payload: event.payload }];
     }
+    // Round 107: the rasxod xabari reaches everyone who may enter the
+    // expense — minus the reporter, when an admin reports their own (round
+    // 36's exceptUserId, one layer down) — and the decision reaches exactly
+    // the reporter.
+    case 'ExpenseRequested': {
+      const requestedBy = event.payload.requestedBy as string | null;
+      const userIds = await usersWithPermission('finance.expenses');
+      return userIds
+        .filter((userId) => userId !== requestedBy)
+        .map((userId) => ({ userId, type: event.type, payload: event.payload }));
+    }
+    case 'ExpenseRequestDecided': {
+      const requestedBy = event.payload.requestedBy as string | null;
+      if (!requestedBy) return [];
+      return [{ userId: requestedBy, type: event.type, payload: event.payload }];
+    }
     default:
       return [];
   }
@@ -214,18 +271,46 @@ export function renderTelegramText(
   if (preRendered) return preRendered;
 
   switch (type) {
-    case 'ReceiptConfirmed':
+    case 'ReceiptConfirmed': {
+      // The deal marker (round 107, item 3): the owner reads the prixod
+      // message and wants to see «bitimi yo'q» right there. Strict === false,
+      // so the years of events that predate the field render exactly as they
+      // always did (#688's Array.isArray rule).
+      const dealMark =
+        payload.dealLinked === false
+          ? Array.isArray(payload.openDealCodes) && payload.openDealCodes.length > 0
+            ? `📎 ${L.unlinkedMark}\n`
+            : `⚠️ ${L.noDealMark}\n`
+          : '';
       return (
         `📥 ${L.receiptConfirmed} ${payload.number}\n` +
         `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        dealMark +
         `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
+    }
     case 'UnknownCargoReceived':
       return (
         `❓ ${L.unknownCargo} ${payload.number}\n` +
         (payload.unclaimedMarking ? `${L.marking}: ${payload.unclaimedMarking}\n` : '') +
         `${L.warehouse}: ${payload.warehouseCode}\n\n${lotLines}\n\n${link}`
       );
+    // The deal exists and the receipt was not linked to it — the seller's job
+    // is one tap on the receipt card, and the message says which deals are
+    // open so they know it is an attach, not a pricing exercise (round 107).
+    case 'UnlinkedCargo': {
+      const openCodes = Array.isArray(payload.openDealCodes)
+        ? (payload.openDealCodes as string[]).join(', ')
+        : '';
+      return (
+        `📎 ${L.unlinkedCargo} — ${payload.number}\n` +
+        `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
+        `${L.warehouse}: ${payload.warehouseCode}\n` +
+        `${payload.volumeM3} ${L.m3} · ${payload.weightKg} ${L.kg} · ${payload.boxCount} ${L.boxesShort}\n` +
+        (openCodes ? `${L.openDealsWord}: ${openCodes}\n` : '') +
+        `\n${L.attachDeal}\n${link}`
+      );
+    }
     // Cargo that landed with no agreed price — the single biggest source of
     // "it came out expensive" arguments, caught while it is still in China.
     case 'UnquotedCargo':
@@ -334,6 +419,19 @@ export function renderTelegramText(
         (payload.note ? `\n${L.comment}: ${payload.note}` : '') +
         `\n\n${appUrl}/issue`
       );
+    // Round 107: the rasxod xabari and its answer.
+    case 'ExpenseRequested':
+      return (
+        `💸 ${L.expenseRequested} — ${payload.warehouseCode}\n` +
+        `${L.requestedByWord}: ${payload.requesterName}\n` +
+        `${payload.amount} ${payload.currency}\n` +
+        `${payload.note}\n\n${appUrl}/accounting/expenses`
+      );
+    case 'ExpenseRequestDecided':
+      return payload.verdict === 'rejected'
+        ? `⛔ ${L.expenseRejected}\n${payload.amount} ${payload.currency} — ${payload.note}\n` +
+            `${L.comment}: ${payload.rejectReason}`
+        : `✅ ${L.expenseEntered}\n${payload.amount} ${payload.currency} — ${payload.note}`;
     case 'RestoreTestFailed':
       return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;
     // Without this case the most important alert in the system fell to the
@@ -678,21 +776,62 @@ async function processEventBatch(): Promise<{ created: number; full: boolean }> 
 }
 
 /** Send all pending Telegram notifications. Called by the telegram worker. */
+/**
+ * Put back what a dead drain took.
+ *
+ * A claimed row whose drain crashed before settling would sit in 'sending'
+ * for ever; ten minutes is far beyond any real batch. The attempt is counted
+ * here — the send may or may not have happened, and counting it is what
+ * stops a crash-looping process from re-sending the same row without limit.
+ * A row already out of attempts goes terminal instead of back in the queue,
+ * or it would be re-claimed and re-parked nightly for ever.
+ */
+export async function reclaimStaleTelegram(): Promise<void> {
+  await db.execute(sql`
+    UPDATE notifications
+    SET status = CASE WHEN attempts + 1 >= ${MAX_TELEGRAM_ATTEMPTS} THEN 'failed' ELSE 'pending' END,
+        attempts = attempts + 1,
+        error = 'drain died mid-send'
+    WHERE channel = 'telegram' AND status = 'sending'
+      AND claimed_at < now() - interval '10 minutes'`);
+}
+
+/**
+ * Take up to `limit` pending rows, so that no other drain can take them.
+ *
+ * ONE statement, atomic: the audit found that two drains ever running at
+ * once — a twice-registered worker, the tg-listen container booting the
+ * fleet — both read the same thirty 'pending' rows and both POSTed them,
+ * because nothing flipped a row until after the Telegram round trip. Both
+ * sources are fixed this round; the claim is what makes the next such
+ * regression a non-event instead of every staff message arriving twice.
+ * `FOR UPDATE SKIP LOCKED` splits concurrent claimers instead of blocking
+ * them — round 83's event-drain rule, applied to the other queue.
+ */
+export async function claimPendingTelegram(limit: number): Promise<string[]> {
+  const rows = (await db.execute(sql`
+    UPDATE notifications SET status = 'sending', claimed_at = now()
+    WHERE id IN (
+      SELECT id FROM notifications
+      WHERE channel = 'telegram' AND status = 'pending' AND attempts < ${MAX_TELEGRAM_ATTEMPTS}
+      ORDER BY created_at
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED)
+    RETURNING id`)) as unknown as { id: string }[];
+  return rows.map((r) => r.id);
+}
+
 export async function sendPendingTelegram(): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
 
+  await reclaimStaleTelegram();
+  const claimedIds = await claimPendingTelegram(30);
+  if (claimedIds.length === 0) return;
   const pending = await db
     .select()
     .from(notifications)
-    .where(
-      and(
-        eq(notifications.channel, 'telegram'),
-        eq(notifications.status, 'pending'),
-        lt(notifications.attempts, MAX_TELEGRAM_ATTEMPTS),
-      ),
-    )
-    .limit(30);
+    .where(inArray(notifications.id, claimedIds));
 
   // One dead chat must not hold up the queue. Every row is attempted, its
   // own failure recorded, and the batch reports at the end — before this,
@@ -702,9 +841,19 @@ export async function sendPendingTelegram(): Promise<void> {
 
   for (const notification of pending) {
     const recipient = await db.query.users.findFirst({
-      columns: { locale: true },
+      columns: { locale: true, active: true },
       where: eq(users.id, notification.userId),
     });
+    // Asked at DELIVERY as well as at recipient-building: rows queued before
+    // the person was deactivated must stop too, and a person deactivated
+    // between the two moments must not get one last debt figure.
+    if (!recipient?.active) {
+      await db
+        .update(notifications)
+        .set({ status: 'muted', error: 'user deactivated' })
+        .where(eq(notifications.id, notification.id));
+      continue;
+    }
     const link = await db.query.telegramLinks.findFirst({
       where: and(
         eq(telegramLinks.userId, notification.userId),
@@ -755,7 +904,8 @@ export async function sendPendingTelegram(): Promise<void> {
           error: String(err),
           // Out of attempts: stop asking. A blocked bot or a deleted chat
           // never becomes deliverable, and a row that retries for ever keeps
-          // the whole job failing.
+          // the whole job failing. Not terminal yet → back to 'pending', so
+          // the claim this drain took does not outlive it.
           status: attempts >= MAX_TELEGRAM_ATTEMPTS ? 'failed' : 'pending',
         })
         .where(eq(notifications.id, notification.id));

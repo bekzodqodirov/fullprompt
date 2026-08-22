@@ -10,17 +10,38 @@ ham ketadi.
 
 Endi har kecha nusxa **tashqi omborga** ham chiqadi.
 
-## Ikkita variant bor — birinchisini tanlang
+## Ikkita variant bor
 
-| | S3 ombor (tavsiya) | Google Drive (eski yo'l) |
+| | Google Drive | S3 ombor (Contabo) |
 |---|---|---|
-| Kalit muddati | **Yo'q** | Ilova «Publish» qilinmasa **7 kunda o'ladi** |
-| Sozlash | 1 ekran, 4 qator `.env` | 8 qadam, brauzer orqali token |
-| Narxi | Contabo ~3 evro/oy 250 GB | 15 GB bepul |
+| Kalit muddati | Ilova «Publish» qilinmasa **7 kunda o'ladi** | **Yo'q** |
+| Sozlash | 8 qadam, brauzer orqali token | 1 ekran, 4 qator `.env` |
+| Bepul hajmi | **15 GB** (Gmail va Google Photos bilan BIRGA) | yo'q, ~3 evro/oy 250 GB |
+| 100 GB narxi | Google One ~2 dollar/oy | Contabo ~3 evro/oy |
 
 **Ikkalasi ham to'ldirilsa S3 ishlaydi.** Bu ataylab: ikkinchisiga o'tib ketish
 degani — bir kechalik nusxa hech kim qaramaydigan joyga tushishi va «ishladi»
 degan yozuv bir oydan beri buzuq turgan manzilni yashirishi.
+
+## ⚠️ Hajm haqida — buni oldindan biling
+
+Baza kichkina: yiliga ~0.5 GB. **Suratlar va qo'ng'iroq yozuvlari esa yiliga
+o'nlab GB.** Bepul Google Drive 15 GB va u Gmail'ingiz bilan umumiy — ya'ni
+suratlarni ham Drive'ga olsangiz, bir yilga yetmasdan to'ladi.
+
+Serveringizdagi haqiqiy raqamni ko'ring:
+
+```bash
+docker compose exec minio du -sh /data
+```
+
+- **15 GB dan kam bo'lsa** — bepul Drive hozircha yetadi.
+- **Ko'p bo'lsa yoki qo'ng'iroq ilovasi tarqatilsa** — Google One 100 GB
+  (~2 dollar/oy) oling, yoki S3 ga o'ting. Menga ayting, `.env` ni sozlaymiz.
+
+Sistema **bazani suratlardan ustun qo'yadi**: Drive'da **2 GB doim baza uchun
+band qilib turiladi**, suratlar unga tegmaydi. Joy tugasa suratlar to'xtaydi
+va sizga Telegram'ga xabar keladi — jimgina to'xtamaydi.
 
 ---
 
@@ -160,16 +181,54 @@ ichida `gsr-2026-07-27.dump` kabi fayllar.
 
 ## Nima saqlanadi, nima yo'q
 
-| | Drive'ga chiqadimi |
+| | Tashqi zaxiraga chiqadimi |
 |---|---|
-| Butun baza: mijozlar, prixodlar, qutilar, pul, hujjatlar | ✅ ha |
-| **Suratlar** (prixod fotolari, qadoqlash suratlari) | ❌ **yo'q** |
-| `.env` (parollar) | ❌ yo'q — ataylab |
+| Butun baza: mijozlar, prixodlar, qutilar, pul, hujjatlar | ✅ ha, har kecha |
+| **Suratlar** (prixod fotolari, qadoqlash suratlari) | ✅ ha |
+| **Qo'ng'iroq yozuvlari** | ✅ ha |
+| **Telegram'dan kelgan fayl/rasm/ovoz** | ✅ ha |
+| Biriktirilgan hujjatlar (hisob-faktura, dalolatnoma) | ✅ ha |
+| Kichraytirilgan nusxalar (thumbnail) | ❌ ataylab — ular asl rasmdan qayta yasaladi |
+| Haydovchi/qo'ng'iroq APK fayllari | ❌ ataylab — ular CI'da qayta yig'iladi |
+| `.env` (parollar, kalitlar) | ❌ **yo'q — ataylab** |
 
-**Suratlar hali chiqmaydi.** Ular MinIO'da turadi va hajmi ~1–1.5 GB —
-bazadan yuz barobar katta. Buni alohida qilish kerak (faqat yangi
-suratlarni yuborish), chunki har kecha 1.5 GB yuborilsa bepul 15 GB
-Drive 10 kunda to'ladi. **Ayting — keyingi navbatda qilaman.**
+### `.env` haqida alohida ogohlantirish
+
+`.env` ni zaxiraga qo'ymayapmiz: unda bot tokeni, baza paroli va Telegram
+sessiya kaliti bor, ularni Google'ga qo'yish — hammasini bitta joyga qo'yish.
+
+**Lekin `TG_SESSION_KEY` yo'qolsa**, tiklangan bazadagi ulangan Telegram
+akkauntlari ochilmaydi va menejerlar qaytadan ulanishlari kerak bo'ladi.
+Shuning uchun: **`.env` ning bitta nusxasini parol menejeringizda yoki
+qog'ozda saqlang.** Bu — bir martalik ish.
+
+## Suratlar qanday ko'chadi
+
+Har kecha **02:30** da (bazadan yarim soat keyin) alohida ish ishga tushadi:
+
+- **Har bir fayl bir marta** ko'chadi. Nima ko'chganini baza eslab qoladi,
+  shuning uchun serverni qayta ishga tushirish hech narsani buzmaydi.
+- **Birinchi safar uzoq davom etadi** — o'n minglab fayl bor. Bir kechada
+  hammasi emas, har kecha bir qismi ketadi va bir necha kunda tugaydi.
+- Har kecha loglarda **«qolgani nechta»** yoziladi. Shu raqam kamayib
+  borayotgan bo'lsa — ishlayapti.
+
+Kutmasdan qo'lda yurgizish (birinchi safar shunday tezroq):
+
+```bash
+docker compose exec app node -e "1" >/dev/null 2>&1   # ilova tirikligini tekshirish
+docker compose run --rm migrate pnpm backup-objects
+```
+
+Loglarni ko'rish:
+
+```bash
+docker compose logs app | grep "object backup"
+```
+
+> Bir-ikkita fayl «bo'lmadi» desa qo'rqmang: bu odatda bazada yozuvi bor,
+> lekin fayli o'chib ketgan eski qatorlar. Ular boshqa fayllarni **to'sib
+> qo'ymaydi** — qolganlari ko'chaveradi.
 
 ## Nechta nusxa saqlanadi
 
@@ -210,9 +269,62 @@ docker compose exec -T postgres pg_restore -U gsr -d gsr --clean --if-exists /tm
 docker compose start app
 ```
 
+4. **Migratsiyani qayta yuriting** (yangi klasterda bu majburiy):
+
+```bash
+docker compose run --rm migrate
+```
+
+5. **Suratlarni qaytaring** (baza tiklangandan KEYIN — fayl nomlari bazadagi
+   yozuvlar bilan bog'lanadi):
+
+```bash
+docker compose run --rm migrate pnpm restore-objects --thumbs
+```
+
+`--thumbs` kichraytirilgan nusxalarni qayta yasaydi. Ular zaxirada yo'q,
+chunki asl rasmdan qayta yasaladi — shuning uchun zaxira ikki barobar
+kichik.
+
 > `--no-owner` bilan olingan dump har qanday postgres'ga tushadi — `gsr`
 > roli bo'lmagan mashinaga ham.
 
-Har yakshanba tizim o'zi **tiklash mashqi** o'tkazadi: oxirgi dump'ni
-alohida bazaga tiklab, jadvallarni tekshiradi. Xato bo'lsa Telegram'ga
-yozadi.
+> Dump ichida jadval huquqlari bor, lekin **`gsr_ai_reader` roli klasterga
+> tegishli** va dump bilan ko'chmaydi — 4-qadam usha rolni qayta yaratadi.
+> U bo'lmasa AI yordamchining tahlil (SQL) qismi ishlamaydi va buni o'zi
+> halol aytadi («fence unavailable»); qolgan hamma narsa ishlayveradi.
+
+## Tiklash mashqi (fire drill)
+
+Har yakshanba tizim oxirgi dump'ni tekshiradi. Ilova konteynerida
+`pg_restore` yo'q, shuning uchun u yerda **to'liq tiklash o'tkazilmaydi** —
+uning o'rniga fayl **haqiqatan pg_dump formatida ekani** va **kutilmaganda
+kichrayib qolmagani** tekshiriladi (bu ikkinchisi muhim: yarim bo'sh dump
+fayl sifatida mutlaqo soz ko'rinadi).
+
+To'liq mashqni yiliga bir-ikki marta **qo'lda** o'tkazing — bu zaxirangiz
+haqiqatan ishlashining yagona isboti:
+
+```bash
+docker compose cp <oxirgi dump> postgres:/tmp/drill.dump
+docker compose exec postgres psql -U gsr -c "CREATE DATABASE gsr_drill"
+docker compose exec postgres pg_restore -U gsr -d gsr_drill --no-owner /tmp/drill.dump
+docker compose exec postgres psql -U gsr -d gsr_drill -c "select count(*) from clients"
+docker compose exec postgres psql -U gsr -c "DROP DATABASE gsr_drill"
+```
+
+Oxirgi qator — **mijozlar soni**. U bugungi songa yaqin bo'lsa, zaxira soz.
+
+## Kim dump oladi
+
+Ikkita mustaqil mexanizm bor va ular bir papkaga yozadi:
+
+1. **`backup` konteyneri** (postgres:16) — har kuni dump oladi. Ilova o'chib
+   qolsa ham ishlaydi. **Amalda ishlaydigani shu.**
+2. **Ilovaning tungi ishi** — o'zi dump olishga urinadi; ilova obrazida
+   postgres asboblari yo'q, shuning uchun u **1-punktdagi dump'ni oladi** va
+   tashqi omborga yuboradi.
+
+Ya'ni: birinchisi olsa ham, olmasa ham — **ikkinchisi 26 soat ichida yangi
+dump topolmasa Telegram'ga xato yozadi.** Shu bilan birinchisining jimgina
+buzilib qolishi ham ko'rinadi.

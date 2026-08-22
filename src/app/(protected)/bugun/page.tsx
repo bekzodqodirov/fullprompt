@@ -12,6 +12,7 @@ import {
   toTaskViews,
 } from '@/modules/platform/tasks/view';
 import { followUps } from '@/modules/wms/crm/service';
+import { FollowUpRow } from './follow-up-row';
 import { NewTaskForm, TaskList } from '@/components/task-list';
 
 /**
@@ -86,17 +87,15 @@ export default async function TodayPage() {
         <section className="space-y-2" data-testid="day-followups">
           <h2 className="section-title">📞 {tcrm('today')} · {follows.length}</h2>
           {follows.map((row) => (
-            <Link
+            <FollowUpRow
               key={`${row.kind}-${row.id}`}
+              kind={row.kind}
+              id={row.id}
               href={row.kind === 'lead' ? `/crm/leads/${row.id}` : `/admin/clients/${row.id}`}
-              className="card block !p-3 hover:bg-surface-sunken"
-            >
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className="min-w-0 flex-1 font-semibold">{row.title}</span>
-                <span className="num text-xs text-ink-500">{row.dueOn}</span>
-              </div>
-              {row.note && <p className="text-sm text-ink-700">{row.note}</p>}
-            </Link>
+              title={row.title}
+              dueOn={row.dueOn}
+              note={row.note}
+            />
           ))}
         </section>
       )}

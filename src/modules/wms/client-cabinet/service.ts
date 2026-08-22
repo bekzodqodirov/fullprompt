@@ -63,9 +63,33 @@ export function phonesOverlap(a: unknown, b: unknown): boolean {
 /**
  * All active clients registered under this phone — the owner's reality:
  * one person often holds 2–4 marking codes (777, 555, 444…).
+ *
+ * Prefiltered in SQL (round 108): this used to fetch and hydrate the WHOLE
+ * client book per call, and the chat surfaces call it per phone per refresh
+ * tick — at ~1,700 clients that was thousands of rows of pure Node work a
+ * second on the one process that serves everything. The SQL half compares
+ * the last SEVEN digits, a strict superset of `phonesMatch`'s last-nine
+ * rule (equal last-n, n ≥ 7, implies equal last-7 — never a false miss),
+ * and the JS filter stays as the exact arbiter over the handful that
+ * survive. Under seven digits the JS rule matches nothing, so answer that
+ * without a query.
  */
 export async function activeClientsByPhone(phone: string) {
-  const rows = await db.select().from(clients).where(eq(clients.active, true));
+  const digits = phoneDigits(phone);
+  if (digits.length < 7) return [];
+  const last7 = digits.slice(-7);
+  const rows = await db
+    .select()
+    .from(clients)
+    .where(
+      and(
+        eq(clients.active, true),
+        sql`EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(${clients}."phones") AS ph(p)
+          WHERE right(regexp_replace(ph.p, '[^0-9]', '', 'g'), 7) = ${last7}
+        )`,
+      ),
+    );
   return rows.filter((c) => phoneBelongsToClient(phone, c.phones));
 }
 

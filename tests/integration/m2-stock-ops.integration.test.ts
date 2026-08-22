@@ -489,3 +489,144 @@ describe('daily digest', () => {
     expect(after).toBeGreaterThan(before);
   });
 });
+
+/**
+ * A correction must not be blocked for ever by a carton nothing will ever
+ * move again.
+ *
+ * The rule «every box must still be on the shelf» is right about cargo that
+ * has moved FORWARD — loaded, departed, handed over — and wrong about the two
+ * terminal states. A `lost` carton (a person's written loss) and a `void` one
+ * (the surplus from a miscount correction) are never coming back, so blocking
+ * on them is not «resolve it first», it is never.
+ */
+describe('a terminal box does not block a correction', () => {
+  it('the money follows the cargo when unclaimed goods are claimed', async () => {
+    // Customs and freight on unclaimed cargo are entered BEFORE anybody knows
+    // whose it is, so the allocations carry client_id NULL. Nothing
+    // re-derived them, so the client showed revenue with no cost — pure
+    // profit on paper — and the owner's landed-cost report, which inner-joins
+    // clients on the allocation, dropped the row entirely.
+    const { receiptId } = await makeReceipt({ clientId: null, marking: 'ZZUNCLAIMED' });
+    const [type] = await db.select().from(costTypes).limit(1);
+    const entry = await addCostEntry(
+      {
+        scope: 'receipt',
+        receiptId,
+        costTypeId: type!.id,
+        amount: 120,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'boxes',
+      },
+      ctx(),
+    );
+    const before = await db
+      .select()
+      .from(costAllocations)
+      .where(eq(costAllocations.costEntryId, entry.id));
+    expect(before.length, 'the cost was allocated onto the boxes').toBeGreaterThan(0);
+    expect(before.every((a) => a.clientId === null), 'and belongs to nobody yet').toBe(true);
+
+    await assignReceiptClient(receiptId, clientAId, ctx());
+
+    const after = await db
+      .select()
+      .from(costAllocations)
+      .where(eq(costAllocations.costEntryId, entry.id));
+    expect(after.every((a) => a.clientId === clientAId), 'now it is his cost').toBe(true);
+  });
+
+  it('a receipt with one LOST carton can still be voided, and the loss survives', async () => {
+    const { receiptId, boxIds } = await makeReceipt({ clientId: clientAId, boxCount: 3 });
+    await setBoxStatus({ boxId: boxIds[0]!, to: 'lost', reason: 'crushed in the aisle' }, ctx());
+
+    await voidReceipt(receiptId, "noto'g'ri mijoz", ctx());
+
+    const [voided] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
+    expect(voided!.voidedAt, 'the receipt is voidable at all').not.toBeNull();
+
+    const rows = await db.select().from(boxes).where(inArray(boxes.id, boxIds));
+    const lost = rows.find((b) => b.id === boxIds[0]);
+    // Overwriting it would erase a recorded loss to tidy up a correction —
+    // the worse of the two mistakes.
+    expect(lost!.status, 'the loss is not tidied away').toBe('lost');
+    expect(
+      rows.filter((b) => b.id !== boxIds[0]).map((b) => b.status),
+      'the cartons that were on the shelf are voided',
+    ).toEqual(['void', 'void']);
+  });
+
+  it('a receipt whose surplus was voided by a miscount correction can still be moved', async () => {
+    const { receiptId, lotId } = await makeReceipt({ clientId: clientAId, boxCount: 4 });
+    // The 4 → 2 correction the warehouse makes by hand; the surplus is voided.
+    const manager = { id: actorId, permissions: new Set(['receipts.edit']) } as unknown as Actor;
+    await editLot(
+      {
+        lotId,
+        productNameZh: '测试货',
+        boxCount: 2,
+        boxLengthCm: 40,
+        boxWidthCm: 30,
+        boxHeightCm: 20,
+        boxWeightKg: 5,
+      },
+      manager,
+      ctx(),
+    );
+
+    const moveResult = await moveReceipt(receiptId, whBId, ctx());
+    expect(moveResult.boxCount, 'only the live cartons travelled').toBe(2);
+
+    const [moved] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
+    expect(moved!.warehouseId).toBe(whBId);
+    const rows = await db.select().from(boxes).where(eq(boxes.lotId, lotId));
+    for (const box of rows) {
+      // Only the live cartons travel; a voided one stays where it was.
+      if (box.status === 'void') expect(box.currentWarehouseId).not.toBe(whBId);
+      else expect(box.currentWarehouseId).toBe(whBId);
+    }
+  });
+
+  it('a VOIDED receipt takes no more lot edits — it used to grow live boxes', async () => {
+    // The structural lock reads «no ACTIVE box has left in_stock», and on a
+    // voided receipt every box is `void`, so the active list is empty and the
+    // lock passes by being asked about nothing. The grow branch then minted
+    // brand-new in_stock cartons with fresh codes, hanging off a prixod that
+    // officially never happened.
+    const { receiptId, lotId } = await makeReceipt({ clientId: clientAId, boxCount: 2 });
+    await voidReceipt(receiptId, 'dublikat', ctx());
+    const manager = { id: actorId, permissions: new Set(['receipts.void']) } as unknown as Actor;
+
+    await expect(
+      editLot(
+        {
+          lotId,
+          productNameZh: '测试货',
+          boxCount: 5,
+          boxLengthCm: 40,
+          boxWidthCm: 30,
+          boxHeightCm: 20,
+          boxWeightKg: 5,
+        },
+        manager,
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'receipt_not_confirmed' });
+
+    const rows = await db.select().from(boxes).where(eq(boxes.lotId, lotId));
+    expect(rows, 'no new carton was minted').toHaveLength(2);
+    expect(rows.every((b) => b.status === 'void'), 'and none came back to life').toBe(true);
+  });
+
+  it('a carton that is still real anywhere else DOES block it', async () => {
+    // The half of the rule that must survive: cargo mid-journey is resolved
+    // by the load/unload/issue machinery, never by a correction.
+    const { receiptId, boxIds } = await makeReceipt({ clientId: clientAId, boxCount: 2 });
+    await db.update(boxes).set({ status: 'in_transit' }).where(eq(boxes.id, boxIds[0]!));
+    await expect(voidReceipt(receiptId, 'dublikat', ctx())).rejects.toMatchObject({
+      code: 'box_not_in_stock',
+    });
+    await db.update(boxes).set({ status: 'in_stock' }).where(eq(boxes.id, boxIds[0]!));
+  });
+});

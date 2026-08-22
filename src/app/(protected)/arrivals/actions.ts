@@ -53,7 +53,7 @@ export async function createArrivalAction(
   }
   const meta = await requestMeta();
   try {
-    await createExpectedArrival(parsed.data, { actorId: actor.id, ...meta });
+    await createExpectedArrival(parsed.data, actor, { actorId: actor.id, ...meta });
   } catch (err) {
     if (err instanceof ArrivalError) return { error: err.code };
     throw err;
@@ -68,7 +68,7 @@ export async function cancelArrivalAction(formData: FormData): Promise<void> {
   const actor = await actorForWrite();
   const meta = await requestMeta();
   try {
-    await cancelExpectedArrival(id, reason, { actorId: actor.id, ...meta });
+    await cancelExpectedArrival(id, reason, actor, { actorId: actor.id, ...meta });
   } catch (err) {
     if (!(err instanceof ArrivalError)) throw err;
   }
@@ -80,7 +80,7 @@ export async function markArrivedAction(formData: FormData): Promise<void> {
   const actor = await authorize('receipts.create');
   const meta = await requestMeta();
   try {
-    await markArrived(id, { actorId: actor.id, ...meta });
+    await markArrived(id, actor, { actorId: actor.id, ...meta });
   } catch (err) {
     if (!(err instanceof ArrivalError)) throw err;
   }

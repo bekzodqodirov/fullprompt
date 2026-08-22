@@ -22,6 +22,8 @@
     "backup": "tsx scripts/backup.ts",
     "gdrive-auth": "tsx scripts/gdrive-auth.ts",
     "restore-test": "tsx scripts/restore-test.ts",
+    "backup-objects": "tsx scripts/backup-objects.ts",
+    "restore-objects": "tsx scripts/restore-objects.ts",
     "refresh": "pnpm install && pnpm db:migrate && pnpm build",
     "start:https": "node scripts/start-https.mjs",
     "dev:https": "node scripts/heal-storage.mjs && next dev --experimental-https",
@@ -31,7 +33,8 @@
     "tg-scan": "tsx scripts/tg-scan.ts",
     "tg-login": "tsx scripts/tg-login.ts",
     "tg-listen": "tsx scripts/tg-listen.ts",
-    "tg-doctor": "tsx scripts/tg-doctor.ts"
+    "tg-doctor": "tsx scripts/tg-doctor.ts",
+    "fetch-road-geometry": "node scripts/fetch-road-geometry.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.114.0",

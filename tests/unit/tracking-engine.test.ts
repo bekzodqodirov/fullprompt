@@ -20,8 +20,22 @@ describe('routeFor', () => {
     expect(routeFor('KA', 'AND')).not.toBeNull();
     expect(routeFor('KA', 'TAS1')).not.toBeNull();
     expect(routeFor('AND', 'TAS2')).not.toBeNull();
-    // Mapped pair without a defined corridor → generic straight line.
-    const generic = routeFor('YW', 'TAS1')!;
+    // A through truck — one batch from China straight to Uzbekistan, no
+    // transfer at Kashgar — is the road plus the border wait now (round
+    // 109). This assertion used YW→TAS1 as its straight-line example, which
+    // is exactly the case the owner asked to be drawn along the road.
+    const through = routeFor('YW', 'TAS1')!;
+    expect(through.points.length).toBeGreaterThan(2);
+    expect(through.segments.map((s) => s.key)).toEqual([
+      'cn_transit',
+      'to_border',
+      'border_wait',
+      'kg',
+      'uz',
+    ]);
+    // Mapped pair without a defined corridor → generic straight line. The
+    // road is one-way in our data: nobody drives cargo back to Yiwu.
+    const generic = routeFor('TAS1', 'YW')!;
     expect(generic.points).toHaveLength(2);
     // Unknown warehouse → no truck on the map.
     expect(routeFor('NOPE', 'TAS1')).toBeNull();

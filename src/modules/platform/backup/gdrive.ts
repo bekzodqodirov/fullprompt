@@ -314,6 +314,24 @@ export async function listDumps(
 }
 
 /**
+ * Pull one file's bytes back — the other half of a backup, and the half that
+ * is usually written the day it is needed rather than the day it is designed.
+ *
+ * `alt=media` is what makes Drive answer with the file instead of its
+ * metadata; without it the restore writes a JSON description of a photograph
+ * into the object store, which is valid JSON, the right file name and
+ * completely useless.
+ */
+export async function downloadFile(
+  token: string,
+  fileId: string,
+  fetcher: Fetcher = fetch,
+): Promise<Buffer> {
+  const res = await api(token, `${API}/files/${fileId}?alt=media`, {}, fetcher);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+/**
  * Delete for real, not into the trash.
  *
  * A trashed file goes on consuming the account's 15 GB, so pruning that way

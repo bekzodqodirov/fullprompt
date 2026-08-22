@@ -3,6 +3,9 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { menuItems, NAV } from '@/modules/platform/rbac/nav';
+import { aiConfigured } from '@/modules/platform/ai/model';
+import { isAnalyst } from '@/modules/platform/ai/tools';
+import { AdminDashboard } from './admin-dashboard';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { Section } from '@/components/ui/page';
 import { myDay } from '@/modules/platform/tasks/service';
@@ -52,6 +55,9 @@ export default async function HomePage() {
       // workflow steps are drawn once, above, not repeated as tiles.
       if (item.href === '/' || !menuItems(item, viewer)) continue;
       if (flow && flow.hrefs.includes(item.href)) continue;
+      // Same rule as the sidebar: the AI tile exists only once the server
+      // key does — a tile to a «not configured» sentence is clutter.
+      if (item.href === '/ai' && !aiConfigured()) continue;
       items.push({
         href: item.href,
         label: await label(item.namespace, item.labelKey),
@@ -114,15 +120,32 @@ export default async function HomePage() {
         )
       ) : null}
 
-      {groups.map((group) => (
-        <Section key={group.title} title={group.title}>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-            {group.items.map((item) => (
-              <Tile key={item.href} {...item} />
-            ))}
-          </div>
-        </Section>
-      ))}
+      {/* The company's own numbers, for whoever runs it (round 107, item 4).
+          NO LONGER exclusive with the role flows (round 109, the owner:
+          «dashboard menda korinmadiku super adminda nega unday bolyabti»).
+          The exclusivity WAS the cause: `buildHomeFlow` answers for any
+          working role a person also carries, and an admin who sells too —
+          which is how his own accounts are set up, one advert lead having
+          landed on «bir admin va sotuvchi» — got the seller's day and no
+          dashboard at all. The one person it was built for was the one
+          person who could not see it. Both now, in the order they are used:
+          the day's work above, the company below it. */}
+      {isAnalyst(actor) ? <AdminDashboard actor={actor} /> : null}
+
+      {/* The testid fences m9p's tile-pair measurement to the GRID — the
+          dashboard above also links /bitimlar, and a bare `.first()` would
+          measure the wrong element. */}
+      <div data-testid="home-tiles" className="space-y-6">
+        {groups.map((group) => (
+          <Section key={group.title} title={group.title}>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {group.items.map((item) => (
+                <Tile key={item.href} {...item} />
+              ))}
+            </div>
+          </Section>
+        ))}
+      </div>
     </div>
   );
 }

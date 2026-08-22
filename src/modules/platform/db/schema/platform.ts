@@ -393,6 +393,8 @@ export const notifications = pgTable(
     status: text('status').notNull().default('pending'),
     /** Telegram sends that failed; at the cap the row goes terminal. */
     attempts: integer('attempts').notNull().default(0),
+    /** When a drain took this row (0082) — a stale claim is put back. */
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     error: text('error'),
     readAt: timestamp('read_at', { withTimezone: true }),
@@ -402,7 +404,7 @@ export const notifications = pgTable(
     check('notifications_channel_check', sql`${t.channel} IN ('in_app', 'telegram')`),
     check(
       'notifications_status_check',
-      sql`${t.status} IN ('pending', 'sent', 'failed', 'muted')`,
+      sql`${t.status} IN ('pending', 'sending', 'sent', 'failed', 'muted')`,
     ),
     index('notifications_user_idx').on(t.userId, t.createdAt),
     index('notifications_pending_idx')
@@ -868,5 +870,38 @@ export const clientNotices = pgTable(
       'client_notices_status_check',
       sql`${t.status} IN ('pending', 'sent', 'failed', 'skipped')`,
     ),
+  ],
+);
+
+/**
+ * What has already been copied off this machine, object by object.
+ *
+ * The database dump is one file a night and needs no ledger; the object store
+ * is tens of thousands of photographs that must each be uploaded exactly once,
+ * across nights, across restarts and across a backlog that takes days to
+ * drain. Asking the destination «do you have this one?» would be an API call
+ * per photograph per night; a row is the cheap, durable answer.
+ *
+ * The DESTINATION is half the key on purpose: pointing the backup somewhere
+ * new must read as «nothing is there yet», not as «all done».
+ *
+ * A row is never deleted when its attachment is. A backup that follows
+ * deletions is not a backup.
+ */
+export const backupObjects = pgTable(
+  'backup_objects',
+  {
+    storageKey: text('storage_key').notNull(),
+    /** 'drive' or 's3' — whichever destination holds this copy. */
+    destination: text('destination').notNull(),
+    /** What the destination said it stored, never what was sent. */
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    /** Drive file id, or the S3 object key — so a restore need not search. */
+    remoteRef: text('remote_ref').notNull(),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.storageKey, t.destination] }),
+    index('backup_objects_dest_idx').on(t.destination, t.storageKey),
   ],
 );

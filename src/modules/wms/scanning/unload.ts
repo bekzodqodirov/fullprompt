@@ -46,6 +46,16 @@ export interface UnloadAck {
    * asymmetry, closed on the unload side in round 31).
    */
   notArrived?: string[];
+  /**
+   * The code as it was scanned, on every REFUSAL.
+   *
+   * The phone marks a code done the moment it is scanned — right, because the
+   * queue is the design and there is no network to ask. So every refusal has
+   * to name what it refused, or the screen cannot take its own green mark
+   * back off, and a truck flushed after «Tushirish tugadi» reads 150/150
+   * while all 150 cartons are recorded as missing in transit.
+   */
+  scannedCode?: string;
 }
 
 /**
@@ -67,9 +77,21 @@ export async function ingestUnloadScans(
   for (const input of inputs) {
     const ack = await db.transaction(async (tx): Promise<UnloadAck> => {
       const batch = await tx.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
-      if (!batch) return { clientEventUuid: input.clientEventUuid, result: 'rejected', detail: 'batch_not_found' };
+      if (!batch) {
+        return {
+          clientEventUuid: input.clientEventUuid,
+          result: 'rejected',
+          detail: 'batch_not_found',
+          scannedCode: input.code,
+        };
+      }
       if (!['in_transit', 'arrived'].includes(batch.status)) {
-        return { clientEventUuid: input.clientEventUuid, result: 'rejected', detail: 'batch_not_unloading' };
+        return {
+          clientEventUuid: input.clientEventUuid,
+          result: 'rejected',
+          detail: 'batch_not_unloading',
+          scannedCode: input.code,
+        };
       }
 
       const existing = await tx.query.scanEvents.findFirst({
@@ -92,11 +114,22 @@ export async function ingestUnloadScans(
         const crate = await tx.query.crates.findFirst({
           where: sql`upper(code) = ${input.code.toUpperCase()}`,
         });
-        if (!crate) return { clientEventUuid: input.clientEventUuid, result: 'unknown_code' };
+        if (!crate) {
+          return {
+            clientEventUuid: input.clientEventUuid,
+            result: 'unknown_code',
+            scannedCode: input.code,
+          };
+        }
         crateId = crate.id;
         members = await tx.select().from(boxes).where(eq(boxes.crateId, crate.id)).for('update');
         if (members.length === 0) {
-          return { clientEventUuid: input.clientEventUuid, result: 'unknown_code', detail: 'empty_crate' };
+          return {
+            clientEventUuid: input.clientEventUuid,
+            result: 'unknown_code',
+            detail: 'empty_crate',
+            scannedCode: input.code,
+          };
         }
       } else {
         const rows = await tx
@@ -104,7 +137,13 @@ export async function ingestUnloadScans(
           .from(boxes)
           .where(sql`upper(${boxes.shortCode}) = ${input.code.toUpperCase()}`)
           .for('update');
-        if (rows.length === 0) return { clientEventUuid: input.clientEventUuid, result: 'unknown_code' };
+        if (rows.length === 0) {
+          return {
+            clientEventUuid: input.clientEventUuid,
+            result: 'unknown_code',
+            scannedCode: input.code,
+          };
+        }
         members = rows;
       }
 
@@ -135,6 +174,7 @@ export async function ingestUnloadScans(
             clientEventUuid: input.clientEventUuid,
             result: 'rejected',
             detail: 'crate_not_on_batch',
+            scannedCode: input.code,
           };
         }
       }
@@ -153,7 +193,12 @@ export async function ingestUnloadScans(
 
       for (const box of members) {
         if (['issued', 'void'].includes(box.status)) {
-          return { clientEventUuid: input.clientEventUuid, result: 'rejected', detail: `box_${box.status}` };
+          return {
+            clientEventUuid: input.clientEventUuid,
+            result: 'rejected',
+            detail: `box_${box.status}`,
+            scannedCode: input.code,
+          };
         }
       }
 
