@@ -370,6 +370,22 @@ export async function saveLines(
       after: { lines: lines.length },
     });
   });
+
+  // The honest end of a calculation's clock: the lines were SAVED.
+  //
+  // Outside the transaction, because everything in the calc service runs on
+  // the pool and a second connection asked for while one is held is what
+  // freezes the whole app (tests/unit/tx-pool.test.ts). Fenced, because a
+  // stuck clock must never refuse the save itself. Guarded on a non-empty
+  // save: wiping a deal's lines is a deletion, not a calculation.
+  if (lines.length > 0 && ctx.actorId) {
+    try {
+      const { completeCalcForDeal } = await import('../calc/service');
+      await completeCalcForDeal(dealId, ctx.actorId);
+    } catch (err) {
+      logger.error({ err, dealId }, '[calc] clock stop on saveLines failed');
+    }
+  }
 }
 
 /**

@@ -78,6 +78,7 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ['meta-leads', async (b) => (await import('../../wms/crm/meta-jobs')).registerMetaLeadWorker(b)],
   ['stale-automation', async (b) => (await import('../automation/stale-jobs')).registerStaleAutomationWorker(b)],
   ['client-notices', async (b) => (await import('../../wms/notices/arrival-jobs')).registerClientNoticeWorker(b)],
+  ['calc-overdue', async (b) => (await import('../../wms/calc/jobs')).registerCalcWorker(b)],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */

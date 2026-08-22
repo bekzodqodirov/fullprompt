@@ -5,6 +5,7 @@ import {
   batches,
   boxes,
   crates,
+  calcRequests,
   crmActivities,
   customFieldValues,
   handovers,
@@ -187,19 +188,36 @@ async function decide(
     }
     // Lenta note files. The deal card is deliberately open to ved.docs
     // (#299-301), so a note on a deal admits the customs manager too.
+    //
+    // A note on a LEAD does not — a seller's prospect correspondence is not
+    // the customs manager's business. The one exception is the note a
+    // calculation request POINTS AT: the seller deliberately handed those
+    // materials to the VED queue, and «everything the seller submitted is
+    // shown to the VED as-is» is the owner's own line (docs/VED.md, law 11).
+    // Without this the whole bot half of the queue would 404 on its files,
+    // because a stranger's request lands on a lead by construction.
     case 'crm_activity': {
       const row = await db.query.crmActivities.findFirst({
         where: eq(crmActivities.id, attachment.entityId),
         columns: { entityType: true },
       });
       if (!row) return { allow: false, rule: 'orphan' };
-      const allowed =
-        row.entityType === 'deal'
-          ? has('crm.leads', 'clients.manage', 'ved.docs')
-          : has('crm.leads', 'clients.manage');
-      return allowed
-        ? { allow: true, rule: 'crm-activity' }
-        : { allow: false, rule: 'crm-no-permission' };
+      if (row.entityType === 'deal') {
+        return has('crm.leads', 'clients.manage', 'ved.docs')
+          ? { allow: true, rule: 'crm-activity' }
+          : { allow: false, rule: 'crm-no-permission' };
+      }
+      if (has('crm.leads', 'clients.manage')) {
+        return { allow: true, rule: 'crm-activity' };
+      }
+      if (has('ved.docs')) {
+        const submitted = await db.query.calcRequests.findFirst({
+          where: eq(calcRequests.noteId, attachment.entityId),
+          columns: { id: true },
+        });
+        if (submitted) return { allow: true, rule: 'crm-activity-calc' };
+      }
+      return { allow: false, rule: 'crm-no-permission' };
     }
     // A call recording — the Telegram thread's rule, for the same reason: a
     // call is its taker's record, and an audio URL must not out-read the

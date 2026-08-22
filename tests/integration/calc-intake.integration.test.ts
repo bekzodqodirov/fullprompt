@@ -1,14 +1,18 @@
 import 'dotenv/config';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  calcRequestItems,
+  calcRequests,
   clients,
   crmActivities,
   deals,
+  events,
   leadStages,
   leads,
+  tasks,
   users,
 } from '@/modules/platform/db/schema';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
@@ -34,6 +38,8 @@ import { landIntake, resolveIntakeClient } from '@/modules/wms/calc/intake-land'
  */
 
 const STAMP = String(Date.now()).slice(-6);
+/** When this file started — the window its own queue rows live in. */
+const FILE_START = new Date();
 let actorId: string;
 const madeLeads: string[] = [];
 
@@ -42,6 +48,31 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Since the VED module (phase A) a landing also opens a CALC REQUEST, so
+  // this file now leaves work in a company-wide queue: rows that put a number
+  // on the VED home, sit in front of the next spec's own, and after two hours
+  // telegraph the owner about a fixture. Cleared here, deepest first — the
+  // items reference the request, the request references the task.
+  // By WINDOW rather than by id: `landIntake` mints deals of its own
+  // (a coded client with no open deal gets one), so there is no list of
+  // entities to sweep — but vitest runs files serially, so «this actor,
+  // since this file started» is exactly this file's rows.
+  {
+    const rows = await db
+      .select({ id: calcRequests.id, taskId: calcRequests.taskId })
+      .from(calcRequests)
+      .where(and(eq(calcRequests.requestedBy, actorId), gte(calcRequests.requestedAt, FILE_START)));
+    if (rows.length) {
+      const requestIds = rows.map((row) => row.id);
+      await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, requestIds));
+      await db.delete(calcRequests).where(inArray(calcRequests.id, requestIds));
+      const taskIds = rows.map((row) => row.taskId).filter(Boolean) as string[];
+      if (taskIds.length) {
+        await db.delete(events).where(inArray(events.entityId, taskIds));
+        await db.delete(tasks).where(inArray(tasks.id, taskIds));
+      }
+    }
+  }
   if (madeLeads.length) {
     await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
     await db.delete(leads).where(inArray(leads.id, madeLeads));

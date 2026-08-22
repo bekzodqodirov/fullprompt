@@ -311,7 +311,7 @@ export async function landCollectedIntake(
   chatId: bigint,
   staffId: string,
   staffName: string,
-): Promise<{ kind: 'deal' | 'lead'; id: string; label: string } | null> {
+): Promise<{ kind: 'deal' | 'lead'; id: string; label: string; queued?: boolean } | null> {
   const { activeIntake } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;

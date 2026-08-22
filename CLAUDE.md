@@ -126,11 +126,30 @@ pnpm build && pnpm e2e  # 44 e2e
 | Why is it built this way? | `DECISIONS.md` — 489 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
-| The VED module | `docs/VED.md` — agreed 2026-08-22, NOT yet built; phases A-E |
+| The VED module | `docs/VED.md` — agreed 2026-08-22; **phase A SHIPPED**, B-E open |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
+
+## State — 2026-08-22
+
+**VED phase A is on this branch** (`docs/VED.md`, migration **0085** — the
+ledger must reach **86**): the calculation request became a JOB with its own
+section/route/kg/kub/goods/materials, the bot and the card form land in ONE
+queue at `/hisoblash`, the round-28 clock is reopened with its overdue sweep,
+the checklist is the bot's own `missingFields`, a bounce-back needs a typed
+reason and the finish records the ANSWER (amount + note, pushed to the
+seller). Assignment moved from the seller to the QUEUE (fewest-open-first
+over `ved.docs`), and 0052's «one open request per card» index is DROPPED —
+a card may carry several jobs. Decisions **#748-751**: the attachment gate
+widened for lead notes a request points at (the blocker three reviewers found
+independently), `isServerBehind` now knows `42703` as well as `42P01`, and
+`ved.docs` is stated as a four-power bundle for the owner to split when he
+wants a calc-only person. 1739 unit/integration + 161 e2e green on a fresh
+gsr_ci in CI's order; screenshots at 360 and 1280. **Phases B-E are open**:
+the workspace and its four dictionaries, the price book, upsale, and the
+calc-vs-actual control.
 
 ## State — 2026-08-13
 

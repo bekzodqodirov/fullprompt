@@ -18,6 +18,7 @@ import { LeadFacts } from './facts';
 import { ConvertForm } from './convert-form';
 import { StageMover } from './stage-mover';
 import { TasksPanel } from '@/components/tasks-panel';
+import { CalcPanel } from '@/components/calc-panel';
 import { HistoryTab } from '@/components/history-tab';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
@@ -246,6 +247,7 @@ export default async function LeadPage({
         </LeadForm>
       </Panel>
 
+      <CalcPanel entityType="lead" entityId={id} revalidate={`/crm/leads/${id}`} />
       <TasksPanel
         entityType="lead"
         entityId={id}

@@ -14,3 +14,18 @@
 export function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
 }
+
+/**
+ * The app is a release ahead of the database — deploy morning, before
+ * `docker compose run --rm migrate` has landed (#472-475).
+ *
+ * BOTH codes, and the second is the one that matters here: `42P01` is a
+ * missing TABLE, which only a brand-new table produces, while a release that
+ * adds COLUMNS to a table that already exists fails with `42703`, undefined
+ * column. A guard that knows only the first passes that straight through to
+ * the error page, which is precisely the morning nobody can afford it.
+ */
+export function isServerBehind(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null || !('code' in err)) return false;
+  return err.code === '42P01' || err.code === '42703';
+}

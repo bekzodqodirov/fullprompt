@@ -26,6 +26,12 @@ export interface IntakeTarget {
   id: string;
   /** For the confirmation message and the link. */
   label: string;
+  /**
+   * Did it reach the VED queue? The material and the card are saved either
+   * way; a false here means the collector must send it from the card, and
+   * saying so is the difference between an honest reply and a silent strand.
+   */
+  queued?: boolean;
 }
 
 /** The client a typed code or phone names — exactly one, or nobody. */
@@ -177,6 +183,41 @@ export async function landIntake(input: {
     { actorId: input.collectedBy },
   );
 
+  // The collected job goes into the VED queue — the bot and the card form are
+  // two doors into ONE queue (docs/VED.md, phase A). Fenced for the same
+  // reason as the stage move below, and BEFORE it because the queue is the
+  // promise and the stage is the decoration: on a stale schema or a refused
+  // insert the note and its files still stand on the card, and the caller is
+  // told which half failed rather than «nothing saved» about work that was.
+  let queued = false;
+  try {
+    const { openCalcRequest } = await import('./service');
+    await openCalcRequest(
+      {
+        entityType: target.kind,
+        entityId: target.id,
+        section: input.section,
+        fromCity: input.facts.fromCity ?? null,
+        toCity: input.facts.toCity ?? null,
+        weightKg: input.facts.weightKg ?? null,
+        volumeM3: input.facts.volumeM3 ?? null,
+        items: (input.facts.goods ?? []).map((good) => ({
+          name: good.name,
+          quantity: good.quantity ?? null,
+          tnvedCode: good.tnvedCode ?? null,
+          note: good.note ?? null,
+        })),
+        noteId: input.noteId,
+        source: 'bot',
+        hasMaterials: input.fileCount > 0,
+      },
+      { actorId: input.collectedBy },
+    );
+    queued = true;
+  } catch (err) {
+    logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] queue open failed');
+  }
+
   // …and the card moves to the hisoblatish stage, through the SAME move the
   // board's buttons use — so the audit row, the stage event and any phase-7
   // rule watching «entered this stage» all fire exactly as if a person had
@@ -188,7 +229,7 @@ export async function landIntake(input: {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
   }
 
-  return target;
+  return { ...target, queued };
 }
 
 async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<void> {
