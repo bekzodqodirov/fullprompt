@@ -39,7 +39,7 @@ interface RecipientNotification {
   payload: Record<string, unknown>;
 }
 
-async function usersWithRoles(roleCodes: string[]): Promise<string[]> {
+export async function usersWithRoles(roleCodes: string[]): Promise<string[]> {
   const rows = await db
     .select({ userId: userRoles.userId })
     .from(userRoles)

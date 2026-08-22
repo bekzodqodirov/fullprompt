@@ -18,6 +18,7 @@ import { likeNeedle, parseQuery } from '../search/query';
 import { closedAtFor, reasonAllowed, stageWrite } from './stage-law';
 import { orderForMove, topOfColumn, type BoardTable } from './board-place';
 import { isUniqueViolation } from '../../platform/db/errors';
+import { logger } from '../../platform/logger';
 
 /**
  * The funnel's own board-order table (0075).
@@ -798,6 +799,17 @@ export async function winLead(
     ctx,
   );
   const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+
+  // An open calculation follows the cargo onto the deal — the same door the
+  // calls and the chat already use. Without it the request stays keyed to the
+  // lead, the seller saves the DEAL's lines, and `completeCalcForDeal` finds
+  // nothing: that clock could then never stop.
+  try {
+    const { rekeyLeadCalcRequests } = await import('../calc/service');
+    await rekeyLeadCalcRequests(id, dealId);
+  } catch (err) {
+    logger.error({ err, leadId: id, dealId }, '[calc] rekey on win failed');
+  }
 
   if (lead.stageId !== won.id) {
     await moveLead(id, won.id, '', ctx, undefined, { viaConvert: true });

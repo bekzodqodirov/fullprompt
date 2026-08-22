@@ -529,7 +529,11 @@ async function handleCalcCallback(
   await ctx.reply(
     `✅ Saqlandi — ${target.kind === 'deal' ? 'bitim' : 'lead'}: ${target.label}\n` +
       `${appUrl}/${path}/${target.id}\n\n` +
-      'Hisoblashga berish kartaning o‘zida — VED xodimini tanlaysiz.',
+      // Honest about which half landed: the material is on the card either
+      // way, but only a queued request will be calculated by anybody.
+      (target.queued
+        ? '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
+        : '⚠️ Hisoblash navbatiga tushmadi — kartadan qo‘lda yuboring.'),
     // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
     // took the cabinet buttons off a both-chat's phone.
     { reply_markup: await replyKeyboardFor(chatId) },

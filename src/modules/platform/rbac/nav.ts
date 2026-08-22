@@ -79,6 +79,16 @@ export const NAV: NavGroupSpec[] = [
         primary: 2,
       },
       {
+        // The VED queue (docs/VED.md, phase A). `ved.docs` alone: it is that
+        // grant's own screen, and a wider list would pull the route into the
+        // warehouse menus whose lengths the nav tripwire pins.
+        href: '/hisoblash',
+        labelKey: 'title',
+        namespace: 'calc',
+        icon: 'report',
+        permissions: ['ved.docs'],
+      },
+      {
         // A client's promise that cargo is coming, plus our own trucks on the
         // road. Sales writes the promises and sales chases them; the WAREHOUSE
         // roles were taken off this menu in round 47 (owner: «sklad ekranidan
@@ -452,7 +462,8 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   // joined in round 33: the calc files and photos arrive in the client's chat
   // with WHICHEVER manager, and the vedchi reads them all (owner's widening).
   ved_manager: [
-    '/', '/bugun', '/kalendar', '/bitimlar', '/batches', '/stock', '/receipts', '/reports',
+    '/', '/bugun', '/kalendar', '/hisoblash', '/bitimlar', '/batches', '/stock', '/receipts',
+    '/reports',
     // Kontragentlar joined in round 39, his instruction: the VED manager
     // arranges the customs firms and knows what each one is owed.
     '/finance', '/kontragentlar', '/suhbatlar', '/ai',

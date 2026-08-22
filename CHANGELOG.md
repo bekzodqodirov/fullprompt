@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## VED moduli, A bosqich: hisoblash navbati — 2026-08-22
+
+Sotuvchi so'rov qoldiradi, VED xodimi bitta navbatdan ishlaydi, va har
+hisoblash o'z soati bilan yuradi. `docs/VED.md` bo'yicha birinchi bosqich.
+
+- **Ikki eshik, bitta navbat.** Telegram botdagi «Hisoblatish» va karta
+  formasi endi bir joyga tushadi — `/hisoblash`. Bot javobida endi «VED
+  xodimini tanlaysiz» emas, «navbatga tushdi» deb yoziladi (navbatga
+  tushmasa — buni ham aniq aytadi).
+- **So'rov endi ISH.** Har so'rov o'zining bo'limi (yo'lkira / rastamojka /
+  podklyuch), yo'nalishi, kg, kubi, tovarlari (1000 tagacha) va sotuvchi
+  yuborgan materiallari bilan yuradi. Bitta kartada bir nechta ochiq so'rov
+  bo'lishi mumkin — chunki dushanbadagi monitor bilan payshanbadagi stulni
+  bitta so'rovga qo'shib yuborish yo'lkira narxini buzardi.
+- **Navbat o'zi taqsimlaydi.** So'rov eng kam yuklangan VED xodimiga
+  biriktiriladi — ya'ni birinchi soniyadanoq egasi bor. Boshqa VED xodimi
+  «Olaman» bilan o'ziga olishi mumkin, bu tarixga yoziladi.
+- **Yetishmayotgan ma'lumot ko'rinib turadi.** Har so'rovda ⚠ ro'yxat: kub
+  yo'q, tovar nomi yo'q… VED xodimi «Qaytarish» tugmasi bilan sababini yozib
+  sotuvchiga qaytaradi.
+- **Javob ham yoziladi.** «Bajarildi» bosilganda narx va izoh so'rovda
+  qoladi va sotuvchiga Telegramga boradi — endi so'rovlar bazasi emas,
+  savol-javob bazasi.
+- **Soat qaytdi.** Muddat tovar soniga qarab (30 daqiqadan, eng ko'pi 2
+  soat), kechikkani qizil, kechikkanda xabar boradi — hech kim olmagan
+  bo'lsa butun VED jamoasiga. Navbat ekranida har xodimning tezligi:
+  nechta bajardi, o'rtacha necha daqiqada, nechtasi muddatida.
+- **Bosh ekran.** VED xodimining bosh ekranida birinchi qator endi hisoblash
+  navbati.
+
+Migratsiya **0085** — deploydan keyin hisob **86** bo'lishi kerak.
+
 ## Xaritadagi mashina belgisi — 2026-08-20
 
 «Mashinalar iconkasini ozgartirmabsan va mashinalar iconi bn soni alohida

@@ -8,6 +8,7 @@ import { CardCols } from '@/components/card-cols';
 import { HistoryTab } from '@/components/history-tab';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
+import { CalcPanel } from '@/components/calc-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
 import { TelegramLookback } from '@/components/telegram-lookback';
@@ -379,6 +380,11 @@ export default async function DealPage({
         </Panel>
       )}
 
+      <CalcPanel
+        entityType="deal"
+        entityId={row.deal.id}
+        revalidate={`/bitimlar/${row.deal.id}`}
+      />
       <TasksPanel entityType="deal" entityId={row.deal.id} revalidate={`/bitimlar/${row.deal.id}`} />
 
       <CustomFieldsPanel

@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { calcQueueCounts } from '../calc/service';
 import {
   batches,
   clientTransactions,
@@ -165,6 +166,10 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
 }
 
 export interface VedFlowCounts {
+  /** Calculations waiting in the queue — the VED module's own day (phase A). */
+  calcOpen: number;
+  /** …of which already past their deadline. */
+  calcLate: number;
   /** Departed export paperwork not yet sent to the agent. */
   docsPending: number;
   /** Goods lines on OPEN deals with no TNVED code — the classification queue. */
@@ -172,7 +177,10 @@ export interface VedFlowCounts {
 }
 
 export async function vedFlowCounts(): Promise<VedFlowCounts> {
-  const [docs, tnved] = await Promise.all([
+  const [calc, docs, tnved] = await Promise.all([
+    // The same fragment the queue screen filters by, so the number here and
+    // the rows there cannot disagree (#513).
+    calcQueueCounts(),
     // A truck that left without its papers reaching the agent is the thing
     // this person gets phoned about; unloaded means customs is behind it.
     db
@@ -190,6 +198,8 @@ export async function vedFlowCounts(): Promise<VedFlowCounts> {
     `),
   ]);
   return {
+    calcOpen: calc.open,
+    calcLate: calc.late,
     docsPending: Number(docs[0]?.n ?? 0),
     tnvedMissing: Number(tnved[0]?.n ?? 0),
   };
@@ -242,11 +252,13 @@ export async function buildHomeFlow(
   if (actor.roles.includes('ved_manager')) {
     return {
       kind: 'ved',
-      // `/bugun` LEFT the list when the hisoblash clock went (round 83): the
-      // flow no longer draws a row for it, and an href named here is a tile
-      // suppressed below — so keeping it would have hidden the day screen
-      // from this person's home entirely.
-      hrefs: ['/batches', '/bitimlar'],
+      // `/bugun` is deliberately NOT here: an href named in this list is a
+      // tile SUPPRESSED below, and the flow draws no row for the day screen —
+      // naming it would hide it entirely (round 83's trap). `/hisoblash` is
+      // named because the flow's first row IS the queue, and that row is
+      // drawn even when the count is zero, or a quiet morning would leave
+      // this person with no door to it at all.
+      hrefs: ['/hisoblash', '/batches', '/bitimlar'],
       counts: await vedFlowCounts(),
     };
   }
