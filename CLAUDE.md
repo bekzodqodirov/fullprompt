@@ -126,6 +126,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Why is it built this way? | `DECISIONS.md` — 489 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
+| The VED module | `docs/VED.md` — agreed 2026-08-22, NOT yet built; phases A-E |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
