@@ -419,7 +419,7 @@ describe('the monthly review claim', () => {
 
 describe('an offer follows the lead onto the deal that wins it', () => {
   it('MEASURED: the offer is orphaned on the dead lead when only the request moves', async () => {
-    // The same shape as #763, one table over. `recordOffer` denormalises the
+    // The same shape as #770, one table over. `recordOffer` denormalises the
     // card onto `calc_offers` so the card panel can read its own offers in one
     // indexed query — and `rekeyLeadCalcRequests` moved `calc_requests` alone.
     // A won lead is exactly the moment a quote becomes an invoice, and the

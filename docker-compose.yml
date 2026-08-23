@@ -150,7 +150,7 @@ services:
       # so it's also the default_sni fallback.
       LAN_IP: ${LAN_IP:-127.0.0.1}
     command: >
-      sh -c 'printf "{\n default_sni %s\n}\nhttps://localhost, https://%s {\n tls internal\n reverse_proxy app:3000\n}\n" "$$LAN_IP" "$$LAN_IP" > /etc/caddy/Caddyfile
+      sh -c 'printf "{\n default_sni %s\n}\nhttps://localhost, https://%s {\n encode zstd gzip\n tls internal\n reverse_proxy app:3000\n}\n" "$$LAN_IP" "$$LAN_IP" > /etc/caddy/Caddyfile
       && caddy run --config /etc/caddy/Caddyfile'
     volumes:
       - caddydata:/data
@@ -168,7 +168,15 @@ services:
       - '443:443'
     environment:
       DOMAIN: ${DOMAIN:-}
-    command: sh -c 'printf "%s {\n reverse_proxy app:3000\n}\n" "$$DOMAIN" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
+    # `encode` is the reason China can work at all (round 110): Next
+    # compresses the HTML it renders and NOT a Route Handler's own response,
+    # and Caddy compresses nothing unless told to — so every API answer left
+    # this machine raw, and the scan screens re-read theirs every 15 seconds.
+    # Tested here against this exact config with a real Caddy 2.8 in front of
+    # the standalone build: an API body 5,793 → 1,283 bytes, a response the
+    # app had ALREADY gzipped passed through untouched at 990 (no double
+    # encoding), and a `Range` read of the map's .pmtiles stayed a plain 206.
+    command: sh -c 'printf "%s {\n encode zstd gzip\n reverse_proxy app:3000\n}\n" "$$DOMAIN" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
     volumes:
       - caddydata:/data
     depends_on:

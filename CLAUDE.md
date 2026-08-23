@@ -138,7 +138,7 @@ pnpm build && pnpm e2e  # 44 e2e
 **0085**-**0089** — the ledger must reach **90**). **The module is done bar
 E2, which is gated on data that does not exist yet.**
 
-**Phase E1 — hisob vs haqiqat** (#789-800). **The headline is that the
+**Phase E1 — hisob vs haqiqat** (#796-800). **The headline is that the
 design's own money comparison could not ship**: `calc_versions.freight_usd`
 is the tariff's LIST price and `cost_allocations.amount_usd` is what the road
 cost, so their difference is MARGIN — measured on his own tariff, a 30 m³ /
@@ -187,13 +187,13 @@ every seller to a pure cost breakdown), reached from `/hisoblash/narxlar`,
 the one calc screen the accountant can open; all four roles opened in a real
 browser. **`ON DELETE SET NULL` cannot coexist with a CHECK spanning the FK
 column** — measured, and I wrote that bug TWICE before its own test caught
-the second one (#794). Found by LOOKING at the screen, not by a test: the
+the second one (#801). Found by LOOKING at the screen, not by a test: the
 completeness gate used `compareQuote`'s worst-of-both, so cargo that arrived
 in full but lighter than quoted read «not all arrived» and hid the exact
-error the round exists to show (#798). Also fixed: `suggestTnved`'s Anthropic
+error the round exists to show (#805). Also fixed: `suggestTnved`'s Anthropic
 client had no timeout (round 101's defect, in the file that never learned
 it). **17 red proofs, all by string edit**; the harness itself corrupted two
-files because an empty replacement is not reversible (#800). **1967
+files because an empty replacement is not reversible (#807). **1967
 unit/integration + 177 e2e** green on a fresh gsr_ci in CI's order;
 screenshots at 360×800 and 1280×900, document width equal to the viewport at
 both. **E2 waits for ≥20 sealed versions with confirmed links and a non-empty
@@ -233,7 +233,7 @@ locked branch re-posting the values as hidden inputs (#171). **The model
 proposes words and can never reach a number**: `rate_source`/`baza_source`
 allow `'dictionary'|'typed'` and there is no `'ai'`, every group must be
 confirmed by a person, and `tests/unit/ai-advisory.test.ts` pins all three
-fences. Decisions **#752-760**. Phase A's typed «Bajarildi» deliberately
+fences. Decisions **#759-760**. Phase A's typed «Bajarildi» deliberately
 STAYS — the dictionaries ship empty, so on deploy morning nothing can be
 sealed at all.
 
@@ -248,9 +248,9 @@ ozing togirla ketma ket qanday kelyabti shunga mosla / 3 shunday qolsim») and
 are built: 900-999 → the $320/$200 row, bands run consecutively (each starts
 at the previous one's top plus one), the 1000 step stays a step. Recorded as a
 SEED correction and not a dated superseding row, because 0086 has never
-deployed and the seed writes only into an empty table. Decision **#761**.
+deployed and the seed writes only into an empty table. Decision **#768**.
 
-**Round 110 — the shipped-code audit** (#762-764): phase B was reviewed
+**Round 110 — the shipped-code audit** (#769-764): phase B was reviewed
 before code and never as shipped, so six adversarial lenses were run over the
 commit. **The headline is NaN through all three layers**: `Number('1 000')` is
 NaN, NaN answers false to every comparison a guard is made of, postgres stores
@@ -262,7 +262,7 @@ and the migration (`<> 'NaN'::numeric` on every money column — the only
 comparison postgres has that excludes it). Second blocker: a SEALED request
 stopped following a won lead, because `rekeyLeadCalcRequests` filtered
 `openRequests` — the new deal got the number with none of the lock, at exactly
-the moment a quote becomes an invoice; #752 had written that rule down and the
+the moment a quote becomes an invoice; #759 had written that rule down and the
 code shipped without it. Plus: a confirmation now clears when a BAZA changes
 or cargo moves between groups (not only when a rate changes), `pullRates`
 reads the dictionary server-side instead of stamping the browser's numbers
@@ -270,7 +270,7 @@ as the dictionary's word, and the sealed panel no longer prints «$0.00» for a
 line its section does not have. Red proofs ×3. **1810 unit/integration + 166
 e2e** green on a fresh gsr_ci in CI's order.
 
-**Phase C — the offer, the price book and the history** (#765-772). The
+**Phase C — the offer, the price book and the history** (#772-772). The
 fourth dictionary is keyed on the **TNVED CODE** and not the product name,
 which is the round's whole design: a name does not normalise («Ayollar
 kurtkasi» / «куртка жен.» / «women's jacket» are one thing and three strings)
@@ -307,10 +307,10 @@ NOTIFICATION on a DAILY clock with a monthly claim, silent when nothing is
 stale. `/api/calc/[versionId]/offer.pdf` carries an EXPLICIT door because this
 app has no middleware at all (#721-726). Red proofs ×5, **one of which stayed
 GREEN** — the NaN test was measuring the column's CHECK, not the engine, and
-was re-anchored on the error CODE (#772). **1876 unit/integration + 170 e2e**
+was re-anchored on the error CODE (#779). **1876 unit/integration + 170 e2e**
 green on a fresh gsr_ci in CI's order.
 
-**Found while LOOKING at phase C's own PDF, not by a test** (#773): the PDF
+**Found while LOOKING at phase C's own PDF, not by a test** (#780): the PDF
 font cannot write Uzbek Cyrillic. MEASURED — **ў Ў қ Қ ғ Ғ ҳ Ҳ all have glyph
 id 0** in `NotoSansSC-Regular.ttf`, with thirty more inside the 0x400-0x45F
 range `BASE_CHARS` asks for; `.notdef` raises nothing, so the character is a
@@ -324,10 +324,10 @@ reads as a gap where a box reads as corruption. Both PDF builders use it.
 `tests/unit/pdf-glyphs.test.ts` measures the FONT, so replacing it turns the
 finding's own assertion red.
 
-**Found while DESIGNING phase D** (#774): the same defect as #763, one table
+**Found while DESIGNING phase D** (#781): the same defect as #770, one table
 over. `recordOffer` denormalises the card onto `calc_offers` and
 `rekeyLeadCalcRequests` moved `calc_requests` alone — so on a won lead the
-price stayed locked (#763's fix working) while `offersFor('deal', …)` came
+price stayed locked (#770's fix working) while `offersFor('deal', …)` came
 back EMPTY and what the seller promised the customer vanished from the only
 card that still exists. Measured, not argued: the integration test was
 written first and was red. The fence is DERIVED —
@@ -336,7 +336,7 @@ carrying both entity columns and asserts the re-key names each, so a third
 turns it red the day it is added. `crm_activities` carries the same pair and
 is deliberately NOT moved: a lead's lenta is that lead's history.
 
-**Phase C leaked the client price to the VED, and law 4 forbids it** (#775-777).
+**Phase C leaked the client price to the VED, and law 4 forbids it** (#782-777).
 Found by phase D's design review, verified against the seeded matrix:
 `DEAL_WRITE_PERMISSIONS` carries **`ved.docs`** on purpose (the VED
 recalculates jobs), so `canWriteDeal` — phase C's gate on the offer PDF, the
@@ -357,13 +357,13 @@ fails OPEN, and making it required turned every caller into a compile error
 that named itself. **The browser then found the defect in the opposite
 direction**: the same old door had also locked out the BUXGALTER, the one
 person law 4 names besides the owner. A permission fix is half-verified until
-somebody who is not an admin opens the screen (#777, round 43's lesson).
+somebody who is not an admin opens the screen (#784, round 43's lesson).
 Measured across four roles. The test is BEHAVIOURAL over every seeded role,
 because the exclusion is a property of a matrix he edits with checkboxes.
 STATED, not fixed: `/bitimlar/[id]` has no ownership gate at all — a CRM
 access round, not a line in this module.
 
-**Phase D — the upsale** (#778-787; migration **0088**, ledger must reach
+**Phase D — the upsale** (#785-787; migration **0088**, ledger must reach
 **89**). Designed and judged by 12 agents over five lenses before code — 27
 findings, absorbed. **The upsale is DERIVED and never stored**: client price
 minus the sealed floor, both parents immutable, so writing the difference
@@ -381,7 +381,7 @@ concession never on a freight quote and fires on EVERY rastamojka one. The
 below-floor lock goes on the **PROMISE, not the record** — the row is always
 written (that is the owner's visibility) while the text, the PDF, the card's
 price and the payout all wait on `approved_at`; that reconciles law 4 with
-#766. **A released offer writes the CLIENT price onto the card**, which is
+#773. **A released offer writes the CLIENT price onto the card**, which is
 what every revenue surface reads — and that quietly broke the quote lock,
 which the design did not see: `quoteLockedFor` returned the sealed floor
 while the locked ✏️ form re-posts what it renders (#171), so every later save
@@ -395,7 +395,7 @@ test. Red proofs ×5. **1913 unit/integration + 173 e2e** green on a fresh
 gsr_ci in CI's order, ledger 89; screenshots at 360×800 and 1280×900,
 document width equal to the viewport at both.
 
-PROCESS NOTE (#788): the intermediate commit reached CI with two unused-import
+PROCESS NOTE (#795): the intermediate commit reached CI with two unused-import
 lint errors, because I chained `pnpm lint` and `pnpm vitest` in one block and
 grepped only for the vitest summary — so eslint's failure was in the output I
 asked for and not in the lines I read, and the block's exit code was vitest's.
@@ -794,6 +794,50 @@ just-departed truck stands ON its origin warehouse and takes the tap
 (deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
 `elementFromPoint` says is free instead of `.first()`.
 
+**Round 110 — the China round** (#752-758 — renumbered from #748-754 on the
+merge, the THIRTEENTH collision: the other session's VED phase A took
+#748-751 and merged first; his «sistema xitoyda juda sekin
+ishlayabti, planlarni yuklayotgan paytda ishlatib bolmayabti»). NO migration
+of its own, but it deploys together with VED phase A's **0085**, so the
+ledger must read **86** afterwards. The answer was BYTES nobody was counting, and one thing that was
+not slowness at all. **Next compresses what it RENDERS and not a Route
+Handler's own `Response`** — measured: the scan screens' manifest went out at
+**28,506 bytes with gzip asked for**, and gzipped is **975** (29×); Caddy in
+front compressed nothing because the inline-generated Caddyfile had two
+directives and `encode` was not one. At 268 B a box row that is 157 KB for a
+600-box truck, every 15 s, per phone. **The unload screen re-read the whole
+truck after EVERY scan** — round 9's #248-250 fixed that on the LOADING screen
+and unload never got it, so a 200-box truck pulled the manifest 200 times
+(~31 MB); measured four accepts = four GETs before, **zero** after (it now
+carries `flush({sync})` + `flushSoon()` verbatim). **The service worker
+reloaded the whole page on every `online` event** (serwist's `reloadOnOnline`
+default, confirmed in the built bundle) — on warehouse wifi that is a scan
+screen restarting mid-pallet, which is why his word was «ishlatib bolmayabti»
+and not «sekin»; off now. Built: `platform/http/json.ts` (gzip on the
+THREADPOOL + an ETag that is the hash of the body itself, `If-None-Match`
+parsed as a list with the proxy `-gzip` suffix stripped), on
+`/api/batches/*/planned`, `/api/plans/stock`, `/api/inventory/expected`; the
+screens send `If-None-Match` EXPLICITLY because the SW's NetworkFirst refetch
+never carried a conditional request; `encode zstd gzip` on both Caddy
+services — **TESTED here with a real Caddy 2.8 in the production shape**
+(5,793 → 1,283 B on a route the app does not compress, no double-encoding of
+one it does, a `.pmtiles` `Range` read still a plain 206, both generated
+Caddyfiles `caddy validate`-clean); one snapshot read on mount instead of two;
+no ticking while the screen is not visible; ACTIVE crates only in the
+snapshot (a dissolved crate can expand no scan — 612 crates / 1,632 codes /
+56 KB rode a five-box batch) and `inArray` for the raw `IN ${array}`.
+MEASURED END TO END in a phone-shaped browser with the worker installed:
+an open loading screen cost **114 KB per 38 s → 990 bytes**, quiet ticks are
+304 with no body, and a colleague's change still lands on the next tick.
+STATED, not done (#758): the 304 saves bytes and NOT the ~67 ms of queries —
+a round-108-style version probe is the next step; the quick-batch `available`
+list still ships 1,500 rows and truncates silently; `batchMemberFilter`'s OR
+runs twice per snapshot; HTTP/3 is advertised while compose publishes TCP 443
+only. 1723 unit/integration + 157 e2e green on a fresh gsr_ci in CI's order.
+LOCAL TRAP worth remembering: a stand-in `.data/basemap/corridor.pmtiles`
+makes /map render LEAFLET, and two specs assert the SVG schematic — both
+failures were that file, not the code.
+
 Latest migration on this branch: **0089** (`calc_actuals` — the calc↔prixod
 join, the confirm record and the seal's three counters, VED phase E1; ledger
 must reach **90**);
@@ -872,9 +916,9 @@ a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
 **HIS SERVER IS AT 84** (he confirmed «84 chiqdi» on 2026-08-19 after PR
-#47 — round 107). **Round 108's PR #48 is MERGED and NOT YET DEPLOYED: his
-next deploy must land migration 0084 and the ledger must read 85.** Round
-109 mints none, so 85 covers both.
+#47 — round 107). **Rounds 108-110 and VED phase A are MERGED and NOT YET
+DEPLOYED: his next deploy must land 0084 AND 0085, and the ledger must read
+86.** Rounds 109, 109b and 110 mint none, so 86 covers all of them.
 Before that: **83 — everything through rounds 103-106
 (PR #45, merged and deployed 2026-08-18 evening, he confirmed «83 chiqdi»;
 migrations 0081 `backup_objects` + 0082 `notify_claim`). The tg-listen
@@ -916,7 +960,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**85** on `main` since round 108; his server was at 84 on
+length (**86** on `main` since VED phase A; his server was at 84 on
 2026-08-19) —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those

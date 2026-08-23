@@ -53,6 +53,12 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
   const [manualCode, setManualCode] = useState('');
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cacheKey = `gsr-unload-${batchId}`;
+  /**
+   * The snapshot's version (round 110, the loading screen's twin). Kashgar
+   * unloads the Chinese trucks, so this screen sits on the same slow link and
+   * re-read the same whole manifest every 15 seconds.
+   */
+  const snapEtag = useRef<string | null>(null);
 
   const applySnapshot = useCallback((data: Snapshot) => {
     setSnapshot(data);
@@ -69,6 +75,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
         const res = await fetch(`/api/batches/${batchId}/planned`);
         if (res.ok) {
           const data = (await res.json()) as Snapshot;
+          snapEtag.current = res.headers.get('etag');
           localStorage.setItem(cacheKey, JSON.stringify(data));
           applySnapshot(data);
           setSnapError(null);
@@ -135,59 +142,121 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
     [t],
   );
 
-  const flush = useCallback(async () => {
-    try {
-      const { acks, discarded, refusedForbidden } = await flushScans();
-      handleAcks(acks);
-      // A body the server threw out is not a network problem, and saying
-      // «offline» about it is how a jammed queue looked like bad wifi.
-      if (discarded.length > 0) {
-        setToast({ text: `❌ ${t('serverRefused', { n: discarded.length })}` });
-        setDone((prev) => {
-          const next = new Set(prev);
-          for (const row of discarded) next.delete(row.code);
-          return next;
-        });
-      }
-      if (refusedForbidden) setToast({ text: `🚫 ${t('notYourTruck')}` });
-      setOnline(true);
-      // Live counter across phones: merge the server's unloaded set in.
+  /**
+   * `sync` = also re-read the truck's snapshot.
+   *
+   * It used to be unconditional, and `accept()` calls this after EVERY scan
+   * — so unloading a 200-box truck pulled the whole manifest 200 times
+   * (round 110). The loading screen has had the split since round 9's
+   * #248-250; this screen, which is the one Kashgar uses on the same
+   * China→Europe link, never got it.
+   */
+  const flush = useCallback(
+    async ({ sync }: { sync?: boolean } = {}) => {
       try {
-        const res = await fetch(`/api/batches/${batchId}/planned`);
-        if (res.ok) {
-          const data = (await res.json()) as Snapshot;
-          localStorage.setItem(cacheKey, JSON.stringify(data));
-          setSnapshot(data);
+        const { acks, discarded, refusedForbidden } = await flushScans();
+        handleAcks(acks);
+        // A body the server threw out is not a network problem, and saying
+        // «offline» about it is how a jammed queue looked like bad wifi.
+        if (discarded.length > 0) {
+          setToast({ text: `❌ ${t('serverRefused', { n: discarded.length })}` });
           setDone((prev) => {
             const next = new Set(prev);
-            for (const b of data.boxes) if (b.status !== 'in_transit') next.add(b.shortCode);
+            for (const row of discarded) next.delete(row.code);
             return next;
           });
         }
+        if (refusedForbidden) setToast({ text: `🚫 ${t('notYourTruck')}` });
+        setOnline(true);
+        // Live counter across phones: merge the server's unloaded set in.
+        if (sync) {
+          try {
+            const res = await fetch(`/api/batches/${batchId}/planned`, {
+              headers: snapEtag.current ? { 'If-None-Match': snapEtag.current } : undefined,
+            });
+            // 304 = nobody has scanned anything since the last tick: no body on
+            // the wire, nothing to parse, nothing to re-render.
+            if (res.ok) {
+              const data = (await res.json()) as Snapshot;
+              snapEtag.current = res.headers.get('etag');
+              localStorage.setItem(cacheKey, JSON.stringify(data));
+              setSnapshot(data);
+              setDone((prev) => {
+                const next = new Set(prev);
+                for (const b of data.boxes) if (b.status !== 'in_transit') next.add(b.shortCode);
+                return next;
+              });
+            }
+          } catch {
+            /* snapshot refresh is best-effort */
+          }
+        }
       } catch {
-        /* snapshot refresh is best-effort */
+        setOnline(false);
       }
-    } catch {
-      setOnline(false);
+      await refreshPending();
+    },
+    [handleAcks, refreshPending, batchId, cacheKey, t],
+  );
+
+  /**
+   * One flush in flight at a time, with a follow-up for whatever arrived
+   * behind it — the loading screen's `flushSoon`, for the same reason: an
+   * operator clears a pallet at three boxes a second and each scan used to
+   * start its own request. Coalesced, never DELAYED: a scan sends
+   * immediately when nothing is in flight, because the last carton and
+   * «Tushirish tugadi» happen in the same second.
+   */
+  const flushing = useRef(false);
+  /** Set while a flush is in flight and more scans arrived behind it. */
+  const again = useRef(false);
+  const flushSoon = useCallback(() => {
+    // The follow-up recurses through a local `run`, not through the callback
+    // itself: the compiler's lint refuses a const that reads its own name.
+    const run = () => {
+      flushing.current = true;
+      void flush().finally(() => {
+        flushing.current = false;
+        if (again.current) {
+          again.current = false;
+          run();
+        }
+      });
+    };
+    if (flushing.current) {
+      again.current = true;
+      return;
     }
-    await refreshPending();
-  }, [handleAcks, refreshPending, batchId, cacheKey, t]);
+    run();
+  }, [flush]);
 
   useEffect(() => {
     const up = () => {
       setOnline(true);
-      void flush();
+      void flush({ sync: true });
     };
     const down = () => setOnline(false);
     window.addEventListener('online', up);
     window.addEventListener('offline', down);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOnline(navigator.onLine);
+    // No `sync` here: the effect above has just read the snapshot, and both
+    // effects firing on mount downloaded the whole truck TWICE (round 110).
     void flush();
-    const interval = setInterval(() => void flush(), 15_000);
+    // A phone in a pocket must not poll. The screen locks between pallets and
+    // the tick went on asking every 15 seconds — for nothing on the phone's
+    // side, and for a real query on the server's, times every phone in the
+    // warehouse (round 74's one-process ceiling). Coming back is a sync, so
+    // the first thing a woken screen shows is current.
+    const tick = () => {
+      if (document.visibilityState === 'visible') void flush({ sync: true });
+    };
+    const interval = setInterval(tick, 15_000);
+    document.addEventListener('visibilitychange', tick);
     return () => {
       window.removeEventListener('online', up);
       window.removeEventListener('offline', down);
+      document.removeEventListener('visibilitychange', tick);
       clearInterval(interval);
     };
   }, [flush]);
@@ -202,7 +271,10 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
     scanFeedback(kind);
   }
 
-  async function accept(codes: string[], scan: { code: string; method: 'qr' | 'manual'; manualReason?: string }) {
+  async function accept(
+    codes: string[],
+    scan: { code: string; method: 'qr' | 'manual'; manualReason?: string },
+  ) {
     setDone((prev) => {
       const next = new Set(prev);
       for (const c of codes) next.add(c);
@@ -220,7 +292,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       scanType: 'unload',
     });
     await refreshPending();
-    void flush();
+    flushSoon();
   }
 
   function onCode(code: string, method: 'qr' | 'manual' = 'qr', manualReason?: string) {
@@ -277,28 +349,37 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
   >();
   for (const box of snapshot.boxes) {
     const identity = codeIdentity(box.marking, box.clientCode);
-    const entry =
-      byLot.get(box.lotId) ?? {
-        label: `${identity.main}-${box.letter}`,
-        sub: identity.sub,
-        product: box.productNameZh,
-        total: 0,
-        done: 0,
-      };
+    const entry = byLot.get(box.lotId) ?? {
+      label: `${identity.main}-${box.letter}`,
+      sub: identity.sub,
+      product: box.productNameZh,
+      total: 0,
+      done: 0,
+    };
     entry.total += 1;
     if (done.has(box.shortCode)) entry.done += 1;
     byLot.set(box.lotId, entry);
   }
 
   return (
-    <div className={`space-y-3 pb-6 transition-colors ${flash === 'ok' ? 'bg-good/15' : flash ? 'bg-bad/15' : ''}`}>
+    <div
+      className={`space-y-3 pb-6 transition-colors ${flash === 'ok' ? 'bg-good/15' : flash ? 'bg-bad/15' : ''}`}
+    >
       <div
         className={`rounded-lg p-2 text-center text-sm font-semibold ${
-          online ? (pending > 0 ? 'bg-orange-100 text-orange-800' : 'bg-good/10 text-good') : 'bg-bad/15 text-bad'
+          online
+            ? pending > 0
+              ? 'bg-orange-100 text-orange-800'
+              : 'bg-good/10 text-good'
+            : 'bg-bad/15 text-bad'
         }`}
         data-testid="sync-banner"
       >
-        {online ? (pending > 0 ? `🔄 ${t('syncing', { n: pending })}` : `✅ ${t('online')}`) : `📴 ${t('offline', { n: pending })}`}
+        {online
+          ? pending > 0
+            ? `🔄 ${t('syncing', { n: pending })}`
+            : `✅ ${t('online')}`
+          : `📴 ${t('offline', { n: pending })}`}
       </div>
 
       <Scanner active onCode={(code) => onCode(code)} />
@@ -306,7 +387,9 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       <p className="text-center font-mono text-4xl font-extrabold" data-testid="unload-counter">
         {doneCount}
         <span className="text-ink-400">/{total}</span> 📦
-        {extra.length > 0 && <span className="ml-2 text-lg text-orange-600">+{extra.length}❗</span>}
+        {extra.length > 0 && (
+          <span className="ml-2 text-lg text-orange-600">+{extra.length}❗</span>
+        )}
       </p>
 
       <div className="card space-y-1 !p-3">
@@ -344,8 +427,14 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       )}
 
       {manualOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setManualOpen(false)}>
-          <div className="max-h-[80vh] w-full max-w-md space-y-2 overflow-y-auto rounded-t-2xl bg-surface-raised p-4" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
+          onClick={() => setManualOpen(false)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-md space-y-2 overflow-y-auto rounded-t-2xl bg-surface-raised p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <p className="font-bold">🏷 {t('stickerLostHint')}</p>
             <div className="flex gap-2">
               <input

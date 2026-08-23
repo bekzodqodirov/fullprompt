@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS calc_price_book (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT calc_price_book_unit_check CHECK (unit IN ('m3', 'kg')),
   -- NaN is a real `numeric` in postgres and answers TRUE to `>= 0`; `<> 'NaN'`
-  -- is the only comparison that excludes it (#762).
+  -- is the only comparison that excludes it (#769).
   CONSTRAINT calc_price_book_value_check CHECK (
     price_usd > 0 AND price_usd <> 'NaN'::numeric
   )

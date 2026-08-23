@@ -9,6 +9,7 @@ import {
   receipts,
 } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { json } from '@/modules/platform/http/json';
 
 const querySchema = z.object({ warehouseId: z.string().uuid() });
 
@@ -89,7 +90,10 @@ export async function GET(request: Request) {
     .groupBy(crates.id, clients.clientCode)
     .orderBy(asc(crates.code));
 
-  return Response.json({
+  // Compressed + tagged (round 110): the plan editor re-reads a whole
+  // warehouse's loadable stock every time it opens or the origin changes,
+  // and it is the screen the owner named — «planlarni yuklayotgan paytda».
+  return json(request, {
     lots: rows.map((r) => ({
       ...r,
       available: Number(r.available),
