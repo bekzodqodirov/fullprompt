@@ -14,6 +14,23 @@ import {
   takeCalcRequest,
   type CalcItemInput,
 } from '@/modules/wms/calc/service';
+import {
+  confirmAllGroups,
+  confirmGroup,
+  createGroup,
+  deleteExtra,
+  deleteGroup,
+  moveItemToGroup,
+  proposeGroups,
+  pullBazasFromDictionary,
+  recalcFromSealed,
+  saveExtra,
+  sealCalc,
+  setFreightZone,
+  setGroupRates,
+  setItemBaza,
+} from '@/modules/wms/calc/workspace';
+import { saveBaza, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
 import { isCalcSection } from '@/modules/wms/calc/labels';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 
@@ -158,4 +175,281 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
   revalidatePath(input.revalidate);
   revalidatePath('/hisoblash');
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Phase B — the workspace, the dictionaries and the seal
+// ---------------------------------------------------------------------------
+
+/**
+ * Every workspace door is `ved.docs` and re-derives what it is given.
+ *
+ * A group id, an item seq and an extra id all arrive from a form, and every
+ * one of them is checked against the REQUEST in the service before it is
+ * written — a hand-posted id must not move one customer's cargo into
+ * another's calculation. The tariff is the exception in the other direction:
+ * it is read here and written only under `admin.dictionaries.manage`, because
+ * the VED must not be able to rewrite the list price his own discount is
+ * measured against.
+ */
+const ws = (id: string) => `/hisoblash/${id}`;
+
+export async function setZoneAction(id: string, zone: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => setFreightZone(id, zone || null, ctx), ws(id));
+}
+
+export async function createGroupAction(id: string, label: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => createGroup(id, { label }, ctx), ws(id));
+}
+
+export async function deleteGroupAction(id: string, groupId: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => deleteGroup(groupId, ctx), ws(id));
+}
+
+export async function moveItemAction(
+  id: string,
+  itemSeq: number,
+  groupId: string,
+): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => moveItemToGroup(id, itemSeq, groupId || null, ctx), ws(id));
+}
+
+export async function setRatesAction(
+  id: string,
+  groupId: string,
+  input: {
+    label: string;
+    tnvedCode: string;
+    dutyPct: number | null;
+    vatPct: number | null;
+    feeUsd: number | null;
+    dutyFree: boolean;
+    vatFree: boolean;
+  },
+): Promise<CalcFormState> {
+  return run(
+    'ved.docs',
+    (ctx) =>
+      setGroupRates(
+        groupId,
+        {
+          label: input.label,
+          tnvedCode: input.tnvedCode,
+          dutyPct: input.dutyPct,
+          vatPct: input.vatPct,
+          feeUsd: input.feeUsd,
+          dutyFree: input.dutyFree,
+          vatFree: input.vatFree,
+          // A person typed these. The column's CHECK knows only 'dictionary'
+          // and 'typed', so a model's estimate has nowhere to land.
+          source: 'typed',
+        },
+        ctx,
+      ),
+    ws(id),
+  );
+}
+
+export async function pullRatesAction(
+  id: string,
+  groupId: string,
+  input: { label: string; tnvedCode: string; dutyPct: number; vatPct: number; feeUsd: number },
+): Promise<CalcFormState> {
+  return run(
+    'ved.docs',
+    (ctx) =>
+      setGroupRates(
+        groupId,
+        {
+          label: input.label,
+          tnvedCode: input.tnvedCode,
+          dutyPct: input.dutyPct,
+          vatPct: input.vatPct,
+          feeUsd: input.feeUsd,
+          dutyFree: false,
+          vatFree: false,
+          source: 'dictionary',
+        },
+        ctx,
+      ),
+    ws(id),
+  );
+}
+
+export async function setBazaAction(
+  id: string,
+  itemSeq: number,
+  bazaUsd: number | null,
+  basis: 'unit' | 'kg',
+): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => setItemBaza(id, itemSeq, { bazaUsd, basis, source: 'typed' }, ctx), ws(id));
+}
+
+export async function pullBazasAction(id: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => pullBazasFromDictionary(id, ctx), ws(id));
+}
+
+export async function confirmGroupAction(id: string, groupId: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => confirmGroup(groupId, ctx), ws(id));
+}
+
+export async function confirmAllAction(id: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => confirmAllGroups(id, ctx), ws(id));
+}
+
+export async function saveExtraAction(
+  id: string,
+  input: { id?: string; costTypeId: string; label: string; amountUsd: number; note: string },
+): Promise<CalcFormState> {
+  return run(
+    'ved.docs',
+    (ctx) =>
+      saveExtra(
+        id,
+        {
+          id: input.id || undefined,
+          costTypeId: input.costTypeId || null,
+          label: input.label,
+          amountUsd: input.amountUsd,
+          note: input.note || null,
+        },
+        ctx,
+      ),
+    ws(id),
+  );
+}
+
+export async function deleteExtraAction(id: string, extraId: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => deleteExtra(extraId, ctx), ws(id));
+}
+
+export async function sealAction(
+  id: string,
+  input: {
+    discountUsd: number;
+    discountReason: string;
+    bandOverrideMin: number | null;
+    bandOverrideReason: string;
+  },
+): Promise<CalcFormState> {
+  return run(
+    'ved.docs',
+    (ctx) =>
+      sealCalc(
+        id,
+        {
+          discountUsd: input.discountUsd,
+          discountReason: input.discountReason.trim() || null,
+          bandOverrideMin: input.bandOverrideMin,
+          bandOverrideReason: input.bandOverrideReason.trim() || null,
+        },
+        ctx,
+      ),
+    ws(id),
+  );
+}
+
+/**
+ * «Qayta hisoblash» — a correction, which is a NEW request.
+ *
+ * Gated on `admin.settings.manage` (#170, no new permission code): a sealed
+ * price is what the client was told, so re-opening the question is the
+ * owner's call and not the calculator's. The seller and the VED both see the
+ * button's absence rather than a refusal.
+ */
+export async function recalcAction(id: string): Promise<CalcFormState & { newId?: string }> {
+  let who;
+  try {
+    who = await authorize('admin.settings.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    const newId = await recalcFromSealed(id, { actorId: who.id, ...meta });
+    revalidatePath('/hisoblash');
+    revalidatePath(ws(id));
+    return { ok: true, newId };
+  } catch (err) {
+    if (err instanceof CalcError) return { error: err.code };
+    if (isServerBehind(err)) return { error: 'server_behind' };
+    throw err;
+  }
+}
+
+export async function saveBazaAction(input: {
+  name: string;
+  label: string;
+  tnvedCode: string;
+  bazaUsd: number;
+  basis: 'unit' | 'kg';
+  effectiveDate: string;
+}): Promise<CalcFormState> {
+  return run(
+    'ved.docs',
+    (ctx) =>
+      saveBaza(
+        {
+          name: input.name,
+          label: input.label,
+          tnvedCode: input.tnvedCode.trim() || null,
+          bazaUsd: input.bazaUsd,
+          basis: input.basis,
+          effectiveDate: input.effectiveDate,
+          note: null,
+        },
+        ctx,
+      ),
+    '/hisoblash/lugatlar',
+  );
+}
+
+export async function saveRatesAction(input: {
+  tnvedCode: string;
+  dutyPct: number;
+  vatPct: number;
+  feeUsd: number;
+  effectiveDate: string;
+}): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => saveRates(input, ctx), '/hisoblash/lugatlar');
+}
+
+/**
+ * The freight tariff is written under `admin.dictionaries.manage` — the
+ * cost-types door — and NOT under `ved.docs`.
+ *
+ * The VED gives the discount, and a discount only means anything against a
+ * list price somebody else owns. His own screen shows the tariff read-only.
+ */
+export async function saveTariffAction(input: {
+  zone: string;
+  minDensity: number;
+  maxDensity: number | null;
+  priceUsd: number;
+  perKg: boolean;
+  effectiveDate: string;
+}): Promise<CalcFormState> {
+  let who;
+  try {
+    who = await authorize('admin.dictionaries.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    await saveTariffBand(input, { actorId: who.id, ...meta });
+  } catch (err) {
+    if (err instanceof CalcError) return { error: err.code };
+    if (isServerBehind(err)) return { error: 'server_behind' };
+    throw err;
+  }
+  revalidatePath('/admin/tarif');
+  revalidatePath('/hisoblash/lugatlar');
+  return { ok: true };
+}
+
+export async function proposeAction(id: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => proposeGroups(id, ctx), `/hisoblash/${id}`);
 }

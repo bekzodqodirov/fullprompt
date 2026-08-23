@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { quoteLockedFor } from '@/modules/wms/crm/service';
 import { PageHeader, Section } from '@/components/ui/page';
 import { Panel } from '@/components/panel';
 import { CardCols } from '@/components/card-cols';
@@ -59,6 +60,8 @@ export default async function DealPage({
   const row = await dealById(id);
 
   if (!row) notFound();
+  // A sealed VED calculation locks the quote on this card (docs/VED.md law 2).
+  const quoteLocked = (await quoteLockedFor('deal', id)) !== null;
   // The thread's filter and the calls' filter live on the same URL; a link
   // that changes one must carry the other (#514 — a literal string drops it).
   const cardHref = (patch: { hodim?: string | null; chodim?: string | null }) => {
@@ -245,6 +248,7 @@ export default async function DealPage({
 
       <Panel title={`✏️ ${tc('edit')}`} testId="deal-edit-panel">
         <DealForm
+          quoteLocked={quoteLocked}
           dealId={row.deal.id}
           stages={formStages(stages, row.deal.stageId)}
           managers={managers}

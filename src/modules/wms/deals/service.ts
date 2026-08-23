@@ -172,6 +172,17 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
     input.quotedAmount !== undefined && !sameNumber(num(input.quotedAmount), before.quotedAmount);
   const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
 
+  // A sealed calculation is what the client was told (docs/VED.md law 2), so
+  // this form may not overwrite it. A CHANGE check, not a presence check: the
+  // locked form re-posts the sealed figure as hidden inputs (#171), and an
+  // ordinary save — a corrected title — must not become a refusal. The door
+  // back is «Qayta hisoblash», which mints a new calculation.
+  if (amountChanged) {
+    const { quoteLockedFor } = await import('../crm/service');
+    const sealedTotal = await quoteLockedFor('deal', id);
+    if (sealedTotal !== null) throw new DealError('quote_sealed');
+  }
+
   // What the audit trail records. The old row named `amount` and `volume` only,
   // so a retitled or re-staged deal left no trace, and the scale difference
   // above printed `200.00 → 200` on every save.

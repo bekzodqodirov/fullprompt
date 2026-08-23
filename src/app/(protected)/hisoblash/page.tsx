@@ -44,7 +44,16 @@ export default async function CalcQueuePage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader icon="report" title={t('queueTitle')} subtitle={`${rows.length} · ${t('myQueue')}: ${mine}`} />
+      <PageHeader
+        icon="report"
+        title={t('queueTitle')}
+        subtitle={`${rows.length} · ${t('myQueue')}: ${mine}`}
+        actions={
+          <Link href="/hisoblash/lugatlar" className="btn-secondary" data-testid="calc-dict-link">
+            {t('dictTitle')}
+          </Link>
+        }
+      />
 
       {rows.length === 0 ? (
         <EmptyState title={t('openNone')} />

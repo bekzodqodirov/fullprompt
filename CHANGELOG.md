@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## VED moduli, B bosqich: hisob stoli va muhrlangan narx — 2026-08-23
+
+Excel o'rniga ishlaydigan hisob ekrani. VED xodimi tovarlarni guruhlaydi,
+stavka va bazani qo'yadi, yo'lkira tarifdan o'zi chiqadi — va «Muhrlash»
+bosilganda narx KARTAGA tushadi va qulflanadi.
+
+- **Uchta lug'at tug'ildi.** Tovar bazasi (`$` — donaga yoki kiloga),
+  TNVED stavkalari (boj %, QQS %, yig'im) va sizning yo'lkira tarifingiz.
+  Uchalasi ham SANA bilan yuriladi: bugun tuzatgan narxingiz kechagi
+  hisobni o'zgartirmaydi — eski hisob o'z tarifini o'qiydi.
+  Baza va stavkalar — VED xodimining o'zida (`Hisoblash → Lug'atlar`),
+  yo'lkira tarifi esa **Boshqaruv → Yo'lkira tarifi** da, ya'ni chegirma
+  beradigan odam chegirma o'lchanadigan narxni o'zgartira olmaydi.
+- **Tarifingiz o'zingiz yozgandek kiritildi** — YW/GZ va Qashqar ustunlari,
+  hammasi 12 qatordan. **Va ikkita joyi so'raladi** (pastda).
+- **Hech qachon «$0» yozmaydi.** Baza yo'q bo'lsa, kg/dona yo'q bo'lsa,
+  stavka yo'q bo'lsa — ekran «⚠ baza yo'q» deb aytadi va qaysi TOVAR
+  ekanini nomlaydi. Nol yozib qo'yish mijozga «rastamojka bepul» deyish
+  bo'lardi.
+- **Baza TOVARGA tegishli, guruhga emas.** Bitta TNVED kod ostida bir necha
+  tovar bo'ladi va ularning bazasi har xil — shuning uchun baza har tovar
+  qatorida turadi va bojxona qiymati ular yig'indisi.
+- **Yo'nalishni O'ZINGIZ tanlaysiz.** Shahar nomidan taxmin qilinadi, lekin
+  qaror emas: YW/GZ bilan Qashqar orasida narx 36-58 % farq qiladi.
+- **Chegirma va band o'zgartirish — ikki alohida narsa.** «Bu yuk aslida
+  boshqa bandga to'g'ri keladi» (yuk haqida) va «bu mijozga chegirma»
+  (mijoz haqida) alohida yoziladi, ikkalasida ham sabab majburiy, va
+  ikkalasi ham rahbariyatga Telegramga boradi.
+- **AI faqat GURUHLAYDI.** Tovarlarni TNVED kodlar bo'yicha guruhlab
+  beradi, lekin uning taxmin qilgan stavkasi hech qayerga tushmaydi —
+  bazaga ham, narxga ham. Har guruhni odam «Tasdiqlash» bilan tasdiqlamaguncha
+  muhrlab bo'lmaydi. 1000 ta tovar bo'lsa 200 talab so'raydi; bittasi
+  ishlamasa qolgani baribir guruhlanadi.
+- **Muhrlangan narx qulf.** Kartadagi narx maydoni yo'qoladi va o'rniga
+  🔒 bilan narx turadi; sotuvchi ham, VED ham o'zgartira olmaydi. Narx **1
+  oy** amal qiladi (sozlamada). O'zgartirish kerak bo'lsa — «Qayta
+  hisoblash», u YANGI so'rov ochadi va eskisi tarixda o'z narxi bilan
+  qoladi.
+- **«Bajarildi» ham qoldi** — chunki lug'atlar hozircha bo'sh, va ular
+  to'lguncha eski usulda javob berish kerak bo'ladi.
+
+Migratsiya **0086** — deploydan keyin hisob **87** bo'lishi kerak.
+
+**Sizdan 3 ta javob kerak (pul bor):**
+1. **900-999 kg/m³ uchun qator yo'q.** 30 kub 950 kg/m³ da — 700-900
+   qatoridan $9,600, yoki 1000+ qatoridan $15,675. Qaysi biri?
+2. **700 ikki qatorda turibdi** («501-700» $300 va «700-900» $320): 30 kub
+   aniq 700 da — $9,000 mi yoki $9,600 mi?
+3. **1000 da narx birdan sakraydi**: 999 kg/m³ × 30 kub = $9,600, 1000
+   kg/m³ × 30 kub = 30,000 kg × $0.55 = $16,500. Shunday qolsinmi?
+
+Javobingiz tarifga sanali qator bo'lib tushadi. Shu paytgacha bunday
+zichlikdagi yuk uchun ekran «bu zichlik uchun tarif yo'q» deydi — o'zi
+arzonini tanlab qo'ymaydi.
+
 ## VED moduli, A bosqich: hisoblash navbati — 2026-08-22
 
 Sotuvchi so'rov qoldiradi, VED xodimi bitta navbatdan ishlaydi, va har

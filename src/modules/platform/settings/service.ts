@@ -47,6 +47,15 @@ export const SETTING_DEFAULTS = {
    */
   unanswered_reminder_minutes: 30,
   /**
+   * How long a sealed VED price stands before it has to be recalculated
+   * (owner: «bu narx turishi menimcha 1 oy bo'lgani yaxshi»).
+   *
+   * Read when the price is SEALED and frozen onto that version, so shortening
+   * this never shortens a quote the client is already holding. Expiry itself
+   * is decided at read time — there is no sweep and nothing to fall behind.
+   */
+  quote_valid_days: 30,
+  /**
    * The funnel stage a request for a price lands on (owner, round 83: «kim
    * botga tashlayotgan bo'lsa o'sha odamning accountiga biriktirilishi kerak
    * … va hisoblatish etapiga tushishi kerak»).

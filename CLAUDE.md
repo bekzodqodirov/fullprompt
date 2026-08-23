@@ -132,6 +132,59 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
+## State — 2026-08-23
+
+**VED phases A and B are on this branch** (`docs/VED.md`; migrations **0085**
+and **0086** — the ledger must reach **87**).
+
+Phase B is the workspace that replaces the Excel. A price on the screen is a
+DRAFT (recomputed from the dictionaries every render); a price in
+`calc_versions` is a FACT (written once, carrying the tariff row and every
+rate that made it); **the seal is the one door between them**. Three
+dictionaries born here, all versioned by `effective_date` and read like
+`fx_rates` — with **no earliest-row fallback**, because a missing baza means
+nobody has ever priced this product. Baza + rates live at
+`/hisoblash/lugatlar` under `ved.docs` (a `ved_manager` cannot open ANY
+`/admin/*` page); the freight tariff lives at `/admin/tarif` under
+`admin.dictionaries.manage`, so the person giving the discount cannot move
+the list price it is measured against.
+
+The engine (`calc/pricing.ts`, pure) **never returns a number it had to
+invent** — every entry point answers `{ok}` or `{ok:false, reason}`, and the
+screen prints ⚠ + the reason, never `$0`. The priced unit is the **ITEM**
+(one TNVED code holds several products with different bazas). His tariff is
+seeded VERBATIM and the lookup **refuses** its two holes — 900-999 kg/m³ is
+covered by no row, 700 by two — instead of silently taking the cheaper
+reading ($9,600 vs $15,675 on 30 m³ at 950). The band is looked up by a WHOLE
+kg/m³, or an ordinary 100.4 falls between «1–100» and «101–150» and is
+covered by neither. The seal is one transaction whose UPDATE RETURNS the
+version number; there is **no re-open** — a correction is a NEW request
+(`supersedes_request_id`), which is also what an expired quote needs. The
+sealed price is written onto the card and LOCKED: both ✏️ forms lose their
+quote inputs and `updateLead`/`updateDeal` refuse a changed one, with the
+locked branch re-posting the values as hidden inputs (#171). **The model
+proposes words and can never reach a number**: `rate_source`/`baza_source`
+allow `'dictionary'|'typed'` and there is no `'ai'`, every group must be
+confirmed by a person, and `tests/unit/ai-advisory.test.ts` pins all three
+fences. Decisions **#752-760**. Phase A's typed «Bajarildi» deliberately
+STAYS — the dictionaries ship empty, so on deploy morning nothing can be
+sealed at all.
+
+**1799 unit/integration + 166 e2e green** on a fresh `gsr_ci` in CI's order
+(vitest, then Playwright without re-seeding); screenshots at 360×800 and
+1280×900, document width equal to the viewport at both. m8-crm's two desktop
+drag tests failed once in an earlier full run and passed alone and in the
+next two full runs — recorded as a flake, not diagnosed.
+
+**Three answers awaited from the owner, each with money in it** (they are in
+the CHANGELOG entry in Uzbek): the 900-999 kg/m³ gap, the double-listed 700,
+and whether ≥1000 should be a floor rather than a 72 % cliff. Each answer
+becomes a dated tariff row.
+
+**Phases C-E are open**: the client-facing offer sheet, upsale (which reads
+`calc_versions.discount_usd`), and calc-vs-actual (which reads the whole
+`breakdown` snapshot).
+
 ## State — 2026-08-22
 
 **VED phase A is on this branch** (`docs/VED.md`, migration **0085** — the

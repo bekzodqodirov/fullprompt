@@ -190,7 +190,10 @@ export async function proposeGoodsGrouping(
 ): Promise<TnvedGrouping> {
   if (!process.env.ANTHROPIC_API_KEY) throw new TnvedError('ai_not_configured');
   if (goods.length === 0 || goods.length > 200) throw new TnvedError('ai_failed');
-  const client = new Anthropic();
+  // Round 97's lesson, which never reached this file: an un-deadlined network
+  // call is the failure that looks like a hang rather than an error, and a
+  // person is standing in front of this one waiting for a grouping.
+  const client = new Anthropic({ timeout: 60_000, maxRetries: 1 });
 
   const listing = goods
     .map((g, i) => `${i}. ${g.name}${g.quantity ? ` — ${g.quantity} ${g.unit ?? 'шт'}` : ''}`)

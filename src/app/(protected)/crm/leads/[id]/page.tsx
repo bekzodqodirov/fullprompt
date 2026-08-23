@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
+import { quoteLockedFor } from '@/modules/wms/crm/service';
 import { clients, leads } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
@@ -44,6 +45,8 @@ export default async function LeadPage({
   const lead = await db.query.leads.findFirst({ where: eq(leads.id, id) });
 
   if (!lead) notFound();
+  // A sealed VED calculation locks the quote on this card (docs/VED.md law 2).
+  const quoteLocked = (await quoteLockedFor('lead', id)) !== null;
   // The thread's filter and the calls' filter live on the same URL; a link
   // that changes one must carry the other (#514 — a literal string drops it).
   const cardHref = (patch: { hodim?: string | null; chodim?: string | null }) => {
@@ -223,6 +226,7 @@ export default async function LeadPage({
             stage stays in the list even when it is lost, or the select would
             fall back to its first option and Save would revive it. */}
         <LeadForm
+          quoteLocked={quoteLocked}
           action={update}
           sources={sources.map((row) => ({ id: row.id, label: row.name }))}
           stages={leadFormStages(stages, lead.stageId).map((row) => ({ id: row.id, label: row.name }))}

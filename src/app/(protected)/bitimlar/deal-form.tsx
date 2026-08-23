@@ -38,11 +38,14 @@ export function DealForm({
   stages,
   managers,
   initial,
+  quoteLocked,
 }: {
   dealId?: string;
   stages: DealStageOption[];
   managers: { id: string; fullName: string }[];
   initial: DealInitial;
+  /** A sealed VED calculation stands on this deal — the quote is not editable. */
+  quoteLocked?: boolean;
   /**
    * The row's own `updated_at`, keying ONLY the inputs the card can also
    * write. Keying the whole form would remount it after every save and take
@@ -69,50 +72,69 @@ export function DealForm({
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="label">{t('volume')}</span>
-          <input
-            name="quotedVolumeM3"
-            data-testid="deal-volume"
-            inputMode="decimal"
-            defaultValue={initial.quotedVolumeM3 ?? ''}
-            className="input"
-          />
-        </label>
-        <label className="block">
-          <span className="label">{t('weight')}</span>
-          <input
-            name="quotedWeightKg"
-            data-testid="deal-weight"
-            inputMode="decimal"
-            defaultValue={initial.quotedWeightKg ?? ''}
-            className="input"
-          />
-        </label>
-        <label className="block">
+      {/* A sealed VED price is what the client was told, so this form does
+          not get a box for it (docs/VED.md law 2). The values are RE-POSTED
+          as hidden inputs rather than left out: this is a replace-all form,
+          and a field that renders nothing and posts nothing reads as «clear
+          it» (#171). `updateDeal` refuses a changed quote in any case. */}
+      {quoteLocked ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="deal-quote-locked">
           <span className="label">{t('amount')}</span>
-          <input
-            name="quotedAmount"
-            data-testid="deal-amount"
-            inputMode="decimal"
-            defaultValue={initial.quotedAmount ?? ''}
-            className="input"
-          />
-        </label>
-        <label className="block">
-          <span className="label">{t('currency')}</span>
-          <select
-            name="quotedCurrency"
-            defaultValue={initial.quotedCurrency ?? 'USD'}
-            className="input"
-          >
-            <option value="USD">USD</option>
-            <option value="CNY">CNY</option>
-            <option value="UZS">UZS</option>
-          </select>
-        </label>
-      </div>
+          <span className="font-mono tabular-nums font-semibold">
+            {initial.quotedAmount} {initial.quotedCurrency ?? 'USD'}
+          </span>
+          <span className="chip chip-neutral">🔒</span>
+          <input type="hidden" name="quotedAmount" value={initial.quotedAmount ?? ''} />
+          <input type="hidden" name="quotedCurrency" value={initial.quotedCurrency ?? 'USD'} />
+          <input type="hidden" name="quotedVolumeM3" value={initial.quotedVolumeM3 ?? ''} />
+          <input type="hidden" name="quotedWeightKg" value={initial.quotedWeightKg ?? ''} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="label">{t('volume')}</span>
+            <input
+              name="quotedVolumeM3"
+              data-testid="deal-volume"
+              inputMode="decimal"
+              defaultValue={initial.quotedVolumeM3 ?? ''}
+              className="input"
+            />
+          </label>
+          <label className="block">
+            <span className="label">{t('weight')}</span>
+            <input
+              name="quotedWeightKg"
+              data-testid="deal-weight"
+              inputMode="decimal"
+              defaultValue={initial.quotedWeightKg ?? ''}
+              className="input"
+            />
+          </label>
+          <label className="block">
+            <span className="label">{t('amount')}</span>
+            <input
+              name="quotedAmount"
+              data-testid="deal-amount"
+              inputMode="decimal"
+              defaultValue={initial.quotedAmount ?? ''}
+              className="input"
+            />
+          </label>
+          <label className="block">
+            <span className="label">{t('currency')}</span>
+            <select
+              name="quotedCurrency"
+              defaultValue={initial.quotedCurrency ?? 'USD'}
+              className="input"
+            >
+              <option value="USD">USD</option>
+              <option value="CNY">CNY</option>
+              <option value="UZS">UZS</option>
+            </select>
+          </label>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         {dealId && (
