@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { canWriteDeal } from '@/modules/wms/deals/service';
+import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { quoteHistoryFor } from '@/modules/wms/calc/history';
 import { priceBookAt } from '@/modules/wms/calc/dictionaries';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
@@ -30,7 +30,16 @@ export default async function PriceHistoryPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!canWriteDeal(actor.permissions) && !actor.permissions.has('ved.docs')) redirect('/');
+  // Two audiences on one screen (laws 4 and 10): the VED reads the cost side
+  // and never a client price, the seller reads the prices and never the floor.
+  const scope = upsaleScopeFor(actor);
+  // The door is the SCOPE, and the VED's own grant beside it.
+  //
+  // It used to be `canWriteDeal || ved.docs`, which locked out the one person
+  // law 4 names explicitly besides the owner: the ACCOUNTANT, who pays the
+  // upsale out and holds none of `crm.leads` / `ved.docs` / `clients.manage`.
+  // Measured in a browser as the buxgalter — redirected to the home screen.
+  if (scope === 'none' && !actor.permissions.has('ved.docs')) redirect('/');
 
   const { kod } = await searchParams;
   const code = (kod ?? '').trim();
@@ -44,7 +53,7 @@ export default async function PriceHistoryPage({
   if (code) {
     try {
       [rows, book] = await Promise.all([
-        quoteHistoryFor(code, { limit: 10 }),
+        quoteHistoryFor(code, { scope, limit: 10 }),
         priceBookAt(code, new Date().toISOString().slice(0, 10)),
       ]);
     } catch (err) {
@@ -104,23 +113,30 @@ export default async function PriceHistoryPage({
                   <span className="chip chip-brand">
                     {t(SECTION_LABELS[row.section] as 'sections.podklyuch')}
                   </span>
-                  <span className="font-mono text-base font-bold tabular-nums">
-                    ${row.totalUsd.toFixed(2)}
-                  </span>
+                  {row.totalUsd !== null ? (
+                    <span className="font-mono text-base font-bold tabular-nums">
+                      ${row.totalUsd.toFixed(2)}
+                    </span>
+                  ) : null}
                   <span className="text-2xs text-ink-500">
                     {format.dateTime(row.sealedAt, { dateStyle: 'short' })}
                   </span>
-                  <Link
-                    className="text-2xs text-brand-700"
-                    href={
-                      row.entityType === 'deal'
-                        ? `/bitimlar/${row.entityId}`
-                        : `/crm/leads/${row.entityId}`
-                    }
-                    data-testid="history-card-link"
-                  >
-                    {t('openCard')} →
-                  </Link>
+                  {/* The card behind this link prints the sealed floor with no
+                      ownership gate of its own, so for a seller the link is a
+                      door to the number the row above deliberately hides. */}
+                  {row.cardReadable ? (
+                    <Link
+                      className="text-2xs text-brand-700"
+                      href={
+                        row.entityType === 'deal'
+                          ? `/bitimlar/${row.entityId}`
+                          : `/crm/leads/${row.entityId}`
+                      }
+                      data-testid="history-card-link"
+                    >
+                      {t('openCard')} →
+                    </Link>
+                  ) : null}
                 </div>
 
                 <p className="text-2xs text-ink-600">

@@ -35,6 +35,7 @@ import {
 import { saveBaza, savePriceBook, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
 import { isCalcSection } from '@/modules/wms/calc/labels';
 import { canWriteDeal } from '@/modules/wms/deals/service';
+import { mayOffer } from '@/modules/wms/calc/upsale-scope';
 
 export interface CalcFormState {
   ok?: boolean;
@@ -477,6 +478,11 @@ export async function makeOfferAction(
   const actor = await getActor();
   if (!actor) return { error: 'unauthenticated' };
   if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
+  // Law 4: the client price is the SELLER's to enter. This comment's own
+  // sibling in `makeOfferAction`'s doc says a calculator does not talk to the
+  // customer, and `canWriteDeal` carries `ved.docs`, so it had to be said in
+  // code as well as in prose.
+  if (!mayOffer(actor)) return { error: 'forbidden' };
   if (input.entityType !== 'deal' && input.entityType !== 'lead') return { error: 'validation' };
   if (input.entityType === 'lead' && !actor.permissions.has('crm.leads')) {
     return { error: 'forbidden' };

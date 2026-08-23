@@ -19,6 +19,16 @@ import { describe, expect, it } from 'vitest';
  */
 const read = (p: string) => readFileSync(p, 'utf8');
 
+/**
+ * Source without its comments.
+ *
+ * A sentence explaining why a door is NOT what it used to be must not satisfy
+ * a fence asserting the old door is gone — #725 minted a pooled function
+ * called `for` out of my own prose, and this is the same mistake wearing a
+ * negative assertion.
+ */
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
 const FORM = read('src/components/calc-offer.tsx');
 const ACTIONS = read('src/app/(protected)/hisoblash/actions.ts');
 const SERVICE = read('src/modules/wms/calc/workspace.ts');
@@ -28,6 +38,11 @@ describe('the offer form and its action agree about the card', () => {
   it('the form posts the entity it is mounted on', () => {
     expect(FORM).toContain('entityType,');
     expect(FORM).toContain('entityId,');
+  });
+
+  it('the action refuses the VED, who may work the card but not quote it', () => {
+    const body = ACTIONS.slice(ACTIONS.indexOf('export async function makeOfferAction'));
+    expect(body).toContain('mayOffer(actor)');
   });
 
   it('the action gates on the CARD, not on the VED queue’s own grant', () => {
@@ -57,9 +72,29 @@ describe('the PDF route carries its own door', () => {
     expect(ROUTE).toContain("new Response('Unauthorized', { status: 401 })");
   });
 
-  it('asks the same two permissions the button asks', () => {
-    expect(ROUTE).toContain('canWriteDeal(actor.permissions)');
+  it('is gated by law 4 itself, and lets the accountant in', () => {
+    // `canWriteDeal` was the wrong question in BOTH directions: it admitted
+    // the VED (`ved.docs` is in the deal-write list) and it shut out the
+    // accountant, who pays the commission measured off this very number.
+    expect(code(ROUTE)).not.toContain('canWriteDeal');
+    expect(ROUTE).toContain('upsaleScopeFor(actor)');
+  });
+
+  it('holds a SELLER to the funnel’s gate on a lead, and nobody else', () => {
+    expect(ROUTE).toContain("scope === 'own' &&");
     expect(ROUTE).toContain("actor.permissions.has('crm.leads')");
+  });
+
+  it('refuses the VED, whom `canWriteDeal` alone lets straight through', () => {
+    // The sheet IS a client price, and `DEAL_WRITE_PERMISSIONS` carries
+    // `ved.docs` on purpose (the VED recalculates jobs). So the card door and
+    // the offer door cannot be the same door — law 4.
+    expect(ROUTE).toContain('upsaleScopeFor(actor)');
+    expect(ROUTE).toContain("scope === 'none'");
+  });
+
+  it('lets a seller reprint their OWN promise and nobody else’s', () => {
+    expect(ROUTE).toContain("scope === 'own' && offer.offeredBy !== actor.id");
   });
 
   it('renders the OFFER’s price and 404s without one — never the sealed floor', () => {
@@ -88,5 +123,13 @@ describe('the panel that hosts it', () => {
 
   it('catches its own reads so a card never dies on a missing table', () => {
     expect(PANEL).toContain('isServerBehind(err)');
+  });
+
+  it('never offers the price box, or the offer list, to the VED', () => {
+    expect(PANEL).toContain('upsaleScopeFor(actor)');
+    // Not fetched at all, not merely not drawn: a read this person may not
+    // have is a query nobody should pay for either.
+    expect(PANEL).toContain("if (seal && scope !== 'none') offers =");
+    expect(PANEL).toContain("scope === 'none' ? null :");
   });
 });

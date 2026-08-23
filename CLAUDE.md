@@ -244,7 +244,7 @@ NOTIFICATION on a DAILY clock with a monthly claim, silent when nothing is
 stale. `/api/calc/[versionId]/offer.pdf` carries an EXPLICIT door because this
 app has no middleware at all (#721-726). Red proofs ×5, **one of which stayed
 GREEN** — the NaN test was measuring the column's CHECK, not the engine, and
-was re-anchored on the error CODE (#772). **1863 unit/integration + 170 e2e**
+was re-anchored on the error CODE (#772). **1876 unit/integration + 170 e2e**
 green on a fresh gsr_ci in CI's order.
 
 **Found while LOOKING at phase C's own PDF, not by a test** (#773): the PDF
@@ -273,9 +273,37 @@ carrying both entity columns and asserts the re-key names each, so a third
 turns it red the day it is added. `crm_activities` carries the same pair and
 is deliberately NOT moved: a lead's lenta is that lead's history.
 
+**Phase C leaked the client price to the VED, and law 4 forbids it** (#775-777).
+Found by phase D's design review, verified against the seeded matrix:
+`DEAL_WRITE_PERMISSIONS` carries **`ved.docs`** on purpose (the VED
+recalculates jobs), so `canWriteDeal` — phase C's gate on the offer PDF, the
+card's offer list, the offer FORM and `/hisoblash/narxlar`'s client-price line
+— answers TRUE for exactly the person law 4 excludes, and upsale is client
+price minus a floor the VED computed themselves. `upsaleScopeFor` keys on
+**`finance.reports`** and NOT round 91's `seesAllMoney`, because that one is
+`finance.manage || clients.manage` and **`ved_manager` holds `finance.manage`**
+(red-proven: swapping them turns the role matrix red on the VED). It is not a
+hierarchy but **two views of one row**, since law 10 pulls the other way: the
+VED reads the cost side and never a client price; the seller reads the prices
+— law 10's own drift control — and never the floor, which means the WHOLE
+derived family goes (`totalUsd`, `perM3Usd`, `perKgUsd`, the group's customs;
+nulling the total alone leaves the floor one multiplication from the volume on
+the same row) and the card LINK with it, because `/bitimlar/[id]` prints the
+seal with no ownership gate. `scope` is a REQUIRED argument — an optional one
+fails OPEN, and making it required turned every caller into a compile error
+that named itself. **The browser then found the defect in the opposite
+direction**: the same old door had also locked out the BUXGALTER, the one
+person law 4 names besides the owner. A permission fix is half-verified until
+somebody who is not an admin opens the screen (#777, round 43's lesson).
+Measured across four roles. The test is BEHAVIOURAL over every seeded role,
+because the exclusion is a property of a matrix he edits with checkboxes.
+STATED, not fixed: `/bitimlar/[id]` has no ownership gate at all — a CRM
+access round, not a line in this module.
+
 **Phases D-E are open**: upsale (which reads `calc_versions.discount_usd` and
 `calc_offers.below_floor`), and calc-vs-actual (which reads the whole
-`breakdown` snapshot).
+`breakdown` snapshot). Phase D's plan is designed and adversarially judged —
+27 findings across five lenses, absorbed.
 
 ## State — 2026-08-22
 

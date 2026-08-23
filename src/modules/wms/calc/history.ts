@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { calcGroups, calcOffers, calcRequests, calcVersions } from '@/modules/platform/db/schema';
 import type { CalcSectionName } from './pricing';
+import type { UpsaleScope } from './upsale-scope';
 
 /**
  * Price history (docs/VED.md phase C, law 10) — «sotuvchi va vedga narxlar
@@ -33,7 +34,7 @@ export interface QuoteHistoryRow {
   sealedAt: Date;
   section: CalcSectionName;
   /** The whole consignment, for context — always labelled with its section. */
-  totalUsd: number;
+  totalUsd: number | null;
   perM3Usd: number | null;
   perKgUsd: number | null;
   volumeM3: number | null;
@@ -46,6 +47,8 @@ export interface QuoteHistoryRow {
   /** What a seller actually quoted, when one has been recorded. */
   clientPriceUsd: number | null;
   belowFloor: boolean;
+  /** False for a seller: the card behind it prints the sealed floor. */
+  cardReadable: boolean;
 }
 
 interface BreakdownGroup {
@@ -102,7 +105,7 @@ export function groupPerUnit(
  */
 export async function quoteHistoryFor(
   tnvedCode: string,
-  opts: { limit?: number; section?: CalcSectionName } = {},
+  opts: { scope: UpsaleScope; limit?: number; section?: CalcSectionName },
 ): Promise<QuoteHistoryRow[]> {
   const code = tnvedCode.trim();
   if (!code) return [];
@@ -129,6 +132,12 @@ export async function quoteHistoryFor(
 
   const offers = await offersByVersion(sorted.map((r) => r.version.id));
 
+  // The two views of one row (laws 4 and 10). `scope` is REQUIRED and not
+  // defaulted: an optional argument with a permissive default fails OPEN, and
+  // every caller that forgets it leaks silently rather than failing to compile.
+  const hideCost = opts.scope === 'own';
+  const hidePrice = opts.scope === 'none';
+
   return sorted.map((r) => {
     const v = r.version;
     const breakdown = (v.breakdown ?? {}) as { groups?: BreakdownGroup[] };
@@ -141,18 +150,27 @@ export async function quoteHistoryFor(
       entityId: r.entityId,
       sealedAt: v.sealedAt,
       section: v.section as CalcSectionName,
-      totalUsd: Number(v.totalUsd),
-      perM3Usd: v.perM3Usd === null ? null : Number(v.perM3Usd),
-      perKgUsd: v.perKgUsd === null ? null : Number(v.perKgUsd),
+      // Nulling the total alone would leave the floor one multiplication
+      // away: the row prints per-m³ and per-kg beside the volume and the
+      // weight. The whole derived family goes, or none of it does.
+      totalUsd: hideCost ? null : Number(v.totalUsd),
+      perM3Usd: hideCost || v.perM3Usd === null ? null : Number(v.perM3Usd),
+      perKgUsd: hideCost || v.perKgUsd === null ? null : Number(v.perKgUsd),
+      // The consignment itself is not a cost — a seller needs it to read the
+      // prices beside it at all.
       volumeM3: v.volumeM3 === null ? null : Number(v.volumeM3),
       weightKg: v.weightKg === null ? null : Number(v.weightKg),
       groupLabel: group?.label ?? code,
       groupCustomsUsd:
-        typeof group?.customs?.customsUsd === 'number' ? group.customs.customsUsd : null,
-      groupCustomsPerM3: group ? groupPerUnit(group, 'volumeM3') : null,
-      groupCustomsPerUnit: group ? groupPerUnit(group, 'quantity') : null,
-      clientPriceUsd: offer ? Number(offer.clientPriceUsd) : null,
-      belowFloor: offer?.belowFloor ?? false,
+        !hideCost && typeof group?.customs?.customsUsd === 'number'
+          ? group.customs.customsUsd
+          : null,
+      groupCustomsPerM3: !hideCost && group ? groupPerUnit(group, 'volumeM3') : null,
+      groupCustomsPerUnit: !hideCost && group ? groupPerUnit(group, 'quantity') : null,
+      clientPriceUsd: hidePrice || !offer ? null : Number(offer.clientPriceUsd),
+      belowFloor: hidePrice ? false : (offer?.belowFloor ?? false),
+      /** A card link is a door to the floor: `/bitimlar/<id>` prints it. */
+      cardReadable: !hideCost,
     };
   });
 }

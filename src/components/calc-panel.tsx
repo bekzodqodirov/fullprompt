@@ -5,6 +5,7 @@ import { canWriteDeal } from '@/modules/wms/deals/service';
 import { lastCalcAnswerFor, openCalcFor } from '@/modules/wms/calc/service';
 import { currentSealFor, offersFor } from '@/modules/wms/calc/workspace';
 import { offerLocaleFor } from '@/modules/wms/calc/offer';
+import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcSection } from '@/modules/wms/calc/intake';
 import { isServerBehind } from '@/modules/platform/db/errors';
@@ -44,6 +45,10 @@ export async function CalcPanel({
   if (!actor || !canWriteDeal(actor.permissions)) return null;
   if (entityType === 'lead' && !actor.permissions.has('crm.leads')) return null;
 
+  // Law 4 splits this panel. The VED reads the sealed price — it is their own
+  // work — and never what the customer was charged for it.
+  const scope = upsaleScopeFor(actor);
+
   let open: Awaited<ReturnType<typeof openCalcFor>> = [];
   let last: Awaited<ReturnType<typeof lastCalcAnswerFor>> = null;
   let seal: Awaited<ReturnType<typeof currentSealFor>> = null;
@@ -56,7 +61,7 @@ export async function CalcPanel({
     ]);
     // Only a card that HAS a price can have been offered one, so the second
     // read is paid by the cards that use it and by nobody else.
-    if (seal) offers = await offersFor(entityType, entityId);
+    if (seal && scope !== 'none') offers = await offersFor(entityType, entityId);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, entityType, entityId }, '[calc] panel: server behind');
@@ -142,7 +147,7 @@ export async function CalcPanel({
               correction takes (there is no re-open, by design). */}
           {seal.expired ? (
             <p className="text-2xs text-warn">{t('sealExpiredHint')}</p>
-          ) : (
+          ) : scope === 'none' ? null : (
             <CalcOfferForm
               versionId={seal.id}
               sealedTotal={seal.totalUsd}
@@ -156,7 +161,10 @@ export async function CalcPanel({
 
           {offers.length > 0 ? (
             <ul className="space-y-0.5 text-2xs text-ink-600" data-testid="calc-offers">
-              {offers.map((o) => (
+              {offers
+                // A seller reprints their own promise, never a colleague's.
+                .filter((o) => scope === 'all' || o.offeredBy === actor.id)
+                .map((o) => (
                 <li key={o.id} className="flex flex-wrap items-center gap-1">
                   <span className="font-mono tabular-nums">${Number(o.clientPriceUsd).toFixed(2)}</span>
                   <span className="uppercase">{o.locale}</span>

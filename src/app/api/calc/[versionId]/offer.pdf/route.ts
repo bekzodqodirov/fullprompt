@@ -9,7 +9,7 @@ import {
   leads,
 } from '@/modules/platform/db/schema';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
-import { canWriteDeal } from '@/modules/wms/deals/service';
+import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { buildOfferPdf } from '@/modules/wms/calc/offer-pdf';
@@ -22,9 +22,11 @@ import type { CalcSectionName } from '@/modules/wms/calc/pricing';
  * The gate is EXPLICIT and lives here, because this app has no middleware at
  * all — every `/api` route carries its own door, and a route that forgot one
  * is how `/transit`, both batch documents and the partner screens each leaked
- * (#721-726). The door is the CARD's: `canWriteDeal`, plus `crm.leads` when
- * the version belongs to a lead — the same pair `makeOfferAction` asks, so
- * the PDF and the button cannot disagree about who may produce this.
+ * (#721-726). The door is LAW 4's — `upsaleScopeFor` — because the sheet is a
+ * client price and who may hold one is the only question here. The card's own
+ * gate was the wrong question in both directions: it admitted the VED, whom
+ * law 4 excludes, and it shut out the accountant, who pays the commission
+ * measured off this very number.
  *
  * The PRICE is the offer's, not the seal's. A sheet rendered from
  * `calc_versions.total_usd` would print the company's floor to the customer;
@@ -42,7 +44,13 @@ export async function GET(
     if (err instanceof AuthError) return new Response('Unauthorized', { status: 401 });
     throw err;
   }
-  if (!canWriteDeal(actor.permissions)) return new Response('Forbidden', { status: 403 });
+  // Law 4 IS this route's door. The sheet is a client price, so who may hold
+  // one is the only question — and `canWriteDeal` was the wrong question in
+  // both directions: it let the VED through (`DEAL_WRITE_PERMISSIONS` carries
+  // `ved.docs`, which is what makes a deal card theirs to work on) and it shut
+  // out the accountant, who pays the commission measured off this number.
+  const scope = upsaleScopeFor(actor);
+  if (scope === 'none') return new Response('Forbidden', { status: 403 });
 
   const { versionId } = await params;
 
@@ -56,7 +64,14 @@ export async function GET(
       .where(eq(calcVersions.id, versionId))
       .limit(1);
     if (!row) return new Response('Not found', { status: 404 });
-    if (row.request.entityType === 'lead' && !actor.permissions.has('crm.leads')) {
+    // A seller reaches a lead's sheet only if they could open the lead at all.
+    // The owner and the accountant are not held to the funnel's own gate:
+    // paying a commission on a lead's quote must not need `crm.leads`.
+    if (
+      row.request.entityType === 'lead' &&
+      scope === 'own' &&
+      !actor.permissions.has('crm.leads')
+    ) {
       return new Response('Forbidden', { status: 403 });
     }
     [offer] = await db
@@ -73,6 +88,10 @@ export async function GET(
     return new Response('Not ready', { status: 503 });
   }
   if (!offer) return new Response('Not found', { status: 404 });
+  // A seller may reprint what THEY promised, and nobody else's.
+  if (scope === 'own' && offer.offeredBy !== actor.id) {
+    return new Response('Forbidden', { status: 403 });
+  }
 
   // The language is the seller's pick, checked against the three we have —
   // a hand-typed one falls back rather than reaching the label bundle.

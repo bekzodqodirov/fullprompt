@@ -344,7 +344,7 @@ describe('the price history', () => {
     const code = `7318${SUFFIX}`;
     const first = await sealed({ code });
     const second = await sealed({ code });
-    const rows = await quoteHistoryFor(code, { limit: 5 });
+    const rows = await quoteHistoryFor(code, { scope: 'all', limit: 5 });
     expect(rows.map((r) => r.versionId)).toEqual([second.versionId, first.versionId]);
     expect(rows[0]!.section).toBe('podklyuch');
     expect(rows[0]!.totalUsd).toBeGreaterThan(0);
@@ -354,13 +354,13 @@ describe('the price history', () => {
     const code = `6109${SUFFIX}`;
     const { versionId } = await sealed({ code });
     await recordOffer(versionId, { clientPriceUsd: 9999, locale: 'uz' }, ctx());
-    const rows = await quoteHistoryFor(code);
+    const rows = await quoteHistoryFor(code, { scope: 'all' });
     expect(rows[0]!.clientPriceUsd).toBe(9999);
   });
 
   it('answers about a code nobody has priced with nothing, never with somebody else’s quote', async () => {
-    expect(await quoteHistoryFor(`0000${SUFFIX}`)).toEqual([]);
-    expect(await quoteHistoryFor('   ')).toEqual([]);
+    expect(await quoteHistoryFor(`0000${SUFFIX}`, { scope: 'all' })).toEqual([]);
+    expect(await quoteHistoryFor('   ', { scope: 'all' })).toEqual([]);
   });
 
   it('gives EACH code its own newest N — a busy code does not crowd out a quiet one', async () => {
@@ -427,5 +427,55 @@ describe('an offer follows the lead onto the deal that wins it', () => {
     // And the dead lead must not still claim it, or two cards answer for one
     // promise and a phase-D payout could be keyed off either.
     expect(await offersFor('lead', leadId)).toEqual([]);
+  });
+});
+
+describe('law 4: the VED never sees what the customer was charged', () => {
+  it('hides the client price from the VED and keeps the cost side', async () => {
+    const code = `8517${SUFFIX}`;
+    const { versionId } = await sealed({ code });
+    await recordOffer(versionId, { clientPriceUsd: 8888, locale: 'uz' }, ctx());
+
+    // The VED computed the floor themselves. Handing them the client price
+    // hands them the upsale by subtraction, which is the whole of law 4.
+    const asVed = await quoteHistoryFor(code, { scope: 'none' });
+    expect(asVed[0]!.clientPriceUsd).toBeNull();
+    expect(asVed[0]!.belowFloor).toBe(false);
+    // …and law 10 still gives them the cost side, which is their own work.
+    expect(asVed[0]!.totalUsd).toBeGreaterThan(0);
+    expect(asVed[0]!.groupCustomsUsd).toBeGreaterThan(0);
+  });
+
+  it('hides the cost side from a seller — the WHOLE derived family, not the total', async () => {
+    const code = `6203${SUFFIX}`;
+    const { versionId } = await sealed({ code });
+    await recordOffer(versionId, { clientPriceUsd: 9100, locale: 'uz' }, ctx());
+
+    const asSeller = await quoteHistoryFor(code, { scope: 'own' });
+    const row = asSeller[0]!;
+    expect(row.clientPriceUsd).toBe(9100);
+    // Nulling the total alone leaves the floor one multiplication away: the
+    // row prints per-m³ and per-kg beside the volume and the weight.
+    expect(row.totalUsd).toBeNull();
+    expect(row.perM3Usd).toBeNull();
+    expect(row.perKgUsd).toBeNull();
+    expect(row.groupCustomsUsd).toBeNull();
+    expect(row.groupCustomsPerM3).toBeNull();
+    // And the card link is a door to the same number.
+    expect(row.cardReadable).toBe(false);
+    // The consignment stays, or the prices beside it cannot be read at all.
+    expect(row.volumeM3).toBe(30);
+    expect(row.weightKg).toBe(1500);
+  });
+
+  it('gives the owner and the accountant both halves', async () => {
+    const code = `7013${SUFFIX}`;
+    const { versionId } = await sealed({ code });
+    await recordOffer(versionId, { clientPriceUsd: 9500, locale: 'uz' }, ctx());
+
+    const row = (await quoteHistoryFor(code, { scope: 'all' }))[0]!;
+    expect(row.clientPriceUsd).toBe(9500);
+    expect(row.totalUsd).toBeGreaterThan(0);
+    expect(row.cardReadable).toBe(true);
   });
 });
