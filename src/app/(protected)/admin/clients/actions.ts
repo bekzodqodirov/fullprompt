@@ -6,12 +6,14 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { clients } from '@/modules/platform/db/schema';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { authorize, getActor } from '@/modules/platform/rbac/authorize';
 import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { autoLinkClientToVerifiedChats } from '@/modules/platform/telegram/client-cabinet';
+import { activeClientsByPhone } from '@/modules/wms/client-cabinet/service';
 import {
   ClientError,
+  canMintClient,
   createClient,
   isValidClientCode,
 } from '@/modules/platform/clients/service';
@@ -82,22 +84,102 @@ export interface QuickClientResult {
    */
   code?: string;
   error?: string;
+  /**
+   * Codes this phone ALREADY holds. One person carrying 2-4 marking codes is
+   * this business's normal shape (777, 555, 444 — round 32 #407), so a second
+   * code for the same person is sometimes right and must never be blocked.
+   * But the seller cannot see the client book, so without this they mint a
+   * sibling code blind, and cargo, calls and the chat then sit on the code
+   * nobody is looking at. Named, and the same press again creates it anyway.
+   */
+  duplicates?: { id: string; code: string; name: string }[];
+  /**
+   * The deal opened alongside the code. Absent when the funnel refused it —
+   * the panel then shows the code without a deal link rather than claiming
+   * one exists.
+   */
+  dealId?: string | null;
+}
+
+/**
+ * The deal a new client code opens with.
+ *
+ * The owner's rule (round 111): «klient kod ochilganda avtomatik bitimda shu
+ * odam bn bitim ochilsin yangi bolib». Both app doors call it; `createClient`
+ * itself deliberately does NOT, for two reasons that would each be a defect:
+ * `scripts/import-clients.ts` mints the whole book through the service and
+ * would open ~1,700 shells, and `winLead` already opens its own deal after
+ * minting a client, so a service-level hook would give every won lead two.
+ *
+ * AFTER the client is committed and in its own try/catch, never in the same
+ * transaction. The code is the thing that goes on the cartons; losing it
+ * because the funnel has no open stage would be a far worse trade than a
+ * client whose deal has to be raised by hand. The caller renders the link only
+ * when an id comes back, so «code minted, deal not» is a state the screen can
+ * draw honestly.
+ *
+ * It lands at the BOTTOM of its column: it carries no price and no goods, and
+ * the board draws forty cards per stage.
+ */
+async function openDealForNewClient(
+  clientId: string,
+  clientName: string,
+  ownerId: string,
+  ctx: { actorId: string },
+): Promise<string | null> {
+  try {
+    const { createDeal } = await import('@/modules/wms/deals/service');
+    return await createDeal(
+      {
+        clientId,
+        // Named, so the board never draws a bare code. `listDeals` falls back
+        // to the title when the deal has no goods line yet (round 79).
+        title: clientName,
+        ownerId,
+      },
+      ctx,
+      { atBottom: true },
+    );
+  } catch (err) {
+    // A funnel with no open stage, or any other refusal: the client stands,
+    // and this is the only place that knows the difference.
+    console.error('[client-deal]', err);
+    return null;
+  }
 }
 
 export async function quickCreateClientAction(input: {
   name: string;
   phones: string;
+  /** Second press: «yes, this person really does need another code». */
+  anyway?: boolean;
 }): Promise<QuickClientResult> {
   const name = String(input?.name ?? '').trim();
   const phones = String(input?.phones ?? '').trim();
   if (name.length < 1) return { ok: false, error: 'validation' };
 
-  let actor;
-  try {
-    actor = await authorize('clients.manage');
-  } catch (err) {
-    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
-    throw err;
+  // `authorize()` takes ONE code and this door answers to two, so it uses the
+  // house pair-gate idiom (bitimlar/actions.ts) instead: fetch the actor, then
+  // ask the predicate the app bar asked. The screen guard decides what
+  // renders; this one decides what happens — a hand-posted call from a browser
+  // console meets exactly the same rule.
+  const actor = await getActor();
+  if (!actor) return { ok: false, error: 'forbidden' };
+  if (!canMintClient(actor.permissions)) return { ok: false, error: 'forbidden' };
+
+  // Warn before minting, never block. The lead door has done this since round
+  // 79 (`similarLeads`) and the client door — the one that puts a code on a
+  // carton — had nothing, which only became urgent when the door opened to
+  // people who cannot look the client up first.
+  if (!input?.anyway && phones) {
+    const seen = await activeClientsByPhone(phones);
+    if (seen.length > 0) {
+      return {
+        ok: false,
+        error: 'duplicateCode',
+        duplicates: seen.map((one) => ({ id: one.id, code: one.clientCode, name: one.name })),
+      };
+    }
   }
 
   const meta = await requestMeta();
@@ -110,11 +192,25 @@ export async function quickCreateClientAction(input: {
           .split(',')
           .map((one) => one.trim())
           .filter(Boolean),
+        // Whoever opens the code is its manager — the owner's own answer
+        // («kod ochgan odamning ozi unga ozi manager bolib yozilishi kerak»),
+        // and the only one that works: round 91 keys every seller's reads on
+        // this column, so a client minted without it is invisible to the
+        // person who just minted it, and the three cargo notifications
+        // (ReceiptConfirmed, ReadyForPickup, BoxIssued) reach NOBODY at all
+        // for a client with no manager. This door has no picker to override
+        // it; the full form keeps its own.
+        salesManagerId: actor.id,
       },
       { actorId: actor.id, ...meta },
     );
+    const dealId = await openDealForNewClient(row.id, row.name, actor.id, {
+      actorId: actor.id,
+      ...meta,
+    });
     revalidatePath('/admin/clients');
-    return { ok: true, id: row.id, code: row.clientCode, name: row.name };
+    revalidatePath('/bitimlar', 'layout');
+    return { ok: true, id: row.id, code: row.clientCode, name: row.name, dealId };
   } catch (err) {
     if (err instanceof ClientError) return { ok: false, error: err.code };
     // The deploy-morning rule (#473): an action that touches the database
@@ -145,7 +241,11 @@ export async function createClientAction(
         clientCode: values.clientCode,
         name: values.name,
         phones: values.phones,
-        salesManagerId: values.salesManagerId ?? undefined,
+        // The picker wins where somebody used it; otherwise the person who
+        // opened the code is its manager, the same rule the «+» door applies
+        // with no picker to ask (round 111, and #637-640's reason: a client
+        // with no manager is one nobody is notified about).
+        salesManagerId: values.salesManagerId ?? actor.id,
         messengerNote: values.messengerNote ?? undefined,
         notes: values.notes ?? undefined,
       },
@@ -156,7 +256,16 @@ export async function createClientAction(
     throw err;
   }
 
+  // The same rule as the «+» door, and it must run BEFORE the redirect:
+  // `redirect()` throws NEXT_REDIRECT, so anything after it is unreachable —
+  // and a try/catch wrapped around it would swallow the redirect itself.
+  await openDealForNewClient(row.id, row.name, values.salesManagerId ?? actor.id, {
+    actorId: actor.id,
+    ...meta,
+  });
+
   revalidatePath('/admin/clients');
+  revalidatePath('/bitimlar', 'layout');
   // Land on the new card: the owner must SEE the assigned code (and the
   // cabinet block) right after saving — the list hid it.
   redirect(`/admin/clients/${row.id}`);

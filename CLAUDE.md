@@ -564,6 +564,58 @@ LOCAL TRAP worth remembering: a stand-in `.data/basemap/corridor.pmtiles`
 makes /map render LEAFLET, and two specs assert the SVG schematic — both
 failures were that file, not the code.
 
+**Round 111 — his two reports** (#759-766, «kamera iconni bossa rasimga olish
+kamerasi ochilyabti … fildan tanlash yokida rasimga olish qilib ochadigan yoli
+borku» + «+ iconkada … klient code ochishni ham qoshishimiz kerak, klient kod
+ochilganda avtomatik bitim ochilsin»). NO migration (86 stands). Designed, then
+judged by a 5-lens adversarial workflow BEFORE any code: **62 objections, 27
+confirmed, 35 refuted** — and three of the confirmed would have shipped as
+defects. (1) **`capture="environment"` on four file inputs** forced the camera
+and hid the gallery and the file browser; gone from all four. `accept="image/*"`
+STAYS on photo slots and the rule is mechanical: those ids feed `lot.photoIds`,
+which `lotsValid()` counts as the confirm gate and `LightboxImg` draws as an
+`<img>` — `accept` may only be dropped where the handler has an `isImage`
+branch (today exactly one: the 📎). **Removing capture unmasked a live defect**:
+three of four inputs never cleared `value`, so re-picking the SAME photo after a
+failed upload fired no `change` at all — the camera hid it for years by handing
+back a fresh temp file each shot. The reset goes AFTER the handler (clearing it
+empties `input.files`). `compressPhoto` now throws a typed `PhotoUnreadable`, so
+a PDF stops reading as «check the connection» (#669's own mistake); one new key
+`common.photoOnly` — NOT `fileTypeUnsupported`, whose text lists PDF as allowed
+and would lie on a photo slot (the reviewer proposed it without reading its
+words). (2) **`canMintClient`** in platform/clients/service.ts asked by BOTH
+doors (app bar draws, action obeys; `authorize()` takes one code so the action
+uses the pair-gate idiom); the three doors NOT widened keep their single-code
+gate and a test counts them. **The minter is the manager** — his own answer, and
+the only workable one: round 91 keys seller reads on that column AND
+ReceiptConfirmed/ReadyForPickup/BoxIssued all return an EMPTY recipient list for
+a managerless client. «Batafsil →» is per-KIND (it would have bounced the very
+seller the door was opened to); the kind chooser became CHIPS above the boxes so
+nobody pays an extra tap on their most frequent action. Duplicate-phone warning
+on the client path, naming codes AND names, never a refusal (#407 — one person
+holds 444/555/777). (3) **The auto-deal's danger was what it BROKE**:
+`priceControlOnReceipt` chooses «📎 biriktiring» vs «💰❓ narx qo'ying» by
+whether the client has an open deal, so an empty deal per client flips every new
+customer's first arrival to «attach it» — and attaching to a quote-less deal
+reaches the deviation branch, where `incomparable` → `worthAlerting` false →
+**silence for ever**. Both sides fixed off one idea (*an empty deal is not
+something to attach to*): `openDealCodes` counts only priced-or-has-lines deals,
+and a receipt linked to a quote-less deal emits `UnquotedCargo` naming the deal.
+Tested on `quotedAmount === null`, never `deviation.incomparable`. **The linked
+half was LIVE since round 107** (winLead always opens a deal, unpriced when the
+lead carried no quote) — the red proof failing with the branch removed IS the
+demonstration. `bottomOfColumn` + `createDeal(…, {atBottom})` — only this door
+passes it, so winLead/the form/the bot keep the top; the hook lives in the two
+APP doors and NOT in `createClient` (import-clients would mint ~1,700 shells;
+winLead would double). Runs after the client commits in its own try/catch, and
+BEFORE `redirect()` (which throws NEXT_REDIRECT). Wizard picker filtered at the
+ROUTE, not in `openDealsForClient` (round 38's repair door is its other
+consumer). Red proofs ×5. 1780 unit/integration + 161 e2e green on a fresh
+gsr_ci in CI's order; measured in a real browser at 360 px (panel 336 px wide,
+every control inside it, document 360) and end-to-end as a SELLER: sees both
+kinds, opens on a text box, «Batafsil» correctly absent, warning names GS323,
+second press mints GS324, both clients and both deals owned by their minter.
+
 Latest migration: **0085** (`calc_queue` — the VED queue's columns and
 `calc_request_items`, 0052's one-open-per-card index DROPPED; count must
 reach **86**);

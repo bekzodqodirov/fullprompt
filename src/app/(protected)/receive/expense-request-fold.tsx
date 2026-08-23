@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { compressPhoto } from '@/components/compress-photo';
+import { compressPhoto, PhotoUnreadable } from '@/components/compress-photo';
 import { requestExpenseAction } from './actions';
 
 /**
@@ -38,6 +38,7 @@ export function ExpenseRequestFold({
   recent: RecentExpenseRequest[];
 }) {
   const t = useTranslations('rasxod');
+  const tc = useTranslations('common');
   const router = useRouter();
   const [requestId, setRequestId] = useState(() => uuidv4());
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
@@ -46,7 +47,10 @@ export function ExpenseRequestFold({
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState(0);
   const [uploading, setUploading] = useState(0);
-  const [photoError, setPhotoError] = useState(false);
+  // A reason, not a boolean: «the upload failed» and «that file is not a
+  // photograph» need different sentences, and round 111 made the second one
+  // reachable by opening the file browser.
+  const [photoError, setPhotoError] = useState<'failed' | 'notPhoto' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
@@ -61,7 +65,7 @@ export function ExpenseRequestFold({
 
   async function addPhotos(files: FileList | null) {
     if (!files || files.length === 0) return;
-    setPhotoError(false);
+    setPhotoError(null);
     for (const file of Array.from(files)) {
       setUploading((n) => n + 1);
       try {
@@ -78,8 +82,8 @@ export function ExpenseRequestFold({
         });
         if (!res.ok) throw new Error(String(res.status));
         setPhotos((n) => n + 1);
-      } catch {
-        setPhotoError(true);
+      } catch (err) {
+        setPhotoError(err instanceof PhotoUnreadable ? 'notPhoto' : 'failed');
       } finally {
         setUploading((n) => n - 1);
       }
@@ -167,10 +171,12 @@ export function ExpenseRequestFold({
             📷 {t('photo')}
             {photos > 0 && ` (${photos})`}
             {uploading > 0 && ' ⏳'}
+            {/* No `capture` (round 111): a receipt is often photographed at
+                the till and picked from the gallery later. The reset was
+                already here and is the model the other three copied. */}
             <input
               type="file"
               accept="image/*"
-              capture="environment"
               multiple
               className="hidden"
               onChange={(event) => {
@@ -189,7 +195,11 @@ export function ExpenseRequestFold({
             {t('send')}
           </button>
         </div>
-        {photoError && <p className="text-xs font-semibold text-bad">{t('photoFailed')}</p>}
+        {photoError && (
+          <p className="text-xs font-semibold text-bad">
+            {photoError === 'notPhoto' ? tc('photoOnly') : t('photoFailed')}
+          </p>
+        )}
         {error && (
           <p className="text-sm font-semibold text-bad" data-testid="rasxod-error">
             {error}

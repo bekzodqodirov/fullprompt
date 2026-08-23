@@ -39,16 +39,50 @@ export interface CompressOptions {
   maxWidthOrHeight?: number;
 }
 
+/**
+ * «This file is not a photograph» — told apart from «the upload failed»,
+ * because the screens say opposite things about them and only one of the two is
+ * the network's fault.
+ *
+ * It could not happen while `capture` forced the camera: the operator was
+ * handed a fresh JPEG and had no way to choose anything else. Round 111 opened
+ * the gallery and the file browser (owner: «fildan tanlash yokida rasimga olish
+ * qilib ochadigan yoli borku»), so a PDF invoice is now one tap away from a
+ * slot that renders its result as an <img> — and the library's own refusal
+ * («The file given is not an image») was landing in a catch that says «check
+ * the connection», sending a warehouse with perfect wifi to look at its router.
+ * That is round 97's own mistake (#669) arriving through a new door.
+ */
+export class PhotoUnreadable extends Error {
+  constructor() {
+    super('photo_unreadable');
+  }
+}
+
 export async function compressPhoto(file: File, options: CompressOptions = {}): Promise<File> {
-  const compressed = await imageCompression(file, {
-    maxSizeMB: options.maxSizeMB ?? 0.3,
-    maxWidthOrHeight: options.maxWidthOrHeight ?? 1600,
-    useWebWorker: true,
-    // The whole point of this module. Without it the worker reaches for
-    // cdn.jsdelivr.net and the operator waits for a network that, in a Chinese
-    // warehouse, may never answer.
-    libURL: COMPRESS_LIB_URL,
-  });
+  // Asked here and not in each caller: every photo slot needs the same answer,
+  // and the library already applies the same test (`/^image/`) — it just
+  // reports it as a bare Error no caller can tell from a decode failure.
+  if (!file.type.startsWith('image/')) throw new PhotoUnreadable();
+  let compressed;
+  try {
+    compressed = await imageCompression(file, {
+      maxSizeMB: options.maxSizeMB ?? 0.3,
+      maxWidthOrHeight: options.maxWidthOrHeight ?? 1600,
+      useWebWorker: true,
+      // The whole point of this module. Without it the worker reaches for
+      // cdn.jsdelivr.net and the operator waits for a network that, in a
+      // Chinese warehouse, may never answer.
+      libURL: COMPRESS_LIB_URL,
+    });
+  } catch {
+    // Anything reaching here is a file the browser could not decode as an
+    // image — an HEIC on a browser with no codec is the common one, and it
+    // passes the type test above because `image/heic` IS an image type. The
+    // library does no network work any more (round 97), so nothing else is
+    // left to blame.
+    throw new PhotoUnreadable();
+  }
   // The library hands back a Blob; the upload wants a File with a name and a
   // type, and `compressed.type` can be empty when the source had no mime.
   return new File([compressed], file.name || 'photo.jpg', {

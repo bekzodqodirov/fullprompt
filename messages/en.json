@@ -47,7 +47,8 @@
     "notFilled": "Not filled",
     "copy": "Copy",
     "scanTruckForbidden": "This truck is not for your warehouse — or the session expired. Sign in again.",
-    "scanSnapshotOffline": "The box list did not load: no connection. Check the network and try again."
+    "scanSnapshotOffline": "The box list did not load: no connection. Check the network and try again.",
+    "photoOnly": "That is not a photograph — choose an image (📎 takes documents)"
   },
   "login": {
     "title": "Sign in",
@@ -2125,6 +2126,7 @@
     "copy": "Copy code",
     "copied": "Copied ✓",
     "toCard": "Card →",
+    "toDeal": "Deal →",
     "done": "Done",
     "discard": "Close without saving? What you typed will be lost.",
     "hint": {
@@ -2137,7 +2139,8 @@
       "code_exists": "That code already exists",
       "code_format": "Bad code format",
       "failed": "Could not save",
-      "duplicate": "A lead like this already exists — see below. Press again to create it anyway."
+      "duplicate": "A lead like this already exists — see below. Press again to create it anyway.",
+      "duplicateCode": "This number already has a code — press again to open a new one anyway"
     }
   },
   "routing": {
