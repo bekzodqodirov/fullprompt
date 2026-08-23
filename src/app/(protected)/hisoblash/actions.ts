@@ -23,6 +23,7 @@ import {
   moveItemToGroup,
   proposeGroups,
   pullBazasFromDictionary,
+  pullRatesFromDictionary,
   recalcFromSealed,
   saveExtra,
   sealCalc,
@@ -250,30 +251,17 @@ export async function setRatesAction(
   );
 }
 
-export async function pullRatesAction(
-  id: string,
-  groupId: string,
-  input: { label: string; tnvedCode: string; dutyPct: number; vatPct: number; feeUsd: number },
-): Promise<CalcFormState> {
-  return run(
-    'ved.docs',
-    (ctx) =>
-      setGroupRates(
-        groupId,
-        {
-          label: input.label,
-          tnvedCode: input.tnvedCode,
-          dutyPct: input.dutyPct,
-          vatPct: input.vatPct,
-          feeUsd: input.feeUsd,
-          dutyFree: false,
-          vatFree: false,
-          source: 'dictionary',
-        },
-        ctx,
-      ),
-    ws(id),
-  );
+/**
+ * «Take the rates from the dictionary» reads the dictionary HERE.
+ *
+ * It used to accept duty/vat/fee from the browser and stamp them
+ * `source: 'dictionary'` — so a hand-posted call could write any rate at all
+ * and label it as the dictionary's word, which is precisely the provenance
+ * `rate_source` exists to record. The browser now sends only which group; the
+ * numbers come from the same reader the screen displayed.
+ */
+export async function pullRatesAction(id: string, groupId: string): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => pullRatesFromDictionary(groupId, ctx), ws(id));
 }
 
 export async function setBazaAction(

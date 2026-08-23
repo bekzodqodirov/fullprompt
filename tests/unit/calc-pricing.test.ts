@@ -132,6 +132,23 @@ describe('customsFor', () => {
   it('an empty group is refused, never priced at zero', () => {
     expect(customsFor(group(), [])).toMatchObject({ ok: false, reason: 'group_empty' });
   });
+
+  it('refuses NaN, which passes every range check a person writes', () => {
+    // `Number('1 000')` and `Number('abc')` are both NaN, and NaN answers
+    // false to `< 0`, to `> 100` and to `> 0` — so it slips through guards
+    // that look correct. Postgres then stores it and answers TRUE to `>= 0`.
+    expect(Number('1 000')).toBeNaN();
+    expect(NaN < 0 || NaN > 100).toBe(false);
+
+    expect(customsFor(group({ dutyPct: NaN }), [item()])).toMatchObject({
+      ok: false,
+      reason: 'not_a_number',
+    });
+    expect(customsFor(group(), [item({ bazaUsd: NaN })])).toMatchObject({
+      ok: false,
+      reason: 'not_a_number',
+    });
+  });
 });
 
 describe('bandFor', () => {
@@ -311,6 +328,11 @@ describe('totalsFor', () => {
       ok: false,
       reason: 'discount_exceeds_total',
     });
+  });
+
+  it('refuses a NaN discount instead of sealing an unreadable total', () => {
+    const res = totalsFor({ ...base, section: 'podklyuch', discountUsd: NaN });
+    expect(res).toEqual({ ok: false, reason: 'not_a_number' });
   });
 
   it('no divisor, no per-unit line — never a zero', () => {

@@ -32,6 +32,7 @@ import {
   loadWorkspace,
   moveItemToGroup,
   pullBazasFromDictionary,
+  pullRatesFromDictionary,
   recalcFromSealed,
   sealCalc,
   setFreightZone,
@@ -425,6 +426,88 @@ describe('the lock is real', () => {
     const after = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
     expect(after!.title).toBe('VED seal fixture 2');
     expect(Number(after!.quotedAmount)).toBe(3764);
+  });
+});
+
+describe('what the shipped-code audit found', () => {
+  it('a sealed price FOLLOWS the lead onto the deal that wins it', async () => {
+    // The lock lives on the card the calc request points at. Re-keying only
+    // OPEN requests handed the new deal the number with none of the lock —
+    // and a won lead is exactly when the quote becomes the invoice.
+    const request = await openCalcRequest(
+      {
+        entityType: 'lead',
+        entityId: leadId,
+        section: 'yolkira',
+        fromCity: 'Yiwu',
+        toCity: 'Toshkent',
+        weightKg: 1500,
+        volumeM3: 30,
+        items: [{ name: `monitor ${tag()}`, quantity: 10 }],
+        source: 'card',
+      },
+      ctx(),
+    );
+    madeRequests.push(request.id);
+    await setFreightZone(request.id, 'cn', ctx());
+    await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    expect(await quoteLockedFor('lead', leadId)).toBe(3300);
+
+    const { rekeyLeadCalcRequests } = await import('@/modules/wms/calc/service');
+    const moved = await rekeyLeadCalcRequests(leadId, dealId);
+    expect(moved, 'a CLOSED, sealed request must move too').toBeGreaterThan(0);
+    expect(await quoteLockedFor('deal', dealId)).toBe(3300);
+  });
+
+  it('changing a baza under a confirmed group takes the ✅ away', async () => {
+    const { requestId } = await readyRequest();
+    const before = await loadWorkspace(requestId);
+    const seq = before!.groups[0]!.items[0]!.seq;
+    expect(before!.groups[0]!.confirmedAt).not.toBeNull();
+
+    await setItemBaza(requestId, seq, { bazaUsd: 25, basis: 'unit', source: 'typed' }, ctx());
+    const after = await loadWorkspace(requestId);
+    // The confirmation was about NUMBERS, and one of them just moved.
+    expect(after!.groups[0]!.confirmedAt).toBeNull();
+    expect(after!.blockers).toContainEqual({ kind: 'groups_unconfirmed', count: 1 });
+  });
+
+  it('«take the rates from the dictionary» reads the dictionary, not the caller', async () => {
+    const code = `991${String((seq += 1)).padStart(4, '0')}`;
+    madeRates.push(
+      await saveRates({ tnvedCode: code, dutyPct: 3, vatPct: 12, feeUsd: 7, effectiveDate: TODAY }, ctx()),
+    );
+    const request = await open();
+    const groupId = await createGroup(request.id, { label: 'X', tnvedCode: code }, ctx());
+    await pullRatesFromDictionary(groupId, ctx());
+
+    const ws = await loadWorkspace(request.id);
+    const group = ws!.groups[0]!;
+    expect(group.dutyPct).toBe(3);
+    expect(group.feeUsd).toBe(7);
+    expect(group.rateSource).toBe('dictionary');
+  });
+
+  it('refuses to claim the dictionary for a code the dictionary has never heard of', async () => {
+    const request = await open();
+    const groupId = await createGroup(request.id, { label: 'X', tnvedCode: '4242424242' }, ctx());
+    await expect(pullRatesFromDictionary(groupId, ctx())).rejects.toMatchObject({
+      code: 'rates_not_in_dictionary',
+    });
+  });
+
+  it('a typo is refused before it is stored, never sealed as NaN', async () => {
+    const { requestId, groupId } = await readyRequest();
+    await expect(
+      setGroupRates(
+        groupId,
+        { tnvedCode: '8528', dutyPct: NaN, vatPct: 12, feeUsd: 0, dutyFree: false, vatFree: false, source: 'typed' },
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'bad_number' });
+    await expect(
+      sealCalc(requestId, { discountUsd: NaN, discountReason: 'x', bandOverrideMin: null, bandOverrideReason: null }, ctx()),
+    ).rejects.toMatchObject({ code: 'bad_number' });
   });
 });
 

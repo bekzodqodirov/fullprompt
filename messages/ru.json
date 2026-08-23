@@ -2046,7 +2046,9 @@
       "ai_running": "ИИ уже работает",
       "ai_failed": "ИИ не ответил",
       "ai_not_configured": "ИИ не настроен",
-      "no_items": "Нет товаров"
+      "no_items": "Нет товаров",
+      "bad_number": "Число введено неверно",
+      "rates_not_in_dictionary": "Этого кода нет в справочнике"
     },
     "openCard": "Карточка",
     "freight": "Фрахт",
@@ -2115,7 +2117,8 @@
       "band_missing": "для этой плотности нет тарифа",
       "band_ambiguous": "плотность попадает в две строки",
       "zone_required": "не выбрано направление",
-      "discount_exceeds_total": "скидка больше суммы"
+      "discount_exceeds_total": "скидка больше суммы",
+      "not_a_number": "неверное число"
     },
     "blockers": {
       "section_missing": "Не выбран раздел",

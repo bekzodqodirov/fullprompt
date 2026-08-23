@@ -187,6 +187,26 @@ at the previous one's top plus one), the 1000 step stays a step. Recorded as a
 SEED correction and not a dated superseding row, because 0086 has never
 deployed and the seed writes only into an empty table. Decision **#761**.
 
+**Round 110 — the shipped-code audit** (#762-764): phase B was reviewed
+before code and never as shipped, so six adversarial lenses were run over the
+commit. **The headline is NaN through all three layers**: `Number('1 000')` is
+NaN, NaN answers false to every comparison a guard is made of, postgres stores
+`'NaN'::numeric` and answers TRUE to `>= 0` — so the seal's own
+`total_usd >= 0` CHECK put an unreadable price on a LOCKED card. Measured:
+`totalsFor` returned `{ok:true}` with a NaN total. Fixed in the engine
+(`isNumber` → `not_a_number`), the services (`mustBeNumber` → `bad_number`)
+and the migration (`<> 'NaN'::numeric` on every money column — the only
+comparison postgres has that excludes it). Second blocker: a SEALED request
+stopped following a won lead, because `rekeyLeadCalcRequests` filtered
+`openRequests` — the new deal got the number with none of the lock, at exactly
+the moment a quote becomes an invoice; #752 had written that rule down and the
+code shipped without it. Plus: a confirmation now clears when a BAZA changes
+or cargo moves between groups (not only when a rate changes), `pullRates`
+reads the dictionary server-side instead of stamping the browser's numbers
+as the dictionary's word, and the sealed panel no longer prints «$0.00» for a
+line its section does not have. Red proofs ×3. **1810 unit/integration + 166
+e2e** green on a fresh gsr_ci in CI's order.
+
 **Phases C-E are open**: the client-facing offer sheet, upsale (which reads
 `calc_versions.discount_usd`), and calc-vs-actual (which reads the whole
 `breakdown` snapshot).

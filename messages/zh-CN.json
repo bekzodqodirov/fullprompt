@@ -2046,7 +2046,9 @@
       "ai_running": "AI 正在运行",
       "ai_failed": "模型未响应",
       "ai_not_configured": "未配置 AI",
-      "no_items": "没有商品"
+      "no_items": "没有商品",
+      "bad_number": "数字输入有误",
+      "rates_not_in_dictionary": "字典中没有该编码"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -2115,7 +2117,8 @@
       "band_missing": "该密度没有价目",
       "band_ambiguous": "该密度落入两个区间",
       "zone_required": "未选择线路",
-      "discount_exceeds_total": "折扣超过总额"
+      "discount_exceeds_total": "折扣超过总额",
+      "not_a_number": "数字无效"
     },
     "blockers": {
       "section_missing": "未选择项目",

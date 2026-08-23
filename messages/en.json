@@ -2046,7 +2046,9 @@
       "ai_running": "The proposal is already running",
       "ai_failed": "The model did not answer",
       "ai_not_configured": "AI is not configured",
-      "no_items": "No goods"
+      "no_items": "No goods",
+      "bad_number": "That is not a number",
+      "rates_not_in_dictionary": "That code is not in the dictionary"
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -2115,7 +2117,8 @@
       "band_missing": "no tariff for this density",
       "band_ambiguous": "this density is in two bands",
       "zone_required": "no route chosen",
-      "discount_exceeds_total": "discount exceeds the total"
+      "discount_exceeds_total": "discount exceeds the total",
+      "not_a_number": "not a number"
     },
     "blockers": {
       "section_missing": "No section chosen",

@@ -2046,7 +2046,9 @@
       "ai_running": "AI hozir ishlayapti",
       "ai_failed": "AI javob bermadi",
       "ai_not_configured": "AI sozlanmagan",
-      "no_items": "Tovar yo‘q"
+      "no_items": "Tovar yo‘q",
+      "bad_number": "Raqam noto‘g‘ri kiritilgan",
+      "rates_not_in_dictionary": "Bu kod lug‘atda yo‘q"
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -2115,7 +2117,8 @@
       "band_missing": "bu zichlik uchun tarif yo‘q",
       "band_ambiguous": "bu zichlik ikki bandda",
       "zone_required": "yo‘nalish tanlanmagan",
-      "discount_exceeds_total": "chegirma jamidan katta"
+      "discount_exceeds_total": "chegirma jamidan katta",
+      "not_a_number": "raqam noto‘g‘ri"
     },
     "blockers": {
       "section_missing": "Bo‘lim tanlanmagan",

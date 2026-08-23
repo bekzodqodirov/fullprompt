@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { sectionParts } from '@/modules/wms/calc/pricing';
 import type { Workspace, WorkspaceGroup, WorkspaceItem } from '@/modules/wms/calc/workspace';
 import {
   confirmAllAction,
@@ -396,17 +397,7 @@ function GroupRows({
               className="ml-2 underline"
               disabled={pending}
               data-testid="calc-pull-rates"
-              onClick={() =>
-                act(() =>
-                  pullRatesAction(id, group.id, {
-                    label: group.label,
-                    tnvedCode: group.tnvedCode ?? '',
-                    dutyPct: group.dictionaryRates!.dutyPct,
-                    vatPct: group.dictionaryRates!.vatPct,
-                    feeUsd: group.dictionaryRates!.feeUsd,
-                  }),
-                )
-              }
+              onClick={() => act(() => pullRatesAction(id, group.id))}
             >
               {t('pullRates')}: {group.dictionaryRates.dutyPct}% / {group.dictionaryRates.vatPct}%
             </button>
@@ -886,6 +877,9 @@ function SealedPanel({
   const t = useTranslations('calc');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // The sealed version carries its own section, so the panel reads what the
+  // quote WAS, never what the request happens to say now.
+  const parts = sectionParts(sealed.section);
 
   return (
     <section className="card !p-3" data-testid="calc-sealed">
@@ -903,10 +897,22 @@ function SealedPanel({
         ${sealed.totalUsd.toFixed(2)}
       </p>
       <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-2xs">
-        <dt className="text-ink-500">{t('customs')}</dt>
-        <dd className="font-mono tabular-nums">${sealed.customsUsd.toFixed(2)}</dd>
-        <dt className="text-ink-500">{t('freight')}</dt>
-        <dd className="font-mono tabular-nums">${sealed.freightUsd.toFixed(2)}</dd>
+        {/* A rastamojka quote has no freight line — it does not have a freight
+            line that happens to be zero. Printing «Yo'lkira $0.00» on the
+            sealed sheet says the road was free, which is a different claim
+            and the one the client would read. */}
+        {parts.customs ? (
+          <>
+            <dt className="text-ink-500">{t('customs')}</dt>
+            <dd className="font-mono tabular-nums">${sealed.customsUsd.toFixed(2)}</dd>
+          </>
+        ) : null}
+        {parts.freight ? (
+          <>
+            <dt className="text-ink-500">{t('freight')}</dt>
+            <dd className="font-mono tabular-nums">${sealed.freightUsd.toFixed(2)}</dd>
+          </>
+        ) : null}
         <dt className="text-ink-500">{t('extras')}</dt>
         <dd className="font-mono tabular-nums">${sealed.extrasUsd.toFixed(2)}</dd>
         {sealed.discountUsd > 0 ? (

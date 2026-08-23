@@ -30,6 +30,7 @@ import {
 import {
   customsFor,
   freightFor,
+  isNumber,
   sectionParts,
   totalsFor,
   type BazaBasis,
@@ -63,6 +64,14 @@ import { CalcError } from './service';
 export const QUOTE_VALID_DAYS_DEFAULT = 30;
 
 const toNum = (v: string | null) => (v === null ? null : Number(v));
+
+/** A typo is refused before it is stored — see `dictionaries.ts` for why. */
+function mustBeNumber(...values: (number | null | undefined)[]): void {
+  for (const v of values) {
+    if (v === null || v === undefined) continue;
+    if (!isNumber(v)) throw new CalcError('bad_number');
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Reading the workspace
@@ -481,10 +490,21 @@ export async function moveItemToGroup(
     // two customers' calculations.
     if (!group || group.requestId !== requestId) throw new CalcError('group_foreign');
   }
-  await db
+  const was = await db.query.calcRequestItems.findFirst({
+    where: and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)),
+    columns: { groupId: true },
+  });
+  const [moved] = await db
     .update(calcRequestItems)
     .set({ groupId })
-    .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
+    .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
+    .returning({ id: calcRequestItems.id });
+  // Both ends of the move: a group that gained or lost cargo is a group whose
+  // customs figure changed, so neither may keep a ✅ from before it did.
+  if (moved) {
+    if (groupId) await unconfirm(groupId);
+    if (was?.groupId && was.groupId !== groupId) await unconfirm(was.groupId);
+  }
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
     entityId: requestId,
@@ -519,6 +539,7 @@ export async function setGroupRates(
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
   await assertOpen(group.requestId);
+  mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd);
   for (const pct of [input.dutyPct, input.vatPct]) {
     if (pct !== null && (pct < 0 || pct > 100)) throw new CalcError('rate_range');
   }
@@ -563,21 +584,59 @@ export async function setItemBaza(
   ctx: AuditContext,
 ) {
   await assertOpen(requestId);
+  mustBeNumber(input.bazaUsd);
   if (input.bazaUsd !== null && !(input.bazaUsd > 0)) throw new CalcError('baza_positive');
-  await db
+  const [changed] = await db
     .update(calcRequestItems)
     .set({
       bazaUsd: input.bazaUsd === null ? null : input.bazaUsd.toFixed(4),
       bazaBasis: input.bazaUsd === null ? null : input.basis,
       bazaSource: input.bazaUsd === null ? null : input.source,
     })
-    .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
+    .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
+    .returning({ groupId: calcRequestItems.groupId });
+  // The confirmation was about NUMBERS, and this is one of them. Changing a
+  // baza under a confirmed group left the ✅ standing over a figure nobody
+  // had looked at — the same rule `setGroupRates` already applies to a rate.
+  if (changed?.groupId) await unconfirm(changed.groupId);
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
     entityId: requestId,
     action: 'update',
     after: { itemSeq, baza: input },
   });
+}
+
+/**
+ * Take a group's rates from the rates dictionary.
+ *
+ * The numbers are read HERE and never accepted from the caller: `rate_source`
+ * records where a rate came from, and an action that stamps 'dictionary' onto
+ * whatever it was handed makes that column a lie.
+ */
+export async function pullRatesFromDictionary(groupId: string, ctx: AuditContext): Promise<void> {
+  const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
+  if (!group) throw new CalcError('not_found');
+  await assertOpen(group.requestId);
+  const code = (group.tnvedCode ?? '').trim();
+  if (!code) throw new CalcError('code_required');
+
+  const hit = (await ratesForCodes([code], onDate())).get(code);
+  if (!hit) throw new CalcError('rates_not_in_dictionary');
+
+  await setGroupRates(
+    groupId,
+    {
+      tnvedCode: code,
+      dutyPct: hit.dutyPct,
+      vatPct: hit.vatPct,
+      feeUsd: hit.feeUsd,
+      dutyFree: group.dutyFree,
+      vatFree: group.vatFree,
+      source: 'dictionary',
+    },
+    ctx,
+  );
 }
 
 /** Fill every item that has no baza from the dictionary, in one pass. */
@@ -645,6 +704,7 @@ export async function saveExtra(
   ctx: AuditContext,
 ): Promise<string> {
   await assertOpen(requestId);
+  mustBeNumber(input.amountUsd);
   if (!(input.amountUsd >= 0)) throw new CalcError('amount_range');
   const label = input.label.trim();
   if (!label) throw new CalcError('label_required');
@@ -801,6 +861,8 @@ export async function sealCalc(
 ): Promise<{ versionNo: number; totalUsd: number }> {
   // The two «say why» rules are checked before anything is loaded: they are
   // facts about the request being made, not about the cargo.
+  mustBeNumber(input.discountUsd, input.bandOverrideMin);
+  if (input.discountUsd < 0) throw new CalcError('amount_range');
   if (input.discountUsd > 0 && !input.discountReason?.trim()) throw new CalcError('discount_reason_required');
   if (input.bandOverrideMin !== null && !input.bandOverrideReason?.trim()) {
     throw new CalcError('band_reason_required');
@@ -1193,6 +1255,14 @@ async function namesOf(ids: string[]): Promise<Map<string, string>> {
     .from(users)
     .where(inArray(users.id, list));
   return new Map(rows.map((r) => [r.id, r.fullName]));
+}
+
+/** A group whose numbers moved is a group nobody has confirmed. */
+async function unconfirm(groupId: string): Promise<void> {
+  await db
+    .update(calcGroups)
+    .set({ confirmedBy: null, confirmedAt: null })
+    .where(eq(calcGroups.id, groupId));
 }
 
 const normalise = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');

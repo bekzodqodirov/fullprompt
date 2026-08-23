@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS calc_bazas (
   entered_by uuid REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT calc_bazas_basis_check CHECK (basis IN ('unit', 'kg')),
-  CONSTRAINT calc_bazas_value_check CHECK (baza_usd > 0)
+  CONSTRAINT calc_bazas_value_check CHECK (baza_usd > 0 AND baza_usd <> 'NaN'::numeric)
 );
 --> statement-breakpoint
 -- The same product corrected twice in one day is one correction: the last
@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS calc_rates (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT calc_rates_source_check CHECK (source IN ('manual', 'correction')),
   CONSTRAINT calc_rates_pct_check CHECK (
-    duty_pct >= 0 AND duty_pct <= 100 AND vat_pct >= 0 AND vat_pct <= 100 AND fee_usd >= 0
+    duty_pct BETWEEN 0 AND 100 AND duty_pct <> 'NaN'::numeric
+    AND vat_pct BETWEEN 0 AND 100 AND vat_pct <> 'NaN'::numeric
+    AND fee_usd >= 0 AND fee_usd <> 'NaN'::numeric
   )
 );
 --> statement-breakpoint
@@ -76,14 +78,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS calc_rates_code_date_unique
 --
 --     A band carries BOTH its bounds, and `max_density` is why. Written as
 --     lower bounds alone — «this density and up, until the next row» — the
---     table silently answers every density, and his table does not: it has a
---     hole at 900-999 kg/m³, it lists 700 in two rows, and it steps from
---     $320/m³ to $0.55/kg at 1000, a 72 % cliff. Each of those is money —
---     30 m³ at 950 kg/m³ is $9,600 or $15,675 depending on which way the hole
---     is read — so the band is seeded EXACTLY as he wrote it and the lookup
---     REFUSES a density no row covers, and refuses again where two rows
---     cover it. His answers become dated rows he can see, which is the only
---     way a tariff decision leaves a record.
+--     table silently answers EVERY density, including the ones a person left
+--     out. The owner's first table left 900-999 kg/m³ out and listed 700
+--     twice, and each is money: 30 m³ at 950 kg/m³ is $9,600 or $15,675
+--     depending on which way the gap is read. He has since closed both (the
+--     seeded table is contiguous — see `wms/calc/tariff-seed.ts`), but the
+--     lookup still REFUSES a density no row covers and one that two rows
+--     cover, because this table is edited on /admin/tarif and the next hole
+--     must be a visible refusal rather than a quietly cheaper invoice.
 --
 --     `max_density` NULL is the open-ended top row (≥1000, priced per kg).
 CREATE TABLE IF NOT EXISTS calc_freight_tariffs (
@@ -96,7 +98,7 @@ CREATE TABLE IF NOT EXISTS calc_freight_tariffs (
   effective_date date NOT NULL,
   entered_by uuid REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT calc_freight_price_check CHECK (price_usd > 0),
+  CONSTRAINT calc_freight_price_check CHECK (price_usd > 0 AND price_usd <> 'NaN'::numeric),
   CONSTRAINT calc_freight_density_check CHECK (
     min_density >= 0 AND (max_density IS NULL OR max_density >= min_density)
   )
@@ -139,6 +141,15 @@ CREATE TABLE IF NOT EXISTS calc_groups (
   note text,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT calc_groups_rate_source_check CHECK (rate_source IS NULL OR rate_source IN ('dictionary', 'typed')),
+  -- NaN is a real `numeric` value in postgres, it survives every range check
+  -- a person writes in JavaScript, and `'NaN'::numeric >= 0` answers TRUE —
+  -- so a mistyped rate would otherwise reach a sealed, client-facing price.
+  -- `<> 'NaN'` is the only comparison that excludes it.
+  CONSTRAINT calc_groups_rates_check CHECK (
+    (duty_pct IS NULL OR (duty_pct BETWEEN 0 AND 100 AND duty_pct <> 'NaN'::numeric))
+    AND (vat_pct IS NULL OR (vat_pct BETWEEN 0 AND 100 AND vat_pct <> 'NaN'::numeric))
+    AND (fee_usd IS NULL OR (fee_usd >= 0 AND fee_usd <> 'NaN'::numeric))
+  ),
   CONSTRAINT calc_groups_confidence_check CHECK (ai_confidence IS NULL OR ai_confidence IN ('high', 'medium', 'low'))
 );
 --> statement-breakpoint
@@ -157,11 +168,18 @@ ALTER TABLE calc_request_items ADD COLUMN IF NOT EXISTS baza_source text;
 --> statement-breakpoint
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'calc_items_baza_basis_check') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'calc_items_baza_basis_check'
+                   AND conrelid = 'calc_request_items'::regclass) THEN
     ALTER TABLE calc_request_items ADD CONSTRAINT calc_items_baza_basis_check
       CHECK (baza_basis IS NULL OR baza_basis IN ('unit', 'kg'));
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'calc_items_baza_source_check') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'calc_items_baza_value_check'
+                   AND conrelid = 'calc_request_items'::regclass) THEN
+    ALTER TABLE calc_request_items ADD CONSTRAINT calc_items_baza_value_check
+      CHECK (baza_usd IS NULL OR (baza_usd > 0 AND baza_usd <> 'NaN'::numeric));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'calc_items_baza_source_check'
+                   AND conrelid = 'calc_request_items'::regclass) THEN
     ALTER TABLE calc_request_items ADD CONSTRAINT calc_items_baza_source_check
       CHECK (baza_source IS NULL OR baza_source IN ('dictionary', 'typed'));
   END IF;
@@ -182,7 +200,7 @@ CREATE TABLE IF NOT EXISTS calc_extras (
   amount_usd numeric(14,2) NOT NULL,
   note text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT calc_extras_amount_check CHECK (amount_usd >= 0)
+  CONSTRAINT calc_extras_amount_check CHECK (amount_usd >= 0 AND amount_usd <> 'NaN'::numeric)
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS calc_extras_seq_unique ON calc_extras (request_id, seq);
@@ -231,8 +249,15 @@ CREATE TABLE IF NOT EXISTS calc_versions (
   low_confidence_sealed integer NOT NULL DEFAULT 0,
   breakdown jsonb NOT NULL DEFAULT '{}'::jsonb,
   CONSTRAINT calc_versions_section_check CHECK (section IN ('yolkira', 'rastamojka', 'podklyuch')),
-  CONSTRAINT calc_versions_total_check CHECK (total_usd >= 0),
-  CONSTRAINT calc_versions_discount_check CHECK (discount_usd >= 0)
+  -- The last gate before a number becomes what the client was told.
+  CONSTRAINT calc_versions_total_check CHECK (total_usd >= 0 AND total_usd <> 'NaN'::numeric),
+  CONSTRAINT calc_versions_discount_check CHECK (
+    discount_usd >= 0 AND discount_usd <> 'NaN'::numeric
+  ),
+  CONSTRAINT calc_versions_parts_check CHECK (
+    customs_usd <> 'NaN'::numeric AND freight_usd <> 'NaN'::numeric
+    AND extras_usd <> 'NaN'::numeric
+  )
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS calc_versions_request_no_unique

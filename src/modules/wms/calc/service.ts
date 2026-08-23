@@ -632,13 +632,16 @@ export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Pro
   const rows = await db
     .update(calcRequests)
     .set({ entityType: 'deal', entityId: dealId, updatedAt: new Date() })
-    .where(
-      and(
-        eq(calcRequests.entityType, 'lead'),
-        eq(calcRequests.entityId, leadId),
-        openRequests,
-      ),
-    )
+    // EVERY request, not just the open ones.
+    //
+    // It filtered `openRequests` while a closed request was only history. A
+    // SEALED request is closed and carries a PRICE, and `currentSealFor` finds
+    // a version by the card its request points at — so leaving sealed ones on
+    // the lead handed the new deal the number with none of the lock, and the
+    // quote became freely editable at exactly the moment it becomes the
+    // invoice. The won lead keeps its own copy as history; the deal is the
+    // live record, and it is the one that must stay locked.
+    .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)))
     .returning({ id: calcRequests.id });
   return rows.length;
 }

@@ -4,7 +4,22 @@ import { calcBazas, calcFreightTariffs, calcRates } from '@/modules/platform/db/
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { productKey } from '../tnved/service';
 import { CalcError } from './service';
+import { isNumber } from './pricing';
 import type { BazaBasis, FreightBand } from './pricing';
+
+/**
+ * A typo is refused before it is stored, not after it is priced.
+ *
+ * `Number('1 000')` is NaN, and NaN slips past every range check ever
+ * written — then postgres stores `'NaN'::numeric` and answers TRUE to
+ * `>= 0`, so the CHECK constraints wave it through too.
+ */
+function mustBeNumber(...values: (number | null | undefined)[]): void {
+  for (const v of values) {
+    if (v === null || v === undefined) continue;
+    if (!isNumber(v)) throw new CalcError('bad_number');
+  }
+}
 
 /**
  * The three dictionaries phase B is born with (docs/VED.md, laws 5-7).
@@ -112,6 +127,7 @@ export async function saveBaza(
 ): Promise<string> {
   const key = productKey(input.name);
   if (!key) throw new CalcError('product_required');
+  mustBeNumber(input.bazaUsd);
   if (!(input.bazaUsd > 0)) throw new CalcError('baza_positive');
 
   const [row] = await db
@@ -194,6 +210,7 @@ export async function saveRates(
 ): Promise<string> {
   const code = input.tnvedCode.trim();
   if (!code) throw new CalcError('code_required');
+  mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd);
   if (input.dutyPct < 0 || input.dutyPct > 100 || input.vatPct < 0 || input.vatPct > 100) {
     throw new CalcError('rate_range');
   }
@@ -309,6 +326,7 @@ export async function saveTariffBand(
 ): Promise<string> {
   const zone = input.zone.trim().toLowerCase();
   if (!zone) throw new CalcError('zone_required');
+  mustBeNumber(input.priceUsd, input.minDensity, input.maxDensity);
   if (!(input.priceUsd > 0)) throw new CalcError('price_positive');
   if (input.minDensity < 0) throw new CalcError('band_range');
   if (input.maxDensity !== null && input.maxDensity < input.minDensity) {

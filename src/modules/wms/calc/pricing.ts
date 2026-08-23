@@ -66,7 +66,26 @@ export type CustomsRefusal =
   | 'group_empty'
   | 'baza_missing'
   | 'measure_missing'
-  | 'rates_missing';
+  | 'rates_missing'
+  | 'not_a_number';
+
+/**
+ * A number this file is willing to multiply.
+ *
+ * `Number('1 000')` and `Number('abc')` are both `NaN`, and NaN passes every
+ * comparison guard ever written: `NaN < 0 || NaN > 100` is false, `NaN > 0` is
+ * false, `NaN >= 0` is false. Postgres then stores `'NaN'::numeric` happily —
+ * and `'NaN'::numeric >= 0` is TRUE there, so even the seal's own
+ * `total_usd >= 0` CHECK waves it through onto a customer's locked card.
+ *
+ * The forms and the actions refuse a typo before it reaches here. This is the
+ * layer that makes the file's contract true rather than merely intended: a
+ * number that is not finite is not a number, and the answer is a refusal.
+ */
+export const isNumber = (n: number | null | undefined): n is number =>
+  typeof n === 'number' && Number.isFinite(n);
+
+const ok = isNumber;
 
 export interface CustomsBreakdown {
   ok: true;
@@ -99,6 +118,9 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
   const dutyPct = group.dutyFree ? 0 : group.dutyPct;
   const vatPct = group.vatFree ? 0 : group.vatPct;
   if (dutyPct === null || vatPct === null) return { ok: false, reason: 'rates_missing' };
+  if (!ok(dutyPct) || !ok(vatPct) || (group.feeUsd !== null && !ok(group.feeUsd))) {
+    return { ok: false, reason: 'not_a_number' };
+  }
 
   let value = 0;
   for (const item of items) {
@@ -108,6 +130,9 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
     const measure = item.bazaBasis === 'kg' ? item.weightKg : item.quantity;
     if (measure === null || !(measure > 0)) {
       return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
+    }
+    if (!ok(item.bazaUsd) || !ok(measure)) {
+      return { ok: false, reason: 'not_a_number', itemSeq: item.seq, itemLabel: item.label };
     }
     value += item.bazaUsd * measure;
   }
@@ -184,7 +209,7 @@ export function bandFor(rows: FreightBand[], zone: string, density: number): Ban
   return { ok: true, band: hits[0]! };
 }
 
-export type FreightRefusal = 'zone_required' | 'measure_missing' | BandRefusal;
+export type FreightRefusal = 'zone_required' | 'measure_missing' | 'not_a_number' | BandRefusal;
 
 export interface FreightBreakdown {
   ok: true;
@@ -221,6 +246,9 @@ export function freightFor(
   if (kg === null || !(kg > 0) || m3 === null || !(m3 > 0)) {
     return { ok: false, reason: 'measure_missing' };
   }
+  if (!ok(kg) || !ok(m3) || (input.overrideDensity != null && !ok(input.overrideDensity))) {
+    return { ok: false, reason: 'not_a_number' };
+  }
 
   const density = kg / m3;
   const bandDensity = bandDensityOf(input.overrideDensity ?? density);
@@ -241,7 +269,7 @@ export function freightFor(
 /* Totals                                                              */
 /* ------------------------------------------------------------------ */
 
-export type TotalsRefusal = 'discount_exceeds_total';
+export type TotalsRefusal = 'discount_exceeds_total' | 'not_a_number';
 
 export interface Totals {
   ok: true;
@@ -273,6 +301,10 @@ export function totalsFor(input: {
   weightKg: number | null;
   volumeM3: number | null;
 }): TotalsResult {
+  for (const n of [input.customsUsd, input.freightUsd, input.extrasUsd, input.discountUsd]) {
+    if (!ok(n)) return { ok: false, reason: 'not_a_number' };
+  }
+
   const parts = sectionParts(input.section);
   const customsUsd = parts.customs ? round2(input.customsUsd) : 0;
   const freightUsd = parts.freight ? round2(input.freightUsd) : 0;
