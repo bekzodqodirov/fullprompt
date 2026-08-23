@@ -98,6 +98,22 @@ export const receipts = pgTable(
      * exactly the case the deal engine shouts about.
      */
     dealId: uuid('deal_id').references((): AnyPgColumn => deals.id),
+    /**
+     * The CALCULATION this cargo was priced by (phase E1) — the join that
+     * makes «hisob vs haqiqat» possible at all.
+     *
+     * At the receipt grain because that is the grain the business has: a deal
+     * carries many prixods AND many calculations, so neither parent could
+     * hold it. `auto` is a suggestion the control screen asks somebody to
+     * confirm; only a CONFIRMED link is ever measured, because a guess that
+     * silently scores a person is worse than no number.
+     */
+    calcRequestId: uuid('calc_request_id').references((): AnyPgColumn => calcRequests.id, {
+      onDelete: 'set null',
+    }),
+    calcLinkSource: text('calc_link_source'),
+    calcLinkConfirmedAt: timestamp('calc_link_confirmed_at', { withTimezone: true }),
+    calcLinkConfirmedBy: uuid('calc_link_confirmed_by').references(() => users.id),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedBy: uuid('voided_by').references(() => users.id),
     voidReason: text('void_reason'),
@@ -115,6 +131,18 @@ export const receipts = pgTable(
     index('receipts_unclaimed_idx')
       .on(t.warehouseId, t.receivedAt)
       .where(sql`${t.clientId} IS NULL AND ${t.status} = 'confirmed'`),
+    check(
+      'receipts_calc_link_source_check',
+      sql`${t.calcLinkSource} IS NULL OR ${t.calcLinkSource} IN ('auto', 'person')`,
+    ),
+    // No constraint ties the confirmation to the link, and that is measured
+    // rather than argued: `ON DELETE SET NULL` is an internal UPDATE of the
+    // FK column alone, so ANY check spanning `calc_request_id` and a sibling
+    // fails 23514 on it and aborts the delete. Every reader asks for both
+    // columns, so an orphaned stamp scores nothing.
+    index('receipts_calc_request_idx')
+      .on(t.calcRequestId)
+      .where(sql`${t.calcRequestId} IS NOT NULL`),
   ],
 );
 
@@ -2146,12 +2174,42 @@ export const calcGroups = pgTable(
     aiConfidence: text('ai_confidence'),
     /** The model's ESTIMATE. Recorded, never multiplied. */
     aiDutyPct: numeric('ai_duty_pct', { precision: 6, scale: 3 }),
+    /**
+     * The model's own words, kept as their own value (phase E1).
+     *
+     * `ai_duty_pct` alone cannot answer «did the VED change anything» — the
+     * grouping and the code are what a person most often corrects, and a diff
+     * nobody kept is not a diff. Written by `applyProposal`, read by the
+     * control screen, multiplied by nothing.
+     */
+    aiProposal: jsonb('ai_proposal'),
+    /**
+     * The warnings that stood on the screen at the moment ✅ was pressed.
+     *
+     * Not re-derivable: the dictionaries move, so today's warnings are not
+     * the ones that person confirmed over. This is the owner's «ko'rmasdan
+     * tasdiqlagan» question, recorded at the only moment it is answerable.
+     */
+    confirmedWarnings: jsonb('confirmed_warnings'),
+    /** single | bulk — «Hammasini tasdiqlash» is a different act. */
+    confirmVia: text('confirm_via'),
     confirmedBy: uuid('confirmed_by').references(() => users.id),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     note: text('note'),
     createdAt: createdAt(),
   },
   (t) => [
+    check(
+      'calc_groups_confirm_via_check',
+      sql`${t.confirmVia} IS NULL OR ${t.confirmVia} IN ('single', 'bulk')`,
+    ),
+    // A ✅ must not outlive the numbers it was about. TWO writers clear it —
+    // `unconfirm()` and the clear `setGroupRates` inlines — and this CHECK is
+    // what makes forgetting the second one loud instead of silent.
+    check(
+      'calc_groups_confirm_pair_check',
+      sql`${t.confirmVia} IS NULL OR ${t.confirmedAt} IS NOT NULL`,
+    ),
     check(
       'calc_groups_rate_source_check',
       sql`${t.rateSource} IS NULL OR ${t.rateSource} IN ('dictionary', 'typed')`,
@@ -2360,6 +2418,17 @@ export const calcVersions = pgTable(
     /** How much of this was still the model's when it was sealed (phase E). */
     aiGroupsSealed: integer('ai_groups_sealed').notNull().default(0),
     lowConfidenceSealed: integer('low_confidence_sealed').notNull().default(0),
+    /**
+     * Phase E1's three counters, carried to the seal so the owner's list
+     * survives the version. The `breakdown` snapshot cannot answer these
+     * after the dictionaries have moved underneath it, which is the whole
+     * reason they are columns and not a query.
+     */
+    warnedGroups: integer('warned_groups').notNull().default(0),
+    /** Confirmed with LOW confidence, unedited, and no dictionary rate. */
+    aiBlindGroups: integer('ai_blind_groups').notNull().default(0),
+    /** The model's own duty rate survived to the seal. */
+    aiRateTakenGroups: integer('ai_rate_taken_groups').notNull().default(0),
     breakdown: jsonb('breakdown').notNull().default({}),
   },
   (t) => [
@@ -2368,6 +2437,10 @@ export const calcVersions = pgTable(
       sql`${t.section} IN ('yolkira', 'rastamojka', 'podklyuch')`,
     ),
     check('calc_versions_total_check', sql`${t.totalUsd} >= 0`),
+    check(
+      'calc_versions_e_counts_check',
+      sql`${t.warnedGroups} >= 0 AND ${t.aiBlindGroups} >= 0 AND ${t.aiRateTakenGroups} >= 0`,
+    ),
     check('calc_versions_discount_check', sql`${t.discountUsd} >= 0`),
     uniqueIndex('calc_versions_request_no_unique').on(t.requestId, t.versionNo),
     index('calc_versions_sealed_idx').on(t.sealedAt),

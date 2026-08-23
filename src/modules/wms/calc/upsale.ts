@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
+import { currentVersionSql, notSupersededSql } from './version-set';
 
 /**
  * The upsale (docs/VED.md law 4) — what a seller earns on a job.
@@ -130,13 +131,8 @@ export function payableOffersSql(): SQL {
         FROM calc_offers   o
         JOIN calc_versions v ON v.id = o.version_id
         JOIN calc_requests r ON r.id = v.request_id
-       WHERE v.version_no = (
-               SELECT max(v2.version_no) FROM calc_versions v2
-                WHERE v2.request_id = v.request_id
-             )
-         AND NOT EXISTS (
-               SELECT 1 FROM calc_requests r2 WHERE r2.supersedes_request_id = r.id
-             )
+       WHERE ${currentVersionSql()}
+         AND ${notSupersededSql()}
     )
     SELECT ranked.*,
            round(ranked.client_price_usd - ranked.total_usd, 2) AS upsale_usd

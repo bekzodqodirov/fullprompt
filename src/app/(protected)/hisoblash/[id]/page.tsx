@@ -6,6 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { attachments, crmActivities } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { calcRequestDetail } from '@/modules/wms/calc/service';
+import { linkedReceipts } from '@/modules/wms/calc/link';
 import { FIELD_LABELS, SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { PageHeader, Section } from '@/components/ui/page';
@@ -67,8 +68,11 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
   const canRecalc = actor.permissions.has('admin.settings.manage');
 
   let workspace: Awaited<ReturnType<typeof loadWorkspace>> = null;
+  // Phase E1: the cargo this quote turned out to be about. On the same catch
+  // as the workspace — 0089 is this release's migration (#472).
+  let linked: Awaited<ReturnType<typeof linkedReceipts>> = [];
   try {
-    workspace = await loadWorkspace(id);
+    [workspace, linked] = await Promise.all([loadWorkspace(id), linkedReceipts(id)]);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, id }, '[calc] workspace: server behind');
@@ -191,6 +195,35 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
             </section>
 
             {/* Everything the seller submitted, unabridged and unsummarised. */}
+            {/* Phase E1: what the quote turned out to be about. The ✓ is the
+                whole point — an unconfirmed guess is not measured, so a row
+                without one is a row asking somebody to look. */}
+            <Section title={t('linkedReceipts')}>
+              {linked.length === 0 ? (
+                <p className="text-sm text-ink-500" data-testid="calc-linked-none">
+                  {t('linkNoneOnCard')}
+                </p>
+              ) : (
+                <ul className="space-y-1" data-testid="calc-linked">
+                  {linked.map((r) => (
+                    <li key={r.receiptId} className="flex flex-wrap items-baseline gap-2 text-sm">
+                      <Link href={`/receipts/${r.receiptId}`} className="font-mono text-brand-700">
+                        {r.number ?? '—'}
+                      </Link>
+                      <span className="text-2xs text-ink-500">
+                        {r.volumeM3.toFixed(2)} m³ · {r.weightKg.toFixed(0)} kg
+                      </span>
+                      {r.linkConfirmed ? (
+                        <span className="chip chip-good">✓</span>
+                      ) : (
+                        <span className="chip chip-warn">?</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+
             <Section title={t('materials')}>
               <div className="card !p-3" data-testid="calc-materials">
                 {note?.note ? (

@@ -134,8 +134,71 @@ pnpm build && pnpm e2e  # 44 e2e
 
 ## State — 2026-08-23
 
-**VED phases A, B, C and D are on this branch** (`docs/VED.md`; migrations
-**0085**-**0088** — the ledger must reach **89**).
+**VED phases A-E1 are on this branch** (`docs/VED.md`; migrations
+**0085**-**0089** — the ledger must reach **90**). **The module is done bar
+E2, which is gated on data that does not exist yet.**
+
+**Phase E1 — hisob vs haqiqat** (#789-800). **The headline is that the
+design's own money comparison could not ship**: `calc_versions.freight_usd`
+is the tariff's LIST price and `cost_allocations.amount_usd` is what the road
+cost, so their difference is MARGIN — measured on his own tariff, a 30 m³ /
+200 kg/m³ cn load quotes $4,800 against roughly $2,700 of truck, i.e. **+78 %
+for ever on a calculation executed exactly as quoted**, tripping every
+threshold on every correct calculation. So `moneyPct` is **CUSTOMS ONLY**
+(duty + VAT + fee is money payable to the STATE and the accountant types the
+same payment into the grid — two measurements of ONE fact, so a gap is an
+error and not a margin), and that is also where `ai_duty_pct` lands, which
+closes the owner's loop: the model proposes the duty, the duty drives the
+customs figure, and this is where confirming it blind turns into money.
+Freight gets a deterministic BAND CHECK at the arrived density instead —
+«quoted band 151-200 at $160/m³, cargo arrived at 96 kg/m³» — which is the
+decision the VED actually makes. **The join did not exist**: `calc_requests`
+names a card, `receipts` names a deal, and a deal carries many of both (0085
+dropped «one open request per card», `dealFor` sends every repeat client to
+their newest OPEN deal, no seeded stage carries a cargo trigger) — so
+`receipts.calc_request_id` (0089) at the RECEIPT grain, ONE writer
+(`calc/link.ts` `stampCalcLink`, called from `createReceipt` — which writes
+`deal_id` on its own INSERT and never goes through `linkReceipt` — plus
+`linkReceipt` and `sealCalculation`), guarded by «exactly one sealed request»
+AND the quote's own `valid_until` window, and **an `auto` link is a
+SUGGESTION that scores nobody**: `measurableLinkSql` demands a person's
+confirmation, because a guess that silently scores a person is worse than no
+number. A correction ADOPTS its predecessor's cargo at SEAL time (not at
+recalc — `recalcFromSealed` inserts a request with NO version, so an
+abandoned correction would strand the cargo on a priceless one), and the
+measurement's «not superseded» clause is deliberately NOT
+`payableOffersSql`'s: money must stop paying on a promise a correction
+replaced, a measurement must not drop a shipment that was priced and arrived.
+A ✅ now records what stood on the screen (`confirmed_warnings`/`confirm_via`)
+— **two writers clear it**, `unconfirm()` and the clear `setGroupRates`
+INLINES, and `pullBazasFromDictionary` had none at all. A warning needs the
+`dictionaryRates !== null` half or the first list is 100 % of the company
+(the dictionaries ship EMPTY, so `rate_source='typed'` is true of every group
+there is); `lowConfidenceSealed` was counting the ORPHAN group `mergeProposals`
+mints with `aiProposed:false`. Six refusals — ⚠ and a reason, never a $0 —
+and `no_actual_cost` NAMES the cost types it found, because the mapping
+(`calc_customs_cost_type_codes`) is DATA and a type he mints gets a `t_…`
+code matched by nothing. Two clocks: sealed-at for coverage/warnings,
+arrived-at + `calc_actual_settle_days` for the arithmetic, or the table is
+empty until the 18th of every month. `/hisoblash/nazorat` behind a THIRD
+door (`calcControlScopeFor`: `finance.reports`→all, `ved.docs`→own,
+seller→none — `upsaleScopeFor` would lock out the measured person AND admit
+every seller to a pure cost breakdown), reached from `/hisoblash/narxlar`,
+the one calc screen the accountant can open; all four roles opened in a real
+browser. **`ON DELETE SET NULL` cannot coexist with a CHECK spanning the FK
+column** — measured, and I wrote that bug TWICE before its own test caught
+the second one (#794). Found by LOOKING at the screen, not by a test: the
+completeness gate used `compareQuote`'s worst-of-both, so cargo that arrived
+in full but lighter than quoted read «not all arrived» and hid the exact
+error the round exists to show (#798). Also fixed: `suggestTnved`'s Anthropic
+client had no timeout (round 101's defect, in the file that never learned
+it). **17 red proofs, all by string edit**; the harness itself corrupted two
+files because an empty replacement is not reversible (#800). **1967
+unit/integration + 177 e2e** green on a fresh gsr_ci in CI's order;
+screenshots at 360×800 and 1280×900, document width equal to the viewport at
+both. **E2 waits for ≥20 sealed versions with confirmed links and a non-empty
+price book**; per-TNVED comparison and the nightly AI pass are CUT and owed
+to him as an explicit «yo'q».
 
 Phase B is the workspace that replaces the Excel. A price on the screen is a
 DRAFT (recomputed from the dictionaries every render); a price in
@@ -731,8 +794,10 @@ just-departed truck stands ON its origin warehouse and takes the tap
 (deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
 `elementFromPoint` says is free instead of `.first()`.
 
-Latest migration on this branch: **0088** (`calc_upsale` — the approval and
-the payout on `calc_offers`, VED phase D; ledger must reach **89**);
+Latest migration on this branch: **0089** (`calc_actuals` — the calc↔prixod
+join, the confirm record and the seal's three counters, VED phase E1; ledger
+must reach **90**);
+0088 (`calc_upsale` — the approval and the payout on `calc_offers`, phase D);
 0087 (`calc_price_book` — the fourth dictionary and the offer ledger);
 0086 (`calc_pricing` — the workspace, three dictionaries and the seal);
 0085 (`calc_requests` — the VED queue). Before them:

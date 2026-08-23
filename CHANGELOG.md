@@ -1,5 +1,81 @@
 # CHANGELOG
 
+## VED moduli, E bosqichi (1-qism): hisob va haqiqat — 2026-08-23
+
+VED odam hisoblab bergan raqam bilan yukning haqiqiy narxini solishtiradigan
+ekran. Bu — modulning oxirgi bosqichi.
+
+**Avval ikkita ochiq gap, chunki ular nima qurilganini o'zgartirdi:**
+
+- **Faqat RASTAMOJKA solishtiriladi, yo'lkira emas.** Yo'lkirada biz o'z
+  narxlarimizni qo'yamiz (sizning tarifingiz), mashina esa bizga boshqa
+  pulga tushadi — orasidagi farq bu **bizning foydamiz**, VED xodimining
+  xatosi emas. O'lchab ko'rdim: 30 kub, 200 kg/m³ yuk sizning tarifingiz
+  bo'yicha $4,800 turadi, mashina esa taxminan $2,700 — ya'ni **+78 %,
+  doimo**, hisob mutlaqo to'g'ri qilingan holda ham. Agar buni «xato» deb
+  ko'rsatsak, har bir to'g'ri hisob ham qizil bo'lib chiqadi va ro'yxatni
+  ikkinchi haftadayoq hech kim o'qimaydi. Rastamojka boshqacha: u davlatga
+  to'lanadigan pul, buxgalter uni xarajatlar jadvaliga o'zi kiritadi — ikkala
+  tomon bir xil narsani o'lchaydi, demak farq haqiqatan ham xato.
+  **Va aynan shu yerda AI ning taklifi pulga aylanadi** (AI faqat poshlina
+  foizini taklif qiladi, u esa rastamojkani hisoblaydi) — sizning savolingiz
+  shu bilan yopiladi.
+- **Yo'lkira bo'yicha tarif BANDI tekshiriladi.** Yuk kelgandagi haqiqiy
+  zichlik bo'yicha tarif qayta ochiladi va ekran shunday deydi: «hisobda
+  151-200 bandi, $160/m³ — haqiqatda 96 kg/m³, ya'ni 1-100 bandi». Bu VED
+  odam haqiqatan qabul qiladigan qaror, va uni tekshirib bo'ladi.
+
+**Yangi ekran: Hisoblash → «Hisob va haqiqat»** (`/hisoblash/nazorat`).
+To'rt bo'lim, va ular shu tartibda:
+
+1. **Qamrov.** «Muhrlangan: 12 · prixodi bog'langani: 5». Birinchi turadi,
+   chunki hech narsa bog'lanmagan bo'lsa pastdagi hamma raqam bo'sh joy
+   haqida — va buni yashirgan ekran «xatomiz yo'q» deb o'qiladi, aslida
+   «ma'lumotimiz yo'q» degani.
+2. **Prixodni tasdiqlang.** Sistema taxmin qiladi, **odam tasdiqlaydi**.
+   Bitta bitimda bitta hisob bo'lsa — o'zi taklif qiladi; ikkita bo'lsa —
+   indamaydi, chunki mashina tanlay olmaydi. **Tasdiqlanmagan taxmin hech
+   kimni baholamaydi.** Prixod kartasida ham qo'lda tanlash tugmasi bor.
+3. **E'tibor talab qiladi.** Kim nimani «ko'rmasdan» tasdiqlagan: stavka
+   lug'atdan emas, AI ishonchsiz edi, AI stavkasi narxga ketdi. Har bir
+   qatorda **VED odamning o'z izohi** turadi (u allaqachon yozilardi, lekin
+   hech qayerda ko'rinmasdi) va «Lug'atga qo'shish» havolasi — ro'yxat
+   ishlangani sari bo'shab boradi.
+4. **Rastamojka: hisob va haqiqat.** «Hisobda $556.80 · Haqiqatda $657.02
+   +18%», yonida tarif bandi tekshiruvi.
+
+**Raqam o'rniga hech qachon $0 chiqmaydi.** Solishtirib bo'lmasa — ⚠ va
+sababi: mijoz o'zi rastamojka qilgan · xarajat hali kiritilmagan · kurs yo'q ·
+xarajat qutilarga taqsimlanmagan · yukning hammasi kelmagan · bitta hisobga
+juda ko'p yuk bog'langan. Kerakli turdagi xarajat topilmasa — **qanday
+xarajatlar topilganini yozib beradi**, ya'ni sozlash kerakligi ko'rinib
+turadi.
+
+**Ikkita soat.** Qamrov va ogohlantirishlar — hisob sanasi bo'yicha (shu oy).
+Solishtirish — **yuk kelgan sana** bo'yicha, kelgandan 7 kun keyin (bu raqam
+sozlanadi). Sababi: yo'l eng kamida 10 kun, odatda 17 kun, ustiga narx bir oy
+turishi mumkin — bitta soat bilan jadval har oyning 18-sanasigacha bo'sh
+bo'lardi.
+
+**Kim ko'radi:** siz, buxgalter — hammasini; VED xodimi — **o'zinikini**;
+sotuvchi — umuman ko'rmaydi (xarajat tannarxi sotuvchining ekrani emas).
+To'rtala rolni brauzerda ochib tekshirdim.
+
+**Hozircha Telegramga xabar yubormaymiz.** Lug'atlar bo'sh ekan, har kuni
+hamma hisob «shubhali» bo'lib chiqadi — bunday xabarni bir oydan keyin hech
+kim o'qimaydi. Ma'lumot to'planganda yoqamiz (2-qism).
+
+**Ochiq aytaman, qurilmadi:** har bir tovar (TNVED kod) bo'yicha alohida
+solishtirish. Prixodda tovar **nomi** yozilgan, hisobda **kod** — ular
+bir-biriga ulanmaydi va nom normallashmaydi («Ayollar kurtkasi» / «куртка
+жен.» — bir narsa, uch xil yozuv). Butun yuk bo'yicha solishtiramiz.
+
+**Yo'l-yo'lakay tuzatildi:** TNVED taklif qilish uchun AI chaqiruvida
+muddat yo'q edi — osilib qolsa yagona jarayonni yarim soat band qilardi
+(101-raundning kasali, shu faylga yetib bormagan).
+
+**Migratsiya 0089** — serverda ro'yxat **90** ga yetishi kerak.
+
 ## VED moduli, D bosqichi: sotuvchi ulushi (upsale) — 2026-08-23
 
 Sotuvchi mijozga tannarxdan qimmatroq sotsa — ustidagi farq uning ulushi.

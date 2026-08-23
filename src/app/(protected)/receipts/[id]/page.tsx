@@ -23,6 +23,9 @@ import { VoidReceiptForm } from './void-form';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
 import { DealLink } from './deal-link';
+import { CalcLink } from './calc-link';
+import { calcLinkOptions } from '@/modules/wms/calc/link';
+import { calcControlScopeFor } from '@/modules/wms/calc/control-scope';
 import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
 import { canWriteDeal, openDealsForClient } from '@/modules/wms/deals/service';
@@ -127,6 +130,11 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   const dealOptions = canLinkDeal ? await openDealsForClient(receipt.clientId!) : [];
   // A deal that has since been won or lost is not in the open list, and
   // hiding it would hide the very mistake being corrected.
+  // Phase E1: which CALCULATION priced this cargo. A separate door from the
+  // deal picker above it and a separate audience — the deal is a sales fact,
+  // the calculation is what the control screen measures.
+  const mayLinkCalc = calcControlScopeFor(actor) !== 'none';
+  const calcOptions = mayLinkCalc ? await calcLinkOptions(receipt.dealId) : [];
   const dealChoices =
     linkedDeal && !dealOptions.some((d) => d.id === linkedDeal.id)
       ? [{ id: linkedDeal.id, code: linkedDeal.code, title: linkedDeal.title }, ...dealOptions]
@@ -193,6 +201,21 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           receiptId={id}
           current={linkedDeal ? { id: linkedDeal.id, code: linkedDeal.code } : null}
           options={dealChoices}
+        />
+      )}
+
+      {mayLinkCalc && calcOptions.length > 0 && (
+        <CalcLink
+          receiptId={id}
+          currentId={receipt.calcRequestId}
+          confirmed={receipt.calcLinkConfirmedAt !== null}
+          options={calcOptions.map((o) => ({
+            requestId: o.requestId,
+            section: o.section,
+            sealedAt: o.sealedAt.toISOString().slice(0, 10),
+            volumeM3: o.volumeM3,
+            weightKg: o.weightKg,
+          }))}
         />
       )}
 

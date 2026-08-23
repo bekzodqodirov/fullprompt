@@ -65,6 +65,33 @@ export const SETTING_DEFAULTS = {
    */
   calc_review_notified_month: '',
   /**
+   * How long after the cargo LANDS the rastamojka figure counts as final
+   * (VED phase E1).
+   *
+   * The clock starts at arrival and not at the seal, because the road is a
+   * ten-day floor and a quote may stand for a month before the cargo even
+   * ships — measured from the seal, every accuracy table would be empty until
+   * about the 18th of any month. Before this many days, a calculation with no
+   * cost typed against it reads «xarajat kiritilmagan» and is not scored.
+   */
+  calc_actual_settle_days: 7,
+  /**
+   * How far the rastamojka may differ from the quote before it is worth
+   * looking at (VED phase E1). Its own number and not the deal threshold:
+   * that one is about CARGO measuring differently, this one about money.
+   */
+  calc_customs_deviation_pct: 15,
+  /**
+   * Which cost types ARE «rastamojka», as a JSON list of codes.
+   *
+   * Data and not a constant, because the owner mints his own cost types and a
+   * new one gets a `t_…` code that is matched by nothing. When a real customs
+   * bill lands under a type that is not on this list the screen refuses the
+   * comparison and NAMES the types it found, so the mapping is discoverable
+   * rather than silently wrong.
+   */
+  calc_customs_cost_type_codes: '["customs"]',
+  /**
    * The expense category an upsale payout is written into (VED phase D).
    *
    * MANDATORY and deliberately not overridable at the moment of paying:

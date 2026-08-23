@@ -102,7 +102,11 @@ export async function suggestTnved(input: {
   photo?: { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null;
 }): Promise<TnvedSuggestion> {
   if (!process.env.ANTHROPIC_API_KEY) throw new TnvedError('ai_not_configured');
-  const client = new Anthropic();
+  // The same deadline `proposeGoodsGrouping` twenty lines below already
+  // carries, and for the same reason: the SDK's default is no timeout and two
+  // retries, so a hung call held a slot in the one Node process for half an
+  // hour — round 101's availability defect, in the file that never learned it.
+  const client = new Anthropic({ timeout: 60_000, maxRetries: 1 });
 
   const content: Anthropic.ContentBlockParam[] = [];
   if (input.photo) {
@@ -122,7 +126,7 @@ export async function suggestTnved(input: {
 
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5',
       max_tokens: 2048,
       system: SYSTEM,
       output_config: {

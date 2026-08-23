@@ -8,6 +8,7 @@ import {
   calcRequests,
   calcVersions,
   costTypes,
+  receipts,
   telegramLinks,
   deals,
   leads,
@@ -43,6 +44,13 @@ import {
   type PricedItem,
 } from './pricing';
 import { CalcError } from './service';
+import {
+  sealCounters,
+  unchangedFromProposal,
+  warningsForGroup,
+  type CalcWarningKind,
+  type ProposalSnapshot,
+} from './warnings';
 
 /**
  * The calculation workspace (docs/VED.md phase B) — the screen that replaces
@@ -105,6 +113,11 @@ export interface WorkspaceGroup {
   aiDutyPct: number | null;
   confirmedAt: Date | null;
   confirmedByName: string | null;
+  /** How it was confirmed, and what stood on the screen when it was (phase E). */
+  confirmVia: 'single' | 'bulk' | null;
+  confirmedWarnings: CalcWarningKind[] | null;
+  /** What needs a second look RIGHT NOW — recomputed every render. */
+  warnings: CalcWarningKind[];
   note: string | null;
   items: WorkspaceItem[];
   quantity: number | null;
@@ -266,6 +279,22 @@ export async function loadWorkspace(
       aiDutyPct: toNum(g.aiDutyPct),
       confirmedAt: g.confirmedAt,
       confirmedByName: g.confirmedBy ? (confirmers.get(g.confirmedBy) ?? null) : null,
+      confirmVia: (g.confirmVia as 'single' | 'bulk' | null) ?? null,
+      confirmedWarnings: (g.confirmedWarnings as CalcWarningKind[] | null) ?? null,
+      warnings: warningsForGroup({
+        dictionaryRates: dictRates
+          ? { dutyPct: dictRates.dutyPct, vatPct: dictRates.vatPct, feeUsd: dictRates.feeUsd }
+          : null,
+        rateSource: (g.rateSource as 'dictionary' | 'typed' | null) ?? null,
+        dutyPct: toNum(g.dutyPct),
+        aiProposed: g.aiProposed,
+        aiConfidence: (g.aiConfidence as 'high' | 'medium' | 'low' | null) ?? null,
+        aiDutyPct: toNum(g.aiDutyPct),
+        items: mine.map((i) => ({
+          hasDictionaryBaza: i.dictionaryBaza !== null,
+          bazaSource: i.bazaSource,
+        })),
+      }),
       note: g.note,
       items: mine,
       quantity: qty.quantity,
@@ -559,8 +588,13 @@ export async function setGroupRates(
       dutyFree: input.dutyFree,
       vatFree: input.vatFree,
       note: input.note ?? group.note,
+      // The SECOND writer of the confirmation clear, and the one a fix aimed
+      // at `unconfirm()` alone would miss — all four columns, per the pair
+      // CHECK 0089 added.
       confirmedBy: null,
       confirmedAt: null,
+      confirmVia: null,
+      confirmedWarnings: null,
     })
     .where(eq(calcGroups.id, groupId));
 
@@ -658,6 +692,10 @@ export async function pullBazasFromDictionary(requestId: string, ctx: AuditConte
       .update(calcRequestItems)
       .set({ bazaUsd: hit.bazaUsd.toFixed(4), bazaBasis: hit.basis, bazaSource: 'dictionary' })
       .where(eq(calcRequestItems.id, item.id));
+    // The same rule `setItemBaza` applies one item at a time. A baza is one
+    // of the numbers the ✅ was about, and filling a blank one changes the
+    // group's customs figure exactly as retyping one does.
+    if (item.groupId) await unconfirm(item.groupId);
     filled += 1;
   }
   if (filled > 0) {
@@ -675,20 +713,47 @@ export async function confirmGroup(groupId: string, ctx: AuditContext) {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
   await assertOpen(group.requestId);
+  // What stood on the screen at this moment, recorded now because it cannot
+  // be recovered later: the dictionaries move, so re-deriving the warnings a
+  // month from now asks a different question about a different world.
+  const warnings = await warningsNow(group.requestId);
   await db
     .update(calcGroups)
-    .set({ confirmedBy: ctx.actorId ?? null, confirmedAt: new Date() })
+    .set({
+      confirmedBy: ctx.actorId ?? null,
+      confirmedAt: new Date(),
+      confirmVia: 'single',
+      confirmedWarnings: warnings.get(groupId) ?? [],
+    })
     .where(eq(calcGroups.id, groupId));
   await writeAudit(db, ctx, { entityType: 'calc_group', entityId: groupId, action: 'update', after: { confirmed: true } });
 }
 
 export async function confirmAllGroups(requestId: string, ctx: AuditContext): Promise<number> {
   await assertOpen(requestId);
-  const rows = await db
-    .update(calcGroups)
-    .set({ confirmedBy: ctx.actorId ?? null, confirmedAt: new Date() })
-    .where(and(eq(calcGroups.requestId, requestId), isNull(calcGroups.confirmedAt)))
-    .returning({ id: calcGroups.id });
+  const warnings = await warningsNow(requestId);
+  const pending = await db
+    .select({ id: calcGroups.id })
+    .from(calcGroups)
+    .where(and(eq(calcGroups.requestId, requestId), isNull(calcGroups.confirmedAt)));
+  const now = new Date();
+  const rows: { id: string }[] = [];
+  for (const group of pending) {
+    // Per group, because the list each one was confirmed over is its own —
+    // and 'bulk' is a different act from 'single', which is exactly what the
+    // owner's «ko'rmasdan tasdiqlagan» question is about.
+    const [row] = await db
+      .update(calcGroups)
+      .set({
+        confirmedBy: ctx.actorId ?? null,
+        confirmedAt: now,
+        confirmVia: 'bulk',
+        confirmedWarnings: warnings.get(group.id) ?? [],
+      })
+      .where(and(eq(calcGroups.id, group.id), isNull(calcGroups.confirmedAt)))
+      .returning({ id: calcGroups.id });
+    if (row) rows.push(row);
+  }
   if (rows.length > 0) {
     await writeAudit(db, ctx, {
       entityType: 'calc_request',
@@ -782,6 +847,19 @@ export async function applyProposal(requestId: string, drafts: DraftGroup[], ctx
           // Recorded for phase E's «confirmed over a warning» list. The
           // arithmetic in pricing.ts cannot name this column.
           aiDutyPct: draft.aiDutyPct === null ? null : draft.aiDutyPct.toFixed(3),
+          // The model's own words, kept whole (phase E1). A code alone cannot
+          // answer «did the VED change anything» — moving one carton between
+          // two groups is the commonest correction there is and touches no
+          // rate at all, so the MEMBERSHIP has to be in the snapshot. The key
+          // is spelled `aiDutyPct` deliberately: `tests/unit/ai-advisory.test`
+          // asserts this function never mentions a bare `dutyPct:`, which is
+          // law 1's third fence — the model must not be able to reach a
+          // number the arithmetic reads.
+          aiProposal: {
+            tnvedCode: draft.tnvedCode,
+            aiDutyPct: draft.aiDutyPct,
+            itemSeqs: draft.itemSeqs,
+          },
           note: draft.note,
         })
         .returning({ id: calcGroups.id });
@@ -898,6 +976,12 @@ export async function sealCalc(
   );
   const validUntil = new Date(Date.now() + validDays * 86_400_000);
 
+  const request = await db.query.calcRequests.findFirst({
+    where: eq(calcRequests.id, requestId),
+    columns: { supersedesRequestId: true },
+  });
+  const superseded = request?.supersedesRequestId ?? null;
+
   const breakdown = {
     groups: workspace.groups.map((g) => ({
       seq: g.seq,
@@ -938,7 +1022,36 @@ export async function sealCalc(
   };
 
   const aiGroupsSealed = workspace.groups.filter((g) => g.aiProposed).length;
-  const lowConfidenceSealed = workspace.groups.filter((g) => g.aiConfidence === 'low').length;
+  // `aiProposed` and not `aiConfidence` alone: `mergeProposals` mints the
+  // orphan group — the cargo the model did not place — with confidence 'low'
+  // and `aiProposed: false`, so counting confidence by itself inflates «how
+  // much of this was still the model's» by a group nobody's model touched.
+  const lowConfidenceSealed = workspace.groups.filter(
+    (g) => g.aiProposed && g.aiConfidence === 'low',
+  ).length;
+
+  // Phase E1's three counters. A sealed version is immutable and its
+  // `breakdown` is a snapshot of numbers — these three are questions about
+  // the DICTIONARIES, which will have moved by the time anybody reads them.
+  const proposals = await db
+    .select({ id: calcGroups.id, aiProposal: calcGroups.aiProposal })
+    .from(calcGroups)
+    .where(eq(calcGroups.requestId, requestId));
+  const proposalById = new Map(proposals.map((p) => [p.id, (p.aiProposal as ProposalSnapshot | null) ?? null]));
+  const counters = sealCounters(
+    workspace.groups.map((g) => ({
+      warnings: g.warnings,
+      // Blind = the model proposed it, said so with low confidence, nothing
+      // was edited, and the dictionary could not have corrected it.
+      blind:
+        g.warnings.includes('ai_low_confidence') &&
+        unchangedFromProposal(proposalById.get(g.id) ?? null, {
+          tnvedCode: g.tnvedCode,
+          dutyPct: g.dutyPct,
+          itemSeqs: g.items.map((i) => i.seq),
+        }),
+    })),
+  );
 
   const result = await db.transaction(async (tx) => {
     const closed = await tx
@@ -986,8 +1099,24 @@ export async function sealCalc(
       discountReason: input.discountReason,
       aiGroupsSealed,
       lowConfidenceSealed,
+      warnedGroups: counters.warnedGroups,
+      aiBlindGroups: counters.aiBlindGroups,
+      aiRateTakenGroups: counters.aiRateTakenGroups,
       breakdown,
     });
+
+    // A correction ADOPTS the cargo the request it supersedes was measuring
+    // (phase E1). Re-pointing at `recalcFromSealed` time was refused: that
+    // function inserts a request with no version at all, so the cargo would
+    // hang off a PRICELESS request — permanently, if the correction is then
+    // abandoned through `endRequest('returned')`. Here there is a price by
+    // construction, because this statement runs after the version's INSERT.
+    if (superseded) {
+      await tx
+        .update(receipts)
+        .set({ calcRequestId: requestId })
+        .where(eq(receipts.calcRequestId, superseded));
+    }
 
     // Law 2: the price lands on the card LOCKED. Writing it here is what
     // makes «the seller cannot change it» a fact about the data rather than
@@ -1265,12 +1394,28 @@ async function namesOf(ids: string[]): Promise<Map<string, string>> {
   return new Map(rows.map((r) => [r.id, r.fullName]));
 }
 
-/** A group whose numbers moved is a group nobody has confirmed. */
+/**
+ * A group whose numbers moved is a group nobody has confirmed.
+ *
+ * All FOUR columns, or `calc_groups_confirm_pair_check` raises 23514 on the
+ * next press — the ✅ record must not outlive the ✅ itself.
+ */
 async function unconfirm(groupId: string): Promise<void> {
   await db
     .update(calcGroups)
-    .set({ confirmedBy: null, confirmedAt: null })
+    .set({ confirmedBy: null, confirmedAt: null, confirmVia: null, confirmedWarnings: null })
     .where(eq(calcGroups.id, groupId));
+}
+
+/**
+ * Today's warnings for every group of a request, keyed by group id.
+ *
+ * Reads the workspace rather than restating the query, so the list recorded
+ * at confirm time is the same list the screen was showing (#513).
+ */
+async function warningsNow(requestId: string): Promise<Map<string, CalcWarningKind[]>> {
+  const w = await loadWorkspace(requestId);
+  return new Map((w?.groups ?? []).map((g) => [g.id, g.warnings]));
 }
 
 const normalise = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');

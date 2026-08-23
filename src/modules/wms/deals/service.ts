@@ -22,6 +22,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
+import { stampCalcLink } from '../calc/link';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
 import { orderForMove, topOfColumn, type BoardTable } from '../crm/board-place';
@@ -420,7 +421,26 @@ export async function linkReceipt(
     }
   }
   await db.transaction(async (tx) => {
-    await tx.update(receipts).set({ dealId }).where(eq(receipts.id, receiptId));
+    await tx
+      .update(receipts)
+      .set(
+        dealId
+          ? { dealId }
+          : // Detaching takes the calculation link with it. The link's whole
+            // meaning is «this cargo was priced by that quote», and a quote
+            // reaches cargo only through the deal — so a link left standing
+            // on a detached prixod would go on measuring a job it is no
+            // longer part of.
+            {
+              dealId: null,
+              calcRequestId: null,
+              calcLinkSource: null,
+              calcLinkConfirmedAt: null,
+              calcLinkConfirmedBy: null,
+            },
+      )
+      .where(eq(receipts.id, receiptId));
+    if (dealId) await stampCalcLink(tx, receiptId, dealId);
     await writeAudit(tx, ctx, {
       entityType: 'receipt',
       entityId: receiptId,

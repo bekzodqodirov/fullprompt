@@ -68,6 +68,20 @@ export default async function PriceHistoryPage({
         icon="report"
         title={t('historyTitle')}
         back={{ href: '/hisoblash', label: t('queueTitle') }}
+        actions={
+          // The accountant's door to phase E1: they cannot open /hisoblash at
+          // all (it gates on `ved.docs`), and this page is the one screen in
+          // the module their grants already reach.
+          scope === 'all' || actor.permissions.has('ved.docs') ? (
+            <Link
+              href="/hisoblash/nazorat"
+              className="btn-secondary"
+              data-testid="calc-control-link"
+            >
+              {t('controlTitle')}
+            </Link>
+          ) : null
+        }
       />
 
       {/* A plain GET form: the code is in the address bar, so a found answer

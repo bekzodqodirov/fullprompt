@@ -192,11 +192,13 @@ future hole will be a visible refusal rather than a quietly cheaper invoice.
    an "confirmed-over-warning" list.
 2. **After sending**: AI re-reads confirmed calcs (price-book deviation,
    history deviation) → suspicious list to the owner, before any batch.
-3. **At batch arrival**: automatic calc-vs-actual comparison — per request,
-   per group, per VED worker; monthly accuracy report («Aziz: 23 calcs,
-   2 % deviation; Karim: 18, 11 %»).
-   Plus: AI draft vs VED-confirmed stored separately, so "blind confirm"
-   is distinguishable from the VED's own error.
+3. **At batch arrival**: automatic calc-vs-actual comparison — per request.
+   **Per GROUP is impossible and was cut** (a group is a TNVED code, a
+   receipt lot is a product name; nothing joins them). Per VED worker and the
+   monthly accuracy report wait for E2's precondition: with one VED person,
+   «Aziz: 23, 2 %» is a comparison table with one row.
+   Plus: AI draft vs VED-confirmed stored separately (`ai_proposal`), so
+   "blind confirm" is distinguishable from the VED's own error.
 
 ## Build phases (each ships alone, owner reviews live between phases)
 
@@ -218,8 +220,34 @@ future hole will be a visible refusal rather than a quietly cheaper invoice.
   card would be refused for ever. The payout is an `expenses` row in a
   mandatory dedicated category with a server-derived amount. `/upsale` in two
   shapes. Decisions #778-787.
-- **E — Fact and AI control**: calc-vs-actual on batch close, accuracy
-  report, warning ledger, suspicious-calcs list.
+- **E1 — Fact control**: **SHIPPED 2026-08-23** (migration 0089). The
+  comparison is **CUSTOMS ONLY** — `freight_usd` is our own list price and
+  `cost_allocations.amount_usd` is what the road cost, so their difference is
+  MARGIN and would have flagged every correct calculation for ever (measured:
+  +78 % permanently on a 200 kg/m³ cn load). Freight gets a deterministic
+  BAND CHECK at the arrived density instead. The join is new
+  (`receipts.calc_request_id`), lives at the RECEIPT grain because a deal
+  carries many of both, has ONE writer (`stampCalcLink`, called from
+  `createReceipt`, `linkReceipt` and `sealCalculation`), and an `auto` link is
+  a SUGGESTION that never scores anybody until a person confirms it. A ✅ now
+  records what stood on the screen (`confirmed_warnings`, `confirm_via`) and
+  the seal carries three counters away. Six refusals, ⚠ and a reason, never a
+  $0. Two clocks: sealed-at for coverage and warnings, arrived-at + a settle
+  window for the arithmetic. `/hisoblash/nazorat`, gated by its own
+  `calcControlScopeFor` (owner/accountant = all, VED = own, seller = none).
+  Decisions #789-800.
+- **E2 — AI control**: the history-dependent suspicious rules, the per-worker
+  ranking, the workspace sidebar's actuals column and the Telegram digest.
+  **PRECONDITION, stated numerically**: ≥20 sealed versions with confirmed
+  links and settled cargo, and a non-empty `calc_price_book`. The dictionaries
+  ship empty, so today every one of those rules would be true of 100 % of
+  groups and a digest would name every calculation every morning.
+  **CUT from the module entirely and stated to the owner**: per-TNVED
+  calc-vs-actual (a group is a CODE, a receipt lot is a NAME in zh/ru — they
+  do not join, and names do not normalise) and the nightly AI pass
+  (`gsr_ai_reader`'s allowlist cannot reach the tables, `ai_questions.user_id`
+  is NOT NULL so a scheduled call is unauditable, and it is subtraction the
+  arithmetic already does deterministically for ~$320/month).
 
 ## House rules that will bite here (read before building)
 

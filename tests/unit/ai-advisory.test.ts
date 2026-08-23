@@ -52,9 +52,21 @@ describe('the arithmetic cannot reach the model', () => {
     const source = read('src/modules/wms/calc/workspace.ts');
     const values = block(source, 'insert(calcVersions).values(');
     const mentions = new Set(values.match(/ai[A-Z]\w*/g) ?? []);
-    // Two counters, both for phase E's «confirmed over a warning» list. A
-    // rate, a baza or an amount named `ai…` here would be the model pricing.
-    expect(mentions).toEqual(new Set(['aiGroupsSealed']));
+    // COUNTS, all three of them. A rate, a baza or an amount named `ai…`
+    // here would be the model pricing, and that is what this asserts —
+    // widened deliberately in phase E1, which added `aiBlindGroups` (how many
+    // groups were confirmed with the model's low-confidence guess untouched)
+    // and `aiRateTakenGroups` (how many carried the model's own duty rate to
+    // the seal). Both are integers derived from `calc_groups`; neither is
+    // multiplied by anything.
+    //
+    // If this ever needs widening again, widen the SET. Do not loosen the
+    // regex and do not rename a column to dodge it: this and the two
+    // assertions around it are law 1's only enforcement in code, and the
+    // tempting fix when they all go red at once is to delete the fence.
+    expect(mentions).toEqual(
+      new Set(['aiGroupsSealed', 'aiBlindGroups', 'aiRateTakenGroups']),
+    );
   });
 
   it('a proposal lands nothing in a rate or baza column', () => {
@@ -65,6 +77,12 @@ describe('the arithmetic cannot reach the model', () => {
     }
     // …and the estimate IS recorded, in the column nothing multiplies.
     expect(apply).toContain('aiDutyPct:');
+    // Phase E1 added `ai_proposal`, which keeps the model's own words whole.
+    // Its duty key is spelled `aiDutyPct` for exactly the reason the loop
+    // above exists: a payload key spelled `dutyPct` would read as the model
+    // writing a rate, and this assertion is what stops it being spelled that
+    // way by accident.
+    expect(apply).toContain('aiProposal:');
   });
 });
 
