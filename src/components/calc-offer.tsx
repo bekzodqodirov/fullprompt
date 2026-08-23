@@ -122,7 +122,7 @@ export function CalcOfferForm({
             {result.delivered ? `✅ ${t('offerSent')}` : `⚠ ${t('offerNoTelegram')}`}
           </p>
           <textarea
-            className="input h-40 font-mono text-2xs"
+            className="input h-56 font-mono text-2xs"
             aria-label={t('offerText')}
             data-testid="offer-text"
             readOnly
