@@ -58,6 +58,14 @@ ALTER TABLE receipts
 CREATE INDEX IF NOT EXISTS receipts_calc_request_idx
   ON receipts (calc_request_id) WHERE calc_request_id IS NOT NULL;
 
+-- `stampCalcLink` asks «which sealed calculation does this deal have» from
+-- INSIDE `createReceipt`'s transaction — the warehouse's most-pressed button,
+-- on the slowest link the company has. `calc_requests` carried no index on
+-- (entity_type, entity_id) at all, so that was a sequential scan per prixod,
+-- holding a transaction open while it ran.
+CREATE INDEX IF NOT EXISTS calc_requests_entity_idx
+  ON calc_requests (entity_type, entity_id);
+
 -- ---------------------------------------------------------------------------
 -- What stood on the screen when ✅ was pressed.
 --

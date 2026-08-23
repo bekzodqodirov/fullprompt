@@ -284,6 +284,59 @@ export async function tariffFor(date: string): Promise<FreightBand[]> {
   return out.sort((a, b) => a.zone.localeCompare(b.zone) || a.minDensity - b.minDensity);
 }
 
+/**
+ * EVERY tariff row ever written, newest date first, for a reader that needs
+ * to price several different DAYS in one pass.
+ *
+ * `tariffFor(date)` is one query per date, which is right for a screen
+ * pricing one calculation and wrong for a list of a hundred sealed quotes
+ * (#432: a per-row query on a list is the business growing). His whole table
+ * is 24 rows, so the honest shape is to load it once and pick per row.
+ */
+export async function tariffHistory(): Promise<
+  (FreightBand & { effectiveDate: string })[]
+> {
+  const rows = await db
+    .select()
+    .from(calcFreightTariffs)
+    .orderBy(desc(calcFreightTariffs.effectiveDate));
+  return rows.map((r) => ({
+    zone: r.zone,
+    minDensity: Number(r.minDensity),
+    maxDensity: r.maxDensity === null ? null : Number(r.maxDensity),
+    priceUsd: Number(r.priceUsd),
+    perKg: r.perKg,
+    effectiveDate: r.effectiveDate,
+  }));
+}
+
+/**
+ * The tariff in force on ONE day, out of the whole history. Pure — the same
+ * «newest row on or before the date» rule `tariffFor` runs in SQL, restated
+ * once here rather than in every caller (#513).
+ */
+export function bandsAsOf(
+  history: (FreightBand & { effectiveDate: string })[],
+  date: string,
+): FreightBand[] {
+  const seen = new Set<string>();
+  const out: FreightBand[] = [];
+  for (const r of history) {
+    if (r.effectiveDate > date) continue;
+    const key = `${r.zone}|${r.minDensity}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      zone: r.zone,
+      minDensity: r.minDensity,
+      maxDensity: r.maxDensity,
+      priceUsd: r.priceUsd,
+      perKg: r.perKg,
+    });
+  }
+  return out.sort((a, b) => a.zone.localeCompare(b.zone) || a.minDensity - b.minDensity);
+}
+
 /** The zones the tariff itself knows about — a third one needs no code. */
 export async function tariffZones(date: string): Promise<string[]> {
   return [...new Set((await tariffFor(date)).map((r) => r.zone))].sort();

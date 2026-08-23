@@ -57,3 +57,13 @@ export const REFUSAL_LABELS: Record<string, string> = {
   link_implausible: 'refusal.linkImplausible',
   not_linked: 'refusal.notLinked',
 };
+
+/**
+ * Why the freight band could not be looked up. A LITERAL map like the three
+ * above (#163): both of these are properties of a tariff the owner edits, so
+ * they are the one band case that needs words on the screen.
+ */
+export const BAND_REFUSAL_LABELS: Record<string, string> = {
+  band_missing: 'bandRefusal.missing',
+  band_ambiguous: 'bandRefusal.ambiguous',
+};

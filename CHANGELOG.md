@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## E1 auditi: chiqarilgan kodni tekshirdim — 2026-08-23
+
+Kodni yozib bo'lgach, uni **beshta mustaqil ko'z bilan qayta ko'rdim** (har bir
+topilma alohida tekshiruvchiga berildi va faqat rad eta olmagani qoldi).
+25 ta nomzoddan **11 tasi tasdiqlandi va tuzatildi**.
+
+**Eng muhimi: ekran umuman ishlamas edi.** «Yuk keldi» degan holatni noto'g'ri
+so'ragan ekanman — yuk O'zbekistonda tushirilganda tizim `ready_for_pickup`
+deb yozadi, men esa `in_stock` deb so'ragan edim. O'lchab ko'rdim: bazadagi
+79 ta tushirishning hammasi `ready_for_pickup`. Ya'ni **hech bir mashina hech
+qachon «kelgan» deb hisoblanmasdi** va «Rastamojka: hisob va haqiqat» bo'limi
+oylab bo'sh turaverardi, sababini aytmasdan. Bu qoida allaqachon tizimda bor
+edi (agent uchun jadval tayyorlaydigan joyda) — men uni qayta yozib, xato
+qilibman. Endi bitta joydan olinadi.
+
+Qolganlari:
+
+- **Bir hisobga bog'langan tugmalar himoyasiz edi:** VED xodimi havola orqali
+  hamkasbining o'lchovini tasdiqlashi yoki **o'chirib yuborishi** mumkin edi.
+  Endi har bir tugma «bu meniki mi?» deb so'raydi.
+- **Prixodni boshqa bitimga ko'chirganda** eski hisobga bog'lanish qolib
+  ketardi — eski hisob o'ziga tegishli bo'lmagan yuk bilan o'lchanardi.
+- **Mashina bo'yicha kiritilgan rastamojka** (siz shunday kiritasiz — bitta
+  partiyaga bitta qator) kursi kelmagan bo'lsa umuman ko'rinmasdi, va ekran
+  yashil «-70 %» deb ko'rsatardi — aslida hisobdan ko'proq pul to'langan.
+- **«Mijoz o'z firmasi bilan»** partiya kartasida bir marta belgilansa, bu
+  yerda hisobga olinmasdi.
+- **Jadval band bo'lgan oylarda bo'shab qolardi:** eng yangi 200 ta hisob
+  olinardi, lekin solishtirishga tayyorlari — har doim eng eskilari.
+- **Rastamojka hisobida kub yozilmasa** «yukning hammasi keldimi» tekshiruvi
+  umuman ishlamasdi. Endi kub bo'lmasa kilogramm bo'yicha qaraydi.
+- **Sozlamalardagi «necha foiz farq muhim»** degan qatorni hech narsa
+  o'qimasdi — ekran shunchaki musbat/manfiy bo'yicha rang berardi. Endi
+  sizning raqamingizni o'qiydi.
+- Tezlik: so'rov butun tarix bo'ylab yurar edi, endi faqat kerakli davr.
+  Qabulda prixod ochilganda ishlaydigan qidiruvga indeks qo'shildi.
+
+**11 ta yangi qizil isbot** (tuzatishni olib tashlab, test qizarishini
+ko'rsatdim). **2003 test + 177 brauzer testi** yangi bazada yashil.
+
 ## VED moduli, E bosqichi (1-qism): hisob va haqiqat — 2026-08-23
 
 VED odam hisoblab bergan raqam bilan yukning haqiqiy narxini solishtiradigan

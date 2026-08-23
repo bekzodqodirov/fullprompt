@@ -2093,7 +2093,6 @@
     "zonePick": "请选择",
     "density": "密度",
     "freightList": "运费（按价目表）",
-    "band": "价目区间",
     "costType": "费用类型",
     "extraLabel": "名称",
     "amount": "金额",
@@ -2222,7 +2221,12 @@
       "cargoIncomplete": "货物未全部到达",
       "linkImplausible": "一个核算关联了太多货物",
       "notLinked": "入库单未关联"
-    }
+    },
+    "bandRefusal": {
+      "missing": "运费表中没有此密度的区间",
+      "ambiguous": "运费表中此密度有两个区间"
+    },
+    "band": "价目区间"
   },
   "partners": {
     "title": "合作方",

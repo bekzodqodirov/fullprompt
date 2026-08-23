@@ -37,8 +37,9 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { getSetting } from '@/modules/platform/settings/service';
 import { compareQuote } from '../deals/deviation';
+import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { freightFor, sectionParts, type CalcSectionName, type FreightBand } from './pricing';
-import { tariffFor } from './dictionaries';
+import { bandsAsOf, tariffHistory } from './dictionaries';
 import { LINK_IMPLAUSIBLE_FACTOR, measurableLinkSql } from './link';
 import { measurableRequestSql } from './version-set';
 
@@ -84,6 +85,17 @@ export interface FreightBandCheck {
   arrivedDensity: number | null;
   /** Same band, or nothing to say (no freight in this section, no measures). */
   ok: boolean | null;
+  /**
+   * Why the band could not be looked up, when that is a fact about the TABLE
+   * rather than about this quote. Collapsing `band_missing` and
+   * `band_ambiguous` into the same silence as «this section has no freight»
+   * broke phase B's own rule — ⚠ and a reason, never nothing — and hid the
+   * one case a person must act on: those two refusals are properties of a
+   * tariff the owner edits, so a hole or an overlap he has just created
+   * would have removed the freight line from every affected row with
+   * nothing on screen to say the table now contradicts itself.
+   */
+  refusal: 'band_missing' | 'band_ambiguous' | null;
 }
 
 export interface CalcActualRow {
@@ -111,6 +123,16 @@ export interface CalcActualRow {
   actualCustomsUsd: number | null;
   /** Signed: +12 means the rastamojka cost 12 % more than the quote said. */
   customsPct: number | null;
+  /**
+   * Is the gap big enough to be worth a person's time?
+   *
+   * `calc_customs_deviation_pct` is the owner's own number and it shipped
+   * with NO reader at all — a live row on /admin/settings that changed
+   * nothing, which is 0064's `tg_peer_index` mistake in a new place. The
+   * screen was colouring on the SIGN, so a 0.4 % overrun looked exactly as
+   * alarming as a 60 % one.
+   */
+  customsOffThreshold: boolean;
   refusal: ActualRefusal | null;
   /** The cost types found on this cargo when none of them mapped. */
   foundCostTypes: string[];
@@ -179,6 +201,7 @@ export function freightBandCheck(input: {
     arrivedRate: null,
     arrivedDensity: null,
     ok: null,
+    refusal: null,
   };
   if (!sectionParts(input.section).freight) return empty;
   if (!(input.actualVolumeM3 > 0) || !(input.actualWeightKg > 0)) return empty;
@@ -187,13 +210,22 @@ export function freightBandCheck(input: {
     weightKg: input.actualWeightKg,
     volumeM3: input.actualVolumeM3,
   });
-  if (!found.ok) return empty;
+  if (!found.ok) {
+    return {
+      ...empty,
+      refusal:
+        found.reason === 'band_missing' || found.reason === 'band_ambiguous'
+          ? found.reason
+          : null,
+    };
+  }
   return {
     quotedMin: input.quotedMin,
     quotedRate: input.quotedRate,
     arrivedMin: found.band.minDensity,
     arrivedRate: found.band.priceUsd,
     arrivedDensity: found.density,
+    refusal: null,
     // A band with no quoted min is a quote whose freight was never resolved;
     // there is nothing to agree or disagree with.
     ok: input.quotedMin === null ? null : Math.abs(found.band.minDensity - input.quotedMin) < 0.005,
@@ -246,29 +278,91 @@ export interface ActualsScope {
  */
 export async function calcActuals(
   who: ActualsScope,
-  opts: { since?: Date; limit?: number } = {},
+  opts: { since?: Date; limit?: number; settledOnly?: boolean } = {},
 ): Promise<CalcActualRow[]> {
-  const [codes, settleDaysRaw, thresholdRaw, tariff] = await Promise.all([
+  const [codes, settleDaysRaw, thresholdRaw, customsPctRaw, tariff] = await Promise.all([
     customsCostCodes(),
     getSetting('calc_actual_settle_days'),
     getSetting('deal_deviation_threshold_pct'),
-    tariffFor(new Date().toISOString().slice(0, 10)),
+    getSetting('calc_customs_deviation_pct'),
+    // The whole tariff HISTORY, not today's table. The band a quote was
+    // priced in came from the tariff in force when it was SEALED, and the
+    // owner edits his table by adding a dated row — so comparing every
+    // historical row against today's boundaries makes correct old quotes
+    // start reporting the wrong band the morning after any edit. That is the
+    // same failure this round exists to avoid: a check that fires on work
+    // nobody got wrong.
+    tariffHistory(),
   ]);
   const settleDays = Number(settleDaysRaw ?? 7);
   const threshold = Number(thresholdRaw ?? 10);
+  const customsThreshold = Number(customsPctRaw ?? 15);
   const since = opts.since ?? new Date(Date.now() - 90 * 86_400_000);
   const limit = opts.limit ?? 200;
 
   // A JS array bound into a raw fragment does not become a postgres array.
   const codeList = sql.join(codes.map((c) => sql`${c}`), sql`, `);
   const ownFilter = who.scope === 'own' ? sql`AND v.sealed_by = ${who.actorId}` : sql``;
+  // The settle gate belongs in SQL, BEFORE the LIMIT, and that is not a
+  // performance nicety. The two clocks run in opposite directions: a settled
+  // row is by construction an OLD seal (the road is a ten-day floor and the
+  // quote may stand a month before the cargo ships) while `ORDER BY sealed_at
+  // DESC LIMIT n` keeps the NEWEST. Filtered afterwards in JS, the busier the
+  // company gets the more certainly every scoreable row falls outside the
+  // slice — so the screen would print «hali solishtiradigan narsa yo'q»
+  // under a coverage line reporting a full month of work. That is the exact
+  // «we have no errors» / «we have no data» confusion the section order was
+  // designed to prevent.
+  const settledFilter = opts.settledOnly
+    ? sql`AND arrival.arrived_at IS NOT NULL
+          AND arrival.arrived_at <= now() - make_interval(days => ${settleDays})`
+    : sql``;
 
   const rows = await db.execute<Record<string, unknown>>(sql`
-    WITH linked AS (
+    WITH
+    -- The requests the outer SELECT can possibly return, computed FIRST and
+    -- joined into every CTE below.
+    --
+    -- Without it, linked selected every receipt that had ever carried a
+    -- confirmed link, and arrival, entries, scoped and money all fanned
+    -- out from there — walking box_movements and cost_allocations over the
+    -- company's whole history to produce at most 200 rows from the last 90
+    -- days. That is the #432/#526 shape this codebase has paid for four
+    -- times: the work grew with the business while the output did not.
+    want AS (
+      SELECT v.request_id
+        FROM calc_versions v
+        JOIN calc_requests r ON r.id = v.request_id
+       WHERE ${currentVersion()}
+         AND ${measurableRequestSql()}
+         AND v.sealed_at >= ${since.toISOString()}::timestamptz
+         ${ownFilter}
+    ),
+    linked AS (
       SELECT r.calc_request_id AS request_id,
              r.id              AS receipt_id,
-             coalesce(r.customs_by_client, false) AS by_client
+             -- THREE states, not two, and effectiveCustoms is the system's
+             -- one definition of them: an explicit answer on the prixod wins
+             -- (false is an answer -- «we clear this one»), NULL is silence
+             -- and the TRUCK's answer applies. A bare coalesce to false made
+             -- «mijoz o'z firmasi bilan» set once on the batch card invisible
+             -- here, so a shared truck the client cleared themselves was
+             -- scored against a rastamojka we never paid.
+             CASE
+               WHEN r.customs_by_client IS NOT NULL OR r.customs_partner_id IS NOT NULL
+                 THEN r.customs_by_client IS TRUE
+               ELSE coalesce((
+                 SELECT bool_or(ba.customs_by_client)
+                   FROM receipt_lots rl0
+                   JOIN boxes b0 ON b0.lot_id = rl0.id
+                   JOIN box_movements bm0 ON bm0.box_id = b0.id
+                        AND bm0.ref_type = 'batch' AND bm0.cause = 'batch_departed'
+                   JOIN batches ba ON ba.id = bm0.ref_id
+                  WHERE rl0.receipt_id = r.id
+               ), false)
+             END AS by_client
         FROM receipts r
+        JOIN want ON want.request_id = r.calc_request_id
        WHERE ${measurableLinkSql('r')}
     ),
     cargo AS (
@@ -284,6 +378,28 @@ export async function calcActuals(
     -- The cargo LANDED. Through box_movements and never the live pointer
     -- (#440): landing nulls current_batch_id and an unloaded truck's boxes
     -- point at nothing.
+    --
+    -- The predicate is documents/arrivals.ts's, restated here as SQL rather
+    -- than re-derived, and the first version of it was WRONG in the way that
+    -- file's own comment warns about. It asked for to_status = 'in_stock',
+    -- which unloading NEVER writes: a customs or distribution warehouse puts
+    -- cargo straight into 'ready_for_pickup' (unload.ts), and in Uzbekistan
+    -- every destination is one of those two. Measured on real rows: every
+    -- unload_scan into a UZ warehouse is 'ready_for_pickup', so the CTE
+    -- matched walk-in receipts alone and settled was false FOR EVER -- the
+    -- whole comparison this round exists for would have rendered empty on
+    -- every truck, for months, with nothing on screen to say why.
+    --
+    --   * the CAUSES are «a truck brought this box here»; found_here counts
+    --     (round 89's failed-scanner path: it rode the truck, it was simply
+    --     never scanned off it), found_at_origin does not.
+    --   * from IS DISTINCT FROM to keeps plan_approved, load_scan and
+    --     crate_packed out -- they carry the box's own warehouse on both
+    --     sides and are status changes, not journeys. MEASURED redundant
+    --     today (0 of 234 rows under the three causes above have from = to),
+    --     and kept anyway so this rule and documents/arrivals.ts read as the
+    --     same sentence: the cause list is what actually fences it, and a
+    --     cause added to that list tomorrow may not be a journey.
     arrival AS (
       SELECT l.request_id, max(m.created_at) AS arrived_at
         FROM linked l
@@ -292,7 +408,8 @@ export async function calcActuals(
         JOIN box_movements m ON m.box_id = b.id
         JOIN warehouses w    ON w.id = m.to_warehouse_id
        WHERE w.country = 'UZ'
-         AND m.to_status = 'in_stock'
+         AND m.cause IN (${sql.join(ARRIVED_ON_A_TRUCK.map((c) => sql`${c}`), sql`, `)})
+         AND m.from_warehouse_id IS DISTINCT FROM m.to_warehouse_id
        GROUP BY l.request_id
     ),
     -- Every non-void cost entry that touches this cargo, at ANY scope: the
@@ -312,10 +429,58 @@ export async function calcActuals(
     -- An entry whose FX rate has not arrived writes NO allocation rows at
     -- all, so the entries CTE cannot see it. Looked up on its own, or a
     -- missing rate reads as a saving.
-    pending AS (
-      SELECT DISTINCT l.request_id, ce.id
+    -- Entries that NAME one of our prixods, seen WITHOUT going through
+    -- cost_allocations. Two ways a real customs bill goes missing from the
+    -- comparison, and the entries CTE above can see neither of them, because
+    -- both write no allocation rows at all:
+    --
+    --   * no FX rate yet -> recomputeEntry returns before allocating
+    --   * converted, but allocated to NOBODY -- a direct_to_client entry
+    --     filed against a client who owns none of these boxes
+    --
+    -- Both make the actual read LOWER than the truth, which puts the VED in
+    -- the wrong on a bill they had nothing to do with. Receipt scope only:
+    -- an entry naming our prixod and allocating nothing to it is unambiguous,
+    -- while a BATCH-scope entry on a truck our boxes rode may legitimately
+    -- allocate to other clients' cargo and nothing is wrong with that.
+    scoped AS (
+      SELECT DISTINCT l.request_id, ce.id, ce.amount_usd,
+             EXISTS (
+               SELECT 1
+                 FROM cost_allocations ca
+                 JOIN boxes b2 ON b2.id = ca.box_id
+                 JOIN receipt_lots rl2 ON rl2.id = b2.lot_id
+                WHERE ca.cost_entry_id = ce.id
+                  AND rl2.receipt_id = l.receipt_id
+             ) AS allocated
         FROM linked l
         JOIN cost_entries ce ON ce.receipt_id = l.receipt_id
+        JOIN cost_types   ct ON ct.id = ce.cost_type_id
+       WHERE ce.voided_at IS NULL
+         AND ct.code IN (${codeList})
+
+      UNION
+
+      -- The BATCH-scope half, and only for an entry that converted to
+      -- NOTHING. Round 29's agreed method puts shared rastamojka on the
+      -- export truck as ONE batch-scope row, so restricting this CTE to
+      -- receipt scope hid the commonest customs bill there is whenever its
+      -- FX rate had not arrived: recomputeEntry returns before allocating,
+      -- so no allocation row exists and every other CTE is blind to it, and
+      -- the screen scored a green «-70 %» against a VED on a bill of ours
+      -- worth more than the quote.
+      --
+      -- Only the unconverted ones, deliberately: a CONVERTED batch entry
+      -- that allocated nothing to our boxes is not an error at all -- a
+      -- truck carries several clients and direct_to_client legitimately
+      -- lands elsewhere.
+      SELECT DISTINCT l.request_id, ce.id, ce.amount_usd, false AS allocated
+        FROM linked l
+        JOIN receipt_lots rl3 ON rl3.receipt_id = l.receipt_id
+        JOIN boxes b3 ON b3.lot_id = rl3.id
+        JOIN box_movements bm ON bm.box_id = b3.id
+             AND bm.ref_type = 'batch' AND bm.cause = 'batch_departed'
+        JOIN cost_entries ce ON ce.batch_id = bm.ref_id
         JOIN cost_types   ct ON ct.id = ce.cost_type_id
        WHERE ce.voided_at IS NULL
          AND ce.amount_usd IS NULL
@@ -332,6 +497,24 @@ export async function calcActuals(
        WHERE ce.voided_at IS NULL
          AND ct.code IN (${codeList})
        GROUP BY l.request_id
+    ),
+    -- One pass over the scoped CTE, not three correlated counts in the
+    -- select list: a materialised CTE has no index, so a scalar subquery
+    -- over it is a scan
+    -- per output row — the #152 shape, three times over.
+    --
+    -- scoped_entries is what the allocation table cannot see AT ALL, and it
+    -- never double-counts an entry that DID allocate: a converted, allocated
+    -- entry is already in entries_found and mapped_entries.
+    scoped_health AS (
+      SELECT request_id,
+             count(*) FILTER (WHERE amount_usd IS NULL) AS unconverted_entries,
+             count(*) FILTER (WHERE amount_usd IS NOT NULL AND NOT allocated)
+               AS unallocated_entries,
+             count(*) FILTER (WHERE amount_usd IS NULL OR NOT allocated)
+               AS scoped_entries
+        FROM scoped
+       GROUP BY request_id
     ),
     health AS (
       SELECT e.request_id,
@@ -370,7 +553,9 @@ export async function calcActuals(
            coalesce(health.entries_found, 0) AS entries_found,
            coalesce(health.mapped_entries, 0) AS mapped_entries,
            coalesce(health.found_names, ARRAY[]::text[]) AS found_names,
-           (SELECT count(*) FROM pending p WHERE p.request_id = v.request_id) AS unconverted_entries
+           coalesce(sh.unconverted_entries, 0) AS unconverted_entries,
+           coalesce(sh.unallocated_entries, 0)  AS unallocated_entries,
+           coalesce(sh.scoped_entries, 0)       AS scoped_entries
       FROM calc_versions v
       JOIN calc_requests r ON r.id = v.request_id
       LEFT JOIN users  u ON u.id = v.sealed_by
@@ -380,10 +565,12 @@ export async function calcActuals(
       LEFT JOIN arrival ON arrival.request_id = v.request_id
       LEFT JOIN money   ON money.request_id = v.request_id
       LEFT JOIN health  ON health.request_id = v.request_id
+      LEFT JOIN scoped_health sh ON sh.request_id = v.request_id
      WHERE ${currentVersion()}
        AND ${measurableRequestSql()}
        AND v.sealed_at >= ${since.toISOString()}::timestamptz
        ${ownFilter}
+       ${settledFilter}
      ORDER BY v.sealed_at DESC
      LIMIT ${limit}
   `);
@@ -419,19 +606,26 @@ export async function calcActuals(
       { volumeM3: actualVolumeM3, weightKg: actualWeightKg },
       threshold,
     );
-    const cargoIncomplete =
-      receiptCount > 0 &&
-      deviation.volumePct !== null &&
-      deviation.volumePct < -threshold;
+    //
+    // WEIGHT is the fallback and not an afterthought: a rastamojka quote
+    // needs no volume at all (`sectionParts().freight` is false, so no
+    // blocker asks for one and `calc_requests.volume_m3` is nullable), and
+    // measured on the real functions a volume-only rule leaves such a quote
+    // with NO completeness guard whatsoever — one 300 kg prixod against a
+    // 5,000 kg quote scored −94 % in green against the person who priced it
+    // correctly. So: volume when there is one, weight when there is not.
+    const shortPct = deviation.volumePct ?? deviation.weightPct;
+    const cargoIncomplete = receiptCount > 0 && shortPct !== null && shortPct < -threshold;
 
+    // The same fallback, for the same reason: without it a rastamojka quote
+    // could have a year of shipments confirmed onto it and still be scored.
+    const implausibleOf = (quoted: number | null, actual: number) =>
+      quoted !== null && quoted > 0 && actual > quoted * LINK_IMPLAUSIBLE_FACTOR;
     const linkImplausible =
       receiptCount > 0 &&
-      quotedVolumeM3 !== null &&
-      quotedVolumeM3 > 0 &&
-      actualVolumeM3 > quotedVolumeM3 * LINK_IMPLAUSIBLE_FACTOR;
-
-    const unallocated =
-      Number(row.mapped_entries ?? 0) > 0 && (actualUsd === null || !(actualUsd > 0)) ? 1 : 0;
+      (quotedVolumeM3 !== null && quotedVolumeM3 > 0
+        ? implausibleOf(quotedVolumeM3, actualVolumeM3)
+        : implausibleOf(quotedWeightKg, actualWeightKg));
 
     const refusal = bucketRefusal({
       section,
@@ -439,13 +633,25 @@ export async function calcActuals(
       anyCustomsByClient: Boolean(row.any_by_client),
       cargoIncomplete,
       linkImplausible,
-      entriesFound: Number(row.entries_found ?? 0),
-      mappedEntries: Number(row.mapped_entries ?? 0),
+      // Both counts have to learn about the invisible entries, or the ladder
+      // answers «nobody has typed the rastamojka» about a bill that is
+      // sitting on the prixod — and «not entered yet» is a wait while
+      // «entered and lost» is an error.
+      entriesFound: Number(row.entries_found ?? 0) + Number(row.scoped_entries ?? 0),
+      // A mapped entry counts as FOUND whether or not it reached an
+      // allocation: `entries` sees only the allocated ones, so on its own it
+      // would report «no cost of the right type» about a bill that is sitting
+      // right there on the prixod, unconverted or unallocated.
+      mappedEntries: Number(row.mapped_entries ?? 0) + Number(row.scoped_entries ?? 0),
       unconvertedEntries: Number(row.unconverted_entries ?? 0),
-      unallocatedEntries: unallocated,
+      unallocatedEntries: Number(row.unallocated_entries ?? 0),
     });
 
     const arrivedAt = row.arrived_at ? new Date(String(row.arrived_at)) : null;
+    const customsPct =
+      refusal === null && actualUsd !== null && quotedCustomsUsd > 0
+        ? Math.round(((actualUsd - quotedCustomsUsd) / quotedCustomsUsd) * 1000) / 10
+        : null;
 
     return {
       requestId: String(row.request_id),
@@ -466,15 +672,14 @@ export async function calcActuals(
       receiptCount,
       quotedCustomsUsd,
       actualCustomsUsd: refusal === null ? actualUsd : null,
-      customsPct:
-        refusal === null && actualUsd !== null && quotedCustomsUsd > 0
-          ? Math.round(((actualUsd - quotedCustomsUsd) / quotedCustomsUsd) * 1000) / 10
-          : null,
+      customsPct,
       refusal,
+      customsOffThreshold:
+        customsPct !== null && Math.abs(customsPct) > customsThreshold,
       foundCostTypes: refusal === 'no_actual_cost' ? toNames(row.found_names) : [],
       band: freightBandCheck({
         section,
-        tariff,
+        tariff: bandsAsOf(tariff, String(row.sealed_at).slice(0, 10)),
         zone: row.freight_zone ? String(row.freight_zone) : null,
         quotedMin: num(row.freight_band_min),
         quotedRate: num(row.freight_rate),

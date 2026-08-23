@@ -13,7 +13,12 @@ import {
   warnedGroups,
   type CalcActualRow,
 } from '@/modules/wms/calc/actuals';
-import { REFUSAL_LABELS, SECTION_LABELS, WARNING_LABELS } from '@/modules/wms/calc/labels';
+import {
+  BAND_REFUSAL_LABELS,
+  REFUSAL_LABELS,
+  SECTION_LABELS,
+  WARNING_LABELS,
+} from '@/modules/wms/calc/labels';
 import { PageHeader } from '@/components/ui/page';
 import { CalcLinkRow } from '@/components/calc-link-row';
 
@@ -62,7 +67,9 @@ export default async function CalcControlPage() {
       calcCoverage(who, monthStart),
       linkSuggestions(who),
       warnedGroups(who, monthStart),
-      calcActuals(who),
+      // Settled only, filtered in SQL: see `settledFilter` — a JS filter after
+      // the LIMIT empties this table exactly when the month is busiest.
+      calcActuals(who, { settledOnly: true }),
       getSetting('calc_actual_settle_days').then((v) => Number(v ?? 7)),
     ]);
   } catch (err) {
@@ -72,8 +79,9 @@ export default async function CalcControlPage() {
     logger.error({ err }, '[calc-control] server behind');
   }
 
-  // Only settled cargo is scored. Everything else is a wait, not a number.
-  const settled = rows.filter((r) => r.settled);
+  // Already settled by the query itself; named here because the section below
+  // reads as «what is scoreable», not «what was fetched».
+  const settled = rows;
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -235,7 +243,18 @@ export default async function CalcControlPage() {
                     {t('quoted')}: ${row.quotedCustomsUsd.toFixed(2)} · {t('measured')}: $
                     {(row.actualCustomsUsd ?? 0).toFixed(2)}
                     {row.customsPct !== null ? (
-                      <span className={row.customsPct > 0 ? ' text-bad' : ' text-good'}>
+                      // Colour on the owner's own threshold, not on the sign:
+                      // a 0.4 % overrun is not news and looked exactly as
+                      // alarming as a 60 % one.
+                      <span
+                        className={
+                          !row.customsOffThreshold
+                            ? ' text-ink-500'
+                            : row.customsPct > 0
+                              ? ' text-bad'
+                              : ' text-good'
+                        }
+                      >
                         {' '}
                         {row.customsPct > 0 ? '+' : ''}
                         {row.customsPct}%
@@ -254,6 +273,13 @@ export default async function CalcControlPage() {
                     {row.band.arrivedDensity !== null
                       ? ` (${row.band.arrivedDensity.toFixed(1)} kg/m³)`
                       : ''}
+                  </p>
+                ) : row.band.refusal !== null ? (
+                  // A hole or an overlap in the owner's own table — a fact
+                  // about the TARIFF, and the one band case somebody has to
+                  // act on. Never silence (phase B's rule).
+                  <p className="text-2xs text-warn" data-testid="accuracy-band-refusal">
+                    ⚠ {t(BAND_REFUSAL_LABELS[row.band.refusal] as 'bandRefusal.missing')}
                   </p>
                 ) : null}
               </li>

@@ -23,9 +23,46 @@ import { calcRequests, calcVersions, receipts } from '@/modules/platform/db/sche
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 
 export class CalcLinkError extends Error {
-  constructor(public code: 'receipt_not_found' | 'request_not_found' | 'request_foreign' | 'no_deal') {
+  constructor(
+    public code:
+      | 'receipt_not_found'
+      | 'request_not_found'
+      | 'request_foreign'
+      | 'no_deal'
+      | 'not_mine',
+  ) {
     super(code);
   }
+}
+
+/**
+ * Whose calculation is this, for somebody whose scope is 'own'?
+ *
+ * Every LIST on the control screen is scoped, and the three BUTTONS were not:
+ * `calcControlScopeFor(actor) !== 'none'` was the whole gate, so a VED could
+ * confirm — or erase — the link that measures a colleague, on a row they can
+ * only have reached by URL. A door that filters what you see and not what you
+ * press is not a door.
+ *
+ * The owner and the accountant answer 'all' and pass everything, which is
+ * right: they are the audience the screen exists for.
+ */
+async function assertMine(
+  requestId: string,
+  scope: 'all' | 'own',
+  actorId: string,
+): Promise<void> {
+  if (scope === 'all') return;
+  const [row] = await db
+    .select({ sealedBy: calcVersions.sealedBy })
+    .from(calcVersions)
+    .where(eq(calcVersions.requestId, requestId))
+    .orderBy(sql`${calcVersions.versionNo} DESC`)
+    .limit(1);
+  // An unsealed request has nobody measured by it yet, so there is nothing to
+  // protect and nothing to score — the same reason the accuracy query only
+  // ever looks at sealed versions.
+  if (row && row.sealedBy !== actorId) throw new CalcLinkError('not_mine');
 }
 
 /**
@@ -107,10 +144,27 @@ export async function stampCalcLink(
 }
 
 /** A person says the guess is right. This is what makes it measurable. */
-export async function confirmCalcLink(receiptId: string, ctx: AuditContext): Promise<void> {
+export async function confirmCalcLink(
+  receiptId: string,
+  scope: 'all' | 'own',
+  ctx: AuditContext,
+): Promise<void> {
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
   if (!receipt) throw new CalcLinkError('receipt_not_found');
   if (!receipt.calcRequestId) throw new CalcLinkError('request_not_found');
+  // The same re-proof `setCalcLink` does, because this door writes the same
+  // fact: a ✓ is what makes a link MEASURABLE, so blessing one whose request
+  // belongs to another customer's deal is exactly what that rule forbids.
+  // Reachable in one press if a prixod is re-filed between the render and the
+  // tap, which is the moment a stale suggestion is most likely on screen.
+  const request = await db.query.calcRequests.findFirst({
+    where: eq(calcRequests.id, receipt.calcRequestId),
+  });
+  if (!request) throw new CalcLinkError('request_not_found');
+  if (request.entityType !== 'deal' || request.entityId !== receipt.dealId) {
+    throw new CalcLinkError('request_foreign');
+  }
+  await assertMine(receipt.calcRequestId, scope, ctx.actorId ?? '');
   await db
     .update(receipts)
     .set({
@@ -139,11 +193,16 @@ export async function confirmCalcLink(receiptId: string, ctx: AuditContext): Pro
 export async function setCalcLink(
   receiptId: string,
   requestId: string | null,
+  scope: 'all' | 'own',
   ctx: AuditContext,
 ): Promise<void> {
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
   if (!receipt) throw new CalcLinkError('receipt_not_found');
   const before = receipt.calcRequestId;
+  // BOTH ends: clearing somebody else's confirmed link is the more damaging
+  // of the two, because it silently removes them from the measurement.
+  if (before) await assertMine(before, scope, ctx.actorId ?? '');
+  if (requestId) await assertMine(requestId, scope, ctx.actorId ?? '');
 
   if (requestId === null) {
     await db

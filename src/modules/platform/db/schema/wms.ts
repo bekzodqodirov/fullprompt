@@ -1976,6 +1976,8 @@ export const calcRequests = pgTable(
     // Read by the attachment gate on every file render (see access.ts).
     index('calc_requests_note_idx').on(t.noteId),
     index('calc_requests_assignee_idx').on(t.assigneeId, t.requestedAt),
+    // Read by `stampCalcLink` inside createReceipt's transaction (phase E1).
+    index('calc_requests_entity_idx').on(t.entityType, t.entityId),
   ],
 );
 

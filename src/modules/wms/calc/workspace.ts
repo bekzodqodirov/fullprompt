@@ -737,23 +737,32 @@ export async function confirmAllGroups(requestId: string, ctx: AuditContext): Pr
     .from(calcGroups)
     .where(and(eq(calcGroups.requestId, requestId), isNull(calcGroups.confirmedAt)));
   const now = new Date();
-  const rows: { id: string }[] = [];
-  for (const group of pending) {
-    // Per group, because the list each one was confirmed over is its own —
-    // and 'bulk' is a different act from 'single', which is exactly what the
-    // owner's «ko'rmasdan tasdiqlagan» question is about.
-    const [row] = await db
-      .update(calcGroups)
-      .set({
-        confirmedBy: ctx.actorId ?? null,
-        confirmedAt: now,
-        confirmVia: 'bulk',
-        confirmedWarnings: warnings.get(group.id) ?? [],
-      })
-      .where(and(eq(calcGroups.id, group.id), isNull(calcGroups.confirmedAt)))
-      .returning({ id: calcGroups.id });
-    if (row) rows.push(row);
-  }
+  // ONE transaction. Before phase E1 this was a single
+  // `UPDATE … WHERE confirmed_at IS NULL RETURNING`, so either every pending
+  // group was confirmed or none was; the per-group values it now writes
+  // (each group's own warning list) need a statement each, and without the
+  // transaction a crash halfway would leave a request half-confirmed with an
+  // audit row claiming a count that never happened.
+  const rows = await db.transaction(async (tx) => {
+    const out: { id: string }[] = [];
+    for (const group of pending) {
+      // Per group, because the list each one was confirmed over is its own —
+      // and 'bulk' is a different act from 'single', which is exactly what
+      // the owner's «ko'rmasdan tasdiqlagan» question is about.
+      const [row] = await tx
+        .update(calcGroups)
+        .set({
+          confirmedBy: ctx.actorId ?? null,
+          confirmedAt: now,
+          confirmVia: 'bulk',
+          confirmedWarnings: warnings.get(group.id) ?? [],
+        })
+        .where(and(eq(calcGroups.id, group.id), isNull(calcGroups.confirmedAt)))
+        .returning({ id: calcGroups.id });
+      if (row) out.push(row);
+    }
+    return out;
+  });
   if (rows.length > 0) {
     await writeAudit(db, ctx, {
       entityType: 'calc_request',
@@ -1317,6 +1326,11 @@ export async function recalcFromSealed(
           dutyFree: g.dutyFree,
           vatFree: g.vatFree,
           aiProposed: g.aiProposed,
+          // The model's own words go across too. Without them
+          // `unchangedFromProposal` answers false for every group of a
+          // correction, so `ai_blind_groups` was permanently 0 on exactly
+          // the calculations somebody had already had to redo.
+          aiProposal: g.aiProposal,
           aiConfidence: g.aiConfidence,
           aiDutyPct: g.aiDutyPct,
           note: g.note,

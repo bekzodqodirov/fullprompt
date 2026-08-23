@@ -2093,7 +2093,6 @@
     "zonePick": "tanlang",
     "density": "Zichlik",
     "freightList": "Yo‘lkira (tarif bo‘yicha)",
-    "band": "Tarif bandi",
     "costType": "Xarajat turi",
     "extraLabel": "Nomi",
     "amount": "Summa",
@@ -2222,7 +2221,12 @@
       "cargoIncomplete": "Yukning hammasi kelmagan",
       "linkImplausible": "Bitta hisobga juda ko'p yuk bog'langan",
       "notLinked": "Prixod bog'lanmagan"
-    }
+    },
+    "bandRefusal": {
+      "missing": "Tarifda bu zichlik uchun band yo'q",
+      "ambiguous": "Tarifda bitta zichlikka ikkita band"
+    },
+    "band": "Tarif bandi"
   },
   "partners": {
     "title": "Kontragentlar",

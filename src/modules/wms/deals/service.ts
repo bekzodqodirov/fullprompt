@@ -425,7 +425,19 @@ export async function linkReceipt(
       .update(receipts)
       .set(
         dealId
-          ? { dealId }
+          ? // RE-FILING clears it too, and for the same reason the detach
+            // branch below spells out. `stampCalcLink` cannot repair it: its
+            // UPDATE is guarded by `calc_request_id IS NULL`, so a link a
+            // person had confirmed survives the move and the OLD deal's
+            // calculation goes on being measured by cargo that has left it —
+            // while the new deal's quote is measured by nothing.
+            {
+              dealId,
+              calcRequestId: null,
+              calcLinkSource: null,
+              calcLinkConfirmedAt: null,
+              calcLinkConfirmedBy: null,
+            }
           : // Detaching takes the calculation link with it. The link's whole
             // meaning is «this cargo was priced by that quote», and a quote
             // reaches cargo only through the deal — so a link left standing

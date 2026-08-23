@@ -200,6 +200,37 @@ both. **E2 waits for ≥20 sealed versions with confirmed links and a non-empty
 price book**; per-TNVED comparison and the nightly AI pass are CUT and owed
 to him as an explicit «yo'q».
 
+**E1 was then AUDITED AS SHIPPED** (#808-816, five lenses, verify-to-refute,
+25 candidates → 11 confirmed and fixed). **The headline is that the screen
+could never have worked**: the arrival CTE asked for `to_status='in_stock'`
+into a UZ warehouse and unloading writes `ready_for_pickup` at a customs or
+distribution warehouse, which every Uzbek destination is — measured, 79 of 79
+— so `settled` was false FOR EVER and the comparison would have rendered
+empty on every truck for months. The correct rule already existed, commented,
+in `documents/arrivals.ts`; I restated it instead of importing it, which is
+#513 inside the round about #513. Also: the link BUTTONS were gated on the
+page's audience and never on «own», so a VED could erase a colleague's
+measurement (scope is a REQUIRED argument now, `assertMine` on both ends);
+`linkReceipt`'s RE-FILE branch kept the calc link that its DETACH branch
+clears, so the old deal went on being scored by cargo that left it;
+`linked` fanned out over the company's whole history to produce 200 rows and
+`stampCalcLink` had NO index on `(entity_type, entity_id)` while running
+inside `createReceipt`'s transaction; the settle gate ran in JS after
+`LIMIT 200` and the two clocks pull opposite ways, so the table empties when
+the month is busiest; `cargo_incomplete` was volume-only and a rastamojka
+quote needs no volume, so BOTH cargo guards were dead for that section;
+`coalesce(customs_by_client,false)` is a two-state reading of a three-state
+column and hid «mijoz o'z firmasi bilan» set on the batch card; a batch-scope
+customs bill with no FX rate was invisible to every CTE; and
+`calc_customs_deviation_pct` shipped with NO reader at all — 0064's
+`tg_peer_index` mistake in the same round that refused to make one. **11 more
+red proofs.** PROCESS (#816): the first wiring test INSERTED a dated tariff
+row and repriced every seal in two other files; its no-rate currency was one
+another test file creates (green here, red on a fresh database, #380); and a
+strip marker must be UNIQUE, not merely present, or the restore welds a
+duplicate in. **2003 unit/integration + 177 e2e** green on a fresh gsr_ci in
+CI's order.
+
 Phase B is the workspace that replaces the Excel. A price on the screen is a
 DRAFT (recomputed from the dictionaries every render); a price in
 `calc_versions` is a FACT (written once, carrying the tariff row and every

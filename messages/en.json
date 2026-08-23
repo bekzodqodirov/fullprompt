@@ -2093,7 +2093,6 @@
     "zonePick": "choose",
     "density": "Density",
     "freightList": "Freight (list)",
-    "band": "Tariff band",
     "costType": "Cost type",
     "extraLabel": "Label",
     "amount": "Amount",
@@ -2222,7 +2221,12 @@
       "cargoIncomplete": "Not all of the cargo arrived",
       "linkImplausible": "Too much cargo on one calculation",
       "notLinked": "The receipt is not linked"
-    }
+    },
+    "bandRefusal": {
+      "missing": "The tariff has no band for this density",
+      "ambiguous": "The tariff has two bands for this density"
+    },
+    "band": "Tariff band"
   },
   "partners": {
     "title": "Counterparties",

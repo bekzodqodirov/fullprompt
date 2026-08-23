@@ -23,12 +23,22 @@ export interface LinkFormState {
  * Both catch `isServerBehind`: 0089 is this release's migration and the one
  * machine whose schema is behind is production on deploy morning (#472).
  */
-async function run(work: (actorId: string, meta: Record<string, unknown>) => Promise<unknown>) {
+async function run(
+  work: (
+    actorId: string,
+    scope: 'all' | 'own',
+    meta: Record<string, unknown>,
+  ) => Promise<unknown>,
+) {
   const actor = await getActor();
   if (!actor) return { error: 'forbidden' };
-  if (calcControlScopeFor(actor) === 'none') return { error: 'forbidden' };
+  const scope = calcControlScopeFor(actor);
+  if (scope === 'none') return { error: 'forbidden' };
   try {
-    await work(actor.id, await requestMeta());
+    // The SCOPE goes down with the call, and is not merely a door on the way
+    // in: every list on the screen is scoped, so buttons that were not let a
+    // VED confirm or erase the link that measures a colleague.
+    await work(actor.id, scope, await requestMeta());
   } catch (err) {
     if (err instanceof CalcLinkError) return { error: err.code };
     if (isServerBehind(err)) {
@@ -46,7 +56,7 @@ export async function confirmLinkAction(
   form: FormData,
 ): Promise<LinkFormState> {
   const receiptId = String(form.get('receiptId') ?? '');
-  return run((actorId, meta) => confirmCalcLink(receiptId, { actorId, ...meta }));
+  return run((actorId, scope, meta) => confirmCalcLink(receiptId, scope, { actorId, ...meta }));
 }
 
 /** «No, this is not that cargo» — clears the guess so it stops being offered. */
@@ -55,7 +65,7 @@ export async function dropLinkAction(
   form: FormData,
 ): Promise<LinkFormState> {
   const receiptId = String(form.get('receiptId') ?? '');
-  return run((actorId, meta) => setCalcLink(receiptId, null, { actorId, ...meta }));
+  return run((actorId, scope, meta) => setCalcLink(receiptId, null, scope, { actorId, ...meta }));
 }
 
 /**
@@ -71,5 +81,7 @@ export async function setCalcLinkAction(
   receiptId: string,
   requestId: string | null,
 ): Promise<LinkFormState> {
-  return run((actorId, meta) => setCalcLink(receiptId, requestId, { actorId, ...meta }));
+  return run((actorId, scope, meta) =>
+    setCalcLink(receiptId, requestId, scope, { actorId, ...meta }),
+  );
 }
