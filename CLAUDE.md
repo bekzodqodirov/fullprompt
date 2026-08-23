@@ -332,6 +332,14 @@ test. Red proofs ×5. **1913 unit/integration + 173 e2e** green on a fresh
 gsr_ci in CI's order, ledger 89; screenshots at 360×800 and 1280×900,
 document width equal to the viewport at both.
 
+PROCESS NOTE (#788): the intermediate commit reached CI with two unused-import
+lint errors, because I chained `pnpm lint` and `pnpm vitest` in one block and
+grepped only for the vitest summary — so eslint's failure was in the output I
+asked for and not in the lines I read, and the block's exit code was vitest's.
+That is **#738's trap in a new hat**, and it survived being written down
+because the second time it wore a different pipe. Run gates with `&&`, and
+grep each gate's OWN failure marker.
+
 **Phase E is open**: calc-vs-actual (which reads the whole `breakdown`
 snapshot).
 
