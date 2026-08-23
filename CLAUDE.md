@@ -244,7 +244,7 @@ NOTIFICATION on a DAILY clock with a monthly claim, silent when nothing is
 stale. `/api/calc/[versionId]/offer.pdf` carries an EXPLICIT door because this
 app has no middleware at all (#721-726). Red proofs ×5, **one of which stayed
 GREEN** — the NaN test was measuring the column's CHECK, not the engine, and
-was re-anchored on the error CODE (#772). **1858 unit/integration + 170 e2e**
+was re-anchored on the error CODE (#772). **1863 unit/integration + 170 e2e**
 green on a fresh gsr_ci in CI's order.
 
 **Found while LOOKING at phase C's own PDF, not by a test** (#773): the PDF
@@ -260,6 +260,18 @@ else undrawable — an emoji in a Telegram display name is ordinary, and a gap
 reads as a gap where a box reads as corruption. Both PDF builders use it.
 `tests/unit/pdf-glyphs.test.ts` measures the FONT, so replacing it turns the
 finding's own assertion red.
+
+**Found while DESIGNING phase D** (#774): the same defect as #763, one table
+over. `recordOffer` denormalises the card onto `calc_offers` and
+`rekeyLeadCalcRequests` moved `calc_requests` alone — so on a won lead the
+price stayed locked (#763's fix working) while `offersFor('deal', …)` came
+back EMPTY and what the seller promised the customer vanished from the only
+card that still exists. Measured, not argued: the integration test was
+written first and was red. The fence is DERIVED —
+`tests/unit/calc-rekey.test.ts` reads the schema for every `calc_*` table
+carrying both entity columns and asserts the re-key names each, so a third
+turns it red the day it is added. `crm_activities` carries the same pair and
+is deliberately NOT moved: a lead's lenta is that lead's history.
 
 **Phases D-E are open**: upsale (which reads `calc_versions.discount_usd` and
 `calc_offers.below_floor`), and calc-vs-actual (which reads the whole

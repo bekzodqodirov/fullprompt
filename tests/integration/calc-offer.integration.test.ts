@@ -15,6 +15,7 @@ import {
   dealStages,
   deals,
   events,
+  leads,
   settings,
   tasks,
   users,
@@ -57,6 +58,7 @@ const CODE_B = `8528${SUFFIX}`;
 let actorId = '';
 let clientId = '';
 let dealId = '';
+let leadId = '';
 const madeRequests: string[] = [];
 const madePrices: string[] = [];
 let claimBefore: unknown;
@@ -93,6 +95,15 @@ beforeAll(async () => {
     })
     .returning();
   dealId = deal!.id;
+
+  const leadStage = await db.execute<{ id: string }>(
+    `SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
+  );
+  const [lead] = await db
+    .insert(leads)
+    .values({ name: `VED offer lead ${SUFFIX}`, stageId: leadStage[0]!.id, createdBy: actorId })
+    .returning();
+  leadId = lead!.id;
 
   const existing = await db.query.settings.findFirst({
     where: eq(settings.key, 'calc_review_notified_month'),
@@ -142,6 +153,8 @@ afterAll(async () => {
     await db.delete(settings).where(eq(settings.key, 'calc_review_notified_month'));
   }
   await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
+  await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
+  await db.delete(leads).where(eq(leads.id, leadId));
   await db.delete(deals).where(eq(deals.id, dealId));
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
   await db.update(users).set({ active: false }).where(eq(users.id, actorId));
@@ -149,12 +162,14 @@ afterAll(async () => {
 });
 
 /** A request priced end to end and SEALED — the only thing an offer can hang on. */
-async function sealed(opts: { code?: string; volumeM3?: number; weightKg?: number } = {}) {
+async function sealed(
+  opts: { code?: string; volumeM3?: number; weightKg?: number; onLead?: boolean } = {},
+) {
   const code = opts.code ?? CODE_A;
   const request = await openCalcRequest(
     {
-      entityType: 'deal',
-      entityId: dealId,
+      entityType: opts.onLead ? 'lead' : 'deal',
+      entityId: opts.onLead ? leadId : dealId,
       section: 'podklyuch',
       fromCity: 'Yiwu',
       toCity: 'Toshkent',
@@ -387,5 +402,30 @@ describe('the monthly review claim', () => {
     // nowhere — but 1 April 04:00 UTC is 09:00 Tashkent, i.e. April.
     expect(reviewMonth(new Date('2026-03-31T19:30:00Z'))).toBe('2026-04');
     expect(reviewMonth(new Date('2026-03-31T18:00:00Z'))).toBe('2026-03');
+  });
+});
+
+describe('an offer follows the lead onto the deal that wins it', () => {
+  it('MEASURED: the offer is orphaned on the dead lead when only the request moves', async () => {
+    // The same shape as #763, one table over. `recordOffer` denormalises the
+    // card onto `calc_offers` so the card panel can read its own offers in one
+    // indexed query — and `rekeyLeadCalcRequests` moved `calc_requests` alone.
+    // A won lead is exactly the moment a quote becomes an invoice, and the
+    // seller's own record of what they promised the customer disappeared from
+    // the only card that still exists.
+    const { versionId } = await sealed({ onLead: true, code: `8471${SUFFIX}` });
+    await recordOffer(versionId, { clientPriceUsd: 7777, locale: 'uz' }, ctx());
+    expect((await offersFor('lead', leadId)).length).toBe(1);
+
+    const { rekeyLeadCalcRequests } = await import('@/modules/wms/calc/service');
+    const moved = await rekeyLeadCalcRequests(leadId, dealId);
+    expect(moved).toBeGreaterThan(0);
+
+    // The deal is the live record. It must carry what the customer was told.
+    const onDeal = await offersFor('deal', dealId);
+    expect(onDeal.some((o) => Number(o.clientPriceUsd) === 7777)).toBe(true);
+    // And the dead lead must not still claim it, or two cards answer for one
+    // promise and a phase-D payout could be keyed off either.
+    expect(await offersFor('lead', leadId)).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
+  calcOffers,
   calcRequestItems,
   calcRequests,
   crmActivities,
@@ -643,6 +644,22 @@ export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Pro
     // live record, and it is the one that must stay locked.
     .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)))
     .returning({ id: calcRequests.id });
+
+  // …and the OFFERS, which carry their own copy of the card.
+  //
+  // `recordOffer` denormalises entity_type/entity_id onto `calc_offers` so a
+  // card can read its own offers in one indexed query, and this function moved
+  // the request alone — so `offersFor('deal', …)` came back empty and what the
+  // seller actually promised the customer vanished from the only card that
+  // still exists. MEASURED, not argued. It is the same defect the paragraph
+  // above describes, one table over, which is the whole reason it was easy to
+  // miss: fixing the rule in one place is not fixing it in every place the
+  // rule was restated.
+  await db
+    .update(calcOffers)
+    .set({ entityType: 'deal', entityId: dealId })
+    .where(and(eq(calcOffers.entityType, 'lead'), eq(calcOffers.entityId, leadId)));
+
   return rows.length;
 }
 
