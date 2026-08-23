@@ -65,6 +65,17 @@ export const SETTING_DEFAULTS = {
    */
   calc_review_notified_month: '',
   /**
+   * The expense category an upsale payout is written into (VED phase D).
+   *
+   * MANDATORY and deliberately not overridable at the moment of paying:
+   * `generateRecurring`'s idempotence slot is (category, date, employee,
+   * warehouse) with no discriminator, so a commission paid to a seller out of
+   * «Oyliklar» would occupy that month's salary slot and the salary would be
+   * silently counted as already posted. Empty = nobody has chosen one, and
+   * the payout refuses with a sentence rather than guessing.
+   */
+  upsale_expense_category_id: '',
+  /**
    * The funnel stage a request for a price lands on (owner, round 83: «kim
    * botga tashlayotgan bo'lsa o'sha odamning accountiga biriktirilishi kerak
    * … va hisoblatish etapiga tushishi kerak»).

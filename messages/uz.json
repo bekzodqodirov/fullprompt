@@ -331,7 +331,8 @@
       "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
       "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi",
       "ai_daily_limit": "Bir kishiga kuniga AI savollar chegarasi (bot + AI ekrani birga; 0 — o'chirilgan)",
-      "calc_review_notified_month": "Lug‘atlarni oylik ko‘rib chiqish eslatmasi oxirgi marta qaysi oyda yuborilgan (tizim o‘zi yozadi)"
+      "calc_review_notified_month": "Lug‘atlarni oylik ko‘rib chiqish eslatmasi oxirgi marta qaysi oyda yuborilgan (tizim o‘zi yozadi)",
+      "upsale_expense_category_id": "Sotuvchining ulushi (upsale) qaysi xarajat turiga yozilishi. Oyliklar turini tanlamang — oylik bilan to‘qnashadi."
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"

@@ -2254,8 +2254,20 @@ export const calcOffers = pgTable(
     entityType: text('entity_type').notNull(),
     entityId: uuid('entity_id').notNull(),
     clientPriceUsd: numeric('client_price_usd', { precision: 14, scale: 2 }).notNull(),
-    /** TRUE when the seller quoted BELOW the sealed floor. Phase D locks it. */
+    /**
+     * TRUE when the seller quoted BELOW the sealed floor.
+     *
+     * The row is always written — the flag is how the owner sees who is
+     * discounting. What law 4 locks is the PROMISE, not the record: a
+     * below-floor offer is born pending and sends nothing until an admin
+     * stamps `approved_at`.
+     */
     belowFloor: boolean('below_floor').notNull().default(false),
+    /** Why. Mandatory when below the floor, exactly as a discount's reason is. */
+    belowFloorReason: text('below_floor_reason'),
+    /** Until this is stamped: no Telegram text, no PDF, not the card's price, never payable. */
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedBy: uuid('approved_by').references(() => users.id),
     locale: text('locale').notNull(),
     /** Exactly what was sent, so «what did we tell them» is answerable. */
     text: text('text').notNull(),
@@ -2263,6 +2275,18 @@ export const calcOffers = pgTable(
       .notNull()
       .references(() => users.id),
     offeredAt: timestamp('offered_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The payout, and the whole pay-twice fence.
+     *
+     * One expense settles several offers — a seller is paid once a week, not
+     * once per quote — so this is deliberately not unique. NULL means unpaid,
+     * and `WHERE payout_expense_id IS NULL` is what the claim locks on.
+     */
+    payoutExpenseId: uuid('payout_expense_id').references((): AnyPgColumn => expenses.id),
+    payoutAt: timestamp('payout_at', { withTimezone: true }),
+    payoutBy: uuid('payout_by').references(() => users.id),
+    /** The seller's credited USD, computed server-side — never typed. */
+    payoutUsd: numeric('payout_usd', { precision: 14, scale: 2 }),
   },
   (t) => [
     check('calc_offers_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
@@ -2270,6 +2294,31 @@ export const calcOffers = pgTable(
     check(
       'calc_offers_price_check',
       sql`${t.clientPriceUsd} > 0 AND ${t.clientPriceUsd} <> 'NaN'::numeric`,
+    ),
+    check(
+      'calc_offers_below_floor_reason_check',
+      sql`${t.belowFloorReason} IS NULL OR btrim(${t.belowFloorReason}) <> ''`,
+    ),
+    // A reason and an approval are facts ABOUT a below-floor price; on an
+    // ordinary offer they would be noise every report has to explain away.
+    check(
+      'calc_offers_below_floor_only_check',
+      sql`${t.belowFloor} OR (${t.belowFloorReason} IS NULL AND ${t.approvedAt} IS NULL)`,
+    ),
+    check(
+      'calc_offers_approval_pair_check',
+      sql`(${t.approvedAt} IS NULL) = (${t.approvedBy} IS NULL)`,
+    ),
+    check(
+      'calc_offers_payout_amount_check',
+      sql`${t.payoutUsd} IS NULL OR (${t.payoutUsd} > 0 AND ${t.payoutUsd} <> 'NaN'::numeric)`,
+    ),
+    // 0054's paired idiom: paid is all four columns, or none of them.
+    check(
+      'calc_offers_payout_pair_check',
+      sql`(${t.payoutExpenseId} IS NULL) = (${t.payoutAt} IS NULL)
+        AND (${t.payoutExpenseId} IS NULL) = (${t.payoutBy} IS NULL)
+        AND (${t.payoutExpenseId} IS NULL) = (${t.payoutUsd} IS NULL)`,
     ),
     index('calc_offers_version_idx').on(t.versionId),
     index('calc_offers_entity_idx').on(t.entityType, t.entityId, t.offeredAt),

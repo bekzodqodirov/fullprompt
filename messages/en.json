@@ -331,7 +331,8 @@
       "crm_calc_stage": "A request for a price from the bot moves the lead to this stage (forward only; «—» means do not move)",
       "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal",
       "ai_daily_limit": "AI questions per person per day (bot + AI screen together; 0 — off)",
-      "calc_review_notified_month": "The month the monthly dictionary-review reminder was last sent (written by the system)"
+      "calc_review_notified_month": "The month the monthly dictionary-review reminder was last sent (written by the system)",
+      "upsale_expense_category_id": "Which expense category a seller’s upsale payout is written into. Do not pick salaries — it collides with the monthly payroll slot."
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"

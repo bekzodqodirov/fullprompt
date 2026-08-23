@@ -331,7 +331,8 @@
       "crm_calc_stage": "机器人发来「报价」时，线索移到该阶段（只向前；「—」表示不移动）",
       "deal_calc_stage": "交易看板同理——已有客户编号的请求会落在交易上",
       "ai_daily_limit": "每人每天的 AI 提问上限（机器人 + AI 页面合计；0 为关闭）",
-      "calc_review_notified_month": "上次发送字典复核提醒的月份（由系统写入）"
+      "calc_review_notified_month": "上次发送字典复核提醒的月份（由系统写入）",
+      "upsale_expense_category_id": "销售提成（upsale）计入哪个费用类别。请勿选择工资类别，会与月度工资冲突。"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"

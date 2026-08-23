@@ -2,7 +2,7 @@ import { cache } from 'react';
 import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   accountTransfers,
   clientTransactions,
@@ -159,25 +159,30 @@ export const expenseSchema = z.object({
 });
 export type ExpenseInput = z.infer<typeof expenseSchema>;
 
-export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
+/**
+ * The WRITE half of an expense, on whichever connection the caller holds.
+ *
+ * Split out so a caller that is already inside a transaction can record an
+ * expense without reaching for the pool — asking for an eleventh connection
+ * from inside a transaction holding one of the ten is the permanent,
+ * unrecoverable freeze #714 measured, and `tx-pool.test.ts` derives the
+ * pooled set transitively so it would find it. `payUpsale` is that caller:
+ * the expense and the claim on the offers it settles must be one transaction
+ * or the money and its attribution can come apart.
+ *
+ * Everything that READS — the rate, the cash box's currency — stays outside,
+ * in `addExpense`. One writer, two entry points (#513).
+ */
+export async function addExpenseTx(
+  dbOrTx: Db | Tx,
+  input: ExpenseInput,
+  rate: number,
+  ctx: AuditContext,
+) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
-  // The same rule as the client ledger: a named cash box must speak the
-  // row's currency, or the till balances stop meaning anything.
-  const accountId = input.partnerId ? null : input.accountId || null;
-  if (accountId) {
-    const [account] = await db
-      .select({ currency: moneyAccounts.currency })
-      .from(moneyAccounts)
-      .where(eq(moneyAccounts.id, accountId));
-    if (account && account.currency !== input.currency) {
-      throw new AccountingError('account_currency_mismatch');
-    }
-  }
-  const rate = await rateFor(input.currency, input.expenseDate);
-  if (rate === null) throw new AccountingError('fx_missing');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
 
-  const [row] = await db
+  const [row] = await dbOrTx
     .insert(expenses)
     .values({
       categoryId: input.categoryId,
@@ -196,17 +201,38 @@ export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
       createdBy: ctx.actorId,
     })
     .returning();
-  await writeAudit(db, ctx, {
+  await writeAudit(dbOrTx, ctx, {
     entityType: 'expense',
     entityId: row!.id,
     action: 'create',
     after: { amount: input.amount, currency: input.currency, amountUsd, date: input.expenseDate },
   });
+  return row!;
+}
+
+export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
+  if (!ctx.actorId) throw new AccountingError('unauthenticated');
+  // The same rule as the client ledger: a named cash box must speak the
+  // row's currency, or the till balances stop meaning anything.
+  const accountId = input.partnerId ? null : input.accountId || null;
+  if (accountId) {
+    const [account] = await db
+      .select({ currency: moneyAccounts.currency })
+      .from(moneyAccounts)
+      .where(eq(moneyAccounts.id, accountId));
+    if (account && account.currency !== input.currency) {
+      throw new AccountingError('account_currency_mismatch');
+    }
+  }
+  const rate = await rateFor(input.currency, input.expenseDate);
+  if (rate === null) throw new AccountingError('fx_missing');
+
+  const row = await addExpenseTx(db, input, rate, ctx);
   if (input.partnerId) {
     const { chargeForExpense } = await import('../partners/link');
-    await chargeForExpense(row!.id, ctx);
+    await chargeForExpense(row.id, ctx);
   }
-  return row!;
+  return row;
 }
 
 export async function voidExpense(id: string, reason: string, ctx: AuditContext) {
@@ -228,6 +254,11 @@ export async function voidExpense(id: string, reason: string, ctx: AuditContext)
   // on the decider's panel (round 107).
   const { reopenRequestsForExpense } = await import('./expense-requests');
   await reopenRequestsForExpense(id);
+  // The same pair rule one module over: a taken-back payout must not leave
+  // its offers reading «to'landi» for ever. Best-effort and after the void,
+  // like the line above it.
+  const { reopenUpsaleForExpense } = await import('../calc/upsale-service');
+  await reopenUpsaleForExpense(id).catch(() => undefined);
   await writeAudit(db, ctx, {
     entityType: 'expense',
     entityId: id,

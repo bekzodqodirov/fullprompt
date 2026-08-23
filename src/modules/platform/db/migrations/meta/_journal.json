@@ -617,6 +617,13 @@
       "when": 1785190000057,
       "tag": "0087_calc_price_book",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1785190000058,
+      "tag": "0088_calc_upsale",
+      "breakpoints": true
     }
   ]
 }
