@@ -11,9 +11,18 @@ import {
   type PricedGroup,
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
+import { OWNER_TARIFF_BANDS, ownerTariffRows } from '@/modules/wms/calc/tariff-seed';
 
-/** The owner's own table, as `scripts/seed.ts` seeds it (docs/VED.md). */
-const TARIFF: FreightBand[] = [
+/**
+ * A tariff WITH A HOLE and an OVERLAP — deliberately not the owner's.
+ *
+ * His own table used to look like this (700 in two rows, nothing for 900-999)
+ * and he has since closed both. The fixture keeps the broken shape because the
+ * refusals are a property of the ENGINE, not of today's data: the tariff is
+ * editable on /admin/tarif, and the day somebody types a band that leaves a
+ * gap, the price has to refuse rather than quietly pick the cheaper reading.
+ */
+const HOLEY: FreightBand[] = [
   { zone: 'cn', minDensity: 1, maxDensity: 100, priceUsd: 110, perKg: false },
   { zone: 'cn', minDensity: 101, maxDensity: 150, priceUsd: 130, perKg: false },
   { zone: 'cn', minDensity: 501, maxDensity: 700, priceUsd: 300, perKg: false },
@@ -22,6 +31,15 @@ const TARIFF: FreightBand[] = [
   { zone: 'kashgar', minDensity: 1, maxDensity: 100, priceUsd: 70, perKg: false },
   { zone: 'kashgar', minDensity: 1000, maxDensity: null, priceUsd: 0.3, perKg: true },
 ];
+
+/** The owner's settled table, from the module `scripts/seed.ts` writes. */
+const TARIFF: FreightBand[] = ownerTariffRows().map((r) => ({
+  zone: r.zone,
+  minDensity: r.minDensity,
+  maxDensity: r.maxDensity,
+  priceUsd: r.priceUsd,
+  perKg: r.perKg,
+}));
 
 const group = (over: Partial<PricedGroup> = {}): PricedGroup => ({
   seq: 1,
@@ -129,16 +147,17 @@ describe('bandFor', () => {
     if (up.ok) expect(up.band.priceUsd).toBe(130);
   });
 
-  it('REFUSES the 900-999 hole rather than choosing the cheaper band', () => {
-    // 30 m³ at 950 kg/m³ is $9,600 read down and $15,675 read up. The
-    // difference is the owner's to decide, and his answer becomes a row.
-    expect(bandFor(TARIFF, 'cn', 950)).toEqual({ ok: false, reason: 'band_missing' });
-    expect(bandFor(TARIFF, 'cn', 901)).toEqual({ ok: false, reason: 'band_missing' });
-    expect(bandFor(TARIFF, 'cn', 999)).toEqual({ ok: false, reason: 'band_missing' });
+  it('REFUSES a gap rather than choosing the cheaper band', () => {
+    // 30 m³ at 950 kg/m³ is $9,600 read down and $15,675 read up. On a tariff
+    // that covers neither, the engine must say so — the difference is a
+    // person's to decide, and their answer becomes a band.
+    expect(bandFor(HOLEY, 'cn', 950)).toEqual({ ok: false, reason: 'band_missing' });
+    expect(bandFor(HOLEY, 'cn', 901)).toEqual({ ok: false, reason: 'band_missing' });
+    expect(bandFor(HOLEY, 'cn', 999)).toEqual({ ok: false, reason: 'band_missing' });
   });
 
-  it('REFUSES the density his table lists twice', () => {
-    expect(bandFor(TARIFF, 'cn', 700)).toEqual({ ok: false, reason: 'band_ambiguous' });
+  it('REFUSES a density two bands both claim', () => {
+    expect(bandFor(HOLEY, 'cn', 700)).toEqual({ ok: false, reason: 'band_ambiguous' });
   });
 
   it('nonsense density finds nothing', () => {
@@ -150,7 +169,57 @@ describe('bandFor', () => {
     const kg = bandFor(TARIFF, 'kashgar', 50);
     expect(cn.ok && cn.band.priceUsd).toBe(110);
     expect(kg.ok && kg.band.priceUsd).toBe(70);
-    expect(bandFor(TARIFF, 'kashgar', 120)).toEqual({ ok: false, reason: 'band_missing' });
+    expect(bandFor(HOLEY, 'kashgar', 120)).toEqual({ ok: false, reason: 'band_missing' });
+  });
+});
+
+describe('the owner’s settled tariff', () => {
+  /**
+   * His three answers, as one property: the table covers EVERY whole kg/m³
+   * from 1 upwards, exactly once, in both zones.
+   *
+   * This is the fence the round's questions bought. It reads the same module
+   * `scripts/seed.ts` writes from, so a hole cannot be re-introduced on one
+   * side without the other side going red — and the two densities that used
+   * to be wrong (700 in two bands, 950 in none) are asserted by name below so
+   * a future edit cannot quietly undo his decision.
+   */
+  it('covers every whole kg/m³ from 1 upwards, exactly once, in both zones', () => {
+    const gaps: string[] = [];
+    const overlaps: string[] = [];
+    for (const zone of ['cn', 'kashgar']) {
+      for (let d = 1; d <= 1500; d += 1) {
+        const hits = TARIFF.filter(
+          (r) => r.zone === zone && d >= r.minDensity && (r.maxDensity === null || d <= r.maxDensity),
+        );
+        if (hits.length === 0) gaps.push(`${zone}@${d}`);
+        if (hits.length > 1) overlaps.push(`${zone}@${d}`);
+      }
+    }
+    expect(gaps, 'densities his tariff cannot price').toEqual([]);
+    expect(overlaps, 'densities two of his bands both claim').toEqual([]);
+  });
+
+  it('answers the three questions he settled', () => {
+    // «ketma-ket»: 700 stays in the band below.
+    const at700 = bandFor(TARIFF, 'cn', 700);
+    expect(at700.ok && at700.band.priceUsd).toBe(300);
+    // «sen aytgandek»: 900-999 takes the $320 band.
+    for (const d of [900, 950, 999]) {
+      const hit = bandFor(TARIFF, 'cn', d);
+      expect(hit.ok && hit.band.priceUsd, `cn@${d}`).toBe(320);
+    }
+    // «shunday qolsin»: 1000 is still a step, and still per kilogram.
+    const at1000 = bandFor(TARIFF, 'cn', 1000);
+    expect(at1000.ok && at1000.band.perKg).toBe(true);
+    expect(at1000.ok && at1000.band.priceUsd).toBe(0.55);
+  });
+
+  it('is twelve bands per zone, and only the top one is per kilogram', () => {
+    expect(OWNER_TARIFF_BANDS).toHaveLength(12);
+    const perKg = TARIFF.filter((r) => r.perKg);
+    expect(perKg).toHaveLength(2);
+    expect(perKg.every((r) => r.maxDensity === null)).toBe(true);
   });
 });
 

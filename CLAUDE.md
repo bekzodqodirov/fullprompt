@@ -152,10 +152,14 @@ the list price it is measured against.
 The engine (`calc/pricing.ts`, pure) **never returns a number it had to
 invent** — every entry point answers `{ok}` or `{ok:false, reason}`, and the
 screen prints ⚠ + the reason, never `$0`. The priced unit is the **ITEM**
-(one TNVED code holds several products with different bazas). His tariff is
-seeded VERBATIM and the lookup **refuses** its two holes — 900-999 kg/m³ is
-covered by no row, 700 by two — instead of silently taking the cheaper
-reading ($9,600 vs $15,675 on 30 m³ at 950). The band is looked up by a WHOLE
+(one TNVED code holds several products with different bazas). His tariff lives in
+`calc/tariff-seed.ts` (one home for the seed AND the fence, #513) and is now
+CONTIGUOUS by his own answers — «700–900» became **701–999**, so 700 stays in
+«501–700» and 900-999 takes the $320 row; a unit test walks every whole
+density 1..1500 in both zones and asserts exactly one band claims each. The
+lookup still **refuses** a hole (`band_missing`) and an overlap
+(`band_ambiguous`), because that is a property of the tariff a person edits
+tomorrow, not of today's data. The band is looked up by a WHOLE
 kg/m³, or an ordinary 100.4 falls between «1–100» and «101–150» and is
 covered by neither. The seal is one transaction whose UPDATE RETURNS the
 version number; there is **no re-open** — a correction is a NEW request
@@ -176,10 +180,12 @@ sealed at all.
 drag tests failed once in an earlier full run and passed alone and in the
 next two full runs — recorded as a flake, not diagnosed.
 
-**Three answers awaited from the owner, each with money in it** (they are in
-the CHANGELOG entry in Uzbek): the 900-999 kg/m³ gap, the double-listed 700,
-and whether ≥1000 should be a floor rather than a 72 % cliff. Each answer
-becomes a dated tariff row.
+**His three tariff answers arrived the same night** («1 sen aytgandek / 2
+ozing togirla ketma ket qanday kelyabti shunga mosla / 3 shunday qolsim») and
+are built: 900-999 → the $320/$200 row, bands run consecutively (each starts
+at the previous one's top plus one), the 1000 step stays a step. Recorded as a
+SEED correction and not a dated superseding row, because 0086 has never
+deployed and the seed writes only into an empty table. Decision **#761**.
 
 **Phases C-E are open**: the client-facing offer sheet, upsale (which reads
 `calc_versions.discount_usd`), and calc-vs-actual (which reads the whole

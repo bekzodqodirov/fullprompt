@@ -316,65 +316,40 @@ async function seedCrm() {
 }
 
 /**
- * The owner's freight tariff (docs/VED.md), VERBATIM — his twelve bands per
- * zone and not one row more.
+ * The owner's freight tariff (docs/VED.md).
  *
- * Two things about it are deliberate and cost real money if they are quietly
- * "tidied up". His table has no row for 900-999 kg/m³, and it lists 700 in
- * two rows. Read as bare lower bounds, both gaps close themselves in the
- * client's favour — 30 m³ at 950 kg/m³ would price at $9,600 instead of
- * $15,675 — so both bounds are seeded exactly as written and the lookup
- * REFUSES a density no single row covers. His answer to each becomes a dated
- * row he can see on the tariff screen.
+ * The table itself lives in `wms/calc/tariff-seed.ts`, because the fence that
+ * proves it has no holes has to read the same rows this writes (#513). It is
+ * CONTIGUOUS by his own correction — «501–700» then «701–999» then 1000+ —
+ * so every whole kg/m³ from 1 upwards is covered exactly once.
  *
- * Fixed `effective_date`: a tariff dated «whenever the seed happened to run»
- * would make two installations disagree about which row was in force, and a
- * re-seed would silently supersede a row the owner had edited.
+ * The engine still REFUSES a density no band covers, and a density two bands
+ * cover: that rule is about the tariff a person edits on /admin/tarif
+ * tomorrow, not about this seed.
+ *
+ * Writes only into an EMPTY table, so an installation that has edited its
+ * tariff is never touched by a later deploy.
  */
 async function seedFreightTariff() {
   const { calcFreightTariffs } = await import('../src/modules/platform/db/schema');
   const existing = await db.select({ id: calcFreightTariffs.id }).from(calcFreightTariffs).limit(1);
   if (existing.length > 0) return;
 
-  const FROM = '2026-01-01';
-  // [min, max, price on the China column, price on the western column].
-  // max null = the open-ended top row. The two zones are named by their CODES
-  // and nowhere by city — `seed-demo-gate.test.ts` reads this file as text and
-  // refuses the demo warehouse names, and the tariff must not smuggle one in.
-  const bands: [number, number | null, number, number][] = [
-    [1, 100, 110, 70],
-    [101, 150, 130, 85],
-    [151, 200, 160, 100],
-    [201, 250, 180, 115],
-    [251, 300, 200, 130],
-    [301, 350, 230, 150],
-    [351, 400, 260, 170],
-    [401, 450, 280, 180],
-    [451, 500, 290, 190],
-    [501, 700, 300, 195],
-    [700, 900, 320, 200],
-    [1000, null, 0.55, 0.3],
-  ];
+  const { ownerTariffRows, OWNER_TARIFF_FROM } = await import(
+    '../src/modules/wms/calc/tariff-seed'
+  );
 
   await db.insert(calcFreightTariffs).values(
-    bands.flatMap(([min, max, cn, kashgar]) =>
-      (
-        [
-          ['cn', cn],
-          ['kashgar', kashgar],
-        ] as const
-      ).map(([zone, price]) => ({
-        zone,
-        minDensity: min.toFixed(2),
-        maxDensity: max === null ? null : max.toFixed(2),
-        priceUsd: price.toFixed(4),
-        // Only the top band is charged by weight; every other row is per m³.
-        perKg: max === null,
-        effectiveDate: FROM,
-      })),
-    ),
+    ownerTariffRows().map((row) => ({
+      zone: row.zone,
+      minDensity: row.minDensity.toFixed(2),
+      maxDensity: row.maxDensity === null ? null : row.maxDensity.toFixed(2),
+      priceUsd: row.priceUsd.toFixed(4),
+      perKg: row.perKg,
+      effectiveDate: OWNER_TARIFF_FROM,
+    })),
   );
-  console.log('freight tariff seeded (owner’s table, editable)');
+  console.log('freight tariff seeded (owner\u2019s table, editable)');
 }
 
 main()

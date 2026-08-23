@@ -43,49 +43,27 @@ bosilganda narx KARTAGA tushadi va qulflanadi.
 
 Migratsiya **0086** — deploydan keyin hisob **87** bo'lishi kerak.
 
-**Sizdan 3 ta javob kerak (pul bor):**
-1. **900-999 kg/m³ uchun qator yo'q.** 30 kub 950 kg/m³ da — 700-900
-   qatoridan $9,600, yoki 1000+ qatoridan $15,675. Qaysi biri?
-2. **700 ikki qatorda turibdi** («501-700» $300 va «700-900» $320): 30 kub
-   aniq 700 da — $9,000 mi yoki $9,600 mi?
-3. **1000 da narx birdan sakraydi**: 999 kg/m³ × 30 kub = $9,600, 1000
-   kg/m³ × 30 kub = 30,000 kg × $0.55 = $16,500. Shunday qolsinmi?
+**Tarifdagi ikki joy — javobingizga ko'ra tuzatildi (2026-08-23):**
 
-Javobingiz tarifga sanali qator bo'lib tushadi. Shu paytgacha bunday
-zichlikdagi yuk uchun ekran «bu zichlik uchun tarif yo'q» deydi — o'zi
-arzonini tanlab qo'ymaydi.
+Tarifni birinchi berganingizda «501-700» dan keyin «700-900» kelib, keyin
+to'g'ridan-to'g'ri «1000+» edi — ya'ni **700 ikki qatorda** turgan, va
+**900-999 uchun qator umuman bo'lmagan**. Ikkalasida ham pul bor edi (30 kub
+950 kg/m³ da: $9,600 mi, $15,675 mi), shuning uchun o'zim tanlab qo'ymay
+so'radim. Javobingiz:
 
-## VED moduli, A bosqich: hisoblash navbati — 2026-08-22
+1. «sen aytgandek» → **900-999 endi $320 / $200 qatorida**;
+2. «ketma ket qanday kelyabti shunga mosla» → **har qator oldingisi tugagan
+   joydan +1 dan boshlanadi**, ya'ni 700 «501-700» da qoladi, keyingisi 701 dan;
+3. «shunday qolsin» → **1000 dagi sakrash o'z holicha qoladi**.
 
-Sotuvchi so'rov qoldiradi, VED xodimi bitta navbatdan ishlaydi, va har
-hisoblash o'z soati bilan yuradi. `docs/VED.md` bo'yicha birinchi bosqich.
+Natijada o'n birinchi qator **701-999** bo'ldi va jadval 1 kg/m³ dan yuqorisini
+**teshiksiz va ustma-ust tushmasdan** qoplaydi. Har ikkala zona bo'yicha
+1 dan 1500 gacha har bir butun zichlik tekshiriladigan test qo'shildi — kelajakda
+kimdir tarifni tahrirlab teshik qoldirsa, shu test qizil bo'ladi.
 
-- **Ikki eshik, bitta navbat.** Telegram botdagi «Hisoblatish» va karta
-  formasi endi bir joyga tushadi — `/hisoblash`. Bot javobida endi «VED
-  xodimini tanlaysiz» emas, «navbatga tushdi» deb yoziladi (navbatga
-  tushmasa — buni ham aniq aytadi).
-- **So'rov endi ISH.** Har so'rov o'zining bo'limi (yo'lkira / rastamojka /
-  podklyuch), yo'nalishi, kg, kubi, tovarlari (1000 tagacha) va sotuvchi
-  yuborgan materiallari bilan yuradi. Bitta kartada bir nechta ochiq so'rov
-  bo'lishi mumkin — chunki dushanbadagi monitor bilan payshanbadagi stulni
-  bitta so'rovga qo'shib yuborish yo'lkira narxini buzardi.
-- **Navbat o'zi taqsimlaydi.** So'rov eng kam yuklangan VED xodimiga
-  biriktiriladi — ya'ni birinchi soniyadanoq egasi bor. Boshqa VED xodimi
-  «Olaman» bilan o'ziga olishi mumkin, bu tarixga yoziladi.
-- **Yetishmayotgan ma'lumot ko'rinib turadi.** Har so'rovda ⚠ ro'yxat: kub
-  yo'q, tovar nomi yo'q… VED xodimi «Qaytarish» tugmasi bilan sababini yozib
-  sotuvchiga qaytaradi.
-- **Javob ham yoziladi.** «Bajarildi» bosilganda narx va izoh so'rovda
-  qoladi va sotuvchiga Telegramga boradi — endi so'rovlar bazasi emas,
-  savol-javob bazasi.
-- **Soat qaytdi.** Muddat tovar soniga qarab (30 daqiqadan, eng ko'pi 2
-  soat), kechikkani qizil, kechikkanda xabar boradi — hech kim olmagan
-  bo'lsa butun VED jamoasiga. Navbat ekranida har xodimning tezligi:
-  nechta bajardi, o'rtacha necha daqiqada, nechtasi muddatida.
-- **Bosh ekran.** VED xodimining bosh ekranida birinchi qator endi hisoblash
-  navbati.
-
-Migratsiya **0085** — deploydan keyin hisob **86** bo'lishi kerak.
+**Ekrandagi ogohlantirish esa qoldi**: agar kelajakda tarifga qo'lda teshik
+kiritilsa, tizim «bu zichlik uchun tarif yo'q» deb aytadi — o'zi arzonini
+tanlab qo'ymaydi.
 
 ## Xaritadagi mashina belgisi — 2026-08-20
 

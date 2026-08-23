@@ -22,7 +22,8 @@ import {
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { quoteLockedFor } from '@/modules/wms/crm/service';
 import { updateDeal } from '@/modules/wms/deals/service';
-import { saveBaza, saveRates, onDate } from '@/modules/wms/calc/dictionaries';
+import { saveBaza, saveRates, onDate, tariffFor } from '@/modules/wms/calc/dictionaries';
+import { bandFor } from '@/modules/wms/calc/pricing';
 import {
   applyProposal,
   confirmAllGroups,
@@ -247,12 +248,26 @@ describe('the freight zone is chosen, never inferred', () => {
     expect(workspace!.freight).toMatchObject({ ok: false, reason: 'zone_required' });
   });
 
-  it('refuses the 900-999 hole in his tariff', async () => {
-    // 28 500 kg over 30 m³ is 950 kg/m³ — a density his table does not cover.
+  it('prices the band he closed — 950 kg/m³ used to be covered by no row', async () => {
+    // 28 500 kg over 30 m³ is 950 kg/m³. His first table had nothing between
+    // 900 and 1000; his answer put it in the $320 band, and this reads the
+    // SEEDED database rather than the module, so it also proves the seed
+    // actually wrote what the module says.
     const request = await open({ weightKg: 28_500, volumeM3: 30 });
     await setFreightZone(request.id, 'cn', ctx());
     const workspace = await loadWorkspace(request.id);
-    expect(workspace!.freight).toMatchObject({ ok: false, reason: 'band_missing' });
+    expect(workspace!.freight).toMatchObject({ ok: true, listUsd: 9600 });
+  });
+
+  it('the seeded tariff can price every whole density in both zones', async () => {
+    const tariff = await tariffFor(onDate());
+    const gaps: string[] = [];
+    for (const zone of ['cn', 'kashgar']) {
+      for (let d = 1; d <= 1500; d += 1) {
+        if (!bandFor(tariff, zone, d).ok) gaps.push(`${zone}@${d}`);
+      }
+    }
+    expect(gaps, 'densities the DATABASE cannot price').toEqual([]);
   });
 
   it('prices the ordinary case off his own table', async () => {
@@ -327,23 +342,30 @@ describe('the seal', () => {
     expect(version!.discountReason).toBe('doimiy mijoz');
   });
 
-  it('a band override needs a reason and is NOT a discount', async () => {
-    const { requestId } = await readyRequest({ weightKg: 28_500, volumeM3: 30 });
+  it('a band override needs a reason, MOVES the band, and is NOT a discount', async () => {
+    // 1500 kg over 30 m³ is 50 kg/m³ and prices itself perfectly well at
+    // $110 × 30 = $3,300. The override is the VED saying this load really
+    // belongs somewhere else — so the test is that the price CHANGED, which
+    // is the only thing that proves the override did anything at all.
+    const { requestId } = await readyRequest({ weightKg: 1500, volumeM3: 30 });
+    const before = await loadWorkspace(requestId);
+    expect(before!.freight).toMatchObject({ ok: true, listUsd: 3300 });
+
     await expect(
-      sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: 701, bandOverrideReason: null }, ctx()),
+      sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: 950, bandOverrideReason: null }, ctx()),
     ).rejects.toMatchObject({ code: 'band_reason_required' });
 
     const result = await sealCalc(
       requestId,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: 701, bandOverrideReason: 'yuk siqilgan' },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: 950, bandOverrideReason: 'yuk siqilgan' },
       ctx(),
     );
     const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, requestId));
-    expect(Number(version!.freightUsd)).toBe(9600); // the 701-900 row, $320 × 30
+    expect(Number(version!.freightUsd)).toBe(9600); // the 701-999 row, $320 × 30
     expect(Number(version!.discountUsd)).toBe(0);
-    expect(Number(version!.bandOverrideMin)).toBe(701);
+    expect(Number(version!.bandOverrideMin)).toBe(950);
     // The real density stays on the record beside the band it was priced in.
-    expect(Number(version!.density)).toBe(950);
+    expect(Number(version!.density)).toBe(50);
     expect(result.totalUsd).toBe(10_064);
   });
 

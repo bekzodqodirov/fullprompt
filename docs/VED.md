@@ -113,11 +113,28 @@ Density (kg/m³) → price per m³; last row per kg:
 | 401–450 | 280 | 180 |
 | 451–500 | 290 | 190 |
 | 501–700 | 300 | 195 |
-| 700–900 | 320 | 200 |
+| 701–999 | 320 | 200 |
 | ≥1000 kg/m³ | 0.55 $/kg | 0.30 $/kg |
 
 Editable in admin; edits keep history (an old calc reads its own tariff).
-Seed exactly these values.
+
+**The eleventh row is 701–999 by the owner's own correction (2026-08-23).**
+As first written it was «700–900», which left 700 in two bands and 900-999 in
+none — and each is real money (30 m³ at 950 kg/m³ is $9,600 or $15,675
+depending on which way the gap is read). His three answers, asked with the
+numbers attached:
+
+1. 900-999 takes this row's price — «sen aytgandek».
+2. The bands run consecutively: each starts where the one before it ended,
+   plus one — «ketma ket qanday kelyabti shunga mosla». So 700 stays in
+   «501–700», and the row after it begins at 701.
+3. The step at 1000 stays a step, not a floor — «shunday qolsin».
+
+The table now covers every whole kg/m³ from 1 upwards exactly once, which
+`tests/unit/calc-pricing.test.ts` asserts against the very module the seed
+writes from. The engine's `band_missing` / `band_ambiguous` refusals STAY:
+they are about the tariff a person may edit tomorrow, and they are why a
+future hole will be a visible refusal rather than a quietly cheaper invoice.
 
 ## The dictionaries (four)
 
