@@ -1,4 +1,4 @@
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   batches,
@@ -10,6 +10,7 @@ import {
   receipts,
 } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { json } from '@/modules/platform/http/json';
 import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 
 /**
@@ -17,7 +18,7 @@ import { batchMemberFilter } from '@/modules/wms/scanning/unload';
  * codes at the origin WH. The phone caches this for offline local validation
  * (<300 ms feedback without a round-trip).
  */
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, id) });
   if (!batch) return Response.json({ error: 'not_found' }, { status: 404 });
@@ -75,13 +76,23 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         .filter(Boolean) as string[],
     ),
   ];
+  // ACTIVE crates only, and the array goes through `inArray` rather than a
+  // raw `IN ${…}` fragment (a JS array bound into raw sql is not a postgres
+  // array — the recorded footgun). Both were bytes nobody could scan: a
+  // dissolved crate has had its members' `crate_id` cleared since round 31,
+  // so it can never expand to anything, and it stayed on this list for ever
+  // — one warehouse had 612 crates and 1,632 box codes riding a five-box
+  // batch's snapshot, 56 KB re-sent every 15 seconds (round 110).
   const originCrates = await db
     .select({ id: crates.id, code: crates.code })
     .from(crates)
     .where(
-      memberCrateIds.length
-        ? sql`${crates.warehouseId} = ${batch.originWarehouseId} OR ${crates.id} IN ${memberCrateIds}`
-        : eq(crates.warehouseId, batch.originWarehouseId),
+      and(
+        eq(crates.status, 'active'),
+        memberCrateIds.length
+          ? or(eq(crates.warehouseId, batch.originWarehouseId), inArray(crates.id, memberCrateIds))
+          : eq(crates.warehouseId, batch.originWarehouseId),
+      ),
     );
   const crateBoxes = originCrates.length
     ? await db
@@ -132,7 +143,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
   }
 
-  return Response.json({
+  // Compressed, and with an ETag: the phone re-reads this every 15 seconds
+  // and Next does not compress a Route Handler's own response (round 110 —
+  // measured 28,506 bytes on the wire against 975 gzipped).
+  return json(request, {
     batch: { id: batch.id, code: batch.code, status: batch.status },
     quick: !hasPlan,
     boxes: memberBoxes,

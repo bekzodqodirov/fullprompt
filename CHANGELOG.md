@@ -1,5 +1,53 @@
 # CHANGELOG
 
+## Xitoydagi sekinlik — sabab topildi va tuzatildi — 2026-08-23
+
+«Sistema Xitoyda juda sekin, planlarni yuklayotgan paytda ishlatib bo'lmayabti»
+xabaringiz bo'yicha. O'lchab chiqildi, taxmin qilinmadi.
+
+**Asosiy sabab: javoblar siqilmasdan ketardi.** Oddiy sahifalar siqilib ketadi
+(124 KB → 36 KB), lekin skaner ekranlari o'qiydigan mashina ro'yxati **28,5 KB
+o'rniga 975 bayt bo'lishi kerak edi — 29 barobar farq**. Har quti ~268 bayt:
+200 qutilik mashina ≈ 52 KB, 600 quti ≈ 157 KB, 1000 quti ≈ 262 KB — va bu
+**har 15 soniyada, har telefonda qaytadan** yuklanardi.
+
+**Undan ham kattasi: tushirish ekrani har bitta skandan keyin butun ro'yxatni
+qayta yuklab olardi.** Yuklash ekranida bu ancha oldin tuzatilgan, tushirishga
+hech qachon qo'llanmagan. 200 qutilik mashinani tushirish = ro'yxat 200 marta
+yuklanadi ≈ **31 MB behuda trafik bitta mashinaga**, ustiga bir vaqtda uchtadan
+so'rov. Endi: **0 marta** (o'lchandi).
+
+**Va uchinchisi — bu sekinlik emas edi:** internet uzilib-ulanganda dastur
+**butun sahifani qayta yuklardi**, skaner ishlab turganda ham. Skladdagi wifi
+kun bo'yi uzilib turadi, ya'ni skladchi har safar joyini yo'qotardi va telefon
+hamma narsani qaytadan yuklab olardi. O'chirildi — ekranlarning o'z offline
+rejimi bor, unga bu kerak emas.
+
+Nima qilindi:
+
+- **Hamma javoblar endi siqiladi** — ham dasturning o'zida, ham oldidagi
+  serverda (haqiqiy Caddy bilan shu yerda sinab ko'rilgan: rasm/xarita
+  fayllariga tegmaydi, ikki marta siqmaydi).
+- **O'zgarish bo'lmasa — umuman yuklab olmaydi.** Telefon «o'zgardimi?» deb
+  so'raydi, server «yo'q» deb javob beradi va **hech qanday ma'lumot
+  ketmaydi**. Hamkasbingiz bitta quti skan qilsa — keyingi 15 soniyada
+  ekraningizda ko'rinadi, avvalgidek.
+- **Skan qilganda ro'yxat qayta yuklanmaydi** (faqat skan serverga ketadi).
+- **Ekran ochilganda ro'yxat bir marta yuklanadi** (avval ikki marta edi).
+- **Telefon cho'ntakda turganda so'rov yubormaydi** — ekran yonganda darrov
+  yangilanadi.
+- Reja tuzish (`plan`) va inventarizatsiya ekranlarining ro'yxatlari ham
+  siqiladi.
+- Buzib tashlangan yashiklar ro'yxatdan chiqdi (ular hech qachon skan
+  qilinmaydi, lekin har safar yuborilardi — bitta skladda 612 ta yashik).
+
+Natija (haqiqiy brauzerda o'lchandi): skaner ekrani ochiq turganda 38 soniyada
+**114 KB o'rniga 990 bayt**.
+
+Bu yangilanishda baza o'zgarmaydi. Lekin quyidagi VED bosqichi bilan birga
+deploy qilinadi, shuning uchun deploydan keyin migratsiya hisobi **86**
+bo'lishi kerak.
+
 ## VED moduli, A bosqich: hisoblash navbati — 2026-08-22
 
 Sotuvchi so'rov qoldiradi, VED xodimi bitta navbatdan ishlaydi, va har

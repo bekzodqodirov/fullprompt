@@ -520,7 +520,54 @@ just-departed truck stands ON its origin warehouse and takes the tap
 (deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
 `elementFromPoint` says is free instead of `.first()`.
 
-Latest migration: **0084** (`speed_round` — two partial `notifications`
+**Round 110 — the China round** (#752-758 — renumbered from #748-754 on the
+merge, the THIRTEENTH collision: the other session's VED phase A took
+#748-751 and merged first; his «sistema xitoyda juda sekin
+ishlayabti, planlarni yuklayotgan paytda ishlatib bolmayabti»). NO migration
+of its own, but it deploys together with VED phase A's **0085**, so the
+ledger must read **86** afterwards. The answer was BYTES nobody was counting, and one thing that was
+not slowness at all. **Next compresses what it RENDERS and not a Route
+Handler's own `Response`** — measured: the scan screens' manifest went out at
+**28,506 bytes with gzip asked for**, and gzipped is **975** (29×); Caddy in
+front compressed nothing because the inline-generated Caddyfile had two
+directives and `encode` was not one. At 268 B a box row that is 157 KB for a
+600-box truck, every 15 s, per phone. **The unload screen re-read the whole
+truck after EVERY scan** — round 9's #248-250 fixed that on the LOADING screen
+and unload never got it, so a 200-box truck pulled the manifest 200 times
+(~31 MB); measured four accepts = four GETs before, **zero** after (it now
+carries `flush({sync})` + `flushSoon()` verbatim). **The service worker
+reloaded the whole page on every `online` event** (serwist's `reloadOnOnline`
+default, confirmed in the built bundle) — on warehouse wifi that is a scan
+screen restarting mid-pallet, which is why his word was «ishlatib bolmayabti»
+and not «sekin»; off now. Built: `platform/http/json.ts` (gzip on the
+THREADPOOL + an ETag that is the hash of the body itself, `If-None-Match`
+parsed as a list with the proxy `-gzip` suffix stripped), on
+`/api/batches/*/planned`, `/api/plans/stock`, `/api/inventory/expected`; the
+screens send `If-None-Match` EXPLICITLY because the SW's NetworkFirst refetch
+never carried a conditional request; `encode zstd gzip` on both Caddy
+services — **TESTED here with a real Caddy 2.8 in the production shape**
+(5,793 → 1,283 B on a route the app does not compress, no double-encoding of
+one it does, a `.pmtiles` `Range` read still a plain 206, both generated
+Caddyfiles `caddy validate`-clean); one snapshot read on mount instead of two;
+no ticking while the screen is not visible; ACTIVE crates only in the
+snapshot (a dissolved crate can expand no scan — 612 crates / 1,632 codes /
+56 KB rode a five-box batch) and `inArray` for the raw `IN ${array}`.
+MEASURED END TO END in a phone-shaped browser with the worker installed:
+an open loading screen cost **114 KB per 38 s → 990 bytes**, quiet ticks are
+304 with no body, and a colleague's change still lands on the next tick.
+STATED, not done (#758): the 304 saves bytes and NOT the ~67 ms of queries —
+a round-108-style version probe is the next step; the quick-batch `available`
+list still ships 1,500 rows and truncates silently; `batchMemberFilter`'s OR
+runs twice per snapshot; HTTP/3 is advertised while compose publishes TCP 443
+only. 1723 unit/integration + 157 e2e green on a fresh gsr_ci in CI's order.
+LOCAL TRAP worth remembering: a stand-in `.data/basemap/corridor.pmtiles`
+makes /map render LEAFLET, and two specs assert the SVG schematic — both
+failures were that file, not the code.
+
+Latest migration: **0085** (`calc_queue` — the VED queue's columns and
+`calc_request_items`, 0052's one-open-per-card index DROPPED; count must
+reach **86**);
+0084 (`speed_round` — two partial `notifications`
 indexes + `tg_messages.edited_at`; count must reach **85**);
 0083 (`expense_requests` — the rasxod xabari queue;
 count must reach **84**;
@@ -591,9 +638,9 @@ a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
 **HIS SERVER IS AT 84** (he confirmed «84 chiqdi» on 2026-08-19 after PR
-#47 — round 107). **Round 108's PR #48 is MERGED and NOT YET DEPLOYED: his
-next deploy must land migration 0084 and the ledger must read 85.** Round
-109 mints none, so 85 covers both.
+#47 — round 107). **Rounds 108-110 and VED phase A are MERGED and NOT YET
+DEPLOYED: his next deploy must land 0084 AND 0085, and the ledger must read
+86.** Rounds 109, 109b and 110 mint none, so 86 covers all of them.
 Before that: **83 — everything through rounds 103-106
 (PR #45, merged and deployed 2026-08-18 evening, he confirmed «83 chiqdi»;
 migrations 0081 `backup_objects` + 0082 `notify_claim`). The tg-listen
@@ -635,7 +682,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**85** on `main` since round 108; his server was at 84 on
+length (**86** on `main` since VED phase A; his server was at 84 on
 2026-08-19) —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those

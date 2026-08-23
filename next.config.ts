@@ -8,6 +8,15 @@ const withSerwist = withSerwistInit({
   swSrc: 'src/app/sw.ts',
   swDest: 'public/sw.js',
   disable: process.env.NODE_ENV === 'development',
+  // Serwist's default is `location.reload()` on every `online` event, and it
+  // is wrong for this app (round 110). Warehouse wifi in Yiwu and Kashgar
+  // flaps all day, so the scan screens were reloading themselves mid-pallet:
+  // the camera restarts, the operator loses their place, and the phone
+  // re-downloads the shell and the truck's snapshot over the slowest link the
+  // company has. Nothing here needs it — the scan screens carry their own
+  // offline banner, their own cached snapshot and an IndexedDB outbox, and
+  // every other live screen re-reads on its own beat.
+  reloadOnOnline: false,
 });
 
 // Native/node-only packages that must never enter a webpack bundle.
