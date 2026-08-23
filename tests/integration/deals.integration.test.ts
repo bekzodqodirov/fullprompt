@@ -8,6 +8,7 @@ import {
   clientTransactions,
   boxes,
   clients,
+  dealLines,
   deals,
   events,
   receiptLots,
@@ -332,6 +333,45 @@ describe('the reality side is summed from the receipts, never typed in', () => {
   });
 });
 
+describe('where a deal nobody asked for lands on the board', () => {
+  it('the client-code shell goes to the BOTTOM, under the work already there', async () => {
+    // Round 111 opens a deal with every client code. The board draws forty
+    // cards per column ordered by board_order ASC, so putting these at the top
+    // — where every deal a PERSON raises goes — would push real, priced work
+    // off the slice. Fifty new codes in a week is an ordinary week here.
+    const cl = await freshClient();
+    const first = await newDeal({ clientId: cl });
+    const shell = await createDeal(
+      { clientId: cl, title: `Shell ${SUFFIX}`, quotedAmount: null, quotedCurrency: null },
+      ctx(),
+      { atBottom: true },
+    );
+    madeDeals.push(shell);
+    const rows = await db
+      .select({ id: deals.id, order: deals.boardOrder, stage: deals.stageId })
+      .from(deals)
+      .where(inArray(deals.id, [first, shell]));
+    const a = rows.find((r) => r.id === first)!;
+    const b = rows.find((r) => r.id === shell)!;
+    // Same column, and the shell is below.
+    expect(b.stage).toBe(a.stage);
+    expect(Number(b.order)).toBeGreaterThan(Number(a.order));
+  });
+
+  it('a deal a person raises still lands on top, as it always has', async () => {
+    const cl = await freshClient();
+    const first = await newDeal({ clientId: cl });
+    const second = await newDeal({ clientId: cl });
+    const rows = await db
+      .select({ id: deals.id, order: deals.boardOrder })
+      .from(deals)
+      .where(inArray(deals.id, [first, second]));
+    const a = rows.find((r) => r.id === first)!;
+    const b = rows.find((r) => r.id === second)!;
+    expect(Number(b.order)).toBeLessThan(Number(a.order));
+  });
+});
+
 describe('price control fires while the cargo is still in China', () => {
   it('shouts when cargo arrives under no job at all', async () => {
     // A client with NO deals: «set a price» is only the honest ask when there
@@ -365,6 +405,76 @@ describe('price control fires while the cargo is still in China', () => {
     const confirmed = await eventsFor(receiptId, 'ReceiptConfirmed');
     expect((confirmed[0]!.payload as Record<string, unknown>).dealLinked).toBe(false);
     expect((confirmed[0]!.payload as Record<string, unknown>).openDealCodes).toEqual([dealCode]);
+  });
+
+  it('an EMPTY deal is not something to attach to — the price alarm still fires', async () => {
+    // Round 111 opens a deal with every client code, and round 107 already
+    // opened one with every won lead. Neither carries a price. If price
+    // control counted those, the first arrival for nearly every new customer
+    // would read «biriktiring» — pointing at a shell — instead of «narx
+    // qo'ying», and the alarm would be gone for good the moment somebody
+    // followed that instruction.
+    const cl = await freshClient();
+    await newDeal({
+      clientId: cl,
+      quotedAmount: null,
+      quotedCurrency: null,
+      quotedVolumeM3: null,
+      quotedWeightKg: null,
+    });
+    const receiptId = await receiveCargo(1.4, 180, 10, null, cl);
+    expect(await eventsFor(receiptId, 'UnquotedCargo')).toHaveLength(1);
+    expect(await eventsFor(receiptId, 'UnlinkedCargo')).toHaveLength(0);
+    // …and the prixod message's own marker agrees with the alarm, or the two
+    // would tell the seller opposite things about the same receipt (#688).
+    const confirmed = await eventsFor(receiptId, 'ReceiptConfirmed');
+    expect((confirmed[0]!.payload as Record<string, unknown>).openDealCodes).toEqual([]);
+  });
+
+  it('a deal with GOODS on it but no price is still attachable', async () => {
+    // The other side of the same rule: «has somebody put something on this
+    // deal» is the question, and a goods list is a yes. A VED calculation
+    // lands lines before it lands a price.
+    const cl = await freshClient();
+    const dealId = await newDeal({
+      clientId: cl,
+      quotedAmount: null,
+      quotedCurrency: null,
+      quotedVolumeM3: null,
+      quotedWeightKg: null,
+    });
+    const dealCode = (await db.query.deals.findFirst({ where: eq(deals.id, dealId) }))!.code;
+    await db.insert(dealLines).values({ dealId, seq: 1, description: `Tovar ${SUFFIX}` });
+    const receiptId = await receiveCargo(1.4, 180, 10, null, cl);
+    expect(await eventsFor(receiptId, 'UnlinkedCargo')).toHaveLength(1);
+    expect(
+      (
+        (await eventsFor(receiptId, 'UnlinkedCargo'))[0]!.payload as Record<string, unknown>
+      ).openDealCodes,
+    ).toEqual([dealCode]);
+    expect(await eventsFor(receiptId, 'UnquotedCargo')).toHaveLength(0);
+  });
+
+  it('linking cargo to a deal that carries no price does NOT go quiet', async () => {
+    // The horn the attach instruction used to lead to. `compareQuote` has
+    // nothing to compare, answers «incomparable», `worthAlerting` says no, and
+    // the cargo reaches Tashkent with nobody having agreed a number. Live
+    // since round 107, closed here.
+    const cl = await freshClient();
+    const dealId = await newDeal({
+      clientId: cl,
+      quotedAmount: null,
+      quotedCurrency: null,
+      quotedVolumeM3: null,
+      quotedWeightKg: null,
+    });
+    const dealCode = (await db.query.deals.findFirst({ where: eq(deals.id, dealId) }))!.code;
+    const receiptId = await receiveCargo(1.02, 100, 10, dealId, cl);
+    const alerts = await eventsFor(receiptId, 'UnquotedCargo');
+    expect(alerts).toHaveLength(1);
+    // It names the deal the price goes ON, not just the receipt.
+    expect((alerts[0]!.payload as Record<string, unknown>).openDealCodes).toEqual([dealCode]);
+    expect(await eventsFor(receiptId, 'DealDeviation')).toHaveLength(0);
   });
 
   it('says nothing about deals when the receipt IS linked to one', async () => {

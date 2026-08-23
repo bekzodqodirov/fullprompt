@@ -1,6 +1,6 @@
 'use client';
 
-import { compressPhoto } from '@/components/compress-photo';
+import { compressPhoto, PhotoUnreadable } from '@/components/compress-photo';
 import { PHOTO_UPLOAD_CONCURRENCY, runPooled } from '@/components/pooled';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -454,8 +454,11 @@ export function ReceiveWizard({
         } else {
           setError(await uploadErrorText(res));
         }
-      } catch {
-        setError(t('photoUploadFailed'));
+      } catch (err) {
+        // Two different failures wearing one sentence until now: a file the
+        // browser cannot read AS A PHOTO is not the network's fault, and
+        // «check the connection» sends the operator to the router (#669).
+        setError(err instanceof PhotoUnreadable ? tc('photoOnly') : t('photoUploadFailed'));
       } finally {
         // In `finally`, not after the write: a refusal or a dropped connection
         // must clear the spinner too, or the screen is stuck on «working» and
@@ -504,8 +507,11 @@ export function ReceiveWizard({
         } else {
           setError(await uploadErrorText(res));
         }
-      } catch {
-        setError(t('photoUploadFailed'));
+      } catch (err) {
+        // Two different failures wearing one sentence until now: a file the
+        // browser cannot read AS A PHOTO is not the network's fault, and
+        // «check the connection» sends the operator to the router (#669).
+        setError(err instanceof PhotoUnreadable ? tc('photoOnly') : t('photoUploadFailed'));
       } finally {
         markBusy(RECEIPT_SLOT, -1);
       }
@@ -530,8 +536,11 @@ export function ReceiveWizard({
         } else {
           setError(await uploadErrorText(res));
         }
-      } catch {
-        setError(t('photoUploadFailed'));
+      } catch (err) {
+        // Two different failures wearing one sentence until now: a file the
+        // browser cannot read AS A PHOTO is not the network's fault, and
+        // «check the connection» sends the operator to the router (#669).
+        setError(err instanceof PhotoUnreadable ? tc('photoOnly') : t('photoUploadFailed'));
       } finally {
         markBusy(RECEIPT_SLOT, -1);
       }
@@ -699,14 +708,34 @@ export function ReceiveWizard({
           }`}
         >
           {busy ? '⏳' : '📷'}
+          {/* No `capture`: it forced the CAMERA and hid the gallery and the
+              file browser entirely (owner, round 111: «kamera iconni bossa
+              rasimga olish kamerasi ochilyabti … fildan tanlash yokida rasimga
+              olish qilib ochadigan yoli borku»). Without it the phone offers
+              all three and the camera costs one extra tap — his trade.
+
+              `accept` STAYS, and the reason is mechanical: whatever comes back
+              is pushed into `lot.photoIds`, which `lotsValid()` counts as the
+              confirm gate and `LightboxImg` draws as an <img>. A PDF here
+              would open the button AND render broken on the receipt, the stock
+              table and the label sheet.
+
+              `value = ''` AFTER the handler, never before — clearing it empties
+              `input.files`, and this is safe only because `addPhotos` snapshots
+              the list synchronously. Without it, re-picking the SAME photo
+              after a failed upload fires no `change` event at all and the tap
+              does nothing: the camera hid that for years by handing back a
+              fresh temp file every time. */}
           <input
             type="file"
             accept="image/*"
-            capture="environment"
             multiple
             disabled={busy}
             className="hidden"
-            onChange={(e) => addPhotos(lot, e.target.files)}
+            onChange={(e) => {
+              void addPhotos(lot, e.target.files);
+              e.target.value = '';
+            }}
           />
         </label>
         {lot.photoIds.map((photoId) => (
@@ -1005,15 +1034,21 @@ export function ReceiveWizard({
           }`}
         >
           {photoBusy(RECEIPT_SLOT) ? '⏳' : '📷'} {t('generalPhotos')}
+          {/* Same two rules as the per-lot tile above: no `capture` so the
+              gallery and the files are reachable, `accept` kept because these
+              ids are drawn as <img>, and the reset after the handler so a
+              second attempt at the same picture is not silently ignored. */}
           <input
             data-testid="general-photo-input"
             type="file"
             accept="image/*"
-            capture="environment"
             multiple
             disabled={photoBusy(RECEIPT_SLOT)}
             className="hidden"
-            onChange={(e) => addGeneralPhotos(e.target.files)}
+            onChange={(e) => {
+              void addGeneralPhotos(e.target.files);
+              e.target.value = '';
+            }}
           />
         </label>
         <label
@@ -1023,12 +1058,19 @@ export function ReceiveWizard({
           }`}
         >
           {photoBusy(RECEIPT_SLOT) ? '⏳' : '📎'} {t('attachments')}
+          {/* No `accept` on purpose — this is the door for an invoice, a
+              packing list, a video. It has always opened the file browser, and
+              it has always carried the missing reset: fixed here with its two
+              siblings rather than left as a known one. */}
           <input
             disabled={photoBusy(RECEIPT_SLOT)}
             type="file"
             multiple
             className="hidden"
-            onChange={(e) => addReceiptFiles(e.target.files)}
+            onChange={(e) => {
+              void addReceiptFiles(e.target.files);
+              e.target.value = '';
+            }}
           />
         </label>
         {draft.generalPhotoIds.map((photoId) => (

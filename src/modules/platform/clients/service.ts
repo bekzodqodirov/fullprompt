@@ -45,6 +45,31 @@ export function isValidClientCode(code: string): boolean {
 }
 
 /**
+ * Who may open a client code.
+ *
+ * Round 111, the owner: «hamma account uchun navbarda + iconkada lid ochish
+ * bor, shu yerga klient code ochishni ham qoshishimiz kerak boladi». Until now
+ * this was `clients.manage`, which the sales_manager role does not carry — so
+ * the seller who signs the customer could raise a lead but not the code that
+ * goes on their cartons, and had to ask an admin for it.
+ *
+ * Stated as ONE exported predicate rather than the pair written out at each
+ * door, because there are two doors (the app bar decides whether to draw the
+ * button, the action decides whether to obey it) and a screen that offers what
+ * the action refuses is worse than neither.
+ *
+ * It deliberately does NOT answer «may this person read the client book» —
+ * that is still `clients.manage`, and a seller who mints a code sees it
+ * through their own screens, by the money scope, because they are stamped as
+ * its manager (#637-640).
+ */
+export const CLIENT_MINT_PERMISSIONS = ['clients.manage', 'crm.leads'] as const;
+
+export function canMintClient(permissions: { has(code: string): boolean }): boolean {
+  return CLIENT_MINT_PERMISSIONS.some((code) => permissions.has(code));
+}
+
+/**
  * The insert, retried when the code it minted turned out to be taken.
  *
  * The generator serialises against ITSELF with an advisory lock, so two

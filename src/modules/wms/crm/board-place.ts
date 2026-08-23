@@ -35,6 +35,27 @@ export async function topOfColumn(db: Exec, spec: BoardTable, stageId: string): 
 }
 
 /**
+ * The bottom of a column: below everything already in it.
+ *
+ * The top is where a card a PERSON raised belongs — they are about to work on
+ * it. A card the system opened by itself is not that: round 111 opens a deal
+ * with every client code, so on a busy funnel those shells would take the top
+ * of the first column and push real, priced work off the forty the board
+ * draws. Ordered by `board_order ASC`, the bottom is exactly the right rank
+ * for a card that carries nothing yet, and it costs the same one query.
+ */
+export async function bottomOfColumn(db: Exec, spec: BoardTable, stageId: string): Promise<number> {
+  const [row] = await db.execute<{ m: number | null }>(
+    sql`SELECT max(board_order) AS m FROM ${spec.table} WHERE stage_id = ${stageId}::uuid`,
+  );
+  const slot = slotBetween(row?.m ?? null, null);
+  // `slotBetween` can only answer 'renumber' when it is given two neighbours;
+  // with `null` on one side it always returns a number. Narrowed rather than
+  // asserted, so a future change to that function fails here loudly.
+  return slot === 'renumber' ? BOARD_SPACING : slot;
+}
+
+/**
  * Space one column out again, keeping the order it is already in.
  *
  * Two things need this and they are the same thing seen twice: gaps halved

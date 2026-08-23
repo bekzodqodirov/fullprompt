@@ -47,7 +47,8 @@
     "notFilled": "未填写",
     "copy": "复制",
     "scanTruckForbidden": "这辆车不属于你的仓库，或登录已过期，请重新登录。",
-    "scanSnapshotOffline": "箱子清单未能加载：无网络。请检查网络后重试。"
+    "scanSnapshotOffline": "箱子清单未能加载：无网络。请检查网络后重试。",
+    "photoOnly": "这不是图片 — 请选择照片（文件请用 📎）"
   },
   "login": {
     "title": "登录系统",
@@ -2125,6 +2126,7 @@
     "copy": "复制编号",
     "copied": "已复制 ✓",
     "toCard": "客户卡 →",
+    "toDeal": "交易 →",
     "done": "完成",
     "discard": "不保存就关闭吗？已输入的内容会丢失。",
     "hint": {
@@ -2137,7 +2139,8 @@
       "code_exists": "该代码已存在",
       "code_format": "代码格式不正确",
       "failed": "保存失败",
-      "duplicate": "已有类似线索 — 请见下方。再次点击仍可创建。"
+      "duplicate": "已有类似线索 — 请见下方。再次点击仍可创建。",
+      "duplicateCode": "该号码已有客户代码 — 再按一次仍然新建"
     }
   },
   "routing": {

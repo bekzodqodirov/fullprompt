@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -340,7 +340,29 @@ export async function confirmReceipt(
               .select({ code: deals.code })
               .from(deals)
               .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
-              .where(and(eq(deals.clientId, input.clientId), eq(dealStages.kind, 'open')))
+              .where(
+                and(
+                  eq(deals.clientId, input.clientId),
+                  eq(dealStages.kind, 'open'),
+                  // …and it must be something a person could ATTACH cargo to.
+                  // An empty deal is not: round 111 opens one automatically
+                  // with every client code, and round 107 already opens one on
+                  // every won lead, so without this the first arrival for
+                  // nearly every new customer would read «biriktiring» —
+                  // pointing at a shell with no price — instead of «narx
+                  // qo'ying», and the seller who attached it would then have
+                  // silenced the alarm for good. A deal carries weight once
+                  // somebody has put a price or a goods list on it.
+                  or(
+                    isNotNull(deals.quotedAmount),
+                    // `${deals}.id`, not `${deals.id}` — inside a correlated
+                    // subquery drizzle would render the bare column against
+                    // deal_lines and the EXISTS would be true for every deal
+                    // that has any line at all (#128).
+                    sql`EXISTS (SELECT 1 FROM deal_lines WHERE deal_lines.deal_id = ${deals}.id)`,
+                  ),
+                ),
+              )
               .limit(4)
           ).map((row) => row.code)
         : [];

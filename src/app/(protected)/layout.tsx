@@ -6,6 +6,7 @@ import { LocaleSwitcher } from '@/components/locale-switcher';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { SearchPalette } from '@/components/search-palette';
 import { QuickCreate, type QuickKind } from '@/components/quick-create';
+import { canMintClient } from '@/modules/platform/clients/service';
 import { readTheme } from '@/modules/platform/theme/theme';
 import { Icon } from '@/components/ui/icon';
 import { UpdateBanner } from '@/components/update-banner';
@@ -33,8 +34,19 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   const theme = await readTheme();
   const quickKinds: QuickKind[] = [
     ...(actor.permissions.has('crm.leads') ? (['lead'] as const) : []),
-    ...(actor.permissions.has('clients.manage') ? (['client'] as const) : []),
+    // One predicate, asked here and again inside the action — a screen that
+    // offers what the action refuses is worse than neither (round 111).
+    ...(canMintClient(actor.permissions) ? (['client'] as const) : []),
   ];
+  // Which kinds have a FULL form this person can actually open. `/admin/clients/new`
+  // is `clients.manage` at the page AND at its action, so the seller the quick
+  // door was just opened to would be bounced to the home screen by «Batafsil»,
+  // losing what they had typed. Hiding the link is the honest v1: widening that
+  // page also hands over the typed-code field, the manager picker and the
+  // internal notes, which is a separate decision and the owner's to make.
+  const quickFullForms: QuickKind[] = quickKinds.filter(
+    (kind) => kind !== 'client' || actor.permissions.has('clients.manage'),
+  );
 
   // Labels come from each screen's own namespace, so the nav never invents a
   // second name for a page that already has one.
@@ -95,7 +107,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           {/* Which objects this person may mint, decided HERE: the client
               component holds no permission knowledge, the same way the nav
               receives a ready list rather than the rules behind it. */}
-          <QuickCreate kinds={quickKinds} />
+          <QuickCreate kinds={quickKinds} fullForms={quickFullForms} />
           {/* Search is a tool, not a destination (owner): it lives in the bar
               at every width instead of taking a tile and a sidebar row. */}
           {/* The palette wraps the link rather than replacing it: with no

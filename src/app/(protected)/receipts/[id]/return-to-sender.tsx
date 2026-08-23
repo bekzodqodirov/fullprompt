@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
-import { compressPhoto } from '@/components/compress-photo';
+import { compressPhoto, PhotoUnreadable } from '@/components/compress-photo';
 import { returnToSenderAction } from './actions';
 
 /**
@@ -39,8 +39,8 @@ export function ReturnToSender({ receiptId }: { receiptId: string }) {
       const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
       if (res.ok) setPhotoId(((await res.json()) as { id: string }).id);
       else setError(tc('error'));
-    } catch {
-      setError(tc('error'));
+    } catch (err) {
+      setError(err instanceof PhotoUnreadable ? tc('photoOnly') : tc('error'));
     } finally {
       setUploading(false);
     }
@@ -96,7 +96,20 @@ export function ReturnToSender({ receiptId }: { receiptId: string }) {
       />
       <label className={`btn-secondary flex w-full cursor-pointer items-center justify-center gap-2 ${uploading ? 'opacity-60' : ''}`}>
         {uploading ? '…' : photoId ? '✅ 📷' : '📷'} {t('handoverPhoto')}
-        <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading} onChange={(e) => addPhoto(e.target.files)} />
+        {/* No `capture` (round 111): the evidence photograph may already be
+            in the gallery — taken at the shelf before this screen was opened.
+            `value` cleared AFTER the handler, or re-picking the same file
+            after a refusal fires no event and the tap does nothing. */}
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          disabled={uploading}
+          onChange={(e) => {
+            void addPhoto(e.target.files);
+            e.target.value = '';
+          }}
+        />
       </label>
       <div className="flex gap-2">
         <button
