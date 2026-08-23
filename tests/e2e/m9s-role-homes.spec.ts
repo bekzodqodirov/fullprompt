@@ -86,20 +86,20 @@ test('the sales manager wakes up to the call list', async ({ page }) => {
   await expect(page).toHaveURL('/crm/today');
 });
 
-test('the VED manager wakes up to the paperwork queue', async ({ page }) => {
+test('the VED manager wakes up to the calculation queue', async ({ page }) => {
   await login(page, VED);
 
-  // The hisoblash clock left in round 83, and its row with it — this person's
-  // hero is now the thing they actually get phoned about: a truck that
-  // departed without its papers reaching the agent.
+  // The hisoblash clock came back with the VED module (phase A), and with it
+  // this person's hero: the only queue in the company with MINUTES on it.
+  // The paperwork row is still here, one rank down.
   await expect(page.getByTestId('ved-flow-hero')).toBeVisible();
+  await expect(page.getByTestId('ved-flow-papers')).toBeVisible();
   await expect(page.getByTestId('ved-flow-tnved')).toBeVisible();
-  await expect(page.getByTestId('ved-flow-docs')).toHaveCount(0);
   await expect(page.getByTestId('sales-flow-hero')).toHaveCount(0);
   await expect(page.getByTestId('flow-receive')).toHaveCount(0);
 
   await page.getByTestId('ved-flow-hero').click();
-  await expect(page).toHaveURL('/batches');
+  await expect(page).toHaveURL('/hisoblash');
 });
 
 test('the accountant wakes up to the money', async ({ page }) => {

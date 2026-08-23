@@ -15,7 +15,11 @@ export const MUTE_GROUPS = {
   // accident.
   // TaskAssigned/TaskDone are the instant halves of the same story the
   // morning digest tells; someone silencing one means all of it.
-  tasks: ['TasksDue', 'TaskAssigned', 'TaskDone'],
+  // The calc queue's three everyday messages ride here beside the task ones:
+  // a calculation IS a task in this company, and somebody who silenced «work
+  // was assigned / work is done» means these too. The late one is an alarm and
+  // lives below.
+  tasks: ['TasksDue', 'TaskAssigned', 'TaskDone', 'CalcRequested', 'CalcTaken', 'CalcDone', 'CalcReturned'],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo
   // that arrived at a different size to the one the client was quoted is not,
@@ -41,7 +45,10 @@ export const MUTE_GROUPS = {
     'ExpenseRequested',
     'ExpenseRequestDecided',
     // A calculation blew its 30–120 minute deadline (round 28) — told to the
-    // waiting salesperson and the owner while chasing it still helps.
+    // waiting salesperson and the owner while chasing it still helps. The
+    // entry left with the clock's doors in round 84 and comes back with them
+    // (VED phase A); its comment sat here orphaned in between.
+    'CalcOverdue',
     // A customer has been waiting for an answer past the threshold (round 36).
     // An alert, not a digest: it is only worth anything before they ring.
     'ClientWaiting',

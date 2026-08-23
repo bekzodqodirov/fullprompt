@@ -8,6 +8,7 @@ import { entitySpec } from '../fields/registry';
 import { recordNames, resolveEntity } from '../entities/service';
 import { taskLink } from '../notifications/links';
 import { notifyStaffTelegram, userName } from '../notifications/staff';
+import { logger } from '../logger';
 
 /**
  * Work one person gives another (owner: "tasklar calendarlar").
@@ -338,6 +339,17 @@ export async function completeTask(
     after: { status: 'done', result: result.trim() || null },
   });
 
+  // A hisoblash task closed by hand is the other end of the calc clock: the
+  // lead has no lines to save, so this is the only end it has. Dynamic import
+  // across platform → wms, fenced — a calc module that throws must not stop a
+  // person closing their own task.
+  try {
+    const { completeCalcForTask } = await import('../../wms/calc/service');
+    await completeCalcForTask(id, ctx.actorId);
+  } catch (err) {
+    logger.error({ err, taskId: id }, '[calc] clock stop on task close failed');
+  }
+
   // The person who ASKED finds out it is done — with what was done, because
   // "bajarildi" with no result is a message that starts a phone call.
   if (before.createdBy && before.createdBy !== ctx.actorId) {
@@ -417,6 +429,16 @@ export async function cancelTask(id: string, reason: string, ctx: TaskContext): 
     before: { status: 'open' },
     after: { status: 'cancelled', reason: reason.trim() || null },
   });
+
+  // Cancelling the task does not cancel the WORK: the calculation goes back
+  // to the queue rather than sitting assigned to somebody with no task, where
+  // no other VED person would ever pick it up.
+  try {
+    const { releaseCalcForTask } = await import('../../wms/calc/service');
+    await releaseCalcForTask(id, ctx.actorId);
+  } catch (err) {
+    logger.error({ err, taskId: id }, '[calc] release on task cancel failed');
+  }
 }
 
 /** Hand a task to somebody else — the everyday move in a small company. */

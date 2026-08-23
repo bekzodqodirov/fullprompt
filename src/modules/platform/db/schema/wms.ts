@@ -1859,15 +1859,25 @@ export const tgOutbox = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Hisoblash (round 28) — a calculation handed to a VED person, with a clock
+// Hisoblash — a calculation JOB standing in the VED queue, with a clock
 //
-// The owner's ask in one line: «VED xodimlarim qanchada hisoblab
-// berayotganini bilishim kerak». A request records who asked, who got it and
-// how big the job is; the deadline scales with item_count (30 min per line,
-// capped at two hours) and the speed report is the difference between
-// requested_at and completed_at. completed_via says HOW the clock stopped:
-// 'lines' = the calculation was actually saved on the deal (the honest end),
-// 'task' = the task was closed by hand (the only end a lead has).
+// Round 28's ask, in the owner's words: «VED xodimlarim qanchada hisoblab
+// berayotganini bilishim kerak». The VED module (phase A, migration 0085)
+// widened it from «price this card» to the consignment itself: which service
+// is being asked for (section), the route, the weight and volume, the goods
+// (calc_request_items), and the materials the seller sent — ONE crm_activity
+// note holding the text and every file.
+//
+// The deadline scales with item_count (30 min a line, two hours at the cap)
+// and the speed report is requested_at → completed_at. completed_via says HOW
+// it ended: 'lines' = the calculation was saved on the deal (the honest end),
+// 'task' = closed by hand, 'returned' = handed back for missing information.
+// **Every speed figure must exclude 'returned'**, or a person who bounces
+// everything back in ninety seconds is the fastest calculator in the company.
+//
+// assignee_id and task_id are nullable because the queue owns assignment: a
+// request nobody can be given (nobody holds `ved.docs`) is still a request.
+// section and source are nullable because rows written before 0085 never said.
 // ---------------------------------------------------------------------------
 
 export const calcRequests = pgTable(
@@ -1879,34 +1889,84 @@ export const calcRequests = pgTable(
     requestedBy: uuid('requested_by')
       .notNull()
       .references(() => users.id),
-    assigneeId: uuid('assignee_id')
-      .notNull()
-      .references(() => users.id),
+    assigneeId: uuid('assignee_id').references(() => users.id),
     itemCount: integer('item_count').notNull(),
-    taskId: uuid('task_id')
-      .notNull()
-      .references(() => tasks.id),
+    taskId: uuid('task_id').references(() => tasks.id),
+    /** yolkira | rastamojka | podklyuch — which service is being priced. */
+    section: text('section'),
+    fromCity: text('from_city'),
+    toCity: text('to_city'),
+    weightKg: numeric('weight_kg', { precision: 12, scale: 3 }),
+    volumeM3: numeric('volume_m3', { precision: 12, scale: 3 }),
+    /** card | bot — which door it came in through. */
+    source: text('source'),
+    /** The materials, as sent: one crm_activity note with its attachments. */
+    noteId: uuid('note_id').references(() => crmActivities.id, { onDelete: 'set null' }),
     requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
     dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    takenAt: timestamp('taken_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     completedBy: uuid('completed_by').references(() => users.id),
     completedVia: text('completed_via'),
+    /** Why it was handed back — mandatory on the 'returned' ending. */
+    returnReason: text('return_reason'),
+    /** The answer: phase A records the figure, phase B seals the breakdown. */
+    answerAmount: numeric('answer_amount', { precision: 14, scale: 2 }),
+    answerCurrency: text('answer_currency'),
+    answerNote: text('answer_note'),
     /** Stamped by the sweep so a late calculation is announced exactly once. */
     overdueNotifiedAt: timestamp('overdue_notified_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     check('calc_requests_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
-    check('calc_requests_items_check', sql`${t.itemCount} BETWEEN 1 AND 500`),
+    check('calc_requests_items_check', sql`${t.itemCount} BETWEEN 0 AND 1000`),
     check(
       'calc_requests_via_check',
-      sql`${t.completedVia} IS NULL OR ${t.completedVia} IN ('lines', 'task')`,
+      sql`${t.completedVia} IS NULL OR ${t.completedVia} IN ('lines', 'task', 'returned')`,
     ),
-    // One live request per card, held even against two simultaneous presses.
-    uniqueIndex('calc_requests_open_entity_idx')
-      .on(t.entityType, t.entityId)
-      .where(sql`${t.completedAt} IS NULL`),
+    check(
+      'calc_requests_section_check',
+      sql`${t.section} IS NULL OR ${t.section} IN ('yolkira', 'rastamojka', 'podklyuch')`,
+    ),
+    check(
+      'calc_requests_source_check',
+      sql`${t.source} IS NULL OR ${t.source} IN ('card', 'bot')`,
+    ),
+    // Read by the attachment gate on every file render (see access.ts).
+    index('calc_requests_note_idx').on(t.noteId),
     index('calc_requests_assignee_idx').on(t.assigneeId, t.requestedAt),
   ],
+);
+
+/**
+ * The goods a request carries, at the grain the client's own invoice comes in.
+ *
+ * Phase B groups these by TNVED code; a group is a layer OVER items and is
+ * born there, because a grouping proposed by a model at submit time would be
+ * load-bearing before anybody confirmed it. `seq` is the seller's ordering and
+ * never moves — phase B's groups refer to items by position.
+ */
+export const calcRequestItems = pgTable(
+  'calc_request_items',
+  {
+    id: id(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    name: text('name').notNull(),
+    quantity: numeric('quantity', { precision: 12, scale: 3 }),
+    unit: text('unit'),
+    weightKg: numeric('weight_kg', { precision: 12, scale: 3 }),
+    volumeM3: numeric('volume_m3', { precision: 12, scale: 3 }),
+    amount: numeric('amount', { precision: 14, scale: 2 }),
+    currency: text('currency'),
+    /** Filled from the TNVED memory at intake, before any model is asked. */
+    tnvedCode: text('tnved_code'),
+    note: text('note'),
+  },
+  (t) => [uniqueIndex('calc_request_items_seq_idx').on(t.requestId, t.seq)],
 );
 
 // ---------------------------------------------------------------------------

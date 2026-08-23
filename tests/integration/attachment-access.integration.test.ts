@@ -6,7 +6,10 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   batches,
   boxes,
+  calcRequests,
   clients,
+  crmActivities,
+  leads,
   customFields,
   customFieldValues,
   receiptLots,
@@ -481,5 +484,98 @@ describe('a partner bank receipt is company money, not a seller’s book', () =>
     expect((await decideAttachmentRead(actor(['clients.manage']), proof)).allow).toBe(true);
     // The uploader keeps their own file, as every branch allows.
     expect((await decideAttachmentRead(actor([], { id: uploaderId }), proof)).allow).toBe(true);
+  });
+});
+
+describe('the materials a seller hands to the VED queue', () => {
+  /**
+   * The blocker three of the five design reviews found independently.
+   *
+   * `ved_manager` holds `ved.docs` and NOT `crm.leads` — so a note on a LEAD
+   * refused it, and the bot's stranger path lands on a lead by construction.
+   * Every photo and every invoice on the whole bot half of the queue would
+   * have 404'd on the day it shipped, while «everything the seller submitted
+   * is shown to the VED as-is» is the owner's own line.
+   *
+   * The widening is exactly as narrow as the promise: this note, because a
+   * calculation request POINTS AT it. A seller's other lead correspondence is
+   * still none of the customs manager's business.
+   */
+  let noteId: string;
+  let plainNoteId: string;
+  let leadId: string;
+  let requestId: string;
+  let leadStageId: string;
+
+  beforeAll(async () => {
+    const stage = await db.execute<{ id: string }>(
+      `SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
+    );
+    leadStageId = stage[0]!.id;
+    const [lead] = await db
+      .insert(leads)
+      .values({ name: `VED authz ${Date.now()}`, stageId: leadStageId, createdBy: uploaderId })
+      .returning();
+    leadId = lead!.id;
+
+    const mint = async (note: string) => {
+      const [row] = await db
+        .insert(crmActivities)
+        .values({ entityType: 'lead', entityId: leadId, kind: 'note', note, createdBy: uploaderId })
+        .returning();
+      return row!.id;
+    };
+    noteId = await mint('hisoblash materiallari');
+    plainNoteId = await mint('sotuvchining o‘z yozuvi');
+
+    const [request] = await db
+      .insert(calcRequests)
+      .values({
+        entityType: 'lead',
+        entityId: leadId,
+        requestedBy: uploaderId,
+        itemCount: 1,
+        section: 'podklyuch',
+        source: 'card',
+        noteId,
+        dueAt: new Date(Date.now() + 3_600_000),
+      })
+      .returning();
+    requestId = request!.id;
+  });
+
+  afterAll(async () => {
+    await db.delete(calcRequests).where(eq(calcRequests.id, requestId));
+    await db.delete(crmActivities).where(inArray(crmActivities.id, [noteId, plainNoteId]));
+    await db.delete(leads).where(eq(leads.id, leadId));
+  });
+
+  it('opens for the VED person, because a request points at it', async () => {
+    const file = att('crm_activity', noteId);
+    expect(await decideAttachmentRead(actor(['ved.docs']), file)).toEqual({
+      allow: true,
+      rule: 'crm-activity-calc',
+    });
+  });
+
+  it('…and the seller’s OTHER lead notes stay shut to them', async () => {
+    const file = att('crm_activity', plainNoteId);
+    expect(await decideAttachmentRead(actor(['ved.docs']), file)).toEqual({
+      allow: false,
+      rule: 'crm-no-permission',
+      enforce: true,
+    });
+  });
+
+  it('the funnel’s own people are unaffected, both ways', async () => {
+    expect((await decideAttachmentRead(actor(['crm.leads']), att('crm_activity', noteId))).allow).toBe(
+      true,
+    );
+    expect(
+      (await decideAttachmentRead(actor(['crm.leads']), att('crm_activity', plainNoteId))).allow,
+    ).toBe(true);
+    expect((await decideAttachmentRead(actor(['scan.load']), att('crm_activity', noteId))).allow).toBe(
+      false,
+    );
   });
 });

@@ -355,7 +355,7 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
 
 /**
  * The VED manager's day (round 30, the last working role without a home):
- * the hisoblash clock first — it is the only queue with MINUTES on it —
+ * the hisoblash queue first — it is the only queue with MINUTES on it —
  * then the paperwork the departed trucks are waiting on, then the goods
  * still without a code.
  */
@@ -364,14 +364,27 @@ async function VedFlow({ flow }: { flow: VedFlowCounts }) {
   return (
     <Section title={t('flowTitle')}>
       <div className="space-y-2">
-        {/* The paperwork queue is the hero since round 83 took the hisoblash
-            clock out: a truck that left without its papers reaching the agent
-            is what this person actually gets phoned about. `ved-flow-hero`
-            keeps its testid — round 24's rule, a hero is an ordinary row. */}
+        {/* The calculation queue is the hero again (VED phase A): it is the
+            only queue in the company with MINUTES on it, and the person who
+            keeps it moving is this one. Drawn even at zero — the href is
+            named in the flow's `hrefs`, so its tile is suppressed below, and
+            a row hidden on a quiet morning would leave no door at all
+            (round 83's trap). `ved-flow-hero` keeps its testid: round 24's
+            rule says a hero is an ordinary row, and the testid names the
+            POSITION rather than the destination. */}
+        <FlowRow
+          href="/hisoblash"
+          icon="report"
+          testid="ved-flow-hero"
+          label={t('flowCalcOpen')}
+          count={flow.calcOpen}
+          warn={flow.calcLate > 0}
+          sub={flow.calcLate > 0 ? `${flow.calcLate} ${t('flowCalcLate')}` : null}
+        />
         <FlowRow
           href="/batches"
           icon="inbox"
-          testid="ved-flow-hero"
+          testid="ved-flow-papers"
           label={t('flowDocsPending')}
           count={flow.docsPending}
           warn={flow.docsPending > 0}

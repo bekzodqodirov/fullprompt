@@ -126,10 +126,30 @@ pnpm build && pnpm e2e  # 44 e2e
 | Why is it built this way? | `DECISIONS.md` — 489 numbered entries, newest last |
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
+| The VED module | `docs/VED.md` — agreed 2026-08-22; **phase A SHIPPED**, B-E open |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
+
+## State — 2026-08-22
+
+**VED phase A is on this branch** (`docs/VED.md`, migration **0085** — the
+ledger must reach **86**): the calculation request became a JOB with its own
+section/route/kg/kub/goods/materials, the bot and the card form land in ONE
+queue at `/hisoblash`, the round-28 clock is reopened with its overdue sweep,
+the checklist is the bot's own `missingFields`, a bounce-back needs a typed
+reason and the finish records the ANSWER (amount + note, pushed to the
+seller). Assignment moved from the seller to the QUEUE (fewest-open-first
+over `ved.docs`), and 0052's «one open request per card» index is DROPPED —
+a card may carry several jobs. Decisions **#748-751**: the attachment gate
+widened for lead notes a request points at (the blocker three reviewers found
+independently), `isServerBehind` now knows `42703` as well as `42P01`, and
+`ved.docs` is stated as a four-power bundle for the owner to split when he
+wants a calc-only person. 1739 unit/integration + 161 e2e green on a fresh
+gsr_ci in CI's order; screenshots at 360 and 1280. **Phases B-E are open**:
+the workspace and its four dictionaries, the price book, upsale, and the
+calc-vs-actual control.
 
 ## State — 2026-08-13
 
@@ -500,9 +520,12 @@ just-departed truck stands ON its origin warehouse and takes the tap
 (deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
 `elementFromPoint` says is free instead of `.first()`.
 
-**Round 110 — the China round** (#748-754, his «sistema xitoyda juda sekin
+**Round 110 — the China round** (#752-758 — renumbered from #748-754 on the
+merge, the THIRTEENTH collision: the other session's VED phase A took
+#748-751 and merged first; his «sistema xitoyda juda sekin
 ishlayabti, planlarni yuklayotgan paytda ishlatib bolmayabti»). NO migration
-(85 stands). The answer was BYTES nobody was counting, and one thing that was
+of its own, but it deploys together with VED phase A's **0085**, so the
+ledger must read **86** afterwards. The answer was BYTES nobody was counting, and one thing that was
 not slowness at all. **Next compresses what it RENDERS and not a Route
 Handler's own `Response`** — measured: the scan screens' manifest went out at
 **28,506 bytes with gzip asked for**, and gzipped is **975** (29×); Caddy in
@@ -532,7 +555,7 @@ snapshot (a dissolved crate can expand no scan — 612 crates / 1,632 codes /
 MEASURED END TO END in a phone-shaped browser with the worker installed:
 an open loading screen cost **114 KB per 38 s → 990 bytes**, quiet ticks are
 304 with no body, and a colleague's change still lands on the next tick.
-STATED, not done (#754): the 304 saves bytes and NOT the ~67 ms of queries —
+STATED, not done (#758): the 304 saves bytes and NOT the ~67 ms of queries —
 a round-108-style version probe is the next step; the quick-batch `available`
 list still ships 1,500 rows and truncates silently; `batchMemberFilter`'s OR
 runs twice per snapshot; HTTP/3 is advertised while compose publishes TCP 443
@@ -541,7 +564,10 @@ LOCAL TRAP worth remembering: a stand-in `.data/basemap/corridor.pmtiles`
 makes /map render LEAFLET, and two specs assert the SVG schematic — both
 failures were that file, not the code.
 
-Latest migration: **0084** (`speed_round` — two partial `notifications`
+Latest migration: **0085** (`calc_queue` — the VED queue's columns and
+`calc_request_items`, 0052's one-open-per-card index DROPPED; count must
+reach **86**);
+0084 (`speed_round` — two partial `notifications`
 indexes + `tg_messages.edited_at`; count must reach **85**);
 0083 (`expense_requests` — the rasxod xabari queue;
 count must reach **84**;
@@ -612,9 +638,9 @@ a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
 **HIS SERVER IS AT 84** (he confirmed «84 chiqdi» on 2026-08-19 after PR
-#47 — round 107). **Round 108's PR #48 is MERGED and NOT YET DEPLOYED: his
-next deploy must land migration 0084 and the ledger must read 85.** Round
-109 mints none, so 85 covers both.
+#47 — round 107). **Rounds 108-110 and VED phase A are MERGED and NOT YET
+DEPLOYED: his next deploy must land 0084 AND 0085, and the ledger must read
+86.** Rounds 109, 109b and 110 mint none, so 86 covers all of them.
 Before that: **83 — everything through rounds 103-106
 (PR #45, merged and deployed 2026-08-18 evening, he confirmed «83 chiqdi»;
 migrations 0081 `backup_objects` + 0082 `notify_claim`). The tg-listen
@@ -656,7 +682,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**85** on `main` since round 108; his server was at 84 on
+length (**86** on `main` since VED phase A; his server was at 84 on
 2026-08-19) —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
