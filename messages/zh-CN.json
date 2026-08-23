@@ -330,7 +330,8 @@
       "unanswered_reminder_minutes": "客户等待多少分钟后提醒其经理（0 = 关闭）",
       "crm_calc_stage": "机器人发来「报价」时，线索移到该阶段（只向前；「—」表示不移动）",
       "deal_calc_stage": "交易看板同理——已有客户编号的请求会落在交易上",
-      "ai_daily_limit": "每人每天的 AI 提问上限（机器人 + AI 页面合计；0 为关闭）"
+      "ai_daily_limit": "每人每天的 AI 提问上限（机器人 + AI 页面合计；0 为关闭）",
+      "calc_review_notified_month": "上次发送字典复核提醒的月份（由系统写入）"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"
@@ -2133,7 +2134,29 @@
       "dictionary": "来自字典",
       "typed": "手动输入"
     },
-    "propose": "AI 建议分组"
+    "propose": "AI 建议分组",
+    "clientPrice": "客户价格",
+    "offerLanguage": "语言",
+    "makeOffer": "向客户报价",
+    "belowFloor": "低于成本 — 核算结果为 {floor} 美元",
+    "belowFloorChip": "偏低",
+    "offerSent": "已发送到 Telegram",
+    "offerNoTelegram": "未连接 Telegram — 请复制文本",
+    "offerText": "报价文本",
+    "sealExpired": "已过期",
+    "sealExpiredHint": "此价格已过期，需要重新核算。",
+    "offersTitle": "已发出的报价",
+    "dictPrice": "价格册",
+    "priceUnit": "单位",
+    "unitM3": "立方",
+    "unitKg": "公斤",
+    "historyTitle": "价格历史",
+    "historyHint": "按 HS 编码查看最近的核算与报价",
+    "historyNone": "该编码没有核算记录",
+    "historySearch": "HS 编码",
+    "lastQuotes": "最近价格",
+    "staleTitle": "更新字典",
+    "staleBody": "有 {n} 条记录长期未更新，请复核。"
   },
   "partners": {
     "title": "合作方",

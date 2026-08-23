@@ -2200,6 +2200,82 @@ export const calcExtras = pgTable(
  * concession to this client — and it is the second that phase D reads when it
  * withdraws the seller's right to add anything on top.
  */
+/**
+ * Dictionary 4 — the SELLING price book (docs/VED.md phase C).
+ *
+ * Keyed on the TNVED CODE and deliberately not on a product name. The spec
+ * says «product/category» and the owner's example is the bare word
+ * «monitor», while the warehouse types «Монитор 27 дюйм» — a code is the
+ * category grain, it is confirmed by a person before anything can be sealed
+ * with it, and it needs no new column on the items.
+ *
+ * It holds what we CHARGE, which is not what a calculation COST: the sealed
+ * price is the floor the seller's price sits above (law 4).
+ */
+export const calcPriceBook = pgTable(
+  'calc_price_book',
+  {
+    id: id(),
+    tnvedCode: text('tnved_code').notNull(),
+    /** What the owner reads. «Monitorlar», not «8528520000». */
+    label: text('label').notNull(),
+    priceUsd: numeric('price_usd', { precision: 14, scale: 4 }).notNull(),
+    unit: text('unit').notNull().default('m3'),
+    effectiveDate: date('effective_date').notNull(),
+    note: text('note'),
+    enteredBy: uuid('entered_by').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('calc_price_book_unit_check', sql`${t.unit} IN ('m3', 'kg')`),
+    check(
+      'calc_price_book_value_check',
+      sql`${t.priceUsd} > 0 AND ${t.priceUsd} <> 'NaN'::numeric`,
+    ),
+    uniqueIndex('calc_price_book_code_date_unique').on(t.tnvedCode, t.effectiveDate),
+  ],
+);
+
+/**
+ * What was actually OFFERED to a client, and for how much.
+ *
+ * A sealed version is what the calculation cost; this is what the seller told
+ * the customer. They are different numbers by design, and this is the one the
+ * price book learns from — and the one that answers «what did we quote this
+ * client last time», which nothing could answer before.
+ */
+export const calcOffers = pgTable(
+  'calc_offers',
+  {
+    id: id(),
+    versionId: uuid('version_id')
+      .notNull()
+      .references((): AnyPgColumn => calcVersions.id, { onDelete: 'cascade' }),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    clientPriceUsd: numeric('client_price_usd', { precision: 14, scale: 2 }).notNull(),
+    /** TRUE when the seller quoted BELOW the sealed floor. Phase D locks it. */
+    belowFloor: boolean('below_floor').notNull().default(false),
+    locale: text('locale').notNull(),
+    /** Exactly what was sent, so «what did we tell them» is answerable. */
+    text: text('text').notNull(),
+    offeredBy: uuid('offered_by')
+      .notNull()
+      .references(() => users.id),
+    offeredAt: timestamp('offered_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('calc_offers_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
+    check('calc_offers_locale_check', sql`${t.locale} IN ('uz', 'ru', 'en')`),
+    check(
+      'calc_offers_price_check',
+      sql`${t.clientPriceUsd} > 0 AND ${t.clientPriceUsd} <> 'NaN'::numeric`,
+    ),
+    index('calc_offers_version_idx').on(t.versionId),
+    index('calc_offers_entity_idx').on(t.entityType, t.entityId, t.offeredAt),
+  ],
+);
+
 export const calcVersions = pgTable(
   'calc_versions',
   {

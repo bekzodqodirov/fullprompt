@@ -1,6 +1,6 @@
 import { and, asc, desc, inArray, lte, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { calcBazas, calcFreightTariffs, calcRates } from '@/modules/platform/db/schema';
+import { calcBazas, calcFreightTariffs, calcPriceBook, calcRates } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { productKey } from '../tnved/service';
 import { CalcError } from './service';
@@ -383,5 +383,164 @@ const toRates = (r: typeof calcRates.$inferSelect): RatesRow => ({
   feeUsd: Number(r.feeUsd),
   effectiveDate: r.effectiveDate,
   source: r.source as 'manual' | 'correction',
+  note: r.note,
+});
+
+// ---------------------------------------------------------------------------
+// 4. The SELLING price book
+// ---------------------------------------------------------------------------
+
+/**
+ * What we CHARGE a client, per cube or per kilo — the owner's «monitor 1 kubi
+ * uchun 450 dollardan klientlarimizga berilyabti».
+ *
+ * Keyed on the TNVED CODE and deliberately not on a product name. A name key
+ * cannot work here: the spec says «product/category», his example is the bare
+ * word «monitor», and the warehouse types «Монитор 27 дюйм» — those never
+ * meet under any normaliser that does not also invent a classifier. A code is
+ * the category grain, and phase B will not seal a group whose code and rates
+ * nobody confirmed, so by the time a price exists a person has looked at it.
+ *
+ * It is NOT the sealed price. The sealed number is what the calculation cost
+ * and, by law 4, the FLOOR the seller's price sits above; a book filled from
+ * it would be a book of floors labelled as prices. It learns from
+ * `calc_offers` — what a seller actually told a customer.
+ */
+export interface PriceBookRow {
+  id: string;
+  tnvedCode: string;
+  label: string;
+  priceUsd: number;
+  unit: 'm3' | 'kg';
+  effectiveDate: string;
+  note: string | null;
+}
+
+export async function priceBookForCodes(
+  codes: string[],
+  date: string,
+): Promise<Map<string, PriceBookRow>> {
+  const list = [...new Set(codes.map((c) => c.trim()))].filter(Boolean);
+  if (list.length === 0) return new Map();
+  const rows = await db
+    .select()
+    .from(calcPriceBook)
+    .where(and(inArray(calcPriceBook.tnvedCode, list), lte(calcPriceBook.effectiveDate, date)))
+    .orderBy(desc(calcPriceBook.effectiveDate));
+  const out = new Map<string, PriceBookRow>();
+  for (const r of rows) if (!out.has(r.tnvedCode)) out.set(r.tnvedCode, toPrice(r));
+  return out;
+}
+
+export async function priceBookAt(code: string, date: string): Promise<PriceBookRow | null> {
+  return (await priceBookForCodes([code], date)).get(code.trim()) ?? null;
+}
+
+export async function listPriceBook(): Promise<
+  (PriceBookRow & { stale: boolean; future: boolean })[]
+> {
+  const today = onDate();
+  const rows = await db
+    .select()
+    .from(calcPriceBook)
+    .orderBy(asc(calcPriceBook.label), desc(calcPriceBook.effectiveDate));
+  const cutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
+  return rows.map((r) => ({
+    ...toPrice(r),
+    stale: r.effectiveDate <= cutoff,
+    future: r.effectiveDate > today,
+  }));
+}
+
+export async function savePriceBook(
+  input: {
+    tnvedCode: string;
+    label: string;
+    priceUsd: number;
+    unit: 'm3' | 'kg';
+    effectiveDate: string;
+    note?: string | null;
+  },
+  ctx: AuditContext,
+): Promise<string> {
+  const code = input.tnvedCode.trim();
+  if (!code) throw new CalcError('code_required');
+  mustBeNumber(input.priceUsd);
+  if (!(input.priceUsd > 0)) throw new CalcError('price_positive');
+  const label = input.label.trim();
+  if (!label) throw new CalcError('label_required');
+
+  const [row] = await db
+    .insert(calcPriceBook)
+    .values({
+      tnvedCode: code,
+      label,
+      priceUsd: input.priceUsd.toFixed(4),
+      unit: input.unit,
+      effectiveDate: input.effectiveDate,
+      note: input.note ?? null,
+      enteredBy: ctx.actorId ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [calcPriceBook.tnvedCode, calcPriceBook.effectiveDate],
+      set: {
+        label: sql`excluded.label`,
+        priceUsd: sql`excluded.price_usd`,
+        unit: sql`excluded.unit`,
+        note: sql`excluded.note`,
+        enteredBy: sql`excluded.entered_by`,
+      },
+    })
+    .returning({ id: calcPriceBook.id });
+
+  await writeAudit(db, ctx, {
+    entityType: 'calc_price',
+    entityId: row!.id,
+    action: 'update',
+    after: { ...input, tnvedCode: code },
+  });
+  return row!.id;
+}
+
+/** Rows nobody has revisited — what the monthly reminder counts. */
+export async function staleDictionaryCounts(): Promise<{
+  bazas: number;
+  rates: number;
+  prices: number;
+  total: number;
+}> {
+  const cutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
+  const [bazas, rates, prices] = await Promise.all([
+    countStale('calc_bazas', 'product_key', cutoff),
+    countStale('calc_rates', 'tnved_code', cutoff),
+    countStale('calc_price_book', 'tnved_code', cutoff),
+  ]);
+  return { bazas, rates, prices, total: bazas + rates + prices };
+}
+
+/**
+ * How many DISTINCT keys have nothing newer than the cutoff.
+ *
+ * Counting rows would count history: a product corrected five times has five
+ * rows and one in-force answer, and only the in-force one can be stale.
+ */
+async function countStale(table: string, keyColumn: string, cutoff: string): Promise<number> {
+  const rows = await db.execute<{ n: string }>(sql`
+    SELECT count(*)::text AS n FROM (
+      SELECT ${sql.raw(keyColumn)} AS k, max(effective_date) AS newest
+        FROM ${sql.raw(table)}
+       GROUP BY ${sql.raw(keyColumn)}
+    ) t WHERE t.newest <= ${cutoff}::date
+  `);
+  return Number(rows[0]?.n ?? 0);
+}
+
+const toPrice = (r: typeof calcPriceBook.$inferSelect): PriceBookRow => ({
+  id: r.id,
+  tnvedCode: r.tnvedCode,
+  label: r.label,
+  priceUsd: Number(r.priceUsd),
+  unit: r.unit as 'm3' | 'kg',
+  effectiveDate: r.effectiveDate,
   note: r.note,
 });

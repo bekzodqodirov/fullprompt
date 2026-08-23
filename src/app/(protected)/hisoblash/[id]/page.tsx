@@ -16,6 +16,7 @@ import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { CalcActions } from './calc-actions';
 import { CalcWorkspace } from './calc-workspace';
+import { LastQuotes } from './last-quotes';
 
 /**
  * One calculation request — the VED person's whole screen.
@@ -93,6 +94,15 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         main={
           <div className="space-y-4">
             {workspace ? <CalcWorkspace workspace={workspace} canRecalc={canRecalc} /> : null}
+
+            {/* What these codes were charged before — read beside the numbers
+                being typed, which is where the question is actually asked. */}
+            {workspace ? (
+              <LastQuotes
+                codes={workspace.groups.map((g) => g.tnvedCode ?? '')}
+                requestId={id}
+              />
+            ) : null}
 
             {closed ? (
               <section className="card !p-3" data-testid="calc-answer">

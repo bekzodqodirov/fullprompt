@@ -1,11 +1,16 @@
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { listBazas, listRates, listTariff } from '@/modules/wms/calc/dictionaries';
+import {
+  listBazas,
+  listPriceBook,
+  listRates,
+  listTariff,
+} from '@/modules/wms/calc/dictionaries';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { PageHeader, Section } from '@/components/ui/page';
-import { BazaForm, RatesForm } from './dict-forms';
+import { BazaForm, PriceBookForm, RatesForm } from './dict-forms';
 
 /**
  * The VED person's own dictionaries — the product baza and the code rates.
@@ -29,8 +34,14 @@ export default async function CalcDictionariesPage() {
   let bazas: Awaited<ReturnType<typeof listBazas>> = [];
   let rates: Awaited<ReturnType<typeof listRates>> = [];
   let tariff: Awaited<ReturnType<typeof listTariff>> = [];
+  let prices: Awaited<ReturnType<typeof listPriceBook>> = [];
   try {
-    [bazas, rates, tariff] = await Promise.all([listBazas(), listRates(), listTariff()]);
+    [bazas, rates, tariff, prices] = await Promise.all([
+      listBazas(),
+      listRates(),
+      listTariff(),
+      listPriceBook(),
+    ]);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err }, '[calc] dictionaries: server behind');
@@ -114,6 +125,51 @@ export default async function CalcDictionariesPage() {
                   </tr>
                 ))}
                 {rates.length === 0 ? (
+                  <tr>
+                    <td className="p-2 text-ink-500" colSpan={5}>
+                      —
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Section>
+
+      {/* The price book. It sits between the rates and the tariff on purpose:
+          the two above it are what a shipment COSTS, this one is what it has
+          been SOLD for, and the tariff below is the list price a discount is
+          measured against. */}
+      <Section title={t('dictPrice')}>
+        <div className="card !p-3" data-testid="dict-price">
+          <PriceBookForm />
+          <div className="table-wrap mt-2 overflow-x-auto">
+            <table className="w-full min-w-[32rem] text-sm">
+              <thead>
+                <tr className="border-b border-line text-left text-2xs uppercase text-ink-500">
+                  <th className="p-2">TNVED</th>
+                  <th className="p-2">{t('product')}</th>
+                  <th className="p-2 text-right">{t('price')}</th>
+                  <th className="p-2">{t('priceUnit')}</th>
+                  <th className="p-2">{t('effectiveDate')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {prices.map((row) => (
+                  <tr key={row.id} className="border-b border-line/60" data-testid="dict-price-row">
+                    <td className="p-2 font-mono tabular-nums">{row.tnvedCode}</td>
+                    <td className="p-2">
+                      {row.label}
+                      {row.stale ? <span className="ml-1 chip chip-warn">{t('stale')}</span> : null}
+                      {row.future ? <span className="ml-1 chip chip-neutral">{t('future')}</span> : null}
+                    </td>
+                    <td className="p-2 text-right font-mono tabular-nums">${row.priceUsd}</td>
+                    <td className="p-2">{row.unit === 'kg' ? t('unitKg') : t('unitM3')}</td>
+                    <td className="p-2 font-mono tabular-nums">{row.effectiveDate}</td>
+                  </tr>
+                ))}
+                {prices.length === 0 ? (
                   <tr>
                     <td className="p-2 text-ink-500" colSpan={5}>
                       —

@@ -388,6 +388,8 @@ export default async function DealPage({
         entityType="deal"
         entityId={row.deal.id}
         revalidate={`/bitimlar/${row.deal.id}`}
+        clientName={row.clientName}
+        clientLocale={row.clientLocale}
       />
       <TasksPanel entityType="deal" entityId={row.deal.id} revalidate={`/bitimlar/${row.deal.id}`} />
 

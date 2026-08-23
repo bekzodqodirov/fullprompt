@@ -1,5 +1,65 @@
 # CHANGELOG
 
+## VED moduli, C bosqich: mijozga taklif, narxlar kitobi va tarix — 2026-08-23
+
+Muhrlangan narxdan mijozga yuboriladigan taklifgacha bitta bosish. Va
+«bu tovarni oxirgi marta qanchaga bergan edik» degan savolga javob.
+
+- **«Mijozga taklif» — kartadagi bitta tugma.** Muhrlangan narx endi lead va
+  bitim kartasida ochiq turadi (buklangan emas): $ summa, versiya raqami,
+  qachongacha amal qilishi va kim muhrlagani. Uning ostida narx qutisi
+  turadi — **muhrlangan summa bilan to'ldirilgan, lekin bu javob emas,
+  boshlanish nuqtasi**. Sotuvchi o'z narxini yozadi.
+- **Muhrlangan narx — bu TANNARX, mijozga bormaydi.** Taklif matnida
+  faqat sotuvchi yozgan narx turadi. Tannarxdan PAST narx yozilsa —
+  bosishdan OLDIN ogohlantiradi (chunki bosgandan keyin aytish, qaror
+  qabul qilingandan keyin aytish demakdir), lekin taqiqlamaydi va yozib
+  qo'yadi: keyinchalik «kim qancha chegirma bergan» ko'rinadi.
+- **Taklif matni narxni bo'laklamaydi.** Yo'lkira alohida, rastamojka
+  alohida yozilsa — mijoz bizning ro'yxat narximizni ko'radi va chegirmani
+  o'zi hisoblab oladi. Shuning uchun: nima kirganini SO'Z bilan, narxni
+  bitta raqam bilan. Kub va kilo bo'lsa — kubiga/kilosiga ham chiqadi
+  (sotuvchi narxidan, tannarxdan emas).
+- **Uch tilda: o'zbekcha, ruscha, inglizcha.** Sotuvchi o'zi tanlaydi
+  (`clients.locale` deyarli hamma mijozda bo'sh, shuning uchun uni
+  «mijozning tili» deb ishlatib bo'lmaydi).
+- **PDF ham bor.** Xuddi shu matn, A4 varaqda, kompaniya nomi bilan.
+  Telegramga yuborilgan matn bilan PDF **bir joydan** chiqadi — ikkitasi
+  hech qachon boshqa narsa aytolmaydi.
+- **Telegram haqida ROSTINI aytadi.** Agar sizning akkauntingiz botga
+  ulanmagan bo'lsa — «⚠ Telegram ulanmagan, matnni nusxalang» deydi. Ilgari
+  bunday holatda tizim jimgina «yuborildi» der edi va xabar hech qayerga
+  bormas edi.
+- **Narxlar kitobi — to'rtinchi lug'at.** `Hisoblash → Lug'atlar` da:
+  TNVED kod, tovar nomi, narx ($/kub yoki $/kg), sana. Nima uchun kod
+  bo'yicha, tovar nomi bo'yicha emas: «Ayollar kurtkasi», «куртка жен.» va
+  «women's jacket» — bitta narsa, uchta yozuv, va ikki VED xodimi ikki xil
+  javob topadi. Kod esa yozib qo'yilgan va odam tasdiqlagan.
+- **Narx tarixi ekrani** (`Hisoblash → Narx tarixi`) — **sotuvchiga ham
+  ochiq**, chunki «oxirgi marta qanchaga berdik» savoli hisoblash paytida
+  emas, narx aytish paytida ko'proq beriladi. Kod yozasiz — oxirgi
+  hisob-kitoblar chiqadi, har biri o'z BO'LIMI bilan (yo'lkira/rastamojka/
+  podklyuch — ular boshqa-boshqa xizmat, bitta ustunda solishtirib
+  bo'lmaydi) va sotuvchi aytgan narx bilan.
+- **Hisob stolida ham ko'rinadi.** VED xodimi baza yozayotganda o'sha
+  kodning oxirgi 3 ta narxi va kitobdagi narxi yonida turadi.
+- **Oyda bir marta eslatma.** Lug'atlarda 90 kundan beri tegilmagan yozuv
+  bo'lsa — VED xodimlariga Telegramga «ko'rib chiqing» xabari boradi.
+  **Faqat eskirgan yozuv bo'lsa** — har oy quruq eslatma yuboradigan tizim
+  odamlar o'qimaydigan tizimdir.
+
+**Yo'l-yo'lakay topilgan xato (bir yildan beri bor edi):** PDF shrifti
+o'zbek kirillchasining **ў қ ғ ҳ** harflarini umuman chiza olmas ekan —
+o'lchab ko'rildi, shriftda bu harflar YO'Q. Ruscha harflar joyida, shuning
+uchun bir yil sezilmagan. Ya'ni **topshirish akti**da ismi kirillcha yozilgan
+mijozning ismi bo'sh katakcha bo'lib chiqar edi va odam shunga imzo qo'yar
+edi. Endi bunday harflar lotinchaga o'giriladi (Ў → O', қ → q), emoji esa
+tushirib qoldiriladi. Ikkala hujjat ham (akt va yangi taklif varag'i) shu
+bitta joydan o'tadi.
+
+Bazada: **0087** (`calc_price_book`, `calc_offers`). Deploy'dan keyin
+migratsiya soni **88** bo'lishi kerak.
+
 ## VED moduli, B bosqich: hisob stoli va muhrlangan narx — 2026-08-23
 
 Excel o'rniga ishlaydigan hisob ekrani. VED xodimi tovarlarni guruhlaydi,

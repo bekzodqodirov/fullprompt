@@ -87,6 +87,14 @@ export const MUTE_GROUPS = {
     // Phase 7: a rule somebody wrote pinged you — mutable like any other
     // routine workflow message; the rule's author is not above your mutes.
     'AutomationRule',
+    // Once a month: the VED dictionaries hold rows nobody has revisited (VED
+    // phase C). Housekeeping and not an alarm — nothing is wrong today, a
+    // stale baza simply prices tomorrow's cargo on last winter's numbers.
+    'CalcDictReview',
+    // A seller turned a sealed price into a client offer — sent to that
+    // seller alone as the text they forward, so it is news about their own
+    // press and never an alert.
+    'CalcOffer',
   ],
 } as const;
 

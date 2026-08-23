@@ -251,7 +251,12 @@ export default async function LeadPage({
         </LeadForm>
       </Panel>
 
-      <CalcPanel entityType="lead" entityId={id} revalidate={`/crm/leads/${id}`} />
+      <CalcPanel
+        entityType="lead"
+        entityId={id}
+        revalidate={`/crm/leads/${id}`}
+        clientName={lead.company || lead.name}
+      />
       <TasksPanel
         entityType="lead"
         entityId={id}

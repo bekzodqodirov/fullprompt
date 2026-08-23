@@ -330,7 +330,8 @@
       "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)",
       "crm_calc_stage": "A request for a price from the bot moves the lead to this stage (forward only; «—» means do not move)",
       "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal",
-      "ai_daily_limit": "AI questions per person per day (bot + AI screen together; 0 — off)"
+      "ai_daily_limit": "AI questions per person per day (bot + AI screen together; 0 — off)",
+      "calc_review_notified_month": "The month the monthly dictionary-review reminder was last sent (written by the system)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"
@@ -2133,7 +2134,29 @@
       "dictionary": "from dictionary",
       "typed": "typed"
     },
-    "propose": "Propose groups (AI)"
+    "propose": "Propose groups (AI)",
+    "clientPrice": "Client price",
+    "offerLanguage": "Language",
+    "makeOffer": "Offer to client",
+    "belowFloor": "Below cost — the calculation came to ${floor}",
+    "belowFloorChip": "below",
+    "offerSent": "Sent to Telegram",
+    "offerNoTelegram": "Telegram not linked — copy the text",
+    "offerText": "Offer text",
+    "sealExpired": "Expired",
+    "sealExpiredHint": "This price has expired. A new calculation is needed.",
+    "offersTitle": "Offers made",
+    "dictPrice": "Price book",
+    "priceUnit": "Unit",
+    "unitM3": "m³",
+    "unitKg": "kg",
+    "historyTitle": "Price history",
+    "historyHint": "Recent calculations and quoted prices by HS code",
+    "historyNone": "No calculations for this code",
+    "historySearch": "HS code",
+    "lastQuotes": "Recent prices",
+    "staleTitle": "Review the dictionaries",
+    "staleBody": "{n} entries have not been updated in a long time. Please review them."
   },
   "partners": {
     "title": "Counterparties",

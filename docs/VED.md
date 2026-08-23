@@ -143,8 +143,15 @@ future hole will be a visible refusal rather than a quietly cheaper invoice.
 2. **Code dictionary**: TNVED → rate set (duty %, VAT %, …) + lgota flags;
    VED corrections remembered (law 6).
 3. **Freight tariff**: the table above, editable, versioned.
-4. **Selling price book**: product/category → current client price $/m³,
-   hand-set; beside it the system shows the last 5 real quotes.
+4. **Selling price book**: TNVED code → current client price $/m³ or $/kg,
+   hand-set; beside it the system shows the last real quotes.
+   **SHIPPED in phase C, keyed on the CODE and not the product name** — a
+   name does not normalise («Ayollar kurtkasi» / «куртка жен.» /
+   «women's jacket» are one thing and three strings), while a code is
+   written down and confirmed by a person before anything can be sealed
+   against it. `calc_price_book` (tnved_code, effective_date) UNIQUE, read
+   like `fx_rates` with **no earliest-row fallback**. It stores the CLIENT
+   price and never the sealed floor.
 
 ## Screens and flows
 

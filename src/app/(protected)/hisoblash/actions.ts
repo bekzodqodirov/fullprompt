@@ -25,13 +25,14 @@ import {
   pullBazasFromDictionary,
   pullRatesFromDictionary,
   recalcFromSealed,
+  recordOffer,
   saveExtra,
   sealCalc,
   setFreightZone,
   setGroupRates,
   setItemBaza,
 } from '@/modules/wms/calc/workspace';
-import { saveBaza, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
+import { saveBaza, savePriceBook, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
 import { isCalcSection } from '@/modules/wms/calc/labels';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 
@@ -440,4 +441,88 @@ export async function saveTariffAction(input: {
 
 export async function proposeAction(id: string): Promise<CalcFormState> {
   return run('ved.docs', (ctx) => proposeGroups(id, ctx), `/hisoblash/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Phase C — the offer and the price book
+// ---------------------------------------------------------------------------
+
+export interface OfferFormState extends CalcFormState {
+  text?: string;
+  belowFloor?: boolean;
+  delivered?: boolean;
+}
+
+/**
+ * «Mijozga taklif» — the SELLER's door, not the queue's.
+ *
+ * Gated exactly as `submitCalcAction` is: the people who quote customers are
+ * the people who work cards, so `ved.docs` would be the wrong grant here (a
+ * calculator does not talk to the client, and every seller would be locked
+ * out of their own offer). The card is named by the caller so the lead branch
+ * can be held to the lead card's own rule, and the service then proves the
+ * sealed version really belongs to that card.
+ */
+export async function makeOfferAction(
+  versionId: string,
+  input: {
+    clientPriceUsd: number;
+    locale: 'uz' | 'ru' | 'en';
+    clientName: string | null;
+    entityType: 'deal' | 'lead';
+    entityId: string;
+    revalidate: string;
+  },
+): Promise<OfferFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
+  if (input.entityType !== 'deal' && input.entityType !== 'lead') return { error: 'validation' };
+  if (input.entityType === 'lead' && !actor.permissions.has('crm.leads')) {
+    return { error: 'forbidden' };
+  }
+  if (input.locale !== 'uz' && input.locale !== 'ru' && input.locale !== 'en') {
+    return { error: 'validation' };
+  }
+  const meta = await requestMeta();
+  try {
+    const res = await recordOffer(
+      versionId,
+      {
+        clientPriceUsd: input.clientPriceUsd,
+        locale: input.locale,
+        clientName: input.clientName,
+        expect: { entityType: input.entityType, entityId: input.entityId },
+      },
+      { actorId: actor.id, ...meta },
+    );
+    revalidatePath(input.revalidate);
+    return { ok: true, text: res.text, belowFloor: res.belowFloor, delivered: res.delivered };
+  } catch (err) {
+    if (err instanceof CalcError) return { error: err.code };
+    // 0087 is this release's migration, and the offer ledger is its table.
+    if (isServerBehind(err)) {
+      logger.error({ err }, '[calc] server behind — migration 0087 not applied');
+      return { error: 'server_behind' };
+    }
+    throw err;
+  }
+}
+
+/**
+ * The price book is a DICTIONARY, so it is written where the other three are.
+ *
+ * `ved.docs` and not `admin.dictionaries.manage`: this is the VED's own memory
+ * of what a code was quoted at, the same hand that types a baza. The freight
+ * tariff stays the exception — a discount only means something against a list
+ * price its giver cannot move.
+ */
+export async function savePriceBookAction(input: {
+  tnvedCode: string;
+  label: string;
+  priceUsd: number;
+  unit: 'm3' | 'kg';
+  effectiveDate: string;
+}): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => savePriceBook(input, ctx), '/hisoblash/lugatlar');
 }

@@ -49,9 +49,18 @@ export default async function CalcQueuePage() {
         title={t('queueTitle')}
         subtitle={`${rows.length} · ${t('myQueue')}: ${mine}`}
         actions={
-          <Link href="/hisoblash/lugatlar" className="btn-secondary" data-testid="calc-dict-link">
-            {t('dictTitle')}
-          </Link>
+          <>
+            <Link
+              href="/hisoblash/narxlar"
+              className="btn-secondary"
+              data-testid="calc-history-link"
+            >
+              {t('historyTitle')}
+            </Link>
+            <Link href="/hisoblash/lugatlar" className="btn-secondary" data-testid="calc-dict-link">
+              {t('dictTitle')}
+            </Link>
+          </>
         }
       />
 

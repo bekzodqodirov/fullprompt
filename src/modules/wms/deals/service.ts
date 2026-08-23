@@ -1366,6 +1366,9 @@ export async function dealById(id: string) {
       clientName: clients.name,
       /** For the Telegram lookback panel — the card already joins the client. */
       clientPhones: clients.phones,
+      /** Pre-selects the offer's language. NULL for nearly everybody, which
+          is exactly why the seller chooses rather than the column deciding. */
+      clientLocale: clients.locale,
       stageName: dealStages.name,
       stageKind: dealStages.kind,
       stageColor: dealStages.color,

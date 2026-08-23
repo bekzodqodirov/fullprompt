@@ -134,8 +134,8 @@ pnpm build && pnpm e2e  # 44 e2e
 
 ## State — 2026-08-23
 
-**VED phases A and B are on this branch** (`docs/VED.md`; migrations **0085**
-and **0086** — the ledger must reach **87**).
+**VED phases A, B and C are on this branch** (`docs/VED.md`; migrations
+**0085**, **0086** and **0087** — the ledger must reach **88**).
 
 Phase B is the workspace that replaces the Excel. A price on the screen is a
 DRAFT (recomputed from the dictionaries every render); a price in
@@ -207,8 +207,62 @@ as the dictionary's word, and the sealed panel no longer prints «$0.00» for a
 line its section does not have. Red proofs ×3. **1810 unit/integration + 166
 e2e** green on a fresh gsr_ci in CI's order.
 
-**Phases C-E are open**: the client-facing offer sheet, upsale (which reads
-`calc_versions.discount_usd`), and calc-vs-actual (which reads the whole
+**Phase C — the offer, the price book and the history** (#765-772). The
+fourth dictionary is keyed on the **TNVED CODE** and not the product name,
+which is the round's whole design: a name does not normalise («Ayollar
+kurtkasi» / «куртка жен.» / «women's jacket» are one thing and three strings)
+while a code is written down and CONFIRMED by a person before anything can be
+sealed against it. `calc_price_book` reads like `fx_rates` — newest row on or
+before the day, **no earliest-row fallback** — and stores the **CLIENT** price,
+because a book filled from `calc_versions` would be a book of floors labelled
+as prices. `calc_offers` records what a seller actually told a customer:
+quoting below the sealed floor is ALLOWED and FLAGGED (`below_floor`), never
+refused — a hard lock while a seller is on the phone is a lock they route
+around by not using the screen, and phase D turns the flag into the upsale.
+The offer text NEVER prints the sealed total, never DECOMPOSES the price
+(`freight_usd` and `freight_list_usd` come from one value, so showing the
+parts hands the customer our list price and lets them subtract the discount)
+and carries **no emoji** — measured in NotoSansSC, every emoji has glyph id 0,
+i.e. a hole in a customer's PDF with no error anywhere; the Telegram text and
+the PDF are ONE shape (`offerLines`) rendered twice. Delivery is reported
+HONESTLY: `notifyStaffTelegram` queues a row whether or not the person has a
+linked chat and the drain settles an unlinked one as `muted`, which
+`notificationProblemCount` excludes — so `recordOffer` asks the drain's own
+predicate first and the screen says «⚠ Telegram ulanmagan». History is
+per-SECTION (a per-cube figure is freight alone on a yolkira quote and
+everything on a podklyuch one) and per-CODE, and refuses a per-product figure
+it cannot make exactly: customs is exact from the group's own stored number,
+**freight is NEVER allocated** (measured — a 30 m³ mix lands in band 451-500
+at $290/m³ while the monitors alone are band 1-100 at $110/m³, 2.64×), and
+`groupPerUnit` refuses unless EVERY item carries the measure. Two query
+shapes are the rules restated: `quoteHistoryFor` uses EXISTS and not a JOIN
+(a join returns the version once per GROUP, so «last five quotes» becomes
+«last five group rows»), and `lastQuotesByCode` is ONE query with
+`row_number() OVER (PARTITION BY code …)` (#74's per-stage cap — a plain LIMIT
+lets a busy code crowd out a quiet one). The monthly review is a
+NOTIFICATION on a DAILY clock with a monthly claim, silent when nothing is
+stale. `/api/calc/[versionId]/offer.pdf` carries an EXPLICIT door because this
+app has no middleware at all (#721-726). Red proofs ×5, **one of which stayed
+GREEN** — the NaN test was measuring the column's CHECK, not the engine, and
+was re-anchored on the error CODE (#772). **1858 unit/integration + 170 e2e**
+green on a fresh gsr_ci in CI's order.
+
+**Found while LOOKING at phase C's own PDF, not by a test** (#773): the PDF
+font cannot write Uzbek Cyrillic. MEASURED — **ў Ў қ Қ ғ Ғ ҳ Ҳ all have glyph
+id 0** in `NotoSansSC-Regular.ttf`, with thirty more inside the 0x400-0x45F
+range `BASE_CHARS` asks for; `.notdef` raises nothing, so the character is a
+blank box on the document. Russian is fine, which is why a year passed: the
+**handover act** has been printing customer and receiver names since it
+shipped, and a name in Uzbek Cyrillic was signed off with holes in it.
+`pdfTextCleaner()` in `cjk-font.ts` transliterates the eight into Latin Uzbek
+(the apostrophe is ASCII, because U+02BC is glyph 0 too) and DROPS anything
+else undrawable — an emoji in a Telegram display name is ordinary, and a gap
+reads as a gap where a box reads as corruption. Both PDF builders use it.
+`tests/unit/pdf-glyphs.test.ts` measures the FONT, so replacing it turns the
+finding's own assertion red.
+
+**Phases D-E are open**: upsale (which reads `calc_versions.discount_usd` and
+`calc_offers.below_floor`), and calc-vs-actual (which reads the whole
 `breakdown` snapshot).
 
 ## State — 2026-08-22
@@ -599,7 +653,11 @@ just-departed truck stands ON its origin warehouse and takes the tap
 (deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
 `elementFromPoint` says is free instead of `.first()`.
 
-Latest migration: **0084** (`speed_round` — two partial `notifications`
+Latest migration on this branch: **0087** (`calc_price_book` — the fourth
+dictionary and the offer ledger, VED phase C; ledger must reach **88**);
+0086 (`calc_pricing` — the workspace, three dictionaries and the seal);
+0085 (`calc_requests` — the VED queue). Before them:
+**0084** (`speed_round` — two partial `notifications`
 indexes + `tg_messages.edited_at`; count must reach **85**);
 0083 (`expense_requests` — the rasxod xabari queue;
 count must reach **84**;

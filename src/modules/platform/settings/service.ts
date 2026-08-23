@@ -56,6 +56,15 @@ export const SETTING_DEFAULTS = {
    */
   quote_valid_days: 30,
   /**
+   * The month the dictionary review was last announced, as `YYYY-MM`.
+   *
+   * A CLAIM and not a preference — it is written by the sweep, never by a
+   * person, and the settings screen shows it read-only-ish for the same
+   * reason the backup panel shows its last run: an owner who wonders why the
+   * reminder is quiet can see when it last spoke. Empty means «never».
+   */
+  calc_review_notified_month: '',
+  /**
    * The funnel stage a request for a price lands on (owner, round 83: «kim
    * botga tashlayotgan bo'lsa o'sha odamning accountiga biriktirilishi kerak
    * … va hisoblatish etapiga tushishi kerak»).

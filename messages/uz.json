@@ -330,7 +330,8 @@
       "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)",
       "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
       "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi",
-      "ai_daily_limit": "Bir kishiga kuniga AI savollar chegarasi (bot + AI ekrani birga; 0 — o'chirilgan)"
+      "ai_daily_limit": "Bir kishiga kuniga AI savollar chegarasi (bot + AI ekrani birga; 0 — o'chirilgan)",
+      "calc_review_notified_month": "Lug‘atlarni oylik ko‘rib chiqish eslatmasi oxirgi marta qaysi oyda yuborilgan (tizim o‘zi yozadi)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -2133,7 +2134,29 @@
       "dictionary": "lug‘atdan",
       "typed": "qo‘lda"
     },
-    "propose": "AI taklif qilsin"
+    "propose": "AI taklif qilsin",
+    "clientPrice": "Mijoz narxi",
+    "offerLanguage": "Til",
+    "makeOffer": "Mijozga taklif",
+    "belowFloor": "Tannarxdan past — hisob {floor} $ chiqqan",
+    "belowFloorChip": "past",
+    "offerSent": "Telegramga yuborildi",
+    "offerNoTelegram": "Telegram ulanmagan — matnni nusxalab oling",
+    "offerText": "Taklif matni",
+    "sealExpired": "Muddati o‘tgan",
+    "sealExpiredHint": "Bu narxning muddati tugagan. Qayta hisoblatish kerak.",
+    "offersTitle": "Berilgan takliflar",
+    "dictPrice": "Narxlar kitobi",
+    "priceUnit": "O‘lchov",
+    "unitM3": "kub",
+    "unitKg": "kg",
+    "historyTitle": "Narx tarixi",
+    "historyHint": "TN VED kod bo‘yicha oxirgi hisob-kitoblar va berilgan narxlar",
+    "historyNone": "Bu kod bo‘yicha hisob-kitob yo‘q",
+    "historySearch": "TN VED kod",
+    "lastQuotes": "Oxirgi narxlar",
+    "staleTitle": "Lug‘atlarni yangilash",
+    "staleBody": "{n} ta yozuv uzoq vaqtdan beri yangilanmagan. Ko‘rib chiqing."
   },
   "partners": {
     "title": "Kontragentlar",

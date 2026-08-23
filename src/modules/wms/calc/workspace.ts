@@ -3,10 +3,12 @@ import { db } from '@/modules/platform/db/client';
 import {
   calcExtras,
   calcGroups,
+  calcOffers,
   calcRequestItems,
   calcRequests,
   calcVersions,
   costTypes,
+  telegramLinks,
   deals,
   leads,
   users,
@@ -919,6 +921,12 @@ export async function sealCalc(
         label: i.label,
         quantity: i.quantity,
         weightKg: i.weightKg,
+        // Added in phase C. The map was written from `PricedItem`, which has
+        // no volume because the customs arithmetic does not need one — so the
+        // snapshot the migration calls «the whole snapshot … so phase E can
+        // compare» could not answer «how many m³ of this item». Every reader
+        // must tolerate an OLD breakdown that lacks it.
+        volumeM3: i.volumeM3,
         bazaUsd: i.bazaUsd,
         bazaBasis: i.bazaBasis,
         bazaSource: i.bazaSource,
@@ -1372,4 +1380,153 @@ export async function proposeGroups(
       .set({ aiProposalStartedAt: null })
       .where(eq(calcRequests.id, requestId));
   }
+}
+
+// ---------------------------------------------------------------------------
+// The offer (phase C)
+// ---------------------------------------------------------------------------
+
+export interface OfferResult {
+  id: string;
+  text: string;
+  belowFloor: boolean;
+  /** FALSE when the seller has no linked staff chat — see the comment below. */
+  delivered: boolean;
+}
+
+/**
+ * Record what a seller offered a client, and hand them the text to forward.
+ *
+ * The price is the SELLER's, not the sealed one. A sealed version is what the
+ * calculation cost and, by the owner's law 4, the floor a client price sits
+ * above — so an offer built from it prints the company's floor to the
+ * customer. Quoting BELOW the floor is allowed here and recorded as
+ * `below_floor`; phase D turns that into a lock.
+ *
+ * Delivery is reported HONESTLY. `notifyStaffTelegram` returns a queued count
+ * whether or not the recipient has a linked chat, and the drain later settles
+ * an unlinked one as `muted / 'telegram not linked'`, which
+ * `notificationProblemCount` deliberately excludes — so a silent success here
+ * is exactly how round 104's backup alarm went unnoticed for months. The
+ * caller is told, and the screen says so.
+ */
+export async function recordOffer(
+  versionId: string,
+  input: {
+    clientPriceUsd: number;
+    locale: 'uz' | 'ru' | 'en';
+    clientName?: string | null;
+    /**
+     * The card the caller believes this version belongs to.
+     *
+     * The action gates on the CARD (a lead needs `crm.leads`, a deal needs the
+     * deal-write list), so it must be able to say which card it checked — and
+     * this proves the version is that one. A hand-posted version id belonging
+     * to somebody else's prospect reads as `not_found`, which is what it is
+     * from where the caller stands.
+     */
+    expect?: { entityType: 'deal' | 'lead'; entityId: string };
+  },
+  ctx: AuditContext,
+): Promise<OfferResult> {
+  mustBeNumber(input.clientPriceUsd);
+  if (!(input.clientPriceUsd > 0)) throw new CalcError('price_positive');
+  if (!ctx.actorId) throw new CalcError('unauthenticated');
+
+  const [row] = await db
+    .select({ version: calcVersions, request: calcRequests })
+    .from(calcVersions)
+    .innerJoin(calcRequests, eq(calcRequests.id, calcVersions.requestId))
+    .where(eq(calcVersions.id, versionId))
+    .limit(1);
+  if (!row) throw new CalcError('not_found');
+  if (
+    input.expect &&
+    (row.request.entityType !== input.expect.entityType ||
+      row.request.entityId !== input.expect.entityId)
+  ) {
+    throw new CalcError('not_found');
+  }
+
+  const v = row.version;
+  const { offerText } = await import('./offer');
+  const text = offerText(
+    {
+      clientPriceUsd: input.clientPriceUsd,
+      volumeM3: toNum(v.volumeM3),
+      weightKg: toNum(v.weightKg),
+      section: v.section as CalcSectionName,
+      fromCity: row.request.fromCity,
+      toCity: row.request.toCity,
+      validUntil: v.validUntil,
+      clientName: input.clientName ?? null,
+    },
+    input.locale,
+  );
+
+  const belowFloor = input.clientPriceUsd < Number(v.totalUsd);
+
+  const [saved] = await db
+    .insert(calcOffers)
+    .values({
+      versionId,
+      entityType: row.request.entityType,
+      entityId: row.request.entityId,
+      clientPriceUsd: input.clientPriceUsd.toFixed(2),
+      belowFloor,
+      locale: input.locale,
+      text,
+      offeredBy: ctx.actorId,
+    })
+    .returning({ id: calcOffers.id });
+
+  await writeAudit(db, ctx, {
+    entityType: 'calc_offer',
+    entityId: saved!.id,
+    action: 'create',
+    after: { versionId, clientPriceUsd: input.clientPriceUsd, belowFloor, locale: input.locale },
+  });
+
+  // The offer goes to the seller's OWN chat as its own message, deliberately
+  // carrying no staff URL: the internal notification does that, and this is
+  // the string they forward to a customer.
+  const linked = await hasLinkedChat(ctx.actorId);
+  if (linked) {
+    await notifyStaffTelegram({
+      userIds: [ctx.actorId],
+      type: 'CalcOffer',
+      text,
+    }).catch((err) => logger.error({ err, versionId }, '[calc] offer push failed'));
+  }
+
+  return { id: saved!.id, text, belowFloor, delivered: linked };
+}
+
+/**
+ * Does this person actually have a Telegram chat we can reach?
+ *
+ * The SAME question the drain asks before it settles a row as
+ * «telegram not linked» (notifications/service.ts:718) — asked here so the
+ * screen can say so now, instead of the seller discovering minutes later that
+ * nothing arrived and nothing reported it.
+ */
+async function hasLinkedChat(userId: string): Promise<boolean> {
+  const link = await db.query.telegramLinks.findFirst({
+    where: and(eq(telegramLinks.userId, userId), eq(telegramLinks.status, 'linked')),
+    columns: { id: true },
+  });
+  return Boolean(link);
+}
+
+/** Every offer made against this card, newest first. */
+export async function offersFor(
+  entityType: 'deal' | 'lead',
+  entityId: string,
+): Promise<(typeof calcOffers.$inferSelect)[]> {
+  return db
+    .select()
+    .from(calcOffers)
+    .where(and(eq(calcOffers.entityType, entityType), eq(calcOffers.entityId, entityId)))
+    .orderBy(desc(calcOffers.offeredAt))
+    .limit(10);
 }
