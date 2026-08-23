@@ -7,7 +7,7 @@ import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { CalcError } from '@/modules/wms/calc/service';
 import { releaseOffer } from '@/modules/wms/calc/workspace';
-import { payUpsale } from '@/modules/wms/calc/upsale-service';
+import { payUpsale, setUpsaleCategory } from '@/modules/wms/calc/upsale-service';
 import { mayApproveBelowFloor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 
 export interface UpsaleFormState {
@@ -61,6 +61,38 @@ export async function releaseOfferAction(offerId: string): Promise<UpsaleFormSta
   const meta = await requestMeta();
   try {
     await releaseOffer(offerId, { actorId: actor.id, ...meta });
+    revalidatePath('/upsale');
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof CalcError) return { error: err.code };
+    if (isServerBehind(err)) return { error: 'server_behind' };
+    throw err;
+  }
+}
+
+/**
+ * Choosing the expense category a payout is written into.
+ *
+ * `admin.settings.manage` and NOT `finance.expenses`: it is a company-wide
+ * setting, and the accountant who presses «to'lash» is not the person who
+ * decides where the company's money is booked. The accountant still sees the
+ * refusal in words, one line above the button, so a locked screen names its
+ * own key rather than reading as broken.
+ */
+export async function setUpsaleCategoryAction(
+  _prev: UpsaleFormState,
+  formData: FormData,
+): Promise<UpsaleFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!actor.permissions.has('admin.settings.manage')) return { error: 'forbidden' };
+
+  const meta = await requestMeta();
+  try {
+    await setUpsaleCategory(String(formData.get('categoryId') ?? ''), {
+      actorId: actor.id,
+      ...meta,
+    });
     revalidatePath('/upsale');
     return { ok: true };
   } catch (err) {

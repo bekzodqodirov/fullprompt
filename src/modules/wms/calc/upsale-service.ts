@@ -1,6 +1,6 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { calcOffers, moneyAccounts } from '@/modules/platform/db/schema';
+import { calcOffers, expenseCategories, moneyAccounts } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
@@ -356,4 +356,44 @@ export async function pendingBelowFloor() {
     .from(calcOffers)
     .where(and(eq(calcOffers.belowFloor, true), isNull(calcOffers.approvedAt)))
     .orderBy(calcOffers.offeredAt);
+}
+
+/**
+ * Which expense category an upsale payout is written into — CHOSEN, not typed.
+ *
+ * It is a setting and so it renders on `/admin/settings` like every other
+ * one: a mono text box asking for a uuid the owner has no screen to read one
+ * from. That is not a choice a person can make, so the real door is a picker
+ * on `/upsale` — beside the button that refuses without it — exactly as
+ * `crm_calc_stage` is picked on the funnel's own settings screen.
+ *
+ * The id is re-checked against the table here and not merely against the
+ * `<select>`: a picker's bad value is a forged post (#506-508). ACTIVE only,
+ * because a retired category would be accepted once and then quietly stop
+ * being a category anybody can post into. An empty value is a real answer —
+ * «nobody has chosen» — and `payUpsale` refuses with its own sentence.
+ */
+export async function setUpsaleCategory(categoryId: string, ctx: AuditContext): Promise<void> {
+  const id = categoryId.trim();
+  if (id) {
+    const [row] = await db
+      .select({ id: expenseCategories.id })
+      .from(expenseCategories)
+      .where(and(eq(expenseCategories.id, id), eq(expenseCategories.active, true)));
+    if (!row) throw new CalcError('category_not_found');
+  }
+  const { getSetting, setSetting, SETTINGS_AUDIT_ID } = await import(
+    '@/modules/platform/settings/service'
+  );
+  const before = await getSetting('upsale_expense_category_id');
+  await setSetting('upsale_expense_category_id', id, ctx.actorId ?? null);
+  // The same entity the generic settings screen audits under, so one history
+  // reads whichever door was used.
+  await writeAudit(db, ctx, {
+    entityType: 'settings',
+    entityId: SETTINGS_AUDIT_ID,
+    action: 'update',
+    before: { upsale_expense_category_id: before },
+    after: { upsale_expense_category_id: id },
+  });
 }

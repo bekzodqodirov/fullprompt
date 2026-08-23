@@ -2482,6 +2482,10 @@
     "pending": "等待批准的价格",
     "allow": "批准",
     "reason": "原因",
-    "sliced": "仅显示最近 {n} 条"
+    "sliced": "仅显示最近 {n} 条",
+    "categoryTitle": "销售分成的费用类别",
+    "categoryUnset": "未选择费用类别 — 无法支付",
+    "categoryHint": "分成按普通费用记账。必须使用专用类别：若从「工资」中支付，该销售当月的工资会被悄悄视为已发放。",
+    "categoryAsk": "只有管理员可以选择。"
   }
 }

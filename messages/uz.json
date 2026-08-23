@@ -2482,6 +2482,10 @@
     "pending": "Ruxsat kutayotgan narxlar",
     "allow": "Ruxsat berish",
     "reason": "Sabab",
-    "sliced": "Faqat oxirgi {n} tasi ko‘rsatilyapti"
+    "sliced": "Faqat oxirgi {n} tasi ko‘rsatilyapti",
+    "categoryTitle": "Sotuvchi ulushi uchun xarajat turi",
+    "categoryUnset": "Xarajat turi tanlanmagan — to‘lab bo‘lmaydi",
+    "categoryHint": "Ulush oddiy xarajat bo‘lib yoziladi. Alohida tur majburiy: «Oyliklar» ichidan to‘lansa, o‘sha sotuvchining o‘sha oygi maoshi jimgina to‘langan deb hisoblanadi.",
+    "categoryAsk": "Faqat administrator tanlay oladi."
   }
 }

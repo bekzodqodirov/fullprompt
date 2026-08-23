@@ -2482,6 +2482,10 @@
     "pending": "Prices awaiting approval",
     "allow": "Allow",
     "reason": "Reason",
-    "sliced": "Showing the latest {n}"
+    "sliced": "Showing the latest {n}",
+    "categoryTitle": "Expense category for the seller share",
+    "categoryUnset": "No expense category chosen — payout is refused",
+    "categoryHint": "A payout is written as an ordinary expense. A dedicated category is mandatory: paid out of «Salaries» it would occupy that seller’s salary slot for the month and the salary would be silently counted as posted.",
+    "categoryAsk": "Only an administrator can choose it."
   }
 }

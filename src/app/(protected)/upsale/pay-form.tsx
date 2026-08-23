@@ -1,9 +1,14 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useActionState, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { payUpsaleAction, releaseOfferAction, type UpsaleFormState } from './actions';
+import {
+  payUpsaleAction,
+  releaseOfferAction,
+  setUpsaleCategoryAction,
+  type UpsaleFormState,
+} from './actions';
 
 export interface PayableRow {
   offerId: string;
@@ -214,5 +219,89 @@ export function ReleaseButton({ offerId }: { offerId: string }) {
         </span>
       ) : null}
     </span>
+  );
+}
+
+/**
+ * Which cost type a payout is booked under — the picker the setting never had.
+ *
+ * It is a `setting`, so `/admin/settings` renders it as a mono box asking for
+ * a uuid: correct for every other key and unusable for this one, because
+ * there is no screen anywhere that prints a category's id. The choice belongs
+ * beside the button it unlocks, exactly as the funnel's «hisoblatish» stage
+ * is chosen on the funnel's own settings screen and not by typing an id.
+ *
+ * The fold's face carries the answer (round 43): ⚠ + the reason while nobody
+ * has chosen, ✅ + the category's name once somebody has, so the state is
+ * readable without opening anything.
+ */
+export function CategoryForm({
+  categories,
+  current,
+  mayChoose,
+}: {
+  categories: { id: string; name: string }[];
+  current: string;
+  mayChoose: boolean;
+}) {
+  const t = useTranslations('upsale');
+  const tc = useTranslations('common');
+  const [state, formAction, pending] = useActionState<UpsaleFormState, FormData>(
+    setUpsaleCategoryAction,
+    {},
+  );
+  const chosen = categories.find((c) => c.id === current);
+
+  // Nothing to say to the accountant once it is set: the button works, and a
+  // settings row on a working screen is clutter they cannot act on anyway.
+  if (!mayChoose && chosen) return null;
+
+  return (
+    <details className="card !p-0" data-testid="upsale-category" open={!chosen}>
+      <summary className="cursor-pointer p-3 text-sm font-bold text-ink-700">
+        {chosen ? (
+          <span>
+            <span className="text-good">✅</span> {t('categoryTitle')}:{' '}
+            <span className="font-normal">{chosen.name}</span>
+          </span>
+        ) : (
+          <span>
+            <span className="text-warn">⚠</span> {t('categoryUnset')}
+          </span>
+        )}
+      </summary>
+      <div className="space-y-2 px-3 pb-3">
+        <p className="text-xs text-ink-500">{t('categoryHint')}</p>
+        {mayChoose ? (
+          <form action={formAction} className="flex flex-wrap items-center gap-2">
+            <select
+              name="categoryId"
+              defaultValue={current}
+              aria-label={t('categoryTitle')}
+              data-testid="upsale-category-pick"
+              className="input min-w-40 flex-1"
+            >
+              <option value="">—</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="btn-primary px-4" disabled={pending}>
+              {tc('save')}
+            </button>
+            {state.ok && <span className="self-center text-sm text-good">✅</span>}
+            {state.error && <span className="self-center text-sm text-bad">{state.error}</span>}
+          </form>
+        ) : (
+          // The accountant is refused by the payout and cannot fix it: say who
+          // can, or the screen reads as broken rather than as waiting.
+          <p className="text-xs text-warn" data-testid="upsale-category-ask">
+            {t('categoryAsk')}
+          </p>
+        )}
+      </div>
+    </details>
   );
 }

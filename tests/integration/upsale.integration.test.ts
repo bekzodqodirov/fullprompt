@@ -619,3 +619,48 @@ describe('law 4: a below-floor promise is admin-only', () => {
     expect(await mine(res.id)).toBeNull();
   });
 });
+
+/**
+ * Choosing the category, which until now could only be done by typing a uuid
+ * into the generic settings screen — i.e. by nobody.
+ */
+describe('naming the category the payout is booked under', () => {
+  const read = async () =>
+    String(
+      (await db.query.settings.findFirst({ where: eq(settings.key, 'upsale_expense_category_id') }))
+        ?.value ?? '',
+    );
+
+  it('writes the chosen category and reads back as the payout will read it', async () => {
+    const { setUpsaleCategory } = await import('@/modules/wms/calc/upsale-service');
+    await setUpsaleCategory('', ctx());
+    expect(await read()).toBe('');
+
+    await setUpsaleCategory(categoryId, ctx());
+    expect(await read()).toBe(categoryId);
+  });
+
+  it('refuses an id no category has', async () => {
+    const { setUpsaleCategory } = await import('@/modules/wms/calc/upsale-service');
+    await expect(
+      setUpsaleCategory('00000000-0000-4000-8000-000000000000', ctx()),
+    ).rejects.toMatchObject({ code: 'category_not_found' });
+    // The refusal must not have moved the live setting.
+    expect(await read()).toBe(categoryId);
+  });
+
+  it('refuses a retired category', async () => {
+    const { setUpsaleCategory } = await import('@/modules/wms/calc/upsale-service');
+    const [dead] = await db
+      .insert(expenseCategories)
+      .values({ name: tag(), active: false })
+      .returning();
+    // Accepting it once would leave the payout pointing at a type nobody can
+    // post into, and the refusal would come back months later as a mystery.
+    await expect(setUpsaleCategory(dead!.id, ctx())).rejects.toMatchObject({
+      code: 'category_not_found',
+    });
+    await db.delete(expenseCategories).where(eq(expenseCategories.id, dead!.id));
+    expect(await read()).toBe(categoryId);
+  });
+});

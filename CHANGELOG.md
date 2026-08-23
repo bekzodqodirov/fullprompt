@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## Sotuvchi ulushi: xarajat turini ro'yxatdan tanlaydigan bo'ldi — 2026-08-23
+
+Sizning «bunday narsa yo'qku sozlamalarda» degan gapingiz haq edi, va men
+o'ylaganimdan kattaroq tomondan haq edi.
+
+D bosqichi to'lovni **majburiy alohida xarajat turiga** bog'lagan (sababi
+o'zgarmadi: «Oyliklar» ichidan to'lansa, o'sha sotuvchining o'sha oygi maoshi
+jimgina to'langan deb hisoblanadi). Turni tanlash esa sozlamalar ekranidagi
+oddiy **matn katagi** edi — va u sizdan xarajat turining ichki raqamini
+so'raydi, bunday raqamni esa tizimda birorta ekran ko'rsatmaydi. Ya'ni
+to'ldirib bo'lmaydigan katak, va uning ortidagi rad javobi «tugma buzuq»
+bo'lib o'qilardi.
+
+Endi tanlov **`/upsale` ekranining o'zida**, to'lov tugmasining yonida:
+yopiq holatida ⚠ «tanlanmagan», tanlangach ✅ va turning nomi.
+
+- **Siz** — ro'yxatdan tanlaysiz.
+- **Buxgalter** — «faqat administrator tanlay oladi» degan yozuvni ko'radi.
+  Pul sarflash uning ishi, kompaniyaning xarajat turlarini nomlash sizniki.
+- **Sotuvchi** — bu bo'lim umuman ko'rinmaydi.
+
+Nofaol (arxivlangan) turni tanlab bo'lmaydi: bir marta qabul qilinsa, keyin
+u hech kim yoza olmaydigan turga aylanib qolardi.
+
 ## E1 auditi: chiqarilgan kodni tekshirdim — 2026-08-23
 
 Kodni yozib bo'lgach, uni **beshta mustaqil ko'z bilan qayta ko'rdim** (har bir

@@ -5,7 +5,8 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { readPeriod } from '@/modules/wms/crm/analytics';
-import { listAccounts } from '@/modules/wms/accounting/service';
+import { listAccounts, listCategories } from '@/modules/wms/accounting/service';
+import { getSetting } from '@/modules/platform/settings/service';
 import { mayApproveBelowFloor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import {
   bySeller,
@@ -17,7 +18,7 @@ import {
 } from '@/modules/wms/calc/upsale-service';
 import { PageHeader } from '@/components/ui/page';
 import { hrefWith } from '@/components/list/board-filter';
-import { PayForm, ReleaseButton } from './pay-form';
+import { CategoryForm, PayForm, ReleaseButton } from './pay-form';
 
 /**
  * «Sotuvchi ulushi» — what a seller earns, and the accountant's Friday.
@@ -71,6 +72,8 @@ export default async function UpsalePage({
   let truncated = false;
   let pending: Awaited<ReturnType<typeof pendingBelowFloor>> = [];
   let accounts: Awaited<ReturnType<typeof listAccounts>> = [];
+  let categories: Awaited<ReturnType<typeof listCategories>> = [];
+  let categoryId = '';
   let behind = false;
   try {
     const res = await upsaleRows(scope, actor.id, {
@@ -82,7 +85,14 @@ export default async function UpsalePage({
     truncated = res.truncated;
     if (mayApproveBelowFloor(actor)) pending = await pendingBelowFloor();
     if (actor.permissions.has('finance.expenses') && scope === 'all') {
-      accounts = await listAccounts();
+      // The payer's two questions: out of which till, and under which cost
+      // type. The second is a setting with no picker anywhere else, so it is
+      // asked here — see `CategoryForm`.
+      [accounts, categories, categoryId] = await Promise.all([
+        listAccounts(),
+        listCategories(),
+        getSetting('upsale_expense_category_id').then((v) => String(v ?? '').trim()),
+      ]);
     }
   } catch (err) {
     // 0088's columns. This screen must say a sentence on deploy morning, not
@@ -164,6 +174,14 @@ export default async function UpsalePage({
             ))}
           </ul>
         </section>
+      ) : null}
+
+      {categories.length > 0 ? (
+        <CategoryForm
+          categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+          current={categoryId}
+          mayChoose={actor.permissions.has('admin.settings.manage')}
+        />
       ) : null}
 
       {accounts.length > 0 && payable.length > 0 ? (

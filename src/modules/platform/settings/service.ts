@@ -166,6 +166,17 @@ export async function getAllSettings(): Promise<Record<SettingKey, unknown>> {
   return result as Record<SettingKey, unknown>;
 }
 
+/**
+ * The row every settings change is audited against.
+ *
+ * `audit_log.entity_id` is a uuid, and a setting's identity is its KEY — so
+ * one fixed id carries them all and the key travels in before/after. Exported
+ * because a setting may also be written from a picker on the screen it
+ * belongs to (`upsale_expense_category_id`), and two doors writing two
+ * different entity ids would split one setting's history in half.
+ */
+export const SETTINGS_AUDIT_ID = '00000000-0000-0000-0000-000000000001';
+
 export async function setSetting(
   key: SettingKey,
   value: unknown,

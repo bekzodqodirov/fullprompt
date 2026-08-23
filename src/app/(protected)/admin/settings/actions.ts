@@ -8,11 +8,10 @@ import { db } from '@/modules/platform/db/client';
 import {
   getSetting,
   SETTING_DEFAULTS,
+  SETTINGS_AUDIT_ID,
   setSetting,
   type SettingKey,
 } from '@/modules/platform/settings/service';
-
-const SETTINGS_ENTITY_ID = '00000000-0000-0000-0000-000000000001';
 
 export async function updateSettingAction(formData: FormData): Promise<void> {
   const actor = await authorize('admin.settings.manage');
@@ -44,7 +43,7 @@ export async function updateSettingAction(formData: FormData): Promise<void> {
     { actorId: actor.id, ...meta },
     {
       entityType: 'settings',
-      entityId: SETTINGS_ENTITY_ID,
+      entityId: SETTINGS_AUDIT_ID,
       action: 'update',
       before: { [key]: before },
       after: { [key]: value },
