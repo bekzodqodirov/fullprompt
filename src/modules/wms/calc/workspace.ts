@@ -1388,10 +1388,13 @@ export async function proposeGroups(
 
 export interface OfferResult {
   id: string;
-  text: string;
+  /** NULL while the promise is pending: there is nothing to forward yet. */
+  text: string | null;
   belowFloor: boolean;
   /** FALSE when the seller has no linked staff chat — see the comment below. */
   delivered: boolean;
+  /** TRUE when a below-floor price is waiting on somebody who may allow it. */
+  pending: boolean;
 }
 
 /**
@@ -1416,6 +1419,16 @@ export async function recordOffer(
     clientPriceUsd: number;
     locale: 'uz' | 'ru' | 'en';
     clientName?: string | null;
+    /** Mandatory when the price is below the floor — a discount's own rule. */
+    belowFloorReason?: string | null;
+    /**
+     * May this person ALLOW a below-floor promise (law 4)?
+     *
+     * Passed in rather than derived here, because the services in this module
+     * take an actor id and never a permission set — the action asks
+     * `mayApproveBelowFloor` and hands down the answer.
+     */
+    mayApprove?: boolean;
     /**
      * The card the caller believes this version belongs to.
      *
@@ -1464,7 +1477,16 @@ export async function recordOffer(
     input.locale,
   );
 
-  const belowFloor = input.clientPriceUsd < Number(v.totalUsd);
+  const belowFloor = input.clientPriceUsd < Number(v.totalUsd) - 0.009;
+  const reason = (input.belowFloorReason ?? '').trim();
+  // A below-floor price says WHY, exactly as a discount does. Without it the
+  // owner's queue is a list of numbers with nobody's reasoning attached.
+  if (belowFloor && !reason) throw new CalcError('below_floor_reason_required');
+  // Law 4: below-floor is admin-only. What is locked is the PROMISE and not
+  // the record — the row is written either way, because the flag is how the
+  // owner sees who is discounting, and a door in front of a seller with a
+  // customer on the phone is a door they walk around by not using the screen.
+  const approved = belowFloor ? Boolean(input.mayApprove) : true;
 
   const [saved] = await db
     .insert(calcOffers)
@@ -1474,6 +1496,9 @@ export async function recordOffer(
       entityId: row.request.entityId,
       clientPriceUsd: input.clientPriceUsd.toFixed(2),
       belowFloor,
+      belowFloorReason: belowFloor ? reason : null,
+      approvedAt: approved && belowFloor ? new Date() : null,
+      approvedBy: approved && belowFloor ? ctx.actorId : null,
       locale: input.locale,
       text,
       offeredBy: ctx.actorId,
@@ -1487,6 +1512,16 @@ export async function recordOffer(
     after: { versionId, clientPriceUsd: input.clientPriceUsd, belowFloor, locale: input.locale },
   });
 
+  // A PENDING promise sends nothing and hands back nothing to forward. The
+  // row exists — that is the owner's visibility — but until somebody allows
+  // it there is no message, no sheet and no price on the card.
+  if (!approved) {
+    await notifyApprovers(saved!.id, input.clientPriceUsd, Number(v.totalUsd), reason, ctx);
+    return { id: saved!.id, text: null, belowFloor, delivered: false, pending: true };
+  }
+
+  await applyOfferToCard(saved!.id, row.request, input.clientPriceUsd);
+
   // The offer goes to the seller's OWN chat as its own message, deliberately
   // carrying no staff URL: the internal notification does that, and this is
   // the string they forward to a customer.
@@ -1499,7 +1534,34 @@ export async function recordOffer(
     }).catch((err) => logger.error({ err, versionId }, '[calc] offer push failed'));
   }
 
-  return { id: saved!.id, text, belowFloor, delivered: linked };
+  return { id: saved!.id, text, belowFloor, delivered: linked, pending: false };
+}
+
+/**
+ * The card carries what the CUSTOMER pays, not what the job cost us.
+ *
+ * `sealCalc` writes the floor onto `quoted_amount`, and every revenue surface
+ * reads that column — the funnel report, five places in `salesAnalytics`, the
+ * sales snapshot and the board's money line. Law 4 says the client pays the
+ * VED price plus the upsale, so leaving the floor there reports the company's
+ * own cost as its revenue and leaves the accountant invoicing from memory.
+ *
+ * The floor itself is untouched on `calc_versions`, which is where law 2's
+ * lock actually lives; volume and weight stay as sealed, because they are
+ * facts about the cargo and not about the price.
+ */
+async function applyOfferToCard(
+  offerId: string,
+  request: typeof calcRequests.$inferSelect,
+  clientPriceUsd: number,
+): Promise<void> {
+  const set = { quotedAmount: clientPriceUsd.toFixed(2), quotedCurrency: 'USD', updatedAt: new Date() };
+  if (request.entityType === 'lead') {
+    await db.update(leads).set(set).where(eq(leads.id, request.entityId));
+  } else {
+    await db.update(deals).set(set).where(eq(deals.id, request.entityId));
+  }
+  logger.info({ offerId, entityId: request.entityId }, '[calc] client price written to card');
 }
 
 /**
@@ -1529,4 +1591,112 @@ export async function offersFor(
     .where(and(eq(calcOffers.entityType, entityType), eq(calcOffers.entityId, entityId)))
     .orderBy(desc(calcOffers.offeredAt))
     .limit(10);
+}
+
+/**
+ * Tell whoever may allow a below-floor promise that one is waiting.
+ *
+ * The audience is `mayApproveBelowFloor`'s own — the same predicate the
+ * button asks, so the people who can act on the message are exactly the
+ * people who get it. `finance.debt_override` alone would have carried a
+ * client price and a margin to every warehouse manager and to competing
+ * sellers, which is a leak wearing an alarm's clothes.
+ */
+async function notifyApprovers(
+  offerId: string,
+  clientPriceUsd: number,
+  floorUsd: number,
+  reason: string,
+  ctx: AuditContext,
+): Promise<void> {
+  const { approverIds } = await import('./upsale-scope');
+  const userIds = await approverIds();
+  if (userIds.length === 0) return;
+  const gap = Math.round((floorUsd - clientPriceUsd) * 100) / 100;
+  await notifyStaffTelegram({
+    userIds,
+    type: 'CalcBelowFloor',
+    text:
+      `⚠️ Tannarxdan past narx ruxsat kutmoqda\n` +
+      `Narx: $${clientPriceUsd.toFixed(2)} · tannarx $${floorUsd.toFixed(2)} (−$${gap.toFixed(2)})\n` +
+      `Sabab: ${reason}`,
+    exceptUserId: ctx.actorId,
+  }).catch((err) => logger.error({ err, offerId }, '[calc] below-floor notify failed'));
+}
+
+/**
+ * Allow a pending below-floor promise, or refuse it.
+ *
+ * Single-shot, and the claim IS the UPDATE (0082's rule): two admins pressing
+ * in the same second must not both release, because releasing is what sends
+ * the customer the message. A refusal is recorded rather than deleted — the
+ * owner asked to see who is discounting, and a rejected attempt is part of
+ * that answer.
+ */
+export async function releaseOffer(offerId: string, ctx: AuditContext): Promise<OfferResult> {
+  if (!ctx.actorId) throw new CalcError('unauthenticated');
+  const [claimed] = await db
+    .update(calcOffers)
+    .set({ approvedAt: new Date(), approvedBy: ctx.actorId })
+    .where(and(eq(calcOffers.id, offerId), eq(calcOffers.belowFloor, true), isNull(calcOffers.approvedAt)))
+    .returning();
+  if (!claimed) throw new CalcError('not_pending');
+
+  const [row] = await db
+    .select({ request: calcRequests })
+    .from(calcVersions)
+    .innerJoin(calcRequests, eq(calcRequests.id, calcVersions.requestId))
+    .where(eq(calcVersions.id, claimed.versionId))
+    .limit(1);
+  if (row) await applyOfferToCard(claimed.id, row.request, Number(claimed.clientPriceUsd));
+
+  await writeAudit(db, ctx, {
+    entityType: 'calc_offer',
+    entityId: claimed.id,
+    action: 'update',
+    after: { approved: true, clientPriceUsd: Number(claimed.clientPriceUsd) },
+  });
+
+  // The seller gets the text now — it is the first moment there is one.
+  const linked = await hasLinkedChat(claimed.offeredBy);
+  if (linked) {
+    await notifyStaffTelegram({
+      userIds: [claimed.offeredBy],
+      type: 'CalcOffer',
+      text: claimed.text,
+    }).catch((err) => logger.error({ err, offerId }, '[calc] released offer push failed'));
+  }
+
+  return {
+    id: claimed.id,
+    text: claimed.text,
+    belowFloor: true,
+    delivered: linked,
+    pending: false,
+  };
+}
+
+/**
+ * The client price this card is currently quoted at, if one has been released.
+ *
+ * The newest RELEASED offer — a pending below-floor promise is not a price the
+ * customer has been told, so it is not the card's price either.
+ */
+export async function releasedPriceFor(
+  entityType: 'deal' | 'lead',
+  entityId: string,
+): Promise<number | null> {
+  const [row] = await db
+    .select({ price: calcOffers.clientPriceUsd })
+    .from(calcOffers)
+    .where(
+      and(
+        eq(calcOffers.entityType, entityType),
+        eq(calcOffers.entityId, entityId),
+        sql`(NOT ${calcOffers.belowFloor} OR ${calcOffers.approvedAt} IS NOT NULL)`,
+      ),
+    )
+    .orderBy(desc(calcOffers.offeredAt))
+    .limit(1);
+  return row ? Number(row.price) : null;
 }

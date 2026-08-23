@@ -57,8 +57,8 @@ What the owner wants (his list, verbatim intent):
    overwritten.
 3. **Quote validity = 1 month.** After that the card says "expired —
    recalculate".
-4. **Upsale.** Client price is entered by the seller on the card; upsale =
-   client price − VED price, computed, never typed. Floor: client price ≥
+4. **Upsale.** *(SHIPPED, phase D.)* Client price is entered by the seller on
+   the card; upsale = client price − VED price, computed, never typed. Floor: client price ≥
    VED price (below-floor is admin-only). **ANY discount kills the upsale
    right** — a freight discount included (owner: «yolkiradan tushirganda ham
    upsale o'chsin»). Visibility: owner + accountant + the seller (own only).
@@ -207,8 +207,17 @@ future hole will be a visible refusal rather than a quietly cheaper invoice.
 - **C — Price base + offer sheet**: price book (dictionary 4), last-5,
   history search for sellers+VED, one-tap client offer, monthly
   dictionary-review task.
-- **D — Upsale and money**: client-price field, floor, discount↔upsale
-  lock, accountant cash view, upsale + seller performance reports.
+- **D — Upsale and money**: **SHIPPED 2026-08-23** (migration 0088).
+  The upsale is DERIVED (client price − sealed floor) and never stored; only
+  its permission (`approved_at`) and its payment (`payout_expense_id`) are
+  facts. `payableOffersSql()` is the one home for five rules and `payUpsale`
+  embeds it in its own claim rather than trusting the ids that were ticked.
+  Below-floor locks the PROMISE and not the record. A released offer writes
+  the client price onto the card — which is what every revenue surface reads
+  — and `quoteLockedFor` had to follow it, or every later save on a quoted
+  card would be refused for ever. The payout is an `expenses` row in a
+  mandatory dedicated category with a server-derived amount. `/upsale` in two
+  shapes. Decisions #778-787.
 - **E — Fact and AI control**: calc-vs-actual on batch close, accuracy
   report, warning ledger, suspicious-calcs list.
 

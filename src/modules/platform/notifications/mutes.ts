@@ -61,6 +61,11 @@ export const MUTE_GROUPS = {
     // staleness threshold (round 55). Raised by the SERVER, deliberately:
     // every alarm the phone itself could raise dies with the app.
     'TruckSilent',
+    // A seller has quoted BELOW the sealed floor and the promise is waiting
+    // on somebody who may allow it (VED phase D, law 4). An alarm and not
+    // news: nothing has been said to the customer yet, and until this is
+    // answered the seller is standing in front of one.
+    'CalcBelowFloor',
   ],
   operations: [
     'ReceiptConfirmed',

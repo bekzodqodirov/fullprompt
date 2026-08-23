@@ -231,15 +231,27 @@ describe('the offer is the SELLER’s price, and the seal is only its floor', ()
   });
 
   it('FLAGS a price below the floor instead of refusing it', async () => {
+    // Still true after phase D, and deliberately so: what law 4 locks is the
+    // PROMISE, never the record. The row is always written, because the flag
+    // is how the owner sees who is discounting — a door in front of a seller
+    // with a customer on the phone is a door they walk around by not using
+    // the screen. Phase D added the two things around it: a mandatory reason,
+    // and `mayApprove` deciding whether anything is actually sent.
     const { versionId, version } = await sealed();
     const result = await recordOffer(
       versionId,
-      { clientPriceUsd: Number(version.totalUsd) / 2, locale: 'ru' },
+      {
+        clientPriceUsd: Number(version.totalUsd) / 2,
+        locale: 'ru',
+        belowFloorReason: 'doimiy mijoz',
+        mayApprove: true,
+      },
       ctx(),
     );
     expect(result.belowFloor).toBe(true);
     const stored = await db.query.calcOffers.findFirst({ where: eq(calcOffers.id, result.id) });
     expect(stored!.belowFloor).toBe(true);
+    expect(stored!.belowFloorReason).toBe('doimiy mijoz');
   });
 
   it('refuses a price that is not a number rather than storing NaN', async () => {

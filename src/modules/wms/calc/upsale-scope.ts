@@ -46,3 +46,27 @@ export function upsaleScopeFor(actor: { permissions: { has(code: string): boolea
 export function mayOffer(actor: { permissions: { has(code: string): boolean } }): boolean {
   return upsaleScopeFor(actor) !== 'none';
 }
+
+/**
+ * May this person ALLOW a below-floor promise? (law 4: «below-floor is
+ * admin-only».)
+ *
+ * `finance.reports` and not `finance.debt_override` alone: that grant is held
+ * by the logist, the warehouse manager and every sales manager, so a
+ * below-floor alarm carrying a client price and a margin would go to the
+ * Kashgar warehouse and to competing sellers. The composite is the owner, the
+ * admins and the accountant — the same three `upsaleScopeFor` answers `all`
+ * for, which is the point: the people who may allow it are the people who may
+ * see what it costs.
+ */
+export function mayApproveBelowFloor(actor: {
+  permissions: { has(code: string): boolean };
+}): boolean {
+  return actor.permissions.has('finance.reports');
+}
+
+/** Who to tell that one is waiting — the SAME predicate, asked of the roster. */
+export async function approverIds(): Promise<string[]> {
+  const { usersWithPermission } = await import('@/modules/platform/notifications/service');
+  return usersWithPermission('finance.reports');
+}

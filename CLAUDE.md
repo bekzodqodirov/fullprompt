@@ -134,8 +134,8 @@ pnpm build && pnpm e2e  # 44 e2e
 
 ## State — 2026-08-23
 
-**VED phases A, B and C are on this branch** (`docs/VED.md`; migrations
-**0085**, **0086** and **0087** — the ledger must reach **88**).
+**VED phases A, B, C and D are on this branch** (`docs/VED.md`; migrations
+**0085**-**0088** — the ledger must reach **89**).
 
 Phase B is the workspace that replaces the Excel. A price on the screen is a
 DRAFT (recomputed from the dictionaries every render); a price in
@@ -300,10 +300,40 @@ because the exclusion is a property of a matrix he edits with checkboxes.
 STATED, not fixed: `/bitimlar/[id]` has no ownership gate at all — a CRM
 access round, not a line in this module.
 
-**Phases D-E are open**: upsale (which reads `calc_versions.discount_usd` and
-`calc_offers.below_floor`), and calc-vs-actual (which reads the whole
-`breakdown` snapshot). Phase D's plan is designed and adversarially judged —
-27 findings across five lenses, absorbed.
+**Phase D — the upsale** (#778-787; migration **0088**, ledger must reach
+**89**). Designed and judged by 12 agents over five lenses before code — 27
+findings, absorbed. **The upsale is DERIVED and never stored**: client price
+minus the sealed floor, both parents immutable, so writing the difference
+down could only create a way for it to disagree with itself; what IS stored
+is whether the promise was allowed and whether the money was handed over
+(NULL on `payout_expense_id` being the whole pay-twice fence).
+`payableOffersSql()` is the one home for five rules — one payable per JOB
+(re-offering is the designed workflow, so without a per-request rank every
+re-quote is a second commission on one sale), on the current version, on a
+request nobody superseded, released, and positive — and `payUpsale` embeds
+the SAME fragment in its claim rather than trusting the ticked ids. **Two
+things concede and the freight columns are NOT one of them**: traced, the
+seal writes both from one expression, so testing them for inequality finds a
+concession never on a freight quote and fires on EVERY rastamojka one. The
+below-floor lock goes on the **PROMISE, not the record** — the row is always
+written (that is the owner's visibility) while the text, the PDF, the card's
+price and the payout all wait on `approved_at`; that reconciles law 4 with
+#766. **A released offer writes the CLIENT price onto the card**, which is
+what every revenue surface reads — and that quietly broke the quote lock,
+which the design did not see: `quoteLockedFor` returned the sealed floor
+while the locked ✏️ form re-posts what it renders (#171), so every later save
+on a quoted card would have been refused for ever. Found by reading the lock,
+red-proven both ways. The payout is an `expenses` row in a MANDATORY
+dedicated category (the recurring slot is (category, date, employee,
+warehouse) with no discriminator, so paying out of «Oyliklar» silently
+cancels that seller's salary) with a **server-derived** amount. `/upsale` is
+two shapes from one query; the paired CHECK caught my own two-step claim in a
+test. Red proofs ×5. **1913 unit/integration + 173 e2e** green on a fresh
+gsr_ci in CI's order, ledger 89; screenshots at 360×800 and 1280×900,
+document width equal to the viewport at both.
+
+**Phase E is open**: calc-vs-actual (which reads the whole `breakdown`
+snapshot).
 
 ## State — 2026-08-22
 
@@ -693,8 +723,9 @@ just-departed truck stands ON its origin warehouse and takes the tap
 (deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
 `elementFromPoint` says is free instead of `.first()`.
 
-Latest migration on this branch: **0087** (`calc_price_book` — the fourth
-dictionary and the offer ledger, VED phase C; ledger must reach **88**);
+Latest migration on this branch: **0088** (`calc_upsale` — the approval and
+the payout on `calc_offers`, VED phase D; ledger must reach **89**);
+0087 (`calc_price_book` — the fourth dictionary and the offer ledger);
 0086 (`calc_pricing` — the workspace, three dictionaries and the seal);
 0085 (`calc_requests` — the VED queue). Before them:
 **0084** (`speed_round` — two partial `notifications`

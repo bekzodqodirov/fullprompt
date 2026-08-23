@@ -29,7 +29,7 @@ import {
   sealCalc,
   setFreightZone,
 } from '@/modules/wms/calc/workspace';
-import { payUpsale, reopenUpsaleForExpense, upsaleRows } from '@/modules/wms/calc/upsale-service';
+import { payUpsale, upsaleRows } from '@/modules/wms/calc/upsale-service';
 import { voidExpense } from '@/modules/wms/accounting/service';
 
 /**
@@ -503,5 +503,119 @@ describe('who may read it', () => {
 
     // Law 4. Not filtered — not fetched.
     expect((await upsaleRows('none', actorId, {})).rows).toEqual([]);
+  });
+});
+
+describe('the card carries what the CUSTOMER pays', () => {
+  it('a released offer writes the client price onto the card, not the floor', async () => {
+    const job = await sealedJob();
+    const sealed = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+    // The seal wrote the floor, which is what every revenue surface reads.
+    expect(Number(sealed!.quotedAmount)).toBe(job.floor);
+
+    await recordOffer(job.versionId, { clientPriceUsd: job.floor + 800, locale: 'uz' }, sellerCtx());
+    const after = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+    // Law 4: the client pays the VED price PLUS the upsale. Leaving the floor
+    // here reports the company's own cost as its revenue.
+    expect(Number(after!.quotedAmount)).toBe(job.floor + 800);
+  });
+
+  it('and the card can still be SAVED afterwards — the lock follows the card', async () => {
+    // The trap: `quoteLockedFor` refuses a save whose posted amount differs
+    // from the locked one, and the locked form re-posts what it renders. If
+    // the lock kept answering «the floor» while the card showed the client
+    // price, every later ✏️ save on a quoted card would be refused for ever.
+    const { quoteLockedFor } = await import('@/modules/wms/crm/service');
+    const job = await sealedJob();
+    await recordOffer(job.versionId, { clientPriceUsd: job.floor + 250, locale: 'uz' }, sellerCtx());
+
+    const locked = await quoteLockedFor('deal', dealId);
+    const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+    expect(locked).toBe(Number(card!.quotedAmount));
+
+    const { updateDeal } = await import('@/modules/wms/deals/service');
+    const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+    await updateDeal(
+      dealId,
+      {
+        clientId,
+        stageId: stage!.id,
+        title: `renamed ${SUFFIX}`,
+        quotedAmount: Number(card!.quotedAmount),
+        quotedCurrency: 'USD',
+        quotedVolumeM3: card!.quotedVolumeM3 === null ? null : Number(card!.quotedVolumeM3),
+        quotedWeightKg: card!.quotedWeightKg === null ? null : Number(card!.quotedWeightKg),
+      },
+      ctx(),
+    );
+    const renamed = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+    expect(renamed!.title).toBe(`renamed ${SUFFIX}`);
+  });
+});
+
+describe('law 4: a below-floor promise is admin-only', () => {
+  it('a seller’s below-floor price is RECORDED and sends nothing', async () => {
+    const job = await sealedJob();
+    const res = await recordOffer(
+      job.versionId,
+      { clientPriceUsd: job.floor - 300, locale: 'uz', belowFloorReason: 'doimiy mijoz', mayApprove: false },
+      sellerCtx(),
+    );
+    // The row exists — that is how the owner sees who is discounting.
+    expect(res.belowFloor).toBe(true);
+    expect(res.pending).toBe(true);
+    // …and there is nothing to forward, which is the whole of the lock.
+    expect(res.text).toBeNull();
+    expect(res.delivered).toBe(false);
+
+    const stored = await db.query.calcOffers.findFirst({ where: eq(calcOffers.id, res.id) });
+    expect(stored!.approvedAt).toBeNull();
+    expect(stored!.belowFloorReason).toBe('doimiy mijoz');
+    // A promise nobody allowed is not the card's price either.
+    const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+    expect(Number(card!.quotedAmount)).not.toBe(job.floor - 300);
+    // …and it is never payable.
+    expect(await mine(res.id)).toBeNull();
+  });
+
+  it('demands a reason, exactly as a discount does', async () => {
+    const job = await sealedJob();
+    await expect(
+      recordOffer(job.versionId, { clientPriceUsd: job.floor - 100, locale: 'uz' }, sellerCtx()),
+    ).rejects.toMatchObject({ code: 'below_floor_reason_required' });
+  });
+
+  it('an admin pressing it themselves is recorded AND released in one step', async () => {
+    const job = await sealedJob();
+    const res = await recordOffer(
+      job.versionId,
+      { clientPriceUsd: job.floor - 200, locale: 'uz', belowFloorReason: 'rahbar qarori', mayApprove: true },
+      ctx(),
+    );
+    expect(res.pending).toBe(false);
+    expect(res.text).not.toBeNull();
+    const stored = await db.query.calcOffers.findFirst({ where: eq(calcOffers.id, res.id) });
+    expect(stored!.approvedAt).not.toBeNull();
+  });
+
+  it('releasing is single-shot, and the second press finds nothing', async () => {
+    const job = await sealedJob();
+    const res = await recordOffer(
+      job.versionId,
+      { clientPriceUsd: job.floor - 400, locale: 'uz', belowFloorReason: 'sinov', mayApprove: false },
+      sellerCtx(),
+    );
+    const { releaseOffer } = await import('@/modules/wms/calc/workspace');
+    const released = await releaseOffer(res.id, ctx());
+    expect(released.text).not.toBeNull();
+    // Releasing is what sends the customer the message — two admins pressing
+    // in the same second must not both send it.
+    await expect(releaseOffer(res.id, ctx())).rejects.toMatchObject({ code: 'not_pending' });
+
+    const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+    expect(Number(card!.quotedAmount)).toBe(job.floor - 400);
+    // A below-floor price is a concession by definition, so it carries no
+    // upsale even once allowed — and the difference is negative anyway.
+    expect(await mine(res.id)).toBeNull();
   });
 });

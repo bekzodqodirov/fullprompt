@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { makeOfferAction, type CalcFormState } from '@/app/(protected)/hisoblash/actions';
+import { makeOfferAction, type OfferFormState } from '@/app/(protected)/hisoblash/actions';
 
 /**
  * «Mijozga taklif» — the seller's one tap from a sealed price to a message
@@ -25,6 +25,7 @@ export function CalcOfferForm({
   clientName,
   entityType,
   entityId,
+  mayApprove,
   revalidate,
 }: {
   versionId: string;
@@ -33,6 +34,8 @@ export function CalcOfferForm({
   clientName: string | null;
   entityType: 'deal' | 'lead';
   entityId: string;
+  /** May THIS person allow a below-floor promise? Law 4: admin-only. */
+  mayApprove: boolean;
   revalidate: string;
 }) {
   const t = useTranslations('calc');
@@ -41,7 +44,8 @@ export function CalcOfferForm({
   const [pending, startTransition] = useTransition();
   const [price, setPrice] = useState(sealedTotal.toFixed(2));
   const [locale, setLocale] = useState<'uz' | 'ru' | 'en'>(defaultLocale);
-  const [result, setResult] = useState<CalcFormState & { text?: string; belowFloor?: boolean; delivered?: boolean }>({});
+  const [result, setResult] = useState<OfferFormState>({});
+  const [reason, setReason] = useState('');
   const [copied, setCopied] = useState(false);
 
   const typed = Number(price.replace(',', '.'));
@@ -76,7 +80,7 @@ export function CalcOfferForm({
         <button
           type="button"
           className="btn-primary"
-          disabled={pending || price.trim() === ''}
+          disabled={pending || price.trim() === '' || (below && reason.trim() === '')}
           data-testid="offer-make"
           onClick={() =>
             startTransition(async () => {
@@ -84,6 +88,7 @@ export function CalcOfferForm({
                 clientPriceUsd: typed,
                 locale,
                 clientName,
+                belowFloorReason: reason,
                 entityType,
                 entityId,
                 revalidate,
@@ -98,18 +103,51 @@ export function CalcOfferForm({
         </button>
       </div>
 
+      {/* What the seller earns, live, as they type. It is the number the
+          whole screen is actually about, and reading it only after pressing
+          would be reading it after the decision. */}
+      {!below && Number.isFinite(typed) && typed > sealedTotal ? (
+        <p className="text-2xs text-good" data-testid="offer-upsale">
+          {t('yourShare')}: <span className="font-mono font-semibold">
+            ${(Math.round((typed - sealedTotal) * 100) / 100).toFixed(2)}
+          </span>
+        </p>
+      ) : null}
+
       {/* The floor is stated BEFORE the press, not after: the seller is
           choosing a number, and a warning that arrives with the result is a
           warning about a decision already made. */}
       {below ? (
-        <p className="text-2xs text-warn" data-testid="offer-below-floor">
-          ⚠ {t('belowFloor', { floor: sealedTotal.toFixed(2) })}
-        </p>
+        <div className="space-y-1" data-testid="offer-below-floor">
+          <p className="text-2xs text-warn">
+            ⚠ {t('belowFloor', { floor: sealedTotal.toFixed(2) })}
+          </p>
+          <p className="text-2xs text-ink-500">
+            {mayApprove ? t('belowFloorYouAllow') : t('belowFloorNeedsApproval')}
+          </p>
+          <label className="block text-2xs">
+            <span className="label">{t('belowFloorReason')}</span>
+            <input
+              className="input input-sm w-full"
+              data-testid="offer-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </label>
+        </div>
       ) : null}
 
       {result.error ? (
         <p className="chip chip-warn" data-testid="offer-error">
           {t.has(`errors.${result.error}`) ? t(`errors.${result.error}` as 'errors.not_found') : result.error}
+        </p>
+      ) : null}
+
+      {/* A pending promise hands back nothing to forward — that is the whole
+          of the lock. Saying so is better than an empty box. */}
+      {result.pending ? (
+        <p className="chip chip-warn" data-testid="offer-pending">
+          {t('offerPending')}
         </p>
       ) : null}
 

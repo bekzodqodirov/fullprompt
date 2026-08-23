@@ -358,9 +358,21 @@ export async function quoteLockedFor(
   entityId: string,
 ): Promise<number | null> {
   try {
-    const { currentSealFor } = await import('../calc/workspace');
+    const { currentSealFor, releasedPriceFor } = await import('../calc/workspace');
     const seal = await currentSealFor(entityType, entityId);
-    return seal ? seal.totalUsd : null;
+    if (!seal) return null;
+    // What is LOCKED is what is on the card, which is not always the floor.
+    //
+    // Phase D writes the released CLIENT price onto `quoted_amount`, because
+    // law 4 says the client pays the VED price plus the upsale and every
+    // revenue surface reads that column. The lock compares the form's posted
+    // value against this number, and the locked form re-posts what it renders
+    // (#171) — so returning the floor here would refuse EVERY later save on a
+    // card that has been quoted, for ever. Found by reading the lock, not by
+    // a test: the card and the lock have to agree about which number is the
+    // one nobody may change.
+    const offered = await releasedPriceFor(entityType, entityId);
+    return offered ?? seal.totalUsd;
   } catch (err) {
     // Deploy morning: this module works without 0086, and the lock is a
     // safeguard rather than a gate — its absence must not take the card down.

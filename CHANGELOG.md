@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## VED moduli, D bosqichi: sotuvchi ulushi (upsale) — 2026-08-23
+
+Sotuvchi mijozga tannarxdan qimmatroq sotsa — ustidagi farq uning ulushi.
+Tizim uni o'zi hisoblaydi, o'zi kuzatadi, buxgalter esa bir bosishda to'laydi.
+
+- **Ulush = mijoz narxi − tannarx.** Hech qayerda alohida saqlanmaydi, chunki
+  ikkala raqam ham o'zgarmas — yozib qo'yish faqat bitta narsa berardi:
+  keyinchalik o'zi bilan o'zi kelishmay qolish. Saqlanadigani boshqa: **ruxsat
+  berildimi** va **pul berildimi**.
+- **Bitta savdo — bitta ulush.** Sotuvchi taklifni qayta yuborsa (masalan
+  tilni almashtirib), bu ikkinchi ulush emas. Qayta hisoblangan ish esa
+  umuman to'lanmaydi — turadigan va'da yangisi.
+- **Chegirma ulushni o'chiradi** (sizning qoidangiz). Ikki narsa chegirma
+  hisoblanadi: VED yozgan chegirma, va yukni o'z zichligidan pastroq bandga
+  majburan tushirish. Uchinchisi yo'q — buni kodni oxirigacha kuzatib
+  tekshirdim.
+- **Tannarxdan past narx — faqat sizning ruxsatingiz bilan**, lekin qulf
+  yozuvga emas, **va'daga** qo'yilgan: narx har doim yozib qo'yiladi (siz kim
+  chegirma berayotganini ko'rib turasiz), sabab majburiy, lekin **siz ruxsat
+  bermaguningizcha mijozga matn ham, PDF ham ketmaydi va kartaga narx
+  tushmaydi**. Sotuvchi ekranda «Ruxsat kutilmoqda» deb ko'radi.
+  Sizga Telegramga xabar boradi.
+- **Kartadagi narx endi MIJOZ to'laydigan narx.** Ilgari u yerda tannarx
+  turardi — ya'ni CRM hisobotlari kompaniyaning o'z xarajatini «daromad» deb
+  ko'rsatardi. **Bu voronka, tahlil va bitim kartasidagi raqamlarni
+  o'zgartiradi** (kattaroq tomonga).
+- **«Sotuvchi ulushi» ekrani** (`/upsale`): uchta raqam — ishlab topilgan,
+  kutilmoqda, to'langan — sotuvchilar ro'yxati va har bir ish. Telefonda
+  ro'yxat, kompyuterda jadval.
+- **Kim nimani ko'radi**: siz va buxgalter — hammasini; sotuvchi — faqat
+  o'zinikini; **VED — umuman ko'rmaydi** (u tannarxni o'zi hisoblagan).
+- **To'lov — bir bosish.** Buxgalter qaysi ishlar, qaysi kassa va qaysi kunni
+  belgilaydi; **summani tizim hisoblaydi**. Qisman to'lash = kamroq ish
+  belgilash. Ikki marta bosilsa ikki marta to'lanmaydi. To'lov bekor qilinsa
+  ishlar qaytadan ochiladi.
+- **Ulush uchun alohida xarajat turi tanlanadi** (Sozlamalarda). Buni
+  majburiy qildim: agar «Oyliklar» turiga yozilsa, o'sha sotuvchining o'sha
+  oylik maoshi jimgina o'tkazilmay qolar edi.
+
+Bazada: **0088**. Deploy'dan keyin migratsiya soni **89** bo'lishi kerak.
+
 ## VED moduli, C bosqich: mijozga taklif, narxlar kitobi va tarix — 2026-08-23
 
 Muhrlangan narxdan mijozga yuboriladigan taklifgacha bitta bosish. Va

@@ -5,7 +5,7 @@ import { canWriteDeal } from '@/modules/wms/deals/service';
 import { lastCalcAnswerFor, openCalcFor } from '@/modules/wms/calc/service';
 import { currentSealFor, offersFor } from '@/modules/wms/calc/workspace';
 import { offerLocaleFor } from '@/modules/wms/calc/offer';
-import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
+import { mayApproveBelowFloor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcSection } from '@/modules/wms/calc/intake';
 import { isServerBehind } from '@/modules/platform/db/errors';
@@ -155,6 +155,7 @@ export async function CalcPanel({
               clientName={clientName ?? null}
               entityType={entityType}
               entityId={entityId}
+              mayApprove={mayApproveBelowFloor(actor)}
               revalidate={revalidate}
             />
           )}
@@ -170,8 +171,17 @@ export async function CalcPanel({
                   <span className="uppercase">{o.locale}</span>
                   <span>{format.dateTime(o.offeredAt, { dateStyle: 'short' })}</span>
                   {o.belowFloor ? <span className="chip chip-warn">{t('belowFloorChip')}</span> : null}
+                  {o.belowFloor && !o.approvedAt ? (
+                    <span className="chip chip-warn" data-testid="calc-offer-pending">
+                      {t('offerPending')}
+                    </span>
+                  ) : null}
                   {/* The sheet outlives the press: after a refresh the form's
                       own link is gone, and this is the only way back to it. */}
+                  {/* A pending promise has no sheet: the customer has not been
+                      told this price and must not be handed a document saying
+                      they have. */}
+                  {o.belowFloor && !o.approvedAt ? null : (
                   <a
                     className="text-brand-700"
                     href={`/api/calc/${o.versionId}/offer.pdf?til=${o.locale}`}
@@ -181,6 +191,7 @@ export async function CalcPanel({
                   >
                     PDF
                   </a>
+                  )}
                 </li>
               ))}
             </ul>

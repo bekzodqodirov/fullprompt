@@ -79,6 +79,18 @@ export const NAV: NavGroupSpec[] = [
         primary: 2,
       },
       {
+        // «Sotuvchi ulushi» (docs/VED.md law 4). Two audiences and NOT the
+        // VED: `finance.reports` is the owner and the accountant, `crm.leads`
+        // is the seller reading their own pay. `ved.docs` is deliberately
+        // absent — the person who computed the floor must not read the
+        // margin off it (`upsaleScopeFor` is the same rule, in code).
+        href: '/upsale',
+        labelKey: 'title',
+        namespace: 'upsale',
+        icon: 'wallet',
+        permissions: ['finance.reports', 'crm.leads'],
+      },
+      {
         // The VED queue (docs/VED.md, phase A). `ved.docs` alone: it is that
         // grant's own screen, and a wider list would pull the route into the
         // warehouse menus whose lengths the nav tripwire pins.
@@ -476,10 +488,15 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   sales_manager: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/crm', '/suhbatlar', '/my-clients',
     '/finance', '/pipeline', '/arrivals', '/approvals', '/ai',
+    // What they earned. It is the one screen on this list that is about them
+    // rather than about a customer.
+    '/upsale',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/kontragentlar', '/reports',
     '/dashboard', '/admin', '/receipts', '/stock', '/approvals', '/ai',
+    // They are the one who pays it (law 4).
+    '/upsale',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

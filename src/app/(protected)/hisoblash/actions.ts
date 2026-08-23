@@ -35,7 +35,7 @@ import {
 import { saveBaza, savePriceBook, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
 import { isCalcSection } from '@/modules/wms/calc/labels';
 import { canWriteDeal } from '@/modules/wms/deals/service';
-import { mayOffer } from '@/modules/wms/calc/upsale-scope';
+import { mayApproveBelowFloor, mayOffer } from '@/modules/wms/calc/upsale-scope';
 
 export interface CalcFormState {
   ok?: boolean;
@@ -449,7 +449,8 @@ export async function proposeAction(id: string): Promise<CalcFormState> {
 // ---------------------------------------------------------------------------
 
 export interface OfferFormState extends CalcFormState {
-  text?: string;
+  text?: string | null;
+  pending?: boolean;
   belowFloor?: boolean;
   delivered?: boolean;
 }
@@ -470,6 +471,7 @@ export async function makeOfferAction(
     clientPriceUsd: number;
     locale: 'uz' | 'ru' | 'en';
     clientName: string | null;
+    belowFloorReason?: string;
     entityType: 'deal' | 'lead';
     entityId: string;
     revalidate: string;
@@ -498,12 +500,23 @@ export async function makeOfferAction(
         clientPriceUsd: input.clientPriceUsd,
         locale: input.locale,
         clientName: input.clientName,
+        belowFloorReason: input.belowFloorReason,
+        // Law 4: below-floor is admin-only. Asked HERE, where the permission
+        // set lives, and handed down — the services take an actor id and
+        // never a permission set.
+        mayApprove: mayApproveBelowFloor(actor),
         expect: { entityType: input.entityType, entityId: input.entityId },
       },
       { actorId: actor.id, ...meta },
     );
     revalidatePath(input.revalidate);
-    return { ok: true, text: res.text, belowFloor: res.belowFloor, delivered: res.delivered };
+    return {
+      ok: true,
+      text: res.text,
+      belowFloor: res.belowFloor,
+      delivered: res.delivered,
+      pending: res.pending,
+    };
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code };
     // 0087 is this release's migration, and the offer ledger is its table.
