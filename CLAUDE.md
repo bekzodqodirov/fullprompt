@@ -500,6 +500,47 @@ just-departed truck stands ON its origin warehouse and takes the tap
 (deliberate — Leaflet's zIndexOffset 1000), so m9c now picks a pin
 `elementFromPoint` says is free instead of `.first()`.
 
+**Round 110 — the China round** (#748-754, his «sistema xitoyda juda sekin
+ishlayabti, planlarni yuklayotgan paytda ishlatib bolmayabti»). NO migration
+(85 stands). The answer was BYTES nobody was counting, and one thing that was
+not slowness at all. **Next compresses what it RENDERS and not a Route
+Handler's own `Response`** — measured: the scan screens' manifest went out at
+**28,506 bytes with gzip asked for**, and gzipped is **975** (29×); Caddy in
+front compressed nothing because the inline-generated Caddyfile had two
+directives and `encode` was not one. At 268 B a box row that is 157 KB for a
+600-box truck, every 15 s, per phone. **The unload screen re-read the whole
+truck after EVERY scan** — round 9's #248-250 fixed that on the LOADING screen
+and unload never got it, so a 200-box truck pulled the manifest 200 times
+(~31 MB); measured four accepts = four GETs before, **zero** after (it now
+carries `flush({sync})` + `flushSoon()` verbatim). **The service worker
+reloaded the whole page on every `online` event** (serwist's `reloadOnOnline`
+default, confirmed in the built bundle) — on warehouse wifi that is a scan
+screen restarting mid-pallet, which is why his word was «ishlatib bolmayabti»
+and not «sekin»; off now. Built: `platform/http/json.ts` (gzip on the
+THREADPOOL + an ETag that is the hash of the body itself, `If-None-Match`
+parsed as a list with the proxy `-gzip` suffix stripped), on
+`/api/batches/*/planned`, `/api/plans/stock`, `/api/inventory/expected`; the
+screens send `If-None-Match` EXPLICITLY because the SW's NetworkFirst refetch
+never carried a conditional request; `encode zstd gzip` on both Caddy
+services — **TESTED here with a real Caddy 2.8 in the production shape**
+(5,793 → 1,283 B on a route the app does not compress, no double-encoding of
+one it does, a `.pmtiles` `Range` read still a plain 206, both generated
+Caddyfiles `caddy validate`-clean); one snapshot read on mount instead of two;
+no ticking while the screen is not visible; ACTIVE crates only in the
+snapshot (a dissolved crate can expand no scan — 612 crates / 1,632 codes /
+56 KB rode a five-box batch) and `inArray` for the raw `IN ${array}`.
+MEASURED END TO END in a phone-shaped browser with the worker installed:
+an open loading screen cost **114 KB per 38 s → 990 bytes**, quiet ticks are
+304 with no body, and a colleague's change still lands on the next tick.
+STATED, not done (#754): the 304 saves bytes and NOT the ~67 ms of queries —
+a round-108-style version probe is the next step; the quick-batch `available`
+list still ships 1,500 rows and truncates silently; `batchMemberFilter`'s OR
+runs twice per snapshot; HTTP/3 is advertised while compose publishes TCP 443
+only. 1723 unit/integration + 157 e2e green on a fresh gsr_ci in CI's order.
+LOCAL TRAP worth remembering: a stand-in `.data/basemap/corridor.pmtiles`
+makes /map render LEAFLET, and two specs assert the SVG schematic — both
+failures were that file, not the code.
+
 Latest migration: **0084** (`speed_round` — two partial `notifications`
 indexes + `tg_messages.edited_at`; count must reach **85**);
 0083 (`expense_requests` — the rasxod xabari queue;

@@ -73,6 +73,18 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   const [manualQuery, setManualQuery] = useState('');
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
+   * The snapshot's version, as the server named it.
+   *
+   * This screen re-reads the whole plan every 15 seconds, and in the Chinese
+   * warehouses that link is the slow part of the day (round 110). Sending the
+   * tag back means a truck nobody has scanned since the last tick answers
+   * **304 with no body at all** — and it is sent EXPLICITLY rather than left
+   * to the browser's own revalidation, because the service worker fetches
+   * this URL itself (NetworkFirst) and measurement showed no conditional
+   * request ever reaching the server through it.
+   */
+  const snapEtag = useRef<string | null>(null);
+  /**
    * Which codes each queued scan marked on screen.
    *
    * The counter moves the instant a box is scanned — that responsiveness is
@@ -103,6 +115,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         const res = await fetch(`/api/batches/${batchId}/planned`);
         if (res.ok) {
           const data = (await res.json()) as Snapshot;
+          snapEtag.current = res.headers.get('etag');
           localStorage.setItem(cacheKey, JSON.stringify(data));
           applySnapshot(data);
           setSnapError(null);
@@ -222,9 +235,15 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         setOnline(true);
         if (sync) {
           try {
-            const res = await fetch(`/api/batches/${batchId}/planned`);
+            const res = await fetch(`/api/batches/${batchId}/planned`, {
+              headers: snapEtag.current ? { 'If-None-Match': snapEtag.current } : undefined,
+            });
+            // 304: the plan has not moved since the last tick, so there is
+            // nothing to parse and nothing to re-render — and nothing but a
+            // header crossed the wire.
             if (res.ok) {
               const data = (await res.json()) as Snapshot;
+              snapEtag.current = res.headers.get('etag');
               localStorage.setItem(cacheKey, JSON.stringify(data));
               setSnapshot(data);
               setLoaded((prev) => {
@@ -299,11 +318,23 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     window.addEventListener('offline', down);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOnline(navigator.onLine);
-    void flush({ sync: true });
-    const interval = setInterval(() => void flush({ sync: true }), 15_000);
+    // No `sync` here: the effect above has just read the snapshot, and both
+    // effects firing on mount downloaded the whole truck TWICE (round 110).
+    void flush();
+    // A phone in a pocket must not poll. The screen locks between pallets and
+    // the tick went on asking every 15 seconds — for nothing on the phone's
+    // side, and for a real query on the server's, times every phone in the
+    // warehouse (round 74's one-process ceiling). Coming back is a sync, so
+    // the first thing a woken screen shows is current.
+    const tick = () => {
+      if (document.visibilityState === 'visible') void flush({ sync: true });
+    };
+    const interval = setInterval(tick, 15_000);
+    document.addEventListener('visibilitychange', tick);
     return () => {
       window.removeEventListener('online', up);
       window.removeEventListener('offline', down);
+      document.removeEventListener('visibilitychange', tick);
       clearInterval(interval);
     };
   }, [flush]);
