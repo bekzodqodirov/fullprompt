@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 /**
  * VED phase E1 — «hisob va haqiqat», in a browser.
  *
- * What only a browser can prove, and what #784 shipped wrong one round ago:
+ * What only a browser can prove, and what #792 shipped wrong one round ago:
  * that the THREE doors are real. The audience is a composite of grants the
  * owner edits with checkboxes, and the last time a phase-E-shaped screen was
  * gated, it locked out the accountant — who is half of what it is for. So
@@ -44,7 +44,7 @@ test('the owner reads the coverage line first', async ({ page }) => {
   await expect(page.getByTestId('control-accuracy')).toBeVisible();
 });
 
-test('the ACCOUNTANT can open it — the door #784 got wrong', async ({ page }) => {
+test('the ACCOUNTANT can open it — the door #792 got wrong', async ({ page }) => {
   // They cannot open /hisoblash at all (it gates on `ved.docs`), which is why
   // the link lives on /hisoblash/narxlar too. The screen is half theirs: the
   // rastamojka they type into the cost grid is the other side of every

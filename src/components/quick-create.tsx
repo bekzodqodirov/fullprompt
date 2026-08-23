@@ -42,13 +42,30 @@ const FULL_FORM: Record<QuickKind, string> = {
   client: '/admin/clients/new',
 };
 
-export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
+/**
+ * `fullForms` is the subset of `kinds` whose «Batafsil →» page this person can
+ * actually open — decided in the layout, because this component holds no
+ * permission knowledge (the nav's own rule). `/admin/clients/new` is gated on
+ * `clients.manage` at the page AND at its action, so for the seller round 111
+ * opened the quick client door to, the link would have bounced them to the
+ * home screen and eaten what they had typed.
+ */
+export function QuickCreate({
+  kinds,
+  fullForms,
+}: {
+  kinds: QuickKind[];
+  fullForms: QuickKind[];
+}) {
   const t = useTranslations('quick');
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  // With one kind available there is nothing to choose: pressing «+» should
-  // show a text box, not a menu of one.
-  const [kind, setKind] = useState<QuickKind | null>(kinds.length === 1 ? kinds[0]! : null);
+  // The panel ALWAYS opens on a text box — round 60's rule, kept now that
+  // there can be two kinds: the chip strip switches between them in place
+  // rather than standing in front of them. The first kind is the default
+  // because the layout lists them in the order this company uses them (a lead
+  // is raised many times a day, a client code weekly).
+  const [kind, setKind] = useState<QuickKind>(kinds[0] ?? 'lead');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
@@ -60,15 +77,23 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
   const [dupes, setDupes] = useState<
     { id: string; name: string; phone: string | null; ownerName: string | null }[]
   >([]);
+  // The client door's own warning: codes this phone already carries. Kept
+  // apart from `dupes` because a lead duplicate and a sibling CODE are
+  // different facts and link to different cards — one person legitimately
+  // holds several codes in this business, so this can never be a refusal.
+  const [codeDupes, setCodeDupes] = useState<{ id: string; code: string; name: string }[]>([]);
   const [made, setMade] = useState<{ id: string; name: string; kind: QuickKind } | null>(null);
   // A NEW CLIENT keeps the panel open on a code banner instead of closing to
   // a toast (round 107, owner's 1B): the code goes on cartons in Yiwu the same
   // day, and «GS527» folded into one grey toast line was being missed. Held
   // separately from `made` because the toast's job — survive the close — is
   // exactly what this state must not do.
-  const [madeClient, setMadeClient] = useState<{ id: string; code: string; name: string } | null>(
-    null,
-  );
+  const [madeClient, setMadeClient] = useState<{
+    id: string;
+    code: string;
+    name: string;
+    dealId: string | null;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
 
   if (kinds.length === 0) return null;
@@ -80,8 +105,11 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
     setPhone('');
     setError(null);
     setDupes([]);
+    setCodeDupes([]);
     setBusy(false);
-    setKind(kinds.length === 1 ? kinds[0]! : null);
+    // The KIND deliberately survives a reset: somebody opening two client
+    // codes in a row should not have to pick the chip again. `close()` puts it
+    // back to the default, so the next «+» starts where it always did.
   }
 
   function close(reason: 'backdrop' | 'escape' | 'route'): boolean {
@@ -93,21 +121,22 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
     setOpen(false);
     setMadeClient(null);
     reset();
+    setKind(kinds[0] ?? 'lead');
     return true;
   }
 
   async function save() {
-    if (!kind) return;
     setBusy(true);
     setError(null);
     const result =
       kind === 'lead'
         ? await quickCreateLeadAction({ name, phone, anyway: dupes.length > 0 })
-        : await quickCreateClientAction({ name, phones: phone });
+        : await quickCreateClientAction({ name, phones: phone, anyway: codeDupes.length > 0 });
     setBusy(false);
     if (!result.ok) {
       setError(result.error ?? 'failed');
       setDupes(kind === 'lead' ? ((result as QuickCreateResult).duplicates ?? []) : []);
+      setCodeDupes(kind === 'client' ? ((result as QuickClientResult).duplicates ?? []) : []);
       return;
     }
     if (kind === 'client') {
@@ -117,6 +146,7 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
         id: result.id!,
         code: (result as QuickClientResult).code ?? '',
         name: result.name!,
+        dealId: (result as QuickClientResult).dealId ?? null,
       });
       reset();
       router.refresh();
@@ -195,6 +225,21 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
                 {t('toCard')}
               </Link>
             </div>
+            {/* Its OWN row, not a third control beside copy and the card
+                link: measured in ru at 360 px, three `.btn` controls overflow
+                the panel's 312 px row by 20-58 px even after every label has
+                wrapped, and the third paints outside the panel over the
+                backdrop (#421/#471/#522). Absent when the funnel refused the
+                deal — the panel never claims one that does not exist. */}
+            {madeClient.dealId && (
+              <Link
+                href={`/bitimlar/${madeClient.dealId}`}
+                data-testid="quick-to-deal"
+                className="btn-secondary !min-h-10 w-full"
+              >
+                {t('toDeal')}
+              </Link>
+            )}
             <button
               type="button"
               data-testid="quick-done"
@@ -207,24 +252,43 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
               {t('done')}
             </button>
           </div>
-        ) : kind === null ? (
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-ink-700">{t('title')}</p>
-            {kinds.map((one) => (
-              <button
-                key={one}
-                type="button"
-                data-testid={`quick-kind-${one}`}
-                onClick={() => setKind(one)}
-                className="btn-secondary w-full !justify-start"
-              >
-                {t(KIND_LABEL[one])}
-              </button>
-            ))}
-          </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-sm font-semibold text-ink-700">{t(KIND_LABEL[kind])}</p>
+            {/* The kinds are CHIPS above the boxes, not a menu in front of
+                them. Round 60 opened straight into the text box because there
+                was one kind; adding the client door for sellers would
+                otherwise have charged the whole sales team an extra tap on the
+                thing they do most, to reach a door they use weekly. With one
+                kind the strip does not render at all, so nothing changes for
+                anybody who has only one. Plain buttons, not peer-checked
+                radios: this panel deliberately has no <form> (#377/#419/#466). */}
+            {kinds.length > 1 ? (
+              <div className="flex gap-1.5" data-testid="quick-kinds">
+                {kinds.map((one) => (
+                  <button
+                    key={one}
+                    type="button"
+                    data-testid={`quick-kind-${one}`}
+                    aria-pressed={kind === one}
+                    onClick={() => {
+                      setKind(one);
+                      setError(null);
+                      setDupes([]);
+                      setCodeDupes([]);
+                    }}
+                    className={
+                      kind === one
+                        ? 'chip flex-1 justify-center !bg-brand-500 !text-white'
+                        : 'chip flex-1 justify-center'
+                    }
+                  >
+                    {t(KIND_LABEL[one])}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm font-semibold text-ink-700">{t(KIND_LABEL[kind])}</p>
+            )}
             <input
               className="input"
               autoFocus
@@ -235,6 +299,7 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
               onChange={(event) => {
                 setName(event.target.value);
                 setDupes([]);
+                setCodeDupes([]);
               }}
             />
             <input
@@ -246,6 +311,7 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
               onChange={(event) => {
                 setPhone(event.target.value);
                 setDupes([]);
+                setCodeDupes([]);
               }}
             />
             <p className="text-xs text-ink-500">{t(`hint.${kind}` as 'hint.lead')}</p>
@@ -278,6 +344,24 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
               </ul>
             )}
 
+            {/* The codes this number already holds. NOT a refusal: one person
+                carrying 444, 555 and 777 is this company's normal shape, and
+                the seller who cannot open the client book has no other way to
+                find out. The same press again mints the new code. */}
+            {codeDupes.length > 0 && (
+              <ul
+                className="space-y-1 rounded-xl border border-warn/30 bg-warn/10 p-2"
+                data-testid="quick-code-dupes"
+              >
+                {codeDupes.map((one) => (
+                  <li key={one.id} className="text-xs">
+                    <span className="font-mono font-semibold text-brand-700">{one.code}</span>
+                    <span className="text-ink-500"> · {one.name}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -288,13 +372,15 @@ export function QuickCreate({ kinds }: { kinds: QuickKind[] }) {
               >
                 {t('save')}
               </button>
-              <Link
-                href={FULL_FORM[kind]}
-                data-testid="quick-full"
-                className="btn-ghost !min-h-10 text-xs"
-              >
-                {t('full')}
-              </Link>
+              {fullForms.includes(kind) && (
+                <Link
+                  href={FULL_FORM[kind]}
+                  data-testid="quick-full"
+                  className="btn-ghost !min-h-10 text-xs"
+                >
+                  {t('full')}
+                </Link>
+              )}
             </div>
           </div>
         )}

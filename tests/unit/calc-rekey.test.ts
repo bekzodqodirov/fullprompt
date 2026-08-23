@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
  *
  * This has now been got wrong twice in a row, one table at a time. Round 110
  * found `rekeyLeadCalcRequests` filtering `openRequests`, so a SEALED request
- * stayed behind and the new deal got the price with none of its lock (#770).
+ * stayed behind and the new deal got the price with none of its lock (#778).
  * The fix moved every request — and left `calc_offers` untouched, so what the
  * seller actually promised the customer vanished from the only card that
  * still existed. Both defects are the same sentence: **fixing a rule in one
@@ -79,7 +79,7 @@ describe('winning a lead moves every calc row that names the card', () => {
   });
 
   it('moves closed rows too — a sealed request is the one that matters', () => {
-    // #770: the filter that hid the sealed request. Its absence is the fix.
+    // #778: the filter that hid the sealed request. Its absence is the fix.
     expect(rekeyBody()).not.toContain('openRequests');
   });
 });

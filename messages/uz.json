@@ -47,7 +47,8 @@
     "notFilled": "To‘ldirilmagan",
     "copy": "Nusxa olish",
     "scanTruckForbidden": "Bu mashina sizning skladingiz uchun emas — yoki sessiya tugagan. Qayta kiring.",
-    "scanSnapshotOffline": "Karobkalar ro‘yxati yuklanmadi: aloqa yo‘q. Internetni tekshirib, qayta urinib ko‘ring."
+    "scanSnapshotOffline": "Karobkalar ro‘yxati yuklanmadi: aloqa yo‘q. Internetni tekshirib, qayta urinib ko‘ring.",
+    "photoOnly": "Bu rasm emas — surat tanlang (hujjat uchun 📎 bor)"
   },
   "login": {
     "title": "Tizimga kirish",
@@ -2332,6 +2333,7 @@
     "copy": "Kodni nusxalash",
     "copied": "Nusxalandi ✓",
     "toCard": "Kartaga →",
+    "toDeal": "Bitim →",
     "done": "Tayyor",
     "discard": "Saqlamasdan yopilsinmi? Yozganingiz yo'qoladi.",
     "hint": {
@@ -2344,7 +2346,8 @@
       "code_exists": "Bunday kod bor",
       "code_format": "Kod formati noto'g'ri",
       "failed": "Saqlanmadi",
-      "duplicate": "Bunday lid allaqachon bor — quyida ko‘ring. Baribir yaratish uchun yana bosing."
+      "duplicate": "Bunday lid allaqachon bor — quyida ko‘ring. Baribir yaratish uchun yana bosing.",
+      "duplicateCode": "Bu raqamda kod bor — baribir yangisini ochish uchun yana bosing"
     }
   },
   "routing": {

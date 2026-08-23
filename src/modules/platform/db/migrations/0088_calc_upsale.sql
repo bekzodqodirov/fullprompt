@@ -20,7 +20,7 @@ ALTER TABLE calc_offers
   -- Law 4: below-floor is admin-only. The ROW is always recorded — the flag
   -- is how the owner sees who is discounting, and a door in front of a seller
   -- with a customer on the phone is a door they walk around by not using the
-  -- screen (#773). What is locked is the PROMISE: until `approved_at` is
+  -- screen (#781). What is locked is the PROMISE: until `approved_at` is
   -- stamped the offer sends no Telegram text, renders no PDF, is not the
   -- card's price and is never payable.
   ADD COLUMN IF NOT EXISTS below_floor_reason text,
@@ -86,7 +86,7 @@ BEGIN
       CHECK ((approved_at IS NULL) = (approved_by IS NULL));
   END IF;
 
-  -- NaN is a real numeric and answers TRUE to `> 0` (#769). `<> 'NaN'` is the
+  -- NaN is a real numeric and answers TRUE to `> 0` (#777). `<> 'NaN'` is the
   -- only comparison postgres has that excludes it.
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint

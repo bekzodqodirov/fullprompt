@@ -61,7 +61,7 @@ describe('who may read hisob vs haqiqat', () => {
     expect(calcControlScopeFor(actorFor('sales_manager'))).toBe('none');
   });
 
-  it('lets the accountant in, which is the door #784 got wrong', () => {
+  it('lets the accountant in, which is the door #792 got wrong', () => {
     expect(calcControlScopeFor(actorFor('accountant'))).toBe('all');
   });
 });

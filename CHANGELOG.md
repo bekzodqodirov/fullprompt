@@ -116,6 +116,59 @@ muddat yo'q edi — osilib qolsa yagona jarayonni yarim soat band qilardi
 
 **Migratsiya 0089** — serverda ro'yxat **90** ga yetishi kerak.
 
+## Rasm tanlash, klient kodi va avtomatik bitim — 2026-08-23
+
+Uchta ish, uchalasi ham sizning so'rovingiz bo'yicha.
+
+**1. Kamera tugmasi endi tanlash beradi.** Prixod qilganda 📷 ni bosgan
+skladchi endi telefonning o'z menyusini ko'radi: **Kamera / Galereya /
+Fayllar**. Avval to'g'ridan-to'g'ri kamera ochilardi — ya'ni besh daqiqa oldin
+olingan rasmni ishlatib bo'lmasdi, qaytadan suratga olish kerak edi. To'rtta
+joyda tuzatildi: prixodning har bir toifasi, umumiy rasmlar, rasxod cheki va
+egasiga qaytarish.
+
+Buni tuzatayotib **yashirin bir xato topildi**: rasm yuklanmay qolsa va
+skladchi **o'sha rasmni qaytadan tanlasa — tugma umuman ishlamasdi**. Telefon
+«rasm o'zgarmadi» deb hisoblardi. Kamera majburiy bo'lgani uchun bu yillar
+davomida ko'rinmagan (har safar yangi surat olinardi). Endi to'g'ri ishlaydi.
+Yana: rasm o'rniga hujjat (masalan PDF) tanlansa, avval «aloqani tekshiring»
+deb yozardi — ya'ni internetni ayblardi. Endi rostini aytadi: «Bu rasm emas —
+surat tanlang (hujjat uchun 📎 bor)».
+
+**2. Sotuvchi endi o'zi klient kodi ocha oladi.** Avval «+» tugmasida kod
+ochish faqat admin va logistda bor edi, sotuvchida yo'q. Endi lid ocha
+oladigan har kim kod ham ocha oladi. **Kodni ochgan odam o'sha mijozning
+menejeri bo'lib yoziladi** — siz aytganingizdek. Bu shunchaki qulaylik emas:
+menejeri yo'q mijozning yuki kelganda **hech kimga xabar bormaydi**, va
+sotuvchi o'zi ochgan mijozni ko'ra olmaydi ham.
+
+Yana bitta himoya qo'shildi: **bir raqamda kod bo'lsa, ogohlantiradi** va
+qaysi kod ekanini aytadi («GS323 · Aziz Karimov»). Bu taqiq emas — bir odamda
+2-3 ta kod bo'lishi sizda odatiy hol, shuning uchun **yana bosilsa yangisini
+baribir ochadi**. Lekin sotuvchi mijozlar ro'yxatini ko'rmaydi, ya'ni busiz
+u ko'r-ko'rona ikkinchi kod ochib yuborardi — keyin yuk, qo'ng'iroq va yozishma
+hech kim qaramaydigan kodda qolib ketardi.
+
+**3. Kod ochilganda bitim ham ochiladi.** Har yangi klient kodiga avtomatik
+yangi bitim ochiladi, mijozning nomi bilan. Kod chiqqan oynada endi «Bitim →»
+havolasi ham bor.
+
+**Va shu ishda bitta jiddiy xato topildi va tuzatildi — u bugun ham bor edi.**
+Mijozning yuki narxi kelishilmasdan kelsa, sistema sotuvchiga «💰❓ narx
+qo'ying» deb ogohlantiradi. Agar har mijozga bo'sh bitim ochilsa, sistema
+o'rniga «📎 bitimga biriktiring» deb yozardi — sotuvchi biriktirsa,
+**ogohlantirish butunlay o'chib qolardi** va yuk narxsiz Toshkentgacha ketardi.
+Bu xato lidni narxsiz yutganda **allaqachon sodir bo'lardi** (107-raunddan
+beri). Endi: bo'sh bitim «biriktiriladigan narsa» deb hisoblanmaydi, va narxsiz
+bitimga biriktirilgan yuk ham baribir «narx qo'ying» deb ogohlantiradi.
+
+Kichik narsalar: avtomatik ochilgan bitim ustunning **pastiga** tushadi
+(tepasiga emas — aks holda haqiqiy ishlarni surib chiqarardi), prixoddagi bitim
+tanlash ro'yxatida bo'sh bitimlar ko'rinmaydi, va «+» oynasida lid/klient
+tanlash endi tugmalar emas, **chiplar** — ya'ni sotuvchi avvalgidek darrov
+yozishni boshlaydi, ortiqcha bosish yo'q.
+
+Bazada o'zgarish yo'q — migratsiya hisobi **86** ligicha qoladi.
 
 ## Xitoydagi sekinlik — sabab topildi va tuzatildi — 2026-08-23
 

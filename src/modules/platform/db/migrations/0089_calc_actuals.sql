@@ -99,7 +99,7 @@ ALTER TABLE calc_groups
 --
 -- A sealed version is immutable and its `breakdown` is a snapshot; these are
 -- the three questions phase E asks that a snapshot cannot answer after the
--- dictionaries move underneath it. Integers, so #769's `<> 'NaN'::numeric`
+-- dictionaries move underneath it. Integers, so #777's `<> 'NaN'::numeric`
 -- has nothing to protect — there is no money column in this migration at all,
 -- and that absence is the design: the comparison is COMPUTED.
 -- ---------------------------------------------------------------------------

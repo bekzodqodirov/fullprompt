@@ -138,7 +138,7 @@ pnpm build && pnpm e2e  # 44 e2e
 **0085**-**0089** — the ledger must reach **90**). **The module is done bar
 E2, which is gated on data that does not exist yet.**
 
-**Phase E1 — hisob vs haqiqat** (#796-800). **The headline is that the
+**Phase E1 — hisob vs haqiqat** (#804-800). **The headline is that the
 design's own money comparison could not ship**: `calc_versions.freight_usd`
 is the tariff's LIST price and `cost_allocations.amount_usd` is what the road
 cost, so their difference is MARGIN — measured on his own tariff, a 30 m³ /
@@ -187,20 +187,20 @@ every seller to a pure cost breakdown), reached from `/hisoblash/narxlar`,
 the one calc screen the accountant can open; all four roles opened in a real
 browser. **`ON DELETE SET NULL` cannot coexist with a CHECK spanning the FK
 column** — measured, and I wrote that bug TWICE before its own test caught
-the second one (#801). Found by LOOKING at the screen, not by a test: the
+the second one (#809). Found by LOOKING at the screen, not by a test: the
 completeness gate used `compareQuote`'s worst-of-both, so cargo that arrived
 in full but lighter than quoted read «not all arrived» and hid the exact
-error the round exists to show (#805). Also fixed: `suggestTnved`'s Anthropic
+error the round exists to show (#813). Also fixed: `suggestTnved`'s Anthropic
 client had no timeout (round 101's defect, in the file that never learned
 it). **17 red proofs, all by string edit**; the harness itself corrupted two
-files because an empty replacement is not reversible (#807). **1967
+files because an empty replacement is not reversible (#815). **1967
 unit/integration + 177 e2e** green on a fresh gsr_ci in CI's order;
 screenshots at 360×800 and 1280×900, document width equal to the viewport at
 both. **E2 waits for ≥20 sealed versions with confirmed links and a non-empty
 price book**; per-TNVED comparison and the nightly AI pass are CUT and owed
 to him as an explicit «yo'q».
 
-**E1 was then AUDITED AS SHIPPED** (#808-816, five lenses, verify-to-refute,
+**E1 was then AUDITED AS SHIPPED** (#816-816, five lenses, verify-to-refute,
 25 candidates → 11 confirmed and fixed). **The headline is that the screen
 could never have worked**: the arrival CTE asked for `to_status='in_stock'`
 into a UZ warehouse and unloading writes `ready_for_pickup` at a customs or
@@ -224,7 +224,7 @@ column and hid «mijoz o'z firmasi bilan» set on the batch card; a batch-scope
 customs bill with no FX rate was invisible to every CTE; and
 `calc_customs_deviation_pct` shipped with NO reader at all — 0064's
 `tg_peer_index` mistake in the same round that refused to make one. **11 more
-red proofs.** PROCESS (#816): the first wiring test INSERTED a dated tariff
+red proofs.** PROCESS (#824): the first wiring test INSERTED a dated tariff
 row and repriced every seal in two other files; its no-rate currency was one
 another test file creates (green here, red on a fresh database, #380); and a
 strip marker must be UNIQUE, not merely present, or the restore welds a
@@ -264,7 +264,7 @@ locked branch re-posting the values as hidden inputs (#171). **The model
 proposes words and can never reach a number**: `rate_source`/`baza_source`
 allow `'dictionary'|'typed'` and there is no `'ai'`, every group must be
 confirmed by a person, and `tests/unit/ai-advisory.test.ts` pins all three
-fences. Decisions **#759-760**. Phase A's typed «Bajarildi» deliberately
+fences. Decisions **#767-760**. Phase A's typed «Bajarildi» deliberately
 STAYS — the dictionaries ship empty, so on deploy morning nothing can be
 sealed at all.
 
@@ -279,9 +279,9 @@ ozing togirla ketma ket qanday kelyabti shunga mosla / 3 shunday qolsim») and
 are built: 900-999 → the $320/$200 row, bands run consecutively (each starts
 at the previous one's top plus one), the 1000 step stays a step. Recorded as a
 SEED correction and not a dated superseding row, because 0086 has never
-deployed and the seed writes only into an empty table. Decision **#768**.
+deployed and the seed writes only into an empty table. Decision **#776**.
 
-**Round 110 — the shipped-code audit** (#769-764): phase B was reviewed
+**Round 110 — the shipped-code audit** (#777-764): phase B was reviewed
 before code and never as shipped, so six adversarial lenses were run over the
 commit. **The headline is NaN through all three layers**: `Number('1 000')` is
 NaN, NaN answers false to every comparison a guard is made of, postgres stores
@@ -293,7 +293,7 @@ and the migration (`<> 'NaN'::numeric` on every money column — the only
 comparison postgres has that excludes it). Second blocker: a SEALED request
 stopped following a won lead, because `rekeyLeadCalcRequests` filtered
 `openRequests` — the new deal got the number with none of the lock, at exactly
-the moment a quote becomes an invoice; #759 had written that rule down and the
+the moment a quote becomes an invoice; #767 had written that rule down and the
 code shipped without it. Plus: a confirmation now clears when a BAZA changes
 or cargo moves between groups (not only when a rate changes), `pullRates`
 reads the dictionary server-side instead of stamping the browser's numbers
@@ -301,7 +301,7 @@ as the dictionary's word, and the sealed panel no longer prints «$0.00» for a
 line its section does not have. Red proofs ×3. **1810 unit/integration + 166
 e2e** green on a fresh gsr_ci in CI's order.
 
-**Phase C — the offer, the price book and the history** (#772-772). The
+**Phase C — the offer, the price book and the history** (#780-772). The
 fourth dictionary is keyed on the **TNVED CODE** and not the product name,
 which is the round's whole design: a name does not normalise («Ayollar
 kurtkasi» / «куртка жен.» / «women's jacket» are one thing and three strings)
@@ -338,10 +338,10 @@ NOTIFICATION on a DAILY clock with a monthly claim, silent when nothing is
 stale. `/api/calc/[versionId]/offer.pdf` carries an EXPLICIT door because this
 app has no middleware at all (#721-726). Red proofs ×5, **one of which stayed
 GREEN** — the NaN test was measuring the column's CHECK, not the engine, and
-was re-anchored on the error CODE (#779). **1876 unit/integration + 170 e2e**
+was re-anchored on the error CODE (#787). **1876 unit/integration + 170 e2e**
 green on a fresh gsr_ci in CI's order.
 
-**Found while LOOKING at phase C's own PDF, not by a test** (#780): the PDF
+**Found while LOOKING at phase C's own PDF, not by a test** (#788): the PDF
 font cannot write Uzbek Cyrillic. MEASURED — **ў Ў қ Қ ғ Ғ ҳ Ҳ all have glyph
 id 0** in `NotoSansSC-Regular.ttf`, with thirty more inside the 0x400-0x45F
 range `BASE_CHARS` asks for; `.notdef` raises nothing, so the character is a
@@ -355,10 +355,10 @@ reads as a gap where a box reads as corruption. Both PDF builders use it.
 `tests/unit/pdf-glyphs.test.ts` measures the FONT, so replacing it turns the
 finding's own assertion red.
 
-**Found while DESIGNING phase D** (#781): the same defect as #770, one table
+**Found while DESIGNING phase D** (#789): the same defect as #778, one table
 over. `recordOffer` denormalises the card onto `calc_offers` and
 `rekeyLeadCalcRequests` moved `calc_requests` alone — so on a won lead the
-price stayed locked (#770's fix working) while `offersFor('deal', …)` came
+price stayed locked (#778's fix working) while `offersFor('deal', …)` came
 back EMPTY and what the seller promised the customer vanished from the only
 card that still exists. Measured, not argued: the integration test was
 written first and was red. The fence is DERIVED —
@@ -367,7 +367,7 @@ carrying both entity columns and asserts the re-key names each, so a third
 turns it red the day it is added. `crm_activities` carries the same pair and
 is deliberately NOT moved: a lead's lenta is that lead's history.
 
-**Phase C leaked the client price to the VED, and law 4 forbids it** (#782-777).
+**Phase C leaked the client price to the VED, and law 4 forbids it** (#790-777).
 Found by phase D's design review, verified against the seeded matrix:
 `DEAL_WRITE_PERMISSIONS` carries **`ved.docs`** on purpose (the VED
 recalculates jobs), so `canWriteDeal` — phase C's gate on the offer PDF, the
@@ -388,13 +388,13 @@ fails OPEN, and making it required turned every caller into a compile error
 that named itself. **The browser then found the defect in the opposite
 direction**: the same old door had also locked out the BUXGALTER, the one
 person law 4 names besides the owner. A permission fix is half-verified until
-somebody who is not an admin opens the screen (#784, round 43's lesson).
+somebody who is not an admin opens the screen (#792, round 43's lesson).
 Measured across four roles. The test is BEHAVIOURAL over every seeded role,
 because the exclusion is a property of a matrix he edits with checkboxes.
 STATED, not fixed: `/bitimlar/[id]` has no ownership gate at all — a CRM
 access round, not a line in this module.
 
-**Phase D — the upsale** (#785-787; migration **0088**, ledger must reach
+**Phase D — the upsale** (#793-787; migration **0088**, ledger must reach
 **89**). Designed and judged by 12 agents over five lenses before code — 27
 findings, absorbed. **The upsale is DERIVED and never stored**: client price
 minus the sealed floor, both parents immutable, so writing the difference
@@ -412,7 +412,7 @@ concession never on a freight quote and fires on EVERY rastamojka one. The
 below-floor lock goes on the **PROMISE, not the record** — the row is always
 written (that is the owner's visibility) while the text, the PDF, the card's
 price and the payout all wait on `approved_at`; that reconciles law 4 with
-#773. **A released offer writes the CLIENT price onto the card**, which is
+#781. **A released offer writes the CLIENT price onto the card**, which is
 what every revenue surface reads — and that quietly broke the quote lock,
 which the design did not see: `quoteLockedFor` returned the sealed floor
 while the locked ✏️ form re-posts what it renders (#171), so every later save
@@ -426,7 +426,7 @@ test. Red proofs ×5. **1913 unit/integration + 173 e2e** green on a fresh
 gsr_ci in CI's order, ledger 89; screenshots at 360×800 and 1280×900,
 document width equal to the viewport at both.
 
-PROCESS NOTE (#795): the intermediate commit reached CI with two unused-import
+PROCESS NOTE (#803): the intermediate commit reached CI with two unused-import
 lint errors, because I chained `pnpm lint` and `pnpm vitest` in one block and
 grepped only for the vitest summary — so eslint's failure was in the output I
 asked for and not in the lines I read, and the block's exit code was vitest's.
@@ -868,6 +868,58 @@ only. 1723 unit/integration + 157 e2e green on a fresh gsr_ci in CI's order.
 LOCAL TRAP worth remembering: a stand-in `.data/basemap/corridor.pmtiles`
 makes /map render LEAFLET, and two specs assert the SVG schematic — both
 failures were that file, not the code.
+
+**Round 111 — his two reports** (#759-766, «kamera iconni bossa rasimga olish
+kamerasi ochilyabti … fildan tanlash yokida rasimga olish qilib ochadigan yoli
+borku» + «+ iconkada … klient code ochishni ham qoshishimiz kerak, klient kod
+ochilganda avtomatik bitim ochilsin»). NO migration (86 stands). Designed, then
+judged by a 5-lens adversarial workflow BEFORE any code: **62 objections, 27
+confirmed, 35 refuted** — and three of the confirmed would have shipped as
+defects. (1) **`capture="environment"` on four file inputs** forced the camera
+and hid the gallery and the file browser; gone from all four. `accept="image/*"`
+STAYS on photo slots and the rule is mechanical: those ids feed `lot.photoIds`,
+which `lotsValid()` counts as the confirm gate and `LightboxImg` draws as an
+`<img>` — `accept` may only be dropped where the handler has an `isImage`
+branch (today exactly one: the 📎). **Removing capture unmasked a live defect**:
+three of four inputs never cleared `value`, so re-picking the SAME photo after a
+failed upload fired no `change` at all — the camera hid it for years by handing
+back a fresh temp file each shot. The reset goes AFTER the handler (clearing it
+empties `input.files`). `compressPhoto` now throws a typed `PhotoUnreadable`, so
+a PDF stops reading as «check the connection» (#669's own mistake); one new key
+`common.photoOnly` — NOT `fileTypeUnsupported`, whose text lists PDF as allowed
+and would lie on a photo slot (the reviewer proposed it without reading its
+words). (2) **`canMintClient`** in platform/clients/service.ts asked by BOTH
+doors (app bar draws, action obeys; `authorize()` takes one code so the action
+uses the pair-gate idiom); the three doors NOT widened keep their single-code
+gate and a test counts them. **The minter is the manager** — his own answer, and
+the only workable one: round 91 keys seller reads on that column AND
+ReceiptConfirmed/ReadyForPickup/BoxIssued all return an EMPTY recipient list for
+a managerless client. «Batafsil →» is per-KIND (it would have bounced the very
+seller the door was opened to); the kind chooser became CHIPS above the boxes so
+nobody pays an extra tap on their most frequent action. Duplicate-phone warning
+on the client path, naming codes AND names, never a refusal (#407 — one person
+holds 444/555/777). (3) **The auto-deal's danger was what it BROKE**:
+`priceControlOnReceipt` chooses «📎 biriktiring» vs «💰❓ narx qo'ying» by
+whether the client has an open deal, so an empty deal per client flips every new
+customer's first arrival to «attach it» — and attaching to a quote-less deal
+reaches the deviation branch, where `incomparable` → `worthAlerting` false →
+**silence for ever**. Both sides fixed off one idea (*an empty deal is not
+something to attach to*): `openDealCodes` counts only priced-or-has-lines deals,
+and a receipt linked to a quote-less deal emits `UnquotedCargo` naming the deal.
+Tested on `quotedAmount === null`, never `deviation.incomparable`. **The linked
+half was LIVE since round 107** (winLead always opens a deal, unpriced when the
+lead carried no quote) — the red proof failing with the branch removed IS the
+demonstration. `bottomOfColumn` + `createDeal(…, {atBottom})` — only this door
+passes it, so winLead/the form/the bot keep the top; the hook lives in the two
+APP doors and NOT in `createClient` (import-clients would mint ~1,700 shells;
+winLead would double). Runs after the client commits in its own try/catch, and
+BEFORE `redirect()` (which throws NEXT_REDIRECT). Wizard picker filtered at the
+ROUTE, not in `openDealsForClient` (round 38's repair door is its other
+consumer). Red proofs ×5. 1780 unit/integration + 161 e2e green on a fresh
+gsr_ci in CI's order; measured in a real browser at 360 px (panel 336 px wide,
+every control inside it, document 360) and end-to-end as a SELLER: sees both
+kinds, opens on a text box, «Batafsil» correctly absent, warning names GS323,
+second press mints GS324, both clients and both deals owned by their minter.
 
 Latest migration on this branch: **0089** (`calc_actuals` — the calc↔prixod
 join, the confirm record and the seal's three counters, VED phase E1; ledger

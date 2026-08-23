@@ -25,7 +25,7 @@ import { likeNeedle } from '../search/query';
 import { stampCalcLink } from '../calc/link';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
-import { orderForMove, topOfColumn, type BoardTable } from '../crm/board-place';
+import { orderForMove, topOfColumn, type BoardTable, bottomOfColumn } from '../crm/board-place';
 import {
   ARRIVED_BOX_STATUSES,
   SETTLED_BOX_STATUSES,
@@ -114,7 +114,19 @@ async function firstStageId(tx: Db | Tx): Promise<string> {
   return stage.id;
 }
 
-export async function createDeal(input: DealInput, ctx: AuditContext): Promise<string> {
+export async function createDeal(
+  input: DealInput,
+  ctx: AuditContext,
+  /**
+   * Where the card lands. The default is the top, which is where every deal a
+   * PERSON raises has always appeared and where `winLead`, the deal form and
+   * the bot's landing all keep it. `atBottom` exists for the one deal nobody
+   * asked for: the shell round 111 opens with each client code. It carries no
+   * price and no goods, so giving it the top of the first column would push
+   * real work off the forty cards the board draws.
+   */
+  options: { atBottom?: boolean } = {},
+): Promise<string> {
   const client = await db.query.clients.findFirst({ where: eq(clients.id, input.clientId) });
   if (!client) throw new DealError('client_not_found');
 
@@ -146,7 +158,9 @@ export async function createDeal(input: DealInput, ctx: AuditContext): Promise<s
         createdBy: ctx.actorId!,
         // Top of its column, which is where a newly raised job has always
         // appeared — see the funnel's own create (0075).
-        boardOrder: await topOfColumn(tx, DEAL_BOARD, stageId),
+        boardOrder: options.atBottom
+          ? await bottomOfColumn(tx, DEAL_BOARD, stageId)
+          : await topOfColumn(tx, DEAL_BOARD, stageId),
       })
       .returning();
 
@@ -886,6 +900,46 @@ export async function priceControlOnReceipt(
 
     const deal = await tx.query.deals.findFirst({ where: eq(deals.id, dealId) });
     if (!deal) return;
+
+    // Case 2. Linked to a deal that carries NO PRICE. The comparison below has
+    // nothing to compare against, so it answers «incomparable», `worthAlerting`
+    // says no, and the cargo goes quiet — which is the exact failure the whole
+    // of price control exists to prevent, reached by attaching rather than by
+    // forgetting.
+    //
+    // This is not new with round 111's auto-deal; it has been live since round
+    // 107 made `winLead` ALWAYS open a deal, unpriced when the lead carried no
+    // quote. What round 111 changes is how often: an unpriced open deal
+    // becomes the normal state of a brand-new client, so the hole had to close
+    // in the same round that widens it.
+    //
+    // The test is the AMOUNT and not `deviation.incomparable`: incomparable
+    // means «no quoted size», and a deal priced at $4,000 with no volume or
+    // weight on it is properly quoted and must not raise this alarm.
+    if (deal.quotedAmount === null) {
+      await emitEvent(tx, {
+        type: 'UnquotedCargo',
+        payload: {
+          // The deal it IS on, so the seller lands where the price goes rather
+          // than on the receipt. `UnquotedCargo` renders no deal line today,
+          // so this costs no locale word and the message is unchanged.
+          openDealCodes: [deal.code],
+          receiptId: input.receiptId,
+          number: input.receiptNumber,
+          clientId: input.clientId,
+          clientCode: client.clientCode,
+          clientName: client.name,
+          warehouseCode: input.warehouseCode,
+          volumeM3: input.volumeM3,
+          weightKg: input.weightKg,
+          boxCount: input.boxCount,
+        },
+        entityType: 'receipt',
+        entityId: input.receiptId,
+        actorId: ctx.actorId,
+      });
+      return;
+    }
 
     // Reality is the WHOLE deal, not this receipt: a shipment split over two
     // days is only over the threshold once both halves are in, and alerting on

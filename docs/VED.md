@@ -219,7 +219,7 @@ future hole will be a visible refusal rather than a quietly cheaper invoice.
   — and `quoteLockedFor` had to follow it, or every later save on a quoted
   card would be refused for ever. The payout is an `expenses` row in a
   mandatory dedicated category with a server-derived amount. `/upsale` in two
-  shapes. Decisions #785-787.
+  shapes. Decisions #793-787.
 - **E1 — Fact control**: **SHIPPED 2026-08-23** (migration 0089). The
   comparison is **CUSTOMS ONLY** — `freight_usd` is our own list price and
   `cost_allocations.amount_usd` is what the road cost, so their difference is
@@ -235,7 +235,7 @@ future hole will be a visible refusal rather than a quietly cheaper invoice.
   $0. Two clocks: sealed-at for coverage and warnings, arrived-at + a settle
   window for the arithmetic. `/hisoblash/nazorat`, gated by its own
   `calcControlScopeFor` (owner/accountant = all, VED = own, seller = none).
-  Decisions #796-800.
+  Decisions #804-800.
 - **E2 — AI control**: the history-dependent suspicious rules, the per-worker
   ranking, the workspace sidebar's actuals column and the Telegram digest.
   **PRECONDITION, stated numerically**: ≥20 sealed versions with confirmed
