@@ -107,6 +107,23 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
   );
   const transitBoxes = (transit ?? []).reduce((acc, row) => acc + Number(row.boxCount), 0);
 
+  /*
+   * Which warehouses belong on the OWNER's home, and in what order — found by
+   * looking at the screen rather than by a test.
+   *
+   * `warehouseFill` returns every active warehouse, deliberately: /dashboard
+   * is the analyst's full picture and an empty warehouse missing from it
+   * cannot be told from a broken card. On the home screen that same rule
+   * printed a row of «0 m³ · sig'im kiritilmagan» for every warehouse nobody
+   * uses, and the two or three he actually asked about were somewhere in the
+   * middle of it. So the home shows what has cargo or a capacity, fullest
+   * first, then whatever is standing in the ones with no capacity typed in —
+   * his question, in his order.
+   */
+  const fillRows = [...(fills ?? [])]
+    .filter((row) => row.occupiedM3 > 0 || row.capacityM3 !== null)
+    .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.occupiedM3 - a.occupiedM3);
+
   // The zaxira signal has THREE states, and day one is the third: with no
   // off-site destination configured the honest word is «sozlanmagan», not a
   // permanent red about a backup that was never switched on (the compose
@@ -167,10 +184,10 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
               how long has its oldest carton been standing there. A warehouse
               with no capacity typed in shows the m³ and says so — every one of
               them is in that state until he fills the numbers in. */}
-          {fills && fills.length > 0 && (
+          {fillRows.length > 0 && (
             <div className="mt-2 border-t border-line pt-2">
               <WarehouseFillRows
-                rows={fills}
+                rows={fillRows}
                 staleDays={staleDays}
                 canEditCapacity={perms.has('admin.warehouses.manage')}
               />

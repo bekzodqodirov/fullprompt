@@ -171,6 +171,9 @@ describe('round two — the bin, the shortcuts, the one message', () => {
     expect(home).toContain('warehouseFill(whScope, staleDays)');
     expect(home).toContain('cargo ? warehouseFill');
     expect(home).toContain('<WarehouseFillRows');
+    // The home shows what he asked about — a warehouse with no cargo AND no
+    // capacity is a row that says nothing; /dashboard keeps the full list.
+    expect(home).toContain('row.occupiedM3 > 0 || row.capacityM3 !== null');
     const dash = read('src/app/(protected)/dashboard/page.tsx');
     expect(dash).toContain('<WarehouseFillRows');
     // Tailwind compiles what it can SEE — the colours are a literal map.
