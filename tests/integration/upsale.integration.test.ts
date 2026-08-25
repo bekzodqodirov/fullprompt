@@ -664,3 +664,67 @@ describe('naming the category the payout is booked under', () => {
     expect(await read()).toBe(categoryId);
   });
 });
+
+/**
+ * The whole-module audit's second confirmed defect: a correction sealed over
+ * a card that already carried a released offer left the LOCK on the old
+ * client price while the card carried the new floor — and updateLead, which
+ * compares the posted value against the lock, refused every later ✏️ save
+ * with quote_sealed for ever.
+ */
+describe('a correction retires the released offer', () => {
+  async function corrected(requestId: string) {
+    const { recalcFromSealed } = await import('@/modules/wms/calc/workspace');
+    const freshId = await recalcFromSealed(requestId, ctx());
+    madeRequests.push(freshId);
+    await sealCalc(
+      freshId,
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      ctx(),
+    );
+    const v = await db.query.calcVersions.findFirst({ where: eq(calcVersions.requestId, freshId) });
+    return { freshId, floor: Number(v!.totalUsd) };
+  }
+
+  it('the lock follows the card onto the new floor, so later saves still work', async () => {
+    const job = await sealedJob();
+    await recordOffer(job.versionId, { clientPriceUsd: job.floor + 500, locale: 'uz' }, sellerCtx());
+    const { releasedPriceFor } = await import('@/modules/wms/calc/workspace');
+    expect((await releasedPriceFor('deal', dealId))?.price).toBe(job.floor + 500);
+
+    const next = await corrected(job.requestId);
+
+    // The card carries the correction's floor and the superseded offer no
+    // longer answers for the price. (An OLDER job's standing offer may still
+    // exist on this shared deal — the earlier tests leave real ones — which
+    // is exactly why the lock below decides by the clock, not by kind.)
+    const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+    expect(Number(card!.quotedAmount)).toBe(next.floor);
+    expect((await releasedPriceFor('deal', dealId))?.price).not.toBe(job.floor + 500);
+
+    // The LOCK and the CARD agree — this equality is exactly what updateLead
+    // checks before letting a save through.
+    const { quoteLockedFor } = await import('@/modules/wms/crm/service');
+    expect(await quoteLockedFor('deal', dealId)).toBe(Number(card!.quotedAmount));
+  });
+
+  it('a stale pending below-floor promise cannot be released after the correction', async () => {
+    const job = await sealedJob();
+    const res = await recordOffer(
+      job.versionId,
+      { clientPriceUsd: job.floor - 300, locale: 'uz', belowFloorReason: 'sinov', mayApprove: false },
+      sellerCtx(),
+    );
+    expect(res.pending).toBe(true);
+
+    const next = await corrected(job.requestId);
+
+    // Releasing a promise a correction replaced would write a dead quote's
+    // price onto the card; the claim itself refuses, with its own sentence.
+    const { releaseOffer } = await import('@/modules/wms/calc/workspace');
+    await expect(releaseOffer(res.id, ctx())).rejects.toMatchObject({ code: 'superseded' });
+
+    const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
+    expect(Number(card!.quotedAmount)).toBe(next.floor);
+  });
+});

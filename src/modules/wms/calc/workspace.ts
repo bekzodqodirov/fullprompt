@@ -22,6 +22,7 @@ import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/
 import { usersWithPermission } from '@/modules/platform/notifications/service';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { bazasFor, onDate, ratesForCodes, tariffFor, tariffZones } from './dictionaries';
+import { currentVersionSql, notSupersededSql } from './version-set';
 import {
   groupMeasure,
   groupQuantity,
@@ -1797,9 +1798,26 @@ export async function releaseOffer(offerId: string, ctx: AuditContext): Promise<
   const [claimed] = await db
     .update(calcOffers)
     .set({ approvedAt: new Date(), approvedBy: ctx.actorId })
-    .where(and(eq(calcOffers.id, offerId), eq(calcOffers.belowFloor, true), isNull(calcOffers.approvedAt)))
+    .where(
+      and(
+        eq(calcOffers.id, offerId),
+        eq(calcOffers.belowFloor, true),
+        isNull(calcOffers.approvedAt),
+        // A promise a correction replaced cannot be released: approving it
+        // would write a dead quote's price onto a card whose lock already
+        // follows the new seal. In the claim's own WHERE, so the check and
+        // the win are one statement.
+        offerStandsSql(),
+      ),
+    )
     .returning();
-  if (!claimed) throw new CalcError('not_pending');
+  if (!claimed) {
+    const still = await db.query.calcOffers.findFirst({ where: eq(calcOffers.id, offerId) });
+    // Name the real refusal: «somebody already decided» and «a correction
+    // replaced this quote» need different sentences on the screen.
+    if (still && still.belowFloor && !still.approvedAt) throw new CalcError('superseded');
+    throw new CalcError('not_pending');
+  }
 
   const [row] = await db
     .select({ request: calcRequests })
@@ -1836,26 +1854,79 @@ export async function releaseOffer(offerId: string, ctx: AuditContext): Promise<
 }
 
 /**
+ * A RELEASED offer — one whose promise the customer may see.
+ *
+ * Law 4's below-floor lock puts the wait on the PROMISE: the row is always
+ * written (the owner's visibility), while the Telegram text, the PDF, the
+ * card's price and the payout all wait on `approved_at`. This fragment is
+ * that clause's one home for the offer-shaped reads — the card's price below
+ * and the PDF route — so a surface cannot forget the wait the way the PDF
+ * route did (found by the whole-module audit: a pending below-floor price
+ * rendered as a customer sheet by URL). `payableOffersSql` restates it inside
+ * its own documented CTE, where the five rules live together.
+ */
+export function releasedOfferWhere() {
+  return sql`(NOT ${calcOffers.belowFloor} OR ${calcOffers.approvedAt} IS NOT NULL)`;
+}
+
+/**
+ * The offer's quote still STANDS — its version is the request's newest seal
+ * and no correction has superseded the request.
+ *
+ * The whole-module audit's second confirmed defect: `releasedPriceFor` was
+ * entity-keyed with no supersession clause, so after a correction sealed on a
+ * card that carried a released offer the LOCK answered the old client price
+ * while the card carried the new floor — and `updateLead`, which compares the
+ * posted value against the lock, refused every later ✏️ save with
+ * `quote_sealed` for ever. Money already had this rule (`payableOffersSql`);
+ * the card's price now embeds the SAME two clauses, verbatim from
+ * version-set.ts, correlated through the offer's own version. #513: the lock
+ * and the commission must stop believing a superseded promise on the same day.
+ */
+export function offerStandsSql() {
+  return sql`EXISTS (
+    SELECT 1 FROM calc_versions v
+      JOIN calc_requests r ON r.id = v.request_id
+     WHERE v.id = ${calcOffers}.version_id
+       AND ${currentVersionSql()}
+       AND ${notSupersededSql()}
+  )`;
+}
+
+/**
  * The client price this card is currently quoted at, if one has been released.
  *
- * The newest RELEASED offer — a pending below-floor promise is not a price the
- * customer has been told, so it is not the card's price either.
+ * The newest RELEASED offer whose quote still STANDS — a pending below-floor
+ * promise is not a price the customer has been told, and a promise a
+ * correction replaced is not this card's price any more either.
+ *
+ * `at` is the moment the price reached the CARD — `approved_at` for a
+ * below-floor promise (applyOfferToCard runs at release), `offered_at`
+ * otherwise. The lock needs it because a deal carries many jobs and the card
+ * column is last-writer-wins between offers and seals: the lock must
+ * reconstruct the same order or it refuses saves against a number the card
+ * does not carry.
  */
 export async function releasedPriceFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<number | null> {
+): Promise<{ price: number; at: Date } | null> {
   const [row] = await db
-    .select({ price: calcOffers.clientPriceUsd })
+    .select({
+      price: calcOffers.clientPriceUsd,
+      offeredAt: calcOffers.offeredAt,
+      approvedAt: calcOffers.approvedAt,
+    })
     .from(calcOffers)
     .where(
       and(
         eq(calcOffers.entityType, entityType),
         eq(calcOffers.entityId, entityId),
-        sql`(NOT ${calcOffers.belowFloor} OR ${calcOffers.approvedAt} IS NOT NULL)`,
+        releasedOfferWhere(),
+        offerStandsSql(),
       ),
     )
     .orderBy(desc(calcOffers.offeredAt))
     .limit(1);
-  return row ? Number(row.price) : null;
+  return row ? { price: Number(row.price), at: row.approvedAt ?? row.offeredAt } : null;
 }

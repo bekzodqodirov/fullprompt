@@ -133,3 +133,24 @@ describe('the panel that hosts it', () => {
     expect(PANEL).toContain("scope === 'none' ? null :");
   });
 });
+
+describe('the PDF route serves RELEASED offers only (law 4, the promise lock)', () => {
+  it('the offer select carries the released clause, not just the version id', () => {
+    // The panel hiding a pending offer's link is a courtesy; the WHERE is the
+    // door. Without it a below-floor price no admin allowed renders as a
+    // customer sheet by URL — the whole-module audit's confirmed hole.
+    const body = code(ROUTE);
+    const select = body.slice(body.indexOf('from(calcOffers)'));
+    expect(select.slice(0, select.indexOf('orderBy'))).toContain('releasedOfferWhere()');
+  });
+
+  it('the clause has ONE home, shared with the card price', () => {
+    const service = code(SERVICE);
+    const fn = service.slice(service.indexOf('export function releasedOfferWhere'));
+    // slice to the function's closing line, not the first '}' — the template
+    // literal's own interpolations close braces before the body does.
+    expect(fn.slice(0, fn.indexOf('\n}'))).toContain('approvedAt} IS NOT NULL');
+    const priceFn = service.slice(service.indexOf('export async function releasedPriceFor'));
+    expect(priceFn.slice(0, priceFn.indexOf('orderBy'))).toContain('releasedOfferWhere()');
+  });
+});

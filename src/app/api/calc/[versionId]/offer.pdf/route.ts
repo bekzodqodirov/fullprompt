@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   calcOffers,
@@ -13,6 +13,7 @@ import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { buildOfferPdf } from '@/modules/wms/calc/offer-pdf';
+import { releasedOfferWhere } from '@/modules/wms/calc/workspace';
 import { offerLocaleFor } from '@/modules/wms/calc/offer';
 import type { CalcSectionName } from '@/modules/wms/calc/pricing';
 
@@ -74,10 +75,15 @@ export async function GET(
     ) {
       return new Response('Forbidden', { status: 403 });
     }
+    // RELEASED offers only (law 4's promise lock): a below-floor price that
+    // no admin has allowed must not become a customer sheet by URL — the
+    // panel hiding its link is a courtesy, this WHERE is the door. Filtered,
+    // not fetched-then-refused, so a pending re-offer does not take away the
+    // sheet of the released price the card still shows.
     [offer] = await db
       .select()
       .from(calcOffers)
-      .where(eq(calcOffers.versionId, versionId))
+      .where(and(eq(calcOffers.versionId, versionId), releasedOfferWhere()))
       .orderBy(desc(calcOffers.offeredAt))
       .limit(1);
   } catch (err) {

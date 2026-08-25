@@ -372,7 +372,15 @@ export async function quoteLockedFor(
     // a test: the card and the lock have to agree about which number is the
     // one nobody may change.
     const offered = await releasedPriceFor(entityType, entityId);
-    return offered ?? seal.totalUsd;
+    // LATER WRITER WINS, by the clock, because that is exactly how the card
+    // column was written: sealCalc stamps the floor at seal time, an offer
+    // stamps the client price when it is made or released. A deal carries
+    // many jobs (0085 dropped one-open-per-card), so «offer beats seal»
+    // unconditionally would hold the lock on job A's released price after
+    // job B's newer seal rewrote the card — and every later ✏️ save would be
+    // refused against a number the card no longer shows.
+    if (offered && offered.at >= seal.sealedAt) return offered.price;
+    return seal.totalUsd;
   } catch (err) {
     // Deploy morning: this module works without 0086, and the lock is a
     // safeguard rather than a gate — its absence must not take the card down.
