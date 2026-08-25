@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## Suhbatdan hisoblatish va sotuvchilar hisoboti — 2026-08-25
+
+Sizning uch javobingiz bo'yicha.
+
+**1. «Hisoblatishga yuborish» — endi chatdan ham.** Mijoz kartasi, bitim
+kartasi va Suhbatlar ekranidagi yozishmada tugma bor: bosasiz, xabarlarni
+belgilaysiz (bosilganlari ramkaga olinadi), bo'limni tanlaysiz — «O'qish»
+AI ga o'qitadi (AI bo'lmasa oddiy o'qish ishlaydi), «VEDga yuborish» so'rovni
+VED navbatiga tushiradi. Tanlangan matn so'zma-so'z kartaga yoziladi —
+VED odam sotuvchi nima yuborganini o'z ko'zi bilan ko'radi. Bitim kartasidan
+yuborilsa so'rov AYNAN o'sha bitimga tushadi, mijozning boshqa ishiga emas.
+Fayllar ko'chirilmaydi — yozuv nechta fayl borligini aytadi, ular suhbatning
+o'zida turadi.
+
+**2. Sotuvchilar hisoboti** — Hisobotlar ichida «Sotuvchilar: natija».
+Sizga va buxgalterga: har bir sotuvchi bo'yicha mijozlar soni, davrda qabul
+qilingan yuk (kub/kg), hisoblangan pul, FOYDA va marja; menejersiz mijozlar
+alohida «—» qatorda (ular ko'p — yashirilsa hisobot yolg'on bo'lardi) va jami
+qator. Sotuvchining o'ziga: faqat o'z mijozlari, yuki va hisoblangan puli.
+
+**3. «Tannarx ko'rinmasin sotuvchiga» — hamma joyda.** Yangi hisobotda
+sotuvchining ko'rinishida foyda/tannarx USTUNI YO'Q — dastur uni u yerda
+hisoblay olmaydigan qilib qurilgan. Va eski teshik ham yopildi: /upsale
+ekrani sotuvchiga o'z qatorlarida tannarxni ko'rsatib turgan ekan — endi u
+faqat sizga va buxgalterga chiqadi; sotuvchi o'z narxi va o'z ulushini
+ko'radi.
+
+Yo'l-yo'lakay: hisoblash ish stolida VED to'g'irlagan stavkani bir bosishda
+lug'atga yozib qo'yish tugmasi, kod uchun o'tgan safargi lgota taklifi,
+eskirgan baza ⚠ belgisi ish stolining o'zida, juda kichik yuk ogohlantirishi
+va «oxirgi 5 narx» (3 emas) — bularning hammasi kelishuvda bor edi, audit
+yetishmayotganini topdi, endi joyida.
+
 ## Sotuvchi ulushi: xarajat turini ro'yxatdan tanlaydigan bo'ldi — 2026-08-23
 
 Sizning «bunday narsa yo'qku sozlamalarda» degan gapingiz haq edi, va men

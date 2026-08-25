@@ -20,6 +20,7 @@ import { ChatMenu } from '@/components/chat-menu';
 import { OutboxDismiss } from '@/components/outbox-dismiss';
 import { TelegramBubble } from '@/components/telegram-bubble';
 import { TelegramReply } from '@/components/telegram-reply';
+import { ThreadCalc } from '@/components/thread-calc';
 import { ThreadManagers } from '@/components/thread-managers';
 import { TelegramShare } from '@/components/telegram-share';
 import { shareTargets } from '@/modules/wms/crm/share';
@@ -179,6 +180,10 @@ export default async function ConversationPage({
 
       {/* Shows the box, or says why it cannot. Same component as on the cards,
           so the two can never drift apart on who may speak. */}
+      {/* The third calc door (owner, 2026-08-25) — the same island the card
+          panel mounts; this screen is where a conversation is READ. */}
+      <ThreadCalc entity={{ kind: 'client', id: clientId }} />
+
       <TelegramReply clientId={clientId} />
 
       {/* A sent reply must stop reading «navbatda», and a client's new

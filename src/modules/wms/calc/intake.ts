@@ -142,6 +142,8 @@ export function intakeNoteText(input: {
   facts: CalcFacts;
   steps: string[];
   collectedBy: string;
+  /** Which door collected it — the note names its own provenance. */
+  via?: string;
   fileCount: number;
   /**
    * The seller's own words, verbatim (law 11: «everything the seller
@@ -173,7 +175,7 @@ export function intakeNoteText(input: {
 
   return (
     `🧮 Hisoblatish — ${SECTION_LABEL[input.section]}\n` +
-    `Yig‘di: ${input.collectedBy} (Telegram bot)\n` +
+    `Yig‘di: ${input.collectedBy} (${input.via ?? 'Telegram bot'})\n` +
     (input.section === 'rastamojka'
       ? ''
       : `Yo‘nalish: ${input.facts.fromCity?.trim() || '—'} → ${input.facts.toCity?.trim() || '—'}\n`) +

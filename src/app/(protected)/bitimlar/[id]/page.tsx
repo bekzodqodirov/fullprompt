@@ -147,6 +147,10 @@ export default async function DealPage({
               clientId={row.deal.clientId}
               hodim={hodim}
               hrefFor={(who) => cardHref({ hodim: who })}
+              // «Hisoblatishga yuborish» lands on THIS deal, not on the
+              // client's newest one — the job on screen is the job asked
+              // about (the design review's find).
+              calcTarget={{ kind: 'deal', id: row.deal.id }}
             />
             <CallsPanel
               clientId={row.deal.clientId}

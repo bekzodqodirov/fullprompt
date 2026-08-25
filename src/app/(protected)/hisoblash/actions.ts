@@ -35,6 +35,7 @@ import {
 import { saveBaza, savePriceBook, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
 import { isCalcSection } from '@/modules/wms/calc/labels';
 import { canWriteDeal } from '@/modules/wms/deals/service';
+import { canReadTg } from '@/modules/wms/crm/conversations';
 import { mayApproveBelowFloor, mayOffer } from '@/modules/wms/calc/upsale-scope';
 
 export interface CalcFormState {
@@ -546,4 +547,69 @@ export async function savePriceBookAction(input: {
   effectiveDate: string;
 }): Promise<CalcFormState> {
   return run('ved.docs', (ctx) => savePriceBook(input, ctx), '/hisoblash/lugatlar');
+}
+
+/**
+ * The THIRD door — «Hisoblatishga yuborish» from a CRM Telegram thread
+ * (owner, 2026-08-25). Same write gate as `submitCalcAction` — working the
+ * card is the power that asks for a price — PLUS the tg read fence, because
+ * the material is a conversation and `threadMaterial` re-loads it under the
+ * viewer's own scope. Two steps: the first press reads, the second lands;
+ * the material is rebuilt server-side on BOTH.
+ */
+function threadCalcGate(
+  actor: NonNullable<Awaited<ReturnType<typeof getActor>>>,
+  entity: import('@/modules/wms/calc/from-thread').ThreadCalcEntity,
+  section: string,
+): CalcFormState | null {
+  if (!canReadTg(actor)) return { error: 'forbidden' };
+  if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
+  if (!isCalcSection(section)) return { error: 'bad_section' };
+  if (entity.kind === 'lead' && !actor.permissions.has('crm.leads')) return { error: 'forbidden' };
+  return null;
+}
+
+export async function threadCalcAnalyzeAction(input: {
+  entity: import('@/modules/wms/calc/from-thread').ThreadCalcEntity;
+  section: import('@/modules/wms/calc/intake').CalcSection;
+  messageIds: string[];
+}): Promise<CalcFormState & { preview?: import('@/modules/wms/calc/from-thread').ThreadCalcPreview }> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  const refused = threadCalcGate(actor, input.entity, input.section);
+  if (refused) return refused;
+  try {
+    const { threadCalcAnalyze } = await import('@/modules/wms/calc/from-thread');
+    const preview = await threadCalcAnalyze(actor, input);
+    return { ok: true, preview };
+  } catch (err) {
+    if (err instanceof CalcError) return { error: err.code };
+    if (isServerBehind(err)) return { error: 'server_behind' };
+    throw err;
+  }
+}
+
+export async function threadCalcSendAction(input: {
+  entity: import('@/modules/wms/calc/from-thread').ThreadCalcEntity;
+  section: import('@/modules/wms/calc/intake').CalcSection;
+  messageIds: string[];
+  noteId: string;
+  facts?: import('@/modules/wms/calc/intake').CalcFacts | null;
+  steps?: string[] | null;
+}): Promise<CalcFormState & { landed?: { kind: 'deal' | 'lead'; id: string } }> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  const refused = threadCalcGate(actor, input.entity, input.section);
+  if (refused) return refused;
+  const meta = await requestMeta();
+  try {
+    const { threadCalcSend } = await import('@/modules/wms/calc/from-thread');
+    const landed = await threadCalcSend(actor, input, { actorId: actor.id, ...meta });
+    revalidatePath('/hisoblash');
+    return { ok: true, landed: { kind: landed.kind, id: landed.id } };
+  } catch (err) {
+    if (err instanceof CalcError) return { error: err.code };
+    if (isServerBehind(err)) return { error: 'server_behind' };
+    throw err;
+  }
 }

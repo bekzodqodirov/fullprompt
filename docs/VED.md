@@ -162,6 +162,10 @@ future hole will be a visible refusal rather than a quietly cheaper invoice.
     owner) — the seller adds a line of text.
   - On a card whose Telegram thread is in the CRM: a «Hisoblatishga
     yuborish» button — select messages, one tap, request minted from them.
+    **SHIPPED 2026-08-25** (the whole-module audit found it silently absent;
+    owner: «yaxshi, qilib bersang kerak»). The selected TEXT lands verbatim
+    on the note (law 11); files stay in the thread, counted — a stated cut.
+    The deal card lands on ITS OWN deal. Decisions #829.
   - Card form for office/Excel users: type, goods (manual / Excel import /
     files), city, kg, m³. 360 px first, as always.
   - A completeness checklist on the request (tovar ✓ · kg ✗ · …); the VED
@@ -185,6 +189,12 @@ future hole will be a visible refusal rather than a quietly cheaper invoice.
 - **Reports**: VED accuracy (calc vs batch actuals, per worker, monthly);
   upsale per seller; seller performance (period: kub / kg brought in,
   profit generated — deal profit machinery exists); suspicious-calcs list.
+  **Seller performance SHIPPED 2026-08-25** (`/reports/sotuvchilar`): owner+
+  accountant read every seller WITH profit and the «—» unassigned cohort;
+  the seller's own view is a return TYPE that cannot carry a cost-derived
+  figure at all («tannarx korinmasin sotuvchiga» — his words). The same
+  answer also removed the floor column from `/upsale`'s own-scope rows.
+  Decisions #830. Per-worker ACCURACY stays E2.
 
 ## Error control (three moments — the owner's «adashsa qanday bilamiz»)
 

@@ -64,7 +64,7 @@ export async function resolveIntakeClient(hint: {
  * one on the funnel's first open stage. Never a won or lost deal — those are
  * finished stories, and a new quote request is not part of them.
  */
-async function dealFor(
+export async function dealFor(
   client: { id: string; clientCode: string; name: string },
   section: CalcSection,
   actorId: string,

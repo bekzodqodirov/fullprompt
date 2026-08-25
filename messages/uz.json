@@ -2233,7 +2233,30 @@
     "band": "Tarif bandi",
     "freightSmall": "yuk juda kichik",
     "teachRates": "lug‘atga yozish",
-    "lgotaLast": "lgota (o‘tgan safar)"
+    "lgotaLast": "lgota (o‘tgan safar)",
+    "threadStart": "Hisoblatishga yuborish",
+    "threadPickHint": "Xabarlarni bosib tanlang",
+    "threadPicked": "tanlandi: {n}",
+    "threadAnalyze": "O‘qish",
+    "threadReading": "AI o‘qimoqda…",
+    "threadRead": "qator: {lines} · fayl: {files}",
+    "threadMissing": "Ma’lumot yetishmaydi — VED baribir qabul qiladi",
+    "threadSendBtn": "VEDga yuborish",
+    "threadCancel": "Bekor",
+    "threadLands": "Tanlangan matn kartaga yozib qo‘yiladi",
+    "threadSent": "VED navbatiga tushdi",
+    "threadOpenCard": "Kartani ochish",
+    "threadErrors": {
+      "empty": "Hech narsa tanlanmadi",
+      "too_many": "Juda ko‘p xabar — 200 tagacha tanlang",
+      "not_yours": "Ba’zi xabarlar bu suhbatdan emas",
+      "bad_section": "Bo‘limni tanlang",
+      "forbidden": "Ruxsat yo‘q",
+      "not_found": "Karta topilmadi",
+      "note_taken": "Allaqachon yuborilgan — sahifani yangilang",
+      "server_behind": "Server yangilanmoqda, keyinroq urinib ko‘ring",
+      "unauthenticated": "Qaytadan kiring"
+    }
   },
   "partners": {
     "title": "Kontragentlar",
@@ -2493,5 +2516,24 @@
     "categoryUnset": "Xarajat turi tanlanmagan — to‘lab bo‘lmaydi",
     "categoryHint": "Ulush oddiy xarajat bo‘lib yoziladi. Alohida tur majburiy: «Oyliklar» ichidan to‘lansa, o‘sha sotuvchining o‘sha oygi maoshi jimgina to‘langan deb hisoblanadi.",
     "categoryAsk": "Faqat administrator tanlay oladi."
+  },
+  "sellerReport": {
+    "title": "Sotuvchilar: natija",
+    "subtitle": "Mijozning sotuv menejeri bo‘yicha: davrda qabul qilingan yuk va haqiqiy hisoblangan pul. Voronka (narx takliflari) — alohida hisobot.",
+    "period": "Davr",
+    "show": "Ko‘rsatish",
+    "ownTitle": "Mening natijam",
+    "clients": "Mijozlar",
+    "receipts": "Prixodlar",
+    "cargo": "Qabul qilingan yuk",
+    "revenue": "Hisoblangan",
+    "profit": "Foyda",
+    "seller": "Sotuvchi",
+    "nobody": "— (menejersiz)",
+    "total": "Jami",
+    "unassigned": "{n} ta mijozda menejer yo‘q — ularning yuki va puli «—» qatorida.",
+    "clientBook": "Mijozlar kitobi",
+    "funnelLink": "Voronka bo‘yicha tahlil",
+    "empty": "Bu davrda ma’lumot yo‘q"
   }
 }

@@ -2233,7 +2233,30 @@
     "band": "Tariff band",
     "freightSmall": "very small cargo",
     "teachRates": "write to the dictionary",
-    "lgotaLast": "lgota (last time)"
+    "lgotaLast": "lgota (last time)",
+    "threadStart": "Send to calc",
+    "threadPickHint": "Tap messages to select them",
+    "threadPicked": "selected: {n}",
+    "threadAnalyze": "Read",
+    "threadReading": "AI is reading…",
+    "threadRead": "{lines} lines · {files} files",
+    "threadMissing": "Some data is missing — the VED will still take it",
+    "threadSendBtn": "Send to VED",
+    "threadCancel": "Cancel",
+    "threadLands": "The selected text will be written onto the card",
+    "threadSent": "In the VED queue",
+    "threadOpenCard": "Open the card",
+    "threadErrors": {
+      "empty": "Nothing selected",
+      "too_many": "Too many messages — select up to 200",
+      "not_yours": "Some messages are not from this conversation",
+      "bad_section": "Pick a section",
+      "forbidden": "No permission",
+      "not_found": "Card not found",
+      "note_taken": "Already sent — refresh the page",
+      "server_behind": "The server is updating, try again shortly",
+      "unauthenticated": "Sign in again"
+    }
   },
   "partners": {
     "title": "Counterparties",
@@ -2493,5 +2516,24 @@
     "categoryUnset": "No expense category chosen — payout is refused",
     "categoryHint": "A payout is written as an ordinary expense. A dedicated category is mandatory: paid out of «Salaries» it would occupy that seller’s salary slot for the month and the salary would be silently counted as posted.",
     "categoryAsk": "Only an administrator can choose it."
+  },
+  "sellerReport": {
+    "title": "Sellers: results",
+    "subtitle": "By the client’s sales manager: cargo received and actual charges in the period. The funnel (quotes) is a separate report.",
+    "period": "Period",
+    "show": "Show",
+    "ownTitle": "My results",
+    "clients": "Clients",
+    "receipts": "Receipts",
+    "cargo": "Cargo received",
+    "revenue": "Charged",
+    "profit": "Profit",
+    "seller": "Seller",
+    "nobody": "— (no manager)",
+    "total": "Total",
+    "unassigned": "{n} clients carry no manager — their cargo and money sit in the «—» row.",
+    "clientBook": "Client book",
+    "funnelLink": "Funnel analytics",
+    "empty": "Nothing in this period"
   }
 }

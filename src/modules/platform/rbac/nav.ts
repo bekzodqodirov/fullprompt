@@ -91,6 +91,21 @@ export const NAV: NavGroupSpec[] = [
         permissions: ['finance.reports', 'crm.leads'],
       },
       {
+        // Sotuvchi samaradorligi (owner, 2026-08-25: «ha qur … tannarx
+        // korinmasin sotuvchiga»). The same two audiences as /upsale and the
+        // same absentee: `finance.reports` reads every seller WITH profit,
+        // `reports.own_clients` reads their own volume and revenue — and
+        // never a cost-derived figure (`sellerReportScopeFor` is the rule in
+        // code; the own return TYPE cannot carry profit at all). NOT
+        // `crm.leads`, which the logist also holds and which would offer
+        // them a permanently empty row.
+        href: '/reports/sotuvchilar',
+        labelKey: 'title',
+        namespace: 'sellerReport',
+        icon: 'report',
+        permissions: ['finance.reports', 'reports.own_clients'],
+      },
+      {
         // The VED queue (docs/VED.md, phase A). `ved.docs` alone: it is that
         // grant's own screen, and a wider list would pull the route into the
         // warehouse menus whose lengths the nav tripwire pins.
@@ -491,12 +506,15 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     // What they earned. It is the one screen on this list that is about them
     // rather than about a customer.
     '/upsale',
+    // And what they brought in — their own volume and revenue, never a cost.
+    '/reports/sotuvchilar',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/kontragentlar', '/reports',
     '/dashboard', '/admin', '/receipts', '/stock', '/approvals', '/ai',
     // They are the one who pays it (law 4).
     '/upsale',
+    '/reports/sotuvchilar',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

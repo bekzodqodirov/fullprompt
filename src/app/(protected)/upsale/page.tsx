@@ -259,8 +259,13 @@ export default async function UpsalePage({
                   {r.clientCode ?? ''} {r.clientName ?? ''}
                   {scope === 'all' ? ` · ${r.sellerName ?? '—'}` : ''}
                 </p>
+                {/* «Tannarx korinmasin sotuvchiga» (owner, 2026-08-25): the
+                    floor prints only where law 4 already shows costs. The
+                    seller keeps their price and their share — the two
+                    figures that are THEIRS. */}
                 <p className="text-2xs text-ink-500">
-                  {t('clientPrice')} {money(r.clientPriceUsd)} · {t('floor')} {money(r.floorUsd)}
+                  {t('clientPrice')} {money(r.clientPriceUsd)}
+                  {scope === 'all' ? ` · ${t('floor')} ${money(r.floorUsd)}` : ''}
                 </p>
               </li>
             ))}
@@ -275,7 +280,7 @@ export default async function UpsalePage({
                     {scope === 'all' ? <th className="p-2">{t('seller')}</th> : null}
                     <th className="p-2">{t('client')}</th>
                     <th className="p-2 text-right">{t('clientPrice')}</th>
-                    <th className="p-2 text-right">{t('floor')}</th>
+                    {scope === 'all' ? <th className="p-2 text-right">{t('floor')}</th> : null}
                     <th className="p-2 text-right">{t('share')}</th>
                     <th className="p-2">{t('state')}</th>
                   </tr>
@@ -293,7 +298,11 @@ export default async function UpsalePage({
                       <td className="p-2 text-right font-mono tabular-nums">
                         {money(r.clientPriceUsd)}
                       </td>
-                      <td className="p-2 text-right font-mono tabular-nums">{money(r.floorUsd)}</td>
+                      {scope === 'all' ? (
+                        <td className="p-2 text-right font-mono tabular-nums">
+                          {money(r.floorUsd)}
+                        </td>
+                      ) : null}
                       <td className="p-2 text-right font-mono font-semibold tabular-nums">
                         {money(r.upsaleUsd)}
                       </td>

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
 import { mayOffer, upsaleScopeFor, type UpsaleScope } from '@/modules/wms/calc/upsale-scope';
@@ -72,5 +73,33 @@ describe('who sees what a customer was charged', () => {
     const ved = actorFor('ved_manager');
     expect(ved.permissions.has('finance.manage')).toBe(true);
     expect(ved.permissions.has('finance.reports')).toBe(false);
+  });
+});
+
+describe('«tannarx korinmasin sotuvchiga» (owner, 2026-08-25)', () => {
+  it('the /upsale page prints the floor only under scope all', () => {
+    // The seller's own rows keep the client price and the share — the two
+    // figures that are theirs. Every floorUsd print must sit behind the
+    // scope guard; an unguarded one is the audit's named hole coming back.
+    // A proximity window cannot be the oracle here — every table row carries
+    // a scope guard for the SELLER column a few hundred characters before the
+    // floor cell, so a stripped guard still found one nearby (the first
+    // version of this test stayed green on its own red proof, #166). The
+    // oracle instead: remove the two exact guarded forms from the source and
+    // demand no floor print survives outside them.
+    const page = readFileSync('src/app/(protected)/upsale/page.tsx', 'utf8');
+    const guardedForms = [
+      "scope === 'all' ? ` · ${t('floor')} ${money(r.floorUsd)}` : ''",
+      /\{scope === 'all' \? \(\s*<td[^>]*>\s*\{money\(r\.floorUsd\)\}\s*<\/td>\s*\) : null\}/,
+    ];
+    let rest = page;
+    let found = 0;
+    for (const form of guardedForms) {
+      const before = rest.length;
+      rest = typeof form === 'string' ? rest.replace(form, '') : rest.replace(form, '');
+      if (rest.length !== before) found += 1;
+    }
+    expect(found).toBe(2);
+    expect(rest).not.toContain('money(r.floorUsd)');
   });
 });

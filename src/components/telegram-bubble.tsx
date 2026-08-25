@@ -85,6 +85,9 @@ export function TelegramBubble({
         out ? 'ml-auto bg-brand-50' : 'mr-auto bg-surface-sunken'
       }`}
       data-testid="tg-bubble"
+      // The «Hisoblatishga yuborish» island selects bubbles by delegation —
+      // one listener over plain server markup, the share sheet's shape.
+      data-msg-id={message.id}
     >
       <div className="mb-0.5 flex justify-between gap-3 text-xs text-ink-500">
         {/* Truncated: a manager's full name wrapped to a second line inside a

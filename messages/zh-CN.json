@@ -2233,7 +2233,30 @@
     "band": "价目区间",
     "freightSmall": "货量极小",
     "teachRates": "写入词典",
-    "lgotaLast": "减免（上次）"
+    "lgotaLast": "减免（上次）",
+    "threadStart": "发送去核算",
+    "threadPickHint": "点按消息进行选择",
+    "threadPicked": "已选：{n}",
+    "threadAnalyze": "读取",
+    "threadReading": "AI 读取中…",
+    "threadRead": "{lines} 行 · {files} 个文件",
+    "threadMissing": "信息不全 — VED 仍会受理",
+    "threadSendBtn": "发送给 VED",
+    "threadCancel": "取消",
+    "threadLands": "所选文字将写入卡片",
+    "threadSent": "已进入 VED 队列",
+    "threadOpenCard": "打开卡片",
+    "threadErrors": {
+      "empty": "未选择任何消息",
+      "too_many": "消息过多 — 最多选择 200 条",
+      "not_yours": "部分消息不属于此会话",
+      "bad_section": "请选择类别",
+      "forbidden": "无权限",
+      "not_found": "未找到卡片",
+      "note_taken": "已发送 — 请刷新页面",
+      "server_behind": "服务器更新中，请稍后再试",
+      "unauthenticated": "请重新登录"
+    }
   },
   "partners": {
     "title": "合作方",
@@ -2493,5 +2516,24 @@
     "categoryUnset": "未选择费用类别 — 无法支付",
     "categoryHint": "分成按普通费用记账。必须使用专用类别：若从「工资」中支付，该销售当月的工资会被悄悄视为已发放。",
     "categoryAsk": "只有管理员可以选择。"
+  },
+  "sellerReport": {
+    "title": "销售业绩",
+    "subtitle": "按客户的销售经理统计：期间收货量与实际计费。漏斗（报价）为单独报表。",
+    "period": "期间",
+    "show": "显示",
+    "ownTitle": "我的业绩",
+    "clients": "客户",
+    "receipts": "入库单",
+    "cargo": "收货量",
+    "revenue": "计费",
+    "profit": "利润",
+    "seller": "销售",
+    "nobody": "—（无经理）",
+    "total": "合计",
+    "unassigned": "{n} 个客户没有经理——其货量与金额在「—」行。",
+    "clientBook": "客户簿",
+    "funnelLink": "漏斗分析",
+    "empty": "该期间暂无数据"
   }
 }

@@ -17,6 +17,7 @@ import { OutboxBubble } from './outbox-bubble';
 import { TelegramBubble } from './telegram-bubble';
 import { ThreadManagers } from './thread-managers';
 import { TelegramReply } from './telegram-reply';
+import { ThreadCalc } from './thread-calc';
 
 /**
  * The Telegram conversation with this client, as a panel on a card.
@@ -51,6 +52,7 @@ export async function TelegramThread({
   limit = 200,
   hodim,
   hrefFor,
+  calcTarget,
 }: {
   clientId: string | null;
   /**
@@ -72,6 +74,13 @@ export async function TelegramThread({
   hodim?: string;
   /** How this card's URL carries the choice; absent ⇒ names, no selector. */
   hrefFor?: (managerId: string | null) => string;
+  /**
+   * Where «Hisoblatishga yuborish» lands. The DEAL card passes its own deal
+   * so the request opens on the job on screen and not on the client's newest
+   * one; without it the service falls back to the bot's own landing rule.
+   * Re-proved server-side — a posted entity is a forged post (#514).
+   */
+  calcTarget?: { kind: 'deal'; id: string };
 }) {
   const actor = await getActor();
   // The CRM grants, or the supervision view (round 33: vedchi and admin read
@@ -110,6 +119,9 @@ export async function TelegramThread({
             />
           ))}
         </div>
+        {/* The third calc door (owner, 2026-08-25) — OUTSIDE the scroll box,
+            or the bar scrolls away with the history. */}
+        <ThreadCalc entity={{ kind: 'lead', id: leadId }} />
       </section>
     );
   }
@@ -204,6 +216,10 @@ export async function TelegramThread({
           />
         ))}
       </div>
+
+      {/* The third calc door (owner, 2026-08-25) — a sibling of the scroll
+          box, never inside it. */}
+      <ThreadCalc entity={calcTarget ?? { kind: 'client', id: clientId }} />
 
       {/* Owner: the send box must be here too, not only on «Suhbatlar» —
           replying onto the code that actually HOLDS the chat. */}
