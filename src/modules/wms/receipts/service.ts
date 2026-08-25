@@ -26,6 +26,7 @@ import {
   closeExpectedOnReceipt,
 } from '../arrivals/service';
 import { priceControlOnReceipt } from '../deals/service';
+import { stampCalcLink } from '../calc/link';
 import { computeLotTotals } from './math';
 
 export const lotInputSchema = z
@@ -402,6 +403,14 @@ export async function confirmReceipt(
       },
       ctx,
     );
+
+    // The calculation this cargo was priced by, when there is exactly one and
+    // the prixod falls inside its quote's own life. `createReceipt` writes
+    // `deal_id` on its own INSERT and never goes through `linkReceipt`, so
+    // the receive wizard's deal picker — used by precisely the person who
+    // knows which job the cargo belongs to — would otherwise be the one door
+    // that bypassed the join entirely.
+    await stampCalcLink(tx, receipt!.id, receipt!.dealId);
 
     return { receiptId: receipt!.id, number: number, lots: summaries };
   });

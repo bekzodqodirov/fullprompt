@@ -1,5 +1,178 @@
 # CHANGELOG
 
+## Suhbatdan hisoblatish va sotuvchilar hisoboti — 2026-08-25
+
+Sizning uch javobingiz bo'yicha.
+
+**1. «Hisoblatishga yuborish» — endi chatdan ham.** Mijoz kartasi, bitim
+kartasi va Suhbatlar ekranidagi yozishmada tugma bor: bosasiz, xabarlarni
+belgilaysiz (bosilganlari ramkaga olinadi), bo'limni tanlaysiz — «O'qish»
+AI ga o'qitadi (AI bo'lmasa oddiy o'qish ishlaydi), «VEDga yuborish» so'rovni
+VED navbatiga tushiradi. Tanlangan matn so'zma-so'z kartaga yoziladi —
+VED odam sotuvchi nima yuborganini o'z ko'zi bilan ko'radi. Bitim kartasidan
+yuborilsa so'rov AYNAN o'sha bitimga tushadi, mijozning boshqa ishiga emas.
+Fayllar ko'chirilmaydi — yozuv nechta fayl borligini aytadi, ular suhbatning
+o'zida turadi.
+
+**2. Sotuvchilar hisoboti** — Hisobotlar ichida «Sotuvchilar: natija».
+Sizga va buxgalterga: har bir sotuvchi bo'yicha mijozlar soni, davrda qabul
+qilingan yuk (kub/kg), hisoblangan pul, FOYDA va marja; menejersiz mijozlar
+alohida «—» qatorda (ular ko'p — yashirilsa hisobot yolg'on bo'lardi) va jami
+qator. Sotuvchining o'ziga: faqat o'z mijozlari, yuki va hisoblangan puli.
+
+**3. «Tannarx ko'rinmasin sotuvchiga» — hamma joyda.** Yangi hisobotda
+sotuvchining ko'rinishida foyda/tannarx USTUNI YO'Q — dastur uni u yerda
+hisoblay olmaydigan qilib qurilgan. Va eski teshik ham yopildi: /upsale
+ekrani sotuvchiga o'z qatorlarida tannarxni ko'rsatib turgan ekan — endi u
+faqat sizga va buxgalterga chiqadi; sotuvchi o'z narxi va o'z ulushini
+ko'radi.
+
+Yo'l-yo'lakay: hisoblash ish stolida VED to'g'irlagan stavkani bir bosishda
+lug'atga yozib qo'yish tugmasi, kod uchun o'tgan safargi lgota taklifi,
+eskirgan baza ⚠ belgisi ish stolining o'zida, juda kichik yuk ogohlantirishi
+va «oxirgi 5 narx» (3 emas) — bularning hammasi kelishuvda bor edi, audit
+yetishmayotganini topdi, endi joyida.
+
+## Sotuvchi ulushi: xarajat turini ro'yxatdan tanlaydigan bo'ldi — 2026-08-23
+
+Sizning «bunday narsa yo'qku sozlamalarda» degan gapingiz haq edi, va men
+o'ylaganimdan kattaroq tomondan haq edi.
+
+D bosqichi to'lovni **majburiy alohida xarajat turiga** bog'lagan (sababi
+o'zgarmadi: «Oyliklar» ichidan to'lansa, o'sha sotuvchining o'sha oygi maoshi
+jimgina to'langan deb hisoblanadi). Turni tanlash esa sozlamalar ekranidagi
+oddiy **matn katagi** edi — va u sizdan xarajat turining ichki raqamini
+so'raydi, bunday raqamni esa tizimda birorta ekran ko'rsatmaydi. Ya'ni
+to'ldirib bo'lmaydigan katak, va uning ortidagi rad javobi «tugma buzuq»
+bo'lib o'qilardi.
+
+Endi tanlov **`/upsale` ekranining o'zida**, to'lov tugmasining yonida:
+yopiq holatida ⚠ «tanlanmagan», tanlangach ✅ va turning nomi.
+
+- **Siz** — ro'yxatdan tanlaysiz.
+- **Buxgalter** — «faqat administrator tanlay oladi» degan yozuvni ko'radi.
+  Pul sarflash uning ishi, kompaniyaning xarajat turlarini nomlash sizniki.
+- **Sotuvchi** — bu bo'lim umuman ko'rinmaydi.
+
+Nofaol (arxivlangan) turni tanlab bo'lmaydi: bir marta qabul qilinsa, keyin
+u hech kim yoza olmaydigan turga aylanib qolardi.
+
+## E1 auditi: chiqarilgan kodni tekshirdim — 2026-08-23
+
+Kodni yozib bo'lgach, uni **beshta mustaqil ko'z bilan qayta ko'rdim** (har bir
+topilma alohida tekshiruvchiga berildi va faqat rad eta olmagani qoldi).
+25 ta nomzoddan **11 tasi tasdiqlandi va tuzatildi**.
+
+**Eng muhimi: ekran umuman ishlamas edi.** «Yuk keldi» degan holatni noto'g'ri
+so'ragan ekanman — yuk O'zbekistonda tushirilganda tizim `ready_for_pickup`
+deb yozadi, men esa `in_stock` deb so'ragan edim. O'lchab ko'rdim: bazadagi
+79 ta tushirishning hammasi `ready_for_pickup`. Ya'ni **hech bir mashina hech
+qachon «kelgan» deb hisoblanmasdi** va «Rastamojka: hisob va haqiqat» bo'limi
+oylab bo'sh turaverardi, sababini aytmasdan. Bu qoida allaqachon tizimda bor
+edi (agent uchun jadval tayyorlaydigan joyda) — men uni qayta yozib, xato
+qilibman. Endi bitta joydan olinadi.
+
+Qolganlari:
+
+- **Bir hisobga bog'langan tugmalar himoyasiz edi:** VED xodimi havola orqali
+  hamkasbining o'lchovini tasdiqlashi yoki **o'chirib yuborishi** mumkin edi.
+  Endi har bir tugma «bu meniki mi?» deb so'raydi.
+- **Prixodni boshqa bitimga ko'chirganda** eski hisobga bog'lanish qolib
+  ketardi — eski hisob o'ziga tegishli bo'lmagan yuk bilan o'lchanardi.
+- **Mashina bo'yicha kiritilgan rastamojka** (siz shunday kiritasiz — bitta
+  partiyaga bitta qator) kursi kelmagan bo'lsa umuman ko'rinmasdi, va ekran
+  yashil «-70 %» deb ko'rsatardi — aslida hisobdan ko'proq pul to'langan.
+- **«Mijoz o'z firmasi bilan»** partiya kartasida bir marta belgilansa, bu
+  yerda hisobga olinmasdi.
+- **Jadval band bo'lgan oylarda bo'shab qolardi:** eng yangi 200 ta hisob
+  olinardi, lekin solishtirishga tayyorlari — har doim eng eskilari.
+- **Rastamojka hisobida kub yozilmasa** «yukning hammasi keldimi» tekshiruvi
+  umuman ishlamasdi. Endi kub bo'lmasa kilogramm bo'yicha qaraydi.
+- **Sozlamalardagi «necha foiz farq muhim»** degan qatorni hech narsa
+  o'qimasdi — ekran shunchaki musbat/manfiy bo'yicha rang berardi. Endi
+  sizning raqamingizni o'qiydi.
+- Tezlik: so'rov butun tarix bo'ylab yurar edi, endi faqat kerakli davr.
+  Qabulda prixod ochilganda ishlaydigan qidiruvga indeks qo'shildi.
+
+**11 ta yangi qizil isbot** (tuzatishni olib tashlab, test qizarishini
+ko'rsatdim). **2003 test + 177 brauzer testi** yangi bazada yashil.
+
+## VED moduli, E bosqichi (1-qism): hisob va haqiqat — 2026-08-23
+
+VED odam hisoblab bergan raqam bilan yukning haqiqiy narxini solishtiradigan
+ekran. Bu — modulning oxirgi bosqichi.
+
+**Avval ikkita ochiq gap, chunki ular nima qurilganini o'zgartirdi:**
+
+- **Faqat RASTAMOJKA solishtiriladi, yo'lkira emas.** Yo'lkirada biz o'z
+  narxlarimizni qo'yamiz (sizning tarifingiz), mashina esa bizga boshqa
+  pulga tushadi — orasidagi farq bu **bizning foydamiz**, VED xodimining
+  xatosi emas. O'lchab ko'rdim: 30 kub, 200 kg/m³ yuk sizning tarifingiz
+  bo'yicha $4,800 turadi, mashina esa taxminan $2,700 — ya'ni **+78 %,
+  doimo**, hisob mutlaqo to'g'ri qilingan holda ham. Agar buni «xato» deb
+  ko'rsatsak, har bir to'g'ri hisob ham qizil bo'lib chiqadi va ro'yxatni
+  ikkinchi haftadayoq hech kim o'qimaydi. Rastamojka boshqacha: u davlatga
+  to'lanadigan pul, buxgalter uni xarajatlar jadvaliga o'zi kiritadi — ikkala
+  tomon bir xil narsani o'lchaydi, demak farq haqiqatan ham xato.
+  **Va aynan shu yerda AI ning taklifi pulga aylanadi** (AI faqat poshlina
+  foizini taklif qiladi, u esa rastamojkani hisoblaydi) — sizning savolingiz
+  shu bilan yopiladi.
+- **Yo'lkira bo'yicha tarif BANDI tekshiriladi.** Yuk kelgandagi haqiqiy
+  zichlik bo'yicha tarif qayta ochiladi va ekran shunday deydi: «hisobda
+  151-200 bandi, $160/m³ — haqiqatda 96 kg/m³, ya'ni 1-100 bandi». Bu VED
+  odam haqiqatan qabul qiladigan qaror, va uni tekshirib bo'ladi.
+
+**Yangi ekran: Hisoblash → «Hisob va haqiqat»** (`/hisoblash/nazorat`).
+To'rt bo'lim, va ular shu tartibda:
+
+1. **Qamrov.** «Muhrlangan: 12 · prixodi bog'langani: 5». Birinchi turadi,
+   chunki hech narsa bog'lanmagan bo'lsa pastdagi hamma raqam bo'sh joy
+   haqida — va buni yashirgan ekran «xatomiz yo'q» deb o'qiladi, aslida
+   «ma'lumotimiz yo'q» degani.
+2. **Prixodni tasdiqlang.** Sistema taxmin qiladi, **odam tasdiqlaydi**.
+   Bitta bitimda bitta hisob bo'lsa — o'zi taklif qiladi; ikkita bo'lsa —
+   indamaydi, chunki mashina tanlay olmaydi. **Tasdiqlanmagan taxmin hech
+   kimni baholamaydi.** Prixod kartasida ham qo'lda tanlash tugmasi bor.
+3. **E'tibor talab qiladi.** Kim nimani «ko'rmasdan» tasdiqlagan: stavka
+   lug'atdan emas, AI ishonchsiz edi, AI stavkasi narxga ketdi. Har bir
+   qatorda **VED odamning o'z izohi** turadi (u allaqachon yozilardi, lekin
+   hech qayerda ko'rinmasdi) va «Lug'atga qo'shish» havolasi — ro'yxat
+   ishlangani sari bo'shab boradi.
+4. **Rastamojka: hisob va haqiqat.** «Hisobda $556.80 · Haqiqatda $657.02
+   +18%», yonida tarif bandi tekshiruvi.
+
+**Raqam o'rniga hech qachon $0 chiqmaydi.** Solishtirib bo'lmasa — ⚠ va
+sababi: mijoz o'zi rastamojka qilgan · xarajat hali kiritilmagan · kurs yo'q ·
+xarajat qutilarga taqsimlanmagan · yukning hammasi kelmagan · bitta hisobga
+juda ko'p yuk bog'langan. Kerakli turdagi xarajat topilmasa — **qanday
+xarajatlar topilganini yozib beradi**, ya'ni sozlash kerakligi ko'rinib
+turadi.
+
+**Ikkita soat.** Qamrov va ogohlantirishlar — hisob sanasi bo'yicha (shu oy).
+Solishtirish — **yuk kelgan sana** bo'yicha, kelgandan 7 kun keyin (bu raqam
+sozlanadi). Sababi: yo'l eng kamida 10 kun, odatda 17 kun, ustiga narx bir oy
+turishi mumkin — bitta soat bilan jadval har oyning 18-sanasigacha bo'sh
+bo'lardi.
+
+**Kim ko'radi:** siz, buxgalter — hammasini; VED xodimi — **o'zinikini**;
+sotuvchi — umuman ko'rmaydi (xarajat tannarxi sotuvchining ekrani emas).
+To'rtala rolni brauzerda ochib tekshirdim.
+
+**Hozircha Telegramga xabar yubormaymiz.** Lug'atlar bo'sh ekan, har kuni
+hamma hisob «shubhali» bo'lib chiqadi — bunday xabarni bir oydan keyin hech
+kim o'qimaydi. Ma'lumot to'planganda yoqamiz (2-qism).
+
+**Ochiq aytaman, qurilmadi:** har bir tovar (TNVED kod) bo'yicha alohida
+solishtirish. Prixodda tovar **nomi** yozilgan, hisobda **kod** — ular
+bir-biriga ulanmaydi va nom normallashmaydi («Ayollar kurtkasi» / «куртка
+жен.» — bir narsa, uch xil yozuv). Butun yuk bo'yicha solishtiramiz.
+
+**Yo'l-yo'lakay tuzatildi:** TNVED taklif qilish uchun AI chaqiruvida
+muddat yo'q edi — osilib qolsa yagona jarayonni yarim soat band qilardi
+(101-raundning kasali, shu faylga yetib bormagan).
+
+**Migratsiya 0089** — serverda ro'yxat **90** ga yetishi kerak.
+
 ## Rasm tanlash, klient kodi va avtomatik bitim — 2026-08-23
 
 Uchta ish, uchalasi ham sizning so'rovingiz bo'yicha.
@@ -102,37 +275,203 @@ Bu yangilanishda baza o'zgarmaydi. Lekin quyidagi VED bosqichi bilan birga
 deploy qilinadi, shuning uchun deploydan keyin migratsiya hisobi **86**
 bo'lishi kerak.
 
+## VED moduli, D bosqichi: sotuvchi ulushi (upsale) — 2026-08-23
+
+Sotuvchi mijozga tannarxdan qimmatroq sotsa — ustidagi farq uning ulushi.
+Tizim uni o'zi hisoblaydi, o'zi kuzatadi, buxgalter esa bir bosishda to'laydi.
+
+- **Ulush = mijoz narxi − tannarx.** Hech qayerda alohida saqlanmaydi, chunki
+  ikkala raqam ham o'zgarmas — yozib qo'yish faqat bitta narsa berardi:
+  keyinchalik o'zi bilan o'zi kelishmay qolish. Saqlanadigani boshqa: **ruxsat
+  berildimi** va **pul berildimi**.
+- **Bitta savdo — bitta ulush.** Sotuvchi taklifni qayta yuborsa (masalan
+  tilni almashtirib), bu ikkinchi ulush emas. Qayta hisoblangan ish esa
+  umuman to'lanmaydi — turadigan va'da yangisi.
+- **Chegirma ulushni o'chiradi** (sizning qoidangiz). Ikki narsa chegirma
+  hisoblanadi: VED yozgan chegirma, va yukni o'z zichligidan pastroq bandga
+  majburan tushirish. Uchinchisi yo'q — buni kodni oxirigacha kuzatib
+  tekshirdim.
+- **Tannarxdan past narx — faqat sizning ruxsatingiz bilan**, lekin qulf
+  yozuvga emas, **va'daga** qo'yilgan: narx har doim yozib qo'yiladi (siz kim
+  chegirma berayotganini ko'rib turasiz), sabab majburiy, lekin **siz ruxsat
+  bermaguningizcha mijozga matn ham, PDF ham ketmaydi va kartaga narx
+  tushmaydi**. Sotuvchi ekranda «Ruxsat kutilmoqda» deb ko'radi.
+  Sizga Telegramga xabar boradi.
+- **Kartadagi narx endi MIJOZ to'laydigan narx.** Ilgari u yerda tannarx
+  turardi — ya'ni CRM hisobotlari kompaniyaning o'z xarajatini «daromad» deb
+  ko'rsatardi. **Bu voronka, tahlil va bitim kartasidagi raqamlarni
+  o'zgartiradi** (kattaroq tomonga).
+- **«Sotuvchi ulushi» ekrani** (`/upsale`): uchta raqam — ishlab topilgan,
+  kutilmoqda, to'langan — sotuvchilar ro'yxati va har bir ish. Telefonda
+  ro'yxat, kompyuterda jadval.
+- **Kim nimani ko'radi**: siz va buxgalter — hammasini; sotuvchi — faqat
+  o'zinikini; **VED — umuman ko'rmaydi** (u tannarxni o'zi hisoblagan).
+- **To'lov — bir bosish.** Buxgalter qaysi ishlar, qaysi kassa va qaysi kunni
+  belgilaydi; **summani tizim hisoblaydi**. Qisman to'lash = kamroq ish
+  belgilash. Ikki marta bosilsa ikki marta to'lanmaydi. To'lov bekor qilinsa
+  ishlar qaytadan ochiladi.
+- **Ulush uchun alohida xarajat turi tanlanadi** (Sozlamalarda). Buni
+  majburiy qildim: agar «Oyliklar» turiga yozilsa, o'sha sotuvchining o'sha
+  oylik maoshi jimgina o'tkazilmay qolar edi.
+
+Bazada: **0088**. Deploy'dan keyin migratsiya soni **89** bo'lishi kerak.
+
+## VED moduli, C bosqich: mijozga taklif, narxlar kitobi va tarix — 2026-08-23
+
+Muhrlangan narxdan mijozga yuboriladigan taklifgacha bitta bosish. Va
+«bu tovarni oxirgi marta qanchaga bergan edik» degan savolga javob.
+
+- **«Mijozga taklif» — kartadagi bitta tugma.** Muhrlangan narx endi lead va
+  bitim kartasida ochiq turadi (buklangan emas): $ summa, versiya raqami,
+  qachongacha amal qilishi va kim muhrlagani. Uning ostida narx qutisi
+  turadi — **muhrlangan summa bilan to'ldirilgan, lekin bu javob emas,
+  boshlanish nuqtasi**. Sotuvchi o'z narxini yozadi.
+- **Muhrlangan narx — bu TANNARX, mijozga bormaydi.** Taklif matnida
+  faqat sotuvchi yozgan narx turadi. Tannarxdan PAST narx yozilsa —
+  bosishdan OLDIN ogohlantiradi (chunki bosgandan keyin aytish, qaror
+  qabul qilingandan keyin aytish demakdir), lekin taqiqlamaydi va yozib
+  qo'yadi: keyinchalik «kim qancha chegirma bergan» ko'rinadi.
+- **Taklif matni narxni bo'laklamaydi.** Yo'lkira alohida, rastamojka
+  alohida yozilsa — mijoz bizning ro'yxat narximizni ko'radi va chegirmani
+  o'zi hisoblab oladi. Shuning uchun: nima kirganini SO'Z bilan, narxni
+  bitta raqam bilan. Kub va kilo bo'lsa — kubiga/kilosiga ham chiqadi
+  (sotuvchi narxidan, tannarxdan emas).
+- **Uch tilda: o'zbekcha, ruscha, inglizcha.** Sotuvchi o'zi tanlaydi
+  (`clients.locale` deyarli hamma mijozda bo'sh, shuning uchun uni
+  «mijozning tili» deb ishlatib bo'lmaydi).
+- **PDF ham bor.** Xuddi shu matn, A4 varaqda, kompaniya nomi bilan.
+  Telegramga yuborilgan matn bilan PDF **bir joydan** chiqadi — ikkitasi
+  hech qachon boshqa narsa aytolmaydi.
+- **Telegram haqida ROSTINI aytadi.** Agar sizning akkauntingiz botga
+  ulanmagan bo'lsa — «⚠ Telegram ulanmagan, matnni nusxalang» deydi. Ilgari
+  bunday holatda tizim jimgina «yuborildi» der edi va xabar hech qayerga
+  bormas edi.
+- **Narxlar kitobi — to'rtinchi lug'at.** `Hisoblash → Lug'atlar` da:
+  TNVED kod, tovar nomi, narx ($/kub yoki $/kg), sana. Nima uchun kod
+  bo'yicha, tovar nomi bo'yicha emas: «Ayollar kurtkasi», «куртка жен.» va
+  «women's jacket» — bitta narsa, uchta yozuv, va ikki VED xodimi ikki xil
+  javob topadi. Kod esa yozib qo'yilgan va odam tasdiqlagan.
+- **Narx tarixi ekrani** (`Hisoblash → Narx tarixi`) — **sotuvchiga ham
+  ochiq**, chunki «oxirgi marta qanchaga berdik» savoli hisoblash paytida
+  emas, narx aytish paytida ko'proq beriladi. Kod yozasiz — oxirgi
+  hisob-kitoblar chiqadi, har biri o'z BO'LIMI bilan (yo'lkira/rastamojka/
+  podklyuch — ular boshqa-boshqa xizmat, bitta ustunda solishtirib
+  bo'lmaydi) va sotuvchi aytgan narx bilan.
+- **Hisob stolida ham ko'rinadi.** VED xodimi baza yozayotganda o'sha
+  kodning oxirgi 3 ta narxi va kitobdagi narxi yonida turadi.
+- **Oyda bir marta eslatma.** Lug'atlarda 90 kundan beri tegilmagan yozuv
+  bo'lsa — VED xodimlariga Telegramga «ko'rib chiqing» xabari boradi.
+  **Faqat eskirgan yozuv bo'lsa** — har oy quruq eslatma yuboradigan tizim
+  odamlar o'qimaydigan tizimdir.
+
+**Yo'l-yo'lakay topilgan xato (bir yildan beri bor edi):** PDF shrifti
+o'zbek kirillchasining **ў қ ғ ҳ** harflarini umuman chiza olmas ekan —
+o'lchab ko'rildi, shriftda bu harflar YO'Q. Ruscha harflar joyida, shuning
+uchun bir yil sezilmagan. Ya'ni **topshirish akti**da ismi kirillcha yozilgan
+mijozning ismi bo'sh katakcha bo'lib chiqar edi va odam shunga imzo qo'yar
+edi. Endi bunday harflar lotinchaga o'giriladi (Ў → O', қ → q), emoji esa
+tushirib qoldiriladi. Ikkala hujjat ham (akt va yangi taklif varag'i) shu
+bitta joydan o'tadi.
+
+Bazada: **0087** (`calc_price_book`, `calc_offers`). Deploy'dan keyin
+migratsiya soni **88** bo'lishi kerak.
+
+## VED moduli, B bosqich: hisob stoli va muhrlangan narx — 2026-08-23
+
+Excel o'rniga ishlaydigan hisob ekrani. VED xodimi tovarlarni guruhlaydi,
+stavka va bazani qo'yadi, yo'lkira tarifdan o'zi chiqadi — va «Muhrlash»
+bosilganda narx KARTAGA tushadi va qulflanadi.
+
+- **Uchta lug'at tug'ildi.** Tovar bazasi (`$` — donaga yoki kiloga),
+  TNVED stavkalari (boj %, QQS %, yig'im) va sizning yo'lkira tarifingiz.
+  Uchalasi ham SANA bilan yuriladi: bugun tuzatgan narxingiz kechagi
+  hisobni o'zgartirmaydi — eski hisob o'z tarifini o'qiydi.
+  Baza va stavkalar — VED xodimining o'zida (`Hisoblash → Lug'atlar`),
+  yo'lkira tarifi esa **Boshqaruv → Yo'lkira tarifi** da, ya'ni chegirma
+  beradigan odam chegirma o'lchanadigan narxni o'zgartira olmaydi.
+- **Tarifingiz o'zingiz yozgandek kiritildi** — YW/GZ va Qashqar ustunlari,
+  hammasi 12 qatordan. **Va ikkita joyi so'raladi** (pastda).
+- **Hech qachon «$0» yozmaydi.** Baza yo'q bo'lsa, kg/dona yo'q bo'lsa,
+  stavka yo'q bo'lsa — ekran «⚠ baza yo'q» deb aytadi va qaysi TOVAR
+  ekanini nomlaydi. Nol yozib qo'yish mijozga «rastamojka bepul» deyish
+  bo'lardi.
+- **Baza TOVARGA tegishli, guruhga emas.** Bitta TNVED kod ostida bir necha
+  tovar bo'ladi va ularning bazasi har xil — shuning uchun baza har tovar
+  qatorida turadi va bojxona qiymati ular yig'indisi.
+- **Yo'nalishni O'ZINGIZ tanlaysiz.** Shahar nomidan taxmin qilinadi, lekin
+  qaror emas: YW/GZ bilan Qashqar orasida narx 36-58 % farq qiladi.
+- **Chegirma va band o'zgartirish — ikki alohida narsa.** «Bu yuk aslida
+  boshqa bandga to'g'ri keladi» (yuk haqida) va «bu mijozga chegirma»
+  (mijoz haqida) alohida yoziladi, ikkalasida ham sabab majburiy, va
+  ikkalasi ham rahbariyatga Telegramga boradi.
+- **AI faqat GURUHLAYDI.** Tovarlarni TNVED kodlar bo'yicha guruhlab
+  beradi, lekin uning taxmin qilgan stavkasi hech qayerga tushmaydi —
+  bazaga ham, narxga ham. Har guruhni odam «Tasdiqlash» bilan tasdiqlamaguncha
+  muhrlab bo'lmaydi. 1000 ta tovar bo'lsa 200 talab so'raydi; bittasi
+  ishlamasa qolgani baribir guruhlanadi.
+- **Muhrlangan narx qulf.** Kartadagi narx maydoni yo'qoladi va o'rniga
+  🔒 bilan narx turadi; sotuvchi ham, VED ham o'zgartira olmaydi. Narx **1
+  oy** amal qiladi (sozlamada). O'zgartirish kerak bo'lsa — «Qayta
+  hisoblash», u YANGI so'rov ochadi va eskisi tarixda o'z narxi bilan
+  qoladi.
+- **«Bajarildi» ham qoldi** — chunki lug'atlar hozircha bo'sh, va ular
+  to'lguncha eski usulda javob berish kerak bo'ladi.
+
+Migratsiya **0086** — deploydan keyin hisob **87** bo'lishi kerak.
+
+**Tarifdagi ikki joy — javobingizga ko'ra tuzatildi (2026-08-23):**
+
+Tarifni birinchi berganingizda «501-700» dan keyin «700-900» kelib, keyin
+to'g'ridan-to'g'ri «1000+» edi — ya'ni **700 ikki qatorda** turgan, va
+**900-999 uchun qator umuman bo'lmagan**. Ikkalasida ham pul bor edi (30 kub
+950 kg/m³ da: $9,600 mi, $15,675 mi), shuning uchun o'zim tanlab qo'ymay
+so'radim. Javobingiz:
+
+1. «sen aytgandek» → **900-999 endi $320 / $200 qatorida**;
+2. «ketma ket qanday kelyabti shunga mosla» → **har qator oldingisi tugagan
+   joydan +1 dan boshlanadi**, ya'ni 700 «501-700» da qoladi, keyingisi 701 dan;
+3. «shunday qolsin» → **1000 dagi sakrash o'z holicha qoladi**.
+
+Natijada o'n birinchi qator **701-999** bo'ldi va jadval 1 kg/m³ dan yuqorisini
+**teshiksiz va ustma-ust tushmasdan** qoplaydi. Har ikkala zona bo'yicha
+1 dan 1500 gacha har bir butun zichlik tekshiriladigan test qo'shildi — kelajakda
+kimdir tarifni tahrirlab teshik qoldirsa, shu test qizil bo'ladi.
+
+**Ekrandagi ogohlantirish esa qoldi**: agar kelajakda tarifga qo'lda teshik
+kiritilsa, tizim «bu zichlik uchun tarif yo'q» deb aytadi — o'zi arzonini
+tanlab qo'ymaydi.
+
 ## VED moduli, A bosqich: hisoblash navbati — 2026-08-22
 
-Sotuvchi so'rov qoldiradi, VED xodimi bitta navbatdan ishlaydi, va har
-hisoblash o'z soati bilan yuradi. `docs/VED.md` bo'yicha birinchi bosqich.
+Hisoblatish so'rovi endi o'z ma'lumotini ko'taradigan ISH bo'ldi: bo'lim
+(yo'lkira / rastamojka / podklyuch), qayerdan-qayerga, kg, kub, tovarlar
+ro'yxati (1000 tagacha) va sotuvchi yuborgan materiallar — hammasi so'rovning
+o'zida.
 
-- **Ikki eshik, bitta navbat.** Telegram botdagi «Hisoblatish» va karta
-  formasi endi bir joyga tushadi — `/hisoblash`. Bot javobida endi «VED
-  xodimini tanlaysiz» emas, «navbatga tushdi» deb yoziladi (navbatga
-  tushmasa — buni ham aniq aytadi).
-- **So'rov endi ISH.** Har so'rov o'zining bo'limi (yo'lkira / rastamojka /
-  podklyuch), yo'nalishi, kg, kubi, tovarlari (1000 tagacha) va sotuvchi
-  yuborgan materiallari bilan yuradi. Bitta kartada bir nechta ochiq so'rov
-  bo'lishi mumkin — chunki dushanbadagi monitor bilan payshanbadagi stulni
-  bitta so'rovga qo'shib yuborish yo'lkira narxini buzardi.
-- **Navbat o'zi taqsimlaydi.** So'rov eng kam yuklangan VED xodimiga
-  biriktiriladi — ya'ni birinchi soniyadanoq egasi bor. Boshqa VED xodimi
-  «Olaman» bilan o'ziga olishi mumkin, bu tarixga yoziladi.
-- **Yetishmayotgan ma'lumot ko'rinib turadi.** Har so'rovda ⚠ ro'yxat: kub
-  yo'q, tovar nomi yo'q… VED xodimi «Qaytarish» tugmasi bilan sababini yozib
-  sotuvchiga qaytaradi.
-- **Javob ham yoziladi.** «Bajarildi» bosilganda narx va izoh so'rovda
-  qoladi va sotuvchiga Telegramga boradi — endi so'rovlar bazasi emas,
-  savol-javob bazasi.
-- **Soat qaytdi.** Muddat tovar soniga qarab (30 daqiqadan, eng ko'pi 2
-  soat), kechikkani qizil, kechikkanda xabar boradi — hech kim olmagan
-  bo'lsa butun VED jamoasiga. Navbat ekranida har xodimning tezligi:
-  nechta bajardi, o'rtacha necha daqiqada, nechtasi muddatida.
-- **Bosh ekran.** VED xodimining bosh ekranida birinchi qator endi hisoblash
-  navbati.
+**Bitta navbat, ikkita eshik.** Botdagi «Hisoblatish» ham, kartadagi forma ham
+endi BITTA joyga tushadi — **/hisoblash** navbatiga. Ish sotuvchiga emas,
+NAVBATGA biriktiriladi: ochiq ishi eng kam bo'lgan VED xodimi oladi. Bitta
+kartada bir nechta ish bo'lishi mumkin (eski «bitta kartaga bitta so'rov»
+cheklovi olib tashlandi — bitta mijoz bir kunda ikki xil yuk so'rashi oddiy).
 
-Migratsiya **0085** — deploydan keyin hisob **86** bo'lishi kerak.
+**Soat qaytadan yurdi.** So'rov ochilganda muddat qo'yiladi (tovar soniga
+qarab, ko'pi bilan 2 soat), kechikkan ish so'ragan odamga va rahbariyatga BIR
+MARTA aytiladi (ishlayotganning o'ziga emas), va soat ISH TUGAGANDA to'xtaydi
+— narx saqlanganda yoki javob yozilganda.
+
+**To'liqlik ro'yxati.** So'rovda nima yetishmayotgani (kg ✗ · kub ✓ · tovar ✓)
+botning o'z tekshiruvi bilan bir xil ko'rinadi. VED to'liq bo'lmagan so'rovni
+**sababini yozib** qaytarib yuborishi mumkin — sabab majburiy.
+
+**Javob so'ragan odamga qaytadi.** Ish tugaganda summa + izoh yoziladi va
+sotuvchining bot chatiga yuboriladi.
+
+**Yo'l-yo'lakay:** so'rov ko'rsatgan lead izohidagi fayllar VED'ga ochildi
+(uchta tekshiruvchi mustaqil topgan to'siq), va server eski sxemada qolganda
+ekran xatolik o'rniga tushunarli gap aytadigan bo'ldi.
+
+**Migratsiya 0085** — o'sha kungi deployda serverda ro'yxat **86** ga yetishi
+kerak edi (keyingi bosqichlar bilan birga endi 90 ga yetadi).
 
 ## Xaritadagi mashina belgisi — 2026-08-20
 

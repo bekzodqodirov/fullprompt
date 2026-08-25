@@ -45,6 +45,9 @@ export const HUB_DOORS: HubDoor[] = [
   { href: '/admin/cost-types', label: 'costing.typesTitle', icon: 'wallet', allow: ['admin.dictionaries.manage'] },
   { href: '/admin/partner-types', label: 'partners.typesTitle', icon: 'briefcase', allow: ['admin.dictionaries.manage'] },
   { href: '/admin/fx', label: 'costing.fxTitle', icon: 'exchange', allow: ['costs.fx.manage'] },
+  // The freight tariff the VED's discount is measured against. The same
+  // dictionary door as the cost types, deliberately NOT `ved.docs`.
+  { href: '/admin/tarif', label: 'calc.dictTariff', icon: 'truck', allow: ['admin.dictionaries.manage'] },
   { href: '/admin/trucks', label: 'plans.trucksTitle', icon: 'truck', allow: ['plans.manage'] },
   { href: '/admin/driver-app', label: 'settings.driverApp', icon: 'truck', allow: ['admin.settings.manage'] },
   { href: '/admin/calls-app', label: 'settings.callsApp', icon: 'phone', allow: ['admin.settings.manage'] },

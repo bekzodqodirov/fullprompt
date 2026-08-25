@@ -313,6 +313,45 @@ const DICT = {
   // --- language switch ---
   chooseLanguage: { uz: 'Tilni tanlang:', ru: 'Выберите язык:', en: 'Choose a language:' },
   languageSet: { uz: '✅ Til o‘zgartirildi', ru: '✅ Язык изменён', en: '✅ Language changed' },
+
+  /*
+   * --- the price offer (phase C) ---
+   *
+   * The one thing in this dictionary a customer reads about MONEY, so two
+   * rules apply that none of the arrival wording needed.
+   *
+   * No emoji in any of these. The offer is also drawn into a PDF with
+   * NotoSansSC, and MEASURED: 📦 and ✅ have glyph id 0 in that font — a hole
+   * on the document a customer reads, with no error anywhere. (U+02BC is
+   * missing too; the apostrophe used throughout this file is U+2018, which
+   * the font does have.)
+   *
+   * And nothing here decomposes the price. `freight_usd` and
+   * `freight_list_usd` are written from ONE value at seal time, so printing
+   * the parts hands the customer our list price and lets them subtract the
+   * discount we were willing to give.
+   */
+  offerTitle: { uz: 'Narx taklifi', ru: 'Коммерческое предложение', en: 'Price offer' },
+  offerTotal: { uz: 'Umumiy narx', ru: 'Итого', en: 'Total' },
+  offerPerM3: { uz: '1 kub uchun', ru: 'за 1 куб', en: 'per m3' },
+  offerPerKg: { uz: '1 kg uchun', ru: 'за 1 кг', en: 'per kg' },
+  offerVolume: { uz: 'Hajmi', ru: 'Объём', en: 'Volume' },
+  offerWeight: { uz: 'Og‘irligi', ru: 'Вес', en: 'Weight' },
+  offerRoute: { uz: 'Yo‘nalish', ru: 'Маршрут', en: 'Route' },
+  offerIncludes: { uz: 'Narxga kiradi', ru: 'В стоимость входит', en: 'Included' },
+  offerValidUntil: { uz: 'Taklif amal qiladi', ru: 'Предложение действует до', en: 'Offer valid until' },
+  offerSecFreight: { uz: 'yetkazib berish', ru: 'доставка', en: 'delivery' },
+  offerSecCustoms: { uz: 'rasmiylashtirish', ru: 'таможенное оформление', en: 'customs clearance' },
+  offerSecAll: {
+    uz: 'yetkazib berish va rasmiylashtirish',
+    ru: 'доставка и таможенное оформление',
+    en: 'delivery and customs clearance',
+  },
+  offerFooter: {
+    uz: 'Savollaringiz bo‘lsa — yozing.',
+    ru: 'Если есть вопросы — напишите.',
+    en: 'If you have any questions, just write.',
+  },
 } satisfies Record<string, Record<ClientLocale, string>>;
 
 export type ClientLabels = { [K in keyof typeof DICT]: string };

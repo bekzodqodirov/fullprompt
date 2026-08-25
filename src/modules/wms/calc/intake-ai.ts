@@ -61,6 +61,12 @@ export async function analyzeIntake(input: {
   text: string;
   /** How many photos/documents came with it — context for the model. */
   fileCount: number;
+  /**
+   * The caller's leash. The bot answers asynchronously and affords the
+   * default 60 s; an interactive press (the thread door) cannot hold a
+   * person that long and passes ~20 s — past it the manual parser answers.
+   */
+  timeoutMs?: number;
 }): Promise<AiIntakeResult | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   const material = input.text.trim();
@@ -71,7 +77,7 @@ export async function analyzeIntake(input: {
     // assistant one: the SDK's default is about ten minutes, and this call
     // is made from the staff bot, whose poller is sequential — a hung socket
     // there is a customer bot that answers nobody until it clears.
-    const client = new Anthropic({ timeout: 60_000, maxRetries: 1 });
+    const client = new Anthropic({ timeout: input.timeoutMs ?? 60_000, maxRetries: 1 });
     const response = await client.messages.create({
       model: 'claude-opus-5',
       max_tokens: 4096,

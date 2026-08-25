@@ -118,6 +118,7 @@ async function main() {
   await seedM1();
   await seedAccounting();
   await seedCrm();
+  await seedFreightTariff();
 
   // --- Single audit marker for the seed run ---
   await db.insert(auditLog).values({
@@ -312,6 +313,43 @@ async function seedCrm() {
     ]);
     console.log('lead stages seeded (editable)');
   }
+}
+
+/**
+ * The owner's freight tariff (docs/VED.md).
+ *
+ * The table itself lives in `wms/calc/tariff-seed.ts`, because the fence that
+ * proves it has no holes has to read the same rows this writes (#513). It is
+ * CONTIGUOUS by his own correction — «501–700» then «701–999» then 1000+ —
+ * so every whole kg/m³ from 1 upwards is covered exactly once.
+ *
+ * The engine still REFUSES a density no band covers, and a density two bands
+ * cover: that rule is about the tariff a person edits on /admin/tarif
+ * tomorrow, not about this seed.
+ *
+ * Writes only into an EMPTY table, so an installation that has edited its
+ * tariff is never touched by a later deploy.
+ */
+async function seedFreightTariff() {
+  const { calcFreightTariffs } = await import('../src/modules/platform/db/schema');
+  const existing = await db.select({ id: calcFreightTariffs.id }).from(calcFreightTariffs).limit(1);
+  if (existing.length > 0) return;
+
+  const { ownerTariffRows, OWNER_TARIFF_FROM } = await import(
+    '../src/modules/wms/calc/tariff-seed'
+  );
+
+  await db.insert(calcFreightTariffs).values(
+    ownerTariffRows().map((row) => ({
+      zone: row.zone,
+      minDensity: row.minDensity.toFixed(2),
+      maxDensity: row.maxDensity === null ? null : row.maxDensity.toFixed(2),
+      priceUsd: row.priceUsd.toFixed(4),
+      perKg: row.perKg,
+      effectiveDate: OWNER_TARIFF_FROM,
+    })),
+  );
+  console.log('freight tariff seeded (owner\u2019s table, editable)');
 }
 
 main()

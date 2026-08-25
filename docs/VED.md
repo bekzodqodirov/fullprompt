@@ -57,8 +57,8 @@ What the owner wants (his list, verbatim intent):
    overwritten.
 3. **Quote validity = 1 month.** After that the card says "expired —
    recalculate".
-4. **Upsale.** Client price is entered by the seller on the card; upsale =
-   client price − VED price, computed, never typed. Floor: client price ≥
+4. **Upsale.** *(SHIPPED, phase D.)* Client price is entered by the seller on
+   the card; upsale = client price − VED price, computed, never typed. Floor: client price ≥
    VED price (below-floor is admin-only). **ANY discount kills the upsale
    right** — a freight discount included (owner: «yolkiradan tushirganda ham
    upsale o'chsin»). Visibility: owner + accountant + the seller (own only).
@@ -113,11 +113,28 @@ Density (kg/m³) → price per m³; last row per kg:
 | 401–450 | 280 | 180 |
 | 451–500 | 290 | 190 |
 | 501–700 | 300 | 195 |
-| 700–900 | 320 | 200 |
+| 701–999 | 320 | 200 |
 | ≥1000 kg/m³ | 0.55 $/kg | 0.30 $/kg |
 
 Editable in admin; edits keep history (an old calc reads its own tariff).
-Seed exactly these values.
+
+**The eleventh row is 701–999 by the owner's own correction (2026-08-23).**
+As first written it was «700–900», which left 700 in two bands and 900-999 in
+none — and each is real money (30 m³ at 950 kg/m³ is $9,600 or $15,675
+depending on which way the gap is read). His three answers, asked with the
+numbers attached:
+
+1. 900-999 takes this row's price — «sen aytgandek».
+2. The bands run consecutively: each starts where the one before it ended,
+   plus one — «ketma ket qanday kelyabti shunga mosla». So 700 stays in
+   «501–700», and the row after it begins at 701.
+3. The step at 1000 stays a step, not a floor — «shunday qolsin».
+
+The table now covers every whole kg/m³ from 1 upwards exactly once, which
+`tests/unit/calc-pricing.test.ts` asserts against the very module the seed
+writes from. The engine's `band_missing` / `band_ambiguous` refusals STAY:
+they are about the tariff a person may edit tomorrow, and they are why a
+future hole will be a visible refusal rather than a quietly cheaper invoice.
 
 ## The dictionaries (four)
 
@@ -126,8 +143,15 @@ Seed exactly these values.
 2. **Code dictionary**: TNVED → rate set (duty %, VAT %, …) + lgota flags;
    VED corrections remembered (law 6).
 3. **Freight tariff**: the table above, editable, versioned.
-4. **Selling price book**: product/category → current client price $/m³,
-   hand-set; beside it the system shows the last 5 real quotes.
+4. **Selling price book**: TNVED code → current client price $/m³ or $/kg,
+   hand-set; beside it the system shows the last real quotes.
+   **SHIPPED in phase C, keyed on the CODE and not the product name** — a
+   name does not normalise («Ayollar kurtkasi» / «куртка жен.» /
+   «women's jacket» are one thing and three strings), while a code is
+   written down and confirmed by a person before anything can be sealed
+   against it. `calc_price_book` (tnved_code, effective_date) UNIQUE, read
+   like `fx_rates` with **no earliest-row fallback**. It stores the CLIENT
+   price and never the sealed floor.
 
 ## Screens and flows
 
@@ -138,6 +162,10 @@ Seed exactly these values.
     owner) — the seller adds a line of text.
   - On a card whose Telegram thread is in the CRM: a «Hisoblatishga
     yuborish» button — select messages, one tap, request minted from them.
+    **SHIPPED 2026-08-25** (the whole-module audit found it silently absent;
+    owner: «yaxshi, qilib bersang kerak»). The selected TEXT lands verbatim
+    on the note (law 11); files stay in the thread, counted — a stated cut.
+    The deal card lands on ITS OWN deal. Decisions #829.
   - Card form for office/Excel users: type, goods (manual / Excel import /
     files), city, kg, m³. 360 px first, as always.
   - A completeness checklist on the request (tovar ✓ · kg ✗ · …); the VED
@@ -161,6 +189,12 @@ Seed exactly these values.
 - **Reports**: VED accuracy (calc vs batch actuals, per worker, monthly);
   upsale per seller; seller performance (period: kub / kg brought in,
   profit generated — deal profit machinery exists); suspicious-calcs list.
+  **Seller performance SHIPPED 2026-08-25** (`/reports/sotuvchilar`): owner+
+  accountant read every seller WITH profit and the «—» unassigned cohort;
+  the seller's own view is a return TYPE that cannot carry a cost-derived
+  figure at all («tannarx korinmasin sotuvchiga» — his words). The same
+  answer also removed the floor column from `/upsale`'s own-scope rows.
+  Decisions #830. Per-worker ACCURACY stays E2.
 
 ## Error control (three moments — the owner's «adashsa qanday bilamiz»)
 
@@ -168,11 +202,13 @@ Seed exactly these values.
    an "confirmed-over-warning" list.
 2. **After sending**: AI re-reads confirmed calcs (price-book deviation,
    history deviation) → suspicious list to the owner, before any batch.
-3. **At batch arrival**: automatic calc-vs-actual comparison — per request,
-   per group, per VED worker; monthly accuracy report («Aziz: 23 calcs,
-   2 % deviation; Karim: 18, 11 %»).
-   Plus: AI draft vs VED-confirmed stored separately, so "blind confirm"
-   is distinguishable from the VED's own error.
+3. **At batch arrival**: automatic calc-vs-actual comparison — per request.
+   **Per GROUP is impossible and was cut** (a group is a TNVED code, a
+   receipt lot is a product name; nothing joins them). Per VED worker and the
+   monthly accuracy report wait for E2's precondition: with one VED person,
+   «Aziz: 23, 2 %» is a comparison table with one row.
+   Plus: AI draft vs VED-confirmed stored separately (`ai_proposal`), so
+   "blind confirm" is distinguishable from the VED's own error.
 
 ## Build phases (each ships alone, owner reviews live between phases)
 
@@ -183,10 +219,45 @@ Seed exactly these values.
 - **C — Price base + offer sheet**: price book (dictionary 4), last-5,
   history search for sellers+VED, one-tap client offer, monthly
   dictionary-review task.
-- **D — Upsale and money**: client-price field, floor, discount↔upsale
-  lock, accountant cash view, upsale + seller performance reports.
-- **E — Fact and AI control**: calc-vs-actual on batch close, accuracy
-  report, warning ledger, suspicious-calcs list.
+- **D — Upsale and money**: **SHIPPED 2026-08-23** (migration 0088).
+  The upsale is DERIVED (client price − sealed floor) and never stored; only
+  its permission (`approved_at`) and its payment (`payout_expense_id`) are
+  facts. `payableOffersSql()` is the one home for five rules and `payUpsale`
+  embeds it in its own claim rather than trusting the ids that were ticked.
+  Below-floor locks the PROMISE and not the record. A released offer writes
+  the client price onto the card — which is what every revenue surface reads
+  — and `quoteLockedFor` had to follow it, or every later save on a quoted
+  card would be refused for ever. The payout is an `expenses` row in a
+  mandatory dedicated category with a server-derived amount. `/upsale` in two
+  shapes. Decisions #793-787.
+- **E1 — Fact control**: **SHIPPED 2026-08-23** (migration 0089). The
+  comparison is **CUSTOMS ONLY** — `freight_usd` is our own list price and
+  `cost_allocations.amount_usd` is what the road cost, so their difference is
+  MARGIN and would have flagged every correct calculation for ever (measured:
+  +78 % permanently on a 200 kg/m³ cn load). Freight gets a deterministic
+  BAND CHECK at the arrived density instead. The join is new
+  (`receipts.calc_request_id`), lives at the RECEIPT grain because a deal
+  carries many of both, has ONE writer (`stampCalcLink`, called from
+  `createReceipt`, `linkReceipt` and `sealCalculation`), and an `auto` link is
+  a SUGGESTION that never scores anybody until a person confirms it. A ✅ now
+  records what stood on the screen (`confirmed_warnings`, `confirm_via`) and
+  the seal carries three counters away. Six refusals, ⚠ and a reason, never a
+  $0. Two clocks: sealed-at for coverage and warnings, arrived-at + a settle
+  window for the arithmetic. `/hisoblash/nazorat`, gated by its own
+  `calcControlScopeFor` (owner/accountant = all, VED = own, seller = none).
+  Decisions #804-800.
+- **E2 — AI control**: the history-dependent suspicious rules, the per-worker
+  ranking, the workspace sidebar's actuals column and the Telegram digest.
+  **PRECONDITION, stated numerically**: ≥20 sealed versions with confirmed
+  links and settled cargo, and a non-empty `calc_price_book`. The dictionaries
+  ship empty, so today every one of those rules would be true of 100 % of
+  groups and a digest would name every calculation every morning.
+  **CUT from the module entirely and stated to the owner**: per-TNVED
+  calc-vs-actual (a group is a CODE, a receipt lot is a NAME in zh/ru — they
+  do not join, and names do not normalise) and the nightly AI pass
+  (`gsr_ai_reader`'s allowlist cannot reach the tables, `ai_questions.user_id`
+  is NOT NULL so a scheduled call is unauditable, and it is subtraction the
+  arithmetic already does deterministically for ~$320/month).
 
 ## House rules that will bite here (read before building)
 

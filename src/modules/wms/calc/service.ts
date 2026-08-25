@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
+  calcOffers,
   calcRequestItems,
   calcRequests,
   crmActivities,
@@ -632,14 +633,33 @@ export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Pro
   const rows = await db
     .update(calcRequests)
     .set({ entityType: 'deal', entityId: dealId, updatedAt: new Date() })
-    .where(
-      and(
-        eq(calcRequests.entityType, 'lead'),
-        eq(calcRequests.entityId, leadId),
-        openRequests,
-      ),
-    )
+    // EVERY request, not just the open ones.
+    //
+    // It filtered `openRequests` while a closed request was only history. A
+    // SEALED request is closed and carries a PRICE, and `currentSealFor` finds
+    // a version by the card its request points at — so leaving sealed ones on
+    // the lead handed the new deal the number with none of the lock, and the
+    // quote became freely editable at exactly the moment it becomes the
+    // invoice. The won lead keeps its own copy as history; the deal is the
+    // live record, and it is the one that must stay locked.
+    .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)))
     .returning({ id: calcRequests.id });
+
+  // …and the OFFERS, which carry their own copy of the card.
+  //
+  // `recordOffer` denormalises entity_type/entity_id onto `calc_offers` so a
+  // card can read its own offers in one indexed query, and this function moved
+  // the request alone — so `offersFor('deal', …)` came back empty and what the
+  // seller actually promised the customer vanished from the only card that
+  // still exists. MEASURED, not argued. It is the same defect the paragraph
+  // above describes, one table over, which is the whole reason it was easy to
+  // miss: fixing the rule in one place is not fixing it in every place the
+  // rule was restated.
+  await db
+    .update(calcOffers)
+    .set({ entityType: 'deal', entityId: dealId })
+    .where(and(eq(calcOffers.entityType, 'lead'), eq(calcOffers.entityId, leadId)));
+
   return rows.length;
 }
 

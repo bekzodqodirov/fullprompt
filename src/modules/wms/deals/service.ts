@@ -22,6 +22,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
+import { stampCalcLink } from '../calc/link';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
 import { orderForMove, topOfColumn, type BoardTable, bottomOfColumn } from '../crm/board-place';
@@ -185,6 +186,17 @@ export async function updateDeal(id: string, input: DealInput, ctx: AuditContext
   const amountChanged =
     input.quotedAmount !== undefined && !sameNumber(num(input.quotedAmount), before.quotedAmount);
   const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
+
+  // A sealed calculation is what the client was told (docs/VED.md law 2), so
+  // this form may not overwrite it. A CHANGE check, not a presence check: the
+  // locked form re-posts the sealed figure as hidden inputs (#171), and an
+  // ordinary save — a corrected title — must not become a refusal. The door
+  // back is «Qayta hisoblash», which mints a new calculation.
+  if (amountChanged) {
+    const { quoteLockedFor } = await import('../crm/service');
+    const sealedTotal = await quoteLockedFor('deal', id);
+    if (sealedTotal !== null) throw new DealError('quote_sealed');
+  }
 
   // What the audit trail records. The old row named `amount` and `volume` only,
   // so a retitled or re-staged deal left no trace, and the scale difference
@@ -423,7 +435,38 @@ export async function linkReceipt(
     }
   }
   await db.transaction(async (tx) => {
-    await tx.update(receipts).set({ dealId }).where(eq(receipts.id, receiptId));
+    await tx
+      .update(receipts)
+      .set(
+        dealId
+          ? // RE-FILING clears it too, and for the same reason the detach
+            // branch below spells out. `stampCalcLink` cannot repair it: its
+            // UPDATE is guarded by `calc_request_id IS NULL`, so a link a
+            // person had confirmed survives the move and the OLD deal's
+            // calculation goes on being measured by cargo that has left it —
+            // while the new deal's quote is measured by nothing.
+            {
+              dealId,
+              calcRequestId: null,
+              calcLinkSource: null,
+              calcLinkConfirmedAt: null,
+              calcLinkConfirmedBy: null,
+            }
+          : // Detaching takes the calculation link with it. The link's whole
+            // meaning is «this cargo was priced by that quote», and a quote
+            // reaches cargo only through the deal — so a link left standing
+            // on a detached prixod would go on measuring a job it is no
+            // longer part of.
+            {
+              dealId: null,
+              calcRequestId: null,
+              calcLinkSource: null,
+              calcLinkConfirmedAt: null,
+              calcLinkConfirmedBy: null,
+            },
+      )
+      .where(eq(receipts.id, receiptId));
+    if (dealId) await stampCalcLink(tx, receiptId, dealId);
     await writeAudit(tx, ctx, {
       entityType: 'receipt',
       entityId: receiptId,
@@ -1409,6 +1452,9 @@ export async function dealById(id: string) {
       clientName: clients.name,
       /** For the Telegram lookback panel — the card already joins the client. */
       clientPhones: clients.phones,
+      /** Pre-selects the offer's language. NULL for nearly everybody, which
+          is exactly why the seller chooses rather than the column deciding. */
+      clientLocale: clients.locale,
       stageName: dealStages.name,
       stageKind: dealStages.kind,
       stageColor: dealStages.color,

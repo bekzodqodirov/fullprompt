@@ -190,6 +190,23 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
  * Clamped at zero PER DEAL, not over the sum: overpaying one job by $200 must
  * not hand out $200 of forgiveness on another.
  */
+/**
+ * What counts as a LIVE deferral, in one place.
+ *
+ * Written once because two things ask it now — the handover gate through
+ * `deferredBalanceUsd`, and the upsale payout, which by law 4 must not be
+ * stricter than the gate that already released the cargo. A deferral whose
+ * date has passed is no longer a deferral and the hourly sweep may not have
+ * run yet, so neither caller may honour it in the meantime (#251).
+ */
+export function liveDeferralWhere() {
+  return and(
+    sql`${deals.deferredAt} IS NOT NULL`,
+    isNull(deals.deferralEndedAt),
+    sql`(${deals.deferUntilAllArrived} OR ${deals.deferUntilDate} >= CURRENT_DATE)`,
+  );
+}
+
 export async function deferredBalanceUsd(clientId: string): Promise<number> {
   const owedPerDeal = db
     .select({
@@ -204,12 +221,7 @@ export async function deferredBalanceUsd(clientId: string): Promise<number> {
       and(
         eq(clientTransactions.clientId, clientId),
         isNull(clientTransactions.voidedAt),
-        sql`${deals.deferredAt} IS NOT NULL`,
-        isNull(deals.deferralEndedAt),
-        // A deferral whose date has passed is no longer a deferral, and the
-        // hourly sweep may not have run yet — the gate must not honour it in
-        // the meantime.
-        sql`(${deals.deferUntilAllArrived} OR ${deals.deferUntilDate} >= CURRENT_DATE)`,
+        liveDeferralWhere(),
       ),
     )
     .groupBy(clientTransactions.dealId)
@@ -391,4 +403,72 @@ export async function paymentsRegister(
     count,
     truncated: rows.length < count,
   };
+}
+
+/**
+ * Balance and live-deferral totals for MANY clients, in one query each.
+ *
+ * The per-client pair above is right for a counter where one customer is
+ * standing; a payout queue asks about every seller's every job at once, and
+ * calling them per row is the shape rounds 45, 68 and 108 each found
+ * saturating the one Node process (#432). Same two predicates, one home.
+ */
+export async function balancesForClients(
+  clientIds: string[],
+): Promise<Map<string, { balanceUsd: number; deferredUsd: number }>> {
+  const out = new Map<string, { balanceUsd: number; deferredUsd: number }>();
+  const ids = [...new Set(clientIds)].filter(Boolean);
+  if (ids.length === 0) return out;
+
+  const balances = await db
+    .select({
+      clientId: clientTransactions.clientId,
+      balance: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
+                                             THEN ${clientTransactions.amountUsd}
+                                             ELSE -${clientTransactions.amountUsd} END), 0)`,
+    })
+    .from(clientTransactions)
+    .where(and(inArray(clientTransactions.clientId, ids), isNull(clientTransactions.voidedAt)))
+    .groupBy(clientTransactions.clientId);
+
+  const perDeal = db
+    .select({
+      clientId: clientTransactions.clientId,
+      dealId: clientTransactions.dealId,
+      owed: sql<string>`greatest(
+        coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
+                          THEN ${clientTransactions.amountUsd}
+                          ELSE -${clientTransactions.amountUsd} END), 0), 0)`.as('owed'),
+    })
+    .from(clientTransactions)
+    .innerJoin(deals, eq(clientTransactions.dealId, deals.id))
+    .where(
+      and(
+        inArray(clientTransactions.clientId, ids),
+        isNull(clientTransactions.voidedAt),
+        liveDeferralWhere(),
+      ),
+    )
+    .groupBy(clientTransactions.clientId, clientTransactions.dealId)
+    .as('owed_per_deal');
+
+  const deferrals = await db
+    .select({
+      clientId: perDeal.clientId,
+      total: sql<string>`coalesce(sum(${perDeal.owed}), 0)`,
+    })
+    .from(perDeal)
+    .groupBy(perDeal.clientId);
+
+  const money = (n: unknown) => Math.round(Number(n ?? 0) * 100) / 100;
+  for (const id of ids) out.set(id, { balanceUsd: 0, deferredUsd: 0 });
+  for (const r of balances) {
+    const row = out.get(r.clientId);
+    if (row) row.balanceUsd = money(r.balance);
+  }
+  for (const r of deferrals) {
+    const row = r.clientId ? out.get(r.clientId) : undefined;
+    if (row) row.deferredUsd = money(r.total);
+  }
+  return out;
 }

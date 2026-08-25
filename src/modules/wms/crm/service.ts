@@ -19,6 +19,7 @@ import { closedAtFor, reasonAllowed, stageWrite } from './stage-law';
 import { orderForMove, topOfColumn, type BoardTable } from './board-place';
 import { isUniqueViolation } from '../../platform/db/errors';
 import { logger } from '../../platform/logger';
+import { isServerBehind } from '../../platform/db/errors';
 
 /**
  * The funnel's own board-order table (0075).
@@ -339,6 +340,59 @@ async function defaultStageId() {
  * one table over). A currency without an amount is noise, so it clears with
  * the price.
  */
+/**
+ * A sealed price is a fact about what the client was told, so the ✏️ form may
+ * not quietly overwrite it (docs/VED.md law 2).
+ *
+ * The check is a CHANGE check and not a presence check, and #171 is why: the
+ * form posts every field it renders, so a locked quote re-posts its own
+ * values as hidden inputs and an ordinary save — a corrected phone number,
+ * say — must not become a refusal. Only a DIFFERENT number is refused, and
+ * the door back is «Qayta hisoblash», which mints a new calculation.
+ *
+ * Dynamically imported: `calc/workspace` reaches this module through
+ * `calc/service`, and a static import would close the circle.
+ */
+export async function quoteLockedFor(
+  entityType: 'lead' | 'deal',
+  entityId: string,
+): Promise<number | null> {
+  try {
+    const { currentSealFor, releasedPriceFor } = await import('../calc/workspace');
+    const seal = await currentSealFor(entityType, entityId);
+    if (!seal) return null;
+    // What is LOCKED is what is on the card, which is not always the floor.
+    //
+    // Phase D writes the released CLIENT price onto `quoted_amount`, because
+    // law 4 says the client pays the VED price plus the upsale and every
+    // revenue surface reads that column. The lock compares the form's posted
+    // value against this number, and the locked form re-posts what it renders
+    // (#171) — so returning the floor here would refuse EVERY later save on a
+    // card that has been quoted, for ever. Found by reading the lock, not by
+    // a test: the card and the lock have to agree about which number is the
+    // one nobody may change.
+    const offered = await releasedPriceFor(entityType, entityId);
+    // LATER WRITER WINS, by the clock, because that is exactly how the card
+    // column was written: sealCalc stamps the floor at seal time, an offer
+    // stamps the client price when it is made or released. A deal carries
+    // many jobs (0085 dropped one-open-per-card), so «offer beats seal»
+    // unconditionally would hold the lock on job A's released price after
+    // job B's newer seal rewrote the card — and every later ✏️ save would be
+    // refused against a number the card no longer shows.
+    if (offered && offered.at >= seal.sealedAt) return offered.price;
+    return seal.totalUsd;
+  } catch (err) {
+    // Deploy morning: this module works without 0086, and the lock is a
+    // safeguard rather than a gate — its absence must not take the card down.
+    if (!isServerBehind(err)) throw err;
+    logger.error({ err, entityType, entityId }, '[crm] quote lock: server behind');
+    return null;
+  }
+}
+
+const sameMoney = (a: number | null, b: string | null) =>
+  a === null ? b === null : b !== null && Math.abs(a - Number(b)) < 0.005;
+
 function quoteValues(input: LeadInput) {
   const money = (n: number | null | undefined) => (n == null ? null : n.toFixed(2));
   const size = (n: number | null | undefined) => (n == null ? null : n.toFixed(3));
@@ -488,6 +542,11 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     nextActionAt: input.nextActionAt || null,
     nextActionNote: input.nextActionNote || null,
   };
+
+  const sealedTotal = await quoteLockedFor('lead', id);
+  if (sealedTotal !== null && !sameMoney(sealedTotal, values.quotedAmount)) {
+    throw new CrmError('quote_sealed');
+  }
 
   /*
    * The funnel's law, asked by the SECOND door too.

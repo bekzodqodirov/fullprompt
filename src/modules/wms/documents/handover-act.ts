@@ -12,7 +12,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
-import { cjkSubsetFor } from '../labels/cjk-font';
+import { cjkSubsetFor, pdfTextCleaner } from '../labels/cjk-font';
 
 /** Handover act PDF (spec 6.7, optional per issue): who took what, signatures. */
 export async function buildHandoverAct(handoverId: string): Promise<Uint8Array | null> {
@@ -48,6 +48,11 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
     ...boxRows.flatMap((r) => [r.productNameZh, r.productNameRu ?? '']),
   ]);
   const font = await doc.embedFont(cjkBytes, { subset: false });
+  // Everything drawn goes through the cleaner first. This font has NO glyph
+  // for any of ў Ў қ Қ ғ Ғ ҳ Ҳ (measured), so a customer or a receiver whose
+  // name is written in Uzbek Cyrillic signed an act with their own name
+  // printed as blanks — silently, since `.notdef` raises nothing.
+  const clean = await pdfTextCleaner();
 
   // Mutable on purpose: `line` and the signature block must draw on whichever
   // page is current, so a new page swaps the binding they close over.
@@ -58,8 +63,12 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
     page = doc.addPage([595, 842]);
     y = 800;
   };
+  // Everything drawn goes through `drawable` first. This font has NO glyph
+  // for any of ў Ў қ Қ ғ Ғ ҳ Ҳ (measured), so a customer or a receiver whose
+  // name is written in Uzbek Cyrillic signed an act with their own name
+  // printed as blanks — silently, since `.notdef` raises nothing.
   const line = (text: string, size = 11, indent = 50) => {
-    page.drawText(text, { x: indent, y, size, font, color: black });
+    page.drawText(clean(text), { x: indent, y, size, font, color: black });
     y -= size + 7;
   };
 

@@ -98,6 +98,22 @@ export const receipts = pgTable(
      * exactly the case the deal engine shouts about.
      */
     dealId: uuid('deal_id').references((): AnyPgColumn => deals.id),
+    /**
+     * The CALCULATION this cargo was priced by (phase E1) — the join that
+     * makes «hisob vs haqiqat» possible at all.
+     *
+     * At the receipt grain because that is the grain the business has: a deal
+     * carries many prixods AND many calculations, so neither parent could
+     * hold it. `auto` is a suggestion the control screen asks somebody to
+     * confirm; only a CONFIRMED link is ever measured, because a guess that
+     * silently scores a person is worse than no number.
+     */
+    calcRequestId: uuid('calc_request_id').references((): AnyPgColumn => calcRequests.id, {
+      onDelete: 'set null',
+    }),
+    calcLinkSource: text('calc_link_source'),
+    calcLinkConfirmedAt: timestamp('calc_link_confirmed_at', { withTimezone: true }),
+    calcLinkConfirmedBy: uuid('calc_link_confirmed_by').references(() => users.id),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedBy: uuid('voided_by').references(() => users.id),
     voidReason: text('void_reason'),
@@ -115,6 +131,18 @@ export const receipts = pgTable(
     index('receipts_unclaimed_idx')
       .on(t.warehouseId, t.receivedAt)
       .where(sql`${t.clientId} IS NULL AND ${t.status} = 'confirmed'`),
+    check(
+      'receipts_calc_link_source_check',
+      sql`${t.calcLinkSource} IS NULL OR ${t.calcLinkSource} IN ('auto', 'person')`,
+    ),
+    // No constraint ties the confirmation to the link, and that is measured
+    // rather than argued: `ON DELETE SET NULL` is an internal UPDATE of the
+    // FK column alone, so ANY check spanning `calc_request_id` and a sibling
+    // fails 23514 on it and aborts the delete. Every reader asks for both
+    // columns, so an orphaned stamp scores nothing.
+    index('receipts_calc_request_idx')
+      .on(t.calcRequestId)
+      .where(sql`${t.calcRequestId} IS NOT NULL`),
   ],
 );
 
@@ -1916,6 +1944,18 @@ export const calcRequests = pgTable(
     answerNote: text('answer_note'),
     /** Stamped by the sweep so a late calculation is announced exactly once. */
     overdueNotifiedAt: timestamp('overdue_notified_at', { withTimezone: true }),
+    /** How many prices this request has sealed (phase B). 0 = none yet. */
+    currentVersionNo: integer('current_version_no').notNull().default(0),
+    /** A correction is a NEW request seeded from the sealed one, never a
+     * re-opening — clearing `completed_at` would re-arm the sweep, the clock
+     * and the manual ending against a request with a locked price behind it. */
+    supersedesRequestId: uuid('supersedes_request_id').references((): AnyPgColumn => calcRequests.id, {
+      onDelete: 'set null',
+    }),
+    /** Which freight column prices this job — chosen, never inferred. */
+    freightZone: text('freight_zone'),
+    /** The proposal claims its request so two presses cannot both spend a call. */
+    aiProposalStartedAt: timestamp('ai_proposal_started_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -1923,7 +1963,7 @@ export const calcRequests = pgTable(
     check('calc_requests_items_check', sql`${t.itemCount} BETWEEN 0 AND 1000`),
     check(
       'calc_requests_via_check',
-      sql`${t.completedVia} IS NULL OR ${t.completedVia} IN ('lines', 'task', 'returned')`,
+      sql`${t.completedVia} IS NULL OR ${t.completedVia} IN ('lines', 'task', 'returned', 'sealed')`,
     ),
     check(
       'calc_requests_section_check',
@@ -1936,6 +1976,8 @@ export const calcRequests = pgTable(
     // Read by the attachment gate on every file render (see access.ts).
     index('calc_requests_note_idx').on(t.noteId),
     index('calc_requests_assignee_idx').on(t.assigneeId, t.requestedAt),
+    // Read by `stampCalcLink` inside createReceipt's transaction (phase E1).
+    index('calc_requests_entity_idx').on(t.entityType, t.entityId),
   ],
 );
 
@@ -1965,8 +2007,446 @@ export const calcRequestItems = pgTable(
     /** Filled from the TNVED memory at intake, before any model is asked. */
     tnvedCode: text('tnved_code'),
     note: text('note'),
+    /** Which group prices it (phase B). A group is a layer OVER items. */
+    groupId: uuid('group_id').references((): AnyPgColumn => calcGroups.id, { onDelete: 'set null' }),
+    /**
+     * The ITEM is the priced unit.
+     *
+     * The owner's law: a baza is per PRODUCT and one TNVED code holds several
+     * products with different bazas — so the customs value is a SUM over
+     * items, never one baza times the group's totals. Two products under one
+     * code at $8/kg and $3/kg priced at either number is ±45 %.
+     */
+    bazaUsd: numeric('baza_usd', { precision: 14, scale: 4 }),
+    bazaBasis: text('baza_basis'),
+    /** 'dictionary' | 'typed' — never 'ai'. A model's estimate has nowhere to land. */
+    bazaSource: text('baza_source'),
   },
-  (t) => [uniqueIndex('calc_request_items_seq_idx').on(t.requestId, t.seq)],
+  (t) => [
+    uniqueIndex('calc_request_items_seq_idx').on(t.requestId, t.seq),
+    index('calc_request_items_group_idx').on(t.groupId),
+    check(
+      'calc_items_baza_basis_check',
+      sql`${t.bazaBasis} IS NULL OR ${t.bazaBasis} IN ('unit', 'kg')`,
+    ),
+    check(
+      'calc_items_baza_source_check',
+      sql`${t.bazaSource} IS NULL OR ${t.bazaSource} IN ('dictionary', 'typed')`,
+    ),
+  ],
+);
+
+/**
+ * A product's customs valuation — the «baza», versioned by the date it took
+ * effect (VED phase B, migration 0086).
+ *
+ * `fx_rates`' shape, with one deliberate departure written into the reader:
+ * there is NO earliest-row fallback. fx_rates falls back because a cost
+ * entered before the first rate still has to convert; here a missing baza
+ * means «nobody has ever priced this product», and inventing a number for it
+ * is the class of defect this whole module exists to remove.
+ *
+ * Keyed on `product_key` — the same `productKey()` normaliser the TNVED
+ * memory uses — because one TNVED code holds several products with different
+ * bazas, so the value belongs to the PRODUCT and the rates below to the CODE.
+ */
+export const calcBazas = pgTable(
+  'calc_bazas',
+  {
+    id: id(),
+    productKey: text('product_key').notNull(),
+    label: text('label').notNull(),
+    tnvedCode: text('tnved_code'),
+    bazaUsd: numeric('baza_usd', { precision: 14, scale: 4 }).notNull(),
+    /** 'unit' | 'kg' — what the number is per. */
+    basis: text('basis').notNull(),
+    effectiveDate: date('effective_date').notNull(),
+    note: text('note'),
+    enteredBy: uuid('entered_by').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('calc_bazas_basis_check', sql`${t.basis} IN ('unit', 'kg')`),
+    check('calc_bazas_value_check', sql`${t.bazaUsd} > 0`),
+    uniqueIndex('calc_bazas_key_date_unique').on(t.productKey, t.effectiveDate),
+  ],
+);
+
+/**
+ * A TNVED code's rates, versioned the same way and learned from corrections —
+ * but only when a person says so. `source` tells a taught rate from a typed
+ * one; a rate learned silently from every seal would learn a one-off
+ * lgota-driven number and then quietly price the next job with it.
+ */
+export const calcRates = pgTable(
+  'calc_rates',
+  {
+    id: id(),
+    tnvedCode: text('tnved_code').notNull(),
+    dutyPct: numeric('duty_pct', { precision: 6, scale: 3 }).notNull().default('0'),
+    vatPct: numeric('vat_pct', { precision: 6, scale: 3 }).notNull().default('0'),
+    feeUsd: numeric('fee_usd', { precision: 12, scale: 2 }).notNull().default('0'),
+    effectiveDate: date('effective_date').notNull(),
+    source: text('source').notNull().default('manual'),
+    note: text('note'),
+    enteredBy: uuid('entered_by').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('calc_rates_source_check', sql`${t.source} IN ('manual', 'correction')`),
+    check(
+      'calc_rates_pct_check',
+      sql`${t.dutyPct} >= 0 AND ${t.dutyPct} <= 100 AND ${t.vatPct} >= 0 AND ${t.vatPct} <= 100 AND ${t.feeUsd} >= 0`,
+    ),
+    uniqueIndex('calc_rates_code_date_unique').on(t.tnvedCode, t.effectiveDate),
+  ],
+);
+
+/**
+ * The owner's own freight table, as LOWER BOUNDS: a row is «this density and
+ * up, until the next row».
+ *
+ * Seeded with the eleven rows he wrote and not one more. His table has a hole
+ * at 900-999 kg/m³, lists 700 twice and steps from $320/m³ to $0.55/kg at
+ * 1000 — and every one of those is money (30 m³ at 950 kg/m³ is $9,600 or
+ * $15,675 depending on the reading), so the engine REFUSES an uncovered
+ * density rather than choosing the cheaper band on his behalf.
+ */
+export const calcFreightTariffs = pgTable(
+  'calc_freight_tariffs',
+  {
+    id: id(),
+    /** 'cn' (Yiwu and Guangzhou share his column) | 'kashgar'. */
+    zone: text('zone').notNull(),
+    minDensity: numeric('min_density', { precision: 10, scale: 2 }).notNull(),
+    /**
+     * The band's top, inclusive. NULL is the open-ended ≥1000 row.
+     *
+     * A band that knew only its floor would answer every density, and his
+     * table does not answer every density — it has a hole at 900-999. The
+     * top bound is what lets the lookup refuse instead of guessing.
+     */
+    maxDensity: numeric('max_density', { precision: 10, scale: 2 }),
+    priceUsd: numeric('price_usd', { precision: 10, scale: 4 }).notNull(),
+    /** The ≥1000 kg/m³ rows are charged per kilogram, not per cube. */
+    perKg: boolean('per_kg').notNull().default(false),
+    effectiveDate: date('effective_date').notNull(),
+    enteredBy: uuid('entered_by').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('calc_freight_price_check', sql`${t.priceUsd} > 0`),
+    check(
+      'calc_freight_density_check',
+      sql`${t.minDensity} >= 0 AND (${t.maxDensity} IS NULL OR ${t.maxDensity} >= ${t.minDensity})`,
+    ),
+    uniqueIndex('calc_freight_zone_band_date_unique').on(t.zone, t.minDensity, t.effectiveDate),
+  ],
+);
+
+/**
+ * The groups a calculation is made of.
+ *
+ * A group carries what is genuinely per-CODE: the code, its rates, and the
+ * lgota decided for THIS calculation (the same code is exempt on one job and
+ * not on the next — the owner's «goh unday goh bunday»). What it does not
+ * carry is the baza: that is per product and lives on the items.
+ *
+ * `rate_source` is the fence that keeps «AI advises, never decides» true —
+ * its legal values are 'dictionary' and 'typed', so a model's estimate has
+ * nowhere to land. `ai_duty_pct` is kept for the record and read by nothing.
+ */
+export const calcGroups = pgTable(
+  'calc_groups',
+  {
+    id: id(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    label: text('label').notNull(),
+    tnvedCode: text('tnved_code'),
+    dutyPct: numeric('duty_pct', { precision: 6, scale: 3 }),
+    vatPct: numeric('vat_pct', { precision: 6, scale: 3 }),
+    feeUsd: numeric('fee_usd', { precision: 12, scale: 2 }),
+    rateSource: text('rate_source'),
+    dutyFree: boolean('duty_free').notNull().default(false),
+    vatFree: boolean('vat_free').notNull().default(false),
+    aiProposed: boolean('ai_proposed').notNull().default(false),
+    aiConfidence: text('ai_confidence'),
+    /** The model's ESTIMATE. Recorded, never multiplied. */
+    aiDutyPct: numeric('ai_duty_pct', { precision: 6, scale: 3 }),
+    /**
+     * The model's own words, kept as their own value (phase E1).
+     *
+     * `ai_duty_pct` alone cannot answer «did the VED change anything» — the
+     * grouping and the code are what a person most often corrects, and a diff
+     * nobody kept is not a diff. Written by `applyProposal`, read by the
+     * control screen, multiplied by nothing.
+     */
+    aiProposal: jsonb('ai_proposal'),
+    /**
+     * The warnings that stood on the screen at the moment ✅ was pressed.
+     *
+     * Not re-derivable: the dictionaries move, so today's warnings are not
+     * the ones that person confirmed over. This is the owner's «ko'rmasdan
+     * tasdiqlagan» question, recorded at the only moment it is answerable.
+     */
+    confirmedWarnings: jsonb('confirmed_warnings'),
+    /** single | bulk — «Hammasini tasdiqlash» is a different act. */
+    confirmVia: text('confirm_via'),
+    confirmedBy: uuid('confirmed_by').references(() => users.id),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    note: text('note'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'calc_groups_confirm_via_check',
+      sql`${t.confirmVia} IS NULL OR ${t.confirmVia} IN ('single', 'bulk')`,
+    ),
+    // A ✅ must not outlive the numbers it was about. TWO writers clear it —
+    // `unconfirm()` and the clear `setGroupRates` inlines — and this CHECK is
+    // what makes forgetting the second one loud instead of silent.
+    check(
+      'calc_groups_confirm_pair_check',
+      sql`${t.confirmVia} IS NULL OR ${t.confirmedAt} IS NOT NULL`,
+    ),
+    check(
+      'calc_groups_rate_source_check',
+      sql`${t.rateSource} IS NULL OR ${t.rateSource} IN ('dictionary', 'typed')`,
+    ),
+    check(
+      'calc_groups_confidence_check',
+      sql`${t.aiConfidence} IS NULL OR ${t.aiConfidence} IN ('high', 'medium', 'low')`,
+    ),
+    uniqueIndex('calc_groups_seq_unique').on(t.requestId, t.seq),
+  ],
+);
+
+/** CCT and whatever else this job needs, pointing at the EXISTING cost-type
+ * dictionary so phase E compares like with like. */
+export const calcExtras = pgTable(
+  'calc_extras',
+  {
+    id: id(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    costTypeId: uuid('cost_type_id').references(() => costTypes.id),
+    label: text('label').notNull(),
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    note: text('note'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('calc_extras_amount_check', sql`${t.amountUsd} >= 0`),
+    uniqueIndex('calc_extras_seq_unique').on(t.requestId, t.seq),
+  ],
+);
+
+/**
+ * THE SEAL — an immutable, versioned, priced document. Never updated.
+ *
+ * `load_plan_versions`' shape: snapshots plus a `current_version_no` pointer
+ * on the parent. It carries the freight row's IDENTITY rather than an FK
+ * alone, because the tariff will be edited and an old quote must go on
+ * reading its own numbers; `breakdown` holds the whole calculation so phase E
+ * can compare a year-old quote with what the truck actually cost.
+ *
+ * Two concessions, two columns, because they mean different things: a BAND
+ * OVERRIDE is the VED's judgement about the cargo, a DISCOUNT is a price
+ * concession to this client — and it is the second that phase D reads when it
+ * withdraws the seller's right to add anything on top.
+ */
+/**
+ * Dictionary 4 — the SELLING price book (docs/VED.md phase C).
+ *
+ * Keyed on the TNVED CODE and deliberately not on a product name. The spec
+ * says «product/category» and the owner's example is the bare word
+ * «monitor», while the warehouse types «Монитор 27 дюйм» — a code is the
+ * category grain, it is confirmed by a person before anything can be sealed
+ * with it, and it needs no new column on the items.
+ *
+ * It holds what we CHARGE, which is not what a calculation COST: the sealed
+ * price is the floor the seller's price sits above (law 4).
+ */
+export const calcPriceBook = pgTable(
+  'calc_price_book',
+  {
+    id: id(),
+    tnvedCode: text('tnved_code').notNull(),
+    /** What the owner reads. «Monitorlar», not «8528520000». */
+    label: text('label').notNull(),
+    priceUsd: numeric('price_usd', { precision: 14, scale: 4 }).notNull(),
+    unit: text('unit').notNull().default('m3'),
+    effectiveDate: date('effective_date').notNull(),
+    note: text('note'),
+    enteredBy: uuid('entered_by').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('calc_price_book_unit_check', sql`${t.unit} IN ('m3', 'kg')`),
+    check(
+      'calc_price_book_value_check',
+      sql`${t.priceUsd} > 0 AND ${t.priceUsd} <> 'NaN'::numeric`,
+    ),
+    uniqueIndex('calc_price_book_code_date_unique').on(t.tnvedCode, t.effectiveDate),
+  ],
+);
+
+/**
+ * What was actually OFFERED to a client, and for how much.
+ *
+ * A sealed version is what the calculation cost; this is what the seller told
+ * the customer. They are different numbers by design, and this is the one the
+ * price book learns from — and the one that answers «what did we quote this
+ * client last time», which nothing could answer before.
+ */
+export const calcOffers = pgTable(
+  'calc_offers',
+  {
+    id: id(),
+    versionId: uuid('version_id')
+      .notNull()
+      .references((): AnyPgColumn => calcVersions.id, { onDelete: 'cascade' }),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    clientPriceUsd: numeric('client_price_usd', { precision: 14, scale: 2 }).notNull(),
+    /**
+     * TRUE when the seller quoted BELOW the sealed floor.
+     *
+     * The row is always written — the flag is how the owner sees who is
+     * discounting. What law 4 locks is the PROMISE, not the record: a
+     * below-floor offer is born pending and sends nothing until an admin
+     * stamps `approved_at`.
+     */
+    belowFloor: boolean('below_floor').notNull().default(false),
+    /** Why. Mandatory when below the floor, exactly as a discount's reason is. */
+    belowFloorReason: text('below_floor_reason'),
+    /** Until this is stamped: no Telegram text, no PDF, not the card's price, never payable. */
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedBy: uuid('approved_by').references(() => users.id),
+    locale: text('locale').notNull(),
+    /** Exactly what was sent, so «what did we tell them» is answerable. */
+    text: text('text').notNull(),
+    offeredBy: uuid('offered_by')
+      .notNull()
+      .references(() => users.id),
+    offeredAt: timestamp('offered_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The payout, and the whole pay-twice fence.
+     *
+     * One expense settles several offers — a seller is paid once a week, not
+     * once per quote — so this is deliberately not unique. NULL means unpaid,
+     * and `WHERE payout_expense_id IS NULL` is what the claim locks on.
+     */
+    payoutExpenseId: uuid('payout_expense_id').references((): AnyPgColumn => expenses.id),
+    payoutAt: timestamp('payout_at', { withTimezone: true }),
+    payoutBy: uuid('payout_by').references(() => users.id),
+    /** The seller's credited USD, computed server-side — never typed. */
+    payoutUsd: numeric('payout_usd', { precision: 14, scale: 2 }),
+  },
+  (t) => [
+    check('calc_offers_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
+    check('calc_offers_locale_check', sql`${t.locale} IN ('uz', 'ru', 'en')`),
+    check(
+      'calc_offers_price_check',
+      sql`${t.clientPriceUsd} > 0 AND ${t.clientPriceUsd} <> 'NaN'::numeric`,
+    ),
+    check(
+      'calc_offers_below_floor_reason_check',
+      sql`${t.belowFloorReason} IS NULL OR btrim(${t.belowFloorReason}) <> ''`,
+    ),
+    // A reason and an approval are facts ABOUT a below-floor price; on an
+    // ordinary offer they would be noise every report has to explain away.
+    check(
+      'calc_offers_below_floor_only_check',
+      sql`${t.belowFloor} OR (${t.belowFloorReason} IS NULL AND ${t.approvedAt} IS NULL)`,
+    ),
+    check(
+      'calc_offers_approval_pair_check',
+      sql`(${t.approvedAt} IS NULL) = (${t.approvedBy} IS NULL)`,
+    ),
+    check(
+      'calc_offers_payout_amount_check',
+      sql`${t.payoutUsd} IS NULL OR (${t.payoutUsd} > 0 AND ${t.payoutUsd} <> 'NaN'::numeric)`,
+    ),
+    // 0054's paired idiom: paid is all four columns, or none of them.
+    check(
+      'calc_offers_payout_pair_check',
+      sql`(${t.payoutExpenseId} IS NULL) = (${t.payoutAt} IS NULL)
+        AND (${t.payoutExpenseId} IS NULL) = (${t.payoutBy} IS NULL)
+        AND (${t.payoutExpenseId} IS NULL) = (${t.payoutUsd} IS NULL)`,
+    ),
+    index('calc_offers_version_idx').on(t.versionId),
+    index('calc_offers_entity_idx').on(t.entityType, t.entityId, t.offeredAt),
+  ],
+);
+
+export const calcVersions = pgTable(
+  'calc_versions',
+  {
+    id: id(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    versionNo: integer('version_no').notNull(),
+    sealedAt: timestamp('sealed_at', { withTimezone: true }).notNull().defaultNow(),
+    sealedBy: uuid('sealed_by')
+      .notNull()
+      .references(() => users.id),
+    validUntil: timestamp('valid_until', { withTimezone: true }).notNull(),
+    section: text('section').notNull(),
+    weightKg: numeric('weight_kg', { precision: 12, scale: 3 }),
+    volumeM3: numeric('volume_m3', { precision: 12, scale: 4 }),
+    density: numeric('density', { precision: 12, scale: 4 }),
+    customsUsd: numeric('customs_usd', { precision: 14, scale: 2 }).notNull().default('0'),
+    freightUsd: numeric('freight_usd', { precision: 14, scale: 2 }).notNull().default('0'),
+    extrasUsd: numeric('extras_usd', { precision: 14, scale: 2 }).notNull().default('0'),
+    totalUsd: numeric('total_usd', { precision: 14, scale: 2 }).notNull(),
+    perM3Usd: numeric('per_m3_usd', { precision: 14, scale: 2 }),
+    perKgUsd: numeric('per_kg_usd', { precision: 14, scale: 4 }),
+    freightZone: text('freight_zone'),
+    freightBandMin: numeric('freight_band_min', { precision: 10, scale: 2 }),
+    freightRate: numeric('freight_rate', { precision: 10, scale: 4 }),
+    freightPerKg: boolean('freight_per_kg'),
+    freightListUsd: numeric('freight_list_usd', { precision: 14, scale: 2 }),
+    bandOverrideMin: numeric('band_override_min', { precision: 10, scale: 2 }),
+    bandOverrideReason: text('band_override_reason'),
+    discountUsd: numeric('discount_usd', { precision: 14, scale: 2 }).notNull().default('0'),
+    discountReason: text('discount_reason'),
+    /** How much of this was still the model's when it was sealed (phase E). */
+    aiGroupsSealed: integer('ai_groups_sealed').notNull().default(0),
+    lowConfidenceSealed: integer('low_confidence_sealed').notNull().default(0),
+    /**
+     * Phase E1's three counters, carried to the seal so the owner's list
+     * survives the version. The `breakdown` snapshot cannot answer these
+     * after the dictionaries have moved underneath it, which is the whole
+     * reason they are columns and not a query.
+     */
+    warnedGroups: integer('warned_groups').notNull().default(0),
+    /** Confirmed with LOW confidence, unedited, and no dictionary rate. */
+    aiBlindGroups: integer('ai_blind_groups').notNull().default(0),
+    /** The model's own duty rate survived to the seal. */
+    aiRateTakenGroups: integer('ai_rate_taken_groups').notNull().default(0),
+    breakdown: jsonb('breakdown').notNull().default({}),
+  },
+  (t) => [
+    check(
+      'calc_versions_section_check',
+      sql`${t.section} IN ('yolkira', 'rastamojka', 'podklyuch')`,
+    ),
+    check('calc_versions_total_check', sql`${t.totalUsd} >= 0`),
+    check(
+      'calc_versions_e_counts_check',
+      sql`${t.warnedGroups} >= 0 AND ${t.aiBlindGroups} >= 0 AND ${t.aiRateTakenGroups} >= 0`,
+    ),
+    check('calc_versions_discount_check', sql`${t.discountUsd} >= 0`),
+    uniqueIndex('calc_versions_request_no_unique').on(t.requestId, t.versionNo),
+    index('calc_versions_sealed_idx').on(t.sealedAt),
+  ],
 );
 
 // ---------------------------------------------------------------------------

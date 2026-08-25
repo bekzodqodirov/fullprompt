@@ -603,6 +603,34 @@
       "when": 1785190000055,
       "tag": "0085_calc_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1785190000056,
+      "tag": "0086_calc_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1785190000057,
+      "tag": "0087_calc_price_book",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1785190000058,
+      "tag": "0088_calc_upsale",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1785190000059,
+      "tag": "0089_calc_actuals",
+      "breakpoints": true
     }
   ]
 }

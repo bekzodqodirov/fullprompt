@@ -132,6 +132,311 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 
+## State — 2026-08-23
+
+**VED phases A-E1 are on this branch** (`docs/VED.md`; migrations
+**0085**-**0089** — the ledger must reach **90**). **The module is done bar
+E2, which is gated on data that does not exist yet.**
+
+**Phase E1 — hisob vs haqiqat** (#804-800). **The headline is that the
+design's own money comparison could not ship**: `calc_versions.freight_usd`
+is the tariff's LIST price and `cost_allocations.amount_usd` is what the road
+cost, so their difference is MARGIN — measured on his own tariff, a 30 m³ /
+200 kg/m³ cn load quotes $4,800 against roughly $2,700 of truck, i.e. **+78 %
+for ever on a calculation executed exactly as quoted**, tripping every
+threshold on every correct calculation. So `moneyPct` is **CUSTOMS ONLY**
+(duty + VAT + fee is money payable to the STATE and the accountant types the
+same payment into the grid — two measurements of ONE fact, so a gap is an
+error and not a margin), and that is also where `ai_duty_pct` lands, which
+closes the owner's loop: the model proposes the duty, the duty drives the
+customs figure, and this is where confirming it blind turns into money.
+Freight gets a deterministic BAND CHECK at the arrived density instead —
+«quoted band 151-200 at $160/m³, cargo arrived at 96 kg/m³» — which is the
+decision the VED actually makes. **The join did not exist**: `calc_requests`
+names a card, `receipts` names a deal, and a deal carries many of both (0085
+dropped «one open request per card», `dealFor` sends every repeat client to
+their newest OPEN deal, no seeded stage carries a cargo trigger) — so
+`receipts.calc_request_id` (0089) at the RECEIPT grain, ONE writer
+(`calc/link.ts` `stampCalcLink`, called from `createReceipt` — which writes
+`deal_id` on its own INSERT and never goes through `linkReceipt` — plus
+`linkReceipt` and `sealCalculation`), guarded by «exactly one sealed request»
+AND the quote's own `valid_until` window, and **an `auto` link is a
+SUGGESTION that scores nobody**: `measurableLinkSql` demands a person's
+confirmation, because a guess that silently scores a person is worse than no
+number. A correction ADOPTS its predecessor's cargo at SEAL time (not at
+recalc — `recalcFromSealed` inserts a request with NO version, so an
+abandoned correction would strand the cargo on a priceless one), and the
+measurement's «not superseded» clause is deliberately NOT
+`payableOffersSql`'s: money must stop paying on a promise a correction
+replaced, a measurement must not drop a shipment that was priced and arrived.
+A ✅ now records what stood on the screen (`confirmed_warnings`/`confirm_via`)
+— **two writers clear it**, `unconfirm()` and the clear `setGroupRates`
+INLINES, and `pullBazasFromDictionary` had none at all. A warning needs the
+`dictionaryRates !== null` half or the first list is 100 % of the company
+(the dictionaries ship EMPTY, so `rate_source='typed'` is true of every group
+there is); `lowConfidenceSealed` was counting the ORPHAN group `mergeProposals`
+mints with `aiProposed:false`. Six refusals — ⚠ and a reason, never a $0 —
+and `no_actual_cost` NAMES the cost types it found, because the mapping
+(`calc_customs_cost_type_codes`) is DATA and a type he mints gets a `t_…`
+code matched by nothing. Two clocks: sealed-at for coverage/warnings,
+arrived-at + `calc_actual_settle_days` for the arithmetic, or the table is
+empty until the 18th of every month. `/hisoblash/nazorat` behind a THIRD
+door (`calcControlScopeFor`: `finance.reports`→all, `ved.docs`→own,
+seller→none — `upsaleScopeFor` would lock out the measured person AND admit
+every seller to a pure cost breakdown), reached from `/hisoblash/narxlar`,
+the one calc screen the accountant can open; all four roles opened in a real
+browser. **`ON DELETE SET NULL` cannot coexist with a CHECK spanning the FK
+column** — measured, and I wrote that bug TWICE before its own test caught
+the second one (#809). Found by LOOKING at the screen, not by a test: the
+completeness gate used `compareQuote`'s worst-of-both, so cargo that arrived
+in full but lighter than quoted read «not all arrived» and hid the exact
+error the round exists to show (#813). Also fixed: `suggestTnved`'s Anthropic
+client had no timeout (round 101's defect, in the file that never learned
+it). **17 red proofs, all by string edit**; the harness itself corrupted two
+files because an empty replacement is not reversible (#815). **1967
+unit/integration + 177 e2e** green on a fresh gsr_ci in CI's order;
+screenshots at 360×800 and 1280×900, document width equal to the viewport at
+both. **E2 waits for ≥20 sealed versions with confirmed links and a non-empty
+price book**; per-TNVED comparison and the nightly AI pass are CUT and owed
+to him as an explicit «yo'q».
+
+**E1 was then AUDITED AS SHIPPED** (#816-816, five lenses, verify-to-refute,
+25 candidates → 11 confirmed and fixed). **The headline is that the screen
+could never have worked**: the arrival CTE asked for `to_status='in_stock'`
+into a UZ warehouse and unloading writes `ready_for_pickup` at a customs or
+distribution warehouse, which every Uzbek destination is — measured, 79 of 79
+— so `settled` was false FOR EVER and the comparison would have rendered
+empty on every truck for months. The correct rule already existed, commented,
+in `documents/arrivals.ts`; I restated it instead of importing it, which is
+#513 inside the round about #513. Also: the link BUTTONS were gated on the
+page's audience and never on «own», so a VED could erase a colleague's
+measurement (scope is a REQUIRED argument now, `assertMine` on both ends);
+`linkReceipt`'s RE-FILE branch kept the calc link that its DETACH branch
+clears, so the old deal went on being scored by cargo that left it;
+`linked` fanned out over the company's whole history to produce 200 rows and
+`stampCalcLink` had NO index on `(entity_type, entity_id)` while running
+inside `createReceipt`'s transaction; the settle gate ran in JS after
+`LIMIT 200` and the two clocks pull opposite ways, so the table empties when
+the month is busiest; `cargo_incomplete` was volume-only and a rastamojka
+quote needs no volume, so BOTH cargo guards were dead for that section;
+`coalesce(customs_by_client,false)` is a two-state reading of a three-state
+column and hid «mijoz o'z firmasi bilan» set on the batch card; a batch-scope
+customs bill with no FX rate was invisible to every CTE; and
+`calc_customs_deviation_pct` shipped with NO reader at all — 0064's
+`tg_peer_index` mistake in the same round that refused to make one. **11 more
+red proofs.** PROCESS (#824): the first wiring test INSERTED a dated tariff
+row and repriced every seal in two other files; its no-rate currency was one
+another test file creates (green here, red on a fresh database, #380); and a
+strip marker must be UNIQUE, not merely present, or the restore welds a
+duplicate in. **2003 unit/integration + 177 e2e** green on a fresh gsr_ci in
+CI's order.
+
+Phase B is the workspace that replaces the Excel. A price on the screen is a
+DRAFT (recomputed from the dictionaries every render); a price in
+`calc_versions` is a FACT (written once, carrying the tariff row and every
+rate that made it); **the seal is the one door between them**. Three
+dictionaries born here, all versioned by `effective_date` and read like
+`fx_rates` — with **no earliest-row fallback**, because a missing baza means
+nobody has ever priced this product. Baza + rates live at
+`/hisoblash/lugatlar` under `ved.docs` (a `ved_manager` cannot open ANY
+`/admin/*` page); the freight tariff lives at `/admin/tarif` under
+`admin.dictionaries.manage`, so the person giving the discount cannot move
+the list price it is measured against.
+
+The engine (`calc/pricing.ts`, pure) **never returns a number it had to
+invent** — every entry point answers `{ok}` or `{ok:false, reason}`, and the
+screen prints ⚠ + the reason, never `$0`. The priced unit is the **ITEM**
+(one TNVED code holds several products with different bazas). His tariff lives in
+`calc/tariff-seed.ts` (one home for the seed AND the fence, #513) and is now
+CONTIGUOUS by his own answers — «700–900» became **701–999**, so 700 stays in
+«501–700» and 900-999 takes the $320 row; a unit test walks every whole
+density 1..1500 in both zones and asserts exactly one band claims each. The
+lookup still **refuses** a hole (`band_missing`) and an overlap
+(`band_ambiguous`), because that is a property of the tariff a person edits
+tomorrow, not of today's data. The band is looked up by a WHOLE
+kg/m³, or an ordinary 100.4 falls between «1–100» and «101–150» and is
+covered by neither. The seal is one transaction whose UPDATE RETURNS the
+version number; there is **no re-open** — a correction is a NEW request
+(`supersedes_request_id`), which is also what an expired quote needs. The
+sealed price is written onto the card and LOCKED: both ✏️ forms lose their
+quote inputs and `updateLead`/`updateDeal` refuse a changed one, with the
+locked branch re-posting the values as hidden inputs (#171). **The model
+proposes words and can never reach a number**: `rate_source`/`baza_source`
+allow `'dictionary'|'typed'` and there is no `'ai'`, every group must be
+confirmed by a person, and `tests/unit/ai-advisory.test.ts` pins all three
+fences. Decisions **#767-760**. Phase A's typed «Bajarildi» deliberately
+STAYS — the dictionaries ship empty, so on deploy morning nothing can be
+sealed at all.
+
+**1799 unit/integration + 166 e2e green** on a fresh `gsr_ci` in CI's order
+(vitest, then Playwright without re-seeding); screenshots at 360×800 and
+1280×900, document width equal to the viewport at both. m8-crm's two desktop
+drag tests failed once in an earlier full run and passed alone and in the
+next two full runs — recorded as a flake, not diagnosed.
+
+**His three tariff answers arrived the same night** («1 sen aytgandek / 2
+ozing togirla ketma ket qanday kelyabti shunga mosla / 3 shunday qolsim») and
+are built: 900-999 → the $320/$200 row, bands run consecutively (each starts
+at the previous one's top plus one), the 1000 step stays a step. Recorded as a
+SEED correction and not a dated superseding row, because 0086 has never
+deployed and the seed writes only into an empty table. Decision **#776**.
+
+**Round 110 — the shipped-code audit** (#777-764): phase B was reviewed
+before code and never as shipped, so six adversarial lenses were run over the
+commit. **The headline is NaN through all three layers**: `Number('1 000')` is
+NaN, NaN answers false to every comparison a guard is made of, postgres stores
+`'NaN'::numeric` and answers TRUE to `>= 0` — so the seal's own
+`total_usd >= 0` CHECK put an unreadable price on a LOCKED card. Measured:
+`totalsFor` returned `{ok:true}` with a NaN total. Fixed in the engine
+(`isNumber` → `not_a_number`), the services (`mustBeNumber` → `bad_number`)
+and the migration (`<> 'NaN'::numeric` on every money column — the only
+comparison postgres has that excludes it). Second blocker: a SEALED request
+stopped following a won lead, because `rekeyLeadCalcRequests` filtered
+`openRequests` — the new deal got the number with none of the lock, at exactly
+the moment a quote becomes an invoice; #767 had written that rule down and the
+code shipped without it. Plus: a confirmation now clears when a BAZA changes
+or cargo moves between groups (not only when a rate changes), `pullRates`
+reads the dictionary server-side instead of stamping the browser's numbers
+as the dictionary's word, and the sealed panel no longer prints «$0.00» for a
+line its section does not have. Red proofs ×3. **1810 unit/integration + 166
+e2e** green on a fresh gsr_ci in CI's order.
+
+**Phase C — the offer, the price book and the history** (#780-772). The
+fourth dictionary is keyed on the **TNVED CODE** and not the product name,
+which is the round's whole design: a name does not normalise («Ayollar
+kurtkasi» / «куртка жен.» / «women's jacket» are one thing and three strings)
+while a code is written down and CONFIRMED by a person before anything can be
+sealed against it. `calc_price_book` reads like `fx_rates` — newest row on or
+before the day, **no earliest-row fallback** — and stores the **CLIENT** price,
+because a book filled from `calc_versions` would be a book of floors labelled
+as prices. `calc_offers` records what a seller actually told a customer:
+quoting below the sealed floor is ALLOWED and FLAGGED (`below_floor`), never
+refused — a hard lock while a seller is on the phone is a lock they route
+around by not using the screen, and phase D turns the flag into the upsale.
+The offer text NEVER prints the sealed total, never DECOMPOSES the price
+(`freight_usd` and `freight_list_usd` come from one value, so showing the
+parts hands the customer our list price and lets them subtract the discount)
+and carries **no emoji** — measured in NotoSansSC, every emoji has glyph id 0,
+i.e. a hole in a customer's PDF with no error anywhere; the Telegram text and
+the PDF are ONE shape (`offerLines`) rendered twice. Delivery is reported
+HONESTLY: `notifyStaffTelegram` queues a row whether or not the person has a
+linked chat and the drain settles an unlinked one as `muted`, which
+`notificationProblemCount` excludes — so `recordOffer` asks the drain's own
+predicate first and the screen says «⚠ Telegram ulanmagan». History is
+per-SECTION (a per-cube figure is freight alone on a yolkira quote and
+everything on a podklyuch one) and per-CODE, and refuses a per-product figure
+it cannot make exactly: customs is exact from the group's own stored number,
+**freight is NEVER allocated** (measured — a 30 m³ mix lands in band 451-500
+at $290/m³ while the monitors alone are band 1-100 at $110/m³, 2.64×), and
+`groupPerUnit` refuses unless EVERY item carries the measure. Two query
+shapes are the rules restated: `quoteHistoryFor` uses EXISTS and not a JOIN
+(a join returns the version once per GROUP, so «last five quotes» becomes
+«last five group rows»), and `lastQuotesByCode` is ONE query with
+`row_number() OVER (PARTITION BY code …)` (#74's per-stage cap — a plain LIMIT
+lets a busy code crowd out a quiet one). The monthly review is a
+NOTIFICATION on a DAILY clock with a monthly claim, silent when nothing is
+stale. `/api/calc/[versionId]/offer.pdf` carries an EXPLICIT door because this
+app has no middleware at all (#721-726). Red proofs ×5, **one of which stayed
+GREEN** — the NaN test was measuring the column's CHECK, not the engine, and
+was re-anchored on the error CODE (#787). **1876 unit/integration + 170 e2e**
+green on a fresh gsr_ci in CI's order.
+
+**Found while LOOKING at phase C's own PDF, not by a test** (#788): the PDF
+font cannot write Uzbek Cyrillic. MEASURED — **ў Ў қ Қ ғ Ғ ҳ Ҳ all have glyph
+id 0** in `NotoSansSC-Regular.ttf`, with thirty more inside the 0x400-0x45F
+range `BASE_CHARS` asks for; `.notdef` raises nothing, so the character is a
+blank box on the document. Russian is fine, which is why a year passed: the
+**handover act** has been printing customer and receiver names since it
+shipped, and a name in Uzbek Cyrillic was signed off with holes in it.
+`pdfTextCleaner()` in `cjk-font.ts` transliterates the eight into Latin Uzbek
+(the apostrophe is ASCII, because U+02BC is glyph 0 too) and DROPS anything
+else undrawable — an emoji in a Telegram display name is ordinary, and a gap
+reads as a gap where a box reads as corruption. Both PDF builders use it.
+`tests/unit/pdf-glyphs.test.ts` measures the FONT, so replacing it turns the
+finding's own assertion red.
+
+**Found while DESIGNING phase D** (#789): the same defect as #778, one table
+over. `recordOffer` denormalises the card onto `calc_offers` and
+`rekeyLeadCalcRequests` moved `calc_requests` alone — so on a won lead the
+price stayed locked (#778's fix working) while `offersFor('deal', …)` came
+back EMPTY and what the seller promised the customer vanished from the only
+card that still exists. Measured, not argued: the integration test was
+written first and was red. The fence is DERIVED —
+`tests/unit/calc-rekey.test.ts` reads the schema for every `calc_*` table
+carrying both entity columns and asserts the re-key names each, so a third
+turns it red the day it is added. `crm_activities` carries the same pair and
+is deliberately NOT moved: a lead's lenta is that lead's history.
+
+**Phase C leaked the client price to the VED, and law 4 forbids it** (#790-777).
+Found by phase D's design review, verified against the seeded matrix:
+`DEAL_WRITE_PERMISSIONS` carries **`ved.docs`** on purpose (the VED
+recalculates jobs), so `canWriteDeal` — phase C's gate on the offer PDF, the
+card's offer list, the offer FORM and `/hisoblash/narxlar`'s client-price line
+— answers TRUE for exactly the person law 4 excludes, and upsale is client
+price minus a floor the VED computed themselves. `upsaleScopeFor` keys on
+**`finance.reports`** and NOT round 91's `seesAllMoney`, because that one is
+`finance.manage || clients.manage` and **`ved_manager` holds `finance.manage`**
+(red-proven: swapping them turns the role matrix red on the VED). It is not a
+hierarchy but **two views of one row**, since law 10 pulls the other way: the
+VED reads the cost side and never a client price; the seller reads the prices
+— law 10's own drift control — and never the floor, which means the WHOLE
+derived family goes (`totalUsd`, `perM3Usd`, `perKgUsd`, the group's customs;
+nulling the total alone leaves the floor one multiplication from the volume on
+the same row) and the card LINK with it, because `/bitimlar/[id]` prints the
+seal with no ownership gate. `scope` is a REQUIRED argument — an optional one
+fails OPEN, and making it required turned every caller into a compile error
+that named itself. **The browser then found the defect in the opposite
+direction**: the same old door had also locked out the BUXGALTER, the one
+person law 4 names besides the owner. A permission fix is half-verified until
+somebody who is not an admin opens the screen (#792, round 43's lesson).
+Measured across four roles. The test is BEHAVIOURAL over every seeded role,
+because the exclusion is a property of a matrix he edits with checkboxes.
+STATED, not fixed: `/bitimlar/[id]` has no ownership gate at all — a CRM
+access round, not a line in this module.
+
+**Phase D — the upsale** (#793-787; migration **0088**, ledger must reach
+**89**). Designed and judged by 12 agents over five lenses before code — 27
+findings, absorbed. **The upsale is DERIVED and never stored**: client price
+minus the sealed floor, both parents immutable, so writing the difference
+down could only create a way for it to disagree with itself; what IS stored
+is whether the promise was allowed and whether the money was handed over
+(NULL on `payout_expense_id` being the whole pay-twice fence).
+`payableOffersSql()` is the one home for five rules — one payable per JOB
+(re-offering is the designed workflow, so without a per-request rank every
+re-quote is a second commission on one sale), on the current version, on a
+request nobody superseded, released, and positive — and `payUpsale` embeds
+the SAME fragment in its claim rather than trusting the ticked ids. **Two
+things concede and the freight columns are NOT one of them**: traced, the
+seal writes both from one expression, so testing them for inequality finds a
+concession never on a freight quote and fires on EVERY rastamojka one. The
+below-floor lock goes on the **PROMISE, not the record** — the row is always
+written (that is the owner's visibility) while the text, the PDF, the card's
+price and the payout all wait on `approved_at`; that reconciles law 4 with
+#781. **A released offer writes the CLIENT price onto the card**, which is
+what every revenue surface reads — and that quietly broke the quote lock,
+which the design did not see: `quoteLockedFor` returned the sealed floor
+while the locked ✏️ form re-posts what it renders (#171), so every later save
+on a quoted card would have been refused for ever. Found by reading the lock,
+red-proven both ways. The payout is an `expenses` row in a MANDATORY
+dedicated category (the recurring slot is (category, date, employee,
+warehouse) with no discriminator, so paying out of «Oyliklar» silently
+cancels that seller's salary) with a **server-derived** amount. `/upsale` is
+two shapes from one query; the paired CHECK caught my own two-step claim in a
+test. Red proofs ×5. **1913 unit/integration + 173 e2e** green on a fresh
+gsr_ci in CI's order, ledger 89; screenshots at 360×800 and 1280×900,
+document width equal to the viewport at both.
+
+PROCESS NOTE (#803): the intermediate commit reached CI with two unused-import
+lint errors, because I chained `pnpm lint` and `pnpm vitest` in one block and
+grepped only for the vitest summary — so eslint's failure was in the output I
+asked for and not in the lines I read, and the block's exit code was vitest's.
+That is **#738's trap in a new hat**, and it survived being written down
+because the second time it wore a different pipe. Run gates with `&&`, and
+grep each gate's OWN failure marker.
+
+**Phase E is open**: calc-vs-actual (which reads the whole `breakdown`
+snapshot).
+
 ## State — 2026-08-22
 
 **VED phase A is on this branch** (`docs/VED.md`, migration **0085** — the
@@ -616,10 +921,14 @@ every control inside it, document 360) and end-to-end as a SELLER: sees both
 kinds, opens on a text box, «Batafsil» correctly absent, warning names GS323,
 second press mints GS324, both clients and both deals owned by their minter.
 
-Latest migration: **0085** (`calc_queue` — the VED queue's columns and
-`calc_request_items`, 0052's one-open-per-card index DROPPED; count must
-reach **86**);
-0084 (`speed_round` — two partial `notifications`
+Latest migration on this branch: **0089** (`calc_actuals` — the calc↔prixod
+join, the confirm record and the seal's three counters, VED phase E1; ledger
+must reach **90**);
+0088 (`calc_upsale` — the approval and the payout on `calc_offers`, phase D);
+0087 (`calc_price_book` — the fourth dictionary and the offer ledger);
+0086 (`calc_pricing` — the workspace, three dictionaries and the seal);
+0085 (`calc_requests` — the VED queue). Before them:
+**0084** (`speed_round` — two partial `notifications`
 indexes + `tg_messages.edited_at`; count must reach **85**);
 0083 (`expense_requests` — the rasxod xabari queue;
 count must reach **84**;

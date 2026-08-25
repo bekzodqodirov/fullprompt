@@ -79,6 +79,7 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ['stale-automation', async (b) => (await import('../automation/stale-jobs')).registerStaleAutomationWorker(b)],
   ['client-notices', async (b) => (await import('../../wms/notices/arrival-jobs')).registerClientNoticeWorker(b)],
   ['calc-overdue', async (b) => (await import('../../wms/calc/jobs')).registerCalcWorker(b)],
+  ['calc-review', async (b) => (await import('../../wms/calc/jobs')).registerCalcReviewWorker(b)],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */

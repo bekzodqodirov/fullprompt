@@ -40,7 +40,7 @@ import { batches, boxes, boxMovements } from '../../platform/db/schema';
  * The causes that mean "a truck brought this box here". `found_here` belongs
  * with them — the box did ride that truck, it was simply never scanned off it.
  */
-const ARRIVED_ON_A_TRUCK = ['unload_scan', 'undocumented_transfer', 'found_here'];
+export const ARRIVED_ON_A_TRUCK = ['unload_scan', 'undocumented_transfer', 'found_here'];
 
 /** One (lot, truck) pair: how many boxes it brought and when the first landed. */
 export interface ArrivalRow {

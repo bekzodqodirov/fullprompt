@@ -61,6 +61,11 @@ export const MUTE_GROUPS = {
     // staleness threshold (round 55). Raised by the SERVER, deliberately:
     // every alarm the phone itself could raise dies with the app.
     'TruckSilent',
+    // A seller has quoted BELOW the sealed floor and the promise is waiting
+    // on somebody who may allow it (VED phase D, law 4). An alarm and not
+    // news: nothing has been said to the customer yet, and until this is
+    // answered the seller is standing in front of one.
+    'CalcBelowFloor',
   ],
   operations: [
     'ReceiptConfirmed',
@@ -87,6 +92,14 @@ export const MUTE_GROUPS = {
     // Phase 7: a rule somebody wrote pinged you — mutable like any other
     // routine workflow message; the rule's author is not above your mutes.
     'AutomationRule',
+    // Once a month: the VED dictionaries hold rows nobody has revisited (VED
+    // phase C). Housekeeping and not an alarm — nothing is wrong today, a
+    // stale baza simply prices tomorrow's cargo on last winter's numbers.
+    'CalcDictReview',
+    // A seller turned a sealed price into a client offer — sent to that
+    // seller alone as the text they forward, so it is news about their own
+    // press and never an alert.
+    'CalcOffer',
   ],
 } as const;
 

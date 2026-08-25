@@ -22,6 +22,7 @@ export function LeadForm({
   stages,
   owners,
   initial,
+  quoteLocked,
   children,
 }: {
   action: (state: CrmFormState, formData: FormData) => Promise<CrmFormState>;
@@ -48,6 +49,16 @@ export function LeadForm({
     nextActionAt: string;
     nextActionNote: string;
   };
+  /**
+   * A sealed VED price stands on this card, so the quote is not this form's
+   * to change (docs/VED.md law 2).
+   *
+   * Read-only rather than absent, and the values are RE-POSTED as hidden
+   * inputs: this is a replace-all form, so a field that renders and posts
+   * nothing reads as «clear it» (#171, fifth appearance). The service refuses
+   * a changed quote anyway — the two agree, which is the point.
+   */
+  quoteLocked?: boolean;
   children?: React.ReactNode;
 }) {
   const t = useTranslations('crm');
@@ -67,7 +78,7 @@ export function LeadForm({
       />
       <div className="flex flex-wrap gap-2">
         <input
-        name="phone"
+          name="phone"
           type="tel"
           defaultValue={initial?.phone}
           placeholder={t('phone')}
@@ -75,7 +86,7 @@ export function LeadForm({
           className="input min-w-40 flex-1"
         />
         <input
-        name="company"
+          name="company"
           defaultValue={initial?.company}
           placeholder={t('company')}
           aria-label={t('company')}
@@ -130,57 +141,71 @@ export function LeadForm({
           that rides with the lead into won/lost and, on «Bitim ochish», into
           the deal's quote. Sizes ride with it; all three are what the AI
           intake extracts, so the seller mostly confirms rather than types. */}
-      <div className="flex flex-wrap gap-2">
-        <label className="min-w-28 flex-1 text-sm">
-          <span className="block text-xs text-ink-500">{t('quotedAmount')}</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            name="quotedAmount"
-            defaultValue={initial?.quotedAmount}
-            data-testid="lead-quote-amount"
-            aria-label={t('quotedAmount')}
-            className="input"
-          />
-        </label>
-        <label className="text-sm">
-          <span className="block text-xs text-ink-500">{t('quotedCurrency')}</span>
-          <select
-            name="quotedCurrency"
-            defaultValue={initial?.quotedCurrency || 'USD'}
-            aria-label={t('quotedCurrency')}
-            className="input !w-24"
-          >
-            {['USD', 'UZS', 'CNY'].map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="min-w-24 flex-1 text-sm">
-          <span className="block text-xs text-ink-500">{t('quotedVolume')}</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            name="quotedVolumeM3"
-            defaultValue={initial?.quotedVolumeM3}
-            aria-label={t('quotedVolume')}
-            className="input"
-          />
-        </label>
-        <label className="min-w-24 flex-1 text-sm">
-          <span className="block text-xs text-ink-500">{t('quotedWeight')}</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            name="quotedWeightKg"
-            defaultValue={initial?.quotedWeightKg}
-            aria-label={t('quotedWeight')}
-            className="input"
-          />
-        </label>
-      </div>
+      {quoteLocked ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="lead-quote-locked">
+          <span className="text-xs text-ink-500">{t('quotedAmount')}</span>
+          <span className="font-mono tabular-nums font-semibold">
+            {initial?.quotedAmount} {initial?.quotedCurrency || 'USD'}
+          </span>
+          <span className="chip chip-neutral">🔒</span>
+          <input type="hidden" name="quotedAmount" value={initial?.quotedAmount ?? ''} />
+          <input type="hidden" name="quotedCurrency" value={initial?.quotedCurrency || 'USD'} />
+          <input type="hidden" name="quotedVolumeM3" value={initial?.quotedVolumeM3 ?? ''} />
+          <input type="hidden" name="quotedWeightKg" value={initial?.quotedWeightKg ?? ''} />
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <label className="min-w-28 flex-1 text-sm">
+            <span className="block text-xs text-ink-500">{t('quotedAmount')}</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              name="quotedAmount"
+              defaultValue={initial?.quotedAmount}
+              data-testid="lead-quote-amount"
+              aria-label={t('quotedAmount')}
+              className="input"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="block text-xs text-ink-500">{t('quotedCurrency')}</span>
+            <select
+              name="quotedCurrency"
+              defaultValue={initial?.quotedCurrency || 'USD'}
+              aria-label={t('quotedCurrency')}
+              className="input !w-24"
+            >
+              {['USD', 'UZS', 'CNY'].map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="min-w-24 flex-1 text-sm">
+            <span className="block text-xs text-ink-500">{t('quotedVolume')}</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              name="quotedVolumeM3"
+              defaultValue={initial?.quotedVolumeM3}
+              aria-label={t('quotedVolume')}
+              className="input"
+            />
+          </label>
+          <label className="min-w-24 flex-1 text-sm">
+            <span className="block text-xs text-ink-500">{t('quotedWeight')}</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              name="quotedWeightKg"
+              defaultValue={initial?.quotedWeightKg}
+              aria-label={t('quotedWeight')}
+              className="input"
+            />
+          </label>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <label className="text-sm">
@@ -203,7 +228,12 @@ export function LeadForm({
 
       {children}
 
-      <button type="submit" data-testid="save-lead" className="btn-primary w-full" disabled={pending}>
+      <button
+        type="submit"
+        data-testid="save-lead"
+        className="btn-primary w-full"
+        disabled={pending}
+      >
         {pending ? tc('loading') : tc('save')}
       </button>
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
