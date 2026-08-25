@@ -66,6 +66,16 @@ export const MUTE_GROUPS = {
     // news: nothing has been said to the customer yet, and until this is
     // answered the seller is standing in front of one.
     'CalcBelowFloor',
+    // The three warehouse corrections (owner's five reports, 2026-08-25).
+    // Alarms, not news: each one means the record and the floor disagreed —
+    // a box recorded on a truck was found standing in a warehouse (told to
+    // the truck's planners), a carton was written off with a reason (told to
+    // the client's seller, whose compensation conversation it starts), and a
+    // manager corrected a receipt's measures over its author's head (told to
+    // the author, the arrival-diff rule).
+    'BoxFoundHere',
+    'BoxLost',
+    'ReceiptMeasureCorrected',
   ],
   operations: [
     'ReceiptConfirmed',

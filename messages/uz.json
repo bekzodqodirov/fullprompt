@@ -156,7 +156,26 @@
     "doneTitle": "{wh} inventarizatsiyasi yakunlandi",
     "doneScanned": "Skan qilindi: {n}",
     "skipped": "O‘tkazilmadi (holati mos emas)",
-    "telegramSent": "Natija rahbariyatga Telegram orqali yuborildi"
+    "telegramSent": "Natija rahbariyatga Telegram orqali yuborildi",
+    "acceptHint": "Shu yerda turgan, sistemada esa boshqa joyda yozilgan karobkani skan qiling.",
+    "acceptConfirmHint": "Bu karobkani shu skladga qabul qilasizmi? Yozuv tuzatiladi.",
+    "acceptBtn": "Skladga qabul qilish",
+    "acceptDone": "Qabul qilindi",
+    "acceptFromTruck": "{code} reysida deb yozilgan edi — reysdan tushirildi.",
+    "acceptFromWh": "{code} skladida deb yozilgan edi.",
+    "modeAccept": "Bitta karobkani qabul qilish",
+    "modeAcceptHint": "Karobka shu yerda turibdi, sistemada esa reysda yoki boshqa skladda",
+    "modeFull": "To'liq inventarizatsiya",
+    "modeFullHint": "Butun skladni qayta skan qilib sistema bilan solishtirish",
+    "acceptErrors": {
+      "unknown_code": "Kod topilmadi.",
+      "already_here": "Bu karobka shundoq ham shu skladda yozilgan.",
+      "still_loading": "Mashina hali yuklanmoqda — yuklash ekranida tushiring.",
+      "box_issued": "Karobka allaqachon mijozga berilgan — qabul qilib bo'lmaydi.",
+      "box_void": "Karobka bekor qilingan — boshliqqa murojaat qiling.",
+      "box_lost": "Karobka yo'qolgan deb belgilangan — boshliqqa murojaat qiling.",
+      "forbidden": "Ruxsat yo'q."
+    }
   },
   "reports": {
     "title": "Hisobotlar",
@@ -546,7 +565,18 @@
     "printDialog": "Chop etish",
     "shareToPrinter": "Printerga yuborish",
     "voidHasCosts": "Avval bu prixodning xarajatlarini bekor qiling — pul yozuvi omborda emas, moliyada hal qilinadi.",
-    "voidBoxGone": "Bekor qilib bo'lmaydi: kamida bitta quti skladdan chiqib ketgan."
+    "voidBoxGone": "Bekor qilib bo'lmaydi: kamida bitta quti skladdan chiqib ketgan.",
+    "markLostTitle": "Karobkani hisobdan chiqarish (yaroqsiz/yo'qolgan)",
+    "markLostBox": "Karobkani tanlang",
+    "markLostReason": "Sabab (majburiy)",
+    "markLostBtn": "Hisobdan chiqarish",
+    "markLostDone": "{code} hisobdan chiqarildi. Mijoz puliga tegilmadi — chegirma bitimda hal qilinadi.",
+    "markLostErrors": {
+      "box_not_here": "Karobka skladda emas (reysda yoki berilgan) — hisobdan chiqarib bo'lmaydi.",
+      "reason_required": "Sababni yozing.",
+      "forbidden": "Ruxsat yo'q.",
+      "box_not_found": "Karobka topilmadi."
+    }
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -830,7 +860,18 @@
     "pickFromStock": "Skladdan tanlab yuklash / qo‘lda kiritish",
     "foreignCode": "Bu bizning kod emas (begona QR). GSR stikerini skanerlang.",
     "serverRefused": "Server {n} ta skanni qabul qilmadi — ular yozilmadi. Qo‘lda kiriting.",
-    "notYourTruck": "Bu mashina sizning skladingiz uchun emas yoki sessiya tugagan — qayta kiring."
+    "notYourTruck": "Bu mashina sizning skladingiz uchun emas yoki sessiya tugagan — qayta kiring.",
+    "removeBtn": "Mashinadan tushirish",
+    "removeHint": "Skan qilingan karobka skladga qaytadi va plandan chiqadi. Karobka yoki yashik (CR-…) kodini kiriting yoki ro'yxatdan tanlang.",
+    "removeConfirmBtn": "Tushirish",
+    "removedToast": "Tushirildi: {codes}",
+    "removeOffline": "Internet kerak — mashinadan tushirish oflayn ishlamaydi.",
+    "removeErrors": {
+      "batch_not_loading": "Mashina allaqachon jo'nagan — tushirib bo'lmaydi.",
+      "unknown_code": "Kod topilmadi.",
+      "not_loaded_here": "Bu karobka bu mashinada yozilmagan.",
+      "forbidden": "Ruxsat yo'q."
+    }
   },
   "unloading": {
     "title": "Razgruzka",

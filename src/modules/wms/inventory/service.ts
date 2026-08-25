@@ -14,6 +14,8 @@ import {
 import { warehouseScope, warehouseScopeEither } from '../../platform/rbac/scope';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { usersWithPermission } from '../../platform/notifications/service';
 import { batchMemberFilter } from '../scanning/unload';
 
 export class InventoryError extends Error {
@@ -120,6 +122,13 @@ export async function reconcileInventory(
     where: eq(warehouses.id, input.warehouseId),
   });
   if (!warehouse) throw new InventoryError('warehouse_not_found');
+  // `resolveMissing`'s rule, which this path shipped without: cargo landing
+  // at a customs/distribution warehouse must land `ready_for_pickup`, or it
+  // sits in `in_stock` at a warehouse that issues to clients and never shows
+  // up as ready for one.
+  const landedStatus = ['customs', 'distribution'].includes(warehouse.type)
+    ? 'ready_for_pickup'
+    : 'in_stock';
 
   return db.transaction(async (tx) => {
     const movedCodes: string[] = [];
@@ -143,7 +152,7 @@ export async function reconcileInventory(
         await tx
           .update(boxes)
           .set({
-            status: 'in_stock',
+            status: landedStatus,
             currentWarehouseId: input.warehouseId,
             currentBatchId: null,
           })
@@ -153,7 +162,7 @@ export async function reconcileInventory(
           fromWarehouseId: box.currentWarehouseId,
           toWarehouseId: input.warehouseId,
           fromStatus: box.status,
-          toStatus: 'in_stock',
+          toStatus: landedStatus,
           cause: 'inventory_found',
           refType: 'manual',
           actorId,
@@ -216,6 +225,142 @@ export async function reconcileInventory(
     });
     return summary;
   });
+}
+
+export interface FoundBoxSummary {
+  shortCode: string;
+  clientCode: string | null;
+  marking: string | null;
+  letter: string | null;
+  product: string;
+  /** Where the record said it was — a warehouse code or a truck code. */
+  fromWhCode: string | null;
+  fromBatchCode: string | null;
+  landedStatus: string;
+}
+
+/**
+ * Accept ONE box found standing in this warehouse while the record says it is
+ * somewhere else (owner, 2026-08-25: «yukni yukladim deb skan qilib qo'ydim
+ * lekin … usha korbkani tushirib qoldirdi … skan qilib skladga qabul qilib
+ * olsam»). The full stocktake's found-here rule for a single code, without
+ * counting the building: reality wins, the correcting movement says so, and
+ * the truck's planner is told their manifest shrank.
+ *
+ * What it deliberately does NOT touch: a box still `loading` (that truck is
+ * being loaded RIGHT NOW — the loading screen's own «tushirish» is the door,
+ * pre-departure state must have one writer), an `issued` box (the client
+ * signed for it — un-issuing is a handover decision, not a scan), and the
+ * terminal `void`/`lost` (a recorded loss is not erased by a scan; reviving a
+ * lost box is a manager's decision with the loss's own history in front of
+ * them — stated cut).
+ */
+export async function acceptFoundBox(
+  input: { warehouseId: string; code: string },
+  ctx: AuditContext,
+): Promise<FoundBoxSummary> {
+  if (!ctx.actorId) throw new InventoryError('unauthenticated');
+  const actorId = ctx.actorId;
+  const warehouse = await db.query.warehouses.findFirst({
+    where: eq(warehouses.id, input.warehouseId),
+  });
+  if (!warehouse) throw new InventoryError('warehouse_not_found');
+  const landedStatus = ['customs', 'distribution'].includes(warehouse.type)
+    ? 'ready_for_pickup'
+    : 'in_stock';
+
+  const summary = await db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(boxes)
+      .where(sql`upper(${boxes.shortCode}) = ${input.code.trim().toUpperCase()}`)
+      .for('update');
+    const box = rows[0];
+    if (!box) throw new InventoryError('unknown_code');
+    if (['void', 'lost', 'issued'].includes(box.status)) {
+      throw new InventoryError(`box_${box.status}`);
+    }
+    if (box.status === 'loading') throw new InventoryError('still_loading');
+    if (box.currentWarehouseId === input.warehouseId) throw new InventoryError('already_here');
+
+    const [label] = await tx
+      .select({
+        letter: receiptLots.letter,
+        product: receiptLots.productNameZh,
+        clientCode: clients.clientCode,
+        marking: receipts.unclaimedMarking,
+      })
+      .from(receiptLots)
+      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+      .leftJoin(clients, eq(receipts.clientId, clients.id))
+      .where(eq(receiptLots.id, box.lotId));
+    const fromWh = box.currentWarehouseId
+      ? await tx.query.warehouses.findFirst({ where: eq(warehouses.id, box.currentWarehouseId) })
+      : null;
+    const fromBatch = box.currentBatchId
+      ? await tx.query.batches.findFirst({ where: eq(batches.id, box.currentBatchId) })
+      : null;
+
+    await tx
+      .update(boxes)
+      .set({
+        status: landedStatus,
+        currentWarehouseId: input.warehouseId,
+        currentBatchId: null,
+        flags: [],
+      })
+      .where(eq(boxes.id, box.id));
+    await tx.insert(boxMovements).values({
+      boxId: box.id,
+      fromWarehouseId: box.currentWarehouseId,
+      toWarehouseId: input.warehouseId,
+      fromStatus: box.status,
+      toStatus: landedStatus,
+      // The stocktake's own cause, so every report treats a single found box
+      // and a counted one identically.
+      cause: 'inventory_found',
+      refType: 'manual',
+      actorId,
+    });
+    await writeAudit(tx, { ...ctx, warehouseId: input.warehouseId }, {
+      entityType: 'box',
+      entityId: box.id,
+      action: 'status_change',
+      after: {
+        foundHere: true,
+        shortCode: box.shortCode,
+        from: fromBatch?.code ?? fromWh?.code ?? null,
+      },
+    });
+    return {
+      shortCode: box.shortCode,
+      clientCode: label?.clientCode ?? null,
+      marking: label?.marking ?? null,
+      letter: label?.letter ?? null,
+      product: label?.product ?? '',
+      fromWhCode: fromWh?.code ?? null,
+      fromBatchCode: fromBatch?.code ?? null,
+      landedStatus,
+    } satisfies FoundBoxSummary;
+  });
+
+  // A box pulled OFF an in-transit truck changes what the destination will
+  // receive — the people who plan the trucks hear it, after the transaction
+  // (a Telegram row must never be able to roll a stock fix back).
+  if (summary.fromBatchCode) {
+    const userIds = await usersWithPermission('plans.manage');
+    if (userIds.length > 0) {
+      await notifyStaffTelegram({
+        userIds,
+        type: 'BoxFoundHere',
+        exceptUserId: actorId,
+        text:
+          `↩️ ${summary.shortCode} (${summary.clientCode ?? summary.marking ?? '?'}) ` +
+          `${summary.fromBatchCode} reysida deb yozilgan edi — ${warehouse.code} skladida topilib, qabul qilindi.`,
+      }).catch(() => {});
+    }
+  }
+  return summary;
 }
 
 /**

@@ -108,8 +108,8 @@ export async function editLot(
     .where(eq(boxes.lotId, lot.id))
     .orderBy(asc(boxes.seqInLot));
   const activeBoxes = lotBoxes.filter((b) => b.status !== 'void');
-  const structuralChange =
-    input.boxCount !== activeBoxes.length ||
+  const countChange = input.boxCount !== activeBoxes.length;
+  const measureChange =
     (lot.dimsMode === 'uniform' &&
       (input.boxLengthCm !== lot.boxLengthCm ||
         input.boxWidthCm !== lot.boxWidthCm ||
@@ -118,7 +118,26 @@ export async function editLot(
     (lot.dimsMode === 'mixed' &&
       (Number(input.totalWeightKg) !== Number(lot.totalWeightKg) ||
         Number(input.totalVolumeM3) !== Number(lot.totalVolumeM3)));
-  if (structuralChange && activeBoxes.some((b) => b.status !== 'in_stock')) {
+  const boxesLeft = activeBoxes.some((b) => b.status !== 'in_stock');
+  /**
+   * The structural lock, split in two (owner, 2026-08-25: «skladchi … kubi
+   * bn kgmini hato kirgazgan shunday payit tuzatb bolmayabti», his 5b).
+   *
+   * The box COUNT stays locked for everybody once any box has left the
+   * shelf: a carton count is what the truck, the labels and the scans agree
+   * on, and changing it mid-journey would mint or void boxes that are
+   * physically somewhere.
+   *
+   * The MEASURES (kg, m³, dims) unlock for `receipts.void` holders — the
+   * same manager level that can void the receipt outright. A wrong weight
+   * frozen for ever feeds the tannarx allocation, the truck's capacity
+   * numbers and the client's bill with a number everybody knows is false,
+   * which is worse than letting a manager correct it on the record: the
+   * audit diff below names the change, the costs re-allocate immediately,
+   * and the receipt's author is told.
+   */
+  if (countChange && boxesLeft) throw new EditError('structural_locked');
+  if (measureChange && boxesLeft && !actor.permissions.has('receipts.void')) {
     throw new EditError('structural_locked');
   }
 
@@ -255,12 +274,33 @@ export async function editLot(
     // boxes NOW, not at the next FX sweep — the batch pricing screen reads
     // them through membership a shelf-voided box can never have, so until a
     // resweep the client's landed cost quietly understated by exactly the
-    // phantom boxes' share. A grow redistributes the same way. Outside the
-    // transaction on purpose: the engine re-reads the boxes it allocates
-    // over, and money must not be able to roll back a warehouse's count fix.
-    if (result.labelsToPrint > 0 || result.labelsToDestroy.length > 0) {
+    // phantom boxes' share. A grow redistributes the same way — and so does a
+    // measure correction, because weight- and volume-based allocations read
+    // the very numbers that just changed. Outside the transaction on purpose:
+    // the engine re-reads the boxes it allocates over, and money must not be
+    // able to roll back a warehouse's count fix.
+    const totalsChanged =
+      totals.totalWeightKg !== Number(lot.totalWeightKg) ||
+      totals.totalVolumeM3 !== Number(lot.totalVolumeM3);
+    if (result.labelsToPrint > 0 || result.labelsToDestroy.length > 0 || totalsChanged) {
       const { recomputeAll } = await import('../costing/service');
       await recomputeAll({ receiptId: lot.receiptId });
+    }
+    // A correction made over the author's head is told to the author — the
+    // arrival-diff rule: the person whose record changed hears it first,
+    // never the client.
+    if (measureChange && boxesLeft && receipt.createdBy && receipt.createdBy !== actor.id) {
+      const { notifyStaffTelegram } = await import('../../platform/notifications/staff');
+      await notifyStaffTelegram({
+        userIds: [receipt.createdBy],
+        type: 'ReceiptMeasureCorrected',
+        exceptUserId: actor.id,
+        text:
+          `✏️ Prixod ${receipt.number ?? ''} (${lot.letter ?? ''} — ${lot.productNameZh}) o'lchovi tuzatildi:\n` +
+          `${Number(lot.totalWeightKg)} kg → ${totals.totalWeightKg} kg · ` +
+          `${Number(lot.totalVolumeM3)} m³ → ${totals.totalVolumeM3} m³\n` +
+          `Tuzatdi: ${actor.fullName}`,
+      }).catch(() => {});
     }
     return result;
   });

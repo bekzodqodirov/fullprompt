@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## Sklad korrektsiyalari: tushirish, inventarizatsiya, yaroqsiz, o'lchov — 2026-08-25
+
+Sizning besh xabaringiz bo'yicha (1 «zo'r idea» / 2 «ha qaytar, shunday
+feature» / 3 «ha to'g'ri» / 5 «ma'qul, 5b»).
+
+**1. Yuklashdan qaytarib tushirish.** Yuklash ekranida yangi «↩ Mashinadan
+tushirish» tugmasi: yuklangan karobkani (yoki butun yashikni) ro'yxatdan
+tanlaysiz yoki kodini kiritasiz, ikkinchi bosishda tasdiqlaysiz — karobka
+skladga qaytadi va plandan chiqadi (sizning B javobingiz). Keyin yana
+yuklamoqchi bo'lsangiz — oddiy skan, plan qamrab olmasa izoh so'raydi.
+Mashina jo'nagandan keyin ishlamaydi — u holat yetib kelgan skladda hal
+qilinadi. Internet talab qiladi (bu skanlash emas, logist bilan qaror).
+
+**2. «Skladda topdim» — bitta skan bilan qabul qilish.** Inventarizatsiya
+menyuga qaytdi (skladchi menyusida), ichida endi ikki eshik: «Bitta
+karobkani qabul qilish» va «To'liq inventarizatsiya». Bittasi — kundalik ish:
+sistemada reysda yoki boshqa skladda deb yozilgan karobkani shu yerda skan
+qilasiz, sistema qayerda deb yozilganini ko'rsatadi, tasdiqlaysiz — haqiqat
+g'olib, tarixga yoziladi, reys planlagichlariga xabar ketadi. Xavf yo'q:
+hali yuklanayotgan mashinaning karobkasi (1-tugmaning ishi), mijozga
+berilgan va bekor/yo'qolgan karobkalar rad etiladi; pulga tegilmaydi
+(tannarx harakat tarixidan o'qiladi). Yo'l-yo'lakay eski nuqson tuzatildi:
+to'liq inventarizatsiyada topilgan karobka bojxona/tarqatish skladida
+«tayyor» ro'yxatiga tushmay qolar edi — endi tushadi.
+
+**3. Karobkani hisobdan chiqarish (yaroqsiz/yo'qolgan).** Prixod kartasida
+har bir partiya ostida «⚠ Karobkani hisobdan chiqarish» — boshliq (prixodni
+bekor qilish huquqi borlar) karobkani tanlab, sababini yozadi. Karobka
+«yo'qolgan» bo'ladi, tarixga yoziladi, mijozning sotuvchisiga Telegram
+xabar ketadi. Mijoz puliga avtomatik tegilmaydi — chegirmani bitimdagi
+chegirma formasi orqali o'zingiz hal qilasiz (sizning javobingiz).
+
+**4. O'lchov korrektsiyasi (5b).** Yuk yuklanib ketgandan keyin ham boshliq
+prixodning kg/kubini tuzata oladi — karobka SONI esa qulflangan qoladi
+(karobka soni mashina, yorliq va skan kelishgan fakt). Tuzatilganda tannarx
+taqsimoti darhol qayta hisoblanadi, tarixga yoziladi va prixodni kiritgan
+skladchiga xabar boradi. Oddiy skladchi uchun eski qoida turadi.
+
+Test: 2097 unit/integration yashil, yangi 18 test, 4 ta qizil isbot.
+
 ## Suhbatdan hisoblatish va sotuvchilar hisoboti — 2026-08-25
 
 Sizning uch javobingiz bo'yicha.

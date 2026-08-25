@@ -311,6 +311,93 @@ async function lettersFor(
 }
 
 /**
+ * Take a scanned box (or crate) back OFF a truck that has not departed
+ * (owner, 2026-08-25: «yukni yuklab bo'lib qaytarib tushirishga to'g'ri
+ * kelganda … tushishni imkoni yo'q sistemada»). His answer B: the box leaves
+ * the batch AND the plan entirely and goes back to the shelf — re-loading it
+ * is a fresh scan, with the not-on-plan ceremony if the plan no longer
+ * covers it.
+ *
+ * ONLINE-only, unlike the load scan, and deliberately so: a removal is a
+ * decision made WITH the logist, not a rhythm kept at three boxes a second,
+ * and an offline reversal queue would have to reconcile against the load
+ * queue's unsent scans — two outboxes disagreeing about one box.
+ *
+ * A single box that leaves a crate whose OTHER members stay aboard loses its
+ * `crateId`: the carton was physically taken out (a whole crate coming off
+ * is scanned as the crate). A crate-code removal keeps every member's
+ * membership — the yashik goes back to the shelf intact.
+ */
+export async function removeLoadedCode(batchId: string, code: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new ScanError('unauthenticated');
+  const actorId = ctx.actorId;
+  return db.transaction(async (tx) => {
+    const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
+    if (!batch) throw new ScanError('batch_not_found');
+    // Once the truck has departed this is `resolveMissing`'s job at the other
+    // end, not a loading correction.
+    if (!['forming', 'loading'].includes(batch.status)) throw new ScanError('batch_not_loading');
+
+    const isCrate = /^CR-/i.test(code);
+    let members: (typeof boxes.$inferSelect)[];
+    if (isCrate) {
+      const crate = await tx.query.crates.findFirst({
+        where: sql`upper(code) = ${code.toUpperCase()}`,
+      });
+      if (!crate) throw new ScanError('unknown_code');
+      members = await tx.select().from(boxes).where(eq(boxes.crateId, crate.id)).for('update');
+    } else {
+      members = await tx
+        .select()
+        .from(boxes)
+        .where(sql`upper(${boxes.shortCode}) = ${code.toUpperCase()}`)
+        .for('update');
+      if (members.length === 0) throw new ScanError('unknown_code');
+    }
+
+    // Only what THIS truck's scan put aboard comes off — a planned-but-
+    // unscanned box is not on the truck, and somebody else's cargo is not
+    // this screen's to move.
+    const aboard = members.filter((b) => b.status === 'loading' && b.currentBatchId === batchId);
+    if (aboard.length === 0) throw new ScanError('not_loaded_here');
+
+    for (const box of aboard) {
+      await tx
+        .update(boxes)
+        .set({
+          status: 'in_stock',
+          currentBatchId: null,
+          // An on-spot flag picked up on this load must not ride into the
+          // box's next life on the shelf (the batch-cancel rule).
+          flags: [],
+          ...(!isCrate && box.crateId ? { crateId: null } : {}),
+        })
+        .where(eq(boxes.id, box.id));
+    }
+    await tx.insert(boxMovements).values(
+      aboard.map((box) => ({
+        boxId: box.id,
+        fromWarehouseId: box.currentWarehouseId,
+        toWarehouseId: box.currentWarehouseId,
+        fromStatus: 'loading',
+        toStatus: 'in_stock',
+        cause: 'load_removed',
+        refType: 'batch',
+        refId: batchId,
+        actorId,
+      })),
+    );
+    await writeAudit(tx, { ...ctx, warehouseId: batch.originWarehouseId }, {
+      entityType: 'batch',
+      entityId: batchId,
+      action: 'update',
+      after: { loadRemoved: aboard.map((b) => b.shortCode), code },
+    });
+    return { removed: aboard.map((b) => b.shortCode) };
+  });
+}
+
+/**
  * Finish loading (W4): planned-but-unscanned boxes revert to stock
  * (short_loaded, edge case 5) and the deviation summary is returned.
  */

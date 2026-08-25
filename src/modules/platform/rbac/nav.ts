@@ -164,11 +164,18 @@ export const NAV: NavGroupSpec[] = [
         icon: 'crate',
         permissions: ['crates.manage'],
       },
-      // Stocktake is hidden until the RFID readers arrive (owner): counting a
-      // warehouse by hand-scanning every box is not a job anyone will do, so
-      // offering it only teaches people to ignore a menu entry. The screens
-      // and the service stay — /inventory still answers, and the entry comes
-      // back the day the hardware does.
+      {
+        // Back on the menu (owner, 2026-08-25: «ha qaytar») — it had been
+        // hidden waiting for RFID readers, and then the screen grew the job
+        // that IS done by hand: accepting ONE box found standing here while
+        // the record says a truck or another warehouse. The full stocktake
+        // rides behind the same door for whoever wants it.
+        href: '/inventory',
+        labelKey: 'title',
+        namespace: 'inventory',
+        icon: 'clipboard',
+        permissions: ['scan.load'],
+      },
     ],
   },
   {
@@ -466,12 +473,15 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
  */
 export const MENU_BY_ROLE: Record<string, string[]> = {
   // Receive, load, unload, hand over. Nothing else is their job.
+  // /inventory came back in the corrections round (owner, 2026-08-25: «ha
+  // qaytar») — accepting one found box is a scanner's everyday job, and the
+  // full stocktake rides behind the same door.
   warehouse_operator: [
-    '/', '/receive', '/batches', '/issue', '/crates', '/stock', '/receipts',
+    '/', '/receive', '/batches', '/issue', '/crates', '/stock', '/receipts', '/inventory',
   ],
   // The same, plus the two screens a manager answers questions from.
   warehouse_manager: [
-    '/', '/receive', '/batches', '/issue', '/crates', '/stock', '/receipts',
+    '/', '/receive', '/batches', '/issue', '/crates', '/stock', '/receipts', '/inventory',
     '/unclaimed', '/dashboard', '/reports',
   ],
   // Plans and trucks. A logist does not receive cargo, but does chase it —
