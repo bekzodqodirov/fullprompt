@@ -106,8 +106,17 @@ test('group, rate, baza, confirm — then seal', async ({ page }) => {
   await page.getByTestId('calc-vat').fill('12');
   await page.getByTestId('calc-save-rates').click();
 
+  // Anchor on the REFRESHED row before touching it again: the ⚠ was already
+  // on screen before the save, so it cannot tell the old tree from the new
+  // one — the code cell can, it was «—» until the save's own refresh landed.
+  // Clicking the fold during the RSC swap lands on a detached node and the
+  // fold never opens (#278's race in App Router clothes; CI's slower runner
+  // hit it twice in a row on run 392).
+  await expect(page.getByTestId('calc-group-row')).toContainText('8528520000', {
+    timeout: 15_000,
+  });
   // Still refused — now for the baza, which is per ITEM.
-  await expect(page.getByTestId('calc-group-customs')).toContainText('⚠', { timeout: 15_000 });
+  await expect(page.getByTestId('calc-group-customs')).toContainText('⚠');
   await page.getByTestId('calc-group-edit').click();
   await page.getByTestId('calc-baza').first().fill('20');
   await page.getByTestId('calc-save-baza').first().click();
