@@ -17,6 +17,8 @@ import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { batchMemberFilter } from '../scanning/unload';
+import { landedStatusFor } from '../warehouses/landed';
+import { claimArrivalNotice } from '../notices/arrival';
 
 export class InventoryError extends Error {
   constructor(public readonly code: string) {
@@ -126,9 +128,7 @@ export async function reconcileInventory(
   // at a customs/distribution warehouse must land `ready_for_pickup`, or it
   // sits in `in_stock` at a warehouse that issues to clients and never shows
   // up as ready for one.
-  const landedStatus = ['customs', 'distribution'].includes(warehouse.type)
-    ? 'ready_for_pickup'
-    : 'in_stock';
+  const landedStatus = landedStatusFor(warehouse.type);
 
   return db.transaction(async (tx) => {
     const movedCodes: string[] = [];
@@ -265,9 +265,7 @@ export async function acceptFoundBox(
     where: eq(warehouses.id, input.warehouseId),
   });
   if (!warehouse) throw new InventoryError('warehouse_not_found');
-  const landedStatus = ['customs', 'distribution'].includes(warehouse.type)
-    ? 'ready_for_pickup'
-    : 'in_stock';
+  const landedStatus = landedStatusFor(warehouse.type);
 
   const summary = await db.transaction(async (tx) => {
     const rows = await tx
@@ -282,6 +280,27 @@ export async function acceptFoundBox(
     }
     if (box.status === 'loading') throw new InventoryError('still_loading');
     if (box.currentWarehouseId === input.warehouseId) throw new InventoryError('already_here');
+    /*
+     * A box riding a truck bound for THIS warehouse belongs to the unload
+     * screen, not to this one. Both doors would move it, but only the unload
+     * writes the records the business reads: `unload_scan` movements (the
+     * logist's «qabul qilindi» count, the agent sheet's arrival), the client's
+     * arrival notice and the seller's message. Accepting it here would be a
+     * quieter, lower-gated way to unload a truck badly — and once the
+     * accept-everything shortcut became a manager act, the tempting one.
+     */
+    if (box.status === 'in_transit' && box.currentBatchId) {
+      const riding = await tx.query.batches.findFirst({
+        where: eq(batches.id, box.currentBatchId),
+      });
+      if (
+        riding &&
+        riding.destWarehouseId === input.warehouseId &&
+        ['in_transit', 'arrived'].includes(riding.status)
+      ) {
+        throw new InventoryError('use_unload_screen');
+      }
+    }
 
     const [label] = await tx
       .select({
@@ -332,6 +351,19 @@ export async function acceptFoundBox(
         from: fromBatch?.code ?? fromWh?.code ?? null,
       },
     });
+    // Cargo that reached a warehouse the client collects from HAS arrived,
+    // whichever door recorded it — the customer and their seller hear it once
+    // per truck through the same claim the unload uses.
+    if (landedStatus === 'ready_for_pickup' && fromBatch && label) {
+      const [owner] = await tx
+        .select({ clientId: receipts.clientId })
+        .from(receiptLots)
+        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+        .where(eq(receiptLots.id, box.lotId));
+      if (owner?.clientId) {
+        await claimArrivalNotice(tx, owner.clientId, fromBatch.id, { actorId });
+      }
+    }
     return {
       shortCode: box.shortCode,
       clientCode: label?.clientCode ?? null,
@@ -361,6 +393,69 @@ export async function acceptFoundBox(
     }
   }
   return summary;
+}
+
+export interface BinCandidateRow {
+  boxId: string;
+  shortCode: string;
+  clientCode: string | null;
+  marking: string | null;
+  letter: string | null;
+  product: string;
+}
+
+/**
+ * «What is this code, and may I bin it here?» — the bin scan's first tap
+ * (owner, 2026-08-25: «1 karobka musorga ketdi shikastlangan … scan qilib
+ * musorga tashlaydi, izoh yozib»).
+ *
+ * Reads and refuses, writes nothing. The refusals are the fence: the code is
+ * resolved GLOBALLY (an operator holds the carton, not a warehouse list) and
+ * then judged against the warehouse the screen is standing in, so a Yiwu
+ * scanner typing a Tashkent code is told «this box is not here» rather than
+ * writing off cargo in another country — the defect the review found in the
+ * first version of this door, where the gate was checked at the posted
+ * warehouse and the code resolved everywhere.
+ */
+export async function binCandidate(input: {
+  warehouseId: string;
+  code: string;
+}): Promise<BinCandidateRow> {
+  const [row] = await db
+    .select({
+      boxId: boxes.id,
+      shortCode: boxes.shortCode,
+      status: boxes.status,
+      warehouseId: boxes.currentWarehouseId,
+      letter: receiptLots.letter,
+      product: receiptLots.productNameZh,
+      clientCode: clients.clientCode,
+      marking: receipts.unclaimedMarking,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .where(sql`upper(${boxes.shortCode}) = ${input.code.trim().toUpperCase()}`);
+
+  if (!row) throw new InventoryError('unknown_code');
+  if (['void', 'lost'].includes(row.status)) throw new InventoryError(`box_${row.status}`);
+  if (row.status === 'issued') throw new InventoryError('box_issued');
+  // On a truck, or standing somewhere else: not this person's carton to bin.
+  // Named separately from the shelf rule so the screen can point at the door
+  // that IS right — the unload screen, or the found-box accept.
+  if (row.warehouseId !== input.warehouseId) throw new InventoryError('box_elsewhere');
+  if (!['in_stock', 'planned', 'ready_for_pickup'].includes(row.status)) {
+    throw new InventoryError('box_not_here');
+  }
+  return {
+    boxId: row.boxId,
+    shortCode: row.shortCode,
+    clientCode: row.clientCode,
+    marking: row.marking,
+    letter: row.letter,
+    product: row.product,
+  };
 }
 
 /**

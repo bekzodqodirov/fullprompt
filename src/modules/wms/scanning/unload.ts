@@ -23,6 +23,7 @@ import { claimArrivalNotice, releaseArrivalNotices } from '../notices/arrival';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { ScanError } from './service';
+import { landedStatusFor } from '../warehouses/landed';
 
 export const unloadScanSchema = z.object({
   clientEventUuid: z.string().uuid(),
@@ -152,9 +153,7 @@ export async function ingestUnloadScans(
       const destWh = (await tx.query.warehouses.findFirst({
         where: eq(warehouses.id, batch.destWarehouseId),
       }))!;
-      const landedStatus = ['customs', 'distribution'].includes(destWh.type)
-        ? 'ready_for_pickup'
-        : 'in_stock';
+      const landedStatus = landedStatusFor(destWh.type);
 
       // A crate scan vouches for the CRATE, not for every box its record
       // lists: a member short-loaded at the origin keeps its crateId, and the
@@ -270,14 +269,18 @@ export async function ingestUnloadScans(
        * door, so one press of «accept the rest» could send a customer two
        * hundred messages.
        *
-       * The event still fires per scan for the STAFF side, which is what it
-       * was written for (the sales manager's ready-for-pickup draft). What
-       * changed is that the CLIENT's copy no longer rides on it: the first
-       * landed box claims one notice per (client, truck), and a worker sends
-       * it once the truck has been scanned, with the totals as they really
-       * are (`wms/notices/arrival.ts`). Claiming here rather than in the
-       * worker is deliberate — inside this transaction, so a rolled-back
-       * unload cannot silence the real one that follows.
+       * Round 98 moved the CLIENT's copy onto a claim and left the event
+       * here, «for the staff side, which is what it was written for». The
+       * owner's next report was the other half of the same sentence: «10 ta
+       * karobka kelsa 10 ta sms» — his SELLER was getting one Telegram per
+       * carton. So the event went with it (`notices/arrival-staff.ts`): one
+       * per customer per truck, with the totals as they really are, carrying
+       * the deal's cargo trigger and the automation rules with it.
+       *
+       * What stays HERE is the claim, and only the claim. Inside this
+       * transaction on purpose: a claim that survived a rolled-back unload
+       * would silence the real one that follows, and a claim made in the
+       * worker could not know which scan was first.
        */
       if (landedStatus === 'ready_for_pickup' && toMove.length > 0) {
         const lotRows = await tx
@@ -286,29 +289,13 @@ export async function ingestUnloadScans(
           .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
           .where(inArray(receiptLots.id, [...new Set(toMove.map((b) => b.lotId))]));
         const clientByLot = new Map(lotRows.map((r) => [r.lotId, r.clientId]));
-        const perClient = new Map<string, number>();
+        const landedClients = new Set<string>();
         for (const box of toMove) {
           const cid = clientByLot.get(box.lotId);
-          if (cid) perClient.set(cid, (perClient.get(cid) ?? 0) + 1);
+          if (cid) landedClients.add(cid);
         }
-        for (const [cid, n] of perClient) {
-          await claimArrivalNotice(tx, cid, input.batchId);
-          await emitEvent(tx, {
-            type: 'ReadyForPickup',
-            payload: {
-              clientId: cid,
-              warehouseId: batch.destWarehouseId,
-              warehouseCode: destWh.code,
-              batchCode: batch.code,
-              boxCount: n,
-              // The client's copy is the claimed notice, not this event. Read
-              // by `renderClientCabinetText`, which returns null for it.
-              staffOnly: true,
-            },
-            entityType: 'batch',
-            entityId: input.batchId,
-            actorId,
-          });
+        for (const cid of landedClients) {
+          await claimArrivalNotice(tx, cid, input.batchId, { actorId });
         }
       }
       await tx
@@ -444,7 +431,11 @@ export async function unloadRemaining(batchId: string, ctx: AuditContext) {
  * Finish unload (spec 6.5): manifest boxes never scanned here stay
  * `in_transit` flagged `missing_in_transit` + alert; batch → `unloaded`.
  */
-export async function finishUnload(batchId: string, ctx: AuditContext) {
+export async function finishUnload(
+  batchId: string,
+  ctx: AuditContext,
+  opts: { mayCloseWithMissing?: boolean } = {},
+) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   return db.transaction(async (tx) => {
@@ -457,6 +448,22 @@ export async function finishUnload(batchId: string, ctx: AuditContext) {
       .from(boxes)
       .where(sql`${boxes.currentBatchId} = ${batchId} AND ${boxes.status} = 'in_transit'`)
       .for('update');
+    /*
+     * Closing over outstanding cartons is not bookkeeping — it DECLARES THEM
+     * LOST, flags every one `missing_in_transit`, and the client's handover
+     * then refuses until a manager resolves each. The owner took the
+     * accept-everything shortcut away from the operators so the cartons get
+     * scanned; leaving them this one would simply move the same press one
+     * button to the right, and lose the cargo instead of accepting it.
+     *
+     * Refused in the SERVICE and not only on the screen (#531). `opts`
+     * defaults to false, so a caller that forgets the question gets the safe
+     * answer — and the plain close, with nothing outstanding, is untouched
+     * and stays the unloader's own.
+     */
+    if (missing.length > 0 && !opts.mayCloseWithMissing) {
+      throw new ScanError('finish_needs_manager');
+    }
     if (missing.length > 0) {
       await tx
         .update(boxes)
@@ -578,10 +585,10 @@ export async function resolveMissing(
     const targetWhRow = (await tx.query.warehouses.findFirst({
       where: eq(warehouses.id, targetWh),
     }))!;
-    const landedStatus =
-      foundHere && ['customs', 'distribution'].includes(targetWhRow.type)
-        ? 'ready_for_pickup'
-        : 'in_stock';
+    // Found at the ORIGIN is a box that never arrived — it goes back on the
+    // shelf it left, and only a box found HERE lands by the destination's own
+    // rule.
+    const landedStatus = foundHere ? landedStatusFor(targetWhRow.type) : 'in_stock';
 
     await tx
       .update(boxes)
@@ -609,6 +616,23 @@ export async function resolveMissing(
       action: 'status_change',
       after: { resolution: input.resolution, shortCode: box.shortCode },
     });
+    /*
+     * A box found HERE has arrived, and until now this door said so to
+     * nobody: no claim, no event — so the customer was never told and neither
+     * was their seller. It mattered little while it was the rare tail of a
+     * missing-box flow; it matters now that finishing over outstanding
+     * cartons is a manager act and this is the ordinary way they come back.
+     */
+    if (foundHere && landedStatus === 'ready_for_pickup') {
+      const [owner] = await tx
+        .select({ clientId: receipts.clientId })
+        .from(receiptLots)
+        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+        .where(eq(receiptLots.id, box.lotId));
+      if (owner?.clientId) {
+        await claimArrivalNotice(tx, owner.clientId, batch.id, { actorId });
+      }
+    }
     return { shortCode: box.shortCode, resolution: input.resolution };
   });
 }

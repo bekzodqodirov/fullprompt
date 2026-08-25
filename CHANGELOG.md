@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## Sklad va xabarlar: musorga skan, qabul tugmasi, bitta xabar, sklad to'lishi — 2026-08-25 (2)
+
+Sizning to'rt xabaringiz bo'yicha. Qurishdan oldin loyihani 7 ta tekshiruvchi
+o'qib chiqdi va 26 ta kamchilik topdi — ulardan uchtasi mening dastlabki
+rejam noto'g'ri ekanini ko'rsatdi, shuning uchun ba'zi joyi siz aytgandan
+biroz boshqacha qilindi (pastda aytaman).
+
+**1. «Musorga» — inventarizatsiya ichida.** Inventarizatsiyada uchinchi eshik:
+🗑 «Yaroqsiz — musorga». Karobkani skan qilasiz → ekran kimning yuki ekanini
+ko'rsatadi → sababni yozasiz → tasdiqlaysiz. Karobka hisobdan chiqadi,
+**sotuvchiga VA logistga** xabar ketadi (ilgari faqat sotuvchiga ketardi —
+va mijozning sotuvchisi bo'lmasa, hech kimga ketmasdi; endi logist doim
+biladi). Mijoz puliga tegilmaydi.
+**Bir joyi sizdan farq qiladi:** tugmani sklad BOSHLIG'I bosadi, oddiy
+skladchi emas. Sabab: hisobdan chiqarishning boshqa uchta yo'li ham
+boshliqda, va bittasini ochib qo'ysak, bitta ekranda ikki xil qoida bo'lardi.
+Agar skladchi ham bosishi kerak desangiz — bitta so'z, bir qatorda
+o'zgartiraman.
+
+**2. «Hammasini qabul qilish» — skladchidan olindi.** Siz aytgandek. Lekin
+tekshiruv bitta muhim narsani ko'rsatdi: yonidagi «Tushirish tugadi»
+tugmasida umuman himoya yo'q edi, va qabul qilinmagan karobka qolganda u
+karobkalarni **«yo'lda yo'qolgan»** deb belgilaydi — keyin mijozga berib
+bo'lmaydi. Ya'ni xavfsiz tugmani olib, xavflisini qoldirgan bo'lardik.
+Shuning uchun ikkalasi ham boshliqqa o'tdi: skladchi hamma karobkani skan
+qiladi va hammasi skan bo'lgach «Tushirish tugadi» ni o'zi bosa oladi.
+Qabul qilinmagan karobka qolsa — boshliq kerak.
+
+**3. Sotuvchiga bitta xabar.** Endi bir reys uchun bitta: «GS777 — 10 ta
+karobka keldi», haqiqiy jamlanma bilan, mashina skanlab bo'lingandan keyin.
+Yo'l-yo'lakay ikkita jonli xato tuzatildi: mashinada rejasiz kelgan karobka
+uchun MIJOZGA xabar ketmasdi, va ikkita jarayon bir vaqtda ishlab qolsa
+mijozga xabar ikki marta ketishi mumkin edi. Mashina ikki kunda tushirilsa,
+ikkinchi kunning yuki ham aytiladi.
+
+**4. Bosh ekranda sklad to'lishi va eng qari yuk.** «Yuk» blokining ostida
+har bir sklad: to'lish chizig'i, m³, va 🕓 «shu skladda necha kun» (eng
+qari yuk) — qavsda 30 kundan ko'p turganlar soni.
+**Sizdan bitta narsa kerak:** hozir hech bir skladning SIG'IMI kiritilmagan
+(9 tasi ham bo'sh), shuning uchun chiziq chiqmaydi — faqat m³ va kun
+ko'rinadi. Har bir sklad uchun necha kub sig'ishini ayting yoki
+Boshqaruv → Skladlar dan kiriting, shunda chiziqlar ishlaydi.
+
+Migratsiya: **0090** (deploydan keyin sanoq **91** bo'lishi kerak).
+
 ## Sklad korrektsiyalari: tushirish, inventarizatsiya, yaroqsiz, o'lchov — 2026-08-25
 
 Sizning besh xabaringiz bo'yicha (1 «zo'r idea» / 2 «ha qaytar, shunday

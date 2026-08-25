@@ -6,12 +6,14 @@ import { logger } from '@/modules/platform/logger';
 import { cabinetInlineKeyboard } from '@/modules/platform/telegram/menu-button';
 import {
   arrivedSummary,
-  dueArrivalNotices,
+  claimNoticesForSending,
   isPermanentNoticeFailure,
   MAX_NOTICE_ATTEMPTS,
   settleArrivalNotice,
 } from './arrival';
+import { emitArrivalStaffEvent, staffPendingNotices } from './arrival-staff';
 import { arrivalText } from './arrival-text';
+import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 
 export const JOB_CLIENT_NOTICES = 'notices.client';
 
@@ -30,14 +32,52 @@ export const JOB_CLIENT_NOTICES = 'notices.client';
  */
 export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const due = await dueArrivalNotices(50, now);
-  if (due.length === 0) return 0;
-  // No bot configured is not a failure to retry for ever — it is a machine
-  // that cannot send, and the cabinet still shows the same state.
-  if (!token) {
-    for (const notice of due) await settleArrivalNotice(notice.id, 'skipped', 'no_bot_token');
-    return 0;
+
+  /*
+   * The STAFF side first, and independent of everything below it.
+   *
+   * The seller's message, the deal's `ready` cargo trigger and the automation
+   * rules ride one domain event, and NONE of them needs Telegram. Every exit
+   * in the customer's path below — no token, no linked chat, a client who
+   * blocked the bot — settles the row out of the pending queue for ever, so
+   * hanging the event off it would lose the seller's notification precisely
+   * for the customers hardest to reach, and lose every truck's for the hours
+   * a burned bot token is being rotated.
+   *
+   * Its own selector, its own fence (`staff_notified_at`), its own
+   * transaction per notice.
+   */
+  const staffDue = await staffPendingNotices(50, now);
+  let staffEmitted = 0;
+  for (const row of staffDue) {
+    try {
+      const res = await emitArrivalStaffEvent(row.id);
+      if (res.emitted) staffEmitted += 1;
+    } catch (err) {
+      // Left unstamped on purpose: the next sweep tries again, two minutes
+      // later, and an event nobody has seen is better late than lost.
+      logger.warn({ err, noticeId: row.id }, 'arrival staff event failed');
+    }
   }
+  if (staffEmitted > 0) {
+    // The events table is drained on its own minute tick; kicking it means
+    // the seller hears about a truck now rather than up to a minute later.
+    await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
+  }
+
+  // Claimed, not merely selected: two overlapping sweeps must split the work.
+  const due = await claimNoticesForSending(50, now);
+  if (due.length === 0) return 0;
+  /*
+   * No bot configured is not this message's fault and must not settle it.
+   *
+   * It used to write `skipped`, and `dueArrivalNotices` reads `pending` and
+   * nothing else — so every customer whose cargo landed while the token was
+   * being rotated was silently never told, for ever. `sendPendingTelegram`
+   * has always had the honest shape one module over: with no token it simply
+   * returns and leaves the rows where they are.
+   */
+  if (!token) return 0;
 
   let sent = 0;
   for (const notice of due) {
@@ -105,6 +145,9 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
             text,
             ...(app ? { reply_markup: app } : {}),
           }),
+          // A call with no deadline is round 101's defect: a hung socket holds
+          // the whole sweep, and every customer behind this one waits with it.
+          signal: AbortSignal.timeout(20_000),
         });
         if (res.ok) delivered += 1;
         else {

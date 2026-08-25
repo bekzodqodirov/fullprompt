@@ -22,7 +22,7 @@ export function UnloadActions({
   status,
   missing,
   remaining,
-  canUnload,
+  canShortcut,
   canResolve,
   canClose,
 }: {
@@ -31,7 +31,14 @@ export function UnloadActions({
   missing: MissingBox[];
   /** Manifest boxes still waiting to be accepted at the destination. */
   remaining: number;
-  canUnload: boolean;
+  /**
+   * May this person take the two SHORTCUTS — accept everything without
+   * scanning, and close over cartons nobody scanned? Both are manager acts
+   * (owner: «hammasini qabul qilib olish degan knobkani skladchilardan olib
+   * tashla»), and they travel together: taking away only the safe one leaves
+   * the operator holding the lossy one.
+   */
+  canShortcut: boolean;
   canResolve: boolean;
   canClose: boolean;
 }) {
@@ -66,7 +73,7 @@ export function UnloadActions({
       {/* The truck is standing in the yard: accepting everything must be at
           least as easy as finishing, or the operator reaches for the button
           that declares the cargo lost (owner's report). */}
-      {['in_transit', 'arrived'].includes(status) && remaining > 0 && canUnload && (
+      {['in_transit', 'arrived'].includes(status) && remaining > 0 && canShortcut && (
         <button
           type="button"
           data-testid="accept-all"
@@ -85,7 +92,16 @@ export function UnloadActions({
         </button>
       )}
 
-      {['in_transit', 'arrived'].includes(status) && (
+      {/* Closing with cartons outstanding declares them lost, so the button
+          renders for the operator only when there is nothing left to lose —
+          and a manager keeps it in both states. The service refuses too. */}
+      {['in_transit', 'arrived'].includes(status) && remaining > 0 && !canShortcut && (
+        <p className="rounded-lg bg-surface-sunken p-2 text-xs text-ink-500" data-testid="unload-scan-hint">
+          {t('scanTheRest')}
+        </p>
+      )}
+
+      {['in_transit', 'arrived'].includes(status) && (remaining === 0 || canShortcut) && (
         <button
           type="button"
           data-testid="finish-unload"

@@ -16,9 +16,11 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { removeLoadedCode } from '@/modules/wms/scanning/service';
+import { finishUnload } from '@/modules/wms/scanning/unload';
 import { acceptFoundBox, reconcileInventory } from '@/modules/wms/inventory/service';
 import { editLot } from '@/modules/wms/receipts/edit';
 import { markBoxLost } from '@/modules/wms/receipts/service';
+import { usersWithPermission } from '@/modules/platform/notifications/service';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 
 /**
@@ -39,6 +41,7 @@ let clientId = '';
 const madeReceipts: string[] = [];
 const madeBatches: string[] = [];
 const madeCrates: string[] = [];
+const madeWarehouses: string[] = [];
 
 async function mintWarehouse(code: string, type: string) {
   const [row] = await db
@@ -190,7 +193,7 @@ afterAll(async () => {
   await db
     .update(warehouses)
     .set({ active: false })
-    .where(inArray(warehouses.id, [whOrigin, whCustoms]));
+    .where(inArray(warehouses.id, [whOrigin, whCustoms, ...madeWarehouses]));
   await db
     .update(users)
     .set({ active: false })
@@ -275,20 +278,64 @@ describe('removeLoadedCode — off the truck, off the plan, back on the shelf', 
   });
 });
 
-describe('acceptFoundBox — reality wins, one scan at a time', () => {
-  it('takes a box off an in-transit truck and lands it ready_for_pickup at a customs warehouse', async () => {
-    const { boxes: minted } = await mintReceipt({ boxes: 1, kg: '15', m3: '0.2' });
+describe('closing an unload over cartons nobody scanned', () => {
+  it('is a MANAGER act — the service refuses, it is not only hidden on screen', async () => {
+    // The owner took the accept-everything shortcut away from the operators so
+    // the cartons get scanned. Leaving them the finish button would move the
+    // same press one button right and LOSE the cargo instead of accepting it:
+    // every outstanding box is flagged `missing_in_transit`, and the client's
+    // handover then refuses until a manager resolves each one.
+    const { boxes: minted } = await mintReceipt({ boxes: 1, kg: '11', m3: '0.2' });
     const batch = await mintBatch('in_transit');
     await db
       .update(boxes)
       .set({ status: 'in_transit', currentBatchId: batch.id, currentWarehouseId: null })
       .where(eq(boxes.id, minted[0]!.id));
 
+    await expect(finishUnload(batch.id, ctx())).rejects.toMatchObject({
+      code: 'finish_needs_manager',
+    });
+    // Nothing was flagged by the refusal.
+    expect(
+      (await db.query.boxes.findFirst({ where: eq(boxes.id, minted[0]!.id) }))?.flags,
+    ).toEqual([]);
+
+    // The manager may, and then it means what it always meant.
+    const res = await finishUnload(batch.id, ctx(), { mayCloseWithMissing: true });
+    expect(res.missing).toEqual([minted[0]!.shortCode]);
+  });
+});
+
+describe('acceptFoundBox — reality wins, one scan at a time', () => {
+  it('takes a box off a truck bound ELSEWHERE and lands it ready_for_pickup here', async () => {
+    // The genuine stray: recorded on a lorry heading somewhere else, standing
+    // on this floor. A box on a truck bound for THIS warehouse is the unload
+    // screen's job and is refused — the test below.
+    const { boxes: minted } = await mintReceipt({ boxes: 1, kg: '15', m3: '0.2' });
+    const elsewhere = await mintWarehouse(`WX${STAMP}`.slice(0, 8), 'distribution');
+    const [batch] = await db
+      .insert(batches)
+      .values({
+        code: `WCE${STAMP}`,
+        originWarehouseId: whOrigin,
+        destWarehouseId: elsewhere,
+        status: 'in_transit',
+        departedAt: new Date(),
+        createdBy: actorId,
+      })
+      .returning();
+    madeBatches.push(batch!.id);
+    madeWarehouses.push(elsewhere);
+    await db
+      .update(boxes)
+      .set({ status: 'in_transit', currentBatchId: batch!.id, currentWarehouseId: null })
+      .where(eq(boxes.id, minted[0]!.id));
+
     const found = await acceptFoundBox(
       { warehouseId: whCustoms, code: minted[0]!.shortCode.toLowerCase() },
       ctx(),
     );
-    expect(found.fromBatchCode).toBe(batch.code);
+    expect(found.fromBatchCode).toBe(batch!.code);
     const after = await db.query.boxes.findFirst({ where: eq(boxes.id, minted[0]!.id) });
     // A UZ customs warehouse issues to clients — landing `in_stock` there
     // hides the box from every «tayyor» list (resolveMissing's own rule).
@@ -302,6 +349,23 @@ describe('acceptFoundBox — reality wins, one scan at a time', () => {
     // The «planners are told» half is pinned source-shape in the wire test —
     // asserting the row here would hang on which SEEDED users happen to hold
     // plans.manage (#380's trap).
+  });
+
+  it('refuses a box riding a truck bound HERE — that is the unload screen', async () => {
+    // The lower-gated bypass the review found: without this, an operator
+    // denied the accept-everything shortcut scans the whole manifest into
+    // /inventory instead, one tap each — through a weaker gate, and writing
+    // records the logist's summary, the client's notice and the seller's
+    // message all read as «nothing arrived».
+    const { boxes: minted } = await mintReceipt({ boxes: 1, kg: '12', m3: '0.2' });
+    const bound = await mintBatch('in_transit');
+    await db
+      .update(boxes)
+      .set({ status: 'in_transit', currentBatchId: bound.id, currentWarehouseId: null })
+      .where(eq(boxes.id, minted[0]!.id));
+    await expect(
+      acceptFoundBox({ warehouseId: whCustoms, code: minted[0]!.shortCode }, ctx()),
+    ).rejects.toMatchObject({ code: 'use_unload_screen' });
   });
 
   it('refuses what is not a stray: already here, still loading, issued, lost', async () => {
@@ -353,10 +417,10 @@ describe('markBoxLost — one crushed carton, one written reason', () => {
   it('writes the box off, unhooks its plan/crate, and tells the seller', async () => {
     const { boxes: minted } = await mintReceipt({ boxes: 1, kg: '8', m3: '0.1' });
     await expect(
-      markBoxLost({ boxId: minted[0]!.id, reason: ' ' }, ctx()),
+      markBoxLost({ boxId: minted[0]!.id, reason: ' ', atWarehouseId: whOrigin }, ctx()),
     ).rejects.toMatchObject({ code: 'reason_required' });
 
-    const res = await markBoxLost({ boxId: minted[0]!.id, reason: `suv tegdi ${STAMP}` }, ctx());
+    const res = await markBoxLost({ boxId: minted[0]!.id, reason: `suv tegdi ${STAMP}`, atWarehouseId: whOrigin }, ctx());
     expect(res.shortCode).toBe(minted[0]!.shortCode);
     const after = await db.query.boxes.findFirst({ where: eq(boxes.id, minted[0]!.id) });
     expect(after?.status).toBe('lost');
@@ -375,8 +439,100 @@ describe('markBoxLost — one crushed carton, one written reason', () => {
 
     // Terminal is terminal: a second write-off is refused, not restated.
     await expect(
-      markBoxLost({ boxId: minted[0]!.id, reason: 'yana' }, ctx()),
+      markBoxLost({ boxId: minted[0]!.id, reason: 'yana', atWarehouseId: whOrigin }, ctx()),
     ).rejects.toMatchObject({ code: 'box_not_here' });
+  });
+
+  it('refuses a carton standing in ANOTHER warehouse, whatever the caller claims', async () => {
+    // The bin scan authorises at the SCREEN's warehouse and resolves the code
+    // globally, so without this fence a Yiwu operator typing a Tashkent code
+    // wrote off cargo in another country — with the audit row naming that
+    // country and that client's seller told their goods were destroyed.
+    const { boxes: minted } = await mintReceipt({ boxes: 1, kg: '9', m3: '0.1' });
+    await expect(
+      markBoxLost(
+        { boxId: minted[0]!.id, reason: 'boshqa skladdan', atWarehouseId: whCustoms },
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'box_not_here' });
+    expect(
+      (await db.query.boxes.findFirst({ where: eq(boxes.id, minted[0]!.id) }))?.status,
+    ).toBe('in_stock');
+  });
+
+  it('tells the LOGIST even when the cargo has no seller — his one stated requirement', async () => {
+    // 1,402 of 1,692 active clients carry no sales manager, and unclaimed
+    // cargo carries no client at all. Hanging the logist's copy off the
+    // seller's made «xabar logistga ketadi» silent for exactly the cargo most
+    // likely to be crushed and forgotten.
+    const [orphan] = await db
+      .insert(clients)
+      .values({ clientCode: `WCO${STAMP}`.slice(0, 10), name: `WC orphan ${STAMP}`, salesManagerId: null })
+      .returning();
+    const [receipt] = await db
+      .insert(receipts)
+      .values({
+        warehouseId: whOrigin,
+        clientId: orphan!.id,
+        status: 'confirmed',
+        confirmedAt: new Date(),
+        createdBy: authorId,
+      })
+      .returning();
+    madeReceipts.push(receipt!.id);
+    const [lot] = await db
+      .insert(receiptLots)
+      .values({
+        receiptId: receipt!.id,
+        seq: 1,
+        letter: 'B',
+        dimsMode: 'mixed',
+        productNameZh: '孤儿货',
+        boxCount: 1,
+        totalWeightKg: '5',
+        totalVolumeM3: '0.1',
+      })
+      .returning();
+    const [box] = await db
+      .insert(boxes)
+      .values({
+        lotId: lot!.id,
+        shortCode: `WCX${STAMP}-0`,
+        seqInLot: 1,
+        status: 'in_stock',
+        currentWarehouseId: whOrigin,
+      })
+      .returning();
+
+    const planners = await usersWithPermission('plans.manage');
+    const before = planners.length
+      ? (
+          await db
+            .select({ id: notifications.id })
+            .from(notifications)
+            .where(
+              and(eq(notifications.type, 'BoxLost'), inArray(notifications.userId, planners)),
+            )
+        ).length
+      : 0;
+    await markBoxLost(
+      { boxId: box!.id, reason: `singan ${STAMP}`, atWarehouseId: whOrigin },
+      { actorId: authorId, ip: null, userAgent: null },
+    );
+    const after = planners.length
+      ? (
+          await db
+            .select({ id: notifications.id })
+            .from(notifications)
+            .where(
+              and(eq(notifications.type, 'BoxLost'), inArray(notifications.userId, planners)),
+            )
+        ).length
+      : 0;
+    // A seeded database has plans.manage holders; a bare one does not, and the
+    // assertion must say something either way rather than passing by accident.
+    expect(after - before).toBe(planners.filter((id) => id !== authorId).length);
+    await db.update(clients).set({ active: false }).where(eq(clients.id, orphan!.id));
   });
 
   it('refuses cargo that is on a truck — the missing flow owns that', async () => {
@@ -387,7 +543,7 @@ describe('markBoxLost — one crushed carton, one written reason', () => {
       .set({ status: 'in_transit', currentBatchId: batch.id })
       .where(eq(boxes.id, minted[0]!.id));
     await expect(
-      markBoxLost({ boxId: minted[0]!.id, reason: 'yo‘qoldi' }, ctx()),
+      markBoxLost({ boxId: minted[0]!.id, reason: 'yo‘qoldi', atWarehouseId: whOrigin }, ctx()),
     ).rejects.toMatchObject({ code: 'box_not_here' });
   });
 });

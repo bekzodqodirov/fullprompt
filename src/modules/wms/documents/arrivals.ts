@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, boxes, boxMovements } from '../../platform/db/schema';
 
@@ -41,6 +41,27 @@ import { batches, boxes, boxMovements } from '../../platform/db/schema';
  * with them — the box did ride that truck, it was simply never scanned off it.
  */
 export const ARRIVED_ON_A_TRUCK = ['unload_scan', 'undocumented_transfer', 'found_here'];
+
+/**
+ * «This movement landed the box in THIS warehouse» — the three clauses above,
+ * as one fragment, so the second reader of the rule cannot restate two of
+ * them (#513).
+ *
+ * `found_at_origin` is excluded here and was not excluded in the paragraph
+ * above, because the document only ever used the rule to NAME A TRUCK and
+ * that cause is simply absent from `ARRIVED_ON_A_TRUCK`. A caller asking
+ * «when did this box get here» is asking a different question, and that
+ * movement is a box which never left: `departBatch` has already NULLed
+ * `current_warehouse_id`, so `NULL IS DISTINCT FROM origin` is TRUE and the
+ * row passes every other clause while describing a journey that did not
+ * happen. Latent in this file too — kept in one place so it stays fixed.
+ */
+export function landedHereSql(warehouseIdCol: SQL | SQLWrapper): SQL {
+  return sql`${boxMovements.toWarehouseId} = ${warehouseIdCol}
+    AND ${boxMovements.fromWarehouseId} IS DISTINCT FROM ${boxMovements.toWarehouseId}
+    AND ${boxMovements.toStatus} <> 'in_transit'
+    AND ${boxMovements.cause} <> 'found_at_origin'`;
+}
 
 /** One (lot, truck) pair: how many boxes it brought and when the first landed. */
 export interface ArrivalRow {
@@ -187,19 +208,9 @@ export async function arrivalsForLots(
         .where(
           and(
             inArray(boxes.lotId, lotIds),
-            eq(boxMovements.toWarehouseId, warehouseId),
-            sql`${boxMovements.fromWarehouseId} IS DISTINCT FROM ${boxMovements.toWarehouseId}`,
-            // A box in transit has NOT arrived: `batch_departed` writes the
-            // destination days before the truck reaches it, so a rule that
-            // trusts `to_warehouse_id` alone announces every arrival early.
-            // The box's own `current_warehouse_id` says the same thing and
-            // this deliberately does NOT ask it — `departBatch` nulls that
-            // column, so the moment the plan's OWN truck leaves, every box
-            // would fall out of the answer and the file the agent already
-            // holds would re-download saying every carton was walked in with
-            // no truck and no date. A document that has left the company must
-            // not change its claims when it is fetched again.
-            sql`${boxMovements.toStatus} <> 'in_transit'`,
+            // The rule itself, from its one home — the comment above spells
+            // out what each clause keeps out.
+            landedHereSql(sql`${warehouseId}::uuid`),
           ),
         )
         .orderBy(boxMovements.boxId, desc(boxMovements.createdAt), desc(boxMovements.id)),

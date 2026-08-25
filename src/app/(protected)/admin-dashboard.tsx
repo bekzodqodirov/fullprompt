@@ -5,7 +5,9 @@ import { seesAllMoney } from '@/modules/wms/finance/scope';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
 import { moneySnapshot, todaySnapshot } from '@/modules/wms/reports/overview';
-import { inTransitBatches, stockByWarehouse } from '@/modules/wms/reports/queries';
+import { inTransitBatches, stockByWarehouse, warehouseFill } from '@/modules/wms/reports/queries';
+import { getSetting } from '@/modules/platform/settings/service';
+import { WarehouseFillRows } from '@/components/warehouse-fill';
 import { decidedLeadCounts } from '@/modules/wms/crm/analytics';
 import { openDealsSummary } from '@/modules/wms/deals/service';
 import { taskPulse } from '@/modules/platform/tasks/analytics';
@@ -60,7 +62,14 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
   const sales = perms.has('crm.manage');
   const today = new Date().toISOString().slice(0, 10);
 
-  const [balance, flowToday, moneySnap, cargoToday, stock, transit, deals, decided, tasks, unsent, backup] =
+  // «Qaysi sklad qanchalik to'lgan va yuk necha kun qolib ketgan» (owner,
+  // 2026-08-25). Behind the CARGO permission the block links through, and
+  // scoped like every other read — an admin whose grants were trimmed to one
+  // warehouse must not read the others off the home screen.
+  const staleDays = Number(await getSetting('stale_stock_days')) || 30;
+  const whScope = actor.warehouseScoped ? actor.warehouseIds : undefined;
+
+  const [balance, flowToday, moneySnap, cargoToday, stock, transit, fills, deals, decided, tasks, unsent, backup] =
     await Promise.all([
       money ? companyBalance() : null,
       money ? cashFlow(today, today) : null,
@@ -68,6 +77,7 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
       cargo ? todaySnapshot() : null,
       cargo ? stockByWarehouse() : null,
       cargo ? inTransitBatches() : null,
+      cargo ? warehouseFill(whScope, staleDays) : null,
       sales ? openDealsSummary() : null,
       sales
         ? decidedLeadCounts(
@@ -153,6 +163,19 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
               {cargoToday.receipts}
             </Row>
           </div>
+          {/* His own question, in one glance: how full is each warehouse, and
+              how long has its oldest carton been standing there. A warehouse
+              with no capacity typed in shows the m³ and says so — every one of
+              them is in that state until he fills the numbers in. */}
+          {fills && fills.length > 0 && (
+            <div className="mt-2 border-t border-line pt-2">
+              <WarehouseFillRows
+                rows={fills}
+                staleDays={staleDays}
+                canEditCapacity={perms.has('admin.warehouses.manage')}
+              />
+            </div>
+          )}
         </section>
       )}
 

@@ -164,7 +164,9 @@ describe('unload reconciliation', () => {
     ).toBe('arrived');
 
     // Second box unscanned → finish flags missing_in_transit
-    const summary = await finishUnload(batch.id, ctx());
+    // Closing over cartons nobody scanned declares them lost, which is a
+    // manager act since the corrections round — this is that path.
+    const summary = await finishUnload(batch.id, ctx(), { mayCloseWithMissing: true });
     expect(summary.missing).toEqual([lot.shortCodes[1]!]);
     const missingRow = (await db.select().from(boxes).where(eq(boxes.id, lot.boxIds[1]!)))[0]!;
     expect(missingRow.status).toBe('in_transit');
@@ -252,7 +254,9 @@ describe('accepting cargo at a distribution destination (owner bug round)', () =
     // Pressing it again must not write a second round of scan events.
     expect((await unloadRemaining(batch.id, ctx())).accepted).toBe(0);
 
-    const summary = await finishUnload(batch.id, ctx());
+    // Closing over cartons nobody scanned declares them lost, which is a
+    // manager act since the corrections round — this is that path.
+    const summary = await finishUnload(batch.id, ctx(), { mayCloseWithMissing: true });
     expect(summary.missing).toEqual([]);
     const rows = await db.select().from(boxes).where(batchMemberFilter(batch.id));
     expect(rows.every((b) => b.status === 'ready_for_pickup')).toBe(true);
@@ -264,7 +268,7 @@ describe('accepting cargo at a distribution destination (owner bug round)', () =
     const batch = await departedBatch(2, lot, distId);
 
     await ingestUnloadScans([scan(batch.id, lot.shortCodes[0]!)], ctx());
-    await finishUnload(batch.id, ctx());
+    await finishUnload(batch.id, ctx(), { mayCloseWithMissing: true });
     await resolveMissing({ boxId: lot.boxIds[1]!, resolution: 'found_here' }, ctx());
 
     const resolved = (await db.select().from(boxes).where(eq(boxes.id, lot.boxIds[1]!)))[0]!;
@@ -278,7 +282,7 @@ describe('accepting cargo at a distribution destination (owner bug round)', () =
     const lot = await makeLot(1);
     const batch = await departedBatch(1, lot, distId);
     await unloadRemaining(batch.id, ctx());
-    await finishUnload(batch.id, ctx());
+    await finishUnload(batch.id, ctx(), { mayCloseWithMissing: true });
     await expect(unloadRemaining(batch.id, ctx())).rejects.toThrow('batch_not_unloading');
   });
 });
@@ -294,7 +298,7 @@ describe('customs documents after unload (audit defect)', () => {
     const lot = await makeLot(2);
     const batch = await departedBatch(2, lot, distId);
     await unloadRemaining(batch.id, ctx());
-    await finishUnload(batch.id, ctx());
+    await finishUnload(batch.id, ctx(), { mayCloseWithMissing: true });
     // The state the documents are regenerated in: no live pointers left.
     expect(await db.select().from(boxes).where(eq(boxes.currentBatchId, batch.id))).toHaveLength(0);
 

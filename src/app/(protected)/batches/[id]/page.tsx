@@ -169,6 +169,8 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const canDepart = canDepartClose || (actor.permissions.has('scan.load') && inOriginScope);
   const canVehicle = actor.permissions.has('batches.vehicle_info');
   const canUnload = actor.permissions.has('scan.unload');
+  const canCloseWithMissing =
+    actor.permissions.has('receipts.void') && inScope(actor, batch.destWarehouseId);
   const canEnterCosts = actor.permissions.has('costs.enter_batch');
   const canSeeCosts = canEnterCosts || actor.permissions.has('reports.all_warehouses');
 
@@ -386,8 +388,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               label: `${codeIdentity(marking, clientCode).main}-${letter}`,
             }))}
             remaining={remainingToAccept}
-            canUnload={canUnload}
-            canResolve={actor.permissions.has('receipts.void')}
+            // The two shortcuts and the missing-box resolution are the same
+            // manager act at the same warehouse — and the WAREHOUSE half was
+            // missing on `canResolve`, so the screen drew a button whose
+            // action then threw an AuthError into an onClick with no
+            // boundary: nothing appeared at all.
+            canShortcut={canCloseWithMissing}
+            canResolve={canCloseWithMissing}
             canClose={canDepartClose}
           />
         )}

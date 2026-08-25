@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
@@ -20,9 +20,52 @@ import {
 
 const IN_WAREHOUSE = ['in_stock', 'planned', 'loading', 'ready_for_pickup'] as const;
 
-export async function warehouseFill(warehouseIds?: string[]) {
+export interface WarehouseFillRow {
+  id: string;
+  code: string;
+  /** NULL = nobody has entered one. A missing capacity is not a full one. */
+  capacityM3: number | null;
+  occupiedM3: number;
+  /** null when there is no capacity to be a percentage OF. */
+  pct: number | null;
+  /** Days the OLDEST carton standing here has been standing here. */
+  oldestDays: number | null;
+  /** How many of them are past `stale_stock_days` — one number is a dead signal. */
+  staleCount: number;
+}
+
+/**
+ * How full each warehouse is, and how long its oldest carton has been sitting
+ * (owner, 2026-08-25: «qaysi sklad qanchalik to'lganini va yuk nechi kun
+ * qolib ketkanini vizual ko'rsatib tur, eng yoshi katta yuk qilib 5 kun»).
+ *
+ * ONE query, and deliberately this one rather than a new neighbour: the fill
+ * bar already existed here and on /dashboard, and a second «how full is it»
+ * query would have been born disagreeing with this one about which
+ * warehouses count.
+ *
+ * Two rules the review had to correct:
+ *
+ *  - a warehouse with NO capacity is a ROW WITH NO BAR, not a missing row and
+ *    never a fake 100 %. All nine of his warehouses have a null capacity
+ *    today, so the old `isNotNull` filter is why this card has never once
+ *    rendered in production.
+ *  - «how many days here» is measured from the movement that LANDED the box
+ *    here — `landedHereSql`, the same three clauses the agent sheet uses.
+ *    Trusting `to_warehouse_id` alone resets the age to zero the morning a
+ *    logist plans the carton onto a truck (`plan_approved` carries the same
+ *    warehouse on both sides), which is precisely the cargo somebody is
+ *    already arguing about. There is no `confirmed_at` fallback: a receipt
+ *    writes a movement with a NULL from-warehouse, so `IS DISTINCT FROM`
+ *    already covers cargo received here and never moved.
+ */
+export async function warehouseFill(
+  warehouseIds?: string[],
+  staleDays = 30,
+): Promise<WarehouseFillRow[]> {
   const rows = await db
     .select({
+      id: warehouses.id,
       code: warehouses.code,
       capacityM3: warehouses.capacityM3,
       occupied: sql<string>`coalesce((
@@ -31,24 +74,56 @@ export async function warehouseFill(warehouseIds?: string[]) {
         WHERE b.current_warehouse_id = "warehouses"."id"
           AND b.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
       ), 0)`,
+      oldestDays: sql<string | null>`(
+        SELECT max(EXTRACT(day FROM now() - landed.at))
+        FROM (
+          SELECT DISTINCT ON (bm.box_id) bm.created_at AS at
+          FROM box_movements bm
+          JOIN boxes b2 ON b2.id = bm.box_id
+          WHERE b2.current_warehouse_id = "warehouses"."id"
+            AND b2.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
+            AND bm.to_warehouse_id = "warehouses"."id"
+            AND bm.from_warehouse_id IS DISTINCT FROM bm.to_warehouse_id
+            AND bm.to_status <> 'in_transit'
+            AND bm.cause <> 'found_at_origin'
+          ORDER BY bm.box_id, bm.created_at DESC, bm.id DESC
+        ) landed
+      )`,
+      staleCount: sql<string>`(
+        SELECT count(*) FROM (
+          SELECT DISTINCT ON (bm.box_id) bm.created_at AS at
+          FROM box_movements bm
+          JOIN boxes b3 ON b3.id = bm.box_id
+          WHERE b3.current_warehouse_id = "warehouses"."id"
+            AND b3.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
+            AND bm.to_warehouse_id = "warehouses"."id"
+            AND bm.from_warehouse_id IS DISTINCT FROM bm.to_warehouse_id
+            AND bm.to_status <> 'in_transit'
+            AND bm.cause <> 'found_at_origin'
+          ORDER BY bm.box_id, bm.created_at DESC, bm.id DESC
+        ) landed2
+        WHERE landed2.at < now() - make_interval(days => ${staleDays})
+      )`,
     })
     .from(warehouses)
     .where(
       and(
         eq(warehouses.active, true),
-        isNotNull(warehouses.capacityM3),
         warehouseIds?.length ? inArray(warehouses.id, warehouseIds) : undefined,
       ),
     )
     .orderBy(asc(warehouses.code));
   return rows.map((r) => {
-    const capacityM3 = Number(r.capacityM3);
+    const capacityM3 = r.capacityM3 === null ? null : Number(r.capacityM3);
     const occupiedM3 = Math.round(Number(r.occupied) * 10) / 10;
     return {
+      id: r.id,
       code: r.code,
       capacityM3,
       occupiedM3,
-      pct: capacityM3 > 0 ? Math.round((occupiedM3 / capacityM3) * 100) : 0,
+      pct: capacityM3 && capacityM3 > 0 ? Math.round((occupiedM3 / capacityM3) * 100) : null,
+      oldestDays: r.oldestDays === null ? null : Math.round(Number(r.oldestDays)),
+      staleCount: Number(r.staleCount ?? 0),
     };
   });
 }
@@ -168,7 +243,10 @@ export async function agingSummary(staleDays: number, warehouseIds?: string[]) {
     .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
     .where(
       and(
-        eq(boxes.status, 'in_stock'),
+        // Every Uzbek warehouse lands cargo `ready_for_pickup`, so asking for
+        // `in_stock` alone made the aging report blind to exactly the
+        // uncollected cargo it is read for.
+        inArray(boxes.status, [...IN_WAREHOUSE]),
         sql`${receipts.receivedAt} < now() - make_interval(days => ${staleDays})`,
         warehouseIds?.length ? inArray(boxes.currentWarehouseId, warehouseIds) : undefined,
       ),

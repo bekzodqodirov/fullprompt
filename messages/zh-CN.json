@@ -174,6 +174,26 @@
       "box_issued": "箱子已交付客户——无法接收。",
       "box_void": "箱子已作废——请联系主管。",
       "box_lost": "箱子已标记为丢失——请联系主管。",
+      "forbidden": "无权限。",
+      "use_unload_screen": "此箱在开往本仓的车上——请在卸车页面接收。"
+    },
+    "modeBin": "报废（损坏）",
+    "modeBinHint": "箱子已损坏并丢弃——扫描并填写原因",
+    "binHint": "扫描要丢弃的箱子。",
+    "binReason": "原因（必填）",
+    "binBtn": "核销",
+    "binDone": "{code} 已核销。已通知销售和物流。",
+    "binMoneyNote": "客户款项不变——折扣在交易中决定。",
+    "binWhoAsk": "核销箱子由仓库主管操作——请联系他。",
+    "binErrors": {
+      "unknown_code": "未找到编号。",
+      "box_elsewhere": "此箱记录在别处——请先收入本仓。",
+      "box_not_here": "箱子不在库（在途或已交付）。",
+      "box_issued": "箱子已交付客户。",
+      "box_void": "箱子已作废。",
+      "box_lost": "箱子已核销。",
+      "code_changed": "箱子已变更——请重新扫描。",
+      "reason_required": "请填写原因。",
       "forbidden": "无权限。"
     }
   },
@@ -899,10 +919,11 @@
     "acceptAll": "全部接收（{n} 箱）",
     "acceptAllConfirm": "确认车上的 {n} 箱全部已到达本仓库？将跳过扫码。",
     "acceptAllDone": "已接收 {n} 箱",
-    "finishConfirm": "注意：还有 {n} 箱未接收。完成后它们将被标记为「途中丢失」。如果货物在此，请先点「全部接收」。要继续吗？",
+    "finishConfirm": "注意：还有 {n} 个箱子未接收。结束将把它们标记为“在途丢失”，客户将无法领取。若货物在此，请先扫描。是否继续？",
     "foreignCode": "这不是我们的编码（其他二维码）。请扫描 GSR 标签。",
     "serverRefused": "服务器拒绝了 {n} 次扫描，未被记录。请手动输入。",
-    "notYourTruck": "这辆车不属于你的仓库，或登录已过期，请重新登录。"
+    "notYourTruck": "这辆车不属于你的仓库，或登录已过期，请重新登录。",
+    "scanTheRest": "请扫描剩余箱子。仅主管可在有未接收箱子时结束卸车。"
   },
   "transit": {
     "title": "在途货物",
@@ -2519,7 +2540,11 @@
     "backupStale": "未完成",
     "unsent": "未送达（7天）",
     "overdueTasks": "逾期任务",
-    "dueTodayShort": "今天到期"
+    "dueTodayShort": "今天到期",
+    "fillNoCapacity": "未设置容量",
+    "daysShort": "天",
+    "oldestTitle": "本仓库最久的货物",
+    "oldestNote": "🕓 — 最久货物在本仓库停放的天数；括号内为超过 {days} 天的箱数。"
   },
   "upsale": {
     "title": "销售提成",

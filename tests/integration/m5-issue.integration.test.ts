@@ -12,11 +12,13 @@ import {
   handovers,
   users,
   warehouses,
+  clientNotices,
 } from '@/modules/platform/db/schema';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
 import { ingestUnloadScans } from '@/modules/wms/scanning/unload';
+import { emitArrivalStaffEvent } from '@/modules/wms/notices/arrival-staff';
 import { issueBoxes } from '@/modules/wms/issue/service';
 import { buildHandoverAct } from '@/modules/wms/documents/handover-act';
 import { nextBatchCode } from '@/modules/wms/codes';
@@ -124,11 +126,32 @@ describe('UZ side', () => {
     const landed = await db.select().from(boxes).where(eq(boxes.lotId, lot.lotId));
     expect(landed.every((b) => b.status === 'ready_for_pickup')).toBe(true);
 
+    /*
+     * The seller learns cargo arrived — ONCE per truck now, not once per
+     * carton (owner, 2026-08-25). The event moved off the scan and onto the
+     * arrival notice's own claim, so the assertion follows it: scanning emits
+     * nothing, and the sweep's own function emits exactly one.
+     */
+    expect(
+      await db
+        .select()
+        .from(events)
+        .where(and(eq(events.type, 'ReadyForPickup'), eq(events.entityId, batch!.id))),
+    ).toHaveLength(0);
+    // ITS OWN notice, by batch: `staffPendingNotices` is global and this suite
+    // shares one database, so «the first pending row» is another file's
+    // fixture as often as not (#380).
+    const [notice] = await db
+      .select({ id: clientNotices.id })
+      .from(clientNotices)
+      .where(eq(clientNotices.refId, batch!.id));
+    expect(notice).toBeTruthy();
+    await emitArrivalStaffEvent(notice!.id);
     const readyEvents = await db
       .select()
       .from(events)
       .where(and(eq(events.type, 'ReadyForPickup'), eq(events.entityId, batch!.id)));
-    expect(readyEvents.length).toBeGreaterThan(0);
+    expect(readyEvents).toHaveLength(1);
 
     // Partial issue: 1 of 2
     const handoverId = uuidv4();

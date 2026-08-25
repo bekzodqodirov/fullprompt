@@ -65,8 +65,9 @@ export async function claimArrivalNotice(
   tx: Exec,
   clientId: string,
   batchId: string,
-  windowMinutes = ARRIVAL_WINDOW_MINUTES,
+  opts: { windowMinutes?: number; actorId?: string | null } = {},
 ): Promise<boolean> {
+  const windowMinutes = opts.windowMinutes ?? ARRIVAL_WINDOW_MINUTES;
   const rows = await tx
     .insert(clientNotices)
     .values({
@@ -75,10 +76,22 @@ export async function claimArrivalNotice(
       refType: 'batch',
       refId: batchId,
       sendAfter: new Date(Date.now() + windowMinutes * 60_000),
+      // Who was scanning. The staff event is emitted from a worker minutes
+      // later and would otherwise carry no actor at all — and an automation
+      // rule assigning «to whoever did it» then finds nobody and stops firing
+      // with its own counter not even moving.
+      claimedBy: opts.actorId ?? null,
     })
     .onConflictDoNothing()
     .returning({ id: clientNotices.id });
-  return rows.length > 0;
+  if (rows.length > 0) return true;
+  // The claim was taken. That is the ordinary case — the rest of the truck —
+  // but it is ALSO the second wave: a truck part-unloaded in the evening and
+  // finished next morning, whose first notice has already spoken. Re-arming
+  // is a no-op for a row that is still waiting.
+  const { rearmArrivalNotice } = await import('./arrival-staff');
+  await rearmArrivalNotice(tx, clientId, batchId, windowMinutes);
+  return false;
 }
 
 /**
@@ -137,8 +150,9 @@ export async function arrivedSummary(
   clientId: string,
   batchId: string,
   warehouseId: string,
+  exec: Exec = db,
 ): Promise<ArrivedSummary | null> {
-  const rows = await db
+  const rows = await exec
     .select({
       letter: receiptLots.letter,
       nameRu: receiptLots.productNameRu,
@@ -166,11 +180,20 @@ export async function arrivedSummary(
          * precisely when the owner looked. The departure movement is the
          * durable record of who rode which lorry.
          */
+        /*
+         * Departed on it, OR landed off it. `batch_departed` is the durable
+         * record for cargo that was loaded in China — but a box AUTO-
+         * TRANSFERRED at the destination (`undocumented_transfer`, the
+         * reality-wins path: it rode the truck and the plan never knew) has
+         * no departure row for this batch at all, so a truck that arrives
+         * with a rogue carton told the seller and never told the customer.
+         * Both halves of the membership, one predicate.
+         */
         sql`EXISTS (
           SELECT 1 FROM box_movements bm
           WHERE bm.box_id = ${boxes.id}
             AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId}
-            AND bm.cause = 'batch_departed'
+            AND bm.cause IN ('batch_departed', 'unload_scan', 'undocumented_transfer', 'found_here')
         )`,
         inArray(boxes.status, ['ready_for_pickup', 'in_stock']),
         isNull(receipts.voidedAt),
@@ -209,6 +232,44 @@ export async function arrivedSummary(
     volumeM3: lines.reduce((sum, line) => sum + line.volumeM3, 0),
     warehouseCode: '',
   };
+}
+
+/**
+ * Notices whose window has passed, CLAIMED for this sweep.
+ *
+ * A plain `SELECT … WHERE status = 'pending'` was the shape round 106 had to
+ * fix in the notifications drain (0082): pg-boss re-dispatches a slow job
+ * while the first run is still going, both reads return the same rows, and
+ * both send — the duplicate «yukingiz keldi» this whole table exists to
+ * prevent. The claim is the same one: `FOR UPDATE SKIP LOCKED` inside the
+ * UPDATE, so two overlapping sweeps split the work instead of repeating it.
+ *
+ * `sending` is a real status and reclaimable: a drain that dies mid-send
+ * leaves rows in it, and `RECLAIM_MINUTES` later they are pending again with
+ * their attempt spent.
+ */
+export const RECLAIM_MINUTES = 10;
+
+export async function claimNoticesForSending(limit = 50, now = new Date()) {
+  const rows = await db
+    .update(clientNotices)
+    .set({ status: 'sending', claimedAt: now })
+    .where(
+      sql`${clientNotices.id} IN (
+        SELECT id FROM client_notices
+        WHERE kind = ${NOTICE_ARRIVED}
+          AND send_after <= ${now.toISOString()}::timestamptz
+          AND (
+            status = 'pending'
+            OR (status = 'sending' AND claimed_at < ${now.toISOString()}::timestamptz - make_interval(mins => ${RECLAIM_MINUTES}))
+          )
+        ORDER BY send_after
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )`,
+    )
+    .returning();
+  return rows;
 }
 
 /** Notices whose window has passed. Ordered oldest first; bounded. */
