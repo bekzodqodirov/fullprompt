@@ -4,6 +4,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import {
   attachments,
+  boxes,
   clients,
   costEntries,
   costTypes,
@@ -22,6 +23,7 @@ import { AttachmentsPanel } from '@/components/attachments-panel';
 import { VoidReceiptForm } from './void-form';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
+import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
 import { CalcLink } from './calc-link';
 import { calcLinkOptions } from '@/modules/wms/calc/link';
@@ -116,6 +118,28 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     : [];
 
   const canVoid = actor.permissions.has('receipts.void') && receipt.status === 'confirmed';
+  // «Yaroqsiz» per box (owner, 2026-08-25): only cargo standing on a shelf is
+  // offerable — the service refuses the rest anyway, but a select listing a
+  // box the button cannot act on is a lie in a form (#171's cousin).
+  const lostOptionsByLot = new Map<string, LostBoxOption[]>();
+  if (canVoid && lotIds.length) {
+    const liveBoxes = await db
+      .select({ id: boxes.id, lotId: boxes.lotId, shortCode: boxes.shortCode, status: boxes.status })
+      .from(boxes)
+      .where(
+        and(
+          inArray(boxes.lotId, lotIds),
+          inArray(boxes.status, ['in_stock', 'planned', 'ready_for_pickup']),
+        ),
+      )
+      .orderBy(asc(boxes.seqInLot));
+    for (const b of liveBoxes) {
+      lostOptionsByLot.set(b.lotId, [
+        ...(lostOptionsByLot.get(b.lotId) ?? []),
+        { boxId: b.id, shortCode: b.shortCode, status: b.status },
+      ]);
+    }
+  }
   const canPrint = actor.permissions.has('receipts.create');
   const canEdit = actor.permissions.has('receipts.edit') && receipt.status === 'confirmed';
   const canAssign = actor.permissions.has('receipts.unclaimed.resolve') && receipt.status === 'confirmed';
@@ -268,6 +292,9 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                   }}
                 />
               </div>
+            )}
+            {canVoid && (
+              <MarkLostForm receiptId={id} options={lostOptionsByLot.get(lot.id) ?? []} />
             )}
           </div>
         ))}

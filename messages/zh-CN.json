@@ -156,7 +156,26 @@
     "doneTitle": "{wh} 盘点完成",
     "doneScanned": "已扫描：{n}",
     "skipped": "已跳过（状态不符）",
-    "telegramSent": "结果已通过 Telegram 发送给管理层"
+    "telegramSent": "结果已通过 Telegram 发送给管理层",
+    "acceptHint": "扫描实际在此、但系统记录在别处的箱子。",
+    "acceptConfirmHint": "将此箱收入本仓库？记录将被更正。",
+    "acceptBtn": "收入仓库",
+    "acceptDone": "已接收",
+    "acceptFromTruck": "原记录在 {code} 车次——已从车次移除。",
+    "acceptFromWh": "原记录在 {code} 仓库。",
+    "modeAccept": "接收单个箱子",
+    "modeAcceptHint": "箱子在此，但记录在车次或其他仓库",
+    "modeFull": "全面盘点",
+    "modeFullHint": "重新扫描整个仓库并核对",
+    "acceptErrors": {
+      "unknown_code": "未找到编号。",
+      "already_here": "此箱已记录在本仓库。",
+      "still_loading": "车辆仍在装货——请在装车页面卸下。",
+      "box_issued": "箱子已交付客户——无法接收。",
+      "box_void": "箱子已作废——请联系主管。",
+      "box_lost": "箱子已标记为丢失——请联系主管。",
+      "forbidden": "无权限。"
+    }
   },
   "reports": {
     "title": "报表",
@@ -546,7 +565,18 @@
     "printDialog": "打印",
     "shareToPrinter": "发送到打印机",
     "voidHasCosts": "请先作废该入库单的费用——资金记录由财务决定，而非仓库。",
-    "voidBoxGone": "无法作废：至少有一箱已离开仓库。"
+    "voidBoxGone": "无法作废：至少有一箱已离开仓库。",
+    "markLostTitle": "核销箱子（损坏/丢失）",
+    "markLostBox": "选择箱子",
+    "markLostReason": "原因（必填）",
+    "markLostBtn": "核销",
+    "markLostDone": "{code} 已核销。客户款项未变——折扣在交易中决定。",
+    "markLostErrors": {
+      "box_not_here": "箱子不在库（在途或已交付）——无法核销。",
+      "reason_required": "请填写原因。",
+      "forbidden": "无权限。",
+      "box_not_found": "未找到箱子。"
+    }
   },
   "stock": {
     "title": "库存",
@@ -830,7 +860,18 @@
     "pickFromStock": "从仓库选择装车 / 手动输入",
     "foreignCode": "这不是我们的编码（其他二维码）。请扫描 GSR 标签。",
     "serverRefused": "服务器拒绝了 {n} 次扫描，未被记录。请手动输入。",
-    "notYourTruck": "这辆车不属于你的仓库，或登录已过期，请重新登录。"
+    "notYourTruck": "这辆车不属于你的仓库，或登录已过期，请重新登录。",
+    "removeBtn": "从车上卸下",
+    "removeHint": "已扫描的箱子将退回仓库并从计划中移除。输入箱子或木箱（CR-…）编号，或从列表选择。",
+    "removeConfirmBtn": "卸下",
+    "removedToast": "已卸下：{codes}",
+    "removeOffline": "需要网络——离线无法卸下。",
+    "removeErrors": {
+      "batch_not_loading": "车辆已发车——无法卸下。",
+      "unknown_code": "未找到编号。",
+      "not_loaded_here": "此箱未记录在本车上。",
+      "forbidden": "无权限。"
+    }
   },
   "unloading": {
     "title": "卸货",

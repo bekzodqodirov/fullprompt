@@ -16,6 +16,7 @@ import {
   type SyncAck,
 } from '@/offline/scan-outbox';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { removeLoadedAction } from '../../batch-actions-server';
 
 interface PlannedBox {
   shortCode: string;
@@ -71,6 +72,12 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [manualQuery, setManualQuery] = useState('');
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeQuery, setRemoveQuery] = useState('');
+  const [removeCode, setRemoveCode] = useState('');
+  /** The row awaiting its second tap — one accidental press must not unload. */
+  const [removeConfirm, setRemoveConfirm] = useState<string | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * The snapshot's version, as the server named it.
@@ -423,6 +430,42 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     return crate && crate.boxShortCodes.length > 0 ? crate.boxShortCodes : [code];
   }
 
+  /**
+   * Take a box (or a whole CR- crate) back off the truck — ONLINE-only and
+   * two-tap on purpose: this is the logist's decision, not a scanning rhythm,
+   * and an accidental press must not quietly unload cargo.
+   */
+  async function doRemove(code: string) {
+    if (removeBusy) return;
+    setRemoveBusy(true);
+    try {
+      const res = await removeLoadedAction({ batchId, code });
+      if (res.ok) {
+        setLoaded((prev) => {
+          const next = new Set(prev);
+          for (const c of res.removed ?? []) next.delete(c);
+          return next;
+        });
+        setToast(`↩️ ${t('removedToast', { codes: (res.removed ?? []).join(', ') })}`);
+        setRemoveConfirm(null);
+        setRemoveCode('');
+        void flush({ sync: true });
+      } else {
+        const known = ['batch_not_loading', 'unknown_code', 'not_loaded_here', 'forbidden'];
+        setToast(
+          `❌ ${known.includes(res.error ?? '') ? t(`removeErrors.${res.error}` as 'removeErrors.unknown_code') : (res.error ?? '')}`,
+        );
+      }
+    } catch {
+      // The action never reached the server — unlike the load scan there is
+      // no offline queue here, and pretending otherwise would show a box off
+      // the truck that the record still has aboard.
+      setToast(`📴 ${t('removeOffline')}`);
+    } finally {
+      setRemoveBusy(false);
+    }
+  }
+
   if (!snapshot) {
     if (!snapError) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
     return (
@@ -533,6 +576,20 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   // Quick batch: no plan, so "sticker lost" picks from the origin WH stock
   // instead of the (empty) plan list (owner: tap the box, don't type codes).
   const quickBatch = isQuick(snapshot);
+  // What is on the truck right now, with its labels — the remove sheet's list.
+  const rq = removeQuery.trim().toUpperCase();
+  const removeList = [...loaded]
+    .map((code) => weighed.get(code))
+    .filter((b): b is PlannedBox => !!b)
+    .filter(
+      (b) =>
+        !rq ||
+        b.shortCode.includes(rq) ||
+        (b.clientCode ?? '').toUpperCase().includes(rq) ||
+        (b.marking ?? '').toUpperCase().includes(rq) ||
+        (b.crateCode ?? '').toUpperCase().includes(rq) ||
+        b.productNameZh.toUpperCase().includes(rq),
+    );
   const q = manualQuery.trim().toUpperCase();
   const basePick = (quickBatch ? (snapshot.available ?? []) : unscanned).filter(
     (b) => !loaded.has(b.shortCode),
@@ -657,6 +714,21 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         {quickBatch ? `📦 ${t('pickFromStock')}` : `🏷 ${t('stickerLost')}`}
       </button>
 
+      {loaded.size > 0 && (
+        <button
+          type="button"
+          className="btn-secondary w-full"
+          data-testid="remove-loaded-open"
+          onClick={() => {
+            setRemoveConfirm(null);
+            setRemoveQuery('');
+            setRemoveOpen(true);
+          }}
+        >
+          ↩️ {t('removeBtn')}
+        </button>
+      )}
+
       {toast && (
         <button type="button" className="w-full rounded-lg bg-gray-800 p-2 text-sm font-semibold text-white" onClick={() => setToast(null)}>
           {toast}
@@ -771,6 +843,88 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
                 <span className="min-w-0 flex-1 truncate text-ink-500">{box.productNameZh}</span>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Take a box back off the truck (owner, 2026-08-25; his answer B). */}
+      {removeOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setRemoveOpen(false)}>
+          <div
+            className="max-h-[80vh] w-full max-w-md space-y-2 overflow-y-auto rounded-t-2xl bg-surface-raised p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="font-bold">↩️ {t('removeBtn')}</p>
+            <p className="text-xs text-ink-500">{t('removeHint')}</p>
+            {!online && <p className="text-xs font-semibold text-bad">📴 {t('removeOffline')}</p>}
+            <div className="flex gap-2">
+              <input
+                data-testid="remove-code"
+                autoCapitalize="characters"
+                className="input flex-1 font-mono uppercase"
+                placeholder="YW26-000123 / CR-…"
+                value={removeCode}
+                onChange={(e) => setRemoveCode(e.target.value.toUpperCase())}
+              />
+              <button
+                type="button"
+                className="btn-danger px-4 disabled:opacity-50"
+                disabled={removeBusy || !online || removeCode.trim().length < 4}
+                onClick={() => void doRemove(removeCode.trim())}
+              >
+                ↩️
+              </button>
+            </div>
+            {removeList.length > 8 && (
+              <input
+                className="input"
+                value={removeQuery}
+                onChange={(e) => setRemoveQuery(e.target.value)}
+                placeholder={t('pickSearch')}
+                autoComplete="off"
+              />
+            )}
+            {removeList.slice(0, 80).map((box) => (
+              <div
+                key={box.shortCode}
+                className="flex w-full items-center gap-2 rounded-lg border border-line p-2 text-left text-sm"
+              >
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  data-testid="remove-row"
+                  onClick={() =>
+                    setRemoveConfirm(removeConfirm === box.shortCode ? null : box.shortCode)
+                  }
+                >
+                  <span className="font-mono font-bold">{box.shortCode}</span>
+                  <span className="font-mono font-extrabold text-brand-700">
+                    {codeIdentity(box.marking, box.clientCode).main}-{box.letter}
+                  </span>
+                  {box.crateCode && (
+                    <span className="whitespace-nowrap rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn">
+                      🧰 {box.crateCode}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-ink-500">{box.productNameZh}</span>
+                </button>
+                {removeConfirm === box.shortCode && (
+                  <button
+                    type="button"
+                    className="btn-danger whitespace-nowrap !min-h-9 px-2 text-xs disabled:opacity-50"
+                    data-testid="remove-confirm"
+                    disabled={removeBusy || !online}
+                    onClick={() => void doRemove(box.shortCode)}
+                  >
+                    ↩️ {t('removeConfirmBtn')}
+                  </button>
+                )}
+              </div>
+            ))}
+            {removeList.length === 0 && <p className="text-sm text-ink-500">—</p>}
+            <button type="button" className="btn-secondary w-full" onClick={() => setRemoveOpen(false)}>
+              {tc('cancel')}
+            </button>
           </div>
         </div>
       )}

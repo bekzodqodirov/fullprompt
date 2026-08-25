@@ -2,12 +2,13 @@
 
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { batches, boxes } from '@/modules/platform/db/schema';
-import { authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
-import { ScanError } from '@/modules/wms/scanning/service';
+import { removeLoadedCode, ScanError } from '@/modules/wms/scanning/service';
 import {
   closeBatch,
   finishUnload,
@@ -77,6 +78,44 @@ export async function resolveMissingAction(
     throw err;
   }
 }
+
+/**
+ * Take a scanned box/crate back off a still-loading truck (owner, 2026-08-25,
+ * his answer B: off the plan entirely, back to the shelf). Gated exactly as
+ * the load scan itself — the loader at the ORIGIN, standing at the truck.
+ */
+export async function removeLoadedAction(
+  input: unknown,
+): Promise<{ ok: boolean; removed?: string[]; error?: string }> {
+  const parsed = removeLoadedSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
+  if (!batch) return { ok: false, error: 'batch_not_found' };
+  let actor;
+  try {
+    actor = await authorize('scan.load', { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    const res = await removeLoadedCode(parsed.data.batchId, parsed.data.code, {
+      actorId: actor.id,
+      ...meta,
+    });
+    revalidatePath(`/batches/${batch.id}`);
+    return { ok: true, removed: res.removed };
+  } catch (err) {
+    if (err instanceof ScanError) return { ok: false, error: err.code };
+    throw err;
+  }
+}
+
+const removeLoadedSchema = z.object({
+  batchId: z.string().uuid(),
+  code: z.string().trim().min(3).max(40),
+});
 
 /** Quick batch (spec 6.6): internal transfer with no plan/approval loop. */
 export async function createQuickBatchAction(

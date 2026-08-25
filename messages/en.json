@@ -156,7 +156,26 @@
     "doneTitle": "Stocktake of {wh} completed",
     "doneScanned": "Scanned: {n}",
     "skipped": "Skipped (status does not apply)",
-    "telegramSent": "The summary was sent to management on Telegram"
+    "telegramSent": "The summary was sent to management on Telegram",
+    "acceptHint": "Scan a box standing here that the system records elsewhere.",
+    "acceptConfirmHint": "Accept this box into this warehouse? The record will be corrected.",
+    "acceptBtn": "Accept into warehouse",
+    "acceptDone": "Accepted",
+    "acceptFromTruck": "Was recorded on trip {code} — taken off the trip.",
+    "acceptFromWh": "Was recorded at warehouse {code}.",
+    "modeAccept": "Accept one box",
+    "modeAcceptHint": "The box is here, but recorded on a trip or another warehouse",
+    "modeFull": "Full stocktake",
+    "modeFullHint": "Re-scan the whole warehouse and reconcile",
+    "acceptErrors": {
+      "unknown_code": "Code not found.",
+      "already_here": "This box is already recorded at this warehouse.",
+      "still_loading": "The truck is still loading — remove it on the loading screen.",
+      "box_issued": "The box was already issued to the client.",
+      "box_void": "The box is voided — ask a manager.",
+      "box_lost": "The box is marked lost — ask a manager.",
+      "forbidden": "No access."
+    }
   },
   "reports": {
     "title": "Reports",
@@ -546,7 +565,18 @@
     "printDialog": "Print",
     "shareToPrinter": "Send to printer",
     "voidHasCosts": "Void this receipt's costs first — a money record is finance's decision, not the warehouse's.",
-    "voidBoxGone": "Cannot void: at least one box has already left the shelf."
+    "voidBoxGone": "Cannot void: at least one box has already left the shelf.",
+    "markLostTitle": "Write off a box (damaged/lost)",
+    "markLostBox": "Pick a box",
+    "markLostReason": "Reason (required)",
+    "markLostBtn": "Write off",
+    "markLostDone": "{code} written off. The client's money is untouched — a discount is decided on the deal.",
+    "markLostErrors": {
+      "box_not_here": "The box is not on a shelf (on a trip or issued) — cannot write off.",
+      "reason_required": "Write the reason.",
+      "forbidden": "No access.",
+      "box_not_found": "Box not found."
+    }
   },
   "stock": {
     "title": "Warehouse stock",
@@ -830,7 +860,18 @@
     "pickFromStock": "Pick from the warehouse / enter by hand",
     "foreignCode": "That is not our code (a foreign QR). Scan the GSR sticker.",
     "serverRefused": "The server refused {n} scan(s) — they were not recorded. Enter them by hand.",
-    "notYourTruck": "This truck is not for your warehouse, or the session expired — sign in again."
+    "notYourTruck": "This truck is not for your warehouse, or the session expired — sign in again.",
+    "removeBtn": "Take off the truck",
+    "removeHint": "A scanned box goes back to stock and leaves the plan. Enter a box or crate (CR-…) code, or pick from the list.",
+    "removeConfirmBtn": "Remove",
+    "removedToast": "Removed: {codes}",
+    "removeOffline": "Internet required — removal does not work offline.",
+    "removeErrors": {
+      "batch_not_loading": "The truck has already departed — cannot remove.",
+      "unknown_code": "Code not found.",
+      "not_loaded_here": "This box is not recorded on this truck.",
+      "forbidden": "No access."
+    }
   },
   "unloading": {
     "title": "Unloading",

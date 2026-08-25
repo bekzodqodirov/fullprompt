@@ -16,6 +16,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { getSetting } from '../../platform/settings/service';
 import { assignLetters } from '../sequencer';
 import { nextBoxCodes, nextReceiptNumber } from '../codes';
@@ -453,7 +454,16 @@ async function confirmedLotSummaries(receiptId: string): Promise<ConfirmedLotSum
 
 /** Void a receipt (nothing is deleted; letters are NOT returned, spec 5.3). */
 export class VoidError extends Error {
-  constructor(public readonly code: 'box_not_in_stock' | 'receipt_has_costs') {
+  constructor(
+    public readonly code:
+      | 'box_not_in_stock'
+      | 'receipt_has_costs'
+      // markBoxLost's refusals ride the same class: one write-off vocabulary.
+      | 'unauthenticated'
+      | 'reason_required'
+      | 'box_not_found'
+      | 'box_not_here',
+  ) {
     super(code);
   }
 }
@@ -532,4 +542,103 @@ export async function voidReceipt(
       after: { reason },
     });
   });
+}
+
+/**
+ * Write off ONE box — crushed, soaked, thrown out (owner, 2026-08-25: «yuk
+ * sklatda shikastlanib musorga chiqib ketsa nima qilaman»). Until now the
+ * only door to `lost` outside a truck's missing flow was the full stocktake;
+ * a manager standing over one wet carton should not have to count the
+ * building.
+ *
+ * `lost`, not `void`: void is «this box never really existed» (a miscount),
+ * lost is «it existed and is gone», with the person's written reason on it —
+ * exactly the state every correction path (`splitForCorrection`) already
+ * treats as terminal and leaves alone. The MONEY deliberately does not move:
+ * whether the client's bill shrinks is the damage-discount decision on the
+ * deal, a person's call, never a warehouse button's side effect (his answer:
+ * «ha to'g'ri»).
+ *
+ * The client's sales manager is told — compensation is their conversation to
+ * have, and a loss the seller learns about from the client is worse than one
+ * they raise first.
+ */
+export async function markBoxLost(
+  input: { boxId: string; reason: string },
+  ctx: AuditContext,
+): Promise<{ shortCode: string }> {
+  if (!ctx.actorId) throw new VoidError('unauthenticated');
+  const reason = input.reason.trim();
+  if (reason.length < 3) throw new VoidError('reason_required');
+
+  const result = await db.transaction(async (tx) => {
+    const rows = await tx.select().from(boxes).where(eq(boxes.id, input.boxId)).for('update');
+    const box = rows[0];
+    if (!box) throw new VoidError('box_not_found');
+    if (!['in_stock', 'planned', 'ready_for_pickup'].includes(box.status)) {
+      throw new VoidError('box_not_here');
+    }
+    // Only cargo standing on a shelf can be written off here: a box on a
+    // truck (or already handed over) is the load/unload/issue machinery's to
+    // resolve, and `planned` is on a shelf too — the plan just loses it.
+
+
+    const [about] = await tx
+      .select({
+        receiptId: receipts.id,
+        clientCode: clients.clientCode,
+        salesManagerId: clients.salesManagerId,
+        product: receiptLots.productNameZh,
+        letter: receiptLots.letter,
+      })
+      .from(receiptLots)
+      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+      .leftJoin(clients, eq(receipts.clientId, clients.id))
+      .where(eq(receiptLots.id, box.lotId));
+    if (!about) throw new VoidError('box_not_found');
+
+    await tx
+      .update(boxes)
+      .set({
+        status: 'lost',
+        statusReason: reason,
+        // A lost member makes its crate undissolvable and unscannable, the
+        // receipt-void rule; a planned box leaves its plan the same breath.
+        crateId: null,
+        currentBatchId: null,
+        flags: [],
+      })
+      .where(eq(boxes.id, box.id));
+    await tx.insert(boxMovements).values({
+      boxId: box.id,
+      fromWarehouseId: box.currentWarehouseId,
+      toWarehouseId: box.currentWarehouseId,
+      fromStatus: box.status,
+      toStatus: 'lost',
+      cause: 'marked_lost',
+      refType: 'receipt',
+      refId: about.receiptId,
+      actorId: ctx.actorId,
+    });
+    await writeAudit(tx, { ...ctx, warehouseId: box.currentWarehouseId }, {
+      entityType: 'receipt',
+      entityId: about.receiptId,
+      action: 'update',
+      after: { boxLost: box.shortCode, reason },
+    });
+    return { shortCode: box.shortCode, about };
+  });
+
+  const about = result.about;
+  if (about?.salesManagerId) {
+    await notifyStaffTelegram({
+      userIds: [about.salesManagerId],
+      type: 'BoxLost',
+      exceptUserId: ctx.actorId,
+      text:
+        `❌ ${result.shortCode} (${about.clientCode ?? '?'}-${about.letter ?? ''}, ${about.product}) ` +
+        `yaroqsiz deb belgilandi.\nSabab: ${reason}`,
+    }).catch(() => {});
+  }
+  return { shortCode: result.shortCode };
 }

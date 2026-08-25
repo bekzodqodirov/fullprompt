@@ -54,9 +54,12 @@ describe('menu relevance', () => {
     // the owner's instruction: /o («Свои списки» — «kerak emas, olib tashla»,
     // gone from every menu) and /arrivals («sklad ekranidan yo'qolsin» — a
     // promise is a sales fact and a packer can only act on a truck). 9 → 7,
-    // 12 → 10.
-    expect(menuFor('warehouse_operator')).toHaveLength(7);
-    expect(menuFor('warehouse_manager')).toHaveLength(10);
+    // 12 → 10. The corrections round put /inventory BACK on both, again on
+    // his instruction («ha qaytar» — the single found-box accept is a
+    // scanner's everyday job): 7 → 8, 10 → 11.
+    expect(menuFor('warehouse_operator')).toHaveLength(8);
+    expect(menuFor('warehouse_manager')).toHaveLength(11);
+    expect(menuFor('warehouse_operator')).toContain('/inventory');
     // And they are gone rather than merely reordered.
     expect(menuFor('warehouse_operator')).not.toContain('/arrivals');
     expect(menuFor('warehouse_manager')).not.toContain('/o');
