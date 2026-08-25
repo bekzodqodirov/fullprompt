@@ -998,11 +998,19 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
+**Latest migration: 0090** (`notice_staff` — the staff arrival event's own
+fence and the client drain's claim; ledger must reach **91**).
+
 **HIS SERVER IS AT 90 — confirmed «deploy qildim 90 chiqdi» on 2026-08-25
 evening**, in ONE deploy that landed PR #53 (the whole VED module, phases
 A-E1, migrations 0085-0089, plus rounds 108-111 and the thread-calc/seller-
 report round) AND PR #56 (the warehouse-corrections round — no migration).
-Everything in this file is LIVE in production. Still owed after that deploy:
+Everything in this file is LIVE in production EXCEPT the second corrections
+round (the bin scan, both unload shortcuts moving to the manager, one arrival
+message per truck, the warehouse-fill block — migration 0090, ledger 91),
+which is merged and awaiting his next deploy. Still owed after that deploy:
+**the nine warehouse capacities** — every `capacity_m3` is NULL, so the fill
+bars render as m³ figures with no bar until he types them. Also:
 he picks the «sotuvchi ulushi» expense category on /upsale, the VED fills
 the empty calc dictionaries at /hisoblash/lugatlar (nothing can be sealed
 until then — by design), and the basemap fetch if /map is still schematic.

@@ -139,7 +139,13 @@ export async function markBoxLostAction(
   const meta = await requestMeta();
   try {
     const res = await markBoxLost(
-      { boxId: parsed.data.boxId, reason: parsed.data.reason },
+      {
+        boxId: parsed.data.boxId,
+        reason: parsed.data.reason,
+        // The fence is the warehouse the BOX stands in — the same one the
+        // gate above was judged at, so the two can never drift apart.
+        atWarehouseId: box.currentWarehouseId,
+      },
       { actorId: actor.id, ...meta },
     );
     revalidatePath(`/receipts/${parsed.data.receiptId}`);

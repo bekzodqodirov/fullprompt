@@ -174,6 +174,26 @@
       "box_issued": "The box was already issued to the client.",
       "box_void": "The box is voided — ask a manager.",
       "box_lost": "The box is marked lost — ask a manager.",
+      "forbidden": "No access.",
+      "use_unload_screen": "This box is on a truck bound here — accept it on the unload screen."
+    },
+    "modeBin": "Write off (damaged)",
+    "modeBinHint": "The box is damaged and thrown out — scan it and write the reason",
+    "binHint": "Scan the box that is going in the bin.",
+    "binReason": "Reason (required)",
+    "binBtn": "Write off",
+    "binDone": "{code} written off. The seller and the logist were told.",
+    "binMoneyNote": "The client's money is untouched — a discount is decided on the deal.",
+    "binWhoAsk": "Writing a box off is the warehouse manager's — ask them.",
+    "binErrors": {
+      "unknown_code": "Code not found.",
+      "box_elsewhere": "This box is recorded elsewhere — accept it here first.",
+      "box_not_here": "The box is not on a shelf (on a trip or issued).",
+      "box_issued": "The box was already issued.",
+      "box_void": "The box is voided.",
+      "box_lost": "The box is already written off.",
+      "code_changed": "The box changed — scan again.",
+      "reason_required": "Write the reason.",
       "forbidden": "No access."
     }
   },
@@ -899,10 +919,11 @@
     "acceptAll": "Accept everything ({n})",
     "acceptAllConfirm": "Accept all {n} boxes as arrived at this warehouse? Scanning will be skipped.",
     "acceptAllDone": "Boxes accepted: {n}",
-    "finishConfirm": "Careful: {n} boxes have not been accepted yet. Finishing marks them as \"lost in transit\". If the cargo is here, press \"Accept everything\" first. Continue?",
+    "finishConfirm": "Careful: {n} boxes have not been accepted. Finishing marks them «missing in transit» and the client cannot be given them. If the cargo is here, scan it first. Continue?",
     "foreignCode": "That is not our code (a foreign QR). Scan the GSR sticker.",
     "serverRefused": "The server refused {n} scan(s) — they were not recorded. Enter them by hand.",
-    "notYourTruck": "This truck is not for your warehouse, or the session expired — sign in again."
+    "notYourTruck": "This truck is not for your warehouse, or the session expired — sign in again.",
+    "scanTheRest": "Scan the remaining boxes. Only a manager may close an unload with boxes outstanding."
   },
   "transit": {
     "title": "Cargo in transit",
@@ -2519,7 +2540,11 @@
     "backupStale": "MISSING",
     "unsent": "Undelivered (7 d)",
     "overdueTasks": "Overdue tasks",
-    "dueTodayShort": "due today"
+    "dueTodayShort": "due today",
+    "fillNoCapacity": "capacity not set",
+    "daysShort": "d",
+    "oldestTitle": "The oldest cargo at this warehouse",
+    "oldestNote": "🕓 — days the oldest cargo has stood AT THIS warehouse; in brackets, how many boxes are past {days} days."
   },
   "upsale": {
     "title": "Seller’s share",

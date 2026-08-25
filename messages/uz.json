@@ -174,6 +174,26 @@
       "box_issued": "Karobka allaqachon mijozga berilgan — qabul qilib bo'lmaydi.",
       "box_void": "Karobka bekor qilingan — boshliqqa murojaat qiling.",
       "box_lost": "Karobka yo'qolgan deb belgilangan — boshliqqa murojaat qiling.",
+      "forbidden": "Ruxsat yo'q.",
+      "use_unload_screen": "Bu karobka shu yerga mashinada kelyapti — tushirish ekranida qabul qiling."
+    },
+    "modeBin": "Yaroqsiz — musorga",
+    "modeBinHint": "Karobka shikastlangan va tashlab yuborildi — skan qiling va sababini yozing",
+    "binHint": "Musorga ketayotgan karobkani skan qiling.",
+    "binReason": "Sabab (majburiy)",
+    "binBtn": "Hisobdan chiqarish",
+    "binDone": "{code} hisobdan chiqarildi. Sotuvchiga va logistga xabar ketdi.",
+    "binMoneyNote": "Mijoz puliga tegilmaydi — chegirma bitimda hal qilinadi.",
+    "binWhoAsk": "Karobkani hisobdan chiqarishni sklad boshlig'i qiladi — undan so'rang.",
+    "binErrors": {
+      "unknown_code": "Kod topilmadi.",
+      "box_elsewhere": "Bu karobka bu skladda emas — avval qabul qilib oling.",
+      "box_not_here": "Karobka skladda emas (reysda yoki berilgan).",
+      "box_issued": "Karobka mijozga berilgan.",
+      "box_void": "Karobka bekor qilingan.",
+      "box_lost": "Karobka allaqachon hisobdan chiqarilgan.",
+      "code_changed": "Karobka o'zgardi — qaytadan skan qiling.",
+      "reason_required": "Sababni yozing.",
       "forbidden": "Ruxsat yo'q."
     }
   },
@@ -899,10 +919,11 @@
     "acceptAll": "Hammasini qabul qilish ({n} ta)",
     "acceptAllConfirm": "Mashinadagi {n} ta korobkaning hammasi shu skladga tushdi deb qabul qilamizmi? Skanerlash o‘tkazib yuboriladi.",
     "acceptAllDone": "{n} ta korobka qabul qilindi",
-    "finishConfirm": "Diqqat: {n} ta korobka hali qabul qilinmagan. Yakunlasangiz, ular «yo‘lda yo‘qolgan» deb belgilanadi. Agar yuklar shu yerda bo‘lsa, avval «Hammasini qabul qilish»ni bosing. Davom etamizmi?",
+    "finishConfirm": "Diqqat: {n} ta karobka hali qabul qilinmagan. Yakunlasangiz, ular «yo'lda yo'qolgan» deb belgilanadi va mijozga berib bo'lmaydi. Yuk shu yerda bo'lsa — avval skan qiling. Davom etamizmi?",
     "foreignCode": "Bu bizning kod emas (begona QR). GSR stikerini skanerlang.",
     "serverRefused": "Server {n} ta skanni qabul qilmadi — ular yozilmadi. Qo‘lda kiriting.",
-    "notYourTruck": "Bu mashina sizning skladingiz uchun emas yoki sessiya tugagan — qayta kiring."
+    "notYourTruck": "Bu mashina sizning skladingiz uchun emas yoki sessiya tugagan — qayta kiring.",
+    "scanTheRest": "Qolgan karobkalarni skan qiling. Qabul qilinmagan karobka bilan tushirishni faqat boshliq yakunlay oladi."
   },
   "transit": {
     "title": "Yo‘ldagi yuklar",
@@ -2519,7 +2540,11 @@
     "backupStale": "OLINMAGAN",
     "unsent": "Yuborilmagan (7 kun)",
     "overdueTasks": "Kechikkan vazifalar",
-    "dueTodayShort": "bugunga"
+    "dueTodayShort": "bugunga",
+    "fillNoCapacity": "sig'im kiritilmagan",
+    "daysShort": "kun",
+    "oldestTitle": "Shu skladdagi eng qari yuk",
+    "oldestNote": "🕓 — eng qari yuk SHU skladda necha kun turgani; qavsda — {days} kundan ko'p turgan karobkalar soni."
   },
   "upsale": {
     "title": "Sotuvchi ulushi",

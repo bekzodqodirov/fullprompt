@@ -5,7 +5,9 @@ import { seesAllMoney } from '@/modules/wms/finance/scope';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
 import { moneySnapshot, todaySnapshot } from '@/modules/wms/reports/overview';
-import { inTransitBatches, stockByWarehouse } from '@/modules/wms/reports/queries';
+import { inTransitBatches, stockByWarehouse, warehouseFill } from '@/modules/wms/reports/queries';
+import { getSetting } from '@/modules/platform/settings/service';
+import { WarehouseFillRows } from '@/components/warehouse-fill';
 import { decidedLeadCounts } from '@/modules/wms/crm/analytics';
 import { openDealsSummary } from '@/modules/wms/deals/service';
 import { taskPulse } from '@/modules/platform/tasks/analytics';
@@ -60,7 +62,14 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
   const sales = perms.has('crm.manage');
   const today = new Date().toISOString().slice(0, 10);
 
-  const [balance, flowToday, moneySnap, cargoToday, stock, transit, deals, decided, tasks, unsent, backup] =
+  // «Qaysi sklad qanchalik to'lgan va yuk necha kun qolib ketgan» (owner,
+  // 2026-08-25). Behind the CARGO permission the block links through, and
+  // scoped like every other read — an admin whose grants were trimmed to one
+  // warehouse must not read the others off the home screen.
+  const staleDays = Number(await getSetting('stale_stock_days')) || 30;
+  const whScope = actor.warehouseScoped ? actor.warehouseIds : undefined;
+
+  const [balance, flowToday, moneySnap, cargoToday, stock, transit, fills, deals, decided, tasks, unsent, backup] =
     await Promise.all([
       money ? companyBalance() : null,
       money ? cashFlow(today, today) : null,
@@ -68,6 +77,7 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
       cargo ? todaySnapshot() : null,
       cargo ? stockByWarehouse() : null,
       cargo ? inTransitBatches() : null,
+      cargo ? warehouseFill(whScope, staleDays) : null,
       sales ? openDealsSummary() : null,
       sales
         ? decidedLeadCounts(
@@ -96,6 +106,23 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
     { boxes: 0, kg: 0, m3: 0 },
   );
   const transitBoxes = (transit ?? []).reduce((acc, row) => acc + Number(row.boxCount), 0);
+
+  /*
+   * Which warehouses belong on the OWNER's home, and in what order — found by
+   * looking at the screen rather than by a test.
+   *
+   * `warehouseFill` returns every active warehouse, deliberately: /dashboard
+   * is the analyst's full picture and an empty warehouse missing from it
+   * cannot be told from a broken card. On the home screen that same rule
+   * printed a row of «0 m³ · sig'im kiritilmagan» for every warehouse nobody
+   * uses, and the two or three he actually asked about were somewhere in the
+   * middle of it. So the home shows what has cargo or a capacity, fullest
+   * first, then whatever is standing in the ones with no capacity typed in —
+   * his question, in his order.
+   */
+  const fillRows = [...(fills ?? [])]
+    .filter((row) => row.occupiedM3 > 0 || row.capacityM3 !== null)
+    .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.occupiedM3 - a.occupiedM3);
 
   // The zaxira signal has THREE states, and day one is the third: with no
   // off-site destination configured the honest word is «sozlanmagan», not a
@@ -153,6 +180,19 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
               {cargoToday.receipts}
             </Row>
           </div>
+          {/* His own question, in one glance: how full is each warehouse, and
+              how long has its oldest carton been standing there. A warehouse
+              with no capacity typed in shows the m³ and says so — every one of
+              them is in that state until he fills the numbers in. */}
+          {fillRows.length > 0 && (
+            <div className="mt-2 border-t border-line pt-2">
+              <WarehouseFillRows
+                rows={fillRows}
+                staleDays={staleDays}
+                canEditCapacity={perms.has('admin.warehouses.manage')}
+              />
+            </div>
+          )}
         </section>
       )}
 

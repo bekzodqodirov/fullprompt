@@ -861,14 +861,29 @@ export const clientNotices = pgTable(
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
     sentAt: timestamp('sent_at', { withTimezone: true }),
+    /**
+     * When the STAFF side was told (0090). Its own fence, deliberately not
+     * `status`: that column is about reaching the customer's Telegram, and
+     * the seller's message, the deal's cargo trigger and the automation rules
+     * need no Telegram at all — a client who never opened the bot must not
+     * cost their seller the notification.
+     */
+    staffNotifiedAt: timestamp('staff_notified_at', { withTimezone: true }),
+    /** Who was scanning when the truck landed — the event's actor (0090). */
+    claimedBy: uuid('claimed_by').references(() => users.id),
+    /** When this sweep took the row (0090) — the drain's own reclaim clock. */
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex('client_notices_once').on(t.clientId, t.kind, t.refType, t.refId),
     index('client_notices_due').on(t.sendAfter).where(sql`status = 'pending'`),
+    index('client_notices_staff_due')
+      .on(t.sendAfter)
+      .where(sql`staff_notified_at IS NULL`),
     check(
       'client_notices_status_check',
-      sql`${t.status} IN ('pending', 'sent', 'failed', 'skipped')`,
+      sql`${t.status} IN ('pending', 'sending', 'sent', 'failed', 'skipped')`,
     ),
   ],
 );

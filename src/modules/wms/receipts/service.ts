@@ -17,6 +17,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { usersWithPermission } from '../../platform/notifications/service';
 import { getSetting } from '../../platform/settings/service';
 import { assignLetters } from '../sequencer';
 import { nextBoxCodes, nextReceiptNumber } from '../codes';
@@ -559,12 +560,24 @@ export async function voidReceipt(
  * deal, a person's call, never a warehouse button's side effect (his answer:
  * «ha to'g'ri»).
  *
- * The client's sales manager is told — compensation is their conversation to
- * have, and a loss the seller learns about from the client is worse than one
- * they raise first.
+ * Two people are told, in ONE message each: the client's sales manager
+ * (compensation is their conversation, and a loss the seller hears about from
+ * the customer is worse than one they raise first) and whoever plans the
+ * trucks — the owner's own instruction for the bin scan, «xabar logistga
+ * ketadi». Unconditionally, because the seller half is NULL for unclaimed
+ * cargo and for the 1,402 of 1,692 clients who carry no manager: hanging the
+ * logist's copy off the seller's would make the requirement silent for
+ * exactly the cargo most likely to be crushed and forgotten.
+ *
+ * `atWarehouseId` is REQUIRED and not optional. The location rule used to
+ * live only in the receipt-card action, so a second caller that authorised at
+ * a warehouse of its own and then resolved a code globally could write off a
+ * carton standing in another country — the audit row would even name that
+ * country. An optional fence fails open; a required argument turns every
+ * caller into a compile error that names itself (#790's lesson).
  */
 export async function markBoxLost(
-  input: { boxId: string; reason: string },
+  input: { boxId: string; reason: string; atWarehouseId: string },
   ctx: AuditContext,
 ): Promise<{ shortCode: string }> {
   if (!ctx.actorId) throw new VoidError('unauthenticated');
@@ -575,12 +588,16 @@ export async function markBoxLost(
     const rows = await tx.select().from(boxes).where(eq(boxes.id, input.boxId)).for('update');
     const box = rows[0];
     if (!box) throw new VoidError('box_not_found');
-    if (!['in_stock', 'planned', 'ready_for_pickup'].includes(box.status)) {
-      throw new VoidError('box_not_here');
-    }
     // Only cargo standing on a shelf can be written off here: a box on a
     // truck (or already handed over) is the load/unload/issue machinery's to
     // resolve, and `planned` is on a shelf too — the plan just loses it.
+    if (!['in_stock', 'planned', 'ready_for_pickup'].includes(box.status)) {
+      throw new VoidError('box_not_here');
+    }
+    // …and standing HERE. Same refusal on purpose: to the person at the bin
+    // «this carton is not yours to bin» and «this carton is not on a shelf»
+    // are one sentence — it is not in front of them.
+    if (box.currentWarehouseId !== input.atWarehouseId) throw new VoidError('box_not_here');
 
 
     const [about] = await tx
@@ -624,15 +641,29 @@ export async function markBoxLost(
       entityType: 'receipt',
       entityId: about.receiptId,
       action: 'update',
+      // WHICH crate it was nailed into, on the row that records the loss: the
+      // write-off clears `crate_id` and the restore door therefore hands the
+      // box back LOOSE, where planning's own loose-line query can reserve it
+      // onto a truck while it is physically inside CR-12.
+      before: { status: box.status, crateId: box.crateId },
       after: { boxLost: box.shortCode, reason },
     });
-    return { shortCode: box.shortCode, about };
+    return { shortCode: box.shortCode, about, warehouseId: box.currentWarehouseId };
   });
 
   const about = result.about;
-  if (about?.salesManagerId) {
+  // ONE message each to a union, never two calls: `notifyStaffTelegram`
+  // de-dupes only WITHIN a call, and the logist holds `clients.manage` and is
+  // routinely somebody's sales manager — two calls would send that person the
+  // same sentence twice.
+  const userIds = [
+    ...(about?.salesManagerId ? [about.salesManagerId] : []),
+    ...(await usersWithPermission('plans.manage')),
+
+  ];
+  if (userIds.length > 0) {
     await notifyStaffTelegram({
-      userIds: [about.salesManagerId],
+      userIds,
       type: 'BoxLost',
       exceptUserId: ctx.actorId,
       text:

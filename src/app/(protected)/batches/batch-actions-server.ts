@@ -18,16 +18,29 @@ import {
 } from '@/modules/wms/scanning/unload';
 
 /**
- * Accept the whole remaining manifest at the destination without scanning
- * (owner: the truck is here, the boxes are here — finishing the unload should
- * not be the only one-tap action, because that one declares them lost).
+ * Accept the whole remaining manifest at the destination without scanning.
+ *
+ * Built because finishing was once the only one-tap action and that one
+ * declares the cargo lost. The owner has now asked for it to leave the
+ * operators («hammasini qabul qilib olish degan knobkani skladchilardan olib
+ * tashla») — he wants the cartons actually scanned — so BOTH shortcuts move to
+ * the manager together: this one, and finishing with boxes still outstanding
+ * (`finishUnloadAction`). Moving only this one would leave the operator the
+ * lossy button and take away the safe one, which is the inversion the button
+ * was built to fix.
  */
 export async function unloadRemainingAction(
   batchId: string,
 ): Promise<{ ok: boolean; accepted?: number; error?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
-  const actor = await authorize('scan.unload', { warehouseId: batch.destWarehouseId });
+  let actor;
+  try {
+    actor = await authorize('receipts.void', { warehouseId: batch.destWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
   const meta = await requestMeta();
   try {
     const result = await unloadRemaining(batchId, { actorId: actor.id, ...meta });
@@ -40,15 +53,34 @@ export async function unloadRemainingAction(
   }
 }
 
+/**
+ * Close the unload.
+ *
+ * Two different acts behind one button: with everything scanned it is
+ * bookkeeping, and with cartons outstanding it DECLARES THEM LOST — every one
+ * flagged `missing_in_transit`, which then refuses the client's handover. So
+ * the gate is asked twice: the plain finish stays the unloader's, and
+ * finishing over remaining boxes needs the manager grant, exactly like the
+ * accept-all it sits beside. The SERVICE refuses too (#531): a screen that
+ * hides a button is not a door.
+ */
 export async function finishUnloadAction(
   batchId: string,
 ): Promise<{ ok: boolean; missing?: string[]; error?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
-  const actor = await authorize('scan.unload', { warehouseId: batch.destWarehouseId });
+  let actor;
+  try {
+    actor = await authorize('scan.unload', { warehouseId: batch.destWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
   const meta = await requestMeta();
   try {
-    const result = await finishUnload(batchId, { actorId: actor.id, ...meta });
+    const result = await finishUnload(batchId, { actorId: actor.id, ...meta }, {
+      mayCloseWithMissing: actor.permissions.has('receipts.void'),
+    });
     await enqueue(JOB_PROCESS_EVENTS, {});
     revalidatePath(`/batches/${batchId}`);
     return { ok: true, missing: result.missing };
@@ -66,8 +98,16 @@ export async function resolveMissingAction(
   const box = await db.query.boxes.findFirst({ where: eq(boxes.id, parsed.data.boxId) });
   if (!box?.currentBatchId) return { ok: false, error: 'not_missing' };
   const batch = (await db.query.batches.findFirst({ where: eq(batches.id, box.currentBatchId) }))!;
-  // Manager-level (DECISIONS #43 proxy).
-  const actor = await authorize('receipts.void', { warehouseId: batch.destWarehouseId });
+  // Manager-level (DECISIONS #43 proxy). Wrapped like every other action in
+  // this file: an AuthError thrown from an async onClick has no boundary and
+  // reaches the operator as nothing at all.
+  let actor;
+  try {
+    actor = await authorize('receipts.void', { warehouseId: batch.destWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
   const meta = await requestMeta();
   try {
     await resolveMissing(parsed.data, { actorId: actor.id, ...meta });

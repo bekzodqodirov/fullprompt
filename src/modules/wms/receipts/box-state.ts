@@ -11,8 +11,12 @@
  *
  * A `void` box (the surplus from a 20 → 18 miscount correction, or a receipt
  * voided earlier) and a `lost` box (a crushed carton, with a person's written
- * reason) are never coming back to a shelf: nothing in the system moves them
- * again. Blocking on one is therefore not «resolve it first», it is FOR EVER
+ * reason) do not come back to a shelf by themselves: no scan, no unload and no
+ * correction moves them. A manager may restore a `lost` box deliberately —
+ * `boxes/status.ts`, the one door back, which refuses when the receipt has
+ * been voided in the meantime — and that is a decision made with the loss's
+ * own history on screen, not something a correction does on the way past.
+ * Blocking a correction on one is therefore not «resolve it first», it is FOR EVER
  * — one lost carton out of twenty and that receipt can never be voided, never
  * be moved to the right warehouse, and unclaimed cargo can never be returned
  * to the sender who has turned up to collect it.

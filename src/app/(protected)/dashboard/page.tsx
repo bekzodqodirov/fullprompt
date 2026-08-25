@@ -15,6 +15,7 @@ import {
 import { moneySnapshot, salesSnapshot, todaySnapshot } from '@/modules/wms/reports/overview';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader, Stat } from '@/components/ui/page';
+import { WarehouseFillRows } from '@/components/warehouse-fill';
 import { stageClass } from '../crm/stage-color';
 
 /**
@@ -45,10 +46,11 @@ export default async function DashboardPage() {
   const tcrm = await getTranslations('crm');
   const format = await getFormatter();
   const staleDays = Number(await getSetting('stale_stock_days')) || 30;
+  const canEditWarehouses = actor.permissions.has('admin.warehouses.manage');
 
   const [fills, stock, transit, unclaimed, aging, flags, costMissing, today, cash, sales] =
     await Promise.all([
-      warehouseFill(scope),
+      warehouseFill(scope, staleDays),
       stockByWarehouse(scope),
       inTransitBatches(scope),
       unclaimedSummary(scope),
@@ -236,22 +238,10 @@ export default async function DashboardPage() {
           {fills.length > 0 && (
             <div className="card space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{t('fill')}</p>
-              {fills.map((fill) => {
-                const bar = fill.pct >= 80 ? 'bg-bad' : fill.pct >= 60 ? 'bg-warn' : 'bg-good';
-                const text = fill.pct >= 80 ? 'text-bad' : fill.pct >= 60 ? 'text-warn' : 'text-ink-700';
-                return (
-                  <div key={fill.code} className="flex items-center gap-2">
-                    <span className="w-14 shrink-0 font-mono text-sm font-extrabold">{fill.code}</span>
-                    <div className="h-3 min-w-0 flex-1 overflow-hidden rounded bg-surface-sunken">
-                      <div className={`h-full ${bar}`} style={{ width: `${Math.min(100, fill.pct)}%` }} />
-                    </div>
-                    <span className={`num w-28 shrink-0 text-right text-xs font-bold ${text}`}>
-                      {fill.occupiedM3}/{fill.capacityM3} m³ · {fill.pct}%
-                    </span>
-                    {fill.pct >= 80 && <span title={t('fillShipHint')}>🚨</span>}
-                  </div>
-                );
-              })}
+              {/* One component, both screens — the owner's home draws the
+                  identical rows (#513: two copies of a bar disagree about
+                  what a missing capacity means). */}
+              <WarehouseFillRows rows={fills} staleDays={staleDays} canEditCapacity={canEditWarehouses} />
             </div>
           )}
 
