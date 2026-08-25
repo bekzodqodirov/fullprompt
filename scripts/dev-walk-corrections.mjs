@@ -27,16 +27,16 @@ async function stage() {
   await sql`insert into receipts (id, number, warehouse_id, client_id, status, confirmed_at, created_by)
     values (${receiptId}, ${'WLK-' + stamp}, ${opWh.id}, ${client.id}, 'confirmed', now(), ${op.id})`;
   const [lot] = await sql`insert into receipt_lots
-    (receipt_id, seq, letter, dims_mode, product_name_zh, box_count, total_weight_kg, total_volume_m3)
-    values (${receiptId}, 1, 'A', 'mixed', ${'测试 walk ' + stamp}, 3, 90, 1.2) returning id`;
+    (id, receipt_id, seq, letter, dims_mode, product_name_zh, box_count, total_weight_kg, total_volume_m3)
+    values (gen_random_uuid(), ${receiptId}, 1, 'A', 'mixed', ${'测试 walk ' + stamp}, 3, 90, 1.2) returning id`;
   const codes = [0, 1, 2].map((i) => `WLK${stamp}-${i}`);
   for (const [i, code] of codes.entries()) {
-    await sql`insert into boxes (lot_id, short_code, seq_in_lot, status, current_warehouse_id)
-      values (${lot.id}, ${code}, ${i + 1}, 'in_stock', ${opWh.id})`;
+    await sql`insert into boxes (id, lot_id, short_code, seq_in_lot, status, current_warehouse_id)
+      values (gen_random_uuid(), ${lot.id}, ${code}, ${i + 1}, 'in_stock', ${opWh.id})`;
   }
   const [batch] = await sql`insert into batches
-    (code, origin_warehouse_id, dest_warehouse_id, status, created_by)
-    values (${'WLKB-' + stamp}, ${opWh.id}, ${otherWh.id}, 'loading', ${op.id})
+    (id, code, origin_warehouse_id, dest_warehouse_id, status, created_by)
+    values (gen_random_uuid(), ${'WLKB-' + stamp}, ${opWh.id}, ${otherWh.id}, 'loading', ${op.id})
     returning id, code`;
   // Box 0 rides the still-loading truck (the remove sheet's subject); box 1
   // is "recorded at another warehouse" for the found-here accept.
@@ -95,7 +95,8 @@ try {
   page = await ctx.newPage();
   await login(page, '+998900000005');
   await page.goto(`${APP}/receipts/${s.receiptId}`);
-  await page.locator('summary', { hasText: 'chiqarish' }).first().click();
+  // Locale-proof: find the fold by the control it contains, not its words.
+  await page.locator('details:has([data-testid="mark-lost-box"]) > summary').first().click();
   await page.selectOption('[data-testid="mark-lost-box"]', { label: s.codes[2] });
   await page.fill('[data-testid="mark-lost-reason"]', 'suv tegdi — walk');
   await page.screenshot({ path: `${OUT}/5-marklost-form.png` });
@@ -111,7 +112,7 @@ try {
   const p2 = await ctx2.newPage();
   await login(p2, '+998900000006');
   await p2.goto(`${APP}/receipts/${s.receiptId}`);
-  const folds = await p2.locator('summary', { hasText: 'chiqarish' }).count();
+  const folds = await p2.locator('details:has([data-testid="mark-lost-box"])').count();
   console.log('operator sees write-off fold:', folds, folds === 0 ? 'OK-HIDDEN' : 'LEAK');
   await ctx2.close();
 } finally {
