@@ -985,7 +985,10 @@
     "costDetail": "成本明细",
     "forDeal": "对应哪笔交易",
     "accountCurrencyMismatch": "账户币种与金额币种不符",
-    "registerTruncated": "显示最新 {shown} 条（共 {total} 条）；合计为整个期间。"
+    "registerTruncated": "显示最新 {shown} 条（共 {total} 条）；合计为整个期间。",
+    "bothFigures": "成本价与客户价",
+    "floorShort": "成本",
+    "clientPriceShort": "客户:"
   },
   "map": {
     "title": "地图",
@@ -2227,7 +2230,10 @@
       "missing": "运费表中没有此密度的区间",
       "ambiguous": "运费表中此密度有两个区间"
     },
-    "band": "价目区间"
+    "band": "价目区间",
+    "freightSmall": "货量极小",
+    "teachRates": "写入词典",
+    "lgotaLast": "减免（上次）"
   },
   "partners": {
     "title": "合作方",

@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { calcOffers, expenseCategories, moneyAccounts } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
@@ -396,4 +396,50 @@ export async function setUpsaleCategory(categoryId: string, ctx: AuditContext): 
     before: { upsale_expense_category_id: before },
     after: { upsale_expense_category_id: id },
   });
+}
+
+/**
+ * «The cash screen must show both figures side by side» — law 4's accountant
+ * half, found missing by the whole-module audit: the payout screen had both
+ * numbers, the cash INTAKE (the client's ledger, the one charge/payment door)
+ * had neither. One row per deal that carries a standing released offer: the
+ * sealed floor and the client price, so the person taking the money sees what
+ * the client owes AND what of it is the company's.
+ *
+ * The CALLER gates on `upsaleScopeFor(actor) === 'all'` — this read is the
+ * difference between the two numbers, i.e. the upsale, and law 4 shows that
+ * to the owner and the accountant only. Not baked in here because the page
+ * already resolved the actor and a second resolution per panel is #432's
+ * shape.
+ */
+export async function bothFiguresForDeals(
+  dealIds: string[],
+): Promise<Map<string, { floorUsd: number; clientPriceUsd: number }>> {
+  const out = new Map<string, { floorUsd: number; clientPriceUsd: number }>();
+  const ids = [...new Set(dealIds)].filter(Boolean);
+  if (ids.length === 0) return out;
+  const { offerStandsSql, releasedOfferWhere } = await import('./workspace');
+  const rows = await db
+    .select({
+      dealId: calcOffers.entityId,
+      clientPriceUsd: calcOffers.clientPriceUsd,
+      floorUsd: sql<string>`(SELECT v.total_usd FROM calc_versions v WHERE v.id = ${calcOffers.versionId})`,
+      offeredAt: calcOffers.offeredAt,
+    })
+    .from(calcOffers)
+    .where(
+      and(
+        eq(calcOffers.entityType, 'deal'),
+        inArray(calcOffers.entityId, ids),
+        releasedOfferWhere(),
+        offerStandsSql(),
+      ),
+    )
+    .orderBy(calcOffers.offeredAt);
+  // Ordered ascending and overwritten, so the NEWEST standing offer per deal
+  // wins — the same answer releasedPriceFor gives one deal at a time.
+  for (const r of rows) {
+    out.set(r.dealId, { floorUsd: money(r.floorUsd), clientPriceUsd: money(r.clientPriceUsd) });
+  }
+  return out;
 }

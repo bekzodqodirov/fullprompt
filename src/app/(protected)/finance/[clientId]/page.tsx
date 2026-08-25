@@ -2,12 +2,14 @@ import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import { clients, currencies } from '@/modules/platform/db/schema';
+import { clients, currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { clientBalanceUsd, clientLedger } from '@/modules/wms/finance/service';
 import { listAccounts } from '@/modules/wms/accounting/service';
 import { ledgerDealsForClient } from '@/modules/wms/deals/service';
+import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
+import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { BackLink } from '@/components/back-link';
 import { CargoSummary } from '@/components/cargo-summary';
 import { TxForm } from './tx-form';
@@ -37,13 +39,29 @@ export default async function ClientLedgerPage({
   const ownerFilter = moneyOwnerFilter(actor);
   if (ownerFilter && client.salesManagerId !== ownerFilter) notFound();
 
-  const [balance, ledger, currencyRows, accounts, openDeals] = await Promise.all([
+  // Law 4's accountant half: at cash INTAKE the person taking the money sees
+  // the sealed floor and the client price side by side. Gated on the upsale
+  // scope and not on finance.view — the difference between the two numbers IS
+  // the upsale, and the VED (finance.manage, no finance.reports) must not
+  // read it here any more than on /upsale.
+  const seesBothFigures = upsaleScopeFor(actor) === 'all';
+  const clientDeals = seesBothFigures
+    ? await db
+        .select({ id: deals.id, code: deals.code, title: deals.title })
+        .from(deals)
+        .where(eq(deals.clientId, clientId))
+    : [];
+  const [balance, ledger, currencyRows, accounts, openDeals, figures] = await Promise.all([
     clientBalanceUsd(clientId),
     clientLedger(clientId),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
     listAccounts(),
     canManage ? ledgerDealsForClient(clientId) : Promise.resolve([]),
+    bothFiguresForDeals(clientDeals.map((d) => d.id)),
   ]);
+  const quoted = clientDeals
+    .map((d) => ({ ...d, fig: figures.get(d.id) }))
+    .filter((d): d is typeof d & { fig: { floorUsd: number; clientPriceUsd: number } } => Boolean(d.fig));
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-2xl">
@@ -61,6 +79,26 @@ export default async function ClientLedgerPage({
         </span>
         {balance > 0.009 && <span className="text-sm font-semibold text-bad">{t('debtor')}</span>}
       </div>
+
+      {quoted.length > 0 ? (
+        <section className="card !p-3" data-testid="both-figures">
+          <p className="text-2xs uppercase text-ink-500">{t('bothFigures')}</p>
+          <ul className="mt-1 space-y-1">
+            {quoted.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+                <span className="font-mono text-xs text-ink-500">{d.code}</span>
+                {d.title ? <span className="truncate text-xs text-ink-700">{d.title}</span> : null}
+                <span className="ml-auto font-mono tabular-nums">
+                  <span className="text-ink-500">{t('floorShort')}</span> ${d.fig.floorUsd.toFixed(2)}
+                  <span className="mx-1 text-ink-300">·</span>
+                  <span className="text-ink-500">{t('clientPriceShort')}</span>{' '}
+                  <span className="font-semibold">${d.fig.clientPriceUsd.toFixed(2)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {canManage && (
         <TxForm

@@ -985,7 +985,10 @@
     "costDetail": "tarkibi",
     "forDeal": "Qaysi bitim uchun",
     "accountCurrencyMismatch": "Kassa valyutasi to'lov valyutasiga mos emas",
-    "registerTruncated": "Eng yangi {shown} tasi ko'rsatildi (jami {total}); «jami» summa to'liq davr bo'yicha."
+    "registerTruncated": "Eng yangi {shown} tasi ko'rsatildi (jami {total}); «jami» summa to'liq davr bo'yicha.",
+    "bothFigures": "Tannarx va mijoz narxi",
+    "floorShort": "tannarx",
+    "clientPriceShort": "mijoz:"
   },
   "map": {
     "title": "Xarita",
@@ -2227,7 +2230,10 @@
       "missing": "Tarifda bu zichlik uchun band yo'q",
       "ambiguous": "Tarifda bitta zichlikka ikkita band"
     },
-    "band": "Tarif bandi"
+    "band": "Tarif bandi",
+    "freightSmall": "yuk juda kichik",
+    "teachRates": "lug‘atga yozish",
+    "lgotaLast": "lgota (o‘tgan safar)"
   },
   "partners": {
     "title": "Kontragentlar",

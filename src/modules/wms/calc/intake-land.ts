@@ -140,6 +140,8 @@ export async function landIntake(input: {
   facts: CalcFacts;
   steps: string[];
   fileCount: number;
+  /** The seller's typed/forwarded text, verbatim — law 11's unabridged half. */
+  material?: string[];
   collectedBy: string;
   collectedByName: string;
   /** Resolved client, when the typed code or phone named exactly one. */
@@ -178,6 +180,7 @@ export async function landIntake(input: {
         steps: input.steps,
         collectedBy: input.collectedByName,
         fileCount: input.fileCount,
+        material: input.material,
       }),
     },
     { actorId: input.collectedBy },

@@ -21,7 +21,7 @@ import { logger } from '@/modules/platform/logger';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
 import { usersWithPermission } from '@/modules/platform/notifications/service';
 import { cardLink } from '@/modules/platform/notifications/links';
-import { bazasFor, onDate, ratesForCodes, tariffFor, tariffZones } from './dictionaries';
+import { BAZA_STALE_DAYS, bazasFor, onDate, ratesForCodes, tariffFor, tariffZones } from './dictionaries';
 import { currentVersionSql, notSupersededSql } from './version-set';
 import {
   groupMeasure,
@@ -95,7 +95,7 @@ export interface WorkspaceItem extends PricedItem {
   groupId: string | null;
   bazaSource: 'dictionary' | 'typed' | null;
   /** The dictionary's current answer, offered even when a value is typed. */
-  dictionaryBaza: { bazaUsd: number; basis: BazaBasis; effectiveDate: string } | null;
+  dictionaryBaza: { bazaUsd: number; basis: BazaBasis; effectiveDate: string; stale: boolean } | null;
 }
 
 export interface WorkspaceGroup {
@@ -128,6 +128,13 @@ export interface WorkspaceGroup {
   customs: CustomsResult;
   /** What the rates dictionary says today, for the «pull» button. */
   dictionaryRates: { dutyPct: number; vatPct: number; feeUsd: number; effectiveDate: string } | null;
+  /**
+   * Law 7's second half: how this code's lgota was decided the LAST time a
+   * person sealed it — the offered default, never an applied one. Non-null
+   * only when the last decision carried an exemption; declining one is
+   * ordinary typing, forgetting one is the error this exists to catch.
+   */
+  lgotaLast: { dutyFree: boolean; vatFree: boolean } | null;
 }
 
 export interface WorkspaceExtra {
@@ -202,6 +209,37 @@ export function guessZone(fromCity: string | null): string | null {
  * to rescue exactly that load could never be reached. The screen previews
  * with the same call the seal validates with, so the two cannot disagree.
  */
+/**
+ * The last sealed lgota decision per TNVED code (law 7: «the dictionary
+ * remembers the last state as the offered default»).
+ *
+ * No lgota column lives in any dictionary ON PURPOSE — the exemption is
+ * per-CALC, so the memory is the sealed record itself: the newest sealed
+ * request carrying the code, excluding the one being worked on. One grouped
+ * query for all codes (#432), and only decisions that carried an exemption
+ * come back — offering «no lgota» as a default would nag every ordinary
+ * group.
+ */
+async function lgotaLastByCode(
+  codes: string[],
+  excludeRequestId: string,
+): Promise<Map<string, { dutyFree: boolean; vatFree: boolean }>> {
+  const out = new Map<string, { dutyFree: boolean; vatFree: boolean }>();
+  const list = [...new Set(codes)].filter(Boolean);
+  if (list.length === 0) return out;
+  const rows = await db.execute<{ tnved_code: string; duty_free: boolean; vat_free: boolean }>(sql`
+    SELECT DISTINCT ON (g.tnved_code) g.tnved_code, g.duty_free, g.vat_free
+      FROM calc_groups g
+      JOIN calc_versions v ON v.request_id = g.request_id
+     WHERE g.tnved_code IN (${sql.join(list.map((c) => sql`${c}`), sql`, `)})
+       AND g.request_id <> ${excludeRequestId}::uuid
+       AND (g.duty_free OR g.vat_free)
+     ORDER BY g.tnved_code, v.sealed_at DESC
+  `);
+  for (const r of rows) out.set(r.tnved_code, { dutyFree: r.duty_free, vatFree: r.vat_free });
+  return out;
+}
+
 export async function loadWorkspace(
   requestId: string,
   opts: { overrideDensity?: number | null; discountUsd?: number } = {},
@@ -226,14 +264,19 @@ export async function loadWorkspace(
   ]);
 
   const date = onDate();
-  const [bazas, rates, tariff, zones, confirmers] = await Promise.all([
+  const [bazas, rates, tariff, zones, confirmers, lgotaLast] = await Promise.all([
     bazasFor(itemRows.map((i) => i.name), date),
     ratesForCodes(groupRows.map((g) => g.tnvedCode ?? '').filter(Boolean), date),
     tariffFor(date),
     tariffZones(date),
     namesOf(groupRows.map((g) => g.confirmedBy).filter((v): v is string => v !== null)),
+    lgotaLastByCode(
+      groupRows.map((g) => g.tnvedCode ?? '').filter(Boolean),
+      requestId,
+    ),
   ]);
 
+  const bazaStaleCutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
   const items: WorkspaceItem[] = itemRows.map((i) => {
     const dict = bazas.get(normalise(i.name));
     return {
@@ -249,7 +292,15 @@ export async function loadWorkspace(
       bazaBasis: (i.bazaBasis as BazaBasis | null) ?? null,
       bazaSource: (i.bazaSource as 'dictionary' | 'typed' | null) ?? null,
       dictionaryBaza: dict
-        ? { bazaUsd: dict.bazaUsd, basis: dict.basis, effectiveDate: dict.effectiveDate }
+        ? {
+            bazaUsd: dict.bazaUsd,
+            basis: dict.basis,
+            effectiveDate: dict.effectiveDate,
+            // Law 5 puts the stale ⚠ where a stale baza actually PRICES a job
+            // — the workspace — not only on the dictionary screen. Same
+            // 90-day rule as /hisoblash/lugatlar.
+            stale: dict.effectiveDate <= bazaStaleCutoff,
+          }
         : null,
     };
   });
@@ -311,6 +362,7 @@ export async function loadWorkspace(
             effectiveDate: dictRates.effectiveDate,
           }
         : null,
+      lgotaLast: (g.tnvedCode && lgotaLast.get(g.tnvedCode)) || null,
     };
   });
 

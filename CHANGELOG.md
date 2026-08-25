@@ -410,79 +410,35 @@ tanlab qo'ymaydi.
 
 ## VED moduli, A bosqich: hisoblash navbati — 2026-08-22
 
-VED odam hisoblab bergan raqam bilan yukning haqiqiy narxini solishtiradigan
-ekran. Bu — modulning oxirgi bosqichi.
+Hisoblatish so'rovi endi o'z ma'lumotini ko'taradigan ISH bo'ldi: bo'lim
+(yo'lkira / rastamojka / podklyuch), qayerdan-qayerga, kg, kub, tovarlar
+ro'yxati (1000 tagacha) va sotuvchi yuborgan materiallar — hammasi so'rovning
+o'zida.
 
-**Avval ikkita ochiq gap, chunki ular nima qurilganini o'zgartirdi:**
+**Bitta navbat, ikkita eshik.** Botdagi «Hisoblatish» ham, kartadagi forma ham
+endi BITTA joyga tushadi — **/hisoblash** navbatiga. Ish sotuvchiga emas,
+NAVBATGA biriktiriladi: ochiq ishi eng kam bo'lgan VED xodimi oladi. Bitta
+kartada bir nechta ish bo'lishi mumkin (eski «bitta kartaga bitta so'rov»
+cheklovi olib tashlandi — bitta mijoz bir kunda ikki xil yuk so'rashi oddiy).
 
-- **Faqat RASTAMOJKA solishtiriladi, yo'lkira emas.** Yo'lkirada biz o'z
-  narxlarimizni qo'yamiz (sizning tarifingiz), mashina esa bizga boshqa
-  pulga tushadi — orasidagi farq bu **bizning foydamiz**, VED xodimining
-  xatosi emas. O'lchab ko'rdim: 30 kub, 200 kg/m³ yuk sizning tarifingiz
-  bo'yicha $4,800 turadi, mashina esa taxminan $2,700 — ya'ni **+78 %,
-  doimo**, hisob mutlaqo to'g'ri qilingan holda ham. Agar buni «xato» deb
-  ko'rsatsak, har bir to'g'ri hisob ham qizil bo'lib chiqadi va ro'yxatni
-  ikkinchi haftadayoq hech kim o'qimaydi. Rastamojka boshqacha: u davlatga
-  to'lanadigan pul, buxgalter uni xarajatlar jadvaliga o'zi kiritadi — ikkala
-  tomon bir xil narsani o'lchaydi, demak farq haqiqatan ham xato.
-  **Va aynan shu yerda AI ning taklifi pulga aylanadi** (AI faqat poshlina
-  foizini taklif qiladi, u esa rastamojkani hisoblaydi) — sizning savolingiz
-  shu bilan yopiladi.
-- **Yo'lkira bo'yicha tarif BANDI tekshiriladi.** Yuk kelgandagi haqiqiy
-  zichlik bo'yicha tarif qayta ochiladi va ekran shunday deydi: «hisobda
-  151-200 bandi, $160/m³ — haqiqatda 96 kg/m³, ya'ni 1-100 bandi». Bu VED
-  odam haqiqatan qabul qiladigan qaror, va uni tekshirib bo'ladi.
+**Soat qaytadan yurdi.** So'rov ochilganda muddat qo'yiladi (tovar soniga
+qarab, ko'pi bilan 2 soat), kechikkan ish so'ragan odamga va rahbariyatga BIR
+MARTA aytiladi (ishlayotganning o'ziga emas), va soat ISH TUGAGANDA to'xtaydi
+— narx saqlanganda yoki javob yozilganda.
 
-**Yangi ekran: Hisoblash → «Hisob va haqiqat»** (`/hisoblash/nazorat`).
-To'rt bo'lim, va ular shu tartibda:
+**To'liqlik ro'yxati.** So'rovda nima yetishmayotgani (kg ✗ · kub ✓ · tovar ✓)
+botning o'z tekshiruvi bilan bir xil ko'rinadi. VED to'liq bo'lmagan so'rovni
+**sababini yozib** qaytarib yuborishi mumkin — sabab majburiy.
 
-1. **Qamrov.** «Muhrlangan: 12 · prixodi bog'langani: 5». Birinchi turadi,
-   chunki hech narsa bog'lanmagan bo'lsa pastdagi hamma raqam bo'sh joy
-   haqida — va buni yashirgan ekran «xatomiz yo'q» deb o'qiladi, aslida
-   «ma'lumotimiz yo'q» degani.
-2. **Prixodni tasdiqlang.** Sistema taxmin qiladi, **odam tasdiqlaydi**.
-   Bitta bitimda bitta hisob bo'lsa — o'zi taklif qiladi; ikkita bo'lsa —
-   indamaydi, chunki mashina tanlay olmaydi. **Tasdiqlanmagan taxmin hech
-   kimni baholamaydi.** Prixod kartasida ham qo'lda tanlash tugmasi bor.
-3. **E'tibor talab qiladi.** Kim nimani «ko'rmasdan» tasdiqlagan: stavka
-   lug'atdan emas, AI ishonchsiz edi, AI stavkasi narxga ketdi. Har bir
-   qatorda **VED odamning o'z izohi** turadi (u allaqachon yozilardi, lekin
-   hech qayerda ko'rinmasdi) va «Lug'atga qo'shish» havolasi — ro'yxat
-   ishlangani sari bo'shab boradi.
-4. **Rastamojka: hisob va haqiqat.** «Hisobda $556.80 · Haqiqatda $657.02
-   +18%», yonida tarif bandi tekshiruvi.
+**Javob so'ragan odamga qaytadi.** Ish tugaganda summa + izoh yoziladi va
+sotuvchining bot chatiga yuboriladi.
 
-**Raqam o'rniga hech qachon $0 chiqmaydi.** Solishtirib bo'lmasa — ⚠ va
-sababi: mijoz o'zi rastamojka qilgan · xarajat hali kiritilmagan · kurs yo'q ·
-xarajat qutilarga taqsimlanmagan · yukning hammasi kelmagan · bitta hisobga
-juda ko'p yuk bog'langan. Kerakli turdagi xarajat topilmasa — **qanday
-xarajatlar topilganini yozib beradi**, ya'ni sozlash kerakligi ko'rinib
-turadi.
+**Yo'l-yo'lakay:** so'rov ko'rsatgan lead izohidagi fayllar VED'ga ochildi
+(uchta tekshiruvchi mustaqil topgan to'siq), va server eski sxemada qolganda
+ekran xatolik o'rniga tushunarli gap aytadigan bo'ldi.
 
-**Ikkita soat.** Qamrov va ogohlantirishlar — hisob sanasi bo'yicha (shu oy).
-Solishtirish — **yuk kelgan sana** bo'yicha, kelgandan 7 kun keyin (bu raqam
-sozlanadi). Sababi: yo'l eng kamida 10 kun, odatda 17 kun, ustiga narx bir oy
-turishi mumkin — bitta soat bilan jadval har oyning 18-sanasigacha bo'sh
-bo'lardi.
-
-**Kim ko'radi:** siz, buxgalter — hammasini; VED xodimi — **o'zinikini**;
-sotuvchi — umuman ko'rmaydi (xarajat tannarxi sotuvchining ekrani emas).
-To'rtala rolni brauzerda ochib tekshirdim.
-
-**Hozircha Telegramga xabar yubormaymiz.** Lug'atlar bo'sh ekan, har kuni
-hamma hisob «shubhali» bo'lib chiqadi — bunday xabarni bir oydan keyin hech
-kim o'qimaydi. Ma'lumot to'planganda yoqamiz (2-qism).
-
-**Ochiq aytaman, qurilmadi:** har bir tovar (TNVED kod) bo'yicha alohida
-solishtirish. Prixodda tovar **nomi** yozilgan, hisobda **kod** — ular
-bir-biriga ulanmaydi va nom normallashmaydi («Ayollar kurtkasi» / «куртка
-жен.» — bir narsa, uch xil yozuv). Butun yuk bo'yicha solishtiramiz.
-
-**Yo'l-yo'lakay tuzatildi:** TNVED taklif qilish uchun AI chaqiruvida
-muddat yo'q edi — osilib qolsa yagona jarayonni yarim soat band qilardi
-(101-raundning kasali, shu faylga yetib bormagan).
-
-**Migratsiya 0089** — serverda ro'yxat **90** ga yetishi kerak.
+**Migratsiya 0085** — o'sha kungi deployda serverda ro'yxat **86** ga yetishi
+kerak edi (keyingi bosqichlar bilan birga endi 90 ga yetadi).
 
 ## Xaritadagi mashina belgisi — 2026-08-20
 

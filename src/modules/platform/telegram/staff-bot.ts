@@ -325,6 +325,9 @@ export async function landCollectedIntake(
     section: state.section,
     facts: state.facts,
     steps: state.steps,
+    // Law 11: the words themselves go onto the card, not only what the
+    // parser made of them.
+    material: state.material,
     fileCount: state.fileCount,
     collectedBy: staffId,
     collectedByName: staffName,

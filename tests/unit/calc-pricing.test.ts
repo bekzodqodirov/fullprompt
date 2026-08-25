@@ -349,3 +349,33 @@ describe('densityOf', () => {
     expect(densityOf(null, 12)).toBeNull();
   });
 });
+
+describe('law 8: no minimum charge — very small cargo gets only a warning', () => {
+  const rows = ownerTariffRows();
+
+  it('a tiny load prices honestly and carries the flag', () => {
+    // 0.2 m³ of light goods: band 1-100 at $110/m³ = $22 — under $50.
+    const r = freightFor(rows, { zone: 'cn', weightKg: 15, volumeM3: 0.2 });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.listUsd).toBe(22);
+      expect(r.small).toBe(true);
+    }
+  });
+
+  it('an ordinary load does not', () => {
+    const r = freightFor(rows, { zone: 'cn', weightKg: 1500, volumeM3: 30 });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.small).toBe(false);
+  });
+
+  it('the per-kg branch is under the same rule', () => {
+    // 40 kg at 0.03 m³ → ≥1000 kg/m³ → $0.55/kg = $22.
+    const r = freightFor(rows, { zone: 'cn', weightKg: 40, volumeM3: 0.03 });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.band.perKg).toBe(true);
+      expect(r.small).toBe(true);
+    }
+  });
+});

@@ -14,6 +14,7 @@ import {
   moveItemAction,
   proposeAction,
   pullBazasAction,
+  saveRatesAction,
   pullRatesAction,
   saveExtraAction,
   sealAction,
@@ -146,7 +147,16 @@ function FreightPanel({
           <dt className="text-ink-500">{t('freightList')}</dt>
           <dd className="font-mono tabular-nums" data-testid="calc-freight-price">
             {freight?.ok ? (
-              `$${freight.listUsd.toFixed(2)}`
+              <>
+                {`$${freight.listUsd.toFixed(2)}`}
+                {/* Law 8's second half: no minimum charge exists, so a tiny
+                    invoice must at least SAY it is tiny. */}
+                {freight.small ? (
+                  <span className="chip chip-warn ml-1" data-testid="calc-freight-small">
+                    ⚠ {t('freightSmall')}
+                  </span>
+                ) : null}
+              </>
             ) : (
               <span className="text-warn">
                 ⚠ {freight ? refusal(t, freight.reason) : refusal(t, 'zone_required')}
@@ -402,6 +412,72 @@ function GroupRows({
               {t('pullRates')}: {group.dictionaryRates.dutyPct}% / {group.dictionaryRates.vatPct}%
             </button>
           ) : null}
+          {/* Law 6's other half: a rate the VED typed over (or without) the
+              dictionary's answer is REMEMBERED — by a person's press, never
+              silently (0086's own comment promised this box; the whole-module
+              audit found it was never built). Hidden once the dictionary
+              already says the same numbers. */}
+          {group.rateSource === 'typed' &&
+          group.tnvedCode &&
+          group.dutyPct !== null &&
+          group.vatPct !== null &&
+          (!group.dictionaryRates ||
+            group.dictionaryRates.dutyPct !== group.dutyPct ||
+            group.dictionaryRates.vatPct !== group.vatPct ||
+            group.dictionaryRates.feeUsd !== (group.feeUsd ?? 0)) ? (
+            <button
+              type="button"
+              className="ml-2 underline"
+              disabled={pending}
+              data-testid="calc-teach-rates"
+              onClick={() =>
+                act(() =>
+                  saveRatesAction({
+                    tnvedCode: group.tnvedCode!,
+                    dutyPct: group.dutyPct!,
+                    vatPct: group.vatPct!,
+                    feeUsd: group.feeUsd ?? 0,
+                    effectiveDate: new Date().toISOString().slice(0, 10),
+                    source: 'correction',
+                  }),
+                )
+              }
+            >
+              {t('teachRates')}
+            </button>
+          ) : null}
+          {/* Law 7's offered default: how this code's lgota was decided last
+              time. A press APPLIES it (clearing any confirm — it is a
+              change); silence remains a real answer. Shown only while nobody
+              has confirmed and the flags differ. */}
+          {group.lgotaLast &&
+          group.confirmedAt === null &&
+          (group.lgotaLast.dutyFree !== group.dutyFree ||
+            group.lgotaLast.vatFree !== group.vatFree) ? (
+            <button
+              type="button"
+              className="ml-2 underline"
+              disabled={pending}
+              data-testid="calc-lgota-last"
+              onClick={() =>
+                act(() =>
+                  setRatesAction(id, group.id, {
+                    label: group.label,
+                    tnvedCode: group.tnvedCode ?? '',
+                    dutyPct: group.dutyPct,
+                    vatPct: group.vatPct,
+                    feeUsd: group.feeUsd,
+                    dutyFree: group.lgotaLast!.dutyFree,
+                    vatFree: group.lgotaLast!.vatFree,
+                  }),
+                )
+              }
+            >
+              {t('lgotaLast')}
+              {group.lgotaLast.dutyFree ? ` · ${t('dutyFree')}` : ''}
+              {group.lgotaLast.vatFree ? ` · ${t('vatFree')}` : ''}
+            </button>
+          ) : null}
           {group.confirmedAt === null ? (
             <button
               type="button"
@@ -536,6 +612,13 @@ function ItemBaza({
 
   return (
     <span className="flex items-center gap-1">
+      {/* Law 5's ⚠ belongs where a stale baza actually prices a job, not
+          only on the dictionary screen — the whole-module audit's find. */}
+      {item.dictionaryBaza?.stale ? (
+        <span className="chip chip-warn" data-testid="calc-baza-stale" title={item.dictionaryBaza.effectiveDate}>
+          ⚠ {t('stale')}
+        </span>
+      ) : null}
       <input
         className="input input-sm !w-20 font-mono tabular-nums"
         aria-label={`${t('baza')} ${item.seq}`}

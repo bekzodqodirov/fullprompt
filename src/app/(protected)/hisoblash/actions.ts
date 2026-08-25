@@ -401,6 +401,8 @@ export async function saveRatesAction(input: {
   vatPct: number;
   feeUsd: number;
   effectiveDate: string;
+  /** 'correction' when the workspace's «lug'atga yozish» taught it (law 6). */
+  source?: 'manual' | 'correction';
 }): Promise<CalcFormState> {
   return run('ved.docs', (ctx) => saveRates(input, ctx), '/hisoblash/lugatlar');
 }

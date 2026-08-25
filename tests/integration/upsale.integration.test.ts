@@ -702,6 +702,12 @@ describe('a correction retires the released offer', () => {
     expect(Number(card!.quotedAmount)).toBe(next.floor);
     expect((await releasedPriceFor('deal', dealId))?.price).not.toBe(job.floor + 500);
 
+    // The accountant's both-figures strip follows the same standing rule:
+    // the superseded promise is not one of the ledger's pairs either.
+    const { bothFiguresForDeals } = await import('@/modules/wms/calc/upsale-service');
+    const fig = (await bothFiguresForDeals([dealId])).get(dealId);
+    expect(fig?.clientPriceUsd).not.toBe(job.floor + 500);
+
     // The LOCK and the CARD agree — this equality is exactly what updateLead
     // checks before letting a save through.
     const { quoteLockedFor } = await import('@/modules/wms/crm/service');

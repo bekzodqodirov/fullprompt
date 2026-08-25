@@ -642,3 +642,46 @@ describe('the model never reaches a sealed number', () => {
     await expect(applyProposal(requestId, [], ctx())).rejects.toMatchObject({ code: 'groups_confirmed' });
   });
 });
+
+/**
+ * Law 7's second half, found missing by the whole-module audit: «the
+ * dictionary remembers the last state as the offered default». No dictionary
+ * column carries the lgota ON PURPOSE (it is per-calc); the memory is the
+ * sealed record, and the workspace offers it.
+ */
+describe('the lgota is offered from the last sealed decision', () => {
+  it('a new group on the same code sees how it was decided last time', async () => {
+    const code = `990${String(Date.now()).slice(-7)}`;
+    // Seal a request whose group carries a duty exemption on this code.
+    const first = await readyRequest({ items: [{ name: `lgota tovar ${tag()}`, quantity: 5 }] });
+    await setGroupRates(
+      first.groupId,
+      { tnvedCode: code, dutyPct: 0, vatPct: 12, feeUsd: 0, dutyFree: true, vatFree: false, source: 'typed' },
+      ctx(),
+    );
+    await confirmAllGroups(first.requestId, ctx());
+    await sealCalc(
+      first.requestId,
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      ctx(),
+    );
+
+    // A NEW request, same code, fresh flags: the offered default is the old
+    // decision, and it is an offer — the group's own flags stay false.
+    const request = await open({ items: [{ name: `lgota tovar 2 ${tag()}`, quantity: 5 }] });
+    const groupId = await createGroup(request.id, { label: 'Lgota', tnvedCode: code }, ctx());
+    const workspace = await loadWorkspace(request.id);
+    const group = workspace!.groups.find((g) => g.id === groupId)!;
+    expect(group.dutyFree).toBe(false);
+    expect(group.lgotaLast).toEqual({ dutyFree: true, vatFree: false });
+  });
+
+  it('a code never sealed with an exemption offers nothing', async () => {
+    const code = `991${String(Date.now()).slice(-7)}`;
+    const request = await open({ items: [{ name: `oddiy tovar ${tag()}`, quantity: 5 }] });
+    const groupId = await createGroup(request.id, { label: 'Oddiy', tnvedCode: code }, ctx());
+    const workspace = await loadWorkspace(request.id);
+    // Offering «no lgota» as a default would nag every ordinary group.
+    expect(workspace!.groups.find((g) => g.id === groupId)!.lgotaLast).toBeNull();
+  });
+});

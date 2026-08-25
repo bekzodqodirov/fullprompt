@@ -211,6 +211,17 @@ export function bandFor(rows: FreightBand[], zone: string, density: number): Ban
 
 export type FreightRefusal = 'zone_required' | 'measure_missing' | 'not_a_number' | BandRefusal;
 
+/**
+ * Law 8's «no minimum charge — very small cargo gets only a warning».
+ *
+ * The first half has always held (nothing floors `listUsd`); this constant is
+ * the second half. MONEY and not volume, because the point of the warning is
+ * a tiny invoice — 0.3 m³ of light goods and 40 kg of dense ones are both
+ * under it, and both are jobs where the VED may want to quote differently
+ * rather than send a $22 freight line.
+ */
+export const SMALL_FREIGHT_USD = 50;
+
 export interface FreightBreakdown {
   ok: true;
   density: number;
@@ -218,6 +229,8 @@ export interface FreightBreakdown {
   bandDensity: number;
   band: FreightBand;
   listUsd: number;
+  /** Under SMALL_FREIGHT_USD — priced honestly, flagged loudly. */
+  small: boolean;
 }
 
 export type FreightResult = FreightBreakdown | { ok: false; reason: FreightRefusal };
@@ -256,12 +269,14 @@ export function freightFor(
   if (!found.ok) return found;
 
   const band = found.band;
+  const listUsd = round2(band.perKg ? band.priceUsd * kg : band.priceUsd * m3);
   return {
     ok: true,
     density,
     bandDensity,
     band,
-    listUsd: round2(band.perKg ? band.priceUsd * kg : band.priceUsd * m3),
+    listUsd,
+    small: listUsd < SMALL_FREIGHT_USD,
   };
 }
 

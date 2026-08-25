@@ -130,12 +130,28 @@ export function intakeSummaryText(input: {
  * what the owner asked for: «kartochkani ichida lenta bor, AI tartib bilan
  * qanday TNVED kod qo'ygan, qanday guruhlagan yozib ketsin».
  */
+/**
+ * Law 11's cap. The note column is unbounded, but a forwarded dump has no
+ * ceiling either — 20 000 characters is the same slice the model reads, and
+ * past it the note says it was cut rather than cutting in silence.
+ */
+export const MATERIAL_NOTE_CAP = 20_000;
+
 export function intakeNoteText(input: {
   section: CalcSection;
   facts: CalcFacts;
   steps: string[];
   collectedBy: string;
   fileCount: number;
+  /**
+   * The seller's own words, verbatim (law 11: «everything the seller
+   * submitted is shown to the VED AS-IS — forwarded messages, unabridged»).
+   * The whole-module audit found the bot path persisted only the parsed
+   * digest: the typed and forwarded TEXT lived in a 30-minute in-memory
+   * state whose sole consumer was the model, so the VED read a summary of a
+   * submission nobody could reopen.
+   */
+  material?: string[];
 }): string {
   const goods = input.facts.goods ?? [];
   const goodsLines = goods
@@ -147,6 +163,13 @@ export function intakeNoteText(input: {
     )
     .join('\n');
   const missing = missingFields(input.section, input.facts);
+  const raw = (input.material ?? []).map((m) => m.trim()).filter(Boolean).join('\n');
+  const material =
+    raw.length === 0
+      ? null
+      : raw.length > MATERIAL_NOTE_CAP
+        ? raw.slice(0, MATERIAL_NOTE_CAP) + '\n… (qisqartirildi)'
+        : raw;
 
   return (
     `🧮 Hisoblatish — ${SECTION_LABEL[input.section]}\n` +
@@ -158,6 +181,7 @@ export function intakeNoteText(input: {
     (input.fileCount ? `Fayllar: ${input.fileCount}\n` : '') +
     (goods.length ? `\nTovarlar:\n${goodsLines}\n` : '') +
     (input.steps.length ? `\nAI izohi:\n${input.steps.map((s) => `— ${s}`).join('\n')}\n` : '') +
+    (material ? `\nSotuvchi yuborgani (asl matn):\n${material}\n` : '') +
     (missing.length
       ? `\n⚠️ Yetishmayotgan ma’lumot: ${missing.map((f) => FIELD_LABEL[f]).join(', ')}`
       : '')

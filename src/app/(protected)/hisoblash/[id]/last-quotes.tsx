@@ -35,7 +35,10 @@ export async function LastQuotes({
   let book: Awaited<ReturnType<typeof priceBookForCodes>> = new Map();
   try {
     [quotes, book] = await Promise.all([
-      lastQuotesByCode(list, 3),
+      // FIVE, the agreed number (law 10: «beside the last 5 real quotes») —
+      // the whole-module audit caught this shipped as 3 with no decision
+      // recording the shrink.
+      lastQuotesByCode(list, 5),
       priceBookForCodes(list, today),
     ]);
   } catch (err) {

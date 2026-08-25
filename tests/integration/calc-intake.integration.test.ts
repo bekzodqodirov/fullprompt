@@ -152,6 +152,46 @@ describe('what a quote cannot be made without', () => {
     // Customs section prints no route line — it does not have one.
     expect(note).not.toContain('Yo‘nalish');
   });
+
+  it("the note carries the seller's own words, unabridged (law 11)", () => {
+    // The whole-module audit's find: the bot path persisted only the parsed
+    // digest — the typed and forwarded TEXT lived in a 30-minute in-memory
+    // state whose sole consumer was the model, so the VED priced a job off a
+    // summary nobody could reopen. The words go onto the card now.
+    const note = intakeNoteText({
+      section: 'podklyuch',
+      facts: full,
+      steps: [],
+      collectedBy: 'Sotuvchi',
+      fileCount: 0,
+      material: ['Mijoz: 500 dona chexol, Yiwu skladga keldi', '2 kub bo‘lishi kerak dedi'],
+    });
+    expect(note).toContain('Sotuvchi yuborgani (asl matn):');
+    expect(note).toContain('Mijoz: 500 dona chexol, Yiwu skladga keldi');
+    expect(note).toContain('2 kub bo‘lishi kerak dedi');
+
+    // Past the cap it says it was cut, rather than cutting in silence.
+    const long = intakeNoteText({
+      section: 'podklyuch',
+      facts: full,
+      steps: [],
+      collectedBy: 'Sotuvchi',
+      fileCount: 0,
+      material: ['x'.repeat(25_000)],
+    });
+    expect(long).toContain('… (qisqartirildi)');
+    expect(long.length).toBeLessThan(25_000);
+
+    // No material — no empty heading pretending there was some.
+    const bare = intakeNoteText({
+      section: 'podklyuch',
+      facts: full,
+      steps: [],
+      collectedBy: 'Sotuvchi',
+      fileCount: 0,
+    });
+    expect(bare).not.toContain('Sotuvchi yuborgani');
+  });
 });
 
 describe('facts the person typed', () => {

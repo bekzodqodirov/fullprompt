@@ -985,7 +985,10 @@
     "costDetail": "breakdown",
     "forDeal": "For which deal",
     "accountCurrencyMismatch": "The cash box's currency does not match the amount's",
-    "registerTruncated": "Showing the newest {shown} of {total}; the total covers the whole period."
+    "registerTruncated": "Showing the newest {shown} of {total}; the total covers the whole period.",
+    "bothFigures": "Floor and client price",
+    "floorShort": "floor",
+    "clientPriceShort": "client:"
   },
   "map": {
     "title": "Map",
@@ -2227,7 +2230,10 @@
       "missing": "The tariff has no band for this density",
       "ambiguous": "The tariff has two bands for this density"
     },
-    "band": "Tariff band"
+    "band": "Tariff band",
+    "freightSmall": "very small cargo",
+    "teachRates": "write to the dictionary",
+    "lgotaLast": "lgota (last time)"
   },
   "partners": {
     "title": "Counterparties",
