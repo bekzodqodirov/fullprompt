@@ -998,10 +998,15 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
-**HIS SERVER IS AT 84** (he confirmed «84 chiqdi» on 2026-08-19 after PR
-#47 — round 107). **Rounds 108-110 and VED phase A are MERGED and NOT YET
-DEPLOYED: his next deploy must land 0084 AND 0085, and the ledger must read
-86.** Rounds 109, 109b and 110 mint none, so 86 covers all of them.
+**HIS SERVER IS AT 90 — confirmed «deploy qildim 90 chiqdi» on 2026-08-25
+evening**, in ONE deploy that landed PR #53 (the whole VED module, phases
+A-E1, migrations 0085-0089, plus rounds 108-111 and the thread-calc/seller-
+report round) AND PR #56 (the warehouse-corrections round — no migration).
+Everything in this file is LIVE in production. Still owed after that deploy:
+he picks the «sotuvchi ulushi» expense category on /upsale, the VED fills
+the empty calc dictionaries at /hisoblash/lugatlar (nothing can be sealed
+until then — by design), and the basemap fetch if /map is still schematic.
+Before that: **84** (2026-08-19 after PR #47 — round 107).
 Before that: **83 — everything through rounds 103-106
 (PR #45, merged and deployed 2026-08-18 evening, he confirmed «83 chiqdi»;
 migrations 0081 `backup_objects` + 0082 `notify_claim`). The tg-listen
