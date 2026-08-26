@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## Qashg'ar: «нет связи» xatosi — sabab topildi va tuzatildi — 2026-08-26
+
+Skrinshotingiz bo'yicha: sahifa ochilardi, lekin karobkalar ro'yxati
+kelmasdi — internet ishlab turgan holda, hamma plan ekranlarida.
+
+**Sabab (o'lchab tekshirildi):** server oldidagi Caddy har javobga
+brauzerga «menda HTTP/3 ham bor, UDP 443-portda» degan e'lon qo'shar ekan —
+lekin serverimiz o'sha portni umuman ochmagan. Ishongan telefon keyingi
+so'rovlarini o'sha yo'q yo'lga o'tkazadi va ular javobsiz qoladi: sahifa
+ochiladi, ro'yxat kelmaydi. Xitoy tarmoqlari bu protokolga baribir xalaqit
+beradi — shuning uchun aynan Qashg'arda chiqdi. Endi e'lon o'chirildi:
+server faqat o'zi haqiqatan xizmat qiladigan yo'llarni aytadi. Haqiqiy
+Caddy bilan tekshirildi: e'lon yo'qoldi, siqish (gzip) joyida.
+
+**Ikkinchi tuzatish — xato matni endi aniq gapiradi.** Ilgari «нет связи»
+ikki xil muammoga bitta gap edi: telefon serverga yetib bormadimi, yoki
+server xato berdimi — ajratib bo'lmasdi. Endi server xato bersa ekranda
+«Server xato bilan javob berdi (kod N)» chiqadi. Keyingi safar skrinshot
+yuborsangiz, muammoning turi o'zi yozilgan bo'ladi. Inventarizatsiya
+ekrani ham endi ro'yxat kelmasa abadiy «Yuklanmoqda…» da qotib qolmaydi —
+xatoni aytib, «Qayta urinish» tugmasini beradi.
+
+Bazada hech narsa o'zgarmagani yo'q (migratsiya yo'q — hisob 91 ligicha
+qoladi, agar oldingi deploy qilingan bo'lsa).
+
+
 ## Sklad va xabarlar: musorga skan, qabul tugmasi, bitta xabar, sklad to'lishi — 2026-08-25 (2)
 
 Sizning to'rt xabaringiz bo'yicha. Qurishdan oldin loyihani 7 ta tekshiruvchi
