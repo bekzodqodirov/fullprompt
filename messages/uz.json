@@ -48,7 +48,8 @@
     "copy": "Nusxa olish",
     "scanTruckForbidden": "Bu mashina sizning skladingiz uchun emas — yoki sessiya tugagan. Qayta kiring.",
     "scanSnapshotOffline": "Karobkalar ro‘yxati yuklanmadi: aloqa yo‘q. Internetni tekshirib, qayta urinib ko‘ring.",
-    "photoOnly": "Bu rasm emas — surat tanlang (hujjat uchun 📎 bor)"
+    "photoOnly": "Bu rasm emas — surat tanlang (hujjat uchun 📎 bor)",
+    "scanSnapshotServer": "Server xato bilan javob berdi (kod {n}). Internet ishlayapti — bu kodni boshliqqa ko'rsating."
   },
   "login": {
     "title": "Tizimga kirish",

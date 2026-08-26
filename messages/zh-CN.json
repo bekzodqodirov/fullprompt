@@ -48,7 +48,8 @@
     "copy": "复制",
     "scanTruckForbidden": "这辆车不属于你的仓库，或登录已过期，请重新登录。",
     "scanSnapshotOffline": "箱子清单未能加载：无网络。请检查网络后重试。",
-    "photoOnly": "这不是图片 — 请选择照片（文件请用 📎）"
+    "photoOnly": "这不是图片 — 请选择照片（文件请用 📎）",
+    "scanSnapshotServer": "服务器返回错误（代码 {n}）。网络正常——请将此代码告知主管。"
   },
   "login": {
     "title": "登录系统",

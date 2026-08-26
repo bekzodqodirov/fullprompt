@@ -48,7 +48,8 @@
     "copy": "Copy",
     "scanTruckForbidden": "This truck is not for your warehouse — or the session expired. Sign in again.",
     "scanSnapshotOffline": "The box list did not load: no connection. Check the network and try again.",
-    "photoOnly": "That is not a photograph — choose an image (📎 takes documents)"
+    "photoOnly": "That is not a photograph — choose an image (📎 takes documents)",
+    "scanSnapshotServer": "The server answered with an error (code {n}). The internet works — show this code to a manager."
   },
   "login": {
     "title": "Sign in",
