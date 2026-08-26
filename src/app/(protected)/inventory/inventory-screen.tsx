@@ -63,10 +63,25 @@ export function InventoryScreen({
     scanFeedback(kind);
   }
 
+  const [snapError, setSnapError] = useState<
+    { kind: 'offline' | 'server'; status?: number } | null
+  >(null);
   useEffect(() => {
     void (async () => {
-      const res = await fetch(`/api/inventory/expected?warehouseId=${warehouseId}`);
-      if (res.ok) setSnapshot((await res.json()) as Snapshot);
+      // Round 89 taught the two scan screens to say WHY there is no list;
+      // this one kept sitting on «Yuklanmoqda…» for ever, which is
+      // indistinguishable from a broken screen.
+      try {
+        const res = await fetch(`/api/inventory/expected?warehouseId=${warehouseId}`);
+        if (res.ok) {
+          setSnapshot((await res.json()) as Snapshot);
+          setSnapError(null);
+          return;
+        }
+        setSnapError({ kind: 'server', status: res.status });
+      } catch {
+        setSnapError({ kind: 'offline' });
+      }
     })();
   }, [warehouseId]);
 
@@ -106,7 +121,21 @@ export function InventoryScreen({
     }
   }
 
-  if (!snapshot) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
+  if (!snapshot) {
+    if (!snapError) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
+    return (
+      <div className="card space-y-3 !p-4 text-center" data-testid="snapshot-error">
+        <p className="font-semibold text-bad">
+          {snapError.kind === 'server'
+            ? tc('scanSnapshotServer', { n: snapError.status ?? 0 })
+            : tc('scanSnapshotOffline')}
+        </p>
+        <button type="button" className="btn-primary w-full" onClick={() => location.reload()}>
+          {tc('retry')}
+        </button>
+      </div>
+    );
+  }
 
   const expectedScanned = snapshot.boxes.filter((b) => scanned.has(b.shortCode));
   const missing = snapshot.boxes.filter((b) => !scanned.has(b.shortCode));

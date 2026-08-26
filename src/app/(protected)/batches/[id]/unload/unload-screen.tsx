@@ -42,7 +42,9 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
   const tc = useTranslations('common');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   /** Why there is no snapshot yet — `null` while it is simply still loading. */
-  const [snapError, setSnapError] = useState<'forbidden' | 'offline' | null>(null);
+  const [snapError, setSnapError] = useState<
+    { kind: 'forbidden' | 'offline' | 'server'; status?: number } | null
+  >(null);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [extra, setExtra] = useState<string[]>([]);
   const [pending, setPending] = useState(0);
@@ -70,7 +72,9 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
   useEffect(() => {
     void (async () => {
-      let failure: 'forbidden' | 'offline' = 'offline';
+      let failure: { kind: 'forbidden' | 'offline' | 'server'; status?: number } = {
+        kind: 'offline',
+      };
       try {
         const res = await fetch(`/api/batches/${batchId}/planned`);
         if (res.ok) {
@@ -84,7 +88,17 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
         // A refusal is not a bad connection, and the screen used to say
         // neither: it sat on the word «Yuklanmoqda…» for ever, with no
         // camera under it, which is indistinguishable from a broken scanner.
-        if (res.status === 401 || res.status === 403) failure = 'forbidden';
+        /*
+         * The server ANSWERED — with a refusal or an error — and that is not
+         * «нет связи». The Kashgar report (owner, 2026-08-26) arrived as a
+         * screenshot of this exact sentence, and the sentence could not say
+         * whether the phone never reached the server or the server answered
+         * 500: the words are the diagnosis, so they must name the class.
+         */
+        failure =
+          res.status === 401 || res.status === 403
+            ? { kind: 'forbidden' }
+            : { kind: 'server', status: res.status };
       } catch {
         /* genuinely offline */
       }
@@ -331,7 +345,11 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
     return (
       <div className="card space-y-3 !p-4 text-center" data-testid="snapshot-error">
         <p className="font-semibold text-bad">
-          {snapError === 'forbidden' ? tc('scanTruckForbidden') : tc('scanSnapshotOffline')}
+          {snapError.kind === 'forbidden'
+            ? tc('scanTruckForbidden')
+            : snapError.kind === 'server'
+              ? tc('scanSnapshotServer', { n: snapError.status ?? 0 })
+              : tc('scanSnapshotOffline')}
         </p>
         <button type="button" className="btn-primary w-full" onClick={() => location.reload()}>
           {tc('retry')}

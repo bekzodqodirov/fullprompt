@@ -150,7 +150,7 @@ services:
       # so it's also the default_sni fallback.
       LAN_IP: ${LAN_IP:-127.0.0.1}
     command: >
-      sh -c 'printf "{\n default_sni %s\n}\nhttps://localhost, https://%s {\n encode zstd gzip\n tls internal\n reverse_proxy app:3000\n}\n" "$$LAN_IP" "$$LAN_IP" > /etc/caddy/Caddyfile
+      sh -c 'printf "{\n default_sni %s\n servers {\n  protocols h1 h2\n }\n}\nhttps://localhost, https://%s {\n encode zstd gzip\n tls internal\n reverse_proxy app:3000\n}\n" "$$LAN_IP" "$$LAN_IP" > /etc/caddy/Caddyfile
       && caddy run --config /etc/caddy/Caddyfile'
     volumes:
       - caddydata:/data
@@ -176,7 +176,21 @@ services:
     # the standalone build: an API body 5,793 → 1,283 bytes, a response the
     # app had ALREADY gzipped passed through untouched at 990 (no double
     # encoding), and a `Range` read of the map's .pmtiles stayed a plain 206.
-    command: sh -c 'printf "%s {\n encode zstd gzip\n reverse_proxy app:3000\n}\n" "$$DOMAIN" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
+    #
+    # `protocols h1 h2` — HTTP/3 is deliberately OFF. Caddy advertises
+    # `Alt-Svc: h3=\":443\"` by default, and this compose publishes 443 over
+    # TCP ONLY, so the advertisement points at a port nobody serves. A browser
+    # that believes it switches its NEXT requests to QUIC/UDP: the page still
+    # renders (first connection, h2) and every API fetch after it dies —
+    # which on the Kashgar phones read as «Список коробок не загрузился: нет
+    # связи» with the internet working (owner, 2026-08-26). Round 110 had
+    # recorded exactly this mismatch as stated-not-done. Advertising only
+    # what is actually served beats publishing UDP 443: China interferes with
+    # QUIC anyway, and TCP h2 is the transport this whole system already
+    # demonstrably works over. Takes effect when the caddy container is
+    # RECREATED (`docker compose up -d` after pull — the command line changed,
+    # so compose recreates it by itself).
+    command: sh -c 'printf "{\n servers {\n  protocols h1 h2\n }\n}\n%s {\n encode zstd gzip\n reverse_proxy app:3000\n}\n" "$$DOMAIN" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
     volumes:
       - caddydata:/data
     depends_on:
