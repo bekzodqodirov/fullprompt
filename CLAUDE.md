@@ -1008,7 +1008,7 @@ report round) AND PR #56 (the warehouse-corrections round — no migration).
 Everything in this file is LIVE in production EXCEPT the second corrections
 round (the bin scan, both unload shortcuts moving to the manager, one arrival
 message per truck, the warehouse-fill block — migration 0090, ledger 91),
-which is merged and awaiting his next deploy. Still owed after that deploy:
+which is merged and awaiting his next deploy — as is the Kashgar fix (2026-08-26, no migration): Caddy advertised HTTP/3 at a UDP port compose never publishes (round 110's stated-not-done), so plan screens' API fetches died on the Kashgar phones while pages rendered; both Caddyfiles now carry `servers { protocols h1 h2 }`, and the loading/unload/inventory screens split «server answered (code N)» from «offline» (DECISIONS #846). Still owed after that deploy:
 **the nine warehouse capacities** — every `capacity_m3` is NULL, so the fill
 bars render as m³ figures with no bar until he types them. Also:
 he picks the «sotuvchi ulushi» expense category on /upsale, the VED fills
