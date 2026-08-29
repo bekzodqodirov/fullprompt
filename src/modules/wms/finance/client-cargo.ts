@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
@@ -137,6 +137,8 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
           eq(receipts.clientId, clientId),
           eq(boxMovements.refType, 'batch'),
           eq(boxMovements.cause, 'batch_departed'),
+          // An annulled box leaves the trip history's figures too.
+          ne(boxes.status, 'void'),
         ),
       )
       .groupBy(batches.id, batches.code, warehouses.code, dest.code, batches.status, batches.departedAt)

@@ -71,9 +71,11 @@ export default async function BatchesPage({
         // A finished batch has no member boxes left (unloading clears the
         // pointer), so the archive counts what actually departed with it.
         boxCount: sql<number>`(
-          SELECT count(*) FROM ${boxes} b WHERE b.current_batch_id = ${batches.id}
+          SELECT count(*) FROM ${boxes} b
+          WHERE b.current_batch_id = ${batches.id} AND b.status <> 'void'
         ) + (
           SELECT count(*) FROM box_movements bm
+          JOIN ${boxes} b3 ON b3.id = bm.box_id AND b3.status <> 'void'
           WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id}
             AND bm.cause = 'batch_departed'
             AND NOT EXISTS (

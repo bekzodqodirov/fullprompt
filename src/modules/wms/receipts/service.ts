@@ -22,6 +22,7 @@ import { getSetting } from '../../platform/settings/service';
 import { assignLetters } from '../sequencer';
 import { nextBoxCodes, nextReceiptNumber } from '../codes';
 import { splitForCorrection } from './box-state';
+import { voidBoxRows } from './void-box';
 import {
   announceArrivalDiff,
   closeExpectedById,
@@ -504,7 +505,7 @@ export async function voidReceipt(
     const lotIds = lotRows.map((l) => l.id);
     if (lotIds.length) {
       const boxRows = await tx
-        .select({ id: boxes.id, status: boxes.status })
+        .select({ id: boxes.id, status: boxes.status, statusReason: boxes.statusReason })
         .from(boxes)
         .where(inArray(boxes.lotId, lotIds))
         .for('update');
@@ -515,25 +516,14 @@ export async function voidReceipt(
       // block that nor take part in it: see box-state.ts.
       const { act, blocked } = splitForCorrection(boxRows);
       if (blocked.length) throw new VoidError('box_not_in_stock');
-      if (act.length) {
-        // crateId goes with the void: a crate holding a voided member could
-        // neither be dissolved nor scanned again (both refuse non-in_stock).
-        await tx
-          .update(boxes)
-          .set({ status: 'void', statusReason: `receipt voided: ${reason}`, crateId: null })
-          .where(inArray(boxes.id, act.map((b) => b.id)));
-        await tx.insert(boxMovements).values(
-          act.map((b) => ({
-            boxId: b.id,
-            fromStatus: b.status,
-            toStatus: 'void',
-            cause: 'receipt_void',
-            refType: 'receipt',
-            refId: receiptId,
-            actorId: ctx.actorId,
-          })),
-        );
-      }
+      // The terminal write lives in ONE place (void-box.ts) — the annul door
+      // writes the same shape over a wider set, and two writers of a terminal
+      // state is how they drift apart.
+      await voidBoxRows(tx, act, {
+        reasonText: `receipt voided: ${reason}`,
+        refId: receiptId,
+        actorId: ctx.actorId ?? null,
+      });
     }
 
     await writeAudit(tx, { ...ctx, warehouseId: receipt.warehouseId }, {

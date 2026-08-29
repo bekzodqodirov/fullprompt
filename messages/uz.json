@@ -334,7 +334,8 @@
       "sales_manager": "Sotuv menejeri",
       "accountant": "Buxgalter",
       "viewer": "Kuzatuvchi"
-    }
+    },
+    "superAdminLocked": "Super-admin rolini faqat super-adminning o'zi berishi yoki olishi mumkin"
   },
   "settings": {
     "title": "Sozlamalar",
@@ -2602,5 +2603,44 @@
     "clientBook": "Mijozlar kitobi",
     "funnelLink": "Voronka bo‘yicha tahlil",
     "empty": "Bu davrda ma’lumot yo‘q"
+  },
+  "annul": {
+    "open": "Anulirovka (kaskad)…",
+    "title": "Prixodni anulirovka qilish",
+    "boxes": "Karobkalar",
+    "costs": "Prixodning jonli rasxodlari",
+    "unconverted": "kurssiz",
+    "batches": "Tegishli reyslar",
+    "willRetire": "reys yopiladi",
+    "pendingPlans": "Qaror kutayotgan planlar bor — avval planni hal qiling/bekor qiling",
+    "clientMoney": "Mijozning jonli pul yozuvlari (hammasi)",
+    "reason": "Sabab (majburiy)",
+    "button": "To'liq anulirovka qilish",
+    "confirm": "Anulirovka: karobkalar bekor bo'ladi, prixod rasxodlari anulirovka bo'ladi, reysning umumiy rasxodlari haqiqiy yukka qayta taqsimlanadi, bo'sh qolgan reys yopiladi. Ortga qaytarib bo'lmaydi. Davom etamizmi?",
+    "done": "Prixod anulirovka qilindi",
+    "forbidden": "Faqat super-admin anulirovka qila oladi",
+    "onActivePlan": "Karobka faol planda/yuklanmoqda — avval planni yoki reysni bekor qiling",
+    "reasonRequired": "Sabab kerak (kamida 3 belgi)",
+    "notFound": "Prixod topilmadi",
+    "registryTitle": "Anulirovka qilingan yuklar",
+    "bulkTitle": "Mijoz bo'yicha tozalash",
+    "bulkHint": "Mijoz kodini kiriting — tasdiqlangan prixodlarini ko'rsatamiz, belgilab bir bosishda anulirovka qilasiz.",
+    "clientCode": "Mijoz kodi (masalan TST1)",
+    "bulkButton": "Belgilanganlarni anulirovka qilish",
+    "bulkConfirm": "{n} ta prixod anulirovka qilinsinmi? Ortga qaytarib bo'lmaydi.",
+    "bulkDone": "Anulirovka qilindi",
+    "bulkRefused": "Rad etildi",
+    "noReceipts": "Mijozda tasdiqlangan prixod yo'q",
+    "clientNotFound": "Bunday kodli mijoz topilmadi",
+    "deactivateHint": "Tozalashdan keyin: mijozning pullari — reyestrdagi havola orqali; mijozning o'zini kartochkasida nofaol qilsangiz bo'ladi.",
+    "listTitle": "Reyestr",
+    "listCap": "{total} tadan {shown} tasi ko'rsatildi",
+    "empty": "Anulirovka qilingan prixod yo'q",
+    "colWhen": "Qachon",
+    "colReceipt": "Prixod",
+    "colClient": "Mijoz",
+    "colCargo": "Yuk",
+    "colWho": "Kim",
+    "colMoney": "Jonli pullar"
   }
 }

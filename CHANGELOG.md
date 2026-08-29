@@ -1,5 +1,49 @@
 # CHANGELOG
 
+## Anulirovka: test-datani tozalash — super-admin kaskadi va reyestr — 2026-08-26
+
+So'rovingiz bo'yicha: «anulirovat qilish mumkin bo'lsin … barcha finance
+rasxodlari ham unga tegishli tozalanishi kerak … ro'yxati tursin». Qurishdan
+oldin loyihani 6 yo'nalishda 31 ta tekshiruvchi o'qidi — 25 ta kamchilik
+topildi va hammasi qurilishga singdirildi (eng kattasi: birinchi variantda
+rad etilgan anulirovka ham pulni qaytarib bo'lmas qilib o'chirib yuborishi
+mumkin edi — endi hammasi BITTA tranzaksiyada: rad etilsa, hech narsa
+o'zgarmaydi).
+
+**1. Prixod kartasida «Anulirovka (kaskad)» tugmasi** — faqat super-adminda.
+Bosishdan oldin ekran nima bo'lishini ko'rsatadi: nechta karobka, prixodning
+qancha jonli rasxodi, qaysi reyslar tegishi. Bir bosishda: karobkalar bekor
+bo'ladi (qayerda bo'lsa ham — yo'lda, berilgan, yashikda), prixodning o'z
+rasxodlari anulirovka bo'ladi (kontragent qarzi bilan birga), umumiy reys
+rasxodlari HAQIQIY yukka qayta taqsimlanadi, bo'shab qolgan yashik yopiladi,
+hamma yuki bekor bo'lgan yo'ldagi reys ham yopiladi (xarita va tranzitdan
+tushadi, haydovchi ilovasi o'chadi). Ortga qaytarib bo'lmaydi — shuning
+uchun sabab majburiy va hamma narsa jurnalga yoziladi.
+
+**2. Boshqaruv → «Anulirovka qilingan yuklar»** — reyestr va tozalash
+quroli. Mijoz kodini kiritasiz → tasdiqlangan prixodlari chiqadi →
+belgilaysiz → bitta sabab bilan bir bosishda hammasi anulirovka. Pastda
+reyestr: kim, qachon, nima sababdan, va har mijozning JONLI pul yozuvlari
+soni — bu ustun 0 ga tushsa, o'sha mijoz toza. Pulni tizim o'zi
+o'chirmaydi: raqam ustiga bossangiz mijoz kassasiga o'tasiz va o'sha yerda
+har yozuvni o'zingiz bekor qilasiz (sabab: pul yozuvi prixodni ko'rsatmaydi,
+va aralash holatda haqiqiy pulni o'chirib yuborish xavfi bor edi).
+
+**3. Himoya kuchaydi:** endi oddiy admin O'ZIGA super-admin rolini yozib
+ololmaydi — super-admin rolini faqat super-adminning o'zi beradi yoki
+oladi (tekshiruv shu teshikni topdi: ilgari bitta forma bilan har qanday
+admin o'zini super-admin qilib olishi mumkin edi).
+
+**4. Hisobotlar halol bo'ldi:** bekor qilingan karobka endi hech qayerda
+«yuk» deb hisoblanmaydi — reys reyestri, tranzit, foyda hisoboti, mashina
+ro'yxati, xaritadagi mashina tarkibi, bot javoblari. Hujjatlar (manifest,
+rastamojka) esa tarixni saqlaydi — mashina nimani olib ketgan bo'lsa, o'sha
+yozilgan qoladi.
+
+Migratsiya YO'Q — bazada hisob 91 ligicha qoladi. Eski void qilingan
+prixodlar ham reyestrda ko'rinadi.
+
+
 ## Qashg'ar: «нет связи» xatosi — sabab topildi va tuzatildi — 2026-08-26
 
 Skrinshotingiz bo'yicha: sahifa ochilardi, lekin karobkalar ro'yxati

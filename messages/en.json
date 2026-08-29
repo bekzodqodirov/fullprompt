@@ -334,7 +334,8 @@
       "sales_manager": "Sales manager",
       "accountant": "Accountant",
       "viewer": "Viewer"
-    }
+    },
+    "superAdminLocked": "Only a super admin may grant or remove the super_admin role"
   },
   "settings": {
     "title": "Settings",
@@ -2602,5 +2603,44 @@
     "clientBook": "Client book",
     "funnelLink": "Funnel analytics",
     "empty": "Nothing in this period"
+  },
+  "annul": {
+    "open": "Annul (cascade)…",
+    "title": "Annul this receipt",
+    "boxes": "Boxes",
+    "costs": "Live receipt costs",
+    "unconverted": "no FX rate",
+    "batches": "Affected trips",
+    "willRetire": "trip will close",
+    "pendingPlans": "Plans awaiting a verdict name this cargo — resolve/cancel the plan first",
+    "clientMoney": "Client's live money rows (all)",
+    "reason": "Reason (required)",
+    "button": "Annul completely",
+    "confirm": "Annulling: boxes become void, receipt costs are voided, shared trip costs redistribute onto real cargo, an emptied trip closes. There is no undo. Continue?",
+    "done": "Receipt annulled",
+    "forbidden": "Only the super admin may annul",
+    "onActivePlan": "A box is on an active plan/loading — cancel the plan or trip first",
+    "reasonRequired": "A reason is required (min 3 characters)",
+    "notFound": "Receipt not found",
+    "registryTitle": "Annulled cargo",
+    "bulkTitle": "Cleanup by client",
+    "bulkHint": "Enter a client code — their confirmed receipts appear; tick and annul in one press.",
+    "clientCode": "Client code (e.g. TST1)",
+    "bulkButton": "Annul the ticked ones",
+    "bulkConfirm": "Annul {n} receipt(s)? There is no undo.",
+    "bulkDone": "Annulled",
+    "bulkRefused": "Refused",
+    "noReceipts": "This client has no confirmed receipts",
+    "clientNotFound": "No client with that code",
+    "deactivateHint": "After the cleanup: the client's money is one link away in the registry; the client itself can be deactivated on its card.",
+    "listTitle": "Registry",
+    "listCap": "{shown} of {total} shown",
+    "empty": "No annulled receipts",
+    "colWhen": "When",
+    "colReceipt": "Receipt",
+    "colClient": "Client",
+    "colCargo": "Cargo",
+    "colWho": "Who",
+    "colMoney": "Live money"
   }
 }

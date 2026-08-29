@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, boxes, boxMovements, clients, receiptLots, receipts } from '../../platform/db/schema';
 import { scheduleEstimate } from './eta';
@@ -66,6 +66,8 @@ export async function truckFor(
         eq(boxMovements.refType, 'batch'),
         eq(boxMovements.refId, batch.id),
         eq(boxMovements.cause, 'batch_departed'),
+        // An annulled box left the trip on paper; the popup must agree.
+        ne(boxes.status, 'void'),
       ),
     )
     .groupBy(sql`coalesce(${clients.clientCode}, ${receipts.unclaimedMarking})`);

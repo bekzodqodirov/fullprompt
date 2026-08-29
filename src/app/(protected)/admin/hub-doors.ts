@@ -54,6 +54,10 @@ export const HUB_DOORS: HubDoor[] = [
   { href: '/admin/rules', label: 'automation.title', icon: 'target', allow: ['admin.settings.manage'] },
   { href: '/admin/taqsimot', label: 'routing.title', icon: 'user', allow: ['admin.settings.manage'] },
   { href: '/admin/audit', label: 'nav.audit', icon: 'clipboard', allow: ['admin.audit.browse'] },
+  // The voided-cargo registry + the owner's cleanup tool. An audit surface,
+  // so the audit door: only admin/super_admin hold it, and the tile never
+  // teases a role the page bounces (#792's cousin).
+  { href: '/admin/anulirovka', label: 'annul.registryTitle', icon: 'alert', allow: ['admin.audit.browse'] },
   { href: '/admin/notifications', label: 'nav.notifications', icon: 'alert', allow: ['admin.audit.browse'] },
 ];
 

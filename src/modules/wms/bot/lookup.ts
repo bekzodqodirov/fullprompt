@@ -180,7 +180,8 @@ async function lookupBatch(actor: BotActor, code: string): Promise<string | null
     })
     .from(sql`box_movements bm`)
     .where(
-      sql`bm.ref_type = 'batch' AND bm.ref_id = ${row.batch.id} AND bm.cause = 'batch_departed'`,
+      sql`bm.ref_type = 'batch' AND bm.ref_id = ${row.batch.id} AND bm.cause = 'batch_departed'
+        AND NOT EXISTS (SELECT 1 FROM boxes vb WHERE vb.id = bm.box_id AND vb.status = 'void')`,
     );
   const [waiting] = await db
     .select({ n: sql<number>`count(*)` })
@@ -247,10 +248,12 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
     (seesAllMoney(actor) || client.salesManagerId === actor.id);
   const balance = canSeeMoney ? await clientBalanceUsd(client.id) : null;
 
+  // Confirmed only: voidReceipt keeps confirmed_at, so an annulled prixod
+  // would otherwise stay «oxirgi prixod» until the next real one.
   const [lastReceipt] = await db
     .select({ number: receipts.number, at: receipts.confirmedAt })
     .from(receipts)
-    .where(eq(receipts.clientId, client.id))
+    .where(and(eq(receipts.clientId, client.id), eq(receipts.status, 'confirmed')))
     .orderBy(desc(receipts.confirmedAt))
     .limit(1);
 
