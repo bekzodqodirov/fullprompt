@@ -4,7 +4,6 @@
 // the screen). Stages by SQL on gsr_ci, walks at 360×800, screenshots, cleans.
 import { chromium } from '@playwright/test';
 import postgres from 'postgres';
-import { randomUUID } from 'node:crypto';
 
 const DB = process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_ci';
 const APP = 'http://127.0.0.1:3000';
