@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { aliasedTable, and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
+import { aliasedTable, and, desc, eq, gte, inArray, ne, or, sql } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -74,7 +74,9 @@ export default async function TrucksPage({
         eq(boxMovements.cause, 'batch_departed'),
       ),
     )
-    .leftJoin(boxes, eq(boxes.id, boxMovements.boxId))
+    // An annulled (void) box is not cargo — the truck list's figures agree
+    // with the batch register.
+    .leftJoin(boxes, and(eq(boxes.id, boxMovements.boxId), ne(boxes.status, 'void')))
     .leftJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .where(
       and(

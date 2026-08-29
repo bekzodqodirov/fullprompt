@@ -21,6 +21,8 @@ import { HistoryTab } from '@/components/history-tab';
 import { PhotoGallery } from '@/components/photo-gallery';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { VoidReceiptForm } from './void-form';
+import { AnnulReceiptForm } from './annul-form';
+import { annulPreview, mayAnnul } from '@/modules/wms/receipts/annul';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
@@ -51,6 +53,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
   const t = await getTranslations('receipts');
   const tc = await getTranslations('common');
+  const ta = await getTranslations('annul');
+  const ts = await getTranslations('stock.statuses');
   const format = await getFormatter();
 
   const warehouse = (await db.query.warehouses.findFirst({
@@ -118,6 +122,15 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     : [];
 
   const canVoid = actor.permissions.has('receipts.void') && receipt.status === 'confirmed';
+  // Anulirovka — the owner's cascade (annul.ts): the ROLE decides, and the
+  // preview is computed server-side; what the form posts is an id and a
+  // reason, never the numbers (#514).
+  // Rendered for VOIDED receipts too, deliberately: (a) the success state
+  // survives the revalidate (the server re-render must not unmount the
+  // component that is holding the answer), and (b) the re-press on an
+  // annulled receipt is the aftermath REPAIR door (#848).
+  const canAnnul = mayAnnul(actor) && receipt.status !== 'draft';
+  const preview = canAnnul ? await annulPreview(id) : null;
   // «Yaroqsiz» per box (owner, 2026-08-25): only cargo standing on a shelf is
   // offerable — the service refuses the rest anyway, but a select listing a
   // box the button cannot act on is a lie in a form (#171's cousin).
@@ -363,7 +376,10 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         )}
       </section>
 
-      {canVoid && (
+      {/* The cascade SUBSUMES the plain void (same terminal state, plus the
+          money) — two forms with the same red vocabulary on one card would
+          be a coin-flip; the plain one stays for everyone below the role. */}
+      {canVoid && !canAnnul && (
         <VoidReceiptForm
           receiptId={id}
           labels={{
@@ -372,6 +388,45 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             errors: {
               box_not_in_stock: t('voidBoxGone'),
               receipt_has_costs: t('voidHasCosts'),
+            },
+          }}
+        />
+      )}
+
+      {canAnnul && preview && (
+        <AnnulReceiptForm
+          receiptId={id}
+          preview={{
+            boxLine: Object.entries(preview.boxesByStatus)
+              .map(([status, n]) => `${ts(status)}: ${n}`)
+              .join(' · '),
+            costLine: `${preview.liveCostEntries} × ≈ $${preview.liveCostUsd.toFixed(2)}`,
+            unconvertedCount: preview.unconvertedCostCount,
+            batchLines: preview.affectedBatches,
+            pendingPlanCount: preview.pendingPlanCount,
+            clientLiveTxCount: preview.clientLiveTxCount,
+            clientLedgerHref: receipt.clientId ? `/finance/${receipt.clientId}` : null,
+          }}
+          labels={{
+            open: ta('open'),
+            title: ta('title'),
+            boxes: ta('boxes'),
+            costs: ta('costs'),
+            unconverted: ta('unconverted'),
+            batches: ta('batches'),
+            willRetire: ta('willRetire'),
+            pendingPlans: ta('pendingPlans'),
+            clientMoney: ta('clientMoney'),
+            reason: t('voidReason'),
+            button: ta('button'),
+            confirm: ta('confirm'),
+            done: ta('done'),
+            errors: {
+              annul_forbidden: ta('forbidden'),
+              box_on_active_plan: ta('onActivePlan'),
+              reason_required: ta('reasonRequired'),
+              not_found: ta('notFound'),
+              validation: ta('reasonRequired'),
             },
           }}
         />

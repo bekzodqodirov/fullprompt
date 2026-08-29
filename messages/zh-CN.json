@@ -334,7 +334,8 @@
       "sales_manager": "销售经理",
       "accountant": "会计",
       "viewer": "观察者"
-    }
+    },
+    "superAdminLocked": "只有超级管理员可以授予或移除超级管理员角色"
   },
   "settings": {
     "title": "设置",
@@ -2602,5 +2603,44 @@
     "clientBook": "客户簿",
     "funnelLink": "漏斗分析",
     "empty": "该期间暂无数据"
+  },
+  "annul": {
+    "open": "作废（级联）…",
+    "title": "作废该入库单",
+    "boxes": "箱数",
+    "costs": "入库单在册费用",
+    "unconverted": "无汇率",
+    "batches": "涉及车次",
+    "willRetire": "车次将关闭",
+    "pendingPlans": "有待审批的装车计划涉及该货物——请先处理/取消计划",
+    "clientMoney": "客户在册资金记录（全部）",
+    "reason": "原因（必填）",
+    "button": "完全作废",
+    "confirm": "作废：箱子将标记为作废，入库费用作废，车次共摊费用将重新分配到真实货物上，空车次将关闭。不可撤销。继续？",
+    "done": "入库单已作废",
+    "forbidden": "仅超级管理员可作废",
+    "onActivePlan": "有箱子在进行中的计划/装车——请先取消计划或车次",
+    "reasonRequired": "需要填写原因（至少3个字符）",
+    "notFound": "未找到入库单",
+    "registryTitle": "已作废货物",
+    "bulkTitle": "按客户清理",
+    "bulkHint": "输入客户编码——显示其已确认的入库单，勾选后一键作废。",
+    "clientCode": "客户编码（如 TST1）",
+    "bulkButton": "作废勾选项",
+    "bulkConfirm": "作废 {n} 个入库单？不可撤销。",
+    "bulkDone": "已作废",
+    "bulkRefused": "被拒绝",
+    "noReceipts": "该客户没有已确认的入库单",
+    "clientNotFound": "未找到该编码的客户",
+    "deactivateHint": "清理后：客户资金见登记表中的链接；客户本身可在其卡片上停用。",
+    "listTitle": "登记表",
+    "listCap": "显示 {shown} / {total}",
+    "empty": "暂无已作废的入库单",
+    "colWhen": "时间",
+    "colReceipt": "入库单",
+    "colClient": "客户",
+    "colCargo": "货物",
+    "colWho": "操作人",
+    "colMoney": "在册资金"
   }
 }

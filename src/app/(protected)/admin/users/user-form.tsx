@@ -122,7 +122,11 @@ export function UserForm({
       </fieldset>
       {state.error && (
         <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
-          {state.error === 'phone_exists' ? t('phoneExists') : tc('error')}
+          {state.error === 'phone_exists'
+            ? t('phoneExists')
+            : state.error === 'super_admin_locked'
+              ? t('superAdminLocked')
+              : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

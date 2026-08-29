@@ -8,6 +8,7 @@ import { boxes, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { markBoxLost, VoidError, voidReceipt } from '@/modules/wms/receipts/service';
+import { AnnulError, annulReceipt, mayAnnul } from '@/modules/wms/receipts/annul';
 import { MoveError, moveReceipt } from '@/modules/wms/receipts/move';
 import {
   ReturnError,
@@ -152,6 +153,54 @@ export async function markBoxLostAction(
     return { ok: true, shortCode: res.shortCode };
   } catch (err) {
     if (err instanceof VoidError) return { ok: false, error: err.code };
+    throw err;
+  }
+}
+
+
+export interface AnnulState {
+  ok?: boolean;
+  repaired?: boolean;
+  boxesVoided?: number;
+  costEntriesVoided?: number;
+  batchesRetired?: string[];
+  error?: string;
+}
+
+/**
+ * Anulirovka — the super-admin cascade (annul.ts). authorize() with NO
+ * warehouse: the gate that matters is the ROLE, checked here AND in the
+ * service (#531); a warehouse check would verify nothing for the unscoped
+ * owner and name the wrong warehouse for anyone else.
+ */
+export async function annulReceiptAction(
+  _prev: AnnulState,
+  formData: FormData,
+): Promise<AnnulState> {
+  const parsed = voidSchema.safeParse({
+    receiptId: formData.get('receiptId'),
+    reason: formData.get('reason'),
+  });
+  if (!parsed.success) return { error: 'validation' };
+  const actor = await authorize('receipts.void');
+  if (!mayAnnul(actor)) return { error: 'annul_forbidden' };
+  const meta = await requestMeta();
+  try {
+    const res = await annulReceipt(parsed.data.receiptId, parsed.data.reason, actor, {
+      actorId: actor.id,
+      ...meta,
+    });
+    revalidatePath(`/receipts/${parsed.data.receiptId}`);
+    revalidatePath('/admin/anulirovka');
+    return {
+      ok: true,
+      repaired: res.repaired,
+      boxesVoided: res.boxesVoided,
+      costEntriesVoided: res.costEntriesVoided,
+      batchesRetired: res.batchesRetired,
+    };
+  } catch (err) {
+    if (err instanceof AnnulError) return { error: err.code };
     throw err;
   }
 }

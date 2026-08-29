@@ -192,6 +192,7 @@ export async function inTransitBatches(warehouseIds?: string[]) {
        */
       boxCount: sql<number>`(
         SELECT count(DISTINCT bm.box_id) FROM box_movements bm
+        JOIN ${boxes} b ON b.id = bm.box_id AND b.status <> 'void'
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id}
           AND bm.cause = 'batch_departed')`,
     })
@@ -400,8 +401,12 @@ export async function batchRegister(warehouseIds?: string[]) {
       destCode: dest.code,
       createdAt: batches.createdAt,
       departedAt: batches.departedAt,
+      // «A void box is not cargo» (the annul round): every departed-movement
+      // aggregate excludes annulled boxes, or a cleaned test truck keeps its
+      // tonnage for ever. The movement rows themselves are never deleted.
       loaded: sql<number>`(
         SELECT count(DISTINCT bm.box_id) FROM box_movements bm
+        JOIN ${boxes} b ON b.id = bm.box_id AND b.status <> 'void'
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
       )`,
       short: sql<number>`(
@@ -414,12 +419,12 @@ export async function batchRegister(warehouseIds?: string[]) {
       )`,
       kg: sql<string>`coalesce((
         SELECT sum(rl.total_weight_kg / rl.box_count)
-        FROM box_movements bm JOIN ${boxes} b ON b.id = bm.box_id JOIN ${receiptLots} rl ON rl.id = b.lot_id
+        FROM box_movements bm JOIN ${boxes} b ON b.id = bm.box_id AND b.status <> 'void' JOIN ${receiptLots} rl ON rl.id = b.lot_id
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
       ), 0)`,
       m3: sql<string>`coalesce((
         SELECT sum(rl.total_volume_m3 / rl.box_count)
-        FROM box_movements bm JOIN ${boxes} b ON b.id = bm.box_id JOIN ${receiptLots} rl ON rl.id = b.lot_id
+        FROM box_movements bm JOIN ${boxes} b ON b.id = bm.box_id AND b.status <> 'void' JOIN ${receiptLots} rl ON rl.id = b.lot_id
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
       ), 0)`,
       costUsd: sql<string>`coalesce((

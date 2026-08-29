@@ -457,17 +457,18 @@ export async function profitByBatch(from: string, to: string) {
       ), 0)`,
       boxCount: sql<number>`coalesce((
         SELECT count(*) FROM box_movements bm
+        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
       ), 0)`,
       kg: sql<string>`coalesce((
         SELECT sum(rl.total_weight_kg / rl.box_count) FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id
+        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
         JOIN receipt_lots rl ON rl.id = b.lot_id
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
       ), 0)`,
       m3: sql<string>`coalesce((
         SELECT sum(rl.total_volume_m3 / rl.box_count) FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id
+        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
         JOIN receipt_lots rl ON rl.id = b.lot_id
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
       ), 0)`,

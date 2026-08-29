@@ -12,7 +12,7 @@ import { hashPassword } from '@/modules/platform/auth/password';
 import { requestMeta } from '@/modules/platform/auth/session';
 
 export interface UserFormState {
-  error?: 'validation' | 'phone_exists';
+  error?: 'validation' | 'phone_exists' | 'super_admin_locked';
 }
 
 const userSchema = z.object({
@@ -81,6 +81,14 @@ export async function createUserAction(
 
   const roleIds = await resolveRoleIds(parsed.data.roleCodes);
   if (!roleIds) return { error: 'validation' };
+  // The grants editor's rule («you cannot grant what you do not hold»,
+  // roles.ts) finally applied to ASSIGNMENT too: until the annul round, any
+  // admin could tick super_admin on themselves — and the annul is the first
+  // super_admin-only DESTRUCTIVE power, so the assignment door is now part
+  // of that gate.
+  if (parsed.data.roleCodes.includes('super_admin') && !actor.roles.includes('super_admin')) {
+    return { error: 'super_admin_locked' };
+  }
 
   const [row] = await db
     .insert(users)
@@ -150,6 +158,15 @@ export async function updateUserAction(
       .from(userWarehouses)
       .where(eq(userWarehouses.userId, id))
   ).map((w) => w.warehouseId);
+
+  // Adding OR removing super_admin is the owner's move alone (the annul
+  // round's C10): granting it is self-escalation one form post away, and
+  // removing it is locking the owner out with the same post.
+  const hadSuper = beforeRoles.includes('super_admin');
+  const wantsSuper = parsed.data.roleCodes.includes('super_admin');
+  if (hadSuper !== wantsSuper && !actor.roles.includes('super_admin')) {
+    return { error: 'super_admin_locked' };
+  }
 
   const values: Record<string, unknown> = {
     fullName: parsed.data.fullName,

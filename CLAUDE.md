@@ -998,6 +998,23 @@ NOT confirmed in chat before the session ended, and worth asking him: the
 a call recording and a receipt photo actually PLAY/OPEN in the browser. The
 database rows are there; rows do not prove bytes.
 
+**Round — anulirovka (2026-08-26, NO migration; DECISIONS #847-852):** the
+super-admin cascade void of a receipt (test data through the whole flow) +
+`/admin/anulirovka` registry & bulk cleanup. Designed, judged by 6 lenses (25
+confirmed objections, 5 blockers — v1's cascade order would have destroyed
+money on a REFUSED annul), rebuilt: one transaction (guards → voidCostEntryInTx
+→ the ONE terminal box writer void-box.ts, shared with voidReceipt → crate
+dissolve → empty-batch retirement → stamp LAST), re-runnable aftermath
+(recompute + empty-scope entry void — the all-test truck's own freight),
+`ne(void)` completing #530 on batch/crate bases (RECORDED correction — old
+data repricing is deliberate, #849), eleven movement-aggregate surfaces
+learned «a void box is not cargo» with a closed-set fence in
+annul-wire.test.ts, and the users form finally refuses non-super-admins
+granting/removing super_admin (#851). Gate: mayAnnul (super_admin role) on
+both sides of every door; registry reads on admin.audit.browse. Client
+charges/payments deliberately NEVER auto-voided — the registry counts a
+client's live money and links the ledger (#852).
+
 **Latest migration: 0090** (`notice_staff` — the staff arrival event's own
 fence and the client drain's claim; ledger must reach **91**).
 

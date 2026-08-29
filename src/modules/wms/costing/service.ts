@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Tx } from '../../platform/db/client';
 import {
   batches,
   boxes,
@@ -169,37 +169,43 @@ export async function voidCostEntry(id: string, reason: string, ctx: AuditContex
   const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, id) });
   if (!entry) throw new CostError('not_found');
   if (entry.voidedAt) throw new CostError('already_voided');
-  // ONE transaction, deliberately. These used to be four autocommitted
-  // statements, and a crash between the entry's void and the charge's left a
-  // live partner debt whose backing cost was gone — with no retry possible
-  // ('already_voided') and no sweep that could ever repair it. #360 added a
-  // reader-side belt for the allocation half of that window; the charge half
-  // gets the transaction, because a debt has no reader-side belt.
-  const voidedCharges = await db.transaction(async (tx) => {
-    await tx
-      .update(costEntries)
-      .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
-      .where(eq(costEntries.id, id));
-    await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, id));
-    // A cancelled cost cannot leave a live debt behind it: the truck we are
-    // no longer paying for must stop appearing on the firm's account.
-    return tx
-      .update(partnerTransactions)
-      .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
-      .where(
-        and(eq(partnerTransactions.costEntryId, id), isNull(partnerTransactions.voidedAt)),
-      )
-      .returning({ id: partnerTransactions.id });
-  });
+  await db.transaction(async (tx) => voidCostEntryInTx(tx, id, reason, ctx));
+}
+
+/**
+ * The void's writes, on the CALLER's transaction. ONE transaction,
+ * deliberately: these used to be four autocommitted statements, and a crash
+ * between the entry's void and the charge's left a live partner debt whose
+ * backing cost was gone — with no retry possible ('already_voided') and no
+ * sweep that could ever repair it. #360 added a reader-side belt for the
+ * allocation half of that window; the charge half gets the transaction,
+ * because a debt has no reader-side belt. The annul cascade runs this inside
+ * ITS transaction so a later refusal rolls the money back with the cargo —
+ * auto-voiding money ahead of a refusable step was the design review's first
+ * blocker.
+ */
+export async function voidCostEntryInTx(tx: Tx, id: string, reason: string, ctx: AuditContext) {
+  await tx
+    .update(costEntries)
+    .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
+    .where(eq(costEntries.id, id));
+  await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, id));
+  // A cancelled cost cannot leave a live debt behind it: the truck we are
+  // no longer paying for must stop appearing on the firm's account.
+  const voidedCharges = await tx
+    .update(partnerTransactions)
+    .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
+    .where(and(eq(partnerTransactions.costEntryId, id), isNull(partnerTransactions.voidedAt)))
+    .returning({ id: partnerTransactions.id });
   for (const row of voidedCharges) {
-    await writeAudit(db, ctx, {
+    await writeAudit(tx, ctx, {
       entityType: 'partner_transaction',
       entityId: row.id,
       action: 'void',
       after: { reason, from: 'cost_entry', costEntryId: id },
     });
   }
-  await writeAudit(db, ctx, {
+  await writeAudit(tx, ctx, {
     entityType: 'cost_entry',
     entityId: id,
     action: 'void',
@@ -242,7 +248,7 @@ async function boxDims(boxIds: string[]): Promise<BoxDims[]> {
 }
 
 /** Boxes in an entry's scope: receipt → its boxes; crate → its boxes; batch → everything that rode it. */
-async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promise<string[]> {
+export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promise<string[]> {
   if (entry.scope === 'receipt' && entry.receiptId) {
     // NOT the void ones. A lot-edit shrink voids the miscounted surplus, and
     // a share left (or re-swept) onto a void box is money on a box that never
@@ -264,14 +270,21 @@ async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promise<stri
     // the live pointer — money must not follow it out: the crating fee was
     // paid for exactly the boxes that were packed, and a recompute after the
     // crate's life ended used to erase the allocations for good.
+    // …and, since the annul round, minus the `void` ones here too: the #530
+    // rule was receipt-scope only, so a box voided AFTER packing (voidReceipt
+    // on crated shelf boxes, or the annul) kept its share of the crating fee.
+    // This is a RECORDED correction, not a no-op — old crates holding such
+    // boxes re-split their fee onto the real members on the next recompute.
     const packed = await db
       .selectDistinct({ id: boxMovements.boxId })
       .from(boxMovements)
+      .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
       .where(
         and(
           eq(boxMovements.refType, 'crate'),
           eq(boxMovements.refId, entry.crateId),
           eq(boxMovements.cause, 'crate_packed'),
+          ne(boxes.status, 'void'),
         ),
       );
     if (packed.length) return packed.map((r) => r.id);
@@ -281,21 +294,28 @@ async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promise<stri
   if (entry.scope === 'batch' && entry.batchId) {
     // Departed boxes are the ground truth; before departure fall back to the
     // currently loaded/reserved members so early-entered costs still show.
+    // Minus the `void` ones (the annul round, completing #530): a box voided
+    // after departing was a counting mistake riding a real truck, and its
+    // share belongs to the cargo that actually was on board. Deliberate for
+    // OLD data too — a void box already in this base repriced silently the
+    // day it was voided under the old rule; now it leaves the base instead.
     const departed = await db
       .selectDistinct({ id: boxMovements.boxId })
       .from(boxMovements)
+      .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
       .where(
         and(
           eq(boxMovements.refType, 'batch'),
           eq(boxMovements.refId, entry.batchId),
           eq(boxMovements.cause, 'batch_departed'),
+          ne(boxes.status, 'void'),
         ),
       );
     if (departed.length) return departed.map((r) => r.id);
     const current = await db
       .select({ id: boxes.id })
       .from(boxes)
-      .where(eq(boxes.currentBatchId, entry.batchId));
+      .where(and(eq(boxes.currentBatchId, entry.batchId), ne(boxes.status, 'void')));
     return current.map((r) => r.id);
   }
   return [];
@@ -513,6 +533,9 @@ export async function batchCostSheet(batchId: string) {
         eq(boxMovements.refType, 'batch'),
         eq(boxMovements.refId, batchId),
         eq(boxMovements.cause, 'batch_departed'),
+        // A void (annulled) box is not cargo: it must not fatten the kg/m³
+        // the per-unit costs divide by.
+        ne(boxes.status, 'void'),
       ),
     );
 

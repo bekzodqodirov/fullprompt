@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
@@ -286,7 +286,7 @@ export async function incomingTrucks(warehouseIds?: string[]): Promise<IncomingT
         eq(boxMovements.cause, 'batch_departed'),
       ),
     )
-    .leftJoin(boxes, eq(boxes.id, boxMovements.boxId))
+    .leftJoin(boxes, and(eq(boxes.id, boxMovements.boxId), ne(boxes.status, 'void')))
     .leftJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .where(
       and(

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
@@ -56,6 +56,8 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         eq(boxMovements.refType, 'batch'),
         eq(boxMovements.refId, id),
         eq(boxMovements.cause, 'batch_departed'),
+        // An annulled box must not price the truck (the annul round).
+        ne(boxes.status, 'void'),
       ),
     )
     .groupBy(receipts.clientId, clients.clientCode, clients.name);
