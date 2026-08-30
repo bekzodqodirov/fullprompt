@@ -25,5 +25,8 @@ export const STOCK_COLUMNS: ColumnDef[] = [
   { key: 'density', label: 'kg/m³', numeric: true },
   { key: 'note', label: '📝' },
   { key: 'whCode', labelKey: 'stock.colWh' },
+  // «Qaysi partiyada kelgan» (owner, 2026-08-29) — the truck(s) that brought
+  // the row to the warehouse it stands in; blank for cargo received here.
+  { key: 'partiya', labelKey: 'stock.colBatch' },
   { key: 'receivedAt', labelKey: 'stock.colDate' },
 ];

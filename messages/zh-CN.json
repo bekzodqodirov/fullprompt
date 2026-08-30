@@ -627,6 +627,7 @@
     "colProduct": "货物",
     "colPieces": "件数",
     "colWh": "仓库",
+    "colBatch": "批次",
     "colDate": "日期",
     "markLost": "丢失",
     "markVoid": "作废",

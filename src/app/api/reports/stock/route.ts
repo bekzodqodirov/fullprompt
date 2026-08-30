@@ -15,6 +15,7 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import { warehouseScope } from '@/modules/platform/rbac/scope';
 import { parseCols, visibleColumns } from '@/modules/platform/lists/columns';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
+import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
 
 /**
  * Stock report XLSX (spec §9/§13 report 1) with the current stock-browser
@@ -62,6 +63,7 @@ export async function GET(request: Request) {
       receivedAt: receipts.receivedAt,
       marking: receipts.unclaimedMarking,
       whCode: warehouses.code,
+      whId: warehouses.id,
       clientCode: clients.clientCode,
       inStock: sql<number>`count(*)`,
     })
@@ -75,11 +77,17 @@ export async function GET(request: Request) {
       receiptLots.id,
       receipts.receivedAt,
       receipts.unclaimedMarking,
+      warehouses.id,
       warehouses.code,
       clients.clientCode,
     )
     .orderBy(asc(warehouses.code), asc(receipts.receivedAt))
     .limit(10_000);
+
+  // The screen's partiya column, from the same one home (round 92's rule).
+  const arrivalCodes = await arrivalCodesForPairs(
+    lines.map((line) => ({ lotId: line.lot.id, warehouseId: line.whId })),
+  );
 
   // The screen's own column set, resolved by the shared helper. `whCode` is
   // written first here whatever the screen's order: a stock sheet is read
@@ -99,6 +107,7 @@ export async function GET(request: Request) {
     { key: 'stockM3', column: { header: L.m3, key: 'totalM3', width: 10 } },
     { key: 'density', column: { header: L.density, key: 'density', width: 10 } },
     { key: 'note', column: { header: L.note, key: 'note', width: 30 } },
+    { key: 'partiya', column: { header: L.batch, key: 'batch', width: 12 } },
     { key: 'receivedAt', column: { header: L.date, key: 'date', width: 12 } },
   ];
 
@@ -130,6 +139,7 @@ export async function GET(request: Request) {
       density: density === null ? '' : Math.round(density),
       aging: Math.floor((now - line.receivedAt.getTime()) / 86_400_000),
       note: line.lot.note ?? '',
+      batch: (arrivalCodes.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
       date: line.receivedAt.toISOString().slice(0, 10),
     });
   }

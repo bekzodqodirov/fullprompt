@@ -10,6 +10,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { json } from '@/modules/platform/http/json';
+import { arrivalsForLots } from '@/modules/wms/documents/arrivals';
 
 const querySchema = z.object({ warehouseId: z.string().uuid() });
 
@@ -73,6 +74,7 @@ export async function GET(request: Request) {
       kg: sql<string>`sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount})`,
       m3: sql<string>`sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount})`,
       oldestReceivedAt: sql<string>`min(${receipts.receivedAt})`,
+      lotIds: sql<string[]>`array_agg(distinct ${receiptLots.id})`,
     })
     .from(boxes)
     .innerJoin(crates, eq(boxes.crateId, crates.id))
@@ -90,6 +92,17 @@ export async function GET(request: Request) {
     .groupBy(crates.id, clients.clientCode)
     .orderBy(asc(crates.code));
 
+  // «Qaysi partiyada kelgan» (owner, 2026-08-29) — the agent sheet's rule
+  // from its one home, computed once for the loose lots AND the crates'
+  // member lots together; the planner keeping one arrival's cargo together
+  // is exactly what the sheet groups by.
+  const arrivals = await arrivalsForLots(
+    [...new Set([...rows.map((r) => r.lotId), ...crateRows.flatMap((c) => c.lotIds)])],
+    query.data.warehouseId,
+  );
+  const crateArrival = (lotIds: string[]) =>
+    [...new Set(lotIds.flatMap((lotId) => arrivals.get(lotId)?.codes ?? []))].join(', ');
+
   // Compressed + tagged (round 110): the plan editor re-reads a whole
   // warehouse's loadable stock every time it opens or the origin changes,
   // and it is the screen the owner named — «planlarni yuklayotgan paytda».
@@ -100,6 +113,7 @@ export async function GET(request: Request) {
       perBoxKg: Number(r.totalWeightKg) / r.boxCount,
       perBoxM3: Number(r.totalVolumeM3) / r.boxCount,
       daysInStock: Math.floor((Date.now() - new Date(r.receivedAt).getTime()) / 86_400_000),
+      arrival: (arrivals.get(r.lotId)?.codes ?? []).join(', '),
     })),
     crates: crateRows.map((c) => ({
       crateId: c.crateId,
@@ -112,6 +126,7 @@ export async function GET(request: Request) {
       daysInStock: Math.floor(
         (Date.now() - new Date(c.oldestReceivedAt).getTime()) / 86_400_000,
       ),
+      arrival: crateArrival(c.lotIds),
     })),
   });
 }

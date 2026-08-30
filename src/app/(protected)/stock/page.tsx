@@ -22,6 +22,7 @@ import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
 import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
+import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
 import { crateStock, transitTrucks } from '@/modules/wms/inventory/service';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { CrateRows } from '@/components/crate-rows';
@@ -198,6 +199,7 @@ export default async function StockPage({
       whCode: warehouses.code,
       clientId: clients.id,
       clientCode: clients.clientCode,
+      whId: warehouses.id,
       inStock: sql<number>`count(*)`,
       photoId: sql<string | null>`(
         SELECT a.id FROM attachments a
@@ -221,12 +223,20 @@ export default async function StockPage({
       receipts.id,
       receipts.receivedAt,
       receipts.unclaimedMarking,
+      warehouses.id,
       warehouses.code,
       clients.id,
       clients.clientCode,
     )
     .orderBy(asc(warehouses.code), asc(receipts.receivedAt))
     .limit(STOCK_FETCH_CAP);
+
+  // «Qaysi partiyada kelgan» — the agent sheet's own rule (round 92), read
+  // from its one home; one query per distinct warehouse on the page, never
+  // one per row (#432).
+  const arrivalCodes = await arrivalCodesForPairs(
+    lines.map((line) => ({ lotId: line.lot.id, warehouseId: line.whId })),
+  );
 
   // The Σ header and the row count describe THE WAREHOUSE, not the fetch
   // (round 74). They used to reduce the fetched array, so once the cap bit —
@@ -290,6 +300,7 @@ export default async function StockPage({
           : null,
       note: line.lot.note ?? '',
       whCode: line.whCode,
+      partiya: (arrivalCodes.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
       receivedAt: line.receivedAt,
     };
   });
@@ -548,6 +559,12 @@ export default async function StockPage({
                       (row.line.lot.note ?? '')
                     ) : column.key === 'whCode' ? (
                       row.line.whCode
+                    ) : column.key === 'partiya' ? (
+                      row.partiya ? (
+                        <span className="font-mono">{row.partiya}</span>
+                      ) : (
+                        <span className="text-ink-400">—</span>
+                      )
                     ) : (
                       format.dateTime(row.line.receivedAt, { dateStyle: 'short' })
                     )}

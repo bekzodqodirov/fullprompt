@@ -627,6 +627,7 @@
     "colProduct": "Tovar",
     "colPieces": "dona",
     "colWh": "Sklad",
+    "colBatch": "Partiya",
     "colDate": "Sana",
     "markLost": "Yo‘qolgan",
     "markVoid": "Bekor qilish",
