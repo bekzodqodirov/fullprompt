@@ -173,6 +173,30 @@ export function groupByArrival<T>(
 }
 
 /**
+ * «Qaysi partiyada kelgan», for rows that span WAREHOUSES — the stock table
+ * groups by (lot, warehouse) and a lot standing in two places arrived on two
+ * different answers. One `arrivalsForLots` call per distinct warehouse
+ * (bounded by the nine he has), never one per row (#432), keyed
+ * `lotId|warehouseId`.
+ */
+export async function arrivalCodesForPairs(
+  pairs: { lotId: string; warehouseId: string }[],
+): Promise<Map<string, string[]>> {
+  const byWh = new Map<string, Set<string>>();
+  for (const { lotId, warehouseId } of pairs) {
+    byWh.set(warehouseId, (byWh.get(warehouseId) ?? new Set()).add(lotId));
+  }
+  const out = new Map<string, string[]>();
+  for (const [warehouseId, lotIds] of byWh) {
+    const arrivals = await arrivalsForLots([...lotIds], warehouseId);
+    for (const [lotId, arrival] of arrivals) {
+      out.set(`${lotId}|${warehouseId}`, arrival.codes);
+    }
+  }
+  return out;
+}
+
+/**
  * Read the arrivals of these lots at this warehouse.
  *
  * ONE query for the whole sheet, never one per line — a plan carries up to 500

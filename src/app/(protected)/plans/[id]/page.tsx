@@ -19,6 +19,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { VerdictForm } from './verdict-form';
 import { CancelPlan } from './cancel-plan';
 import { BackLink } from '@/components/back-link';
+import { arrivalsForLots } from '@/modules/wms/documents/arrivals';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
@@ -72,6 +73,12 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
         .where(eq(loadPlanLines.versionId, current.id))
         .orderBy(asc(loadPlanLines.id))
     : [];
+  // «Qaysi partiyada kelgan» — the agent sheet's rule from its one home, so
+  // the logist reviewing on screen reads the same answer the XLSX groups by.
+  const arrivals = await arrivalsForLots(
+    [...new Set(lines.map(({ line }) => line.lotId))],
+    plan.originWarehouseId,
+  );
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -128,6 +135,14 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
               {id.main}-{lot.letter}
               {id.sub && (
                 <span className="block font-sans text-2xs font-normal text-ink-500">{id.sub}</span>
+              )}
+              {(arrivals.get(line.lotId)?.codes.length ?? 0) > 0 && (
+                <span
+                  className="block font-sans text-2xs font-normal text-ink-500"
+                  data-testid="plan-lot-arrival"
+                >
+                  🚚 {arrivals.get(line.lotId)!.codes.join(', ')}
+                </span>
               )}
             </span>
             {crateCode && (

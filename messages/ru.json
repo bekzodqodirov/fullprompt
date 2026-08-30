@@ -627,6 +627,7 @@
     "colProduct": "Товар",
     "colPieces": "шт",
     "colWh": "Склад",
+    "colBatch": "Партия",
     "colDate": "Дата",
     "markLost": "Потеряна",
     "markVoid": "Аннулировать",

@@ -30,6 +30,8 @@ interface StockLot {
   perBoxM3: number;
   daysInStock: number;
   photoId: string | null;
+  /** Which truck(s) brought it here — '' for cargo received at this warehouse. */
+  arrival: string;
 }
 interface StockCrate {
   crateId: string;
@@ -40,6 +42,7 @@ interface StockCrate {
   kg: number;
   m3: number;
   daysInStock: number;
+  arrival: string;
 }
 
 /**
@@ -283,7 +286,14 @@ export function PlanEditor({
                 }
               >
                 <span className="font-bold">{on ? '☑' : '☐'}</span>
-                <span className="font-mono font-extrabold text-brand-700">{crate.code}</span>
+                <span className="font-mono font-extrabold text-brand-700">
+                  {crate.code}
+                  {crate.arrival && (
+                    <span className="block font-sans text-2xs font-normal text-ink-500">
+                      🚚 {crate.arrival}
+                    </span>
+                  )}
+                </span>
                 <span className="font-mono font-bold">{crate.clientCode ?? '?'}</span>
                 <span className="text-ink-700">{crate.boxCount} 📦</span>
                 <span className="ml-auto whitespace-nowrap font-mono text-xs">
@@ -347,6 +357,14 @@ export function PlanEditor({
                       {id.sub && (
                         <span className="block font-sans text-2xs font-normal text-ink-500">
                           {id.sub}
+                        </span>
+                      )}
+                      {lot.arrival && (
+                        <span
+                          className="block font-sans text-2xs font-normal text-ink-500"
+                          data-testid="lot-arrival"
+                        >
+                          🚚 {lot.arrival}
                         </span>
                       )}
                     </td>

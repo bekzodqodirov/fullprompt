@@ -627,6 +627,7 @@
     "colProduct": "Product",
     "colPieces": "pcs",
     "colWh": "Warehouse",
+    "colBatch": "Batch",
     "colDate": "Date",
     "markLost": "Mark as lost",
     "markVoid": "Void",

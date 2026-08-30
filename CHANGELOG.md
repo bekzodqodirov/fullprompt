@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Ostatka va planda «Partiya» — yuk qaysi reysda kelgani — 2026-08-29
+
+So'rovingiz bo'yicha: «sklad ostatkani ko'rganda yoki plan berganda yuk
+qaysi partiyada kelganini ko'radigan narsa».
+
+**1. Sklad ostatkasida yangi «Partiya» ustuni.** Har qator qaysi reys(lar)da
+shu skladga kelganini ko'rsatadi (masalan `KA-29`); shu skladning o'zida
+qabul qilingan yuk uchun «—». Ustunni ustun tanlagichda yashirsa/ko'rsatsa
+bo'ladi, XLSX yuklab olishga ham tushadi. Bitta yuk ikki skladda tursa, har
+qatorda O'SHA skladga qaysi reys olib kelgani yoziladi.
+
+**2. Plan tuzayotganda** har yuk qatorining kodi ostida kichik `🚚 KA-29`
+yozuvi — qaysi partiyada kelgani. Yashiklarda ham. Shu bilan bitta reysning
+yukini birga jo'natish oson bo'ladi.
+
+**3. Plan sahifasida ham** (tayyor planni ochganda) har qatorda shu yozuv
+bor — agent varag'i qanday guruhlagan bo'lsa, ekranda ham o'sha javob.
+
+Qoida bitta joydan o'qiladi (agent varag'iniki bilan bir xil), shuning uchun
+ekran bilan varaq hech qachon boshqa-boshqa gapirmaydi. Migratsiya yo'q.
+
+
 ## Anulirovka: test-datani tozalash — super-admin kaskadi va reyestr — 2026-08-26
 
 So'rovingiz bo'yicha: «anulirovat qilish mumkin bo'lsin … barcha finance
