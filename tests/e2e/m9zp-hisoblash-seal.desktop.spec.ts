@@ -121,18 +121,20 @@ test('group, rate, baza, confirm — then seal', async ({ page }) => {
   await page.getByTestId('calc-baza').first().fill('20');
   await page.getByTestId('calc-save-baza').first().click();
 
-  // 100 × $20 = $2 000; duty 10 % = $200; VAT 12 % of $2 200 = $264.
+  // 100 × $20 = $2 000; duty 10 % = $200; VAT 12 % of $2 200 = $264. The
+  // GROUP cell stays $464 — the VMQ-55 declaration fee (1 BHM ≈ $32.96 at
+  // the demo book's 12 500 UZS/USD) is per REQUEST and lands in the total.
   await expect(page.getByTestId('calc-group-customs')).toContainText('464', { timeout: 15_000 });
 
   // An unconfirmed group is still the model's opinion — law 1, and the seal
   // stays shut until a person says otherwise.
   await expect(page.getByTestId('calc-do-seal')).toBeDisabled();
   await page.getByTestId('calc-confirm-all').click();
-  await expect(page.getByTestId('calc-total')).toContainText('3764', { timeout: 15_000 });
+  await expect(page.getByTestId('calc-total')).toContainText('3796.96', { timeout: 15_000 });
 
   await page.getByTestId('calc-do-seal').click();
   await expect(page.getByTestId('calc-sealed')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('calc-sealed-total')).toContainText('3764');
+  await expect(page.getByTestId('calc-sealed-total')).toContainText('3796.96');
 });
 
 test('the sealed price is on the card, and the card cannot change it', async ({ page }) => {
@@ -145,9 +147,9 @@ test('the sealed price is on the card, and the card cannot change it', async ({ 
   // Law 2: the price landed on the lead, and the ✏️ form has no box for it.
   //
   // Matched on the digits with any separator between them — the facts rail
-  // formats money for the reader's locale, and `ru` prints «3 764 USD» with a
-  // narrow no-break space that a literal '3764' will never find.
-  await expect(page.getByTestId('lead-facts')).toContainText(/3\s*764/, { timeout: 15_000 });
+  // formats money for the reader's locale, and `ru` prints «3 796,96 USD» with a
+  // narrow no-break space that a literal '3796' will never find.
+  await expect(page.getByTestId('lead-facts')).toContainText(/3\s*796/, { timeout: 15_000 });
   // The ✏️ form lives in a fold, so it has to be opened before anything in
   // it can be called visible.
   await page.getByTestId('lead-edit-panel').click();
