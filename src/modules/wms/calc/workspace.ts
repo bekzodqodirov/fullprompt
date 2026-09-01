@@ -41,10 +41,11 @@ import {
   type ProposedGroup,
 } from './grouping';
 import {
-  customsFeeFor,
   customsFor,
   freightFor,
   isNumber,
+  pricedGroupOf,
+  requestCustomsFor,
   sectionParts,
   totalsFor,
   type BazaBasis,
@@ -55,6 +56,7 @@ import {
   type FeeResult,
   type FreightBand,
   type FreightResult,
+  type MeasureUnit,
   type PricedItem,
 } from './pricing';
 import { CalcError, MAX_CALC_ITEMS } from './service';
@@ -102,6 +104,9 @@ function mustBeNumber(...values: (number | null | undefined)[]): void {
 // ---------------------------------------------------------------------------
 
 export interface WorkspaceItem extends PricedItem {
+  /** The immutable address (phase 3): seqs are re-minted after a delete, so
+   * drafts and edits key on the id or a stranded draft lands on new cargo. */
+  id: string;
   unit: string | null;
   volumeM3: number | null;
   tnvedCode: string | null;
@@ -161,6 +166,9 @@ export interface WorkspaceGroup {
      * has no row of its own (6403 answering for 6403520000). */
     matchedCode: string;
     effectiveDate: string;
+    /** The law's own condition on this row, when it has one — rendered as a
+     * visible warn chip, and recorded by the confirm (`rate_noted`). */
+    note: string | null;
   } | null;
   /**
    * Law 7's second half: how this code's lgota was decided the LAST time a
@@ -182,6 +190,16 @@ export interface WorkspaceExtra {
 
 export interface Workspace {
   requestId: string;
+  /**
+   * The revision clock, read by loadWorkspace's FIRST query — the seal and
+   * the confirm doors compare exactly this value under FOR UPDATE, so a
+   * capture taken any later would pass on a torn snapshot.
+   */
+  rev: number;
+  /** The fee's raw inputs, shipped so the browser can run the SAME pure
+   * assembly the server does (live sums). null = unset / no rate in the book. */
+  bhmUzs: number | null;
+  fxUzsPerUsd: number | null;
   section: CalcSectionName | null;
   parts: { customs: boolean; freight: boolean; extras: boolean };
   weightKg: number | null;
@@ -308,22 +326,27 @@ export async function loadWorkspace(
   ]);
 
   const date = onDate();
-  const [bazas, rates, tariff, zones, confirmers, lgotaLast] = await Promise.all([
-    bazasFor(itemRows.map((i) => i.name), date),
-    ratesForCodes(groupRows.map((g) => g.tnvedCode ?? '').filter(Boolean), date),
-    tariffFor(date),
-    tariffZones(date),
-    namesOf(groupRows.map((g) => g.confirmedBy).filter((v): v is string => v !== null)),
-    lgotaLastByCode(
-      groupRows.map((g) => g.tnvedCode ?? '').filter(Boolean),
-      requestId,
-    ),
-  ]);
+  const [bazas, rates, tariff, zones, confirmers, lgotaLast, bhmSetting, fxUzsPerUsd] =
+    await Promise.all([
+      bazasFor(itemRows.map((i) => i.name), date),
+      ratesForCodes(groupRows.map((g) => g.tnvedCode ?? '').filter(Boolean), date),
+      tariffFor(date),
+      tariffZones(date),
+      namesOf(groupRows.map((g) => g.confirmedBy).filter((v): v is string => v !== null)),
+      lgotaLastByCode(
+        groupRows.map((g) => g.tnvedCode ?? '').filter(Boolean),
+        requestId,
+      ),
+      getSetting('bhm_uzs'),
+      uzsPerUsd(date),
+    ]);
+  const bhmUzs = bhmSetting == null ? null : Number(bhmSetting);
 
   const bazaStaleCutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
   const items: WorkspaceItem[] = itemRows.map((i) => {
     const dict = bazas.get(normalise(i.name));
     return {
+      id: i.id,
       seq: i.seq,
       label: i.name,
       quantity: toNum(i.quantity),
@@ -336,6 +359,8 @@ export async function loadWorkspace(
       bazaUsd: toNum(i.bazaUsd),
       bazaBasis: (i.bazaBasis as BazaBasis | null) ?? null,
       bazaSource: (i.bazaSource as 'dictionary' | 'typed' | null) ?? null,
+      measureUnit: (i.measureUnit as MeasureUnit | null) ?? null,
+      measureQty: toNum(i.measureQty),
       dictionaryBaza: dict
         ? {
             bazaUsd: dict.bazaUsd,
@@ -360,7 +385,11 @@ export async function loadWorkspace(
     // inherits the request's — a sborniy truck mixes senders, and one
     // certificate-less sender must not flip the whole declaration.
     const effectiveCertificate = g.hasCertificate ?? request.hasCertificate;
-    const priced = {
+    // Through the SHARED mapper (pricing.ts): the live browser recompute
+    // builds its PricedGroup the same way, and the parameter name forces the
+    // EFFECTIVE certificate on both — the raw override would silently drop
+    // the add-duty from whichever side picked it.
+    const priced = pricedGroupOf({
       seq: g.seq,
       label: g.label,
       tnvedCode: g.tnvedCode,
@@ -373,10 +402,10 @@ export async function loadWorkspace(
       dutySpecific: toNum(g.dutySpecific),
       dutyUnit: (g.dutyUnit as DutyUnit | null) ?? null,
       excisePct: toNum(g.excisePct),
-      hasCertificate: effectiveCertificate,
+      effectiveCertificate,
       dutyFree: g.dutyFree,
       vatFree: g.vatFree,
-    };
+    });
     const dictRates = g.tnvedCode ? rates.get(g.tnvedCode.trim()) : undefined;
     return {
       id: g.id,
@@ -395,6 +424,7 @@ export async function loadWorkspace(
         dictionaryRates: dictRates
           ? { dutyPct: dictRates.dutyPct, vatPct: dictRates.vatPct, feeUsd: dictRates.feeUsd }
           : null,
+        dictionaryNote: dictRates?.note ?? null,
         rateSource: (g.rateSource as 'dictionary' | 'typed' | null) ?? null,
         dutyPct: toNum(g.dutyPct),
         vatPct: toNum(g.vatPct),
@@ -428,6 +458,7 @@ export async function loadWorkspace(
             dutyUnit: dictRates.dutyUnit,
             matchedCode: dictRates.tnvedCode,
             effectiveDate: dictRates.effectiveDate,
+            note: dictRates.note,
           }
         : null,
       lgotaLast: (g.tnvedCode && lgotaLast.get(g.tnvedCode)) || null,
@@ -449,31 +480,20 @@ export async function loadWorkspace(
       })
     : null;
 
-  const customsOk = groups.every((g) => g.customs.ok);
-
-  // The per-declaration fee (VMQ-55): the BHM scale over the WHOLE
-  // declaration's value, computed once and folded into the customs figure.
-  // Only when every group prices — a partial value would land in the wrong
-  // tier and read as an answer.
+  // The per-declaration fee (VMQ-55) and the request-grain sum, through the
+  // ONE pure assembly the live browser recompute also runs (`requestCustomsFor`
+  // — no partial sums, fee only when every group prices).
   const feeOverrideUsd = toNum(request.feeOverrideUsd);
-  let fee: FeeResult | null = null;
-  if (parts.customs && groups.length > 0 && customsOk) {
-    const valueUsd = groups.reduce((sum, g) => sum + (g.customs.ok ? g.customs.valueUsd : 0), 0);
-    const [bhmUzs, fx] = await Promise.all([getSetting('bhm_uzs'), uzsPerUsd(date)]);
-    fee = customsFeeFor({
-      valueUsd,
-      bhmUzs: Number(bhmUzs),
-      fxUzsPerUsd: fx,
-      overrideUsd: feeOverrideUsd,
-    });
-  }
-
-  const customsUsd = parts.customs
-    ? customsOk && (fee === null || fee.ok)
-      ? groups.reduce((sum, g) => sum + (g.customs.ok ? g.customs.customsUsd : 0), 0) +
-        (fee?.ok ? fee.feeUsd : 0)
-      : null
-    : 0;
+  const assembled = parts.customs
+    ? requestCustomsFor({
+        customs: groups.map((g) => g.customs),
+        bhmUzs,
+        fxUzsPerUsd,
+        feeOverrideUsd,
+      })
+    : null;
+  const fee = assembled?.fee ?? null;
+  const customsUsd = parts.customs ? assembled!.customsUsd : 0;
   const extrasUsd = extraRows.reduce((sum, e) => sum + Number(e.amountUsd), 0);
 
   const totals =
@@ -494,6 +514,9 @@ export async function loadWorkspace(
 
   return {
     requestId,
+    rev: request.rev,
+    bhmUzs,
+    fxUzsPerUsd,
     section,
     parts,
     weightKg,
@@ -612,18 +635,16 @@ async function assertOpen(requestId: string): Promise<typeof calcRequests.$infer
 }
 
 export async function setFreightZone(requestId: string, zone: string | null, ctx: AuditContext) {
-  await assertOpen(requestId);
   const zones = await tariffZones(onDate());
   if (zone !== null && !zones.includes(zone)) throw new CalcError('zone_unknown');
-  await db
-    .update(calcRequests)
-    .set({ freightZone: zone, updatedAt: new Date() })
-    .where(eq(calcRequests.id, requestId));
-  await writeAudit(db, ctx, {
-    entityType: 'calc_request',
-    entityId: requestId,
-    action: 'update',
-    after: { freightZone: zone },
+  await mutateRequest(requestId, async (tx) => {
+    await tx.update(calcRequests).set({ freightZone: zone }).where(eq(calcRequests.id, requestId));
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_request',
+      entityId: requestId,
+      action: 'update',
+      after: { freightZone: zone },
+    });
   });
 }
 
@@ -632,24 +653,25 @@ export async function createGroup(
   input: { label: string; tnvedCode?: string | null },
   ctx: AuditContext,
 ): Promise<string> {
-  await assertOpen(requestId);
-  const seq = await nextSeq(calcGroups, requestId);
-  const [row] = await db
-    .insert(calcGroups)
-    .values({
-      requestId,
-      seq,
-      label: input.label.trim() || '—',
-      tnvedCode: input.tnvedCode?.trim() || null,
-    })
-    .returning({ id: calcGroups.id });
-  await writeAudit(db, ctx, {
-    entityType: 'calc_group',
-    entityId: row!.id,
-    action: 'create',
-    after: { requestId, ...input },
+  return mutateRequest(requestId, async (tx) => {
+    const seq = await nextSeq(tx, calcGroups, requestId);
+    const [row] = await tx
+      .insert(calcGroups)
+      .values({
+        requestId,
+        seq,
+        label: input.label.trim() || '—',
+        tnvedCode: input.tnvedCode?.trim() || null,
+      })
+      .returning({ id: calcGroups.id });
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_group',
+      entityId: row!.id,
+      action: 'create',
+      after: { requestId, ...input },
+    });
+    return row!.id;
   });
-  return row!.id;
 }
 
 /**
@@ -662,13 +684,14 @@ export async function createGroup(
 export async function deleteGroup(groupId: string, ctx: AuditContext) {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
-  await assertOpen(group.requestId);
-  await db.delete(calcGroups).where(eq(calcGroups.id, groupId));
-  await writeAudit(db, ctx, {
-    entityType: 'calc_group',
-    entityId: groupId,
-    action: 'delete',
-    before: { requestId: group.requestId, label: group.label },
+  await mutateRequest(group.requestId, async (tx) => {
+    await tx.delete(calcGroups).where(eq(calcGroups.id, groupId));
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_group',
+      entityId: groupId,
+      action: 'delete',
+      before: { requestId: group.requestId, label: group.label },
+    });
   });
 }
 
@@ -678,33 +701,39 @@ export async function moveItemToGroup(
   groupId: string | null,
   ctx: AuditContext,
 ) {
-  await assertOpen(requestId);
-  if (groupId) {
-    const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
-    // Re-proved server-side: a hand-posted id must not move cargo between
-    // two customers' calculations.
-    if (!group || group.requestId !== requestId) throw new CalcError('group_foreign');
-  }
-  const was = await db.query.calcRequestItems.findFirst({
-    where: and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)),
-    columns: { groupId: true },
-  });
-  const [moved] = await db
-    .update(calcRequestItems)
-    .set({ groupId })
-    .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
-    .returning({ id: calcRequestItems.id });
-  // Both ends of the move: a group that gained or lost cargo is a group whose
-  // customs figure changed, so neither may keep a ✅ from before it did.
-  if (moved) {
-    if (groupId) await unconfirm(groupId);
-    if (was?.groupId && was.groupId !== groupId) await unconfirm(was.groupId);
-  }
-  await writeAudit(db, ctx, {
-    entityType: 'calc_request',
-    entityId: requestId,
-    action: 'update',
-    after: { itemSeq, groupId },
+  await mutateRequest(requestId, async (tx) => {
+    if (groupId) {
+      const [group] = await tx
+        .select({ requestId: calcGroups.requestId })
+        .from(calcGroups)
+        .where(eq(calcGroups.id, groupId));
+      // Re-proved server-side: a hand-posted id must not move cargo between
+      // two customers' calculations.
+      if (!group || group.requestId !== requestId) throw new CalcError('group_foreign');
+    }
+    const [was] = await tx
+      .select({ groupId: calcRequestItems.groupId })
+      .from(calcRequestItems)
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
+    const [moved] = await tx
+      .update(calcRequestItems)
+      .set({ groupId })
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
+      .returning({ id: calcRequestItems.id });
+    // Both ends of the move: a group that gained or lost cargo is a group whose
+    // customs figure changed, so neither may keep a ✅ from before it did.
+    if (moved) {
+      const ends = [groupId, was?.groupId && was.groupId !== groupId ? was.groupId : null].filter(
+        (v): v is string => !!v,
+      );
+      await unconfirmInTx(tx, ends);
+    }
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_request',
+      entityId: requestId,
+      action: 'update',
+      after: { itemSeq, groupId },
+    });
   });
 }
 
@@ -740,9 +769,11 @@ export async function setGroupRates(
   },
   ctx: AuditContext,
 ) {
-  const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
-  if (!group) throw new CalcError('not_found');
-  await assertOpen(group.requestId);
+  const found = await db.query.calcGroups.findFirst({
+    where: eq(calcGroups.id, groupId),
+    columns: { requestId: true },
+  });
+  if (!found) throw new CalcError('not_found');
   mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd, input.dutySpecific, input.excisePct);
   for (const pct of [input.dutyPct, input.vatPct, input.excisePct]) {
     if (pct !== null && pct !== undefined && (pct < 0 || pct > 100)) {
@@ -750,6 +781,11 @@ export async function setGroupRates(
     }
   }
   if (input.feeUsd !== null && input.feeUsd < 0) throw new CalcError('rate_range');
+
+  await mutateRequest(found.requestId, async (tx) => {
+  // Re-read under the lock — the pool row above only located the request.
+  const [group] = await tx.select().from(calcGroups).where(eq(calcGroups.id, groupId));
+  if (!group) throw new CalcError('not_found');
 
   const dutyMode = input.dutyMode ?? ((group.dutyMode as DutyMode | null) ?? 'advalor');
   let dutySpecific =
@@ -764,7 +800,7 @@ export async function setGroupRates(
     throw new CalcError('rate_range');
   }
 
-  await db
+  await tx
     .update(calcGroups)
     .set({
       label: input.label?.trim() || group.label,
@@ -796,7 +832,7 @@ export async function setGroupRates(
     })
     .where(eq(calcGroups.id, groupId));
 
-  await writeAudit(db, ctx, {
+  await writeAudit(tx, ctx, {
     entityType: 'calc_group',
     entityId: groupId,
     action: 'update',
@@ -809,6 +845,7 @@ export async function setGroupRates(
     },
     after: input,
   });
+  });
 }
 
 export async function setItemBaza(
@@ -817,27 +854,28 @@ export async function setItemBaza(
   input: { bazaUsd: number | null; basis: BazaBasis | null; source: 'dictionary' | 'typed' },
   ctx: AuditContext,
 ) {
-  await assertOpen(requestId);
   mustBeNumber(input.bazaUsd);
   if (input.bazaUsd !== null && !(input.bazaUsd > 0)) throw new CalcError('baza_positive');
-  const [changed] = await db
-    .update(calcRequestItems)
-    .set({
-      bazaUsd: input.bazaUsd === null ? null : input.bazaUsd.toFixed(4),
-      bazaBasis: input.bazaUsd === null ? null : input.basis,
-      bazaSource: input.bazaUsd === null ? null : input.source,
-    })
-    .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
-    .returning({ groupId: calcRequestItems.groupId });
-  // The confirmation was about NUMBERS, and this is one of them. Changing a
-  // baza under a confirmed group left the ✅ standing over a figure nobody
-  // had looked at — the same rule `setGroupRates` already applies to a rate.
-  if (changed?.groupId) await unconfirm(changed.groupId);
-  await writeAudit(db, ctx, {
-    entityType: 'calc_request',
-    entityId: requestId,
-    action: 'update',
-    after: { itemSeq, baza: input },
+  await mutateRequest(requestId, async (tx) => {
+    const [changed] = await tx
+      .update(calcRequestItems)
+      .set({
+        bazaUsd: input.bazaUsd === null ? null : input.bazaUsd.toFixed(4),
+        bazaBasis: input.bazaUsd === null ? null : input.basis,
+        bazaSource: input.bazaUsd === null ? null : input.source,
+      })
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
+      .returning({ groupId: calcRequestItems.groupId });
+    // The confirmation was about NUMBERS, and this is one of them. Changing a
+    // baza under a confirmed group left the ✅ standing over a figure nobody
+    // had looked at — the same rule `setGroupRates` already applies to a rate.
+    if (changed?.groupId) await unconfirmInTx(tx, [changed.groupId]);
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_request',
+      entityId: requestId,
+      action: 'update',
+      after: { itemSeq, baza: input },
+    });
   });
 }
 
@@ -851,7 +889,8 @@ export async function setItemBaza(
 export async function pullRatesFromDictionary(groupId: string, ctx: AuditContext): Promise<void> {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
-  await assertOpen(group.requestId);
+  // The lock and the clock ride the delegate: setGroupRates opens the
+  // request tx itself.
   const code = (group.tnvedCode ?? '').trim();
   if (!code) throw new CalcError('code_required');
 
@@ -894,21 +933,23 @@ export async function setRequestCertificate(
 ) {
   const request = await assertOpen(requestId);
   if (request.hasCertificate === hasCertificate) return;
-  await db
-    .update(calcRequests)
-    .set({ hasCertificate, updatedAt: new Date() })
-    .where(eq(calcRequests.id, requestId));
-  const inheriting = await db
-    .select({ id: calcGroups.id })
-    .from(calcGroups)
-    .where(and(eq(calcGroups.requestId, requestId), isNull(calcGroups.hasCertificate)));
-  for (const g of inheriting) await unconfirm(g.id);
-  await writeAudit(db, ctx, {
-    entityType: 'calc_request',
-    entityId: requestId,
-    action: 'update',
-    before: { hasCertificate: request.hasCertificate },
-    after: { hasCertificate },
+  await mutateRequest(requestId, async (tx) => {
+    await tx
+      .update(calcRequests)
+      .set({ hasCertificate })
+      .where(eq(calcRequests.id, requestId));
+    const inheriting = await tx
+      .select({ id: calcGroups.id })
+      .from(calcGroups)
+      .where(and(eq(calcGroups.requestId, requestId), isNull(calcGroups.hasCertificate)));
+    await unconfirmInTx(tx, inheriting.map((g) => g.id));
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_request',
+      entityId: requestId,
+      action: 'update',
+      before: { hasCertificate: request.hasCertificate },
+      after: { hasCertificate },
+    });
   });
 }
 
@@ -918,93 +959,136 @@ export async function setFeeOverride(
   feeOverrideUsd: number | null,
   ctx: AuditContext,
 ) {
-  await assertOpen(requestId);
   mustBeNumber(feeOverrideUsd);
   if (feeOverrideUsd !== null && feeOverrideUsd < 0) throw new CalcError('rate_range');
-  await db
-    .update(calcRequests)
-    .set({
-      feeOverrideUsd: feeOverrideUsd === null ? null : feeOverrideUsd.toFixed(2),
-      updatedAt: new Date(),
-    })
-    .where(eq(calcRequests.id, requestId));
-  await writeAudit(db, ctx, {
-    entityType: 'calc_request',
-    entityId: requestId,
-    action: 'update',
-    after: { feeOverrideUsd },
+  await mutateRequest(requestId, async (tx) => {
+    await tx
+      .update(calcRequests)
+      .set({ feeOverrideUsd: feeOverrideUsd === null ? null : feeOverrideUsd.toFixed(2) })
+      .where(eq(calcRequests.id, requestId));
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_request',
+      entityId: requestId,
+      action: 'update',
+      after: { feeOverrideUsd },
+    });
   });
 }
 
-/** Fill every item that has no baza from the dictionary, in one pass. */
-export async function pullBazasFromDictionary(requestId: string, ctx: AuditContext): Promise<number> {
+/**
+ * Fill every item that has no baza from the dictionary, in one pass.
+ *
+ * A hit is applied only when its basis is RESOLVABLE on that row: unit/kg
+ * always, an extended basis (juft/litr/m²) only when the item's group prices
+ * per exactly that unit. A «plitka» row stored per m² stamped onto a per-dona
+ * item would strand a basis the row cannot measure and the select cannot
+ * render — the skip is counted and reported instead.
+ */
+export async function pullBazasFromDictionary(
+  requestId: string,
+  ctx: AuditContext,
+): Promise<{ filled: number; skipped: number }> {
   await assertOpen(requestId);
   const items = await db
     .select()
     .from(calcRequestItems)
     .where(and(eq(calcRequestItems.requestId, requestId), isNull(calcRequestItems.bazaUsd)));
-  if (items.length === 0) return 0;
-  const bazas = await bazasFor(items.map((i) => i.name), onDate());
-  let filled = 0;
+  if (items.length === 0) return { filled: 0, skipped: 0 };
+  const [bazas, groupRows] = await Promise.all([
+    bazasFor(items.map((i) => i.name), onDate()),
+    db
+      .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
+      .from(calcGroups)
+      .where(eq(calcGroups.requestId, requestId)),
+  ]);
+  const unitByGroup = new Map(groupRows.map((g) => [g.id, g.dutyUnit]));
+
+  const fills: { id: string; groupId: string | null; bazaUsd: number; basis: BazaBasis }[] = [];
+  let skipped = 0;
   for (const item of items) {
     const hit = bazas.get(normalise(item.name));
     if (!hit) continue;
-    await db
-      .update(calcRequestItems)
-      .set({ bazaUsd: hit.bazaUsd.toFixed(4), bazaBasis: hit.basis, bazaSource: 'dictionary' })
-      .where(eq(calcRequestItems.id, item.id));
+    const resolvable =
+      hit.basis === 'unit' ||
+      hit.basis === 'kg' ||
+      (item.groupId !== null && unitByGroup.get(item.groupId) === hit.basis);
+    if (!resolvable) {
+      skipped += 1;
+      continue;
+    }
+    fills.push({ id: item.id, groupId: item.groupId, bazaUsd: hit.bazaUsd, basis: hit.basis });
+  }
+  if (fills.length === 0) return { filled: 0, skipped };
+
+  await mutateRequest(requestId, async (tx) => {
+    for (const f of fills) {
+      await tx
+        .update(calcRequestItems)
+        .set({ bazaUsd: f.bazaUsd.toFixed(4), bazaBasis: f.basis, bazaSource: 'dictionary' })
+        .where(and(eq(calcRequestItems.id, f.id), isNull(calcRequestItems.bazaUsd)));
+    }
     // The same rule `setItemBaza` applies one item at a time. A baza is one
     // of the numbers the ✅ was about, and filling a blank one changes the
     // group's customs figure exactly as retyping one does.
-    if (item.groupId) await unconfirm(item.groupId);
-    filled += 1;
-  }
-  if (filled > 0) {
-    await writeAudit(db, ctx, {
+    await unconfirmInTx(tx, fills.map((f) => f.groupId).filter((v): v is string => !!v));
+    await writeAudit(tx, ctx, {
       entityType: 'calc_request',
       entityId: requestId,
       action: 'update',
-      after: { bazasPulled: filled },
+      after: { bazasPulled: fills.length, bazasSkipped: skipped },
     });
-  }
-  return filled;
+  });
+  return { filled: fills.length, skipped };
 }
 
 export async function confirmGroup(groupId: string, ctx: AuditContext) {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
-  await assertOpen(group.requestId);
   // What stood on the screen at this moment, recorded now because it cannot
   // be recovered later: the dictionaries move, so re-deriving the warnings a
   // month from now asks a different question about a different world.
   const warnings = await warningsNow(group.requestId);
-  await db
-    .update(calcGroups)
-    .set({
-      confirmedBy: ctx.actorId ?? null,
-      confirmedAt: new Date(),
-      confirmVia: 'single',
-      confirmedWarnings: warnings.get(groupId) ?? [],
-    })
-    .where(eq(calcGroups.id, groupId));
-  await writeAudit(db, ctx, { entityType: 'calc_group', entityId: groupId, action: 'update', after: { confirmed: true } });
+  await mutateRequest(group.requestId, async (tx, locked) => {
+    // The clock: a save committing after the warnings were computed makes
+    // that list a description of numbers that no longer stand — refuse, the
+    // screen re-renders, the person presses again over the truth.
+    if (locked.rev !== warnings.rev) throw new CalcError('conflict');
+    const [row] = await tx
+      .update(calcGroups)
+      .set({
+        confirmedBy: ctx.actorId ?? null,
+        confirmedAt: new Date(),
+        confirmVia: 'single',
+        confirmedWarnings: warnings.byGroup.get(groupId) ?? [],
+      })
+      // A re-press is a no-op, never a re-stamp: the first press's who/when/
+      // warnings are the record E1 reads.
+      .where(and(eq(calcGroups.id, groupId), isNull(calcGroups.confirmedAt)))
+      .returning({ id: calcGroups.id });
+    if (row) {
+      await writeAudit(tx, ctx, {
+        entityType: 'calc_group',
+        entityId: groupId,
+        action: 'update',
+        after: { confirmed: true },
+      });
+    }
+  });
 }
 
 export async function confirmAllGroups(requestId: string, ctx: AuditContext): Promise<number> {
-  await assertOpen(requestId);
   const warnings = await warningsNow(requestId);
-  const pending = await db
-    .select({ id: calcGroups.id })
-    .from(calcGroups)
-    .where(and(eq(calcGroups.requestId, requestId), isNull(calcGroups.confirmedAt)));
-  const now = new Date();
-  // ONE transaction. Before phase E1 this was a single
-  // `UPDATE … WHERE confirmed_at IS NULL RETURNING`, so either every pending
-  // group was confirmed or none was; the per-group values it now writes
-  // (each group's own warning list) need a statement each, and without the
-  // transaction a crash halfway would leave a request half-confirmed with an
-  // audit row claiming a count that never happened.
-  const rows = await db.transaction(async (tx) => {
+  // ONE transaction under the request lock, with the SAME clock check as the
+  // single door — bulk is the COMMON press, and a save landing between the
+  // warnings compute and the stamps would otherwise record lists describing
+  // numbers that no longer stand (the drift E1's record exists to prevent).
+  const rows = await mutateRequest(requestId, async (tx, locked) => {
+    if (locked.rev !== warnings.rev) throw new CalcError('conflict');
+    const pending = await tx
+      .select({ id: calcGroups.id })
+      .from(calcGroups)
+      .where(and(eq(calcGroups.requestId, requestId), isNull(calcGroups.confirmedAt)));
+    const now = new Date();
     const out: { id: string }[] = [];
     for (const group of pending) {
       // Per group, because the list each one was confirmed over is its own —
@@ -1016,22 +1100,22 @@ export async function confirmAllGroups(requestId: string, ctx: AuditContext): Pr
           confirmedBy: ctx.actorId ?? null,
           confirmedAt: now,
           confirmVia: 'bulk',
-          confirmedWarnings: warnings.get(group.id) ?? [],
+          confirmedWarnings: warnings.byGroup.get(group.id) ?? [],
         })
         .where(and(eq(calcGroups.id, group.id), isNull(calcGroups.confirmedAt)))
         .returning({ id: calcGroups.id });
       if (row) out.push(row);
     }
+    if (out.length > 0) {
+      await writeAudit(tx, ctx, {
+        entityType: 'calc_request',
+        entityId: requestId,
+        action: 'update',
+        after: { confirmedGroups: out.length },
+      });
+    }
     return out;
   });
-  if (rows.length > 0) {
-    await writeAudit(db, ctx, {
-      entityType: 'calc_request',
-      entityId: requestId,
-      action: 'update',
-      after: { confirmedGroups: rows.length },
-    });
-  }
   return rows.length;
 }
 
@@ -1040,68 +1124,74 @@ export async function saveExtra(
   input: { id?: string; costTypeId: string | null; label: string; amountUsd: number; note: string | null },
   ctx: AuditContext,
 ): Promise<string> {
-  await assertOpen(requestId);
   mustBeNumber(input.amountUsd);
   if (!(input.amountUsd >= 0)) throw new CalcError('amount_range');
   const label = input.label.trim();
   if (!label) throw new CalcError('label_required');
 
-  if (input.id) {
-    const existing = await db.query.calcExtras.findFirst({ where: eq(calcExtras.id, input.id) });
-    if (!existing || existing.requestId !== requestId) throw new CalcError('not_found');
-    await db
-      .update(calcExtras)
-      .set({
+  return mutateRequest(requestId, async (tx) => {
+    if (input.id) {
+      const [existing] = await tx.select().from(calcExtras).where(eq(calcExtras.id, input.id));
+      if (!existing || existing.requestId !== requestId) throw new CalcError('not_found');
+      await tx
+        .update(calcExtras)
+        .set({
+          costTypeId: input.costTypeId,
+          label,
+          amountUsd: input.amountUsd.toFixed(2),
+          note: input.note,
+        })
+        .where(eq(calcExtras.id, input.id));
+      await writeAudit(tx, ctx, { entityType: 'calc_extra', entityId: input.id, action: 'update', after: input });
+      return input.id;
+    }
+
+    const seq = await nextSeq(tx, calcExtras, requestId);
+    const [row] = await tx
+      .insert(calcExtras)
+      .values({
+        requestId,
+        seq,
         costTypeId: input.costTypeId,
         label,
         amountUsd: input.amountUsd.toFixed(2),
         note: input.note,
       })
-      .where(eq(calcExtras.id, input.id));
-    await writeAudit(db, ctx, { entityType: 'calc_extra', entityId: input.id, action: 'update', after: input });
-    return input.id;
-  }
-
-  const seq = await nextSeq(calcExtras, requestId);
-  const [row] = await db
-    .insert(calcExtras)
-    .values({
-      requestId,
-      seq,
-      costTypeId: input.costTypeId,
-      label,
-      amountUsd: input.amountUsd.toFixed(2),
-      note: input.note,
-    })
-    .returning({ id: calcExtras.id });
-  await writeAudit(db, ctx, { entityType: 'calc_extra', entityId: row!.id, action: 'create', after: input });
-  return row!.id;
+      .returning({ id: calcExtras.id });
+    await writeAudit(tx, ctx, { entityType: 'calc_extra', entityId: row!.id, action: 'create', after: input });
+    return row!.id;
+  });
 }
 
 export async function deleteExtra(extraId: string, ctx: AuditContext) {
   const extra = await db.query.calcExtras.findFirst({ where: eq(calcExtras.id, extraId) });
   if (!extra) throw new CalcError('not_found');
-  await assertOpen(extra.requestId);
-  await db.delete(calcExtras).where(eq(calcExtras.id, extraId));
-  await writeAudit(db, ctx, {
-    entityType: 'calc_extra',
-    entityId: extraId,
-    action: 'delete',
-    before: { label: extra.label, amountUsd: extra.amountUsd },
+  await mutateRequest(extra.requestId, async (tx) => {
+    await tx.delete(calcExtras).where(eq(calcExtras.id, extraId));
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_extra',
+      entityId: extraId,
+      action: 'delete',
+      before: { label: extra.label, amountUsd: extra.amountUsd },
+    });
   });
 }
 
 /** Land a model proposal as draft groups. Refuses once anything is confirmed. */
 export async function applyProposal(requestId: string, drafts: DraftGroup[], ctx: AuditContext) {
-  await assertOpen(requestId);
-  const confirmed = await db
-    .select({ id: calcGroups.id })
-    .from(calcGroups)
-    .where(and(eq(calcGroups.requestId, requestId), sql`${calcGroups.confirmedAt} IS NOT NULL`))
-    .limit(1);
-  if (confirmed.length > 0) throw new CalcError('groups_confirmed');
-
   await db.transaction(async (tx) => {
+    // Its OWN flow holds the AI claim it would otherwise refuse on; the lock
+    // still serializes it against saves (it deletes and recreates every
+    // group — unlocked, a concurrent save's items UPDATE hits a deleted
+    // group's FK and the whole save dies with a raw 23503).
+    await lockRequestInTx(tx, requestId, { ignoreAiClaim: true });
+    const confirmed = await tx
+      .select({ id: calcGroups.id })
+      .from(calcGroups)
+      .where(and(eq(calcGroups.requestId, requestId), sql`${calcGroups.confirmedAt} IS NOT NULL`))
+      .limit(1);
+    if (confirmed.length > 0) throw new CalcError('groups_confirmed');
+
     await tx.delete(calcGroups).where(eq(calcGroups.requestId, requestId));
     let seq = 1;
     for (const draft of drafts) {
@@ -1145,6 +1235,7 @@ export async function applyProposal(requestId: string, drafts: DraftGroup[], ctx
           );
       }
     }
+    await bumpRevInTx(tx, requestId);
   });
 
   await writeAudit(db, ctx, {
@@ -1292,6 +1383,10 @@ export async function sealCalc(
         bazaUsd: i.bazaUsd,
         bazaBasis: i.bazaBasis,
         bazaSource: i.bazaSource,
+        // Phase 3's measure pair — absent on every older breakdown, and
+        // every reader tolerates that.
+        measureUnit: i.measureUnit,
+        measureQty: i.measureQty,
       })),
     })),
     extras: workspace.extras,
@@ -1336,6 +1431,14 @@ export async function sealCalc(
   );
 
   const result = await db.transaction(async (tx) => {
+    // The clock CAS (phase 3): the compute above ran on the pool —
+    // loadWorkspace cannot move inside a tx (#714) — so this is where the
+    // seal learns whether the workspace it computed still stands. Every
+    // mutator bumps `rev` under the same lock; a moved clock means somebody
+    // saved between the compute and this line, and sealing the pre-save
+    // snapshot would lock a price nobody is looking at onto a client card.
+    const locked = await lockRequestInTx(tx, requestId);
+    if (locked.rev !== workspace.rev) throw new CalcError('conflict');
     const closed = await tx
       .update(calcRequests)
       .set({
@@ -1343,6 +1446,7 @@ export async function sealCalc(
         completedBy: ctx.actorId ?? null,
         completedVia: 'sealed',
         currentVersionNo: sql`${calcRequests.currentVersionNo} + 1`,
+        rev: sql`${calcRequests.rev} + 1`,
         updatedAt: new Date(),
       })
       .where(and(eq(calcRequests.id, requestId), isNull(calcRequests.completedAt)))
@@ -1642,6 +1746,10 @@ export async function recalcFromSealed(
         bazaUsd: item.bazaUsd,
         bazaBasis: item.bazaBasis,
         bazaSource: item.bazaSource,
+        // Phase 3: a column absent from this explicit list is NULL on every
+        // correction — exactly the freshest measures missing (0087's rule).
+        measureUnit: item.measureUnit,
+        measureQty: item.measureQty,
       });
     }
 
@@ -1672,10 +1780,11 @@ export async function recalcFromSealed(
 // ---------------------------------------------------------------------------
 
 async function nextSeq(
+  handle: TxHandle | typeof db,
   table: typeof calcGroups | typeof calcExtras,
   requestId: string,
 ): Promise<number> {
-  const [row] = await db
+  const [row] = await handle
     .select({ max: sql<number | null>`max(${table.seq})` })
     .from(table)
     .where(eq(table.requestId, requestId));
@@ -1693,27 +1802,18 @@ async function namesOf(ids: string[]): Promise<Map<string, string>> {
 }
 
 /**
- * A group whose numbers moved is a group nobody has confirmed.
- *
- * All FOUR columns, or `calc_groups_confirm_pair_check` raises 23514 on the
- * next press — the ✅ record must not outlive the ✅ itself.
- */
-async function unconfirm(groupId: string): Promise<void> {
-  await db
-    .update(calcGroups)
-    .set({ confirmedBy: null, confirmedAt: null, confirmVia: null, confirmedWarnings: null })
-    .where(eq(calcGroups.id, groupId));
-}
-
-/**
  * Today's warnings for every group of a request, keyed by group id.
  *
  * Reads the workspace rather than restating the query, so the list recorded
  * at confirm time is the same list the screen was showing (#513).
  */
-async function warningsNow(requestId: string): Promise<Map<string, CalcWarningKind[]>> {
+async function warningsNow(
+  requestId: string,
+): Promise<{ byGroup: Map<string, CalcWarningKind[]>; rev: number }> {
   const w = await loadWorkspace(requestId);
-  return new Map((w?.groups ?? []).map((g) => [g.id, g.warnings]));
+  // The rev rides the SAME loadWorkspace call — a capture read any later
+  // would let a save land between the compute and the capture and pass.
+  return { byGroup: new Map((w?.groups ?? []).map((g) => [g.id, g.warnings])), rev: w?.rev ?? -1 };
 }
 
 const normalise = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -1848,6 +1948,10 @@ export async function proposeGroups(
  * or `calc_groups_confirm_pair_check` 23514s the next press).
  */
 export interface TableItemEdit {
+  /** The immutable address: seqs are re-minted after a delete (max+1), so an
+   * edit keyed by seq could land a stranded draft on DIFFERENT cargo. */
+  id: string;
+  /** Display order — a refusal names the row by it. */
   seq: number;
   name?: string;
   quantity?: number | null;
@@ -1855,38 +1959,42 @@ export interface TableItemEdit {
   volumeM3?: number | null;
   tnvedCode?: string | null;
   note?: string | null;
+  /** The amount in the code's own extended unit (juft/litr/m²/sm³). The UNIT
+   * is never posted — the server stamps it from the law (the group's
+   * dutyUnit); a posted unit could disagree with the code it rides. */
+  measureQty?: number | null;
+  /** The row's baza — null clears amount, basis and source TOGETHER (a basis
+   * without a price describes nothing). */
+  bazaUsd?: number | null;
+  bazaBasis?: BazaBasis | null;
 }
 
-/**
- * Group baza addressed by CODE, deliberately not by group id: the code IS
- * the group's identity in this model, a save that types a code AND its baza
- * must land both (the group's id does not exist when the client posts), and
- * a code cannot name another request's group — the teleport the judge found
- * in the id-addressed draft dies with the id.
- */
-export interface TableGroupBaza {
-  code: string;
-  bazaUsd: number | null;
-  basis: BazaBasis;
-  /** What the screen showed when the person typed — the stale-overwrite
-   * fence: a browser opened before a colleague set per-item bazas must not
-   * silently flatten them (law 5's several-products case). */
-  sawBazaUsd: number | null;
-  sawMixed: boolean;
-}
-
-export interface TableEditResult {
-  /** Freshly minted groups, so the bar can say «+N yangi guruh: …» — a
-   * typo'd code shows up as a surprise one-item group instead of pricing
-   * silently off a prefix match. */
+export interface TableSaveResult {
+  /** Freshly minted codes, so the bar can say «+N yangi kod: …» — a typo'd
+   * code shows up as a surprise one-item block instead of pricing silently
+   * off a prefix match. */
   minted: string[];
   /** Coded-but-ungrouped items the SWEEP placed (intake prefills codes from
    * the TNVED memory, so the commonest request arrives pre-coded with
    * nothing dirty — any save heals the backlog). */
   swept: number;
+  added: number;
+  /** Legacy same-code duplicate groups this save merged — only ever when
+   * their whole rate column set is identical, and always announced. */
+  merged: string[];
+  /** Rows whose measure pair was CLEARED because the required unit changed —
+   * a quantity is a statement IN a unit, and the unit changed. Named, never
+   * silent. */
+  measuresCleared: number[];
+  /** Rows whose posted measure was DROPPED — the code needs no extended
+   * unit. Never a whole-save refusal: the box was on the screen in good
+   * faith (a new row's law shape is unknowable before the save). */
+  measuresDropped: number[];
 }
 
 const CODE_SHAPE = /^\d{4,10}$/;
+const BAZA_BASES: readonly BazaBasis[] = ['unit', 'kg', 'juft', 'litr', 'm2'];
+const EXT_UNITS: readonly MeasureUnit[] = ['juft', 'litr', 'm2', 'sm3'];
 
 /** Parse a table code cell: '' → null, digits 4-10 → trimmed, else refused. */
 function tableCode(raw: string | null | undefined, seq: number): string | null {
@@ -1900,6 +2008,9 @@ function tableMeasure(v: number | null | undefined, seq: number): number | null 
   if (v === null || v === undefined) return null;
   if (!isNumber(v)) throw new CalcError('bad_number', seq);
   if (!(v > 0)) throw new CalcError('measure_positive', seq);
+  // numeric(12,3) holds nine digits; past it the INSERT dies 22003 as a
+  // white page. The cap sits at the true column boundary.
+  if (v >= 1e9) throw new CalcError('bad_number', seq);
   return v;
 }
 
@@ -1927,19 +2038,60 @@ async function unconfirmInTx(tx: TxHandle, groupIds: Iterable<string>) {
  * pass takes single minutes, and a claim a crashed process left behind must
  * not brick the table for ever.
  */
-async function lockRequestInTx(tx: TxHandle, requestId: string) {
+async function lockRequestInTx(
+  tx: TxHandle,
+  requestId: string,
+  opts: { ignoreAiClaim?: boolean } = {},
+): Promise<{ rev: number }> {
   const rows = await tx.execute<{
     id: string;
     completed_at: Date | null;
     ai_proposal_started_at: Date | null;
+    rev: number;
   }>(
-    sql`SELECT id, completed_at, ai_proposal_started_at FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`,
+    sql`SELECT id, completed_at, ai_proposal_started_at, rev FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`,
   );
   const row = rows[0];
   if (!row) throw new CalcError('not_found');
   if (row.completed_at) throw new CalcError('already_closed');
   const claimed = row.ai_proposal_started_at ? new Date(row.ai_proposal_started_at).getTime() : null;
-  if (claimed !== null && Date.now() - claimed < 10 * 60_000) throw new CalcError('ai_running');
+  // `ignoreAiClaim` exists for exactly one caller: applyProposal, whose OWN
+  // flow holds the claim it would otherwise refuse on.
+  if (!opts.ignoreAiClaim && claimed !== null && Date.now() - claimed < 10 * 60_000) {
+    throw new CalcError('ai_running');
+  }
+  return { rev: row.rev };
+}
+
+/** The revision clock's one writer — every mutator moves it, the seal and
+ * the confirm doors compare it. An integer under FOR UPDATE cannot collide
+ * the way a millisecond timestamp does. */
+async function bumpRevInTx(tx: TxHandle, requestId: string) {
+  await tx
+    .update(calcRequests)
+    .set({ rev: sql`${calcRequests.rev} + 1`, updatedAt: new Date() })
+    .where(eq(calcRequests.id, requestId));
+}
+
+/**
+ * EVERY workspace mutator runs through here (or opens its own tx that calls
+ * `lockRequestInTx` + bumps — the table doors' shape): lock the request row
+ * FIRST — one lock order everywhere, so no two doors can deadlock — re-check
+ * closed/claimed under the lock (assertOpen is a check, not a lock: a door
+ * statement queued behind a seal must land as a refusal, never as a ghost
+ * edit onto a completed request), run the writes, move the clock.
+ * `tests/unit/calc-clock.test.ts` derives the mutator list and holds it here.
+ */
+async function mutateRequest<T>(
+  requestId: string,
+  fn: (tx: TxHandle, locked: { rev: number }) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    const locked = await lockRequestInTx(tx, requestId);
+    const out = await fn(tx, locked);
+    await bumpRevInTx(tx, requestId);
+    return out;
+  });
 }
 
 /**
@@ -2047,20 +2199,20 @@ async function recountItemsInTx(tx: TxHandle, requestId: string): Promise<number
   const n = Number(rows[0]?.n ?? 0);
   await tx
     .update(calcRequests)
-    .set({ itemCount: n, updatedAt: new Date() })
+    .set({ itemCount: n, rev: sql`${calcRequests.rev} + 1`, updatedAt: new Date() })
     .where(eq(calcRequests.id, requestId));
   return n;
 }
 
-export async function applyTableEdits(
+export async function saveTable(
   requestId: string,
-  edits: { items: TableItemEdit[]; groupBazas: TableGroupBaza[] },
+  input: { items: TableItemEdit[]; adds: TableNewItem[] },
   ctx: AuditContext,
-): Promise<TableEditResult> {
-  await assertOpen(requestId);
-
-  // Validate every cell BEFORE anything is written, naming the row.
-  const itemEdits = edits.items.map((e) => ({
+): Promise<TableSaveResult> {
+  // Validate every cell BEFORE anything is written, naming the row. A ghost
+  // (new) row is named by a NEGATIVE seq — the screen renders «yangi qator».
+  const itemEdits = input.items.map((e) => ({
+    id: e.id,
     seq: e.seq,
     name: e.name === undefined ? undefined : e.name.trim().slice(0, 300),
     quantity: e.quantity === undefined ? undefined : tableMeasure(e.quantity, e.seq),
@@ -2068,33 +2220,68 @@ export async function applyTableEdits(
     volumeM3: e.volumeM3 === undefined ? undefined : tableMeasure(e.volumeM3, e.seq),
     tnvedCode: e.tnvedCode === undefined ? undefined : tableCode(e.tnvedCode, e.seq),
     note: e.note === undefined ? undefined : (e.note ?? '').trim().slice(0, 500) || null,
+    measureQty: e.measureQty === undefined ? undefined : tableMeasure(e.measureQty, e.seq),
+    bazaUsd: e.bazaUsd,
+    bazaBasis: e.bazaBasis,
   }));
   for (const e of itemEdits) {
     if (e.name !== undefined && !e.name) throw new CalcError('name_required', e.seq);
+    checkBazaPair(e, e.seq);
   }
-  const bazaEdits = edits.groupBazas.map((b) => {
-    const code = (b.code ?? '').trim();
-    if (!CODE_SHAPE.test(code)) throw new CalcError('bad_code');
-    mustBeNumber(b.bazaUsd, b.sawBazaUsd);
-    if (b.bazaUsd !== null && !(b.bazaUsd > 0)) throw new CalcError('baza_positive');
-    return { ...b, code };
+  const adds = input.adds.map((r, i) => {
+    const seq = -(i + 1);
+    const name = r.name.trim().slice(0, 300);
+    if (!name) throw new CalcError('name_required', seq);
+    checkBazaPair(r, seq);
+    return {
+      name,
+      quantity: tableMeasure(r.quantity ?? null, seq),
+      unit: r.unit?.trim().slice(0, 20) || null,
+      weightKg: tableMeasure(r.weightKg ?? null, seq),
+      volumeM3: tableMeasure(r.volumeM3 ?? null, seq),
+      tnvedCode: tableCode(r.tnvedCode, seq),
+      note: r.note?.trim().slice(0, 500) || null,
+      measureQty: tableMeasure(r.measureQty ?? null, seq),
+      bazaUsd: r.bazaUsd === undefined ? null : r.bazaUsd,
+      bazaBasis: r.bazaBasis === undefined ? null : r.bazaBasis,
+    };
   });
 
-  // The dictionary read lives OUTSIDE the tx (#714). Candidates: every code
-  // this save types, plus every coded-but-ungrouped item already standing —
-  // the sweep's targets. Staleness between this read and the lock is
-  // bounded and self-announcing (warningsForGroup recompares every render).
+  // The dictionary reads live OUTSIDE the tx (#714). ONE ratesForCodes over
+  // the UNION: every code this save types, every coded-but-ungrouped item
+  // already standing (the sweep's targets), the adds' typed codes AND the
+  // memory-resolved ones — a partial union mints groups with NULL rates and
+  // silently degrades «prices on its first save» to «type them by hand».
   const standing = await db
     .select({ seq: calcRequestItems.seq, tnvedCode: calcRequestItems.tnvedCode, groupId: calcRequestItems.groupId })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
+  let withCodes = adds;
+  if (adds.length > 0) {
+    // The TNVED memory fills codes exactly as openCalcRequest does — an
+    // added item must not arrive uncoded while its twin from intake is coded.
+    const { tnvedFor, productKey } = await import('../tnved/service');
+    const known = await tnvedFor(adds.map((r) => r.name));
+    withCodes = adds.map((r) => ({
+      ...r,
+      tnvedCode: r.tnvedCode || known.get(productKey(r.name))?.tnvedCode || null,
+    }));
+  }
   const editedCodes = itemEdits.map((e) => e.tnvedCode).filter((c): c is string => !!c);
   const sweepCodes = standing
     .filter((i) => i.groupId === null && (i.tnvedCode ?? '').trim())
     .map((i) => i.tnvedCode!.trim());
-  const rates = await ratesForCodes([...editedCodes, ...sweepCodes], onDate());
+  const addCodes = withCodes.map((r) => r.tnvedCode).filter((c): c is string => !!c);
+  const rates = await ratesForCodes([...editedCodes, ...sweepCodes, ...addCodes], onDate());
 
-  let result: TableEditResult = { minted: [], swept: 0 };
+  let result: TableSaveResult = {
+    minted: [],
+    swept: 0,
+    added: 0,
+    merged: [],
+    measuresCleared: [],
+    measuresDropped: [],
+  };
   await db.transaction(async (tx) => {
     await lockRequestInTx(tx, requestId);
 
@@ -2108,16 +2295,21 @@ export async function applyTableEdits(
       .from(calcGroups)
       .where(eq(calcGroups.requestId, requestId))
       .orderBy(asc(calcGroups.seq));
-    const bySeq = new Map(items.map((i) => [i.seq, i]));
+    const byId = new Map(items.map((i) => [i.id, i]));
     const itemGroupBySeq = new Map(items.map((i) => [i.seq, i.groupId]));
 
-    // 1. Field edits (measures unconfirm — the ✅ was about those numbers;
-    //    a name or note is words).
+    if (items.length + withCodes.length > MAX_CALC_ITEMS) throw new CalcError('too_many_items');
+
+    // 1. Field edits, addressed by the immutable id (measures and bazas
+    //    unconfirm — the ✅ was about those numbers; a name or note is words).
     const changedCells: { seq: number; field: string; before: unknown; after: unknown }[] = [];
     const touched = new Set<string>();
+    /** item id → posted extended-unit qty (undefined = the cell was not sent). */
+    const postedMeasure = new Map<string, number | null>();
     for (const e of itemEdits) {
-      const item = bySeq.get(e.seq);
-      if (!item) throw new CalcError('not_found', e.seq);
+      const item = byId.get(e.id);
+      if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
+      if (e.measureQty !== undefined) postedMeasure.set(item.id, e.measureQty);
       const patch: Record<string, unknown> = {};
       const put = (field: string, before: unknown, after: unknown) => {
         patch[field] = after;
@@ -2148,23 +2340,81 @@ export async function applyTableEdits(
         put('tnvedCode', item.tnvedCode, e.tnvedCode);
         patch.tnvedCode = e.tnvedCode;
       }
+      // The row's baza — an atomic triple. Null clears amount, basis and
+      // source together (the old setItemBaza rule, restated here because the
+      // schema has no pair CHECK to enforce it); an unchanged pair diffs to
+      // nothing, so a re-save re-stamps neither 'typed' nor the ✅-clear.
+      if (e.bazaUsd !== undefined) {
+        const before = num(item.bazaUsd);
+        const beforeBasis = (item.bazaBasis as BazaBasis | null) ?? null;
+        if (e.bazaUsd === null) {
+          if (before !== null || beforeBasis !== null) {
+            put('baza', { bazaUsd: before, basis: beforeBasis }, null);
+            patch.bazaUsd = null;
+            patch.bazaBasis = null;
+            patch.bazaSource = null;
+            measuresMoved = true;
+          }
+        } else if (before !== e.bazaUsd || beforeBasis !== (e.bazaBasis ?? null)) {
+          put('baza', { bazaUsd: before, basis: beforeBasis }, { bazaUsd: e.bazaUsd, basis: e.bazaBasis });
+          patch.bazaUsd = e.bazaUsd.toFixed(4);
+          patch.bazaBasis = e.bazaBasis;
+          patch.bazaSource = 'typed';
+          measuresMoved = true;
+        }
+      }
       if (Object.keys(patch).length > 0) {
-        await tx
-          .update(calcRequestItems)
-          .set(patch)
-          .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, e.seq)));
+        await tx.update(calcRequestItems).set(patch).where(eq(calcRequestItems.id, item.id));
       }
       if (measuresMoved && item.groupId) touched.add(item.groupId);
     }
 
-    // 2. Regroup: the save's typed codes, PLUS the sweep — every coded item
-    //    standing ungrouped (intake prefills codes from the TNVED memory, so
-    //    the commonest request arrives pre-coded with nothing dirty; the
-    //    judge's blocker: without the sweep, Saqlash no-ops against the
-    //    ungrouped blocker for ever).
+    // 2. Insert the ghost rows — in the SAME tx, so a new row born with
+    //    code + baza + measure prices on its first save (the two-tx seam
+    //    the audit measured dies here).
+    let nextSeqNo = items.reduce((m, i) => Math.max(m, i.seq), 0) + 1;
+    const insertedRows: { id: string; seq: number; tnvedCode: string | null }[] = [];
+    if (withCodes.length > 0) {
+      const minted = withCodes.map((r) => ({ ...r, seq: nextSeqNo++ }));
+      const inserted = await tx
+        .insert(calcRequestItems)
+        .values(
+          minted.map((r) => ({
+            requestId,
+            seq: r.seq,
+            name: r.name,
+            quantity: r.quantity === null ? null : r.quantity.toFixed(3),
+            unit: r.unit,
+            weightKg: r.weightKg === null ? null : r.weightKg.toFixed(3),
+            volumeM3: r.volumeM3 === null ? null : r.volumeM3.toFixed(3),
+            tnvedCode: r.tnvedCode,
+            note: r.note,
+            bazaUsd: r.bazaUsd === null ? null : r.bazaUsd.toFixed(4),
+            bazaBasis: r.bazaUsd === null ? null : r.bazaBasis,
+            bazaSource: r.bazaUsd === null ? null : ('typed' as const),
+          })),
+        )
+        .returning({ id: calcRequestItems.id, seq: calcRequestItems.seq, tnvedCode: calcRequestItems.tnvedCode });
+      for (let i = 0; i < inserted.length; i++) {
+        const row = inserted[i]!;
+        insertedRows.push(row);
+        itemGroupBySeq.set(row.seq, null);
+        const qty = minted[i]!.measureQty;
+        if (qty !== null) postedMeasure.set(row.id, qty);
+      }
+    }
+
+    // 3. Regroup: the save's typed codes (edits AND adds), PLUS the sweep —
+    //    every coded item standing ungrouped (intake prefills codes from the
+    //    TNVED memory, so the commonest request arrives pre-coded with
+    //    nothing dirty; the judge's blocker: without the sweep, Saqlash
+    //    no-ops against the ungrouped blocker for ever).
     const moves = new Map<number, string | null>();
     for (const e of itemEdits) {
-      if (e.tnvedCode !== undefined) moves.set(e.seq, e.tnvedCode);
+      if (e.tnvedCode !== undefined) moves.set(byId.get(e.id)!.seq, e.tnvedCode);
+    }
+    for (const row of insertedRows) {
+      if (row.tnvedCode) moves.set(row.seq, row.tnvedCode);
     }
     let swept = 0;
     for (const i of items) {
@@ -2178,48 +2428,117 @@ export async function applyTableEdits(
     const grouped = await autoGroupInTx(tx, requestId, { groups, moves, itemGroupBySeq, rates });
     grouped.touched.forEach((id) => touched.add(id));
 
-    // 3. Emptied groups die AFTER all moves (judge: ordering).
+    // 4. Emptied groups die AFTER all moves (judge: ordering).
     const lostFrom = [...moves.keys()]
-      .map((seq) => bySeq.get(seq)?.groupId)
+      .map((seq) => items.find((i) => i.seq === seq)?.groupId)
       .filter((id): id is string => !!id);
     await pruneEmptyGroupsInTx(tx, requestId, lostFrom);
 
-    // 4. Group bazas fan out over POST-edit membership, re-read in-tx.
-    const fanned: { code: string; bazaUsd: number | null; memberSeqs: number[] }[] = [];
-    for (const b of bazaEdits) {
-      const groupRow = await tx
-        .select({ id: calcGroups.id })
-        .from(calcGroups)
-        .where(and(eq(calcGroups.requestId, requestId), eq(calcGroups.tnvedCode, b.code)))
-        .orderBy(asc(calcGroups.seq))
-        .limit(1);
-      const group = groupRow[0];
-      // A code this same save just emptied-and-pruned answers a refusal, not
-      // a silent skip — the person typed a number and it must not vanish.
-      if (!group) throw new CalcError('group_gone');
-      const members = await tx
-        .select({ seq: calcRequestItems.seq, bazaUsd: calcRequestItems.bazaUsd })
-        .from(calcRequestItems)
-        .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.groupId, group.id)));
-      // The stale-overwrite fence (law 5): the server compares what the
-      // SCREEN showed against what stands now — a browser opened before a
-      // colleague set per-item bazas must not flatten them unseen.
-      const distinct = [...new Set(members.map((m) => (m.bazaUsd === null ? null : Number(m.bazaUsd))))];
-      const nowMixed = distinct.length > 1;
-      const nowUniform = distinct.length === 1 ? distinct[0]! : null;
-      if (b.sawMixed !== nowMixed || (!nowMixed && b.sawBazaUsd !== nowUniform)) {
-        throw new CalcError('stale_baza');
+    // 5. Legacy duplicate same-code groups MERGE — but only when their whole
+    //    rate column set is identical. First-by-seq is arbitrary, and the
+    //    losing group's typed lgota or certificate override silently dying
+    //    under the winner's dictionary numbers would understate customs by
+    //    the whole add-duty band; differing duplicates stay as two honest
+    //    blocks for a person to resolve.
+    const groupsNow = await tx
+      .select()
+      .from(calcGroups)
+      .where(eq(calcGroups.requestId, requestId))
+      .orderBy(asc(calcGroups.seq));
+    const dupsByCode = new Map<string, (typeof groupsNow)[number][]>();
+    for (const g of groupsNow) {
+      const code = (g.tnvedCode ?? '').trim();
+      if (!code) continue;
+      const list = dupsByCode.get(code) ?? [];
+      list.push(g);
+      dupsByCode.set(code, list);
+    }
+    const merged: string[] = [];
+    for (const [code, list] of dupsByCode) {
+      if (list.length < 2) continue;
+      const first = list[0]!;
+      for (const g of list.slice(1)) {
+        if (!sameGroupRates(first, g)) continue;
+        await tx
+          .update(calcRequestItems)
+          .set({ groupId: first.id })
+          .where(eq(calcRequestItems.groupId, g.id));
+        touched.add(first.id);
+        touched.delete(g.id);
+        await tx.delete(calcGroups).where(eq(calcGroups.id, g.id));
+        if (!merged.includes(code)) merged.push(code);
       }
-      await tx
-        .update(calcRequestItems)
-        .set(
-          b.bazaUsd === null
-            ? { bazaUsd: null, bazaBasis: null, bazaSource: null }
-            : { bazaUsd: b.bazaUsd.toFixed(4), bazaBasis: b.basis, bazaSource: 'typed' },
-        )
-        .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.groupId, group.id)));
-      touched.add(group.id);
-      fanned.push({ code: b.code, bazaUsd: b.bazaUsd, memberSeqs: members.map((m) => m.seq) });
+    }
+
+    // 6. The measure pass — the ONE writer of the pair, after the regroup
+    //    and the merge so every item's group (and thus its REQUIRED unit) is
+    //    final. Written and cleared only TOGETHER, in one UPDATE per item —
+    //    the pair CHECK is immediate and a lone half 23514s the whole save.
+    const groupsFinal = await tx
+      .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
+      .from(calcGroups)
+      .where(eq(calcGroups.requestId, requestId));
+    const requiredByGroup = new Map(
+      groupsFinal.map((g) => [
+        g.id,
+        g.dutyUnit && (EXT_UNITS as readonly string[]).includes(g.dutyUnit)
+          ? (g.dutyUnit as MeasureUnit)
+          : null,
+      ]),
+    );
+    const itemsNow = await tx
+      .select({
+        id: calcRequestItems.id,
+        seq: calcRequestItems.seq,
+        groupId: calcRequestItems.groupId,
+        measureUnit: calcRequestItems.measureUnit,
+        measureQty: calcRequestItems.measureQty,
+      })
+      .from(calcRequestItems)
+      .where(eq(calcRequestItems.requestId, requestId));
+    const measuresCleared: number[] = [];
+    const measuresDropped: number[] = [];
+    for (const item of itemsNow) {
+      const required = item.groupId ? (requiredByGroup.get(item.groupId) ?? null) : null;
+      const storedUnit = (item.measureUnit as MeasureUnit | null) ?? null;
+      const storedQty = item.measureQty === null ? null : Number(item.measureQty);
+      const posted = postedMeasure.get(item.id);
+      let write: { unit: MeasureUnit; qty: number } | null | undefined;
+      if (required === null) {
+        // The code needs no extended unit. A posted qty is DROPPED with a
+        // named note (never a whole-save refusal — the box was offered in
+        // good faith); a standing pair is cleared and named: keeping «200»
+        // under a law that stopped asking for m² is a number nobody stated.
+        if (posted !== undefined && posted !== null) measuresDropped.push(item.seq);
+        if (storedUnit !== null) {
+          write = null;
+          measuresCleared.push(item.seq);
+        }
+      } else if (posted !== undefined) {
+        if (posted === null) {
+          if (storedUnit !== null) write = null;
+        } else if (storedUnit !== required || storedQty !== posted) {
+          write = { unit: required, qty: posted };
+        }
+      } else if (storedUnit !== null && storedUnit !== required) {
+        // A recode changed the required unit under a standing pair — the
+        // quantity was a statement in the OLD unit. Clear and name it;
+        // re-stamping «200 m²» as «200 litr» would price a number nobody
+        // measured.
+        write = null;
+        measuresCleared.push(item.seq);
+      }
+      if (write !== undefined) {
+        await tx
+          .update(calcRequestItems)
+          .set(
+            write === null
+              ? { measureUnit: null, measureQty: null }
+              : { measureUnit: write.unit, measureQty: write.qty.toFixed(4) },
+          )
+          .where(eq(calcRequestItems.id, item.id));
+        if (item.groupId) touched.add(item.groupId);
+      }
     }
 
     await unconfirmInTx(tx, touched);
@@ -2233,14 +2552,56 @@ export async function applyTableEdits(
       action: 'update',
       after: {
         tableEdits: changedCells,
-        groupBazas: fanned,
+        itemsAdded: insertedRows.map((r) => r.seq),
         minted: grouped.minted.map((m) => m.code),
         swept,
+        merged,
+        measuresCleared,
+        measuresDropped,
       },
     });
-    result = { minted: grouped.minted.map((m) => m.code), swept };
+    result = {
+      minted: grouped.minted.map((m) => m.code),
+      swept,
+      added: insertedRows.length,
+      merged,
+      measuresCleared,
+      measuresDropped,
+    };
   });
   return result;
+}
+
+/** The whole rate column set, compared null-safe — the merge's gate. */
+function sameGroupRates(
+  a: typeof calcGroups.$inferSelect,
+  b: typeof calcGroups.$inferSelect,
+): boolean {
+  return (
+    a.dutyPct === b.dutyPct &&
+    a.vatPct === b.vatPct &&
+    a.feeUsd === b.feeUsd &&
+    a.dutyMode === b.dutyMode &&
+    a.dutySpecific === b.dutySpecific &&
+    a.dutyUnit === b.dutyUnit &&
+    a.excisePct === b.excisePct &&
+    a.dutyFree === b.dutyFree &&
+    a.vatFree === b.vatFree &&
+    a.hasCertificate === b.hasCertificate
+  );
+}
+
+/** A baza posts as an atomic pair: an amount needs its basis, and a basis
+ * from off the widened list is a forged post. */
+function checkBazaPair(
+  e: { bazaUsd?: number | null; bazaBasis?: BazaBasis | null },
+  seq: number,
+): void {
+  if (e.bazaUsd === undefined || e.bazaUsd === null) return;
+  if (!isNumber(e.bazaUsd)) throw new CalcError('bad_number', seq);
+  if (!(e.bazaUsd > 0)) throw new CalcError('baza_positive', seq);
+  if (e.bazaUsd >= 1e9) throw new CalcError('bad_number', seq);
+  if (!e.bazaBasis || !BAZA_BASES.includes(e.bazaBasis)) throw new CalcError('bad_basis', seq);
 }
 
 export interface TableNewItem {
@@ -2251,114 +2612,20 @@ export interface TableNewItem {
   volumeM3?: number | null;
   tnvedCode?: string | null;
   note?: string | null;
+  measureQty?: number | null;
+  bazaUsd?: number | null;
+  bazaBasis?: BazaBasis | null;
 }
 
-export async function addItems(
-  requestId: string,
-  rows: TableNewItem[],
-  ctx: AuditContext,
-): Promise<TableEditResult & { added: number }> {
-  await assertOpen(requestId);
-  if (rows.length === 0) return { minted: [], swept: 0, added: 0 };
-
-  const cleaned = rows.map((r, i) => {
-    const name = r.name.trim().slice(0, 300);
-    if (!name) throw new CalcError('name_required', i + 1);
-    return {
-      name,
-      quantity: tableMeasure(r.quantity ?? null, i + 1),
-      unit: r.unit?.trim().slice(0, 20) || null,
-      weightKg: tableMeasure(r.weightKg ?? null, i + 1),
-      volumeM3: tableMeasure(r.volumeM3 ?? null, i + 1),
-      tnvedCode: tableCode(r.tnvedCode, i + 1),
-      note: r.note?.trim().slice(0, 500) || null,
-    };
-  });
-
-  // The TNVED memory fills codes exactly as openCalcRequest does — an added
-  // item must not arrive uncoded while its twin from intake is coded. Both
-  // reads are pooled, so both run BEFORE the tx.
-  const { tnvedFor, productKey } = await import('../tnved/service');
-  const known = await tnvedFor(cleaned.map((r) => r.name));
-  const withCodes = cleaned.map((r) => ({
-    ...r,
-    tnvedCode: r.tnvedCode || known.get(productKey(r.name))?.tnvedCode || null,
-  }));
-  const rates = await ratesForCodes(
-    withCodes.map((r) => r.tnvedCode).filter((c): c is string => !!c),
-    onDate(),
-  );
-
-  let result = { minted: [] as string[], swept: 0, added: 0 };
-  await db.transaction(async (tx) => {
-    await lockRequestInTx(tx, requestId);
-    const existing = await tx
-      .select({ seq: calcRequestItems.seq, groupId: calcRequestItems.groupId, tnvedCode: calcRequestItems.tnvedCode })
-      .from(calcRequestItems)
-      .where(eq(calcRequestItems.requestId, requestId));
-    if (existing.length + withCodes.length > MAX_CALC_ITEMS) {
-      throw new CalcError('too_many_items');
-    }
-    const groups = await tx
-      .select({ id: calcGroups.id, seq: calcGroups.seq, tnvedCode: calcGroups.tnvedCode })
-      .from(calcGroups)
-      .where(eq(calcGroups.requestId, requestId))
-      .orderBy(asc(calcGroups.seq));
-
-    let nextSeqNo = existing.reduce((m, i) => Math.max(m, i.seq), 0) + 1;
-    const minted = withCodes.map((r) => ({ ...r, seq: nextSeqNo++ }));
-    await tx.insert(calcRequestItems).values(
-      minted.map((r) => ({
-        requestId,
-        seq: r.seq,
-        name: r.name,
-        quantity: r.quantity === null ? null : r.quantity.toFixed(3),
-        unit: r.unit,
-        weightKg: r.weightKg === null ? null : r.weightKg.toFixed(3),
-        volumeM3: r.volumeM3 === null ? null : r.volumeM3.toFixed(3),
-        tnvedCode: r.tnvedCode,
-        note: r.note,
-      })),
-    );
-
-    // New codes auto-group exactly like typed ones (judge #40) — an added
-    // item must never sit ungrouped while carrying an existing group's code.
-    const moves = new Map<number, string | null>();
-    const itemGroupBySeq = new Map<number, string | null>();
-    for (const r of minted) {
-      itemGroupBySeq.set(r.seq, null);
-      if (r.tnvedCode) moves.set(r.seq, r.tnvedCode);
-    }
-    const grouped = await autoGroupInTx(tx, requestId, { groups, moves, itemGroupBySeq, rates });
-    await unconfirmInTx(tx, grouped.touched);
-    await recountItemsInTx(tx, requestId);
-
-    await writeAudit(tx, ctx, {
-      entityType: 'calc_request',
-      entityId: requestId,
-      action: 'update',
-      after: {
-        itemsAdded: minted.map((r) => ({ seq: r.seq, name: r.name })),
-        minted: grouped.minted.map((m) => m.code),
-      },
-    });
-    result = { minted: grouped.minted.map((m) => m.code), swept: 0, added: minted.length };
-  });
-  return result;
-}
-
-export async function deleteItem(requestId: string, itemSeq: number, ctx: AuditContext) {
-  await assertOpen(requestId);
+export async function deleteItem(requestId: string, itemId: string, ctx: AuditContext) {
   await db.transaction(async (tx) => {
     await lockRequestInTx(tx, requestId);
     const [item] = await tx
       .select()
       .from(calcRequestItems)
-      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
-    if (!item) throw new CalcError('not_found', itemSeq);
-    await tx
-      .delete(calcRequestItems)
-      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.id, itemId)));
+    if (!item) throw new CalcError('not_found');
+    await tx.delete(calcRequestItems).where(eq(calcRequestItems.id, item.id));
     if (item.groupId) {
       // The group's numbers changed; and a group the delete emptied dies —
       // a header with no rows is noise the table would render for ever.
@@ -2370,8 +2637,8 @@ export async function deleteItem(requestId: string, itemSeq: number, ctx: AuditC
       entityType: 'calc_request',
       entityId: requestId,
       action: 'update',
-      before: { itemSeq, name: item.name },
-      after: { itemDeleted: itemSeq },
+      before: { itemSeq: item.seq, name: item.name },
+      after: { itemDeleted: item.seq },
     });
   });
 }

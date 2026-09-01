@@ -21,24 +21,33 @@ export type CalcWarningKind =
   /** Confirmed with the model's low-confidence guess untouched and no dictionary answer. */
   | 'ai_low_confidence'
   /** The model's own duty rate survived to the seal. */
-  | 'ai_rate_taken';
+  | 'ai_rate_taken'
+  /** The dictionary rate driving this group carries the law's own note — e.g.
+   * the 21 sm³ vehicle rows whose «…за куб. см. для» condition the parse cut
+   * short. The price computes; the confirm must RECORD that the book's answer
+   * came with a condition attached (phase 3). */
+  | 'rate_noted';
 
 export interface WarningGroupFacts {
   /** What the rates dictionary answers for this group's code today, if anything. */
   dictionaryRates: { dutyPct: number; vatPct: number; feeUsd: number } | null;
+  /** The note on the dictionary row — the law's own condition, when it has one. */
+  dictionaryNote: string | null;
   rateSource: 'dictionary' | 'typed' | null;
   dutyPct: number | null;
   vatPct: number | null;
   aiProposed: boolean;
   aiConfidence: 'high' | 'medium' | 'low' | null;
   aiDutyPct: number | null;
-  /** One entry per ITEM: what the baza dictionary answers, and what stands. */
+  /** One entry per ITEM: what the baza dictionary answers, and what stands.
+   * The basis union is RESTATED here (this file is zero-import on purpose) —
+   * it must match pricing.ts's BazaBasis by hand. */
   items: {
     hasDictionaryBaza: boolean;
     bazaSource: 'dictionary' | 'typed' | null;
     bazaUsd: number | null;
-    bazaBasis: 'unit' | 'kg' | null;
-    dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' } | null;
+    bazaBasis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' | null;
+    dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' } | null;
   }[];
 }
 
@@ -94,6 +103,13 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
     out.push('ai_low_confidence');
   }
   if (aiRateTaken(facts)) out.push('ai_rate_taken');
+  // The book answered WITH a condition (its note), and that answer is what
+  // drives the price. A typed rate means a person already looked past the
+  // note; a dictionary-sourced one means nobody had to — so the confirm must
+  // carry the fact (phase 3, the clauseCut vehicle rows).
+  if (facts.rateSource === 'dictionary' && facts.dictionaryNote !== null) {
+    out.push('rate_noted');
+  }
 
   return out;
 }

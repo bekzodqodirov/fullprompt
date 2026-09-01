@@ -74,7 +74,7 @@ export function CalcWorkspace({
 
           <FreightPanel workspace={workspace} pending={pending} act={act} />
           <ExtrasPanel workspace={workspace} pending={pending} act={act} />
-          <TotalsPanel workspace={workspace} />
+          <TotalsPanel workspace={workspace} dirty={dirty} />
           <SealPanel workspace={workspace} pending={pending} act={act} dirty={dirty} />
         </>
       ) : null}
@@ -282,13 +282,23 @@ function ExtrasPanel({
 
 /* --------------------------------------------------------------- totals */
 
-function TotalsPanel({ workspace }: { workspace: Workspace }) {
+function TotalsPanel({ workspace, dirty }: { workspace: Workspace; dirty: number }) {
   const t = useTranslations('calc');
   const totals = workspace.totals;
 
   return (
-    <section className="card !p-3" data-testid="calc-totals">
-      <h3 className="section-title">{t('totals')}</h3>
+    // One freshness per screen: while cells are dirty the bar carries the
+    // LIVE figure and this panel is the SAVED one — greyed and saying so,
+    // or two totals on one screen read as a broken screen.
+    <section className={`card !p-3${dirty > 0 ? ' opacity-60' : ''}`} data-testid="calc-totals">
+      <h3 className="section-title">
+        {t('totals')}
+        {dirty > 0 ? (
+          <span className="ml-2 text-2xs font-normal text-ink-500" data-testid="calc-totals-stale">
+            {t('table.savedFigures')}
+          </span>
+        ) : null}
+      </h3>
       {totals?.ok ? (
         <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
           {/* His law 5: rastamojka and yo'lkira are always on their own

@@ -2138,7 +2138,9 @@
       "name_required": "Tovar nomi kerak",
       "stale_baza": "Guruh bazalari o'zgargan — sahifani yangilab qayta kiriting",
       "group_gone": "Bu kodning guruhi qolmadi — sahifani yangilang",
-      "conflict": "Bir vaqtda ikki saqlash to'qnashdi — qayta urinib ko'ring"
+      "conflict": "Boshqa kishi hozirgina saqladi — ekran yangilandi, qayta bosing",
+      "save_failed": "Saqlash o'tmadi — aloqani tekshirib, qayta urinib ko'ring",
+      "bad_basis": "Baza o'lchovi noto'g'ri"
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -2287,7 +2289,8 @@
       "rateOffDictionary": "Stavka lug'atdan emas",
       "bazaOffDictionary": "Baza lug'atdan emas",
       "aiLowConfidence": "AI ishonchsiz edi",
-      "aiRateTaken": "AI stavkasi narxga ketdi"
+      "aiRateTaken": "AI stavkasi narxga ketdi",
+      "rateNoted": "lug'at stavkasi izoh bilan"
     },
     "refusal": {
       "customsByClient": "Mijoz o'zi rastamojka qildi",
@@ -2352,7 +2355,17 @@
       "pasteAdd": "{count} qator qo'shish",
       "pasteCap": "Ko'pi bilan 500 qator birdan qo'shiladi",
       "editOnDesktop": "Jadval kompyuterda tahrirlanadi; qabul qilish, tasdiqlash va muhrlash telefonda ishlaydi.",
-      "saveFirst": "Avval saqlang ({count})"
+      "saveFirst": "Avval saqlang ({count})",
+      "live": "jonli",
+      "newRowN": "Yangi qator {n}",
+      "mergedNote": "Bir xil kodli guruhlar birlashtirildi",
+      "measureCleared": "O'lchov tozalandi (birlik o'zgardi), qator",
+      "measureDropped": "O'lchov olib tashlandi (kod talab qilmaydi), qator",
+      "measureFor": "O'lchov ({unit}):",
+      "measureGhost": "O'lchov (kod juft/litr/m²/sm³ talab qilsa):",
+      "sm3Hint": "jami sm³ = dona × motor hajmi",
+      "rateNoted": "qonunda izoh bor",
+      "savedFigures": "saqlangan raqamlar"
     }
   },
   "partners": {

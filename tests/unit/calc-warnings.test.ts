@@ -9,6 +9,7 @@ import {
 
 const base: WarningGroupFacts = {
   dictionaryRates: null,
+  dictionaryNote: null,
   rateSource: 'typed',
   dutyPct: 10,
   vatPct: 12,
@@ -101,6 +102,15 @@ describe('a warning means the dictionary had an answer and a person typed anothe
         items: [item({ hasDictionaryBaza: false, dictionaryBaza: null })],
       }),
     ).toEqual([]);
+  });
+
+  it('a NOTED dictionary rate warns only while the dictionary is driving', () => {
+    // The 21 clauseCut sm³ vehicle rows: the book answered WITH a condition.
+    const noted = { ...base, rateSource: 'dictionary' as const, dictionaryNote: '…за куб. см. для' };
+    expect(warningsForGroup(noted)).toContain('rate_noted');
+    // A person who TYPED over the rate has already looked past the note.
+    expect(warningsForGroup({ ...noted, rateSource: 'typed' })).not.toContain('rate_noted');
+    expect(warningsForGroup({ ...noted, dictionaryNote: null })).not.toContain('rate_noted');
   });
 
   /** A blind confirm is a conjunction; each clause is load-bearing. */

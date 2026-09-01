@@ -1969,6 +1969,14 @@ export const calcRequests = pgTable(
      * over the computed tier; NULL means «compute it».
      */
     feeOverrideUsd: numeric('fee_override_usd', { precision: 12, scale: 2 }),
+    /**
+     * The revision clock (0092). The seal and both confirm doors compute on
+     * pool reads (#714 keeps loadWorkspace out of transactions), so their
+     * write tx compares this integer under FOR UPDATE to know the workspace
+     * they computed still stands. Every mutator bumps it; a millisecond
+     * timestamp collides, a counter cannot.
+     */
+    rev: integer('rev').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -2038,17 +2046,37 @@ export const calcRequestItems = pgTable(
     bazaBasis: text('baza_basis'),
     /** 'dictionary' | 'typed' — never 'ai'. A model's estimate has nowhere to land. */
     bazaSource: text('baza_source'),
+    /**
+     * The law's own measure (0092): the quantity in the unit the code's duty
+     * is per, for the four units no other column holds. kg / dona / 1000_dona
+     * deliberately stay on weight_kg / quantity — one home per fact. Written
+     * and cleared only as a PAIR (a quantity is a statement IN a unit).
+     */
+    measureUnit: text('measure_unit'),
+    measureQty: numeric('measure_qty', { precision: 14, scale: 4 }),
   },
   (t) => [
     uniqueIndex('calc_request_items_seq_idx').on(t.requestId, t.seq),
     index('calc_request_items_group_idx').on(t.groupId),
     check(
       'calc_items_baza_basis_check',
-      sql`${t.bazaBasis} IS NULL OR ${t.bazaBasis} IN ('unit', 'kg')`,
+      sql`${t.bazaBasis} IS NULL OR ${t.bazaBasis} IN ('unit', 'kg', 'juft', 'litr', 'm2')`,
     ),
     check(
       'calc_items_baza_source_check',
       sql`${t.bazaSource} IS NULL OR ${t.bazaSource} IN ('dictionary', 'typed')`,
+    ),
+    check(
+      'calc_items_measure_unit_check',
+      sql`${t.measureUnit} IS NULL OR ${t.measureUnit} IN ('juft', 'litr', 'm2', 'sm3')`,
+    ),
+    check(
+      'calc_items_measure_qty_check',
+      sql`${t.measureQty} IS NULL OR (${t.measureQty} > 0 AND ${t.measureQty} <> 'NaN'::numeric)`,
+    ),
+    check(
+      'calc_items_measure_pair_check',
+      sql`(${t.measureUnit} IS NULL) = (${t.measureQty} IS NULL)`,
     ),
   ],
 );
@@ -2083,7 +2111,9 @@ export const calcBazas = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('calc_bazas_basis_check', sql`${t.basis} IN ('unit', 'kg')`),
+    // No sm3 on purpose: nothing is VALUED per cm³ of displacement — a
+    // vehicle's baza is its invoice price per dona (0092).
+    check('calc_bazas_basis_check', sql`${t.basis} IN ('unit', 'kg', 'juft', 'litr', 'm2')`),
     check('calc_bazas_value_check', sql`${t.bazaUsd} > 0`),
     uniqueIndex('calc_bazas_key_date_unique').on(t.productKey, t.effectiveDate),
   ],

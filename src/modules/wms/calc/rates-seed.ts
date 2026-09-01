@@ -50,16 +50,27 @@ export function pp3818Records(): Pp3818Record[] {
  * once per group.
  */
 export function pp3818Rows() {
-  return pp3818Records().map((r) => ({
-    tnvedCode: r.code,
-    dutyPct: r.pct.toFixed(3),
-    vatPct: '12.000',
-    feeUsd: '0.00',
-    dutyMode: r.mode,
-    dutySpecific: r.specific === undefined ? null : r.specific.toFixed(4),
-    dutyUnit: r.unit ?? null,
-    effectiveDate: PP3818_FROM,
-    source: 'pp3818' as const,
-    note: r.notes ? `PP-3818 izoh: ${r.notes}` : null,
-  }));
+  return pp3818Records().map((r) => {
+    // 21 sm³ vehicle rows carry a CONDITION the lex.uz parse truncated
+    // («…за куб. см. для» — the +$/cm³ applies only to a class the stored
+    // row no longer names). The note is what the screen surfaces as a warn
+    // chip and the confirm records (`rate_noted`): a computed figure whose
+    // own book attached a clause must not read as the book's clean answer.
+    const parts = [
+      r.notes ? `PP-3818 izoh: ${r.notes}` : null,
+      r.clauseCut ? `⚠ shart qisqargan: «${r.raw}»` : null,
+    ].filter(Boolean);
+    return {
+      tnvedCode: r.code,
+      dutyPct: r.pct.toFixed(3),
+      vatPct: '12.000',
+      feeUsd: '0.00',
+      dutyMode: r.mode,
+      dutySpecific: r.specific === undefined ? null : r.specific.toFixed(4),
+      dutyUnit: r.unit ?? null,
+      effectiveDate: PP3818_FROM,
+      source: 'pp3818' as const,
+      note: parts.length > 0 ? parts.join(' · ') : null,
+    };
+  });
 }

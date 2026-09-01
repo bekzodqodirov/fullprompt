@@ -65,6 +65,8 @@ const item = (over: Partial<PricedItem> = {}): PricedItem => ({
   weightKg: 500,
   bazaUsd: 20,
   bazaBasis: 'unit',
+  measureUnit: null,
+  measureQty: null,
   ...over,
 });
 

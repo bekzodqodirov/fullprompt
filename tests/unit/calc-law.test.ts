@@ -45,6 +45,8 @@ const item = (over: Partial<PricedItem> = {}): PricedItem => ({
   weightKg: 1,
   bazaUsd: 1,
   bazaBasis: 'unit',
+  measureUnit: null,
+  measureQty: null,
   ...over,
 });
 
@@ -185,16 +187,72 @@ describe('the four duty modes', () => {
     expect(r).toMatchObject({ ok: true, dutyUsd: 20 });
   });
 
+  // Phase 3: the four extended units PRICE once the item carries the law's
+  // own measure — each case below is a REAL seeded PP-3818 row's shape.
+  it('m² prices — 6907 kafel, 15 % / min $1/m², the floor wins', () => {
+    const r = customsFor(
+      group({ tnvedCode: '6907', dutyPct: 15, dutyMode: 'max', dutySpecific: 1, dutyUnit: 'm2' }),
+      [item({ bazaUsd: 1, bazaBasis: 'm2', measureUnit: 'm2', measureQty: 200 })],
+    );
+    // value 200 × $1/m² = 200; advalor 30; specific 200 × $1 = 200 → MAX 200.
+    expect(r).toMatchObject({ ok: true, valueUsd: 200, dutyUsd: 200, vatUsd: 48 });
+  });
+
+  it('litr prices — 2203 pivo, 30 % / min $1/l', () => {
+    const r = customsFor(
+      group({ tnvedCode: '2203', dutyPct: 30, dutyMode: 'max', dutySpecific: 1, dutyUnit: 'litr' }),
+      [item({ bazaUsd: 0.5, bazaBasis: 'litr', measureUnit: 'litr', measureQty: 500 })],
+    );
+    // value 250; advalor 75; specific 500 → MAX 500.
+    expect(r).toMatchObject({ ok: true, valueUsd: 250, dutyUsd: 500 });
+  });
+
+  it('juft prices — 6403 poyabzal, 20 % / min $3/juft', () => {
+    const r = customsFor(
+      group({ tnvedCode: '6403', dutyPct: 20, dutyMode: 'max', dutySpecific: 3, dutyUnit: 'juft' }),
+      [item({ bazaUsd: 8, bazaBasis: 'juft', measureUnit: 'juft', measureQty: 100 })],
+    );
+    // value 800; advalor 160; specific 300 → MAX 300.
+    expect(r).toMatchObject({ ok: true, valueUsd: 800, dutyUsd: 300 });
+  });
+
+  it('sm³ prices with the baza per DONA — value and duty measure independent', () => {
+    // The vehicle rows: the baza is the invoice price per unit, the duty is
+    // per cm³ of displacement — one row, two different measures.
+    const r = customsFor(
+      group({ dutyPct: 30, dutyMode: 'plus', dutySpecific: 3, dutyUnit: 'sm3' }),
+      [
+        item({
+          quantity: 1,
+          bazaUsd: 15_000,
+          bazaBasis: 'unit',
+          measureUnit: 'sm3',
+          measureQty: 2500,
+        }),
+      ],
+    );
+    // value 15 000; advalor 4 500; specific 2 500 × $3 = 7 500 → PLUS 12 000.
+    expect(r).toMatchObject({ ok: true, valueUsd: 15_000, dutyUsd: 12_000 });
+  });
+
   it.each(['litr', 'juft', 'sm3', 'm2'] as const)(
-    'refuses a %s rate — the items carry no such measure',
+    'a %s rate against an item with NO such measure refuses, naming the item',
     (unit) => {
       const r = customsFor(
         group({ dutyPct: 10, dutyMode: 'max', dutySpecific: 1, dutyUnit: unit }),
         items,
       );
-      expect(r).toMatchObject({ ok: false, reason: 'unit_unsupported' });
+      expect(r).toMatchObject({ ok: false, reason: 'measure_missing', itemLabel: 'tovar' });
     },
   );
+
+  it('a measure in the WRONG unit is no measure — juft cannot answer a litr rate', () => {
+    const r = customsFor(
+      group({ dutyPct: 10, dutyMode: 'max', dutySpecific: 1, dutyUnit: 'litr' }),
+      [item({ measureUnit: 'juft', measureQty: 50 })],
+    );
+    expect(r).toMatchObject({ ok: false, reason: 'measure_missing' });
+  });
 
   it('a specific rate with no quantity on an item refuses and NAMES it', () => {
     const r = customsFor(

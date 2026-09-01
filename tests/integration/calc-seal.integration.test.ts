@@ -557,7 +557,7 @@ describe('the dictionaries', () => {
         ctx(),
       ),
     );
-    const filled = await pullBazasFromDictionary(request.id, ctx());
+    const { filled } = await pullBazasFromDictionary(request.id, ctx());
     expect(filled).toBe(1);
     const workspace = await loadWorkspace(request.id);
     expect(workspace!.ungrouped[0]!.bazaUsd).toBe(12);
@@ -575,7 +575,7 @@ describe('the dictionaries', () => {
       ),
     );
     // No earliest-row fallback: a future row is not today's answer.
-    expect(await pullBazasFromDictionary(request.id, ctx())).toBe(0);
+    expect((await pullBazasFromDictionary(request.id, ctx())).filled).toBe(0);
     const workspace = await loadWorkspace(request.id);
     expect(workspace!.ungrouped[0]!.bazaUsd).toBeNull();
   });

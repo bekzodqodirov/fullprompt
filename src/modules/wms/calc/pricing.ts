@@ -13,7 +13,13 @@
  */
 
 export type CalcSectionName = 'yolkira' | 'rastamojka' | 'podklyuch';
-export type BazaBasis = 'unit' | 'kg';
+/**
+ * What a baza is PER. 'unit' keeps meaning dona — live rows and sealed
+ * breakdowns store that spelling forever, and a second spelling of one
+ * meaning is a trap. sm3 is deliberately absent: nothing is VALUED per cm³
+ * of displacement — a vehicle's baza is its invoice price per dona (0092).
+ */
+export type BazaBasis = 'unit' | 'kg' | 'juft' | 'litr' | 'm2';
 
 /** What a section is made of. The seal and the screen both ask this. */
 export function sectionParts(section: CalcSectionName): {
@@ -48,6 +54,29 @@ export interface PricedItem {
   weightKg: number | null;
   bazaUsd: number | null;
   bazaBasis: BazaBasis | null;
+  /**
+   * The law's own measure (phase 3): the amount in the unit the code's duty
+   * is per, for the four units no other column holds. kg / dona / 1000_dona
+   * deliberately stay on weightKg / quantity — one home per fact. Required-
+   * nullable, not optional: every constructor must answer (#790).
+   */
+  measureUnit: MeasureUnit | null;
+  measureQty: number | null;
+}
+
+/** The four units that need their own column — the rest live on kg/quantity. */
+export type MeasureUnit = 'juft' | 'litr' | 'm2' | 'sm3';
+
+/**
+ * ONE resolver for «how much of this item, in that unit» — the value loop
+ * and the specific-duty half both ask it, so a tile's $1/m² baza and its
+ * min-$1/m² duty floor can never disagree about what 200 m² means.
+ * 'unit' (the baza spelling) and 'dona' (the law's) are one measure.
+ */
+export function itemMeasure(item: PricedItem, unit: BazaBasis | DutyUnit): number | null {
+  if (unit === 'kg') return item.weightKg;
+  if (unit === 'unit' || unit === 'dona' || unit === '1000_dona') return item.quantity;
+  return item.measureUnit === unit ? item.measureQty : null;
 }
 
 /**
@@ -60,10 +89,11 @@ export interface PricedItem {
 export type DutyMode = 'advalor' | 'specific' | 'max' | 'plus';
 
 /**
- * The units the law writes specific rates in. The ENGINE prices the first
- * three — a calc request's items carry weight and quantity and nothing else —
- * and refuses the rest with `unit_unsupported`, because reading a litre rate
- * against a piece count is a number, just the wrong one.
+ * The units the law writes specific rates in. Since phase 3 the engine
+ * prices ALL seven: kg and dona/1000_dona from the item's own columns, the
+ * other four from the item's measure pair — and an item that cannot answer
+ * in the law's unit refuses `measure_missing` naming itself, because reading
+ * a litre rate against a piece count is a number, just the wrong one.
  */
 export type DutyUnit = 'kg' | 'dona' | 'litr' | 'juft' | '1000_dona' | 'sm3' | 'm2';
 
@@ -94,7 +124,6 @@ export type CustomsRefusal =
   | 'baza_missing'
   | 'measure_missing'
   | 'rates_missing'
-  | 'unit_unsupported'
   | 'not_a_number';
 
 /**
@@ -173,7 +202,7 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
     if (item.bazaUsd === null || item.bazaBasis === null) {
       return { ok: false, reason: 'baza_missing', itemSeq: item.seq, itemLabel: item.label };
     }
-    const measure = item.bazaBasis === 'kg' ? item.weightKg : item.quantity;
+    const measure = itemMeasure(item, item.bazaBasis);
     if (measure === null || !(measure > 0)) {
       return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
     }
@@ -189,40 +218,25 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
   const advalorUsd = round2((valueUsd * dutyPct) / 100);
 
   // The specific half: Miqdor × T, over the measure the LAW names — never a
-  // reinterpretation. A request's items carry weight and quantity; a litre or
-  // a square metre exists on neither, and pricing a juft rate against a piece
-  // count would be a number that is simply wrong, so those refuse.
+  // reinterpretation. kg and dona live on the item's own columns; juft, litr,
+  // m² and sm³ on its measure pair — and an item that cannot answer in the
+  // law's unit refuses naming itself, because pricing a juft rate against a
+  // piece count would be a number that is simply wrong.
   let dutyUsd = advalorUsd;
   if (group.dutyMode !== 'advalor' && !group.dutyFree) {
     const unit = group.dutyUnit!;
-    let quantity: number;
-    if (unit === 'kg') {
-      let kg = 0;
-      for (const item of items) {
-        if (item.weightKg === null || !(item.weightKg > 0)) {
-          return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
-        }
-        if (!ok(item.weightKg)) {
-          return { ok: false, reason: 'not_a_number', itemSeq: item.seq, itemLabel: item.label };
-        }
-        kg += item.weightKg;
+    let sum = 0;
+    for (const item of items) {
+      const m = itemMeasure(item, unit);
+      if (m === null || !(m > 0)) {
+        return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
       }
-      quantity = kg;
-    } else if (unit === 'dona' || unit === '1000_dona') {
-      let count = 0;
-      for (const item of items) {
-        if (item.quantity === null || !(item.quantity > 0)) {
-          return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
-        }
-        if (!ok(item.quantity)) {
-          return { ok: false, reason: 'not_a_number', itemSeq: item.seq, itemLabel: item.label };
-        }
-        count += item.quantity;
+      if (!ok(m)) {
+        return { ok: false, reason: 'not_a_number', itemSeq: item.seq, itemLabel: item.label };
       }
-      quantity = unit === '1000_dona' ? count / 1000 : count;
-    } else {
-      return { ok: false, reason: 'unit_unsupported' };
+      sum += m;
     }
+    const quantity = unit === '1000_dona' ? sum / 1000 : sum;
 
     const specificUsd = round2(quantity * group.dutySpecific!);
     dutyUsd =
@@ -481,6 +495,94 @@ export function customsFeeFor(input: {
   const bhmCoefficient = tier ? tier[1] : 25;
   const feeUsd = round2((bhmCoefficient * input.bhmUzs) / input.fxUzsPerUsd);
   return { ok: true, feeUsd, bhmCoefficient, overridden: false };
+}
+
+/**
+ * A group's law shape, taken with the EFFECTIVE certificate by name.
+ *
+ * The workspace carries both the group's raw certificate override and the
+ * resolved answer (own answer, else the request's); the server and the live
+ * browser recompute must map the SAME one, and a mapper whose parameter is
+ * called `effectiveCertificate` cannot be handed the raw field by accident —
+ * picking the wrong one silently drops the 5-20 % add-duty from the figure.
+ */
+export function pricedGroupOf(g: {
+  seq: number;
+  label: string;
+  tnvedCode: string | null;
+  dutyPct: number | null;
+  vatPct: number | null;
+  feeUsd: number | null;
+  dutyMode: DutyMode;
+  dutySpecific: number | null;
+  dutyUnit: DutyUnit | null;
+  excisePct: number | null;
+  effectiveCertificate: boolean;
+  dutyFree: boolean;
+  vatFree: boolean;
+}): PricedGroup {
+  return {
+    seq: g.seq,
+    label: g.label,
+    tnvedCode: g.tnvedCode,
+    dutyPct: g.dutyPct,
+    vatPct: g.vatPct,
+    feeUsd: g.feeUsd,
+    dutyMode: g.dutyMode,
+    dutySpecific: g.dutySpecific,
+    dutyUnit: g.dutyUnit,
+    excisePct: g.excisePct,
+    hasCertificate: g.effectiveCertificate,
+    dutyFree: g.dutyFree,
+    vatFree: g.vatFree,
+  };
+}
+
+export interface RequestCustoms {
+  /** Σ of the groups' declared values — null unless EVERY group prices. */
+  valueUsd: number | null;
+  /** The per-declaration fee — null while any group refuses (a partial value
+   * lands in the wrong tier and reads as an answer) or there are no groups. */
+  fee: FeeResult | null;
+  /** Σ group customs + fee — null unless everything above stands. */
+  customsUsd: number | null;
+}
+
+/**
+ * The request-grain customs assembly — ONE definition, consumed verbatim by
+ * `loadWorkspace` AND the live browser recompute, so the bar and the seal
+ * cannot disagree about when a total exists. The rule it encodes: no partial
+ * sums, ever — while any group refuses, the answer is «blocked, here is why»
+ * and never a smaller number.
+ */
+export function requestCustomsFor(input: {
+  customs: CustomsResult[];
+  bhmUzs: number | null;
+  fxUzsPerUsd: number | null;
+  feeOverrideUsd: number | null;
+}): RequestCustoms {
+  const allOk = input.customs.every((c) => c.ok);
+  if (!allOk) return { valueUsd: null, fee: null, customsUsd: null };
+
+  const valueUsd = input.customs.reduce((sum, c) => sum + (c.ok ? c.valueUsd : 0), 0);
+  const fee =
+    input.customs.length > 0
+      ? customsFeeFor({
+          valueUsd,
+          bhmUzs: input.bhmUzs ?? Number.NaN,
+          fxUzsPerUsd: input.fxUzsPerUsd,
+          overrideUsd: input.feeOverrideUsd,
+        })
+      : null;
+  if (fee !== null && !fee.ok) return { valueUsd, fee, customsUsd: null };
+
+  return {
+    valueUsd,
+    fee,
+    customsUsd:
+      input.customs.reduce((sum, c) => sum + (c.ok ? c.customsUsd : 0), 0) +
+      (fee?.ok ? fee.feeUsd : 0),
+  };
 }
 
 /* ------------------------------------------------------------------ */

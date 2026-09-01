@@ -686,7 +686,7 @@ describe('a ✅ must not outlive the numbers it was about', () => {
     madeBazas.push(bazaId);
 
     await confirmGroup(groupId, ctx());
-    const filled = await pullBazasFromDictionary(request.id, ctx());
+    const { filled } = await pullBazasFromDictionary(request.id, ctx());
     expect(filled).toBe(1);
     const row = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
     expect(row!.confirmedAt).toBeNull();
