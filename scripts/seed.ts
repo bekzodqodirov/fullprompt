@@ -119,6 +119,7 @@ async function main() {
   await seedAccounting();
   await seedCrm();
   await seedFreightTariff();
+  await seedPp3818Rates();
 
   // --- Single audit marker for the seed run ---
   await db.insert(auditLog).values({
@@ -350,6 +351,35 @@ async function seedFreightTariff() {
     })),
   );
   console.log('freight tariff seeded (owner\u2019s table, editable)');
+}
+
+/**
+ * PP-3818's duty table into `calc_rates` (VED 2.0 phase 1, the owner's
+ * \u00abshuni baza qilib ol stavkalarni\u00bb).
+ *
+ * NOT the freight seed's \u00abonly into an empty table\u00bb rule, deliberately: the
+ * VED types corrections into this same table, so \u00abempty\u00bb stops being true on
+ * day two and a redeploy would then never repair a partial seed. Idempotence
+ * is the ROW's \u2014 the seed's date is a constant, so every run mints the same
+ * (code, date) pairs and `ON CONFLICT DO NOTHING` leaves both an earlier run
+ * and every person's row (a different date, a different source) untouched.
+ * Batched because one INSERT of 1,489 rows exceeds postgres.js's 65k
+ * parameter budget at ten columns a row.
+ */
+async function seedPp3818Rates() {
+  const { calcRates } = await import('../src/modules/platform/db/schema');
+  const { pp3818Rows } = await import('../src/modules/wms/calc/rates-seed');
+  const rows = pp3818Rows();
+  let inserted = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const res = await db
+      .insert(calcRates)
+      .values(rows.slice(i, i + 500))
+      .onConflictDoNothing({ target: [calcRates.tnvedCode, calcRates.effectiveDate] })
+      .returning({ id: calcRates.id });
+    inserted += res.length;
+  }
+  console.log(`PP-3818 rates seeded: ${inserted} inserted, ${rows.length - inserted} already present`);
 }
 
 main()

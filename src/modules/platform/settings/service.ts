@@ -146,6 +146,15 @@ export const SETTING_DEFAULTS = {
    * process. 0 switches the assistant off without touching the key.
    */
   ai_daily_limit: 40,
+  /**
+   * Bazaviy hisoblash miqdori, in so'm (2026: 412 000). The customs FEE is a
+   * step scale over the declaration's value measured in BHM, and the law
+   * moves this number about once a year — a setting, so the owner types the
+   * new figure instead of waiting for a deploy. The engine converts the
+   * so'm fee to USD through the day's FX rate and refuses with a sentence
+   * when no UZS rate exists, never inventing one.
+   */
+  bhm_uzs: 412000,
 };
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

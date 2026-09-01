@@ -373,6 +373,7 @@
       "crm_calc_stage": "A request for a price from the bot moves the lead to this stage (forward only; «—» means do not move)",
       "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal",
       "ai_daily_limit": "AI questions per person per day (bot + AI screen together; 0 — off)",
+      "bhm_uzs": "BHM (base calculation unit) in soum — the customs fee scale is measured in it (2026: 412,000)",
       "calc_review_notified_month": "The month the monthly dictionary-review reminder was last sent (written by the system)",
       "upsale_expense_category_id": "Which expense category a seller’s upsale payout is written into. Do not pick salaries — it collides with the monthly payroll slot.",
       "calc_actual_settle_days": "How many days after arrival the customs figure counts as final",
@@ -2200,7 +2201,9 @@
       "band_ambiguous": "this density is in two bands",
       "zone_required": "no route chosen",
       "discount_exceeds_total": "discount exceeds the total",
-      "not_a_number": "not a number"
+      "not_a_number": "not a number",
+      "unit_unsupported": "Rate is per a unit this calculation does not measure (litre/pair/cm³/m²) — type the duty by hand",
+      "fee_fx_missing": "Customs fee: no UZS rate for today — enter the rate in the currency book"
     },
     "blockers": {
       "section_missing": "No section chosen",
@@ -2321,7 +2324,12 @@
       "note_taken": "Already sent — refresh the page",
       "server_behind": "The server is updating, try again shortly",
       "unauthenticated": "Sign in again"
-    }
+    },
+    "certificate": "Certificate of origin present",
+    "certificateMissing": "no certificate — additional duty 5–20 %",
+    "feeLine": "incl. customs fee",
+    "rateSearch": "Search by TNVED code",
+    "rateSearchHint": "Without a search only hand-entered rows are shown; the full PP-3818 book (1,489 rows) is searchable by code."
   },
   "partners": {
     "title": "Counterparties",

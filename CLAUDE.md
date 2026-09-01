@@ -1015,8 +1015,36 @@ both sides of every door; registry reads on admin.audit.browse. Client
 charges/payments deliberately NEVER auto-voided — the registry counts a
 client's live money and links the ledger (#852).
 
-**Latest migration: 0090** (`notice_staff` — the staff arrival event's own
-fence and the client drain's claim; ledger must reach **91**).
+**Round — VED 2.0 phase 1, the law engine (2026-09-01; DECISIONS #854-860;
+migration 0091 `calc_law` — ledger must reach 92):** his two files (the
+PP-3818 lex.uz export + the 2026 guide) are the spec. 1,489 rates seeded
+into `calc_rates` (source 'pp3818', fixed date + ON CONFLICT DO NOTHING =
+row-level idempotence; **vat_pct 12 on every row** — the column default 0
+would have priced every job VAT-free through pullRates), duty in FOUR
+shapes (`duty_mode` advalor|specific|max|plus + specific/unit, two-directional
+pair CHECKs; group snapshot NULL = advalor so old seals keep meaning),
+longest-prefix lookup (6403120000's own 5 % beats heading 6403's «20 %, min
+$3/juft»; `saveRates` carries the shape forward on an exact-code correction),
+additional duty on `has_certificate` (request default TRUE, per-group
+override for sborniy; bands inclusive-HIGH per the guide's own example 9.2 —
+exactly 20 % → +15 %; lgota kills it), excise in the VAT base, and the
+VMQ-55 **BHM fee computed per DECLARATION inside `customs_usd`** (setting
+`bhm_uzs` 412 000; UZS rate read with NO earliest-row fallback →
+`fee_fx_missing` blocker; `fee_override_usd` for a differing tier; **exactly
+$1M pays 25 BHM — the shipped `<=` gave it 20 and the boundary test caught
+it before commit**). Engine prices kg/dona/1000_dona only and REFUSES
+litr/juft/sm3/m2 (`unit_unsupported`) — never reinterprets a quantity.
+`rate_off_dictionary` now compares VALUES (the seed flipped «dictionary
+answered» from never to always, so source-only would name every group);
+lugatlar rates list shows own rows bare + searches the whole book by code
+(round 68's DOM crush avoided); the pull stops copying a per-code fee.
+Guide examples 9.1-9.3 are permanent engine tests. 4 red proofs. **Phase 2
+(the Excel-table workspace the owner asked for) is NEXT and not built.**
+
+**Latest migration: 0091** (`calc_law` — the four duty shapes, the
+certificate, the fee override; ledger must reach **92**). Before it: 0090
+(`notice_staff` — the staff arrival event's own fence and the client drain's
+claim; ledger 91).
 
 **HIS SERVER IS AT 90 — confirmed «deploy qildim 90 chiqdi» on 2026-08-25
 evening**, in ONE deploy that landed PR #53 (the whole VED module, phases

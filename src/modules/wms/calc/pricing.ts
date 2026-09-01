@@ -50,6 +50,23 @@ export interface PricedItem {
   bazaBasis: BazaBasis | null;
 }
 
+/**
+ * PP-3818's four shapes of a duty (VED 2.0 phase 1). `advalor` is BQ × %;
+ * `specific` is Miqdor × T per unit; `max` is the greater of the two («20 %,
+ * lekin 3 AQSH dollaridan kam emas» — 198 rows); `plus` is their sum (the
+ * vehicle rows). A `max` read as its percentage alone silently loses the
+ * floor, which on light goods IS the duty — hence a mode and not a flag.
+ */
+export type DutyMode = 'advalor' | 'specific' | 'max' | 'plus';
+
+/**
+ * The units the law writes specific rates in. The ENGINE prices the first
+ * three — a calc request's items carry weight and quantity and nothing else —
+ * and refuses the rest with `unit_unsupported`, because reading a litre rate
+ * against a piece count is a number, just the wrong one.
+ */
+export type DutyUnit = 'kg' | 'dona' | 'litr' | 'juft' | '1000_dona' | 'sm3' | 'm2';
+
 export interface PricedGroup {
   seq: number;
   label: string;
@@ -57,6 +74,16 @@ export interface PricedGroup {
   dutyPct: number | null;
   vatPct: number | null;
   feeUsd: number | null;
+  /** All three REQUIRED (null duty_mode in the db reads as 'advalor' — the
+   * mapping layer resolves it, so no caller can forget the law's shape). */
+  dutyMode: DutyMode;
+  dutySpecific: number | null;
+  dutyUnit: DutyUnit | null;
+  /** Advalor excise, the rare case. null means «not an excise good». */
+  excisePct: number | null;
+  /** Resolved by the caller: the group's own answer, else the request's.
+   * Without a certificate of origin the 28.02.2026 additional duty applies. */
+  hasCertificate: boolean;
   /** The lgota, decided per CALCULATION — the same code is not always free. */
   dutyFree: boolean;
   vatFree: boolean;
@@ -67,6 +94,7 @@ export type CustomsRefusal =
   | 'baza_missing'
   | 'measure_missing'
   | 'rates_missing'
+  | 'unit_unsupported'
   | 'not_a_number';
 
 /**
@@ -91,6 +119,11 @@ export interface CustomsBreakdown {
   ok: true;
   valueUsd: number;
   dutyUsd: number;
+  /** BK 300-1 (28.02.2026): BQ × 5/10/15/20 % when no origin certificate. */
+  addDutyUsd: number;
+  /** The band the advalor rate fell in — 0 when a certificate stands. */
+  addDutyPct: number;
+  exciseUsd: number;
   vatUsd: number;
   feeUsd: number;
   customsUsd: number;
@@ -118,8 +151,21 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
   const dutyPct = group.dutyFree ? 0 : group.dutyPct;
   const vatPct = group.vatFree ? 0 : group.vatPct;
   if (dutyPct === null || vatPct === null) return { ok: false, reason: 'rates_missing' };
-  if (!ok(dutyPct) || !ok(vatPct) || (group.feeUsd !== null && !ok(group.feeUsd))) {
+  if (
+    !ok(dutyPct) ||
+    !ok(vatPct) ||
+    (group.feeUsd !== null && !ok(group.feeUsd)) ||
+    (group.excisePct !== null && !ok(group.excisePct))
+  ) {
     return { ok: false, reason: 'not_a_number' };
+  }
+  // A non-advalor mode without its specific half is a row the CHECK forbids;
+  // reaching here means a mapping bug, and the honest answer is a refusal.
+  if (group.dutyMode !== 'advalor' && !group.dutyFree) {
+    if (group.dutySpecific === null || group.dutyUnit === null) {
+      return { ok: false, reason: 'rates_missing' };
+    }
+    if (!ok(group.dutySpecific)) return { ok: false, reason: 'not_a_number' };
   }
 
   let value = 0;
@@ -138,20 +184,100 @@ export function customsFor(group: PricedGroup, items: PricedItem[]): CustomsResu
   }
 
   const valueUsd = round2(value);
-  const dutyUsd = round2((valueUsd * dutyPct) / 100);
-  const vatUsd = round2(((valueUsd + dutyUsd) * vatPct) / 100);
-  // A fee is additively zero far more often than it is unknown, and a group
-  // whose rates came from the dictionary always carries one.
+
+  // The advalor half. For 'max' and 'plus' rows this is one of two parts.
+  const advalorUsd = round2((valueUsd * dutyPct) / 100);
+
+  // The specific half: Miqdor × T, over the measure the LAW names — never a
+  // reinterpretation. A request's items carry weight and quantity; a litre or
+  // a square metre exists on neither, and pricing a juft rate against a piece
+  // count would be a number that is simply wrong, so those refuse.
+  let dutyUsd = advalorUsd;
+  if (group.dutyMode !== 'advalor' && !group.dutyFree) {
+    const unit = group.dutyUnit!;
+    let quantity: number;
+    if (unit === 'kg') {
+      let kg = 0;
+      for (const item of items) {
+        if (item.weightKg === null || !(item.weightKg > 0)) {
+          return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
+        }
+        if (!ok(item.weightKg)) {
+          return { ok: false, reason: 'not_a_number', itemSeq: item.seq, itemLabel: item.label };
+        }
+        kg += item.weightKg;
+      }
+      quantity = kg;
+    } else if (unit === 'dona' || unit === '1000_dona') {
+      let count = 0;
+      for (const item of items) {
+        if (item.quantity === null || !(item.quantity > 0)) {
+          return { ok: false, reason: 'measure_missing', itemSeq: item.seq, itemLabel: item.label };
+        }
+        if (!ok(item.quantity)) {
+          return { ok: false, reason: 'not_a_number', itemSeq: item.seq, itemLabel: item.label };
+        }
+        count += item.quantity;
+      }
+      quantity = unit === '1000_dona' ? count / 1000 : count;
+    } else {
+      return { ok: false, reason: 'unit_unsupported' };
+    }
+
+    const specificUsd = round2(quantity * group.dutySpecific!);
+    dutyUsd =
+      group.dutyMode === 'specific'
+        ? specificUsd
+        : group.dutyMode === 'max'
+          ? Math.max(advalorUsd, specificUsd)
+          : round2(advalorUsd + specificUsd);
+  }
+
+  // BK 300-1 (28.02.2026): without a certificate of origin the additional
+  // duty is BQ × the band the code's ADVALOR rate falls in. Not when the
+  // lgota frees the duty — a lgota is proven origin, and origin proven and
+  // origin unknown cannot both be true of one consignment.
+  const addDutyPct = !group.hasCertificate && !group.dutyFree ? addDutyBand(dutyPct) : 0;
+  const addDutyUsd = round2((valueUsd * addDutyPct) / 100);
+
+  // Excise is the rare case — ordinary consumer goods carry none, and null
+  // means exactly that. Base = customs value (SK 285).
+  const exciseUsd = round2((valueUsd * (group.excisePct ?? 0)) / 100);
+
+  // SK 254: the VAT base is value + duty + additional duty + excise.
+  const vatUsd = round2(((valueUsd + dutyUsd + addDutyUsd + exciseUsd) * vatPct) / 100);
+  // A fee is additively zero far more often than it is unknown, and the
+  // per-DECLARATION fee (`customsFeeFor`) lands at the request grain — this
+  // per-group column survives for rows a person typed one into.
   const feeUsd = round2(group.feeUsd ?? 0);
 
   return {
     ok: true,
     valueUsd,
     dutyUsd,
+    addDutyUsd,
+    addDutyPct,
+    exciseUsd,
     vatUsd,
     feeUsd,
-    customsUsd: round2(dutyUsd + vatUsd + feeUsd),
+    customsUsd: round2(dutyUsd + addDutyUsd + exciseUsd + vatUsd + feeUsd),
   };
+}
+
+/**
+ * BK 300-1's band, decided by the code's advalor rate.
+ *
+ * The boundaries are inclusive-HIGH — exactly 20 % lands in the «20 dan 30
+ * gacha» band — because the guide's own worked example 9.2 prices a 20 %
+ * idish-tovoq at +15 %, and the law's text («10 dan 20 gacha») does not
+ * decide it. The guide says to ask the post about boundary codes; until the
+ * post disagrees, the example is the spec.
+ */
+export function addDutyBand(advalorPct: number): number {
+  if (advalorPct < 10) return 5;
+  if (advalorPct < 20) return 10;
+  if (advalorPct < 30) return 15;
+  return 20;
 }
 
 /* ------------------------------------------------------------------ */
@@ -278,6 +404,83 @@ export function freightFor(
     listUsd,
     small: listUsd < SMALL_FREIGHT_USD,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* The customs fee (bojxona yig'imi)                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * VMQ-55's step scale (2026 edition): the declaration's customs value in
+ * USD decides a BHM coefficient. Each entry is «value up to and including
+ * this → this many BHM»; past the last row the law's own words are
+ * «1 000 000 USD va undan ortiq → 25», so exactly a million pays 25.
+ */
+export const FEE_TIERS: ReadonlyArray<readonly [maxValueUsd: number, bhm: number]> = [
+  [10_000, 1],
+  [20_000, 1.5],
+  [40_000, 2.5],
+  [60_000, 4],
+  [100_000, 7],
+  [200_000, 10],
+  [500_000, 15],
+  [1_000_000, 20],
+];
+
+export type FeeRefusal = 'fee_fx_missing' | 'not_a_number';
+
+export interface FeeBreakdown {
+  ok: true;
+  feeUsd: number;
+  /** The coefficient the value landed on — the screen prints «2,5 BHM». */
+  bhmCoefficient: number;
+  /** True when a typed override stands in for the computed tier. */
+  overridden: boolean;
+}
+
+export type FeeResult = FeeBreakdown | { ok: false; reason: FeeRefusal };
+
+/**
+ * The fee prices a DECLARATION, not a group — one request, one fee — which
+ * is why it is not a per-code dictionary number: a per-code fee would be
+ * added once per group and a three-group job would pay it three times.
+ *
+ * The scale is written in BHM (so'm) and this system prices in USD, so the
+ * day's UZS rate is load-bearing: absent, the answer is a refusal and never
+ * an invented conversion. `overrideUsd` is the VED's word that this job's
+ * declaration count or tier differs (the −20 % preliminary-declaration
+ * discount lives there too, stated rather than modelled).
+ */
+export function customsFeeFor(input: {
+  valueUsd: number;
+  bhmUzs: number;
+  /** UZS per USD on the day. null = no rate in the book. */
+  fxUzsPerUsd: number | null;
+  overrideUsd: number | null;
+}): FeeResult {
+  if (input.overrideUsd !== null) {
+    if (!ok(input.overrideUsd) || input.overrideUsd < 0) {
+      return { ok: false, reason: 'not_a_number' };
+    }
+    return { ok: true, feeUsd: round2(input.overrideUsd), bhmCoefficient: 0, overridden: true };
+  }
+  if (!ok(input.valueUsd) || !ok(input.bhmUzs) || !(input.bhmUzs > 0)) {
+    return { ok: false, reason: 'not_a_number' };
+  }
+  if (input.fxUzsPerUsd === null || !(input.fxUzsPerUsd > 0)) {
+    return { ok: false, reason: 'fee_fx_missing' };
+  }
+  if (!ok(input.fxUzsPerUsd)) return { ok: false, reason: 'not_a_number' };
+
+  // «1 000 000 USD va undan ortiq → 25» — the ONE boundary the law's own
+  // words decide, and it lands in the HIGHER tier unlike every «gacha» below
+  // it. Checked first, or the last tier's `<=` would hand exactly a million
+  // the 20 it does not get (this off-by-one shipped and its boundary test
+  // caught it).
+  const tier = input.valueUsd >= 1_000_000 ? undefined : FEE_TIERS.find(([max]) => input.valueUsd <= max);
+  const bhmCoefficient = tier ? tier[1] : 25;
+  const feeUsd = round2((bhmCoefficient * input.bhmUzs) / input.fxUzsPerUsd);
+  return { ok: true, feeUsd, bhmCoefficient, overridden: false };
 }
 
 /* ------------------------------------------------------------------ */

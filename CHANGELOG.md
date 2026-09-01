@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## VED 2.0 — 1-bosqich: bojxona qonuni enjini (PQ-3818 + BHM yig'im) — 2026-09-01
+
+So'rovingiz bo'yicha: «hisoblash juda mujmal … qayta o'ylab chiq» va «shu
+fileni baza qilib ol stavkalarni». Bu 1-bosqich — qonunning o'zi. 2-bosqich
+(VED hodimining yangi Excel-ko'rinishdagi oynasi) keyingi raundda.
+
+**1. PQ-3818 to'liq bazaga kirdi.** Siz yuborgan fayldan 1 489 ta TNVED
+stavka o'qib chiqildi va lug'atga yozildi: 1 250 ta oddiy foizli, 198 ta
+«X %, lekin kamida T $/birlik» (ikkitadan kattasi olinadi), 41 ta avtomobil
+qatori «X % + T $/sm³». Endi VED hodimi kod yozsa, stavka o'zi lug'atdan
+keladi — qo'lda izlash shart emas. Hodim kiritgan tuzatishlar saqlanadi,
+seed ularni hech qachon ustidan yozmaydi.
+
+**2. Kod bo'yicha aniq qidiruv.** To'liq 10 xonali kod yozilsa, avval uning
+O'Z qatori izlanadi (masalan 6403120000 → 5 %), topilmasa 4 xonali bosh
+qatoriga tushadi (6403 → «20 %, kamida 3 $/juft») — qonunning o'z tartibida.
+
+**3. Qo'shimcha boj (28.02.2026 qonuni).** Sertifikat yo'q bo'lsa qiymatdan
++5/10/15/20 % qo'shiladi (stavka foiziga qarab). Har hisobda «Sertifikat
+bor» belgisi turadi — siz aytgandek, standart «bor». Belgini olib tashlasangiz
+qo'shimcha boj o'zi hisobga tushadi va QQS bazasiga ham kiradi. Sborniy yuk
+uchun har guruhga alohida belgilasa ham bo'ladi.
+
+**4. Bojxona yig'imi (BHM shkalasi) endi o'zi hisoblanadi.** Deklaratsiya
+qiymatiga qarab 1 BHM dan 25 BHM gacha (qo'llanmangizning jadvali aynan),
+so'mdan dollarga kunning kursi bilan o'tadi va rastamojka summasining ichida
+turadi. UZS kursi kiritilmagan bo'lsa — $0 emas, ochiq ogohlantirish.
+BHM (412 000 so'm) sozlamalarda — yil o'zgarsa o'zingiz yangilaysiz.
+
+**5. Qo'llanmangizning 3 ta misoli** (kurtka, idish-tovoq, gilam) doimiy
+test bo'lib turibdi — enjin har doim aynan o'sha javoblarni beradi (masalan
+kurtka: MAX(2 700; 3 000) = 3 000 $ boj, 1 980 $ QQS, 52,37 $ yig'im).
+
+Migratsiya **0091** — deploydan keyin hisob **92** bo'lishi kerak.
+Eslatma: yig'im hisoblanishi uchun valyuta lug'atida UZS kursi bo'lishi
+kerak (masalan 1 USD = 12 500 so'm).
+
+
 ## Ostatka va planda «Partiya» — yuk qaysi reysda kelgani — 2026-08-29
 
 So'rovingiz bo'yicha: «sklad ostatkani ko'rganda yoki plan berganda yuk

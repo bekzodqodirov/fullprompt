@@ -28,6 +28,7 @@ export interface WarningGroupFacts {
   dictionaryRates: { dutyPct: number; vatPct: number; feeUsd: number } | null;
   rateSource: 'dictionary' | 'typed' | null;
   dutyPct: number | null;
+  vatPct: number | null;
   aiProposed: boolean;
   aiConfidence: 'high' | 'medium' | 'low' | null;
   aiDutyPct: number | null;
@@ -37,19 +38,30 @@ export interface WarningGroupFacts {
 
 /**
  * A warning means «the dictionary HAD an answer and a person typed something
- * else», and the `dictionary !== null` half is what makes the list useful.
+ * else», and BOTH halves of that sentence are load-bearing.
  *
- * Without it the rule reads «rate_source is typed», which is TRUE of every
- * group in the company: `0086` and `0087` ship the dictionaries EMPTY, so on
- * deploy morning nobody has ever priced anything from one. The owner's first
- * list would be 23 rows out of 23, and a list that names everything names
- * nothing. Typing a rate the dictionary cannot supply is not a mistake — it
- * is the only thing a person can do.
+ * `dictionary !== null`: without it the rule reads «rate_source is typed»,
+ * which was TRUE of every group in the company while `0086`/`0087` shipped
+ * the dictionaries empty. The owner's first list would have been 23 rows out
+ * of 23, and a list that names everything names nothing.
+ *
+ * «something ELSE»: since 0091 the seed fills the rates dictionary with all
+ * 1,489 PP-3818 rows, so `dictionary !== null` is now true of nearly every
+ * real code — and a VED who types 10 % where the law says 10 % has typed the
+ * LAW, not a deviation. The warning fires only when a typed number actually
+ * DIFFERS from the dictionary's, which is what its own sentence always
+ * claimed.
  */
 export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
   const out: CalcWarningKind[] = [];
 
-  if (facts.dictionaryRates !== null && facts.rateSource === 'typed') {
+  const dict = facts.dictionaryRates;
+  const differs = (typed: number | null, book: number) => typed !== null && typed !== book;
+  if (
+    dict !== null &&
+    facts.rateSource === 'typed' &&
+    (differs(facts.dutyPct, dict.dutyPct) || differs(facts.vatPct, dict.vatPct))
+  ) {
     out.push('rate_off_dictionary');
   }
   if (facts.items.some((i) => i.hasDictionaryBaza && i.bazaSource === 'typed')) {

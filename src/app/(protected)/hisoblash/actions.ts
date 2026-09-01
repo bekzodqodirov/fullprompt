@@ -29,6 +29,7 @@ import {
   saveExtra,
   sealCalc,
   setFreightZone,
+  setRequestCertificate,
   setGroupRates,
   setItemBaza,
 } from '@/modules/wms/calc/workspace';
@@ -200,6 +201,10 @@ const ws = (id: string) => `/hisoblash/${id}`;
 
 export async function setZoneAction(id: string, zone: string): Promise<CalcFormState> {
   return run('ved.docs', (ctx) => setFreightZone(id, zone || null, ctx), ws(id));
+}
+
+export async function setCertificateAction(id: string, has: boolean): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => setRequestCertificate(id, has, ctx), ws(id));
 }
 
 export async function createGroupAction(id: string, label: string): Promise<CalcFormState> {

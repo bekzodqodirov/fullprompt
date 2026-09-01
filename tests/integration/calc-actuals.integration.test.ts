@@ -604,8 +604,9 @@ describe('a ✅ must not outlive the numbers it was about', () => {
     await confirmGroup(groupId, ctx());
     const row = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
     expect(row!.confirmVia).toBe('single');
-    // The dictionaries ship EMPTY, so an honest recording here is the empty
-    // list — that is the point of the `dictionaryRates !== null` clause.
+    // The typed rates EQUAL what the seeded PP-3818 dictionary answers for
+    // 8528 (10 % / 12 %), so an honest recording is the empty list — typing
+    // the law's own numbers deviates from nothing (VED 2.0's value compare).
     expect(row!.confirmedWarnings).toEqual([]);
     expect(requestId).toBeTruthy();
   });

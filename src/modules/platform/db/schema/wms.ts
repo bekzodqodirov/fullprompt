@@ -1956,9 +1956,26 @@ export const calcRequests = pgTable(
     freightZone: text('freight_zone'),
     /** The proposal claims its request so two presses cannot both spend a call. */
     aiProposalStartedAt: timestamp('ai_proposal_started_at', { withTimezone: true }),
+    /**
+     * Origin certificate present? Default TRUE by the owner's own answer —
+     * without one the 28.02.2026 additional duty adds 5-20 % by value band,
+     * so the flag flips the whole calculation. Inheritable per group (a
+     * sborniy truck mixes senders).
+     */
+    hasCertificate: boolean('has_certificate').notNull().default(true),
+    /**
+     * The BHM step scale prices a DECLARATION and this system prices a
+     * REQUEST — usually the same thing, not always. A typed override wins
+     * over the computed tier; NULL means «compute it».
+     */
+    feeOverrideUsd: numeric('fee_override_usd', { precision: 12, scale: 2 }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    check(
+      'calc_requests_fee_override_check',
+      sql`${t.feeOverrideUsd} IS NULL OR (${t.feeOverrideUsd} >= 0 AND ${t.feeOverrideUsd} <> 'NaN'::numeric)`,
+    ),
     check('calc_requests_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
     check('calc_requests_items_check', sql`${t.itemCount} BETWEEN 0 AND 1000`),
     check(
@@ -2086,6 +2103,18 @@ export const calcRates = pgTable(
     dutyPct: numeric('duty_pct', { precision: 6, scale: 3 }).notNull().default('0'),
     vatPct: numeric('vat_pct', { precision: 6, scale: 3 }).notNull().default('0'),
     feeUsd: numeric('fee_usd', { precision: 12, scale: 2 }).notNull().default('0'),
+    /**
+     * How PP-3818 prices this code: advalor (BQ × %), specific (Miqdor × T),
+     * max (the greater of the two — 198 rows), plus (their sum — the vehicle
+     * rows). `duty_pct` alone can store the 20 and silently lose the $3/dona
+     * floor, which on light goods IS the duty.
+     */
+    dutyMode: text('duty_mode').notNull().default('advalor'),
+    dutySpecific: numeric('duty_specific', { precision: 12, scale: 4 }),
+    /** The law's own unit vocabulary. The engine prices kg/dona/1000_dona and
+     * refuses the rest (`unit_unsupported`) — the dictionary stores all seven,
+     * because dropping litr rows would answer «no rate» about priced codes. */
+    dutyUnit: text('duty_unit'),
     effectiveDate: date('effective_date').notNull(),
     source: text('source').notNull().default('manual'),
     note: text('note'),
@@ -2093,10 +2122,25 @@ export const calcRates = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('calc_rates_source_check', sql`${t.source} IN ('manual', 'correction')`),
+    check('calc_rates_source_check', sql`${t.source} IN ('manual', 'correction', 'pp3818')`),
     check(
       'calc_rates_pct_check',
       sql`${t.dutyPct} >= 0 AND ${t.dutyPct} <= 100 AND ${t.vatPct} >= 0 AND ${t.vatPct} <= 100 AND ${t.feeUsd} >= 0`,
+    ),
+    check('calc_rates_duty_mode_check', sql`${t.dutyMode} IN ('advalor', 'specific', 'max', 'plus')`),
+    check(
+      'calc_rates_duty_unit_check',
+      sql`${t.dutyUnit} IS NULL OR ${t.dutyUnit} IN ('kg', 'dona', 'litr', 'juft', '1000_dona', 'sm3', 'm2')`,
+    ),
+    check(
+      'calc_rates_specific_check',
+      sql`${t.dutySpecific} IS NULL OR (${t.dutySpecific} >= 0 AND ${t.dutySpecific} <> 'NaN'::numeric)`,
+    ),
+    // Two-directional: 'advalor' carries no specific half, every other mode
+    // carries both — one direction alone lets a 'max' row lose its floor.
+    check(
+      'calc_rates_mode_pair_check',
+      sql`((${t.dutyMode} = 'advalor') = (${t.dutySpecific} IS NULL)) AND ((${t.dutyMode} = 'advalor') = (${t.dutyUnit} IS NULL))`,
     ),
     uniqueIndex('calc_rates_code_date_unique').on(t.tnvedCode, t.effectiveDate),
   ],
@@ -2170,6 +2214,15 @@ export const calcGroups = pgTable(
     vatPct: numeric('vat_pct', { precision: 6, scale: 3 }),
     feeUsd: numeric('fee_usd', { precision: 12, scale: 2 }),
     rateSource: text('rate_source'),
+    /** NULL reads as 'advalor', so every group sealed before 0091 keeps
+     * meaning exactly what it meant. */
+    dutyMode: text('duty_mode'),
+    dutySpecific: numeric('duty_specific', { precision: 12, scale: 4 }),
+    dutyUnit: text('duty_unit'),
+    /** NULL means none — excise names a short list of goods. */
+    excisePct: numeric('excise_pct', { precision: 6, scale: 3 }),
+    /** NULL inherits the request's answer. */
+    hasCertificate: boolean('has_certificate'),
     dutyFree: boolean('duty_free').notNull().default(false),
     vatFree: boolean('vat_free').notNull().default(false),
     aiProposed: boolean('ai_proposed').notNull().default(false),
@@ -2219,6 +2272,27 @@ export const calcGroups = pgTable(
     check(
       'calc_groups_confidence_check',
       sql`${t.aiConfidence} IS NULL OR ${t.aiConfidence} IN ('high', 'medium', 'low')`,
+    ),
+    check(
+      'calc_groups_duty_mode_check',
+      sql`${t.dutyMode} IS NULL OR ${t.dutyMode} IN ('advalor', 'specific', 'max', 'plus')`,
+    ),
+    check(
+      'calc_groups_duty_unit_check',
+      sql`${t.dutyUnit} IS NULL OR ${t.dutyUnit} IN ('kg', 'dona', 'litr', 'juft', '1000_dona', 'sm3', 'm2')`,
+    ),
+    check(
+      'calc_groups_specific_check',
+      sql`${t.dutySpecific} IS NULL OR (${t.dutySpecific} >= 0 AND ${t.dutySpecific} <> 'NaN'::numeric)`,
+    ),
+    check(
+      'calc_groups_excise_check',
+      sql`${t.excisePct} IS NULL OR (${t.excisePct} >= 0 AND ${t.excisePct} <= 100)`,
+    ),
+    // The dictionary's pair rule, read through the NULL-means-advalor lens.
+    check(
+      'calc_groups_mode_pair_check',
+      sql`((coalesce(${t.dutyMode}, 'advalor') = 'advalor') = (${t.dutySpecific} IS NULL)) AND ((coalesce(${t.dutyMode}, 'advalor') = 'advalor') = (${t.dutyUnit} IS NULL))`,
     ),
     uniqueIndex('calc_groups_seq_unique').on(t.requestId, t.seq),
   ],

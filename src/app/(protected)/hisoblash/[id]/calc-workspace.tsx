@@ -19,6 +19,7 @@ import {
   saveExtraAction,
   sealAction,
   setBazaAction,
+  setCertificateAction,
   setRatesAction,
   setZoneAction,
   type CalcFormState,
@@ -198,6 +199,25 @@ function GroupsPanel({
 
   return (
     <section className="card !p-3" data-testid="calc-groups">
+      {/* The certificate flips the whole calculation: without one, BK 300-1's
+          additional duty (5-20 % of BQ by the code's advalor band) lands on
+          every group that inherits the request's answer — and the flip clears
+          those groups' ✅, because the person confirmed different numbers. */}
+      <label className="mb-2 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={workspace.hasCertificate}
+          data-testid="calc-certificate"
+          disabled={pending}
+          onChange={(e) => act(() => setCertificateAction(id, e.target.checked))}
+        />
+        <span>{t('certificate')}</span>
+        {!workspace.hasCertificate ? (
+          <span className="chip chip-warn" data-testid="calc-certificate-warn">
+            ⚠ {t('certificateMissing')}
+          </span>
+        ) : null}
+      </label>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="section-title">{t('groups')}</h3>
         <div className="flex flex-wrap items-center gap-2">
@@ -396,11 +416,17 @@ function GroupRows({
             {group.volumeM3 ?? '—'} m³
           </span>{' '}
           ·{' '}
-          {group.dutyFree ? t('dutyFree') : `${t('duty')} ${group.dutyPct ?? '—'}%`} ·{' '}
+          {group.dutyFree ? t('dutyFree') : `${t('duty')} ${dutyText(group)}`} ·{' '}
           {group.vatFree ? t('vatFree') : `${t('vat')} ${group.vatPct ?? '—'}%`} ·{' '}
           {t('fee')} ${group.feeUsd ?? 0}
           {group.rateSource ? ` · ${t(`source.${group.rateSource}` as 'source.typed')}` : ''}
           {group.customs.ok ? ` · ${t('value')} $${group.customs.valueUsd.toFixed(2)}` : ''}
+          {/* The additional duty is money the certificate answer created —
+              it must be visible on the group it landed on, or the total is
+              bigger than its own lines. */}
+          {group.customs.ok && group.customs.addDutyUsd > 0
+            ? ` · +${group.customs.addDutyPct}% ($${group.customs.addDutyUsd.toFixed(2)})`
+            : ''}
           {group.dictionaryRates && group.rateSource !== 'dictionary' ? (
             <button
               type="button"
@@ -409,7 +435,8 @@ function GroupRows({
               data-testid="calc-pull-rates"
               onClick={() => act(() => pullRatesAction(id, group.id))}
             >
-              {t('pullRates')}: {group.dictionaryRates.dutyPct}% / {group.dictionaryRates.vatPct}%
+              {t('pullRates')}: {dutyText(group.dictionaryRates)} /{' '}
+              {group.dictionaryRates.vatPct}%
             </button>
           ) : null}
           {/* Law 6's other half: a rate the VED typed over (or without) the
@@ -811,6 +838,18 @@ function TotalsPanel({ workspace }: { workspace: Workspace }) {
               <dd className="font-mono tabular-nums" data-testid="calc-total-customs">
                 ${totals.customsUsd.toFixed(2)}
               </dd>
+              {/* The VMQ-55 declaration fee is INSIDE the customs figure —
+                  this line is its receipt, so the VED can check the tier. */}
+              {workspace.fee?.ok ? (
+                <>
+                  <dt className="text-ink-500 pl-2">{t('feeLine')}</dt>
+                  <dd className="font-mono tabular-nums text-ink-600" data-testid="calc-total-fee">
+                    {workspace.fee.overridden
+                      ? `$${workspace.fee.feeUsd.toFixed(2)} ✎`
+                      : `${workspace.fee.bhmCoefficient} BHM ≈ $${workspace.fee.feeUsd.toFixed(2)}`}
+                  </dd>
+                </>
+              ) : null}
             </>
           ) : null}
           {workspace.parts.freight ? (
@@ -1052,6 +1091,24 @@ async function recalcActionClient(id: string) {
 
 type T = ReturnType<typeof useTranslations<'calc'>>;
 
+/**
+ * The whole law in one cell — a MAX row printed as its percentage alone
+ * loses the floor, which on light goods IS the duty.
+ */
+function dutyText(r: {
+  dutyPct: number | null;
+  dutyMode: 'advalor' | 'specific' | 'max' | 'plus';
+  dutySpecific: number | null;
+  dutyUnit: string | null;
+}): string {
+  const pct = r.dutyPct === null ? '—' : `${r.dutyPct}%`;
+  if (r.dutyMode === 'advalor') return pct;
+  const spec = `${r.dutySpecific ?? '—'} $/${r.dutyUnit ?? '—'}`;
+  if (r.dutyMode === 'specific') return spec;
+  if (r.dutyMode === 'max') return `${pct} / min ${spec}`;
+  return `${pct} + ${spec}`;
+}
+
 function refusal(t: T, reason: string): string {
   return t.has(`refusals.${reason}`) ? t(`refusals.${reason}` as 'refusals.band_missing') : reason;
 }
@@ -1062,6 +1119,9 @@ function blockerText(t: T, b: Workspace['blockers'][number]): string {
       return `${b.groupLabel}: ${refusal(t, b.reason)}${b.itemLabel ? ` (${b.itemLabel})` : ''}`;
     case 'freight':
       return `${t('freight')}: ${refusal(t, b.reason)}`;
+    case 'fee':
+      // The reason's own text names the fee — no prefix needed.
+      return refusal(t, b.reason);
     case 'totals':
       return refusal(t, b.reason);
     case 'ungrouped_items':

@@ -24,12 +24,17 @@ import { BazaForm, PriceBookForm, RatesForm } from './dict-forms';
  * the list price a VED discount is measured against, so the person giving the
  * discount must not be the person who can move the list.
  */
-export default async function CalcDictionariesPage() {
+export default async function CalcDictionariesPage(props: {
+  searchParams: Promise<{ kod?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('ved.docs')) redirect('/');
 
   const t = await getTranslations('calc');
+  // A URL param is a forged post (#514): digits only, or it never reaches SQL.
+  const rawKod = (await props.searchParams).kod ?? '';
+  const kod = /^\d{1,10}$/.test(rawKod.trim()) ? rawKod.trim() : '';
 
   let bazas: Awaited<ReturnType<typeof listBazas>> = [];
   let rates: Awaited<ReturnType<typeof listRates>> = [];
@@ -38,7 +43,7 @@ export default async function CalcDictionariesPage() {
   try {
     [bazas, rates, tariff, prices] = await Promise.all([
       listBazas(),
-      listRates(),
+      listRates(kod),
       listTariff(),
       listPriceBook(),
     ]);
@@ -100,12 +105,32 @@ export default async function CalcDictionariesPage() {
       <Section title={t('dictRates')}>
         <div className="card !p-3" data-testid="dict-rates">
           <RatesForm />
+          {/* The whole PP-3818 book lives underneath (1,489 seeded rows) and
+              rendering it all is /stock's DOM crush — so bare, the table
+              shows only the VED's own rows, and a typed code searches the
+              book both ways: the heading AND its carved-out exceptions. */}
+          <form className="mt-2 flex flex-wrap items-end gap-2" method="get">
+            <label className="text-2xs">
+              <span className="label">{t('rateSearch')}</span>
+              <input
+                className="input input-sm !w-40 font-mono tabular-nums"
+                data-testid="dict-rate-search"
+                defaultValue={kod}
+                inputMode="numeric"
+                name="kod"
+              />
+            </label>
+            <button className="btn" type="submit">
+              🔍
+            </button>
+          </form>
+          {!kod ? <p className="mt-1 text-2xs text-ink-500">{t('rateSearchHint')}</p> : null}
           <div className="table-wrap mt-2 overflow-x-auto">
             <table className="w-full min-w-[32rem] text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-2xs uppercase text-ink-500">
                   <th className="p-2">TNVED</th>
-                  <th className="p-2 text-right">{t('duty')} %</th>
+                  <th className="p-2 text-right">{t('duty')}</th>
                   <th className="p-2 text-right">{t('vat')} %</th>
                   <th className="p-2 text-right">{t('fee')} $</th>
                   <th className="p-2">{t('effectiveDate')}</th>
@@ -117,8 +142,21 @@ export default async function CalcDictionariesPage() {
                     <td className="p-2 font-mono tabular-nums">
                       {row.tnvedCode}
                       {row.future ? <span className="ml-1 chip chip-neutral">{t('future')}</span> : null}
+                      {row.source === 'pp3818' ? (
+                        <span className="ml-1 chip chip-neutral">PQ-3818</span>
+                      ) : null}
                     </td>
-                    <td className="p-2 text-right font-mono tabular-nums">{row.dutyPct}</td>
+                    {/* A MAX row read as its percentage alone loses the floor,
+                        so the cell prints the whole law: «20% / min 3 $/dona». */}
+                    <td className="p-2 text-right font-mono tabular-nums">
+                      {row.dutyMode === 'advalor'
+                        ? `${row.dutyPct}%`
+                        : row.dutyMode === 'specific'
+                          ? `${row.dutySpecific} $/${row.dutyUnit}`
+                          : row.dutyMode === 'max'
+                            ? `${row.dutyPct}% / min ${row.dutySpecific} $/${row.dutyUnit}`
+                            : `${row.dutyPct}% + ${row.dutySpecific} $/${row.dutyUnit}`}
+                    </td>
                     <td className="p-2 text-right font-mono tabular-nums">{row.vatPct}</td>
                     <td className="p-2 text-right font-mono tabular-nums">{row.feeUsd}</td>
                     <td className="p-2 font-mono tabular-nums">{row.effectiveDate}</td>
