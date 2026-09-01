@@ -82,7 +82,7 @@ test('a sealed price appears on the card without a fold', async ({ page }) => {
 
   await page.getByTestId('calc-zone').selectOption('cn');
   await page.getByTestId('calc-confirm-all').click();
-  await expect(page.getByTestId('calc-total')).toContainText('3764', { timeout: 15_000 });
+  await expect(page.getByTestId('calc-total')).toContainText('3796.96', { timeout: 15_000 });
   await page.getByTestId('calc-do-seal').click();
   await expect(page.getByTestId('calc-sealed')).toBeVisible({ timeout: 15_000 });
 
@@ -90,7 +90,7 @@ test('a sealed price appears on the card without a fold', async ({ page }) => {
   // sealed price is what the seller opens this card to read.
   await page.goto(cardUrl);
   await expect(page.getByTestId('calc-seal')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('calc-seal-total')).toContainText('3764');
+  await expect(page.getByTestId('calc-seal-total')).toContainText('3796.96');
 });
 
 test('the offer carries the SELLER’s price, and the floor is warned about first', async ({
@@ -103,7 +103,7 @@ test('the offer carries the SELLER’s price, and the floor is warned about firs
   const form = page.getByTestId('calc-offer');
   await expect(form).toBeVisible({ timeout: 15_000 });
   // Prefilled with the floor, and quiet about it.
-  await expect(page.getByTestId('offer-price')).toHaveValue('3764.00');
+  await expect(page.getByTestId('offer-price')).toHaveValue('3796.96');
   await expect(page.getByTestId('offer-below-floor')).toHaveCount(0);
 
   // Typing UNDER the floor warns before anything is pressed.
@@ -121,8 +121,8 @@ test('the offer carries the SELLER’s price, and the floor is warned about firs
   expect(body).toContain('4 500.00');
   // The sealed total is what the calculation COST. It is the company's floor
   // and must not reach the customer's message.
-  expect(body).not.toContain('3764');
-  expect(body).not.toContain('3 764');
+  expect(body).not.toContain('3796');
+  expect(body).not.toContain('3 796');
 
   // And the offer is recorded on the card, with a sheet behind it.
   await page.reload();

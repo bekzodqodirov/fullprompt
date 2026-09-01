@@ -373,6 +373,7 @@
       "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
       "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi",
       "ai_daily_limit": "Bir kishiga kuniga AI savollar chegarasi (bot + AI ekrani birga; 0 — o'chirilgan)",
+      "bhm_uzs": "BHM (bazaviy hisoblash miqdori) so'mda — bojxona yig'imi shu bo'yicha hisoblanadi (2026: 412 000)",
       "calc_review_notified_month": "Lug‘atlarni oylik ko‘rib chiqish eslatmasi oxirgi marta qaysi oyda yuborilgan (tizim o‘zi yozadi)",
       "upsale_expense_category_id": "Sotuvchining ulushi (upsale) qaysi xarajat turiga yozilishi. Oyliklar turini tanlamang — oylik bilan to‘qnashadi.",
       "calc_actual_settle_days": "Yuk kelgandan necha kun keyin rastamojka yakuniy hisoblanadi",
@@ -2200,7 +2201,9 @@
       "band_ambiguous": "bu zichlik ikki bandda",
       "zone_required": "yo‘nalish tanlanmagan",
       "discount_exceeds_total": "chegirma jamidan katta",
-      "not_a_number": "raqam noto‘g‘ri"
+      "not_a_number": "raqam noto‘g‘ri",
+      "unit_unsupported": "Stavka hisob o'lchamaydigan birlikda (litr/juft/sm³/m²) — bojni qo'lda kiriting",
+      "fee_fx_missing": "Bojxona yig'imi: bugungi UZS kursi yo'q — valyuta lug'atiga kurs kiriting"
     },
     "blockers": {
       "section_missing": "Bo‘lim tanlanmagan",
@@ -2321,7 +2324,12 @@
       "note_taken": "Allaqachon yuborilgan — sahifani yangilang",
       "server_behind": "Server yangilanmoqda, keyinroq urinib ko‘ring",
       "unauthenticated": "Qaytadan kiring"
-    }
+    },
+    "certificate": "Kelib chiqish sertifikati bor",
+    "certificateMissing": "sertifikatsiz — qo'shimcha boj 5–20 %",
+    "feeLine": "sh.j. bojxona yig'imi",
+    "rateSearch": "TNVED kod bo‘yicha qidiruv",
+    "rateSearchHint": "Qidiruvsiz faqat qo'lda kiritilgan qatorlar ko'rinadi; PQ-3818 to'liq bazasi (1 489 qator) kod bo'yicha qidiriladi."
   },
   "partners": {
     "title": "Kontragentlar",

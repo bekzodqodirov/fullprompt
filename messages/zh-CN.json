@@ -373,6 +373,7 @@
       "crm_calc_stage": "机器人发来「报价」时，线索移到该阶段（只向前；「—」表示不移动）",
       "deal_calc_stage": "交易看板同理——已有客户编号的请求会落在交易上",
       "ai_daily_limit": "每人每天的 AI 提问上限（机器人 + AI 页面合计；0 为关闭）",
+      "bhm_uzs": "BHM（基准计算单位，苏姆）——海关规费按其阶梯计算（2026 年：412 000）",
       "calc_review_notified_month": "上次发送字典复核提醒的月份（由系统写入）",
       "upsale_expense_category_id": "销售提成（upsale）计入哪个费用类别。请勿选择工资类别，会与月度工资冲突。",
       "calc_actual_settle_days": "货物到达后多少天清关费用视为最终",
@@ -2200,7 +2201,9 @@
       "band_ambiguous": "该密度落入两个区间",
       "zone_required": "未选择线路",
       "discount_exceeds_total": "折扣超过总额",
-      "not_a_number": "数字无效"
+      "not_a_number": "数字无效",
+      "unit_unsupported": "税率单位（升/双/cm³/m²）本计算无法计量——请手动输入关税",
+      "fee_fx_missing": "海关规费：今日无 UZS 汇率——请在汇率簿中录入"
     },
     "blockers": {
       "section_missing": "未选择项目",
@@ -2321,7 +2324,12 @@
       "note_taken": "已发送 — 请刷新页面",
       "server_behind": "服务器更新中，请稍后再试",
       "unauthenticated": "请重新登录"
-    }
+    },
+    "certificate": "有原产地证书",
+    "certificateMissing": "无证书——附加关税 5–20 %",
+    "feeLine": "含海关规费",
+    "rateSearch": "按 TNVED 编码搜索",
+    "rateSearchHint": "未搜索时仅显示手工录入的行；PP-3818 全表（1 489 行）可按编码搜索。"
   },
   "partners": {
     "title": "合作方",

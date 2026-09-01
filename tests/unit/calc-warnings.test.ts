@@ -11,6 +11,7 @@ const base: WarningGroupFacts = {
   dictionaryRates: null,
   rateSource: 'typed',
   dutyPct: 10,
+  vatPct: 12,
   aiProposed: false,
   aiConfidence: null,
   aiDutyPct: null,
@@ -31,8 +32,29 @@ describe('a warning means the dictionary had an answer and a person typed anothe
     }
   });
 
-  it('warns once the dictionary HAS an answer and a rate was typed anyway', () => {
+  it('warns once the dictionary HAS an answer and a DIFFERENT rate was typed', () => {
     const facts = { ...base, dictionaryRates: { dutyPct: 5, vatPct: 12, feeUsd: 0 } };
+    expect(warningsForGroup(facts)).toContain('rate_off_dictionary');
+  });
+
+  /**
+   * VED 2.0's second half of the sentence. The 0091 seed fills the rates
+   * dictionary with all 1,489 PP-3818 rows, so «the dictionary answered» is
+   * now true of nearly every real code — and a person who TYPES the law's own
+   * numbers has deviated from nothing. Source-only, the owner's list would
+   * have gone from naming nothing to naming everything in one deploy.
+   */
+  it('says nothing when the typed numbers EQUAL the dictionary’s', () => {
+    const facts = { ...base, dictionaryRates: { dutyPct: 10, vatPct: 12, feeUsd: 0 } };
+    expect(warningsForGroup(facts)).toEqual([]);
+  });
+
+  it('a typed VAT alone off the book still warns', () => {
+    const facts = {
+      ...base,
+      vatPct: 0,
+      dictionaryRates: { dutyPct: 10, vatPct: 12, feeUsd: 0 },
+    };
     expect(warningsForGroup(facts)).toContain('rate_off_dictionary');
   });
 

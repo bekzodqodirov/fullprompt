@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   calcExtras,
@@ -8,6 +8,7 @@ import {
   calcRequests,
   calcVersions,
   costTypes,
+  fxRates,
   receipts,
   telegramLinks,
   deals,
@@ -32,6 +33,7 @@ import {
   type ProposedGroup,
 } from './grouping';
 import {
+  customsFeeFor,
   customsFor,
   freightFor,
   isNumber,
@@ -40,6 +42,9 @@ import {
   type BazaBasis,
   type CalcSectionName,
   type CustomsResult,
+  type DutyMode,
+  type DutyUnit,
+  type FeeResult,
   type FreightBand,
   type FreightResult,
   type PricedItem,
@@ -106,6 +111,15 @@ export interface WorkspaceGroup {
   dutyPct: number | null;
   vatPct: number | null;
   feeUsd: number | null;
+  /** The law's shape (VED 2.0): stored NULL reads as 'advalor'. */
+  dutyMode: DutyMode;
+  dutySpecific: number | null;
+  dutyUnit: DutyUnit | null;
+  excisePct: number | null;
+  /** The group's own answer — null inherits the request's. */
+  hasCertificate: boolean | null;
+  /** Resolved: the group's answer, else the request's. What the engine used. */
+  effectiveCertificate: boolean;
   rateSource: 'dictionary' | 'typed' | null;
   dutyFree: boolean;
   vatFree: boolean;
@@ -127,7 +141,18 @@ export interface WorkspaceGroup {
   volumeM3: number | null;
   customs: CustomsResult;
   /** What the rates dictionary says today, for the «pull» button. */
-  dictionaryRates: { dutyPct: number; vatPct: number; feeUsd: number; effectiveDate: string } | null;
+  dictionaryRates: {
+    dutyPct: number;
+    vatPct: number;
+    feeUsd: number;
+    dutyMode: DutyMode;
+    dutySpecific: number | null;
+    dutyUnit: DutyUnit | null;
+    /** The stored code that answered — a prefix when the group's own code
+     * has no row of its own (6403 answering for 6403520000). */
+    matchedCode: string;
+    effectiveDate: string;
+  } | null;
   /**
    * Law 7's second half: how this code's lgota was decided the LAST time a
    * person sealed it — the offered default, never an applied one. Non-null
@@ -164,6 +189,15 @@ export interface Workspace {
   freight: FreightResult | null;
   customsUsd: number | null;
   extrasUsd: number;
+  /** The request's certificate answer — the groups inherit it. */
+  hasCertificate: boolean;
+  /**
+   * The per-DECLARATION customs fee (VMQ-55's BHM scale), computed once for
+   * the request and folded into `customsUsd` — never per group, or a
+   * three-group job would pay it three times. null on a yolkira quote.
+   */
+  fee: FeeResult | null;
+  feeOverrideUsd: number | null;
   totals: ReturnType<typeof totalsFor> | null;
   /** Everything standing between this screen and «Muhrlash». */
   blockers: SealBlocker[];
@@ -180,6 +214,7 @@ export type SealBlocker =
   | { kind: 'groups_unconfirmed'; count: number }
   | { kind: 'customs'; groupSeq: number; groupLabel: string; reason: string; itemLabel?: string }
   | { kind: 'freight'; reason: string }
+  | { kind: 'fee'; reason: string }
   | { kind: 'totals'; reason: string }
   | { kind: 'customs_on_yolkira' };
 
@@ -311,6 +346,10 @@ export async function loadWorkspace(
   const groups: WorkspaceGroup[] = groupRows.map((g) => {
     const mine = items.filter((i) => i.groupId === g.id);
     const qty = groupQuantity(mine.map((i) => ({ quantity: i.quantity, unit: i.unit })));
+    // The group's own certificate answer wins; a group that says nothing
+    // inherits the request's — a sborniy truck mixes senders, and one
+    // certificate-less sender must not flip the whole declaration.
+    const effectiveCertificate = g.hasCertificate ?? request.hasCertificate;
     const priced = {
       seq: g.seq,
       label: g.label,
@@ -318,13 +357,22 @@ export async function loadWorkspace(
       dutyPct: toNum(g.dutyPct),
       vatPct: toNum(g.vatPct),
       feeUsd: toNum(g.feeUsd),
+      // Stored NULL reads as 'advalor' — every group sealed before 0091
+      // keeps meaning exactly what it meant.
+      dutyMode: (g.dutyMode as DutyMode | null) ?? 'advalor',
+      dutySpecific: toNum(g.dutySpecific),
+      dutyUnit: (g.dutyUnit as DutyUnit | null) ?? null,
+      excisePct: toNum(g.excisePct),
+      hasCertificate: effectiveCertificate,
       dutyFree: g.dutyFree,
       vatFree: g.vatFree,
     };
-    const dictRates = g.tnvedCode ? rates.get(g.tnvedCode) : undefined;
+    const dictRates = g.tnvedCode ? rates.get(g.tnvedCode.trim()) : undefined;
     return {
       id: g.id,
       ...priced,
+      hasCertificate: g.hasCertificate,
+      effectiveCertificate,
       rateSource: (g.rateSource as 'dictionary' | 'typed' | null) ?? null,
       aiProposed: g.aiProposed,
       aiConfidence: (g.aiConfidence as 'high' | 'medium' | 'low' | null) ?? null,
@@ -339,6 +387,7 @@ export async function loadWorkspace(
           : null,
         rateSource: (g.rateSource as 'dictionary' | 'typed' | null) ?? null,
         dutyPct: toNum(g.dutyPct),
+        vatPct: toNum(g.vatPct),
         aiProposed: g.aiProposed,
         aiConfidence: (g.aiConfidence as 'high' | 'medium' | 'low' | null) ?? null,
         aiDutyPct: toNum(g.aiDutyPct),
@@ -359,6 +408,10 @@ export async function loadWorkspace(
             dutyPct: dictRates.dutyPct,
             vatPct: dictRates.vatPct,
             feeUsd: dictRates.feeUsd,
+            dutyMode: dictRates.dutyMode,
+            dutySpecific: dictRates.dutySpecific,
+            dutyUnit: dictRates.dutyUnit,
+            matchedCode: dictRates.tnvedCode,
             effectiveDate: dictRates.effectiveDate,
           }
         : null,
@@ -382,9 +435,28 @@ export async function loadWorkspace(
     : null;
 
   const customsOk = groups.every((g) => g.customs.ok);
+
+  // The per-declaration fee (VMQ-55): the BHM scale over the WHOLE
+  // declaration's value, computed once and folded into the customs figure.
+  // Only when every group prices — a partial value would land in the wrong
+  // tier and read as an answer.
+  const feeOverrideUsd = toNum(request.feeOverrideUsd);
+  let fee: FeeResult | null = null;
+  if (parts.customs && groups.length > 0 && customsOk) {
+    const valueUsd = groups.reduce((sum, g) => sum + (g.customs.ok ? g.customs.valueUsd : 0), 0);
+    const [bhmUzs, fx] = await Promise.all([getSetting('bhm_uzs'), uzsPerUsd(date)]);
+    fee = customsFeeFor({
+      valueUsd,
+      bhmUzs: Number(bhmUzs),
+      fxUzsPerUsd: fx,
+      overrideUsd: feeOverrideUsd,
+    });
+  }
+
   const customsUsd = parts.customs
-    ? customsOk
-      ? groups.reduce((sum, g) => sum + (g.customs.ok ? g.customs.customsUsd : 0), 0)
+    ? customsOk && (fee === null || fee.ok)
+      ? groups.reduce((sum, g) => sum + (g.customs.ok ? g.customs.customsUsd : 0), 0) +
+        (fee?.ok ? fee.feeUsd : 0)
       : null
     : 0;
   const extrasUsd = extraRows.reduce((sum, e) => sum + Number(e.amountUsd), 0);
@@ -430,8 +502,11 @@ export async function loadWorkspace(
     freight,
     customsUsd,
     extrasUsd,
+    hasCertificate: request.hasCertificate,
+    fee,
+    feeOverrideUsd,
     totals,
-    blockers: blockersFor({ section, parts, groups, items, freight, totals }),
+    blockers: blockersFor({ section, parts, groups, items, freight, fee, totals }),
     reconcile: {
       groupKg,
       groupM3,
@@ -447,12 +522,32 @@ export async function loadWorkspace(
 const disagrees = (a: number | null, b: number | null) =>
   a !== null && b !== null && b > 0 && Math.abs(a - b) / b > 0.01;
 
+/**
+ * UZS per one USD on the day — the fee scale is written in so'm and this
+ * screen prices in USD. Deliberately NOT `costing.rateFor`: that one falls
+ * back to the earliest row ever recorded (a cost predating the rate book
+ * still has to convert into something), and this module's rule is that a
+ * missing rate is a refusal, never an invented number.
+ */
+async function uzsPerUsd(date: string): Promise<number | null> {
+  const [hit] = await db
+    .select({ rateToUsd: fxRates.rateToUsd })
+    .from(fxRates)
+    .where(and(eq(fxRates.currency, 'UZS'), lte(fxRates.effectiveDate, date)))
+    .orderBy(desc(fxRates.effectiveDate))
+    .limit(1);
+  if (!hit) return null;
+  const usdPerUzs = Number(hit.rateToUsd);
+  return usdPerUzs > 0 ? 1 / usdPerUzs : null;
+}
+
 function blockersFor(w: {
   section: CalcSectionName | null;
   parts: { customs: boolean; freight: boolean; extras: boolean };
   groups: WorkspaceGroup[];
   items: WorkspaceItem[];
   freight: FreightResult | null;
+  fee: FeeResult | null;
   totals: ReturnType<typeof totalsFor> | null;
 }): SealBlocker[] {
   const out: SealBlocker[] = [];
@@ -484,6 +579,7 @@ function blockersFor(w: {
   if (w.parts.freight && w.freight && !w.freight.ok) {
     out.push({ kind: 'freight', reason: w.freight.reason });
   }
+  if (w.fee && !w.fee.ok) out.push({ kind: 'fee', reason: w.fee.reason });
   if (w.totals && !w.totals.ok) out.push({ kind: 'totals', reason: w.totals.reason });
   return out;
 }
@@ -615,6 +711,15 @@ export async function setGroupRates(
     dutyFree: boolean;
     vatFree: boolean;
     source: 'dictionary' | 'typed';
+    /** Absent = keep the group's stored shape (a rate edit is not a shape
+     * edit). 'advalor' explicitly is how the specific half is removed. */
+    dutyMode?: DutyMode;
+    dutySpecific?: number | null;
+    dutyUnit?: DutyUnit | null;
+    excisePct?: number | null;
+    /** Absent = keep; null = «inherit the request»; a boolean = this group's
+     * own answer (a sborniy truck mixes senders). */
+    hasCertificate?: boolean | null;
     label?: string;
     note?: string | null;
   },
@@ -623,11 +728,26 @@ export async function setGroupRates(
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
   await assertOpen(group.requestId);
-  mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd);
-  for (const pct of [input.dutyPct, input.vatPct]) {
-    if (pct !== null && (pct < 0 || pct > 100)) throw new CalcError('rate_range');
+  mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd, input.dutySpecific, input.excisePct);
+  for (const pct of [input.dutyPct, input.vatPct, input.excisePct]) {
+    if (pct !== null && pct !== undefined && (pct < 0 || pct > 100)) {
+      throw new CalcError('rate_range');
+    }
   }
   if (input.feeUsd !== null && input.feeUsd < 0) throw new CalcError('rate_range');
+
+  const dutyMode = input.dutyMode ?? ((group.dutyMode as DutyMode | null) ?? 'advalor');
+  let dutySpecific =
+    input.dutySpecific !== undefined ? input.dutySpecific : toNum(group.dutySpecific);
+  let dutyUnit =
+    input.dutyUnit !== undefined ? input.dutyUnit : ((group.dutyUnit as DutyUnit | null) ?? null);
+  if (dutyMode === 'advalor') {
+    // The pair CHECK: an advalor group carries no specific half.
+    dutySpecific = null;
+    dutyUnit = null;
+  } else if (dutySpecific === null || !(dutySpecific >= 0) || dutyUnit === null) {
+    throw new CalcError('rate_range');
+  }
 
   await db
     .update(calcGroups)
@@ -637,6 +757,16 @@ export async function setGroupRates(
       dutyPct: input.dutyPct === null ? null : input.dutyPct.toFixed(3),
       vatPct: input.vatPct === null ? null : input.vatPct.toFixed(3),
       feeUsd: input.feeUsd === null ? null : input.feeUsd.toFixed(2),
+      dutyMode: dutyMode === 'advalor' ? null : dutyMode,
+      dutySpecific: dutySpecific === null ? null : dutySpecific.toFixed(4),
+      dutyUnit,
+      excisePct:
+        input.excisePct !== undefined
+          ? input.excisePct === null
+            ? null
+            : input.excisePct.toFixed(3)
+          : group.excisePct,
+      hasCertificate: input.hasCertificate !== undefined ? input.hasCertificate : group.hasCertificate,
       rateSource: input.source,
       dutyFree: input.dutyFree,
       vatFree: input.vatFree,
@@ -719,13 +849,76 @@ export async function pullRatesFromDictionary(groupId: string, ctx: AuditContext
       tnvedCode: code,
       dutyPct: hit.dutyPct,
       vatPct: hit.vatPct,
-      feeUsd: hit.feeUsd,
+      // The fee stopped being a per-code fact in VED 2.0: the declaration's
+      // BHM scale (`customsFeeFor`) already pays it once per request, so
+      // copying a dictionary fee here would pay it once per GROUP on top.
+      feeUsd: null,
+      dutyMode: hit.dutyMode,
+      dutySpecific: hit.dutySpecific,
+      dutyUnit: hit.dutyUnit,
       dutyFree: group.dutyFree,
       vatFree: group.vatFree,
       source: 'dictionary',
     },
     ctx,
   );
+}
+
+/**
+ * The request's certificate answer — the door the «sertifikat» chip presses.
+ *
+ * Flipping it re-prices every group that INHERITS it (the additional duty
+ * appears or vanishes), so those groups lose their ✅ — the person who
+ * confirmed did not confirm these numbers. A group carrying its own answer
+ * keeps both its answer and its confirmation.
+ */
+export async function setRequestCertificate(
+  requestId: string,
+  hasCertificate: boolean,
+  ctx: AuditContext,
+) {
+  const request = await assertOpen(requestId);
+  if (request.hasCertificate === hasCertificate) return;
+  await db
+    .update(calcRequests)
+    .set({ hasCertificate, updatedAt: new Date() })
+    .where(eq(calcRequests.id, requestId));
+  const inheriting = await db
+    .select({ id: calcGroups.id })
+    .from(calcGroups)
+    .where(and(eq(calcGroups.requestId, requestId), isNull(calcGroups.hasCertificate)));
+  for (const g of inheriting) await unconfirm(g.id);
+  await writeAudit(db, ctx, {
+    entityType: 'calc_request',
+    entityId: requestId,
+    action: 'update',
+    before: { hasCertificate: request.hasCertificate },
+    after: { hasCertificate },
+  });
+}
+
+/** The typed per-declaration fee override — null returns to the computed tier. */
+export async function setFeeOverride(
+  requestId: string,
+  feeOverrideUsd: number | null,
+  ctx: AuditContext,
+) {
+  await assertOpen(requestId);
+  mustBeNumber(feeOverrideUsd);
+  if (feeOverrideUsd !== null && feeOverrideUsd < 0) throw new CalcError('rate_range');
+  await db
+    .update(calcRequests)
+    .set({
+      feeOverrideUsd: feeOverrideUsd === null ? null : feeOverrideUsd.toFixed(2),
+      updatedAt: new Date(),
+    })
+    .where(eq(calcRequests.id, requestId));
+  await writeAudit(db, ctx, {
+    entityType: 'calc_request',
+    entityId: requestId,
+    action: 'update',
+    after: { feeOverrideUsd },
+  });
 }
 
 /** Fill every item that has no baza from the dictionary, in one pass. */
@@ -1052,6 +1245,14 @@ export async function sealCalc(
       dutyPct: g.dutyPct,
       vatPct: g.vatPct,
       feeUsd: g.feeUsd,
+      // VED 2.0: the law's shape rides into the snapshot, so a sealed MAX
+      // price goes on explaining its own floor after the dictionary moves.
+      // Readers of OLD breakdowns must tolerate their absence (advalor).
+      dutyMode: g.dutyMode,
+      dutySpecific: g.dutySpecific,
+      dutyUnit: g.dutyUnit,
+      excisePct: g.excisePct,
+      hasCertificate: g.effectiveCertificate,
       dutyFree: g.dutyFree,
       vatFree: g.vatFree,
       rateSource: g.rateSource,
@@ -1081,6 +1282,10 @@ export async function sealCalc(
     extras: workspace.extras,
     tariffRow: freight?.ok ? freight.band : null,
     density: workspace.density,
+    // VED 2.0: what the declaration paid VMQ-55, and under which certificate
+    // answer. `fee` is inside `customsUsd` already — this is its receipt.
+    hasCertificate: workspace.hasCertificate,
+    fee: workspace.fee?.ok ? workspace.fee : null,
   };
 
   const aiGroupsSealed = workspace.groups.filter((g) => g.aiProposed).length;
@@ -1347,6 +1552,10 @@ export async function recalcFromSealed(
         source: old.source,
         noteId: old.noteId,
         freightZone: old.freightZone,
+        // VED 2.0 (J19's rule): a correction inherits the certificate answer
+        // and the fee override — the sender did not change, only the numbers.
+        hasCertificate: old.hasCertificate,
+        feeOverrideUsd: old.feeOverrideUsd,
         supersedesRequestId: old.id,
         dueAt: new Date(Date.now() + 2 * 3_600_000),
       })
@@ -1375,6 +1584,13 @@ export async function recalcFromSealed(
           dutyPct: g.dutyPct,
           vatPct: g.vatPct,
           feeUsd: g.feeUsd,
+          // VED 2.0: the law's shape travels with the rates it shapes — a
+          // correction that dropped the MAX floor would re-price the job.
+          dutyMode: g.dutyMode,
+          dutySpecific: g.dutySpecific,
+          dutyUnit: g.dutyUnit,
+          excisePct: g.excisePct,
+          hasCertificate: g.hasCertificate,
           rateSource: g.rateSource,
           dutyFree: g.dutyFree,
           vatFree: g.vatFree,

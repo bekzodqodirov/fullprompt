@@ -22,11 +22,12 @@ import {
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { quoteLockedFor } from '@/modules/wms/crm/service';
 import { updateDeal } from '@/modules/wms/deals/service';
-import { saveBaza, saveRates, onDate, tariffFor } from '@/modules/wms/calc/dictionaries';
+import { ratesFor, saveBaza, saveRates, onDate, tariffFor } from '@/modules/wms/calc/dictionaries';
 import { bandFor } from '@/modules/wms/calc/pricing';
 import {
   applyProposal,
   confirmAllGroups,
+  confirmGroup,
   createGroup,
   currentSealFor,
   loadWorkspace,
@@ -38,6 +39,7 @@ import {
   setFreightZone,
   setGroupRates,
   setItemBaza,
+  setRequestCertificate,
 } from '@/modules/wms/calc/workspace';
 
 /**
@@ -289,14 +291,17 @@ describe('the seal', () => {
       ctx(),
     );
     // customs: 100 × $20 = $2 000 value; duty 10 % = $200; VAT 12 % of
-    // $2 200 = $264 → $464. freight: 50 kg/m³ → $110 × 30 m³ = $3 300.
+    // $2 200 = $264; VMQ-55 fee — BQ ≤ $10 000 → 1 BHM = 412 000 so'm at the
+    // demo book's 12 500 UZS/USD = $32.96 (VED 2.0: the declaration's fee
+    // lands INSIDE the customs figure) → $496.96. freight: 50 kg/m³ →
+    // $110 × 30 m³ = $3 300.
     expect(result.versionNo).toBe(1);
-    expect(result.totalUsd).toBe(3764);
+    expect(result.totalUsd).toBe(3796.96);
 
     const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, requestId));
-    expect(Number(version!.customsUsd)).toBe(464);
+    expect(Number(version!.customsUsd)).toBe(496.96);
     expect(Number(version!.freightUsd)).toBe(3300);
-    expect(Number(version!.perM3Usd)).toBeCloseTo(125.47, 2);
+    expect(Number(version!.perM3Usd)).toBeCloseTo(126.57, 2);
     // The tariff row that made the price travels WITH it, so editing the
     // tariff tomorrow cannot change what this client was told.
     expect(Number(version!.freightRate)).toBe(110);
@@ -309,7 +314,7 @@ describe('the seal', () => {
     expect(request!.answerAmount).toBeNull();
 
     const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
-    expect(Number(deal!.quotedAmount)).toBe(3764);
+    expect(Number(deal!.quotedAmount)).toBe(3796.96);
     expect(deal!.quotedCurrency).toBe('USD');
   });
 
@@ -334,7 +339,7 @@ describe('the seal', () => {
       { discountUsd: 300, discountReason: 'doimiy mijoz', bandOverrideMin: null, bandOverrideReason: null },
       ctx(),
     );
-    expect(result.totalUsd).toBe(3464);
+    expect(result.totalUsd).toBe(3496.96);
     const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, requestId));
     // The concession is a LINE, not a smaller freight number — phase D reads
     // this column to withdraw the upsale right.
@@ -367,7 +372,7 @@ describe('the seal', () => {
     expect(Number(version!.bandOverrideMin)).toBe(950);
     // The real density stays on the record beside the band it was priced in.
     expect(Number(version!.density)).toBe(50);
-    expect(result.totalUsd).toBe(10_064);
+    expect(result.totalUsd).toBe(10_096.96);
   });
 
   it('a rastamojka quote has no freight line at all', async () => {
@@ -380,7 +385,7 @@ describe('the seal', () => {
       { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
       ctx(),
     );
-    expect(result.totalUsd).toBe(464);
+    expect(result.totalUsd).toBe(496.96);
     const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, requestId));
     expect(Number(version!.freightUsd)).toBe(0);
     expect(version!.freightRate).toBeNull();
@@ -392,7 +397,7 @@ describe('the card reads the version', () => {
     const { requestId } = await readyRequest();
     await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
     const seal = await currentSealFor('deal', dealId);
-    expect(seal!.totalUsd).toBe(3764);
+    expect(seal!.totalUsd).toBe(3796.96);
     expect(seal!.expired).toBe(false);
     expect(seal!.validUntil.getTime()).toBeGreaterThan(Date.now());
   });
@@ -402,14 +407,14 @@ describe('the lock is real', () => {
   it('the ✏️ form cannot change a sealed quote, and an ordinary save still works', async () => {
     const { requestId } = await readyRequest();
     await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
-    expect(await quoteLockedFor('deal', dealId)).toBe(3764);
+    expect(await quoteLockedFor('deal', dealId)).toBe(3796.96);
 
     const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
     const base = {
       clientId,
       stageId: stage!.id,
       title: 'VED seal fixture',
-      quotedAmount: 3764,
+      quotedAmount: 3796.96,
       quotedCurrency: 'USD',
       quotedVolumeM3: 30,
       quotedWeightKg: 1500,
@@ -425,7 +430,7 @@ describe('the lock is real', () => {
     await updateDeal(dealId, { ...base, title: 'VED seal fixture 2' }, ctx());
     const after = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
     expect(after!.title).toBe('VED seal fixture 2');
-    expect(Number(after!.quotedAmount)).toBe(3764);
+    expect(Number(after!.quotedAmount)).toBe(3796.96);
   });
 });
 
@@ -484,7 +489,10 @@ describe('what the shipped-code audit found', () => {
     const ws = await loadWorkspace(request.id);
     const group = ws!.groups[0]!;
     expect(group.dutyPct).toBe(3);
-    expect(group.feeUsd).toBe(7);
+    // VED 2.0: the fee stopped being a per-code fact — the pull leaves the
+    // group's fee EMPTY and the declaration's BHM scale (`customsFeeFor`)
+    // pays it once per request, or a three-group job would pay it thrice.
+    expect(group.feeUsd).toBeNull();
     expect(group.rateSource).toBe('dictionary');
   });
 
@@ -683,5 +691,198 @@ describe('the lgota is offered from the last sealed decision', () => {
     const workspace = await loadWorkspace(request.id);
     // Offering «no lgota» as a default would nag every ordinary group.
     expect(workspace!.groups.find((g) => g.id === groupId)!.lgotaLast).toBeNull();
+  });
+});
+
+/**
+ * This file opens requests faster than it seals them, and `openCalcRequest`
+ * caps a requester at 20 OPEN jobs — so a test that leaves its request open
+ * closes it before returning, or the cap refuses a later test's fixture.
+ */
+async function closeOpen(requestId: string) {
+  await db
+    .update(calcRequests)
+    .set({ completedAt: new Date(), completedVia: 'returned', returnReason: 'test cleanup' })
+    .where(eq(calcRequests.id, requestId));
+}
+
+describe('VED 2.0 — the law engine wired through the workspace', () => {
+  it('the LONGEST stored prefix answers a typed 10-digit code', async () => {
+    // Straight off the PP-3818 seed: heading 6403 is «20 %, min $3/juft» and
+    // 6403120000 carries its own 5 % advalor exception. The exception must
+    // answer for itself and every OTHER 6403 code must fall back to the
+    // heading — reading the heading for both silently loses the exception.
+    const own = await ratesFor('6403120000', TODAY);
+    expect(own).toMatchObject({ tnvedCode: '6403120000', dutyPct: 5, dutyMode: 'advalor' });
+
+    const fallback = await ratesFor('6403520000', TODAY);
+    expect(fallback).toMatchObject({
+      tnvedCode: '6403',
+      dutyMode: 'max',
+      dutySpecific: 3,
+      dutyUnit: 'juft',
+    });
+  });
+
+  it('a rate correction CARRIES the law shape forward unless told otherwise', async () => {
+    const code = `992${String((seq += 1)).padStart(4, '0')}`;
+    const yesterday = onDate(new Date(Date.now() - 86_400_000));
+    madeRates.push(
+      await saveRates(
+        {
+          tnvedCode: code,
+          dutyPct: 20,
+          vatPct: 12,
+          feeUsd: 0,
+          effectiveDate: yesterday,
+          dutyMode: 'max',
+          dutySpecific: 2,
+          dutyUnit: 'kg',
+        },
+        ctx(),
+      ),
+    );
+    // A person corrects the PERCENTAGE and says nothing about the shape —
+    // the $2/kg floor must survive, or the correction quietly turns a MAX
+    // code into the plain advalor it was created to beat.
+    madeRates.push(
+      await saveRates(
+        { tnvedCode: code, dutyPct: 25, vatPct: 12, feeUsd: 0, effectiveDate: TODAY },
+        ctx(),
+      ),
+    );
+    expect(await ratesFor(code, TODAY)).toMatchObject({
+      dutyPct: 25,
+      dutyMode: 'max',
+      dutySpecific: 2,
+      dutyUnit: 'kg',
+    });
+
+    // Saying 'advalor' explicitly IS how the shape is removed.
+    madeRates.push(
+      await saveRates(
+        {
+          tnvedCode: code,
+          dutyPct: 25,
+          vatPct: 12,
+          feeUsd: 0,
+          effectiveDate: TODAY,
+          dutyMode: 'advalor',
+        },
+        ctx(),
+      ),
+    );
+    expect(await ratesFor(code, TODAY)).toMatchObject({
+      dutyMode: 'advalor',
+      dutySpecific: null,
+      dutyUnit: null,
+    });
+  });
+
+  it('a MAX group prices its floor and a missing certificate adds the duty', async () => {
+    const request = await open({ section: 'rastamojka' });
+    const groupId = await createGroup(request.id, { label: 'Kurtkalar' }, ctx());
+    const ws0 = await loadWorkspace(request.id);
+    for (const item of ws0!.ungrouped) {
+      await moveItemToGroup(request.id, item.seq, groupId, ctx());
+      await setItemBaza(request.id, item.seq, { bazaUsd: 135, basis: 'unit', source: 'typed' }, ctx());
+    }
+    // Guide §9.1's kurtka: 100 dona × $135 = $13 500; 20 %, min $3/dona.
+    await setGroupRates(
+      groupId,
+      {
+        tnvedCode: '6102',
+        dutyPct: 20,
+        vatPct: 12,
+        feeUsd: null,
+        dutyMode: 'max',
+        dutySpecific: 3,
+        dutyUnit: 'dona',
+        dutyFree: false,
+        vatFree: false,
+        source: 'typed',
+      },
+      ctx(),
+    );
+    const withCert = await loadWorkspace(request.id);
+    const g1 = withCert!.groups[0]!;
+    // 100 dona: MAX(13 500 × 20 % = 2 700 … wait, 100 × $135 = $13 500;
+    // specific 100 × $3 = $300 → advalor wins here) = 2 700.
+    expect(g1.customs).toMatchObject({ ok: true, valueUsd: 13_500, dutyUsd: 2700, addDutyUsd: 0 });
+
+    // The certificate chip flips the request → the additional duty appears
+    // (20 % lands in the 20–30 band → +15 % of BQ) and the ✅ would clear.
+    await setRequestCertificate(request.id, false, ctx());
+    const withoutCert = await loadWorkspace(request.id);
+    expect(withoutCert!.groups[0]!.customs).toMatchObject({
+      ok: true,
+      addDutyPct: 15,
+      addDutyUsd: 2025,
+    });
+    await closeOpen(request.id);
+  });
+
+  it('flipping the request certificate unconfirms INHERITING groups only', async () => {
+    const request = await open({
+      section: 'rastamojka',
+      items: [
+        { name: `tovar A ${tag()}`, quantity: 10 },
+        { name: `tovar B ${tag()}`, quantity: 10 },
+      ],
+    });
+    const inheriting = await createGroup(request.id, { label: 'A' }, ctx());
+    const ownAnswer = await createGroup(request.id, { label: 'B' }, ctx());
+    await moveItemToGroup(request.id, 1, inheriting, ctx());
+    await moveItemToGroup(request.id, 2, ownAnswer, ctx());
+    for (const seqNo of [1, 2]) {
+      await setItemBaza(request.id, seqNo, { bazaUsd: 10, basis: 'unit', source: 'typed' }, ctx());
+    }
+    const rates = {
+      tnvedCode: '8528520000',
+      dutyPct: 10,
+      vatPct: 12,
+      feeUsd: null,
+      dutyFree: false,
+      vatFree: false,
+      source: 'typed' as const,
+    };
+    await setGroupRates(inheriting, rates, ctx());
+    // The sborniy case: this sender's certificate stands whatever the
+    // request-level answer says.
+    await setGroupRates(ownAnswer, { ...rates, hasCertificate: true }, ctx());
+    await confirmGroup(inheriting, ctx());
+    await confirmGroup(ownAnswer, ctx());
+
+    await setRequestCertificate(request.id, false, ctx());
+
+    const ws = await loadWorkspace(request.id);
+    const a = ws!.groups.find((g) => g.id === inheriting)!;
+    const b = ws!.groups.find((g) => g.id === ownAnswer)!;
+    // A's numbers changed under its ✅ — the confirm must not outlive them.
+    expect(a.confirmedAt).toBeNull();
+    expect(a.effectiveCertificate).toBe(false);
+    // B answered for itself: numbers unchanged, ✅ stands.
+    expect(b.confirmedAt).not.toBeNull();
+    expect(b.effectiveCertificate).toBe(true);
+    await closeOpen(request.id);
+  });
+
+  it('the sealed breakdown carries the law shape and the declaration fee', async () => {
+    const { requestId } = await readyRequest({ section: 'rastamojka' });
+    await sealCalc(
+      requestId,
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      ctx(),
+    );
+    const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, requestId));
+    const breakdown = version!.breakdown as {
+      hasCertificate: boolean;
+      fee: { feeUsd: number; bhmCoefficient: number } | null;
+      groups: { dutyMode: string; customs: { addDutyUsd: number } | null }[];
+    };
+    expect(breakdown.hasCertificate).toBe(true);
+    // BQ $2 000 → tier 1 BHM = 412 000 so'm at the demo book's 12 500 UZS/USD.
+    expect(breakdown.fee).toMatchObject({ feeUsd: 32.96, bhmCoefficient: 1 });
+    expect(breakdown.groups[0]).toMatchObject({ dutyMode: 'advalor' });
   });
 });

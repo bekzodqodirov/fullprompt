@@ -5,7 +5,7 @@ import { writeAudit, type AuditContext } from '@/modules/platform/audit/service'
 import { productKey } from '../tnved/service';
 import { CalcError } from './service';
 import { isNumber } from './pricing';
-import type { BazaBasis, FreightBand } from './pricing';
+import type { BazaBasis, DutyMode, DutyUnit, FreightBand } from './pricing';
 
 /**
  * A typo is refused before it is stored, not after it is priced.
@@ -59,8 +59,11 @@ export interface RatesRow {
   dutyPct: number;
   vatPct: number;
   feeUsd: number;
+  dutyMode: DutyMode;
+  dutySpecific: number | null;
+  dutyUnit: DutyUnit | null;
   effectiveDate: string;
-  source: 'manual' | 'correction';
+  source: 'manual' | 'correction' | 'pp3818';
   note: string | null;
 }
 
@@ -170,16 +173,46 @@ export async function saveBaza(
 // 2. Code rates
 // ---------------------------------------------------------------------------
 
+/**
+ * The prefixes a typed code is answered by, LONGEST FIRST.
+ *
+ * PP-3818 writes its rates at the law's own grain — a 4-digit heading with
+ * 10-digit exceptions carved out (1,228 headings, 144 ten-digit rows in the
+ * seed) — so «6403120000» must find its own 5 % row and «6403520000», which
+ * has no row of its own, must fall back to heading 6403's «20 %, min
+ * $3/juft». The longest stored prefix wins; within one prefix, the newest
+ * dated row on or before the day, exactly as every dictionary here reads.
+ */
+export const codePrefixes = (code: string): string[] => {
+  const c = code.trim();
+  const out: string[] = [];
+  for (let len = Math.min(c.length, 10); len >= 4; len--) out.push(c.slice(0, len));
+  if (out.length === 0 && c) out.push(c);
+  return out;
+};
+
 export async function ratesForCodes(codes: string[], date: string): Promise<Map<string, RatesRow>> {
   const list = [...new Set(codes.map((c) => c.trim()))].filter(Boolean);
   if (list.length === 0) return new Map();
+  const prefixes = [...new Set(list.flatMap(codePrefixes))];
   const rows = await db
     .select()
     .from(calcRates)
-    .where(and(inArray(calcRates.tnvedCode, list), lte(calcRates.effectiveDate, date)))
+    .where(and(inArray(calcRates.tnvedCode, prefixes), lte(calcRates.effectiveDate, date)))
     .orderBy(desc(calcRates.effectiveDate));
+  // Newest first, so the first row seen for a stored code is the one in force.
+  const inForce = new Map<string, RatesRow>();
+  for (const r of rows) if (!inForce.has(r.tnvedCode)) inForce.set(r.tnvedCode, toRates(r));
   const out = new Map<string, RatesRow>();
-  for (const r of rows) if (!out.has(r.tnvedCode)) out.set(r.tnvedCode, toRates(r));
+  for (const code of list) {
+    for (const prefix of codePrefixes(code)) {
+      const hit = inForce.get(prefix);
+      if (hit) {
+        out.set(code, hit);
+        break;
+      }
+    }
+  }
   return out;
 }
 
@@ -187,12 +220,27 @@ export async function ratesFor(code: string, date: string): Promise<RatesRow | n
   return (await ratesForCodes([code], date)).get(code.trim()) ?? null;
 }
 
-export async function listRates(): Promise<(RatesRow & { future: boolean })[]> {
+/**
+ * The screen's list. Unfiltered it shows only PERSON-entered rows: the 0091
+ * seed put all 1,489 PP-3818 rows in this table, and a page that renders
+ * them all is /stock's DOM crush (round 68 — ~9,000 cells, seconds of
+ * freeze on a phone). A typed code searches the WHOLE book both ways —
+ * `6403…` finds the carved-out exceptions under the heading AND the heading
+ * a full code falls back to, which is exactly the pair the lookup weighs.
+ */
+export async function listRates(search?: string | null): Promise<(RatesRow & { future: boolean })[]> {
   const today = onDate();
+  const q = (search ?? '').trim();
   const rows = await db
     .select()
     .from(calcRates)
-    .orderBy(asc(calcRates.tnvedCode), desc(calcRates.effectiveDate));
+    .where(
+      q
+        ? sql`(${calcRates.tnvedCode} LIKE ${`${q}%`} OR ${q} LIKE ${calcRates.tnvedCode} || '%')`
+        : sql`${calcRates.source} <> 'pp3818'`,
+    )
+    .orderBy(asc(calcRates.tnvedCode), desc(calcRates.effectiveDate))
+    .limit(300);
   return rows.map((r) => ({ ...toRates(r), future: r.effectiveDate > today }));
 }
 
@@ -205,16 +253,45 @@ export async function saveRates(
     effectiveDate: string;
     source?: 'manual' | 'correction';
     note?: string | null;
+    /** Absent = CARRY the in-force row's law shape forward — a person
+     * correcting the percentage of a MAX code must not silently strip its
+     * per-piece floor. Passing 'advalor' explicitly IS how the shape is
+     * removed. */
+    dutyMode?: DutyMode;
+    dutySpecific?: number | null;
+    dutyUnit?: DutyUnit | null;
   },
   ctx: AuditContext,
 ): Promise<string> {
   const code = input.tnvedCode.trim();
   if (!code) throw new CalcError('code_required');
-  mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd);
+  mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd, input.dutySpecific);
   if (input.dutyPct < 0 || input.dutyPct > 100 || input.vatPct < 0 || input.vatPct > 100) {
     throw new CalcError('rate_range');
   }
   if (input.feeUsd < 0) throw new CalcError('rate_range');
+
+  let dutyMode = input.dutyMode ?? null;
+  let dutySpecific = input.dutySpecific ?? null;
+  let dutyUnit = input.dutyUnit ?? null;
+  if (dutyMode === null) {
+    // Only an EXACT-code in-force row carries forward: heading 6403's shape
+    // must not ride onto a 10-digit exception a person is minting on purpose.
+    const standing = await ratesFor(code, input.effectiveDate);
+    if (standing && standing.tnvedCode === code) {
+      dutyMode = standing.dutyMode;
+      dutySpecific = standing.dutySpecific;
+      dutyUnit = standing.dutyUnit;
+    } else {
+      dutyMode = 'advalor';
+    }
+  }
+  if (dutyMode === 'advalor') {
+    dutySpecific = null;
+    dutyUnit = null;
+  } else if (dutySpecific === null || !(dutySpecific >= 0) || dutyUnit === null) {
+    throw new CalcError('rate_range');
+  }
 
   const [row] = await db
     .insert(calcRates)
@@ -223,6 +300,9 @@ export async function saveRates(
       dutyPct: input.dutyPct.toFixed(3),
       vatPct: input.vatPct.toFixed(3),
       feeUsd: input.feeUsd.toFixed(2),
+      dutyMode,
+      dutySpecific: dutySpecific === null ? null : dutySpecific.toFixed(4),
+      dutyUnit,
       effectiveDate: input.effectiveDate,
       source: input.source ?? 'manual',
       note: input.note ?? null,
@@ -234,6 +314,9 @@ export async function saveRates(
         dutyPct: sql`excluded.duty_pct`,
         vatPct: sql`excluded.vat_pct`,
         feeUsd: sql`excluded.fee_usd`,
+        dutyMode: sql`excluded.duty_mode`,
+        dutySpecific: sql`excluded.duty_specific`,
+        dutyUnit: sql`excluded.duty_unit`,
         source: sql`excluded.source`,
         note: sql`excluded.note`,
         enteredBy: sql`excluded.entered_by`,
@@ -434,8 +517,11 @@ const toRates = (r: typeof calcRates.$inferSelect): RatesRow => ({
   dutyPct: Number(r.dutyPct),
   vatPct: Number(r.vatPct),
   feeUsd: Number(r.feeUsd),
+  dutyMode: r.dutyMode as DutyMode,
+  dutySpecific: r.dutySpecific === null ? null : Number(r.dutySpecific),
+  dutyUnit: r.dutyUnit as DutyUnit | null,
   effectiveDate: r.effectiveDate,
-  source: r.source as 'manual' | 'correction',
+  source: r.source as 'manual' | 'correction' | 'pp3818',
   note: r.note,
 });
 

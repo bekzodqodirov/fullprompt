@@ -35,6 +35,7 @@ import {
   setItemBaza,
 } from '@/modules/wms/calc/workspace';
 import { lastQuotesByCode, quoteHistoryFor } from '@/modules/wms/calc/history';
+import { offerMoney } from '@/modules/wms/calc/offer';
 import { claimReviewMonth, reviewMonth } from '@/modules/wms/calc/review';
 
 /**
@@ -227,7 +228,10 @@ describe('the offer is the SELLER’s price, and the seal is only its floor', ()
     // The floor is what the calculation cost. It is the seller's business and
     // must not reach the customer's sheet.
     expect(result.text).not.toContain(floor.toFixed(2));
-    expect(result.text).toContain((floor + 500).toFixed(2).split('.')[0]!.slice(0, 2));
+    // The CLIENT price, in the exact string the customer reads. The old
+    // two-digit slice was satisfied by the per-kub line by coincidence and
+    // went red the day the fee moved the floor by $32.96.
+    expect(result.text).toContain(offerMoney(floor + 500));
   });
 
   it('FLAGS a price below the floor instead of refusing it', async () => {
