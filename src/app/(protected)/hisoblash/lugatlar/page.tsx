@@ -85,7 +85,7 @@ export default async function CalcDictionariesPage(props: {
                     </td>
                     <td className="p-2 font-mono tabular-nums">{row.tnvedCode ?? '—'}</td>
                     <td className="p-2 text-right font-mono tabular-nums">${row.bazaUsd}</td>
-                    <td className="p-2">{row.basis === 'kg' ? 'kg' : t('perUnit')}</td>
+                    <td className="p-2">{row.basis === 'unit' ? t('perUnit') : row.basis === 'm2' ? 'm²' : row.basis}</td>
                     <td className="p-2 font-mono tabular-nums">{row.effectiveDate}</td>
                   </tr>
                 ))}

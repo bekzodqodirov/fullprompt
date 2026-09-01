@@ -69,7 +69,8 @@ test('a sealed price appears on the card without a fold', async ({ page }) => {
   await page.locator('[data-cell="tnvedCode"][data-row="0"]').fill(CODE);
   await page.getByTestId('calc-save-table').click();
   await expect(page.getByTestId('calc-group-row')).toContainText(CODE, { timeout: 15_000 });
-  await page.getByTestId('calc-group-baza').fill('20');
+  // Phase 3: the baza is per ROW, default per-dona basis — same arithmetic.
+  await page.getByTestId('calc-baza').first().fill('20');
   await page.getByTestId('calc-save-table').click();
   await expect(page.getByTestId('calc-group-customs')).toContainText('464', { timeout: 15_000 });
 

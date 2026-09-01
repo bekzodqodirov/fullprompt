@@ -2138,7 +2138,9 @@
       "name_required": "需要商品名称",
       "stale_baza": "该组基价已被他人修改——请刷新后重新输入",
       "group_gone": "该编码的组已不存在——请刷新页面",
-      "conflict": "两次保存冲突——请重试"
+      "conflict": "他人刚刚保存——页面已刷新，请再按一次",
+      "save_failed": "保存失败——请检查网络后重试",
+      "bad_basis": "基价单位无效"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -2287,7 +2289,8 @@
       "rateOffDictionary": "税率非来自词典",
       "bazaOffDictionary": "基价非来自词典",
       "aiLowConfidence": "AI 不确定",
-      "aiRateTaken": "AI 的税率进入了报价"
+      "aiRateTaken": "AI 的税率进入了报价",
+      "rateNoted": "词典税率附有说明"
     },
     "refusal": {
       "customsByClient": "客户自行清关",
@@ -2352,7 +2355,17 @@
       "pasteAdd": "添加 {count} 行",
       "pasteCap": "一次最多添加 500 行",
       "editOnDesktop": "表格在电脑上编辑；接单、确认与封存可在手机操作。",
-      "saveFirst": "请先保存（{count}）"
+      "saveFirst": "请先保存（{count}）",
+      "live": "实时",
+      "newRowN": "新行 {n}",
+      "mergedNote": "相同编码的组已合并",
+      "measureCleared": "计量已清除（单位已变），行",
+      "measureDropped": "计量已移除（编码不需要），行",
+      "measureFor": "计量（{unit}）：",
+      "measureGhost": "计量（若编码需要 juft/litr/m²/sm³）：",
+      "sm3Hint": "总 cm³ = 件数 × 排量",
+      "rateNoted": "法规附有说明",
+      "savedFigures": "已保存数字"
     }
   },
   "partners": {

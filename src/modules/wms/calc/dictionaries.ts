@@ -132,6 +132,11 @@ export async function saveBaza(
   if (!key) throw new CalcError('product_required');
   mustBeNumber(input.bazaUsd);
   if (!(input.bazaUsd > 0)) throw new CalcError('baza_positive');
+  // The widened vocabulary minus sm3 (nothing is VALUED per cm³) — checked
+  // here so a forged post is a coded refusal, not the CHECK's white page.
+  if (!(['unit', 'kg', 'juft', 'litr', 'm2'] as BazaBasis[]).includes(input.basis)) {
+    throw new CalcError('bad_basis');
+  }
 
   const [row] = await db
     .insert(calcBazas)

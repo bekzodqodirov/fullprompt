@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -16,21 +16,29 @@ import {
 } from '@/modules/platform/db/schema';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import {
-  addItems,
-  applyTableEdits,
   confirmGroup,
   deleteItem,
   loadWorkspace,
+  saveTable,
+  type TableItemEdit,
+  type TableNewItem,
 } from '@/modules/wms/calc/workspace';
 
 /**
- * VED 2.0 phase 2 — the table's one write door, against a real database.
+ * VED 2.0 phase 3 — the table's ONE write door, against a real database.
  *
- * The auto-grouping rules live here: a typed TNVED code finds-or-creates its
- * group with the PP-3818 dictionary rates pulled at mint; the SWEEP places
+ * The rules live here: a typed TNVED code finds-or-creates its group with
+ * the PP-3818 dictionary rates pulled at mint; the SWEEP places
  * intake-prefilled codes on any save; both ends of a move lose their ✅
- * (all FOUR confirm columns — the pair CHECK sees only two of them, so the
- * asserts must name the other two); an emptied group dies.
+ * (all FOUR confirm columns); an emptied group dies; the baza is PER ROW
+ * and clears as a triple; the MEASURE pair is written and cleared only
+ * together, by the save's own pass, in the unit the code's law asks; and
+ * legacy same-code duplicate groups merge only when their rates are
+ * identical.
+ *
+ * Phase 2's law-5 fan-out fence (`stale_baza`) is RETIRED with the group
+ * cell itself: a per-row baza is its own address, so there is no fan-out
+ * left to flatten a colleague's per-item work (recorded, DECISIONS).
  *
  * Fixtures are this file's own (#183); no dictionary rows are written — the
  * rates assertions lean on the SEEDED PP-3818 book deliberately, because
@@ -112,8 +120,6 @@ async function open(items: { name: string; quantity?: number | null; tnvedCode?:
     ctx(),
   );
   madeRequests.push(result.id);
-  // The cap test needs many opens; keep this file under the per-requester
-  // limit by closing nothing — the fixture actor opens ~12 requests total.
   return result.id;
 }
 
@@ -129,14 +135,22 @@ const itemRows = (requestId: string) =>
     .where(eq(calcRequestItems.requestId, requestId))
     .orderBy(calcRequestItems.seq);
 
+/** Edits are addressed by the immutable item id (seqs are re-minted after a
+ * delete); the tests speak in seqs, so this resolves them. */
+async function editOf(requestId: string, seqNo: number, patch: Omit<TableItemEdit, 'id' | 'seq'>) {
+  const items = await itemRows(requestId);
+  const item = items.find((i) => i.seq === seqNo)!;
+  return { id: item.id, seq: item.seq, ...patch };
+}
+const save = (
+  requestId: string,
+  input: { items?: TableItemEdit[]; adds?: TableNewItem[] },
+) => saveTable(requestId, { items: input.items ?? [], adds: input.adds ?? [] }, ctx());
+
 describe('auto-grouping by typed code', () => {
   it('a typed code mints the group WITH the PP-3818 rates, and a twin joins it', async () => {
     const id = await open([{ name: `monitor ${tag()}` }, { name: `televizor ${tag()}` }]);
-    const first = await applyTableEdits(
-      id,
-      { items: [{ seq: 1, tnvedCode: '8528520000' }], groupBazas: [] },
-      ctx(),
-    );
+    const first = await save(id, { items: [await editOf(id, 1, { tnvedCode: '8528520000' })] });
     expect(first.minted).toEqual(['8528520000']);
 
     const groups = await groupRows(id);
@@ -152,11 +166,7 @@ describe('auto-grouping by typed code', () => {
       dutyMode: null,
     });
 
-    const second = await applyTableEdits(
-      id,
-      { items: [{ seq: 2, tnvedCode: '8528520000' }], groupBazas: [] },
-      ctx(),
-    );
+    const second = await save(id, { items: [await editOf(id, 2, { tnvedCode: '8528520000' })] });
     // The twin JOINS — no second group, nothing newly minted.
     expect(second.minted).toEqual([]);
     expect(await groupRows(id)).toHaveLength(1);
@@ -166,7 +176,7 @@ describe('auto-grouping by typed code', () => {
 
   it('a code the book has never heard of mints with NULL rates and NULL source', async () => {
     const id = await open([{ name: `nomalum ${tag()}` }]);
-    await applyTableEdits(id, { items: [{ seq: 1, tnvedCode: '9977001122' }], groupBazas: [] }, ctx());
+    await save(id, { items: [await editOf(id, 1, { tnvedCode: '9977001122' })] });
     const [group] = await groupRows(id);
     // 'dictionary' over nulls is a provenance lie — the rates_missing
     // blocker must stand instead.
@@ -177,26 +187,19 @@ describe('auto-grouping by typed code', () => {
 
   it('moving a coded item unconfirms BOTH ends — all four columns — and the emptied group dies', async () => {
     // The losing group keeps a member, or its unconfirm is unobservable and
-    // the red proof stays green (#166 — this fixture's first version had
-    // exactly that hole: the emptied loser was deleted before anyone could
-    // ask about its ✅).
+    // the red proof stays green (#166).
     const id = await open([
       { name: `kurtka A ${tag()}` },
       { name: `kurtka B ${tag()}` },
       { name: `shim ${tag()}` },
     ]);
-    await applyTableEdits(
-      id,
-      {
-        items: [
-          { seq: 1, tnvedCode: '6102' },
-          { seq: 2, tnvedCode: '6102' },
-          { seq: 3, tnvedCode: '6103' },
-        ],
-        groupBazas: [],
-      },
-      ctx(),
-    );
+    await save(id, {
+      items: [
+        await editOf(id, 1, { tnvedCode: '6102' }),
+        await editOf(id, 2, { tnvedCode: '6102' }),
+        await editOf(id, 3, { tnvedCode: '6103' }),
+      ],
+    });
     const before = await groupRows(id);
     expect(before).toHaveLength(2);
     for (const g of before) await confirmGroup(g.id, ctx());
@@ -204,7 +207,7 @@ describe('auto-grouping by typed code', () => {
     // Item 1 re-codes 6102 → 6103: BOTH groups' numbers moved, so BOTH lose
     // their ✅ — and all four columns clear, because the pair CHECK sees only
     // two of them.
-    await applyTableEdits(id, { items: [{ seq: 1, tnvedCode: '6103' }], groupBazas: [] }, ctx());
+    await save(id, { items: [await editOf(id, 1, { tnvedCode: '6103' })] });
     const after = await groupRows(id);
     expect(after).toHaveLength(2);
     for (const g of after) {
@@ -217,23 +220,19 @@ describe('auto-grouping by typed code', () => {
     }
 
     // And when the loser's LAST member leaves, the group dies with it.
-    await applyTableEdits(id, { items: [{ seq: 2, tnvedCode: '6103' }], groupBazas: [] }, ctx());
+    await save(id, { items: [await editOf(id, 2, { tnvedCode: '6103' })] });
     const final = await groupRows(id);
     expect(final).toHaveLength(1);
     expect(final[0]!.tnvedCode).toBe('6103');
   });
 
   it('THE SWEEP: intake-prefilled codes group on a save with nothing dirty', async () => {
-    // The commonest real request: the TNVED memory (or the seller) filled
-    // the codes at intake, so every item arrives coded and ungrouped — and
-    // an empty save must heal the whole backlog (the judge's blocker: the
-    // old flow's group ceremony must not survive as «retype every code»).
     const id = await open([
       { name: `gilam A ${tag()}`, tnvedCode: '5703' },
       { name: `gilam B ${tag()}`, tnvedCode: '5703' },
       { name: `idish ${tag()}`, tnvedCode: '3924' },
     ]);
-    const result = await applyTableEdits(id, { items: [], groupBazas: [] }, ctx());
+    const result = await save(id, {});
     expect(result.swept).toBe(3);
     expect(result.minted.sort()).toEqual(['3924', '5703']);
     const items = await itemRows(id);
@@ -245,16 +244,16 @@ describe('auto-grouping by typed code', () => {
 
   it('a measure edit unconfirms; a rename does not', async () => {
     const id = await open([{ name: `stol ${tag()}`, quantity: 5, tnvedCode: '9403' }]);
-    await applyTableEdits(id, { items: [], groupBazas: [] }, ctx());
+    await save(id, {});
     const [group] = await groupRows(id);
     await confirmGroup(group!.id, ctx());
 
-    await applyTableEdits(id, { items: [{ seq: 1, name: `stol yangi ${tag()}` }], groupBazas: [] }, ctx());
+    await save(id, { items: [await editOf(id, 1, { name: `stol yangi ${tag()}` })] });
     let [g] = await groupRows(id);
     // A name is words, not one of the numbers the ✅ was about.
     expect(g!.confirmedAt).not.toBeNull();
 
-    await applyTableEdits(id, { items: [{ seq: 1, quantity: 7 }], groupBazas: [] }, ctx());
+    await save(id, { items: [await editOf(id, 1, { quantity: 7 })] });
     [g] = await groupRows(id);
     expect(g!.confirmedAt).toBeNull();
     expect(g!.confirmedWarnings).toBeNull();
@@ -265,29 +264,31 @@ describe('the table refuses by ROW', () => {
   it('a malformed code names its seq', async () => {
     const id = await open([{ name: `x ${tag()}` }]);
     await expect(
-      applyTableEdits(id, { items: [{ seq: 1, tnvedCode: '85AB' }], groupBazas: [] }, ctx()),
+      save(id, { items: [await editOf(id, 1, { tnvedCode: '85AB' })] }),
     ).rejects.toMatchObject({ code: 'bad_code', seq: 1 });
   });
 
   it('a zero measure names its seq, and nothing half-applies', async () => {
     const id = await open([{ name: `a ${tag()}` }, { name: `b ${tag()}` }]);
     await expect(
-      applyTableEdits(
-        id,
-        {
-          items: [
-            { seq: 1, name: 'yangilangan nom' },
-            { seq: 2, quantity: 0 },
-          ],
-          groupBazas: [],
-        },
-        ctx(),
-      ),
+      save(id, {
+        items: [
+          await editOf(id, 1, { name: 'yangilangan nom' }),
+          await editOf(id, 2, { quantity: 0 }),
+        ],
+      }),
     ).rejects.toMatchObject({ code: 'measure_positive', seq: 2 });
     const items = await itemRows(id);
     // The refusal happened at validation, BEFORE the transaction — row 1's
     // rename must not have landed.
     expect(items[0]!.name).not.toBe('yangilangan nom');
+  });
+
+  it('a value past the numeric(12,3) ceiling refuses instead of a 22003 white page', async () => {
+    const id = await open([{ name: `katta ${tag()}` }]);
+    await expect(
+      save(id, { items: [await editOf(id, 1, { quantity: 1_000_000_000 })] }),
+    ).rejects.toMatchObject({ code: 'bad_number', seq: 1 });
   });
 
   it('an AI proposal in flight refuses the save', async () => {
@@ -297,112 +298,189 @@ describe('the table refuses by ROW', () => {
       .set({ aiProposalStartedAt: new Date() })
       .where(eq(calcRequests.id, id));
     await expect(
-      applyTableEdits(id, { items: [{ seq: 1, tnvedCode: '8528' }], groupBazas: [] }, ctx()),
+      save(id, { items: [await editOf(id, 1, { tnvedCode: '8528' })] }),
     ).rejects.toMatchObject({ code: 'ai_running' });
     // A claim a crashed pass left behind must NOT brick the table for ever.
     await db
       .update(calcRequests)
       .set({ aiProposalStartedAt: new Date(Date.now() - 11 * 60_000) })
       .where(eq(calcRequests.id, id));
-    await expect(
-      applyTableEdits(id, { items: [{ seq: 1, tnvedCode: '8528' }], groupBazas: [] }, ctx()),
-    ).resolves.toBeTruthy();
+    await expect(save(id, { items: [await editOf(id, 1, { tnvedCode: '8528' })] })).resolves.toBeTruthy();
   });
 });
 
-describe('the group baza cell', () => {
-  it('fans one number over every member as typed, and clears the ✅', async () => {
-    const id = await open([
-      { name: `krujka ${tag()}`, quantity: 100, tnvedCode: '3924' },
-      { name: `likop ${tag()}`, quantity: 50, tnvedCode: '3924' },
-    ]);
-    await applyTableEdits(id, { items: [], groupBazas: [] }, ctx());
+describe('the per-row baza', () => {
+  it('lands as an atomic triple, and clears as one', async () => {
+    const id = await open([{ name: `krujka ${tag()}`, quantity: 100, tnvedCode: '3924' }]);
+    await save(id, {});
     const [group] = await groupRows(id);
     await confirmGroup(group!.id, ctx());
 
-    await applyTableEdits(
-      id,
-      {
-        items: [],
-        groupBazas: [{ code: '3924', bazaUsd: 2.5, basis: 'unit', sawBazaUsd: null, sawMixed: false }],
-      },
-      ctx(),
-    );
-    const items = await itemRows(id);
-    expect(items.map((i) => ({ b: i.bazaUsd, s: i.bazaSource }))).toEqual([
-      { b: '2.5000', s: 'typed' },
-      { b: '2.5000', s: 'typed' },
-    ]);
+    await save(id, { items: [await editOf(id, 1, { bazaUsd: 2.5, bazaBasis: 'unit' })] });
+    let [item] = await itemRows(id);
+    expect(item).toMatchObject({ bazaUsd: '2.5000', bazaBasis: 'unit', bazaSource: 'typed' });
+    // A baza is one of the numbers the ✅ was about.
     const [g] = await groupRows(id);
     expect(g!.confirmedAt).toBeNull();
+
+    // Null clears amount, basis and source TOGETHER — the schema has no pair
+    // CHECK, so the writer restates the old setItemBaza rule.
+    await save(id, { items: [await editOf(id, 1, { bazaUsd: null })] });
+    [item] = await itemRows(id);
+    expect(item).toMatchObject({ bazaUsd: null, bazaBasis: null, bazaSource: null });
   });
 
-  it('refuses a fanout over per-item bazas the screen never showed', async () => {
-    const id = await open([
-      { name: `arzon ${tag()}`, quantity: 10, tnvedCode: '3926' },
-      { name: `qimmat ${tag()}`, quantity: 10, tnvedCode: '3926' },
-    ]);
-    await applyTableEdits(id, { items: [], groupBazas: [] }, ctx());
-    // A colleague sets law-5 per-item bazas…
-    await db
-      .update(calcRequestItems)
-      .set({ bazaUsd: '3.0000', bazaBasis: 'unit', bazaSource: 'typed' })
-      .where(and2(id, 1));
-    await db
-      .update(calcRequestItems)
-      .set({ bazaUsd: '9.0000', bazaBasis: 'unit', bazaSource: 'typed' })
-      .where(and2(id, 2));
-    // …and a browser opened BEFORE that posts a uniform cell.
-    await expect(
-      applyTableEdits(
-        id,
-        {
-          items: [],
-          groupBazas: [{ code: '3926', bazaUsd: 5, basis: 'unit', sawBazaUsd: null, sawMixed: false }],
-        },
-        ctx(),
-      ),
-    ).rejects.toMatchObject({ code: 'stale_baza' });
-    // A screen that SAW the mix and confirmed is allowed through.
-    await applyTableEdits(
-      id,
-      {
-        items: [],
-        groupBazas: [{ code: '3926', bazaUsd: 5, basis: 'unit', sawBazaUsd: null, sawMixed: true }],
-      },
-      ctx(),
-    );
+  it('an unchanged baza pair diffs to nothing — no re-stamp, no unconfirm', async () => {
+    const id = await open([{ name: `chashka ${tag()}`, quantity: 10, tnvedCode: '3924' }]);
+    await save(id, { items: [await editOf(id, 1, { bazaUsd: 4, bazaBasis: 'unit' })] });
+    const [group] = await groupRows(id);
+    await confirmGroup(group!.id, ctx());
+    // Re-posting the identical pair (what a full-row save does) must not
+    // clear the ✅ — a no-op edit is not an edit.
+    await save(id, { items: [await editOf(id, 1, { bazaUsd: 4, bazaBasis: 'unit' })] });
+    const [g] = await groupRows(id);
+    expect(g!.confirmedAt).not.toBeNull();
+  });
+});
+
+describe('the measure pair (the law’s own unit)', () => {
+  it('a m² code takes its measure, prices, and the pair is stamped together', async () => {
+    // 6907 — the ONE m² row in PP-3818: max 15 % / min $1/m².
+    const id = await open([{ name: `plitka ${tag()}`, tnvedCode: '6907' }]);
+    await save(id, {});
+    const [group] = await groupRows(id);
+    expect(group).toMatchObject({ dutyMode: 'max', dutyUnit: 'm2' });
+
+    await save(id, {
+      items: [await editOf(id, 1, { measureQty: 200, bazaUsd: 1, bazaBasis: 'm2' })],
+    });
+    const [item] = await itemRows(id);
+    expect(item!).toMatchObject({ measureUnit: 'm2', measureQty: '200.0000', bazaBasis: 'm2' });
+
+    // value 200 × $1/m² = 200; advalor 30; specific 200 → MAX 200; VAT 48.
+    const ws = await loadWorkspace(id);
+    const g = ws!.groups[0]!;
+    expect(g.customs).toMatchObject({ ok: true, valueUsd: 200, dutyUsd: 200, customsUsd: 248 });
+  });
+
+  it('a recode that changes the required unit CLEARS the pair and NAMES the row', async () => {
+    const id = await open([{ name: `plitka ${tag()}`, tnvedCode: '6907' }]);
+    await save(id, {});
+    await save(id, { items: [await editOf(id, 1, { measureQty: 200 })] });
+    // 2203 (pivo) prices per LITR — «200» was a statement in m², and
+    // re-stamping it as litres would price a number nobody measured.
+    const result = await save(id, { items: [await editOf(id, 1, { tnvedCode: '2203' })] });
+    expect(result.measuresCleared).toEqual([1]);
+    const [item] = await itemRows(id);
+    expect(item).toMatchObject({ measureUnit: null, measureQty: null, tnvedCode: '2203' });
+  });
+
+  it('a measure posted for a code that needs none is DROPPED with a named note, never a refusal', async () => {
+    const id = await open([{ name: `monitor ${tag()}`, tnvedCode: '8528520000' }]);
+    await save(id, {});
+    const result = await save(id, {
+      items: [await editOf(id, 1, { measureQty: 50, name: `monitor yangi ${tag()}` })],
+    });
+    // The rename LANDED — a good-faith box must not refuse the whole save.
+    expect(result.measuresDropped).toEqual([1]);
+    const [item] = await itemRows(id);
+    expect(item!.name).toContain('monitor yangi');
+    expect(item!).toMatchObject({ measureUnit: null, measureQty: null });
+  });
+});
+
+describe('one transaction for edits AND adds', () => {
+  it('a new row born with code + baza + measure prices on its FIRST save', async () => {
+    const id = await open([{ name: `bor ${tag()}`, tnvedCode: '8528' }]);
+    await save(id, {});
+    const result = await save(id, {
+      adds: [
+        { name: `kafel ${tag()}`, tnvedCode: '6907', measureQty: 100, bazaUsd: 2, bazaBasis: 'm2' },
+      ],
+    });
+    expect(result.added).toBe(1);
+    expect(result.minted).toEqual(['6907']);
     const items = await itemRows(id);
-    expect(items.every((i) => i.bazaUsd === '5.0000')).toBe(true);
+    const added = items.find((i) => i.seq === 2)!;
+    // The whole statement landed in ONE tx: code grouped with dictionary
+    // rates, baza typed, measure stamped in the law's unit.
+    expect(added).toMatchObject({
+      tnvedCode: '6907',
+      bazaUsd: '2.0000',
+      bazaBasis: 'm2',
+      bazaSource: 'typed',
+      measureUnit: 'm2',
+      measureQty: '100.0000',
+    });
+    const ws = await loadWorkspace(id);
+    const kafel = ws!.groups.find((g) => g.tnvedCode === '6907')!;
+    // value 100 × $2 = 200; advalor 30; specific 100 × $1 = 100 → MAX 100.
+    expect(kafel.customs).toMatchObject({ ok: true, valueUsd: 200, dutyUsd: 100 });
+    const request = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(request!.itemCount).toBe(2);
+  });
+});
+
+describe('legacy duplicate same-code groups', () => {
+  it('merges duplicates whose rates are IDENTICAL, and announces the code', async () => {
+    const id = await open([{ name: `eski A ${tag()}` }, { name: `eski B ${tag()}` }]);
+    // A phase-B leftover: two groups carrying one code with the same rates.
+    const [g1] = await db
+      .insert(calcGroups)
+      .values({ requestId: id, seq: 1, label: '9403', tnvedCode: '9403', dutyPct: '10.000', vatPct: '12.000' })
+      .returning();
+    const [g2] = await db
+      .insert(calcGroups)
+      .values({ requestId: id, seq: 2, label: '9403', tnvedCode: '9403', dutyPct: '10.000', vatPct: '12.000' })
+      .returning();
+    const items = await itemRows(id);
+    await db.update(calcRequestItems).set({ groupId: g1!.id, tnvedCode: '9403' }).where(eq(calcRequestItems.id, items[0]!.id));
+    await db.update(calcRequestItems).set({ groupId: g2!.id, tnvedCode: '9403' }).where(eq(calcRequestItems.id, items[1]!.id));
+
+    const result = await save(id, {});
+    expect(result.merged).toEqual(['9403']);
+    const groups = await groupRows(id);
+    expect(groups).toHaveLength(1);
+    const after = await itemRows(id);
+    expect(after.map((i) => i.groupId)).toEqual([groups[0]!.id, groups[0]!.id]);
   });
 
-  it('a code with no group refuses group_gone', async () => {
-    const id = await open([{ name: `z ${tag()}` }]);
-    await expect(
-      applyTableEdits(
-        id,
-        {
-          items: [],
-          groupBazas: [{ code: '4242', bazaUsd: 1, basis: 'unit', sawBazaUsd: null, sawMixed: false }],
-        },
-        ctx(),
-      ),
-    ).rejects.toMatchObject({ code: 'group_gone' });
+  it('duplicates whose rates DIFFER are left alone — a typed lgota must not die under a merge', async () => {
+    const id = await open([{ name: `lgotali ${tag()}` }, { name: `oddiy ${tag()}` }]);
+    const [g1] = await db
+      .insert(calcGroups)
+      .values({ requestId: id, seq: 1, label: '9403', tnvedCode: '9403', dutyPct: '10.000', vatPct: '12.000' })
+      .returning();
+    const [g2] = await db
+      .insert(calcGroups)
+      .values({
+        requestId: id,
+        seq: 2,
+        label: '9403',
+        tnvedCode: '9403',
+        dutyPct: '10.000',
+        vatPct: '12.000',
+        dutyFree: true,
+        rateSource: 'typed',
+      })
+      .returning();
+    const items = await itemRows(id);
+    await db.update(calcRequestItems).set({ groupId: g1!.id, tnvedCode: '9403' }).where(eq(calcRequestItems.id, items[0]!.id));
+    await db.update(calcRequestItems).set({ groupId: g2!.id, tnvedCode: '9403' }).where(eq(calcRequestItems.id, items[1]!.id));
+
+    const result = await save(id, {});
+    expect(result.merged).toEqual([]);
+    expect(await groupRows(id)).toHaveLength(2);
   });
 });
 
 describe('adding and deleting rows', () => {
   it('appends with fresh seqs, fills codes from the TNVED memory shape, auto-groups, and recounts', async () => {
     const id = await open([{ name: `bor ${tag()}`, tnvedCode: '8528' }]);
-    await applyTableEdits(id, { items: [], groupBazas: [] }, ctx());
-    const result = await addItems(
-      id,
-      [
-        { name: `yana bir ${tag()}`, quantity: 3, tnvedCode: '8528' },
-        { name: `kodsiz ${tag()}` },
-      ],
-      ctx(),
-    );
+    await save(id, {});
+    const result = await save(id, {
+      adds: [{ name: `yana bir ${tag()}`, quantity: 3, tnvedCode: '8528' }, { name: `kodsiz ${tag()}` }],
+    });
     expect(result.added).toBe(2);
     const items = await itemRows(id);
     expect(items.map((i) => i.seq)).toEqual([1, 2, 3]);
@@ -413,11 +491,12 @@ describe('adding and deleting rows', () => {
     expect(request!.itemCount).toBe(3);
   });
 
-  it('deleting the last member prunes the group and recounts', async () => {
+  it('deleting the last member (by ID — seqs are re-mintable) prunes the group and recounts', async () => {
     const id = await open([{ name: `bitta ${tag()}`, tnvedCode: '6403120000' }]);
-    await applyTableEdits(id, { items: [], groupBazas: [] }, ctx());
+    await save(id, {});
     expect(await groupRows(id)).toHaveLength(1);
-    await deleteItem(id, 1, ctx());
+    const [item] = await itemRows(id);
+    await deleteItem(id, item!.id, ctx());
     expect(await groupRows(id)).toHaveLength(0);
     expect(await itemRows(id)).toHaveLength(0);
     const request = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
@@ -425,7 +504,50 @@ describe('adding and deleting rows', () => {
   });
 });
 
-// Tiny where-helper: the (requestId, seq) address the module uses everywhere.
-import { and } from 'drizzle-orm';
-const and2 = (requestId: string, seqNo: number) =>
-  and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, seqNo));
+describe('the revision clock', () => {
+  beforeAll(async () => {
+    // This file opens more requests than the per-requester cap allows open at
+    // once — everything before this block is finished with its request, so
+    // close them (the fixture actor is this file's own, #183).
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date(), completedVia: 'returned' })
+      .where(inArray(calcRequests.id, madeRequests));
+  });
+
+  it('every save moves it, and the confirm doors capture-and-compare through it', async () => {
+    const id = await open([{ name: `soat ${tag()}`, tnvedCode: '9403' }]);
+    const before = (await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) }))!.rev;
+    await save(id, {});
+    const after = (await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) }))!.rev;
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('a re-press of ✅ is a no-op, never a re-stamp — the first record is the record E1 reads', async () => {
+    const id = await open([{ name: `qulf ${tag()}`, tnvedCode: '9403' }]);
+    await save(id, {});
+    const [group] = await groupRows(id);
+    await confirmGroup(group!.id, ctx());
+    const [first] = await groupRows(id);
+
+    // A SECOND user re-presses: identity is the oracle (a timestamp can
+    // collide within a millisecond and turn the red proof green — #166).
+    const [other] = await db
+      .insert(users)
+      .values({
+        phone: `+99894${String(Date.now()).slice(-7)}`,
+        fullName: `VED table second ${SUFFIX}`,
+        passwordHash: 'x',
+      })
+      .returning();
+    await confirmGroup(group!.id, { actorId: other!.id });
+    const [second] = await groupRows(id);
+    expect(second!.confirmedBy).toBe(first!.confirmedBy);
+    expect(second!.confirmedBy).toBe(actorId);
+    expect(second!.confirmedAt!.getTime()).toBe(first!.confirmedAt!.getTime());
+    await db.update(users).set({ active: false }).where(eq(users.id, other!.id));
+  });
+});
+
+// The (requestId, seq) helper survives for raw fixture writes above.
+void and;

@@ -2138,7 +2138,9 @@
       "name_required": "The item needs a name",
       "stale_baza": "The group’s bazas changed underneath — refresh and retype",
       "group_gone": "That code’s group is gone — refresh the page",
-      "conflict": "Two saves collided — try again"
+      "conflict": "Someone just saved — the screen refreshed, press again",
+      "save_failed": "Save failed — check the connection and retry",
+      "bad_basis": "Invalid baza unit"
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -2287,7 +2289,8 @@
       "rateOffDictionary": "Rate not from the dictionary",
       "bazaOffDictionary": "Baza not from the dictionary",
       "aiLowConfidence": "The model was unsure",
-      "aiRateTaken": "The model's rate reached the price"
+      "aiRateTaken": "The model's rate reached the price",
+      "rateNoted": "dictionary rate carries a note"
     },
     "refusal": {
       "customsByClient": "The client cleared it themselves",
@@ -2352,7 +2355,17 @@
       "pasteAdd": "Add {count} rows",
       "pasteCap": "At most 500 rows per paste",
       "editOnDesktop": "The table is edited on a computer; take, confirm and seal work on the phone.",
-      "saveFirst": "Save first ({count})"
+      "saveFirst": "Save first ({count})",
+      "live": "live",
+      "newRowN": "New row {n}",
+      "mergedNote": "Same-code groups merged",
+      "measureCleared": "Measure cleared (unit changed), row",
+      "measureDropped": "Measure dropped (code needs none), row",
+      "measureFor": "Measure ({unit}):",
+      "measureGhost": "Measure (if the code needs juft/litr/m²/sm³):",
+      "sm3Hint": "total cm³ = pcs × engine volume",
+      "rateNoted": "the law carries a note",
+      "savedFigures": "saved figures"
     }
   },
   "partners": {

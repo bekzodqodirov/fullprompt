@@ -645,6 +645,13 @@
       "when": 1785190000070,
       "tag": "0091_calc_law",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1785190000071,
+      "tag": "0092_calc_measure",
+      "breakpoints": true
     }
   ]
 }

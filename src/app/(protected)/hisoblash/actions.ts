@@ -15,30 +15,24 @@ import {
   type CalcItemInput,
 } from '@/modules/wms/calc/service';
 import {
-  addItems,
-  applyTableEdits,
   confirmAllGroups,
   confirmGroup,
-  createGroup,
   deleteExtra,
-  deleteGroup,
   deleteItem,
-  moveItemToGroup,
   proposeGroups,
   pullBazasFromDictionary,
   pullRatesFromDictionary,
   recalcFromSealed,
   recordOffer,
   saveExtra,
+  saveTable,
   sealCalc,
   setFreightZone,
   setRequestCertificate,
   setGroupRates,
-  setItemBaza,
-  type TableEditResult,
-  type TableGroupBaza,
   type TableItemEdit,
   type TableNewItem,
+  type TableSaveResult,
 } from '@/modules/wms/calc/workspace';
 import { saveBaza, savePriceBook, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
 import { isCalcSection } from '@/modules/wms/calc/labels';
@@ -61,10 +55,14 @@ export interface CalcFormState {
 export interface TableFormState {
   ok?: boolean;
   error?: string;
+  /** The row the refusal names — NEGATIVE for a ghost (new) row. */
   seq?: number;
   minted?: string[];
   swept?: number;
   added?: number;
+  merged?: string[];
+  measuresCleared?: number[];
+  measuresDropped?: number[];
 }
 
 /**
@@ -232,7 +230,7 @@ export async function setCertificateAction(id: string, has: boolean): Promise<Ca
 
 /** The table door — `run()`'s gate and catches, plus the row-naming answer. */
 async function runTable(
-  work: (ctx: { actorId: string } & Record<string, unknown>) => Promise<TableEditResult & { added?: number }>,
+  work: (ctx: { actorId: string } & Record<string, unknown>) => Promise<TableSaveResult>,
   revalidate: string,
 ): Promise<TableFormState> {
   let who;
@@ -243,7 +241,7 @@ async function runTable(
     throw err;
   }
   const meta = await requestMeta();
-  let result: TableEditResult & { added?: number };
+  let result: TableSaveResult;
   try {
     result = await work({ actorId: who.id, ...meta });
   } catch (err) {
@@ -256,41 +254,31 @@ async function runTable(
   }
   revalidatePath(revalidate);
   revalidatePath('/hisoblash');
-  return { ok: true, minted: result.minted, swept: result.swept, added: result.added };
+  return {
+    ok: true,
+    minted: result.minted,
+    swept: result.swept,
+    added: result.added,
+    merged: result.merged,
+    measuresCleared: result.measuresCleared,
+    measuresDropped: result.measuresDropped,
+  };
 }
 
-export async function applyTableAction(
+/** ONE door for the whole save — edits AND new rows in one transaction, so a
+ * row born with code + baza + measure prices on its first save. */
+export async function saveTableAction(
   id: string,
-  edits: { items: TableItemEdit[]; groupBazas: TableGroupBaza[] },
+  input: { items: TableItemEdit[]; adds: TableNewItem[] },
 ): Promise<TableFormState> {
-  return runTable((ctx) => applyTableEdits(id, edits, ctx), ws(id));
+  return runTable((ctx) => saveTable(id, input, ctx), ws(id));
 }
 
-export async function addItemsAction(id: string, rows: TableNewItem[]): Promise<TableFormState> {
-  return runTable((ctx) => addItems(id, rows, ctx), ws(id));
-}
-
-export async function deleteItemAction(id: string, itemSeq: number): Promise<TableFormState> {
+export async function deleteItemAction(id: string, itemId: string): Promise<TableFormState> {
   return runTable(async (ctx) => {
-    await deleteItem(id, itemSeq, ctx);
-    return { minted: [], swept: 0 };
+    await deleteItem(id, itemId, ctx);
+    return { minted: [], swept: 0, added: 0, merged: [], measuresCleared: [], measuresDropped: [] };
   }, ws(id));
-}
-
-export async function createGroupAction(id: string, label: string): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => createGroup(id, { label }, ctx), ws(id));
-}
-
-export async function deleteGroupAction(id: string, groupId: string): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => deleteGroup(groupId, ctx), ws(id));
-}
-
-export async function moveItemAction(
-  id: string,
-  itemSeq: number,
-  groupId: string,
-): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => moveItemToGroup(id, itemSeq, groupId || null, ctx), ws(id));
 }
 
 export async function setRatesAction(
@@ -342,17 +330,20 @@ export async function pullRatesAction(id: string, groupId: string): Promise<Calc
   return run('ved.docs', (ctx) => pullRatesFromDictionary(groupId, ctx), ws(id));
 }
 
-export async function setBazaAction(
+export async function pullBazasAction(
   id: string,
-  itemSeq: number,
-  bazaUsd: number | null,
-  basis: 'unit' | 'kg',
-): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => setItemBaza(id, itemSeq, { bazaUsd, basis, source: 'typed' }, ctx), ws(id));
-}
-
-export async function pullBazasAction(id: string): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => pullBazasFromDictionary(id, ctx), ws(id));
+): Promise<CalcFormState & { filled?: number; skipped?: number }> {
+  let counts: { filled: number; skipped: number } = { filled: 0, skipped: 0 };
+  const state = await run(
+    'ved.docs',
+    async (ctx) => {
+      counts = await pullBazasFromDictionary(id, ctx);
+    },
+    ws(id),
+  );
+  // A skipped hit is not an error — the dictionary's basis is one this row
+  // cannot measure — but the person must hear the count, not a silence.
+  return state.ok ? { ...state, ...counts } : state;
 }
 
 export async function confirmGroupAction(id: string, groupId: string): Promise<CalcFormState> {
@@ -449,7 +440,7 @@ export async function saveBazaAction(input: {
   label: string;
   tnvedCode: string;
   bazaUsd: number;
-  basis: 'unit' | 'kg';
+  basis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2';
   effectiveDate: string;
 }): Promise<CalcFormState> {
   return run(

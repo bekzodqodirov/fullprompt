@@ -34,7 +34,7 @@ export function BazaForm() {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [amount, setAmount] = useState('');
-  const [basis, setBasis] = useState<'unit' | 'kg'>('unit');
+  const [basis, setBasis] = useState<'unit' | 'kg' | 'juft' | 'litr' | 'm2'>('unit');
   const [date, setDate] = useState(today());
 
   return (
@@ -72,10 +72,15 @@ export function BazaForm() {
             className="input input-sm !w-20"
             aria-label={t('basis')}
             value={basis}
-            onChange={(e) => setBasis(e.target.value as 'unit' | 'kg')}
+            onChange={(e) => setBasis(e.target.value as 'unit' | 'kg' | 'juft' | 'litr' | 'm2')}
           >
+            {/* The law's units minus sm3 — nothing is VALUED per cm³ of
+                displacement (a vehicle's baza is per dona). */}
             <option value="unit">{t('perUnit')}</option>
             <option value="kg">kg</option>
+            <option value="juft">juft</option>
+            <option value="litr">litr</option>
+            <option value="m2">m²</option>
           </select>
         </label>
         <label className="text-2xs">

@@ -90,13 +90,13 @@ test('type the code, save, baza, confirm — then seal (VED 2.0 table)', async (
   await page.goto(requestUrl);
 
   // Phase 2's whole point: no group ceremony. The code goes on the ITEM row
-  // and the save mints the group with the PP-3818 dictionary's own rates —
+  // and the save mints the block with the PP-3818 dictionary's own rates —
   // nobody types a duty or a VAT here any more.
   await page.locator('[data-cell="tnvedCode"][data-row="0"]').fill('8528520000');
   await page.getByTestId('calc-save-table').click();
 
   // Anchor on the REFRESHED row before touching anything else: the code in
-  // the group header exists only once the save's own refresh landed (#278's
+  // the block footer exists only once the save's own refresh landed (#278's
   // race in App Router clothes; CI's slower runner hit it twice on run 392).
   await expect(page.getByTestId('calc-group-row')).toContainText('8528520000', {
     timeout: 15_000,
@@ -108,8 +108,9 @@ test('type the code, save, baza, confirm — then seal (VED 2.0 table)', async (
   // Still refused — no baza yet — and refusals are words, never $0.
   await expect(page.getByTestId('calc-group-customs')).toContainText('⚠');
 
-  // ONE baza cell for the whole group — the owner's «bitta kod, bitta narx».
-  await page.getByTestId('calc-group-baza').fill('20');
+  // Phase 3: the baza is PER ROW (the owner's 1a — differently-priced goods
+  // are different rows), at the default per-dona basis.
+  await page.getByTestId('calc-baza').first().fill('20');
 
   // The dirty gate: while a cell is unsaved, confirming or sealing would
   // bless numbers the server has never seen — both doors must wait.
