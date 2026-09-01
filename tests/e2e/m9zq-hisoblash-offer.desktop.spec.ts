@@ -64,20 +64,13 @@ test('a sealed price appears on the card without a fold', async ({ page }) => {
   const requestUrl = (await page.getByTestId('calc-open-link').first().getAttribute('href'))!;
   await page.goto(requestUrl);
 
-  await page.getByTestId('calc-new-group').fill('Monitorlar');
-  await page.getByTestId('calc-add-group').click();
-  await expect(page.getByTestId('calc-group-row')).toHaveCount(1, { timeout: 15_000 });
-  await page.getByTestId('calc-item-group').first().selectOption({ index: 1 });
-  await expect(page.getByTestId('calc-ungrouped')).toHaveCount(0, { timeout: 15_000 });
-
-  await page.getByTestId('calc-group-edit').click();
-  await page.getByTestId('calc-code').fill(CODE);
-  await page.getByTestId('calc-duty').fill('10');
-  await page.getByTestId('calc-vat').fill('12');
-  await page.getByTestId('calc-save-rates').click();
-  await page.getByTestId('calc-group-edit').click();
-  await page.getByTestId('calc-baza').first().fill('20');
-  await page.getByTestId('calc-save-baza').first().click();
+  // VED 2.0: the code goes on the ITEM row, the save mints the group with
+  // the PP-3818 dictionary's own 10 % / 12 % — no rate typing anywhere.
+  await page.locator('[data-cell="tnvedCode"][data-row="0"]').fill(CODE);
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-group-row')).toContainText(CODE, { timeout: 15_000 });
+  await page.getByTestId('calc-group-baza').fill('20');
+  await page.getByTestId('calc-save-table').click();
   await expect(page.getByTestId('calc-group-customs')).toContainText('464', { timeout: 15_000 });
 
   await page.getByTestId('calc-zone').selectOption('cn');

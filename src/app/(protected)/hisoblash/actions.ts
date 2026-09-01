@@ -15,11 +15,14 @@ import {
   type CalcItemInput,
 } from '@/modules/wms/calc/service';
 import {
+  addItems,
+  applyTableEdits,
   confirmAllGroups,
   confirmGroup,
   createGroup,
   deleteExtra,
   deleteGroup,
+  deleteItem,
   moveItemToGroup,
   proposeGroups,
   pullBazasFromDictionary,
@@ -32,6 +35,10 @@ import {
   setRequestCertificate,
   setGroupRates,
   setItemBaza,
+  type TableEditResult,
+  type TableGroupBaza,
+  type TableItemEdit,
+  type TableNewItem,
 } from '@/modules/wms/calc/workspace';
 import { saveBaza, savePriceBook, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
 import { isCalcSection } from '@/modules/wms/calc/labels';
@@ -42,6 +49,22 @@ import { mayApproveBelowFloor, mayOffer } from '@/modules/wms/calc/upsale-scope'
 export interface CalcFormState {
   ok?: boolean;
   error?: string;
+}
+
+/**
+ * The table's answer: a refusal NAMES the row (`seq`) — one bare code over
+ * a 100-row save is the owner's «mujmal» complaint rebuilt — and a success
+ * carries what the sticky bar announces (freshly minted groups, so a typo'd
+ * code surfaces as a surprise one-item group; and how many pre-coded items
+ * the sweep placed).
+ */
+export interface TableFormState {
+  ok?: boolean;
+  error?: string;
+  seq?: number;
+  minted?: string[];
+  swept?: number;
+  added?: number;
 }
 
 /**
@@ -205,6 +228,53 @@ export async function setZoneAction(id: string, zone: string): Promise<CalcFormS
 
 export async function setCertificateAction(id: string, has: boolean): Promise<CalcFormState> {
   return run('ved.docs', (ctx) => setRequestCertificate(id, has, ctx), ws(id));
+}
+
+/** The table door — `run()`'s gate and catches, plus the row-naming answer. */
+async function runTable(
+  work: (ctx: { actorId: string } & Record<string, unknown>) => Promise<TableEditResult & { added?: number }>,
+  revalidate: string,
+): Promise<TableFormState> {
+  let who;
+  try {
+    who = await authorize('ved.docs');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  let result: TableEditResult & { added?: number };
+  try {
+    result = await work({ actorId: who.id, ...meta });
+  } catch (err) {
+    if (err instanceof CalcError) return { error: err.code, seq: err.seq };
+    if (isServerBehind(err)) {
+      logger.error({ err }, '[calc] server behind — migration 0085 not applied');
+      return { error: 'server_behind' };
+    }
+    throw err;
+  }
+  revalidatePath(revalidate);
+  revalidatePath('/hisoblash');
+  return { ok: true, minted: result.minted, swept: result.swept, added: result.added };
+}
+
+export async function applyTableAction(
+  id: string,
+  edits: { items: TableItemEdit[]; groupBazas: TableGroupBaza[] },
+): Promise<TableFormState> {
+  return runTable((ctx) => applyTableEdits(id, edits, ctx), ws(id));
+}
+
+export async function addItemsAction(id: string, rows: TableNewItem[]): Promise<TableFormState> {
+  return runTable((ctx) => addItems(id, rows, ctx), ws(id));
+}
+
+export async function deleteItemAction(id: string, itemSeq: number): Promise<TableFormState> {
+  return runTable(async (ctx) => {
+    await deleteItem(id, itemSeq, ctx);
+    return { minted: [], swept: 0 };
+  }, ws(id));
 }
 
 export async function createGroupAction(id: string, label: string): Promise<CalcFormState> {

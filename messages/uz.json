@@ -2132,7 +2132,13 @@
       "one_seller_at_a_time": "Bir vaqtda bitta sotuvchiga to‘lang",
       "nothing_to_pay": "To‘lanadigan summa yo‘q",
       "amount_moved": "Summa o‘zgardi — qayta ochib ko‘ring",
-      "no_offers": "Hech qanday ish belgilanmagan"
+      "no_offers": "Hech qanday ish belgilanmagan",
+      "bad_code": "TNVED kod 4–10 ta raqamdan iborat bo'lishi kerak",
+      "measure_positive": "O'lchov 0 dan katta bo'lishi kerak (bo'sh qoldirsa ham bo'ladi)",
+      "name_required": "Tovar nomi kerak",
+      "stale_baza": "Guruh bazalari o'zgargan — sahifani yangilab qayta kiriting",
+      "group_gone": "Bu kodning guruhi qolmadi — sahifani yangilang",
+      "conflict": "Bir vaqtda ikki saqlash to'qnashdi — qayta urinib ko'ring"
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -2329,7 +2335,25 @@
     "certificateMissing": "sertifikatsiz — qo'shimcha boj 5–20 %",
     "feeLine": "sh.j. bojxona yig'imi",
     "rateSearch": "TNVED kod bo‘yicha qidiruv",
-    "rateSearchHint": "Qidiruvsiz faqat qo'lda kiritilgan qatorlar ko'rinadi; PQ-3818 to'liq bazasi (1 489 qator) kod bo'yicha qidiriladi."
+    "rateSearchHint": "Qidiruvsiz faqat qo'lda kiritilgan qatorlar ko'rinadi; PQ-3818 to'liq bazasi (1 489 qator) kod bo'yicha qidiriladi.",
+    "table": {
+      "unpriced": "narxsiz",
+      "unsaved": "Saqlanmagan: {count}",
+      "rowN": "-qator",
+      "minted": "+{count} yangi guruh",
+      "swept": "{count} tovar guruhlandi",
+      "typeCode": "TNVED kod yozing — tovar o'zi guruhga tushadi",
+      "mixed": "har xil",
+      "mixedConfirm": "{count} tovarda har xil baza bor ({values}). Hammasini bitta qiymatga almashtirasizmi?",
+      "note": "Izoh",
+      "addRow": "qator",
+      "paste": "Ro'yxatdan qo'shish",
+      "pasteHint": "Excel'dan ustunlarni yoki «nomi, soni» ko'rinishidagi qatorlarni shu yerga qo'ying.",
+      "pasteAdd": "{count} qator qo'shish",
+      "pasteCap": "Ko'pi bilan 500 qator birdan qo'shiladi",
+      "editOnDesktop": "Jadval kompyuterda tahrirlanadi; qabul qilish, tasdiqlash va muhrlash telefonda ishlaydi.",
+      "saveFirst": "Avval saqlang ({count})"
+    }
   },
   "partners": {
     "title": "Kontragentlar",
