@@ -2132,7 +2132,13 @@
       "one_seller_at_a_time": "每次只能支付一位销售",
       "nothing_to_pay": "没有可支付金额",
       "amount_moved": "金额已变化，请重新打开",
-      "no_offers": "未选择任何业务"
+      "no_offers": "未选择任何业务",
+      "bad_code": "TNVED 编码为 4–10 位数字",
+      "measure_positive": "数值须大于 0（可留空）",
+      "name_required": "需要商品名称",
+      "stale_baza": "该组基价已被他人修改——请刷新后重新输入",
+      "group_gone": "该编码的组已不存在——请刷新页面",
+      "conflict": "两次保存冲突——请重试"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -2329,7 +2335,25 @@
     "certificateMissing": "无证书——附加关税 5–20 %",
     "feeLine": "含海关规费",
     "rateSearch": "按 TNVED 编码搜索",
-    "rateSearchHint": "未搜索时仅显示手工录入的行；PP-3818 全表（1 489 行）可按编码搜索。"
+    "rateSearchHint": "未搜索时仅显示手工录入的行；PP-3818 全表（1 489 行）可按编码搜索。",
+    "table": {
+      "unpriced": "无税率",
+      "unsaved": "未保存：{count}",
+      "rowN": " 行",
+      "minted": "+{count} 个新组",
+      "swept": "已分组 {count} 件商品",
+      "typeCode": "输入 TNVED 编码——商品自动进组",
+      "mixed": "不一致",
+      "mixedConfirm": "{count} 件商品的基价不一致（{values}）。全部替换为一个值？",
+      "note": "备注",
+      "addRow": "行",
+      "paste": "批量添加",
+      "pasteHint": "在此粘贴 Excel 列，或按«名称, 数量»格式逐行粘贴。",
+      "pasteAdd": "添加 {count} 行",
+      "pasteCap": "一次最多添加 500 行",
+      "editOnDesktop": "表格在电脑上编辑；接单、确认与封存可在手机操作。",
+      "saveFirst": "请先保存（{count}）"
+    }
   },
   "partners": {
     "title": "合作方",

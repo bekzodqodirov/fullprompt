@@ -2132,7 +2132,13 @@
       "one_seller_at_a_time": "Pay one seller at a time",
       "nothing_to_pay": "Nothing to pay",
       "amount_moved": "The amount changed — reopen the screen",
-      "no_offers": "No jobs selected"
+      "no_offers": "No jobs selected",
+      "bad_code": "A TNVED code is 4–10 digits",
+      "measure_positive": "A measure must be above 0 (or left empty)",
+      "name_required": "The item needs a name",
+      "stale_baza": "The group’s bazas changed underneath — refresh and retype",
+      "group_gone": "That code’s group is gone — refresh the page",
+      "conflict": "Two saves collided — try again"
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -2329,7 +2335,25 @@
     "certificateMissing": "no certificate — additional duty 5–20 %",
     "feeLine": "incl. customs fee",
     "rateSearch": "Search by TNVED code",
-    "rateSearchHint": "Without a search only hand-entered rows are shown; the full PP-3818 book (1,489 rows) is searchable by code."
+    "rateSearchHint": "Without a search only hand-entered rows are shown; the full PP-3818 book (1,489 rows) is searchable by code.",
+    "table": {
+      "unpriced": "unpriced",
+      "unsaved": "Unsaved: {count}",
+      "rowN": " row",
+      "minted": "+{count} new groups",
+      "swept": "{count} items grouped",
+      "typeCode": "Type a TNVED code — the item joins its group by itself",
+      "mixed": "mixed",
+      "mixedConfirm": "{count} items carry different bazas ({values}). Replace all with one value?",
+      "note": "Note",
+      "addRow": "row",
+      "paste": "Add from a list",
+      "pasteHint": "Paste Excel columns here, or lines shaped «name, quantity».",
+      "pasteAdd": "Add {count} rows",
+      "pasteCap": "At most 500 rows per paste",
+      "editOnDesktop": "The table is edited on a computer; take, confirm and seal work on the phone.",
+      "saveFirst": "Save first ({count})"
+    }
   },
   "partners": {
     "title": "Counterparties",

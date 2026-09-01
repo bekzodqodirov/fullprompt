@@ -67,18 +67,40 @@ describe('a warning means the dictionary had an answer and a person typed anothe
     expect(warningsForGroup(facts)).toEqual([]);
   });
 
-  it('warns on a typed baza only when the dictionary could have answered', () => {
-    const off = warningsForGroup({
-      ...base,
-      items: [{ hasDictionaryBaza: true, bazaSource: 'typed' }],
+  it('warns on a typed baza only when the dictionary answered AND the value differs', () => {
+    const dict = { bazaUsd: 12, basis: 'unit' as const };
+    const item = (over: Partial<WarningGroupFacts['items'][number]>) => ({
+      hasDictionaryBaza: true,
+      bazaSource: 'typed' as const,
+      bazaUsd: 12,
+      bazaBasis: 'unit' as const,
+      dictionaryBaza: dict,
+      ...over,
     });
-    expect(off).toContain('baza_off_dictionary');
 
-    const quiet = warningsForGroup({
-      ...base,
-      items: [{ hasDictionaryBaza: false, bazaSource: 'typed' }],
-    });
-    expect(quiet).toEqual([]);
+    // A different NUMBER warns…
+    expect(warningsForGroup({ ...base, items: [item({ bazaUsd: 15 })] })).toContain(
+      'baza_off_dictionary',
+    );
+    // …and so does the book's own number per the WRONG measure — the basis
+    // is part of the price ($12/kg is not $12/unit).
+    expect(warningsForGroup({ ...base, items: [item({ bazaBasis: 'kg' })] })).toContain(
+      'baza_off_dictionary',
+    );
+
+    // Typing the dictionary's own answer deviates from nothing — phase 2's
+    // group-baza cell stamps 'typed' on every member, so source-alone would
+    // have named essentially every group the day the baza book fills up
+    // (the exact flip the rates half was corrected for).
+    expect(warningsForGroup({ ...base, items: [item({})] })).toEqual([]);
+
+    // No dictionary answer → typing is the only thing a person CAN do.
+    expect(
+      warningsForGroup({
+        ...base,
+        items: [item({ hasDictionaryBaza: false, dictionaryBaza: null })],
+      }),
+    ).toEqual([]);
   });
 
   /** A blind confirm is a conjunction; each clause is load-bearing. */

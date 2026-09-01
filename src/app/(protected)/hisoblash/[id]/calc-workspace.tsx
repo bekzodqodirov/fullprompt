@@ -4,26 +4,15 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { sectionParts } from '@/modules/wms/calc/pricing';
-import type { Workspace, WorkspaceGroup, WorkspaceItem } from '@/modules/wms/calc/workspace';
+import type { Workspace } from '@/modules/wms/calc/workspace';
 import {
-  confirmAllAction,
-  confirmGroupAction,
-  createGroupAction,
   deleteExtraAction,
-  deleteGroupAction,
-  moveItemAction,
-  proposeAction,
-  pullBazasAction,
-  saveRatesAction,
-  pullRatesAction,
   saveExtraAction,
   sealAction,
-  setBazaAction,
-  setCertificateAction,
-  setRatesAction,
   setZoneAction,
   type CalcFormState,
 } from '../actions';
+import { ItemsTable } from './items-table';
 
 /**
  * The calculation itself — the screen that replaces the Excel.
@@ -52,6 +41,10 @@ export function CalcWorkspace({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // The table's unsaved-draft count. While it is non-zero the SEAL waits —
+  // a locked, client-facing price must not be computed from cells the server
+  // has never seen (the phase-2 judge's blocker).
+  const [dirty, setDirty] = useState(0);
 
   const id = workspace.requestId;
   const sealed = workspace.sealedVersion;
@@ -75,15 +68,14 @@ export function CalcWorkspace({
 
       {!locked ? (
         <>
-          <FreightPanel workspace={workspace} pending={pending} act={act} />
-
           {workspace.parts.customs ? (
-            <GroupsPanel workspace={workspace} pending={pending} act={act} />
+            <ItemsTable workspace={workspace} pending={pending} act={act} onDirty={setDirty} />
           ) : null}
 
+          <FreightPanel workspace={workspace} pending={pending} act={act} />
           <ExtrasPanel workspace={workspace} pending={pending} act={act} />
           <TotalsPanel workspace={workspace} />
-          <SealPanel workspace={workspace} pending={pending} act={act} />
+          <SealPanel workspace={workspace} pending={pending} act={act} dirty={dirty} />
         </>
       ) : null}
 
@@ -181,537 +173,6 @@ function FreightPanel({
 }
 
 /* --------------------------------------------------------------- groups */
-
-function GroupsPanel({
-  workspace,
-  pending,
-  act,
-}: {
-  workspace: Workspace;
-  pending: boolean;
-  act: (work: () => Promise<CalcFormState>) => void;
-}) {
-  const t = useTranslations('calc');
-  const tc = useTranslations('common');
-  const [newLabel, setNewLabel] = useState('');
-  const id = workspace.requestId;
-  const unconfirmed = workspace.groups.filter((g) => g.confirmedAt === null).length;
-
-  return (
-    <section className="card !p-3" data-testid="calc-groups">
-      {/* The certificate flips the whole calculation: without one, BK 300-1's
-          additional duty (5-20 % of BQ by the code's advalor band) lands on
-          every group that inherits the request's answer — and the flip clears
-          those groups' ✅, because the person confirmed different numbers. */}
-      <label className="mb-2 flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={workspace.hasCertificate}
-          data-testid="calc-certificate"
-          disabled={pending}
-          onChange={(e) => act(() => setCertificateAction(id, e.target.checked))}
-        />
-        <span>{t('certificate')}</span>
-        {!workspace.hasCertificate ? (
-          <span className="chip chip-warn" data-testid="calc-certificate-warn">
-            ⚠ {t('certificateMissing')}
-          </span>
-        ) : null}
-      </label>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="section-title">{t('groups')}</h3>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={pending}
-            data-testid="calc-propose"
-            onClick={() => act(() => proposeAction(id))}
-          >
-            ✨ {t('propose')}
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={pending}
-            data-testid="calc-pull-bazas"
-            onClick={() => act(() => pullBazasAction(id))}
-          >
-            {t('pullBazas')}
-          </button>
-          {unconfirmed > 0 ? (
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={pending}
-              data-testid="calc-confirm-all"
-              onClick={() => act(() => confirmAllAction(id))}
-            >
-              {t('confirmAll')} ({unconfirmed})
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Three columns, and the measures on the muted line below.
-          Measured: with the quantity, the kilos and the cubes on the primary
-          row the table needs 40rem, and the main column is 490 px at 1280 —
-          so the CUSTOMS figure, the one number the whole screen exists to
-          produce, sat off the right edge on the widest screen the company
-          owns and could only be reached by scrolling inside the box. */}
-      <div className="table-wrap mt-2 overflow-x-auto">
-        <table className="w-full min-w-[22rem] text-sm">
-          <thead>
-            <tr className="border-b border-line text-left text-2xs uppercase text-ink-500">
-              <th className="p-2">{t('group')}</th>
-              <th className="p-2">TNVED</th>
-              <th className="p-2 text-right">{t('customs')}</th>
-              <th className="p-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {workspace.groups.map((group) => (
-              <GroupRows key={group.id} id={id} group={group} pending={pending} act={act} />
-            ))}
-            {workspace.groups.length === 0 ? (
-              <tr>
-                <td className="p-2 text-ink-500" colSpan={4}>
-                  —
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <input
-          className="input input-sm max-!w-48"
-          placeholder={t('newGroup')}
-          aria-label={t('newGroup')}
-          data-testid="calc-new-group"
-          value={newLabel}
-          onChange={(e) => setNewLabel(e.target.value)}
-        />
-        <button
-          type="button"
-          className="btn-secondary"
-          disabled={pending || !newLabel.trim()}
-          data-testid="calc-add-group"
-          onClick={() =>
-            act(async () => {
-              const result = await createGroupAction(id, newLabel);
-              if (!result.error) setNewLabel('');
-              return result;
-            })
-          }
-        >
-          {tc('save')}
-        </button>
-      </div>
-
-      {workspace.ungrouped.length > 0 ? (
-        <div className="mt-3 border-t border-line pt-2" data-testid="calc-ungrouped">
-          <p className="text-sm text-warn">
-            ⚠ {t('ungrouped')}: {workspace.ungrouped.length}
-          </p>
-          <ul className="mt-1 space-y-1">
-            {workspace.ungrouped.map((item) => (
-              <li key={item.seq} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="grow">{item.label}</span>
-                <ItemBaza id={id} item={item} pending={pending} act={act} />
-                <GroupPicker id={id} item={item} groups={workspace.groups} pending={pending} act={act} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {workspace.reconcile.mismatch ? (
-        <p className="mt-2 text-2xs text-warn" data-testid="calc-reconcile">
-          ⚠ {t('reconcile', {
-            groupKg: workspace.reconcile.groupKg ?? 0,
-            groupM3: workspace.reconcile.groupM3 ?? 0,
-            kg: workspace.weightKg ?? 0,
-            m3: workspace.volumeM3 ?? 0,
-          })}
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
-function GroupRows({
-  id,
-  group,
-  pending,
-  act,
-}: {
-  id: string;
-  group: WorkspaceGroup;
-  pending: boolean;
-  act: (work: () => Promise<CalcFormState>) => void;
-}) {
-  const t = useTranslations('calc');
-  const tc = useTranslations('common');
-  const [open, setOpen] = useState(false);
-  const [label, setLabel] = useState(group.label);
-  const [code, setCode] = useState(group.tnvedCode ?? '');
-  const [duty, setDuty] = useState(group.dutyPct === null ? '' : String(group.dutyPct));
-  const [vat, setVat] = useState(group.vatPct === null ? '' : String(group.vatPct));
-  const [fee, setFee] = useState(group.feeUsd === null ? '' : String(group.feeUsd));
-  const [dutyFree, setDutyFree] = useState(group.dutyFree);
-  const [vatFree, setVatFree] = useState(group.vatFree);
-
-  const num = (v: string) => (v.trim() === '' ? null : Number(v.replace(',', '.')));
-
-  return (
-    <>
-      <tr className="border-b border-line/60 align-top" data-testid="calc-group-row">
-        <td className="p-2">
-          <span className="font-semibold">{group.label}</span>
-          {group.aiProposed && group.confirmedAt === null ? (
-            <span className="ml-1 chip chip-warn" data-testid="calc-group-ai">
-              ✨ {group.aiConfidence ?? '—'}
-            </span>
-          ) : null}
-          {group.confirmedAt ? (
-            <span className="ml-1 text-2xs text-good" data-testid="calc-group-ok">
-              ✅
-            </span>
-          ) : null}
-          <span className="block text-2xs text-ink-500">
-            {group.items.length} {t('items')}
-          </span>
-        </td>
-        <td className="p-2 font-mono tabular-nums">{group.tnvedCode ?? '—'}</td>
-        <td className="p-2 text-right font-mono tabular-nums" data-testid="calc-group-customs">
-          {group.customs.ok ? (
-            `$${group.customs.customsUsd.toFixed(2)}`
-          ) : (
-            <span className="text-warn">
-              ⚠ {refusal(t, group.customs.reason)}
-              {group.customs.itemLabel ? `: ${group.customs.itemLabel}` : ''}
-            </span>
-          )}
-        </td>
-        <td className="p-2 text-right">
-          <button
-            type="button"
-            className="btn-secondary"
-            data-testid="calc-group-edit"
-            onClick={() => setOpen((v) => !v)}
-          >
-            ✏️
-          </button>
-        </td>
-      </tr>
-
-      {/* The rates on their own muted line: six numbers on the row above
-          would leave the goods name nothing. */}
-      <tr className="border-b border-line/60 text-2xs text-ink-600">
-        <td className="px-2 pb-2" colSpan={4}>
-          <span className="font-mono tabular-nums">
-            {group.quantity ?? '—'} {group.unit ?? ''} · {group.weightKg ?? '—'} kg ·{' '}
-            {group.volumeM3 ?? '—'} m³
-          </span>{' '}
-          ·{' '}
-          {group.dutyFree ? t('dutyFree') : `${t('duty')} ${dutyText(group)}`} ·{' '}
-          {group.vatFree ? t('vatFree') : `${t('vat')} ${group.vatPct ?? '—'}%`} ·{' '}
-          {t('fee')} ${group.feeUsd ?? 0}
-          {group.rateSource ? ` · ${t(`source.${group.rateSource}` as 'source.typed')}` : ''}
-          {group.customs.ok ? ` · ${t('value')} $${group.customs.valueUsd.toFixed(2)}` : ''}
-          {/* The additional duty is money the certificate answer created —
-              it must be visible on the group it landed on, or the total is
-              bigger than its own lines. */}
-          {group.customs.ok && group.customs.addDutyUsd > 0
-            ? ` · +${group.customs.addDutyPct}% ($${group.customs.addDutyUsd.toFixed(2)})`
-            : ''}
-          {group.dictionaryRates && group.rateSource !== 'dictionary' ? (
-            <button
-              type="button"
-              className="ml-2 underline"
-              disabled={pending}
-              data-testid="calc-pull-rates"
-              onClick={() => act(() => pullRatesAction(id, group.id))}
-            >
-              {t('pullRates')}: {dutyText(group.dictionaryRates)} /{' '}
-              {group.dictionaryRates.vatPct}%
-            </button>
-          ) : null}
-          {/* Law 6's other half: a rate the VED typed over (or without) the
-              dictionary's answer is REMEMBERED — by a person's press, never
-              silently (0086's own comment promised this box; the whole-module
-              audit found it was never built). Hidden once the dictionary
-              already says the same numbers. */}
-          {group.rateSource === 'typed' &&
-          group.tnvedCode &&
-          group.dutyPct !== null &&
-          group.vatPct !== null &&
-          (!group.dictionaryRates ||
-            group.dictionaryRates.dutyPct !== group.dutyPct ||
-            group.dictionaryRates.vatPct !== group.vatPct ||
-            group.dictionaryRates.feeUsd !== (group.feeUsd ?? 0)) ? (
-            <button
-              type="button"
-              className="ml-2 underline"
-              disabled={pending}
-              data-testid="calc-teach-rates"
-              onClick={() =>
-                act(() =>
-                  saveRatesAction({
-                    tnvedCode: group.tnvedCode!,
-                    dutyPct: group.dutyPct!,
-                    vatPct: group.vatPct!,
-                    feeUsd: group.feeUsd ?? 0,
-                    effectiveDate: new Date().toISOString().slice(0, 10),
-                    source: 'correction',
-                  }),
-                )
-              }
-            >
-              {t('teachRates')}
-            </button>
-          ) : null}
-          {/* Law 7's offered default: how this code's lgota was decided last
-              time. A press APPLIES it (clearing any confirm — it is a
-              change); silence remains a real answer. Shown only while nobody
-              has confirmed and the flags differ. */}
-          {group.lgotaLast &&
-          group.confirmedAt === null &&
-          (group.lgotaLast.dutyFree !== group.dutyFree ||
-            group.lgotaLast.vatFree !== group.vatFree) ? (
-            <button
-              type="button"
-              className="ml-2 underline"
-              disabled={pending}
-              data-testid="calc-lgota-last"
-              onClick={() =>
-                act(() =>
-                  setRatesAction(id, group.id, {
-                    label: group.label,
-                    tnvedCode: group.tnvedCode ?? '',
-                    dutyPct: group.dutyPct,
-                    vatPct: group.vatPct,
-                    feeUsd: group.feeUsd,
-                    dutyFree: group.lgotaLast!.dutyFree,
-                    vatFree: group.lgotaLast!.vatFree,
-                  }),
-                )
-              }
-            >
-              {t('lgotaLast')}
-              {group.lgotaLast.dutyFree ? ` · ${t('dutyFree')}` : ''}
-              {group.lgotaLast.vatFree ? ` · ${t('vatFree')}` : ''}
-            </button>
-          ) : null}
-          {group.confirmedAt === null ? (
-            <button
-              type="button"
-              className="ml-2 underline text-good"
-              disabled={pending}
-              data-testid="calc-confirm-group"
-              onClick={() => act(() => confirmGroupAction(id, group.id))}
-            >
-              {t('confirm')}
-            </button>
-          ) : null}
-        </td>
-      </tr>
-
-      {open ? (
-        <tr className="border-b border-line bg-surface-sunken">
-          <td className="p-2" colSpan={4}>
-            <div className="flex flex-wrap items-end gap-2" data-testid="calc-group-form">
-              <label className="text-2xs">
-                <span className="label">{t('group')}</span>
-                <input className="input input-sm !w-40" value={label} onChange={(e) => setLabel(e.target.value)} />
-              </label>
-              <label className="text-2xs">
-                <span className="label">TNVED</span>
-                <input
-                  className="input input-sm !w-32"
-                  data-testid="calc-code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-              </label>
-              <label className="text-2xs">
-                <span className="label">{t('duty')} %</span>
-                <input
-                  className="input input-sm !w-20"
-                  data-testid="calc-duty"
-                  value={duty}
-                  onChange={(e) => setDuty(e.target.value)}
-                />
-              </label>
-              <label className="text-2xs">
-                <span className="label">{t('vat')} %</span>
-                <input
-                  className="input input-sm !w-20"
-                  data-testid="calc-vat"
-                  value={vat}
-                  onChange={(e) => setVat(e.target.value)}
-                />
-              </label>
-              <label className="text-2xs">
-                <span className="label">{t('fee')} $</span>
-                <input className="input input-sm !w-24" value={fee} onChange={(e) => setFee(e.target.value)} />
-              </label>
-              <label className="flex items-center gap-1 text-2xs">
-                <input type="checkbox" checked={dutyFree} onChange={(e) => setDutyFree(e.target.checked)} />
-                {t('dutyFree')}
-              </label>
-              <label className="flex items-center gap-1 text-2xs">
-                <input type="checkbox" checked={vatFree} onChange={(e) => setVatFree(e.target.checked)} />
-                {t('vatFree')}
-              </label>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={pending}
-                data-testid="calc-save-rates"
-                onClick={() =>
-                  act(async () => {
-                    const result = await setRatesAction(id, group.id, {
-                      label,
-                      tnvedCode: code,
-                      dutyPct: num(duty),
-                      vatPct: num(vat),
-                      feeUsd: num(fee),
-                      dutyFree,
-                      vatFree,
-                    });
-                    if (!result.error) setOpen(false);
-                    return result;
-                  })
-                }
-              >
-                {tc('save')}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={pending}
-                data-testid="calc-delete-group"
-                onClick={() => act(() => deleteGroupAction(id, group.id))}
-              >
-                🗑
-              </button>
-            </div>
-
-            <ul className="mt-2 space-y-1">
-              {group.items.map((item) => (
-                <li key={item.seq} className="flex flex-wrap items-center gap-2 text-2xs">
-                  <span className="grow">{item.label}</span>
-                  <ItemBaza id={id} item={item} pending={pending} act={act} />
-                </li>
-              ))}
-            </ul>
-          </td>
-        </tr>
-      ) : null}
-    </>
-  );
-}
-
-/**
- * The baza, per ITEM.
- *
- * One TNVED code holds several products with different bazas, so this box is
- * on the item and not on the group — pricing a whole group at one product's
- * number is nearly half out on a realistic pair.
- */
-function ItemBaza({
-  id,
-  item,
-  pending,
-  act,
-}: {
-  id: string;
-  item: WorkspaceItem;
-  pending: boolean;
-  act: (work: () => Promise<CalcFormState>) => void;
-}) {
-  const t = useTranslations('calc');
-  const [value, setValue] = useState(item.bazaUsd === null ? '' : String(item.bazaUsd));
-  const [basis, setBasis] = useState<'unit' | 'kg'>(item.bazaBasis ?? 'unit');
-
-  return (
-    <span className="flex items-center gap-1">
-      {/* Law 5's ⚠ belongs where a stale baza actually prices a job, not
-          only on the dictionary screen — the whole-module audit's find. */}
-      {item.dictionaryBaza?.stale ? (
-        <span className="chip chip-warn" data-testid="calc-baza-stale" title={item.dictionaryBaza.effectiveDate}>
-          ⚠ {t('stale')}
-        </span>
-      ) : null}
-      <input
-        className="input input-sm !w-20 font-mono tabular-nums"
-        aria-label={`${t('baza')} ${item.seq}`}
-        data-testid="calc-baza"
-        placeholder={item.dictionaryBaza ? String(item.dictionaryBaza.bazaUsd) : t('baza')}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-      />
-      <select
-        className="input input-sm !w-16"
-        aria-label={`${t('basis')} ${item.seq}`}
-        value={basis}
-        onChange={(e) => setBasis(e.target.value as 'unit' | 'kg')}
-      >
-        <option value="unit">{t('perUnit')}</option>
-        <option value="kg">kg</option>
-      </select>
-      <button
-        type="button"
-        className="btn-secondary"
-        disabled={pending}
-        data-testid="calc-save-baza"
-        onClick={() =>
-          act(() =>
-            setBazaAction(id, item.seq, value.trim() === '' ? null : Number(value.replace(',', '.')), basis),
-          )
-        }
-      >
-        ✓
-      </button>
-    </span>
-  );
-}
-
-function GroupPicker({
-  id,
-  item,
-  groups,
-  pending,
-  act,
-}: {
-  id: string;
-  item: WorkspaceItem;
-  groups: WorkspaceGroup[];
-  pending: boolean;
-  act: (work: () => Promise<CalcFormState>) => void;
-}) {
-  const t = useTranslations('calc');
-  return (
-    <select
-      className="input input-sm !w-40"
-      aria-label={`${t('group')} ${item.seq}`}
-      data-testid="calc-item-group"
-      defaultValue={item.groupId ?? ''}
-      disabled={pending}
-      onChange={(e) => act(() => moveItemAction(id, item.seq, e.target.value))}
-    >
-      <option value="">— {t('ungrouped')} —</option>
-      {groups.map((g) => (
-        <option key={g.id} value={g.id}>
-          {g.label}
-        </option>
-      ))}
-    </select>
-  );
-}
 
 /* --------------------------------------------------------------- extras */
 
@@ -890,10 +351,14 @@ function SealPanel({
   workspace,
   pending,
   act,
+  dirty,
 }: {
   workspace: Workspace;
   pending: boolean;
   act: (work: () => Promise<CalcFormState>) => void;
+  /** Unsaved table drafts. A seal over them locks a price computed from
+   * cells the server has never seen — «Avval saqlang» instead. */
+  dirty: number;
 }) {
   const t = useTranslations('calc');
   const [discount, setDiscount] = useState('');
@@ -968,7 +433,7 @@ function SealPanel({
       <button
         type="button"
         className="btn-primary mt-2"
-        disabled={pending || workspace.blockers.length > 0}
+        disabled={pending || dirty > 0 || workspace.blockers.length > 0}
         data-testid="calc-do-seal"
         onClick={() =>
           act(() =>
@@ -983,6 +448,11 @@ function SealPanel({
       >
         🔒 {t('seal')}
       </button>
+      {dirty > 0 ? (
+        <p className="mt-1 text-2xs text-warn" data-testid="calc-seal-unsaved">
+          {t('table.saveFirst', { count: dirty })}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -1090,24 +560,6 @@ async function recalcActionClient(id: string) {
 /* ---------------------------------------------------------------- words */
 
 type T = ReturnType<typeof useTranslations<'calc'>>;
-
-/**
- * The whole law in one cell — a MAX row printed as its percentage alone
- * loses the floor, which on light goods IS the duty.
- */
-function dutyText(r: {
-  dutyPct: number | null;
-  dutyMode: 'advalor' | 'specific' | 'max' | 'plus';
-  dutySpecific: number | null;
-  dutyUnit: string | null;
-}): string {
-  const pct = r.dutyPct === null ? '—' : `${r.dutyPct}%`;
-  if (r.dutyMode === 'advalor') return pct;
-  const spec = `${r.dutySpecific ?? '—'} $/${r.dutyUnit ?? '—'}`;
-  if (r.dutyMode === 'specific') return spec;
-  if (r.dutyMode === 'max') return `${pct} / min ${spec}`;
-  return `${pct} + ${spec}`;
-}
 
 function refusal(t: T, reason: string): string {
   return t.has(`refusals.${reason}`) ? t(`refusals.${reason}` as 'refusals.band_missing') : reason;

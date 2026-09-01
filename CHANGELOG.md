@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## VED 2.0 — 2-bosqich: yangi hisoblash oynasi (Excel-jadval) — 2026-09-01
+
+So'rovingiz bo'yicha: «hisoblash juda mujmal … 1 tovar kelganda ichida
+50–100 lab pozitsiya bo'lishi mumkin, VED hodimi o'lchov birliklarini
+kiritishi oson bo'lsin» va «guruh yasab ulash juda ish ko'p».
+
+**1. Guruh yasash degan ish YO'Q endi.** Bitta jadval: har qator — bitta
+tovar (nomi · dona · kg · m³ · TNVED kod). Kod yozilishi bilan tovar o'sha
+kodning guruhiga O'ZI tushadi, stavkalar lug'atdan o'zi keladi (kulrang —
+lug'atniki; qo'lda yozilsa qora bo'ladi). Sotuvchi yuborgan tovarlar kod
+bilan kelgan bo'lsa — bitta «Saqlash» hammasini guruhlab beradi.
+
+**2. Bitta «Saqlash» — yuz katak.** Excel'dagidek: hamma o'zgarishni terib,
+bitta tugma. Enter pastga yuradi, oxirgi qatorda yangi qator ochadi. Xato
+bo'lsa — qaysi QATORda ekani yozilgan holda rad etiladi, terilganlari
+yo'qolmaydi. Saqlanmagan narsa turganda muhrlash/tasdiqlash kutib turadi
+(«Avval saqlang») — server ko'rmagan raqam ustidan qaror bo'lmasin.
+
+**3. Baza — guruh qatorida BITTA katak.** «Bitta kod — bitta narx»
+deganingizdek: guruh qatoriga baza yozilsa, hamma a'zosiga tarqaydi.
+Har xil bazali guruhda avval so'raladi (qiymatlari aytilgan holda).
+Alohida tovarga alohida baza kerak bo'lsa — qatorning ⋯ menyusida.
+
+**4. Ro'yxatdan qo'shish.** Excel'dan ustunlarni ko'chirib qo'ysangiz —
+o'zi ajratib, qatorlab qo'shadi (sarlavhalarni 4 tilda taniydi). Katakka
+ko'p qatorli narsa qo'yilsa ham shu oynaga o'zi olib chiqadi.
+
+**5. Yuqorida yopishqoq panel:** nechta tovar/guruh, nechtasida kamchilik
+(bosilsa — o'sha qatorga sakraydi), jami summa, sertifikat belgisi.
+
+**6. Telefonda** — o'qish, tasdiqlash va muhrlash ishlaydi; jadval
+kompyuterda tahrirlanadi (o'zingiz aytgan tartib).
+
+Migratsiya YO'Q — 1-bosqichning 0091'i yetarli (hisob 92 bo'lishi kerak).
+
+
 ## VED 2.0 — 1-bosqich: bojxona qonuni enjini (PQ-3818 + BHM yig'im) — 2026-09-01
 
 So'rovingiz bo'yicha: «hisoblash juda mujmal … qayta o'ylab chiq» va «shu

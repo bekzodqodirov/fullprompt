@@ -46,7 +46,12 @@ import { isComplete, missingFields, type CalcFacts, type CalcSection } from './i
  */
 
 export class CalcError extends Error {
-  constructor(public readonly code: string) {
+  /** `seq` names the ROW a table refusal is about — a one-word code over a
+   * 100-row save is «mujmal» rebuilt at 100× (phase 2's judge). */
+  constructor(
+    public readonly code: string,
+    public readonly seq?: number,
+  ) {
     super(code);
   }
 }

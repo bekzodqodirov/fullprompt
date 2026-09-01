@@ -32,8 +32,14 @@ export interface WarningGroupFacts {
   aiProposed: boolean;
   aiConfidence: 'high' | 'medium' | 'low' | null;
   aiDutyPct: number | null;
-  /** One entry per ITEM: did the baza dictionary answer, and what was typed. */
-  items: { hasDictionaryBaza: boolean; bazaSource: 'dictionary' | 'typed' | null }[];
+  /** One entry per ITEM: what the baza dictionary answers, and what stands. */
+  items: {
+    hasDictionaryBaza: boolean;
+    bazaSource: 'dictionary' | 'typed' | null;
+    bazaUsd: number | null;
+    bazaBasis: 'unit' | 'kg' | null;
+    dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' } | null;
+  }[];
 }
 
 /**
@@ -64,7 +70,20 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
   ) {
     out.push('rate_off_dictionary');
   }
-  if (facts.items.some((i) => i.hasDictionaryBaza && i.bazaSource === 'typed')) {
+  // The baza half carries the SAME «something else» clause (phase 2's judge:
+  // the group-baza cell stamps 'typed' on every member, so source-alone would
+  // warn on essentially every group the day the baza dictionary has answers —
+  // the exact from-nothing-to-everything flip the rates half was fixed for).
+  // The BASIS is part of the price: $20/kg against the book's $20/unit warns.
+  if (
+    facts.items.some(
+      (i) =>
+        i.dictionaryBaza !== null &&
+        i.bazaSource === 'typed' &&
+        i.bazaUsd !== null &&
+        (i.bazaUsd !== i.dictionaryBaza.bazaUsd || i.bazaBasis !== i.dictionaryBaza.basis),
+    )
+  ) {
     out.push('baza_off_dictionary');
   }
   // A blind confirm is a CONJUNCTION and each clause earns its place: the

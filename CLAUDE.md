@@ -1038,8 +1038,36 @@ litr/juft/sm3/m2 (`unit_unsupported`) — never reinterprets a quantity.
 answered» from never to always, so source-only would name every group);
 lugatlar rates list shows own rows bare + searches the whole book by code
 (round 68's DOM crush avoided); the pull stops copying a per-code fee.
-Guide examples 9.1-9.3 are permanent engine tests. 4 red proofs. **Phase 2
-(the Excel-table workspace the owner asked for) is NEXT and not built.**
+Guide examples 9.1-9.3 are permanent engine tests. 4 red proofs. **MERGED
+as PR #63 and deployed-ready the same day.**
+
+**Round — VED 2.0 phase 2, the Excel-table workspace (2026-09-01; DECISIONS
+#861-867; NO migration — 0091 stands, ledger 92):** the group ceremony is
+DELETED. One table, one row per item; a typed TNVED code lands the item in
+that code's group by itself (find-or-create, PP-3818 rates pulled at mint,
+grey=dictionary/black=typed); ONE «Saqlash» posts every changed cell in ONE
+tx opened with `FOR UPDATE` on the request row (`applyTableEdits`/`addItems`/
+`deleteItem` in workspace.ts — assertOpen is a check, not a lock; itemCount
+recomputed as count(*) in-tx; live AI claim refuses with a 10-min staleness
+window). **THE SWEEP** (judge blocker): every save also groups every
+coded-but-ungrouped item — intake prefills codes from the TNVED memory, so
+the commonest request arrives pre-coded with nothing dirty. **Dirty gate**:
+✅/confirm-all/certificate/Muhrlash all wait on unsaved drafts («Avval
+saqlang»); refusals carry the ROW (`CalcError.seq`); minted groups announced
+(«+N yangi guruh» — a typo'd code surfaces as a surprise group, not a silent
+prefix-priced one); group baza addressed by CODE (id-teleport dies with the
+id) with the sawBazaUsd/sawMixed stale fence; codes `<datalist>`-completed.
+Layout left CardCols (main column was 490px at 1280 — measured); calc-items
+is a ONE-element contract (workspace table, or the read-only fallback that
+is also the isServerBehind/yolkira/closed rendering); materials a <details>
+with the testid on the ROOT; phone read-only with confirm+seal alive.
+`baza_off_dictionary` got the values-differ half (the fanout stamps 'typed'
+everywhere — source-only would name every group). The round's own 360px
+screenshot caught `.btn` beating bare `hidden` (#419's fourth costume) —
+desktop-only bar buttons hide behind `hidden md:contents` wrappers. m9zp/
+m9zq rewritten to the new flow (numbers unchanged: dictionary supplies
+10%/12%, 464/3796.96). 13 new integration tests; 4 red proofs (one stayed
+green first — the emptied losing group hid its own unconfirm, #166).
 
 **Latest migration: 0091** (`calc_law` — the four duty shapes, the
 certificate, the fee override; ledger must reach **92**). Before it: 0090
