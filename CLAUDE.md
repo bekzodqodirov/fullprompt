@@ -1069,8 +1069,49 @@ m9zq rewritten to the new flow (numbers unchanged: dictionary supplies
 10%/12%, 464/3796.96). 13 new integration tests; 4 red proofs (one stayed
 green first — the emptied losing group hid its own unconfirm, #166).
 
-**Latest migration: 0091** (`calc_law` — the four duty shapes, the
-certificate, the fee override; ledger must reach **92**). Before it: 0090
+**Round — VED 2.0 phase 3, the unit-driven row (2026-09-01; DECISIONS
+#868-873; migration 0092 `calc_measure` — ledger must reach 93):** his own
+design («tenved kodni olchov birligiga qarab kg dona m2 chiqsin va bazani
+shu yerda sorasin … yonida rastamojka summasi chiqadgan»; answers 1a/2/3a/
+4a/5a). The CODE says the measure: `measure_unit`+`measure_qty` on the ITEM,
+CHECK admits ONLY juft/litr/m2/sm3 — kg stays on weight_kg, dona/1000_dona
+on quantity (one home per fact); pair CHECK; both baza-basis CHECKs widened
+sans sm³ (a vehicle's baza is per dona). Engine: `itemMeasure` is the ONE
+resolver for the value loop and the specific half; `unit_unsupported`
+RETIRED → `measure_missing` names the row. `requestCustomsFor` = the shared
+gated request-grain assembly (fee only when every group prices; no partial
+sums) consumed by loadWorkspace AND the browser's live bar. Baza moved to
+the ROW (his 1a — same code, different prices = separate rows), which
+deletes the group-baza fanout and its whole `stale_baza`/`sawMixed` fence;
+block identity = GROUP, BlockFooter carries code·law·value·LIVE customs·✅·⚙;
+`rate_noted` prices the 21 clause-cut vehicle rows WITH a visible chip. The
+audit's three findings closed: `calc_requests.rev` integer clock, every
+mutator through `mutateRequest`/`lockRequestInTx` (unit fence classifies
+every export), seal CASes `workspace.rev` in-tx → `conflict`, confirms
+capture rev via `warningsNow`; drafts keyed by item ID, delete clears its
+draft (m9zr red proof), clearing held until rev MOVES (no snap-back).
+Deterministic concurrency proof: holder FOR UPDATE + raw SQL in the
+holder's own tx; the observer polls `pg_stat_activity wait_event_type=
+'Lock'` through the POOL — pg_locks' relation is NULL for a row-lock
+waiter, and pg_stat_activity's snapshot FREEZES inside an open tx (both
+measured, the first two observers were wrong). `saveTable` = ONE tx
+(validate → memory+rates pre-tx → lock → edits by id → adds → regroup+
+sweep → merge-identical-rates-only (announced) → prune → measure pass
+(keep/clear+named/drop+named) → unconfirm → recount → ONE audit); six door
+actions → one `saveTableAction`. **#430 broken a FOURTH time** (#873):
+`git checkout -- workspace.ts 2>/dev/null` in a cleanup one-liner destroyed
+the round's uncommitted surgery — replayed from the conversation record,
+then committed BEFORE the remaining proofs. BUILD TRAP: Next build lint
+answers from `.next/cache/eslint` and served the pre-edit file twice —
+`rm -rf .next/cache/eslint` when a build contradicts `pnpm lint`. m9zr
+(3 e2e): the m² code grows the O'lchov line, live 248 in the footer, seal
+280.96; draft-wedge proven in client state. Screenshots at 1280×900 and
+360×800, document = viewport; phone read-only with confirm+seal alive.
+
+**Latest migration: 0092** (`calc_measure` — the measure pair, the widened
+baza bases, the revision clock; ledger must reach **93**). Before it: 0091
+(`calc_law` — the four duty shapes, the certificate, the fee override;
+ledger 92); 0090
 (`notice_staff` — the staff arrival event's own fence and the client drain's
 claim; ledger 91).
 

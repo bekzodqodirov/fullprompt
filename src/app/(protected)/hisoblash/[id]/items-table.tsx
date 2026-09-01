@@ -152,13 +152,14 @@ export function ItemsTable({
   const itemById = useMemo(() => new Map(allItems.map((i) => [i.id, i])), [allItems]);
   const groupById = useMemo(() => new Map(workspace.groups.map((g) => [g.id, g])), [workspace.groups]);
 
-  useEffect(() => {
-    if (clearAfterRev !== null && workspace.rev !== clearAfterRev) {
-      setDrafts({});
-      setNewRows([]);
-      setClearAfterRev(null);
-    }
-  }, [workspace.rev, clearAfterRev]);
+  // Render-time adjustment, not an effect: the frame that brings the moved
+  // rev must not paint once with the stale drafts before an effect clears
+  // them. Guarded by the null-reset, so it settles in one re-render.
+  if (clearAfterRev !== null && workspace.rev !== clearAfterRev) {
+    setDrafts({});
+    setNewRows([]);
+    setClearAfterRev(null);
+  }
 
   const ghostDirty = (r: NewRow) =>
     Boolean(

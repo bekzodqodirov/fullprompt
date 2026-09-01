@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## VED 2.0 — 3-bosqich: kod o'lchov birligini o'zi aytadi — 2026-09-01
+
+Sizning dizayningiz bo'yicha: «tenved kodni olchov birligiga qarab kg dona
+m2 chiqsin va bazani shu yerda sorasin … kirgizganda yonida rastamojka
+summasi chiqadgan qilsachi», javoblaringiz: 1a / 2 / 3a / 4a / 5a.
+
+**1. Kod yozilishi bilan o'lchov katagi o'zi chiqadi.** TNVED kod juft,
+litr, m² yoki sm³ da o'lchansa — qator ostida «Zamer» katagi paydo bo'ladi
+va baza tanlovida o'sha birlik ham taklif qilinadi. Kg va dona uchun hech
+narsa o'zgarmaydi — ular oldindan qatorning o'zida (kg va soni katagida).
+Kod o'zgartirilsa (masalan m² kod → kg kod) eski zamer O'CHIRILADI va
+qaysi qatorlarda o'chgani aytiladi — 200 m² degan raqam 200 juft bo'lib
+qolib ketmasin.
+
+**2. Baza — endi QATORDA** (1a javobingiz): bitta kod ichida har xil
+narxli tovarlar — alohida qatorlar, har birining o'z bazasi. Guruh yasash
+degan tugmalar butunlay yo'q: blok kodning o'zidan chiziladi, blok ostida
+kod · qonun stavkasi · qiymat · JONLI rastamojka summasi · Tasdiqlash turadi.
+
+**3. Yozayotganda summa jonli ko'rinadi** (3a): har blok ostida o'z summasi,
+tepada jami — saqlashdan OLDIN, terilgan raqamlardan hisoblanadi va «jonli»
+deb belgilanadi; saqlangan raqamlar paneli shu paytda xiralashadi, ikkalasi
+adashmasin. Yetishmagan narsa bo'lsa $0 emas — ⚠ va sababi (qaysi qatorda).
+
+**4. Auditning uch topilmasi yopildi:** (a) saqlash bilan muhrlash bir
+paytda bosilsa endi muhr eski raqamlarni ololmaydi — har o'zgarish soat
+sanog'ini suradi, muhr «raqamlar o'zgardi, qayta ko'ring» deb to'xtaydi
+(qayta bosilsa yangi raqamlarni muhrlaydi); (b) tasdiqlash ham xuddi
+shunday — ekranda turgan raqamlargina tasdiqlanadi; (c) qoralama turgan
+qator o'chirilsa qoralamasi ham o'chadi — oldin «Avval saqlang» qulflanib
+qolardi.
+
+**5. 41 ta avtomobil kodi** (qonunda «+ $x/sm³» qismi bor): endi hisoblanadi,
+lekin blokda «⚠ shart qisqargan» belgisi bilan — VED ko'rib tasdiqlaydi.
+
+Migratsiya **0092** — deploy'dan keyin hisob **93** bo'lishi kerak.
+
+
 ## VED 2.0 — 2-bosqich: yangi hisoblash oynasi (Excel-jadval) — 2026-09-01
 
 So'rovingiz bo'yicha: «hisoblash juda mujmal … 1 tovar kelganda ichida
