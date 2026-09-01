@@ -751,7 +751,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
     const value = drafts?.[col] ?? server;
     return (
       <input
-        className={`input-cell ${extra}${drafts?.[col] !== undefined ? ' border-brand-400' : ''}`}
+        className={`input-cell ${extra}${drafts?.[col] !== undefined ? ' border-brand-500' : ''}`}
         aria-label={`${col} ${item.seq}`}
         data-cell={col}
         data-row={index}
@@ -875,7 +875,7 @@ function GroupHeaderRow({
           <span className="flex items-center gap-1">
             <span className="text-2xs text-ink-500">{t('baza')}</span>
             <input
-              className={`input-cell !w-24 text-right font-mono tabular-nums${bazaDraft ? ' border-brand-400' : ''}`}
+              className={`input-cell !w-24 text-right font-mono tabular-nums${bazaDraft ? ' border-brand-500' : ''}`}
               aria-label={`${t('baza')} ${code}`}
               data-testid="calc-group-baza"
               inputMode="decimal"

@@ -9,7 +9,12 @@ import { describe, expect, it } from 'vitest';
 const read = (p: string) => readFileSync(p, 'utf8');
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
-const WORKSPACE_UI = read('src/app/(protected)/hisoblash/[id]/calc-workspace.tsx');
+// Phase 2 split the screen: the table (groups, bazas, teach/lgota/stale)
+// lives in items-table.tsx, the panels stayed in calc-workspace.tsx — the
+// fence reads BOTH, because the law it pins is about the SCREEN, not a file.
+const WORKSPACE_UI =
+  read('src/app/(protected)/hisoblash/[id]/calc-workspace.tsx') +
+  read('src/app/(protected)/hisoblash/[id]/items-table.tsx');
 const WORKSPACE = read('src/modules/wms/calc/workspace.ts');
 const LEDGER = read('src/app/(protected)/finance/[clientId]/page.tsx');
 
