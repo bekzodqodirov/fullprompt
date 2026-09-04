@@ -379,7 +379,8 @@
       "calc_actual_settle_days": "货物到达后多少天清关费用视为最终",
       "calc_customs_deviation_pct": "清关费用与核算的允许偏差百分比",
       "calc_customs_cost_type_codes": "哪些费用类型算作清关（代码列表）",
-      "client_code_next": "下一个客户代码编号（留空 = 旧规则；仅自动生成会推进）"
+      "client_code_next": "下一个客户代码编号（留空 = 旧规则；仅自动生成会推进）",
+      "import_baza_min_sim": "导入名称需达到的相似度阈值，超过后自动填入基价（0..1）"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"
@@ -2145,6 +2146,7 @@
       "conflict": "他人刚刚保存——页面已刷新，请再按一次",
       "save_failed": "保存失败——请检查网络后重试",
       "bad_basis": "基价单位无效",
+      "import_row_missing": "所选导入行不存在或属于其他编码 — 请重新选择",
       "answer_missing": "该请求没有含金额的答复。",
       "answer_not_usd": "答复不是美元——无法报价。",
       "answer_expired": "价格已过期——请重新计算。",
@@ -2299,7 +2301,8 @@
       "bazaOffDictionary": "基价非来自词典",
       "aiLowConfidence": "AI 不确定",
       "aiRateTaken": "AI 的税率进入了报价",
-      "rateNoted": "词典税率附有说明"
+      "rateNoted": "词典税率附有说明",
+      "bazaFromImport": "基价来自海关导入（估算）"
     },
     "refusal": {
       "customsByClient": "客户自行清关",
@@ -2375,8 +2378,13 @@
       "sm3Hint": "总 cm³ = 件数 × 排量",
       "rateNoted": "法规附有说明",
       "savedFigures": "已保存数字",
-      "basisSuspect": "请检查基价单位（法律按其他单位计价）— 行"
+      "basisSuspect": "请检查基价单位（法律按其他单位计价）— 行",
+      "importFilled": "已从导入填充 {count} 行基价（估算），行号"
     },
+    "importGuess": "来自导入（估算）",
+    "importGuessTitle": "基价取自海关导入文件 — 请核对，也可自行填写",
+    "importPick": "从导入中选择",
+    "importNone": "该编码在导入中无匹配行",
     "answerNotUsd": "答复价格不是美元——报价窗口仅对美元答复开放。",
     "answerExpiredHint": "该价格已过期——请重新计算。",
     "sealInstead": "核算已可封存 — 请点“封存报价”。价格将从封存结果发给销售。",
@@ -2702,5 +2710,32 @@
     "colCargo": "货物",
     "colWho": "操作人",
     "colMoney": "在册资金"
+  },
+  "customsImport": {
+    "title": "海关基价库（导入）",
+    "hint": "在此上传每季度的报关单文件。文件在后台解析——旧的导入会保留，建议取自最新的已就绪导入。",
+    "file": "文件",
+    "period": "期间",
+    "rows": "行数",
+    "skipped": "已跳过",
+    "status": "状态",
+    "ready": "就绪",
+    "processing": "解析中",
+    "failed": "失败",
+    "empty": "暂无导入",
+    "upload": "上传",
+    "uploading": "上传中…",
+    "queued": "已加入队列",
+    "deleteConfirm": "删除此次导入？",
+    "errors": {
+      "not_xlsx": "不是 xlsx 或 csv",
+      "too_large": "文件过大",
+      "empty": "文件为空",
+      "no_file": "未选择文件",
+      "forbidden": "无权限",
+      "enqueue_failed": "未加入队列——请重试",
+      "in_use": "已有计算使用该导入的价格 — 无法删除",
+      "network": "连接中断"
+    }
   }
 }

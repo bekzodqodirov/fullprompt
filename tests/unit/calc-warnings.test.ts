@@ -33,6 +33,61 @@ describe('a warning means the dictionary had an answer and a person typed anothe
     }
   });
 
+  /**
+   * 0094's own half. It carries NO dictionary clause on purpose, and that
+   * is the difference between the two sentences: `baza_off_dictionary`
+   * means a person disagreed with the book, this one means NOBODY stated the
+   * price — the machine matched a declaration by name and the row is still
+   * wearing its «📥 taxmin» chip. The ✅ has to record that a person looked.
+   */
+  it('records that a baza came out of the customs import, book or no book', () => {
+    const imported = {
+      ...base,
+      items: [
+        {
+          hasDictionaryBaza: false,
+          bazaSource: 'import' as const,
+          bazaUsd: 2,
+          bazaBasis: 'kg' as const,
+          dictionaryBaza: null,
+        },
+      ],
+    };
+    expect(warningsForGroup(imported)).toContain('baza_from_import');
+    // A price the VED typed is theirs and says nothing.
+    expect(
+      warningsForGroup({
+        ...imported,
+        items: [{ ...imported.items[0]!, bazaSource: 'typed' as const }],
+      }),
+    ).not.toContain('baza_from_import');
+    // An EMPTY row cannot have been filled from anything.
+    expect(
+      warningsForGroup({
+        ...imported,
+        items: [{ ...imported.items[0]!, bazaUsd: null }],
+      }),
+    ).not.toContain('baza_from_import');
+  });
+
+  it('an imported baza that disagrees with the book warns on BOTH counts', () => {
+    const facts = {
+      ...base,
+      items: [
+        {
+          hasDictionaryBaza: true,
+          bazaSource: 'import' as const,
+          bazaUsd: 2,
+          bazaBasis: 'kg' as const,
+          dictionaryBaza: { bazaUsd: 5, basis: 'kg' as const },
+        },
+      ],
+    };
+    const out = warningsForGroup(facts);
+    expect(out).toContain('baza_off_dictionary');
+    expect(out).toContain('baza_from_import');
+  });
+
   it('warns once the dictionary HAS an answer and a DIFFERENT rate was typed', () => {
     const facts = { ...base, dictionaryRates: { dutyPct: 5, vatPct: 12, feeUsd: 0 } };
     expect(warningsForGroup(facts)).toContain('rate_off_dictionary');

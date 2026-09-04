@@ -56,6 +56,17 @@ export const SETTING_DEFAULTS = {
    */
   quote_valid_days: 30,
   /**
+   * How close a customs-import name must be to the VED's typed one before
+   * its price fills the baza by itself (0..1, pg_trgm similarity).
+   *
+   * The owner's rule: «qanchalik togriligiga qarab olamiz agar togri bolmasa
+   * baza yoq deb ved hodimi ozi qoyadi» — so this number is the line between
+   * «fill it and mark it 📥» and «leave it empty and offer the list». 0.45 is
+   * a first guess to be tuned on his real quarterly file; raising it fills
+   * fewer rows and guesses less.
+   */
+  import_baza_min_sim: 0.45,
+  /**
    * The month the dictionary review was last announced, as `YYYY-MM`.
    *
    * A CLAIM and not a preference — it is written by the sweep, never by a

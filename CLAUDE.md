@@ -127,7 +127,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | The VED module | `docs/VED.md` — agreed 2026-08-22; **phase A SHIPPED**, B-E open |
-| Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **not yet built**, sub-rounds A (import+suggest) then B (bot AI) |
+| Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **sub-round A SHIPPED** (import + baza suggestion), B (bot AI) open |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
@@ -1209,19 +1209,44 @@ floor-hidden text → PDF. STATED to him: m³ has no PP-3818 rate; unclaimed
 marking cargo stays out of the code answer; answer offers stay out of the
 per-code price history.
 
-**AGREED NEXT (2026-09-04, after the phase-4 deploy — his server confirmed
-94): the customs-IMPORT baza + the AI VED hodimi.** The full agreed spec with
-his seven verbatim answers, the measured file structure (his quarterly
-~500k-row declarations dump; a 12-row fixture with the exact headers is at
-`tests/fixtures/customs-import-sample.xlsx`), migration 0094's design, the
-matching rules (name trigram + weight-closeness for dona, auto-fill over a
-threshold marked «📥 taxmin»), and the staff-bot AI estimator design is
-**`docs/VED-IMPORT-AI.md`** — read it FIRST, do not re-ask the owner. Build
-sub-round A (admin upload → background import → baza suggestions in the
-workspace) before sub-round B (bot AI).
+**Round — the customs IMPORT baza, sub-round A (2026-09-04; DECISIONS
+#889-895; migration 0094 `customs_import` — ledger must reach 95):** his
+quarterly declarations dump becomes the VED's baza SUGGESTION. Spec +
+his seven verbatim answers: **`docs/VED-IMPORT-AI.md`** (read it first, do
+not re-ask him). The ADMIN uploads at `/admin/bojxona-import` (his answer 4)
+through a ROUTE HANDLER (#291) that stores the bytes and enqueues; the parse
+is a pg-boss job STREAMING through `ExcelJS.stream.xlsx.WorkbookReader` —
+`StorageDriver` grew its first `getStream` for it, because a Buffer of 80 MB
+plus an in-memory workbook is the container's memory twice over. Columns are
+found by HEADER NAME (his 1b), imports ACCUMULATE and the newest READY one
+answers (2b), only the BAZA comes out of the file (7). **Three defects came
+out of MEASURING his own file instead of assuming**: the streaming reader
+hands a date back as the raw Excel SERIAL where the in-memory one hands a
+`Date` (so the batch could not say which quarter it covered); «Божхона
+киймати» is the CONTRACT currency and «Там.стоим $» the dollars (the kg
+self-check went 64 % drift → 0 when the header list was narrowed); and
+`similarity()` scores a short typed name inside a 500-character declaration
+paragraph near ZERO — `word_similarity` is the operator, found in a BROWSER
+after every integration test passed. `unitsForRow` decides which of the
+file's units may price a row: the law when it pins one, else the row's own
+figures with kg first (74 % of his file is per-kg; `defaultBasisFor` alone
+would have refused three quarters of every quarter). The fill is computed on
+the POOL beside `ratesForCodes` and applied in-tx with three re-checks
+(#714); a picked row's PRICE comes from the file, never the browser (#778);
+`baza_source` gains `'import'` and still has no `'ai'`. New warning
+`baza_from_import` carries NO dictionary clause on purpose — it means nobody
+stated the price, so the ✅ records that a person looked at a number the
+machine chose. A ready import can be deleted only while nothing is priced
+off it (`in_use`), which is also the e2e's honest cleanup — an import is the
+loudest CONFIGURATION this suite can leave behind (#183). 7 red proofs, one
+of which needed BOTH fences stripped. **Sub-round B (the staff-bot AI VED
+hodimi, spec §3) is open.**
 
-**Latest migration: 0093** (`calc_offer_answer` — the offer's answer anchor
-and the answer-amount money CHECK; ledger must reach **94**). Before it:
+**Latest migration: 0094** (`customs_import` — the quarterly declarations
+dump, its rows under a GIN trigram index, and `calc_request_items.
+import_row_id`; ledger must reach **95**). Before it:
+0093 (`calc_offer_answer` — the offer's answer anchor
+and the answer-amount money CHECK; ledger 94). Before it:
 0092 (`calc_measure` — the measure pair, the widened
 baza bases, the revision clock; ledger 93). Before it: 0091(`calc_law` — the four duty shapes, the certificate, the fee override;
 ledger 92); 0090

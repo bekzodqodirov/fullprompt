@@ -101,4 +101,33 @@ describe('the database refuses too', () => {
       expect(clause).not.toContain("'ai'");
     }
   });
+
+  // 0094 REPLACES the baza check to admit 'import' — the quarterly customs
+  // dump. That is a declaration somebody filed, not the model's opinion, and
+  // the fence has to follow the constraint that is actually in force or it
+  // goes on guarding a rule 0094 has already rewritten. The list is asserted
+  // WHOLE, so a fourth value cannot slip in beside it.
+  it("0094 widens the baza source to the import and still refuses 'ai'", () => {
+    const later = readFileSync(
+      'src/modules/platform/db/migrations/0094_customs_import.sql',
+      'utf8',
+    );
+    const at = later.lastIndexOf('calc_items_baza_source_check');
+    expect(at).toBeGreaterThan(-1);
+    const clause = later.slice(at, later.indexOf(';', at));
+    expect(clause).toContain("'dictionary'");
+    expect(clause).toContain("'typed'");
+    expect(clause).toContain("'import'");
+    expect(clause).not.toContain("'ai'");
+    expect(clause.match(/'[a-z_]+'/g)).toEqual(["'dictionary'", "'typed'", "'import'"]);
+  });
+
+  // And the ROW the import writes is a price out of the file — never a
+  // number the model produced. `import-baza.ts` is the only new writer of a
+  // baza in 0094's round, and it may not name the model at all.
+  it('the import suggestion mentions no ai identifier', () => {
+    const source = read('src/modules/wms/customs/import-baza.ts');
+    expect(source).not.toMatch(/\bai[A-Z]\w*/);
+    expect(source).not.toMatch(/ai_\w+/);
+  });
 });

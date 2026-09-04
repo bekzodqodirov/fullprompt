@@ -26,7 +26,13 @@ export type CalcWarningKind =
    * the 21 sm³ vehicle rows whose «…за куб. см. для» condition the parse cut
    * short. The price computes; the confirm must RECORD that the book's answer
    * came with a condition attached (phase 3). */
-  | 'rate_noted';
+  | 'rate_noted'
+  /** At least one baza in this group was FILLED FROM THE CUSTOMS IMPORT and
+   * nobody has retyped it (0094). The file is a real declaration, not a
+   * guess, but it was matched to our cargo by a NAME — so the ✅ must record
+   * that the person looked at a price the machine chose, exactly as
+   * `ai_low_confidence` records a rate it chose. */
+  | 'baza_from_import';
 
 export interface WarningGroupFacts {
   /** What the rates dictionary answers for this group's code today, if anything. */
@@ -44,7 +50,7 @@ export interface WarningGroupFacts {
    * it must match pricing.ts's BazaBasis by hand. */
   items: {
     hasDictionaryBaza: boolean;
-    bazaSource: 'dictionary' | 'typed' | null;
+    bazaSource: 'dictionary' | 'typed' | 'import' | null;
     bazaUsd: number | null;
     bazaBasis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' | null;
     dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' } | null;
@@ -88,12 +94,20 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
     facts.items.some(
       (i) =>
         i.dictionaryBaza !== null &&
-        i.bazaSource === 'typed' &&
+        (i.bazaSource === 'typed' || i.bazaSource === 'import') &&
         i.bazaUsd !== null &&
         (i.bazaUsd !== i.dictionaryBaza.bazaUsd || i.bazaBasis !== i.dictionaryBaza.basis),
     )
   ) {
     out.push('baza_off_dictionary');
+  }
+  // The import's own half. It does NOT need the dictionary clause the two
+  // above carry: a value «off the dictionary» is a person disagreeing with
+  // the book, while this one is nobody having stated the price at all — the
+  // machine matched a declaration by name and the row is still wearing its
+  // «📥 taxmin» chip.
+  if (facts.items.some((i) => i.bazaSource === 'import' && i.bazaUsd !== null)) {
+    out.push('baza_from_import');
   }
   // A blind confirm is a CONJUNCTION and each clause earns its place: the
   // model actually proposed this group (`mergeProposals` mints orphan groups
