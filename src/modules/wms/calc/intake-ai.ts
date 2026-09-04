@@ -165,6 +165,14 @@ export async function analyzeIntake(input: {
         },
       ],
     });
+    // Spec §3: «no new cap in v1, but log token use». Until this round
+    // every model call was a person pressing a button; the pass makes
+    // them automatic, so what it costs has to be readable in the log or
+    // the owner cannot answer whether it is affordable.
+    logger.info(
+      { in: response.usage?.input_tokens, out: response.usage?.output_tokens },
+      '[calc intake] model tokens',
+    );
     if (response.stop_reason === 'refusal') return null;
     const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
     const parsed = factsSchema.parse(JSON.parse(raw));

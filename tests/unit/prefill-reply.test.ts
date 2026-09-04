@@ -129,6 +129,43 @@ describe('the honest degradations', () => {
   });
 });
 
+describe('the pass names what it did NOT do', () => {
+  it('a capped or refused pick is said out loud, never only logged', () => {
+    // Law 6 applied to the pass's own decisions. `MAX_PICK_ROWS` is 40, so a
+    // 60-line invoice leaves twenty rows unanswered — and the first version
+    // reported that to `logger.info` alone, which made the reply read like a
+    // complete answer with twenty rows silently baza-less.
+    const text = prefillReplyText({
+      customsUsd: 248,
+      freightUsd: null,
+      hasFreight: false,
+      blockers: [],
+      codesStamped: 0,
+      ratesPulled: 0,
+      importFilled: 40,
+      link: null,
+      aiConfigured: true,
+      pickCapped: 20,
+      pickRefused: 3,
+    });
+    expect(text).toContain('20 ta qator');
+    expect(text).toContain('3 ta taklif');
+    // …and stays quiet when there is nothing to confess.
+    const clean = prefillReplyText({
+      customsUsd: 248,
+      freightUsd: null,
+      hasFreight: false,
+      blockers: [],
+      codesStamped: 0,
+      ratesPulled: 0,
+      importFilled: 2,
+      link: null,
+      aiConfigured: true,
+    });
+    expect(clean).not.toContain('Bazasi qo‘yilmadi');
+  });
+});
+
 describe('every refusal the engine can make has a sentence', () => {
   /**
    * The first version of these maps was `Record<string, string>` full of

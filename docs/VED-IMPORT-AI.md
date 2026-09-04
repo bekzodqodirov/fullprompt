@@ -436,3 +436,15 @@ collector. Staff bot ONLY (his 5a).
 - Sub-round A's «bu kod avvalgi chorakda qancha edi» (the per-code history
   across quarters) was designed and is NOT built — owed to him as a «yo'q»
   or a later round, whichever he prefers.
+- **The model's REASON for a pick is logged and not shown.** `pickImportRows`
+  returns a one-line reason per row and nothing on any screen can display it:
+  there is no column for it and sub-round B mints no migration. So a pick and
+  the deterministic ≥0.45 auto-fill land identically (`baza_source='import'`
+  + `import_row_id`, one 📥 chip, one `baza_from_import` warning), and the VED
+  reviewing a number cannot tell which of the two put it there. Owed: a
+  column and a chip that separate «the file matched this name» from «the
+  model chose between five candidates», in a round that may mint one.
+- A pass killed half-way is NOT retried — its own first half has moved the
+  rev clock, and `prefillStanding` then reads `touched`. Deliberate (the
+  alternative re-runs `applyProposal` over work a person may have done since)
+  and logged, never silent.

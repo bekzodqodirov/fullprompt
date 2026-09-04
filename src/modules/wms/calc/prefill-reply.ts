@@ -121,6 +121,18 @@ export interface PrefillReplyInput {
   link: string | null;
   /** No key configured — the honest word, not a silent half-answer. */
   aiConfigured: boolean;
+  /**
+   * Rows the pass did NOT answer a baza for, and why — law 6 applied to the
+   * pass's own decisions and not only to the engine's.
+   *
+   * `capped` are the rows past `MAX_PICK_ROWS`, never shown to the model at
+   * all; `refused` are picks the model made in the wrong unit, which the
+   * basis fence dropped. Both used to vanish into a log line, so a 60-line
+   * invoice came back reading like a complete answer with twenty rows
+   * silently baza-less.
+   */
+  pickCapped?: number;
+  pickRefused?: number;
 }
 
 /**
@@ -161,6 +173,14 @@ export function prefillReplyText(input: PrefillReplyInput): string {
   if (did.length) lines.push(`AI qo‘ydi: ${did.join(' · ')}`);
 
   if (!input.aiConfigured) lines.push('AI sozlanmagan — faqat yozilganidan o‘qildi.');
+
+  // What the pass did not reach, named. A count is enough here — the rows
+  // themselves are on the screen, and the seller's action either way is the
+  // same: the VED finishes it.
+  const left: string[] = [];
+  if (input.pickCapped) left.push(`${input.pickCapped} ta qator ko‘rilmadi (juda ko‘p)`);
+  if (input.pickRefused) left.push(`${input.pickRefused} ta taklif o‘lchovi mos kelmadi`);
+  if (left.length) lines.push(`Bazasi qo‘yilmadi: ${left.join(' · ')}`);
 
   const missing = input.blockers.map(blockerText);
   if (missing.length) {

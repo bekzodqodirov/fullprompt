@@ -157,9 +157,14 @@ export async function aiPrefill(
   // 3. The bazas the file could not fill by itself: the model is shown the
   //    candidates and picks a DECLARATION, never a number.
   let picked = 0;
+  let pickCapped = 0;
+  let pickRefused = 0;
   if (configured) {
     try {
-      picked = await pickBazas(requestId, ctx, pick);
+      const out = await pickBazas(requestId, ctx, pick);
+      picked = out.picked;
+      pickCapped = out.capped;
+      pickRefused = out.refused;
       if (picked > 0) aiUsed = true;
     } catch (err) {
       logger.warn({ err, requestId }, '[calc-prefill] pick failed');
@@ -186,6 +191,8 @@ export async function aiPrefill(
       importFilled: importFilled + picked,
       link: null,
       aiConfigured: configured,
+      pickCapped,
+      pickRefused,
     }),
     customsUsd,
     freightUsd,
@@ -206,11 +213,12 @@ async function pickBazas(
   requestId: string,
   ctx: AuditContext,
   pick: NonNullable<PrefillDeps['pick']>,
-): Promise<number> {
+): Promise<{ picked: number; capped: number; refused: number }> {
+  const none = { picked: 0, capped: 0, refused: 0 };
   const batchId = await newestReadyBatchId();
   // Nothing imported yet: there is nothing to choose between, and inventing
   // a price is the one thing this module may never do.
-  if (!batchId) return 0;
+  if (!batchId) return none;
 
   const rows = await db
     .select({
@@ -226,7 +234,7 @@ async function pickBazas(
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
   const empty = rows.filter((r) => r.bazaUsd === null && (r.tnvedCode ?? '').trim());
-  if (empty.length === 0) return 0;
+  if (empty.length === 0) return none;
 
   const groups = await db
     .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
@@ -266,14 +274,16 @@ async function pickBazas(
       '[calc-prefill] pick capped — the rest stay for the VED',
     );
   }
-  if (asking.length === 0) return 0;
+  if (asking.length === 0) return none;
 
+  const capped = Math.max(0, empty.length - MAX_PICK_ROWS);
   const answers = await pick(asking);
-  if (!answers) return 0;
+  if (!answers) return { ...none, capped };
 
   const bySeq = new Map(rows.map((r) => [r.seq, r]));
   const askedBySeq = new Map(asking.map((a) => [a.seq, a]));
   const edits: TableItemEdit[] = [];
+  let refused = 0;
   for (const a of answers) {
     if (a.candidate === null) continue;
     const row = bySeq.get(a.seq);
@@ -285,7 +295,10 @@ async function pickBazas(
     // The unit the row was ASKED about is the only one it may be answered
     // in: a per-kg declaration on a per-dona row is off by the weight of the
     // goods, and the model is choosing a row, not a basis.
-    if (!unit || BASIS_FOR_UNIT[chosen.unit] !== BASIS_FOR_UNIT[unit]) continue;
+    if (!unit || BASIS_FOR_UNIT[chosen.unit] !== BASIS_FOR_UNIT[unit]) {
+      refused += 1;
+      continue;
+    }
     edits.push({
       id: row.id,
       seq: row.seq,
@@ -296,8 +309,23 @@ async function pickBazas(
       importRowId: chosen.id,
     });
   }
-  if (edits.length === 0) return 0;
+  // The model's REASONS, which nothing on a screen can show yet: there is no
+  // column for them and this round mints no migration. Logged structurally so
+  // the first real week is reviewable at all — and STATED to the owner as
+  // owed, because a pick a person cannot see the reason for is exactly as
+  // reviewable as no reason at all.
+  logger.info(
+    {
+      requestId,
+      picks: answers.map((a) => ({ seq: a.seq, candidate: a.candidate, reason: a.reason })),
+      capped,
+      refused,
+    },
+    '[calc-prefill] the model chose',
+  );
+
+  if (edits.length === 0) return { picked: 0, capped, refused };
 
   await saveTable(requestId, { items: edits, adds: [] }, ctx);
-  return edits.length;
+  return { picked: edits.length, capped, refused };
 }
