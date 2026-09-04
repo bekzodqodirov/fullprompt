@@ -1319,9 +1319,43 @@ own rule is one measure per line (`unitsForRow` prices per dona on a count
 or per kg on a weight, and refuses only a row stating NEITHER), so the two
 fields collapsed to one: `itemMeasure`.
 
-**Latest migration: 0094** (`customs_import` — the quarterly declarations
+**Round — «читается» abadiy (2026-09-04; DECISIONS #915-916; migration 0095
+`customs_import_heartbeat` — ledger must reach 96):** his two June uploads sat
+at `processing` with 0 rows, 0 skipped, no period, no error, one for four
+hours, on a screen that offers NO delete button on a processing row — so the
+system could neither say what happened nor let him clear them. **The deepest
+cause is that a dead source stream is a HANG and not an error**: exceljs pipes
+the stored file into unzipper and node does not forward an error across
+`pipe()`, so a MinIO reset simply stops the rows for ever with nothing in the
+log; on the local driver the unhandled `'error'` was an uncaught exception
+that takes the whole app process down. The source's failure is RACED against
+every row, and teardown destroys the stream FIRST and never awaits the
+generator's close (measured — awaiting it re-created the freeze one layer
+down). Second: the worker recorded only refusals it could NAME, so once
+pg-boss spent the retries it forgot the job while the row went on claiming to
+run — the LAST attempt now writes the real error (`includeMetadata: true`).
+Third, which no catch can reach: a process killed mid-parse. Hence 0095's
+`heartbeat_at`, written every **10 seconds on a wall clock** (it was every
+20,000 ROWS, which is exactly why a small file and a dead one both showed
+«0»), first beat BEFORE a byte is read, and a 5-minute sweep failing anything
+quiet for 15 minutes in words — after which the existing delete button appears
+by itself. Two clauses carry it, both red-proven: `COALESCE(heartbeat_at,
+uploaded_at)` (his stuck rows predate 0095 and are otherwise unreachable) and
+`status = 'processing'` (a slow morning must not reap the ready quarter every
+suggestion reads). MEASURED: 500k rows = **83 s / 774 MB**, 150k = 27 s /
+434 MB — size was never the cause, but pg-boss's 15-min expiry and 5 retries
+are the wrong shape for this one job, so `enqueue` grew per-job options and
+the import alone takes 2 hours / 2 attempts. The refusal reason reached the
+admin as a CODE («missing_columns: Ед. из.») and is a sentence now, fenced by
+a test that reads the reason union out of the service. 4 red proofs + 2
+source-shape. **2422 unit/integration + 189 e2e** green on a fresh gsr_ci in
+CI's order, ledger 96.
+
+**Latest migration: 0095** (`customs_import_heartbeat` — the parse's wall-clock
+beat and the sweep's partial index; ledger must reach **96**). Before it:
+0094 (`customs_import` — the quarterly declarations
 dump, its rows under a GIN trigram index, and `calc_request_items.
-import_row_id`; ledger must reach **95**). Before it:
+import_row_id`; ledger 95). Before it:
 0093 (`calc_offer_answer` — the offer's answer anchor
 and the answer-amount money CHECK; ledger 94). Before it:
 0092 (`calc_measure` — the measure pair, the widened
