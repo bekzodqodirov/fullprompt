@@ -127,7 +127,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | The VED module | `docs/VED.md` — agreed 2026-08-22; **phase A SHIPPED**, B-E open |
-| Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **sub-round A SHIPPED** (import + baza suggestion), B (bot AI) open |
+| Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **sub-rounds A AND B SHIPPED** (import + baza suggestion; the bot's AI VED hodimi) |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
@@ -1244,8 +1244,48 @@ diff review then found the provenance QUADRUPLE broken in two writers —
 `import_row_id`, so the book's own number would have kept the «📥 taxmin»
 chip — fenced by a DERIVED source-shape test that finds every `.set()`
 writing `bazaSource` (#896). 8 red proofs, one of which needed BOTH fences
-stripped. **Sub-round B (the staff-bot AI VED
-hodimi, spec §3) is open.**
+stripped.
+
+**Sub-round B — the staff-bot AI VED hodimi (2026-09-04; DECISIONS
+#897-905; NO migration, 95 stands).** His «AI Ved hodimi … malumotlar
+berilganda hamma malumotlarni toliq qilib olib hsoblab beradgan bolsin».
+A job the bot lands is picked up by the machine and carried as far as it
+honestly can — codes from the model, rates from PP-3818, bazas from the
+quarterly file — and then it **STOPS**: the request stays in the VED's
+queue, every group unconfirmed, nothing sealed, the official price still
+the seal (or «Готово»). **Every write goes through a door that already
+exists** (`proposeGroups`, `saveTable`), which is why a feature this size
+needed no migration and no second writer. **The ✨ button had been leaving
+nothing priceable** — probed, not read: after `applyProposal` the group
+read `dutyPct null … rates_missing` and the ITEM's code was still null, so
+the VED retyped every code the model had found; `priceProposedGroups` pulls
+the book's rates per coded group and then stamps the codes through
+`saveTable`, in that order (a code stamped before its rates exist mints a
+group with no law). Law 1 at its narrowest: `pickImportRows` answers with
+an INDEX into real declarations, every index re-checked against the row it
+claims, the price re-read from the FILE through 0094's `importRowId` path
+— and **`prefill.ts` writes no provenance of its own**, because a module
+naming its own source is a second writer whose only inventable value is the
+one 0094 refuses. Live fence with no test until now: candidates are
+selected by TNVED CODE with **no unit filter** (mismatches are included and
+labelled), so a per-kg declaration on a per-dona row would be off by the
+weight of the goods. The reply is pure (`prefill-reply.ts`) — figure,
+«⚠️ Rasmiy emas» on its own line, blockers in WORDS, capped at six, and
+never a $0; freight reads `listUsd`, because a prefill states the tariff
+and never a discount nobody has given. **The checklist grew per-LINE
+questions** for rastamojka/podklyuch (a total weight prices a truck, not a
+declaration), with the one weight that is arithmetic DERIVED — a single
+line's weight IS the shipment's — through `loneWeightKg`, applied by all
+THREE landing doors; the derived fence `intake-items-wire.test.ts` found
+the third door on its first run. Two blockers came out of the design judge:
+the pass was an unowned `void` promise in the container the owner restarts
+on every deploy (now `JOB_CALC_PREFILL`, answer through the notification
+drain), and `proposeGroups`'s claim released only in a `finally`, so a hard
+kill said `ai_running` to that request FOR EVER (now heals on the same
+10-minute window as the workspace lock, from the same constant). Also
+fixed: the reconcile warning fired on partial coverage — the normal state
+of a half-coded request, and the AI prefill made it the normal state of a
+landed one.
 
 **Latest migration: 0094** (`customs_import` — the quarterly declarations
 dump, its rows under a GIN trigram index, and `calc_request_items.

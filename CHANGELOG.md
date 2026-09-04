@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## Telegram botdagi AI VED hodimi — 2026-09-04
+
+Sizning «AI Ved hodimi … malumotlar berilganda hamma malumotlarni toliq
+qilib olib hsoblab beradgan bolsin» degan so'rovingiz. **Migratsiya yo'q —
+hisob 95 bo'lib qolaveradi.**
+
+**Nima o'zgardi.** Sotuvchi botda 🧮 «Hisoblatish»ni bosib materiallarni
+tashlaydi va «Bo'ldi» deydi — bugungidek. Yangisi shundaki, ariza VED
+navbatiga tushgandan keyin **mashina ishni oxirigacha o'zi olib boradi**:
+
+1. Tovarlarni guruhlaydi va TNVED kodlarini qo'yadi;
+2. Har guruhga PQ-3818 kitobidan boj va QQS stavkalarini tortadi;
+3. Bazani chorak import faylidan to'ldiradi — nomi o'xshasa o'zi, o'xshamasa
+   o'sha kod ostidagi eng yaqin e'lonlarni ko'rib bittasini tanlaydi;
+4. Va o'sha chatga javob yozadi: **«Tahminiy rastamojka: ~$X»**, ostida
+   **«⚠️ Rasmiy emas — VED xodimi tasdiqlaydi»**.
+
+**Ariza NAVBATDAN chiqmaydi.** Hech narsa muhrlanmaydi, hech bir guruh
+tasdiqlanmaydi. VED oynani ochganda hamma narsa TO'LDIRILGAN turadi — u
+📥 belgilarini ko'zdan kechiradi, ✅ bosadi va muhrlaydi. Rasmiy narx —
+avvalgidek muhr (yoki muhrlab bo'lmaydigan joyda «Готово»).
+
+**Mashina hech qachon narx o'ylab topmaydi.** Model faqat fayldagi
+e'lonlardan BITTASINI tanlaydi — raqamni sistema o'sha e'londan oladi.
+Mos e'lon topilmasa baza BO'SH qoladi va javobda «baza yo'q» deb yoziladi;
+hech qayerda $0 chiqmaydi. Hisoblab bo'lmasa — nimasi yetishmayotgani
+so'z bilan aytiladi.
+
+**Kalit bo'lmasa ham ishlaydi.** ANTHROPIC kaliti serverda bo'lmasa,
+sistema TNVED xotirasi allaqachon kodlagan narsani baribir narxlaydi va
+javobda «AI sozlanmagan» deb rostini aytadi.
+
+**Rastamojkada endi har bir qator uchun soni va kilosi so'raladi.**
+Umumiy og'irlik furani narxlaydi, deklaratsiyani emas: baza har qator uchun
+kg yoki dona bo'yicha hisoblanadi. Agar arizada bitta tovar bo'lsa —
+yukning og'irligi o'sha tovarning og'irligi deb olinadi, sizdan qayta
+so'ralmaydi. Ikki va undan ortiq tovar bo'lsa bot har birining kilosini
+so'raydi. Yo'lkirada ikkalasi ham so'ralmaydi — fura umumiy raqamlar bilan
+narxlanadi.
+
+**Nima qilishingiz kerak:** hech narsa. Fayl allaqachon yuklangan bo'lsa
+ishlaydi; yuklanmagan bo'lsa Boshqaruv → «📥 Bojxona bazasi» dan chorak
+faylni yuklang.
+
+**Ustiga yana ikkita ichki tuzatish** (siz ko'rmaysiz, lekin bo'lishi shart
+edi): mashinaning ishi endi deploy'dan omon qoladi — avval u dastur
+jarayonining ichida ishlardi va siz serverni yangilagan paytda yarim
+qolgan ish yo'qolib ketardi; va «hisob va haqiqat mos kelmayapti»
+ogohlantirishi endi faqat ikkala tomon bir xil yukni o'lchaganda chiqadi —
+avval yarim kodlangan arizada ham chiqib, bekorga qo'rqitardi.
+
 ## Bojxona bazasi: chorak fayl → VEDga baza taklifi — 2026-09-04
 
 Sizning «har 3 oyda 1 marta baza olaman … shuni ichida menga tahminan qoyib

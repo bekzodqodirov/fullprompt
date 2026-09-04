@@ -309,7 +309,24 @@ suggestImportBaza(input: {
   transitively — the import job and the saveTable fill must not call any
   pooled helper inside a tx or that fence goes red (it is right).
 
-## 3. Sub-round B — the AI VED hodimi (staff bot)
+## 3. Sub-round B — the AI VED hodimi (staff bot) — **SHIPPED 2026-09-04**
+
+> **Built** (DECISIONS #897-905, no migration). Everything below stands as
+> agreed; what the build learned beyond it:
+>
+> - The ✨ proposal it builds on had been leaving nothing priceable — the
+>   model's code lived on the GROUP alone, so no rates were pulled and the
+>   ITEM's code stayed null. `priceProposedGroups` closes it.
+> - The checklist extension is `itemQuantity` + `itemWeight` on
+>   rastamojka/podklyuch only, with a SINGLE line's weight derived from the
+>   shipment total (`loneWeightKg`) rather than asked for. Three doors land a
+>   calculation, not two; a derived fence found the third.
+> - The pass is a pg-boss job (`JOB_CALC_PREFILL`), not a `void` promise in
+>   the app process — a deploy mid-pass otherwise lost it half-applied with
+>   nothing recording that it was owed.
+> - The pick's basis fence is LIVE, not theoretical: candidates come back by
+>   TNVED code with unit mismatches included and labelled.
+
 
 Builds ON TOP of the existing 🧮 hisoblatish intake
 (`telegram/calc-intake.ts`, `wms/calc/intake*.ts`) — do not build a second
@@ -416,3 +433,6 @@ collector. Staff bot ONLY (his 5a).
 - The AI hisobchi does not quote FREIGHT unless the zone is known — freight
   needs his tariff zone; the reply says so rather than guessing.
 - Client-facing AI: refused (his standing decision).
+- Sub-round A's «bu kod avvalgi chorakda qancha edi» (the per-code history
+  across quarters) was designed and is NOT built — owed to him as a «yo'q»
+  or a later round, whichever he prefers.
