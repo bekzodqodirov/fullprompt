@@ -8,6 +8,7 @@ import {
   newestReadyBatchId,
 } from '../customs/import-service';
 import { suggestImportBaza, unitsForRow, BASIS_FOR_UNIT } from '../customs/import-baza';
+import { sectionParts, type CalcSectionName } from './pricing';
 import { loadWorkspace, proposeGroups, saveTable, type TableItemEdit } from './workspace';
 import { prefillReplyText } from './prefill-reply';
 import { pickImportRows, type PickAnswer, type PickRequest } from './prefill-ai';
@@ -124,10 +125,33 @@ export async function aiPrefill(
   let importFilled = 0;
   let aiUsed = false;
 
+  /**
+   * DOES THIS JOB HAVE A CUSTOMS SIDE AT ALL?
+   *
+   * The pass never asked, and on a **yolkira** request — the freight-only
+   * section, the first one the bot offers — it ran the whole customs half
+   * anyway: the model grouped the goods, `applyProposal` COMMITTED customs
+   * groups onto a quote that has no customs, and `blockersFor` then raised
+   * `customs_on_yolkira` («bu bo'limda rastamojka hisoblanmaydi») — a blocker
+   * no screen can clear, because nothing offers to delete those groups. So
+   * the machine could make a freight quote permanently unsealable, and then
+   * bill an Opus grouping call for doing it.
+   *
+   * A freight quote is priced on the TOTALS. There is nothing here for the
+   * model to do, and the honest pass is the one that does nothing.
+   */
+  const [row] = await db
+    .select({ section: calcRequests.section })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  const parts = row?.section
+    ? sectionParts(row.section as CalcSectionName)
+    : { customs: true, freight: true, extras: true };
+
   // 1. The model groups the goods and names their codes; `proposeGroups`
   //    then prices what it proposed (the book's rates, the code onto the
   //    row) and 0094's import fill runs inside its save.
-  if (configured) {
+  if (configured && parts.customs) {
     try {
       const out = await propose(requestId, ctx);
       codesStamped += out.codesStamped;
@@ -147,11 +171,13 @@ export async function aiPrefill(
   //    an empty save is what places those items in groups (with rates at
   //    mint) and fires the import fill. This is the whole model-free half of
   //    the feature, and it is why a server with no key still gets a figure.
-  try {
-    const swept = await saveTable(requestId, { items: [], adds: [] }, ctx);
-    importFilled += swept.importFilled.length;
-  } catch (err) {
-    logger.warn({ err, requestId }, '[calc-prefill] sweep failed');
+  if (parts.customs) {
+    try {
+      const swept = await saveTable(requestId, { items: [], adds: [] }, ctx);
+      importFilled += swept.importFilled.length;
+    } catch (err) {
+      logger.warn({ err, requestId }, '[calc-prefill] sweep failed');
+    }
   }
 
   // 3. The bazas the file could not fill by itself: the model is shown the
@@ -159,7 +185,7 @@ export async function aiPrefill(
   let picked = 0;
   let pickCapped = 0;
   let pickRefused = 0;
-  if (configured) {
+  if (configured && parts.customs) {
     try {
       const out = await pickBazas(requestId, ctx, pick);
       picked = out.picked;
@@ -185,6 +211,7 @@ export async function aiPrefill(
       customsUsd,
       freightUsd,
       hasFreight: ws?.parts.freight ?? false,
+      hasCustoms: ws?.parts.customs ?? parts.customs,
       blockers: ws?.blockers ?? [],
       codesStamped,
       ratesPulled,

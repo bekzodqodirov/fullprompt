@@ -16,6 +16,7 @@ const base = {
   customsUsd: null as number | null,
   freightUsd: null as number | null,
   hasFreight: false,
+  hasCustoms: true,
   blockers: [],
   codesStamped: 0,
   ratesPulled: 0,
@@ -139,6 +140,7 @@ describe('the pass names what it did NOT do', () => {
       customsUsd: 248,
       freightUsd: null,
       hasFreight: false,
+      hasCustoms: true,
       blockers: [],
       codesStamped: 0,
       ratesPulled: 0,
@@ -155,6 +157,7 @@ describe('the pass names what it did NOT do', () => {
       customsUsd: 248,
       freightUsd: null,
       hasFreight: false,
+      hasCustoms: true,
       blockers: [],
       codesStamped: 0,
       ratesPulled: 0,
@@ -212,5 +215,42 @@ describe('every refusal the engine can make has a sentence', () => {
         expect(text.length).toBeGreaterThan(kind.length);
       }
     }
+  });
+});
+
+describe('a section with no customs half says nothing about customs', () => {
+  it('a yolkira job never leads with «rastamojka ~$0.00»', () => {
+    // `loadWorkspace` answers `customsUsd: 0` — NOT null — for a section with
+    // no customs (`parts.customs ? assembled.customsUsd : 0`), so the reply
+    // read that as «priced, at zero» and led with it. On the freight-only
+    // section the bot offers FIRST, and with the freight still unpriced, the
+    // whole message was a $0: law 6 broken by the round whose law it is.
+    const priced = prefillReplyText({
+      ...base,
+      hasCustoms: false,
+      hasFreight: true,
+      customsUsd: 0,
+      freightUsd: 4800,
+    });
+    expect(priced).not.toContain('rastamojka');
+    expect(priced).not.toContain('$0.00');
+    expect(priced).toContain('yo‘lkira ~$4800.00');
+
+    // …and with nothing priced at all it must refuse in words, not print $0.
+    const bare = prefillReplyText({
+      ...base,
+      hasCustoms: false,
+      hasFreight: true,
+      customsUsd: 0,
+      freightUsd: null,
+    });
+    expect(bare).not.toContain('$0.00');
+    expect(bare).toContain('Hozircha hisoblab bo‘lmadi');
+
+    // A real customs job with a genuine zero is a FACT and still prints — the
+    // question was never «is it zero», it was «does this job have a customs
+    // side at all».
+    const genuine = prefillReplyText({ ...base, hasCustoms: true, customsUsd: 0 });
+    expect(genuine).toContain('rastamojka ~$0.00');
   });
 });

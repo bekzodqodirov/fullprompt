@@ -138,6 +138,28 @@ async function open(items: { name: string; tnvedCode?: string | null; quantity?:
   return r.id;
 }
 
+async function openSection(
+  section: 'yolkira' | 'rastamojka' | 'podklyuch',
+  items: { name: string; tnvedCode?: string | null; quantity?: number | null; weightKg?: number | null }[],
+) {
+  const r = await openCalcRequest(
+    {
+      entityType: 'deal',
+      entityId: dealId,
+      section,
+      fromCity: 'Yiwu',
+      toCity: 'Toshkent',
+      weightKg: 500,
+      volumeM3: 10,
+      items,
+      source: 'card',
+    },
+    ctx(),
+  );
+  madeRequests.push(r.id);
+  return r.id;
+}
+
 const importRow = async () => {
   const rows = await db
     .select()
@@ -348,6 +370,39 @@ describe('the machine carries a job as far as it honestly can', () => {
     // evidence about the fixture (#166).
     await confirmGroup(group!.id, ctx());
     expect(await prefillStanding(fresh, await prefillTicket(fresh))).toBe('confirmed');
+  });
+
+  it('a freight-only job is left ALONE — no groups, no model call, no $0', async () => {
+    // The pass never asked what section the job was. On a yolkira request —
+    // the freight-only one, and the FIRST the bot offers — it ran the whole
+    // customs half anyway: `applyProposal` COMMITTED customs groups onto a
+    // quote that has no customs, and `blockersFor` then raised
+    // `customs_on_yolkira`, a blocker no screen can clear because nothing
+    // offers to delete those groups. The machine could make a freight quote
+    // permanently unsealable, and bill an Opus call for doing it.
+    const row = await importRow();
+    const id = await openSection('yolkira', [{ name: row.name, weightKg: 100 }]);
+
+    let asked = 0;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      propose: async () => {
+        asked += 1;
+        throw new Error('the model must not be asked about a freight quote');
+      },
+      pick: async () => {
+        asked += 1;
+        return null;
+      },
+    });
+
+    expect(asked, 'no model call belongs on a freight-only job').toBe(0);
+    const ws = await loadWorkspace(id);
+    expect(ws!.groups, 'no customs group may be minted here').toHaveLength(0);
+    expect(ws!.blockers.some((b) => b.kind === 'customs_on_yolkira')).toBe(false);
+    // …and the reply says nothing about customs, least of all a zero.
+    expect(out.text).not.toContain('rastamojka');
+    expect(out.text).not.toContain('$0.00');
   });
 
   it('a model that fails costs a sentence, never the job', async () => {

@@ -112,6 +112,16 @@ export interface PrefillReplyInput {
   freightUsd: number | null;
   /** Does this section even have a freight half? */
   hasFreight: boolean;
+  /**
+   * …and a customs half?
+   *
+   * `loadWorkspace` answers `customsUsd: 0` — not null — for a section that
+   * has no customs at all (`parts.customs ? assembled.customsUsd : 0`), so a
+   * yolkira job read as «priced at zero» and the reply led with
+   * «Tahminiy: rastamojka ~$0.00». Law 6's own $0, printed by the round whose
+   * founding law it is, on the freight-only section the bot offers first.
+   */
+  hasCustoms: boolean;
   blockers: SealBlocker[];
   /** How much the machine did, so the VED knows what to check. */
   codesStamped: number;
@@ -147,11 +157,16 @@ export interface PrefillReplyInput {
  */
 export function prefillReplyText(input: PrefillReplyInput): string {
   const lines: string[] = [];
-  const priced = input.customsUsd !== null || input.freightUsd !== null;
+  const priced =
+    (input.hasCustoms && input.customsUsd !== null) || input.freightUsd !== null;
 
   if (priced) {
     const parts: string[] = [];
-    if (input.customsUsd !== null) parts.push(`rastamojka ~${money(input.customsUsd)}`);
+    // A figure is only worth printing where the SECTION has that half. Not
+    // «is it zero» — a genuine $0 customs bill is a fact worth stating; the
+    // question is whether this job has a customs side at all.
+    if (input.hasCustoms && input.customsUsd !== null)
+      parts.push(`rastamojka ~${money(input.customsUsd)}`);
     if (input.freightUsd !== null) parts.push(`yo‘lkira ~${money(input.freightUsd)}`);
     lines.push(`🧮 Tahminiy: ${parts.join(' · ')}`);
     lines.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
