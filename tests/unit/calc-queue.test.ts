@@ -41,12 +41,18 @@ describe('the checklist over a stored request', () => {
     // asks what each line is — a count, and a weight where one cannot be
     // derived. One line and a stated total weight IS that line's weight, so
     // only the count is outstanding here.
-    expect(missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor' }] })).toEqual([
-      'itemQuantity',
-    ]);
+    // Sub-round B: a customs section also asks that each LINE state a
+    // figure for something. One line takes the shipment's weight, so this is
+    // already complete…
+    expect(missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor' }] })).toEqual([]);
+    // …and a second line that states nothing is the case the engine cannot
+    // value at all.
     expect(
-      missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor', quantity: 4 }] }),
-    ).toEqual([]);
+      missingFor('podklyuch', {
+        ...facts,
+        goods: [{ name: 'monitor', quantity: 4 }, { name: 'kabel' }],
+      }),
+    ).toEqual(['itemMeasure']);
   });
 
   it('a row written before the module existed has no section and no checklist', () => {
@@ -60,10 +66,11 @@ describe('the checklist over a stored request', () => {
     // With no total weight there is nothing to derive the line's weight
     // FROM, so the per-line question appears beside the total's — which is
     // the derivation being visible rather than assumed.
+    // With no total weight there is nothing to derive the line's weight FROM
+    // and the line states no count either, so both questions stand.
     expect(missingFor('podklyuch', { ...facts, weightKg: 0, goods: [{ name: 'x' }] })).toEqual([
       'weightKg',
-      'itemQuantity',
-      'itemWeight',
+      'itemMeasure',
     ]);
   });
 });

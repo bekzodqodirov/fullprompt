@@ -111,6 +111,20 @@ describe('what a line weighs is derived once, or asked for', () => {
     expect(itemFacts({ weightKg: 250, goods: [{ name: 'x', quantity: 0 }] })[0]!.quantity).toBeNull();
   });
 
+  it('a line needs ONE measure, never both', () => {
+    // `unitsForRow` prices a row per kg OR per dona; asking for both made a
+    // multi-line podklyuch from the seller's card form — which has no
+    // per-line weight input — permanently incomplete.
+    const base = { weightKg: 500, volumeM3: 3 };
+    const counted = { ...base, goods: [{ name: 'a', quantity: 4 }, { name: 'b', quantity: 2 }] };
+    expect(missingFields('rastamojka', counted)).toEqual([]);
+    const weighed = { ...base, goods: [{ name: 'a', weightKg: 300 }, { name: 'b', weightKg: 200 }] };
+    expect(missingFields('rastamojka', weighed)).toEqual([]);
+    // Neither is the one case the engine genuinely cannot value.
+    const bare = { ...base, goods: [{ name: 'a', quantity: 4 }, { name: 'b' }] };
+    expect(missingFields('rastamojka', bare)).toEqual(['itemMeasure']);
+  });
+
   it('no goods at all is ONE absence, not three', () => {
     // The per-line questions must not pile onto «tovar nomi». It falls out of
     // `[].some()` being false rather than out of a guard, which is why it is
@@ -123,7 +137,9 @@ describe('what a line weighs is derived once, or asked for', () => {
   it('freight asks for neither — a truck is priced on the totals', () => {
     const facts = { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 250, volumeM3: 3, goods: [{ name: 'Chexol' }] };
     expect(missingFields('yolkira', facts)).toEqual([]);
-    expect(missingFields('rastamojka', facts)).toEqual(['itemQuantity']);
+    // The line carries a derived weight (one line, 250 kg total), so it is
+    // priceable per kg and nothing is outstanding.
+    expect(missingFields('rastamojka', facts)).toEqual([]);
   });
 
   it('the summary prints the line’s own figures, derived weight included', () => {

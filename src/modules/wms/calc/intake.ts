@@ -38,16 +38,8 @@ export const SECTION_LABEL: Record<CalcSection, string> = {
  */
 export const REQUIRED_FIELDS: Record<CalcSection, CalcField[]> = {
   yolkira: ['fromCity', 'toCity', 'weightKg', 'volumeM3', 'goods'],
-  rastamojka: ['weightKg', 'volumeM3', 'goods', 'itemQuantity', 'itemWeight'],
-  podklyuch: [
-    'fromCity',
-    'toCity',
-    'weightKg',
-    'volumeM3',
-    'goods',
-    'itemQuantity',
-    'itemWeight',
-  ],
+  rastamojka: ['weightKg', 'volumeM3', 'goods', 'itemMeasure'],
+  podklyuch: ['fromCity', 'toCity', 'weightKg', 'volumeM3', 'goods', 'itemMeasure'],
 };
 
 export type CalcField =
@@ -60,15 +52,22 @@ export type CalcField =
    * PER-ITEM, and only where customs is being calculated (sub-round B).
    *
    * A total weight prices a truck; it cannot price a declaration. The baza is
-   * per kg or per dona or per m², chosen per ROW, so `unitsForRow` needs to
-   * know what THIS line states a figure for — and the customs file is 74 %
-   * per-kg while an ordinary advalor code asks per-dona. A line stating
-   * neither a count nor a weight can be valued at all only by guessing, which
-   * is the one thing the module may not do. Freight asks for neither: it is
-   * priced on the totals.
+   * per kg or per dona or per m², chosen per ROW, so the row has to state a
+   * figure for SOMETHING — and `unitsForRow` says exactly which: a count
+   * prices it per dona, a weight per kg, and a row stating NEITHER can be
+   * valued only by guessing, which is the one thing this module may not do.
+   *
+   * ONE field, not two, and the first version got that wrong. Asking for a
+   * count AND a weight made a multi-line podklyuch submitted through the
+   * SELLER'S CARD FORM permanently incomplete — that form has no per-line
+   * weight input at all — so the chip rendered for ever on the commonest
+   * submission there is. That is #649's «a warning that fires on everything
+   * names nothing» a second time, in the same round that fixed it once.
+   * Found by CI, on the e2e that walks the very door this round opened.
+   *
+   * Freight asks for none of it: a truck is priced on the totals.
    */
-  | 'itemQuantity'
-  | 'itemWeight';
+  | 'itemMeasure';
 
 export const FIELD_LABEL: Record<CalcField, string> = {
   fromCity: 'qaysi shahardan',
@@ -76,8 +75,7 @@ export const FIELD_LABEL: Record<CalcField, string> = {
   weightKg: 'og‘irligi (kg)',
   volumeM3: 'hajmi (kub)',
   goods: 'tovar nomi',
-  itemQuantity: 'har bir tovarning soni',
-  itemWeight: 'har bir tovarning og‘irligi (kg)',
+  itemMeasure: 'tovarning soni yoki og‘irligi',
 };
 
 /** What the AI (or a human) managed to read out of the sent material. */
@@ -89,7 +87,7 @@ export interface CalcFacts {
   goods?: {
     name: string;
     quantity?: number | null;
-    /** What THIS line weighs, in kg — see `CalcField`'s `itemWeight`. */
+    /** What THIS line weighs, in kg — see `CalcField`'s `itemMeasure`. */
     weightKg?: number | null;
     tnvedCode?: string | null;
     note?: string | null;
@@ -161,8 +159,8 @@ export function missingFields(section: CalcSection, facts: CalcFacts): CalcField
     // absence, and one hole reported three times is how a checklist stops
     // being read. Pinned behaviourally, because the mechanism is subtle
     // enough that a later `!items.length ||` would look like an improvement.
-    if (field === 'itemQuantity') return items.some((i) => i.quantity === null);
-    if (field === 'itemWeight') return items.some((i) => i.weightKg === null);
+    if (field === 'itemMeasure')
+      return items.some((i) => i.quantity === null && i.weightKg === null);
     if (field === 'weightKg') return !(Number(facts.weightKg) > 0);
     if (field === 'volumeM3') return !(Number(facts.volumeM3) > 0);
     return !String(facts[field] ?? '').trim();

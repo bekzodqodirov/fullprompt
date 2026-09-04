@@ -2088,8 +2088,7 @@
       "weightKg": "weight",
       "volumeM3": "volume",
       "goods": "goods",
-      "itemQuantity": "quantity per line",
-      "itemWeight": "weight per line"
+      "itemMeasure": "quantity or weight per line"
     },
     "errors": {
       "validation": "Check the fields",

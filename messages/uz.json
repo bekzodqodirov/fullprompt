@@ -2088,8 +2088,7 @@
       "weightKg": "og‘irlik",
       "volumeM3": "hajm",
       "goods": "tovar nomi",
-      "itemQuantity": "har bir tovarning soni",
-      "itemWeight": "har bir tovarning og‘irligi"
+      "itemMeasure": "tovarning soni yoki og‘irligi"
     },
     "errors": {
       "validation": "Maydonlarni tekshiring",

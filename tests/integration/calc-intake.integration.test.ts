@@ -104,12 +104,10 @@ describe('what a quote cannot be made without', () => {
   });
 
   it('a zero is a blank, not a number', () => {
-    // `weightKg` is BOTH the shipment's fact and — on a one-line job — the
-    // line's, so removing it takes two answers away at once (sub-round B).
-    expect(missingFields('rastamojka', { ...full, weightKg: 0 })).toEqual([
-      'weightKg',
-      'itemWeight',
-    ]);
+    // The line still states a COUNT, so removing the shipment's weight takes
+    // the total away and leaves the line priceable — one measure is what the
+    // engine asks of a row (`unitsForRow`), never both.
+    expect(missingFields('rastamojka', { ...full, weightKg: 0 })).toEqual(['weightKg']);
     expect(missingFields('rastamojka', { ...full, volumeM3: -1 })).toEqual(['volumeM3']);
     // …and with no goods at all the per-line questions stay silent: one hole
     // named three times is a checklist nobody finishes reading.

@@ -198,7 +198,7 @@ describe('a request is a JOB, not a card state', () => {
   });
 
   it('the checklist can be SATISFIED — both screens carry what it asks about', async () => {
-    // The per-line questions (`itemQuantity`, `itemWeight`) are answered from
+    // The per-line question (`itemMeasure`) is answered from
     // the facts the SCREEN builds, and both screens projected the item to
     // `{name}` alone — so quantity and weight read null whatever is stored,
     // and both chips rendered on every rastamojka request for ever,
@@ -218,13 +218,22 @@ describe('a request is a JOB, not a card state', () => {
     expect(listed, 'the queue must show the same request').toBeTruthy();
     expect(listed!.missing).toEqual([]);
 
-    // …and it still SAYS so when a line really is missing its count.
+    // A line stating a WEIGHT alone is complete — `unitsForRow` prices it per
+    // kg, which is 74 % of the customs file.
+    const byWeight = await open({
+      section: 'rastamojka',
+      items: [{ name: `kg-only ${tag()}`, weightKg: 200 }],
+    });
+    expect((await calcRequestDetail(byWeight.id))!.missing).toEqual([]);
+
+    // …and it still SAYS so when a line states NEITHER. TWO lines, because
+    // with one the shipment's own weight IS that line's and the request is
+    // complete without anybody typing anything — the derivation, visible.
     const bare = await open({
       section: 'rastamojka',
-      items: [{ name: `nomsiz ${tag()}`, weightKg: 200 }],
+      items: [{ name: `sonli ${tag()}`, quantity: 3 }, { name: `nomsiz ${tag()}` }],
     });
-    const bareRow = await calcRequestDetail(bare.id);
-    expect(bareRow!.missing).toEqual(['itemQuantity']);
+    expect((await calcRequestDetail(bare.id))!.missing).toEqual(['itemMeasure']);
   });
 });
 
