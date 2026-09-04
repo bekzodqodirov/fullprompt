@@ -172,8 +172,22 @@ export function prefillReplyText(input: PrefillReplyInput): string {
     // A figure is only worth printing where the SECTION has that half. Not
     // «is it zero» — a genuine $0 customs bill is a fact worth stating; the
     // question is whether this job has a customs side at all.
-    if (input.hasCustoms && input.customsUsd !== null)
-      parts.push(`rastamojka ~${money(input.customsUsd)}`);
+    if (input.hasCustoms && input.customsUsd !== null) {
+      // A customs figure is the sum over the GROUPS, and a row nobody has
+      // coded is in no group — so on a half-classified request the number is
+      // the estimate for PART of the cargo, wearing the job's name.
+      // MEASURED: two lines, one coded, and the seller reads
+      // «Tahminiy: rastamojka ~$376.96» for half the goods; the blocker line
+      // named the hole, the headline did not, and a seller quotes from the
+      // headline. Not suppressed — a partial estimate plus an honest label
+      // beats silence, and the VED finishes it either way.
+      const loose = input.blockers.find((b) => b.kind === 'ungrouped_items');
+      const partial =
+        loose && loose.kind === 'ungrouped_items'
+          ? ` (${loose.count} ta tovarsiz)`
+          : '';
+      parts.push(`rastamojka ~${money(input.customsUsd)}${partial}`);
+    }
     if (input.freightUsd !== null) parts.push(`yo‘lkira ~${money(input.freightUsd)}`);
     lines.push(`🧮 Tahminiy: ${parts.join(' · ')}`);
     lines.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');

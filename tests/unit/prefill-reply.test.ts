@@ -265,3 +265,24 @@ describe('a section with no customs half says nothing about customs', () => {
     expect(genuine).toContain('rastamojka ~$0.00');
   });
 });
+
+describe('a figure over PART of the cargo says so', () => {
+  it('the headline names the goods it could not count', () => {
+    // The customs total is the sum over GROUPS, and an uncoded row is in no
+    // group — so a half-classified request produced a confident figure for
+    // part of the cargo. MEASURED on a real request: two lines, one coded,
+    // «~$376.96» for half the goods. The blocker line named the hole; the
+    // headline did not, and a seller quotes from the headline.
+    const partial = prefillReplyText({
+      ...base,
+      customsUsd: 376.96,
+      blockers: [{ kind: 'ungrouped_items', count: 3 }],
+    });
+    expect(partial).toContain('rastamojka ~$376.96 (3 ta tovarsiz)');
+
+    // Nothing loose: the figure stands on its own, as it always has.
+    const whole = prefillReplyText({ ...base, customsUsd: 376.96, blockers: [] });
+    expect(whole).toContain('rastamojka ~$376.96');
+    expect(whole).not.toContain('tovarsiz');
+  });
+});
