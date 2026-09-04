@@ -423,7 +423,14 @@ export async function bothFiguresForDeals(
     .select({
       dealId: calcOffers.entityId,
       clientPriceUsd: calcOffers.clientPriceUsd,
-      floorUsd: sql<string>`(SELECT v.total_usd FROM calc_versions v WHERE v.id = ${calcOffers.versionId})`,
+      // Phase 4: the floor follows the offer's anchor — version total, or the
+      // Готово answer. A version-only subselect here read NULL on every
+      // request-anchored row, and money(NULL) prints a $0 floor on the cash
+      // screen (judge, phase 4).
+      floorUsd: sql<string>`COALESCE(
+        (SELECT v.total_usd FROM calc_versions v WHERE v.id = ${calcOffers.versionId}),
+        (SELECT r.answer_amount FROM calc_requests r WHERE r.id = ${calcOffers.requestId})
+      )`,
       offeredAt: calcOffers.offeredAt,
     })
     .from(calcOffers)

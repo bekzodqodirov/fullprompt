@@ -2412,9 +2412,19 @@ export const calcOffers = pgTable(
   'calc_offers',
   {
     id: id(),
-    versionId: uuid('version_id')
-      .notNull()
-      .references((): AnyPgColumn => calcVersions.id, { onDelete: 'cascade' }),
+    /** The sealed-floor anchor (phase C). NULL on a Готово-answered offer. */
+    versionId: uuid('version_id').references((): AnyPgColumn => calcVersions.id, {
+      onDelete: 'cascade',
+    }),
+    /**
+     * The ANSWER anchor (phase 4, 0093): the offer stands on a completed
+     * request's typed Готово figure instead of a sealed version — production's
+     * only price while the dictionaries are empty. Exactly one of the two
+     * anchors is set (CHECK below); the floor is `answer_amount`.
+     */
+    requestId: uuid('request_id').references((): AnyPgColumn => calcRequests.id, {
+      onDelete: 'cascade',
+    }),
     entityType: text('entity_type').notNull(),
     entityId: uuid('entity_id').notNull(),
     clientPriceUsd: numeric('client_price_usd', { precision: 14, scale: 2 }).notNull(),
@@ -2455,6 +2465,9 @@ export const calcOffers = pgTable(
   (t) => [
     check('calc_offers_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
     check('calc_offers_locale_check', sql`${t.locale} IN ('uz', 'ru', 'en')`),
+    // Exactly one anchor: both = two floors for one promise, neither = a
+    // promise measured against nothing.
+    check('calc_offers_one_anchor_check', sql`(${t.versionId} IS NULL) <> (${t.requestId} IS NULL)`),
     check(
       'calc_offers_price_check',
       sql`${t.clientPriceUsd} > 0 AND ${t.clientPriceUsd} <> 'NaN'::numeric`,

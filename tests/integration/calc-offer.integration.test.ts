@@ -219,7 +219,7 @@ describe('the offer is the SELLER’s price, and the seal is only its floor', ()
     const { versionId, version } = await sealed();
     const floor = Number(version.totalUsd);
     const result = await recordOffer(
-      versionId,
+      { versionId: versionId },
       { clientPriceUsd: floor + 500, locale: 'uz', clientName: 'Ali aka' },
       ctx(),
     );
@@ -243,7 +243,7 @@ describe('the offer is the SELLER’s price, and the seal is only its floor', ()
     // and `mayApprove` deciding whether anything is actually sent.
     const { versionId, version } = await sealed();
     const result = await recordOffer(
-      versionId,
+      { versionId: versionId },
       {
         clientPriceUsd: Number(version.totalUsd) / 2,
         locale: 'ru',
@@ -266,10 +266,10 @@ describe('the offer is the SELLER’s price, and the seal is only its floor', ()
     // of this test asserted `rejects.toThrow()` and STAYED GREEN with the
     // engine's fence stripped — it was measuring the database.
     await expect(
-      recordOffer(versionId, { clientPriceUsd: Number('1 000'), locale: 'uz' }, ctx()),
+      recordOffer({ versionId: versionId }, { clientPriceUsd: Number('1 000'), locale: 'uz' }, ctx()),
     ).rejects.toMatchObject({ code: 'bad_number' });
     await expect(
-      recordOffer(versionId, { clientPriceUsd: 0, locale: 'uz' }, ctx()),
+      recordOffer({ versionId: versionId }, { clientPriceUsd: 0, locale: 'uz' }, ctx()),
     ).rejects.toMatchObject({ code: 'price_positive' });
   });
 
@@ -277,7 +277,7 @@ describe('the offer is the SELLER’s price, and the seal is only its floor', ()
     const { versionId } = await sealed();
     await expect(
       recordOffer(
-        versionId,
+        { versionId: versionId },
         {
           clientPriceUsd: 1000,
           locale: 'uz',
@@ -290,8 +290,8 @@ describe('the offer is the SELLER’s price, and the seal is only its floor', ()
 
   it('lists every offer made against the card, newest first', async () => {
     const { versionId } = await sealed();
-    await recordOffer(versionId, { clientPriceUsd: 4000, locale: 'uz' }, ctx());
-    await recordOffer(versionId, { clientPriceUsd: 4200, locale: 'uz' }, ctx());
+    await recordOffer({ versionId: versionId }, { clientPriceUsd: 4000, locale: 'uz' }, ctx());
+    await recordOffer({ versionId: versionId }, { clientPriceUsd: 4200, locale: 'uz' }, ctx());
     const list = await offersFor('deal', dealId);
     expect(list.length).toBeGreaterThanOrEqual(2);
     expect(Number(list[0]!.clientPriceUsd)).toBe(4200);
@@ -369,7 +369,7 @@ describe('the price history', () => {
   it('carries the offer a seller actually made, when there is one', async () => {
     const code = `6109${SUFFIX}`;
     const { versionId } = await sealed({ code });
-    await recordOffer(versionId, { clientPriceUsd: 9999, locale: 'uz' }, ctx());
+    await recordOffer({ versionId: versionId }, { clientPriceUsd: 9999, locale: 'uz' }, ctx());
     const rows = await quoteHistoryFor(code, { scope: 'all' });
     expect(rows[0]!.clientPriceUsd).toBe(9999);
   });
@@ -430,7 +430,7 @@ describe('an offer follows the lead onto the deal that wins it', () => {
     // seller's own record of what they promised the customer disappeared from
     // the only card that still exists.
     const { versionId } = await sealed({ onLead: true, code: `8471${SUFFIX}` });
-    await recordOffer(versionId, { clientPriceUsd: 7777, locale: 'uz' }, ctx());
+    await recordOffer({ versionId: versionId }, { clientPriceUsd: 7777, locale: 'uz' }, ctx());
     expect((await offersFor('lead', leadId)).length).toBe(1);
 
     const { rekeyLeadCalcRequests } = await import('@/modules/wms/calc/service');
@@ -450,7 +450,7 @@ describe('law 4: the VED never sees what the customer was charged', () => {
   it('hides the client price from the VED and keeps the cost side', async () => {
     const code = `8517${SUFFIX}`;
     const { versionId } = await sealed({ code });
-    await recordOffer(versionId, { clientPriceUsd: 8888, locale: 'uz' }, ctx());
+    await recordOffer({ versionId: versionId }, { clientPriceUsd: 8888, locale: 'uz' }, ctx());
 
     // The VED computed the floor themselves. Handing them the client price
     // hands them the upsale by subtraction, which is the whole of law 4.
@@ -465,7 +465,7 @@ describe('law 4: the VED never sees what the customer was charged', () => {
   it('hides the cost side from a seller — the WHOLE derived family, not the total', async () => {
     const code = `6203${SUFFIX}`;
     const { versionId } = await sealed({ code });
-    await recordOffer(versionId, { clientPriceUsd: 9100, locale: 'uz' }, ctx());
+    await recordOffer({ versionId: versionId }, { clientPriceUsd: 9100, locale: 'uz' }, ctx());
 
     const asSeller = await quoteHistoryFor(code, { scope: 'own' });
     const row = asSeller[0]!;
@@ -487,7 +487,7 @@ describe('law 4: the VED never sees what the customer was charged', () => {
   it('gives the owner and the accountant both halves', async () => {
     const code = `7013${SUFFIX}`;
     const { versionId } = await sealed({ code });
-    await recordOffer(versionId, { clientPriceUsd: 9500, locale: 'uz' }, ctx());
+    await recordOffer({ versionId: versionId }, { clientPriceUsd: 9500, locale: 'uz' }, ctx());
 
     const row = (await quoteHistoryFor(code, { scope: 'all' }))[0]!;
     expect(row.clientPriceUsd).toBe(9500);
