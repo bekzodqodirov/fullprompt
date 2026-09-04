@@ -678,6 +678,16 @@ describe('a parse that stopped saying it was alive', () => {
     const spooled = () => readdirSync('/tmp').filter((f) => f.startsWith('tmp-')).length;
     const before = spooled();
     await importFixture('spool-check.xlsx');
+    // Polled, not sampled: the cleanup exceljs runs at the end of the sheet
+    // unlinks the file asynchronously, and under a full suite that lands a
+    // few milliseconds after the import resolves. An immediate read passed
+    // alone and failed in the full run — the FILE is the fact, the instant is
+    // not, so the assertion waits a bounded moment for it. Without the fix
+    // the file is there for the life of the process, so two seconds tells the
+    // two apart with room to spare.
+    for (let i = 0; i < 40 && spooled() > before; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     expect(spooled()).toBe(before);
   });
 
