@@ -378,7 +378,8 @@
       "upsale_expense_category_id": "Which expense category a seller’s upsale payout is written into. Do not pick salaries — it collides with the monthly payroll slot.",
       "calc_actual_settle_days": "How many days after arrival the customs figure counts as final",
       "calc_customs_deviation_pct": "How far the customs cost may differ from the quote, in percent",
-      "calc_customs_cost_type_codes": "Which cost types count as customs (a list of codes)"
+      "calc_customs_cost_type_codes": "Which cost types count as customs (a list of codes)",
+      "client_code_next": "Next client code number (empty = old rule; only auto-generation advances it)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"
@@ -1509,12 +1510,15 @@
       "errors": {
         "clientNotFound": "No such code",
         "clientInactive": "This client is deactivated",
+        "clientHasLead": "This code already carries a lead — mint a new code or open that lead",
         "codeExists": "That code is taken",
         "codeFormat": "Bad code format",
         "stageGone": "Stage not found — refresh the page",
         "forbidden": "No permission",
         "failed": "Could not save"
-      }
+      },
+      "search": "Find a client: code, name or phone",
+      "toDeal": "Deal →"
     },
     "errors": {
       "quote_sealed": "The price is sealed — it cannot be edited (recalculate instead)"
@@ -2140,7 +2144,9 @@
       "group_gone": "That code’s group is gone — refresh the page",
       "conflict": "Someone just saved — the screen refreshed, press again",
       "save_failed": "Save failed — check the connection and retry",
-      "bad_basis": "Invalid baza unit"
+      "bad_basis": "Invalid baza unit",
+      "discounted_no_upsale": "The VED gave a discount — selling above this price is not allowed (the discount is the customer’s)",
+      "seal_instead": "This calculation can be sealed — press “Seal”, not “Done” with a price"
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -2366,7 +2372,9 @@
       "sm3Hint": "total cm³ = pcs × engine volume",
       "rateNoted": "the law carries a note",
       "savedFigures": "saved figures"
-    }
+    },
+    "sealInstead": "Ready to seal — press “Seal”. The seller gets the price from the seal.",
+    "discountedFloor": "The VED gave a discount: selling above this amount is not allowed."
   },
   "partners": {
     "title": "Counterparties",

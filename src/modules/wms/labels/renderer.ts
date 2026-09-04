@@ -64,8 +64,9 @@ export class PdfLabelRenderer implements LabelRenderer {
     doc.registerFontkit(fontkit);
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
     const regular = await doc.embedFont(StandardFonts.Helvetica);
-    // HarfBuzz-subsetted to this document's characters; fontkit's own
-    // subsetter drops CJK glyphs (see cjk-font.ts), hence subset: false.
+    // HarfBuzz-subsetted to this document's characters, GSUB cut out;
+    // fontkit's own subsetter is the one #103 removed (see cjk-font.ts, #881),
+    // hence subset: false.
     const cjkBytes = await cjkSubsetFor(labels.flatMap((l) => [l.productZh, l.productRu]));
     const cjk = await doc.embedFont(cjkBytes, { subset: false });
 
@@ -255,6 +256,7 @@ export async function renderCrateLabel(label: CrateLabelData): Promise<Uint8Arra
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const cjkBytes = await cjkSubsetFor(['ЯЩИК КАРКАС', label.contents, label.clientCode]);
+  // See cjk-font.ts (#103, #881): a HarfBuzz subset, embedded as it is.
   const cjk = await doc.embedFont(cjkBytes, { subset: false });
 
   const page = doc.addPage([PAGE, PAGE]);

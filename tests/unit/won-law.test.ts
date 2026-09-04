@@ -95,3 +95,28 @@ describe('won law wiring (round 107)', () => {
     expect(formStages(stages, null).map((s) => s.id)).toEqual(['a', 'b', 'w']);
   });
 });
+
+describe('the won dialog cannot freeze (round 112)', () => {
+  // Found by the round's own screenshot: `winLeadAction` THREW (the index's
+  // 23505 is not a CrmError, so `run()` rethrows it) and `busy` stayed true —
+  // a greyed button and no sentence. Both awaits now sit in try/finally, and
+  // the refusal has a word at both doors. Source-shape, because the frozen
+  // version also «worked» for every input a test would think to send.
+  it('both action awaits release the busy flag in a finally', () => {
+    const dialog = read('src/components/won-dialog.tsx');
+    expect(dialog.match(/finally \{\s*setBusy\(false\);\s*\}/g)?.length).toBe(2);
+    expect(dialog).toContain("client_has_lead: t('won.errors.clientHasLead')");
+    // The hit tap goes through the same check as the typed code — the
+    // refusal must arrive at the echo, by name, on both paths.
+    expect(dialog).toContain('void checkCode(hit.clientCode)');
+    expect(dialog).toContain('void checkCode(attachCode)');
+    expect(dialog).not.toContain('setChecked({ code: hit.clientCode');
+  });
+
+  it('a second lead on one client is refused by the service AND named at the echo', () => {
+    const service = read('src/modules/wms/crm/service.ts');
+    expect(service).toContain("throw new CrmError('client_has_lead')");
+    const actions = read('src/app/(protected)/crm/actions.ts');
+    expect(actions).toContain("return { error: 'client_has_lead', name: row.name, clientCode: row.clientCode, leadName: taken.name }");
+  });
+});

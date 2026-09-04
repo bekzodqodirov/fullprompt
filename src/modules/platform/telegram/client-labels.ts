@@ -331,6 +331,23 @@ const DICT = {
    * the parts hands the customer our list price and lets them subtract the
    * discount we were willing to give.
    */
+  // Round 112 — the sheet's furniture. Descriptors only: nothing here is a
+  // price, and the goods table prints no money per row (#781).
+  sheetDocNo: { uz: 'Hujjat', ru: 'Документ', en: 'Document' },
+  sheetDate: { uz: 'Sana', ru: 'Дата', en: 'Date' },
+  sheetClient: { uz: 'Mijoz', ru: 'Клиент', en: 'Client' },
+  sheetClientCode: { uz: 'Mijoz kodi', ru: 'Код клиента', en: 'Client code' },
+  sheetPhone: { uz: 'Telefon', ru: 'Телефон', en: 'Phone' },
+  sheetGoods: { uz: 'Tovarlar', ru: 'Товары', en: 'Goods' },
+  sheetColNo: { uz: '№', ru: '№', en: '#' },
+  sheetColGoods: { uz: 'Tovar', ru: 'Наименование', en: 'Description' },
+  sheetColQty: { uz: 'Soni', ru: 'Кол-во', en: 'Qty' },
+  sheetColKg: { uz: 'kg', ru: 'кг', en: 'kg' },
+  sheetColM3: { uz: 'm³', ru: 'м³', en: 'm³' },
+  sheetGoodsTotal: { uz: 'Jami', ru: 'Итого по товарам', en: 'Goods total' },
+  sheetManager: { uz: 'Sizning menejeringiz', ru: 'Ваш менеджер', en: 'Your manager' },
+  sheetSignature: { uz: 'Imzo', ru: 'Подпись', en: 'Signature' },
+  sheetPage: { uz: 'Sahifa', ru: 'Стр.', en: 'Page' },
   offerTitle: { uz: 'Narx taklifi', ru: 'Коммерческое предложение', en: 'Price offer' },
   offerTotal: { uz: 'Umumiy narx', ru: 'Итого', en: 'Total' },
   offerPerM3: { uz: '1 kub uchun', ru: 'за 1 куб', en: 'per m3' },

@@ -151,6 +151,7 @@ export async function CalcPanel({
             <CalcOfferForm
               versionId={seal.id}
               sealedTotal={seal.totalUsd}
+              discountUsd={seal.discountUsd}
               defaultLocale={offerLocaleFor(clientLocale)}
               clientName={clientName ?? null}
               entityType={entityType}

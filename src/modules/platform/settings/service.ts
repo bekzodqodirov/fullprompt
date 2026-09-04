@@ -119,6 +119,12 @@ export const SETTING_DEFAULTS = {
   deal_calc_stage: '',
   costing_base_currency: 'USD',
   client_code_prefix: 'GS',
+  /**
+   * The next number the generator hands out (round 112). Empty = not set:
+   * the generator keeps following the book's densest run, as it always has.
+   * Only the generator advances it; a typed or imported code never does.
+   */
+  client_code_next: '',
   label_size: '100x100',
   translation_provider: 'libretranslate',
   default_locale: 'ru' as 'ru' | 'uz' | 'zh-CN' | 'en',

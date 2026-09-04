@@ -27,6 +27,7 @@ export function CalcOfferForm({
   entityId,
   mayApprove,
   revalidate,
+  discountUsd,
 }: {
   versionId: string;
   sealedTotal: number;
@@ -37,6 +38,8 @@ export function CalcOfferForm({
   /** May THIS person allow a below-floor promise? Law 4: admin-only. */
   mayApprove: boolean;
   revalidate: string;
+  /** The seal's own concession. Above the discounted floor is refused (round 112). */
+  discountUsd: number;
 }) {
   const t = useTranslations('calc');
   const tc = useTranslations('common');
@@ -50,9 +53,22 @@ export function CalcOfferForm({
 
   const typed = Number(price.replace(',', '.'));
   const below = Number.isFinite(typed) && typed < sealedTotal;
+  // A concession is the customer's: once the VED has lowered the floor the
+  // seller may not sell above it and keep the difference. The box stays
+  // editable — BELOW is still the approver's door — but the button will not
+  // press, and the sentence says why in the seller's own language, or a
+  // locked price is a bug report (round 112, his «VED xodimi skidka bersa
+  // sotuvchi upsale qilish huquqi bo'lmasin»).
+  const discounted = discountUsd > 0;
+  const aboveDiscounted = discounted && Number.isFinite(typed) && typed > sealedTotal + 0.009;
 
   return (
     <div className="space-y-2" data-testid="calc-offer">
+      {discounted ? (
+        <p className="text-xs font-semibold text-warn" data-testid="offer-discounted-floor">
+          {t('discountedFloor')}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-2xs">
           <span className="label">{t('clientPrice')} $</span>
@@ -80,7 +96,9 @@ export function CalcOfferForm({
         <button
           type="button"
           className="btn-primary"
-          disabled={pending || price.trim() === '' || (below && reason.trim() === '')}
+          disabled={
+            pending || price.trim() === '' || (below && reason.trim() === '') || aboveDiscounted
+          }
           data-testid="offer-make"
           onClick={() =>
             startTransition(async () => {

@@ -11,7 +11,7 @@ import { FIELD_LABELS, SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { PageHeader, Section } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
-import { loadWorkspace } from '@/modules/wms/calc/workspace';
+import { canSeal, loadWorkspace } from '@/modules/wms/calc/workspace';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { CalcActions } from './calc-actions';
@@ -306,6 +306,7 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
                 id={row.id}
                 mine={row.assigneeId === actor.id}
                 assigned={Boolean(row.assigneeId)}
+                canSeal={workspace ? canSeal(workspace) : false}
               />
             </section>
           )}

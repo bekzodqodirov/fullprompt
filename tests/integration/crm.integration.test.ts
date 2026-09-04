@@ -265,6 +265,16 @@ describe('leads', () => {
     const after = await db.query.leads.findFirst({ where: eq(leads.id, lead.id) });
     expect(after!.clientId).toBe(holder[0]!.id);
 
+    // One lead per client (0021 `leads_client_unique`): a SECOND lead cannot
+    // attach to the same code — refused with a word, not with the index's
+    // 23505 (round 112, found by the screenshot: the dialog froze on it).
+    const repeat = await createLead({ name: `Takror ${SUFFIX}` }, ctx());
+    await expect(
+      winLead(repeat.id, { attachCode: holder[0]!.clientCode }, ctx()),
+    ).rejects.toThrow('client_has_lead');
+    const untouched = await db.query.leads.findFirst({ where: eq(leads.id, repeat.id) });
+    expect(untouched!.clientId).toBeNull();
+
     // …and a retired code taking a new job is exactly the typo being caught.
     await db.update(clients).set({ active: false }).where(eq(clients.id, holder[0]!.id));
     const another = await createLead({ name: `Yana biri ${SUFFIX}` }, ctx());
