@@ -2737,7 +2737,8 @@
       "forbidden": "Not allowed",
       "enqueue_failed": "Not queued — try again",
       "in_use": "Calculations are priced off this import — it cannot be deleted",
-      "network": "Connection lost"
+      "network": "Connection lost",
+      "server_behind": "The server has not been updated yet — try after the deploy"
     },
     "lastBeat": "updated {time}"
   }

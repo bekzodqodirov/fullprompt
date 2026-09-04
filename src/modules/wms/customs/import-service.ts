@@ -47,6 +47,25 @@ const HEARTBEAT_MS = 10_000;
  */
 export const IMPORT_STALE_MS = 15 * 60_000;
 
+/** How long the abort path may spend releasing exceljs's spooled sheet. */
+const SPOOL_DRAIN_MS = 3_000;
+
+/**
+ * How long a batch that has NEVER started may wait before it is called lost.
+ *
+ * The two clocks are different questions and the first version asked only
+ * one. `COALESCE(heartbeat_at, uploaded_at)` judged a QUEUED import by its
+ * upload time — and the queue is serial, so uploading two quarterly files
+ * back to back (exactly what the owner did on 2026-09-04) puts the second
+ * one behind twenty minutes of the first, beating nothing, blameless, and
+ * failed at fifteen. «To‘xtab qoldi» about a file that had not been opened.
+ *
+ * A batch that has not started is waiting; only its own job's expiry says
+ * when waiting became losing, so this is the job's two hours plus a margin
+ * for the drain to reach it.
+ */
+export const IMPORT_NEVER_STARTED_MS = 3 * 60 * 60_000;
+
 export interface ImportOutcome {
   rowCount: number;
   skipped: number;
@@ -54,6 +73,16 @@ export interface ImportOutcome {
   periodFrom: string | null;
   periodTo: string | null;
 }
+
+/**
+ * The parse gave up because the batch it was filling is no longer its own —
+ * swept, or deleted from the screen, while it was reading.
+ *
+ * Not a failure of the FILE, so nothing is written on the row (there may be
+ * no row) and pg-boss must not retry: whatever happened, a person has
+ * already been told and has already acted.
+ */
+export class BatchGoneError extends Error {}
 
 export class CustomsImportError extends Error {
   constructor(
@@ -94,23 +123,40 @@ async function* streamRows(storageKey: string, fileName: string): AsyncGenerator
    * So the source's failure is raced against every row. Measured: reading a
    * key that does not exist used to hang until the test's own timeout and
    * escape as an uncaught exception; it now refuses, with the reason.
+   *
+   * ONE latch, and a gate RE-ARMED per row.
+   *
+   * The first version raced every row against a SINGLE long-lived promise,
+   * and `Promise.race` calls `.then()` on each member — so every iteration
+   * appended a reaction to a promise that, on a healthy import, never
+   * settles. A pending promise releases its reactions only when it settles,
+   * and each reaction held the race's resolve closure and through it that
+   * row's cells. MEASURED on the real exceljs path: ~570 bytes retained per
+   * row, +82 MB of live heap and +172 MB of RSS per 150,000 rows — so a
+   * parse whose whole reason for existing is that it STREAMS was holding
+   * every row it had read, in the process that also serves every screen.
+   * A fresh gate per iteration dies with the iteration and retains nothing.
    */
-  let sourceFailed!: (err: Error) => void;
-  const failed = new Promise<never>((_, reject) => {
-    sourceFailed = reject;
+  let sourceError: Error | null = null;
+  let wake: () => void = () => {};
+  stream.on('error', (err: unknown) => {
+    sourceError = err instanceof Error ? err : new Error(String(err));
+    wake();
   });
-  // Marked handled up front — nobody awaits it until the first race, and an
-  // early rejection would otherwise be an unhandled rejection warning.
-  failed.catch(() => {});
-  stream.on('error', (err: unknown) =>
-    sourceFailed(err instanceof Error ? err : new Error(String(err))),
-  );
 
   const inner = /\.csv$/i.test(fileName) ? csvRows(stream) : xlsxRows(stream);
   const it = inner[Symbol.asyncIterator]();
   try {
     for (;;) {
-      const step = await Promise.race([it.next(), failed]);
+      // An error that arrived between two rows needs no gate at all.
+      if (sourceError) throw sourceError;
+      const gate = new Promise<never>((_, reject) => {
+        wake = () => reject(sourceError ?? new Error('source stream failed'));
+      });
+      // Handled up front: nobody awaits it until the race, and an early
+      // rejection would otherwise be an unhandled rejection warning.
+      gate.catch(() => {});
+      const step = await Promise.race([it.next(), gate]);
       if (step.done) return;
       yield step.value;
     }
@@ -123,6 +169,7 @@ async function* streamRows(storageKey: string, fileName: string): AsyncGenerator
     // silence one layer down. Tearing the source down is what lets that
     // cleanup finish, and whether it ever does is no longer this parse's
     // business.
+    wake = () => {};
     stream.destroy();
     void Promise.resolve(it.return?.(undefined)).catch(() => {});
   }
@@ -150,6 +197,7 @@ async function* csvRows(stream: Readable): AsyncGenerator<RowCells> {
  * impossible here (500,000 rows measured at 774 MB even streaming).
  */
 async function* xlsxRows(stream: Readable): AsyncGenerator<RowCells> {
+  let drained = false;
   const ExcelJS = (await import('exceljs')).default;
   const reader = new ExcelJS.stream.xlsx.WorkbookReader(stream, {
     entries: 'emit',
@@ -177,14 +225,49 @@ async function* xlsxRows(stream: Readable): AsyncGenerator<RowCells> {
   // kept by not yielding the others' rows. The cost is walking a second
   // sheet's XML for nothing, on a file that is not supposed to have one.
   let sheet = 0;
-  for await (const worksheet of reader) {
-    sheet++;
-    for await (const row of worksheet) {
-      // The dump is one sheet; a second one would be somebody else's file.
-      if (sheet > 1) continue;
-      // exceljs's values array is 1-based with a hole at [0].
-      const values = row.values as unknown[];
-      yield Array.isArray(values) ? values.slice(1).map(cellText) : [];
+  try {
+    for await (const worksheet of reader) {
+      sheet++;
+      for await (const row of worksheet) {
+        // The dump is one sheet; a second one would be somebody else's file.
+        if (sheet > 1) continue;
+        // exceljs's values array is 1-based with a hole at [0].
+        const values = row.values as unknown[];
+        yield Array.isArray(values) ? values.slice(1).map(cellText) : [];
+      }
+    }
+    // Ran out on its own: exceljs has already released the spool, and
+    // re-entering the reader here would restart `parse()` on a destroyed
+    // stream and cost every healthy import the drain's whole timeout.
+    drained = true;
+  } finally {
+    // The ABORT path leaks the same 57 MB the success path stopped leaking.
+    //
+    // Running the loop out is what reaches exceljs's own cleanup — but a file
+    // REFUSED half way (a wrong header row, which is this screen's ordinary
+    // mistake and the refusal the round's own sentence invites the admin to
+    // repeat) throws out of the middle, and the spooled sheet stays for the
+    // life of the container. So the abort drains what is left, BOUNDED: the
+    // source is healthy on this path (it is our own refusal, not a dead
+    // stream), and if it turns out not to be, a hang here would be the very
+    // silence 0095 exists to abolish — so the drain gets three seconds and
+    // then the disk keeps the file rather than the import keeping the process.
+    if (!drained) {
+      drained = true;
+      await Promise.race([
+        (async () => {
+          try {
+            for await (const worksheet of reader) {
+              // Read to the end so the temp file is released; nothing is
+              // yielded, so nothing is parsed twice.
+              for await (const row of worksheet) void row.number;
+            }
+          } catch {
+            // A source that died on the way out is the case above.
+          }
+        })(),
+        new Promise((resolve) => setTimeout(resolve, SPOOL_DRAIN_MS)),
+      ]);
     }
   }
 }
@@ -235,12 +318,23 @@ function splitCsvLine(line: string): string[] {
  * any size. The two are one write on purpose: a heartbeat that agreed with a
  * counter written somewhere else would be a second place to get it wrong.
  */
-async function beat(batchId: string, rowCount: number, skipped: number): Promise<void> {
-  await db
+async function beat(batchId: string, rowCount: number, skipped: number): Promise<boolean> {
+  const rows = await db
     .update(customsImportBatches)
     .set({ rowCount, skippedRows: skipped, heartbeatAt: new Date() })
-    .where(eq(customsImportBatches.id, batchId));
+    // `status` in the WHERE is what makes the sweep's verdict FINAL.
+    //
+    // Without it a parse the sweep had already given up on went on writing
+    // its row counter over a row the admin had been told was dead, and could
+    // still finish and flip it to 'ready' — a batch coming back to life two
+    // hours after he was told to upload it again. It also answers the other
+    // direction: zero rows here means the batch was swept, or deleted from
+    // the screen, and this parse has nothing left to write to.
+    .where(and(eq(customsImportBatches.id, batchId), eq(customsImportBatches.status, 'processing')))
+    .returning({ id: customsImportBatches.id });
+  return rows.length > 0;
 }
+
 
 /**
  * Parse the stored file into `customs_import_rows` and settle the batch.
@@ -261,7 +355,15 @@ export async function runCustomsImport(input: {
   // network read of 80 MB). Without it a batch would look dead for the
   // fifteen minutes the sweep waits, and a retry after a container restart
   // would be reaped before it had done anything wrong.
-  await beat(batchId, 0, 0);
+  //
+  // It is also the CLAIM. pg-boss re-delivers a job whose process died, and
+  // this one may run for two hours — so a re-delivery can arrive long after
+  // the sweep gave up on the batch and the admin deleted the row and
+  // uploaded the file again. A parse whose batch is no longer 'processing'
+  // has nothing to fill and stops here.
+  if (!(await beat(batchId, 0, 0))) {
+    throw new BatchGoneError(batchId);
+  }
 
   let header: ReturnType<typeof readHeader>['index'] | null = null;
   let rowCount = 0;
@@ -375,7 +477,10 @@ export async function runCustomsImport(input: {
     if (pending.length >= CHUNK) await flush();
     if (Date.now() - lastBeat >= HEARTBEAT_MS) {
       lastBeat = Date.now();
-      await beat(batchId, rowCount, skipped);
+      // Swept, or deleted from the screen, while we were reading: stop rather
+      // than spend an hour filling rows whose parent is gone (the delete
+      // cascades, so those rows are already going away).
+      if (!(await beat(batchId, rowCount, skipped))) throw new BatchGoneError(batchId);
     }
   }
   await flush();
@@ -391,7 +496,7 @@ export async function runCustomsImport(input: {
     );
   }
 
-  await db
+  const settled = await db
     .update(customsImportBatches)
     .set({
       status: 'ready',
@@ -402,7 +507,12 @@ export async function runCustomsImport(input: {
       error: null,
       heartbeatAt: new Date(),
     })
-    .where(eq(customsImportBatches.id, batchId));
+    // Same fence as the beat: a batch the sweep failed, or one the admin
+    // removed, must not be brought back as READY — and a ready batch is what
+    // every suggestion in the company reads.
+    .where(and(eq(customsImportBatches.id, batchId), eq(customsImportBatches.status, 'processing')))
+    .returning({ id: customsImportBatches.id });
+  if (settled.length === 0) throw new BatchGoneError(batchId);
 
   return { rowCount, skipped, skipReasons, periodFrom, periodTo };
 }
@@ -431,14 +541,25 @@ export async function failCustomsImport(batchId: string, message: string): Promi
  *
  * Returns how many it settled, so a quiet sweep says nothing at all.
  */
-export async function sweepStuckImports(staleMs = IMPORT_STALE_MS): Promise<number> {
-  const cutoff = new Date(Date.now() - staleMs).toISOString();
+export async function sweepStuckImports(
+  staleMs = IMPORT_STALE_MS,
+  neverStartedMs = IMPORT_NEVER_STARTED_MS,
+): Promise<number> {
+  const beatCutoff = new Date(Date.now() - staleMs).toISOString();
+  const waitCutoff = new Date(Date.now() - neverStartedMs).toISOString();
   const rows = await db.execute<{ id: string }>(sql`
     UPDATE customs_import_batches
        SET status = 'failed',
            error = ${'to‘xtab qoldi — faylni qayta yuklang'}
      WHERE status = 'processing'
-       AND COALESCE(heartbeat_at, uploaded_at) < ${cutoff}::timestamptz
+       AND (
+         -- It was reading and stopped: fifteen minutes of silence from a
+         -- parse that beats every ten seconds is a dead process.
+         (heartbeat_at IS NOT NULL AND heartbeat_at < ${beatCutoff}::timestamptz)
+         -- It never started: it is WAITING, and the queue is serial, so the
+         -- honest clock is the job's own expiry and not the parse's.
+         OR (heartbeat_at IS NULL AND uploaded_at < ${waitCutoff}::timestamptz)
+       )
     RETURNING id
   `);
   if (rows.length > 0) {
