@@ -74,6 +74,10 @@ const EXEMPT: Record<string, string> = {
   recalcFromSealed: 'creates a NEW request from a CLOSED one; the closed subject is immutable',
   proposeGroups: 'its claim (ai_proposal_started_at CAS) is the serialization; the write lands via applyProposal, which locks',
   pullRatesFromDictionary: 'delegates its one write to setGroupRates, which locks',
+  // The proposal's pricing tail: every write it makes goes through
+  // pullRatesFromDictionary and saveTable, both of which lock. Exported so
+  // the integration test can drive it without a model.
+  priceProposedGroups: 'delegates to pullRatesFromDictionary and saveTable, which lock',
   recordOffer: 'phase C — writes calc_offers against a SEALED version, not the open workspace',
   offersFor: 'reader',
   releaseOffer: 'offers, not the workspace',

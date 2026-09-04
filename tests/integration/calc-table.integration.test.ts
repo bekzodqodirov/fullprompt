@@ -19,6 +19,8 @@ import {
   confirmGroup,
   deleteItem,
   loadWorkspace,
+  applyProposal,
+  priceProposedGroups,
   saveTable,
   setCargoFacts,
   type TableItemEdit,
@@ -603,6 +605,84 @@ describe('the VED can type the cargo facts the bot could not read', () => {
     await expect(
       setCargoFacts(id, { fromCity: null, toCity: null, weightKg: 1e9, volumeM3: null }, ctx()),
     ).rejects.toMatchObject({ code: 'bad_number' });
+  });
+});
+
+describe('an AI proposal lands as a CALCULATION, not as an empty shell', () => {
+  /**
+   * MEASURED before this was written, on a real request: `applyProposal`
+   * leaves the group carrying the code and nothing else — duty and VAT null,
+   * so `customsFor` refuses `rates_missing` — and never stamps the item's own
+   * `tnved_code`, so phase 2's grain and 0094's import fill both stay asleep.
+   * Pressing ✨ produced a request nobody could price, over a seeded book of
+   * 1,489 PP-3818 rates that answers for nearly every code.
+   */
+  it('pulls the BOOK rate for the proposed code and puts the code on the row', async () => {
+    const id = await open([{ name: 'Plitka keramik', quantity: 100 }]);
+    const ws0 = await loadWorkspace(id);
+    const seq = ws0!.ungrouped[0]!.seq;
+
+    await applyProposal(
+      id,
+      [
+        {
+          label: 'Plitka',
+          tnvedCode: '6907',
+          itemSeqs: [seq],
+          aiProposed: true,
+          confidence: 'high',
+          aiDutyPct: 20,
+          note: null,
+        },
+      ],
+      ctx(),
+    );
+
+    // What the proposal alone leaves behind: a code, and no way to price it.
+    const mid = await loadWorkspace(id);
+    expect(mid!.groups[0]!.dutyPct).toBeNull();
+    expect((await itemRows(id))[0]!.tnvedCode).toBeNull();
+
+    const out = await priceProposedGroups(id, ctx());
+    expect(out.ratesPulled).toBe(1);
+    expect(out.codesStamped).toBe(1);
+
+    const after = await loadWorkspace(id);
+    const g = after!.groups[0]!;
+    // The book's own answer for 6907 — «15 %, min $1/m²» (0091's seed).
+    expect(g.dutyPct).toBe(15);
+    expect(g.vatPct).toBe(12);
+    expect(g.rateSource).toBe('dictionary');
+    // …and the MODEL's provenance survives, so `ai_low_confidence` and the
+    // ✅'s record still have something to say.
+    expect(g.aiProposed).toBe(true);
+    // The item carries the code: phase 2's grain, and what the customs
+    // import keys on.
+    expect((await itemRows(id))[0]!.tnvedCode).toBe('6907');
+    // The only thing left is the price a person or the import supplies.
+    expect(g.customs).toMatchObject({ ok: false, reason: 'baza_missing' });
+  });
+
+  it('a code the dictionary never heard of costs its own group, not the others', async () => {
+    const id = await open([{ name: 'A' }, { name: 'B' }]);
+    const ws0 = await loadWorkspace(id);
+    const [a, b] = ws0!.ungrouped;
+    await applyProposal(
+      id,
+      [
+        { label: 'real', tnvedCode: '6907', itemSeqs: [a!.seq], aiProposed: true, confidence: 'high', aiDutyPct: null, note: null },
+        { label: 'invented', tnvedCode: '9999999999', itemSeqs: [b!.seq], aiProposed: true, confidence: 'low', aiDutyPct: null, note: null },
+      ],
+      ctx(),
+    );
+    const out = await priceProposedGroups(id, ctx());
+    // One priced, one skipped — never a refusal that costs both.
+    expect(out.ratesPulled).toBe(1);
+    const after = await loadWorkspace(id);
+    const real = after!.groups.find((g) => g.tnvedCode === '6907')!;
+    const invented = after!.groups.find((g) => g.tnvedCode === '9999999999')!;
+    expect(real.dutyPct).toBe(15);
+    expect(invented.dutyPct).toBeNull();
   });
 });
 

@@ -2012,7 +2012,14 @@ export { isUniqueViolation, type FreightBand };
 export async function proposeGroups(
   requestId: string,
   ctx: AuditContext,
-): Promise<{ groups: number; batches: number; failed: number }> {
+): Promise<{
+  groups: number;
+  batches: number;
+  failed: number;
+  ratesPulled: number;
+  codesStamped: number;
+  importFilled: number;
+}> {
   await assertOpen(requestId);
 
   const claimed = await db
@@ -2053,13 +2060,109 @@ export async function proposeGroups(
 
     const drafts = mergeProposals(results, items.map((i) => i.seq));
     await applyProposal(requestId, drafts, ctx);
-    return { groups: drafts.length, batches: batches.length, failed };
+    // …and then the proposal is turned into a CALCULATION.
+    //
+    // MEASURED before it was written (a probe on a real request): the
+    // proposal alone leaves a group carrying the code and NOTHING else —
+    // `duty_pct` and `vat_pct` null, so `customsFor` refuses `rates_missing`
+    // — and it never stamps the item's own `tnved_code`, so phase 2's «the
+    // code on the row is what groups and prices it» machinery and 0094's
+    // customs-import baza fill both stay asleep. Pressing ✨ therefore
+    // produced a request nobody could price, over a book of 1,489 seeded
+    // PP-3818 rates that answers for nearly every code: the VED had to pull
+    // each group's rates by hand and retype every code the model had found.
+    //
+    // Both halves go through doors that already exist, and NEITHER lets the
+    // model reach a number: `pullRatesFromDictionary` writes the BOOK's rate
+    // for the code (source 'dictionary'), and `saveTable` writes the model's
+    // CODE onto the row exactly as a person typing it would — which is also
+    // what makes the import fill fire. Law 1's fence is untouched:
+    // `applyProposal` still writes no rate column at all.
+    const priced = await priceProposedGroups(requestId, ctx);
+    return { groups: drafts.length, batches: batches.length, failed, ...priced };
   } finally {
     await db
       .update(calcRequests)
       .set({ aiProposalStartedAt: null })
       .where(eq(calcRequests.id, requestId));
   }
+}
+
+/**
+ * Turn a landed proposal into something the engine can price.
+ *
+ * Two steps, in this order and for a reason: the rates come FIRST because
+ * the group's `duty_unit` is what says which of the customs file's units may
+ * price a row (0094's `unitsForRow`), and the item codes come second because
+ * `saveTable` is the ONE writer that runs the sweep, the measure pass and
+ * the import fill together.
+ *
+ * A code the dictionary has never heard of is SKIPPED, not fatal: the model
+ * proposes codes for a living, and one it invented must cost its own group's
+ * rates and never the other nine groups' — `proposeGroups`'s own batch rule,
+ * one level down.
+ *
+ * Exported for the integration test alone: `proposeGroups` needs a model and
+ * this container has no key, so the behaviour is proven by driving the tail
+ * directly and the CALL is pinned by `tests/unit/proposal-wire.test.ts`.
+ */
+export async function priceProposedGroups(
+  requestId: string,
+  ctx: AuditContext,
+): Promise<{ ratesPulled: number; codesStamped: number; importFilled: number }> {
+  const groups = await db
+    .select({
+      id: calcGroups.id,
+      tnvedCode: calcGroups.tnvedCode,
+      dutyPct: calcGroups.dutyPct,
+      vatPct: calcGroups.vatPct,
+    })
+    .from(calcGroups)
+    .where(eq(calcGroups.requestId, requestId));
+
+  let ratesPulled = 0;
+  for (const g of groups) {
+    if (!(g.tnvedCode ?? '').trim()) continue;
+    if (g.dutyPct !== null && g.vatPct !== null) continue;
+    try {
+      await pullRatesFromDictionary(g.id, ctx);
+      ratesPulled += 1;
+    } catch (err) {
+      if (!(err instanceof CalcError)) throw err;
+      logger.info(
+        { requestId, groupId: g.id, code: g.tnvedCode, reason: err.code },
+        '[calc] proposed code has no dictionary rate',
+      );
+    }
+  }
+
+  // The item's own code — phase 2's grain, and what 0094's import fill keys
+  // on. Through `saveTable`, never a bare UPDATE: the sweep, the measure
+  // pass, the rev clock and the baza suggestion all ride that one door.
+  const items = await db
+    .select({
+      id: calcRequestItems.id,
+      seq: calcRequestItems.seq,
+      tnvedCode: calcRequestItems.tnvedCode,
+      groupId: calcRequestItems.groupId,
+    })
+    .from(calcRequestItems)
+    .where(eq(calcRequestItems.requestId, requestId));
+  const codeOfGroup = new Map(groups.map((g) => [g.id, (g.tnvedCode ?? '').trim()]));
+  const edits = items
+    .filter((i) => {
+      const code = i.groupId ? (codeOfGroup.get(i.groupId) ?? '') : '';
+      return code !== '' && (i.tnvedCode ?? '') !== code;
+    })
+    .map((i) => ({ id: i.id, seq: i.seq, tnvedCode: codeOfGroup.get(i.groupId!)! }));
+  if (edits.length === 0) return { ratesPulled, codesStamped: 0, importFilled: 0 };
+
+  const saved = await saveTable(requestId, { items: edits, adds: [] }, ctx);
+  return {
+    ratesPulled,
+    codesStamped: edits.length,
+    importFilled: saved.importFilled.length,
+  };
 }
 
 // ---------------------------------------------------------------------------
