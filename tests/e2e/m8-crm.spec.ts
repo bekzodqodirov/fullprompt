@@ -257,3 +257,35 @@ test('the stage and the field it invented are removed again', async ({ page }) =
     page.locator(`[data-testid="field-label"][value="Shahar ${runId}"]`),
   ).toHaveCount(0);
 });
+
+test('a won lead is attached to an EXISTING client found by NAME, and the deal is one tap away', async ({ page }) => {
+  // Round 112, the owner: «mijozlarni orasidan tanlab bitim ochmayabti». The
+  // attach mode used to take an exact code only; a seller on the phone knows
+  // a name. The hit names the manager, the tap is the echo, and the primary
+  // way out is the deal the ceremony opened.
+  await login(page, OWNER);
+  await page.goto('/crm/leads/new');
+  await page.getByTestId('lead-name').fill(`Ulash mijoz ${runId}`);
+  await page.locator('input[name="phone"]').fill(`+99891${runId}`);
+  await page.getByTestId('save-lead').click();
+  await expect(page).toHaveURL(/\/crm\/leads\/[0-9a-f-]+$/);
+
+  await page.getByTestId('stage-fold').click();
+  await page.getByTestId('stage-won').click();
+  await expect(page.getByTestId('won-dialog')).toBeVisible();
+  await page.getByTestId('won-mode-attach').click();
+  // A NAME, not a code — the seeded «Bobur Trading» is GS102.
+  await page.getByTestId('won-attach-code').fill('Bobur');
+  const hit = page.getByTestId('won-hit').filter({ hasText: 'GS102' });
+  await expect(hit).toBeVisible();
+  await hit.click();
+  // The echo: code + name, before anything is written.
+  await expect(page.getByTestId('won-checked')).toContainText('GS102');
+  await page.getByTestId('won-confirm').click();
+  await expect(page.getByTestId('won-client-code')).toHaveText('GS102', { timeout: 15_000 });
+  await expect(page.getByTestId('won-deal-code')).toContainText('B-');
+  await page.getByTestId('won-to-deal').click();
+  await expect(page).toHaveURL(/\/bitimlar\/[0-9a-f-]+$/);
+  // The code is in the card's subtitle (round 79 put it under the title).
+  await expect(page.locator('body')).toContainText('GS102');
+});

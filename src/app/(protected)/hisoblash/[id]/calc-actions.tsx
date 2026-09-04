@@ -24,12 +24,20 @@ export function CalcActions({
   id,
   mine,
   assigned,
+  canSeal,
 }: {
   id: string;
   /** The request is already this person's. */
   mine: boolean;
   /** Somebody holds it — the release door only makes sense then. */
   assigned: boolean;
+  /**
+   * The workspace prices cleanly and could be sealed (round 112). Then the
+   * fold takes no price: the seal is the one door between a draft and a fact,
+   * and «Готово» with a typed number was a way around it. The server refuses
+   * it too (`seal_instead`) — this only stops asking for what it will refuse.
+   */
+  canSeal: boolean;
 }) {
   const t = useTranslations('calc');
   const tc = useTranslations('common');
@@ -134,7 +142,12 @@ export function CalcActions({
 
       {mode === 'finish' ? (
         <div className="space-y-2 border-t border-line pt-2">
-          <div className="flex flex-wrap items-end gap-2">
+          {canSeal ? (
+            <p className="text-xs font-semibold text-warn" data-testid="calc-seal-instead">
+              {t('sealInstead')}
+            </p>
+          ) : null}
+          <div className={canSeal ? 'hidden' : 'flex flex-wrap items-end gap-2'}>
             <div>
               <label className="label" htmlFor="calc-amount">
                 {t('answerAmount')}
@@ -186,7 +199,7 @@ export function CalcActions({
                   await finishCalcAction(
                     id,
                     {
-                      amount: amount.trim() ? Number(amount.replace(',', '.')) : null,
+                      amount: !canSeal && amount.trim() ? Number(amount.replace(',', '.')) : null,
                       currency,
                       note,
                     },

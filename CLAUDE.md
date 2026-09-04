@@ -1108,6 +1108,61 @@ answers from `.next/cache/eslint` and served the pre-edit file twice —
 280.96; draft-wedge proven in client state. Screenshots at 1280×900 and
 360×800, document = viewport; phone read-only with confirm+seal alive.
 
+**Round 112 — his six answered items** (#874-880, his «1a / mijozlarni
+orasidan tanlab / 451 / 4c / VED skidka bersa sotuvchi upsale qilish huquqi
+bo'lmasin / sen aytgandek»). NO migration (ledger stays 93). Causes confirmed
+in the tree before the reply; design judged by 5 lenses BEFORE code (**64
+objections, 21 confirmed, 43 refuted**; 28 verifiers died on a session limit
+and were judged by hand). THREE confirmed ones re-shaped the design — two were
+branches aimed at a state that cannot exist. (1) **The offer PDF**
+(`offer-pdf.ts`): logo, company block, doc no (deal code) + the OFFER's date,
+client name/code/phone, a GOODS table from **`calc_request_items` and NOT the
+sealed `breakdown`** (a yolkira seal carries no groups → no items in the
+snapshot → an empty table on the commonest quote), `offerLines()` money rows
+verbatim, seller name/phone, signature, page numbers. No price column, no
+TNVED (a per-row price decomposes the total, #781). `OfferSheetItem` is a pure
+projection with no money field — `offer-sheet.test.ts` pins the type's keys,
+that the route never reads `breakdown`, and that every drawn string is in the
+`cjkSubsetFor` list (#788). Cells cut by measured width; pdf-lib wraps nothing.
+(2) **Win dialog attach = SEARCH** (`/api/clients/search`, stale-answer
+counter, hits name the MANAGER, tap = the echo); «Bitim →» is the primary way
+out to `/bitimlar/<dealId>`, «Готово» stays secondary. New m8 e2e attaches by
+typing «Bobur» → GS102. (3) **`client_code_next`** (setting; empty = old group
+rule): first free ≥ N, written back by the generator only, **read AND written
+via `tx.execute` inside the advisory lock — never getSetting/setSetting (pool
+→ #714 freeze; three lenses found it)**; whole digits only (`gs451` = not
+set); skips codes AND unclaimed markings on non-void receipts. The ladder is
+the cause: imported Kashgar markings 470…712 within 50 of each other pulled
+the «main sequence» to 713. Integration file snapshots/restores the setting
+per test (#183). **He must type 451 on /admin/settings once.** (4)
+`discountAudience` = admin roles ∪ accountant ∪ requestedBy ∪ the superseded
+request's requestedBy; never `finance.debt_override` (= every seller).
+(5) **Above a discounted floor is refused** (`discounted_no_upsale` in
+`recordOffer`; `total_usd` is NET of the discount) — below stays the
+approver's door (v1's readOnly would have closed it); sentence on screen;
+band override deliberately not locked. The phase-D «carries NONE» fixture
+moved to quote AT the floor. (6) **`canSeal(workspace)`** — one predicate for
+`sealCalc`, the seal button and `finishCalcRequest`, which throws
+`seal_instead` on a sealable job; the fold hides the price and says
+«Muhrlang». My v1 («use the sealed total») was a no-op: the seal CLOSES the
+request and «Готово» never renders on a closed one. Bot's «Bajarildi» door
+untouched. Red proofs ×5. Postgres died mid-round again (footgun 1); an
+audited fixture user is DEACTIVATED in cleanup, never deleted (audit_log FK).
+LESSON: re-read the DECISIONS tail and the journal length AFTER a pull — the
+other session's VED 2.0 rounds had moved both (#854-873, 0090-0092) and my
+first draft cited 86 and #767.
+**Found by LOOKING at the round's own PDF through pdfium (#881)**: every DIGIT
+drawn full-width — «GS7 7 7», «B-0 0 0 0 6 6» — whenever the embedded HarfBuzz
+subset carries its GSUB table; the /W widths were always right, so only a
+raster could see it, and the handover act + crate label have had it in
+Chrome/Android since #103. `dropSfntTable` (cjk-font.ts) cuts the table by a
+directory rewrite — every other byte HarfBuzz wrote stays — and `subset: false`
+stays at all four embed sites (`subset: true` also fixes it and is exactly the
+fontkit subsetter #103 removed for fonts a thermal printer dropped).
+`pdf-embed.test.ts` pins the premise, the cut, the built PDF's font streams
+and the four sites. Oracle for a renderer = that renderer: `pip install
+pypdfium2`, render, look.
+
 **Latest migration: 0092** (`calc_measure` — the measure pair, the widened
 baza bases, the revision clock; ledger must reach **93**). Before it: 0091
 (`calc_law` — the four duty shapes, the certificate, the fee override;

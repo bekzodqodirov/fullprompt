@@ -47,6 +47,8 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
     client?.name ?? '',
     ...boxRows.flatMap((r) => [r.productNameZh, r.productNameRu ?? '']),
   ]);
+  // `subset: false` — the bytes are already a HarfBuzz subset with GSUB cut
+  // out; fontkit's subsetter is the one #103 removed (see cjk-font.ts, #881).
   const font = await doc.embedFont(cjkBytes, { subset: false });
   // Everything drawn goes through the cleaner first. This font has NO glyph
   // for any of ў Ў қ Қ ғ Ғ ҳ Ҳ (measured), so a customer or a receiver whose

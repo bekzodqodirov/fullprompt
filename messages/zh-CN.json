@@ -378,7 +378,8 @@
       "upsale_expense_category_id": "销售提成（upsale）计入哪个费用类别。请勿选择工资类别，会与月度工资冲突。",
       "calc_actual_settle_days": "货物到达后多少天清关费用视为最终",
       "calc_customs_deviation_pct": "清关费用与核算的允许偏差百分比",
-      "calc_customs_cost_type_codes": "哪些费用类型算作清关（代码列表）"
+      "calc_customs_cost_type_codes": "哪些费用类型算作清关（代码列表）",
+      "client_code_next": "下一个客户代码编号（留空 = 旧规则；仅自动生成会推进）"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"
@@ -1514,7 +1515,9 @@
         "stageGone": "阶段不存在——请刷新页面",
         "forbidden": "没有权限",
         "failed": "保存失败"
-      }
+      },
+      "search": "查找客户：代码、姓名或电话",
+      "toDeal": "交易 →"
     },
     "errors": {
       "quote_sealed": "价格已封存，无法修改（请重新计算）"
@@ -2140,7 +2143,9 @@
       "group_gone": "该编码的组已不存在——请刷新页面",
       "conflict": "他人刚刚保存——页面已刷新，请再按一次",
       "save_failed": "保存失败——请检查网络后重试",
-      "bad_basis": "基价单位无效"
+      "bad_basis": "基价单位无效",
+      "discounted_no_upsale": "外贸已给折扣 — 不能高于此价出售（折扣归客户）",
+      "seal_instead": "该核算可以封存 — 请点“封存”，而不是带价格的“完成”"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -2366,7 +2371,9 @@
       "sm3Hint": "总 cm³ = 件数 × 排量",
       "rateNoted": "法规附有说明",
       "savedFigures": "已保存数字"
-    }
+    },
+    "sealInstead": "核算已可封存 — 请点“封存”。价格将从封存结果发给销售。",
+    "discountedFloor": "外贸已给折扣：不能高于此金额出售。"
   },
   "partners": {
     "title": "合作方",

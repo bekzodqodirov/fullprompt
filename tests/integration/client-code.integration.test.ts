@@ -1,8 +1,8 @@
 import 'dotenv/config';
-import { like, sql } from 'drizzle-orm';
+import { eq, like, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { clients, settings } from '@/modules/platform/db/schema';
+import { clients, receipts, settings } from '@/modules/platform/db/schema';
 import { nextClientCode } from '@/modules/platform/clients/code';
 import { ClientError, createClient } from '@/modules/platform/clients/service';
 
@@ -19,10 +19,38 @@ async function seedCodes(prefix: string, numbers: number[]) {
   );
 }
 
+// `client_code_next` (round 112) is ONE row for the whole book — configuration
+// that every later spec's minted codes would inherit (#183). Snapshot it once,
+// put it back after every test, never trust a test to clean up on its own.
+let counterBefore: unknown = undefined;
+let counterExisted = false;
+beforeAll(async () => {
+  const row = await db.query.settings.findFirst({ where: eq(settings.key, 'client_code_next') });
+  counterExisted = Boolean(row);
+  counterBefore = row?.value;
+});
+async function setCounter(value: string | null) {
+  if (value === null) {
+    await db.delete(settings).where(eq(settings.key, 'client_code_next'));
+    return;
+  }
+  await db
+    .insert(settings)
+    .values({ key: 'client_code_next', value })
+    .onConflictDoUpdate({ target: settings.key, set: { value } });
+}
+async function readCounter(): Promise<unknown> {
+  const row = await db.query.settings.findFirst({ where: eq(settings.key, 'client_code_next') });
+  return row?.value;
+}
+
 afterEach(async () => {
   for (const prefix of PREFIXES) {
     await db.delete(clients).where(like(clients.clientCode, `${prefix}%`));
+    await db.delete(receipts).where(like(receipts.unclaimedMarking, `${prefix}%`));
   }
+  if (counterExisted) await setCounter(counterBefore as string);
+  else await setCounter(null);
 });
 
 afterAll(async () => {
@@ -76,6 +104,58 @@ describe('nextClientCode (DB path)', () => {
  * files down with it. `tests/unit/tx-pool.test.ts` reads the code instead,
  * for every transaction in `src/`.
  */
+describe('the counter (round 112: «gs451 dan davom etsin»)', () => {
+  // His exact shape: a real sequence to 446, then imported Kashgar markings
+  // forming a ladder above it (each within 50 of the next), so the group rule
+  // followed the ladder and handed out 713. A number only the generator moves
+  // cannot be pulled anywhere by what people type.
+  const LADDER = [470, 505, 540, 575, 610, 645, 680, 712];
+
+  it('walks from the number he set, straight into the ladder\'s gaps', async () => {
+    await seedCodes('ZZT', [...Array.from({ length: 446 }, (_, i) => i + 1), ...LADDER]);
+    expect(await nextClientCode(db, 'ZZT')).toBe('ZZT713'); // the old rule, for contrast
+    await setCounter('451');
+    expect(await nextClientCode(db, 'ZZT')).toBe('ZZT451');
+    // …and it advanced itself, so the next press is 452.
+    expect(String(await readCounter())).toBe('452');
+  });
+
+  it('skips a number that is already a code, and remembers the one after it', async () => {
+    await seedCodes('ZZT', [452]);
+    await setCounter('452');
+    expect(await nextClientCode(db, 'ZZT')).toBe('ZZT453');
+    expect(String(await readCounter())).toBe('454');
+  });
+
+  it('skips a number written on UNCLAIMED cargo — a marking that may become that code', async () => {
+    const wh = await db.query.warehouses.findFirst();
+    const who = await db.query.users.findFirst();
+    await db.insert(receipts).values({
+      warehouseId: wh!.id,
+      createdBy: who!.id,
+      clientId: null,
+      unclaimedMarking: 'ZZT455MANIKEN-AL',
+    });
+    await setCounter('455');
+    expect(await nextClientCode(db, 'ZZT')).toBe('ZZT456');
+  });
+
+  it('a typed code never moves the counter', async () => {
+    await setCounter('460');
+    const who = await db.query.users.findFirst();
+    await createClient({ clientCode: 'ZZT999', name: 'typed', phones: [] }, { actorId: who!.id });
+    expect(String(await readCounter())).toBe('460');
+    expect(await nextClientCode(db, 'ZZT')).toBe('ZZT460');
+  });
+
+  it('a value that is not a whole number reads as «not set», and the old rule runs', async () => {
+    await seedCodes('ZZT', [100, 101, 102]);
+    await setCounter('gs451');
+    expect(await nextClientCode(db, 'ZZT')).toBe('ZZT103');
+    expect(String(await readCounter())).toBe('gs451'); // untouched — the generator is not an editor
+  });
+});
+
 describe('createClient under a race', () => {
   let restorePrefix: string | null = null;
 

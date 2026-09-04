@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Overlay } from './ui/overlay';
 import {
@@ -55,6 +56,18 @@ export function WonDialog({
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [attachCode, setAttachCode] = useState('');
+  // Round 112 (his «mijozlarni orasidan tanlab bitim ochmayabti»): the
+  // attach mode used to be a box for an EXACT code, which a seller on the
+  // phone rarely has — they know a name or a number. The hits come from the
+  // same search the receive wizard uses and name the MANAGER, because a
+  // colleague's client attached by mistake is an attach with no undo.
+  const [hits, setHits] = useState<
+    { id: string; clientCode: string; name: string; managerName: string | null }[]
+  >([]);
+  // A later, shorter query can answer before an earlier one: only the newest
+  // request may write (the ⌘K palette's guard, round 58).
+  const searchSeq = useRef(0);
+  const router = useRouter();
   const [checked, setChecked] = useState<{ code: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -87,6 +100,24 @@ export function WonDialog({
     failed: t('won.errors.failed'),
   };
 
+  async function search(q: string) {
+    const seq = ++searchSeq.current;
+    const needle = q.trim();
+    if (needle.length < 2) {
+      setHits([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/clients/search?q=${encodeURIComponent(needle)}`);
+      if (!res.ok) return;
+      const body = (await res.json()) as { results?: typeof hits };
+      if (seq !== searchSeq.current) return;
+      setHits(body.results ?? []);
+    } catch {
+      /* a dropped search is not an error the dialog needs to show */
+    }
+  }
+
   async function check() {
     setBusy(true);
     setError('');
@@ -109,7 +140,7 @@ export function WonDialog({
       ...(lead.clientCode
         ? {}
         : mode === 'attach'
-          ? { attachCode: checked?.code ?? attachCode }
+          ? { attachCode: checked?.code ?? attachCode.trim().toUpperCase() }
           : { clientCode: code, name }),
     });
     setBusy(false);
@@ -177,6 +208,25 @@ export function WonDialog({
               {tq('toCard')}
             </Link>
           </div>
+          {/* «karta sdelkaga o'tib ketishi kerak edi» (round 112): the deal
+              this ceremony just opened is the PRIMARY way out. «Готово» stays
+              as the secondary for the seller who only wanted the code and is
+              in the middle of a board — a teleport they did not ask for is
+              the round-60 interruption in a new place. Rendered in the
+              confirm-only (re-win) mode too, since that opens a deal as well. */}
+          <button
+            type="button"
+            data-testid="won-to-deal"
+            onClick={() => {
+              const dealId = result.dealId;
+              setResult(null);
+              onWon();
+              router.push(`/bitimlar/${dealId}`);
+            }}
+            className="btn-primary w-full"
+          >
+            {t('won.toDeal')}
+          </button>
           <button
             type="button"
             data-testid="won-done"
@@ -184,7 +234,7 @@ export function WonDialog({
               setResult(null);
               onWon();
             }}
-            className="btn-primary w-full"
+            className="btn-secondary w-full"
           >
             {tq('done')}
           </button>
@@ -252,14 +302,15 @@ export function WonDialog({
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <input
-                      className="input flex-1 font-mono"
+                      className="input flex-1"
                       value={attachCode}
                       data-testid="won-attach-code"
-                      aria-label={t('won.attachCode')}
-                      placeholder={t('won.attachCode')}
+                      aria-label={t('won.search')}
+                      placeholder={t('won.search')}
                       onChange={(event) => {
-                        setAttachCode(event.target.value.toUpperCase());
+                        setAttachCode(event.target.value);
                         setChecked(null);
+                        void search(event.target.value);
                       }}
                     />
                     <button
@@ -272,6 +323,35 @@ export function WonDialog({
                       {t('won.check')}
                     </button>
                   </div>
+                  {hits.length > 0 && !checked ? (
+                    <ul className="max-h-48 space-y-1 overflow-y-auto" data-testid="won-hits">
+                      {hits.map((hit) => (
+                        <li key={hit.id}>
+                          <button
+                            type="button"
+                            data-testid="won-hit"
+                            className="btn-secondary w-full !justify-start gap-2 text-left"
+                            onClick={() => {
+                              // The tap is the ECHO round 107 demanded before an
+                              // attach with no undo: the code and the name land in
+                              // the checked strip, and «Confirm» wakes up only then.
+                              setAttachCode(hit.clientCode);
+                              setChecked({ code: hit.clientCode, name: hit.name });
+                              setHits([]);
+                            }}
+                          >
+                            <span className="font-mono font-semibold">{hit.clientCode}</span>
+                            <span className="truncate">{hit.name}</span>
+                            {hit.managerName ? (
+                              <span className="ml-auto shrink-0 text-xs text-ink-500">
+                                {hit.managerName}
+                              </span>
+                            ) : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   {/* The echo: who this code IS, read before anything is
                       written — the attach has no undo. */}
                   {checked && (
