@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Bojxona importi to'xtab qolsa endi buni aytadi — 2026-09-04
+
+**Muammo.** Ikkita yuklangan fayl «читается» holatida soatlab osilib qoldi:
+0 qator, 0 o'tmagan, davri yo'q, sababi yo'q — va ekranda o'sha qatorni
+o'chiradigan tugma ham yo'q edi.
+
+**Sabab uchta bo'lgan, uchalasi ham o'lchandi.**
+
+1. **Fayl oqimi uzilsa bu xato emas, muzlash edi.** Excel o'quvchisi oqimni
+   arxiv ochuvchiga ulaydi, xato esa bu ulanish orqali o'tmaydi — natijada
+   o'qish qator bermay abadiy kutadi va hech qayerda hech nima yozilmaydi.
+   Mahalliy diskda esa ushlanmagan xato butun dastur jarayonini yiqitardi.
+2. **Qayta urinishlar tugagach hech kim buni yozib qo'ymasdi** — navbat ishni
+   unutadi, yozuv «читается» deb qolaveradi.
+3. **Jarayon o'ldirilsa** (xotira tugasa, deploy bo'lsa, disk to'lsa) umuman
+   hech qanday xato ushlanmaydi.
+
+**Endi qanday.**
+
+- O'qish har **10 soniyada** «tirikman» deb yozadi va ekrandagi qator soni shu
+  bilan harakatlanadi. Avval har 20 000 qatorda yozardi — shuning uchun kichik
+  fayl ham, o'lgan fayl ham bir xil «0» ko'rsatardi.
+- **Har 5 daqiqada tekshiruv**: jim qolgan yozuvni «to'xtab qoldi — faylni
+  qayta yuklang» deb yopadi. Shundan keyin o'chirish tugmasi o'zi paydo
+  bo'ladi, ya'ni osilib qolgan qatorlar o'z-o'zidan tozalanadi.
+- **Oqim uzilsa darhol sabab bilan rad etadi**, kutmaydi.
+- **Xato matni endi kod emas, gap**: «missing_columns: Ед. из.» o'rniga
+  «Faylda kerakli ustun topilmadi (Ед. из.). Sarlavha qatorini tekshiring.»
+- Katta faylga vaqt oshirildi: 15 daqiqa o'rniga 2 soat. O'lchov: 500 000
+  qator 83 soniya, 150 000 qator 27 soniya — ya'ni fayl kattaligi sabab emas
+  edi.
+
+**Migratsiya 0095** — deploy'dan keyin jurnal **96** ni ko'rsatishi kerak.
+
 ## Telegram botdagi AI VED hodimi — 2026-09-04 · **DEPLOY QILINDI (95)**
 
 Sizning «AI Ved hodimi … malumotlar berilganda hamma malumotlarni toliq

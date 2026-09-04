@@ -2738,6 +2738,7 @@
       "enqueue_failed": "Not queued — try again",
       "in_use": "Calculations are priced off this import — it cannot be deleted",
       "network": "Connection lost"
-    }
+    },
+    "lastBeat": "updated {time}"
   }
 }

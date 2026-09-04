@@ -88,6 +88,10 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
     'customs-import',
     async (b) => (await import('../../wms/customs/jobs')).registerCustomsImportWorker(b),
   ],
+  [
+    'customs-import-sweep',
+    async (b) => (await import('../../wms/customs/jobs')).registerCustomsImportSweep(b),
+  ],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */
@@ -144,7 +148,27 @@ export async function startBoss(): Promise<PgBoss> {
  * away on every deploy», resurrected by an alarm. Sending needs only
  * `boss.start()` plus the queue existing; working jobs stays the app's.
  */
-export async function enqueue<T extends object>(name: string, data: T): Promise<void> {
+/**
+ * Per-job send options, for the jobs whose shape the defaults are wrong for.
+ *
+ * The defaults below suit every job this application had for a year: they
+ * are seconds long, so five quick retries cost nothing and pg-boss's
+ * fifteen-minute expiry is never in sight. The customs import is the first
+ * that is neither — it reads half a million declaration rows — so it says
+ * so, and nothing else has to change.
+ */
+export interface EnqueueOptions {
+  /** How long a claimed job may run before pg-boss re-delivers it. */
+  expireInSeconds?: number;
+  /** Retries after the first attempt. */
+  retryLimit?: number;
+}
+
+export async function enqueue<T extends object>(
+  name: string,
+  data: T,
+  options: EnqueueOptions = {},
+): Promise<void> {
   const boss = await ensureListening();
   globalForBoss.bossQueues ??= new Set();
   if (!globalForBoss.bossQueues.has(name)) {
@@ -154,5 +178,5 @@ export async function enqueue<T extends object>(name: string, data: T): Promise<
     await boss.createQueue(name);
     globalForBoss.bossQueues.add(name);
   }
-  await boss.send(name, data, { retryLimit: 5, retryBackoff: true });
+  await boss.send(name, data, { retryLimit: 5, retryBackoff: true, ...options });
 }

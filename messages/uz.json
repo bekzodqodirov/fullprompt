@@ -2738,6 +2738,7 @@
       "enqueue_failed": "Navbatga qo'shilmadi — qayta urinib ko'ring",
       "in_use": "Bu import bo‘yicha narx qo‘yilgan hisoblar bor — o‘chirib bo‘lmaydi",
       "network": "Aloqa uzildi"
-    }
+    },
+    "lastBeat": "yangilandi {time}"
   }
 }

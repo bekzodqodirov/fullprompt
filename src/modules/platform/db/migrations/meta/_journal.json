@@ -666,6 +666,13 @@
       "when": 1785190000073,
       "tag": "0094_customs_import",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1785190000074,
+      "tag": "0095_customs_import_heartbeat",
+      "breakpoints": true
     }
   ]
 }

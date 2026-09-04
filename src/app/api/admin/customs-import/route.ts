@@ -67,7 +67,19 @@ export async function POST(request: Request) {
   });
 
   try {
-    await enqueue(JOB_CUSTOMS_IMPORT, { batchId: batch!.id, storageKey, fileName });
+    // Two of pg-boss's defaults are wrong for THIS job and for no other in
+    // the app. Fifteen minutes is its expiry, and half a million declaration
+    // rows measured 83 seconds here on a machine with nothing else on it —
+    // on his VPS, behind MinIO, with Postgres and the web app beside it,
+    // that margin is not one to bet a quarter's baza on. And five retries of
+    // a parse this size is six full re-reads of an 80 MB file before anybody
+    // is told anything; three attempts heal a storage blip and reach the
+    // sentence sooner.
+    await enqueue(
+      JOB_CUSTOMS_IMPORT,
+      { batchId: batch!.id, storageKey, fileName },
+      { expireInSeconds: 2 * 60 * 60, retryLimit: 2 },
+    );
   } catch (err) {
     // The bytes are stored and the batch exists; a queue that refused the
     // job leaves a row saying so, rather than a silent «processing» for ever.
