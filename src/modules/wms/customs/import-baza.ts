@@ -96,10 +96,25 @@ export interface ImportBazaSuggestion {
   candidates: ImportBazaRow[];
   /** Which import the answer came from — null when nothing is imported yet. */
   batchId: string | null;
+  /** How many declarations the file holds under this code, before the cap —
+   * so the screen can say «200 ta · eng mos 50 tasi» rather than implying
+   * that fifty is all there is. */
+  total: number;
 }
 
-/** How many rows the picker offers. Ten is a screenful; a hundred is a wall. */
+/** How many rows the AUTO-fill path ranks. Ten is what it needs to pick one. */
 const CANDIDATE_LIMIT = 10;
+/**
+ * How many the PICKER lists.
+ *
+ * Ten was «a screenful» when the list lived in a 288px popover that the
+ * table clipped anyway. In a dialog with a search box the question changes:
+ * the search filters what has been FETCHED, so the cap decides what he can
+ * ever reach. Fifty is roughly 25 KB of declaration prose — measured against
+ * the 500-character names his own file carries — and the count line says
+ * when there are more.
+ */
+const PICKER_LIMIT = 50;
 const MIN_SIM_DEFAULT = 0.45;
 /** Shorter than this and «name similarity» stops meaning anything. */
 const MIN_NEEDLE = 4;
@@ -119,27 +134,39 @@ interface SuggestInput {
  */
 export async function suggestImportBaza(
   input: SuggestInput,
-  opts: { batchId?: string | null; minSim?: number } = {},
+  opts: { batchId?: string | null; minSim?: number; picker?: boolean } = {},
 ): Promise<ImportBazaSuggestion> {
   const batchId = opts.batchId !== undefined ? opts.batchId : await newestReadyBatchId();
-  if (!batchId) return { auto: null, candidates: [], batchId: null };
+  if (!batchId) return { auto: null, candidates: [], batchId: null, total: 0 };
 
   const needle = normalizeName(input.name);
   // A needle this short matches inside almost any declaration text: at three
-  // characters «м2» or «оси» would auto-price a whole quarter. The picker
-  // still answers — it is the AUTO-fill that needs a name worth believing.
-  if (needle.length < MIN_NEEDLE) return { auto: null, candidates: [], batchId };
+  // characters «м2» or «оси» would auto-price a whole quarter, so it can
+  // never AUTO-fill.
+  //
+  // But it used to return an empty list as well, and the comment right here
+  // claimed the opposite («The picker still answers»). So a row honestly
+  // called «Лак» or «Мёд» opened the picker onto «nothing under this code»
+  // about a code that may hold four hundred declarations — the feature
+  // unreachable for exactly the shortest, commonest names. The WHERE clause
+  // never used the needle; it only SCORED. So in picker mode the list is
+  // simply ordered by what is knowable without a name: the matching unit
+  // first, then the newest declaration.
+  const usable = needle.length >= MIN_NEEDLE;
+  if (!usable && !opts.picker) return { auto: null, candidates: [], batchId, total: 0 };
+
+  const limit = opts.picker ? PICKER_LIMIT : CANDIDATE_LIMIT;
+  const { rows, total } = await queryCandidates(batchId, input, usable ? needle : null, limit);
+  const candidates = rows.slice(0, limit);
+  if (!usable) return { auto: null, candidates, batchId, total };
 
   const minSim =
     opts.minSim ?? Number((await getSetting('import_baza_min_sim')) ?? MIN_SIM_DEFAULT);
-
-  const rows = await queryCandidates(batchId, input, needle);
-  const candidates = rows.slice(0, CANDIDATE_LIMIT);
   const best = candidates[0];
   // Auto-fill needs BOTH: a name we believe, and the right unit. A per-kg
   // price landing on a per-dona row is off by the weight of the goods.
   const auto = best && best.unitMatches && best.nameSim >= minSim ? best : null;
-  return { auto, candidates, batchId };
+  return { auto, candidates, batchId, total };
 }
 
 /**
@@ -163,8 +190,10 @@ export async function suggestImportBaza(
 async function queryCandidates(
   batchId: string,
   input: SuggestInput,
-  needle: string,
-): Promise<ImportBazaRow[]> {
+  /** null when the typed name is too short to score — see the caller. */
+  needle: string | null,
+  limit: number,
+): Promise<{ rows: ImportBazaRow[]; total: number }> {
   const wantWeight =
     input.unit === 'dona' &&
     input.weightPerUnitKg !== null &&
@@ -172,6 +201,11 @@ async function queryCandidates(
     Number.isFinite(input.weightPerUnitKg) &&
     input.weightPerUnitKg > 0;
   const w = wantWeight ? Number(input.weightPerUnitKg) : 0;
+
+  // A needle of null scores nothing — the ordering falls back to what is
+  // knowable without a name, and every row still carries `nameSim` 0 so the
+  // AUTO-fill's threshold can never be met by accident.
+  const sim = needle === null ? sql`0::real` : sql`word_similarity(${needle}, r.name_norm)`;
 
   const rows = await db.execute<{
     id: string;
@@ -183,6 +217,7 @@ async function queryCandidates(
     sender: string | null;
     name_sim: number;
     score: number;
+    total: number;
   }>(sql`
     SELECT r.id::text AS id,
            r.name,
@@ -191,22 +226,27 @@ async function queryCandidates(
            r.weight_per_unit_kg,
            r.declared_at::text AS declared_at,
            r.sender,
-           word_similarity(${needle}, r.name_norm) AS name_sim,
+           ${sim} AS name_sim,
            CASE
              WHEN ${wantWeight} AND r.weight_per_unit_kg IS NOT NULL
-               THEN 0.7 * word_similarity(${needle}, r.name_norm)
+               THEN 0.7 * ${sim}
                   + 0.3 * (1 - LEAST(1, abs(${w}::numeric - r.weight_per_unit_kg)
                                         / GREATEST(${w}::numeric, 0.01)))
-             ELSE word_similarity(${needle}, r.name_norm)
-           END AS score
+             ELSE ${sim}
+           END AS score,
+           -- The count rides the same scan: the screen must be able to say
+           -- «200 declarations · the 50 closest» rather than imply that the
+           -- page it shows is the whole file.
+           count(*) OVER () ::int AS total
       FROM customs_import_rows r
      WHERE r.batch_id = ${batchId}::uuid
        AND r.tnved_code = ${input.tnvedCode}
      ORDER BY (r.unit = ${input.unit}) DESC, score DESC, r.declared_at DESC NULLS LAST
-     LIMIT ${CANDIDATE_LIMIT}
+     LIMIT ${limit}
   `);
 
-  return rows.map((r) => ({
+  const total = Number(rows[0]?.total ?? 0);
+  const mapped = rows.map((r) => ({
     id: r.id,
     name: r.name,
     unit: r.unit,
@@ -219,6 +259,7 @@ async function queryCandidates(
     score: Number(r.score),
     unitMatches: r.unit === input.unit,
   }));
+  return { rows: mapped, total };
 }
 
 /**

@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Baza tanlash o'z oynasiga chiqdi — 2026-09-04
+
+**Muammo.** ⋯ menyusi jadvalning siljish qutisi ichida chizilgan edi, u esa
+ikkala tomondan ham kesadi — skrinshotdagi yarim ko'rinib turgan
+«O'chirish» shuning isboti. Baza ro'yxati o'sha menyuning eng pastida
+turgani uchun butunlay kesish chizig'i ostida qolardi: 📥 ni bosasiz,
+hech narsa ko'rinmaydi.
+
+**Endi qanday.**
+
+- ⋯ — jadval kengligidagi ochiluvchi qator (guruh qatoridagi ⚙ kabi):
+  878 piksel, avvalgi 288 pikselli kesilgan quti o'rniga.
+- 📥 — alohida oyna, jadvaldan tashqarida, ya'ni uni hech narsa kesolmaydi.
+  Ichida qidiruv; har bir qatorda narx, birlik mos kelmasa SO'Z bilan
+  ogohlantirish, deklaratsiya nomi uch qatorda (uzun bo'lsa «to'liq»
+  tugmasi bilan ochiladi), dona og'irligi, sana, yuboruvchi. Sarlavhada
+  qaysi tovar va qaysi chorakdan tanlanayotgani.
+- **Qisqa nomli tovarda ro'yxat endi bo'sh chiqmaydi.** «Лак», «Мёд» kabi
+  nomlarda qidiruv umuman ishga tushmasdi va «bu kodda hech narsa yo'q»
+  deb javob berardi. Endi ro'yxat chiqadi, lekin avtomatik to'ldirish
+  baribir ishlamaydi — qisqa nom ishonchli emas.
+- 50 tagacha ko'rsatiladi va umumiy soni aytiladi: «Jami 200 · eng mos 50
+  tasi» — 50 ta hammasi emasligi yashirilmaydi.
+- **Lug'atlar** sahifasidagi baza jadvaliga nom bo'yicha qidiruv qo'shildi
+  (u yerda faqat kod bo'yicha qidiruv bor edi).
+
+Qo'lda cho'zish qilinmadi: quti kichkina emas edi, chizilgan piksellar
+ko'rsatilmayotgan edi — kattaroq qutini ham o'sha narsa kesardi.
+
 ## Auditda ikkita jiddiy xato topildi — 2026-09-04
 
 Yuqoridagi tuzatishlar ustidan olti yo'nalishli tekshiruv o'tkazildi (21

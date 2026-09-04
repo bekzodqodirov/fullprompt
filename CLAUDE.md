@@ -1376,6 +1376,36 @@ code — #803's trap, hit again, a real lint error reached a commit under a
 green-looking line. **2428 unit/integration + 189 e2e** green on a fresh gsr_ci
 in CI's order.
 
+**Round — the clipped ⋯ and the baza picker (2026-09-04; DECISIONS #921-922;
+NO migration, 96 stands):** his «kattaroq qilib bo'ladimi … bazani qidirganda
+korinmay qolyabti» was a size question about pixels that were painted and never
+shown. `RowMenu`'s panel was `absolute … w-72` INSIDE the grid's
+`overflow-x-auto` wrapper, and CSS computes the other axis to `auto` when one
+is not `visible` — clipped on both, which is his cut-off «🗑 Удалить», and the
+📥 list is the LAST thing in that panel so it fell entirely below the clip
+line: one cause, two sentences. `GroupFold`'s own comment had said so since the
+workspace shipped; the ITEM row never got the treatment. The ⋯ is a full-width
+fold now and the picker is an `Overlay` portalled to body. **Both of his own
+proposed fixes were REFUSED with the diagnosis as the reason** — a bigger box
+inside a clipping container is a bigger clipped box, a drag handle is a
+resizable one. Three designs, five lenses, 18 objections absorbed: the note
+CAPPED not `flex-1` (768px leaves ~512px of an 880px table after the sidebar),
+`min-h-0` on the list, the sheet/centred split on `md` (the grid is
+`hidden md:block`), a touch box on the ⋯, and no `block` beside `line-clamp-3`
+(Tailwind emits `display` after `line-clamp`). Also #922: the picker returned
+NOTHING for a name under four characters — «Лак», «Мёд» — while its own comment
+claimed it still answered; `opts.picker` lists by unit-then-date with `nameSim`
+0 so `auto` still cannot fire, lists 50 where auto ranks 10, and carries
+`total`. **Two things a browser found and no test could**: a `key` added to
+stop a stale answer made the Overlay MOUNT on open, and its close-on-navigation
+effect runs on mount — the dialog shut itself on the frame it appeared (#684,
+re-created by the guard against a different defect; the key belongs on the
+BODY); and the header printed `$/шт` beside a row priced per kg, now named as
+an expectation. MEASURED at 1280×900: fold 878px, dialog 640×302 fully inside
+the viewport, document width = viewport. `/hisoblash/lugatlar`'s baza table
+gained the name search it never had. **2436 unit/integration + 189 e2e** green
+on a fresh gsr_ci in CI's order.
+
 **Post-merge AUDIT of the two rounds above (2026-09-04; DECISIONS #919-920; NO
 migration, 96 stands):** six lenses, 21 candidates × 3 refuters → **13
 confirmed, 1 contested, 7 refuted**, and the two blockers were both in my own

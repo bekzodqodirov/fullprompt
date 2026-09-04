@@ -5,6 +5,7 @@ import { authorize, AuthError } from '@/modules/platform/rbac/authorize';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { defaultBasisFor } from '@/modules/wms/calc/basis';
+import { customsImportBatches } from '@/modules/platform/db/schema';
 import { suggestImportBaza, UNIT_FOR_BASIS } from '@/modules/wms/customs/import-baza';
 
 /**
@@ -47,7 +48,11 @@ export async function GET(request: Request) {
     const code = (item.tnvedCode ?? '').trim();
     // No code, no question: the file is keyed on the code and a name search
     // across every declaration is not what he asked for.
-    if (!code) return Response.json({ candidates: [], batchId: null });
+    // WHY there is nothing to show is four different sentences, and the
+    // screen used to have to guess from a null batch id — so on deploy
+    // morning it told the admin to go and upload a quarter file, which is
+    // exactly what he cannot do until the migration has run.
+    if (!code) return Response.json({ state: 'no_code', candidates: [], batchId: null, total: 0 });
 
     const basis = defaultBasisFor({ dutyUnit: item.dutyUnit });
     const qty = item.quantity === null ? null : Number(item.quantity);
@@ -55,14 +60,45 @@ export async function GET(request: Request) {
     const perPiece =
       basis === 'unit' && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
 
-    const sug = await suggestImportBaza({
-      tnvedCode: code,
-      name: item.name,
-      unit: UNIT_FOR_BASIS[basis],
-      weightPerUnitKg: perPiece,
-    });
+    const sug = await suggestImportBaza(
+      {
+        tnvedCode: code,
+        name: item.name,
+        unit: UNIT_FOR_BASIS[basis],
+        weightPerUnitKg: perPiece,
+      },
+      // The picker lists more than the auto-fill ranks, and answers even
+      // when the typed name is too short to score — «Лак» is a real product.
+      { picker: true },
+    );
+    if (!sug.batchId) {
+      return Response.json({ state: 'no_batch', candidates: [], batchId: null, total: 0 });
+    }
+    // Which quarter he is choosing from. A batch whose period never parsed
+    // falls back to its file name — the column is NOT NULL.
+    const [batch] = await db
+      .select({
+        fileName: customsImportBatches.fileName,
+        periodFrom: customsImportBatches.periodFrom,
+        periodTo: customsImportBatches.periodTo,
+      })
+      .from(customsImportBatches)
+      .where(eq(customsImportBatches.id, sug.batchId))
+      .limit(1);
     return Response.json(
-      { candidates: sug.candidates, batchId: sug.batchId },
+      {
+        state: 'ok',
+        candidates: sug.candidates,
+        batchId: sug.batchId,
+        total: sug.total,
+        itemName: item.name,
+        tnvedCode: code,
+        basis,
+        source:
+          batch?.periodFrom && batch?.periodTo
+            ? `${batch.periodFrom} … ${batch.periodTo}`
+            : (batch?.fileName ?? null),
+      },
       { headers: { 'cache-control': 'private, no-store' } },
     );
   } catch (err) {
@@ -70,7 +106,7 @@ export async function GET(request: Request) {
     // says «nothing», the screen keeps working, the number stays the VED's.
     if (isServerBehind(err)) {
       logger.error({ err }, '[calc] import-baza: server behind');
-      return Response.json({ candidates: [], batchId: null });
+      return Response.json({ state: 'behind', candidates: [], batchId: null, total: 0 });
     }
     throw err;
   }

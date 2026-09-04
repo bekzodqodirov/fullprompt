@@ -2390,7 +2390,20 @@
     "answerNotUsd": "答复价格不是美元——报价窗口仅对美元答复开放。",
     "answerExpiredHint": "该价格已过期——请重新计算。",
     "sealInstead": "核算已可封存 — 请点“封存报价”。价格将从封存结果发给销售。",
-    "discountedFloor": "外贸已给折扣：不能高于此金额出售。"
+    "discountedFloor": "外贸已给折扣：不能高于此金额出售。",
+    "importClose": "关闭",
+    "importSearch": "按报关单名称搜索",
+    "importCount": "共 {total} 条 · 显示最接近的 {shown} 条（在其中搜索）",
+    "importNoBatch": "尚未上传海关基价库。管理 → 📥 海关基价库",
+    "importNoMatch": "未找到「{q}」",
+    "importFailed": "基价库无响应——请重试",
+    "importUnitMismatch": "单位不符：文件中为 {unit}",
+    "importNameMore": "全文",
+    "importNameLess": "收起",
+    "importOwnBaza": "都不合适——我自己填基价",
+    "bazaSearch": "按商品搜索",
+    "bazaSearchNone": "未找到「{q}」的基价",
+    "importWants": "需要 $/{basis} 的基价"
   },
   "partners": {
     "title": "合作方",
