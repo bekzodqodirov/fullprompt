@@ -1351,6 +1351,31 @@ a test that reads the reason union out of the service. 4 red proofs + 2
 source-shape. **2422 unit/integration + 189 e2e** green on a fresh gsr_ci in
 CI's order, ledger 96.
 
+**Follow-up, HIS OWN FILE (2026-09-04; DECISIONS #917-918; NO migration, 96
+stands):** he deployed and re-uploaded, and the screen carried the sentence
+0095 exists to produce — `customs_import_rows_weight_check`. **The guard was
+about the wrong number**: the parser guarded what it READ and the column
+guards what it STORES, measured both halves — a per-unit weight of `0.00004`
+is `> 0` in JS and `0.0000` in numeric(12,4). `fitNumeric(value, precision,
+scale)` rounds to the column's scale FIRST (so `> 0` tests the stored value)
+and refuses a figure too large for its integer digits rather than clipping it;
+applied to all four money/measure columns, not only the one that broke.
+**The deeper half: ONE row cost the whole quarter** — `flush` inserts a
+thousand rows in one statement, so anything the TABLE refuses throws for all
+thousand; the chunk now falls back to a row at a time on failure, counting
+`rejected` and naming the first in the log. Also #917: **every import left its
+worksheet in /tmp** — exceljs spools a sheet whenever the zip puts it before
+`sharedStrings` (how Excel itself saves) and deletes it only after the sheet is
+yielded to COMPLETION, which our `break` skipped; MEASURED at **57 MB per
+150k-row import**, still there three seconds later, cleaned only by the
+container's own exit — ~190 MB per upload on his quarter, on a disk shared with
+the photographs and Postgres, and a full /tmp is itself one of the ways a parse
+dies with nothing written down. The reader RUNS OUT now instead of breaking.
+Red proofs ×4. PROCESS: `pnpm lint | tail && echo $?` reports the PIPELINE's
+code — #803's trap, hit again, a real lint error reached a commit under a
+green-looking line. **2428 unit/integration + 189 e2e** green on a fresh gsr_ci
+in CI's order.
+
 **Latest migration: 0095** (`customs_import_heartbeat` — the parse's wall-clock
 beat and the sweep's partial index; ledger must reach **96**). Before it:
 0094 (`customs_import` — the quarterly declarations
