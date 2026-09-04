@@ -33,6 +33,14 @@ import {
 } from './dictionaries';
 import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
 import {
+  BASIS_FOR_UNIT,
+  importRowForCode,
+  suggestImportBaza,
+  unitsForRow,
+  type ImportBazaRow,
+} from '../customs/import-baza';
+import { newestReadyBatchId } from '../customs/import-service';
+import {
   groupMeasure,
   groupQuantity,
   mergeProposals,
@@ -49,6 +57,7 @@ import {
   sectionParts,
   totalsFor,
   type BazaBasis,
+  type BazaSource,
   type CalcSectionName,
   type CustomsResult,
   type DutyMode,
@@ -112,7 +121,10 @@ export interface WorkspaceItem extends PricedItem {
   tnvedCode: string | null;
   note: string | null;
   groupId: string | null;
-  bazaSource: 'dictionary' | 'typed' | null;
+  bazaSource: BazaSource;
+  /** The customs-import row this baza was taken from — the provenance behind
+   * the «📥 taxmin» chip, and what the picker re-opens on. */
+  importRowId: string | null;
   /** The dictionary's current answer, offered even when a value is typed. */
   dictionaryBaza: { bazaUsd: number; basis: BazaBasis; effectiveDate: string; stale: boolean } | null;
 }
@@ -358,7 +370,8 @@ export async function loadWorkspace(
       groupId: i.groupId,
       bazaUsd: toNum(i.bazaUsd),
       bazaBasis: (i.bazaBasis as BazaBasis | null) ?? null,
-      bazaSource: (i.bazaSource as 'dictionary' | 'typed' | null) ?? null,
+      bazaSource: (i.bazaSource as BazaSource) ?? null,
+      importRowId: i.importRowId === null ? null : String(i.importRowId),
       measureUnit: (i.measureUnit as MeasureUnit | null) ?? null,
       measureQty: toNum(i.measureQty),
       dictionaryBaza: dict
@@ -863,6 +876,9 @@ export async function setItemBaza(
         bazaUsd: input.bazaUsd === null ? null : input.bazaUsd.toFixed(4),
         bazaBasis: input.bazaUsd === null ? null : input.basis,
         bazaSource: input.bazaUsd === null ? null : input.source,
+        // The quadruple moves together (0094): whatever this writes, the
+        // number is no longer the import's.
+        importRowId: null,
       })
       .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
       .returning({ groupId: calcRequestItems.groupId });
@@ -1024,7 +1040,16 @@ export async function pullBazasFromDictionary(
     for (const f of fills) {
       await tx
         .update(calcRequestItems)
-        .set({ bazaUsd: f.bazaUsd.toFixed(4), bazaBasis: f.basis, bazaSource: 'dictionary' })
+        // The provenance goes with the price it explained (0094): a row the
+        // dictionary just re-priced is no longer wearing the import's
+        // number, and a stale `import_row_id` would keep the «📥 taxmin»
+        // chip on a baza the book supplied.
+        .set({
+          bazaUsd: f.bazaUsd.toFixed(4),
+          bazaBasis: f.basis,
+          bazaSource: 'dictionary',
+          importRowId: null,
+        })
         .where(and(eq(calcRequestItems.id, f.id), isNull(calcRequestItems.bazaUsd)));
     }
     // The same rule `setItemBaza` applies one item at a time. A baza is one
@@ -1800,6 +1825,10 @@ export async function recalcFromSealed(
         bazaUsd: item.bazaUsd,
         bazaBasis: item.bazaBasis,
         bazaSource: item.bazaSource,
+        // A correction inherits WHERE the price came from, or the chip and
+        // the ✅'s `baza_from_import` would vanish the moment somebody
+        // re-priced the job (0094).
+        importRowId: item.importRowId,
         // Phase 3: a column absent from this explicit list is NULL on every
         // correction — exactly the freshest measures missing (0087's rule).
         measureUnit: item.measureUnit,
@@ -2021,6 +2050,12 @@ export interface TableItemEdit {
    * without a price describes nothing). */
   bazaUsd?: number | null;
   bazaBasis?: BazaBasis | null;
+  /** A row PICKED out of the customs import. The id is a claim: the server
+   * re-reads that row, refuses one that does not price this very code, and
+   * takes the PRICE and the BASIS from the file — never from the browser
+   * (the `pullRates` rule, #778). A posted `bazaUsd` is ignored when this is
+   * set; clearing the baza clears this with it. */
+  importRowId?: string | null;
 }
 
 export interface TableSaveResult {
@@ -2048,6 +2083,11 @@ export interface TableSaveResult {
    * the one-save-new-code case, where the default could not know the law
    * yet. Advisory and NAMED, never a silent rewrite (#171 inverted). */
   basisSuspect: number[];
+  /** Rows whose EMPTY baza this save filled from the customs import (0094).
+   * Named, never silent — his own rule is that a suggestion the VED cannot
+   * see is a price nobody stated: «agar to'g'ri bo'lmasa baza yo'q deb VED
+   * hodimi o'zi qo'yadi». */
+  importFilled: number[];
 }
 
 const CODE_SHAPE = /^\d{4,10}$/;
@@ -2262,6 +2302,150 @@ async function recountItemsInTx(tx: TxHandle, requestId: string): Promise<number
   return n;
 }
 
+/** One row's answer from the customs import, ready to be written. */
+interface ImportFill {
+  /** The code the suggestion was made FOR — re-checked inside the tx. */
+  code: string;
+  bazaUsd: number;
+  basis: BazaBasis;
+  importRowId: string;
+}
+
+interface ImportFillPlan {
+  byItemId: Map<string, ImportFill>;
+  /** Keyed by the add's index, because a ghost row has no id until it is
+   * inserted; the insert maps them onto the minted ids. */
+  byAddIndex: Map<number, ImportFill>;
+}
+
+const EMPTY_FILL_PLAN: ImportFillPlan = { byItemId: new Map(), byAddIndex: new Map() };
+
+/**
+ * The import's auto-fill, computed on the POOL before the transaction.
+ *
+ * Only rows that will end this save CODED and BAZA-LESS are asked about: a
+ * price the VED typed is never second-guessed, and a code-less row has
+ * nothing to look up. `unitsForRow` says which of the file's units may price
+ * the row — the law when it pins one, the row's own figures when it does not
+ * — so a per-m² declaration can never land on a per-kg row, and the
+ * similarity threshold does the rest. His own rule: «agar to'g'ri bo'lmasa
+ * baza yo'q deb VED hodimi o'zi qo'yadi.»
+ */
+async function suggestImportFills(input: {
+  standing: {
+    id: string;
+    name: string;
+    tnvedCode: string | null;
+    quantity: string | null;
+    weightKg: string | null;
+    bazaUsd: string | null;
+  }[];
+  itemEdits: {
+    id: string;
+    name?: string;
+    tnvedCode?: string | null;
+    quantity?: number | null;
+    weightKg?: number | null;
+    bazaUsd?: number | null;
+  }[];
+  withCodes: {
+    name: string;
+    tnvedCode: string | null;
+    quantity: number | null;
+    weightKg: number | null;
+    bazaUsd: number | null;
+  }[];
+  rates: Map<string, RatesRow>;
+}): Promise<ImportFillPlan> {
+  type Want = {
+    key: { kind: 'item'; id: string } | { kind: 'add'; index: number };
+    code: string;
+    name: string;
+    quantity: number | null;
+    weightKg: number | null;
+  };
+  const num = (v: string | null) => (v === null ? null : Number(v));
+  const wants: Want[] = [];
+
+  const editById = new Map(input.itemEdits.map((e) => [e.id, e]));
+  for (const s of input.standing) {
+    const e = editById.get(s.id);
+    const code = e && e.tnvedCode !== undefined ? e.tnvedCode : s.tnvedCode;
+    const baza = e && e.bazaUsd !== undefined ? e.bazaUsd : num(s.bazaUsd);
+    if (!code || baza !== null) continue;
+    wants.push({
+      key: { kind: 'item', id: s.id },
+      code,
+      name: e && e.name !== undefined ? e.name : s.name,
+      quantity: e && e.quantity !== undefined ? e.quantity : num(s.quantity),
+      weightKg: e && e.weightKg !== undefined ? e.weightKg : num(s.weightKg),
+    });
+  }
+  input.withCodes.forEach((r, index) => {
+    if (!r.tnvedCode || r.bazaUsd !== null) return;
+    wants.push({
+      key: { kind: 'add', index },
+      code: r.tnvedCode,
+      name: r.name,
+      quantity: r.quantity,
+      weightKg: r.weightKg,
+    });
+  });
+  if (wants.length === 0) return EMPTY_FILL_PLAN;
+
+  const batchId = await newestReadyBatchId();
+  // No import yet — the module ships with an empty table, exactly as the four
+  // dictionaries do, and a request saved today must behave as it did before.
+  if (!batchId) return EMPTY_FILL_PLAN;
+
+  const minSimRaw = await getSetting('import_baza_min_sim');
+  const minSim = Number(minSimRaw);
+
+  const plan: ImportFillPlan = { byItemId: new Map(), byAddIndex: new Map() };
+  // One question per DISTINCT row shape: a fifty-line invoice repeats the
+  // same product under one code, and asking per line is fifty identical
+  // trigram scans (#432).
+  const asked = new Map<string, ImportFill | null>();
+  for (const w of wants) {
+    const units = unitsForRow({
+      dutyUnit: input.rates.get(w.code)?.dutyUnit ?? null,
+      hasWeight: w.weightKg !== null && w.weightKg > 0,
+      hasQuantity: w.quantity !== null && w.quantity > 0,
+    });
+    // His rule for piece goods: «har bir tovarni ogirligiga qaraymiz». Only
+    // meaningful when the row states BOTH a count and a weight.
+    const perPiece =
+      w.quantity !== null && w.quantity > 0 && w.weightKg !== null && w.weightKg > 0
+        ? w.weightKg / w.quantity
+        : null;
+    const memo = `${w.code}|${units.join('+')}|${w.name}|${perPiece ?? ''}`;
+    let fill = asked.get(memo);
+    if (fill === undefined) {
+      fill = null;
+      // First unit that answers wins; the order IS the preference.
+      for (const unit of units) {
+        const sug = await suggestImportBaza(
+          { tnvedCode: w.code, name: w.name, unit, weightPerUnitKg: perPiece },
+          { batchId, minSim: Number.isFinite(minSim) ? minSim : undefined },
+        );
+        if (!sug.auto) continue;
+        fill = {
+          code: w.code,
+          bazaUsd: sug.auto.pricePerUnitUsd,
+          basis: BASIS_FOR_UNIT[unit],
+          importRowId: sug.auto.id,
+        };
+        break;
+      }
+      asked.set(memo, fill);
+    }
+    if (!fill) continue;
+    if (w.key.kind === 'item') plan.byItemId.set(w.key.id, fill);
+    else plan.byAddIndex.set(w.key.index, fill);
+  }
+  return plan;
+}
+
 export async function saveTable(
   requestId: string,
   input: { items: TableItemEdit[]; adds: TableNewItem[] },
@@ -2281,6 +2465,7 @@ export async function saveTable(
     measureQty: e.measureQty === undefined ? undefined : tableMeasure(e.measureQty, e.seq),
     bazaUsd: e.bazaUsd,
     bazaBasis: e.bazaBasis,
+    importRowId: e.importRowId ?? null,
   }));
   for (const e of itemEdits) {
     if (e.name !== undefined && !e.name) throw new CalcError('name_required', e.seq);
@@ -2311,7 +2496,16 @@ export async function saveTable(
   // memory-resolved ones — a partial union mints groups with NULL rates and
   // silently degrades «prices on its first save» to «type them by hand».
   const standing = await db
-    .select({ seq: calcRequestItems.seq, tnvedCode: calcRequestItems.tnvedCode, groupId: calcRequestItems.groupId })
+    .select({
+      id: calcRequestItems.id,
+      seq: calcRequestItems.seq,
+      name: calcRequestItems.name,
+      tnvedCode: calcRequestItems.tnvedCode,
+      groupId: calcRequestItems.groupId,
+      quantity: calcRequestItems.quantity,
+      weightKg: calcRequestItems.weightKg,
+      bazaUsd: calcRequestItems.bazaUsd,
+    })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
   let withCodes = adds;
@@ -2332,6 +2526,38 @@ export async function saveTable(
   const addCodes = withCodes.map((r) => r.tnvedCode).filter((c): c is string => !!c);
   const rates = await ratesForCodes([...editedCodes, ...sweepCodes, ...addCodes], onDate());
 
+  // The picker's claims, resolved on the POOL before the tx (#714). The file
+  // answers the price and the basis; the browser only says WHICH row.
+  const pickedRows = new Map<string, ImportBazaRow>();
+  const pickedIds = [...new Set(itemEdits.map((e) => e.importRowId).filter((v): v is string => !!v))];
+  if (pickedIds.length > 0) {
+    for (const e of itemEdits) {
+      if (!e.importRowId || pickedRows.has(e.importRowId)) continue;
+      // The code the row will CARRY after this save — a pick and a recode can
+      // ride one press, and the file row must price the code that lands.
+      const code = e.tnvedCode !== undefined ? e.tnvedCode : (standing.find((s) => s.id === e.id)?.tnvedCode ?? null);
+      if (!code) throw new CalcError('import_row_missing', e.seq);
+      const row = await importRowForCode(e.importRowId, code);
+      if (!row) throw new CalcError('import_row_missing', e.seq);
+      pickedRows.set(e.importRowId, row);
+    }
+  }
+  // The picked price REPLACES whatever the browser posted, and does it here
+  // so the edit loop below stays one baza writer.
+  for (const e of itemEdits) {
+    const row = e.importRowId ? pickedRows.get(e.importRowId) : undefined;
+    if (!row) continue;
+    e.bazaUsd = row.pricePerUnitUsd;
+    e.bazaBasis = row.basis;
+  }
+
+  // The auto-fill (spec §2.4). Every row that will stand CODED with an EMPTY
+  // baza after this save is offered the newest ready import's best match —
+  // above the threshold and on the right unit, or nothing at all. Pooled, so
+  // it happens HERE and is applied inside the tx only where the state still
+  // agrees (#714).
+  const importAuto = await suggestImportFills({ standing, itemEdits, withCodes, rates });
+
   let result: TableSaveResult = {
     minted: [],
     swept: 0,
@@ -2340,6 +2566,7 @@ export async function saveTable(
     measuresCleared: [],
     measuresDropped: [],
     basisSuspect: [],
+    importFilled: [],
   };
   await db.transaction(async (tx) => {
     await lockRequestInTx(tx, requestId);
@@ -2412,13 +2639,22 @@ export async function saveTable(
             patch.bazaUsd = null;
             patch.bazaBasis = null;
             patch.bazaSource = null;
+            // The provenance goes with the price it explained.
+            patch.importRowId = null;
             measuresMoved = true;
           }
-        } else if (before !== e.bazaUsd || beforeBasis !== (e.bazaBasis ?? null)) {
+        } else if (
+          before !== e.bazaUsd ||
+          beforeBasis !== (e.bazaBasis ?? null) ||
+          // A re-pick of the SAME price off a different declaration still
+          // moves the provenance — the chip names a row, not a number.
+          (e.importRowId !== null && String(item.importRowId ?? '') !== e.importRowId)
+        ) {
           put('baza', { bazaUsd: before, basis: beforeBasis }, { bazaUsd: e.bazaUsd, basis: e.bazaBasis });
           patch.bazaUsd = e.bazaUsd.toFixed(4);
           patch.bazaBasis = e.bazaBasis;
-          patch.bazaSource = 'typed';
+          patch.bazaSource = e.importRowId ? 'import' : 'typed';
+          patch.importRowId = e.importRowId ? BigInt(e.importRowId) : null;
           measuresMoved = true;
         }
       }
@@ -2433,6 +2669,8 @@ export async function saveTable(
     //    the audit measured dies here).
     let nextSeqNo = items.reduce((m, i) => Math.max(m, i.seq), 0) + 1;
     const insertedRows: { id: string; seq: number; tnvedCode: string | null }[] = [];
+    /** The fill plan re-keyed onto item ids — a ghost row gets its id here. */
+    const fillByItem = new Map(importAuto.byItemId);
     if (withCodes.length > 0) {
       const minted = withCodes.map((r) => ({ ...r, seq: nextSeqNo++ }));
       const inserted = await tx
@@ -2460,6 +2698,8 @@ export async function saveTable(
         itemGroupBySeq.set(row.seq, null);
         const qty = minted[i]!.measureQty;
         if (qty !== null) postedMeasure.set(row.id, qty);
+        const fill = importAuto.byAddIndex.get(i);
+        if (fill) fillByItem.set(row.id, fill);
       }
     }
 
@@ -2550,6 +2790,9 @@ export async function saveTable(
         id: calcRequestItems.id,
         seq: calcRequestItems.seq,
         groupId: calcRequestItems.groupId,
+        tnvedCode: calcRequestItems.tnvedCode,
+        quantity: calcRequestItems.quantity,
+        weightKg: calcRequestItems.weightKg,
         measureUnit: calcRequestItems.measureUnit,
         measureQty: calcRequestItems.measureQty,
         bazaUsd: calcRequestItems.bazaUsd,
@@ -2602,6 +2845,42 @@ export async function saveTable(
       }
     }
 
+    // 7. The import's auto-fill (0094), AFTER the regroup — the group is what
+    //    says which unit the law prices in, and the suggestion was made for
+    //    that unit. Applied only where the pre-tx state still holds: the code
+    //    is still the one asked about, the baza is still empty, and the
+    //    group's own law still wants this basis (a typed dutyUnit override on
+    //    a legacy group can disagree with today's dictionary). Anything else
+    //    is left EMPTY for the VED, which is his own rule.
+    const dutyUnitByGroup = new Map(groupsFinal.map((g) => [g.id, g.dutyUnit]));
+    const importFilled: number[] = [];
+    for (const item of itemsNow) {
+      const fill = fillByItem.get(item.id);
+      if (!fill) continue;
+      if (item.bazaUsd !== null) continue;
+      if ((item.tnvedCode ?? null) !== fill.code) continue;
+      // The suggestion was made against the dictionary's law; the GROUP is
+      // what actually prices, and a legacy group can carry a typed dutyUnit
+      // the dictionary no longer agrees with.
+      const allowed = unitsForRow({
+        dutyUnit: item.groupId ? (dutyUnitByGroup.get(item.groupId) ?? null) : null,
+        hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
+        hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
+      });
+      if (!allowed.some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
+      await tx
+        .update(calcRequestItems)
+        .set({
+          bazaUsd: fill.bazaUsd.toFixed(4),
+          bazaBasis: fill.basis,
+          bazaSource: 'import',
+          importRowId: BigInt(fill.importRowId),
+        })
+        .where(eq(calcRequestItems.id, item.id));
+      importFilled.push(item.seq);
+      if (item.groupId) touched.add(item.groupId);
+    }
+
     // Item 3's loud half (judge F13): a NEW code typed with a baza in ONE
     // save posts basis 'unit' before its group exists to say otherwise —
     // never silently rewritten (#171 inverted), NAMED instead, so the VED
@@ -2637,6 +2916,7 @@ export async function saveTable(
         measuresCleared,
         measuresDropped,
         basisSuspect,
+        importFilled,
       },
     });
     result = {
@@ -2647,6 +2927,7 @@ export async function saveTable(
       measuresCleared,
       measuresDropped,
       basisSuspect,
+      importFilled,
     };
   });
   return result;

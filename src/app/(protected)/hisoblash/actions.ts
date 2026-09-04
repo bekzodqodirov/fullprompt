@@ -64,6 +64,8 @@ export interface TableFormState {
   measuresCleared?: number[];
   measuresDropped?: number[];
   basisSuspect?: number[];
+  /** Rows the customs import filled — the bar says «📥 N qator». */
+  importFilled?: number[];
 }
 
 /**
@@ -264,6 +266,7 @@ async function runTable(
     measuresCleared: result.measuresCleared,
     measuresDropped: result.measuresDropped,
     basisSuspect: result.basisSuspect,
+    importFilled: result.importFilled,
   };
 }
 
@@ -287,6 +290,7 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
       measuresCleared: [],
       measuresDropped: [],
       basisSuspect: [],
+      importFilled: [],
     };
   }, ws(id));
 }

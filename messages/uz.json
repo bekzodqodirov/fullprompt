@@ -379,7 +379,8 @@
       "calc_actual_settle_days": "Yuk kelgandan necha kun keyin rastamojka yakuniy hisoblanadi",
       "calc_customs_deviation_pct": "Rastamojka hisobdan necha foizga farq qilishi mumkin",
       "calc_customs_cost_type_codes": "Qaysi xarajat turlari rastamojka hisoblanadi (kodlar ro'yxati)",
-      "client_code_next": "Keyingi mijoz kodi raqami (bo‘sh = eski qoida; faqat avtomatik berish suradi)"
+      "client_code_next": "Keyingi mijoz kodi raqami (bo‘sh = eski qoida; faqat avtomatik berish suradi)",
+      "import_baza_min_sim": "Import bazasidan nom o'xshashligi shu darajadan yuqori bo'lsa — baza avtomatik qo'yiladi (0..1)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -2145,6 +2146,7 @@
       "conflict": "Boshqa kishi hozirgina saqladi — ekran yangilandi, qayta bosing",
       "save_failed": "Saqlash o'tmadi — aloqani tekshirib, qayta urinib ko'ring",
       "bad_basis": "Baza o'lchovi noto'g'ri",
+      "import_row_missing": "Tanlangan import qatori topilmadi yoki bu kodga tegishli emas — qaytadan tanlang",
       "answer_missing": "Bu so‘rovda summa yozilgan javob yo‘q.",
       "answer_not_usd": "Javob USD emas — taklif qilinmaydi.",
       "answer_expired": "Berilgan narx eskirgan — qayta hisoblating.",
@@ -2299,7 +2301,8 @@
       "bazaOffDictionary": "Baza lug'atdan emas",
       "aiLowConfidence": "AI ishonchsiz edi",
       "aiRateTaken": "AI stavkasi narxga ketdi",
-      "rateNoted": "lug'at stavkasi izoh bilan"
+      "rateNoted": "lug'at stavkasi izoh bilan",
+      "bazaFromImport": "Baza importdan (taxmin)"
     },
     "refusal": {
       "customsByClient": "Mijoz o'zi rastamojka qildi",
@@ -2375,8 +2378,13 @@
       "sm3Hint": "jami sm³ = dona × motor hajmi",
       "rateNoted": "qonunda izoh bor",
       "savedFigures": "saqlangan raqamlar",
-      "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator"
+      "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator",
+      "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator"
     },
+    "importGuess": "importdan (taxmin)",
+    "importGuessTitle": "Baza bojxona import faylidan tanlandi — tekshiring, kerak bo‘lsa o‘zingiz yozing",
+    "importPick": "Importdan tanlash",
+    "importNone": "Bu kod uchun importda mos qator yo‘q",
     "answerNotUsd": "Narx USD emas — taklif eshigi faqat dollardagi javobga ochiladi.",
     "answerExpiredHint": "Berilgan narx eskirgan — qayta hisoblating.",
     "sealInstead": "Hisob muhrlashga tayyor — «Muhrlash»ni bosing. Narx sotuvchiga muhrdan ketadi.",
@@ -2702,5 +2710,32 @@
     "colCargo": "Yuk",
     "colWho": "Kim",
     "colMoney": "Jonli pullar"
+  },
+  "customsImport": {
+    "title": "Bojxona bazasi (import)",
+    "hint": "Har chorakda bojxonadan olingan deklaratsiya faylini shu yerga yuklang. Fayl fonda o'qiladi — eski importlar o'chmaydi, taklif eng yangi tayyor importdan olinadi.",
+    "file": "Fayl",
+    "period": "Davri",
+    "rows": "Qatorlar",
+    "skipped": "O'tmadi",
+    "status": "Holati",
+    "ready": "tayyor",
+    "processing": "o'qilmoqda",
+    "failed": "xato",
+    "empty": "Hali import yo'q",
+    "upload": "Yuklash",
+    "uploading": "Yuklanmoqda…",
+    "queued": "Navbatga qo'shildi",
+    "deleteConfirm": "Bu importni o'chirasizmi?",
+    "errors": {
+      "not_xlsx": "Bu xlsx ham, csv ham emas",
+      "too_large": "Fayl juda katta",
+      "empty": "Fayl bo'sh",
+      "no_file": "Fayl tanlanmadi",
+      "forbidden": "Ruxsat yo'q",
+      "enqueue_failed": "Navbatga qo'shilmadi — qayta urinib ko'ring",
+      "in_use": "Bu import bo‘yicha narx qo‘yilgan hisoblar bor — o‘chirib bo‘lmaydi",
+      "network": "Aloqa uzildi"
+    }
   }
 }

@@ -379,7 +379,8 @@
       "calc_actual_settle_days": "How many days after arrival the customs figure counts as final",
       "calc_customs_deviation_pct": "How far the customs cost may differ from the quote, in percent",
       "calc_customs_cost_type_codes": "Which cost types count as customs (a list of codes)",
-      "client_code_next": "Next client code number (empty = old rule; only auto-generation advances it)"
+      "client_code_next": "Next client code number (empty = old rule; only auto-generation advances it)",
+      "import_baza_min_sim": "How close an imported name must be before its price fills the baza automatically (0..1)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"
@@ -2145,6 +2146,7 @@
       "conflict": "Someone just saved — the screen refreshed, press again",
       "save_failed": "Save failed — check the connection and retry",
       "bad_basis": "Invalid baza unit",
+      "import_row_missing": "The picked import row is gone or prices another code — pick again",
       "answer_missing": "This request has no answered figure.",
       "answer_not_usd": "The answer is not in USD — cannot offer.",
       "answer_expired": "The figure has expired — recalculate.",
@@ -2299,7 +2301,8 @@
       "bazaOffDictionary": "Baza not from the dictionary",
       "aiLowConfidence": "The model was unsure",
       "aiRateTaken": "The model's rate reached the price",
-      "rateNoted": "dictionary rate carries a note"
+      "rateNoted": "dictionary rate carries a note",
+      "bazaFromImport": "baza filled from the customs import"
     },
     "refusal": {
       "customsByClient": "The client cleared it themselves",
@@ -2375,8 +2378,13 @@
       "sm3Hint": "total cm³ = pcs × engine volume",
       "rateNoted": "the law carries a note",
       "savedFigures": "saved figures",
-      "basisSuspect": "check the baza unit (the law prices in another) — row"
+      "basisSuspect": "check the baza unit (the law prices in another) — row",
+      "importFilled": "{count} baza(s) filled from the import (estimate), rows"
     },
+    "importGuess": "from the import (estimate)",
+    "importGuessTitle": "The baza was matched in the customs import file — check it, or type your own",
+    "importPick": "Pick from the import",
+    "importNone": "Nothing in the import for this code",
     "answerNotUsd": "The answer is not in USD — the offer door opens only on a dollar figure.",
     "answerExpiredHint": "The quoted figure has expired — recalculate.",
     "sealInstead": "Ready to seal — press “Seal”. The seller gets the price from the seal.",
@@ -2702,5 +2710,32 @@
     "colCargo": "Cargo",
     "colWho": "Who",
     "colMoney": "Live money"
+  },
+  "customsImport": {
+    "title": "Customs base (import)",
+    "hint": "Upload the quarterly declarations file here. It is parsed in the background — older imports are kept, and suggestions read the newest ready one.",
+    "file": "File",
+    "period": "Period",
+    "rows": "Rows",
+    "skipped": "Skipped",
+    "status": "Status",
+    "ready": "ready",
+    "processing": "parsing",
+    "failed": "failed",
+    "empty": "No imports yet",
+    "upload": "Upload",
+    "uploading": "Uploading…",
+    "queued": "Queued",
+    "deleteConfirm": "Delete this import?",
+    "errors": {
+      "not_xlsx": "Not an xlsx or csv",
+      "too_large": "File too large",
+      "empty": "Empty file",
+      "no_file": "No file chosen",
+      "forbidden": "Not allowed",
+      "enqueue_failed": "Not queued — try again",
+      "in_use": "Calculations are priced off this import — it cannot be deleted",
+      "network": "Connection lost"
+    }
   }
 }

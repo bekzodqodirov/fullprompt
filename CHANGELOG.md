@@ -1,5 +1,64 @@
 # CHANGELOG
 
+## Bojxona bazasi: chorak fayl → VEDga baza taklifi — 2026-09-04
+
+Sizning «har 3 oyda 1 marta baza olaman … shuni ichida menga tahminan qoyib
+berish bazani» degan so'rovingiz. **Migratsiya 0094 — deploy'dan keyin hisob
+95 bo'lishi kerak.**
+
+**Faylni ADMIN yuklaydi** (sizning javobingiz): Boshqaruv → «📥 Bojxona
+bazasi». Yuklash bir soniya — fayl saqlanadi va OCHIQ ishlanadi, sahifa
+o'zi yangilanib qatorlar sonini ko'rsatib turadi. 500 ming qator bo'lsa ham
+sistema sekinlashmaydi: hech narsa siz kutib turgan so'rov ichida
+bajarilmaydi.
+
+**Ustunlar NOMI bo'yicha topiladi.** Bojxona keyingi chorakda ustunlarni
+joyini almashtirsa yoki nomini o'zgartirsa ham fayl o'qiladi. Kerakli ustun
+yo'q bo'lsa — «qaysi ustun yetishmayapti» deb aytadi, jim qolmaydi.
+O'lchov birligini tushunmasa (masalan «компл») o'sha qatorni O'TKAZIB
+yuboradi va nechtasini o'tkazganini yozadi — noto'g'ri birlik butun qatorni
+noto'g'ri narxlaydi, taxmin qilgandan ko'ra o'tkazib yuborgan yaxshi.
+
+**Fayllar YIG'ILADI** (sizning javobingiz): eng oxirgi tayyor fayl javob
+beradi, eskilari turaveradi. Ishlanayotgan fayl hech qachon narx bermaydi.
+
+**VED oynasida:** TNVED kod qo'yilgan, bazasi bo'sh qator saqlashda o'zi
+to'ladi va yonida «📥 baza importdan (taxmin) — tekshiring» yozuvi turadi;
+saqlash javobida «📥 N qator bazasi importdan to'ldirildi» qatori chiqadi.
+Nom yetarlicha o'xshamasa — **hech narsa qo'yilmaydi**, katak bo'sh qoladi
+va VED o'zi yozadi (aynan siz aytganingizdek). Har qanday qatorda ⋯ →
+«📥 Importdan tanlash» bosilsa, o'sha kod bo'yicha fayldagi qatorlar
+ro'yxati chiqadi — narxi, nomi, dona og'irligi bilan; birortasini bossangiz
+baza o'sha e'londan olinadi.
+
+**Donadagi tovarlarda og'irlikka qaraladi** (sizning qoidangiz): qatorda
+soni ham, kilosi ham bo'lsa, bitta dona necha kg ekani hisoblanadi va bir
+kod ostidagi bir xil nomli e'lonlar shu bilan ajratiladi.
+
+**Birlik hech qachon aralashmaydi.** Kod m²/juft/litr/kg bo'yicha o'lchansa
+— faqat o'sha birlikdagi e'lon olinadi. Oddiy foizli kodda esa qonun birlik
+aytmaydi: fayldagi kg bahosi ham, dona bahosi ham yarayveradi — qatorning
+o'zida qaysi raqam borligiga qarab (kilosi bor bo'lsa avval kg, chunki
+faylning 74 foizi kilogrammda).
+
+**Narx faqat FAYLdan olinadi.** Siz qo'lda yozgan baza hech qachon
+almashtirilmaydi, va qo'lda yozilgan raqam «taxmin» belgisini yo'qotadi —
+u sizniki bo'ladi. Guruhni ✅ qilganingizda «baza importdan» belgisi yozib
+qoladi: ya'ni kim qachon mashina tanlagan narxni tasdiqlaganini keyin ham
+ko'rasiz.
+
+**Boj, НДС va yig'im FAYLDAN OLINMAYDI** (sizning 7-javobingiz) — ular
+bizning enjinimiz, PP-3818 bo'yicha. Fayldan faqat BAZA keladi.
+
+**Noto'g'ri fayl yuklansa o'chirsa bo'ladi** — hali hech qaysi hisobga narx
+bermagan bo'lsa. Narx bergan bo'lsa o'chirilmaydi: u narxning «qayerdan
+kelgani» bo'lib qoladi, va ekran buni so'z bilan aytadi.
+
+**Sizdan kerak:** to'liq faylni yuboring (500 ming qatorli) — men uni
+sinovdan o'tkazaman. Xohlasangiz, o'xshashlik chegarasini
+(Sozlamalar → `import_baza_min_sim`, hozir 0.45) keyin birga
+to'g'rilaymiz — kattaroq raqam kamroq avtomatik to'ldiradi.
+
 ## VED 2.0 — 4-bosqich: sizning 6 bandingiz — 2026-09-04
 
 Deploy'dan keyingi xabaringiz bo'yicha (93 tasdiqlangan kuni).

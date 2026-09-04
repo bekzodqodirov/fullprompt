@@ -99,6 +99,38 @@ The full file is NOT in the repo; the owner re-uploads it each quarter.
 
 ## 2. Sub-round A — import + baza suggestions
 
+> **SHIPPED 2026-09-04** (DECISIONS #889-895). What differs from the design
+> below, and why — every one of them measured, not argued:
+>
+> - the service lives at **`src/modules/wms/customs/import-baza.ts`** (with
+>   `import-parse.ts` and `import-service.ts` beside it), not under `calc/`:
+>   the parse and the file's own vocabulary are not calculation code.
+> - `StorageDriver` grew **`getStream(key)`** — it had no stream at all, and
+>   500k rows cannot be a Buffer.
+> - **exceljs's STREAM reader hands a date back as the raw Excel serial**
+>   (46201) where the in-memory reader hands a `Date`. `parseDate` has a
+>   number branch, windowed to 1954-2064.
+> - **«Божхона киймати» is not the dollar column.** His file carries it
+>   (30 015.09) beside «Там.стоим $» (4 415.15) for one line — the first in
+>   the contract currency. The header list names the dollar spellings only,
+>   and the kg self-check went from 64 % average drift to 0.
+> - **`word_similarity`, not `similarity`.** His «Товар номи» is a
+>   500-character paragraph and the VED types a short name; plain similarity
+>   divides by the union and scores that near zero, so nothing would ever
+>   have auto-filled. Found in a browser, after every integration test
+>   passed. Minimum needle: 4 characters.
+> - **`unitsForRow`** replaces «ask the law for one unit»: 74 % of the file
+>   is per-kg while `defaultBasisFor` answers 'unit' for every ordinary
+>   advalor code. The law pins a unit or the row's own figures decide.
+> - the fill is computed **pre-tx on the pool** and applied in-tx with three
+>   re-checks (#714); a picked row's price is read from the FILE (#778).
+> - new warning **`baza_from_import`**, deliberately WITHOUT a dictionary
+>   clause — it means nobody stated the price.
+> - a ready import **can** be deleted while nothing is priced off it
+>   (`in_use` otherwise) — the design said failed-only, and that left the
+>   wrong file unremovable for ever.
+
+
 ### 2.1 Migration 0094 `customs_import` (ledger must reach 95)
 
 **BEFORE minting: `git fetch origin main` and read the tail of

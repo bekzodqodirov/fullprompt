@@ -2044,7 +2044,13 @@ export const calcRequestItems = pgTable(
      */
     bazaUsd: numeric('baza_usd', { precision: 14, scale: 4 }),
     bazaBasis: text('baza_basis'),
-    /** 'dictionary' | 'typed' — never 'ai'. A model's estimate has nowhere to land. */
+    /**
+     * 'dictionary' | 'typed' | 'import' — never 'ai'.
+     *
+     * 'import' is the customs service's OWN recorded price for this code,
+     * chosen by name similarity and still confirmed by a person (0094). A
+     * model may propose a ROW; a model's own number has nowhere to land.
+     */
     bazaSource: text('baza_source'),
     /**
      * The law's own measure (0092): the quantity in the unit the code's duty
@@ -2054,6 +2060,19 @@ export const calcRequestItems = pgTable(
      */
     measureUnit: text('measure_unit'),
     measureQty: numeric('measure_qty', { precision: 14, scale: 4 }),
+    /**
+     * WHICH customs declaration row filled this baza (0094).
+     *
+     * Provenance for the 📥 chip and for the picker's «shu qatordan» record.
+     * ON DELETE SET NULL: retiring an old quarter must not take a priced
+     * calculation down with it — and deliberately NO CHECK mentions this
+     * column, because a CHECK spanning an ON DELETE SET NULL column cannot
+     * coexist with it (#809).
+     */
+    importRowId: bigint('import_row_id', { mode: 'bigint' }).references(
+      (): AnyPgColumn => customsImportRows.id,
+      { onDelete: 'set null' },
+    ),
   },
   (t) => [
     uniqueIndex('calc_request_items_seq_idx').on(t.requestId, t.seq),
@@ -2064,7 +2083,7 @@ export const calcRequestItems = pgTable(
     ),
     check(
       'calc_items_baza_source_check',
-      sql`${t.bazaSource} IS NULL OR ${t.bazaSource} IN ('dictionary', 'typed')`,
+      sql`${t.bazaSource} IS NULL OR ${t.bazaSource} IN ('dictionary', 'typed', 'import')`,
     ),
     check(
       'calc_items_measure_unit_check',
@@ -2748,5 +2767,80 @@ export const callLogs = pgTable(
     unique('call_logs_dedup').on(t.userId, t.phone, t.startedAt),
     index('call_logs_client_idx').on(t.clientId, t.startedAt),
     index('call_logs_user_idx').on(t.userId, t.startedAt),
+  ],
+);
+
+/**
+ * A quarterly customs-declaration dump, as uploaded (docs/VED-IMPORT-AI.md).
+ *
+ * The owner receives one every three months and wants the VED's baza filled
+ * from it. Imports ACCUMULATE — his answer: a new quarter never deletes the
+ * old one, suggestions read the newest READY batch, and the previous quarter
+ * stays readable for «bu kod avvalgi chorakda qancha edi».
+ */
+export const customsImportBatches = pgTable(
+  'customs_import_batches',
+  {
+    id: id(),
+    fileName: text('file_name').notNull(),
+    uploadedBy: uuid('uploaded_by').references(() => users.id),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+    /** 'processing' until the background job finishes; a failure keeps its
+     * reason on the row, because the uploader is not watching a log. */
+    status: text('status').notNull().default('processing'),
+    rowCount: integer('row_count').notNull().default(0),
+    /** Rows the parser refused: an unmapped unit, a bad code, no price. */
+    skippedRows: integer('skipped_rows').notNull().default(0),
+    periodFrom: date('period_from'),
+    periodTo: date('period_to'),
+    error: text('error'),
+  },
+  (t) => [
+    check(
+      'customs_import_batches_status_check',
+      sql`${t.status} IN ('processing', 'ready', 'failed')`,
+    ),
+  ],
+);
+
+/** One declared goods line: this code, this name, at this price per unit. */
+export const customsImportRows = pgTable(
+  'customs_import_rows',
+  {
+    id: bigint('id', { mode: 'bigint' }).generatedAlwaysAsIdentity().primaryKey(),
+    batchId: uuid('batch_id')
+      .notNull()
+      .references((): AnyPgColumn => customsImportBatches.id, { onDelete: 'cascade' }),
+    tnvedCode: text('tnved_code').notNull(),
+    name: text('name').notNull(),
+    /** Lowercased, «1. » prefix stripped, whitespace collapsed — what the
+     * trigram similarity measures. Stored, because computing it per query
+     * over half a million rows is the same work done a thousand times. */
+    nameNorm: text('name_norm').notNull(),
+    unit: text('unit').notNull(),
+    pricePerUnitUsd: numeric('price_per_unit_usd', { precision: 14, scale: 4 }).notNull(),
+    /** The owner's own rule for piece goods: «donada hisoblanadgan
+     * tovarlarda har bir tovarni ogirligiga qaraymiz». */
+    weightPerUnitKg: numeric('weight_per_unit_kg', { precision: 12, scale: 4 }),
+    nettoKg: numeric('netto_kg', { precision: 14, scale: 3 }),
+    customsValueUsd: numeric('customs_value_usd', { precision: 14, scale: 2 }),
+    declaredAt: date('declared_at'),
+    sender: text('sender'),
+    originCountry: text('origin_country'),
+  },
+  (t) => [
+    index('customs_import_rows_batch_idx').on(t.batchId),
+    index('customs_import_rows_code_idx').on(t.batchId, t.tnvedCode),
+    check('customs_import_rows_unit_check', sql`${t.unit} IN ('kg', 'dona', 'm2', 'juft', 'litr')`),
+    check(
+      'customs_import_rows_price_check',
+      sql`${t.pricePerUnitUsd} > 0 AND ${t.pricePerUnitUsd} <> 'NaN'::numeric`,
+    ),
+    check(
+      'customs_import_rows_weight_check',
+      sql`${t.weightPerUnitKg} IS NULL OR (${t.weightPerUnitKg} > 0 AND ${t.weightPerUnitKg} <> 'NaN'::numeric)`,
+    ),
+    // The trigram index is created in SQL (0094): drizzle has no gin_trgm_ops
+    // expression, and the suggestion query is the only reader.
   ],
 );

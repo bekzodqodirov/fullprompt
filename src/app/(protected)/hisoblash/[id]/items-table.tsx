@@ -64,6 +64,20 @@ interface ItemDraft {
   measure?: string;
   bazaValue?: string;
   bazaBasis?: BazaBasis;
+  /** Set only by the import picker — the row the price was taken from. Any
+   * hand edit of the amount clears it, because a retyped number is the VED's
+   * own and must not wear the file's provenance. */
+  importRowId?: string;
+}
+
+/** What the picker lists — the API's row, narrowed to what it draws. */
+interface ImportCandidate {
+  id: string;
+  name: string;
+  basis: BazaBasis;
+  pricePerUnitUsd: number;
+  weightPerUnitKg: number | null;
+  unitMatches: boolean;
 }
 
 interface NewRow {
@@ -138,6 +152,7 @@ export function ItemsTable({
     measuresCleared: number[];
     measuresDropped: number[];
     basisSuspect: number[];
+    importFilled: number[];
   } | null>(null);
   /** The rev the save was made against — drafts are held until the refreshed
    * workspace (a moved rev) lands, so the live figures never snap back to
@@ -227,6 +242,8 @@ export function ItemsTable({
       const item = itemById.get(itemId);
       if (!item) return prev;
       const next = { ...prev, [itemId]: { ...prev[itemId], [field]: raw } };
+      // A number the VED types is theirs, not the file's (0094).
+      if (field === 'bazaValue' || field === 'bazaBasis') delete next[itemId]!.importRowId;
       // A draft equal to the server value is not a draft — the dirty count
       // must mean «cells the save will send». The baza pair self-cleans only
       // when BOTH halves match (a basis is part of the price).
@@ -246,6 +263,22 @@ export function ItemsTable({
       }
       return next;
     });
+  };
+
+  /** The picker's one writer: amount, basis and provenance land TOGETHER —
+   * setDraft deliberately drops the provenance, because a hand-typed number
+   * is the VED's own. */
+  const pickImport = (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => {
+    setLastSave(null);
+    setDrafts((prev) => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        bazaValue: String(row.pricePerUnitUsd),
+        bazaBasis: row.basis,
+        importRowId: row.id,
+      },
+    }));
   };
 
   const clearDraft = (itemId: string) =>
@@ -427,6 +460,10 @@ export function ItemsTable({
         // row must save per m², not per the bare fallback.
         edit.bazaBasis =
           v === null ? null : (d.bazaBasis ?? item.bazaBasis ?? defaultBasisFor(groupOfItem(item)));
+        // The picked row's id — the server re-reads it and takes the PRICE
+        // from the file, so a browser that lies about the number is answered
+        // by the declaration itself.
+        if (v !== null && d.importRowId) edit.importRowId = d.importRowId;
       }
       items.push(edit);
     }
@@ -476,6 +513,7 @@ export function ItemsTable({
         measuresCleared: result.measuresCleared ?? [],
         measuresDropped: result.measuresDropped ?? [],
         basisSuspect: result.basisSuspect ?? [],
+        importFilled: result.importFilled ?? [],
       });
       // Drafts are HELD until the refreshed workspace lands (the rev moves),
       // so the live figures never flash back to pre-save numbers.
@@ -567,6 +605,7 @@ export function ItemsTable({
           measuresCleared: [],
           measuresDropped: [],
           basisSuspect: [],
+          importFilled: result.importFilled ?? [],
         });
       }
       return result;
@@ -711,7 +750,8 @@ export function ItemsTable({
         lastSave.merged.length > 0 ||
         lastSave.measuresCleared.length > 0 ||
         lastSave.measuresDropped.length > 0 ||
-        lastSave.basisSuspect.length > 0) ? (
+        lastSave.basisSuspect.length > 0 ||
+        lastSave.importFilled.length > 0) ? (
         <p className="text-2xs text-ink-600" data-testid="calc-save-note">
           {[
             lastSave.minted.length > 0
@@ -727,6 +767,9 @@ export function ItemsTable({
               : '',
             lastSave.basisSuspect.length > 0
               ? `⚠ ${t('table.basisSuspect')}: ${lastSave.basisSuspect.join(', ')}`
+              : '',
+            lastSave.importFilled.length > 0
+              ? `📥 ${t('table.importFilled', { count: lastSave.importFilled.length })}: ${lastSave.importFilled.join(', ')}`
               : '',
           ]
             .filter(Boolean)
@@ -788,6 +831,7 @@ export function ItemsTable({
                     act={act}
                     setDraft={setDraft}
                     clearDraft={clearDraft}
+                    pickImport={pickImport}
                     onCellKey={onCellKey}
                     onCellPaste={onCellPaste}
                   />
@@ -975,6 +1019,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   act,
   setDraft,
   clearDraft,
+  pickImport,
   onCellKey,
   onCellPaste,
 }: {
@@ -991,6 +1036,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   act: (work: () => Promise<CalcFormState>) => void;
   setDraft: (itemId: string, field: keyof ItemDraft, raw: string) => void;
   clearDraft: (itemId: string) => void;
+  pickImport: (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
   onCellKey: (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => void;
   onCellPaste: (e: React.ClipboardEvent) => void;
 }) {
@@ -1090,6 +1136,18 @@ const ItemRowBlock = memo(function ItemRowBlock({
               ))}
             </select>
           </span>
+          {/* 0094: the price came out of the customs dump and nobody has
+              retyped it. A draft on the amount hides the chip — the number on
+              the screen is then the VED's, not the file's. */}
+          {item.bazaSource === 'import' && drafts?.bazaValue === undefined ? (
+            <span
+              className="mt-0.5 block truncate text-2xs text-ink-500"
+              data-testid="calc-baza-import"
+              title={t('importGuessTitle')}
+            >
+              📥 {t('importGuess')}
+            </span>
+          ) : null}
           {item.dictionaryBaza ? (
             <span className="mt-0.5 block truncate text-2xs text-ink-500" title={item.dictionaryBaza.effectiveDate}>
               ≈ ${item.dictionaryBaza.bazaUsd}/
@@ -1110,6 +1168,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
             act={act}
             setDraft={setDraft}
             clearDraft={clearDraft}
+            pickImport={pickImport}
             noteDraft={drafts?.note}
           />
         </td>
@@ -1442,6 +1501,7 @@ function RowMenu({
   act,
   setDraft,
   clearDraft,
+  pickImport,
   noteDraft,
 }: {
   id: string;
@@ -1450,11 +1510,14 @@ function RowMenu({
   act: (work: () => Promise<CalcFormState>) => void;
   setDraft: (itemId: string, field: keyof ItemDraft, raw: string) => void;
   clearDraft: (itemId: string) => void;
+  pickImport: (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
   noteDraft: string | undefined;
 }) {
   const t = useTranslations('calc');
   const tc = useTranslations('common');
   const [open, setOpen] = useState(false);
+  const [picks, setPicks] = useState<ImportCandidate[] | null>(null);
+  const [picking, setPicking] = useState(false);
   return (
     <span className="relative inline-block">
       <button
@@ -1497,6 +1560,66 @@ function RowMenu({
           >
             🗑 {tc('delete')}
           </button>
+          {/* The customs dump's own answer for this code (0094). Offered on
+              every coded row, not only the empty ones: his rule is that the
+              VED decides, and a wrong auto-fill must be replaceable with the
+              right declaration rather than only with a typed number. */}
+          {item.tnvedCode ? (
+            <button
+              type="button"
+              className="btn-secondary !min-h-8"
+              disabled={picking}
+              data-testid="calc-import-pick"
+              onClick={() => {
+                setPicking(true);
+                void (async () => {
+                  try {
+                    const res = await fetch(`/api/calc/import-baza?item=${item.id}`);
+                    const data = (await res.json()) as { candidates?: ImportCandidate[] };
+                    setPicks(data.candidates ?? []);
+                  } catch {
+                    setPicks([]);
+                  } finally {
+                    setPicking(false);
+                  }
+                })();
+              }}
+            >
+              📥 {t('importPick')}
+            </button>
+          ) : null}
+          {picks !== null ? (
+            picks.length === 0 ? (
+              <span className="text-2xs text-ink-500" data-testid="calc-import-empty">
+                {t('importNone')}
+              </span>
+            ) : (
+              <span className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+                {picks.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="rounded-lg border border-line p-1 text-left text-2xs hover:bg-surface-sunken"
+                    data-testid="calc-import-candidate"
+                    onClick={() => {
+                      pickImport(item.id, c);
+                      setOpen(false);
+                      setPicks(null);
+                    }}
+                  >
+                    <span className="block font-mono tabular-nums">
+                      ${c.pricePerUnitUsd}/{c.basis === 'unit' ? t('perUnit') : c.basis}
+                      {c.unitMatches ? '' : ' ⚠'}
+                    </span>
+                    <span className="block truncate text-ink-500" title={c.name}>
+                      {c.name}
+                      {c.weightPerUnitKg !== null ? ` · ${c.weightPerUnitKg} kg/${t('perUnit')}` : ''}
+                    </span>
+                  </button>
+                ))}
+              </span>
+            )
+          ) : null}
         </span>
       ) : null}
     </span>

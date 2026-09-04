@@ -21,6 +21,14 @@ export type CalcSectionName = 'yolkira' | 'rastamojka' | 'podklyuch';
  */
 export type BazaBasis = 'unit' | 'kg' | 'juft' | 'litr' | 'm2';
 
+/**
+ * Where a baza came from. 'import' joined the pair in 0094 — the quarterly
+ * customs dump SUGGESTING a price. There is deliberately no 'ai': the model
+ * proposes words and can never reach a number (law 3, phase B), and an
+ * import row is not a guess but a declaration somebody filed.
+ */
+export type BazaSource = 'dictionary' | 'typed' | 'import' | null;
+
 /** What a section is made of. The seal and the screen both ask this. */
 export function sectionParts(section: CalcSectionName): {
   customs: boolean;

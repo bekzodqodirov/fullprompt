@@ -48,6 +48,15 @@ export const HUB_DOORS: HubDoor[] = [
   // The freight tariff the VED's discount is measured against. The same
   // dictionary door as the cost types, deliberately NOT `ved.docs`.
   { href: '/admin/tarif', label: 'calc.dictTariff', icon: 'truck', allow: ['admin.dictionaries.manage'] },
+  // The quarterly customs dump the VED's baza is suggested from. The ADMIN
+  // uploads it (his own answer: «admin yuklab bersin fileni sistemamiz tez
+  // ishlashi kerak»), the VED only reads what it suggests.
+  {
+    href: '/admin/bojxona-import',
+    label: 'customsImport.title',
+    icon: 'clipboard',
+    allow: ['admin.dictionaries.manage'],
+  },
   { href: '/admin/trucks', label: 'plans.trucksTitle', icon: 'truck', allow: ['plans.manage'] },
   { href: '/admin/driver-app', label: 'settings.driverApp', icon: 'truck', allow: ['admin.settings.manage'] },
   { href: '/admin/calls-app', label: 'settings.callsApp', icon: 'phone', allow: ['admin.settings.manage'] },

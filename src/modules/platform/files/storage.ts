@@ -1,6 +1,8 @@
 import { createHash, createHmac } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
@@ -30,6 +32,15 @@ function answeredStatus(err: unknown): number | undefined {
 export interface StorageDriver {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   get(key: string): Promise<Buffer>;
+  /**
+   * The object as a STREAM — for files too big to hold whole.
+   *
+   * Everything else here is Buffer in, Buffer out, which is right for a
+   * photograph and wrong for the customs import: his quarterly file is
+   * ~500k rows, and a Buffer plus an in-memory workbook is the container's
+   * memory twice over. The one caller (the import job) reads row by row.
+   */
+  getStream(key: string): Promise<Readable>;
   /** Remove the object; missing keys are not an error. */
   delete(key: string): Promise<void>;
   /** URL the browser can fetch for a limited time. */
@@ -111,6 +122,13 @@ class S3Driver implements StorageDriver {
     return Buffer.from(await res.Body!.transformToByteArray());
   }
 
+  async getStream(key: string): Promise<Readable> {
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    // In Node the SDK's Body IS a Readable; the union covers browser types
+    // this process never sees.
+    return res.Body as unknown as Readable;
+  }
+
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
@@ -151,6 +169,10 @@ class LocalDriver implements StorageDriver {
 
   async get(key: string): Promise<Buffer> {
     return readFile(this.filePath(key));
+  }
+
+  async getStream(key: string): Promise<Readable> {
+    return createReadStream(this.filePath(key));
   }
 
   async delete(key: string): Promise<void> {

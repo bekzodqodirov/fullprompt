@@ -45,6 +45,7 @@ export const WARNING_LABELS: Record<string, string> = {
   ai_low_confidence: 'warnings.aiLowConfidence',
   ai_rate_taken: 'warnings.aiRateTaken',
   rate_noted: 'warnings.rateNoted',
+  baza_from_import: 'warnings.bazaFromImport',
 };
 
 export const REFUSAL_LABELS: Record<string, string> = {
