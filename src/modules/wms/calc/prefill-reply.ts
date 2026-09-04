@@ -1,3 +1,9 @@
+import type {
+  CustomsRefusal,
+  FeeRefusal,
+  FreightRefusal,
+  TotalsRefusal,
+} from './pricing';
 import type { SealBlocker } from './workspace';
 
 /**
@@ -25,7 +31,22 @@ import type { SealBlocker } from './workspace';
  * BOT's strings, so they are Uzbek here rather than in a bundle — the staff
  * bot speaks Uzbek and nothing else (staff-bot.ts's convention).
  */
-const CUSTOMS_REASON: Record<string, string> = {
+/**
+ * KEYED ON THE ENGINE'S OWN UNIONS, not on `string`.
+ *
+ * The first version was a `Record<string, string>` full of plausible words —
+ * `freight_zone_required`, `weight_missing`, `tariff_missing` — and NOT ONE
+ * of them is a `FreightRefusal`. `SealBlocker.reason` is typed `string`, so
+ * nothing failed; the seller simply read «yo'lkira: zone_required» in
+ * Telegram, on the commonest case there is, because a bot-landed request
+ * carries no zone. Law 6 says a refusal is a sentence, and a code in Latin
+ * letters is not one.
+ *
+ * `Record<Union, string>` makes the drift a COMPILE error in both
+ * directions: a refusal the engine gains has no sentence until somebody
+ * writes one, and a key nobody emits cannot be added.
+ */
+const CUSTOMS_REASON: Record<CustomsRefusal, string> = {
   baza_missing: 'baza yo‘q',
   measure_missing: 'o‘lchov (dona/m²/juft/litr) yo‘q',
   rates_missing: 'bu kodga stavka topilmadi',
@@ -33,18 +54,22 @@ const CUSTOMS_REASON: Record<string, string> = {
   not_a_number: 'raqam noto‘g‘ri',
 };
 
-const FREIGHT_REASON: Record<string, string> = {
-  freight_zone_required: 'yo‘nalish tanlanmagan',
-  weight_missing: 'og‘irlik yo‘q',
-  volume_missing: 'hajm yo‘q',
+const FREIGHT_REASON: Record<FreightRefusal, string> = {
+  zone_required: 'yo‘nalish (zona) tanlanmagan',
+  measure_missing: 'og‘irlik yoki hajm yo‘q',
   band_missing: 'bu zichlikka tarif yo‘q',
   band_ambiguous: 'tarif bandlari bir-birini bosgan',
-  tariff_missing: 'tarif jadvali yo‘q',
+  not_a_number: 'raqam noto‘g‘ri',
 };
 
-const FEE_REASON: Record<string, string> = {
+const FEE_REASON: Record<FeeRefusal, string> = {
   fee_fx_missing: 'so‘m kursi yo‘q',
-  bhm_missing: 'BHM qiymati kiritilmagan',
+  not_a_number: 'raqam noto‘g‘ri',
+};
+
+const TOTALS_REASON: Record<TotalsRefusal, string> = {
+  discount_exceeds_total: 'chegirma jamidan katta',
+  not_a_number: 'raqam noto‘g‘ri',
 };
 
 /** One blocker, as a sentence a person can act on. */
@@ -58,17 +83,20 @@ export function blockerText(b: SealBlocker): string {
       return `${b.count} ta tovarga TNVED kod qo‘yilmagan`;
     case 'groups_unconfirmed':
       return `${b.count} ta guruh tasdiqlanmagan (VED ✅ qiladi)`;
+    // `SealBlocker.reason` is a `string`, so the lookups still fall back —
+    // but the fallback is now only reachable by a value no union member
+    // spells, which is a bug in the caller rather than a hole in this map.
     case 'customs':
       return (
-        `${b.groupLabel}: ${CUSTOMS_REASON[b.reason] ?? b.reason}` +
+        `${b.groupLabel}: ${CUSTOMS_REASON[b.reason as CustomsRefusal] ?? b.reason}` +
         (b.itemLabel ? ` — ${b.itemLabel}` : '')
       );
     case 'freight':
-      return `yo‘lkira: ${FREIGHT_REASON[b.reason] ?? b.reason}`;
+      return `yo‘lkira: ${FREIGHT_REASON[b.reason as FreightRefusal] ?? b.reason}`;
     case 'fee':
-      return `bojxona yig‘imi: ${FEE_REASON[b.reason] ?? b.reason}`;
+      return `bojxona yig‘imi: ${FEE_REASON[b.reason as FeeRefusal] ?? b.reason}`;
     case 'totals':
-      return `jami: ${b.reason}`;
+      return `jami: ${TOTALS_REASON[b.reason as TotalsRefusal] ?? b.reason}`;
     case 'customs_on_yolkira':
       return 'bu bo‘limda rastamojka hisoblanmaydi';
     default:

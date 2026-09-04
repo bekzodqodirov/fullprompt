@@ -196,6 +196,36 @@ describe('a request is a JOB, not a card state', () => {
     expect(row!.items[0]!.unit).toBe('dona');
     expect(row!.completedAt).toBeNull();
   });
+
+  it('the checklist can be SATISFIED — both screens carry what it asks about', async () => {
+    // The per-line questions (`itemQuantity`, `itemWeight`) are answered from
+    // the facts the SCREEN builds, and both screens projected the item to
+    // `{name}` alone — so quantity and weight read null whatever is stored,
+    // and both chips rendered on every rastamojka request for ever,
+    // including one the machine had just priced in full. A warning that
+    // fires on everything names nothing (#649).
+    const { id } = await open({
+      section: 'rastamojka',
+      items: [
+        { name: `krujka ${tag()}`, quantity: 100, weightKg: 200 },
+        { name: `plitka ${tag()}`, quantity: 50, weightKg: 100 },
+      ],
+    });
+    const row = await calcRequestDetail(id);
+    expect(row!.missing).toEqual([]);
+
+    const listed = (await calcQueue()).find((r) => r.id === id);
+    expect(listed, 'the queue must show the same request').toBeTruthy();
+    expect(listed!.missing).toEqual([]);
+
+    // …and it still SAYS so when a line really is missing its count.
+    const bare = await open({
+      section: 'rastamojka',
+      items: [{ name: `nomsiz ${tag()}`, weightKg: 200 }],
+    });
+    const bareRow = await calcRequestDetail(bare.id);
+    expect(bareRow!.missing).toEqual(['itemQuantity']);
+  });
 });
 
 describe('the queue hands the work out and takes it back', () => {

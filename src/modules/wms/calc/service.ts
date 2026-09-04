@@ -900,16 +900,35 @@ export async function calcQueueCounts(
   return { open: Number(row?.open ?? 0), late: Number(row?.late ?? 0) };
 }
 
-async function goodsByRequest(ids: string[]): Promise<Map<string, { name: string }[]>> {
+/**
+ * The goods, carrying every fact the CHECKLIST asks about.
+ *
+ * It projected `{name}` alone, which was harmless while the checklist only
+ * asked whether goods existed. The moment it grew per-LINE questions, a
+ * name-only projection made both of them unanswerable: quantity and weight
+ * read null for every item whatever is stored, so «har bir tovarning soni»
+ * and «og'irligi» rendered on every rastamojka request for ever — including
+ * one the machine had just priced in full. A warning that fires on
+ * everything names nothing (#649), introduced into the one surface this
+ * round exists to strengthen.
+ */
+type GoodsFact = { name: string; quantity: number | null; weightKg: number | null };
+
+async function goodsByRequest(ids: string[]): Promise<Map<string, GoodsFact[]>> {
   if (ids.length === 0) return new Map();
   const rows = await db
-    .select({ requestId: calcRequestItems.requestId, name: calcRequestItems.name })
+    .select({
+      requestId: calcRequestItems.requestId,
+      name: calcRequestItems.name,
+      quantity: calcRequestItems.quantity,
+      weightKg: calcRequestItems.weightKg,
+    })
     .from(calcRequestItems)
     .where(inArray(calcRequestItems.requestId, ids));
-  const out = new Map<string, { name: string }[]>();
+  const out = new Map<string, GoodsFact[]>();
   for (const row of rows) {
     const list = out.get(row.requestId) ?? [];
-    list.push({ name: row.name });
+    list.push({ name: row.name, quantity: toNum(row.quantity), weightKg: toNum(row.weightKg) });
     out.set(row.requestId, list);
   }
   return out;
@@ -1007,7 +1026,12 @@ export async function calcRequestDetail(
       toCity: row.toCity,
       weightKg: toNum(row.weightKg),
       volumeM3: toNum(row.volumeM3),
-      goods: items.map((item) => ({ name: item.name })),
+      // Every fact the checklist asks about — see `goodsByRequest`.
+      goods: items.map((item) => ({
+        name: item.name,
+        quantity: toNum(item.quantity),
+        weightKg: toNum(item.weightKg),
+      })),
     }),
     late: !row.completedAt && row.dueAt.getTime() < now.getTime(),
     noteId: row.noteId,

@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { blockerText, prefillReplyText } from '@/modules/wms/calc/prefill-reply';
+import type { SealBlocker } from '@/modules/wms/calc/workspace';
 
 /**
  * What the AI VED hodimi says back into the staff chat.
@@ -124,5 +126,54 @@ describe('the honest degradations', () => {
   it('stays quiet about work it did not do', () => {
     const t = prefillReplyText({ ...base, customsUsd: 10 });
     expect(t).not.toContain('AI qo‘ydi');
+  });
+});
+
+describe('every refusal the engine can make has a sentence', () => {
+  /**
+   * The first version of these maps was `Record<string, string>` full of
+   * plausible invented keys — `freight_zone_required`, `weight_missing`,
+   * `tariff_missing` — and NOT ONE was a real `FreightRefusal`. The unit
+   * test asserted on the same fabricated strings the map invented, which is
+   * a test restating the code (#166): it passed while every bot-landed
+   * podklyuch quote told the seller «yo'lkira: zone_required».
+   *
+   * So the oracle is the ENGINE's own union, read out of `pricing.ts`, and
+   * not a list retyped here. `Record<Union, string>` already makes the drift
+   * a compile error; this proves the words exist and that none of them is
+   * the code itself.
+   */
+  const unionsOf = (source: string, name: string): string[] => {
+    const at = source.indexOf(`export type ${name} =`);
+    expect(at, `${name} has been renamed — re-anchor this fence`).toBeGreaterThan(-1);
+    const decl = source.slice(at, source.indexOf(';', at));
+    return [...decl.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!);
+  };
+
+  it('freight, fee, customs and totals refusals all reach the seller in words', () => {
+    const pricing = readFileSync('src/modules/wms/calc/pricing.ts', 'utf8');
+    const band = unionsOf(pricing, 'BandRefusal');
+    const cases: [SealBlocker['kind'], string[]][] = [
+      ['customs', unionsOf(pricing, 'CustomsRefusal')],
+      ['freight', [...unionsOf(pricing, 'FreightRefusal'), ...band]],
+      ['fee', unionsOf(pricing, 'FeeRefusal')],
+      ['totals', unionsOf(pricing, 'TotalsRefusal')],
+    ];
+    for (const [kind, reasons] of cases) {
+      expect(reasons.length, `${kind} union looks empty`).toBeGreaterThan(0);
+      for (const reason of reasons) {
+        const text = blockerText({
+          kind,
+          reason,
+          groupSeq: 1,
+          groupLabel: 'Guruh',
+          itemLabel: null,
+        } as unknown as SealBlocker);
+        // The code itself must not survive into the sentence — that IS the
+        // defect, and «zone_required» would pass a bare truthiness check.
+        expect(text, `${kind}/${reason} reached the seller as a code`).not.toContain(reason);
+        expect(text.length).toBeGreaterThan(kind.length);
+      }
+    }
   });
 });
