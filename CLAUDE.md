@@ -127,6 +127,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | The VED module | `docs/VED.md` — agreed 2026-08-22; **phase A SHIPPED**, B-E open |
+| Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **not yet built**, sub-rounds A (import+suggest) then B (bot AI) |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
@@ -1207,6 +1208,17 @@ client. 5 red proofs by string edit; new m9zt e2e walks Готово → offer �
 floor-hidden text → PDF. STATED to him: m³ has no PP-3818 rate; unclaimed
 marking cargo stays out of the code answer; answer offers stay out of the
 per-code price history.
+
+**AGREED NEXT (2026-09-04, after the phase-4 deploy — his server confirmed
+94): the customs-IMPORT baza + the AI VED hodimi.** The full agreed spec with
+his seven verbatim answers, the measured file structure (his quarterly
+~500k-row declarations dump; a 12-row fixture with the exact headers is at
+`tests/fixtures/customs-import-sample.xlsx`), migration 0094's design, the
+matching rules (name trigram + weight-closeness for dona, auto-fill over a
+threshold marked «📥 taxmin»), and the staff-bot AI estimator design is
+**`docs/VED-IMPORT-AI.md`** — read it FIRST, do not re-ask the owner. Build
+sub-round A (admin upload → background import → baza suggestions in the
+workspace) before sub-round B (bot AI).
 
 **Latest migration: 0093** (`calc_offer_answer` — the offer's answer anchor
 and the answer-amount money CHECK; ledger must reach **94**). Before it:
