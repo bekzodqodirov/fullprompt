@@ -876,6 +876,9 @@ export async function setItemBaza(
         bazaUsd: input.bazaUsd === null ? null : input.bazaUsd.toFixed(4),
         bazaBasis: input.bazaUsd === null ? null : input.basis,
         bazaSource: input.bazaUsd === null ? null : input.source,
+        // The quadruple moves together (0094): whatever this writes, the
+        // number is no longer the import's.
+        importRowId: null,
       })
       .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
       .returning({ groupId: calcRequestItems.groupId });
@@ -1037,7 +1040,16 @@ export async function pullBazasFromDictionary(
     for (const f of fills) {
       await tx
         .update(calcRequestItems)
-        .set({ bazaUsd: f.bazaUsd.toFixed(4), bazaBasis: f.basis, bazaSource: 'dictionary' })
+        // The provenance goes with the price it explained (0094): a row the
+        // dictionary just re-priced is no longer wearing the import's
+        // number, and a stale `import_row_id` would keep the «📥 taxmin»
+        // chip on a baza the book supplied.
+        .set({
+          bazaUsd: f.bazaUsd.toFixed(4),
+          bazaBasis: f.basis,
+          bazaSource: 'dictionary',
+          importRowId: null,
+        })
         .where(and(eq(calcRequestItems.id, f.id), isNull(calcRequestItems.bazaUsd)));
     }
     // The same rule `setItemBaza` applies one item at a time. A baza is one

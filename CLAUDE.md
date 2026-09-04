@@ -1238,8 +1238,13 @@ the POOL beside `ratesForCodes` and applied in-tx with three re-checks
 stated the price, so the ✅ records that a person looked at a number the
 machine chose. A ready import can be deleted only while nothing is priced
 off it (`in_use`), which is also the e2e's honest cleanup — an import is the
-loudest CONFIGURATION this suite can leave behind (#183). 7 red proofs, one
-of which needed BOTH fences stripped. **Sub-round B (the staff-bot AI VED
+loudest CONFIGURATION this suite can leave behind (#183). The round's own
+diff review then found the provenance QUADRUPLE broken in two writers —
+`pullBazasFromDictionary` and `setItemBaza` moved the price and left
+`import_row_id`, so the book's own number would have kept the «📥 taxmin»
+chip — fenced by a DERIVED source-shape test that finds every `.set()`
+writing `bazaSource` (#896). 8 red proofs, one of which needed BOTH fences
+stripped. **Sub-round B (the staff-bot AI VED
 hodimi, spec §3) is open.**
 
 **Latest migration: 0094** (`customs_import` — the quarterly declarations
@@ -1266,6 +1271,11 @@ bars render as m³ figures with no bar until he types them. Also:
 he picks the «sotuvchi ulushi» expense category on /upsale, the VED fills
 the empty calc dictionaries at /hisoblash/lugatlar (nothing can be sealed
 until then — by design), and the basemap fetch if /map is still schematic.
+**After the 0094 deploy he owes the FULL quarterly customs file** — the
+suggestion answers nothing until one is uploaded at
+Boshqaruv → «📥 Bojxona bazasi», and the threshold
+(`import_baza_min_sim`, 0.45) is his to tune once he has seen it work on his
+own 500k rows.
 Before that: **84** (2026-08-19 after PR #47 — round 107).
 Before that: **83 — everything through rounds 103-106
 (PR #45, merged and deployed 2026-08-18 evening, he confirmed «83 chiqdi»;
@@ -1308,8 +1318,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**86** on `main` since VED phase A; his server was at 84 on
-2026-08-19) —
+length (**95** on this branch since 0094; his server was at 94 on
+2026-09-04) —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
