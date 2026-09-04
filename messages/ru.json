@@ -2402,7 +2402,8 @@
     "importNameLess": "свернуть",
     "importOwnBaza": "Ничего не подходит — впишу базу сам",
     "bazaSearch": "Поиск по товару",
-    "bazaSearchNone": "По «{q}» база не найдена"
+    "bazaSearchNone": "По «{q}» база не найдена",
+    "importWants": "нужна база в $/{basis}"
   },
   "partners": {
     "title": "Контрагенты",

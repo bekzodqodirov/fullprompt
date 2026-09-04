@@ -2402,7 +2402,8 @@
     "importNameLess": "收起",
     "importOwnBaza": "都不合适——我自己填基价",
     "bazaSearch": "按商品搜索",
-    "bazaSearchNone": "未找到「{q}」的基价"
+    "bazaSearchNone": "未找到「{q}」的基价",
+    "importWants": "需要 $/{basis} 的基价"
   },
   "partners": {
     "title": "合作方",

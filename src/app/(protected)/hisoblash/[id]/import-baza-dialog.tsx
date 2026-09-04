@@ -60,64 +60,18 @@ export function ImportBazaDialog({
   onClose,
   onPick,
 }: {
-  /** null while closed — the dialog stays MOUNTED (#684: Overlay's
-   * close-on-navigation effect runs on mount, so a conditionally rendered
-   * open dialog shuts itself on the frame it appears). */
+  /** null while closed. The Overlay itself stays MOUNTED — #684: its
+   * close-on-navigation effect runs on MOUNT, so anything that makes the
+   * Overlay appear for the first time when it opens closes it on the frame
+   * it appears. Measured, in a browser, on this very round: a `key` on this
+   * component (added so a stale answer could not render under another row's
+   * header) shut the dialog the instant it opened. The key belongs on the
+   * BODY, one level in, where remounting costs nothing. */
   target: PickerTarget | null;
   onClose: () => void;
   onPick: (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
 }) {
   const t = useTranslations('calc');
-  const tc = useTranslations('common');
-  const [answer, setAnswer] = useState<PickerAnswer | null>(null);
-  // Starts true, and is never set synchronously in the effect: the caller
-  // keys this component on the item, so a different row is a fresh mount
-  // with fresh state and there is nothing to reset.
-  const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState('');
-  const [expanded, setExpanded] = useState<string | null>(null);
-  /** Which request the answer on screen belongs to — an out-of-order reply
-   * for the row he has already left must not render under this header. */
-  const asked = useRef(0);
-
-  const itemId = target?.itemId ?? null;
-  useEffect(() => {
-    if (itemId === null) return;
-    // A ticket, because re-opening the SAME row does not remount: two
-    // answers can be in flight and only the newest may render.
-    const ticket = ++asked.current;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/calc/import-baza?item=${itemId}`);
-        // `fetch` does not throw on 4xx: a 403 body has no candidates, and
-        // reading that as «nothing imported» would send him to upload a file
-        // he is not allowed to upload.
-        if (!res.ok) {
-          if (ticket === asked.current) setAnswer({ state: 'behind', candidates: [], total: 0, source: null, basis: null });
-          return;
-        }
-        const data = (await res.json()) as Partial<PickerAnswer>;
-        if (ticket !== asked.current) return;
-        setAnswer({
-          state: data.state ?? 'ok',
-          candidates: data.candidates ?? [],
-          total: data.total ?? 0,
-          source: data.source ?? null,
-          basis: data.basis ?? null,
-        });
-      } catch {
-        if (ticket === asked.current) setAnswer({ state: 'behind', candidates: [], total: 0, source: null, basis: null });
-      } finally {
-        if (ticket === asked.current) setLoading(false);
-      }
-    })();
-  }, [itemId]);
-
-  const needle = q.trim().toLowerCase();
-  const shown = (answer?.candidates ?? []).filter(
-    (c) => needle === '' || c.name.toLowerCase().includes(needle),
-  );
-
   return (
     <Overlay
       open={target !== null}
@@ -135,13 +89,92 @@ export function ImportBazaDialog({
       // header, the search and the footer stay put under a keyboard.
       className="absolute inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-2xl bg-surface-raised p-4 pb-safe shadow-pop md:inset-x-auto md:bottom-auto md:left-1/2 md:top-1/2 md:max-h-[80dvh] md:w-[40rem] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl"
     >
+      {target ? (
+        <PickerBody key={target.itemId} target={target} onClose={onClose} onPick={onPick} />
+      ) : null}
+    </Overlay>
+  );
+}
+
+function PickerBody({
+  target,
+  onClose,
+  onPick,
+}: {
+  target: PickerTarget;
+  onClose: () => void;
+  onPick: (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
+}) {
+  const t = useTranslations('calc');
+  const tc = useTranslations('common');
+  const [answer, setAnswer] = useState<PickerAnswer | null>(null);
+  // Starts true, and is never set synchronously in the effect: the caller
+  // keys this body on the item, so a different row is a fresh mount with
+  // fresh state and there is nothing to reset.
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState('');
+  const [expanded, setExpanded] = useState<string | null>(null);
+  /** Which request the answer on screen belongs to — re-opening the SAME row
+   * does not remount, so two answers can be in flight. */
+  const asked = useRef(0);
+
+  const itemId = target.itemId;
+  useEffect(() => {
+    const ticket = ++asked.current;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/calc/import-baza?item=${itemId}`);
+        // `fetch` does not throw on 4xx: a 403 body has no candidates, and
+        // reading that as «nothing imported» would send him to upload a file
+        // he is not allowed to upload.
+        if (!res.ok) {
+          if (ticket === asked.current) {
+            setAnswer({ state: 'behind', candidates: [], total: 0, source: null, basis: null });
+          }
+          return;
+        }
+        const data = (await res.json()) as Partial<PickerAnswer>;
+        if (ticket !== asked.current) return;
+        setAnswer({
+          state: data.state ?? 'ok',
+          candidates: data.candidates ?? [],
+          total: data.total ?? 0,
+          source: data.source ?? null,
+          basis: data.basis ?? null,
+        });
+      } catch {
+        if (ticket === asked.current) {
+          setAnswer({ state: 'behind', candidates: [], total: 0, source: null, basis: null });
+        }
+      } finally {
+        if (ticket === asked.current) setLoading(false);
+      }
+    })();
+  }, [itemId]);
+
+  const needle = q.trim().toLowerCase();
+  const shown = (answer?.candidates ?? []).filter(
+    (c) => needle === '' || c.name.toLowerCase().includes(needle),
+  );
+
+  return (
+    <>
       <div className="shrink-0">
         <h2 className="min-w-0 break-words text-sm font-semibold" data-testid="calc-import-title">
-          {target?.name}
+          {target.name}
         </h2>
         <p className="mt-0.5 flex flex-wrap items-center gap-1 text-2xs text-ink-500">
-          <span className="shrink-0 font-mono">{target?.tnvedCode}</span>
-          {answer?.basis ? <span className="shrink-0">· $/{answer.basis === 'unit' ? t('perUnit') : answer.basis}</span> : null}
+          <span className="shrink-0 font-mono">{target.tnvedCode}</span>
+          {/* Named as an EXPECTATION, not as a fact about the row. It is the
+              basis the picker matches against, so it is the other half of a
+              candidate's «unit does not match: the file says kg» — a bare
+              «$/шт» beside a row currently priced per kg reads as a claim
+              about the row and is not one. */}
+          {answer?.basis ? (
+            <span className="shrink-0">
+              · {t('importWants', { basis: answer.basis === 'unit' ? t('perUnit') : answer.basis })}
+            </span>
+          ) : null}
           {answer?.source ? <span className="shrink-0">· {answer.source}</span> : null}
         </p>
         <input
@@ -187,10 +220,10 @@ export function ImportBazaDialog({
             <div key={c.id} className="rounded-xl border border-line">
               <button
                 type="button"
-                className="block w-full min-h-12 p-2 text-left hover:bg-surface-sunken"
+                className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken"
                 data-testid="calc-import-candidate"
                 onClick={() => {
-                  onPick(target!.itemId, {
+                  onPick(target.itemId, {
                     id: c.id,
                     pricePerUnitUsd: c.pricePerUnitUsd,
                     basis: c.basis,
@@ -199,7 +232,7 @@ export function ImportBazaDialog({
                 }}
               >
                 <span className="flex flex-wrap items-center gap-1">
-                  <span className="font-mono tabular-nums text-sm">
+                  <span className="font-mono text-sm tabular-nums">
                     ${c.pricePerUnitUsd} / {c.basis === 'unit' ? t('perUnit') : c.basis}
                   </span>
                   {/* A bare ⚠ said nothing. The mismatch is the one thing on
@@ -212,7 +245,7 @@ export function ImportBazaDialog({
                 </span>
                 {/* No `block` beside the clamp: `display` is emitted after
                     `line-clamp` in Tailwind's own order, so `block` would win
-                    and the clamp would do nothing (style-cascade's sixth). */}
+                    and the clamp would do nothing. */}
                 <span
                   className={`mt-0.5 text-2xs text-ink-500 ${expanded === c.id ? 'break-words' : CLAMP}`}
                   title={c.name}
@@ -258,6 +291,6 @@ export function ImportBazaDialog({
       >
         {t('importOwnBaza')}
       </button>
-    </Overlay>
+    </>
   );
 }

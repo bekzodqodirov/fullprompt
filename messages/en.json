@@ -2402,7 +2402,8 @@
     "importNameLess": "collapse",
     "importOwnBaza": "None of these — I will type the baza myself",
     "bazaSearch": "Search by product",
-    "bazaSearchNone": "No baza found for “{q}”"
+    "bazaSearchNone": "No baza found for “{q}”",
+    "importWants": "wants a baza in $/{basis}"
   },
   "partners": {
     "title": "Counterparties",

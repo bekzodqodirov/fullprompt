@@ -917,11 +917,9 @@ export function ItemsTable({
         ) : null}
       </div>
 
-      {/* ONE dialog for the table, kept mounted and toggled (#684). Keyed on
-          the item so a stale answer can never render under another row's
-          header. */}
+      {/* ONE dialog for the table, kept mounted and toggled (#684). The key
+          that makes a stale answer impossible lives on its BODY, inside. */}
       <ImportBazaDialog
-        key={picker?.itemId ?? 'none'}
         target={picker}
         onClose={() => setPicker(null)}
         onPick={pickImport}

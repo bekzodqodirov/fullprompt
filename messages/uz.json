@@ -2402,7 +2402,8 @@
     "importNameLess": "yig‘ish",
     "importOwnBaza": "Mos kelmadi — bazani o‘zim yozaman",
     "bazaSearch": "Tovar bo‘yicha qidirish",
-    "bazaSearchNone": "«{q}» bo‘yicha baza topilmadi"
+    "bazaSearchNone": "«{q}» bo‘yicha baza topilmadi",
+    "importWants": "kerak: $/{basis} da baza"
   },
   "partners": {
     "title": "Kontragentlar",
