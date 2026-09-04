@@ -32,13 +32,14 @@ so'z bilan aytiladi.
 sistema TNVED xotirasi allaqachon kodlagan narsani baribir narxlaydi va
 javobda «AI sozlanmagan» deb rostini aytadi.
 
-**Rastamojkada endi har bir qator uchun soni va kilosi so'raladi.**
-Umumiy og'irlik furani narxlaydi, deklaratsiyani emas: baza har qator uchun
-kg yoki dona bo'yicha hisoblanadi. Agar arizada bitta tovar bo'lsa —
-yukning og'irligi o'sha tovarning og'irligi deb olinadi, sizdan qayta
-so'ralmaydi. Ikki va undan ortiq tovar bo'lsa bot har birining kilosini
-so'raydi. Yo'lkirada ikkalasi ham so'ralmaydi — fura umumiy raqamlar bilan
-narxlanadi.
+**Rastamojkada endi har bir qator o'z o'lchovini aytishi kerak.** Umumiy
+og'irlik furani narxlaydi, deklaratsiyani emas: baza har qator uchun kg yoki
+dona bo'yicha hisoblanadi. Shuning uchun qator **soni yoki kilosi** dan
+bittasini aytsa yetadi — soni bo'lsa donaga qarab, kilosi bo'lsa kiloga
+qarab narxlanadi. Ikkalasi ham yo'q qatorni esa umuman baholab bo'lmaydi, va
+bot aynan shuni so'raydi. Bitta tovarli arizada yukning og'irligi o'sha
+tovarning og'irligi deb olinadi — sizdan qayta so'ralmaydi. Yo'lkirada bu
+savol umuman yo'q: fura umumiy raqamlar bilan narxlanadi.
 
 **Nima qilishingiz kerak:** hech narsa. Fayl allaqachon yuklangan bo'lsa
 ishlaydi; yuklanmagan bo'lsa Boshqaruv → «📥 Bojxona bazasi» dan chorak
