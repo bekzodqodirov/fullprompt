@@ -2381,6 +2381,7 @@
       "basisSuspect": "check the baza unit (the law prices in another) — row",
       "importFilled": "{count} baza(s) filled from the import (estimate), rows"
     },
+    "editCargoFacts": "✏️ Edit the cargo facts",
     "importGuess": "from the import (estimate)",
     "importGuessTitle": "The baza was matched in the customs import file — check it, or type your own",
     "importPick": "Pick from the import",

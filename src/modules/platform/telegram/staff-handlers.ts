@@ -23,6 +23,8 @@ import { clientLabels } from './client-labels';
 import {
   activeIntake,
   analyzeCollected,
+  MAX_INTAKE_IMAGES,
+  type IntakeState,
   endIntake,
   mayCollect,
   startIntake,
@@ -209,20 +211,37 @@ export function registerStaffBot(bot: Bot): void {
 
     const saved = await saveIntakeFile(ctx, state.noteId, staff.id).catch((err: unknown) => {
       logger.warn({ err }, 'intake file save failed');
-      return false;
+      return null;
     });
     const caption = ctx.message.caption?.trim();
-    updateIntake(chatId, {
+    // The reduced copy the model will LOOK at (his third report: the cube and
+    // the kilos are written on the packing list, and the analysis only ever
+    // read text). Capped: a forwarded album is a request body nobody
+    // budgeted for, and what does not fit is COUNTED, never dropped in
+    // silence — the summary says how many were read.
+    let images = state.images;
+    let imagesSkipped = state.imagesSkipped;
+    if (saved && saved.isPhoto) {
+      if (images.length < MAX_INTAKE_IMAGES) {
+        const reduced = await reduceForModel(saved.body).catch(() => null);
+        if (reduced) images = [...images, { data: reduced, mediaType: 'image/jpeg' as const }];
+        else imagesSkipped += 1;
+      } else {
+        imagesSkipped += 1;
+      }
+    }
+    const updated = updateIntake(chatId, {
       stage: 'material',
       fileCount: state.fileCount + (saved ? 1 : 0),
       material: caption ? [...state.material, caption] : state.material,
+      images,
+      imagesSkipped,
     });
-    await ctx.reply(
-      saved
-        ? `📎 Qabul qilindi (${state.fileCount + 1}). Tugagach «Bo‘ldi» ni bosing.`
-        : 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.',
-      { reply_markup: doneKeyboard },
-    );
+    if (!saved) {
+      await ctx.reply('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
+      return;
+    }
+    await showIntakePrompt(ctx, chatId, updated ?? state);
   });
 
   bot.on('message:text', async (ctx, next) => {
@@ -241,13 +260,11 @@ export function registerStaffBot(bot: Bot): void {
         );
         return;
       }
-      updateIntake(chatId, {
+      const updated = updateIntake(chatId, {
         stage: 'material',
         material: [...intake.material, ctx.message.text],
       });
-      await ctx.reply('✍️ Qo‘shildi. Tugagach «Bo‘ldi» ni bosing.', {
-        reply_markup: doneKeyboard,
-      });
+      await showIntakePrompt(ctx, chatId, updated ?? intake);
       return;
     }
 
@@ -417,15 +434,15 @@ async function saveIntakeFile(
   },
   noteId: string,
   uploadedBy: string,
-): Promise<boolean> {
+): Promise<{ isPhoto: boolean; body: Buffer } | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return false;
+  if (!token) return null;
   const file = await ctx.getFile();
-  if (!file.file_path) return false;
+  if (!file.file_path) return null;
   const res = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`);
-  if (!res.ok) return false;
+  if (!res.ok) return null;
   const body = Buffer.from(await res.arrayBuffer());
-  if (body.length === 0) return false;
+  if (body.length === 0) return null;
 
   const isPhoto = Boolean(ctx.message.photo?.length);
   const { saveAttachment } = await import('../files/service');
@@ -444,7 +461,76 @@ async function saveIntakeFile(
     { thumbnails: 'skip' },
   );
   await generateThumbnails(id).catch(() => {});
-  return true;
+  return { isPhoto, body };
+}
+
+/**
+ * The copy the model looks at: rotated by EXIF, at most 1568 px on the long
+ * side (past that the vision API downsamples anyway), JPEG.
+ *
+ * A packing list photographed by a phone is 3-5 MB; six of those base64'd is
+ * a request body of thirty megabytes for numbers that survive a resize
+ * perfectly well. `sharp` is lazily imported for the same reason the
+ * thumbnail job does it — a native module must never be traced into the
+ * standalone bundle.
+ */
+const MODEL_IMAGE_PX = 1568;
+async function reduceForModel(original: Buffer): Promise<Buffer | null> {
+  const sharp = (await import('sharp')).default;
+  const out = await sharp(original)
+    .rotate()
+    .resize(MODEL_IMAGE_PX, MODEL_IMAGE_PX, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+  // Anthropic refuses an image past ~5 MB; one that still does not fit is
+  // counted as skipped rather than sent to be rejected.
+  return out.length > 4_500_000 ? null : out;
+}
+
+/**
+ * ONE live «Bo'ldi» control, edited in place.
+ *
+ * His second report: «har bir sms uchun "bo'ldi tahlil qil" degan sms
+ * chiqvotti» — eight forwards left eight identical keyboards and no way to
+ * tell which one was current. The prompt now says what has been collected
+ * so far and is EDITED rather than re-sent; only when the edit is refused
+ * (the message is too old, or was deleted) does a fresh one appear.
+ */
+async function showIntakePrompt(
+  ctx: {
+    api: {
+      editMessageText: (
+        chatId: string,
+        messageId: number,
+        text: string,
+        extra?: Record<string, unknown>,
+      ) => Promise<unknown>;
+    };
+    reply: (text: string, extra?: Record<string, unknown>) => Promise<{ message_id: number }>;
+  },
+  chatId: bigint,
+  state: IntakeState,
+): Promise<void> {
+  const parts = [
+    state.material.length ? `✍️ ${state.material.length} ta xabar` : '',
+    state.fileCount ? `📎 ${state.fileCount} ta fayl` : '',
+    state.images.length ? `🖼 ${state.images.length} ta rasm o‘qiladi` : '',
+    state.imagesSkipped ? `⚠️ ${state.imagesSkipped} ta rasm o‘qilmaydi` : '',
+  ].filter(Boolean);
+  const text = `Qabul qilindi: ${parts.join(' · ')}\nYana yuboring yoki «Bo‘ldi» ni bosing.`;
+
+  if (state.promptMessageId !== null) {
+    try {
+      await ctx.api.editMessageText(String(chatId), state.promptMessageId, text, {
+        reply_markup: doneKeyboard,
+      });
+      return;
+    } catch {
+      // Too old, deleted, or identical — fall through and send a fresh one.
+    }
+  }
+  const sent = await ctx.reply(text, { reply_markup: doneKeyboard });
+  updateIntake(chatId, { promptMessageId: sent.message_id });
 }
 
 /**

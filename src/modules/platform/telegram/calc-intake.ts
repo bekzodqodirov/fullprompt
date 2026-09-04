@@ -34,8 +34,34 @@ export interface IntakeState {
   facts: import('../../wms/calc/intake').CalcFacts;
   steps: string[];
   aiUsed: boolean;
+  /**
+   * Photographs the model is allowed to LOOK at, downscaled.
+   *
+   * The owner's report: «kub kilosi rasimni ichiga yozilgan bo'lsa analiz
+   * qilmayabti» — and he is right, the analysis only ever saw text. His
+   * office photographs the packing list; the numbers on it were stored on
+   * the card and read by nobody.
+   *
+   * Held in memory beside the rest of the collection (the FILES themselves
+   * are already in storage against the note id — these are the reduced
+   * copies the call sends). Capped in both directions: a handful of images,
+   * downscaled, or a forwarded album is a request body nobody budgeted for.
+   */
+  images: { data: Buffer; mediaType: 'image/jpeg' }[];
+  /** How many photos arrived but were NOT reduced — counted, never silent. */
+  imagesSkipped: number;
+  /**
+   * The one live «Bo'ldi» control. Every material message used to answer
+   * with a fresh keyboard, so eight forwards left eight buttons and the
+   * person could not tell which was current (his second report). The prompt
+   * is EDITED in place instead, and its id is how.
+   */
+  promptMessageId: number | null;
   expires: number;
 }
+
+/** At most this many photographs reach the model. */
+export const MAX_INTAKE_IMAGES = 6;
 
 const TTL_MS = 30 * 60_000;
 const collections = new Map<string, IntakeState>();
@@ -56,6 +82,9 @@ export function startIntake(
     facts: {},
     steps: [],
     aiUsed: false,
+    images: [],
+    imagesSkipped: 0,
+    promptMessageId: null,
     expires: Date.now() + TTL_MS,
   };
   collections.set(key(chatId), state);
@@ -103,6 +132,7 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     section: state.section,
     text,
     fileCount: state.fileCount,
+    images: state.images,
   }).catch((err: unknown) => {
     logger.warn({ err }, 'intake analyze failed');
     return null;

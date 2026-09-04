@@ -27,6 +27,7 @@ import {
   saveExtra,
   saveTable,
   sealCalc,
+  setCargoFacts,
   setFreightZone,
   setRequestCertificate,
   setGroupRates,
@@ -225,6 +226,24 @@ const ws = (id: string) => `/hisoblash/${id}`;
 
 export async function setZoneAction(id: string, zone: string): Promise<CalcFormState> {
   return run('ved.docs', (ctx) => setFreightZone(id, zone || null, ctx), ws(id));
+}
+
+/**
+ * The cargo facts the VED types when the bot's reading came back empty.
+ *
+ * Same door as every other workspace write (`ved.docs`); the SERVICE
+ * validates, because a number posted from a form is a claim (#531).
+ */
+export async function setCargoFactsAction(
+  id: string,
+  input: {
+    fromCity: string | null;
+    toCity: string | null;
+    weightKg: number | null;
+    volumeM3: number | null;
+  },
+): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => setCargoFacts(id, input, ctx), ws(id));
 }
 
 export async function setCertificateAction(id: string, has: boolean): Promise<CalcFormState> {

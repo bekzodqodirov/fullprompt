@@ -40,6 +40,9 @@ function exportedBodies(): Map<string, string> {
  * riding recountItemsInTx / the closing UPDATE). */
 const MUTATORS = [
   'setFreightZone',
+  // The VED's own door onto the shipment's weight, volume and route — it
+  // moves the freight band, so it moves the clock.
+  'setCargoFacts',
   'createGroup',
   'deleteGroup',
   'moveItemToGroup',

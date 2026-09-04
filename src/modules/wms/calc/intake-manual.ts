@@ -21,17 +21,30 @@ import type { CalcFacts } from './intake';
  * boundary is defined on ASCII, so «120кг» ends on a non-word character as
  * far as it is concerned and `\b` never matches — which is exactly how the
  * office writes it. (Caught by the test, not by reading the regex.)
+ *
+ * It reads EVERY occurrence, not the first, and answers only when the whole
+ * collection agrees on ONE number. The owner's report — «7 8 ta malumot
+ * tashlaganda … faqat 1 tasini tahlil qilyabti» — is partly this: eight
+ * forwarded messages are joined into one string, the first «12 kg» in a
+ * packing line won, and because a typed fact deliberately BEATS the model's
+ * reading, that one line became the shipment's whole weight and the model's
+ * total was thrown away. Several different numbers mean the office wrote
+ * several numbers: that is a question for the reader (the model, which sees
+ * all of the text) or for the VED, who can now type it on the screen.
  */
 function readNumber(text: string, units: string[]): number | null {
+  const seen = new Set<number>();
   for (const unit of units) {
-    const re = new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*${unit}(?![\\p{L}\\d])`, 'iu');
-    const hit = re.exec(text);
-    if (hit) {
+    const re = new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*${unit}(?![\\p{L}\\d])`, 'giu');
+    for (let hit = re.exec(text); hit; hit = re.exec(text)) {
       const value = Number(hit[1]!.replace(',', '.'));
-      if (Number.isFinite(value) && value > 0) return value;
+      if (Number.isFinite(value) && value > 0) seen.add(value);
     }
+    // A unit that answered is the unit: «5 kub» and «5 m3» in one text are
+    // one statement, and the next spelling must not add a second opinion.
+    if (seen.size > 0) break;
   }
-  return null;
+  return seen.size === 1 ? [...seen][0]! : null;
 }
 
 /**
