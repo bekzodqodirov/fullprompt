@@ -6,6 +6,7 @@ import {
   normalizeName,
   parseDate,
   parseNumber,
+  fitNumeric,
   parseRow,
   priceDrift,
   readHeader,
@@ -230,5 +231,50 @@ describe('one row', () => {
     // A per-piece row has no such arithmetic and must not be judged by it.
     const piece = parseRow(row(), header);
     if (piece.ok) expect(priceDrift(piece.row)).toBeNull();
+  });
+});
+
+/**
+ * The column's own limits, applied where the guard is (his June file).
+ *
+ * The whole import stopped on `customs_import_rows_weight_check`. Measured,
+ * both halves: 0.00004 is `> 0` in JavaScript and `0.0000` in
+ * numeric(12,4) — so a row passed every parser guard and was refused by the
+ * table, and the chunk it rode in took 999 good rows down with it.
+ */
+describe('a figure is fitted to its column before it is judged', () => {
+  it('a weight that rounds away at the column scale is no weight', () => {
+    // The exact shape that stopped his quarter.
+    expect(fitNumeric(0.00004, 12, 4)).toBe(0);
+    expect(fitNumeric(0.00006, 12, 4)).toBe(0.0001);
+  });
+
+  it('refuses a figure the column cannot hold, rather than clipping it', () => {
+    // numeric(12,4) holds eight integer digits. Storing a DIFFERENT number
+    // is worse than storing none: a baza nobody can trace is not a baza.
+    expect(fitNumeric(100_000_000, 12, 4)).toBeNull();
+    expect(fitNumeric(99_999_999.9, 12, 4)).toBe(99_999_999.9);
+    expect(fitNumeric(Infinity, 14, 4)).toBeNull();
+    expect(fitNumeric(NaN, 14, 4)).toBeNull();
+    expect(fitNumeric(null, 14, 4)).toBeNull();
+  });
+
+  it('a row whose weight rounds to zero keeps its price and drops the weight', () => {
+    const header = readHeader(['ТИФ ТН КОДИ', 'Товар номи', 'За.ед.из.$', 'Ед.из.', 'Вес за ед']);
+    const parsed = parseRow(['6203420000', 'Брюки', '12.5', 'кг', '0.00004'], header.index);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    // The row is still a real declaration and still prices the code.
+    expect(parsed.row.pricePerUnitUsd).toBe(12.5);
+    // Nulled here, so the CHECK never sees a zero.
+    expect(parsed.row.weightPerUnitKg).toBeNull();
+  });
+
+  it('a PRICE that rounds away is refused, not stored as zero', () => {
+    const header = readHeader(['ТИФ ТН КОДИ', 'Товар номи', 'За.ед.из.$', 'Ед.из.']);
+    const parsed = parseRow(['6203420000', 'Брюки', '0.00004', 'кг'], header.index);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.reason).toBe('bad_price');
   });
 });

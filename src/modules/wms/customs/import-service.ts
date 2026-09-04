@@ -156,14 +156,36 @@ async function* xlsxRows(stream: Readable): AsyncGenerator<RowCells> {
     sharedStrings: 'cache',
     worksheets: 'emit',
   });
+  // NOT `break` after the first sheet — measured, and it leaked 57 MB.
+  //
+  // exceljs SPOOLS a worksheet to a temp file whenever the sheet entry
+  // precedes `sharedStrings` in the zip, which is how Excel itself writes
+  // one, and it deletes that file only after the sheet has been yielded to
+  // COMPLETION (`tempFileCleanupCallback()` after `yield* _parseWorksheet`).
+  // Breaking out leaves the reader suspended mid-yield, so the callback never
+  // runs — and a generator's `return()` executes `finally` blocks only, of
+  // which it has none, so nothing else can reach it either. MEASURED in a
+  // long-lived process: one 150,000-row import left **57 MB** in /tmp and it
+  // was still there three seconds later; the container's own exit is what
+  // cleans it, and the app container runs for weeks between deploys. On a
+  // 500,000-row quarter that is ~190 MB per upload, on a VPS where the
+  // photographs, Postgres and the dumps already share one disk — and a /tmp
+  // with no room is itself one of the ways a parse dies with nothing written
+  // down, which is the whole subject of 0095.
+  //
+  // So the loop RUNS OUT rather than breaking, and the rule «one sheet» is
+  // kept by not yielding the others' rows. The cost is walking a second
+  // sheet's XML for nothing, on a file that is not supposed to have one.
+  let sheet = 0;
   for await (const worksheet of reader) {
+    sheet++;
     for await (const row of worksheet) {
+      // The dump is one sheet; a second one would be somebody else's file.
+      if (sheet > 1) continue;
       // exceljs's values array is 1-based with a hole at [0].
       const values = row.values as unknown[];
       yield Array.isArray(values) ? values.slice(1).map(cellText) : [];
     }
-    // The dump is one sheet; a second one would be somebody else's file.
-    break;
   }
 }
 
@@ -252,25 +274,61 @@ export async function runCustomsImport(input: {
   let pending: ParsedImportRow[] = [];
   let lastBeat = Date.now();
 
+  const toRow = (r: ParsedImportRow) => ({
+    batchId,
+    tnvedCode: r.tnvedCode,
+    name: r.name,
+    nameNorm: r.nameNorm,
+    unit: r.unit,
+    pricePerUnitUsd: r.pricePerUnitUsd.toFixed(4),
+    weightPerUnitKg: r.weightPerUnitKg === null ? null : r.weightPerUnitKg.toFixed(4),
+    nettoKg: r.nettoKg === null ? null : r.nettoKg.toFixed(3),
+    customsValueUsd: r.customsValueUsd === null ? null : r.customsValueUsd.toFixed(2),
+    declaredAt: r.declaredAt,
+    sender: r.sender,
+    originCountry: r.originCountry,
+  });
+
+  /**
+   * Write the chunk — and if postgres refuses it, write it a row at a time.
+   *
+   * ONE bad row used to cost the whole quarter. The insert carries a
+   * thousand rows in a single statement, so anything the TABLE refuses
+   * throws for all thousand, and before 0095 that hung the import for ever;
+   * even after it, the whole file was lost to one line. MEASURED on his own
+   * June file: `customs_import_rows_weight_check`, a per-unit weight that is
+   * positive in JavaScript and 0.0000 in numeric(12,4).
+   *
+   * `fitNumeric` closes the gap that produced that one, but the promise this
+   * makes is stronger and does not depend on my having thought of every
+   * column: whatever the database refuses is counted and named, and the
+   * other 499,999 rows are still the quarter's baza. The row-at-a-time pass
+   * runs only on a failure, so the fast path pays nothing.
+   */
   const flush = async () => {
     if (pending.length === 0) return;
-    await db.insert(customsImportRows).values(
-      pending.map((r) => ({
-        batchId,
-        tnvedCode: r.tnvedCode,
-        name: r.name,
-        nameNorm: r.nameNorm,
-        unit: r.unit,
-        pricePerUnitUsd: r.pricePerUnitUsd.toFixed(4),
-        weightPerUnitKg: r.weightPerUnitKg === null ? null : r.weightPerUnitKg.toFixed(4),
-        nettoKg: r.nettoKg === null ? null : r.nettoKg.toFixed(3),
-        customsValueUsd: r.customsValueUsd === null ? null : r.customsValueUsd.toFixed(2),
-        declaredAt: r.declaredAt,
-        sender: r.sender,
-        originCountry: r.originCountry,
-      })),
-    );
+    const values = pending.map(toRow);
     pending = [];
+    try {
+      await db.insert(customsImportRows).values(values);
+      return;
+    } catch (err) {
+      logger.warn({ batchId, chunk: values.length, err }, '[customs-import] chunk refused — retrying row by row');
+    }
+    for (const value of values) {
+      try {
+        await db.insert(customsImportRows).values(value);
+      } catch (err) {
+        rowCount--;
+        skipped++;
+        skipReasons.rejected = (skipReasons.rejected ?? 0) + 1;
+        if ((skipReasons.rejected ?? 0) === 1) {
+          // The FIRST one carries its reason into the log; the rest are a
+          // count, or a broken column would write half a million lines.
+          logger.error({ batchId, value, err }, '[customs-import] row refused by the table');
+        }
+      }
+    }
   };
 
   for await (const cells of streamRows(storageKey, fileName)) {

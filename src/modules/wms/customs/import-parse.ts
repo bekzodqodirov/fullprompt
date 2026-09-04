@@ -215,9 +215,43 @@ export interface ParsedImportRow {
 }
 
 /** Why a row was not imported — counted, and the commonest one is logged. */
-export type SkipReason = 'bad_code' | 'no_name' | 'bad_price' | 'unknown_unit';
+export type SkipReason =
+  | 'bad_code'
+  | 'no_name'
+  | 'bad_price'
+  | 'unknown_unit'
+  /** Postgres refused the row itself — see `flush`'s per-row fallback. */
+  | 'rejected';
 
 const CODE_SHAPE = /^\d{4,10}$/;
+
+/**
+ * A number the COLUMN can hold, at the COLUMN's own scale — or nothing.
+ *
+ * The parser used to guard the value it READ and the database guards the
+ * value it STORES, and the two disagreed. His June file stopped the whole
+ * import on `customs_import_rows_weight_check`: a per-unit weight of
+ * 0.00004 is `> 0` in JavaScript and `0.0000` in numeric(12,4), so the row
+ * passed every guard here and was refused there — MEASURED, both halves.
+ * The same shape waits on the price column, which carries the same CHECK.
+ *
+ * Rounding FIRST is what makes the two agree: whatever this returns is
+ * exactly what postgres will hold, so a caller testing `> 0` is testing the
+ * stored value. A figure too large for the column's integer digits is
+ * refused rather than clipped — a weight we cannot record is not a weight,
+ * and silently storing a different number is worse than storing none.
+ */
+export function fitNumeric(
+  value: number | null,
+  precision: number,
+  scale: number,
+): number | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  const rounded = Number(value.toFixed(scale));
+  if (!Number.isFinite(rounded)) return null;
+  if (Math.abs(rounded) >= 10 ** (precision - scale)) return null;
+  return rounded;
+}
 
 /**
  * One sheet row → one import row, or a named refusal.
@@ -246,12 +280,16 @@ export function parseRow(
   const unit = mapUnit(at('unit'));
   if (!unit) return { ok: false, reason: 'unknown_unit' };
 
-  const price = parseNumber(at('pricePerUnit'));
+  // Every figure is fitted to its own column BEFORE it is judged — the
+  // precisions are numeric(14,4), numeric(12,4), numeric(14,3), numeric(14,2)
+  // in 0094, and a guard applied to the unrounded number is a guard about a
+  // value that never reaches the table.
+  const price = fitNumeric(parseNumber(at('pricePerUnit')), 14, 4);
   // A zero or negative price is not a baza; the column's own CHECK would
   // refuse it, and one bad row must not take the whole chunk down.
   if (price === null || !(price > 0)) return { ok: false, reason: 'bad_price' };
 
-  const weight = parseNumber(at('weightPerUnit'));
+  const weight = fitNumeric(parseNumber(at('weightPerUnit')), 12, 4);
 
   return {
     ok: true,
@@ -262,8 +300,8 @@ export function parseRow(
       unit,
       pricePerUnitUsd: price,
       weightPerUnitKg: weight !== null && weight > 0 ? weight : null,
-      nettoKg: parseNumber(at('netto')),
-      customsValueUsd: parseNumber(at('customsValue')),
+      nettoKg: fitNumeric(parseNumber(at('netto')), 14, 3),
+      customsValueUsd: fitNumeric(parseNumber(at('customsValue')), 14, 2),
       declaredAt: parseDate(at('declaredAt')),
       sender: (String(at('sender') ?? '').trim() || null)?.slice(0, 300) ?? null,
       originCountry: (String(at('originCountry') ?? '').trim() || null)?.slice(0, 120) ?? null,

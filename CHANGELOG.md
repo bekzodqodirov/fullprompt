@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## Iyun faylining haqiqiy sababi topildi — 2026-09-04
+
+Siz deploy qilganingizdan keyin ekran nima bo'lganini aytdi:
+`customs_import_rows_weight_check`. Ya'ni 0095 o'z ishini qildi.
+
+**Sabab.** Faylda bir dona tovarning og'irligi juda kichik bo'lsa (masalan
+0.00004 kg), bu bizning kodda «noldan katta», ustunda esa rosa nol —
+va baza bunday qatorni qabul qilmaydi. Endi har bir son avval o'z ustuni
+aniqligiga keltiriladi, keyin tekshiriladi: narx, og'irlik, netto va
+bojxona qiymati. Ustunga sig'maydigan son yozilmaydi (boshqa raqamni
+jimgina saqlagandan ko'ra saqlamagan yaxshi).
+
+**Va muhimrog'i.** Yozish 1000 qatordan boradi, ya'ni jadval rad etgan
+bitta qator o'sha mingtasini ham olib ketardi — butun fayl yo'qolardi.
+Endi bo'lak rad etilsa qatorma-qator qayta yoziladi: rad etilgani «o'tmadi»
+ustunida sanaladi, qolgan hammasi baribir chorakning bazasi bo'ladi.
+
+## Import har safar diskda 57 MB axlat qoldirardi — 2026-09-04
+
+Excel o'quvchisi varaqni vaqtinchalik faylga yozadi va uni faqat varaq
+oxirigacha o'qilgandan keyin o'chiradi. Kod birinchi varaqdan keyin
+to'xtardi, ya'ni o'quvchi o'rtada muzlab qolardi va tozalash ishlamasdi.
+
+O'lchandi: 150 000 qatorli bitta import /tmp ga **57 MB** qoldiradi va u
+faqat konteyner o'chganda tozalanadi — dastur konteyneri esa deploy'lar
+orasida haftalab ishlaydi. 500 000 qatorli chorakda bu har bir yuklashga
+~190 MB, rasmlar, Postgres va zaxiralar bitta diskda turgan serverda.
+
+Bu shunchaki joy masalasi emas: **joyi qolmagan disk — importning hech
+narsa yozmasdan o'lishining yo'llaridan biri**, ya'ni oldingi ikki
+faylning osilib qolishiga aynan shu sabab bo'lgan bo'lishi mumkin.
+
 ## Bojxona importi to'xtab qolsa endi buni aytadi — 2026-09-04
 
 **Muammo.** Ikkita yuklangan fayl «читается» holatida soatlab osilib qoldi:

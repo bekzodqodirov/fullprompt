@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -601,6 +601,94 @@ describe('a parse that stopped saying it was alive', () => {
     const id = await mint({ status: 'ready', heartbeatAt: minutesAgo(600) });
     await sweepStuckImports();
     expect((await statusOf(id)).status).toBe('ready');
+  });
+
+  it('a whole file lands even when the table refuses one of its rows', async () => {
+    // End to end through `runCustomsImport`, with a refusal that comes from
+    // the TABLE and not from the parser.
+    //
+    // The refusal has to be MANUFACTURED, and that is the point: `fitNumeric`
+    // now closes every column the parser feeds, so there is deliberately no
+    // input that reaches this branch any more. (Two fixtures were tried and
+    // discarded first — a NUL byte in a product name does not survive
+    // exceljs's writer, and every numeric path is fitted — which is #166
+    // twice: a proof that will not go red is evidence about the fixture.)
+    // A NOT VALID check needs no table scan and is dropped in `finally`, so
+    // the schema is exactly as it was found (#183). What is under test is the
+    // PROMISE: whatever the database refuses costs that row and not the
+    // quarter — the promise that does not depend on my having thought of
+    // every column, which is what his June file proved I had not.
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Sheet1');
+    ws.addRow(['ТИФ ТН КОДИ', 'Товар номи', 'За.ед.из.$', 'Ед.из.']);
+    ws.addRow(['6203420000', 'Yaxshi qator 1', '10', 'кг']);
+    ws.addRow(['6203420000', 'ZZ-REFUSE-ME', '11', 'кг']);
+    ws.addRow(['6203420000', 'Yaxshi qator 2', '12', 'кг']);
+    const bytes = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const key = `customs-import/refuse-${randomUUID()}.xlsx`;
+    await getStorage().put(
+      key,
+      bytes,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    madeKeys.push(key);
+    const [batch] = await db
+      .insert(customsImportBatches)
+      .values({ fileName: 'refuse.xlsx', uploadedBy: actorId, status: 'processing' })
+      .returning({ id: customsImportBatches.id });
+    madeBatches.push(batch!.id);
+
+    await db.execute(sql`
+      ALTER TABLE customs_import_rows
+        ADD CONSTRAINT customs_import_rows_test_refusal
+        CHECK (name <> 'ZZ-REFUSE-ME') NOT VALID
+    `);
+    try {
+      const out = await runCustomsImport({
+        batchId: batch!.id,
+        storageKey: key,
+        fileName: 'refuse.xlsx',
+      });
+      // The two good declarations ARE the quarter's baza; the third is named.
+      expect(out.rowCount).toBe(2);
+      expect(out.skipped).toBe(1);
+      expect(out.skipReasons.rejected).toBe(1);
+      const stored = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(customsImportRows)
+        .where(eq(customsImportRows.batchId, batch!.id));
+      expect(Number(stored[0]!.n)).toBe(2);
+    } finally {
+      await db.execute(sql`
+        ALTER TABLE customs_import_rows DROP CONSTRAINT customs_import_rows_test_refusal
+      `);
+    }
+  });
+
+  it('leaves no spooled worksheet behind — measured, not assumed', async () => {
+    // exceljs writes a worksheet to a temp file whenever the sheet entry
+    // precedes sharedStrings in the zip, which is how Excel itself saves one,
+    // and deletes it only once the sheet has been yielded to completion.
+    // Breaking out of the reader after the first sheet skipped that: MEASURED
+    // at 57 MB left behind per 150,000-row import, in a process that runs for
+    // weeks. `fileParallelism: false` is what makes this count trustworthy —
+    // no other test file is running beside this one.
+    const spooled = () => readdirSync('/tmp').filter((f) => f.startsWith('tmp-')).length;
+    const before = spooled();
+    await importFixture('spool-check.xlsx');
+    // Polled, not sampled: the cleanup exceljs runs at the end of the sheet
+    // unlinks the file asynchronously, and under a full suite that lands a
+    // few milliseconds after the import resolves. An immediate read passed
+    // alone and failed in the full run — the FILE is the fact, the instant is
+    // not, so the assertion waits a bounded moment for it. Without the fix
+    // the file is there for the life of the process, so two seconds tells the
+    // two apart with room to spare.
+    for (let i = 0; i < 40 && spooled() > before; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(spooled()).toBe(before);
   });
 
   it('says it is alive BEFORE it reads a byte', async () => {
