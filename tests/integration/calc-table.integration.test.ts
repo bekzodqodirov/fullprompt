@@ -107,7 +107,14 @@ afterAll(async () => {
   await pgClient.end();
 });
 
-async function open(items: { name: string; quantity?: number | null; tnvedCode?: string | null }[]) {
+async function open(
+  items: {
+    name: string;
+    quantity?: number | null;
+    tnvedCode?: string | null;
+    weightKg?: number | null;
+  }[],
+) {
   const result = await openCalcRequest(
     {
       entityType: 'deal',
@@ -309,6 +316,57 @@ describe('the table refuses by ROW', () => {
       .set({ aiProposalStartedAt: new Date(Date.now() - 11 * 60_000) })
       .where(eq(calcRequests.id, id));
     await expect(save(id, { items: [await editOf(id, 1, { tnvedCode: '8528' })] })).resolves.toBeTruthy();
+  });
+
+  it('the kg reconcile waits until both sides measure the same cargo', async () => {
+    // `groupMeasure` sums whatever carries a figure and returns null only
+    // when nothing does, so a HALF-weighed request produces a partial Σ that
+    // looks like a total — and the warning then fires on the shortfall. That
+    // is the normal state of every request the VED is mid-way through
+    // coding, and the AI prefill made it the normal state of a landed one
+    // too, since the model reads a weight off some packing-list lines and
+    // not others.
+    const half = await open([
+      { name: `a ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
+      { name: `b ${tag()}`, quantity: 1, tnvedCode: '3924' },
+    ]);
+    await save(half, {});
+    const partial = await loadWorkspace(half);
+    // 100 kg of a 500 kg request — a 80 % «gap» that is not a gap at all.
+    expect(partial!.reconcile.groupKg).toBe(100);
+    expect(partial!.reconcile.mismatch).toBe(false);
+
+    // Fully weighed and honestly disagreeing: 100 + 100 against 500.
+    const whole = await open([
+      { name: `c ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
+      { name: `d ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
+    ]);
+    await save(whole, {});
+    const full = await loadWorkspace(whole);
+    expect(full!.reconcile.groupKg).toBe(200);
+    expect(full!.reconcile.mismatch).toBe(true);
+
+    // …and an UNGROUPED row is the other way to be partial: nothing is
+    // wrong with the numbers, the Σ simply is not over the same cargo.
+    const loose = await open([
+      { name: `e ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
+      { name: `f ${tag()}`, quantity: 1, weightKg: 100 },
+    ]);
+    await save(loose, {});
+    const mixed = await loadWorkspace(loose);
+    expect(mixed!.ungrouped).toHaveLength(1);
+    expect(mixed!.reconcile.mismatch).toBe(false);
+
+    // This test needs THREE requests and the cap is 20 OPEN per requester
+    // (`MAX_OPEN_PER_REQUESTER`), which the file was already close to: a
+    // test that eats a shared budget starves the ones after it, and the
+    // first version of this one did exactly that — three later tests failed
+    // `too_many_open` and blamed their own code. #183 wearing a budget's
+    // clothes.
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date() })
+      .where(inArray(calcRequests.id, [half, whole, loose]));
   });
 
   it('and the CLAIM heals on the same clock the lock does', async () => {

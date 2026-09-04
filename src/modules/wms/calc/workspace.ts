@@ -524,6 +524,24 @@ export async function loadWorkspace(
 
   const groupKg = groupMeasure(groups.map((g) => g.weightKg));
   const groupM3 = groupMeasure(groups.map((g) => g.volumeM3));
+  /**
+   * Is the Σ above the WHOLE of what it is being compared against?
+   *
+   * `groupMeasure` returns the sum of whatever items carry the measure and
+   * null only when none do, so a partially-measured request produces a
+   * partial Σ that LOOKS like a total — and `disagrees` then fires on the
+   * shortfall. Two ways to be partial: an item with no figure, and an item
+   * in no group at all, which is the normal state of every request the VED
+   * is half-way through coding. Both make the two sides incomparable, and
+   * «not yet» is the honest answer, not «they disagree».
+   *
+   * The module already decided this one file over: `groupPerUnit`
+   * (calc/history.ts) refuses unless EVERY item carries the measure, because
+   * dividing by a partial Σ «prints roughly three times the true rate». This
+   * is the same arithmetic and now the same rule.
+   */
+  const covered = (pick: (i: WorkspaceItem) => number | null) =>
+    items.length > 0 && items.every((i) => i.groupId !== null && pick(i) !== null);
 
   return {
     requestId,
@@ -562,8 +580,11 @@ export async function loadWorkspace(
       groupKg,
       groupM3,
       // Freight reads the REQUEST's totals and customs reads the GROUPS', so
-      // nothing else would tell the VED the two disagree.
-      mismatch: disagrees(groupKg, weightKg) || disagrees(groupM3, volumeM3),
+      // nothing else would tell the VED the two disagree — but only once
+      // both sides are measuring the same cargo.
+      mismatch:
+        (covered((i) => i.weightKg) && disagrees(groupKg, weightKg)) ||
+        (covered((i) => i.volumeM3) && disagrees(groupM3, volumeM3)),
     },
     sealedVersion: sealed,
     completedAt: request.completedAt,
