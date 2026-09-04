@@ -2087,7 +2087,9 @@
       "toCity": "destination city",
       "weightKg": "weight",
       "volumeM3": "volume",
-      "goods": "goods"
+      "goods": "goods",
+      "itemQuantity": "quantity per line",
+      "itemWeight": "weight per line"
     },
     "errors": {
       "validation": "Check the fields",

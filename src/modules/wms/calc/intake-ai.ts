@@ -25,6 +25,7 @@ const factsSchema = z.object({
     z.object({
       name: z.string(),
       quantity: z.number().nullable(),
+      weight_kg: z.number().nullable(),
       tnved_code: z.string().nullable(),
       note: z.string().nullable(),
     }),
@@ -39,7 +40,11 @@ const SYSTEM = `Ты — помощник карго-компании GSR LOGIST
 Извлеки:
 - город отправления и город назначения (если названы);
 - общий вес в килограммах и объём в кубометрах (если названы; пересчитай единицы при необходимости);
-- список товаров: название, количество, и — если уверенно определяешь — код ТН ВЭД (10 цифр);
+- список товаров: название, количество, ВЕС ЭТОЙ ПОЗИЦИИ в килограммах,
+  и — если уверенно определяешь — код ТН ВЭД (10 цифр);
+  вес позиции нужен для растаможки: база считается за кг или за штуку по
+  КАЖДОЙ строке. Если в упаковочном листе вес указан по каждой позиции —
+  бери его оттуда. Если веса по позиции нет — null, не дели общий вес.
 - steps: короткие строки на узбекском о том, ЧТО ты сделал: как сгруппировал товары,
   почему поставил такой код ТН ВЭД, что показалось противоречивым. Это читает человек.
 
@@ -116,10 +121,11 @@ export async function analyzeIntake(input: {
                   properties: {
                     name: { type: 'string' },
                     quantity: { type: ['number', 'null'] },
+                    weight_kg: { type: ['number', 'null'] },
                     tnved_code: { type: ['string', 'null'] },
                     note: { type: ['string', 'null'] },
                   },
-                  required: ['name', 'quantity', 'tnved_code', 'note'],
+                  required: ['name', 'quantity', 'weight_kg', 'tnved_code', 'note'],
                   additionalProperties: false,
                 },
               },
@@ -171,6 +177,7 @@ export async function analyzeIntake(input: {
         goods: parsed.goods.map((g) => ({
           name: g.name,
           quantity: g.quantity,
+          weightKg: g.weight_kg,
           // A code that is not ten digits is not a code — blanked rather
           // than passed on, the same rule the goods import uses (#378).
           tnvedCode: g.tnved_code && /^\d{10}$/.test(g.tnved_code) ? g.tnved_code : null,

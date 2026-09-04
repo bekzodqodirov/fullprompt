@@ -4,7 +4,7 @@ import { clients, dealStages, deals, leadStages, leads } from '../../platform/db
 import { addActivity, createLead } from '../crm/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { logger } from '../../platform/logger';
-import { intakeNoteText, type CalcFacts, type CalcSection } from './intake';
+import { intakeNoteText, itemFacts, type CalcFacts, type CalcSection } from './intake';
 
 /**
  * Where a confirmed «Hisoblatish» lands (owner: «hammasi lead yoki ochilgan
@@ -207,11 +207,15 @@ export async function landIntake(input: {
         toCity: input.facts.toCity ?? null,
         weightKg: input.facts.weightKg ?? null,
         volumeM3: input.facts.volumeM3 ?? null,
-        items: (input.facts.goods ?? []).map((good) => ({
+        // Through `itemFacts`, so the weight a single-line job already
+        // stated reaches the ITEM — which is what lets the AI VED hodimi
+        // find a per-kg declaration for it (docs/VED-IMPORT-AI §3).
+        items: itemFacts(input.facts).map((good) => ({
           name: good.name,
-          quantity: good.quantity ?? null,
-          tnvedCode: good.tnvedCode ?? null,
-          note: good.note ?? null,
+          quantity: good.quantity,
+          weightKg: good.weightKg,
+          tnvedCode: good.tnvedCode,
+          note: good.note,
         })),
         noteId: input.noteId,
         source: 'bot',

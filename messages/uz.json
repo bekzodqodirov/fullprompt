@@ -2087,7 +2087,9 @@
       "toCity": "qaysi shaharga",
       "weightKg": "og‘irlik",
       "volumeM3": "hajm",
-      "goods": "tovar nomi"
+      "goods": "tovar nomi",
+      "itemQuantity": "har bir tovarning soni",
+      "itemWeight": "har bir tovarning og‘irligi"
     },
     "errors": {
       "validation": "Maydonlarni tekshiring",

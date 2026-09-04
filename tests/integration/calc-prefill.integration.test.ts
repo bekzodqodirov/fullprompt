@@ -143,7 +143,7 @@ const importRow = async () => {
 };
 
 /** The model's grouping, scripted: it names ONE code for every item. */
-const proposeAs = (code: string) => async (requestId: string, c: { actorId: string }) => {
+const proposeAs = (code: string) => async (requestId: string, c: { actorId: string | null }) => {
   const items = await db
     .select({ seq: calcRequestItems.seq })
     .from(calcRequestItems)

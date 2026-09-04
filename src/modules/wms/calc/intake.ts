@@ -38,11 +38,37 @@ export const SECTION_LABEL: Record<CalcSection, string> = {
  */
 export const REQUIRED_FIELDS: Record<CalcSection, CalcField[]> = {
   yolkira: ['fromCity', 'toCity', 'weightKg', 'volumeM3', 'goods'],
-  rastamojka: ['weightKg', 'volumeM3', 'goods'],
-  podklyuch: ['fromCity', 'toCity', 'weightKg', 'volumeM3', 'goods'],
+  rastamojka: ['weightKg', 'volumeM3', 'goods', 'itemQuantity', 'itemWeight'],
+  podklyuch: [
+    'fromCity',
+    'toCity',
+    'weightKg',
+    'volumeM3',
+    'goods',
+    'itemQuantity',
+    'itemWeight',
+  ],
 };
 
-export type CalcField = 'fromCity' | 'toCity' | 'weightKg' | 'volumeM3' | 'goods';
+export type CalcField =
+  | 'fromCity'
+  | 'toCity'
+  | 'weightKg'
+  | 'volumeM3'
+  | 'goods'
+  /**
+   * PER-ITEM, and only where customs is being calculated (sub-round B).
+   *
+   * A total weight prices a truck; it cannot price a declaration. The baza is
+   * per kg or per dona or per m², chosen per ROW, so `unitsForRow` needs to
+   * know what THIS line states a figure for — and the customs file is 74 %
+   * per-kg while an ordinary advalor code asks per-dona. A line stating
+   * neither a count nor a weight can be valued at all only by guessing, which
+   * is the one thing the module may not do. Freight asks for neither: it is
+   * priced on the totals.
+   */
+  | 'itemQuantity'
+  | 'itemWeight';
 
 export const FIELD_LABEL: Record<CalcField, string> = {
   fromCity: 'qaysi shahardan',
@@ -50,6 +76,8 @@ export const FIELD_LABEL: Record<CalcField, string> = {
   weightKg: 'og‘irligi (kg)',
   volumeM3: 'hajmi (kub)',
   goods: 'tovar nomi',
+  itemQuantity: 'har bir tovarning soni',
+  itemWeight: 'har bir tovarning og‘irligi (kg)',
 };
 
 /** What the AI (or a human) managed to read out of the sent material. */
@@ -58,7 +86,48 @@ export interface CalcFacts {
   toCity?: string | null;
   weightKg?: number | null;
   volumeM3?: number | null;
-  goods?: { name: string; quantity?: number | null; tnvedCode?: string | null; note?: string | null }[];
+  goods?: {
+    name: string;
+    quantity?: number | null;
+    /** What THIS line weighs, in kg — see `CalcField`'s `itemWeight`. */
+    weightKg?: number | null;
+    tnvedCode?: string | null;
+    note?: string | null;
+  }[];
+}
+
+/** One line as the rest of the system should read it. */
+export interface CalcItemFact {
+  name: string;
+  quantity: number | null;
+  weightKg: number | null;
+  tnvedCode: string | null;
+  note: string | null;
+}
+
+/**
+ * The goods, with the one weight that can be DERIVED rather than asked for.
+ *
+ * With a single line, the shipment's weight IS that line's weight — that is
+ * arithmetic, not a guess, and asking a person to retype a number they have
+ * already given reads as a broken form. With two or more lines nothing can be
+ * split without inventing a ratio, so those stay empty and the checklist asks.
+ *
+ * ONE home (#513): the checklist, the summary, the note and the landing all
+ * read the goods through here, so «what does this line weigh» has a single
+ * answer everywhere it is asked.
+ */
+export function itemFacts(facts: CalcFacts): CalcItemFact[] {
+  const goods = facts.goods ?? [];
+  const total = Number(facts.weightKg);
+  const lone = goods.length === 1 && total > 0 ? total : null;
+  return goods.map((g) => ({
+    name: g.name,
+    quantity: Number(g.quantity) > 0 ? Number(g.quantity) : null,
+    weightKg: Number(g.weightKg) > 0 ? Number(g.weightKg) : lone,
+    tnvedCode: g.tnvedCode ?? null,
+    note: g.note ?? null,
+  }));
 }
 
 /**
@@ -67,8 +136,16 @@ export interface CalcFacts {
  * somebody typed over.
  */
 export function missingFields(section: CalcSection, facts: CalcFacts): CalcField[] {
+  const items = itemFacts(facts);
   return REQUIRED_FIELDS[section].filter((field) => {
-    if (field === 'goods') return !facts.goods || facts.goods.length === 0;
+    if (field === 'goods') return items.length === 0;
+    // With no goods at all these stay silent — `[].some()` is false — and
+    // that is deliberate, not incidental: «tovar nomi» already names that
+    // absence, and one hole reported three times is how a checklist stops
+    // being read. Pinned behaviourally, because the mechanism is subtle
+    // enough that a later `!items.length ||` would look like an improvement.
+    if (field === 'itemQuantity') return items.some((i) => i.quantity === null);
+    if (field === 'itemWeight') return items.some((i) => i.weightKg === null);
     if (field === 'weightKg') return !(Number(facts.weightKg) > 0);
     if (field === 'volumeM3') return !(Number(facts.volumeM3) > 0);
     return !String(facts[field] ?? '').trim();
@@ -98,12 +175,13 @@ export function intakeSummaryText(input: {
   fileCount: number;
 }): string {
   const missing = missingFields(input.section, input.facts);
-  const goods = input.facts.goods ?? [];
+  const goods = itemFacts(input.facts);
   const goodsLines = goods
     .slice(0, 15)
     .map(
       (g) =>
-        `· ${g.name}${g.quantity ? ` — ${g.quantity}` : ''}${g.tnvedCode ? ` · ${g.tnvedCode}` : ''}`,
+        `· ${g.name}${g.quantity ? ` — ${g.quantity} dona` : ''}` +
+        `${g.weightKg ? ` · ${g.weightKg} kg` : ''}${g.tnvedCode ? ` · ${g.tnvedCode}` : ''}`,
     )
     .join('\n');
 
@@ -155,11 +233,12 @@ export function intakeNoteText(input: {
    */
   material?: string[];
 }): string {
-  const goods = input.facts.goods ?? [];
+  const goods = itemFacts(input.facts);
   const goodsLines = goods
     .map(
       (g) =>
-        `· ${g.name}${g.quantity ? ` — ${g.quantity}` : ''}` +
+        `· ${g.name}${g.quantity ? ` — ${g.quantity} dona` : ''}` +
+        `${g.weightKg ? ` · ${g.weightKg} kg` : ''}` +
         `${g.tnvedCode ? `\n   TNVED: ${g.tnvedCode}` : ''}` +
         `${g.note ? `\n   ${g.note}` : ''}`,
     )

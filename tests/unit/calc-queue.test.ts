@@ -37,7 +37,16 @@ describe('the checklist over a stored request', () => {
     // through the stored row rather than restated.
     expect(missingFor('rastamojka', { ...facts, fromCity: null, toCity: null })).toEqual(['goods']);
     expect(missingFor('yolkira', { ...facts, fromCity: null })).toEqual(['fromCity', 'goods']);
-    expect(missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor' }] })).toEqual([]);
+    // Sub-round B: customs is calculated per LINE, so a customs section also
+    // asks what each line is — a count, and a weight where one cannot be
+    // derived. One line and a stated total weight IS that line's weight, so
+    // only the count is outstanding here.
+    expect(missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor' }] })).toEqual([
+      'itemQuantity',
+    ]);
+    expect(
+      missingFor('podklyuch', { ...facts, goods: [{ name: 'monitor', quantity: 4 }] }),
+    ).toEqual([]);
   });
 
   it('a row written before the module existed has no section and no checklist', () => {
@@ -48,8 +57,13 @@ describe('the checklist over a stored request', () => {
   });
 
   it('a zero is a blank, through the adapter too', () => {
+    // With no total weight there is nothing to derive the line's weight
+    // FROM, so the per-line question appears beside the total's — which is
+    // the derivation being visible rather than assumed.
     expect(missingFor('podklyuch', { ...facts, weightKg: 0, goods: [{ name: 'x' }] })).toEqual([
       'weightKg',
+      'itemQuantity',
+      'itemWeight',
     ]);
   });
 });

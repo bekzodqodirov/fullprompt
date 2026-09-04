@@ -24,6 +24,8 @@ export const FIELD_LABELS: Record<CalcField, string> = {
   weightKg: 'fields.weightKg',
   volumeM3: 'fields.volumeM3',
   goods: 'fields.goods',
+  itemQuantity: 'fields.itemQuantity',
+  itemWeight: 'fields.itemWeight',
 };
 
 /** A section string that came off a form or out of the database. */
