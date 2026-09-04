@@ -207,6 +207,20 @@ describe('«V2» is the rank in the chain, not the stored counter', () => {
 
     expect(await quoteNoFor((await versionOf(second)).id)).toBe(2);
     expect(await quoteNoFor((await versionOf(first)).id)).toBe(1);
+
+    // Raw SQL hands timestamptz back as TEXT; the chain must hand back DATES,
+    // and expiry must be decided on them — found in a browser as seven
+    // FORMATTING_ERRORs, one per registry row, with every test green.
+    expect(v1!.sealedAt).toBeInstanceOf(Date);
+    expect(v1!.sealedAt.getTime()).toBeLessThanOrEqual(v2!.sealedAt.getTime());
+    expect(v1!.expired).toBe(false);
+    await db
+      .update(calcVersions)
+      .set({ validUntil: new Date(Date.now() - 86_400_000) })
+      .where(eq(calcVersions.requestId, first));
+    const [stale] = await chainOf(first);
+    expect(stale!.expired).toBe(true);
+    expect((await chainOf(first))[1]!.expired).toBe(false);
   });
 
   it('an OPEN correction is «qayta hisoblanmoqda» and takes no number', async () => {

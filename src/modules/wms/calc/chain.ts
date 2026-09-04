@@ -115,9 +115,13 @@ type RankedRow = {
   version_id: string;
   request_id: string;
   root_id: string;
-  sealed_at: Date;
+  /** `db.execute` hands timestamptz back as TEXT («2026-09-04 21:30:44+00»),
+   * not as a Date — `history.ts`'s own idiom, measured before this was
+   * typed: a string compared to a Date is never «expired» and
+   * `format.dateTime` on it is a FORMATTING_ERROR on every row. */
+  sealed_at: string;
   sealed_by_name: string | null;
-  valid_until: Date;
+  valid_until: string;
   section: string;
   total_usd: string;
   per_m3_usd: string | null;
@@ -135,14 +139,14 @@ function toChain(r: RankedRow, now: Date): ChainVersion {
     versionId: r.version_id,
     requestId: r.request_id,
     quoteNo: Number(r.quote_no),
-    sealedAt: r.sealed_at,
+    sealedAt: new Date(r.sealed_at),
     sealedByName: r.sealed_by_name,
     section: r.section as CalcSectionName,
     totalUsd: Number(r.total_usd),
     superseded: r.superseded,
     supersededByNo: r.superseded_by_no === null ? null : Number(r.superseded_by_no),
     recalcOpen: r.recalc_open,
-    expired: r.valid_until < now,
+    expired: new Date(r.valid_until).getTime() < now.getTime(),
   };
 }
 
