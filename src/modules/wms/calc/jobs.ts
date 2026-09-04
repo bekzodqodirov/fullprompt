@@ -108,7 +108,15 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
           logger.info({ requestId, standing }, '[calc-prefill] stood down — the request has moved');
           continue;
         }
-        const out = await aiPrefill(requestId, { actorId: staffId });
+        // NOBODY typed this. The pass ran under the seller's id, so every
+        // TNVED code, every rate and every baza the machine wrote was
+        // recorded in `audit_log` under the name of a person who never saw
+        // them — and this company reads that log to answer «who put this
+        // number here». `actorId: null` is the module's own idiom for a
+        // machine acting (the stale-lead sweep writes the same way: nobody
+        // causes a silence). Who ASKED is not lost — `calc_requests.
+        // requested_by` records it, and the answer goes to them.
+        const out = await aiPrefill(requestId, { actorId: null });
         await notifyStaffTelegram({
           userIds: [staffId],
           type: 'CalcPrefilled',

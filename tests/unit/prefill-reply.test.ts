@@ -16,6 +16,7 @@ const base = {
   customsUsd: null as number | null,
   freightUsd: null as number | null,
   hasFreight: false,
+  hasCustoms: true,
   blockers: [],
   codesStamped: 0,
   ratesPulled: 0,
@@ -139,6 +140,7 @@ describe('the pass names what it did NOT do', () => {
       customsUsd: 248,
       freightUsd: null,
       hasFreight: false,
+      hasCustoms: true,
       blockers: [],
       codesStamped: 0,
       ratesPulled: 0,
@@ -150,11 +152,23 @@ describe('the pass names what it did NOT do', () => {
     });
     expect(text).toContain('20 ta qator');
     expect(text).toContain('3 ta taklif');
+    // …and a row a PERSON filled while the model was thinking is a different
+    // fact with a different sentence: the model's unit was fine, the VED
+    // simply got there first, and reporting that as a fault would be the
+    // wrong reason on the screen.
+    const overtaken = prefillReplyText({
+      ...base,
+      customsUsd: 248,
+      pickOvertaken: 2,
+    });
+    expect(overtaken).toContain('2 tasini o‘zingiz to‘ldirdingiz');
+    expect(overtaken).not.toContain('o‘lchovi mos kelmadi');
     // …and stays quiet when there is nothing to confess.
     const clean = prefillReplyText({
       customsUsd: 248,
       freightUsd: null,
       hasFreight: false,
+      hasCustoms: true,
       blockers: [],
       codesStamped: 0,
       ratesPulled: 0,
@@ -212,5 +226,63 @@ describe('every refusal the engine can make has a sentence', () => {
         expect(text.length).toBeGreaterThan(kind.length);
       }
     }
+  });
+});
+
+describe('a section with no customs half says nothing about customs', () => {
+  it('a yolkira job never leads with «rastamojka ~$0.00»', () => {
+    // `loadWorkspace` answers `customsUsd: 0` — NOT null — for a section with
+    // no customs (`parts.customs ? assembled.customsUsd : 0`), so the reply
+    // read that as «priced, at zero» and led with it. On the freight-only
+    // section the bot offers FIRST, and with the freight still unpriced, the
+    // whole message was a $0: law 6 broken by the round whose law it is.
+    const priced = prefillReplyText({
+      ...base,
+      hasCustoms: false,
+      hasFreight: true,
+      customsUsd: 0,
+      freightUsd: 4800,
+    });
+    expect(priced).not.toContain('rastamojka');
+    expect(priced).not.toContain('$0.00');
+    expect(priced).toContain('yo‘lkira ~$4800.00');
+
+    // …and with nothing priced at all it must refuse in words, not print $0.
+    const bare = prefillReplyText({
+      ...base,
+      hasCustoms: false,
+      hasFreight: true,
+      customsUsd: 0,
+      freightUsd: null,
+    });
+    expect(bare).not.toContain('$0.00');
+    expect(bare).toContain('Hozircha hisoblab bo‘lmadi');
+
+    // A real customs job with a genuine zero is a FACT and still prints — the
+    // question was never «is it zero», it was «does this job have a customs
+    // side at all».
+    const genuine = prefillReplyText({ ...base, hasCustoms: true, customsUsd: 0 });
+    expect(genuine).toContain('rastamojka ~$0.00');
+  });
+});
+
+describe('a figure over PART of the cargo says so', () => {
+  it('the headline names the goods it could not count', () => {
+    // The customs total is the sum over GROUPS, and an uncoded row is in no
+    // group — so a half-classified request produced a confident figure for
+    // part of the cargo. MEASURED on a real request: two lines, one coded,
+    // «~$376.96» for half the goods. The blocker line named the hole; the
+    // headline did not, and a seller quotes from the headline.
+    const partial = prefillReplyText({
+      ...base,
+      customsUsd: 376.96,
+      blockers: [{ kind: 'ungrouped_items', count: 3 }],
+    });
+    expect(partial).toContain('rastamojka ~$376.96 (3 ta tovarsiz)');
+
+    // Nothing loose: the figure stands on its own, as it always has.
+    const whole = prefillReplyText({ ...base, customsUsd: 376.96, blockers: [] });
+    expect(whole).toContain('rastamojka ~$376.96');
+    expect(whole).not.toContain('tovarsiz');
   });
 });

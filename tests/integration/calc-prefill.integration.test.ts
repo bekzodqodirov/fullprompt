@@ -138,6 +138,28 @@ async function open(items: { name: string; tnvedCode?: string | null; quantity?:
   return r.id;
 }
 
+async function openSection(
+  section: 'yolkira' | 'rastamojka' | 'podklyuch',
+  items: { name: string; tnvedCode?: string | null; quantity?: number | null; weightKg?: number | null }[],
+) {
+  const r = await openCalcRequest(
+    {
+      entityType: 'deal',
+      entityId: dealId,
+      section,
+      fromCity: 'Yiwu',
+      toCity: 'Toshkent',
+      weightKg: 500,
+      volumeM3: 10,
+      items,
+      source: 'card',
+    },
+    ctx(),
+  );
+  madeRequests.push(r.id);
+  return r.id;
+}
+
 const importRow = async () => {
   const rows = await db
     .select()
@@ -348,6 +370,110 @@ describe('the machine carries a job as far as it honestly can', () => {
     // evidence about the fixture (#166).
     await confirmGroup(group!.id, ctx());
     expect(await prefillStanding(fresh, await prefillTicket(fresh))).toBe('confirmed');
+  });
+
+  it('a freight-only job is left ALONE — no groups, no model call, no $0', async () => {
+    // The pass never asked what section the job was. On a yolkira request —
+    // the freight-only one, and the FIRST the bot offers — it ran the whole
+    // customs half anyway: `applyProposal` COMMITTED customs groups onto a
+    // quote that has no customs, and `blockersFor` then raised
+    // `customs_on_yolkira`, a blocker no screen can clear because nothing
+    // offers to delete those groups. The machine could make a freight quote
+    // permanently unsealable, and bill an Opus call for doing it.
+    const row = await importRow();
+    const id = await openSection('yolkira', [{ name: row.name, weightKg: 100 }]);
+
+    let asked = 0;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      propose: async () => {
+        asked += 1;
+        throw new Error('the model must not be asked about a freight quote');
+      },
+      pick: async () => {
+        asked += 1;
+        return null;
+      },
+    });
+
+    expect(asked, 'no model call belongs on a freight-only job').toBe(0);
+    const ws = await loadWorkspace(id);
+    expect(ws!.groups, 'no customs group may be minted here').toHaveLength(0);
+    expect(ws!.blockers.some((b) => b.kind === 'customs_on_yolkira')).toBe(false);
+    // …and the reply says nothing about customs, least of all a zero.
+    expect(out.text).not.toContain('rastamojka');
+    expect(out.text).not.toContain('$0.00');
+  });
+
+  it('a baza the VED types WHILE the model thinks is left alone', async () => {
+    // The rows are read before a model call that can take a minute, and a VED
+    // opening the request meanwhile is not a race — it is how this queue is
+    // worked. The deterministic auto-fill has re-checked «still empty» since
+    // 0094; the pick did not, because it writes through `saveTable`'s
+    // ORDINARY edit branch, which is right for a person and wrong for a
+    // machine answering a question it asked a minute ago. So the VED's number
+    // was replaced and `baza_source` flipped to 'import' — their figure gone,
+    // and the chip claiming the file had supplied it.
+    const rows = await db
+      .select()
+      .from(customsImportRows)
+      .where(eq(customsImportRows.batchId, batchId));
+    const kg = rows.find((r) => r.unit === 'kg')!;
+    const id = await open([{ name: 'Boshqa nom butunlay', tnvedCode: kg.tnvedCode, weightKg: 100 }]);
+
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0 }),
+      pick: async (asking) => {
+        // THE VED TYPES, right here — inside the model's own window.
+        const [item] = await db
+          .select({ id: calcRequestItems.id, seq: calcRequestItems.seq })
+          .from(calcRequestItems)
+          .where(eq(calcRequestItems.requestId, id));
+        await saveTable(
+          id,
+          {
+            items: [{ id: item!.id, seq: item!.seq, bazaUsd: 7.77, bazaBasis: 'kg' }],
+            adds: [],
+          },
+          ctx(),
+        );
+        return asking.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' }));
+      },
+    });
+
+    expect(out.picked, 'the machine must not have written').toBe(0);
+    const [item] = await db
+      .select()
+      .from(calcRequestItems)
+      .where(eq(calcRequestItems.requestId, id));
+    expect(Number(item!.bazaUsd), 'the VED’s own number stands').toBe(7.77);
+    expect(item!.bazaSource, 'and it is still THEIR number, not the file’s').toBe('typed');
+    expect(item!.importRowId).toBeNull();
+  });
+
+  it('a customs job with NOTHING classified refuses in words, never «~$0.00»', async () => {
+    // The section gate is not enough. `requestCustomsFor([])` runs
+    // `[].every(ok)` — vacuously TRUE — and answers `customsUsd: 0`, so a
+    // rastamojka job that produced no groups read as «priced, at zero».
+    // That is the ORDINARY way this ships: no key, or a model that refused,
+    // and nothing the TNVED memory already knew.
+    //
+    // The round's two existing `$0` assertions do NOT cover it: their
+    // fixtures have a group that EXISTS and REFUSES, so `allOk` is false and
+    // `customsUsd` is already null. The uncovered branch is the EMPTY list —
+    // a test passing on the neighbouring case is not evidence about this one
+    // (#166).
+    const id = await open([{ name: `nomsiz mol ${Date.now()}` }]);
+    const out = await aiPrefill(id, ctx(), { configured: false });
+
+    const ws = await loadWorkspace(id);
+    expect(ws!.groups, 'the premise: nothing is classified').toHaveLength(0);
+    expect(ws!.customsUsd, 'and the engine still spells that as 0').toBe(0);
+
+    expect(out.customsUsd, 'the pass must read it as «nothing priced»').toBeNull();
+    expect(out.text).not.toContain('$0');
+    expect(out.text).toContain('Hozircha hisoblab bo‘lmadi');
   });
 
   it('a model that fails costs a sentence, never the job', async () => {

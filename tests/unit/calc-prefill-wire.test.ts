@@ -65,6 +65,20 @@ describe('the prefill survives a deploy', () => {
     expect(bot).toMatch(/enqueue\(JOB_CALC_PREFILL, \{[^}]*rev[^}]*\}\)/);
   });
 
+  it('the machine writes as NOBODY, and the seller is only told', () => {
+    // The pass ran under the seller's id, so every code, rate and baza the
+    // machine wrote landed in `audit_log` under the name of a person who
+    // never saw them — and this company reads that log to answer «who put
+    // this number here». `actorId: null` is the module's own idiom for a
+    // machine acting. Who ASKED is not lost: it is the notification's
+    // recipient, and `calc_requests.requested_by` on the row.
+    const jobs = read('src/modules/wms/calc/jobs.ts');
+    expect(jobs).toContain('aiPrefill(requestId, { actorId: null })');
+    expect(jobs).not.toContain('actorId: staffId');
+    // …and `staffId` still names who hears about it.
+    expect(jobs).toContain('userIds: [staffId]');
+  });
+
   it('a failed pass is logged and NOT rethrown', () => {
     // Retrying a model that refused five times spends money to change
     // nothing; the request is in the VED's queue whatever happens here. What

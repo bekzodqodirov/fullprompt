@@ -112,6 +112,16 @@ export interface PrefillReplyInput {
   freightUsd: number | null;
   /** Does this section even have a freight half? */
   hasFreight: boolean;
+  /**
+   * …and a customs half?
+   *
+   * `loadWorkspace` answers `customsUsd: 0` — not null — for a section that
+   * has no customs at all (`parts.customs ? assembled.customsUsd : 0`), so a
+   * yolkira job read as «priced at zero» and the reply led with
+   * «Tahminiy: rastamojka ~$0.00». Law 6's own $0, printed by the round whose
+   * founding law it is, on the freight-only section the bot offers first.
+   */
+  hasCustoms: boolean;
   blockers: SealBlocker[];
   /** How much the machine did, so the VED knows what to check. */
   codesStamped: number;
@@ -133,6 +143,13 @@ export interface PrefillReplyInput {
    */
   pickCapped?: number;
   pickRefused?: number;
+  /**
+   * Rows a PERSON filled while the model was thinking — left alone, and a
+   * different fact from a refused pick. Counting the two together would put
+   * the wrong reason on the screen: the model's unit was fine, the VED
+   * simply got there first, and that is not a fault to report as one.
+   */
+  pickOvertaken?: number;
 }
 
 /**
@@ -147,11 +164,30 @@ export interface PrefillReplyInput {
  */
 export function prefillReplyText(input: PrefillReplyInput): string {
   const lines: string[] = [];
-  const priced = input.customsUsd !== null || input.freightUsd !== null;
+  const priced =
+    (input.hasCustoms && input.customsUsd !== null) || input.freightUsd !== null;
 
   if (priced) {
     const parts: string[] = [];
-    if (input.customsUsd !== null) parts.push(`rastamojka ~${money(input.customsUsd)}`);
+    // A figure is only worth printing where the SECTION has that half. Not
+    // «is it zero» — a genuine $0 customs bill is a fact worth stating; the
+    // question is whether this job has a customs side at all.
+    if (input.hasCustoms && input.customsUsd !== null) {
+      // A customs figure is the sum over the GROUPS, and a row nobody has
+      // coded is in no group — so on a half-classified request the number is
+      // the estimate for PART of the cargo, wearing the job's name.
+      // MEASURED: two lines, one coded, and the seller reads
+      // «Tahminiy: rastamojka ~$376.96» for half the goods; the blocker line
+      // named the hole, the headline did not, and a seller quotes from the
+      // headline. Not suppressed — a partial estimate plus an honest label
+      // beats silence, and the VED finishes it either way.
+      const loose = input.blockers.find((b) => b.kind === 'ungrouped_items');
+      const partial =
+        loose && loose.kind === 'ungrouped_items'
+          ? ` (${loose.count} ta tovarsiz)`
+          : '';
+      parts.push(`rastamojka ~${money(input.customsUsd)}${partial}`);
+    }
     if (input.freightUsd !== null) parts.push(`yo‘lkira ~${money(input.freightUsd)}`);
     lines.push(`🧮 Tahminiy: ${parts.join(' · ')}`);
     lines.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
@@ -180,6 +216,7 @@ export function prefillReplyText(input: PrefillReplyInput): string {
   const left: string[] = [];
   if (input.pickCapped) left.push(`${input.pickCapped} ta qator ko‘rilmadi (juda ko‘p)`);
   if (input.pickRefused) left.push(`${input.pickRefused} ta taklif o‘lchovi mos kelmadi`);
+  if (input.pickOvertaken) left.push(`${input.pickOvertaken} tasini o‘zingiz to‘ldirdingiz`);
   if (left.length) lines.push(`Bazasi qo‘yilmadi: ${left.join(' · ')}`);
 
   const missing = input.blockers.map(blockerText);

@@ -120,6 +120,14 @@ describe('what a line weighs is derived once, or asked for', () => {
     expect(missingFields('rastamojka', counted)).toEqual([]);
     const weighed = { ...base, goods: [{ name: 'a', weightKg: 300 }, { name: 'b', weightKg: 200 }] };
     expect(missingFields('rastamojka', weighed)).toEqual([]);
+    // …and the law's OWN unit is the third way — m²/juft/litr, typed by the
+    // VED in the workspace. Without it the chip stood over a request the
+    // engine had fully priced, which is #649 a third time in one round.
+    const measured = {
+      ...base,
+      goods: [{ name: 'a', measureQty: 12.5 }, { name: 'b', quantity: 2 }],
+    };
+    expect(missingFields('rastamojka', measured)).toEqual([]);
     // Neither is the one case the engine genuinely cannot value.
     const bare = { ...base, goods: [{ name: 'a', quantity: 4 }, { name: 'b' }] };
     expect(missingFields('rastamojka', bare)).toEqual(['itemMeasure']);

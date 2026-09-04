@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { calcGroups, calcRequestItems, calcRequests } from '../../platform/db/schema';
 import { aiConfigured } from '../../platform/ai/model';
@@ -8,6 +8,7 @@ import {
   newestReadyBatchId,
 } from '../customs/import-service';
 import { suggestImportBaza, unitsForRow, BASIS_FOR_UNIT } from '../customs/import-baza';
+import { sectionParts, type CalcSectionName } from './pricing';
 import { loadWorkspace, proposeGroups, saveTable, type TableItemEdit } from './workspace';
 import { prefillReplyText } from './prefill-reply';
 import { pickImportRows, type PickAnswer, type PickRequest } from './prefill-ai';
@@ -124,10 +125,33 @@ export async function aiPrefill(
   let importFilled = 0;
   let aiUsed = false;
 
+  /**
+   * DOES THIS JOB HAVE A CUSTOMS SIDE AT ALL?
+   *
+   * The pass never asked, and on a **yolkira** request — the freight-only
+   * section, the first one the bot offers — it ran the whole customs half
+   * anyway: the model grouped the goods, `applyProposal` COMMITTED customs
+   * groups onto a quote that has no customs, and `blockersFor` then raised
+   * `customs_on_yolkira` («bu bo'limda rastamojka hisoblanmaydi») — a blocker
+   * no screen can clear, because nothing offers to delete those groups. So
+   * the machine could make a freight quote permanently unsealable, and then
+   * bill an Opus grouping call for doing it.
+   *
+   * A freight quote is priced on the TOTALS. There is nothing here for the
+   * model to do, and the honest pass is the one that does nothing.
+   */
+  const [row] = await db
+    .select({ section: calcRequests.section })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  const parts = row?.section
+    ? sectionParts(row.section as CalcSectionName)
+    : { customs: true, freight: true, extras: true };
+
   // 1. The model groups the goods and names their codes; `proposeGroups`
   //    then prices what it proposed (the book's rates, the code onto the
   //    row) and 0094's import fill runs inside its save.
-  if (configured) {
+  if (configured && parts.customs) {
     try {
       const out = await propose(requestId, ctx);
       codesStamped += out.codesStamped;
@@ -147,11 +171,13 @@ export async function aiPrefill(
   //    an empty save is what places those items in groups (with rates at
   //    mint) and fires the import fill. This is the whole model-free half of
   //    the feature, and it is why a server with no key still gets a figure.
-  try {
-    const swept = await saveTable(requestId, { items: [], adds: [] }, ctx);
-    importFilled += swept.importFilled.length;
-  } catch (err) {
-    logger.warn({ err, requestId }, '[calc-prefill] sweep failed');
+  if (parts.customs) {
+    try {
+      const swept = await saveTable(requestId, { items: [], adds: [] }, ctx);
+      importFilled += swept.importFilled.length;
+    } catch (err) {
+      logger.warn({ err, requestId }, '[calc-prefill] sweep failed');
+    }
   }
 
   // 3. The bazas the file could not fill by itself: the model is shown the
@@ -159,12 +185,14 @@ export async function aiPrefill(
   let picked = 0;
   let pickCapped = 0;
   let pickRefused = 0;
-  if (configured) {
+  let pickOvertaken = 0;
+  if (configured && parts.customs) {
     try {
       const out = await pickBazas(requestId, ctx, pick);
       picked = out.picked;
       pickCapped = out.capped;
       pickRefused = out.refused;
+      pickOvertaken = out.overtaken;
       if (picked > 0) aiUsed = true;
     } catch (err) {
       logger.warn({ err, requestId }, '[calc-prefill] pick failed');
@@ -173,7 +201,24 @@ export async function aiPrefill(
 
   // 4. Read what the engine now says, and say it in words.
   const ws = await loadWorkspace(requestId);
-  const customsUsd = ws?.customsUsd ?? null;
+  /**
+   * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO», and the engine spells both 0.
+   *
+   * Two independent sources, and the section gate above only closes the
+   * first. (1) A section with no customs half is hard-coded 0 by
+   * `loadWorkspace`. (2) A section that HAS one but carries no groups yet:
+   * `requestCustomsFor([])` runs `[].every(ok)` — vacuously TRUE — and
+   * returns `customsUsd: 0`. That second one is the ordinary way this ships:
+   * no ANTHROPIC key, or a model that refused, and nothing the TNVED memory
+   * already knew. MEASURED: the seller read «Tahminiy: rastamojka ~$0.00».
+   *
+   * `null` here, so the reply refuses in words. Deliberately NOT fixed in
+   * `requestCustomsFor`: that function is consumed verbatim by the live
+   * browser recompute and by the seal, and making its empty case null would
+   * move the footer bar and the seal gate in a round that ships no migration.
+   */
+  const customsUsd =
+    ws && ws.parts.customs && ws.groups.length > 0 ? ws.customsUsd : null;
   const freight = ws?.freight ?? null;
   // `listUsd` is the road's LIST price — what the tariff says before any
   // concession. A prefill states the tariff, never a discount somebody has
@@ -185,6 +230,7 @@ export async function aiPrefill(
       customsUsd,
       freightUsd,
       hasFreight: ws?.parts.freight ?? false,
+      hasCustoms: ws?.parts.customs ?? parts.customs,
       blockers: ws?.blockers ?? [],
       codesStamped,
       ratesPulled,
@@ -193,6 +239,7 @@ export async function aiPrefill(
       aiConfigured: configured,
       pickCapped,
       pickRefused,
+      pickOvertaken,
     }),
     customsUsd,
     freightUsd,
@@ -213,8 +260,8 @@ async function pickBazas(
   requestId: string,
   ctx: AuditContext,
   pick: NonNullable<PrefillDeps['pick']>,
-): Promise<{ picked: number; capped: number; refused: number }> {
-  const none = { picked: 0, capped: 0, refused: 0 };
+): Promise<{ picked: number; capped: number; refused: number; overtaken: number }> {
+  const none = { picked: 0, capped: 0, refused: 0, overtaken: 0 };
   const batchId = await newestReadyBatchId();
   // Nothing imported yet: there is nothing to choose between, and inventing
   // a price is the one thing this module may never do.
@@ -324,8 +371,46 @@ async function pickBazas(
     '[calc-prefill] the model chose',
   );
 
-  if (edits.length === 0) return { picked: 0, capped, refused };
+  if (edits.length === 0) return { picked: 0, capped, refused, overtaken: 0 };
 
-  await saveTable(requestId, { items: edits, adds: [] }, ctx);
-  return { picked: edits.length, capped, refused };
+  /**
+   * STILL EMPTY? The rows were read before a model call that can take a
+   * minute, and a VED opening the request meanwhile is not a race — it is
+   * the normal way this queue is worked.
+   *
+   * The deterministic auto-fill has carried this re-check since 0094
+   * (`if (item.bazaUsd !== null) continue`, inside the save's own
+   * transaction). The pick did not, because it writes through `saveTable`'s
+   * ORDINARY edit branch — which is right for a person, whose typing SHOULD
+   * overwrite, and wrong for a machine answering a question it asked a
+   * minute ago. So a baza the VED had just typed was replaced by the model's
+   * choice, and `baza_source` flipped to 'import': their number gone, and the
+   * chip claiming the file had supplied it.
+   *
+   * A row that filled in the meantime is DROPPED and counted, never written.
+   * The residual window is the milliseconds to `saveTable`'s own
+   * `FOR UPDATE`, which is the window every writer in this module has.
+   */
+  const fresh = await db
+    .select({ id: calcRequestItems.id, bazaUsd: calcRequestItems.bazaUsd })
+    .from(calcRequestItems)
+    .where(
+      inArray(
+        calcRequestItems.id,
+        edits.map((e) => e.id),
+      ),
+    );
+  const stillEmpty = new Set(fresh.filter((r) => r.bazaUsd === null).map((r) => r.id));
+  const live = edits.filter((e) => stillEmpty.has(e.id));
+  const overtaken = edits.length - live.length;
+  if (overtaken > 0) {
+    logger.info(
+      { requestId, overtaken },
+      '[calc-prefill] a person filled these while the model was thinking — left alone',
+    );
+  }
+  if (live.length === 0) return { picked: 0, capped, refused, overtaken };
+
+  await saveTable(requestId, { items: live, adds: [] }, ctx);
+  return { picked: live.length, capped, refused, overtaken };
 }
