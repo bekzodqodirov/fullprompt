@@ -369,6 +369,59 @@ describe('the table refuses by ROW', () => {
       .where(inArray(calcRequests.id, [half, whole, loose]));
   });
 
+  it('the proposal’s pricing tail is an ORDINARY writer, claim and all', async () => {
+    // The trap a design judge found and my own test could not see: the tail
+    // runs INSIDE `proposeGroups`, which holds `ai_proposal_started_at` until
+    // its `finally` — and both doors it uses (`pullRatesFromDictionary`,
+    // `saveTable`) go through `lockRequestInTx`, which refuses on exactly
+    // that claim. So the whole pricing half was dead in production while its
+    // integration test called the tail DIRECTLY with no claim held: a
+    // condition production never has (#531, a third time in this module).
+    //
+    // The fix is that `proposeGroups` RELEASES before calling the tail — the
+    // claim's stated job is to stop two people spending a model call on the
+    // same goods, and by then that call is spent. So this asserts both
+    // halves of the contract: the tail behaves like every other writer, and
+    // `proposal-wire.test.ts` pins that its caller lets go first.
+    const { priceProposedGroups } = await import('@/modules/wms/calc/workspace');
+    const id = await open([{ name: `plitka ${tag()}`, quantity: 5, tnvedCode: '6907' }]);
+    await save(id, {});
+    // Strip the rates the mint pulled, so the tail has real work to do.
+    await db
+      .update(calcGroups)
+      .set({ dutyPct: null, vatPct: null, rateSource: null })
+      .where(eq(calcGroups.requestId, id));
+    await db
+      .update(calcRequestItems)
+      .set({ tnvedCode: null })
+      .where(eq(calcRequestItems.requestId, id));
+
+    // Under a live claim it is refused, exactly like a person's save…
+    await db
+      .update(calcRequests)
+      .set({ aiProposalStartedAt: new Date() })
+      .where(eq(calcRequests.id, id));
+    await expect(priceProposedGroups(id, ctx())).rejects.toMatchObject({ code: 'ai_running' });
+
+    // …and with the claim released it prices, which is the state
+    // `proposeGroups` now hands it.
+    await db
+      .update(calcRequests)
+      .set({ aiProposalStartedAt: null })
+      .where(eq(calcRequests.id, id));
+    const priced = await priceProposedGroups(id, ctx());
+    expect(priced.ratesPulled).toBe(1);
+    expect(priced.codesStamped).toBe(1);
+    const [group] = await groupRows(id);
+    expect(group!.dutyPct).not.toBeNull();
+    expect(group!.vatPct).not.toBeNull();
+
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date() })
+      .where(eq(calcRequests.id, id));
+  });
+
   it('and the CLAIM heals on the same clock the lock does', async () => {
     // The lock healed and the claim did not, so a pass killed mid-flight —
     // a deploy, with the bot dispatching it in the background — answered

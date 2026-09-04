@@ -50,6 +50,26 @@ describe('a proposal is turned into a calculation', () => {
     expect(fn).not.toMatch(/\.insert\(/);
   });
 
+  it('the claim is RELEASED before the tail, or the tail refuses itself', () => {
+    // The tail writes through two doors that both take `lockRequestInTx`,
+    // which refuses on `ai_proposal_started_at` — the very column
+    // `proposeGroups` sets on entry. Held through the tail, the whole
+    // pricing half is dead: every group logs `ai_running` and the request
+    // comes out unpriceable, which is what it did in production while the
+    // integration test called the tail directly and passed (#531).
+    //
+    // This is the ONE assertion that can see it: no behavioural test can
+    // reach `proposeGroups`'s body without a model, and the tail on its own
+    // has no claim to be refused by.
+    const fn = body('proposeGroups');
+    expect(fn).toContain('releaseAiClaim(');
+    expect(fn.indexOf('releaseAiClaim(')).toBeLessThan(fn.indexOf('priceProposedGroups('));
+    // …and the model call it protects still happens first: releasing before
+    // `applyProposal` would let a second press spend a second model call on
+    // the same thousand goods, which is the claim's whole job.
+    expect(fn.indexOf('applyProposal(')).toBeLessThan(fn.indexOf('releaseAiClaim('));
+  });
+
   it('rates are pulled BEFORE the codes are stamped', () => {
     // The group's duty_unit is what says which of the customs file's units
     // may price a row (0094's unitsForRow), and saveTable is what runs the

@@ -2126,14 +2126,38 @@ export async function proposeGroups(
     // CODE onto the row exactly as a person typing it would — which is also
     // what makes the import fill fire. Law 1's fence is untouched:
     // `applyProposal` still writes no rate column at all.
+    // THE CLAIM COMES OFF FIRST, and it has to.
+    //
+    // The tail writes through `pullRatesFromDictionary` and `saveTable`, and
+    // BOTH take `lockRequestInTx`, which refuses on exactly the claim this
+    // function is holding — so the tail ran, was refused `ai_running` on
+    // every group, and logged it as «this code has no dictionary rate».
+    // Measured, not read: the whole pricing half was dead in production and
+    // green in the tests, because the test called the tail directly with no
+    // claim held (#531, a third time in this module).
+    //
+    // Releasing here rather than threading `ignoreAiClaim` through two more
+    // public doors is not a shortcut, it is what the claim MEANS: its stated
+    // job is that «two people pressing the button do not both spend a model
+    // call on the same thousand goods», and by this line that call is spent.
+    // What guards the writes from here on is the rev clock and `FOR UPDATE`,
+    // which is what guards every other writer. The `finally` still runs — the
+    // release is an idempotent UPDATE — so a throw in the tail cannot strand
+    // the claim.
+    await releaseAiClaim(requestId);
     const priced = await priceProposedGroups(requestId, ctx);
     return { groups: drafts.length, batches: batches.length, failed, ...priced };
   } finally {
-    await db
-      .update(calcRequests)
-      .set({ aiProposalStartedAt: null })
-      .where(eq(calcRequests.id, requestId));
+    await releaseAiClaim(requestId);
   }
+}
+
+/** Idempotent, because both the happy path and the `finally` call it. */
+async function releaseAiClaim(requestId: string): Promise<void> {
+  await db
+    .update(calcRequests)
+    .set({ aiProposalStartedAt: null })
+    .where(eq(calcRequests.id, requestId));
 }
 
 /**
@@ -2176,7 +2200,12 @@ export async function priceProposedGroups(
       await pullRatesFromDictionary(g.id, ctx);
       ratesPulled += 1;
     } catch (err) {
+      // Only the rate LOOKUP's own refusals belong here. Anything else — a
+      // lock, a closed request, a bad number — is a fact about the request
+      // and not about this code, and swallowing it under «no dictionary
+      // rate» is how a dead pricing half read as a book with holes in it.
       if (!(err instanceof CalcError)) throw err;
+      if (err.code !== 'rates_not_in_dictionary' && err.code !== 'code_required') throw err;
       logger.info(
         { requestId, groupId: g.id, code: g.tnvedCode, reason: err.code },
         '[calc] proposed code has no dictionary rate',
