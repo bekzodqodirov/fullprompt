@@ -274,25 +274,61 @@ export async function runCustomsImport(input: {
   let pending: ParsedImportRow[] = [];
   let lastBeat = Date.now();
 
+  const toRow = (r: ParsedImportRow) => ({
+    batchId,
+    tnvedCode: r.tnvedCode,
+    name: r.name,
+    nameNorm: r.nameNorm,
+    unit: r.unit,
+    pricePerUnitUsd: r.pricePerUnitUsd.toFixed(4),
+    weightPerUnitKg: r.weightPerUnitKg === null ? null : r.weightPerUnitKg.toFixed(4),
+    nettoKg: r.nettoKg === null ? null : r.nettoKg.toFixed(3),
+    customsValueUsd: r.customsValueUsd === null ? null : r.customsValueUsd.toFixed(2),
+    declaredAt: r.declaredAt,
+    sender: r.sender,
+    originCountry: r.originCountry,
+  });
+
+  /**
+   * Write the chunk — and if postgres refuses it, write it a row at a time.
+   *
+   * ONE bad row used to cost the whole quarter. The insert carries a
+   * thousand rows in a single statement, so anything the TABLE refuses
+   * throws for all thousand, and before 0095 that hung the import for ever;
+   * even after it, the whole file was lost to one line. MEASURED on his own
+   * June file: `customs_import_rows_weight_check`, a per-unit weight that is
+   * positive in JavaScript and 0.0000 in numeric(12,4).
+   *
+   * `fitNumeric` closes the gap that produced that one, but the promise this
+   * makes is stronger and does not depend on my having thought of every
+   * column: whatever the database refuses is counted and named, and the
+   * other 499,999 rows are still the quarter's baza. The row-at-a-time pass
+   * runs only on a failure, so the fast path pays nothing.
+   */
   const flush = async () => {
     if (pending.length === 0) return;
-    await db.insert(customsImportRows).values(
-      pending.map((r) => ({
-        batchId,
-        tnvedCode: r.tnvedCode,
-        name: r.name,
-        nameNorm: r.nameNorm,
-        unit: r.unit,
-        pricePerUnitUsd: r.pricePerUnitUsd.toFixed(4),
-        weightPerUnitKg: r.weightPerUnitKg === null ? null : r.weightPerUnitKg.toFixed(4),
-        nettoKg: r.nettoKg === null ? null : r.nettoKg.toFixed(3),
-        customsValueUsd: r.customsValueUsd === null ? null : r.customsValueUsd.toFixed(2),
-        declaredAt: r.declaredAt,
-        sender: r.sender,
-        originCountry: r.originCountry,
-      })),
-    );
+    const values = pending.map(toRow);
     pending = [];
+    try {
+      await db.insert(customsImportRows).values(values);
+      return;
+    } catch (err) {
+      logger.warn({ batchId, chunk: values.length, err }, '[customs-import] chunk refused — retrying row by row');
+    }
+    for (const value of values) {
+      try {
+        await db.insert(customsImportRows).values(value);
+      } catch (err) {
+        rowCount--;
+        skipped++;
+        skipReasons.rejected = (skipReasons.rejected ?? 0) + 1;
+        if ((skipReasons.rejected ?? 0) === 1) {
+          // The FIRST one carries its reason into the log; the rest are a
+          // count, or a broken column would write half a million lines.
+          logger.error({ batchId, value, err }, '[customs-import] row refused by the table');
+        }
+      }
+    }
   };
 
   for await (const cells of streamRows(storageKey, fileName)) {
