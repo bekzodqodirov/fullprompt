@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
-import { intakeSummaryText, itemFacts, missingFields } from '@/modules/wms/calc/intake';
+import {
+  intakeSummaryText,
+  itemFacts,
+  loneWeightKg,
+  missingFields,
+} from '@/modules/wms/calc/intake';
 
 /**
  * The owner's three bot reports, as pure rules (2026-09-04).
@@ -84,6 +89,21 @@ describe('what a line weighs is derived once, or asked for', () => {
       goods: [{ name: 'Chexol', weightKg: 40 }, { name: 'Monitor' }],
     });
     expect(stated.map((i) => i.weightKg)).toEqual([40, null]);
+  });
+
+  it('the rule is one function, so all three doors can apply it', () => {
+    // The bot and the thread hand over what was READ; the seller's card form
+    // hands over what was TYPED. Different shapes, one rule — otherwise the
+    // same job lands a different row depending on which door it came through.
+    expect(loneWeightKg(1, 250)).toBe(250);
+    expect(loneWeightKg(2, 250)).toBeNull();
+    expect(loneWeightKg(1, 0)).toBeNull();
+    expect(loneWeightKg(1, null)).toBeNull();
+    expect(loneWeightKg(0, 250)).toBeNull();
+    // …and `itemFacts` is that same function applied to read facts.
+    expect(itemFacts({ weightKg: 250, goods: [{ name: 'x' }] })[0]!.weightKg).toBe(
+      loneWeightKg(1, 250),
+    );
   });
 
   it('a zero is a blank here too, and there is nothing to derive from', () => {

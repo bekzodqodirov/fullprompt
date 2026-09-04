@@ -106,6 +106,24 @@ export interface CalcItemFact {
 }
 
 /**
+ * The one weight a single-line job never has to be asked for.
+ *
+ * Split out from `itemFacts` because three doors land a calculation and only
+ * one of them carries `CalcFacts`: the bot and the thread hand over what was
+ * READ, the seller's card form hands over what was TYPED. The shape differs;
+ * the RULE must not, or the same job lands a different row depending on which
+ * door it came through — which is the asymmetry a derived fence found here on
+ * its first run.
+ */
+export function loneWeightKg(
+  itemCount: number,
+  totalKg: number | null | undefined,
+): number | null {
+  const total = Number(totalKg);
+  return itemCount === 1 && total > 0 ? total : null;
+}
+
+/**
  * The goods, with the one weight that can be DERIVED rather than asked for.
  *
  * With a single line, the shipment's weight IS that line's weight — that is
@@ -119,8 +137,7 @@ export interface CalcItemFact {
  */
 export function itemFacts(facts: CalcFacts): CalcItemFact[] {
   const goods = facts.goods ?? [];
-  const total = Number(facts.weightKg);
-  const lone = goods.length === 1 && total > 0 ? total : null;
+  const lone = loneWeightKg(goods.length, facts.weightKg);
   return goods.map((g) => ({
     name: g.name,
     quantity: Number(g.quantity) > 0 ? Number(g.quantity) : null,
