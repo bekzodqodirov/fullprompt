@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## Muhrlangan hisob-kitoblar tarixi va V2 — 2026-09-04
+
+**So'ralgan.** «Hisoblangan narsalarning tarixini hohlayabman — VED hodimi
+hisoblagan raschotlarini spiskasi» (javoblari: 1A faqat muhrlanganlar, 2A
+egasi + buxgalter + VED, sotuvchi emas) va «qayta hisoblaganda V1 turibti,
+V2 bo'lib chiqishi kerak emasmi, eski narxlar tarixi bo'lishi kerak emasmidi».
+
+**Sabab.** Raqam har bir SO'ROVning o'z muhrlarini sanardi, qayta hisob esa
+YANGI so'rov — shuning uchun har bir qayta hisob 1 dan boshlanib «v1» deb
+o'qilardi. Eski narxlar yo'qolmagan edi — ular hech qachon o'chirilmaydi —
+faqat ekrani yo'q edi.
+
+**Endi qanday.**
+- **V raqami zanjirdan hisoblanadi**: V1 → qayta hisob → V2 → yana → V3. Eski
+  muhr «V2 bilan almashtirilgan» deb yozilib turadi, ochiq qayta hisob
+  bo'lsa «qayta hisoblanmoqda» (eski narx hali AMALDA — tashlab qo'yilgan
+  qayta hisob hech narsani o'zgartirmaydi). Bazada hech narsa qayta
+  yozilmadi, migratsiya yo'q.
+- **Hisoblash oynasida** muhr ostida «Versiyalar tarixi»: har bir versiya
+  sanasi, summasi, kim muhrlagani va havolasi bilan.
+- **Bitim/lid kartasida** «V2» chipi va «Oldingi: V1 · sana» qatori (summasi
+  faqat egasi/buxgalter/VEDga; sotuvchi kartada joriy polni ko'radi, eski
+  narx esa tarix — tarixning o'z eshigi bor).
+- **Yangi ekran /hisoblash/tarix — «Muhrlangan hisob-kitoblar»**: har bir
+  muhrlangan versiya bir qator (sana · mijoz/bitim · bo'lim · summa · $/m³ ·
+  $/kg · kim · V raqami · holati · chegirma). Tepada «N ta hisob-kitob · M ta
+  versiya» — tuzatilgan ish ikki qator, bitta ish. Filtrlar: dan/gacha,
+  bo'lim, kim muhrlagan, mijoz/bitim qidiruvi. Botdagi «Bajarildi» javoblari
+  bu ro'yxatda YO'Q — ekranning o'zi shuni aytadi. Menyuda VED va buxgalterga,
+  havola navbat sahifasida va «Narx tarixi»da. Sotuvchi kirsa bosh sahifaga
+  qaytariladi.
+- **Qayta hisob faqat eng yangi versiyadan**: almashtirilgan versiyadan
+  bosilsa «eng yangisidan qayta hisoblang», ochiq qayta hisob turgan bo'lsa
+  «avval uni tugating», narxsiz yopilgan so'rovdan «muhrlangan narx yo'q» —
+  tugma endi rad etganini SO'Z bilan aytadi (avval jim turardi). Sababi pul:
+  bir ota-so'rovdan ikkita bola ikkalasi ham «amalda» bo'lib, sotuvchiga
+  bitta savdo uchun ikki marta upsale to'lanardi.
+
+**Tekshiruv.** 2447 unit/integration + 193 e2e yashil (yangi gsr_ci, CI tartibida); 5 ta qizil
+isbot (zanjirdagi raqam saqlangan ustunga almashtirilsa 3 test qizil, bola
+tekshiruvi o'chirilsa 2 test qizil, lid nomi fenсasi olib tashlansa 1 test
+qizil, ekran eshigi olib tashlansa sotuvchi brauzer testi qizil, sana matn
+ligicha qolsa 1 test qizil — brauzerda topilgan). Skrinshotlar
+360×800 va 1280×900. Deploy uchun migratsiya kerak emas — ledger 96 ligicha.
+
 ## Baza tanlash o'z oynasiga chiqdi — 2026-09-04
 
 **Muammo.** ⋯ menyusi jadvalning siljish qutisi ichida chizilgan edi, u esa
