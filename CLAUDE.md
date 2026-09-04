@@ -1321,8 +1321,13 @@ ledger 92); 0090
 (`notice_staff` — the staff arrival event's own fence and the client drain's
 claim; ledger 91).
 
-**HIS SERVER IS AT 90 — confirmed «deploy qildim 90 chiqdi» on 2026-08-25
-evening**, in ONE deploy that landed PR #53 (the whole VED module, phases
+**HIS SERVER'S LAST CONFIRMED COUNT IS 93** (the VED 2.0 phase-4 entry in
+CHANGELOG.md, «93 tasdiqlangan kuni»); 0093 and 0094 have both shipped
+since and NEITHER has a «chiqdi» in the record, so **ask him to read the
+count before assuming which migrations he is missing** — do not trust the
+paragraph below, which is kept for the deploy it describes and is stale
+about the server. The 90 line: confirmed «deploy qildim 90 chiqdi» on
+2026-08-25 evening, in ONE deploy that landed PR #53 (the whole VED module, phases
 A-E1, migrations 0085-0089, plus rounds 108-111 and the thread-calc/seller-
 report round) AND PR #56 (the warehouse-corrections round — no migration).
 Everything in this file is LIVE in production EXCEPT the second corrections
@@ -1381,8 +1386,9 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**95** on this branch since 0094; his server was at 94 on
-2026-09-04) —
+length (**95** on this branch since 0094; his last CONFIRMED count is 93 —
+see the note above, and have him read
+`drizzle.__drizzle_migrations` rather than assuming) —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check
