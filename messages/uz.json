@@ -2390,7 +2390,19 @@
     "answerNotUsd": "Narx USD emas — taklif eshigi faqat dollardagi javobga ochiladi.",
     "answerExpiredHint": "Berilgan narx eskirgan — qayta hisoblating.",
     "sealInstead": "Hisob muhrlashga tayyor — «Muhrlash»ni bosing. Narx sotuvchiga muhrdan ketadi.",
-    "discountedFloor": "VED chegirma bergan: bu summadan qimmatga sotib bo‘lmaydi."
+    "discountedFloor": "VED chegirma bergan: bu summadan qimmatga sotib bo‘lmaydi.",
+    "importClose": "Yopish",
+    "importSearch": "Deklaratsiya nomi bo‘yicha qidirish",
+    "importCount": "Jami {total} · eng mos {shown} tasi ko‘rsatilgan (qidiruv shular ichida)",
+    "importNoBatch": "Bojxona bazasi hali yuklanmagan. Boshqaruv → 📥 Bojxona bazasi",
+    "importNoMatch": "«{q}» bo‘yicha topilmadi",
+    "importFailed": "Baza javob bermadi — qayta urinib ko‘ring",
+    "importUnitMismatch": "birlik mos emas: faylda {unit}",
+    "importNameMore": "to‘liq",
+    "importNameLess": "yig‘ish",
+    "importOwnBaza": "Mos kelmadi — bazani o‘zim yozaman",
+    "bazaSearch": "Tovar bo‘yicha qidirish",
+    "bazaSearchNone": "«{q}» bo‘yicha baza topilmadi"
   },
   "partners": {
     "title": "Kontragentlar",

@@ -1,4 +1,4 @@
-import { and, asc, desc, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, ilike, inArray, lte, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { calcBazas, calcFreightTariffs, calcPriceBook, calcRates } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
@@ -100,11 +100,36 @@ export async function bazaFor(name: string, date: string): Promise<BazaRow | nul
   return (await bazasFor([name], date)).get(productKey(name)) ?? null;
 }
 
-export async function listBazas(): Promise<(BazaRow & { stale: boolean; future: boolean })[]> {
+/**
+ * The VED's own baza book, optionally narrowed by product NAME.
+ *
+ * The rates table beside it has been searchable by CODE since round 68; the
+ * baza table had no filter of any kind, so once the book grows past a screen
+ * the only way to find a product is the browser's own Ctrl+F over whatever
+ * happens to be rendered. The owner's «bazani qidirganda korinmay qolyabti»
+ * has two literal readings and this is the second one.
+ *
+ * Matched on `label` and on the normalised key, so «Куртка» finds a row
+ * saved as «куртка жен.»; filtered in SQL, because a JS filter over a list
+ * that is itself capped answers «not found» about rows it never fetched
+ * (#513's shape, and /stock's own lesson).
+ */
+export async function listBazas(
+  q = '',
+): Promise<(BazaRow & { stale: boolean; future: boolean })[]> {
   const today = onDate();
+  const needle = q.trim().slice(0, 80);
   const rows = await db
     .select()
     .from(calcBazas)
+    .where(
+      needle === ''
+        ? undefined
+        : or(
+            ilike(calcBazas.label, `%${needle}%`),
+            ilike(calcBazas.productKey, `%${productKey(needle)}%`),
+          ),
+    )
     .orderBy(asc(calcBazas.label), desc(calcBazas.effectiveDate));
   const cutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
   return rows.map((r) => ({

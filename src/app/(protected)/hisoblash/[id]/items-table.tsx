@@ -31,6 +31,7 @@ import {
   type CalcFormState,
 } from '../actions';
 import { dutyText } from './duty-text';
+import { ImportBazaDialog, type PickerTarget } from './import-baza-dialog';
 
 /**
  * The Excel-table workspace (VED 2.0 phase 3) — the owner's own columns:
@@ -68,16 +69,6 @@ interface ItemDraft {
    * hand edit of the amount clears it, because a retyped number is the VED's
    * own and must not wear the file's provenance. */
   importRowId?: string;
-}
-
-/** What the picker lists — the API's row, narrowed to what it draws. */
-interface ImportCandidate {
-  id: string;
-  name: string;
-  basis: BazaBasis;
-  pricePerUnitUsd: number;
-  weightPerUnitKg: number | null;
-  unitMatches: boolean;
 }
 
 interface NewRow {
@@ -280,6 +271,14 @@ export function ItemsTable({
       },
     }));
   };
+
+  /** ONE dialog for the whole table, not one per row.
+   *
+   * Per-row state meant N fetches in flight and a stale list sitting inside
+   * a closed panel; and a per-row `<Overlay>` would mount already-open, so
+   * its close-on-navigation effect would shut it the frame it appeared
+   * (#684). `key` on the item makes the answer belong to the row it names. */
+  const [picker, setPicker] = useState<PickerTarget | null>(null);
 
   const clearDraft = (itemId: string) =>
     setDrafts((prev) => {
@@ -831,7 +830,7 @@ export function ItemsTable({
                     act={act}
                     setDraft={setDraft}
                     clearDraft={clearDraft}
-                    pickImport={pickImport}
+                    onPickBaza={setPicker}
                     onCellKey={onCellKey}
                     onCellPaste={onCellPaste}
                   />
@@ -917,6 +916,16 @@ export function ItemsTable({
           </div>
         ) : null}
       </div>
+
+      {/* ONE dialog for the table, kept mounted and toggled (#684). Keyed on
+          the item so a stale answer can never render under another row's
+          header. */}
+      <ImportBazaDialog
+        key={picker?.itemId ?? 'none'}
+        target={picker}
+        onClose={() => setPicker(null)}
+        onPick={pickImport}
+      />
 
       {/* One datalist feeds every code cell: repeats become 2-3 digits and a
           pick — 100 items over 5 codes must not cost 1 000 keystrokes. */}
@@ -1019,7 +1028,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   act,
   setDraft,
   clearDraft,
-  pickImport,
+  onPickBaza,
   onCellKey,
   onCellPaste,
 }: {
@@ -1036,13 +1045,17 @@ const ItemRowBlock = memo(function ItemRowBlock({
   act: (work: () => Promise<CalcFormState>) => void;
   setDraft: (itemId: string, field: keyof ItemDraft, raw: string) => void;
   clearDraft: (itemId: string) => void;
-  pickImport: (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
+  onPickBaza: (target: PickerTarget) => void;
   onCellKey: (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => void;
   onCellPaste: (e: React.ClipboardEvent) => void;
 }) {
   const t = useTranslations('calc');
   const item = row.item;
   const required = requiredUnitOf(row.group);
+  // Per-row and LOCAL. Lifting «only one fold open» above a memo'd row is
+  // round 70's board freeze in a grid's clothes, and two open folds harm
+  // nothing — the ⚙ has allowed exactly that since the workspace shipped.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const cell = (col: 'name' | 'quantity' | 'weightKg' | 'volumeM3' | 'tnvedCode', extra = '') => {
     const server =
@@ -1161,18 +1174,33 @@ const ItemRowBlock = memo(function ItemRowBlock({
           ) : null}
         </td>
         <td className="p-1.5 text-center">
-          <RowMenu
-            id={id}
-            item={item}
-            busy={busy}
-            act={act}
-            setDraft={setDraft}
-            clearDraft={clearDraft}
-            pickImport={pickImport}
-            noteDraft={drafts?.note}
-          />
+          {/* A touch box, not a 14px glyph: from 768px up this table is also
+              what a tablet in portrait shows, and the ⋯ is now the door to
+              both the note and the declaration picker. */}
+          <button
+            type="button"
+            className="inline-flex min-h-11 min-w-9 items-center justify-center text-ink-400 hover:text-ink-900"
+            aria-label={`⋯ ${item.seq}`}
+            data-testid="calc-item-menu"
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            ⋯
+          </button>
         </td>
       </tr>
+      {menuOpen ? (
+        <ItemFold
+          id={id}
+          item={item}
+          busy={busy}
+          act={act}
+          setDraft={setDraft}
+          clearDraft={clearDraft}
+          onPickBaza={onPickBaza}
+          noteDraft={drafts?.note}
+          onDone={() => setMenuOpen(false)}
+        />
+      ) : null}
       {required ? (
         <tr className="border-b border-line/60 text-2xs">
           <td />
@@ -1491,18 +1519,33 @@ function GroupFold({
   );
 }
 
-/** The item's ⋯: note and delete — the rare cases off the grid. The delete
- * clears the row's draft with it, or the stranded draft wedges every later
- * save (the audit's finding, closed here). */
-function RowMenu({
+/**
+ * The item's ⋯: a FULL-WIDTH FOLD, never a popover.
+ *
+ * It was a `absolute … w-72` panel inside the grid's `overflow-x-auto`
+ * wrapper — and CSS computes the other axis to `auto` when one is not
+ * `visible`, so it was clipped on both. The owner's screenshot shows its
+ * delete button cut off by that edge. The answer already existed one
+ * component down with its reason written in a comment: `GroupFold` is a fold
+ * for exactly this, and the ⚙ has opened one since the workspace shipped.
+ * The ITEM's ⋯ simply never got the same treatment.
+ *
+ * The note gets room without fighting the cascade (#419): `.input` carries
+ * `w-full`, so instead of an `!w-…` override the LABEL is given a width and
+ * the input fills it. Capped rather than `flex-1`: the table is
+ * `min-w-[880px]` and at 768 the window onto it is ~512px after the sidebar,
+ * so a note that eats the row's slack puts its own caret off-screen.
+ */
+function ItemFold({
   id,
   item,
   busy,
   act,
   setDraft,
   clearDraft,
-  pickImport,
+  onPickBaza,
   noteDraft,
+  onDone,
 }: {
   id: string;
   item: WorkspaceItem;
@@ -1510,36 +1553,16 @@ function RowMenu({
   act: (work: () => Promise<CalcFormState>) => void;
   setDraft: (itemId: string, field: keyof ItemDraft, raw: string) => void;
   clearDraft: (itemId: string) => void;
-  pickImport: (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
+  onPickBaza: (target: PickerTarget) => void;
   noteDraft: string | undefined;
+  onDone: () => void;
 }) {
   const t = useTranslations('calc');
   const tc = useTranslations('common');
-  const [open, setOpen] = useState(false);
-  const [picks, setPicks] = useState<ImportCandidate[] | null>(null);
-  const [picking, setPicking] = useState(false);
   return (
-    <span className="relative inline-block">
-      <button
-        type="button"
-        className="text-ink-400 hover:text-ink-900"
-        aria-label={`⋯ ${item.seq}`}
-        data-testid="calc-item-menu"
-        onClick={() => setOpen((v) => !v)}
-      >
-        ⋯
-      </button>
-      {open ? (
-        <span className="absolute right-0 top-6 z-20 flex w-72 flex-col gap-2 rounded-xl border border-line bg-surface-raised p-2 shadow-pop">
-          <label className="text-2xs">
-            <span className="label">{t('table.note')}</span>
-            <input
-              className="input input-sm"
-              data-testid="calc-item-note"
-              value={noteDraft ?? item.note ?? ''}
-              onChange={(e) => setDraft(item.id, 'note', e.target.value)}
-            />
-          </label>
+    <tr className="border-b border-line bg-surface-sunken text-2xs">
+      <td className="p-2" colSpan={8}>
+        <div className="flex flex-wrap items-end gap-2" data-testid="calc-item-form">
           <button
             type="button"
             className="btn-secondary !min-h-8 text-bad"
@@ -1552,7 +1575,7 @@ function RowMenu({
                 const result = await deleteItemAction(id, item.id);
                 if (!result.error) {
                   clearDraft(item.id);
-                  setOpen(false);
+                  onDone();
                 }
                 return { ok: result.ok, error: result.error };
               });
@@ -1568,61 +1591,26 @@ function RowMenu({
             <button
               type="button"
               className="btn-secondary !min-h-8"
-              disabled={picking}
               data-testid="calc-import-pick"
-              onClick={() => {
-                setPicking(true);
-                void (async () => {
-                  try {
-                    const res = await fetch(`/api/calc/import-baza?item=${item.id}`);
-                    const data = (await res.json()) as { candidates?: ImportCandidate[] };
-                    setPicks(data.candidates ?? []);
-                  } catch {
-                    setPicks([]);
-                  } finally {
-                    setPicking(false);
-                  }
-                })();
-              }}
+              onClick={() =>
+                onPickBaza({ itemId: item.id, name: item.label, tnvedCode: item.tnvedCode! })
+              }
             >
               📥 {t('importPick')}
             </button>
           ) : null}
-          {picks !== null ? (
-            picks.length === 0 ? (
-              <span className="text-2xs text-ink-500" data-testid="calc-import-empty">
-                {t('importNone')}
-              </span>
-            ) : (
-              <span className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-                {picks.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="rounded-lg border border-line p-1 text-left text-2xs hover:bg-surface-sunken"
-                    data-testid="calc-import-candidate"
-                    onClick={() => {
-                      pickImport(item.id, c);
-                      setOpen(false);
-                      setPicks(null);
-                    }}
-                  >
-                    <span className="block font-mono tabular-nums">
-                      ${c.pricePerUnitUsd}/{c.basis === 'unit' ? t('perUnit') : c.basis}
-                      {c.unitMatches ? '' : ' ⚠'}
-                    </span>
-                    <span className="block truncate text-ink-500" title={c.name}>
-                      {c.name}
-                      {c.weightPerUnitKg !== null ? ` · ${c.weightPerUnitKg} kg/${t('perUnit')}` : ''}
-                    </span>
-                  </button>
-                ))}
-              </span>
-            )
-          ) : null}
-        </span>
-      ) : null}
-    </span>
+          <label className="w-full max-w-[22rem]">
+            <span className="label">{t('table.note')}</span>
+            <input
+              className="input input-sm"
+              data-testid="calc-item-note"
+              value={noteDraft ?? item.note ?? ''}
+              onChange={(e) => setDraft(item.id, 'note', e.target.value)}
+            />
+          </label>
+        </div>
+      </td>
+    </tr>
   );
 }
 

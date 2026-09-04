@@ -332,6 +332,33 @@ describe('which price the file offers', () => {
     expect(sug.auto).toBeNull();
   });
 
+  it('a SHORT product name still lists the code — the picker is not the auto-fill', async () => {
+    // «Лак», «Мёд», «Ключ» are real products. The needle rule exists so a
+    // three-character name can never AUTO-price a quarter — and it used to
+    // return an empty LIST as well, so the picker opened onto «nothing under
+    // this code» about a code the file may hold four hundred rows for. The
+    // comment above the rule already claimed the picker still answered.
+    // A code the FIXTURE holds — a code his file does not carry proves
+    // nothing about the needle rule, only that the file lacks the code.
+    const rows = await db
+      .select()
+      .from(customsImportRows)
+      .where(eq(customsImportRows.batchId, batchId));
+    const kgRow = rows.find((r) => r.unit === 'kg')!;
+    const short = { tnvedCode: kgRow.tnvedCode, name: 'Лак', unit: 'kg' as ImportUnit };
+    const auto = await suggestImportBaza(short, { batchId });
+    expect(auto.candidates).toHaveLength(0);
+    const picker = await suggestImportBaza(short, { batchId, picker: true });
+    expect(picker.candidates.length).toBeGreaterThan(0);
+    // It lists, and it still refuses to CHOOSE: a name this short can score
+    // nothing, so nothing can clear the threshold.
+    expect(picker.auto).toBeNull();
+    for (const c of picker.candidates) expect(c.nameSim).toBe(0);
+    // And it says how many there are in all, so «the 50 closest» can never
+    // read as «all there is».
+    expect(picker.total).toBeGreaterThanOrEqual(picker.candidates.length);
+  });
+
   it('a name nobody would recognise fills nothing', async () => {
     const [row] = await db
       .select()

@@ -2390,7 +2390,19 @@
     "answerNotUsd": "The answer is not in USD — the offer door opens only on a dollar figure.",
     "answerExpiredHint": "The quoted figure has expired — recalculate.",
     "sealInstead": "Ready to seal — press “Seal”. The seller gets the price from the seal.",
-    "discountedFloor": "The VED gave a discount: selling above this amount is not allowed."
+    "discountedFloor": "The VED gave a discount: selling above this amount is not allowed.",
+    "importClose": "Close",
+    "importSearch": "Search by declaration name",
+    "importCount": "{total} in all · the {shown} closest are shown (search runs over these)",
+    "importNoBatch": "No customs base uploaded yet. Administration → 📥 Customs base",
+    "importNoMatch": "Nothing found for “{q}”",
+    "importFailed": "The base did not answer — try again",
+    "importUnitMismatch": "unit does not match: the file says {unit}",
+    "importNameMore": "full text",
+    "importNameLess": "collapse",
+    "importOwnBaza": "None of these — I will type the baza myself",
+    "bazaSearch": "Search by product",
+    "bazaSearchNone": "No baza found for “{q}”"
   },
   "partners": {
     "title": "Counterparties",
