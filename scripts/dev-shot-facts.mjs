@@ -16,6 +16,10 @@ async function login(page) {
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 
+// The phone cannot OPEN a request (the bot panel's section chips are desktop
+// only), so the desktop pass makes one and the phone pass reads it.
+let sharedUrl = null;
+
 for (const [tag, viewport] of [
   ['1280', { width: 1280, height: 900 }],
   ['360', { width: 360, height: 800 }],
@@ -23,6 +27,16 @@ for (const [tag, viewport] of [
   const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
   await login(page);
+
+  if (sharedUrl) {
+    await page.goto(BASE + sharedUrl);
+    await page.getByTestId('calc-facts').waitFor({ timeout: 20_000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${OUT}/facts-filled-${tag}.png`, fullPage: true });
+    console.log(tag, 'width', await page.evaluate(() => document.documentElement.scrollWidth));
+    await ctx.close();
+    continue;
+  }
 
   // A request with NO weight and NO volume — exactly his case.
   await page.goto(BASE + '/crm');
@@ -58,6 +72,7 @@ for (const [tag, viewport] of [
   await page.screenshot({ path: `${OUT}/facts-filled-${tag}.png`, fullPage: true });
   const missing = await page.getByTestId('calc-checklist').innerText();
   console.log(tag, 'checklist after:', JSON.stringify(missing.slice(0, 120)));
+  sharedUrl = url;
   await ctx.close();
 }
 

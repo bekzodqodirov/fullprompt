@@ -89,7 +89,7 @@ export function CargoFactsForm({
           <label className="text-2xs">
             <span className="label">{t('fields.fromCity')}</span>
             <input
-              className="input input-sm !w-28"
+              className="input input-sm !w-32"
               data-testid="calc-fact-from"
               value={form.fromCity}
               disabled={pending}
@@ -99,7 +99,7 @@ export function CargoFactsForm({
           <label className="text-2xs">
             <span className="label">{t('fields.toCity')}</span>
             <input
-              className="input input-sm !w-28"
+              className="input input-sm !w-32"
               data-testid="calc-fact-to"
               value={form.toCity}
               disabled={pending}
