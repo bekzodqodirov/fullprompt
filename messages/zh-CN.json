@@ -2146,7 +2146,7 @@
       "save_failed": "保存失败——请检查网络后重试",
       "bad_basis": "基价单位无效",
       "discounted_no_upsale": "外贸已给折扣 — 不能高于此价出售（折扣归客户）",
-      "seal_instead": "该核算可以封存 — 请点“封存”，而不是带价格的“完成”"
+      "seal_instead": "该核算可以封存 — 请点“封存报价”，而不是带价格的“完成”"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -2373,7 +2373,7 @@
       "rateNoted": "法规附有说明",
       "savedFigures": "已保存数字"
     },
-    "sealInstead": "核算已可封存 — 请点“封存”。价格将从封存结果发给销售。",
+    "sealInstead": "核算已可封存 — 请点“封存报价”。价格将从封存结果发给销售。",
     "discountedFloor": "外贸已给折扣：不能高于此金额出售。"
   },
   "partners": {
