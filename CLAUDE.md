@@ -1310,6 +1310,15 @@ down). STATED, not built: the model's REASON for a pick is logged and shown
 nowhere, so a pick and the deterministic auto-fill land identically — owed
 as a column and a chip in `docs/VED-IMPORT-AI.md` §6.
 
+**And CI found the last one** (#910): asking for a count AND a weight per
+line made a multi-line podklyuch from the SELLER'S CARD FORM — which has no
+per-line weight input — permanently incomplete, i.e. #649's shape a second
+time inside the round that fixed it once. Green locally because this
+container's long-lived database is a different oracle (#653). The engine's
+own rule is one measure per line (`unitsForRow` prices per dona on a count
+or per kg on a weight, and refuses only a row stating NEITHER), so the two
+fields collapsed to one: `itemMeasure`.
+
 **Latest migration: 0094** (`customs_import` — the quarterly declarations
 dump, its rows under a GIN trigram index, and `calc_request_items.
 import_row_id`; ledger must reach **95**). Before it:
