@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## Import har safar diskda 57 MB axlat qoldirardi — 2026-09-04
+
+Excel o'quvchisi varaqni vaqtinchalik faylga yozadi va uni faqat varaq
+oxirigacha o'qilgandan keyin o'chiradi. Kod birinchi varaqdan keyin
+to'xtardi, ya'ni o'quvchi o'rtada muzlab qolardi va tozalash ishlamasdi.
+
+O'lchandi: 150 000 qatorli bitta import /tmp ga **57 MB** qoldiradi va u
+faqat konteyner o'chganda tozalanadi — dastur konteyneri esa deploy'lar
+orasida haftalab ishlaydi. 500 000 qatorli chorakda bu har bir yuklashga
+~190 MB, rasmlar, Postgres va zaxiralar bitta diskda turgan serverda.
+
+Bu shunchaki joy masalasi emas: **joyi qolmagan disk — importning hech
+narsa yozmasdan o'lishining yo'llaridan biri**, ya'ni oldingi ikki
+faylning osilib qolishiga aynan shu sabab bo'lgan bo'lishi mumkin.
+
 ## Bojxona importi to'xtab qolsa endi buni aytadi — 2026-09-04
 
 **Muammo.** Ikkita yuklangan fayl «читается» holatida soatlab osilib qoldi:
