@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Telegram botdagi AI VED hodimi — 2026-09-04
+## Telegram botdagi AI VED hodimi — 2026-09-04 · **DEPLOY QILINDI (95)**
 
 Sizning «AI Ved hodimi … malumotlar berilganda hamma malumotlarni toliq
 qilib olib hsoblab beradgan bolsin» degan so'rovingiz. **Migratsiya yo'q —
