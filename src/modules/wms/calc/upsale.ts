@@ -1,5 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
-import { currentVersionSql, notSupersededSql } from './version-set';
+import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
 
 /**
  * The upsale (docs/VED.md law 4) — what a seller earns on a job.
@@ -104,6 +104,16 @@ export function upsaleOf(input: { clientPriceUsd: number; totalUsd: number }): n
  *   SQL, and a loss is not a commission.
  */
 export function payableOffersSql(): SQL {
+  // Phase 4: the LEFT JOIN carries the second anchor. Every version-only
+  // clause is GUARDED by `o.version_id IS NOT NULL` — unguarded, each
+  // evaluates NULL on a request-anchored row and silently drops it (the
+  // judge's NULL-trap list: currentVersionSql, discount, band override).
+  // The floor is COALESCE(v.total_usd, r.answer_amount), emitted under the
+  // old name so every consumer reads the right figure unchanged; the
+  // partition key COALESCEs the same way, so «one payable per JOB» covers
+  // both anchors of one request. `answerFloorStandsSql` (version-set.ts)
+  // carries the answer branch's own five clauses, including the cross-request
+  // fences (no newer answer, no later seal on the same card).
   return sql`
     WITH ranked AS (
       SELECT o.id,
@@ -116,34 +126,34 @@ export function payableOffersSql(): SQL {
              o.payout_expense_id,
              o.payout_at,
              o.payout_usd,
-             v.request_id,
-             v.total_usd,
+             COALESCE(v.request_id, o.request_id) AS request_id,
+             COALESCE(v.total_usd, r.answer_amount) AS total_usd,
              v.discount_usd,
              v.band_override_min,
              v.density,
-             v.section,
+             COALESCE(v.section, r.section) AS section,
              r.entity_type,
              r.entity_id,
              row_number() OVER (
-               PARTITION BY v.request_id
+               PARTITION BY COALESCE(v.request_id, o.request_id)
                ORDER BY o.offered_at DESC, o.id DESC
              ) AS rn
         FROM calc_offers   o
-        JOIN calc_versions v ON v.id = o.version_id
-        JOIN calc_requests r ON r.id = v.request_id
-       WHERE ${currentVersionSql()}
-         AND ${notSupersededSql()}
+        LEFT JOIN calc_versions v ON v.id = o.version_id
+        JOIN calc_requests r ON r.id = COALESCE(v.request_id, o.request_id)
+       WHERE (o.version_id IS NOT NULL AND ${currentVersionSql()} AND ${notSupersededSql()})
+          OR (o.version_id IS NULL AND ${answerFloorStandsSql()})
     )
     SELECT ranked.*,
            round(ranked.client_price_usd - ranked.total_usd, 2) AS upsale_usd
       FROM ranked
      WHERE ranked.rn = 1
        AND (NOT ranked.below_floor OR ranked.approved_at IS NOT NULL)
-       AND ranked.discount_usd <= ${MONEY_EPSILON}
-       AND NOT (
+       AND (ranked.version_id IS NULL OR ranked.discount_usd <= ${MONEY_EPSILON})
+       AND (ranked.version_id IS NULL OR NOT (
              ranked.band_override_min IS NOT NULL
              AND (ranked.density IS NULL OR ranked.band_override_min < ranked.density - 0.0001)
-           )
+           ))
        AND ranked.client_price_usd - ranked.total_usd > ${MONEY_EPSILON}
   `;
 }

@@ -12,6 +12,7 @@ import {
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { seesAllMoney } from '../finance/scope';
 import { clientBalanceUsd } from '../finance/service';
+import { arrivalCodesForPairs } from '../documents/arrivals';
 
 /**
  * "Where is it?" — answered in the bot (owner's item 2).
@@ -209,13 +210,24 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
     .limit(1);
   if (!client) return null;
 
-  // Where this client's cargo stands, per warehouse — the scoped person sees
-  // only their own floors, which is the same cut the stock screen makes.
+  // The FULL cargo picture (phase 4, the owner's item 6): per (lot,
+  // warehouse) — goods · boxes with the status split · kg · m³ · the truck
+  // it arrived on — inside the same cut the stock screen makes. ONE grouped
+  // query (the bot answers on grammy's sequential poller, round 101), then
+  // #853's arrival rule for the partiya, one query per warehouse the client
+  // actually stands in.
   const rows = await db
     .select({
+      lotId: receiptLots.id,
+      productZh: receiptLots.productNameZh,
+      productRu: receiptLots.productNameRu,
+      lotBoxes: receiptLots.boxCount,
+      lotKg: receiptLots.totalWeightKg,
+      lotM3: receiptLots.totalVolumeM3,
       status: boxes.status,
       warehouseId: boxes.currentWarehouseId,
       whCode: warehouses.code,
+      batchId: boxes.currentBatchId,
       n: sql<number>`count(*)`,
     })
     .from(boxes)
@@ -228,14 +240,133 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
         inArray(boxes.status, ['in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup']),
       ),
     )
-    .groupBy(boxes.status, boxes.currentWarehouseId, warehouses.code);
+    .groupBy(
+      receiptLots.id,
+      receiptLots.productNameZh,
+      receiptLots.productNameRu,
+      receiptLots.boxCount,
+      receiptLots.totalWeightKg,
+      receiptLots.totalVolumeM3,
+      boxes.status,
+      boxes.currentWarehouseId,
+      warehouses.code,
+      boxes.currentBatchId,
+    );
 
-  const visible = rows.filter(
-    (r) => inScope(actor, r.warehouseId) || (r.status === 'in_transit' && !actor.warehouseScoped),
+  // In-transit visibility: unscoped actors as always, PLUS the batch's two
+  // ends for scoped ones — wms/search's own rule, a recorded widening.
+  const transitBatchIds = [...new Set(rows.filter((r) => r.batchId).map((r) => r.batchId!))];
+  const transitBatches = transitBatchIds.length
+    ? await db.select().from(batches).where(inArray(batches.id, transitBatchIds))
+    : [];
+  const batchById = new Map(transitBatches.map((b) => [b.id, b]));
+
+  const share = (total: string | null, lotBoxes: number, n: number, digits: number) => {
+    const t = total === null ? null : Number(total);
+    return t === null || !Number.isFinite(t) || lotBoxes <= 0
+      ? null
+      : (t * (n / lotBoxes)).toFixed(digits);
+  };
+
+  let hiddenBoxes = 0;
+  // Standing cargo folds per (lot, warehouse); transit folds per batch.
+  const standing = new Map<
+    string,
+    {
+      lotId: string;
+      warehouseId: string;
+      whCode: string;
+      product: string;
+      lotBoxes: number;
+      lotKg: string | null;
+      lotM3: string | null;
+      n: number;
+      byStatus: Map<string, number>;
+    }
+  >();
+  const transit = new Map<string, { code: string; route: string; n: number; kg: number; m3: number }>();
+  for (const r of rows) {
+    const n = Number(r.n);
+    if (r.status === 'in_transit') {
+      const b = r.batchId ? batchById.get(r.batchId) : undefined;
+      const reachable =
+        !actor.warehouseScoped ||
+        (b ? inScope(actor, b.originWarehouseId) || inScope(actor, b.destWarehouseId) : false);
+      if (!reachable) {
+        hiddenBoxes += n;
+        continue;
+      }
+      const key = b?.id ?? 'yolda';
+      const entry = transit.get(key) ?? {
+        code: b?.code ?? 'yo‘lda',
+        route: '',
+        n: 0,
+        kg: 0,
+        m3: 0,
+      };
+      entry.n += n;
+      entry.kg += Number(share(r.lotKg, r.lotBoxes, n, 1) ?? 0);
+      entry.m3 += Number(share(r.lotM3, r.lotBoxes, n, 3) ?? 0);
+      transit.set(key, entry);
+      continue;
+    }
+    if (!inScope(actor, r.warehouseId)) {
+      hiddenBoxes += n;
+      continue;
+    }
+    if (!r.warehouseId || !r.whCode) continue;
+    const key = `${r.lotId}|${r.warehouseId}`;
+    const entry = standing.get(key) ?? {
+      lotId: r.lotId,
+      warehouseId: r.warehouseId,
+      whCode: r.whCode,
+      product: r.productRu?.trim() || r.productZh,
+      lotBoxes: r.lotBoxes,
+      lotKg: r.lotKg,
+      lotM3: r.lotM3,
+      n: 0,
+      byStatus: new Map<string, number>(),
+    };
+    entry.n += n;
+    entry.byStatus.set(r.status, (entry.byStatus.get(r.status) ?? 0) + n);
+    standing.set(key, entry);
+  }
+
+  // The partiya each shelf-standing lot arrived on (#853's rule, verbatim).
+  const arrivalCodes = await arrivalCodesForPairs(
+    [...standing.values()].map((s) => ({ lotId: s.lotId, warehouseId: s.warehouseId })),
   );
-  const lines = visible
-    .map((r) => `· ${r.whCode ?? 'yo‘lda'}: ${Number(r.n)} — ${STATUS_UZ[r.status] ?? r.status}`)
-    .sort();
+
+  const LINE_CAP = 20;
+  const standingLines = [...standing.values()]
+    .sort((a, b) => a.whCode.localeCompare(b.whCode) || a.product.localeCompare(b.product))
+    .map((s) => {
+      const kg = share(s.lotKg, s.lotBoxes, s.n, 1);
+      const m3 = share(s.lotM3, s.lotBoxes, s.n, 3);
+      const statuses = [...s.byStatus]
+        .map(([st, c]) => `${STATUS_UZ[st] ?? st} ${c}`)
+        .join(' · ');
+      const codes = arrivalCodes.get(`${s.lotId}|${s.warehouseId}`) ?? [];
+      return (
+        `· ${s.whCode}: ${s.product} — ${s.n} karobka (${statuses})` +
+        (kg !== null ? ` · ${kg} kg` : '') +
+        (m3 !== null ? ` · ${m3} m³` : '') +
+        (codes.length ? ` · 🚚 ${codes.join(', ')}` : '')
+      );
+    });
+  const transitLines = [...transit.values()].map((tr) => {
+    return (
+      `· 🚚 ${tr.code} yo‘lda: ${tr.n} karobka` +
+      (tr.kg > 0 ? ` · ${tr.kg.toFixed(1)} kg` : '') +
+      (tr.m3 > 0 ? ` · ${tr.m3.toFixed(3)} m³` : '')
+    );
+  });
+  const allLines = [...standingLines, ...transitLines];
+  const lines = allLines.slice(0, LINE_CAP);
+  if (allLines.length > LINE_CAP) lines.push(`… +${allLines.length - LINE_CAP} qator`);
+  // A scoped operator must never read «yuk yo‘q» about cargo that exists —
+  // the dropped rows are counted and said (round 36's rule, kept honest).
+  if (hiddenBoxes > 0) lines.push(`(+${hiddenBoxes} karobka boshqa joylarda — sizga ko‘rinmaydi)`);
 
   // Money is a permission, not a courtesy — and since round 91 it is also
   // OWNED: `finance.view` alone is a seller, and a seller reads only their
@@ -257,8 +388,28 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
     .orderBy(desc(receipts.confirmedAt))
     .limit(1);
 
+  // The Σ he asks the phone for: boxes, kg, m³ over what THIS person may see.
+  let totalN = 0;
+  let totalKg = 0;
+  let totalM3 = 0;
+  for (const s of standing.values()) {
+    totalN += s.n;
+    totalKg += Number(share(s.lotKg, s.lotBoxes, s.n, 1) ?? 0);
+    totalM3 += Number(share(s.lotM3, s.lotBoxes, s.n, 3) ?? 0);
+  }
+  for (const tr of transit.values()) {
+    totalN += tr.n;
+    totalKg += tr.kg;
+    totalM3 += tr.m3;
+  }
+  const jami =
+    totalN > 0
+      ? `Jami: ${totalN} karobka · ${totalKg.toFixed(1)} kg · ${totalM3.toFixed(3)} m³\n`
+      : '';
+
   return (
     `👤 ${client.clientCode} · ${client.name}\n` +
+    jami +
     (lines.length ? `${lines.join('\n')}` : 'Hozircha yuk yo‘q') +
     (balance !== null
       ? `\n💰 Balans: ${money(balance)}${balance > 0.009 ? ' (qarz)' : ''}`

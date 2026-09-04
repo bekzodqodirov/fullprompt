@@ -15,6 +15,7 @@ import {
   type MeasureUnit,
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
+import { defaultBasisFor, uniformBazaOf } from '@/modules/wms/calc/basis';
 import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 import {
   confirmAllAction,
@@ -136,6 +137,7 @@ export function ItemsTable({
     merged: string[];
     measuresCleared: number[];
     measuresDropped: number[];
+    basisSuspect: number[];
   } | null>(null);
   /** The rev the save was made against — drafts are held until the refreshed
    * workspace (a moved rev) lands, so the live figures never snap back to
@@ -195,6 +197,9 @@ export function ItemsTable({
     return () => window.removeEventListener('beforeunload', guard);
   }, [dirtyCount]);
 
+  const groupOfItem = (item: WorkspaceItem): WorkspaceGroup | null =>
+    item.groupId ? (groupById.get(item.groupId) ?? null) : null;
+
   const serverValueOf = (item: WorkspaceItem, field: keyof ItemDraft): string => {
     switch (field) {
       case 'name':
@@ -208,7 +213,9 @@ export function ItemsTable({
       case 'bazaValue':
         return item.bazaUsd === null ? '' : String(item.bazaUsd);
       case 'bazaBasis':
-        return item.bazaBasis ?? 'unit';
+        // The same default the select renders — the self-clean must compare
+        // against what the screen shows, not a bare 'unit' (#171).
+        return item.bazaBasis ?? defaultBasisFor(groupOfItem(item));
       default:
         return String(item[field] ?? '');
     }
@@ -265,7 +272,11 @@ export function ItemsTable({
 
   /** An item with its drafts merged, quantized to the column scales so the
    * live figure and the saved figure agree to the cent. */
-  const liveItem = (item: WorkspaceItem, required: MeasureUnit | null): PricedItem => {
+  const liveItem = (
+    item: WorkspaceItem,
+    required: MeasureUnit | null,
+    group: WorkspaceGroup | null,
+  ): PricedItem => {
     const d = drafts[item.id];
     const numOf = (raw: string | undefined, server: number | null, scale: (v: number) => number) => {
       if (raw === undefined) return server;
@@ -277,7 +288,7 @@ export function ItemsTable({
       d?.bazaValue !== undefined
         ? bazaUsd === null
           ? null
-          : (d.bazaBasis ?? item.bazaBasis ?? 'unit')
+          : (d.bazaBasis ?? item.bazaBasis ?? defaultBasisFor(group))
         : item.bazaBasis;
     // The measure mirrors the server's stamp rule: a draft prices in the
     // REQUIRED unit; a stored pair whose unit the code stopped asking for is
@@ -316,9 +327,22 @@ export function ItemsTable({
         g.id,
         customsFor(
           pricedGroupOf(g),
-          g.items.map((i) => liveItem(i, required)),
+          g.items.map((i) => liveItem(i, required, g)),
         ),
       );
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, drafts]);
+
+  /** Item 1: the block's one baza, read off the LIVE merged rows — the
+   * footer must not print yesterday's baza beside a live customs figure
+   * computed from the draft (two numbers from two moments on one row). */
+  const liveBazaByGroup = useMemo(() => {
+    const out = new Map<string, { bazaUsd: number; bazaBasis: BazaBasis } | null>();
+    for (const g of workspace.groups) {
+      const required = requiredUnitOf(g);
+      out.set(g.id, uniformBazaOf(g.items.map((i) => liveItem(i, required, g))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -399,7 +423,10 @@ export function ItemsTable({
           return;
         }
         edit.bazaUsd = v;
-        edit.bazaBasis = v === null ? null : (d.bazaBasis ?? item.bazaBasis ?? 'unit');
+        // The SAME chain the select renders (#171): a baza typed on an m²
+        // row must save per m², not per the bare fallback.
+        edit.bazaBasis =
+          v === null ? null : (d.bazaBasis ?? item.bazaBasis ?? defaultBasisFor(groupOfItem(item)));
       }
       items.push(edit);
     }
@@ -448,6 +475,7 @@ export function ItemsTable({
         merged: result.merged ?? [],
         measuresCleared: result.measuresCleared ?? [],
         measuresDropped: result.measuresDropped ?? [],
+        basisSuspect: result.basisSuspect ?? [],
       });
       // Drafts are HELD until the refreshed workspace lands (the rev moves),
       // so the live figures never flash back to pre-save numbers.
@@ -538,6 +566,7 @@ export function ItemsTable({
           merged: result.merged ?? [],
           measuresCleared: [],
           measuresDropped: [],
+          basisSuspect: [],
         });
       }
       return result;
@@ -681,7 +710,8 @@ export function ItemsTable({
         lastSave.swept > 0 ||
         lastSave.merged.length > 0 ||
         lastSave.measuresCleared.length > 0 ||
-        lastSave.measuresDropped.length > 0) ? (
+        lastSave.measuresDropped.length > 0 ||
+        lastSave.basisSuspect.length > 0) ? (
         <p className="text-2xs text-ink-600" data-testid="calc-save-note">
           {[
             lastSave.minted.length > 0
@@ -694,6 +724,9 @@ export function ItemsTable({
               : '',
             lastSave.measuresDropped.length > 0
               ? `${t('table.measureDropped')}: ${lastSave.measuresDropped.join(', ')}`
+              : '',
+            lastSave.basisSuspect.length > 0
+              ? `⚠ ${t('table.basisSuspect')}: ${lastSave.basisSuspect.join(', ')}`
               : '',
           ]
             .filter(Boolean)
@@ -748,6 +781,7 @@ export function ItemsTable({
                       (index === orderedRows.length - 1 || orderedRows[index + 1]!.group !== row.group)
                     }
                     liveCustoms={row.group ? (liveCustomsByGroup.get(row.group.id) ?? null) : null}
+                    liveBaza={row.group ? (liveBazaByGroup.get(row.group.id) ?? null) : null}
                     drafts={drafts[row.item.id]}
                     busy={busy}
                     dirty={dirtyCount > 0}
@@ -766,7 +800,24 @@ export function ItemsTable({
                     lastIndex={lastIndex}
                     onChange={(patch) => {
                       setLastSave(null);
-                      setNewRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, ...patch } : r)));
+                      // Typing a code states the row's law: the basis select
+                      // follows the matched group's default (a brand-new code
+                      // has no group yet and stays per-dona until the mint —
+                      // the save's own basisSuspect warning names it then).
+                      const withBasis =
+                        patch.tnvedCode !== undefined
+                          ? {
+                              ...patch,
+                              bazaBasis: defaultBasisFor(
+                                workspace.groups.find(
+                                  (g) => (g.tnvedCode ?? '') === patch.tnvedCode!.trim(),
+                                ) ?? null,
+                              ),
+                            }
+                          : patch;
+                      setNewRows((rows) =>
+                        rows.map((r) => (r.key === row.key ? { ...r, ...withBasis } : r)),
+                      );
                     }}
                     onRemove={() => setNewRows((rows) => rows.filter((r) => r.key !== row.key))}
                     onCellKey={onCellKey}
@@ -843,6 +894,15 @@ export function ItemsTable({
           <div key={group.id} className="card !p-2 text-sm">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono font-semibold tabular-nums">{group.tnvedCode ?? '—'}</span>
+              {(() => {
+                const ub = uniformBazaOf(group.items);
+                return ub ? (
+                  <span className="text-2xs text-ink-600">
+                    {t('baza')}{ub.bazaUsd}/
+                    {ub.bazaBasis === 'unit' ? t('perUnit') : ub.bazaBasis === 'm2' ? 'm²' : ub.bazaBasis}
+                  </span>
+                ) : null;
+              })()}
               {group.confirmedAt ? (
                 <span className="text-2xs text-good">✅</span>
               ) : (
@@ -908,6 +968,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   lastIndex,
   endsGroup,
   liveCustoms,
+  liveBaza,
   drafts,
   busy,
   dirty,
@@ -923,6 +984,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   lastIndex: number;
   endsGroup: boolean;
   liveCustoms: CustomsResult | null;
+  liveBaza: { bazaUsd: number; bazaBasis: BazaBasis } | null;
   drafts: ItemDraft | undefined;
   busy: boolean;
   dirty: boolean;
@@ -966,7 +1028,9 @@ const ItemRowBlock = memo(function ItemRowBlock({
   // silently rewrites it on the next submit (#171).
   const storedBasis = item.bazaBasis;
   const draftBasis = drafts?.bazaBasis;
-  const basisValue: BazaBasis = draftBasis ?? storedBasis ?? 'unit';
+  // Item 3: the law's own unit is the default — the VED only types the
+  // number. The save and the live figure use the SAME chain (#171).
+  const basisValue: BazaBasis = draftBasis ?? storedBasis ?? defaultBasisFor(row.group);
   const offered: BazaBasis[] = ['unit', 'kg'];
   if (required && required !== 'sm3') offered.push(required);
   const basisOptions = offered.includes(basisValue) ? offered : [...offered, basisValue];
@@ -1077,7 +1141,15 @@ const ItemRowBlock = memo(function ItemRowBlock({
         </tr>
       ) : null}
       {endsGroup && row.group ? (
-        <BlockFooter id={id} group={row.group} liveCustoms={liveCustoms} busy={busy} dirty={dirty} act={act} />
+        <BlockFooter
+          id={id}
+          group={row.group}
+          liveCustoms={liveCustoms}
+          liveBaza={liveBaza}
+          busy={busy}
+          dirty={dirty}
+          act={act}
+        />
       ) : null}
     </>
   );
@@ -1095,6 +1167,7 @@ function BlockFooter({
   id,
   group,
   liveCustoms,
+  liveBaza,
   busy,
   dirty,
   act,
@@ -1102,6 +1175,7 @@ function BlockFooter({
   id: string;
   group: WorkspaceGroup;
   liveCustoms: CustomsResult | null;
+  liveBaza: { bazaUsd: number; bazaBasis: BazaBasis } | null;
   busy: boolean;
   dirty: boolean;
   act: (work: () => Promise<CalcFormState>) => void;
@@ -1151,6 +1225,16 @@ function BlockFooter({
           {customs.ok && customs.addDutyUsd > 0 ? (
             <span className="ml-1 text-2xs text-warn">
               +{customs.addDutyPct}% (${customs.addDutyUsd.toFixed(2)})
+            </span>
+          ) : null}
+          {/* Item 1 (the owner's own example): the block's one baza is the
+              line he reads — «baza 2$ za kg» — with the declared value kept
+              beside it, visible, never a hover title (#420). Mixed bazas
+              have no one number, so the value stands alone there. */}
+          {liveBaza ? (
+            <span className="ml-2 text-2xs text-ink-700" data-testid="calc-group-baza">
+              {t('baza')}{liveBaza.bazaUsd}/
+              {liveBaza.bazaBasis === 'unit' ? t('perUnit') : liveBaza.bazaBasis === 'm2' ? 'm²' : liveBaza.bazaBasis}
             </span>
           ) : null}
           {customs.ok ? (

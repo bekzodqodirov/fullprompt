@@ -254,7 +254,7 @@ async function sealedJob(
 async function payableJob(extra = 600) {
   const job = await sealedJob();
   const price = job.floor + extra;
-  const offer = await recordOffer(job.versionId, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
+  const offer = await recordOffer({ versionId: job.versionId }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
   const day = new Date().toISOString().slice(0, 10);
   for (const type of ['charge', 'payment'] as const) {
     await db.insert(clientTransactions).values({
@@ -280,7 +280,7 @@ describe('law 4: any concession kills the upsale', () => {
   it('a clean job carries one', async () => {
     const job = await sealedJob();
     const offer = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor + 700, locale: 'uz' },
       sellerCtx(),
     );
@@ -297,7 +297,7 @@ describe('law 4: any concession kills the upsale', () => {
     // no commission even when the customer is charged the full floor — is
     // exactly the price a seller may still promise.
     const offer = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor, locale: 'uz' },
       sellerCtx(),
     );
@@ -310,11 +310,11 @@ describe('law 4: any concession kills the upsale', () => {
     // upsale qilish huquqi bo'lmasin». Below stays the approver's door.
     const job = await sealedJob({ discountUsd: 1 });
     await expect(
-      recordOffer(job.versionId, { clientPriceUsd: job.floor + 0.5, locale: 'uz' }, sellerCtx()),
+      recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor + 0.5, locale: 'uz' }, sellerCtx()),
     ).rejects.toMatchObject({ code: 'discounted_no_upsale' });
     // Exactly the floor is allowed…
     const atFloor = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor, locale: 'uz' },
       sellerCtx(),
     );
@@ -322,7 +322,7 @@ describe('law 4: any concession kills the upsale', () => {
     // …and an UNdiscounted seal is untouched by the rule.
     const clean = await sealedJob();
     const above = await recordOffer(
-      clean.versionId,
+      { versionId: clean.versionId },
       { clientPriceUsd: clean.floor + 700, locale: 'uz' },
       sellerCtx(),
     );
@@ -334,7 +334,7 @@ describe('law 4: any concession kills the upsale', () => {
     // the job into a band below its own density buys a cheaper rate.
     const job = await sealedJob({ weightKg: 7500, volumeM3: 30, bandOverrideMin: 1 });
     const offer = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor + 700, locale: 'uz' },
       sellerCtx(),
     );
@@ -344,7 +344,7 @@ describe('law 4: any concession kills the upsale', () => {
   it('a band override that RAISES it is not — the VED charged MORE', async () => {
     const job = await sealedJob({ weightKg: 1500, volumeM3: 30, bandOverrideMin: 301 });
     const offer = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor + 700, locale: 'uz' },
       sellerCtx(),
     );
@@ -356,12 +356,12 @@ describe('one sale, one commission', () => {
   it('re-quoting the same job replaces the payable, never adds one', async () => {
     const job = await sealedJob();
     const first = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor + 500, locale: 'uz' },
       sellerCtx(),
     );
     const second = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor + 900, locale: 'ru' },
       sellerCtx(),
     );
@@ -376,7 +376,7 @@ describe('one sale, one commission', () => {
   it('a CORRECTED job pays nothing — the promise that stands is the new one', async () => {
     const job = await sealedJob();
     const offer = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor + 400, locale: 'uz' },
       sellerCtx(),
     );
@@ -393,7 +393,7 @@ describe('the three states before payable', () => {
   it('an offer on a LEAD is not payable — there is no job to invoice', async () => {
     const job = await sealedJob({ onLead: true });
     const offer = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor + 300, locale: 'uz' },
       sellerCtx(),
     );
@@ -403,7 +403,7 @@ describe('the three states before payable', () => {
   it('walks no_invoice → awaiting_payment → payable as the money arrives', async () => {
     const job = await sealedJob();
     const price = job.floor + 600;
-    const offer = await recordOffer(job.versionId, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
+    const offer = await recordOffer({ versionId: job.versionId }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
     expect((await mine(offer.id))!.state).toBe('no_invoice');
 
     await db.insert(clientTransactions).values({
@@ -542,7 +542,7 @@ describe('the card carries what the CUSTOMER pays', () => {
     // The seal wrote the floor, which is what every revenue surface reads.
     expect(Number(sealed!.quotedAmount)).toBe(job.floor);
 
-    await recordOffer(job.versionId, { clientPriceUsd: job.floor + 800, locale: 'uz' }, sellerCtx());
+    await recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor + 800, locale: 'uz' }, sellerCtx());
     const after = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
     // Law 4: the client pays the VED price PLUS the upsale. Leaving the floor
     // here reports the company's own cost as its revenue.
@@ -556,7 +556,7 @@ describe('the card carries what the CUSTOMER pays', () => {
     // price, every later ✏️ save on a quoted card would be refused for ever.
     const { quoteLockedFor } = await import('@/modules/wms/crm/service');
     const job = await sealedJob();
-    await recordOffer(job.versionId, { clientPriceUsd: job.floor + 250, locale: 'uz' }, sellerCtx());
+    await recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor + 250, locale: 'uz' }, sellerCtx());
 
     const locked = await quoteLockedFor('deal', dealId);
     const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
@@ -586,7 +586,7 @@ describe('law 4: a below-floor promise is admin-only', () => {
   it('a seller’s below-floor price is RECORDED and sends nothing', async () => {
     const job = await sealedJob();
     const res = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor - 300, locale: 'uz', belowFloorReason: 'doimiy mijoz', mayApprove: false },
       sellerCtx(),
     );
@@ -610,14 +610,14 @@ describe('law 4: a below-floor promise is admin-only', () => {
   it('demands a reason, exactly as a discount does', async () => {
     const job = await sealedJob();
     await expect(
-      recordOffer(job.versionId, { clientPriceUsd: job.floor - 100, locale: 'uz' }, sellerCtx()),
+      recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor - 100, locale: 'uz' }, sellerCtx()),
     ).rejects.toMatchObject({ code: 'below_floor_reason_required' });
   });
 
   it('an admin pressing it themselves is recorded AND released in one step', async () => {
     const job = await sealedJob();
     const res = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor - 200, locale: 'uz', belowFloorReason: 'rahbar qarori', mayApprove: true },
       ctx(),
     );
@@ -630,7 +630,7 @@ describe('law 4: a below-floor promise is admin-only', () => {
   it('releasing is single-shot, and the second press finds nothing', async () => {
     const job = await sealedJob();
     const res = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor - 400, locale: 'uz', belowFloorReason: 'sinov', mayApprove: false },
       sellerCtx(),
     );
@@ -717,7 +717,7 @@ describe('a correction retires the released offer', () => {
 
   it('the lock follows the card onto the new floor, so later saves still work', async () => {
     const job = await sealedJob();
-    await recordOffer(job.versionId, { clientPriceUsd: job.floor + 500, locale: 'uz' }, sellerCtx());
+    await recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor + 500, locale: 'uz' }, sellerCtx());
     const { releasedPriceFor } = await import('@/modules/wms/calc/workspace');
     expect((await releasedPriceFor('deal', dealId))?.price).toBe(job.floor + 500);
 
@@ -746,7 +746,7 @@ describe('a correction retires the released offer', () => {
   it('a stale pending below-floor promise cannot be released after the correction', async () => {
     const job = await sealedJob();
     const res = await recordOffer(
-      job.versionId,
+      { versionId: job.versionId },
       { clientPriceUsd: job.floor - 300, locale: 'uz', belowFloorReason: 'sinov', mayApprove: false },
       sellerCtx(),
     );

@@ -65,26 +65,34 @@ test('a m² code asks for its measure, prices live, and seals the same number', 
   await expect(page.getByTestId('calc-group-row').first()).toContainText('6907', { timeout: 15_000 });
 
   // The code said m² — the row grew its measure input, and the basis select
-  // now OFFERS m² for exactly this row. The grouped row renders LAST: the
-  // table draws ungrouped rows first, then the declaration blocks.
+  // is ALREADY on m² (phase 4, item 3: the law's unit is the default, the
+  // VED only types the number). The grouped row renders LAST: the table
+  // draws ungrouped rows first, then the declaration blocks.
   await expect(page.getByTestId('calc-measure')).toHaveCount(1);
   const basis = page.getByTestId('calc-basis').last();
-  await expect(basis.locator('option[value="m2"]')).toHaveCount(1);
+  await expect(basis).toHaveValue('m2');
   // …and the codeless row's select still offers nothing beyond unit/kg.
   await expect(
     page.getByTestId('calc-basis').first().locator('option[value="m2"]'),
   ).toHaveCount(0);
 
   // 200 m² at $1/m²: value 200; advalor 15 % = 30; specific 200 × $1 = 200
-  // → MAX 200; VAT 12 % of 400 = 48 → the block's own figure is $248.
+  // → MAX 200; VAT 12 % of 400 = 48 → the block's own figure is $248 —
+  // nobody touches the select. Priced per dona instead it would read $230,
+  // so the figure IS the proof the default chain reaches the save.
   await page.getByTestId('calc-measure').fill('200');
   await page.getByTestId('calc-baza').last().fill('1');
-  await basis.selectOption('m2');
   await expect(page.getByTestId('calc-unsaved')).toBeVisible();
+  // The LIVE footer prices the drafts through the SAME chain before any
+  // save — the live figure and the saved one must agree to the cent.
+  await expect(page.getByTestId('calc-group-row').first()).toContainText('248');
   await page.getByTestId('calc-save-table').click();
   await expect(page.getByTestId('calc-group-row').first()).toContainText('248', {
     timeout: 15_000,
   });
+  // Item 1: the block footer states the ONE baza the block is priced at.
+  await expect(page.getByTestId('calc-group-baza')).toContainText('1');
+  await expect(page.getByTestId('calc-group-baza')).toContainText('m²');
 });
 
 test('deleting a row with an unsaved draft releases the gate — never a wedge', async ({ page }) => {

@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## VED 2.0 — 4-bosqich: sizning 6 bandingiz — 2026-09-04
+
+Deploy'dan keyingi xabaringiz bo'yicha (93 tasdiqlangan kuni).
+
+**1. Blok qatorida endi BAZA yozilgan:** «6907 · 15% / min 1$/m² · НДС 12% ·
+База $2/kg · …» — bojxona qiymati ham yonida qoladi (u ham kerakli fakt),
+lekin siz o'qiydigan narsa — baza. Har xil bazali blokda bitta raqam yo'q,
+shuning uchun u yerda qiymat yolg'iz turadi. Telefonda ham chiqadi.
+
+**2. Итоговая цена — katta va qalin,** ostida kichkina «$X/m³ · $Y/kg»
+qatori. Muhrlangan panelda ham xuddi shu ko'rinish (u yerga $/kg ham
+qo'shildi).
+
+**3. Kod birlikni O'ZI tanlaydi:** m²/juft/litr kodda baza tanlovi avtomatik
+o'sha birlikka tushadi, kg-kodda kg'ga — VED faqat raqam teradi. Yangi kod
+bilan bazani BIR saqlashda kiritsangiz, guruh endi ochilgani uchun birlik
+hali dona bo'lishi mumkin — saqlash javobida «⚠ birligini tekshiring»
+qatori chiqadi (jimgina almashtirmaymiz). Eslatma: m³ bo'yicha boj stavkasi
+PP-3818da yo'q — kub har qatorda o'z ustunida turadi.
+
+**4. «База из справочника»** — /hisoblash/lugatlar'dagi baza lug'atidan
+narxlarni tortadi; lug'at bo'sh bo'lgani uchun hozircha hech narsa
+keltirmayapti (VED to'ldirsa ishlaydi).
+
+**5. «Готово»dan berilgan narx endi taklif eshigini ochadi:** muhr yo'q
+bo'lsa ham, javob USD bo'lsa karta xuddi muhrlangan kartadek «Mijozga
+taklif» formasini ko'rsatadi — javob summasi tannarx (pol) bo'ladi, undan
+past narx admin ruxsatini kutadi, ustidagi farq sotuvchining upsale'i.
+Taklif matni va PDF mijozga polni hech qachon ko'rsatmaydi. Cheklovlar:
+faqat dollardagi javob (so'mdagi javob taqqoslanmaydi — ekran sababini
+aytadi), narx 30 kundan eski bo'lsa «qayta hisoblating», va kartada
+keyinroq MUHR paydo bo'lsa muhr ustun — eski javob bo'yicha komissiya
+to'lanmaydi (bitta sotuv ikki marta to'lamaydi).
+
+**6. Botga GS777 yozilsa — to'liq surat:** har qator uchun sklad · tovar ·
+nechta karobka (omborda/tayyor bo'lib) · kg · m³ · qaysi partiyada kelgani;
+yo'ldagi yuk reys kodi bilan alohida; tepada Jami. Hodim faqat o'z ruxsati
+yetgan yukni ko'radi, qolgani «+N karobka boshqa joylarda» deb AYTILADI
+(yashirilmaydi). Egasiz (markirovkali) yuk kod javobiga kirmaydi — avval
+biriktiriladi.
+
+Migratsiya **0094 emas — 0093**: deploy'dan keyin hisob **94** bo'lishi kerak.
+
 ## Oltita ish: PDF taklif, yutish oynasi, kod hisoblagichi, chegirma — 2026-08-24
 
 Sizning oltita bandingiz bo'yicha. Kod yozishdan oldin dizayn 5 ta mustaqil

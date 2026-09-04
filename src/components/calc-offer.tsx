@@ -19,8 +19,8 @@ import { makeOfferAction, type OfferFormState } from '@/app/(protected)/hisoblas
  * makes the seller retype everything they got right.
  */
 export function CalcOfferForm({
-  versionId,
-  sealedTotal,
+  anchor,
+  floorUsd,
   defaultLocale,
   clientName,
   entityType,
@@ -29,8 +29,11 @@ export function CalcOfferForm({
   revalidate,
   discountUsd,
 }: {
-  versionId: string;
-  sealedTotal: number;
+  /** What the price is measured against: a sealed version, or a Готово
+      answer (phase 4). The server re-derives everything — this only says
+      which door the panel rendered. */
+  anchor: { versionId: string } | { requestId: string };
+  floorUsd: number;
   defaultLocale: 'uz' | 'ru' | 'en';
   clientName: string | null;
   entityType: 'deal' | 'lead';
@@ -45,22 +48,23 @@ export function CalcOfferForm({
   const tc = useTranslations('common');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [price, setPrice] = useState(sealedTotal.toFixed(2));
+  const [price, setPrice] = useState(floorUsd.toFixed(2));
   const [locale, setLocale] = useState<'uz' | 'ru' | 'en'>(defaultLocale);
   const [result, setResult] = useState<OfferFormState>({});
   const [reason, setReason] = useState('');
   const [copied, setCopied] = useState(false);
 
   const typed = Number(price.replace(',', '.'));
-  const below = Number.isFinite(typed) && typed < sealedTotal;
+  const below = Number.isFinite(typed) && typed < floorUsd;
   // A concession is the customer's: once the VED has lowered the floor the
   // seller may not sell above it and keep the difference. The box stays
   // editable — BELOW is still the approver's door — but the button will not
   // press, and the sentence says why in the seller's own language, or a
   // locked price is a bug report (round 112, his «VED xodimi skidka bersa
-  // sotuvchi upsale qilish huquqi bo'lmasin»).
+  // sotuvchi upsale qilish huquqi bo'lmasin»). An ANSWER anchor carries no
+  // discount, so its door passes 0 and none of this bites (phase 4).
   const discounted = discountUsd > 0;
-  const aboveDiscounted = discounted && Number.isFinite(typed) && typed > sealedTotal + 0.009;
+  const aboveDiscounted = discounted && Number.isFinite(typed) && typed > floorUsd + 0.009;
 
   return (
     <div className="space-y-2" data-testid="calc-offer">
@@ -102,7 +106,7 @@ export function CalcOfferForm({
           data-testid="offer-make"
           onClick={() =>
             startTransition(async () => {
-              const res = await makeOfferAction(versionId, {
+              const res = await makeOfferAction(anchor, {
                 clientPriceUsd: typed,
                 locale,
                 clientName,
@@ -124,10 +128,10 @@ export function CalcOfferForm({
       {/* What the seller earns, live, as they type. It is the number the
           whole screen is actually about, and reading it only after pressing
           would be reading it after the decision. */}
-      {!below && Number.isFinite(typed) && typed > sealedTotal ? (
+      {!below && Number.isFinite(typed) && typed > floorUsd ? (
         <p className="text-2xs text-good" data-testid="offer-upsale">
           {t('yourShare')}: <span className="font-mono font-semibold">
-            ${(Math.round((typed - sealedTotal) * 100) / 100).toFixed(2)}
+            ${(Math.round((typed - floorUsd) * 100) / 100).toFixed(2)}
           </span>
         </p>
       ) : null}
@@ -138,7 +142,7 @@ export function CalcOfferForm({
       {below ? (
         <div className="space-y-1" data-testid="offer-below-floor">
           <p className="text-2xs text-warn">
-            ⚠ {t('belowFloor', { floor: sealedTotal.toFixed(2) })}
+            ⚠ {t('belowFloor', { floor: floorUsd.toFixed(2) })}
           </p>
           <p className="text-2xs text-ink-500">
             {mayApprove ? t('belowFloorYouAllow') : t('belowFloorNeedsApproval')}
@@ -196,15 +200,20 @@ export function CalcOfferForm({
             >
               {copied ? tc('saved') : tc('copy')}
             </button>
-            <a
-              className="btn-secondary"
-              href={`/api/calc/${versionId}/offer.pdf?til=${locale}`}
-              target="_blank"
-              rel="noreferrer"
-              data-testid="offer-pdf"
-            >
-              PDF
-            </a>
+            {/* The sheet is fetched by the OFFER's own id — one route for
+                both anchors (a version-keyed URL is a literal null on a
+                Готово-anchored offer). */}
+            {result.id ? (
+              <a
+                className="btn-secondary"
+                href={`/api/calc/offer/${result.id}/pdf?til=${locale}`}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="offer-pdf"
+              >
+                PDF
+              </a>
+            ) : null}
           </div>
         </div>
       ) : null}

@@ -112,8 +112,9 @@ describe('the PDF route carries its own door', () => {
 describe('the panel that hosts it', () => {
   const PANEL = read('src/components/calc-panel.tsx');
 
-  it('shows the sealed price without a fold — it is what the card is opened for', () => {
-    expect(PANEL).toContain('open={open.length > 0 || Boolean(seal)}');
+  it('shows the price without a fold — it is what the card is opened for', () => {
+    // Phase 4: the Готово answer's door counts as a price too.
+    expect(PANEL).toContain('open={open.length > 0 || Boolean(seal) || Boolean(anchor)}');
   });
 
   it('gives an EXPIRED price words instead of a price box', () => {
@@ -128,9 +129,12 @@ describe('the panel that hosts it', () => {
   it('never offers the price box, or the offer list, to the VED', () => {
     expect(PANEL).toContain('upsaleScopeFor(actor)');
     // Not fetched at all, not merely not drawn: a read this person may not
-    // have is a query nobody should pay for either.
-    expect(PANEL).toContain("if (seal && scope !== 'none') offers =");
+    // have is a query nobody should pay for either. Phase 4 widened the
+    // fetch to the answer anchor — the scope clause is the pin.
+    expect(PANEL).toContain("if ((seal || anchor) && scope !== 'none') offers =");
     expect(PANEL).toContain("scope === 'none' ? null :");
+    // The answer door itself waits on the same law-4 scope.
+    expect(PANEL).toContain("!seal && anchor && scope !== 'none' ?");
   });
 });
 

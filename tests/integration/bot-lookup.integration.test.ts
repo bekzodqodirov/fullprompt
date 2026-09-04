@@ -153,6 +153,33 @@ describe('the bot answers "where is it?"', () => {
     expect(noMoney).not.toContain('Balans');
   });
 
+  it('the client answer is the FULL picture: goods, status split, kg/m³, Σ (phase 4, item 6)', async () => {
+    await makeLot(4);
+    const answer = await botLookup(boss(), clientCode);
+    // Per-(lot, warehouse) rows: goods (ru preferred), the warehouse, the
+    // count with its status split, and the lot-share weights.
+    expect(answer).toContain('Chexol');
+    expect(answer).toContain(WH_O);
+    expect(answer).toContain('karobka');
+    expect(answer).toContain('omborda');
+    expect(answer).toContain('kg');
+    expect(answer).toContain('m³');
+    expect(answer).toContain('Jami:');
+  });
+
+  it('a scoped hand asking a client code is TOLD about cargo beyond their floor, never «yuk yo‘q»', async () => {
+    await makeLot(2);
+    const answer = await botLookup(destHand(), clientCode);
+    // Everything stands at the ORIGIN: no rows for this person — but the
+    // absence is NAMED, or a scoped operator reads «no cargo» about cargo
+    // that exists (round 36's rule, kept honest at the new detail level).
+    expect(answer).toContain(clientCode);
+    // No cargo LINE renders (the last-receipt number legitimately carries the
+    // origin code — a receipt number is not a location).
+    expect(answer).not.toContain('omborda');
+    expect(answer).toContain('karobka boshqa joylarda');
+  });
+
   it('a warehouse-scoped hand is told when cargo is not on their floor', async () => {
     const lot = await makeLot(1);
     const answer = await botLookup(destHand(), lot.shortCodes[0]!);

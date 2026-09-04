@@ -2145,6 +2145,9 @@
       "conflict": "Someone just saved — the screen refreshed, press again",
       "save_failed": "Save failed — check the connection and retry",
       "bad_basis": "Invalid baza unit",
+      "answer_missing": "This request has no answered figure.",
+      "answer_not_usd": "The answer is not in USD — cannot offer.",
+      "answer_expired": "The figure has expired — recalculate.",
       "discounted_no_upsale": "The VED gave a discount — selling above this price is not allowed (the discount is the customer’s)",
       "seal_instead": "This calculation can be sealed — press “Seal”, not “Done” with a price"
     },
@@ -2371,8 +2374,11 @@
       "measureGhost": "Measure (if the code needs juft/litr/m²/sm³):",
       "sm3Hint": "total cm³ = pcs × engine volume",
       "rateNoted": "the law carries a note",
-      "savedFigures": "saved figures"
+      "savedFigures": "saved figures",
+      "basisSuspect": "check the baza unit (the law prices in another) — row"
     },
+    "answerNotUsd": "The answer is not in USD — the offer door opens only on a dollar figure.",
+    "answerExpiredHint": "The quoted figure has expired — recalculate.",
     "sealInstead": "Ready to seal — press “Seal”. The seller gets the price from the seal.",
     "discountedFloor": "The VED gave a discount: selling above this amount is not allowed."
   },

@@ -63,6 +63,7 @@ export interface TableFormState {
   merged?: string[];
   measuresCleared?: number[];
   measuresDropped?: number[];
+  basisSuspect?: number[];
 }
 
 /**
@@ -262,6 +263,7 @@ async function runTable(
     merged: result.merged,
     measuresCleared: result.measuresCleared,
     measuresDropped: result.measuresDropped,
+    basisSuspect: result.basisSuspect,
   };
 }
 
@@ -277,7 +279,15 @@ export async function saveTableAction(
 export async function deleteItemAction(id: string, itemId: string): Promise<TableFormState> {
   return runTable(async (ctx) => {
     await deleteItem(id, itemId, ctx);
-    return { minted: [], swept: 0, added: 0, merged: [], measuresCleared: [], measuresDropped: [] };
+    return {
+      minted: [],
+      swept: 0,
+      added: 0,
+      merged: [],
+      measuresCleared: [],
+      measuresDropped: [],
+      basisSuspect: [],
+    };
   }, ws(id));
 }
 
@@ -518,6 +528,8 @@ export async function proposeAction(id: string): Promise<CalcFormState> {
 // ---------------------------------------------------------------------------
 
 export interface OfferFormState extends CalcFormState {
+  /** The recorded offer's id — what the PDF link is keyed on (phase 4). */
+  id?: string;
   text?: string | null;
   pending?: boolean;
   belowFloor?: boolean;
@@ -535,7 +547,10 @@ export interface OfferFormState extends CalcFormState {
  * sealed version really belongs to that card.
  */
 export async function makeOfferAction(
-  versionId: string,
+  // Phase 4: the offer stands on a sealed version OR a Готово answer — the
+  // form posts whichever anchor the panel rendered, and `recordOffer`
+  // re-derives every admission server-side.
+  anchor: { versionId: string } | { requestId: string },
   input: {
     clientPriceUsd: number;
     locale: 'uz' | 'ru' | 'en';
@@ -564,7 +579,7 @@ export async function makeOfferAction(
   const meta = await requestMeta();
   try {
     const res = await recordOffer(
-      versionId,
+      anchor,
       {
         clientPriceUsd: input.clientPriceUsd,
         locale: input.locale,
@@ -581,6 +596,7 @@ export async function makeOfferAction(
     revalidatePath(input.revalidate);
     return {
       ok: true,
+      id: res.id,
       text: res.text,
       belowFloor: res.belowFloor,
       delivered: res.delivered,

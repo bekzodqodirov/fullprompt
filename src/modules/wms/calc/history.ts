@@ -184,7 +184,9 @@ async function offersByVersion(versionIds: string[]) {
     .where(inArray(calcOffers.versionId, versionIds))
     .orderBy(desc(calcOffers.offeredAt));
   const out = new Map<string, typeof calcOffers.$inferSelect>();
-  for (const r of rows) if (!out.has(r.versionId)) out.set(r.versionId, r);
+  // The inArray above admits only version-anchored rows, so versionId is
+  // non-null here — the narrowing is for the widened column (phase 4).
+  for (const r of rows) if (r.versionId && !out.has(r.versionId)) out.set(r.versionId, r);
   return out;
 }
 

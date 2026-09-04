@@ -77,6 +77,11 @@ const EXEMPT: Record<string, string> = {
   releasedOfferWhere: 'pure sql fragment',
   offerStandsSql: 'pure sql fragment',
   releasedPriceFor: 'reader',
+  // Phase 4: the answer anchor is read off a COMPLETED request — the rev
+  // clock guards the open workspace, and lockRequestInTx would refuse
+  // `already_closed` here by design (recordOffer re-derives every admission
+  // instead).
+  lastAnswerAnchorFor: 'reader',
 };
 
 describe('every workspace mutator moves the revision clock', () => {

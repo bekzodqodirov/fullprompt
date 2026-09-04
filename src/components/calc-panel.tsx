@@ -3,7 +3,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { lastCalcAnswerFor, openCalcFor } from '@/modules/wms/calc/service';
-import { currentSealFor, offersFor } from '@/modules/wms/calc/workspace';
+import { currentSealFor, lastAnswerAnchorFor, offersFor } from '@/modules/wms/calc/workspace';
 import { offerLocaleFor } from '@/modules/wms/calc/offer';
 import { mayApproveBelowFloor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
@@ -52,16 +52,19 @@ export async function CalcPanel({
   let open: Awaited<ReturnType<typeof openCalcFor>> = [];
   let last: Awaited<ReturnType<typeof lastCalcAnswerFor>> = null;
   let seal: Awaited<ReturnType<typeof currentSealFor>> = null;
+  let anchor: Awaited<ReturnType<typeof lastAnswerAnchorFor>> = null;
   let offers: Awaited<ReturnType<typeof offersFor>> = [];
   try {
-    [open, last, seal] = await Promise.all([
+    [open, last, seal, anchor] = await Promise.all([
       openCalcFor(entityType, entityId),
       lastCalcAnswerFor(entityType, entityId),
       currentSealFor(entityType, entityId),
+      lastAnswerAnchorFor(entityType, entityId),
     ]);
     // Only a card that HAS a price can have been offered one, so the second
-    // read is paid by the cards that use it and by nobody else.
-    if (seal && scope !== 'none') offers = await offersFor(entityType, entityId);
+    // read is paid by the cards that use it and by nobody else. Phase 4: a
+    // Готово-answered card carries offers too.
+    if ((seal || anchor) && scope !== 'none') offers = await offersFor(entityType, entityId);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, entityType, entityId }, '[calc] panel: server behind');
@@ -76,9 +79,9 @@ export async function CalcPanel({
       title={`🧮 ${t('panelTitle')}`}
       badge={open.length || undefined}
       testId="calc-panel"
-      // A sealed price is what the seller opens this card to read, so it is
-      // never behind a fold.
-      open={open.length > 0 || Boolean(seal)}
+      // A price on the card is what the seller opens it to read, so it is
+      // never behind a fold — the Готово answer's door included (phase 4).
+      open={open.length > 0 || Boolean(seal) || Boolean(anchor)}
     >
       {open.length > 0 ? (
         <ul className="space-y-1" data-testid="calc-open">
@@ -149,8 +152,8 @@ export async function CalcPanel({
             <p className="text-2xs text-warn">{t('sealExpiredHint')}</p>
           ) : scope === 'none' ? null : (
             <CalcOfferForm
-              versionId={seal.id}
-              sealedTotal={seal.totalUsd}
+              anchor={{ versionId: seal.id }}
+              floorUsd={seal.totalUsd}
               discountUsd={seal.discountUsd}
               defaultLocale={offerLocaleFor(clientLocale)}
               clientName={clientName ?? null}
@@ -161,6 +164,55 @@ export async function CalcPanel({
             />
           )}
 
+        </div>
+      ) : null}
+
+      {last ? (
+        <p className="border-t border-line pt-2 text-sm" data-testid="calc-last-answer">
+          <span className="text-ink-500">{t('answered')}:</span>{' '}
+          <span className="num font-semibold">
+            {last.amount ?? '—'} {last.currency ?? ''}
+          </span>{' '}
+          <span className="text-2xs text-ink-500">
+            {format.dateTime(last.at, { dateStyle: 'short' })}
+          </span>
+          {last.note ? <span className="block text-xs text-ink-600">{last.note}</span> : null}
+        </p>
+      ) : null}
+
+      {/* Phase 4, the owner's item 5: a Готово answer opens the same offer
+          door a seal does — while the dictionaries are empty it is the only
+          price production has. ANY seal on the card outranks it (an expired
+          seal's own sentence is «recalc», never «quote the older figure»),
+          and every admission is re-derived in `recordOffer`. */}
+      {!seal && anchor && scope !== 'none' ? (
+        <div className="space-y-2" data-testid="calc-answer-door">
+          {anchor.currency !== 'USD' ? (
+            <p className="text-2xs text-ink-500" data-testid="calc-answer-not-usd">
+              {t('answerNotUsd')}
+            </p>
+          ) : anchor.expired ? (
+            <p className="text-2xs text-warn" data-testid="calc-answer-expired">
+              {t('answerExpiredHint')}
+            </p>
+          ) : anchor.stands && anchor.amountUsd !== null ? (
+            <CalcOfferForm
+              anchor={{ requestId: anchor.requestId }}
+              floorUsd={anchor.amountUsd}
+              discountUsd={0}
+              defaultLocale={offerLocaleFor(clientLocale)}
+              clientName={clientName ?? null}
+              entityType={entityType}
+              entityId={entityId}
+              mayApprove={mayApproveBelowFloor(actor)}
+              revalidate={revalidate}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Every recorded offer on this card, whichever anchor made it — one
+          list, one home, after both doors. */}
           {offers.length > 0 ? (
             <ul className="space-y-0.5 text-2xs text-ink-600" data-testid="calc-offers">
               {offers
@@ -185,7 +237,7 @@ export async function CalcPanel({
                   {o.belowFloor && !o.approvedAt ? null : (
                   <a
                     className="text-brand-700"
-                    href={`/api/calc/${o.versionId}/offer.pdf?til=${o.locale}`}
+                    href={`/api/calc/offer/${o.id}/pdf?til=${o.locale}`}
                     target="_blank"
                     rel="noreferrer"
                     data-testid="calc-offer-pdf"
@@ -197,21 +249,6 @@ export async function CalcPanel({
               ))}
             </ul>
           ) : null}
-        </div>
-      ) : null}
-
-      {last ? (
-        <p className="border-t border-line pt-2 text-sm" data-testid="calc-last-answer">
-          <span className="text-ink-500">{t('answered')}:</span>{' '}
-          <span className="num font-semibold">
-            {last.amount ?? '—'} {last.currency ?? ''}
-          </span>{' '}
-          <span className="text-2xs text-ink-500">
-            {format.dateTime(last.at, { dateStyle: 'short' })}
-          </span>
-          {last.note ? <span className="block text-xs text-ink-600">{last.note}</span> : null}
-        </p>
-      ) : null}
 
       {/* The phone path is the BOT: the seller's material lives in Telegram,
           and a browser form cannot reach it — forwarding three photos to the
