@@ -92,6 +92,7 @@ export function WonDialog({
   const errors: Record<string, string> = {
     client_not_found: t('won.errors.clientNotFound'),
     client_inactive: t('won.errors.clientInactive'),
+    client_has_lead: t('won.errors.clientHasLead'),
     code_exists: t('won.errors.codeExists'),
     code_format: t('won.errors.codeFormat'),
     stage_not_found: t('won.errors.stageGone'),
@@ -118,14 +119,25 @@ export function WonDialog({
     }
   }
 
+  // Both awaits sit in try/finally: an action that THROWS (a fault `run()`
+  // does not translate) used to leave `busy` true for ever — a greyed button
+  // and no sentence, which is how the round-112 screenshot found the
+  // one-lead-per-client refusal. A thrown action reads as «Saqlab bo'lmadi».
   async function check() {
     setBusy(true);
     setError('');
-    const res = await resolveClientCodeAction(attachCode);
-    setBusy(false);
+    let res: Awaited<ReturnType<typeof resolveClientCodeAction>>;
+    try {
+      res = await resolveClientCodeAction(attachCode);
+    } catch {
+      res = { error: 'failed' };
+    } finally {
+      setBusy(false);
+    }
     if (!res.ok) {
       setChecked(null);
-      setError(errors[res.error ?? 'failed'] ?? res.error ?? '');
+      const word = errors[res.error ?? 'failed'] ?? res.error ?? '';
+      setError(res.leadName ? `${word} (${res.leadName})` : word);
       return;
     }
     setChecked({ code: res.clientCode!, name: res.name! });
@@ -135,15 +147,21 @@ export function WonDialog({
     if (!lead) return;
     setBusy(true);
     setError('');
-    const res = await winLeadAction(lead.id, {
-      stageId: lead.stageId,
-      ...(lead.clientCode
-        ? {}
-        : mode === 'attach'
-          ? { attachCode: checked?.code ?? attachCode.trim().toUpperCase() }
-          : { clientCode: code, name }),
-    });
-    setBusy(false);
+    let res: WinLeadState;
+    try {
+      res = await winLeadAction(lead.id, {
+        stageId: lead.stageId,
+        ...(lead.clientCode
+          ? {}
+          : mode === 'attach'
+            ? { attachCode: checked?.code ?? attachCode.trim().toUpperCase() }
+            : { clientCode: code, name }),
+      });
+    } catch {
+      res = { error: 'failed' };
+    } finally {
+      setBusy(false);
+    }
     if (!res.ok || !res.result) {
       setError(errors[res.error ?? 'failed'] ?? res.error ?? '');
       return;

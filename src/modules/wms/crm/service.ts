@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, isNotNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -795,6 +795,19 @@ export async function winLead(
     });
     if (!existing) throw new CrmError('client_not_found');
     if (!existing.active) throw new CrmError('client_inactive');
+    // One lead per client is the schema's law (0021 `leads_client_unique`):
+    // a lead is the client's pre-history and a code can have only one. A
+    // repeat customer's new job is a DEAL on the code (round 111's «Bitim
+    // ochish»), or a fresh code — one person holding several is this
+    // company's ordinary practice (#407). Refused HERE with a word, because
+    // the UPDATE below would refuse it with a 23505 that no screen can read
+    // (found by the round-112 screenshot: the dialog froze with a greyed
+    // button and no sentence).
+    const taken = await db.query.leads.findFirst({
+      where: and(eq(leads.clientId, existing.id), ne(leads.id, id)),
+      columns: { id: true },
+    });
+    if (taken) throw new CrmError('client_has_lead');
     clientId = existing.id;
     clientCode = existing.clientCode;
   } else {
@@ -820,10 +833,19 @@ export async function winLead(
   if (!lead.clientId) {
     // The client lands on the lead BEFORE the deal and the move, so a failure
     // in either leaves a retry that finds the client and mints nothing twice.
-    await db
-      .update(leads)
-      .set({ clientId, updatedAt: new Date() })
-      .where(eq(leads.id, id));
+    try {
+      await db
+        .update(leads)
+        .set({ clientId, updatedAt: new Date() })
+        .where(eq(leads.id, id));
+    } catch (err) {
+      // Two sellers winning two leads onto one code in the same second: the
+      // check above cannot see the other transaction, the index can.
+      if (typeof err === 'object' && err !== null && 'code' in err && err.code === '23505') {
+        throw new CrmError('client_has_lead');
+      }
+      throw err;
+    }
     await writeAudit(db, ctx, {
       entityType: 'lead',
       entityId: id,

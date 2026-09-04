@@ -1510,6 +1510,7 @@
       "errors": {
         "clientNotFound": "No such code",
         "clientInactive": "This client is deactivated",
+        "clientHasLead": "This code already carries a lead — mint a new code or open that lead",
         "codeExists": "That code is taken",
         "codeFormat": "Bad code format",
         "stageGone": "Stage not found — refresh the page",

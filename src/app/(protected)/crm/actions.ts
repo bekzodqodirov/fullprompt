@@ -29,8 +29,8 @@ import {
   type WinLeadResult,
 } from '@/modules/wms/crm/service';
 import { db } from '@/modules/platform/db/client';
-import { clients } from '@/modules/platform/db/schema';
-import { sql } from 'drizzle-orm';
+import { clients, leads } from '@/modules/platform/db/schema';
+import { eq, sql } from 'drizzle-orm';
 import { setFieldValues, validateValues } from '@/modules/platform/fields/service';
 import { customValues } from '@/modules/platform/fields/actions';
 import { FieldError } from '@/modules/platform/fields/types';
@@ -375,7 +375,7 @@ export async function winLeadAction(
  */
 export async function resolveClientCodeAction(
   code: string,
-): Promise<{ ok?: boolean; error?: string; name?: string; clientCode?: string }> {
+): Promise<{ ok?: boolean; error?: string; name?: string; clientCode?: string; leadName?: string }> {
   try {
     await authorize('crm.leads');
   } catch (err) {
@@ -389,6 +389,13 @@ export async function resolveClientCodeAction(
   });
   if (!row) return { error: 'client_not_found' };
   if (!row.active) return { error: 'client_inactive' };
+  // The service refuses this too (`winLead`, one lead per client); saying it
+  // at the echo names the lead the code already carries, before the press.
+  const taken = await db.query.leads.findFirst({
+    where: eq(leads.clientId, row.id),
+    columns: { name: true },
+  });
+  if (taken) return { error: 'client_has_lead', name: row.name, clientCode: row.clientCode, leadName: taken.name };
   return { ok: true, name: row.name, clientCode: row.clientCode };
 }
 

@@ -53,6 +53,17 @@ muhrni chetlab o'tishi mumkin edi (karta qulflanmaydi, chegirma xabari
 ketmaydi). Endi hisob muhrlanishi mumkin bo'lsa «Готово» narx so'ramaydi va
 «Muhrlang» deydi; muhrlab bo'lmasa (lug'at bo'sh) — avvalgidek qo'lda.
 
+**Yana bittasi, skrinshot topdi: mijoz kodida lid allaqachon bo'lsa, oyna
+muzlab qolardi.** Bitta mijoz kodiga faqat BITTA lid biriktirilishi mumkin
+(lid — mijozning «tarixdan oldingi» kartasi). Yutish oynasida shunday kodni
+tanlab «Bitim ochish» bosilsa, sistema jimgina to'xtab qolardi — tugma kulrang,
+so'z yo'q. Endi kodni tanlagan zahoti izoh chiqadi: «Bu kodda lid
+allaqachon bor (lid nomi) — mijoz uchun yangi kod oching yoki o'sha lidni
+oching». Takroriy mijozning yangi ishi — mijoz kartasidan bitim, yoki yangi
+kod (bir odamda bir nechta kod bo'lishi bizda oddiy). Taklif (siz hal
+qilasiz): «lidni mavjud mijozga qo'shish» tugmasi — bitim o'sha kodga
+ochiladi, lid yopiladi. Hozircha yo'q.
+
 **Yo'l-yo'lakay topilgan va tuzatilgan: PDF'larda raqamlar «G S 7 7 7» bo'lib
 chiqardi.** Yangi taklif varag'ini Chrome ko'radigan usulda chizib qarasam,
 har bir raqam bir-biridan uzoq turibdi («B-0 0 0 0 6 6», «2 4 .0 8 .2 0 2 6»),

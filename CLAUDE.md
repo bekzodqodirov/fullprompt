@@ -1162,6 +1162,13 @@ fontkit subsetter #103 removed for fonts a thermal printer dropped).
 `pdf-embed.test.ts` pins the premise, the cut, the built PDF's font streams
 and the four sites. Oracle for a renderer = that renderer: `pip install
 pypdfium2`, render, look.
+**And the screenshot of item 2 froze the dialog (#882)**: attaching a won lead
+to a code that already carries one hits 0021's `leads_client_unique`, `run()`
+rethrows a non-CrmError, and `busy` stayed true — greyed button, no sentence,
+latent since round 107's typed-code attach. `client_has_lead` at both doors
+(the echo NAMES the lead; the UPDATE's 23505 maps to the same word for the
+race), both dialog awaits in try/finally; fenced in `won-law.test.ts`. STATED,
+not built: a «merge lead into client» door — his call.
 
 **Latest migration: 0092** (`calc_measure` — the measure pair, the widened
 baza bases, the revision clock; ledger must reach **93**). Before it: 0091

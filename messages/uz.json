@@ -1510,6 +1510,7 @@
       "errors": {
         "clientNotFound": "Bunday kod yo'q",
         "clientInactive": "Bu mijoz nofaol qilingan",
+        "clientHasLead": "Bu kodda lid allaqachon bor — mijoz uchun yangi kod oching yoki o‘sha lidni oching",
         "codeExists": "Bu kod band",
         "codeFormat": "Kod formati noto'g'ri",
         "stageGone": "Bosqich topilmadi — sahifani yangilang",
