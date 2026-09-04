@@ -386,26 +386,24 @@ async function analyseIntakeAndReply(
 }
 
 /**
- * Run the AI VED hodimi over a just-landed job and deliver its answer.
+ * Hand the just-landed job to the AI VED hodimi — through pg-boss, so it
+ * belongs to something that outlives this container.
  *
- * Everything is caught: a rejection here would be an unhandled promise, and
- * the seller has already been told the job was saved — a prefill that fails
- * must cost them a sentence, never the process. It says nothing at all on a
- * failure, because the job IS in the queue and a VED will answer it; the
- * only honest alternative would be an alarm about a machine nobody asked
- * for.
+ * The send is caught for the same reason the pass itself is best-effort: the
+ * seller has already been told their job is saved, the VED has it either
+ * way, and a queue that is briefly unreachable must cost a background pass
+ * rather than the confirmation they are reading.
  */
-async function prefillAndReply(
-  ctx: CalcReplyCtx,
-  requestId: string,
-  staffId: string,
-): Promise<void> {
+async function queuePrefill(requestId: string, staffId: string): Promise<void> {
   try {
-    const { prefillFromBot } = await import('./staff-bot');
-    const text = await prefillFromBot(requestId, staffId);
-    if (text) await ctx.reply(text);
+    const { enqueue } = await import('../jobs/boss');
+    const { JOB_CALC_PREFILL } = await import('../../wms/calc/jobs');
+    await enqueue(JOB_CALC_PREFILL, { requestId, staffId });
   } catch (err) {
-    logger.warn({ err, requestId }, 'calc prefill failed');
+    // The queue being unreachable must not cost the seller the confirmation
+    // they are about to read: the request is saved and a VED will answer it
+    // whether or not the machine got there first.
+    logger.warn({ err, requestId }, 'calc prefill could not be queued');
   }
 }
 
@@ -634,12 +632,17 @@ async function handleCalcCallback(
     return;
   }
   endIntake(chatId);
-  // The AI VED hodimi picks the job up — OFF the poller, exactly like the
-  // analysis and the assistant (#706): grammy's poller is sequential and the
-  // same bot serves every customer, so awaiting a grouping call plus a baza
-  // pick here would freeze every cabinet tap until it returned.
+  // The AI VED hodimi picks the job up — off the poller (grammy's poller is
+  // sequential and the same bot serves every customer, so awaiting a grouping
+  // call plus a baza pick here would freeze every cabinet tap, #706) and OUT
+  // OF THIS PROCESS. A `void` promise here lived in the container the owner
+  // restarts on every deploy: a restart mid-pass left committed AI groups,
+  // no bazas, no retry, no row saying a pass was owed, and a seller who was
+  // promised an answer and got silence. pg-boss owns it now, exactly as the
+  // customs parse in this same sub-round is owned; the answer comes back
+  // through the notification drain rather than a `ctx` that is gone by then.
   if (target.queued && target.requestId) {
-    void prefillAndReply(ctx, target.requestId, staff.id);
+    await queuePrefill(target.requestId, staff.id);
   }
   const appUrl = process.env.APP_URL ?? '';
   const path = target.kind === 'deal' ? 'bitimlar' : 'crm/leads';

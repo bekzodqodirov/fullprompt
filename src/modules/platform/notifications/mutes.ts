@@ -19,7 +19,19 @@ export const MUTE_GROUPS = {
   // a calculation IS a task in this company, and somebody who silenced «work
   // was assigned / work is done» means these too. The late one is an alarm and
   // lives below.
-  tasks: ['TasksDue', 'TaskAssigned', 'TaskDone', 'CalcRequested', 'CalcTaken', 'CalcDone', 'CalcReturned'],
+  // `CalcPrefilled` is the machine's own answer to a job the person just
+  // submitted — the same family, and somebody who silenced «work was
+  // assigned / work is done» means this too.
+  tasks: [
+    'TasksDue',
+    'TaskAssigned',
+    'TaskDone',
+    'CalcRequested',
+    'CalcTaken',
+    'CalcDone',
+    'CalcReturned',
+    'CalcPrefilled',
+  ],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo
   // that arrived at a different size to the one the client was quoted is not,

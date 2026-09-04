@@ -310,6 +310,29 @@ describe('the table refuses by ROW', () => {
       .where(eq(calcRequests.id, id));
     await expect(save(id, { items: [await editOf(id, 1, { tnvedCode: '8528' })] })).resolves.toBeTruthy();
   });
+
+  it('and the CLAIM heals on the same clock the lock does', async () => {
+    // The lock healed and the claim did not, so a pass killed mid-flight —
+    // a deploy, with the bot dispatching it in the background — answered
+    // `ai_running` to that request FOR EVER: the release lives in a
+    // `finally`, and there is no sweep anywhere that clears the column.
+    const { proposeGroups } = await import('@/modules/wms/calc/workspace');
+    const id = await open([{ name: `z ${tag()}` }]);
+    await db
+      .update(calcRequests)
+      .set({ aiProposalStartedAt: new Date() })
+      .where(eq(calcRequests.id, id));
+    await expect(proposeGroups(id, ctx())).rejects.toMatchObject({ code: 'ai_running' });
+
+    await db
+      .update(calcRequests)
+      .set({ aiProposalStartedAt: new Date(Date.now() - 11 * 60_000) })
+      .where(eq(calcRequests.id, id));
+    // It gets PAST the claim — this container has no key, so the model half
+    // then refuses honestly. Any code but `ai_running` is the claim granted,
+    // which is the whole assertion.
+    await expect(proposeGroups(id, ctx())).rejects.not.toMatchObject({ code: 'ai_running' });
+  });
 });
 
 describe('the per-row baza', () => {

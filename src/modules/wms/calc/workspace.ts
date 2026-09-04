@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   calcExtras,
@@ -1995,6 +1995,17 @@ export { isUniqueViolation, type FreightBand };
 // ---------------------------------------------------------------------------
 
 /**
+ * How long a held AI claim is believed.
+ *
+ * ONE constant for the two places that ask (#513): the claim that TAKES the
+ * request and the workspace lock that REFUSES while somebody holds it. If the
+ * lock healed sooner than the claim, an edit would land under a pass still
+ * running; if the claim healed sooner than the lock, the pass would be
+ * refused by a lock it had itself been granted.
+ */
+export const AI_CLAIM_STALE_MS = 10 * 60_000;
+
+/**
  * «AI taklif qilsin» — the model groups the goods, and nothing more.
  *
  * What comes back is labels, TNVED codes and a grouping. What does NOT come
@@ -2025,7 +2036,23 @@ export async function proposeGroups(
   const claimed = await db
     .update(calcRequests)
     .set({ aiProposalStartedAt: new Date() })
-    .where(and(eq(calcRequests.id, requestId), isNull(calcRequests.aiProposalStartedAt)))
+    .where(
+      and(
+        eq(calcRequests.id, requestId),
+        or(
+          isNull(calcRequests.aiProposalStartedAt),
+          // …or the holder is GONE. The release lives in a `finally`, which
+          // runs for a refusal and a thrown call and not for a killed
+          // process — and this app is restarted on every deploy, with a bot
+          // dispatching this pass in the background. Without the window a
+          // single unlucky restart answered `ai_running` to that request for
+          // ever, with no sweep and no reaper anywhere to clear it. Same
+          // window `lockRequestInTx` already heals on, from the same
+          // constant, so the two cannot drift apart (#513).
+          lt(calcRequests.aiProposalStartedAt, new Date(Date.now() - AI_CLAIM_STALE_MS)),
+        ),
+      ),
+    )
     .returning({ id: calcRequests.id });
   if (claimed.length === 0) throw new CalcError('ai_running');
 
@@ -2312,7 +2339,7 @@ async function lockRequestInTx(
   const claimed = row.ai_proposal_started_at ? new Date(row.ai_proposal_started_at).getTime() : null;
   // `ignoreAiClaim` exists for exactly one caller: applyProposal, whose OWN
   // flow holds the claim it would otherwise refuse on.
-  if (!opts.ignoreAiClaim && claimed !== null && Date.now() - claimed < 10 * 60_000) {
+  if (!opts.ignoreAiClaim && claimed !== null && Date.now() - claimed < AI_CLAIM_STALE_MS) {
     throw new CalcError('ai_running');
   }
   return { rev: row.rev };

@@ -81,6 +81,10 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ['calc-overdue', async (b) => (await import('../../wms/calc/jobs')).registerCalcWorker(b)],
   ['calc-review', async (b) => (await import('../../wms/calc/jobs')).registerCalcReviewWorker(b)],
   [
+    'calc-prefill',
+    async (b) => (await import('../../wms/calc/jobs')).registerCalcPrefillWorker(b),
+  ],
+  [
     'customs-import',
     async (b) => (await import('../../wms/customs/jobs')).registerCustomsImportWorker(b),
   ],
