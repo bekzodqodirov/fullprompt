@@ -386,6 +386,30 @@ async function analyseIntakeAndReply(
 }
 
 /**
+ * Run the AI VED hodimi over a just-landed job and deliver its answer.
+ *
+ * Everything is caught: a rejection here would be an unhandled promise, and
+ * the seller has already been told the job was saved — a prefill that fails
+ * must cost them a sentence, never the process. It says nothing at all on a
+ * failure, because the job IS in the queue and a VED will answer it; the
+ * only honest alternative would be an alarm about a machine nobody asked
+ * for.
+ */
+async function prefillAndReply(
+  ctx: CalcReplyCtx,
+  requestId: string,
+  staffId: string,
+): Promise<void> {
+  try {
+    const { prefillFromBot } = await import('./staff-bot');
+    const text = await prefillFromBot(requestId, staffId);
+    if (text) await ctx.reply(text);
+  } catch (err) {
+    logger.warn({ err, requestId }, 'calc prefill failed');
+  }
+}
+
+/**
  * Ask the assistant OFF the middleware chain and deliver the answer when it
  * arrives (see the call site: the poller is sequential, so this must not be
  * awaited). Everything is caught — a rejection here would be an unhandled
@@ -610,6 +634,13 @@ async function handleCalcCallback(
     return;
   }
   endIntake(chatId);
+  // The AI VED hodimi picks the job up — OFF the poller, exactly like the
+  // analysis and the assistant (#706): grammy's poller is sequential and the
+  // same bot serves every customer, so awaiting a grouping call plus a baza
+  // pick here would freeze every cabinet tap until it returned.
+  if (target.queued && target.requestId) {
+    void prefillAndReply(ctx, target.requestId, staff.id);
+  }
   const appUrl = process.env.APP_URL ?? '';
   const path = target.kind === 'deal' ? 'bitimlar' : 'crm/leads';
   await ctx.reply(

@@ -311,7 +311,13 @@ export async function landCollectedIntake(
   chatId: bigint,
   staffId: string,
   staffName: string,
-): Promise<{ kind: 'deal' | 'lead'; id: string; label: string; queued?: boolean } | null> {
+): Promise<{
+  kind: 'deal' | 'lead';
+  id: string;
+  label: string;
+  queued?: boolean;
+  requestId?: string | null;
+} | null> {
   const { activeIntake } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;
@@ -337,6 +343,24 @@ export async function landCollectedIntake(
     leadName: state.clientHintRaw.trim() || 'Hisoblatish (nomsiz)',
     leadPhone: hint?.phone ?? null,
   });
+}
+
+/**
+ * Hand a just-landed job to the AI VED hodimi, and answer with what it made
+ * of it (docs/VED-IMPORT-AI.md §3).
+ *
+ * The crossing only: everything it decides lives in wms and is tested there.
+ * The actor is the staff member who COLLECTED — the same one whose name is
+ * already on the note and on the request — so nothing here acts as a
+ * synthetic admin.
+ */
+export async function prefillFromBot(
+  requestId: string,
+  staffId: string,
+): Promise<string | null> {
+  const { aiPrefill } = await import('../../wms/calc/prefill');
+  const out = await aiPrefill(requestId, { actorId: staffId });
+  return out.text;
 }
 
 export type BotTaskResult = 'done' | 'not_linked' | 'not_yours' | 'already_closed' | 'not_found';

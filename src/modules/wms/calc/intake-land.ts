@@ -32,6 +32,8 @@ export interface IntakeTarget {
    * saying so is the difference between an honest reply and a silent strand.
    */
   queued?: boolean;
+  /** The queued request, when there is one — what the AI prefill works on. */
+  requestId?: string | null;
 }
 
 /** The client a typed code or phone names — exactly one, or nobody. */
@@ -193,9 +195,10 @@ export async function landIntake(input: {
   // insert the note and its files still stand on the card, and the caller is
   // told which half failed rather than «nothing saved» about work that was.
   let queued = false;
+  let requestId: string | null = null;
   try {
     const { openCalcRequest } = await import('./service');
-    await openCalcRequest(
+    const opened = await openCalcRequest(
       {
         entityType: target.kind,
         entityId: target.id,
@@ -217,6 +220,9 @@ export async function landIntake(input: {
       { actorId: input.collectedBy },
     );
     queued = true;
+    // Handed back so the bot can hand the job to the AI VED hodimi — the
+    // prefill runs OFF the poller, against this id (docs/VED-IMPORT-AI §3).
+    requestId = opened.id;
   } catch (err) {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] queue open failed');
   }
@@ -232,7 +238,7 @@ export async function landIntake(input: {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
   }
 
-  return { ...target, queued };
+  return { ...target, queued, requestId };
 }
 
 async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<void> {
