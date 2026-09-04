@@ -201,7 +201,24 @@ export async function aiPrefill(
 
   // 4. Read what the engine now says, and say it in words.
   const ws = await loadWorkspace(requestId);
-  const customsUsd = ws?.customsUsd ?? null;
+  /**
+   * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO», and the engine spells both 0.
+   *
+   * Two independent sources, and the section gate above only closes the
+   * first. (1) A section with no customs half is hard-coded 0 by
+   * `loadWorkspace`. (2) A section that HAS one but carries no groups yet:
+   * `requestCustomsFor([])` runs `[].every(ok)` — vacuously TRUE — and
+   * returns `customsUsd: 0`. That second one is the ordinary way this ships:
+   * no ANTHROPIC key, or a model that refused, and nothing the TNVED memory
+   * already knew. MEASURED: the seller read «Tahminiy: rastamojka ~$0.00».
+   *
+   * `null` here, so the reply refuses in words. Deliberately NOT fixed in
+   * `requestCustomsFor`: that function is consumed verbatim by the live
+   * browser recompute and by the seal, and making its empty case null would
+   * move the footer bar and the seal gate in a round that ships no migration.
+   */
+  const customsUsd =
+    ws && ws.parts.customs && ws.groups.length > 0 ? ws.customsUsd : null;
   const freight = ws?.freight ?? null;
   // `listUsd` is the road's LIST price — what the tariff says before any
   // concession. A prefill states the tariff, never a discount somebody has
