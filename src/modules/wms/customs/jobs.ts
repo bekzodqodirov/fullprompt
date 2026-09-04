@@ -1,6 +1,7 @@
 import type PgBoss from 'pg-boss';
 import { logger } from '../../platform/logger';
 import {
+  BatchGoneError,
   CustomsImportError,
   failCustomsImport,
   runCustomsImport,
@@ -36,6 +37,11 @@ export function importFailureText(err: CustomsImportError): string {
     case 'unreadable':
       return `Fayl o'qilmadi${detail}. Excel'da qayta saqlab ko'ring.`;
     case 'in_use':
+      // `in_use` is the DELETE's refusal and never a parse's — it is raised
+      // by `deleteImportBatch` and read by the button, which has its own
+      // translated sentence in all four bundles. A second copy here would be
+      // one rule with two homes (#513), and this one is unreachable: the
+      // parse cannot raise it.
       return "Bu bazadan narx olingan — o'chirib bo'lmaydi.";
   }
 }
@@ -67,10 +73,20 @@ export async function registerCustomsImportWorker(boss: PgBoss): Promise<void> {
           const outcome = await runCustomsImport({ batchId, storageKey, fileName });
           logger.info({ batchId, ...outcome }, '[customs-import] batch ready');
         } catch (err) {
+          if (err instanceof BatchGoneError) {
+            // Not the file's failure and not ours: the batch was swept or
+            // deleted while this parse was reading. Nothing to write on (the
+            // row may be gone) and nothing to retry — a person has already
+            // been told and has already acted.
+            logger.info({ batchId }, '[customs-import] batch gone — parse stood down');
+            continue;
+          }
           if (err instanceof CustomsImportError) {
             await failCustomsImport(batchId, importFailureText(err));
             logger.error({ err, batchId }, '[customs-import] file refused');
-            return;
+            // `continue`, never `return`: pg-boss hands the handler an ARRAY,
+            // and one refused file must not abandon the others in the batch.
+            continue;
           }
           // `includeMetadata` is asked for exactly this: the handler cannot
           // otherwise know it is the last time it will run.

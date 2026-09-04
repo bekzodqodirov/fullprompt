@@ -48,6 +48,11 @@ describe('the import says what happened to it', () => {
     // nowhere at all.
     expect(jobs).toMatch(/includeMetadata:\s*true/);
     expect(jobs).toMatch(/retryCount/);
+    // Anchored on the WRITE, not the log line beside it: the audit deleted
+    // the whole last-attempt branch and every test stayed green, because the
+    // assertions named `retryCount` and a message rather than the thing the
+    // branch exists to do (#166 — a fence over a neighbour is not a fence).
+    expect(jobs).toMatch(/last[\s\S]{0,400}failCustomsImport/);
   });
 
   it('the upload gives the parse its own expiry and retry budget', () => {
@@ -65,5 +70,71 @@ describe('the import says what happened to it', () => {
     // the last, and a file that died on row three showed exactly the same.
     expect(service).toMatch(/HEARTBEAT_MS/);
     expect(service).not.toMatch(/PROGRESS_EVERY/);
+  });
+});
+
+/**
+ * Comments STRIPPED before any of these look at the source.
+ *
+ * #725's lesson, met again in this file's own first run: the fence for «the
+ * sweep no longer coalesces the two clocks» matched the SENTENCE in the
+ * comment explaining why it must not, and reported the fix as missing.
+ */
+const bare = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+const serviceCode = bare(service);
+const jobsCode = bare(jobs);
+
+describe('a batch that is no longer this parse\'s', () => {
+  it('the beat and the settle both fence on «still processing»', () => {
+    // The sweep's verdict has to be FINAL in both directions: a parse it gave
+    // up on must not go on writing its counter over the row, and must not
+    // finish and flip a failed batch to READY two hours after the admin was
+    // told to upload the file again — a ready batch is what every suggestion
+    // in the company reads.
+    const fences = serviceCode.match(/eq\(customsImportBatches\.status, 'processing'\)/g) ?? [];
+    expect(fences.length).toBeGreaterThanOrEqual(2);
+    // Both of them are on an UPDATE that writes the heartbeat, and both read
+    // back whether they hit anything.
+    const updates = serviceCode.match(/\.update\(customsImportBatches\)[\s\S]*?;/g) ?? [];
+    const heartbeatWrites = updates.filter((u) => u.includes('heartbeatAt'));
+    expect(heartbeatWrites.length).toBe(2);
+    for (const write of heartbeatWrites) {
+      expect(write).toContain("eq(customsImportBatches.status, 'processing')");
+      expect(write).toContain('.returning(');
+    }
+  });
+
+  it('a lost claim stops the parse and is neither retried nor written down', () => {
+    expect(serviceCode).toMatch(/class BatchGoneError/);
+    const branch = jobsCode.slice(
+      jobsCode.indexOf('instanceof BatchGoneError'),
+      jobsCode.indexOf('instanceof CustomsImportError'),
+    );
+    expect(branch.length).toBeGreaterThan(0);
+    // There may be no row left to write on, and a person has already acted.
+    expect(branch).not.toContain('failCustomsImport');
+    expect(branch).toContain('continue');
+  });
+
+  it('one refused file never abandons the others in the same batch', () => {
+    // pg-boss hands the handler an ARRAY. `return` walked out of the loop.
+    expect(jobsCode).not.toMatch(/failCustomsImport\([\s\S]{0,200}?\breturn;/);
+  });
+
+  it('the sweep asks TWO questions, because waiting is not dying', () => {
+    // The queue is serial: a second quarterly file uploaded behind the first
+    // beats nothing for as long as the first one parses, and judging it by
+    // its UPLOAD time called a blameless import dead at fifteen minutes.
+    expect(serviceCode).toMatch(/heartbeat_at IS NOT NULL AND heartbeat_at </);
+    expect(serviceCode).toMatch(/heartbeat_at IS NULL AND uploaded_at </);
+    expect(serviceCode).not.toMatch(/COALESCE\(heartbeat_at, uploaded_at\)/);
+  });
+
+  it('the abort path releases the spooled worksheet too, and cannot hang doing it', () => {
+    // A refused file used to keep its whole sheet in /tmp for the life of the
+    // container — the same 57 MB the success path stopped leaking.
+    expect(serviceCode).toMatch(/SPOOL_DRAIN_MS/);
+    expect(serviceCode).toMatch(/setTimeout\(resolve, SPOOL_DRAIN_MS\)/);
   });
 });

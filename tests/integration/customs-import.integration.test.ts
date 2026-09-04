@@ -25,6 +25,7 @@ import {
   newestReadyBatchId,
   runCustomsImport,
   sweepStuckImports,
+  BatchGoneError,
 } from '@/modules/wms/customs/import-service';
 import { importRowForCode, suggestImportBaza } from '@/modules/wms/customs/import-baza';
 import type { ImportUnit } from '@/modules/wms/customs/import-parse';
@@ -191,6 +192,16 @@ describe('the file becomes rows', () => {
   it('a re-run replaces its own rows rather than doubling them', async () => {
     // pg-boss retries a thrown job; the batch id is the claim, so a second
     // pass must leave the same quarter, not two of it.
+    //
+    // The retry is driven from the state a retry actually starts in. A thrown
+    // job leaves the batch 'processing' — it is the SUCCESS that writes
+    // 'ready' — and a parse now refuses a batch that is no longer its own, so
+    // re-running a ready one is a state production never reaches and the
+    // fixture must not invent (#166). The reset IS the retry.
+    await db
+      .update(customsImportBatches)
+      .set({ status: 'processing' })
+      .where(eq(customsImportBatches.id, batchId));
     const before = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(customsImportRows)
@@ -593,6 +604,48 @@ describe('a parse that stopped saying it was alive', () => {
     await sweepStuckImports();
     expect((await statusOf(old)).status).toBe('failed');
     expect((await statusOf(fresh)).status).toBe('processing');
+  });
+
+  it('a batch that never STARTED is waiting, not dying', async () => {
+    // The queue is serial. Uploading two quarterly files back to back — what
+    // the owner did on 2026-09-04 — puts the second behind twenty minutes of
+    // the first, beating nothing and blameless. Judged by its UPLOAD time on
+    // the parse's fifteen-minute clock it was declared dead without a byte
+    // having been read, and the screen said «to‘xtab qoldi» about a file
+    // nobody had opened.
+    const queued = await mint({ heartbeatAt: null, uploadedAt: minutesAgo(40) });
+    await sweepStuckImports();
+    expect((await statusOf(queued)).status).toBe('processing');
+    // It is not immortal: past the job's own expiry, waiting IS losing.
+    const abandoned = await mint({ heartbeatAt: null, uploadedAt: minutesAgo(60 * 5) });
+    await sweepStuckImports();
+    expect((await statusOf(abandoned)).status).toBe('failed');
+  });
+
+  it('a parse whose batch was swept writes nothing more, and never resurrects it', async () => {
+    // pg-boss re-delivers a job whose process died, and this one may run for
+    // two hours — so a re-delivery can land long after the sweep gave up and
+    // the admin acted on what he was told. Such a parse has nothing to fill.
+    const id = await mint({ status: 'failed', heartbeatAt: minutesAgo(30) });
+    const bytes = readFileSync('tests/fixtures/customs-import-sample.xlsx');
+    const key = `customs-import/ghost-${randomUUID()}.xlsx`;
+    await getStorage().put(
+      key,
+      bytes,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    madeKeys.push(key);
+    await expect(
+      runCustomsImport({ batchId: id, storageKey: key, fileName: 'ghost.xlsx' }),
+    ).rejects.toThrow(BatchGoneError);
+    // Still failed — a READY batch is what every suggestion in the company
+    // reads, and this one was declared dead to a person who acted on it.
+    expect((await statusOf(id)).status).toBe('failed');
+    const rows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(customsImportRows)
+      .where(eq(customsImportRows.batchId, id));
+    expect(Number(rows[0]!.n)).toBe(0);
   });
 
   it('never touches a batch that finished', async () => {

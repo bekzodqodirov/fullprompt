@@ -2737,7 +2737,8 @@
       "forbidden": "Ruxsat yo'q",
       "enqueue_failed": "Navbatga qo'shilmadi — qayta urinib ko'ring",
       "in_use": "Bu import bo‘yicha narx qo‘yilgan hisoblar bor — o‘chirib bo‘lmaydi",
-      "network": "Aloqa uzildi"
+      "network": "Aloqa uzildi",
+      "server_behind": "Server hali yangilanmagan — yangilangach urinib ko'ring"
     },
     "lastBeat": "yangilandi {time}"
   }

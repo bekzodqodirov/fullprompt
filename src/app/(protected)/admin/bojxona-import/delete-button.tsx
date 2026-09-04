@@ -28,7 +28,16 @@ export function DeleteBatchButton({ batchId }: { batchId: string }) {
       >
         🗑 {tc('delete')}
       </button>
-      {error ? <span className="chip chip-warn">{error}</span> : null}
+      {/* A CODE is not a sentence on the one screen whose whole purpose is to
+          say what went wrong in words — «in_use» is what the admin read when
+          a calculation had already taken a price from the quarter. The
+          sibling upload form has always mapped it this way; an unknown code
+          still prints itself rather than vanishing. */}
+      {error ? (
+        <span className="chip chip-warn">
+          {t.has(`errors.${error}`) ? t(`errors.${error}`) : error}
+        </span>
+      ) : null}
     </span>
   );
 }
