@@ -1376,6 +1376,36 @@ code — #803's trap, hit again, a real lint error reached a commit under a
 green-looking line. **2428 unit/integration + 189 e2e** green on a fresh gsr_ci
 in CI's order.
 
+**Post-merge AUDIT of the two rounds above (2026-09-04; DECISIONS #919-920; NO
+migration, 96 stands):** six lenses, 21 candidates × 3 refuters → **13
+confirmed, 1 contested, 7 refuted**, and the two blockers were both in my own
+just-shipped code. **(1) The fix for the hang held every row it read**:
+`Promise.race([it.next(), failed])` ran once PER ROW against ONE promise that
+on a healthy import never settles, and `race` calls `.then()` on each member —
+so every iteration appended a reaction holding that row's cells. MEASURED, 500k
+rows: **1391 MB peak RSS with the single promise, 796 MB with a gate re-armed
+per row**. A long-lived promise is safe to AWAIT once and a trap to RACE in a
+loop, and no behavioural test can see it. **(2) The sweep judged a batch that
+had not STARTED**: the queue is serial, so the second of two files uploaded
+back to back — his own 2026-09-04 pattern — waits, beats nothing, and was
+failed at fifteen minutes by its UPLOAD time; the round's own fallback clause
+re-created the failure it was fixing one state earlier. Two clocks now: beating
+(15 min) and waiting (`IMPORT_NEVER_STARTED_MS`, 3 h). The rest is one idea in
+five costumes — **'failed' was not terminal**: `beat` and the settle wrote over
+a swept row and could resurrect it as READY two hours later, and a delete
+cascaded rows out from under a running parse; the first beat is the CLAIM now
+(`AND status='processing' RETURNING`) and `BatchGoneError` stands the parse
+down without a write or a retry. Also: #917 closed the success path only, so a
+REFUSED file still leaked the whole spool (bounded 3 s drain now); `return` in
+the refusal branch abandoned the rest of pg-boss's job array; the delete
+refusal reached the admin as the bare code `in_use`; `errors.server_behind`
+existed in no bundle. TEST LESSONS: the last-attempt fence named `retryCount`
+and a log line, so deleting the whole branch left every test green (#166); the
+new fences must STRIP COMMENTS (#725, met again — a fence matched the sentence
+explaining itself); and a retry test drove from a READY batch, a state
+production never reaches. **2435 unit/integration + 189 e2e** green on a fresh
+gsr_ci in CI's order.
+
 **Latest migration: 0095** (`customs_import_heartbeat` — the parse's wall-clock
 beat and the sweep's partial index; ledger must reach **96**). Before it:
 0094 (`customs_import` — the quarterly declarations

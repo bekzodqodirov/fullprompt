@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Auditda ikkita jiddiy xato topildi — 2026-09-04
+
+Yuqoridagi tuzatishlar ustidan olti yo'nalishli tekshiruv o'tkazildi (21
+gumon, har biri uchta mustaqil rad etuvchidan o'tdi: 13 tasi tasdiqlandi).
+Ikkitasi jiddiy, va ikkalasi ham serverda ishlab turgan edi.
+
+**1. Xotira — 595 MB.** Fayl o'qishdagi himoya har bir qatorni ushlab
+qolardi. Ya'ni «oqim bilan o'qiymiz» degan kod aslida hammasini yig'ib
+turgan. O'lchandi, 500 000 qator: eski shakl 1391 MB, tuzatilgani 796 MB —
+va bu hamma ekranni ko'rsatib turgan o'sha jarayonda.
+
+**2. Hali boshlanmagan import o'ldirilardi.** Navbat ketma-ket ishlaydi:
+ketma-ket yuklangan ikkinchi fayl birinchisi tugaguncha kutadi. Uni yuklash
+vaqti bo'yicha 15 daqiqada «to'xtab qoldi» deb yopilardi — hali ochilmagan
+fayl haqida. Endi ikkita soat: o'qiyotgani 15 daqiqa jimlikda, kutayotgani
+esa 3 soatda.
+
+Qolganlari: «xato» holati endi yakuniy (parse uni ortga qaytarolmaydi);
+o'chirilgan yozuv ustidagi parse to'xtaydi; rad etilgan fayl ham diskdagi
+57 MB ni bo'shatadi; bitta rad etilgan fayl navbatdagilarni tashlab
+ketmaydi; o'chirish rad etilishi ekranda kod emas, gap.
+
 ## Iyun faylining haqiqiy sababi topildi — 2026-09-04
 
 Siz deploy qilganingizdan keyin ekran nima bo'lganini aytdi:
