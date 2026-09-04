@@ -89,6 +89,15 @@ export interface CalcFacts {
     quantity?: number | null;
     /** What THIS line weighs, in kg — see `CalcField`'s `itemMeasure`. */
     weightKg?: number | null;
+    /**
+     * A measure in the law's OWN unit — m² / juft / litr (0092's pair).
+     *
+     * The VED types it in the workspace, not at intake, and it is a third way
+     * for a row to state a figure. Without it the chip could never close on a
+     * row priced per m²: a warning standing over a request the engine had
+     * fully priced, which is #649 for the third time in this round.
+     */
+    measureQty?: number | null;
     tnvedCode?: string | null;
     note?: string | null;
   }[];
@@ -99,6 +108,7 @@ export interface CalcItemFact {
   name: string;
   quantity: number | null;
   weightKg: number | null;
+  measureQty: number | null;
   tnvedCode: string | null;
   note: string | null;
 }
@@ -140,6 +150,7 @@ export function itemFacts(facts: CalcFacts): CalcItemFact[] {
     name: g.name,
     quantity: Number(g.quantity) > 0 ? Number(g.quantity) : null,
     weightKg: Number(g.weightKg) > 0 ? Number(g.weightKg) : lone,
+    measureQty: Number(g.measureQty) > 0 ? Number(g.measureQty) : null,
     tnvedCode: g.tnvedCode ?? null,
     note: g.note ?? null,
   }));
@@ -159,8 +170,14 @@ export function missingFields(section: CalcSection, facts: CalcFacts): CalcField
     // absence, and one hole reported three times is how a checklist stops
     // being read. Pinned behaviourally, because the mechanism is subtle
     // enough that a later `!items.length ||` would look like an improvement.
+    // THREE ways a row can state a figure, matching what `unitsForRow`
+    // actually prices: a count (per dona), a weight (per kg), or the law's
+    // own unit (m²/juft/litr, typed by the VED in the workspace). A row
+    // stating none of them is the only one that cannot be valued at all.
     if (field === 'itemMeasure')
-      return items.some((i) => i.quantity === null && i.weightKg === null);
+      return items.some(
+        (i) => i.quantity === null && i.weightKg === null && i.measureQty === null,
+      );
     if (field === 'weightKg') return !(Number(facts.weightKg) > 0);
     if (field === 'volumeM3') return !(Number(facts.volumeM3) > 0);
     return !String(facts[field] ?? '').trim();

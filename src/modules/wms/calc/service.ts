@@ -912,7 +912,12 @@ export async function calcQueueCounts(
  * everything names nothing (#649), introduced into the one surface this
  * round exists to strengthen.
  */
-type GoodsFact = { name: string; quantity: number | null; weightKg: number | null };
+type GoodsFact = {
+  name: string;
+  quantity: number | null;
+  weightKg: number | null;
+  measureQty: number | null;
+};
 
 async function goodsByRequest(ids: string[]): Promise<Map<string, GoodsFact[]>> {
   if (ids.length === 0) return new Map();
@@ -922,13 +927,19 @@ async function goodsByRequest(ids: string[]): Promise<Map<string, GoodsFact[]>> 
       name: calcRequestItems.name,
       quantity: calcRequestItems.quantity,
       weightKg: calcRequestItems.weightKg,
+      measureQty: calcRequestItems.measureQty,
     })
     .from(calcRequestItems)
     .where(inArray(calcRequestItems.requestId, ids));
   const out = new Map<string, GoodsFact[]>();
   for (const row of rows) {
     const list = out.get(row.requestId) ?? [];
-    list.push({ name: row.name, quantity: toNum(row.quantity), weightKg: toNum(row.weightKg) });
+    list.push({
+      name: row.name,
+      quantity: toNum(row.quantity),
+      weightKg: toNum(row.weightKg),
+      measureQty: toNum(row.measureQty),
+    });
     out.set(row.requestId, list);
   }
   return out;
@@ -1027,10 +1038,14 @@ export async function calcRequestDetail(
       weightKg: toNum(row.weightKg),
       volumeM3: toNum(row.volumeM3),
       // Every fact the checklist asks about — see `goodsByRequest`.
-      goods: items.map((item) => ({
+      // From the ROWS, not from `items` — the screen's item projection has no
+      // measure pair, and the checklist asks about all three ways a line can
+      // state a figure.
+      goods: itemRows.map((item) => ({
         name: item.name,
         quantity: toNum(item.quantity),
         weightKg: toNum(item.weightKg),
+        measureQty: toNum(item.measureQty),
       })),
     }),
     late: !row.completedAt && row.dueAt.getTime() < now.getTime(),

@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { calcGroups, calcRequestItems, calcRequests } from '../../platform/db/schema';
 import { aiConfigured } from '../../platform/ai/model';
@@ -353,6 +353,44 @@ async function pickBazas(
 
   if (edits.length === 0) return { picked: 0, capped, refused };
 
-  await saveTable(requestId, { items: edits, adds: [] }, ctx);
-  return { picked: edits.length, capped, refused };
+  /**
+   * STILL EMPTY? The rows were read before a model call that can take a
+   * minute, and a VED opening the request meanwhile is not a race — it is
+   * the normal way this queue is worked.
+   *
+   * The deterministic auto-fill has carried this re-check since 0094
+   * (`if (item.bazaUsd !== null) continue`, inside the save's own
+   * transaction). The pick did not, because it writes through `saveTable`'s
+   * ORDINARY edit branch — which is right for a person, whose typing SHOULD
+   * overwrite, and wrong for a machine answering a question it asked a
+   * minute ago. So a baza the VED had just typed was replaced by the model's
+   * choice, and `baza_source` flipped to 'import': their number gone, and the
+   * chip claiming the file had supplied it.
+   *
+   * A row that filled in the meantime is DROPPED and counted, never written.
+   * The residual window is the milliseconds to `saveTable`'s own
+   * `FOR UPDATE`, which is the window every writer in this module has.
+   */
+  const fresh = await db
+    .select({ id: calcRequestItems.id, bazaUsd: calcRequestItems.bazaUsd })
+    .from(calcRequestItems)
+    .where(
+      inArray(
+        calcRequestItems.id,
+        edits.map((e) => e.id),
+      ),
+    );
+  const stillEmpty = new Set(fresh.filter((r) => r.bazaUsd === null).map((r) => r.id));
+  const live = edits.filter((e) => stillEmpty.has(e.id));
+  const overtaken = edits.length - live.length;
+  if (overtaken > 0) {
+    logger.info(
+      { requestId, overtaken },
+      '[calc-prefill] a person filled these while the model was thinking — left alone',
+    );
+  }
+  if (live.length === 0) return { picked: 0, capped, refused: refused + overtaken };
+
+  await saveTable(requestId, { items: live, adds: [] }, ctx);
+  return { picked: live.length, capped, refused: refused + overtaken };
 }

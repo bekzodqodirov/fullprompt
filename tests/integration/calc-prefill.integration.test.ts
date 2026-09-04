@@ -405,6 +405,53 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(out.text).not.toContain('$0.00');
   });
 
+  it('a baza the VED types WHILE the model thinks is left alone', async () => {
+    // The rows are read before a model call that can take a minute, and a VED
+    // opening the request meanwhile is not a race — it is how this queue is
+    // worked. The deterministic auto-fill has re-checked «still empty» since
+    // 0094; the pick did not, because it writes through `saveTable`'s
+    // ORDINARY edit branch, which is right for a person and wrong for a
+    // machine answering a question it asked a minute ago. So the VED's number
+    // was replaced and `baza_source` flipped to 'import' — their figure gone,
+    // and the chip claiming the file had supplied it.
+    const rows = await db
+      .select()
+      .from(customsImportRows)
+      .where(eq(customsImportRows.batchId, batchId));
+    const kg = rows.find((r) => r.unit === 'kg')!;
+    const id = await open([{ name: 'Boshqa nom butunlay', tnvedCode: kg.tnvedCode, weightKg: 100 }]);
+
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      propose: async () => ({ groups: 0, batches: 0, failed: 0, ratesPulled: 0, codesStamped: 0, importFilled: 0 }),
+      pick: async (asking) => {
+        // THE VED TYPES, right here — inside the model's own window.
+        const [item] = await db
+          .select({ id: calcRequestItems.id, seq: calcRequestItems.seq })
+          .from(calcRequestItems)
+          .where(eq(calcRequestItems.requestId, id));
+        await saveTable(
+          id,
+          {
+            items: [{ id: item!.id, seq: item!.seq, bazaUsd: 7.77, bazaBasis: 'kg' }],
+            adds: [],
+          },
+          ctx(),
+        );
+        return asking.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' }));
+      },
+    });
+
+    expect(out.picked, 'the machine must not have written').toBe(0);
+    const [item] = await db
+      .select()
+      .from(calcRequestItems)
+      .where(eq(calcRequestItems.requestId, id));
+    expect(Number(item!.bazaUsd), 'the VED’s own number stands').toBe(7.77);
+    expect(item!.bazaSource, 'and it is still THEIR number, not the file’s').toBe('typed');
+    expect(item!.importRowId).toBeNull();
+  });
+
   it('a model that fails costs a sentence, never the job', async () => {
     const kg = await importRow();
     const id = await open([{ name: kg.name, tnvedCode: kg.tnvedCode, weightKg: 100 }]);

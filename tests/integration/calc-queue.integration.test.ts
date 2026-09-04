@@ -234,6 +234,15 @@ describe('a request is a JOB, not a card state', () => {
       items: [{ name: `sonli ${tag()}`, quantity: 3 }, { name: `nomsiz ${tag()}` }],
     });
     expect((await calcRequestDetail(bare.id))!.missing).toEqual(['itemMeasure']);
+
+    // …and a row the VED measured in the law's own unit closes it too. The
+    // screens read the measure pair off the ROWS, which the item projection
+    // they render does not carry.
+    await db
+      .update(calcRequestItems)
+      .set({ measureUnit: 'm2', measureQty: '12.5000' })
+      .where(eq(calcRequestItems.requestId, bare.id));
+    expect((await calcRequestDetail(bare.id))!.missing).toEqual([]);
   });
 });
 
