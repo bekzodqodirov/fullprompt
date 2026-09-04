@@ -106,6 +106,11 @@ describe('the won dialog cannot freeze (round 112)', () => {
     const dialog = read('src/components/won-dialog.tsx');
     expect(dialog.match(/finally \{\s*setBusy\(false\);\s*\}/g)?.length).toBe(2);
     expect(dialog).toContain("client_has_lead: t('won.errors.clientHasLead')");
+    // The hit tap goes through the same check as the typed code — the
+    // refusal must arrive at the echo, by name, on both paths.
+    expect(dialog).toContain('void checkCode(hit.clientCode)');
+    expect(dialog).toContain('void checkCode(attachCode)');
+    expect(dialog).not.toContain('setChecked({ code: hit.clientCode');
   });
 
   it('a second lead on one client is refused by the service AND named at the echo', () => {

@@ -123,12 +123,13 @@ export function WonDialog({
   // does not translate) used to leave `busy` true for ever — a greyed button
   // and no sentence, which is how the round-112 screenshot found the
   // one-lead-per-client refusal. A thrown action reads as «Saqlab bo'lmadi».
-  async function check() {
+  async function checkCode(code: string) {
     setBusy(true);
     setError('');
+    setChecked(null);
     let res: Awaited<ReturnType<typeof resolveClientCodeAction>>;
     try {
-      res = await resolveClientCodeAction(attachCode);
+      res = await resolveClientCodeAction(code);
     } catch {
       res = { error: 'failed' };
     } finally {
@@ -335,7 +336,7 @@ export function WonDialog({
                       type="button"
                       data-testid="won-check"
                       disabled={busy || attachCode.trim().length < 2}
-                      onClick={() => void check()}
+                      onClick={() => void checkCode(attachCode)}
                       className="btn-secondary shrink-0"
                     >
                       {t('won.check')}
@@ -351,11 +352,13 @@ export function WonDialog({
                             className="btn-secondary w-full !justify-start gap-2 text-left"
                             onClick={() => {
                               // The tap is the ECHO round 107 demanded before an
-                              // attach with no undo: the code and the name land in
-                              // the checked strip, and «Confirm» wakes up only then.
+                              // attach with no undo: the code goes through the SAME
+                              // check the typed code does, so a code that already
+                              // carries a lead is refused here, by name, and not at
+                              // the press (#882); «Confirm» wakes up only on the echo.
                               setAttachCode(hit.clientCode);
-                              setChecked({ code: hit.clientCode, name: hit.name });
                               setHits([]);
+                              void checkCode(hit.clientCode);
                             }}
                           >
                             <span className="font-mono font-semibold">{hit.clientCode}</span>
