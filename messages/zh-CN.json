@@ -2425,7 +2425,8 @@
     "chainTitle": "版本历史",
     "registryLead": "线索",
     "regClear": "清除",
-    "regAll": "全部"
+    "regAll": "全部",
+    "registryNav": "计算历史"
   },
   "partners": {
     "title": "合作方",

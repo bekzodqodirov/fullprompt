@@ -2425,7 +2425,8 @@
     "chainTitle": "История версий",
     "registryLead": "Лид",
     "regClear": "Сбросить",
-    "regAll": "Все"
+    "regAll": "Все",
+    "registryNav": "История расчётов"
   },
   "partners": {
     "title": "Контрагенты",

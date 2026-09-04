@@ -2425,7 +2425,8 @@
     "chainTitle": "Version history",
     "registryLead": "Lead",
     "regClear": "Clear",
-    "regAll": "All"
+    "regAll": "All",
+    "registryNav": "Calc history"
   },
   "partners": {
     "title": "Counterparties",

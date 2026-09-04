@@ -122,7 +122,7 @@ export const NAV: NavGroupSpec[] = [
         // entry could reach no calc screen at all: /hisoblash redirects them
         // out, and /hisoblash/narxlar hung off a card panel they cannot open.
         href: '/hisoblash/tarix',
-        labelKey: 'registryTitle',
+        labelKey: 'registryNav',
         namespace: 'calc',
         icon: 'report',
         permissions: ['finance.reports', 'ved.docs'],

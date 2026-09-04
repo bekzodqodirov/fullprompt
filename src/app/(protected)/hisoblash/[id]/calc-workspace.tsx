@@ -585,11 +585,14 @@ function SealedPanel({
                     V{v.quoteNo}
                   </a>
                 )}
+                {/* The chip sits right behind the version it describes: at
+                    360 the row wraps, and a chip at the END landed on its
+                    own line between V1 and V2, reading as either's. */}
+                <ChainStateChip version={v} />
                 <span className="font-mono tabular-nums">${v.totalUsd.toFixed(2)}</span>
                 <span className="text-ink-500">
                   {v.sealedAt.toLocaleDateString('ru-RU')} · {v.sealedByName ?? '—'}
                 </span>
-                <ChainStateChip version={v} />
               </li>
             ))}
           </ul>
