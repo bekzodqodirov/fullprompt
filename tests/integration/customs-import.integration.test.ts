@@ -24,6 +24,7 @@ import {
   deleteImportBatch,
   newestReadyBatchId,
   runCustomsImport,
+  sweepStuckImports,
 } from '@/modules/wms/customs/import-service';
 import { importRowForCode, suggestImportBaza } from '@/modules/wms/customs/import-baza';
 import type { ImportUnit } from '@/modules/wms/customs/import-parse';
@@ -506,5 +507,114 @@ describe('the workspace takes the suggestion', () => {
     const [after] = await itemsOf(requestId);
     expect(Number(after!.bazaUsd)).toBe(Number(ghost!.pricePerUnitUsd));
     expect(after!.importRowId).toBeNull();
+  });
+});
+
+/**
+ * The watchdog over a parse that stopped (0095).
+ *
+ * Two files uploaded on 2026-09-04 sat at «читается» with 0 rows for hours:
+ * whatever killed them, nothing wrote it down, and the screen offers no
+ * button on a processing row — so they were unremovable. The sweep is what
+ * tells a dead import from a slow one, and the heartbeat is what it reads.
+ *
+ * It runs over the WHOLE table, so a foreign batch left processing by
+ * another file would be settled by this test's own sweep (#730). Every
+ * processing batch that is not ours is snapshotted and put back.
+ */
+describe('a parse that stopped saying it was alive', () => {
+  const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000);
+  let foreign: { id: string; heartbeatAt: Date | null }[] = [];
+
+  const mint = async (opts: {
+    status?: string;
+    heartbeatAt?: Date | null;
+    uploadedAt?: Date;
+  }) => {
+    const [row] = await db
+      .insert(customsImportBatches)
+      .values({
+        fileName: `sweep-${randomUUID().slice(0, 8)}.xlsx`,
+        uploadedBy: actorId,
+        status: opts.status ?? 'processing',
+        heartbeatAt: opts.heartbeatAt ?? null,
+        ...(opts.uploadedAt ? { uploadedAt: opts.uploadedAt } : {}),
+      })
+      .returning({ id: customsImportBatches.id });
+    madeBatches.push(row!.id);
+    return row!.id;
+  };
+
+  const statusOf = async (id: string) => {
+    const [row] = await db
+      .select({ status: customsImportBatches.status, error: customsImportBatches.error })
+      .from(customsImportBatches)
+      .where(eq(customsImportBatches.id, id));
+    return row!;
+  };
+
+  beforeAll(async () => {
+    foreign = await db
+      .select({ id: customsImportBatches.id, heartbeatAt: customsImportBatches.heartbeatAt })
+      .from(customsImportBatches)
+      .where(eq(customsImportBatches.status, 'processing'));
+  });
+
+  afterAll(async () => {
+    for (const row of foreign) {
+      await db
+        .update(customsImportBatches)
+        .set({ status: 'processing', error: null, heartbeatAt: row.heartbeatAt })
+        .where(eq(customsImportBatches.id, row.id));
+    }
+  });
+
+  it('fails a batch that went quiet, and says so in words', async () => {
+    const id = await mint({ heartbeatAt: minutesAgo(20) });
+    await sweepStuckImports();
+    const row = await statusOf(id);
+    expect(row.status).toBe('failed');
+    // Law 6 one module over: never a bare code on a screen a person reads.
+    expect(row.error ?? '').toMatch(/qayta yuklang/);
+  });
+
+  it('leaves a batch that is still beating alone', async () => {
+    const id = await mint({ heartbeatAt: new Date() });
+    await sweepStuckImports();
+    expect((await statusOf(id)).status).toBe('processing');
+  });
+
+  it('judges a batch from before 0095 by its upload time', async () => {
+    // A row minted by the deploy that is stuck TODAY has no heartbeat at
+    // all: without the fallback clock the sweep can never reach the two rows
+    // it exists for.
+    const old = await mint({ heartbeatAt: null, uploadedAt: minutesAgo(240) });
+    const fresh = await mint({ heartbeatAt: null });
+    await sweepStuckImports();
+    expect((await statusOf(old)).status).toBe('failed');
+    expect((await statusOf(fresh)).status).toBe('processing');
+  });
+
+  it('never touches a batch that finished', async () => {
+    // A ready quarter is what every suggestion in the company reads; a sweep
+    // that could reach one would delete the baza book on a slow morning.
+    const id = await mint({ status: 'ready', heartbeatAt: minutesAgo(600) });
+    await sweepStuckImports();
+    expect((await statusOf(id)).status).toBe('ready');
+  });
+
+  it('says it is alive BEFORE it reads a byte', async () => {
+    // Opening the stored file is itself something that can hang — 80 MB over
+    // the network from MinIO. A first beat only after the first row would
+    // leave a healthy retry looking dead for the whole stale window.
+    const id = await mint({ heartbeatAt: null });
+    await expect(
+      runCustomsImport({ batchId: id, storageKey: 'customs-import/missing', fileName: 'x.xlsx' }),
+    ).rejects.toThrow();
+    const [row] = await db
+      .select({ heartbeatAt: customsImportBatches.heartbeatAt })
+      .from(customsImportBatches)
+      .where(eq(customsImportBatches.id, id));
+    expect(row!.heartbeatAt).not.toBeNull();
   });
 });

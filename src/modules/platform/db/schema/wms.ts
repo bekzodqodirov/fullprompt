@@ -2794,12 +2794,24 @@ export const customsImportBatches = pgTable(
     periodFrom: date('period_from'),
     periodTo: date('period_to'),
     error: text('error'),
+    /** When the parse last said it was alive (0095).
+     *
+     * A job that throws is retried and then forgotten by pg-boss; a process
+     * killed mid-parse never reaches a catch at all. Without this column a
+     * batch in either state is indistinguishable from one still reading a
+     * large file, so «processing» meant nothing and the row could never be
+     * cleared. NULL on batches uploaded before 0095 — the sweep reads
+     * `uploaded_at` for those. */
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
   },
   (t) => [
     check(
       'customs_import_batches_status_check',
       sql`${t.status} IN ('processing', 'ready', 'failed')`,
     ),
+    index('customs_import_batches_processing_idx')
+      .on(t.heartbeatAt)
+      .where(sql`${t.status} = 'processing'`),
   ],
 );
 

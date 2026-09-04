@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { customsImportBatches, customsImportRows } from '../../platform/db/schema';
@@ -25,8 +26,26 @@ import {
 /** Rows per INSERT. Big enough that 500k rows is 500 statements, small
  * enough that one bad chunk is a small loss and the pool is never held. */
 const CHUNK = 1_000;
-/** How often the screen's row counter catches up (in rows). */
-const PROGRESS_EVERY = 20_000;
+/**
+ * How often the parse says it is alive — on a WALL CLOCK, not every N rows.
+ *
+ * It used to be every 20,000 rows, and that is why two stuck imports were
+ * indistinguishable from two slow ones: a file with fewer rows than one step
+ * showed «0» from the first second to the last, and a file that died on row
+ * three showed exactly the same. Ten seconds answers the only question the
+ * person at the screen has — is it moving — for every file size there is.
+ */
+const HEARTBEAT_MS = 10_000;
+
+/**
+ * How long a batch may go quiet before the sweep calls it dead.
+ *
+ * Generous against the measurement rather than against a guess: 500,000 rows
+ * parse in 83 seconds here and the beat is every ten, so a live import is
+ * never more than seconds behind. Fifteen minutes is what a container
+ * restart, a deploy or a full disk looks like.
+ */
+export const IMPORT_STALE_MS = 15 * 60_000;
 
 export interface ImportOutcome {
   rowCount: number;
@@ -60,22 +79,77 @@ async function* streamRows(storageKey: string, fileName: string): AsyncGenerator
   const storage = getStorage();
   const stream = await storage.getStream(storageKey);
 
-  if (/\.csv$/i.test(fileName)) {
-    let buffer = '';
-    for await (const chunk of stream) {
-      buffer += String(chunk);
-      let nl = buffer.indexOf('\n');
-      while (nl >= 0) {
-        const line = buffer.slice(0, nl).replace(/\r$/, '');
-        buffer = buffer.slice(nl + 1);
-        if (line.trim() !== '') yield splitCsvLine(line);
-        nl = buffer.indexOf('\n');
-      }
-    }
-    if (buffer.trim() !== '') yield splitCsvLine(buffer.replace(/\r$/, ''));
-    return;
-  }
+  /**
+   * A source that dies is a HANG, not an error — and that is the whole
+   * reason «читается» could mean nothing.
+   *
+   * exceljs pipes this stream into unzipper, and node does NOT forward an
+   * error across `pipe()`: the reader simply stops producing entries and the
+   * parse waits for ever, with no row counter moving and nothing in the log.
+   * Worse on the local driver, where `createReadStream` reports a missing
+   * file asynchronously and nobody is listening: an unhandled 'error' on a
+   * Readable is an uncaught exception, which takes the whole app process
+   * down rather than one import.
+   *
+   * So the source's failure is raced against every row. Measured: reading a
+   * key that does not exist used to hang until the test's own timeout and
+   * escape as an uncaught exception; it now refuses, with the reason.
+   */
+  let sourceFailed!: (err: Error) => void;
+  const failed = new Promise<never>((_, reject) => {
+    sourceFailed = reject;
+  });
+  // Marked handled up front — nobody awaits it until the first race, and an
+  // early rejection would otherwise be an unhandled rejection warning.
+  failed.catch(() => {});
+  stream.on('error', (err: unknown) =>
+    sourceFailed(err instanceof Error ? err : new Error(String(err))),
+  );
 
+  const inner = /\.csv$/i.test(fileName) ? csvRows(stream) : xlsxRows(stream);
+  const it = inner[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      const step = await Promise.race([it.next(), failed]);
+      if (step.done) return;
+      yield step.value;
+    }
+  } finally {
+    // Destroy FIRST, and never AWAIT the generator's own close.
+    //
+    // Measured: closing the exceljs reader while it is parked on a stream
+    // that will produce no more bytes never resolves, so awaiting it turned
+    // the refusal back into the hang it was supposed to replace — the same
+    // silence one layer down. Tearing the source down is what lets that
+    // cleanup finish, and whether it ever does is no longer this parse's
+    // business.
+    stream.destroy();
+    void Promise.resolve(it.return?.(undefined)).catch(() => {});
+  }
+}
+
+/** The customs service exports csv too, and the owner may send either. */
+async function* csvRows(stream: Readable): AsyncGenerator<RowCells> {
+  let buffer = '';
+  for await (const chunk of stream) {
+    buffer += String(chunk);
+    let nl = buffer.indexOf('\n');
+    while (nl >= 0) {
+      const line = buffer.slice(0, nl).replace(/\r$/, '');
+      buffer = buffer.slice(nl + 1);
+      if (line.trim() !== '') yield splitCsvLine(line);
+      nl = buffer.indexOf('\n');
+    }
+  }
+  if (buffer.trim() !== '') yield splitCsvLine(buffer.replace(/\r$/, ''));
+}
+
+/**
+ * xlsx through exceljs's STREAM reader — the repo's other nine call sites
+ * all build workbooks in memory, which is right for a 40-row report and
+ * impossible here (500,000 rows measured at 774 MB even streaming).
+ */
+async function* xlsxRows(stream: Readable): AsyncGenerator<RowCells> {
   const ExcelJS = (await import('exceljs')).default;
   const reader = new ExcelJS.stream.xlsx.WorkbookReader(stream, {
     entries: 'emit',
@@ -133,6 +207,20 @@ function splitCsvLine(line: string): string[] {
 }
 
 /**
+ * «I am still reading» — one small UPDATE, on the wall clock.
+ *
+ * It carries the row counter too, so the screen's number moves for a file of
+ * any size. The two are one write on purpose: a heartbeat that agreed with a
+ * counter written somewhere else would be a second place to get it wrong.
+ */
+async function beat(batchId: string, rowCount: number, skipped: number): Promise<void> {
+  await db
+    .update(customsImportBatches)
+    .set({ rowCount, skippedRows: skipped, heartbeatAt: new Date() })
+    .where(eq(customsImportBatches.id, batchId));
+}
+
+/**
  * Parse the stored file into `customs_import_rows` and settle the batch.
  *
  * Idempotent by wipe-and-redo: pg-boss retries a thrown job, so the batch's
@@ -146,6 +234,12 @@ export async function runCustomsImport(input: {
 }): Promise<ImportOutcome> {
   const { batchId, storageKey, fileName } = input;
   await db.delete(customsImportRows).where(eq(customsImportRows.batchId, batchId));
+  // The first beat is BEFORE a byte is read, and it matters most: opening
+  // the stored file is itself something that can hang (a storage blip, a
+  // network read of 80 MB). Without it a batch would look dead for the
+  // fifteen minutes the sweep waits, and a retry after a container restart
+  // would be reaped before it had done anything wrong.
+  await beat(batchId, 0, 0);
 
   let header: ReturnType<typeof readHeader>['index'] | null = null;
   let rowCount = 0;
@@ -156,7 +250,7 @@ export async function runCustomsImport(input: {
   let driftChecked = 0;
   let driftSum = 0;
   let pending: ParsedImportRow[] = [];
-  let sinceProgress = 0;
+  let lastBeat = Date.now();
 
   const flush = async () => {
     if (pending.length === 0) return;
@@ -220,14 +314,10 @@ export async function runCustomsImport(input: {
     }
     pending.push(row);
     rowCount++;
-    sinceProgress++;
     if (pending.length >= CHUNK) await flush();
-    if (sinceProgress >= PROGRESS_EVERY) {
-      sinceProgress = 0;
-      await db
-        .update(customsImportBatches)
-        .set({ rowCount, skippedRows: skipped })
-        .where(eq(customsImportBatches.id, batchId));
+    if (Date.now() - lastBeat >= HEARTBEAT_MS) {
+      lastBeat = Date.now();
+      await beat(batchId, rowCount, skipped);
     }
   }
   await flush();
@@ -245,7 +335,15 @@ export async function runCustomsImport(input: {
 
   await db
     .update(customsImportBatches)
-    .set({ status: 'ready', rowCount, skippedRows: skipped, periodFrom, periodTo, error: null })
+    .set({
+      status: 'ready',
+      rowCount,
+      skippedRows: skipped,
+      periodFrom,
+      periodTo,
+      error: null,
+      heartbeatAt: new Date(),
+    })
     .where(eq(customsImportBatches.id, batchId));
 
   return { rowCount, skipped, skipReasons, periodFrom, periodTo };
@@ -257,6 +355,38 @@ export async function failCustomsImport(batchId: string, message: string): Promi
     .update(customsImportBatches)
     .set({ status: 'failed', error: message.slice(0, 500) })
     .where(eq(customsImportBatches.id, batchId));
+}
+
+/**
+ * Fail every batch that stopped saying it was alive.
+ *
+ * The backstop for the failures the worker's own catch can never see. A
+ * process killed mid-parse — out of memory, a deploy, a disk with no room
+ * left for the sheet exceljs spools to /tmp — reaches no catch, and pg-boss
+ * forgets a job once its retries are spent. Both left the row claiming
+ * «processing» for ever, on a screen that offers no button on a processing
+ * row: two files uploaded on 2026-09-04 were, between them, unremovable.
+ *
+ * `uploaded_at` is the fallback clock for batches minted before 0095 — and
+ * for the one window where a beat has genuinely not happened yet, which
+ * cannot outlast the first ten seconds of a live parse.
+ *
+ * Returns how many it settled, so a quiet sweep says nothing at all.
+ */
+export async function sweepStuckImports(staleMs = IMPORT_STALE_MS): Promise<number> {
+  const cutoff = new Date(Date.now() - staleMs).toISOString();
+  const rows = await db.execute<{ id: string }>(sql`
+    UPDATE customs_import_batches
+       SET status = 'failed',
+           error = ${'to‘xtab qoldi — faylni qayta yuklang'}
+     WHERE status = 'processing'
+       AND COALESCE(heartbeat_at, uploaded_at) < ${cutoff}::timestamptz
+    RETURNING id
+  `);
+  if (rows.length > 0) {
+    logger.error({ count: rows.length }, '[customs-import] stuck batches failed by the sweep');
+  }
+  return rows.length;
 }
 
 export async function listImportBatches(limit = 20) {

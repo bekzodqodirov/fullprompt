@@ -86,7 +86,22 @@ export default async function CustomsImportPage() {
                         {t('ready')}
                       </span>
                     ) : b.status === 'processing' ? (
-                      <span className="chip chip-brand">{t('processing')}</span>
+                      <>
+                        <span className="chip chip-brand">{t('processing')}</span>
+                        {/* The row counter moves every ten seconds now, and
+                            this is the clock beside it: a beat that stops is
+                            how a stuck import used to be invisible. The
+                            sweep fails it in words a quarter of an hour
+                            later — this is what the person watching sees
+                            first. */}
+                        {b.heartbeatAt ? (
+                          <span className="mt-0.5 block text-2xs text-ink-500">
+                            {t('lastBeat', {
+                              time: format.dateTime(b.heartbeatAt, { timeStyle: 'medium' }),
+                            })}
+                          </span>
+                        ) : null}
+                      </>
                     ) : (
                       <span className="chip chip-warn" data-testid="import-failed">
                         {t('failed')}
