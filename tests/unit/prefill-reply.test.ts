@@ -152,6 +152,17 @@ describe('the pass names what it did NOT do', () => {
     });
     expect(text).toContain('20 ta qator');
     expect(text).toContain('3 ta taklif');
+    // …and a row a PERSON filled while the model was thinking is a different
+    // fact with a different sentence: the model's unit was fine, the VED
+    // simply got there first, and reporting that as a fault would be the
+    // wrong reason on the screen.
+    const overtaken = prefillReplyText({
+      ...base,
+      customsUsd: 248,
+      pickOvertaken: 2,
+    });
+    expect(overtaken).toContain('2 tasini o‘zingiz to‘ldirdingiz');
+    expect(overtaken).not.toContain('o‘lchovi mos kelmadi');
     // …and stays quiet when there is nothing to confess.
     const clean = prefillReplyText({
       customsUsd: 248,

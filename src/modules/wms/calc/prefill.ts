@@ -185,12 +185,14 @@ export async function aiPrefill(
   let picked = 0;
   let pickCapped = 0;
   let pickRefused = 0;
+  let pickOvertaken = 0;
   if (configured && parts.customs) {
     try {
       const out = await pickBazas(requestId, ctx, pick);
       picked = out.picked;
       pickCapped = out.capped;
       pickRefused = out.refused;
+      pickOvertaken = out.overtaken;
       if (picked > 0) aiUsed = true;
     } catch (err) {
       logger.warn({ err, requestId }, '[calc-prefill] pick failed');
@@ -220,6 +222,7 @@ export async function aiPrefill(
       aiConfigured: configured,
       pickCapped,
       pickRefused,
+      pickOvertaken,
     }),
     customsUsd,
     freightUsd,
@@ -240,8 +243,8 @@ async function pickBazas(
   requestId: string,
   ctx: AuditContext,
   pick: NonNullable<PrefillDeps['pick']>,
-): Promise<{ picked: number; capped: number; refused: number }> {
-  const none = { picked: 0, capped: 0, refused: 0 };
+): Promise<{ picked: number; capped: number; refused: number; overtaken: number }> {
+  const none = { picked: 0, capped: 0, refused: 0, overtaken: 0 };
   const batchId = await newestReadyBatchId();
   // Nothing imported yet: there is nothing to choose between, and inventing
   // a price is the one thing this module may never do.
@@ -351,7 +354,7 @@ async function pickBazas(
     '[calc-prefill] the model chose',
   );
 
-  if (edits.length === 0) return { picked: 0, capped, refused };
+  if (edits.length === 0) return { picked: 0, capped, refused, overtaken: 0 };
 
   /**
    * STILL EMPTY? The rows were read before a model call that can take a
@@ -389,8 +392,8 @@ async function pickBazas(
       '[calc-prefill] a person filled these while the model was thinking — left alone',
     );
   }
-  if (live.length === 0) return { picked: 0, capped, refused: refused + overtaken };
+  if (live.length === 0) return { picked: 0, capped, refused, overtaken };
 
   await saveTable(requestId, { items: live, adds: [] }, ctx);
-  return { picked: live.length, capped, refused: refused + overtaken };
+  return { picked: live.length, capped, refused, overtaken };
 }

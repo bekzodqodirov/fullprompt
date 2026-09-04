@@ -143,6 +143,13 @@ export interface PrefillReplyInput {
    */
   pickCapped?: number;
   pickRefused?: number;
+  /**
+   * Rows a PERSON filled while the model was thinking — left alone, and a
+   * different fact from a refused pick. Counting the two together would put
+   * the wrong reason on the screen: the model's unit was fine, the VED
+   * simply got there first, and that is not a fault to report as one.
+   */
+  pickOvertaken?: number;
 }
 
 /**
@@ -195,6 +202,7 @@ export function prefillReplyText(input: PrefillReplyInput): string {
   const left: string[] = [];
   if (input.pickCapped) left.push(`${input.pickCapped} ta qator ko‘rilmadi (juda ko‘p)`);
   if (input.pickRefused) left.push(`${input.pickRefused} ta taklif o‘lchovi mos kelmadi`);
+  if (input.pickOvertaken) left.push(`${input.pickOvertaken} tasini o‘zingiz to‘ldirdingiz`);
   if (left.length) lines.push(`Bazasi qo‘yilmadi: ${left.join(' · ')}`);
 
   const missing = input.blockers.map(blockerText);
