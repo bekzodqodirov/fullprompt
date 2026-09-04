@@ -79,9 +79,9 @@ export async function CalcPanel({
       title={`🧮 ${t('panelTitle')}`}
       badge={open.length || undefined}
       testId="calc-panel"
-      // A sealed price is what the seller opens this card to read, so it is
-      // never behind a fold.
-      open={open.length > 0 || Boolean(seal)}
+      // A price on the card is what the seller opens it to read, so it is
+      // never behind a fold — the Готово answer's door included (phase 4).
+      open={open.length > 0 || Boolean(seal) || Boolean(anchor)}
     >
       {open.length > 0 ? (
         <ul className="space-y-1" data-testid="calc-open">
@@ -163,42 +163,6 @@ export async function CalcPanel({
             />
           )}
 
-          {offers.length > 0 ? (
-            <ul className="space-y-0.5 text-2xs text-ink-600" data-testid="calc-offers">
-              {offers
-                // A seller reprints their own promise, never a colleague's.
-                .filter((o) => scope === 'all' || o.offeredBy === actor.id)
-                .map((o) => (
-                <li key={o.id} className="flex flex-wrap items-center gap-1">
-                  <span className="font-mono tabular-nums">${Number(o.clientPriceUsd).toFixed(2)}</span>
-                  <span className="uppercase">{o.locale}</span>
-                  <span>{format.dateTime(o.offeredAt, { dateStyle: 'short' })}</span>
-                  {o.belowFloor ? <span className="chip chip-warn">{t('belowFloorChip')}</span> : null}
-                  {o.belowFloor && !o.approvedAt ? (
-                    <span className="chip chip-warn" data-testid="calc-offer-pending">
-                      {t('offerPending')}
-                    </span>
-                  ) : null}
-                  {/* The sheet outlives the press: after a refresh the form's
-                      own link is gone, and this is the only way back to it. */}
-                  {/* A pending promise has no sheet: the customer has not been
-                      told this price and must not be handed a document saying
-                      they have. */}
-                  {o.belowFloor && !o.approvedAt ? null : (
-                  <a
-                    className="text-brand-700"
-                    href={`/api/calc/offer/${o.id}/pdf?til=${o.locale}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    data-testid="calc-offer-pdf"
-                  >
-                    PDF
-                  </a>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : null}
         </div>
       ) : null}
 
@@ -244,6 +208,45 @@ export async function CalcPanel({
           ) : null}
         </div>
       ) : null}
+
+      {/* Every recorded offer on this card, whichever anchor made it — one
+          list, one home, after both doors. */}
+          {offers.length > 0 ? (
+            <ul className="space-y-0.5 text-2xs text-ink-600" data-testid="calc-offers">
+              {offers
+                // A seller reprints their own promise, never a colleague's.
+                .filter((o) => scope === 'all' || o.offeredBy === actor.id)
+                .map((o) => (
+                <li key={o.id} className="flex flex-wrap items-center gap-1">
+                  <span className="font-mono tabular-nums">${Number(o.clientPriceUsd).toFixed(2)}</span>
+                  <span className="uppercase">{o.locale}</span>
+                  <span>{format.dateTime(o.offeredAt, { dateStyle: 'short' })}</span>
+                  {o.belowFloor ? <span className="chip chip-warn">{t('belowFloorChip')}</span> : null}
+                  {o.belowFloor && !o.approvedAt ? (
+                    <span className="chip chip-warn" data-testid="calc-offer-pending">
+                      {t('offerPending')}
+                    </span>
+                  ) : null}
+                  {/* The sheet outlives the press: after a refresh the form's
+                      own link is gone, and this is the only way back to it. */}
+                  {/* A pending promise has no sheet: the customer has not been
+                      told this price and must not be handed a document saying
+                      they have. */}
+                  {o.belowFloor && !o.approvedAt ? null : (
+                  <a
+                    className="text-brand-700"
+                    href={`/api/calc/offer/${o.id}/pdf?til=${o.locale}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    data-testid="calc-offer-pdf"
+                  >
+                    PDF
+                  </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
       {/* The phone path is the BOT: the seller's material lives in Telegram,
           and a browser form cannot reach it — forwarding three photos to the

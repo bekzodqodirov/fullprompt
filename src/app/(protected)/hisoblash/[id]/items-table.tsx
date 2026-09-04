@@ -15,6 +15,7 @@ import {
   type MeasureUnit,
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
+import { defaultBasisFor, uniformBazaOf } from '@/modules/wms/calc/basis';
 import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 import {
   confirmAllAction,
@@ -103,38 +104,6 @@ const emptyRow = (key: number): NewRow => ({
   bazaValue: '',
   bazaBasis: 'unit',
 });
-
-/**
- * Item 3 (phase 4): the CODE's law says the row's default basis, so the VED
- * only types the number («edinitsa izmereniya avtomatik» — the owner's own
- * sentence). Total over DutyUnit: dona/1000_dona price per piece and default
- * to the per-unit basis; sm³ stays per dona (#868 — nobody VALUES a vehicle
- * by displacement); a pure-advalor code keeps the old default. Used by the
- * render, save(), the LIVE arithmetic and the draft self-clean — all four,
- * or the screen shows one basis while another is posted or priced (#171,
- * and phase 3's live-equals-saved invariant).
- */
-export const defaultBasisFor = (group: WorkspaceGroup | null): BazaBasis => {
-  const u = group?.dutyUnit;
-  return u === 'm2' || u === 'juft' || u === 'litr' ? u : u === 'kg' ? 'kg' : 'unit';
-};
-
-/**
- * Item 1 (phase 4): the ONE baza the whole block is priced at — his own
- * sentence «bitta kod — bitta narx» made a summary line. Null when members
- * carry different pairs or none: three different bazas have no one number.
- */
-export const uniformBazaOf = (
-  items: { bazaUsd: number | null; bazaBasis: BazaBasis | null }[],
-): { bazaUsd: number; bazaBasis: BazaBasis } | null => {
-  if (items.length === 0) return null;
-  const first = items[0]!;
-  if (first.bazaUsd === null || first.bazaBasis === null) return null;
-  for (const it of items) {
-    if (it.bazaUsd !== first.bazaUsd || it.bazaBasis !== first.bazaBasis) return null;
-  }
-  return { bazaUsd: first.bazaUsd, bazaBasis: first.bazaBasis };
-};
 
 /** Which extended unit the group's law asks for — null for advalor/kg/dona. */
 const requiredUnitOf = (group: WorkspaceGroup | null): MeasureUnit | null =>
