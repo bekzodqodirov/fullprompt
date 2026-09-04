@@ -91,6 +91,32 @@ test('the queue shows it, and the checklist says what it knows', async ({ page }
   await expect(page.getByTestId('calc-checklist')).toBeVisible();
 });
 
+test('the VED types the cargo facts the bot could not read', async ({ page }) => {
+  expect(requestUrl, 'the queue test must have opened a request').not.toBe('');
+  await login(page, ADMIN);
+  await page.goto(requestUrl);
+
+  // The owner's report: «agar AI kub kilolarni bermagan bo'lsa lekin
+  // materiallarda bo'lsa, ularni VED hodimi o'zi kirgiza olmayabti». The
+  // screen accused and offered nothing — this walk is the door that answers.
+  // This request came from the CARD form, which asks for both — so the
+  // editor is folded (it opens itself only when something is missing, which
+  // is exactly the case he reported). Open it, as the VED would.
+  await page.getByTestId('calc-facts-edit').click();
+  const weight = page.getByTestId('calc-fact-weight');
+  await expect(weight).toBeVisible({ timeout: 15_000 });
+  await weight.fill('812.5');
+  await page.getByTestId('calc-fact-volume').fill('4.25');
+  await page.getByTestId('calc-facts-save').click();
+
+  // The figures stand, and the ⚠ that named them is gone.
+  await expect(page.getByTestId('calc-facts')).toContainText('812.5', { timeout: 15_000 });
+  await expect(page.getByTestId('calc-facts')).toContainText('4.25');
+  await expect(page.getByTestId('calc-checklist')).not.toContainText('⚠');
+  // Filled, the form folds away rather than sitting open over the facts.
+  await expect(page.getByTestId('calc-facts-edit')).toBeVisible();
+});
+
 test('take it, then finish it with the figure the seller is waiting for', async ({ page }) => {
   expect(requestUrl, 'the queue test must have opened a request').not.toBe('');
   await login(page, ADMIN);
