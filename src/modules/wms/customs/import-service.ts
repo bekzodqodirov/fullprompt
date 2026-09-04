@@ -156,14 +156,36 @@ async function* xlsxRows(stream: Readable): AsyncGenerator<RowCells> {
     sharedStrings: 'cache',
     worksheets: 'emit',
   });
+  // NOT `break` after the first sheet — measured, and it leaked 57 MB.
+  //
+  // exceljs SPOOLS a worksheet to a temp file whenever the sheet entry
+  // precedes `sharedStrings` in the zip, which is how Excel itself writes
+  // one, and it deletes that file only after the sheet has been yielded to
+  // COMPLETION (`tempFileCleanupCallback()` after `yield* _parseWorksheet`).
+  // Breaking out leaves the reader suspended mid-yield, so the callback never
+  // runs — and a generator's `return()` executes `finally` blocks only, of
+  // which it has none, so nothing else can reach it either. MEASURED in a
+  // long-lived process: one 150,000-row import left **57 MB** in /tmp and it
+  // was still there three seconds later; the container's own exit is what
+  // cleans it, and the app container runs for weeks between deploys. On a
+  // 500,000-row quarter that is ~190 MB per upload, on a VPS where the
+  // photographs, Postgres and the dumps already share one disk — and a /tmp
+  // with no room is itself one of the ways a parse dies with nothing written
+  // down, which is the whole subject of 0095.
+  //
+  // So the loop RUNS OUT rather than breaking, and the rule «one sheet» is
+  // kept by not yielding the others' rows. The cost is walking a second
+  // sheet's XML for nothing, on a file that is not supposed to have one.
+  let sheet = 0;
   for await (const worksheet of reader) {
+    sheet++;
     for await (const row of worksheet) {
+      // The dump is one sheet; a second one would be somebody else's file.
+      if (sheet > 1) continue;
       // exceljs's values array is 1-based with a hole at [0].
       const values = row.values as unknown[];
       yield Array.isArray(values) ? values.slice(1).map(cellText) : [];
     }
-    // The dump is one sheet; a second one would be somebody else's file.
-    break;
   }
 }
 

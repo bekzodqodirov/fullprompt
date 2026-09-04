@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -601,6 +601,20 @@ describe('a parse that stopped saying it was alive', () => {
     const id = await mint({ status: 'ready', heartbeatAt: minutesAgo(600) });
     await sweepStuckImports();
     expect((await statusOf(id)).status).toBe('ready');
+  });
+
+  it('leaves no spooled worksheet behind — measured, not assumed', async () => {
+    // exceljs writes a worksheet to a temp file whenever the sheet entry
+    // precedes sharedStrings in the zip, which is how Excel itself saves one,
+    // and deletes it only once the sheet has been yielded to completion.
+    // Breaking out of the reader after the first sheet skipped that: MEASURED
+    // at 57 MB left behind per 150,000-row import, in a process that runs for
+    // weeks. `fileParallelism: false` is what makes this count trustworthy —
+    // no other test file is running beside this one.
+    const spooled = () => readdirSync('/tmp').filter((f) => f.startsWith('tmp-')).length;
+    const before = spooled();
+    await importFixture('spool-check.xlsx');
+    expect(spooled()).toBe(before);
   });
 
   it('says it is alive BEFORE it reads a byte', async () => {
