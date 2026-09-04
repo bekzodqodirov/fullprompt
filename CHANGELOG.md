@@ -44,6 +44,25 @@ narxlanadi.
 ishlaydi; yuklanmagan bo'lsa Boshqaruv → «📥 Bojxona bazasi» dan chorak
 faylni yuklang.
 
+**Va ishga tushirishdan oldin butun narsa qaytadan tekshirildi** — o'sha
+tekshiruv to'rtta xatoni topdi, ikkitasi siz yoki xodimingiz KO'RADIGAN
+joyda edi:
+
+- **Narxlash qismi umuman ishlamas ekan.** ✨ tugmasi va bot ishi tovarni
+  guruhlab, keyin stavkalarni tortishi kerak edi — lekin o'sha qism
+  o'zining ichki qulfidan rad etilardi va jurnalga «bu kodga stavka yo'q»
+  deb yolg'on sabab yozardi. Testlar yashil edi, chunki test o'sha qismni
+  to'g'ridan chaqirardi. Tuzatildi.
+- **«Yetishmayapti» ro'yxati hech qachon yopilmas edi:** ekran tovarni
+  faqat nomi bilan olardi, ya'ni soni va kilosi bazada turgan bo'lsa ham
+  bo'sh o'qilardi — va ogohlantirish mashina to'liq narxlab bergan
+  arizada ham chiqib turardi.
+- **Bot rad javobini lotincha kod bilan yozardi** («yo'lkira:
+  zone_required») — eng ko'p uchraydigan holatda. Endi o'zbekcha gap.
+- **Kechikkan ish VED xodimining ishini o'chirib yuborishi mumkin edi.**
+  Endi mashina ariza qimirlagan bo'lsa — ya'ni odam kelib ketgan bo'lsa —
+  chetga chiqadi.
+
 **Ustiga yana ikkita ichki tuzatish** (siz ko'rmaysiz, lekin bo'lishi shart
 edi): mashinaning ishi endi deploy'dan omon qoladi — avval u dastur
 jarayonining ichida ishlardi va siz serverni yangilagan paytda yarim

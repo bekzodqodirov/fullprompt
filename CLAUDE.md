@@ -1287,6 +1287,29 @@ fixed: the reconcile warning fired on partial coverage — the normal state
 of a half-coded request, and the AI prefill made it the normal state of a
 landed one.
 
+**Then the judge was re-run over the SHIPPED code and found four more,
+three of them mine and two visible to a person** (#906-909). **The
+headline is that the round's own central fix never ran**: `proposeGroups`
+holds the claim until its `finally`, and the pricing tail writes through
+two doors that both take `lockRequestInTx` — so every group was refused
+`ai_running`, the whole pricing half was dead in production, and the
+`catch` logged it as «this code has no dictionary rate». Green here because
+the integration test called the tail DIRECTLY with no claim held — #531 for
+the third time in this module and the SECOND time in this round. The claim
+is released after the model call and before the tail, which is what it
+means. Plus: the checklist could not be SATISFIED (both VED screens project
+the item to `{name}` alone, so both new chips rendered on every rastamojka
+request for ever — #649's shape in the surface the round strengthens); the
+bot's refusal words were INVENTED (`freight_zone_required` is not a
+`FreightRefusal`, so the commonest case read «yo'lkira: zone_required» in
+Telegram — the maps are `Record<Union, string>` now and the test reads the
+unions out of `pricing.ts`); and the queued pass was an unguarded second
+writer that could delete a VED's evening and un-tick their ✅ (the job
+carries the rev it was queued at, `prefillStanding` stands the machine
+down). STATED, not built: the model's REASON for a pick is logged and shown
+nowhere, so a pick and the deterministic auto-fill land identically — owed
+as a column and a chip in `docs/VED-IMPORT-AI.md` §6.
+
 **Latest migration: 0094** (`customs_import` — the quarterly declarations
 dump, its rows under a GIN trigram index, and `calc_request_items.
 import_row_id`; ledger must reach **95**). Before it:
