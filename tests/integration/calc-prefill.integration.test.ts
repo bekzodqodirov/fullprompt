@@ -261,6 +261,40 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(item!.importRowId).not.toBeNull();
   });
 
+  it('a per-kg declaration may not price a per-dona row', async () => {
+    // The candidate list is built by TNVED CODE and deliberately INCLUDES
+    // unit mismatches, labelled — a matching unit merely sorts first. So a
+    // model that answers with the wrong index is a real event, and the
+    // number it would write is off by the weight of the goods.
+    const row = await importRow();
+    // Quantity and NO weight, so the row is asked about per-DONA while
+    // every declaration under this code is per-KG.
+    const id = await open([{ name: row.name, tnvedCode: row.tnvedCode, quantity: 10 }]);
+
+    let asked: { unit: string; unitMatches: boolean }[] = [];
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      propose: proposeAs(row.tnvedCode),
+      pick: async (rows) => {
+        asked = rows[0]?.candidates ?? [];
+        return rows.map((a) => ({ seq: a.seq, candidate: 0, reason: 'shu' }));
+      },
+    });
+
+    // The fixture states its own premise: if these ever match, the test is
+    // not reaching the fence and must be rewritten, not believed (#166).
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every((c) => c.unit === 'kg' && !c.unitMatches)).toBe(true);
+
+    expect(out.picked).toBe(0);
+    const [item] = await db
+      .select()
+      .from(calcRequestItems)
+      .where(eq(calcRequestItems.requestId, id));
+    expect(item!.bazaUsd).toBeNull();
+    expect(out.text).not.toContain('$0');
+  });
+
   it('«none of these» leaves the baza EMPTY for the VED', async () => {
     const kg = await importRow();
     const id = await open([{ name: 'Yana boshqa nom', tnvedCode: kg.tnvedCode, weightKg: 100 }]);
