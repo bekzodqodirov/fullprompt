@@ -1990,6 +1990,10 @@ export interface TableSaveResult {
    * unit. Never a whole-save refusal: the box was on the screen in good
    * faith (a new row's law shape is unknowable before the save). */
   measuresDropped: number[];
+  /** Rows priced per-dona inside a block whose law prices per m²/juft/litr —
+   * the one-save-new-code case, where the default could not know the law
+   * yet. Advisory and NAMED, never a silent rewrite (#171 inverted). */
+  basisSuspect: number[];
 }
 
 const CODE_SHAPE = /^\d{4,10}$/;
@@ -2281,6 +2285,7 @@ export async function saveTable(
     merged: [],
     measuresCleared: [],
     measuresDropped: [],
+    basisSuspect: [],
   };
   await db.transaction(async (tx) => {
     await lockRequestInTx(tx, requestId);
@@ -2493,6 +2498,8 @@ export async function saveTable(
         groupId: calcRequestItems.groupId,
         measureUnit: calcRequestItems.measureUnit,
         measureQty: calcRequestItems.measureQty,
+        bazaUsd: calcRequestItems.bazaUsd,
+        bazaBasis: calcRequestItems.bazaBasis,
       })
       .from(calcRequestItems)
       .where(eq(calcRequestItems.requestId, requestId));
@@ -2541,6 +2548,23 @@ export async function saveTable(
       }
     }
 
+    // Item 3's loud half (judge F13): a NEW code typed with a baza in ONE
+    // save posts basis 'unit' before its group exists to say otherwise —
+    // never silently rewritten (#171 inverted), NAMED instead, so the VED
+    // checks the unit the law actually prices in.
+    const basisSuspect: number[] = [];
+    for (const item of itemsNow) {
+      const lawUnit = item.groupId ? (requiredByGroup.get(item.groupId) ?? null) : null;
+      if (
+        lawUnit !== null &&
+        lawUnit !== 'sm3' &&
+        item.bazaUsd !== null &&
+        item.bazaBasis === 'unit'
+      ) {
+        basisSuspect.push(item.seq);
+      }
+    }
+
     await unconfirmInTx(tx, touched);
     await recountItemsInTx(tx, requestId);
 
@@ -2558,6 +2582,7 @@ export async function saveTable(
         merged,
         measuresCleared,
         measuresDropped,
+        basisSuspect,
       },
     });
     result = {
@@ -2567,6 +2592,7 @@ export async function saveTable(
       merged,
       measuresCleared,
       measuresDropped,
+      basisSuspect,
     };
   });
   return result;

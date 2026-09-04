@@ -2140,7 +2140,10 @@
       "group_gone": "Bu kodning guruhi qolmadi — sahifani yangilang",
       "conflict": "Boshqa kishi hozirgina saqladi — ekran yangilandi, qayta bosing",
       "save_failed": "Saqlash o'tmadi — aloqani tekshirib, qayta urinib ko'ring",
-      "bad_basis": "Baza o'lchovi noto'g'ri"
+      "bad_basis": "Baza o'lchovi noto'g'ri",
+      "answer_missing": "Bu so‘rovda summa yozilgan javob yo‘q.",
+      "answer_not_usd": "Javob USD emas — taklif qilinmaydi.",
+      "answer_expired": "Berilgan narx eskirgan — qayta hisoblating."
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -2365,8 +2368,11 @@
       "measureGhost": "O'lchov (kod juft/litr/m²/sm³ talab qilsa):",
       "sm3Hint": "jami sm³ = dona × motor hajmi",
       "rateNoted": "qonunda izoh bor",
-      "savedFigures": "saqlangan raqamlar"
-    }
+      "savedFigures": "saqlangan raqamlar",
+      "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator"
+    },
+    "answerNotUsd": "Narx USD emas — taklif eshigi faqat dollardagi javobga ochiladi.",
+    "answerExpiredHint": "Berilgan narx eskirgan — qayta hisoblating."
   },
   "partners": {
     "title": "Kontragentlar",

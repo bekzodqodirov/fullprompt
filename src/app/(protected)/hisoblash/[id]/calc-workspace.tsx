@@ -333,17 +333,17 @@ function TotalsPanel({ workspace, dirty }: { workspace: Workspace; dirty: number
           ) : null}
           <dt className="text-ink-500">{t('extras')}</dt>
           <dd className="font-mono tabular-nums">${totals.extrasUsd.toFixed(2)}</dd>
-          <dt className="font-semibold">{t('total')}</dt>
-          <dd className="font-mono tabular-nums font-semibold" data-testid="calc-total">
+          {/* Item 2 (phase 4, his ask): the TOTAL is what he reads first —
+              its own big row, with the per-unit figures small beneath it. */}
+          <dt className="self-center font-semibold">{t('total')}</dt>
+          <dd className="font-mono text-lg font-bold tabular-nums" data-testid="calc-total">
             ${totals.totalUsd.toFixed(2)}
           </dd>
-          <dt className="text-ink-500">$/m³</dt>
-          <dd className="font-mono tabular-nums" data-testid="calc-per-m3">
-            {totals.perM3Usd === null ? '—' : `$${totals.perM3Usd.toFixed(2)}`}
-          </dd>
-          <dt className="text-ink-500">$/kg</dt>
-          <dd className="font-mono tabular-nums">
-            {totals.perKgUsd === null ? '—' : `$${totals.perKgUsd.toFixed(4)}`}
+          <dt />
+          <dd className="text-2xs text-ink-500 font-mono tabular-nums" data-testid="calc-per-m3">
+            {totals.perM3Usd === null ? '' : `$${totals.perM3Usd.toFixed(2)}/m³`}
+            {totals.perM3Usd !== null && totals.perKgUsd !== null ? ' · ' : ''}
+            {totals.perKgUsd === null ? '' : `$${totals.perKgUsd.toFixed(4)}/kg`}
           </dd>
         </dl>
       ) : (
@@ -533,9 +533,13 @@ function SealedPanel({
             </dd>
           </>
         ) : null}
-        <dt className="text-ink-500">$/m³</dt>
-        <dd className="font-mono tabular-nums">
-          {sealed.perM3Usd === null ? '—' : `$${sealed.perM3Usd.toFixed(2)}`}
+        {/* The same shape TotalsPanel wears (item 2): one small per-unit
+            line — and $/kg joins it, which the data always carried. */}
+        <dt />
+        <dd className="text-2xs text-ink-500 font-mono tabular-nums">
+          {sealed.perM3Usd === null ? '' : `$${sealed.perM3Usd.toFixed(2)}/m³`}
+          {sealed.perM3Usd !== null && sealed.perKgUsd !== null ? ' · ' : ''}
+          {sealed.perKgUsd === null ? '' : `$${sealed.perKgUsd.toFixed(4)}/kg`}
         </dd>
         <dt className="text-ink-500">{t('validUntil')}</dt>
         <dd>{sealed.validUntil.toLocaleDateString('ru-RU')}</dd>

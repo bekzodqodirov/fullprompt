@@ -2140,7 +2140,10 @@
       "group_gone": "该编码的组已不存在——请刷新页面",
       "conflict": "他人刚刚保存——页面已刷新，请再按一次",
       "save_failed": "保存失败——请检查网络后重试",
-      "bad_basis": "基价单位无效"
+      "bad_basis": "基价单位无效",
+      "answer_missing": "该请求没有含金额的答复。",
+      "answer_not_usd": "答复不是美元——无法报价。",
+      "answer_expired": "价格已过期——请重新计算。"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -2365,8 +2368,11 @@
       "measureGhost": "计量（若编码需要 juft/litr/m²/sm³）：",
       "sm3Hint": "总 cm³ = 件数 × 排量",
       "rateNoted": "法规附有说明",
-      "savedFigures": "已保存数字"
-    }
+      "savedFigures": "已保存数字",
+      "basisSuspect": "请检查基价单位（法律按其他单位计价）— 行"
+    },
+    "answerNotUsd": "答复价格不是美元——报价窗口仅对美元答复开放。",
+    "answerExpiredHint": "该价格已过期——请重新计算。"
   },
   "partners": {
     "title": "合作方",

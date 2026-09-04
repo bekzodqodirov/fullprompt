@@ -2140,7 +2140,10 @@
       "group_gone": "That code’s group is gone — refresh the page",
       "conflict": "Someone just saved — the screen refreshed, press again",
       "save_failed": "Save failed — check the connection and retry",
-      "bad_basis": "Invalid baza unit"
+      "bad_basis": "Invalid baza unit",
+      "answer_missing": "This request has no answered figure.",
+      "answer_not_usd": "The answer is not in USD — cannot offer.",
+      "answer_expired": "The figure has expired — recalculate."
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -2365,8 +2368,11 @@
       "measureGhost": "Measure (if the code needs juft/litr/m²/sm³):",
       "sm3Hint": "total cm³ = pcs × engine volume",
       "rateNoted": "the law carries a note",
-      "savedFigures": "saved figures"
-    }
+      "savedFigures": "saved figures",
+      "basisSuspect": "check the baza unit (the law prices in another) — row"
+    },
+    "answerNotUsd": "The answer is not in USD — the offer door opens only on a dollar figure.",
+    "answerExpiredHint": "The quoted figure has expired — recalculate."
   },
   "partners": {
     "title": "Counterparties",

@@ -63,6 +63,7 @@ export interface TableFormState {
   merged?: string[];
   measuresCleared?: number[];
   measuresDropped?: number[];
+  basisSuspect?: number[];
 }
 
 /**
@@ -262,6 +263,7 @@ async function runTable(
     merged: result.merged,
     measuresCleared: result.measuresCleared,
     measuresDropped: result.measuresDropped,
+    basisSuspect: result.basisSuspect,
   };
 }
 
@@ -277,7 +279,15 @@ export async function saveTableAction(
 export async function deleteItemAction(id: string, itemId: string): Promise<TableFormState> {
   return runTable(async (ctx) => {
     await deleteItem(id, itemId, ctx);
-    return { minted: [], swept: 0, added: 0, merged: [], measuresCleared: [], measuresDropped: [] };
+    return {
+      minted: [],
+      swept: 0,
+      added: 0,
+      merged: [],
+      measuresCleared: [],
+      measuresDropped: [],
+      basisSuspect: [],
+    };
   }, ws(id));
 }
 
