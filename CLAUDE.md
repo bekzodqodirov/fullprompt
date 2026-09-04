@@ -1108,8 +1108,47 @@ answers from `.next/cache/eslint` and served the pre-edit file twice —
 280.96; draft-wedge proven in client state. Screenshots at 1280×900 and
 360×800, document = viewport; phone read-only with confirm+seal alive.
 
-**Latest migration: 0092** (`calc_measure` — the measure pair, the widened
-baza bases, the revision clock; ledger must reach **93**). Before it: 0091
+**Round — VED 2.0 phase 4, his six post-deploy items (2026-09-04; DECISIONS
+#874-879; migration 0093 `calc_offer_answer` — ledger must reach 94):**
+designed, judged by a 5-lens workflow (50 findings: 7 blockers, 19 defects,
+all absorbed), built. **The money item: the Готово answer became a second
+OFFER ANCHOR** — `calc_offers.version_id` nullable + `request_id` with the
+one-anchor CHECK; floor = `answer_amount`; `answerFloorStandsSql`
+(version-set.ts) carries five fences (completed, >0 — a NULL floor reads $0
+through Number() and any price clears it, USD only, not superseded, no newer
+answer AND no later seal on the same card — one sale never pays twice); the
+judge's headline was that `offerStandsSql` has FIVE consumers (releaseOffer's
+CLAIM, releasedPriceFor, currentOfferFor, bothFiguresForDeals, the PDF) and a
+version-only EXISTS bricks every answer-anchored below-floor approval; every
+version-only clause in `payableOffersSql` is now guarded
+`o.version_id IS NOT NULL` (unguarded, NULL drops the row silently while all
+18 version tests stay green). recordOffer re-derives every admission
+server-side (answer_missing/answer_not_usd/answer_expired via
+quote_valid_days/superseded), deliberately NOT under the rev clock
+(lockRequestInTx throws already_closed on any completed request); PDF = ONE
+by-offer-id route with the sibling's four gates; ANY seal (expired included)
+outranks the answer door; the offers list left the seal block (one list, both
+anchors). **Item 3**: `defaultBasisFor(group)` in `calc/basis.ts`, TOTAL over
+DutyUnit, in FOUR sites (render, save(), liveItem, serverValueOf's
+self-clean) — the judge found sites 3-4; ghost code re-seeds its select;
+`saveTable` answers `basisSuspect` (loud, never a silent rewrite); m9zr
+asserts auto-m², live-248-before-save and seal 280.96 (per-dona = 230, the
+figure IS the proof). **Items 1-2**: footer + phone card print «База $2/kg»
+off the LIVE merged pair beside the visible value (#420, no tooltip; the
+screenshot caught the doubled $); Итоговая цена big in BOTH panels with one
+muted $/m³·$/kg line. **Item 6**: bot GS777 = per-(lot,warehouse) rows with
+goods · status split · kg/m³ shares · arrival truck (#853 verbatim), transit
+per batch (two-ends widening recorded), Σ, 20-line cap, hidden cargo COUNTED
+(«+N karobka boshqa joylarda») — measured 2.1 ms on the clone's fullest
+client. 5 red proofs by string edit; new m9zt e2e walks Готово → offer →
+floor-hidden text → PDF. STATED to him: m³ has no PP-3818 rate; unclaimed
+marking cargo stays out of the code answer; answer offers stay out of the
+per-code price history.
+
+**Latest migration: 0093** (`calc_offer_answer` — the offer's answer anchor
+and the answer-amount money CHECK; ledger must reach **94**). Before it:
+0092 (`calc_measure` — the measure pair, the widened
+baza bases, the revision clock; ledger 93). Before it: 0091
 (`calc_law` — the four duty shapes, the certificate, the fee override;
 ledger 92); 0090
 (`notice_staff` — the staff arrival event's own fence and the client drain's

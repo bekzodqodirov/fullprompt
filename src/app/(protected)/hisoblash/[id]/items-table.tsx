@@ -898,7 +898,7 @@ export function ItemsTable({
                 const ub = uniformBazaOf(group.items);
                 return ub ? (
                   <span className="text-2xs text-ink-600">
-                    {t('baza')} ${ub.bazaUsd}/
+                    {t('baza')}{ub.bazaUsd}/
                     {ub.bazaBasis === 'unit' ? t('perUnit') : ub.bazaBasis === 'm2' ? 'm²' : ub.bazaBasis}
                   </span>
                 ) : null;
@@ -1233,7 +1233,7 @@ function BlockFooter({
               have no one number, so the value stands alone there. */}
           {liveBaza ? (
             <span className="ml-2 text-2xs text-ink-700" data-testid="calc-group-baza">
-              {t('baza')} ${liveBaza.bazaUsd}/
+              {t('baza')}{liveBaza.bazaUsd}/
               {liveBaza.bazaBasis === 'unit' ? t('perUnit') : liveBaza.bazaBasis === 'm2' ? 'm²' : liveBaza.bazaBasis}
             </span>
           ) : null}
