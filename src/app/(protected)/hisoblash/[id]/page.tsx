@@ -7,6 +7,7 @@ import { attachments, crmActivities } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { calcRequestDetail } from '@/modules/wms/calc/service';
 import { linkedReceipts } from '@/modules/wms/calc/link';
+import { chainOf, type ChainVersion } from '@/modules/wms/calc/chain';
 import { FIELD_LABELS, SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { PageHeader, Section } from '@/components/ui/page';
@@ -76,8 +77,10 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
   // Phase E1: the cargo this quote turned out to be about. On the same catch
   // as the workspace — 0089 is this release's migration (#472).
   let linked: Awaited<ReturnType<typeof linkedReceipts>> = [];
+  // The correction chain this request sits in — what «V2» counts.
+  let chain: ChainVersion[] = [];
   try {
-    [workspace, linked] = await Promise.all([loadWorkspace(id), linkedReceipts(id)]);
+    [workspace, linked, chain] = await Promise.all([loadWorkspace(id), linkedReceipts(id), chainOf(id)]);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, id }, '[calc] workspace: server behind');
@@ -217,7 +220,7 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         </div>
       </details>
 
-      {workspace ? <CalcWorkspace workspace={workspace} canRecalc={canRecalc} /> : null}
+      {workspace ? <CalcWorkspace workspace={workspace} canRecalc={canRecalc} chain={chain} /> : null}
 
       {/* The workspace's own table renders `calc-items` when it is on screen;
           everywhere else (server behind, yolkira, closed) this read-only

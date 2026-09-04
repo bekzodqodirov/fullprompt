@@ -36,3 +36,23 @@ export function calcControlScopeFor(actor: {
   if (actor.permissions.has('ved.docs')) return 'own';
   return 'none';
 }
+
+/**
+ * Who may read the registry of SEALED calculations (`/hisoblash/tarix`).
+ *
+ * The owner's answer 2A: himself, the accountant and the VED people — and NOT
+ * the sellers, because every figure on that screen is a FLOOR (law 4).
+ *
+ * A BOOLEAN and not a reuse of `calcControlScopeFor`, on purpose. That one's
+ * `'own'` means «the calculations you sealed yourself», which is right for a
+ * screen that MEASURES the person and wrong for a history: a VED pricing a
+ * Guangzhou→Tashkent podklyuch needs the company's last answer on that route,
+ * not their own. And it adds no read a `ved.docs` holder does not already
+ * have — `quoteHistoryFor` on /hisoblash/narxlar is company-wide by code —
+ * it adds a way to FIND it.
+ */
+export function mayReadCalcRegistry(actor: {
+  permissions: { has(code: string): boolean };
+}): boolean {
+  return actor.permissions.has('finance.reports') || actor.permissions.has('ved.docs');
+}

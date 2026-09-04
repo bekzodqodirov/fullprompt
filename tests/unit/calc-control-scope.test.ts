@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
 import {
   calcControlScopeFor,
+  mayReadCalcRegistry,
   type CalcControlScope,
 } from '@/modules/wms/calc/control-scope';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
@@ -63,5 +64,45 @@ describe('who may read hisob vs haqiqat', () => {
 
   it('lets the accountant in, which is the door #792 got wrong', () => {
     expect(calcControlScopeFor(actorFor('accountant'))).toBe('all');
+  });
+});
+
+/**
+ * The REGISTRY's door (`/hisoblash/tarix`), enumerated the same way.
+ *
+ * The owner's answer 2A: himself, the accountant and the VED — and NOT the
+ * sellers, because every figure on that screen is a floor (law 4). A
+ * boolean and not a reuse of the control scope: `'own'` there means «the
+ * calculations you sealed», and a history must answer about the company's.
+ */
+const REGISTRY: Record<RoleCode, boolean> = {
+  super_admin: true,
+  admin: true,
+  accountant: true,
+  ved_manager: true,
+  sales_manager: false,
+  logist: false,
+  warehouse_manager: false,
+  warehouse_operator: false,
+  viewer: false,
+};
+
+describe('who may read the registry of sealed calculations', () => {
+  it('answers for every seeded role', () => {
+    for (const role of Object.keys(REGISTRY) as RoleCode[]) {
+      expect(mayReadCalcRegistry(actorFor(role)), role).toBe(REGISTRY[role]);
+    }
+  });
+
+  it('covers every role the catalogue has', () => {
+    expect(Object.keys(REGISTRY).sort()).toEqual(Object.keys(ROLE_MATRIX).sort());
+  });
+
+  it('is exactly the control screen with «own» widened to «yes» — no third audience', () => {
+    for (const role of Object.keys(ROLE_MATRIX) as RoleCode[]) {
+      expect(mayReadCalcRegistry(actorFor(role)), role).toBe(
+        calcControlScopeFor(actorFor(role)) !== 'none',
+      );
+    }
   });
 });

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
+import { mayReadCalcRegistry } from '@/modules/wms/calc/control-scope';
 import { quoteHistoryFor } from '@/modules/wms/calc/history';
 import { priceBookAt } from '@/modules/wms/calc/dictionaries';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
@@ -72,15 +73,30 @@ export default async function PriceHistoryPage({
           // The accountant's door to phase E1: they cannot open /hisoblash at
           // all (it gates on `ved.docs`), and this page is the one screen in
           // the module their grants already reach.
-          scope === 'all' || actor.permissions.has('ved.docs') ? (
-            <Link
-              href="/hisoblash/nazorat"
-              className="btn-secondary"
-              data-testid="calc-control-link"
-            >
-              {t('controlTitle')}
-            </Link>
-          ) : null
+          <>
+            {scope === 'all' || actor.permissions.has('ved.docs') ? (
+              <Link
+                href="/hisoblash/nazorat"
+                className="btn-secondary"
+                data-testid="calc-control-link"
+              >
+                {t('controlTitle')}
+              </Link>
+            ) : null}
+            {/* The registry of SEALED calculations — same reasoning: the
+                accountant reaches it from here or from nowhere. Gated by the
+                registry's own door, so a seller standing on this screen is
+                not shown a link to a redirect. */}
+            {mayReadCalcRegistry(actor) ? (
+              <Link
+                href="/hisoblash/tarix"
+                className="btn-secondary"
+                data-testid="calc-registry-link"
+              >
+                {t('registryTitle')}
+              </Link>
+            ) : null}
+          </>
         }
       />
 

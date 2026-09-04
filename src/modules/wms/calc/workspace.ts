@@ -1807,6 +1807,29 @@ export async function recalcFromSealed(
   const old = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, requestId) });
   if (!old) throw new CalcError('not_found');
   if (!old.completedAt) throw new CalcError('not_closed');
+  // Its own name promises a SEALED parent, and `completed_at` alone does not
+  // say so: `endRequest({via:'returned'})` stamps it too, so a handed-back
+  // request was a legal parent by URL and the «correction» started from a
+  // job that never had a price.
+  const sealed = await db
+    .select({ id: calcVersions.id })
+    .from(calcVersions)
+    .where(eq(calcVersions.requestId, requestId))
+    .limit(1);
+  if (sealed.length === 0) throw new CalcError('not_sealed');
+  // A correction starts from the chain's NEWEST link, never from one that
+  // already has a child. This is a MONEY fence before it is a numbering one:
+  // two children off one parent both stand (`notSupersededSql` sees no child
+  // on either), so `payableOffersSql` pays the seller's commission on BOTH,
+  // and the cargo link (`stampCalcLink`, «exactly one sealed request») can
+  // no longer choose. An open child says «finish that one»; a sealed child
+  // says «recalc from it».
+  const child = await db
+    .select({ id: calcRequests.id, completedAt: calcRequests.completedAt })
+    .from(calcRequests)
+    .where(eq(calcRequests.supersedesRequestId, requestId))
+    .limit(1);
+  if (child[0]) throw new CalcError(child[0].completedAt ? 'recalc_superseded' : 'recalc_open');
 
   const newId = await db.transaction(async (tx) => {
     const [fresh] = await tx
