@@ -398,7 +398,11 @@ async function queuePrefill(requestId: string, staffId: string): Promise<void> {
   try {
     const { enqueue } = await import('../jobs/boss');
     const { JOB_CALC_PREFILL } = await import('../../wms/calc/jobs');
-    await enqueue(JOB_CALC_PREFILL, { requestId, staffId });
+    const { prefillTicket } = await import('../../wms/calc/prefill');
+    // The revision travels WITH the job: the queue drains when it drains,
+    // and the machine must not overwrite whatever a person did meanwhile.
+    const rev = await prefillTicket(requestId);
+    await enqueue(JOB_CALC_PREFILL, { requestId, staffId, rev });
   } catch (err) {
     // The queue being unreachable must not cost the seller the confirmation
     // they are about to read: the request is saved and a VED will answer it

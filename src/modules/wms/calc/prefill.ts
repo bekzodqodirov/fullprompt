@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { calcGroups, calcRequestItems } from '../../platform/db/schema';
+import { calcGroups, calcRequestItems, calcRequests } from '../../platform/db/schema';
 import { aiConfigured } from '../../platform/ai/model';
 import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
@@ -31,6 +31,59 @@ import { pickImportRows, type PickAnswer, type PickRequest } from './prefill-ai'
  * The model is INJECTABLE at both points, which is how any of this is
  * provable in a container with no key.
  */
+
+/**
+ * May the machine still touch this request?
+ *
+ * The pass moved to pg-boss so a deploy could not lose it, and that opened a
+ * wider hole than it closed: the job no longer runs seconds after the seller
+ * presses ✅, it runs whenever the queue drains, and `enqueue` re-delivers it
+ * up to five times. Meanwhile `applyProposal` DELETES every group and
+ * re-inserts them, and `saveTable`'s import fill ends by clearing the
+ * confirmations of every group it touched. So a late or re-delivered job
+ * could destroy an evening of a VED's typing — rates, bazas, a certificate
+ * flag — and silently un-tick the ✅ that phase E1 exists to record.
+ *
+ * The rev clock answers it exactly. The job carries the revision the request
+ * stood at when it was queued; if anything has moved it since, a person has
+ * been here and the machine stands down. A confirmed group or a closed
+ * request is the same answer said louder.
+ *
+ * COST, stated: a pass killed half-way is not retried, because its own first
+ * half has already moved the clock. That is the safer half of the trade —
+ * the request is in the VED's queue either way, and re-running
+ * `applyProposal` over work somebody has since done is the loss this guard
+ * exists to prevent. The refusal is logged, never silent.
+ */
+export type PrefillStand = 'ok' | 'touched' | 'confirmed' | 'closed' | 'not_found';
+
+export async function prefillStanding(
+  requestId: string,
+  expectRev: number | null,
+): Promise<PrefillStand> {
+  const [request] = await db
+    .select({ rev: calcRequests.rev, completedAt: calcRequests.completedAt })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  if (!request) return 'not_found';
+  if (request.completedAt) return 'closed';
+  if (expectRev !== null && request.rev !== expectRev) return 'touched';
+  const [confirmed] = await db
+    .select({ id: calcGroups.id })
+    .from(calcGroups)
+    .where(and(eq(calcGroups.requestId, requestId), isNotNull(calcGroups.confirmedAt)))
+    .limit(1);
+  return confirmed ? 'confirmed' : 'ok';
+}
+
+/** The revision to quote back when the pass finally runs. */
+export async function prefillTicket(requestId: string): Promise<number | null> {
+  const [row] = await db
+    .select({ rev: calcRequests.rev })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  return row?.rev ?? null;
+}
 
 export interface PrefillDeps {
   /** The grouping pass. Default: `proposeGroups` (the ✨ button's own door). */

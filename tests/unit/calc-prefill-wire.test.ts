@@ -48,6 +48,23 @@ describe('the prefill survives a deploy', () => {
     expect(Object.values(MUTE_GROUPS).flat()).toContain('CalcPrefilled');
   });
 
+  it('the worker asks whether a person got there first', () => {
+    // pg-boss drains when it drains and re-delivers up to five times, while
+    // `applyProposal` DELETES every group and the import fill clears the ✅
+    // of every group it touches. Without this the machine could destroy an
+    // evening of the VED's typing — and no behavioural test can reach the
+    // worker body, so the wiring is asserted here (#531).
+    const jobs = read('src/modules/wms/calc/jobs.ts');
+    expect(jobs).toContain('prefillStanding(');
+    expect(jobs.indexOf('prefillStanding(')).toBeLessThan(jobs.indexOf('aiPrefill(requestId'));
+    // …and the revision it compares against travels ON the job, stamped by
+    // the sender: read at drain time it would always agree with itself.
+    expect(jobs).toContain('job.data.rev');
+    const bot = read('src/modules/platform/telegram/staff-handlers.ts');
+    expect(bot).toContain('prefillTicket(');
+    expect(bot).toMatch(/enqueue\(JOB_CALC_PREFILL, \{[^}]*rev[^}]*\}\)/);
+  });
+
   it('a failed pass is logged and NOT rethrown', () => {
     // Retrying a model that refused five times spends money to change
     // nothing; the request is in the VED's queue whatever happens here. What

@@ -11,6 +11,10 @@ export interface CalcPrefillJob {
   requestId: string;
   /** Whose job it is — the audit actor AND who is told the answer. */
   staffId: string;
+  /** The revision the request stood at when this was queued — see
+   * `prefillStanding`. Absent on a job queued before this field existed,
+   * which then falls back to the confirmed/closed checks alone. */
+  rev?: number | null;
 }
 
 /**
@@ -94,8 +98,16 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
     for (const job of jobs) {
       const { requestId, staffId } = job.data;
       try {
-        const { aiPrefill } = await import('./prefill');
+        const { aiPrefill, prefillStanding } = await import('./prefill');
         const { notifyStaffTelegram } = await import('@/modules/platform/notifications/staff');
+        // A person may have reached the request first — the queue drains
+        // when it drains, and pg-boss re-delivers. The machine stands down
+        // rather than deleting their groups and un-ticking their ✅.
+        const standing = await prefillStanding(requestId, job.data.rev ?? null);
+        if (standing !== 'ok') {
+          logger.info({ requestId, standing }, '[calc-prefill] stood down — the request has moved');
+          continue;
+        }
         const out = await aiPrefill(requestId, { actorId: staffId });
         await notifyStaffTelegram({
           userIds: [staffId],

@@ -21,8 +21,13 @@ import {
 import { getStorage } from '@/modules/platform/files/storage';
 import { runCustomsImport } from '@/modules/wms/customs/import-service';
 import { openCalcRequest } from '@/modules/wms/calc/service';
-import { applyProposal, loadWorkspace } from '@/modules/wms/calc/workspace';
-import { aiPrefill } from '@/modules/wms/calc/prefill';
+import {
+  applyProposal,
+  confirmGroup,
+  loadWorkspace,
+  saveTable,
+} from '@/modules/wms/calc/workspace';
+import { aiPrefill, prefillStanding, prefillTicket } from '@/modules/wms/calc/prefill';
 
 /**
  * The AI VED hodimi, end to end, with the MODEL INJECTED.
@@ -312,6 +317,37 @@ describe('the machine carries a job as far as it honestly can', () => {
     // …and the reply says so rather than printing a zero (law 6).
     expect(out.text).not.toContain('$0');
     expect(out.text).toContain('baza yo‘q');
+  });
+
+  it('the machine stands down once a person has been here', async () => {
+    // The pass moved to pg-boss so a deploy could not lose it — and pg-boss
+    // drains when it drains and re-delivers up to five times. `applyProposal`
+    // DELETES every group and re-inserts, and the import fill clears the ✅ of
+    // every group it touches, so a late job could destroy an evening of the
+    // VED's typing. The rev the job was queued at is what says «somebody has
+    // been here since».
+    const row = await importRow();
+    const id = await open([{ name: row.name, weightKg: 100 }]);
+    const rev = await prefillTicket(id);
+    expect(rev).not.toBeNull();
+    expect(await prefillStanding(id, rev)).toBe('ok');
+
+    // Any ordinary save moves the clock — which is exactly a person working.
+    await saveTable(id, { items: [], adds: [] }, ctx());
+    expect(await prefillStanding(id, rev)).toBe('touched');
+
+    // A confirmed group says it louder, whatever the clock reads.
+    const fresh = await open([{ name: row.name, tnvedCode: row.tnvedCode, quantity: 2 }]);
+    await saveTable(fresh, { items: [], adds: [] }, ctx());
+    const [group] = await db
+      .select({ id: calcGroups.id })
+      .from(calcGroups)
+      .where(eq(calcGroups.requestId, fresh));
+    // Through the real door: a hand-written confirm invents a `confirm_via`
+    // the 0089 CHECK refuses, and a fixture that cannot reach the state is
+    // evidence about the fixture (#166).
+    await confirmGroup(group!.id, ctx());
+    expect(await prefillStanding(fresh, await prefillTicket(fresh))).toBe('confirmed');
   });
 
   it('a model that fails costs a sentence, never the job', async () => {
