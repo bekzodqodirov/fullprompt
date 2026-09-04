@@ -292,12 +292,41 @@ describe('law 4: any concession kills the upsale', () => {
 
   it('a discounted job carries NONE, however small the concession', async () => {
     const job = await sealedJob({ discountUsd: 1 });
+    // AT the discounted floor: round 112 refuses anything above it on a
+    // discounted seal (the next test), and the point here — a concession pays
+    // no commission even when the customer is charged the full floor — is
+    // exactly the price a seller may still promise.
     const offer = await recordOffer(
       { versionId: job.versionId },
-      { clientPriceUsd: job.floor + 700, locale: 'uz' },
+      { clientPriceUsd: job.floor, locale: 'uz' },
       sellerCtx(),
     );
     expect(await mine(offer.id)).toBeNull();
+  });
+
+  it('above a discounted floor is REFUSED — the concession is the customer\'s (round 112)', async () => {
+    // The VED lowered the floor for the customer. A seller quoting above it
+    // would be selling the discount back — «VED xodimi skidka bersa sotuvchi
+    // upsale qilish huquqi bo'lmasin». Below stays the approver's door.
+    const job = await sealedJob({ discountUsd: 1 });
+    await expect(
+      recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor + 0.5, locale: 'uz' }, sellerCtx()),
+    ).rejects.toMatchObject({ code: 'discounted_no_upsale' });
+    // Exactly the floor is allowed…
+    const atFloor = await recordOffer(
+      { versionId: job.versionId },
+      { clientPriceUsd: job.floor, locale: 'uz' },
+      sellerCtx(),
+    );
+    expect(atFloor.belowFloor).toBe(false);
+    // …and an UNdiscounted seal is untouched by the rule.
+    const clean = await sealedJob();
+    const above = await recordOffer(
+      { versionId: clean.versionId },
+      { clientPriceUsd: clean.floor + 700, locale: 'uz' },
+      sellerCtx(),
+    );
+    expect(above.belowFloor).toBe(false);
   });
 
   it('a band override that LOWERS the freight is a concession', async () => {

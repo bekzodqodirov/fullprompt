@@ -378,7 +378,8 @@
       "upsale_expense_category_id": "Sotuvchining ulushi (upsale) qaysi xarajat turiga yozilishi. Oyliklar turini tanlamang — oylik bilan to‘qnashadi.",
       "calc_actual_settle_days": "Yuk kelgandan necha kun keyin rastamojka yakuniy hisoblanadi",
       "calc_customs_deviation_pct": "Rastamojka hisobdan necha foizga farq qilishi mumkin",
-      "calc_customs_cost_type_codes": "Qaysi xarajat turlari rastamojka hisoblanadi (kodlar ro'yxati)"
+      "calc_customs_cost_type_codes": "Qaysi xarajat turlari rastamojka hisoblanadi (kodlar ro'yxati)",
+      "client_code_next": "Keyingi mijoz kodi raqami (bo‘sh = eski qoida; faqat avtomatik berish suradi)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -1509,12 +1510,15 @@
       "errors": {
         "clientNotFound": "Bunday kod yo'q",
         "clientInactive": "Bu mijoz nofaol qilingan",
+        "clientHasLead": "Bu kodda lid allaqachon bor — mijoz uchun yangi kod oching yoki o‘sha lidni oching",
         "codeExists": "Bu kod band",
         "codeFormat": "Kod formati noto'g'ri",
         "stageGone": "Bosqich topilmadi — sahifani yangilang",
         "forbidden": "Huquq yo'q",
         "failed": "Saqlab bo'lmadi"
-      }
+      },
+      "search": "Mijozni topish: kod, ism yoki telefon",
+      "toDeal": "Bitim →"
     },
     "errors": {
       "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)"
@@ -2143,7 +2147,9 @@
       "bad_basis": "Baza o'lchovi noto'g'ri",
       "answer_missing": "Bu so‘rovda summa yozilgan javob yo‘q.",
       "answer_not_usd": "Javob USD emas — taklif qilinmaydi.",
-      "answer_expired": "Berilgan narx eskirgan — qayta hisoblating."
+      "answer_expired": "Berilgan narx eskirgan — qayta hisoblating.",
+      "discounted_no_upsale": "VED chegirma bergan — bu narxdan yuqoriga sotib bo‘lmaydi (chegirma mijozniki)",
+      "seal_instead": "Hisobni muhrlash mumkin — «Готово» bilan narx emas, «Muhrlash»ni bosing"
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -2372,7 +2378,9 @@
       "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator"
     },
     "answerNotUsd": "Narx USD emas — taklif eshigi faqat dollardagi javobga ochiladi.",
-    "answerExpiredHint": "Berilgan narx eskirgan — qayta hisoblating."
+    "answerExpiredHint": "Berilgan narx eskirgan — qayta hisoblating.",
+    "sealInstead": "Hisob muhrlashga tayyor — «Muhrlash»ni bosing. Narx sotuvchiga muhrdan ketadi.",
+    "discountedFloor": "VED chegirma bergan: bu summadan qimmatga sotib bo‘lmaydi."
   },
   "partners": {
     "title": "Kontragentlar",

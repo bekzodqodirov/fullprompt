@@ -154,6 +154,7 @@ export async function CalcPanel({
             <CalcOfferForm
               anchor={{ versionId: seal.id }}
               floorUsd={seal.totalUsd}
+              discountUsd={seal.discountUsd}
               defaultLocale={offerLocaleFor(clientLocale)}
               clientName={clientName ?? null}
               entityType={entityType}
@@ -198,6 +199,7 @@ export async function CalcPanel({
             <CalcOfferForm
               anchor={{ requestId: anchor.requestId }}
               floorUsd={anchor.amountUsd}
+              discountUsd={0}
               defaultLocale={offerLocaleFor(clientLocale)}
               clientName={clientName ?? null}
               entityType={entityType}

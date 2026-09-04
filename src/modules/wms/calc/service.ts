@@ -552,6 +552,16 @@ export async function finishCalcRequest(
   ctx: AuditContext,
 ): Promise<void> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
+  // Round 112: a job the VED could SEAL is not closed with a typed number. The
+  // typed answer is phase A's fallback for a workspace that cannot price
+  // (#775); on one that can, it was a way past the seal — no version on the
+  // card, no lock, no floor for the upsale, no discount notice, nothing for
+  // E1 to measure. Same predicate as the seal and its button (#513). Dynamic
+  // import: workspace.ts imports this file's CalcError. `loadWorkspace` runs
+  // on the pool and `endRequest` opens no transaction, so #714 is untouched.
+  const { loadWorkspace, canSeal } = await import('./workspace');
+  const workspace = await loadWorkspace(id);
+  if (workspace && canSeal(workspace)) throw new CalcError('seal_instead');
   const row = await endRequest(id, {
     via: 'task',
     actorId: ctx.actorId,

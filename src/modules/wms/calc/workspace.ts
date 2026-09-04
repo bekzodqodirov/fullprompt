@@ -20,7 +20,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { isUniqueViolation } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
-import { usersWithPermission } from '@/modules/platform/notifications/service';
+import { usersWithRoles } from '@/modules/platform/notifications/service';
 import { cardLink } from '@/modules/platform/notifications/links';
 import {
   BAZA_STALE_DAYS,
@@ -1320,7 +1320,7 @@ export async function sealCalc(
   });
   if (!workspace) throw new CalcError('not_found');
   if (workspace.completedAt) throw new CalcError('already_closed');
-  if (workspace.blockers.length > 0) throw new CalcError('not_ready');
+  if (!canSeal(workspace)) throw new CalcError('not_ready');
 
   const section = workspace.section;
   if (!section) throw new CalcError('section_required');
@@ -1550,7 +1550,7 @@ export async function sealCalc(
     },
   });
 
-  await announceSeal(result, totals, input, ctx).catch((err) =>
+  await announceSeal(result, totals, input, ctx, requestId).catch((err) =>
     logger.error({ err, requestId }, '[calc] seal notify failed'),
   );
 
@@ -1570,6 +1570,7 @@ async function announceSeal(
   totals: { totalUsd: number; discountUsd: number },
   input: SealInput,
   ctx: AuditContext,
+  requestId: string,
 ) {
   const link = cardLink(result.entityType === 'lead' ? 'lead' : 'deal', result.entityId);
   const who = ctx.actorId ? await userName(ctx.actorId) : '—';
@@ -1581,7 +1582,17 @@ async function announceSeal(
   });
 
   if (totals.discountUsd > 0 || input.bandOverrideMin !== null) {
-    const deciders = await usersWithPermission('finance.debt_override');
+    // WHO hears about a concession (round 112, his «4c»): the owner, the
+    // seller whose job it is, and the accountant — and nobody else. This used
+    // to go to `finance.debt_override` holders, a set borrowed from the
+    // handover-debt approval that happens to include EVERY seller and every
+    // warehouse manager, so one seller's discount was company news. The owner
+    // is the admin ROLES (his own accounts carry «bir admin va sotuvchi»,
+    // not necessarily super_admin). On a correction `requestedBy` is whoever
+    // pressed «Qayta hisoblash», so the ORIGINAL request's seller is added
+    // through `supersedesRequestId`, or the person whose price this locks
+    // hears nothing (the review's cross-lens find).
+    const deciders = await discountAudience(result.requestedBy, requestId);
     const lines = [
       `⚠️ Hisobda chegirma: ${who}`,
       totals.discountUsd > 0
@@ -1600,6 +1611,49 @@ async function announceSeal(
       exceptUserId: ctx.actorId ?? null,
     });
   }
+}
+
+
+/** The people a sealed concession is reported to — see the call site. */
+async function discountAudience(requestedBy: string, requestId: string): Promise<string[]> {
+  const [owners, accountants, req] = await Promise.all([
+    usersWithRoles(['super_admin', 'admin']),
+    usersWithRoles(['accountant']),
+    db.query.calcRequests.findFirst({
+      where: eq(calcRequests.id, requestId),
+      columns: { supersedesRequestId: true },
+    }),
+  ]);
+  const original = req?.supersedesRequestId
+    ? await db.query.calcRequests.findFirst({
+        where: eq(calcRequests.id, req.supersedesRequestId),
+        columns: { requestedBy: true },
+      })
+    : null;
+  return [
+    ...new Set(
+      [...owners, ...accountants, requestedBy, original?.requestedBy ?? null].filter(
+        (id): id is string => Boolean(id),
+      ),
+    ),
+  ];
+}
+
+
+/**
+ * «This workspace can be sealed» — ONE predicate for three doors (#513): the
+ * seal itself (`not_ready`), the seal button, and — since round 112 — the
+ * phase-A «Готово» fallback, which refuses a hand-typed price on a job the
+ * VED could have sealed. The typed answer exists for the workspace that
+ * cannot price (#775: empty dictionaries); on one that can, it was a way to
+ * close the job with a number nobody sealed — no version, no card lock, no
+ * floor for the upsale, no discount notice, nothing for E1 to measure.
+ */
+export function canSeal(workspace: {
+  blockers: unknown[];
+  totals: { ok: boolean } | null;
+}): boolean {
+  return workspace.blockers.length === 0 && Boolean(workspace.totals?.ok);
 }
 
 export async function currentVersion(requestId: string): Promise<SealedVersion | null> {
@@ -2768,6 +2822,17 @@ export async function recordOffer(
     const v = row.version;
     request = row.request;
     floorUsd = Number(v.totalUsd);
+    // A concession is the CUSTOMER's (round 112, his «VED xodimi skidka bersa
+    // sotuvchi upsale qilish huquqi bo'lmasin»): once the VED has lowered the
+    // floor, the seller may not quote ABOVE it and keep the difference. Phase
+    // D already pays nothing on a discounted job (`payableOffersSql`), but
+    // the PROMISE to the customer was still free to rise — the wrong promise,
+    // paid or not. Below the discounted floor is unchanged: that is the
+    // approver's own door (law 4). An ANSWER anchor carries no discount, so
+    // the rule lives in this branch alone.
+    if (Number(v.discountUsd) > 0 && input.clientPriceUsd > floorUsd + 0.009) {
+      throw new CalcError('discounted_no_upsale');
+    }
     text = offerText(
       {
         clientPriceUsd: input.clientPriceUsd,

@@ -43,6 +43,86 @@ biriktiriladi.
 
 Migratsiya **0094 emas — 0093**: deploy'dan keyin hisob **94** bo'lishi kerak.
 
+## Oltita ish: PDF taklif, yutish oynasi, kod hisoblagichi, chegirma — 2026-08-24
+
+Sizning oltita bandingiz bo'yicha. Kod yozishdan oldin dizayn 5 ta mustaqil
+ko'z bilan tekshirildi: 64 ta e'tiroz, 21 tasi tasdiqlandi — uchtasi dizaynni
+tubdan o'zgartirdi (pastda yozilgan).
+
+**1. «Коммерческое предложение» PDF chiroyli bo'ldi.** Endi varaqda: logo va
+kompaniya rekvizitlari (nomi, manzili, telefoni — sozlamalardan, hozircha
+«—» turibdi, to'ldiring), hujjat raqami (bitim kodi) va **taklif qilingan
+sana** (qayta yuklab olganda ham o'sha kun), mijoz (nomi, kodi, telefoni),
+**tovarlar jadvali** (nomi, soni, kg, m³ — narxsiz, ataylab: narx bo'linib
+ko'rsatilsa mijoz bizning tarif va chegirmani hisoblab oladi), avvalgi
+narx qatorlari (Итого katta), sizning menejeringiz (ismi, telefoni), imzo
+joyi, ko'p sahifali bo'lsa raqamlar. Tovarlar so'rovning o'zidan olinadi —
+tekshiruv topdi: muhr «surati»da yo'lkira hisoblarda tovar umuman yo'q,
+jadval bo'sh chiqardi.
+
+**2. Yutish oynasida mijozni ismi bilan topish.** Avval faqat aniq kod
+yozish mumkin edi. Endi kod, ism yoki telefon yozsangiz — ro'yxat chiqadi
+(mijoz kodi · nomi · menejeri), bittasini bosasiz, tasdiqlaysiz. Oxirida
+**«Bitim →»** asosiy tugma — to'g'ridan-to'g'ri ochilgan bitimga o'tadi.
+«Готово» ham qoladi (faqat kod kerak bo'lganlar uchun).
+
+**3. GS kodlar 451 dan davom etadi.** Sabab topildi: import qilingan Qashg'ar
+markirovkalari 446 dan yuqorida «zinapoya» hosil qilgan (470, 505 … 712,
+har biri oldingisidan 50 dan kam masofada), generator o'sha zinaga
+yopishib 713 ga sakragan. Endi sistema **o'zi bergan oxirgi raqamni eslab
+qoladi** va faqat undan davom etadi; qo'lda yozilgan yoki import qilingan
+kod uni surmaydi; band raqamni va **egasiz yukdagi markirovka**ni (GS470
+yozilgan quti Ivuda tursa) o'tkazib yuboradi.
+
+> **Deploydan keyin bir marta:** Boshqaruv → Sozlamalar → «Keyingi mijoz
+> kodi raqami» → **451** yozing. Yozmaguningizcha eski qoida ishlaydi.
+
+**4. Chegirma xabari faqat kerakli odamlarga.** VED chegirma bilan
+muhrlaganda xabar `finance.debt_override` huquqi borlarga ketardi — bu
+logist, sklad boshliqlari, **hamma sotuvchilar**, buxgalter. Endi: siz
+(admin/super admin), **o'sha ishning sotuvchisi**, buxgalter. Qayta
+hisoblashda asl so'rovning sotuvchisi ham eshitadi.
+
+**5. VED chegirma bergan bo'lsa — sotuvchi ustiga qo'ya olmaydi.** Chegirma
+mijozniki. Muhrlangan (chegirmali) summadan **yuqoriga** taklif yozish rad
+etiladi, ekranda sababi yoziladi; pastga — avvalgidek ruxsat bilan. Chegirmasiz
+hisoblarga hech narsa o'zgarmadi.
+
+**6. «Готово» — muhrlash o'rniga emas.** Tekshiruv ko'rsatdi: muhrlangan
+so'rov yopiq bo'ladi, u yerda «Готово» umuman chiqmaydi — ya'ni narx maydoni
+faqat **muhrlanmagan** so'rovda ko'rinadi. Haqiqiy tuzoq boshqa edi: VED
+xodimi hisobni muhrlash mumkin bo'lsa ham «Готово»ga qo'lda narx yozib,
+muhrni chetlab o'tishi mumkin edi (karta qulflanmaydi, chegirma xabari
+ketmaydi). Endi hisob muhrlanishi mumkin bo'lsa «Готово» narx so'ramaydi va
+«Muhrlang» deydi; muhrlab bo'lmasa (lug'at bo'sh) — avvalgidek qo'lda.
+
+**Yana bittasi, skrinshot topdi: mijoz kodida lid allaqachon bo'lsa, oyna
+muzlab qolardi.** Bitta mijoz kodiga faqat BITTA lid biriktirilishi mumkin
+(lid — mijozning «tarixdan oldingi» kartasi). Yutish oynasida shunday kodni
+tanlab «Bitim ochish» bosilsa, sistema jimgina to'xtab qolardi — tugma kulrang,
+so'z yo'q. Endi kodni tanlagan zahoti izoh chiqadi: «Bu kodda lid
+allaqachon bor (lid nomi) — mijoz uchun yangi kod oching yoki o'sha lidni
+oching». Takroriy mijozning yangi ishi — mijoz kartasidan bitim, yoki yangi
+kod (bir odamda bir nechta kod bo'lishi bizda oddiy). Taklif (siz hal
+qilasiz): «lidni mavjud mijozga qo'shish» tugmasi — bitim o'sha kodga
+ochiladi, lid yopiladi. Hozircha yo'q.
+
+**Yo'l-yo'lakay topilgan va tuzatilgan: PDF'larda raqamlar «G S 7 7 7» bo'lib
+chiqardi.** Yangi taklif varag'ini Chrome ko'radigan usulda chizib qarasam,
+har bir raqam bir-biridan uzoq turibdi («B-0 0 0 0 6 6», «2 4 .0 8 .2 0 2 6»),
+harflar esa joyida. O'lchab topildi: PDF ichidagi shrift bilan birga ketadigan
+bitta «almashtirish jadvali» (GSUB) Chrome va Android'ning PDF o'quvchisini
+chalg'itadi — jadval olib tashlansa hammasi joyiga tushadi. Bu nuqson
+**topshirish aktida** (mijoz kodlari, qutilar soni, kg) va **yashik
+yorlig'ida** bir yildan beri turgan ekan — printerda ko'rinmagani uchun hech
+kim sezmagan; brauzerdan nusxa olganda ham raqamlar boshqacha ko'chib
+tushardi. Endi to'rtala PDF (taklif, akt, quti va yashik yorliqlari) o'sha
+jadvalsiz chiqadi; shriftning qolgan hamma qismi — bir yildan beri
+printerda ishlab kelayotgan baytlar — o'zgarmagan. Qo'riqchi test yozildi.
+
+Bu raundda bazada o'zgarish yo'q. Lekin bu shohobchada VED 2.0 ning uch bosqichi ham
+bor (0090–0092), shuning uchun deploydan keyin migratsiya hisobi **93** bo'lishi
+kerak.
 
 ## VED 2.0 — 3-bosqich: kod o'lchov birligini o'zi aytadi — 2026-09-01
 

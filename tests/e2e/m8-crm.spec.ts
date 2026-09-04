@@ -11,6 +11,9 @@ const OWNER = '+998900000001';
 const SALES = '+998900000009';
 const PASSWORD = 'demo1234';
 const runId = Date.now().toString().slice(-6);
+// The client the attach test mints; the refusal test needs its CODE, because
+// a name search also returns every other client carrying `mijoz` + the run id.
+let ulashCode = '';
 
 async function login(page: import('@playwright/test').Page, phone: string) {
   await page.goto('/login');
@@ -256,4 +259,75 @@ test('the stage and the field it invented are removed again', async ({ page }) =
   await expect(
     page.locator(`[data-testid="field-label"][value="Shahar ${runId}"]`),
   ).toHaveCount(0);
+});
+
+test('a won lead is attached to an EXISTING client found by NAME, and the deal is one tap away', async ({ page }) => {
+  // Round 112, the owner: «mijozlarni orasidan tanlab bitim ochmayabti». The
+  // attach mode used to take an exact code only; a seller on the phone knows
+  // a name. The hit names the manager, the tap is the echo, and the primary
+  // way out is the deal the ceremony opened.
+  await login(page, OWNER);
+  // Its OWN client, minted through the app bar's «+» (round 111): a code may
+  // carry ONE lead (#882), so a seeded code attached here would be taken for
+  // good and the spec could not run twice on one database (#154).
+  await page.goto('/crm');
+  await page.getByTestId('quick-create').click();
+  await page.getByTestId('quick-kind-client').click();
+  await page.getByTestId('quick-name').fill(`Ulash mijoz ${runId}`);
+  await page.getByTestId('quick-phone').fill(`+99893${runId}`);
+  await page.getByTestId('quick-save').click();
+  await expect(page.getByTestId('quick-client-made')).toBeVisible({ timeout: 15_000 });
+  const code = (await page.getByTestId('quick-client-code').textContent())?.trim() ?? '';
+  expect(code).toMatch(/^[A-Z0-9]{2,10}$/);
+  ulashCode = code;
+  await page.getByTestId('quick-done').click();
+
+  await page.goto('/crm/leads/new');
+  await page.getByTestId('lead-name').fill(`Ulash lid ${runId}`);
+  await page.locator('input[name="phone"]').fill(`+99891${runId}`);
+  await page.getByTestId('save-lead').click();
+  await expect(page).toHaveURL(/\/crm\/leads\/[0-9a-f-]+$/);
+
+  await page.getByTestId('stage-fold').click();
+  await page.getByTestId('stage-won').click();
+  await expect(page.getByTestId('won-dialog')).toBeVisible();
+  await page.getByTestId('won-mode-attach').click();
+  // A NAME, not a code.
+  await page.getByTestId('won-attach-code').fill(`Ulash mijoz ${runId}`);
+  const hit = page.getByTestId('won-hit').filter({ hasText: code });
+  await expect(hit).toBeVisible();
+  await hit.click();
+  // The echo: code + name, before anything is written.
+  await expect(page.getByTestId('won-checked')).toContainText(code);
+  await page.getByTestId('won-confirm').click();
+  await expect(page.getByTestId('won-client-code')).toHaveText(code, { timeout: 15_000 });
+  await expect(page.getByTestId('won-deal-code')).toContainText('B-');
+  await page.getByTestId('won-to-deal').click();
+  await expect(page).toHaveURL(/\/bitimlar\/[0-9a-f-]+$/);
+  // The code is in the card's subtitle (round 79 put it under the title).
+  await expect(page.locator('body')).toContainText(code);
+});
+
+test('a code that already carries a lead is refused at the echo, by name (#882)', async ({ page }) => {
+  // The round's own screenshot found the old shape: the index's 23505 threw
+  // out of the action and the dialog froze with a greyed button. Now the tap
+  // itself is refused, the sentence names the lead, and the press stays shut.
+  // A failed earlier test leaves this empty (round 62's lesson: assert the
+  // carried value before using it, or every locator times out blaming itself).
+  expect(ulashCode).toBeTruthy();
+  await login(page, OWNER);
+  await page.goto('/crm/leads/new');
+  await page.getByTestId('lead-name').fill(`Takror lid ${runId}`);
+  await page.locator('input[name="phone"]').fill(`+99894${runId}`);
+  await page.getByTestId('save-lead').click();
+  await expect(page).toHaveURL(/\/crm\/leads\/[0-9a-f-]+$/);
+  await page.getByTestId('stage-fold').click();
+  await page.getByTestId('stage-won').click();
+  await expect(page.getByTestId('won-dialog')).toBeVisible();
+  await page.getByTestId('won-mode-attach').click();
+  await page.getByTestId('won-attach-code').fill(`Ulash mijoz ${runId}`);
+  await page.getByTestId('won-hit').filter({ hasText: ulashCode }).click();
+  await expect(page.getByTestId('won-error')).toContainText(`Ulash lid ${runId}`);
+  await expect(page.getByTestId('won-checked')).toHaveCount(0);
+  await expect(page.getByTestId('won-confirm')).toBeDisabled();
 });

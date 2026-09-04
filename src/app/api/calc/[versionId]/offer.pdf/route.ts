@@ -1,12 +1,14 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   calcOffers,
+  calcRequestItems,
   calcRequests,
   calcVersions,
   clients,
   deals,
   leads,
+  users,
 } from '@/modules/platform/db/schema';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
@@ -106,22 +108,49 @@ export async function GET(
 
   // The customer's name heads the sheet, resolved the same way the Telegram
   // text resolved it — the two must not greet different people.
+  // The sheet's furniture (round 112): the customer, the deal's code, the
+  // goods from the request's OWN items (a yolkira seal has no groups, so the
+  // breakdown carries no items for it), and the seller to call back.
   let clientName: string | null = null;
+  let clientCode: string | null = null;
+  let clientPhone: string | null = null;
+  let docNo: string | null = null;
   if (row.request.entityType === 'deal') {
     const [d] = await db
-      .select({ name: clients.name })
+      .select({ name: clients.name, code: clients.clientCode, phones: clients.phones, dealCode: deals.code })
       .from(deals)
       .innerJoin(clients, eq(deals.clientId, clients.id))
       .where(eq(deals.id, row.request.entityId))
       .limit(1);
     clientName = d?.name ?? null;
+    clientCode = d?.code ?? null;
+    clientPhone = Array.isArray(d?.phones) && typeof d.phones[0] === 'string' ? d.phones[0] : null;
+    docNo = d?.dealCode ?? null;
   } else {
     const lead = await db.query.leads.findFirst({
       where: eq(leads.id, row.request.entityId),
-      columns: { name: true, company: true },
+      columns: { name: true, company: true, phone: true },
     });
     clientName = lead ? lead.company || lead.name : null;
+    clientPhone = lead?.phone ?? null;
   }
+  const itemRows = await db
+    .select({
+      seq: calcRequestItems.seq,
+      name: calcRequestItems.name,
+      quantity: calcRequestItems.quantity,
+      unit: calcRequestItems.unit,
+      weightKg: calcRequestItems.weightKg,
+      volumeM3: calcRequestItems.volumeM3,
+    })
+    .from(calcRequestItems)
+    .where(eq(calcRequestItems.requestId, row.request.id))
+    .orderBy(asc(calcRequestItems.seq));
+  const seller = await db.query.users.findFirst({
+    where: eq(users.id, offer.offeredBy),
+    columns: { fullName: true, phone: true },
+  });
+  const toNum = (v: string | null) => (v === null ? null : Number(v));
 
   const pdf = await buildOfferPdf(
     {
@@ -133,6 +162,22 @@ export async function GET(
       toCity: row.request.toCity,
       validUntil: row.version.validUntil,
       clientName,
+      clientCode,
+      clientPhone,
+      docNo,
+      offeredAt: offer.offeredAt,
+      managerName: seller?.fullName ?? null,
+      managerPhone: seller?.phone ?? null,
+      // Descriptors only — never the sealed breakdown, which carries the baza
+      // and the customs rates (#781).
+      items: itemRows.map((i) => ({
+        seq: i.seq,
+        label: i.name,
+        quantity: toNum(i.quantity),
+        unit: i.unit,
+        weightKg: toNum(i.weightKg),
+        volumeM3: toNum(i.volumeM3),
+      })),
     },
     locale,
   );

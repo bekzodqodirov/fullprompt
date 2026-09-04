@@ -62,6 +62,9 @@ const MUTATORS = [
  * not a hole. */
 const EXEMPT: Record<string, string> = {
   guessZone: 'pure',
+  // Round 112: the seal's gate, exported so «Готово» and the seal button ask
+  // the same question. Reads the workspace it is handed, writes nothing.
+  canSeal: 'pure',
   loadWorkspace: 'reader — it is the capture side of the clock',
   currentVersion: 'reader',
   currentSealFor: 'reader',

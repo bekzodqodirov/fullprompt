@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Overlay } from './ui/overlay';
 import {
@@ -55,6 +56,18 @@ export function WonDialog({
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [attachCode, setAttachCode] = useState('');
+  // Round 112 (his «mijozlarni orasidan tanlab bitim ochmayabti»): the
+  // attach mode used to be a box for an EXACT code, which a seller on the
+  // phone rarely has — they know a name or a number. The hits come from the
+  // same search the receive wizard uses and name the MANAGER, because a
+  // colleague's client attached by mistake is an attach with no undo.
+  const [hits, setHits] = useState<
+    { id: string; clientCode: string; name: string; managerName: string | null }[]
+  >([]);
+  // A later, shorter query can answer before an earlier one: only the newest
+  // request may write (the ⌘K palette's guard, round 58).
+  const searchSeq = useRef(0);
+  const router = useRouter();
   const [checked, setChecked] = useState<{ code: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -79,6 +92,7 @@ export function WonDialog({
   const errors: Record<string, string> = {
     client_not_found: t('won.errors.clientNotFound'),
     client_inactive: t('won.errors.clientInactive'),
+    client_has_lead: t('won.errors.clientHasLead'),
     code_exists: t('won.errors.codeExists'),
     code_format: t('won.errors.codeFormat'),
     stage_not_found: t('won.errors.stageGone'),
@@ -87,14 +101,44 @@ export function WonDialog({
     failed: t('won.errors.failed'),
   };
 
-  async function check() {
+  async function search(q: string) {
+    const seq = ++searchSeq.current;
+    const needle = q.trim();
+    if (needle.length < 2) {
+      setHits([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/clients/search?q=${encodeURIComponent(needle)}`);
+      if (!res.ok) return;
+      const body = (await res.json()) as { results?: typeof hits };
+      if (seq !== searchSeq.current) return;
+      setHits(body.results ?? []);
+    } catch {
+      /* a dropped search is not an error the dialog needs to show */
+    }
+  }
+
+  // Both awaits sit in try/finally: an action that THROWS (a fault `run()`
+  // does not translate) used to leave `busy` true for ever — a greyed button
+  // and no sentence, which is how the round-112 screenshot found the
+  // one-lead-per-client refusal. A thrown action reads as «Saqlab bo'lmadi».
+  async function checkCode(code: string) {
     setBusy(true);
     setError('');
-    const res = await resolveClientCodeAction(attachCode);
-    setBusy(false);
+    setChecked(null);
+    let res: Awaited<ReturnType<typeof resolveClientCodeAction>>;
+    try {
+      res = await resolveClientCodeAction(code);
+    } catch {
+      res = { error: 'failed' };
+    } finally {
+      setBusy(false);
+    }
     if (!res.ok) {
       setChecked(null);
-      setError(errors[res.error ?? 'failed'] ?? res.error ?? '');
+      const word = errors[res.error ?? 'failed'] ?? res.error ?? '';
+      setError(res.leadName ? `${word} (${res.leadName})` : word);
       return;
     }
     setChecked({ code: res.clientCode!, name: res.name! });
@@ -104,15 +148,21 @@ export function WonDialog({
     if (!lead) return;
     setBusy(true);
     setError('');
-    const res = await winLeadAction(lead.id, {
-      stageId: lead.stageId,
-      ...(lead.clientCode
-        ? {}
-        : mode === 'attach'
-          ? { attachCode: checked?.code ?? attachCode }
-          : { clientCode: code, name }),
-    });
-    setBusy(false);
+    let res: WinLeadState;
+    try {
+      res = await winLeadAction(lead.id, {
+        stageId: lead.stageId,
+        ...(lead.clientCode
+          ? {}
+          : mode === 'attach'
+            ? { attachCode: checked?.code ?? attachCode.trim().toUpperCase() }
+            : { clientCode: code, name }),
+      });
+    } catch {
+      res = { error: 'failed' };
+    } finally {
+      setBusy(false);
+    }
     if (!res.ok || !res.result) {
       setError(errors[res.error ?? 'failed'] ?? res.error ?? '');
       return;
@@ -177,6 +227,25 @@ export function WonDialog({
               {tq('toCard')}
             </Link>
           </div>
+          {/* «karta sdelkaga o'tib ketishi kerak edi» (round 112): the deal
+              this ceremony just opened is the PRIMARY way out. «Готово» stays
+              as the secondary for the seller who only wanted the code and is
+              in the middle of a board — a teleport they did not ask for is
+              the round-60 interruption in a new place. Rendered in the
+              confirm-only (re-win) mode too, since that opens a deal as well. */}
+          <button
+            type="button"
+            data-testid="won-to-deal"
+            onClick={() => {
+              const dealId = result.dealId;
+              setResult(null);
+              onWon();
+              router.push(`/bitimlar/${dealId}`);
+            }}
+            className="btn-primary w-full"
+          >
+            {t('won.toDeal')}
+          </button>
           <button
             type="button"
             data-testid="won-done"
@@ -184,7 +253,7 @@ export function WonDialog({
               setResult(null);
               onWon();
             }}
-            className="btn-primary w-full"
+            className="btn-secondary w-full"
           >
             {tq('done')}
           </button>
@@ -252,26 +321,58 @@ export function WonDialog({
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <input
-                      className="input flex-1 font-mono"
+                      className="input flex-1"
                       value={attachCode}
                       data-testid="won-attach-code"
-                      aria-label={t('won.attachCode')}
-                      placeholder={t('won.attachCode')}
+                      aria-label={t('won.search')}
+                      placeholder={t('won.search')}
                       onChange={(event) => {
-                        setAttachCode(event.target.value.toUpperCase());
+                        setAttachCode(event.target.value);
                         setChecked(null);
+                        void search(event.target.value);
                       }}
                     />
                     <button
                       type="button"
                       data-testid="won-check"
                       disabled={busy || attachCode.trim().length < 2}
-                      onClick={() => void check()}
+                      onClick={() => void checkCode(attachCode)}
                       className="btn-secondary shrink-0"
                     >
                       {t('won.check')}
                     </button>
                   </div>
+                  {hits.length > 0 && !checked ? (
+                    <ul className="max-h-48 space-y-1 overflow-y-auto" data-testid="won-hits">
+                      {hits.map((hit) => (
+                        <li key={hit.id}>
+                          <button
+                            type="button"
+                            data-testid="won-hit"
+                            className="btn-secondary w-full !justify-start gap-2 text-left"
+                            onClick={() => {
+                              // The tap is the ECHO round 107 demanded before an
+                              // attach with no undo: the code goes through the SAME
+                              // check the typed code does, so a code that already
+                              // carries a lead is refused here, by name, and not at
+                              // the press (#882); «Confirm» wakes up only on the echo.
+                              setAttachCode(hit.clientCode);
+                              setHits([]);
+                              void checkCode(hit.clientCode);
+                            }}
+                          >
+                            <span className="font-mono font-semibold">{hit.clientCode}</span>
+                            <span className="truncate">{hit.name}</span>
+                            {hit.managerName ? (
+                              <span className="ml-auto shrink-0 text-xs text-ink-500">
+                                {hit.managerName}
+                              </span>
+                            ) : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   {/* The echo: who this code IS, read before anything is
                       written — the attach has no undo. */}
                   {checked && (

@@ -1,12 +1,14 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   calcOffers,
+  calcRequestItems,
   calcRequests,
   calcVersions,
   clients,
   deals,
   leads,
+  users,
 } from '@/modules/platform/db/schema';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
@@ -91,22 +93,54 @@ export async function GET(request: Request, { params }: { params: Promise<{ offe
   const url = new URL(request.url);
   const locale = offerLocaleFor(url.searchParams.get('til') ?? offer.locale);
 
+  // The sheet's furniture (round 112, inherited whole): the customer, the
+  // deal's code, the goods from the request's OWN items, and the seller —
+  // this route and the versionId sibling must print the same paper.
   let clientName: string | null = null;
+  let clientCode: string | null = null;
+  let clientPhone: string | null = null;
+  let docNo: string | null = null;
   if (req.entityType === 'deal') {
     const [d] = await db
-      .select({ name: clients.name })
+      .select({
+        name: clients.name,
+        code: clients.clientCode,
+        phones: clients.phones,
+        dealCode: deals.code,
+      })
       .from(deals)
       .innerJoin(clients, eq(deals.clientId, clients.id))
       .where(eq(deals.id, req.entityId))
       .limit(1);
     clientName = d?.name ?? null;
+    clientCode = d?.code ?? null;
+    clientPhone = Array.isArray(d?.phones) && typeof d.phones[0] === 'string' ? d.phones[0] : null;
+    docNo = d?.dealCode ?? null;
   } else {
     const lead = await db.query.leads.findFirst({
       where: eq(leads.id, req.entityId),
-      columns: { name: true, company: true },
+      columns: { name: true, company: true, phone: true },
     });
     clientName = lead ? lead.company || lead.name : null;
+    clientPhone = lead?.phone ?? null;
   }
+  const itemRows = await db
+    .select({
+      seq: calcRequestItems.seq,
+      name: calcRequestItems.name,
+      quantity: calcRequestItems.quantity,
+      unit: calcRequestItems.unit,
+      weightKg: calcRequestItems.weightKg,
+      volumeM3: calcRequestItems.volumeM3,
+    })
+    .from(calcRequestItems)
+    .where(eq(calcRequestItems.requestId, req.id))
+    .orderBy(asc(calcRequestItems.seq));
+  const seller = await db.query.users.findFirst({
+    where: eq(users.id, offer.offeredBy),
+    columns: { fullName: true, phone: true },
+  });
+  const cellNum = (v: string | null) => (v === null ? null : Number(v));
 
   // The answer anchor has no stored valid_until — the sheet recomputes it the
   // way recordOffer did (completed_at + the setting's days).
@@ -138,6 +172,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ offe
       toCity: req.toCity,
       validUntil,
       clientName,
+      clientCode,
+      clientPhone,
+      docNo,
+      offeredAt: offer.offeredAt,
+      managerName: seller?.fullName ?? null,
+      managerPhone: seller?.phone ?? null,
+      // Descriptors only — never a breakdown or a money column (#781).
+      items: itemRows.map((i) => ({
+        seq: i.seq,
+        label: i.name,
+        quantity: cellNum(i.quantity),
+        unit: i.unit,
+        weightKg: cellNum(i.weightKg),
+        volumeM3: cellNum(i.volumeM3),
+      })),
     },
     locale,
   );
