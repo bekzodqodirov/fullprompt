@@ -20,6 +20,7 @@ import {
   deleteItem,
   loadWorkspace,
   saveTable,
+  setCargoFacts,
   type TableItemEdit,
   type TableNewItem,
 } from '@/modules/wms/calc/workspace';
@@ -551,3 +552,57 @@ describe('the revision clock', () => {
 
 // The (requestId, seq) helper survives for raw fixture writes above.
 void and;
+
+describe('the VED can type the cargo facts the bot could not read', () => {
+  /**
+   * The owner's report: «agar AI kub kilolarni bermagan bo'lsa lekin
+   * materiallarda bo'lsa, ularni VED hodimi o'zi kirgiza olmayabti». The
+   * screen accused and offered nothing; the request's weight, volume and
+   * route arrived from the bot's reading and nowhere else.
+   */
+  it('writes them, moves the clock, and clears the checklist', async () => {
+    const id = await open([{ name: 'plitka', quantity: 10 }]);
+    const before = await loadWorkspace(id);
+    expect(before!.weightKg).toBe(500);
+
+    await setCargoFacts(
+      id,
+      { fromCity: 'Guangzhou', toCity: 'Andijon', weightKg: 812.5, volumeM3: 4.25 },
+      ctx(),
+    );
+    const after = await loadWorkspace(id);
+    expect(after!.weightKg).toBe(812.5);
+    expect(after!.volumeM3).toBe(4.25);
+    expect(after!.fromCity).toBe('Guangzhou');
+    // The freight band is looked up at the density, so this moves what a
+    // seal would seal — the clock must move with it.
+    expect(after!.rev).toBeGreaterThan(before!.rev);
+    expect(after!.density).toBeCloseTo(812.5 / 4.25, 3);
+  });
+
+  it('an empty box CLEARS the fact rather than writing zero', async () => {
+    const id = await open([{ name: 'plitka' }]);
+    await setCargoFacts(id, { fromCity: null, toCity: null, weightKg: null, volumeM3: null }, ctx());
+    const ws = await loadWorkspace(id);
+    expect(ws!.weightKg).toBeNull();
+    expect(ws!.volumeM3).toBeNull();
+    expect(ws!.fromCity).toBeNull();
+  });
+
+  it('refuses the numbers that are not numbers', async () => {
+    const id = await open([{ name: 'plitka' }]);
+    // Zero is not a weight, it is a blank somebody typed over.
+    await expect(
+      setCargoFacts(id, { fromCity: null, toCity: null, weightKg: 0, volumeM3: null }, ctx()),
+    ).rejects.toMatchObject({ code: 'measure_positive' });
+    await expect(
+      setCargoFacts(id, { fromCity: null, toCity: null, weightKg: NaN, volumeM3: null }, ctx()),
+    ).rejects.toMatchObject({ code: 'bad_number' });
+    // numeric(12,3) holds nine whole digits; past it the UPDATE would 22003
+    // as a white page instead of as a sentence.
+    await expect(
+      setCargoFacts(id, { fromCity: null, toCity: null, weightKg: 1e9, volumeM3: null }, ctx()),
+    ).rejects.toMatchObject({ code: 'bad_number' });
+  });
+});
+

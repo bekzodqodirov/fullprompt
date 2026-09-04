@@ -12,10 +12,12 @@ import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { PageHeader, Section } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
 import { canSeal, loadWorkspace } from '@/modules/wms/calc/workspace';
+import { sectionParts } from '@/modules/wms/calc/pricing';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { CalcActions } from './calc-actions';
 import { CalcWorkspace } from './calc-workspace';
+import { CargoFactsForm } from './cargo-facts';
 import { LastQuotes } from './last-quotes';
 
 /**
@@ -145,6 +147,25 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
                 </span>
               ))}
             </div>
+          )}
+          {/* …and the door that answers it. Until this round the checklist
+              could only ACCUSE: the request's weight, volume and route came
+              from the bot's reading and nowhere else, so a photograph the
+              model could not read left a job that could never be priced. */}
+          {closed ? null : (
+            <CargoFactsForm
+              id={id}
+              hasFreight={
+                row.section ? sectionParts(row.section as CalcSection).freight : true
+              }
+              initial={{
+                fromCity: row.fromCity,
+                toCity: row.toCity,
+                weightKg: row.weightKg,
+                volumeM3: row.volumeM3,
+              }}
+              incomplete={row.missing.length > 0}
+            />
           )}
         </div>
       </section>

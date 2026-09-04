@@ -661,6 +661,60 @@ export async function setFreightZone(requestId: string, zone: string | null, ctx
   });
 }
 
+/**
+ * The cargo facts a QUOTE cannot be made without — typed by the VED.
+ *
+ * The owner's report, and it is the one that made the whole module dead-end
+ * for him: «agar AI kub kilolarni bermagan bo'lsa lekin materiallarda bo'lsa,
+ * ularni VED hodimi o'zi kirgiza olmayabti». The screen has printed
+ * «⚠ Yetishmayapti: og'irlik, hajm» since phase A and offered NOTHING to fill
+ * it: the request's own weight, volume and route arrive from the bot's
+ * reading and nowhere else, so a photograph the model could not read left a
+ * job that could never be priced — freight has no density and the band lookup
+ * has no answer — and the only way out was «Готово» with a typed figure.
+ * `setFreightZone` next door was the shape of the missing door all along.
+ *
+ * NOT a confirmation clear: a ✅ blesses a group's RATES and BAZAS, and the
+ * shipment's weight is neither. It DOES move the rev clock, because it moves
+ * what a seal would seal — the freight band is looked up at the arrived
+ * density (#764).
+ */
+export async function setCargoFacts(
+  requestId: string,
+  input: {
+    fromCity: string | null;
+    toCity: string | null;
+    weightKg: number | null;
+    volumeM3: number | null;
+  },
+  ctx: AuditContext,
+): Promise<void> {
+  mustBeNumber(input.weightKg, input.volumeM3);
+  for (const v of [input.weightKg, input.volumeM3]) {
+    if (v === null) continue;
+    if (!(v > 0)) throw new CalcError('measure_positive');
+    // numeric(12,3) holds nine whole digits; past it the UPDATE dies 22003
+    // as a white page rather than as a sentence (#867's rule).
+    if (v >= 1e9) throw new CalcError('bad_number');
+  }
+  const city = (raw: string | null) => (raw ?? '').trim().slice(0, 120) || null;
+  const patch = {
+    fromCity: city(input.fromCity),
+    toCity: city(input.toCity),
+    weightKg: input.weightKg === null ? null : input.weightKg.toFixed(3),
+    volumeM3: input.volumeM3 === null ? null : input.volumeM3.toFixed(3),
+  };
+  await mutateRequest(requestId, async (tx) => {
+    await tx.update(calcRequests).set(patch).where(eq(calcRequests.id, requestId));
+    await writeAudit(tx, ctx, {
+      entityType: 'calc_request',
+      entityId: requestId,
+      action: 'update',
+      after: { cargoFacts: patch },
+    });
+  });
+}
+
 export async function createGroup(
   requestId: string,
   input: { label: string; tnvedCode?: string | null },

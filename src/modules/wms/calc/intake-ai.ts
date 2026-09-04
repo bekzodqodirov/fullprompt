@@ -43,6 +43,11 @@ const SYSTEM = `Ты — помощник карго-компании GSR LOGIST
 - steps: короткие строки на узбекском о том, ЧТО ты сделал: как сгруппировал товары,
   почему поставил такой код ТН ВЭД, что показалось противоречивым. Это читает человек.
 
+ЕСЛИ ПРИЛОЖЕНЫ ФОТО — читай их так же внимательно, как текст. Вес и объём
+чаще всего написаны ИМЕННО НА ФОТО: на упаковочном листе, на инвойсе, на
+наклейке коробки, от руки на накладной. Возьми числа оттуда, если в тексте
+их нет. В steps напиши, что именно ты прочитал с фотографии.
+
 Ничего не выдумывай. Если факта нет — null. Лучше пустой список товаров, чем придуманный.
 Коды ТН ВЭД ставь только там, где уверен; иначе null.`;
 
@@ -62,6 +67,15 @@ export async function analyzeIntake(input: {
   /** How many photos/documents came with it — context for the model. */
   fileCount: number;
   /**
+   * The photographs, already downscaled by the caller.
+   *
+   * His office writes the weight and the cube ON the packing list and sends
+   * a picture of it — «kub kilosi rasimni ichiga yozilgan bo'lsa analiz
+   * qilmayabti». Before this the call was text-only, so those numbers were
+   * stored on the card and read by nobody.
+   */
+  images?: { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' }[];
+  /**
    * The caller's leash. The bot answers asynchronously and affords the
    * default 60 s; an interactive press (the thread door) cannot hold a
    * person that long and passes ~20 s — past it the manual parser answers.
@@ -70,7 +84,10 @@ export async function analyzeIntake(input: {
 }): Promise<AiIntakeResult | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   const material = input.text.trim();
-  if (!material) return null;
+  const images = input.images ?? [];
+  // A collection of nothing but photographs is still a collection: before
+  // this round the empty-text guard refused it outright.
+  if (!material && images.length === 0) return null;
 
   try {
     // A deadline of its own, for the same reason round 101 gave the
@@ -116,10 +133,29 @@ export async function analyzeIntake(input: {
       messages: [
         {
           role: 'user',
-          content:
-            `Раздел: ${input.section}\n` +
-            (input.fileCount ? `Прикреплено файлов: ${input.fileCount}\n` : '') +
-            `Материалы:\n${material.slice(0, 20000)}`,
+          content: [
+            // Images FIRST: the model reads them as context for the text
+            // that follows, which is how the packing list and its caption
+            // actually relate.
+            ...images.map(
+              (img): Anthropic.ContentBlockParam => ({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: img.mediaType,
+                  data: img.data.toString('base64'),
+                },
+              }),
+            ),
+            {
+              type: 'text',
+              text:
+                `Раздел: ${input.section}\n` +
+                (input.fileCount ? `Прикреплено файлов: ${input.fileCount}\n` : '') +
+                (images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
+                (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото.'),
+            },
+          ],
         },
       ],
     });

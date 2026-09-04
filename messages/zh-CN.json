@@ -2381,6 +2381,7 @@
       "basisSuspect": "请检查基价单位（法律按其他单位计价）— 行",
       "importFilled": "已从导入填充 {count} 行基价（估算），行号"
     },
+    "editCargoFacts": "修改货物信息",
     "importGuess": "来自导入（估算）",
     "importGuessTitle": "基价取自海关导入文件 — 请核对，也可自行填写",
     "importPick": "从导入中选择",
