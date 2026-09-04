@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   calcExtras,
@@ -524,6 +524,24 @@ export async function loadWorkspace(
 
   const groupKg = groupMeasure(groups.map((g) => g.weightKg));
   const groupM3 = groupMeasure(groups.map((g) => g.volumeM3));
+  /**
+   * Is the Σ above the WHOLE of what it is being compared against?
+   *
+   * `groupMeasure` returns the sum of whatever items carry the measure and
+   * null only when none do, so a partially-measured request produces a
+   * partial Σ that LOOKS like a total — and `disagrees` then fires on the
+   * shortfall. Two ways to be partial: an item with no figure, and an item
+   * in no group at all, which is the normal state of every request the VED
+   * is half-way through coding. Both make the two sides incomparable, and
+   * «not yet» is the honest answer, not «they disagree».
+   *
+   * The module already decided this one file over: `groupPerUnit`
+   * (calc/history.ts) refuses unless EVERY item carries the measure, because
+   * dividing by a partial Σ «prints roughly three times the true rate». This
+   * is the same arithmetic and now the same rule.
+   */
+  const covered = (pick: (i: WorkspaceItem) => number | null) =>
+    items.length > 0 && items.every((i) => i.groupId !== null && pick(i) !== null);
 
   return {
     requestId,
@@ -562,8 +580,11 @@ export async function loadWorkspace(
       groupKg,
       groupM3,
       // Freight reads the REQUEST's totals and customs reads the GROUPS', so
-      // nothing else would tell the VED the two disagree.
-      mismatch: disagrees(groupKg, weightKg) || disagrees(groupM3, volumeM3),
+      // nothing else would tell the VED the two disagree — but only once
+      // both sides are measuring the same cargo.
+      mismatch:
+        (covered((i) => i.weightKg) && disagrees(groupKg, weightKg)) ||
+        (covered((i) => i.volumeM3) && disagrees(groupM3, volumeM3)),
     },
     sealedVersion: sealed,
     completedAt: request.completedAt,
@@ -1995,6 +2016,17 @@ export { isUniqueViolation, type FreightBand };
 // ---------------------------------------------------------------------------
 
 /**
+ * How long a held AI claim is believed.
+ *
+ * ONE constant for the two places that ask (#513): the claim that TAKES the
+ * request and the workspace lock that REFUSES while somebody holds it. If the
+ * lock healed sooner than the claim, an edit would land under a pass still
+ * running; if the claim healed sooner than the lock, the pass would be
+ * refused by a lock it had itself been granted.
+ */
+export const AI_CLAIM_STALE_MS = 10 * 60_000;
+
+/**
  * «AI taklif qilsin» — the model groups the goods, and nothing more.
  *
  * What comes back is labels, TNVED codes and a grouping. What does NOT come
@@ -2012,13 +2044,36 @@ export { isUniqueViolation, type FreightBand };
 export async function proposeGroups(
   requestId: string,
   ctx: AuditContext,
-): Promise<{ groups: number; batches: number; failed: number }> {
+): Promise<{
+  groups: number;
+  batches: number;
+  failed: number;
+  ratesPulled: number;
+  codesStamped: number;
+  importFilled: number;
+}> {
   await assertOpen(requestId);
 
   const claimed = await db
     .update(calcRequests)
     .set({ aiProposalStartedAt: new Date() })
-    .where(and(eq(calcRequests.id, requestId), isNull(calcRequests.aiProposalStartedAt)))
+    .where(
+      and(
+        eq(calcRequests.id, requestId),
+        or(
+          isNull(calcRequests.aiProposalStartedAt),
+          // …or the holder is GONE. The release lives in a `finally`, which
+          // runs for a refusal and a thrown call and not for a killed
+          // process — and this app is restarted on every deploy, with a bot
+          // dispatching this pass in the background. Without the window a
+          // single unlucky restart answered `ai_running` to that request for
+          // ever, with no sweep and no reaper anywhere to clear it. Same
+          // window `lockRequestInTx` already heals on, from the same
+          // constant, so the two cannot drift apart (#513).
+          lt(calcRequests.aiProposalStartedAt, new Date(Date.now() - AI_CLAIM_STALE_MS)),
+        ),
+      ),
+    )
     .returning({ id: calcRequests.id });
   if (claimed.length === 0) throw new CalcError('ai_running');
 
@@ -2053,13 +2108,138 @@ export async function proposeGroups(
 
     const drafts = mergeProposals(results, items.map((i) => i.seq));
     await applyProposal(requestId, drafts, ctx);
-    return { groups: drafts.length, batches: batches.length, failed };
+    // …and then the proposal is turned into a CALCULATION.
+    //
+    // MEASURED before it was written (a probe on a real request): the
+    // proposal alone leaves a group carrying the code and NOTHING else —
+    // `duty_pct` and `vat_pct` null, so `customsFor` refuses `rates_missing`
+    // — and it never stamps the item's own `tnved_code`, so phase 2's «the
+    // code on the row is what groups and prices it» machinery and 0094's
+    // customs-import baza fill both stay asleep. Pressing ✨ therefore
+    // produced a request nobody could price, over a book of 1,489 seeded
+    // PP-3818 rates that answers for nearly every code: the VED had to pull
+    // each group's rates by hand and retype every code the model had found.
+    //
+    // Both halves go through doors that already exist, and NEITHER lets the
+    // model reach a number: `pullRatesFromDictionary` writes the BOOK's rate
+    // for the code (source 'dictionary'), and `saveTable` writes the model's
+    // CODE onto the row exactly as a person typing it would — which is also
+    // what makes the import fill fire. Law 1's fence is untouched:
+    // `applyProposal` still writes no rate column at all.
+    // THE CLAIM COMES OFF FIRST, and it has to.
+    //
+    // The tail writes through `pullRatesFromDictionary` and `saveTable`, and
+    // BOTH take `lockRequestInTx`, which refuses on exactly the claim this
+    // function is holding — so the tail ran, was refused `ai_running` on
+    // every group, and logged it as «this code has no dictionary rate».
+    // Measured, not read: the whole pricing half was dead in production and
+    // green in the tests, because the test called the tail directly with no
+    // claim held (#531, a third time in this module).
+    //
+    // Releasing here rather than threading `ignoreAiClaim` through two more
+    // public doors is not a shortcut, it is what the claim MEANS: its stated
+    // job is that «two people pressing the button do not both spend a model
+    // call on the same thousand goods», and by this line that call is spent.
+    // What guards the writes from here on is the rev clock and `FOR UPDATE`,
+    // which is what guards every other writer. The `finally` still runs — the
+    // release is an idempotent UPDATE — so a throw in the tail cannot strand
+    // the claim.
+    await releaseAiClaim(requestId);
+    const priced = await priceProposedGroups(requestId, ctx);
+    return { groups: drafts.length, batches: batches.length, failed, ...priced };
   } finally {
-    await db
-      .update(calcRequests)
-      .set({ aiProposalStartedAt: null })
-      .where(eq(calcRequests.id, requestId));
+    await releaseAiClaim(requestId);
   }
+}
+
+/** Idempotent, because both the happy path and the `finally` call it. */
+async function releaseAiClaim(requestId: string): Promise<void> {
+  await db
+    .update(calcRequests)
+    .set({ aiProposalStartedAt: null })
+    .where(eq(calcRequests.id, requestId));
+}
+
+/**
+ * Turn a landed proposal into something the engine can price.
+ *
+ * Two steps, in this order and for a reason: the rates come FIRST because
+ * the group's `duty_unit` is what says which of the customs file's units may
+ * price a row (0094's `unitsForRow`), and the item codes come second because
+ * `saveTable` is the ONE writer that runs the sweep, the measure pass and
+ * the import fill together.
+ *
+ * A code the dictionary has never heard of is SKIPPED, not fatal: the model
+ * proposes codes for a living, and one it invented must cost its own group's
+ * rates and never the other nine groups' — `proposeGroups`'s own batch rule,
+ * one level down.
+ *
+ * Exported for the integration test alone: `proposeGroups` needs a model and
+ * this container has no key, so the behaviour is proven by driving the tail
+ * directly and the CALL is pinned by `tests/unit/proposal-wire.test.ts`.
+ */
+export async function priceProposedGroups(
+  requestId: string,
+  ctx: AuditContext,
+): Promise<{ ratesPulled: number; codesStamped: number; importFilled: number }> {
+  const groups = await db
+    .select({
+      id: calcGroups.id,
+      tnvedCode: calcGroups.tnvedCode,
+      dutyPct: calcGroups.dutyPct,
+      vatPct: calcGroups.vatPct,
+    })
+    .from(calcGroups)
+    .where(eq(calcGroups.requestId, requestId));
+
+  let ratesPulled = 0;
+  for (const g of groups) {
+    if (!(g.tnvedCode ?? '').trim()) continue;
+    if (g.dutyPct !== null && g.vatPct !== null) continue;
+    try {
+      await pullRatesFromDictionary(g.id, ctx);
+      ratesPulled += 1;
+    } catch (err) {
+      // Only the rate LOOKUP's own refusals belong here. Anything else — a
+      // lock, a closed request, a bad number — is a fact about the request
+      // and not about this code, and swallowing it under «no dictionary
+      // rate» is how a dead pricing half read as a book with holes in it.
+      if (!(err instanceof CalcError)) throw err;
+      if (err.code !== 'rates_not_in_dictionary' && err.code !== 'code_required') throw err;
+      logger.info(
+        { requestId, groupId: g.id, code: g.tnvedCode, reason: err.code },
+        '[calc] proposed code has no dictionary rate',
+      );
+    }
+  }
+
+  // The item's own code — phase 2's grain, and what 0094's import fill keys
+  // on. Through `saveTable`, never a bare UPDATE: the sweep, the measure
+  // pass, the rev clock and the baza suggestion all ride that one door.
+  const items = await db
+    .select({
+      id: calcRequestItems.id,
+      seq: calcRequestItems.seq,
+      tnvedCode: calcRequestItems.tnvedCode,
+      groupId: calcRequestItems.groupId,
+    })
+    .from(calcRequestItems)
+    .where(eq(calcRequestItems.requestId, requestId));
+  const codeOfGroup = new Map(groups.map((g) => [g.id, (g.tnvedCode ?? '').trim()]));
+  const edits = items
+    .filter((i) => {
+      const code = i.groupId ? (codeOfGroup.get(i.groupId) ?? '') : '';
+      return code !== '' && (i.tnvedCode ?? '') !== code;
+    })
+    .map((i) => ({ id: i.id, seq: i.seq, tnvedCode: codeOfGroup.get(i.groupId!)! }));
+  if (edits.length === 0) return { ratesPulled, codesStamped: 0, importFilled: 0 };
+
+  const saved = await saveTable(requestId, { items: edits, adds: [] }, ctx);
+  return {
+    ratesPulled,
+    codesStamped: edits.length,
+    importFilled: saved.importFilled.length,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2209,7 +2389,7 @@ async function lockRequestInTx(
   const claimed = row.ai_proposal_started_at ? new Date(row.ai_proposal_started_at).getTime() : null;
   // `ignoreAiClaim` exists for exactly one caller: applyProposal, whose OWN
   // flow holds the claim it would otherwise refuse on.
-  if (!opts.ignoreAiClaim && claimed !== null && Date.now() - claimed < 10 * 60_000) {
+  if (!opts.ignoreAiClaim && claimed !== null && Date.now() - claimed < AI_CLAIM_STALE_MS) {
     throw new CalcError('ai_running');
   }
   return { rev: row.rev };

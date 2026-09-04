@@ -5,6 +5,17 @@ import { notifyDictionaryReview } from './review';
 
 export const JOB_CALC_OVERDUE = 'calc.overdue';
 export const JOB_CALC_REVIEW = 'calc.dict-review';
+export const JOB_CALC_PREFILL = 'calc.prefill';
+
+export interface CalcPrefillJob {
+  requestId: string;
+  /** Whose job it is — the audit actor AND who is told the answer. */
+  staffId: string;
+  /** The revision the request stood at when this was queued — see
+   * `prefillStanding`. Absent on a job queued before this field existed,
+   * which then falls back to the confirmed/closed checks alone. */
+  rev?: number | null;
+}
 
 /**
  * The lateness watch for calculations (round 28, reopened in VED phase A).
@@ -54,6 +65,62 @@ export async function registerCalcReviewWorker(boss: PgBoss): Promise<void> {
     } catch (err) {
       logger.error({ err }, 'calc dictionary review sweep failed');
       throw err;
+    }
+  });
+}
+
+/**
+ * The AI VED hodimi's pass, OWNED.
+ *
+ * It was dispatched with `void` from the staff bot, which polls inside the
+ * Next.js app process — the one the owner restarts on every deploy
+ * (`docker compose build migrate app`). A restart 90 seconds after a seller
+ * pressed ✅ left a request carrying AI groups that `applyProposal` had
+ * already committed, no bazas, no row anywhere saying a prefill was owed,
+ * no retry, and a seller who had been promised an answer and got silence.
+ * The precedent is one directory over and was written in this same
+ * sub-round: the customs parse is a pg-boss job for exactly this reason.
+ *
+ * The answer is delivered through `notifyStaffTelegram` rather than the
+ * grammy context that no longer exists by then: the drain owns the claim
+ * (0082) and round 101's transient-vs-permanent budget, so a Telegram 429
+ * costs a retry instead of the message.
+ *
+ * A failure is NOT rethrown. The pass is best-effort by construction — the
+ * request is in the VED's queue whatever happens here, and a person will
+ * answer it — so five retries of a model that refused would spend money to
+ * change nothing. What IS worth retrying is the process dying mid-pass, and
+ * that is a job pg-boss re-delivers on its own.
+ */
+export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
+  await boss.createQueue(JOB_CALC_PREFILL);
+  await boss.work<CalcPrefillJob>(JOB_CALC_PREFILL, async (jobs) => {
+    for (const job of jobs) {
+      const { requestId, staffId } = job.data;
+      try {
+        const { aiPrefill, prefillStanding } = await import('./prefill');
+        const { notifyStaffTelegram } = await import('@/modules/platform/notifications/staff');
+        // A person may have reached the request first — the queue drains
+        // when it drains, and pg-boss re-delivers. The machine stands down
+        // rather than deleting their groups and un-ticking their ✅.
+        const standing = await prefillStanding(requestId, job.data.rev ?? null);
+        if (standing !== 'ok') {
+          logger.info({ requestId, standing }, '[calc-prefill] stood down — the request has moved');
+          continue;
+        }
+        const out = await aiPrefill(requestId, { actorId: staffId });
+        await notifyStaffTelegram({
+          userIds: [staffId],
+          type: 'CalcPrefilled',
+          text: out.text,
+        });
+        logger.info(
+          { requestId, codesStamped: out.codesStamped, picked: out.picked, aiUsed: out.aiUsed },
+          '[calc-prefill] pass finished',
+        );
+      } catch (err) {
+        logger.error({ err, requestId }, '[calc-prefill] pass failed — the VED still has the job');
+      }
     }
   });
 }

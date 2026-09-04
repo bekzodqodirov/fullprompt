@@ -86,7 +86,7 @@ describe('what a quote cannot be made without', () => {
     toCity: 'Toshkent',
     weightKg: 250,
     volumeM3: 3,
-    goods: [{ name: 'Chexol' }],
+    goods: [{ name: 'Chexol', quantity: 100 }],
   };
 
   it('freight needs the road, customs does not — and podklyuch needs both', () => {
@@ -104,8 +104,13 @@ describe('what a quote cannot be made without', () => {
   });
 
   it('a zero is a blank, not a number', () => {
+    // The line still states a COUNT, so removing the shipment's weight takes
+    // the total away and leaves the line priceable — one measure is what the
+    // engine asks of a row (`unitsForRow`), never both.
     expect(missingFields('rastamojka', { ...full, weightKg: 0 })).toEqual(['weightKg']);
     expect(missingFields('rastamojka', { ...full, volumeM3: -1 })).toEqual(['volumeM3']);
+    // …and with no goods at all the per-line questions stay silent: one hole
+    // named three times is a checklist nobody finishes reading.
     expect(missingFields('rastamojka', { ...full, goods: [] })).toEqual(['goods']);
     expect(isComplete('rastamojka', full)).toBe(true);
     expect(isComplete('rastamojka', { ...full, weightKg: null })).toBe(false);

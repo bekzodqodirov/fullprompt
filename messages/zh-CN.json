@@ -2087,7 +2087,8 @@
       "toCity": "目的城市",
       "weightKg": "重量",
       "volumeM3": "体积",
-      "goods": "货物"
+      "goods": "货物",
+      "itemMeasure": "每项数量或重量"
     },
     "errors": {
       "validation": "请检查字段",

@@ -4,7 +4,7 @@ import { clients, dealStages, deals, leadStages, leads } from '../../platform/db
 import { addActivity, createLead } from '../crm/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { logger } from '../../platform/logger';
-import { intakeNoteText, type CalcFacts, type CalcSection } from './intake';
+import { intakeNoteText, itemFacts, type CalcFacts, type CalcSection } from './intake';
 
 /**
  * Where a confirmed «Hisoblatish» lands (owner: «hammasi lead yoki ochilgan
@@ -32,6 +32,8 @@ export interface IntakeTarget {
    * saying so is the difference between an honest reply and a silent strand.
    */
   queued?: boolean;
+  /** The queued request, when there is one — what the AI prefill works on. */
+  requestId?: string | null;
 }
 
 /** The client a typed code or phone names — exactly one, or nobody. */
@@ -193,9 +195,10 @@ export async function landIntake(input: {
   // insert the note and its files still stand on the card, and the caller is
   // told which half failed rather than «nothing saved» about work that was.
   let queued = false;
+  let requestId: string | null = null;
   try {
     const { openCalcRequest } = await import('./service');
-    await openCalcRequest(
+    const opened = await openCalcRequest(
       {
         entityType: target.kind,
         entityId: target.id,
@@ -204,11 +207,15 @@ export async function landIntake(input: {
         toCity: input.facts.toCity ?? null,
         weightKg: input.facts.weightKg ?? null,
         volumeM3: input.facts.volumeM3 ?? null,
-        items: (input.facts.goods ?? []).map((good) => ({
+        // Through `itemFacts`, so the weight a single-line job already
+        // stated reaches the ITEM — which is what lets the AI VED hodimi
+        // find a per-kg declaration for it (docs/VED-IMPORT-AI §3).
+        items: itemFacts(input.facts).map((good) => ({
           name: good.name,
-          quantity: good.quantity ?? null,
-          tnvedCode: good.tnvedCode ?? null,
-          note: good.note ?? null,
+          quantity: good.quantity,
+          weightKg: good.weightKg,
+          tnvedCode: good.tnvedCode,
+          note: good.note,
         })),
         noteId: input.noteId,
         source: 'bot',
@@ -217,6 +224,9 @@ export async function landIntake(input: {
       { actorId: input.collectedBy },
     );
     queued = true;
+    // Handed back so the bot can hand the job to the AI VED hodimi — the
+    // prefill runs OFF the poller, against this id (docs/VED-IMPORT-AI §3).
+    requestId = opened.id;
   } catch (err) {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] queue open failed');
   }
@@ -232,7 +242,7 @@ export async function landIntake(input: {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
   }
 
-  return { ...target, queued };
+  return { ...target, queued, requestId };
 }
 
 async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<void> {

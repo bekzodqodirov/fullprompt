@@ -86,6 +86,59 @@ describe('the arithmetic cannot reach the model', () => {
   });
 });
 
+describe('the AI VED hodimi picks a row, never a price', () => {
+  // Sub-round B lets the model work a whole job unattended, which puts law 1
+  // at its narrowest: the ONE place a model's output travels toward a money
+  // column. The rule is that it answers with an INDEX into real declarations
+  // somebody filed, and the number is re-read from the file by `saveTable`.
+
+  it('the answer the model may give carries no amount at all', () => {
+    const source = read('src/modules/wms/calc/prefill-ai.ts');
+    // Both schemas — the one the model is TOLD and the one its answer is
+    // PARSED by — name the same three keys. Each slice asserts it found
+    // something first: a marker that has been renamed must fail loudly, not
+    // pass over an empty string.
+    const zodAt = source.indexOf('const picksSchema');
+    expect(zodAt, 'picksSchema has been renamed — re-anchor this fence').toBeGreaterThan(-1);
+    const wireAt = source.indexOf('type: \'json_schema\'');
+    expect(wireAt, 'the output schema has moved — re-anchor this fence').toBeGreaterThan(-1);
+    const shapes = [
+      source.slice(zodAt, source.indexOf('export interface PickRequest')),
+      source.slice(wireAt, source.indexOf('messages: [', wireAt)),
+    ];
+    for (const shape of shapes) {
+      expect(shape).toContain('candidate');
+      expect(shape).toContain('reason');
+      // A fourth key called anything price-shaped would be the model quoting.
+      for (const money of ['price', 'usd', 'amount', 'baza', 'summa']) {
+        expect(shape.toLowerCase(), `the pick schema must not offer ${money}`).not.toContain(money);
+      }
+    }
+    // …and what is handed back to the caller is the same three keys. The
+    // candidates ARE read for the listing shown to the model — showing a
+    // filed declaration is not the model producing a number — so the
+    // assertion is about the RETURN, not about the file mentioning a price.
+    for (const push of source.match(/out\.push\(\{[^}]*\}\)/g) ?? []) {
+      expect(push).toMatch(/^out\.push\(\{\s*seq:[^}]*candidate:[^}]*reason:[^}]*\}\)$/s);
+    }
+  });
+
+  it('the prefill writes no provenance of its own', () => {
+    const source = read('src/modules/wms/calc/prefill.ts');
+    // `baza_source` is `saveTable`'s to decide, and it decides 'import'
+    // BECAUSE an `importRowId` was posted. A prefill that named the source
+    // itself would be a second writer, and the only value it could invent
+    // is the one 0094 refuses.
+    expect(source).not.toContain('bazaSource');
+    expect(source).not.toContain('rateSource');
+    // The row id is what makes the price the FILE's. Without it the number
+    // posted here is stored as somebody's typing — measured, red-proven.
+    const edit = block(source, 'edits.push(');
+    expect(edit).toContain('importRowId: chosen.id');
+    expect(edit).toContain('bazaUsd: chosen.pricePerUnitUsd');
+  });
+});
+
 describe('the database refuses too', () => {
   const migration = readFileSync(
     'src/modules/platform/db/migrations/0086_calc_pricing.sql',

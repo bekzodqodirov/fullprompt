@@ -386,6 +386,32 @@ async function analyseIntakeAndReply(
 }
 
 /**
+ * Hand the just-landed job to the AI VED hodimi — through pg-boss, so it
+ * belongs to something that outlives this container.
+ *
+ * The send is caught for the same reason the pass itself is best-effort: the
+ * seller has already been told their job is saved, the VED has it either
+ * way, and a queue that is briefly unreachable must cost a background pass
+ * rather than the confirmation they are reading.
+ */
+async function queuePrefill(requestId: string, staffId: string): Promise<void> {
+  try {
+    const { enqueue } = await import('../jobs/boss');
+    const { JOB_CALC_PREFILL } = await import('../../wms/calc/jobs');
+    const { prefillTicket } = await import('../../wms/calc/prefill');
+    // The revision travels WITH the job: the queue drains when it drains,
+    // and the machine must not overwrite whatever a person did meanwhile.
+    const rev = await prefillTicket(requestId);
+    await enqueue(JOB_CALC_PREFILL, { requestId, staffId, rev });
+  } catch (err) {
+    // The queue being unreachable must not cost the seller the confirmation
+    // they are about to read: the request is saved and a VED will answer it
+    // whether or not the machine got there first.
+    logger.warn({ err, requestId }, 'calc prefill could not be queued');
+  }
+}
+
+/**
  * Ask the assistant OFF the middleware chain and deliver the answer when it
  * arrives (see the call site: the poller is sequential, so this must not be
  * awaited). Everything is caught — a rejection here would be an unhandled
@@ -610,6 +636,18 @@ async function handleCalcCallback(
     return;
   }
   endIntake(chatId);
+  // The AI VED hodimi picks the job up — off the poller (grammy's poller is
+  // sequential and the same bot serves every customer, so awaiting a grouping
+  // call plus a baza pick here would freeze every cabinet tap, #706) and OUT
+  // OF THIS PROCESS. A `void` promise here lived in the container the owner
+  // restarts on every deploy: a restart mid-pass left committed AI groups,
+  // no bazas, no retry, no row saying a pass was owed, and a seller who was
+  // promised an answer and got silence. pg-boss owns it now, exactly as the
+  // customs parse in this same sub-round is owned; the answer comes back
+  // through the notification drain rather than a `ctx` that is gone by then.
+  if (target.queued && target.requestId) {
+    await queuePrefill(target.requestId, staff.id);
+  }
   const appUrl = process.env.APP_URL ?? '';
   const path = target.kind === 'deal' ? 'bitimlar' : 'crm/leads';
   await ctx.reply(

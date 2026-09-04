@@ -36,6 +36,7 @@ import {
   type TableSaveResult,
 } from '@/modules/wms/calc/workspace';
 import { saveBaza, savePriceBook, saveRates, saveTariffBand } from '@/modules/wms/calc/dictionaries';
+import { loneWeightKg } from '@/modules/wms/calc/intake';
 import { isCalcSection } from '@/modules/wms/calc/labels';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { canReadTg } from '@/modules/wms/crm/conversations';
@@ -188,7 +189,13 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
         toCity: input.toCity,
         weightKg: input.weightKg,
         volumeM3: input.volumeM3,
-        items: input.goods,
+        // The same derivation both read-doors apply: one line means the
+        // shipment's weight IS that line's weight, and customs is calculated
+        // per line (`loneWeightKg`, the one home for the rule).
+        items: input.goods.map((g) => ({
+          ...g,
+          weightKg: g.weightKg ?? loneWeightKg(input.goods.length, input.weightKg),
+        })),
         note: input.noteId ? { id: input.noteId, text: input.noteText } : null,
         source: 'card',
       },

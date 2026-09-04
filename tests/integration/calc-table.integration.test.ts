@@ -19,6 +19,8 @@ import {
   confirmGroup,
   deleteItem,
   loadWorkspace,
+  applyProposal,
+  priceProposedGroups,
   saveTable,
   setCargoFacts,
   type TableItemEdit,
@@ -105,7 +107,14 @@ afterAll(async () => {
   await pgClient.end();
 });
 
-async function open(items: { name: string; quantity?: number | null; tnvedCode?: string | null }[]) {
+async function open(
+  items: {
+    name: string;
+    quantity?: number | null;
+    tnvedCode?: string | null;
+    weightKg?: number | null;
+  }[],
+) {
   const result = await openCalcRequest(
     {
       entityType: 'deal',
@@ -307,6 +316,133 @@ describe('the table refuses by ROW', () => {
       .set({ aiProposalStartedAt: new Date(Date.now() - 11 * 60_000) })
       .where(eq(calcRequests.id, id));
     await expect(save(id, { items: [await editOf(id, 1, { tnvedCode: '8528' })] })).resolves.toBeTruthy();
+  });
+
+  it('the kg reconcile waits until both sides measure the same cargo', async () => {
+    // `groupMeasure` sums whatever carries a figure and returns null only
+    // when nothing does, so a HALF-weighed request produces a partial Σ that
+    // looks like a total — and the warning then fires on the shortfall. That
+    // is the normal state of every request the VED is mid-way through
+    // coding, and the AI prefill made it the normal state of a landed one
+    // too, since the model reads a weight off some packing-list lines and
+    // not others.
+    const half = await open([
+      { name: `a ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
+      { name: `b ${tag()}`, quantity: 1, tnvedCode: '3924' },
+    ]);
+    await save(half, {});
+    const partial = await loadWorkspace(half);
+    // 100 kg of a 500 kg request — a 80 % «gap» that is not a gap at all.
+    expect(partial!.reconcile.groupKg).toBe(100);
+    expect(partial!.reconcile.mismatch).toBe(false);
+
+    // Fully weighed and honestly disagreeing: 100 + 100 against 500.
+    const whole = await open([
+      { name: `c ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
+      { name: `d ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
+    ]);
+    await save(whole, {});
+    const full = await loadWorkspace(whole);
+    expect(full!.reconcile.groupKg).toBe(200);
+    expect(full!.reconcile.mismatch).toBe(true);
+
+    // …and an UNGROUPED row is the other way to be partial: nothing is
+    // wrong with the numbers, the Σ simply is not over the same cargo.
+    const loose = await open([
+      { name: `e ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
+      { name: `f ${tag()}`, quantity: 1, weightKg: 100 },
+    ]);
+    await save(loose, {});
+    const mixed = await loadWorkspace(loose);
+    expect(mixed!.ungrouped).toHaveLength(1);
+    expect(mixed!.reconcile.mismatch).toBe(false);
+
+    // This test needs THREE requests and the cap is 20 OPEN per requester
+    // (`MAX_OPEN_PER_REQUESTER`), which the file was already close to: a
+    // test that eats a shared budget starves the ones after it, and the
+    // first version of this one did exactly that — three later tests failed
+    // `too_many_open` and blamed their own code. #183 wearing a budget's
+    // clothes.
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date() })
+      .where(inArray(calcRequests.id, [half, whole, loose]));
+  });
+
+  it('the proposal’s pricing tail is an ORDINARY writer, claim and all', async () => {
+    // The trap a design judge found and my own test could not see: the tail
+    // runs INSIDE `proposeGroups`, which holds `ai_proposal_started_at` until
+    // its `finally` — and both doors it uses (`pullRatesFromDictionary`,
+    // `saveTable`) go through `lockRequestInTx`, which refuses on exactly
+    // that claim. So the whole pricing half was dead in production while its
+    // integration test called the tail DIRECTLY with no claim held: a
+    // condition production never has (#531, a third time in this module).
+    //
+    // The fix is that `proposeGroups` RELEASES before calling the tail — the
+    // claim's stated job is to stop two people spending a model call on the
+    // same goods, and by then that call is spent. So this asserts both
+    // halves of the contract: the tail behaves like every other writer, and
+    // `proposal-wire.test.ts` pins that its caller lets go first.
+    const { priceProposedGroups } = await import('@/modules/wms/calc/workspace');
+    const id = await open([{ name: `plitka ${tag()}`, quantity: 5, tnvedCode: '6907' }]);
+    await save(id, {});
+    // Strip the rates the mint pulled, so the tail has real work to do.
+    await db
+      .update(calcGroups)
+      .set({ dutyPct: null, vatPct: null, rateSource: null })
+      .where(eq(calcGroups.requestId, id));
+    await db
+      .update(calcRequestItems)
+      .set({ tnvedCode: null })
+      .where(eq(calcRequestItems.requestId, id));
+
+    // Under a live claim it is refused, exactly like a person's save…
+    await db
+      .update(calcRequests)
+      .set({ aiProposalStartedAt: new Date() })
+      .where(eq(calcRequests.id, id));
+    await expect(priceProposedGroups(id, ctx())).rejects.toMatchObject({ code: 'ai_running' });
+
+    // …and with the claim released it prices, which is the state
+    // `proposeGroups` now hands it.
+    await db
+      .update(calcRequests)
+      .set({ aiProposalStartedAt: null })
+      .where(eq(calcRequests.id, id));
+    const priced = await priceProposedGroups(id, ctx());
+    expect(priced.ratesPulled).toBe(1);
+    expect(priced.codesStamped).toBe(1);
+    const [group] = await groupRows(id);
+    expect(group!.dutyPct).not.toBeNull();
+    expect(group!.vatPct).not.toBeNull();
+
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date() })
+      .where(eq(calcRequests.id, id));
+  });
+
+  it('and the CLAIM heals on the same clock the lock does', async () => {
+    // The lock healed and the claim did not, so a pass killed mid-flight —
+    // a deploy, with the bot dispatching it in the background — answered
+    // `ai_running` to that request FOR EVER: the release lives in a
+    // `finally`, and there is no sweep anywhere that clears the column.
+    const { proposeGroups } = await import('@/modules/wms/calc/workspace');
+    const id = await open([{ name: `z ${tag()}` }]);
+    await db
+      .update(calcRequests)
+      .set({ aiProposalStartedAt: new Date() })
+      .where(eq(calcRequests.id, id));
+    await expect(proposeGroups(id, ctx())).rejects.toMatchObject({ code: 'ai_running' });
+
+    await db
+      .update(calcRequests)
+      .set({ aiProposalStartedAt: new Date(Date.now() - 11 * 60_000) })
+      .where(eq(calcRequests.id, id));
+    // It gets PAST the claim — this container has no key, so the model half
+    // then refuses honestly. Any code but `ai_running` is the claim granted,
+    // which is the whole assertion.
+    await expect(proposeGroups(id, ctx())).rejects.not.toMatchObject({ code: 'ai_running' });
   });
 });
 
@@ -603,6 +739,84 @@ describe('the VED can type the cargo facts the bot could not read', () => {
     await expect(
       setCargoFacts(id, { fromCity: null, toCity: null, weightKg: 1e9, volumeM3: null }, ctx()),
     ).rejects.toMatchObject({ code: 'bad_number' });
+  });
+});
+
+describe('an AI proposal lands as a CALCULATION, not as an empty shell', () => {
+  /**
+   * MEASURED before this was written, on a real request: `applyProposal`
+   * leaves the group carrying the code and nothing else — duty and VAT null,
+   * so `customsFor` refuses `rates_missing` — and never stamps the item's own
+   * `tnved_code`, so phase 2's grain and 0094's import fill both stay asleep.
+   * Pressing ✨ produced a request nobody could price, over a seeded book of
+   * 1,489 PP-3818 rates that answers for nearly every code.
+   */
+  it('pulls the BOOK rate for the proposed code and puts the code on the row', async () => {
+    const id = await open([{ name: 'Plitka keramik', quantity: 100 }]);
+    const ws0 = await loadWorkspace(id);
+    const seq = ws0!.ungrouped[0]!.seq;
+
+    await applyProposal(
+      id,
+      [
+        {
+          label: 'Plitka',
+          tnvedCode: '6907',
+          itemSeqs: [seq],
+          aiProposed: true,
+          confidence: 'high',
+          aiDutyPct: 20,
+          note: null,
+        },
+      ],
+      ctx(),
+    );
+
+    // What the proposal alone leaves behind: a code, and no way to price it.
+    const mid = await loadWorkspace(id);
+    expect(mid!.groups[0]!.dutyPct).toBeNull();
+    expect((await itemRows(id))[0]!.tnvedCode).toBeNull();
+
+    const out = await priceProposedGroups(id, ctx());
+    expect(out.ratesPulled).toBe(1);
+    expect(out.codesStamped).toBe(1);
+
+    const after = await loadWorkspace(id);
+    const g = after!.groups[0]!;
+    // The book's own answer for 6907 — «15 %, min $1/m²» (0091's seed).
+    expect(g.dutyPct).toBe(15);
+    expect(g.vatPct).toBe(12);
+    expect(g.rateSource).toBe('dictionary');
+    // …and the MODEL's provenance survives, so `ai_low_confidence` and the
+    // ✅'s record still have something to say.
+    expect(g.aiProposed).toBe(true);
+    // The item carries the code: phase 2's grain, and what the customs
+    // import keys on.
+    expect((await itemRows(id))[0]!.tnvedCode).toBe('6907');
+    // The only thing left is the price a person or the import supplies.
+    expect(g.customs).toMatchObject({ ok: false, reason: 'baza_missing' });
+  });
+
+  it('a code the dictionary never heard of costs its own group, not the others', async () => {
+    const id = await open([{ name: 'A' }, { name: 'B' }]);
+    const ws0 = await loadWorkspace(id);
+    const [a, b] = ws0!.ungrouped;
+    await applyProposal(
+      id,
+      [
+        { label: 'real', tnvedCode: '6907', itemSeqs: [a!.seq], aiProposed: true, confidence: 'high', aiDutyPct: null, note: null },
+        { label: 'invented', tnvedCode: '9999999999', itemSeqs: [b!.seq], aiProposed: true, confidence: 'low', aiDutyPct: null, note: null },
+      ],
+      ctx(),
+    );
+    const out = await priceProposedGroups(id, ctx());
+    // One priced, one skipped — never a refusal that costs both.
+    expect(out.ratesPulled).toBe(1);
+    const after = await loadWorkspace(id);
+    const real = after!.groups.find((g) => g.tnvedCode === '6907')!;
+    const invented = after!.groups.find((g) => g.tnvedCode === '9999999999')!;
+    expect(real.dutyPct).toBe(15);
+    expect(invented.dutyPct).toBeNull();
   });
 });
 

@@ -6,7 +6,14 @@ import type { AuditContext } from '@/modules/platform/audit/service';
 import { tgViewerFor } from '../crm/conversations';
 import { threadClientFor } from '../crm/conversations';
 import { CalcError, openCalcRequest } from './service';
-import { CALC_SECTIONS, intakeNoteText, missingFields, type CalcFacts, type CalcSection } from './intake';
+import {
+  CALC_SECTIONS,
+  intakeNoteText,
+  itemFacts,
+  missingFields,
+  type CalcFacts,
+  type CalcSection,
+} from './intake';
 import { parseManualFacts } from './intake-manual';
 import { analyzeIntake } from './intake-ai';
 import { dealFor } from './intake-land';
@@ -186,6 +193,10 @@ function cleanFacts(raw: CalcFacts | null | undefined, material: string): CalcFa
         {
           name,
           quantity: num(g?.quantity),
+          // Carried, not dropped: the checklist asks for a per-line weight on
+          // a customs job, so a door that sanitises it away would warn about
+          // a hole it is itself digging.
+          weightKg: num(g?.weightKg),
           tnvedCode: str(g?.tnvedCode, 10),
           note: str(g?.note, 300),
         },
@@ -258,11 +269,15 @@ export async function threadCalcSend(
       toCity: facts.toCity ?? null,
       weightKg: facts.weightKg ?? null,
       volumeM3: facts.volumeM3 ?? null,
-      items: (facts.goods ?? []).map((g) => ({
+      // Through `itemFacts` — the same one home the bot door uses, so the
+      // single-line weight derivation happens once and both doors land the
+      // same row for the same job (#513).
+      items: itemFacts(facts).map((g) => ({
         name: g.name,
-        quantity: g.quantity ?? null,
-        tnvedCode: g.tnvedCode ?? null,
-        note: g.note ?? null,
+        quantity: g.quantity,
+        weightKg: g.weightKg,
+        tnvedCode: g.tnvedCode,
+        note: g.note,
       })),
       note: { id: input.noteId, text: note },
       source: 'card',

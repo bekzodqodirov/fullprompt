@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
-import { intakeSummaryText, missingFields } from '@/modules/wms/calc/intake';
+import {
+  intakeSummaryText,
+  itemFacts,
+  loneWeightKg,
+  missingFields,
+} from '@/modules/wms/calc/intake';
 
 /**
  * The owner's three bot reports, as pure rules (2026-09-04).
@@ -60,5 +65,91 @@ describe('the checklist still names what a quote cannot be made without', () => 
       fileCount: 2,
     });
     expect(text).toContain('Yetishmayapti');
+  });
+});
+
+describe('what a line weighs is derived once, or asked for', () => {
+  /**
+   * Customs is calculated per LINE, so the checklist grew two per-line
+   * questions in sub-round B — and exactly one of them has an honest answer
+   * the system can work out for itself.
+   */
+  it('one line takes the shipment’s weight; two lines take nothing', () => {
+    const one = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol' }] });
+    expect(one[0]!.weightKg).toBe(250);
+
+    // Two lines cannot be split without inventing a ratio, and inventing is
+    // the one thing this module may not do — so both stay empty and the
+    // checklist asks.
+    const two = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol' }, { name: 'Monitor' }] });
+    expect(two.map((i) => i.weightKg)).toEqual([null, null]);
+    // …unless the line states its own, which always wins.
+    const stated = itemFacts({
+      weightKg: 250,
+      goods: [{ name: 'Chexol', weightKg: 40 }, { name: 'Monitor' }],
+    });
+    expect(stated.map((i) => i.weightKg)).toEqual([40, null]);
+  });
+
+  it('the rule is one function, so all three doors can apply it', () => {
+    // The bot and the thread hand over what was READ; the seller's card form
+    // hands over what was TYPED. Different shapes, one rule — otherwise the
+    // same job lands a different row depending on which door it came through.
+    expect(loneWeightKg(1, 250)).toBe(250);
+    expect(loneWeightKg(2, 250)).toBeNull();
+    expect(loneWeightKg(1, 0)).toBeNull();
+    expect(loneWeightKg(1, null)).toBeNull();
+    expect(loneWeightKg(0, 250)).toBeNull();
+    // …and `itemFacts` is that same function applied to read facts.
+    expect(itemFacts({ weightKg: 250, goods: [{ name: 'x' }] })[0]!.weightKg).toBe(
+      loneWeightKg(1, 250),
+    );
+  });
+
+  it('a zero is a blank here too, and there is nothing to derive from', () => {
+    expect(itemFacts({ weightKg: 0, goods: [{ name: 'x' }] })[0]!.weightKg).toBeNull();
+    expect(itemFacts({ weightKg: 250, goods: [{ name: 'x', quantity: 0 }] })[0]!.quantity).toBeNull();
+  });
+
+  it('a line needs ONE measure, never both', () => {
+    // `unitsForRow` prices a row per kg OR per dona; asking for both made a
+    // multi-line podklyuch from the seller's card form — which has no
+    // per-line weight input — permanently incomplete.
+    const base = { weightKg: 500, volumeM3: 3 };
+    const counted = { ...base, goods: [{ name: 'a', quantity: 4 }, { name: 'b', quantity: 2 }] };
+    expect(missingFields('rastamojka', counted)).toEqual([]);
+    const weighed = { ...base, goods: [{ name: 'a', weightKg: 300 }, { name: 'b', weightKg: 200 }] };
+    expect(missingFields('rastamojka', weighed)).toEqual([]);
+    // Neither is the one case the engine genuinely cannot value.
+    const bare = { ...base, goods: [{ name: 'a', quantity: 4 }, { name: 'b' }] };
+    expect(missingFields('rastamojka', bare)).toEqual(['itemMeasure']);
+  });
+
+  it('no goods at all is ONE absence, not three', () => {
+    // The per-line questions must not pile onto «tovar nomi». It falls out of
+    // `[].some()` being false rather than out of a guard, which is why it is
+    // asserted here: the mechanism is invisible and easy to «improve» away.
+    expect(missingFields('rastamojka', { weightKg: 250, volumeM3: 3, goods: [] })).toEqual([
+      'goods',
+    ]);
+  });
+
+  it('freight asks for neither — a truck is priced on the totals', () => {
+    const facts = { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 250, volumeM3: 3, goods: [{ name: 'Chexol' }] };
+    expect(missingFields('yolkira', facts)).toEqual([]);
+    // The line carries a derived weight (one line, 250 kg total), so it is
+    // priceable per kg and nothing is outstanding.
+    expect(missingFields('rastamojka', facts)).toEqual([]);
+  });
+
+  it('the summary prints the line’s own figures, derived weight included', () => {
+    const text = intakeSummaryText({
+      section: 'rastamojka',
+      facts: { weightKg: 250, volumeM3: 3, goods: [{ name: 'Chexol', quantity: 100 }] },
+      clientLabel: 'GS777',
+      fileCount: 0,
+    });
+    expect(text).toContain('100 dona');
+    expect(text).toContain('250 kg');
   });
 });

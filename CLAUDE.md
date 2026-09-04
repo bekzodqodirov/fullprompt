@@ -127,7 +127,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | What shipped and when? | `CHANGELOG.md` — newest first, written in Uzbek for the owner |
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | The VED module | `docs/VED.md` — agreed 2026-08-22; **phase A SHIPPED**, B-E open |
-| Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **sub-round A SHIPPED** (import + baza suggestion), B (bot AI) open |
+| Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **sub-rounds A AND B SHIPPED** (import + baza suggestion; the bot's AI VED hodimi) |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
@@ -1244,8 +1244,80 @@ diff review then found the provenance QUADRUPLE broken in two writers —
 `import_row_id`, so the book's own number would have kept the «📥 taxmin»
 chip — fenced by a DERIVED source-shape test that finds every `.set()`
 writing `bazaSource` (#896). 8 red proofs, one of which needed BOTH fences
-stripped. **Sub-round B (the staff-bot AI VED
-hodimi, spec §3) is open.**
+stripped.
+
+**Sub-round B — the staff-bot AI VED hodimi (2026-09-04; DECISIONS
+#897-905; NO migration, 95 stands).** His «AI Ved hodimi … malumotlar
+berilganda hamma malumotlarni toliq qilib olib hsoblab beradgan bolsin».
+A job the bot lands is picked up by the machine and carried as far as it
+honestly can — codes from the model, rates from PP-3818, bazas from the
+quarterly file — and then it **STOPS**: the request stays in the VED's
+queue, every group unconfirmed, nothing sealed, the official price still
+the seal (or «Готово»). **Every write goes through a door that already
+exists** (`proposeGroups`, `saveTable`), which is why a feature this size
+needed no migration and no second writer. **The ✨ button had been leaving
+nothing priceable** — probed, not read: after `applyProposal` the group
+read `dutyPct null … rates_missing` and the ITEM's code was still null, so
+the VED retyped every code the model had found; `priceProposedGroups` pulls
+the book's rates per coded group and then stamps the codes through
+`saveTable`, in that order (a code stamped before its rates exist mints a
+group with no law). Law 1 at its narrowest: `pickImportRows` answers with
+an INDEX into real declarations, every index re-checked against the row it
+claims, the price re-read from the FILE through 0094's `importRowId` path
+— and **`prefill.ts` writes no provenance of its own**, because a module
+naming its own source is a second writer whose only inventable value is the
+one 0094 refuses. Live fence with no test until now: candidates are
+selected by TNVED CODE with **no unit filter** (mismatches are included and
+labelled), so a per-kg declaration on a per-dona row would be off by the
+weight of the goods. The reply is pure (`prefill-reply.ts`) — figure,
+«⚠️ Rasmiy emas» on its own line, blockers in WORDS, capped at six, and
+never a $0; freight reads `listUsd`, because a prefill states the tariff
+and never a discount nobody has given. **The checklist grew per-LINE
+questions** for rastamojka/podklyuch (a total weight prices a truck, not a
+declaration), with the one weight that is arithmetic DERIVED — a single
+line's weight IS the shipment's — through `loneWeightKg`, applied by all
+THREE landing doors; the derived fence `intake-items-wire.test.ts` found
+the third door on its first run. Two blockers came out of the design judge:
+the pass was an unowned `void` promise in the container the owner restarts
+on every deploy (now `JOB_CALC_PREFILL`, answer through the notification
+drain), and `proposeGroups`'s claim released only in a `finally`, so a hard
+kill said `ai_running` to that request FOR EVER (now heals on the same
+10-minute window as the workspace lock, from the same constant). Also
+fixed: the reconcile warning fired on partial coverage — the normal state
+of a half-coded request, and the AI prefill made it the normal state of a
+landed one.
+
+**Then the judge was re-run over the SHIPPED code and found four more,
+three of them mine and two visible to a person** (#906-909). **The
+headline is that the round's own central fix never ran**: `proposeGroups`
+holds the claim until its `finally`, and the pricing tail writes through
+two doors that both take `lockRequestInTx` — so every group was refused
+`ai_running`, the whole pricing half was dead in production, and the
+`catch` logged it as «this code has no dictionary rate». Green here because
+the integration test called the tail DIRECTLY with no claim held — #531 for
+the third time in this module and the SECOND time in this round. The claim
+is released after the model call and before the tail, which is what it
+means. Plus: the checklist could not be SATISFIED (both VED screens project
+the item to `{name}` alone, so both new chips rendered on every rastamojka
+request for ever — #649's shape in the surface the round strengthens); the
+bot's refusal words were INVENTED (`freight_zone_required` is not a
+`FreightRefusal`, so the commonest case read «yo'lkira: zone_required» in
+Telegram — the maps are `Record<Union, string>` now and the test reads the
+unions out of `pricing.ts`); and the queued pass was an unguarded second
+writer that could delete a VED's evening and un-tick their ✅ (the job
+carries the rev it was queued at, `prefillStanding` stands the machine
+down). STATED, not built: the model's REASON for a pick is logged and shown
+nowhere, so a pick and the deterministic auto-fill land identically — owed
+as a column and a chip in `docs/VED-IMPORT-AI.md` §6.
+
+**And CI found the last one** (#910): asking for a count AND a weight per
+line made a multi-line podklyuch from the SELLER'S CARD FORM — which has no
+per-line weight input — permanently incomplete, i.e. #649's shape a second
+time inside the round that fixed it once. Green locally because this
+container's long-lived database is a different oracle (#653). The engine's
+own rule is one measure per line (`unitsForRow` prices per dona on a count
+or per kg on a weight, and refuses only a row stating NEITHER), so the two
+fields collapsed to one: `itemMeasure`.
 
 **Latest migration: 0094** (`customs_import` — the quarterly declarations
 dump, its rows under a GIN trigram index, and `calc_request_items.
@@ -1258,8 +1330,13 @@ ledger 92); 0090
 (`notice_staff` — the staff arrival event's own fence and the client drain's
 claim; ledger 91).
 
-**HIS SERVER IS AT 90 — confirmed «deploy qildim 90 chiqdi» on 2026-08-25
-evening**, in ONE deploy that landed PR #53 (the whole VED module, phases
+**HIS SERVER'S LAST CONFIRMED COUNT IS 93** (the VED 2.0 phase-4 entry in
+CHANGELOG.md, «93 tasdiqlangan kuni»); 0093 and 0094 have both shipped
+since and NEITHER has a «chiqdi» in the record, so **ask him to read the
+count before assuming which migrations he is missing** — do not trust the
+paragraph below, which is kept for the deploy it describes and is stale
+about the server. The 90 line: confirmed «deploy qildim 90 chiqdi» on
+2026-08-25 evening, in ONE deploy that landed PR #53 (the whole VED module, phases
 A-E1, migrations 0085-0089, plus rounds 108-111 and the thread-calc/seller-
 report round) AND PR #56 (the warehouse-corrections round — no migration).
 Everything in this file is LIVE in production EXCEPT the second corrections
@@ -1318,8 +1395,9 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**95** on this branch since 0094; his server was at 94 on
-2026-09-04) —
+length (**95** on this branch since 0094; his last CONFIRMED count is 93 —
+see the note above, and have him read
+`drizzle.__drizzle_migrations` rather than assuming) —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check

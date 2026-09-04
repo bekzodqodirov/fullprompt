@@ -196,6 +196,45 @@ describe('a request is a JOB, not a card state', () => {
     expect(row!.items[0]!.unit).toBe('dona');
     expect(row!.completedAt).toBeNull();
   });
+
+  it('the checklist can be SATISFIED — both screens carry what it asks about', async () => {
+    // The per-line question (`itemMeasure`) is answered from
+    // the facts the SCREEN builds, and both screens projected the item to
+    // `{name}` alone — so quantity and weight read null whatever is stored,
+    // and both chips rendered on every rastamojka request for ever,
+    // including one the machine had just priced in full. A warning that
+    // fires on everything names nothing (#649).
+    const { id } = await open({
+      section: 'rastamojka',
+      items: [
+        { name: `krujka ${tag()}`, quantity: 100, weightKg: 200 },
+        { name: `plitka ${tag()}`, quantity: 50, weightKg: 100 },
+      ],
+    });
+    const row = await calcRequestDetail(id);
+    expect(row!.missing).toEqual([]);
+
+    const listed = (await calcQueue()).find((r) => r.id === id);
+    expect(listed, 'the queue must show the same request').toBeTruthy();
+    expect(listed!.missing).toEqual([]);
+
+    // A line stating a WEIGHT alone is complete — `unitsForRow` prices it per
+    // kg, which is 74 % of the customs file.
+    const byWeight = await open({
+      section: 'rastamojka',
+      items: [{ name: `kg-only ${tag()}`, weightKg: 200 }],
+    });
+    expect((await calcRequestDetail(byWeight.id))!.missing).toEqual([]);
+
+    // …and it still SAYS so when a line states NEITHER. TWO lines, because
+    // with one the shipment's own weight IS that line's and the request is
+    // complete without anybody typing anything — the derivation, visible.
+    const bare = await open({
+      section: 'rastamojka',
+      items: [{ name: `sonli ${tag()}`, quantity: 3 }, { name: `nomsiz ${tag()}` }],
+    });
+    expect((await calcRequestDetail(bare.id))!.missing).toEqual(['itemMeasure']);
+  });
 });
 
 describe('the queue hands the work out and takes it back', () => {
