@@ -1033,6 +1033,13 @@ export function ItemsTable({
                 <li key={item.id}>
                   {item.seq}. {item.label}
                   {item.quantity != null ? ` · ${item.quantity} ${item.unit ?? ''}` : ''}
+                  {/* The ✅ on this card is about these numbers, so the card
+                      must print where each price CAME from — the desktop grid
+                      has said so since 0094 and the phone said nothing
+                      (audit A18). */}
+                  {item.bazaSource === 'memory' ? ' 🧠' : ''}
+                  {item.bazaSource === 'import' ? ' 📥' : ''}
+                  {item.bazaReason ? ' 🤖' : ''}
                 </li>
               ))}
             </ul>
@@ -1229,6 +1236,19 @@ const ItemRowBlock = memo(function ItemRowBlock({
               })}
             >
               🧠 {t('memoryGuess')}
+            </span>
+          ) : null}
+          {/* 0096, owed since #909: the model's own reason for choosing THIS
+              declaration. Without it a pick and the deterministic auto-fill
+              landed identically and the VED could not tell which had put the
+              number there. */}
+          {item.bazaReason && drafts?.bazaValue === undefined ? (
+            <span
+              className="mt-0.5 block truncate text-2xs text-ink-500"
+              data-testid="calc-baza-reason"
+              title={item.bazaReason}
+            >
+              🤖 {item.bazaReason}
             </span>
           ) : null}
           {item.dictionaryBaza ? (

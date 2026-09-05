@@ -574,13 +574,13 @@ async function pickBazas(
       bazaUsd: chosen.pricePerUnitUsd,
       bazaBasis: chosen.basis,
       importRowId: chosen.id,
+      // WHY this declaration and not the one beside it — owed since #909,
+      // where a model's pick and the deterministic ≥0.45 auto-fill landed
+      // identically and the VED reviewing the number could not tell which
+      // had put it there. WORDS only: the price still comes from the file.
+      bazaReason: a.reason,
     });
   }
-  // The model's REASONS, which nothing on a screen can show yet: there is no
-  // column for them and this round mints no migration. Logged structurally so
-  // the first real week is reviewable at all — and STATED to the owner as
-  // owed, because a pick a person cannot see the reason for is exactly as
-  // reviewable as no reason at all.
   logger.info(
     {
       requestId,

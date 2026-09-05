@@ -131,6 +131,9 @@ export interface WorkspaceItem extends PricedItem {
   /** The sealed answer this baza was copied from (0096) — the 🧠 chip's
    * title. Null on every other source. */
   memoryFrom: { sealedAt: string; sealedByName: string | null } | null;
+  /** WHY the model chose this declaration and not the one beside it (0096,
+   * owed since #909). Words, never a number. */
+  bazaReason: string | null;
   /** The dictionary's current answer, offered even when a value is typed. */
   dictionaryBaza: { bazaUsd: number; basis: BazaBasis; effectiveDate: string; stale: boolean } | null;
 }
@@ -387,6 +390,7 @@ export async function loadWorkspace(
       bazaBasis: (i.bazaBasis as BazaBasis | null) ?? null,
       bazaSource: (i.bazaSource as BazaSource) ?? null,
       importRowId: i.importRowId === null ? null : String(i.importRowId),
+      bazaReason: i.bazaReason,
       memoryFrom: (() => {
         const p = i.memoryItemId === null ? undefined : memoryProv.get(i.memoryItemId);
         return p ? { sealedAt: p.sealedAt.toISOString(), sealedByName: p.sealedByName } : null;
@@ -2463,6 +2467,14 @@ export interface TableItemEdit {
    * (the `pullRates` rule, #778). A posted `bazaUsd` is ignored when this is
    * set; clearing the baza clears this with it. */
   importRowId?: string | null;
+  /**
+   * The model's one-line REASON for choosing this declaration (0096).
+   *
+   * SERVER-SIDE ONLY — the browser never posts it, and there is no input for
+   * it: it is what the machine said about its own pick, not a field a person
+   * edits. A typed baza clears it, like every other half of the provenance.
+   */
+  bazaReason?: string | null;
 }
 
 export interface TableSaveResult {
@@ -2959,6 +2971,11 @@ export async function saveTable(
     bazaUsd: e.bazaUsd,
     bazaBasis: e.bazaBasis,
     importRowId: e.importRowId ?? null,
+    // Capped like every other free-text field that reaches a column, and it
+    // is the MACHINE's text — a browser posts none, so this is only ever the
+    // prefill's own sentence.
+    bazaReason:
+      e.bazaReason === undefined ? null : (e.bazaReason ?? '').trim().slice(0, 300) || null,
   }));
   for (const e of itemEdits) {
     if (e.name !== undefined && !e.name) throw new CalcError('name_required', e.seq);
@@ -3168,7 +3185,9 @@ export async function saveTable(
           patch.bazaSource = e.importRowId ? 'import' : 'typed';
           patch.importRowId = e.importRowId ? BigInt(e.importRowId) : null;
           patch.memoryItemId = null;
-          patch.bazaReason = null;
+          // The model's words travel with the row it chose, and with nothing
+          // else: a person retyping the price clears them.
+          patch.bazaReason = e.importRowId ? (e.bazaReason ?? null) : null;
           measuresMoved = true;
         }
       }
