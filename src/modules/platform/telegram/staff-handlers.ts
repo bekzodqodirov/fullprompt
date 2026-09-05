@@ -508,7 +508,11 @@ async function askNextOrConfirm(
       clientLabel: settled.clientHintRaw || null,
       fileCount: settled.fileCount,
     }) +
-      (settled.aiUsed ? '' : '\n\n(AI mavjud emas — faqat yozilganidan o‘qildi)') +
+      (settled.aiUsed
+        ? ''
+        : settled.budgetSpent
+          ? '\n\n(AI kunlik limiti tugadi — faqat yozilganidan o‘qildi)'
+          : '\n\n(AI mavjud emas — faqat yozilganidan o‘qildi)') +
       (settled.ai
         ? `\n\n📄 Sertifikat: ${settled.hasCertificate ? 'bor' : 'yo‘q'} (o‘zgartirish uchun tugmani bosing)`
         : ''),
@@ -592,32 +596,6 @@ async function analyseIntakeAndReply(
     await askNextOrConfirm(ctx, chatId, analysed);
   } catch {
     await ctx.reply('Tahlil qilib bo‘lmadi. Qaytadan urinib ko‘ring.').catch(() => {});
-  }
-}
-
-/**
- * Hand the just-landed job to the AI VED hodimi — through pg-boss, so it
- * belongs to something that outlives this container.
- *
- * The send is caught for the same reason the pass itself is best-effort: the
- * seller has already been told their job is saved, the VED has it either
- * way, and a queue that is briefly unreachable must cost a background pass
- * rather than the confirmation they are reading.
- */
-async function queuePrefill(requestId: string, staffId: string): Promise<void> {
-  try {
-    const { enqueue } = await import('../jobs/boss');
-    const { JOB_CALC_PREFILL } = await import('../../wms/calc/jobs');
-    const { prefillTicket } = await import('../../wms/calc/prefill');
-    // The revision travels WITH the job: the queue drains when it drains,
-    // and the machine must not overwrite whatever a person did meanwhile.
-    const rev = await prefillTicket(requestId);
-    await enqueue(JOB_CALC_PREFILL, { requestId, staffId, rev });
-  } catch (err) {
-    // The queue being unreachable must not cost the seller the confirmation
-    // they are about to read: the request is saved and a VED will answer it
-    // whether or not the machine got there first.
-    logger.warn({ err, requestId }, 'calc prefill could not be queued');
   }
 }
 
@@ -950,9 +928,6 @@ async function handleCalcCallback(
   // promised an answer and got silence. pg-boss owns it now, exactly as the
   // customs parse in this same sub-round is owned; the answer comes back
   // through the notification drain rather than a `ctx` that is gone by then.
-  if (target.queued && target.requestId) {
-    await queuePrefill(target.requestId, staff.id);
-  }
   const appUrl = process.env.APP_URL ?? '';
   const path = target.kind === 'deal' ? 'bitimlar' : 'crm/leads';
   await ctx.reply(

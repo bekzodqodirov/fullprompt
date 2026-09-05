@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { logger } from '../../platform/logger';
+import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
 import type { CalcFacts, CalcSection } from './intake';
 
 /**
@@ -60,6 +61,16 @@ export interface AiIntakeResult {
   facts: CalcFacts;
   /** What the model says it did — shown on the card's lenta. */
   steps: string[];
+  /**
+   * What the call cost, carried out so the LANDING can record it.
+   *
+   * The ledger keys on a request id and this call happens before any request
+   * exists — the seller is still forwarding material. Rather than let the
+   * most expensive call on the path (Opus, with photographs) be the one that
+   * never reaches the bill, the usage travels with the answer and
+   * `landIntake` writes the row once there is something to attach it to.
+   */
+  usage?: { model: string; inputTokens: number; outputTokens: number };
 }
 
 /**
@@ -97,7 +108,7 @@ export async function analyzeIntake(input: {
    */
   timeoutMs?: number;
 }): Promise<AiIntakeResult | null> {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!aiConfigured()) return null;
   const material = input.text.trim();
   const images = input.images ?? [];
   const pdf = input.pdf ?? null;
@@ -113,7 +124,7 @@ export async function analyzeIntake(input: {
     // there is a customer bot that answers nobody until it clears.
     const client = new Anthropic({ timeout: input.timeoutMs ?? 60_000, maxRetries: 1 });
     const response = await client.messages.create({
-      model: 'claude-opus-5',
+      model: ANALYST_MODEL,
       max_tokens: 4096,
       system: SYSTEM,
       output_config: {
@@ -204,6 +215,11 @@ export async function analyzeIntake(input: {
     const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
     const parsed = factsSchema.parse(JSON.parse(raw));
     return {
+      usage: {
+        model: ANALYST_MODEL,
+        inputTokens: response.usage?.input_tokens ?? 0,
+        outputTokens: response.usage?.output_tokens ?? 0,
+      },
       facts: {
         fromCity: parsed.from_city,
         toCity: parsed.to_city,

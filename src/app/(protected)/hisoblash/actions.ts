@@ -186,7 +186,7 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
   }
   const meta = await requestMeta();
   try {
-    await openCalcRequest(
+    const opened = await openCalcRequest(
       {
         entityType: input.entityType,
         entityId: input.entityId,
@@ -207,6 +207,12 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
       },
       { actorId: actor.id, ...meta },
     );
+    // The AI VED hodimi looks at it — same sender, same queue, same rev
+    // ticket as the bot's door. Only the bot had this until now, so which of
+    // three buttons a seller pressed decided whether the machine ever saw
+    // their cargo.
+    const { queueCalcPrefill } = await import('@/modules/wms/calc/prefill-queue');
+    await queueCalcPrefill({ requestId: opened.id, staffId: actor.id, section: input.section });
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code };
     if (isServerBehind(err)) {

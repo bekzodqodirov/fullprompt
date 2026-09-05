@@ -20,6 +20,7 @@ import { writeAudit, type AuditContext } from '@/modules/platform/audit/service'
 import { getSetting } from '@/modules/platform/settings/service';
 import { isUniqueViolation } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
+import { recordAiPass } from './ai-cost';
 import { itemNameNorm, memoryProvenanceFor, sealedMemoryFor } from './memory';
 import { aiConfigured } from '@/modules/platform/ai/model';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
@@ -2263,6 +2264,18 @@ export async function proposeGroups(
           slice.map((i) => ({ name: i.name, quantity: toNum(i.quantity), unit: i.unit })),
         );
         results.push({ offset: batch.offset, groups: answer.groups });
+        // One ledger row per model call (0096), so a real week of this can
+        // be read as a bill. Never throws — see `recordAiPass`.
+        if (answer.usage) {
+          await recordAiPass({
+            requestId,
+            staffId: ctx.actorId ?? null,
+            kind: 'grouping',
+            model: answer.usage.model,
+            inputTokens: answer.usage.inputTokens,
+            outputTokens: answer.usage.outputTokens,
+          });
+        }
       } catch (err) {
         // NO KEY IS NOT «THE MODEL DID NOT ANSWER» (audit A25). Every other
         // failure here is per-batch and survivable; a missing key is a fact

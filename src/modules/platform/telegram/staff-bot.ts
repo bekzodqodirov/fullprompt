@@ -370,6 +370,9 @@ export async function landCollectedIntake(
     // Only the AI door offers the toggle; every other collection lands the
     // column's own default, which is what it landed before this round.
     hasCertificate: state.hasCertificate,
+    // What the reading cost, so the day's AI budget counts the most
+    // expensive call on this path rather than the two cheap ones.
+    usage: state.usage,
   });
 }
 

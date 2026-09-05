@@ -72,6 +72,15 @@ export interface AiVedReplyInput {
   link: string | null;
   /** No key on this server: the honest word, not a silent half-answer. */
   aiConfigured: boolean;
+  /**
+   * A key, but the day's model calls are spent (0096's soft budget).
+   *
+   * A DIFFERENT sentence from «not configured», deliberately: one is a fact
+   * about the server that only the owner can change, the other is a fact
+   * about today that fixes itself at midnight — and a seller told the wrong
+   * one goes to the wrong person.
+   */
+  budgetSpent?: boolean;
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -176,6 +185,9 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   // no road line reads as a complete price to somebody in a hurry.
   if (input.hasFreight) out.push('Yo‘lkirani VED xodimi hisoblaydi.');
   if (!input.aiConfigured) out.push('AI sozlanmagan — faqat yozilganidan o‘qildi.');
+  else if (input.budgetSpent) {
+    out.push('AI kunlik limiti tugadi — muhrlangan xotira va bojxona faylidan hisoblandi.');
+  }
 
   // The legend names only what was actually used — a key to marks nobody can
   // see is noise on a phone.

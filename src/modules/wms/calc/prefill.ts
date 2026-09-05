@@ -10,6 +10,7 @@ import {
 } from '../../platform/db/schema';
 import { cardLink } from '../../platform/notifications/links';
 import { aiConfigured } from '../../platform/ai/model';
+import { aiCalcBudgetLeft, recordAiPass } from './ai-cost';
 import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
 import {
@@ -29,7 +30,7 @@ import { itemNameNorm, sealedMemoryFor } from './memory';
 import { aiVedReplyText, type AiVedLine } from './ai-reply';
 import { dutyText } from './duty-text';
 import { blockerText, prefillReplyText } from './prefill-reply';
-import { pickImportRows, type PickAnswer, type PickRequest } from './prefill-ai';
+import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } from './prefill-ai';
 
 /**
  * The AI VED hodimi (docs/VED-IMPORT-AI.md §3).
@@ -107,8 +108,13 @@ export async function prefillTicket(requestId: string): Promise<number | null> {
 export interface PrefillDeps {
   /** The grouping pass. Default: `proposeGroups` (the ✨ button's own door). */
   propose?: typeof proposeGroups;
-  /** The baza pick. Default: `pickImportRows`. Null answer = not available. */
-  pick?: (rows: PickRequest[]) => Promise<PickAnswer[] | null>;
+  /** The baza pick. Default: `pickImportRows`. Null answer = not available.
+   * The second argument carries the usage callback; an injected stand-in may
+   * ignore it. */
+  pick?: (
+    rows: PickRequest[],
+    opts?: { onUsage?: (usage: PickUsage) => void },
+  ) => Promise<PickAnswer[] | null>;
   /** Overridable so a test can run without a customs import in the database. */
   configured?: boolean;
 }
@@ -140,7 +146,19 @@ export async function aiPrefill(
 ): Promise<PrefillOutcome> {
   const propose = deps.propose ?? proposeGroups;
   const pick = deps.pick ?? pickImportRows;
-  const configured = deps.configured ?? aiConfigured();
+  /**
+   * Configured AND within the day's budget — one flag, because to everything
+   * downstream they mean the same thing: no model on this pass.
+   *
+   * The memory, the sweep and the import fill all still run; they are the
+   * model-free half and they are what a server with no key has always had.
+   * The reply says which it was, in words: «AI sozlanmagan» is a fact about
+   * the server and «AI kunlik limiti tugadi» is a fact about today, and a
+   * seller reading the second must not be told the first.
+   */
+  const hasKey = deps.configured ?? aiConfigured();
+  const budgetLeft = hasKey ? await aiCalcBudgetLeft() : 0;
+  const configured = hasKey && budgetLeft > 0;
 
   let codesStamped = 0;
   let ratesPulled = 0;
@@ -297,7 +315,8 @@ export async function aiPrefill(
           hasCertificate: ws.hasCertificate,
           hasFreight: ws.parts.freight,
           link: about?.link ?? null,
-          aiConfigured: configured,
+          aiConfigured: hasKey,
+          budgetSpent: hasKey && budgetLeft <= 0,
         })
       : prefillReplyText({
           customsUsd,
@@ -309,7 +328,7 @@ export async function aiPrefill(
           ratesPulled,
           importFilled: importFilled + picked,
           link: null,
-          aiConfigured: configured,
+          aiConfigured: hasKey,
           pickCapped,
           pickRefused,
           pickOvertaken,
@@ -544,7 +563,18 @@ async function pickBazas(
   if (asking.length === 0) return none;
 
   const capped = Math.max(0, empty.length - MAX_PICK_ROWS);
-  const answers = await pick(asking);
+  const answers = await pick(asking, {
+    onUsage: (usage) => {
+      void recordAiPass({
+        requestId,
+        staffId: ctx.actorId ?? null,
+        kind: 'pick',
+        model: usage.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      });
+    },
+  });
   if (!answers) return { ...none, capped };
 
   const bySeq = new Map(rows.map((r) => [r.seq, r]));

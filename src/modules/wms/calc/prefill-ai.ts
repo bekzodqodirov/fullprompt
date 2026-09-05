@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { logger } from '../../platform/logger';
+import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
 import type { ImportBazaRow } from '../customs/import-baza';
 
 /**
@@ -36,6 +37,13 @@ export interface PickRequest {
   candidates: ImportBazaRow[];
 }
 
+/** What one pick call cost, carried out for the ledger (0096). */
+export interface PickUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface PickAnswer {
   seq: number;
   /** Index into that row's candidates, or null for «none of these». */
@@ -67,9 +75,9 @@ reason — одна короткая строка на узбекском: по�
  */
 export async function pickImportRows(
   rows: PickRequest[],
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; onUsage?: (usage: PickUsage) => void } = {},
 ): Promise<PickAnswer[] | null> {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!aiConfigured()) return null;
   const asking = rows.filter((r) => r.candidates.length > 0);
   if (asking.length === 0) return [];
 
@@ -92,7 +100,7 @@ export async function pickImportRows(
     // poller, so it carries its own deadline. The SDK's default is none.
     const client = new Anthropic({ timeout: opts.timeoutMs ?? 60_000, maxRetries: 1 });
     const response = await client.messages.create({
-      model: 'claude-opus-5',
+      model: ANALYST_MODEL,
       max_tokens: 4096,
       system: SYSTEM,
       output_config: {
@@ -130,6 +138,15 @@ export async function pickImportRows(
       { in: response.usage?.input_tokens, out: response.usage?.output_tokens },
       '[calc-prefill pick] model tokens',
     );
+    // …and told to the caller, which is the one that knows WHICH request to
+    // bill. A callback rather than a widened return: the answer's shape is
+    // law 1's own fence («seq, candidate, reason» and nothing else) and
+    // `ai-advisory.test.ts` asserts exactly those three keys.
+    opts.onUsage?.({
+      model: ANALYST_MODEL,
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+    });
     if (response.stop_reason === 'refusal') return null;
     const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
     const parsed = picksSchema.parse(JSON.parse(raw));

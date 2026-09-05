@@ -101,6 +101,10 @@ export interface IntakeState {
    * not a second invoice.
    */
   pdf: { data: Buffer; name: string } | null;
+  /** What the analysis cost, carried to the landing — see `AiIntakeResult`. */
+  usage: { model: string; inputTokens: number; outputTokens: number } | null;
+  /** The day's AI budget was spent before this collection was read. */
+  budgetSpent: boolean;
   expires: number;
 }
 
@@ -140,6 +144,8 @@ export function startIntake(
     reasked: false,
     invoiceGoods: [],
     pdf: null,
+    usage: null,
+    budgetSpent: false,
     expires: Date.now() + TTL_MS,
   };
   collections.set(key(chatId), state);
@@ -183,7 +189,13 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   const text = state.material.join('\n');
   const manual = parseManualFacts(text);
 
-  const ai = await analyzeIntake({
+  // The day's budget gates the READING too — it is the most expensive call
+  // on this path (Opus, with photographs). Over the cap the manual parser
+  // answers, which is exactly what a keyless server has always had, and the
+  // summary says so rather than looking like a model that found nothing.
+  const { aiCalcBudgetLeft } = await import('../../wms/calc/ai-cost');
+  const budgetLeft = await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY);
+  const ai = budgetLeft <= 0 ? null : await analyzeIntake({
     section: state.section,
     text,
     fileCount: state.fileCount,
@@ -221,6 +233,8 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     facts,
     steps: ai?.steps ?? [],
     aiUsed: Boolean(ai),
+    budgetSpent: budgetLeft <= 0,
+    usage: ai?.usage ?? null,
     stage: 'review',
   };
 }
