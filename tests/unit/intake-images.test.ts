@@ -35,8 +35,11 @@ describe('the analysis actually looks at the photographs', () => {
 
   it('a collection of photographs alone is still analysed', () => {
     // The old guard returned null on empty text, which refused exactly the
-    // case he reported: a forwarded packing-list photo with no caption.
-    expect(AI).toContain('if (!material && images.length === 0) return null;');
+    // case he reported: a forwarded packing-list photo with no caption. The
+    // AI-rastamojka round widened it once more, for a collection that is
+    // nothing but an invoice PDF — same rule, one more way of having sent
+    // something.
+    expect(AI).toContain('if (!material && images.length === 0 && !pdf) return null;');
   });
 
   it('the system prompt tells it where the numbers are', () => {

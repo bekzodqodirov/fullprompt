@@ -164,6 +164,15 @@ export interface CalcRequestInput {
   source: 'card' | 'bot';
   /** Set by the bot, which acts for the staff member who collected. */
   hasMaterials?: boolean;
+  /**
+   * Has the customer a certificate of origin (0091's column)?
+   *
+   * The one answer that changes the duty without changing the cargo — the
+   * additional duty applies only when there is none — and the seller is who
+   * knows. Absent means TRUE, which is the column's own default and the
+   * ordinary case; assuming the worse case would quote every job high.
+   */
+  hasCertificate?: boolean;
 }
 
 const num = (value: number | null | undefined): string | null =>
@@ -300,6 +309,7 @@ export async function openCalcRequest(
         weightKg: num(input.weightKg),
         volumeM3: num(input.volumeM3),
         source: input.source,
+        hasCertificate: input.hasCertificate ?? true,
         noteId,
         takenAt: assigneeId ? new Date() : null,
         dueAt,

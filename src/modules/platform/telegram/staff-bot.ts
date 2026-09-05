@@ -149,9 +149,32 @@ export type BotCallback =
   | { kind: 'task_done'; taskId: string }
   | { kind: 'approval'; approvalId: string; verdict: 'approved' | 'refused' }
   | { kind: 'entry'; who: 'staff' | 'client' }
-  | { kind: 'calc'; step: 'yolkira' | 'rastamojka' | 'podklyuch' | 'done' | 'save' | 'more' | 'cancel' };
+  | { kind: 'calc'; step: CalcStep };
 
-const CALC_STEPS = ['yolkira', 'rastamojka', 'podklyuch', 'done', 'save', 'more', 'cancel'] as const;
+/**
+ * `go_*` are the RESTART confirmations: a section pressed while a collection
+ * is live asks first and only then discards (sub-round C). `cert` flips the
+ * certificate answer, `ai` opens the AI-rastamojka door, `skip` moves past a
+ * follow-up question the seller cannot answer.
+ */
+const CALC_STEPS = [
+  'yolkira',
+  'rastamojka',
+  'podklyuch',
+  'ai',
+  'go_yolkira',
+  'go_rastamojka',
+  'go_podklyuch',
+  'go_ai',
+  'cert',
+  'skip',
+  'done',
+  'save',
+  'more',
+  'cancel',
+] as const;
+
+export type CalcStep = (typeof CALC_STEPS)[number];
 
 export function parseCallback(data: string): BotCallback | null {
   if (data === 'e:s') return { kind: 'entry', who: 'staff' };
@@ -344,6 +367,9 @@ export async function landCollectedIntake(
     // one was typed, is what a second request will find it by.
     leadName: state.clientHintRaw.trim() || 'Hisoblatish (nomsiz)',
     leadPhone: hint?.phone ?? null,
+    // Only the AI door offers the toggle; every other collection lands the
+    // column's own default, which is what it landed before this round.
+    hasCertificate: state.hasCertificate,
   });
 }
 

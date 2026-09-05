@@ -161,6 +161,8 @@ export async function landIntake(input: {
   /** What staff typed as the customer's name when there is no code yet. */
   leadName: string;
   leadPhone: string | null;
+  /** The seller's certificate answer (the AI-rastamojka door's one toggle). */
+  hasCertificate?: boolean;
 }): Promise<IntakeTarget> {
   const target = input.client
     ? await dealFor(input.client, input.section, input.collectedBy)
@@ -231,6 +233,7 @@ export async function landIntake(input: {
         noteId: input.noteId,
         source: 'bot',
         hasMaterials: input.fileCount > 0,
+        hasCertificate: input.hasCertificate ?? true,
       },
       { actorId: input.collectedBy },
     );

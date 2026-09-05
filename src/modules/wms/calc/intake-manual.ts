@@ -79,3 +79,67 @@ export function parseManualFacts(text: string): CalcFacts {
     goods: [],
   };
 }
+
+/**
+ * The answer to «how many, or how heavy?» about ONE line.
+ *
+ * The follow-up loop (sub-round C) asks the seller about the rows that state
+ * neither a count nor a weight, because `unitsForRow` can price a row per
+ * dona or per kg and can price a row stating NEITHER only by guessing — the
+ * one thing this module may not do.
+ *
+ * Pure, and deliberately narrow in a different direction from
+ * `parseManualFacts`: there the risk is a packing list full of numbers, here
+ * the whole message IS the answer, so a bare «50» is legal and means the
+ * unit the QUESTION was about.
+ *
+ * Rules:
+ *  - «300 kg» / «300 кг» / «300kilo» → a weight. The unit ends on a NEGATIVE
+ *    LOOKAHEAD and not `\b` — JavaScript's word boundary is ASCII, so «300кг»
+ *    never matches a `\b` (#412, measured, and the same trap twice now).
+ *  - «50 dona» / «50 шт» / «50 pcs» / «50 ta» → a count.
+ *  - a bare number → whichever the caller says the line is shaped like.
+ *  - anything with two different figures, or none, or a nonsense unit → null.
+ *    A refusal here is re-asked once; a WRONG reading would be a weight the
+ *    VED never sees and a duty computed on it.
+ */
+export type LineAnswer = { quantity: number } | { weightKg: number };
+
+const KG_RE = /(\d+(?:[.,]\d+)?)\s*(?:kg|кг|kilogramm|kilo|килограмм|килограм)(?![\p{L}\d])/giu;
+const QTY_RE = /(\d+(?:[.,]\d+)?)\s*(?:dona|donа|ta|sht|шт|штук|pcs|pc|adet)(?![\p{L}\d])/giu;
+const BARE_RE = /^\s*(\d+(?:[.,]\d+)?)\s*$/u;
+
+function only(text: string, re: RegExp): number | null {
+  const seen = new Set<number>();
+  const fresh = new RegExp(re.source, re.flags);
+  for (let hit = fresh.exec(text); hit; hit = fresh.exec(text)) {
+    const value = Number(hit[1]!.replace(',', '.'));
+    if (Number.isFinite(value) && value > 0) seen.add(value);
+  }
+  return seen.size === 1 ? [...seen][0]! : null;
+}
+
+export function parseLineAnswer(
+  raw: string,
+  opts: { bareMeans: 'quantity' | 'weight' } = { bareMeans: 'quantity' },
+): LineAnswer | null {
+  const text = raw.trim();
+  if (!text) return null;
+
+  const kg = only(text, KG_RE);
+  const qty = only(text, QTY_RE);
+  // Both spelled out is not an answer to a question that asked for one — the
+  // seller may have meant «50 dona, 300 kg jami», and picking either would be
+  // a number nobody stated about this row.
+  if (kg !== null && qty !== null) return null;
+  if (kg !== null) return { weightKg: kg };
+  if (qty !== null) return { quantity: qty };
+
+  const bare = BARE_RE.exec(text);
+  if (bare) {
+    const value = Number(bare[1]!.replace(',', '.'));
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return opts.bareMeans === 'weight' ? { weightKg: value } : { quantity: value };
+  }
+  return null;
+}

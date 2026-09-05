@@ -81,6 +81,16 @@ export async function analyzeIntake(input: {
    */
   images?: { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' }[];
   /**
+   * An invoice the seller attached as a PDF.
+   *
+   * XLSX and CSV are READ by `goodsFromFile` — exact rows, no model, no
+   * tokens — and a PDF cannot be, so it is shown to the model as a document
+   * block instead. One document: a seller forwarding a folder is forwarding
+   * context, and a second invoice about the same shipment is a contradiction
+   * nobody can resolve from here.
+   */
+  pdf?: { data: Buffer; name: string } | null;
+  /**
    * The caller's leash. The bot answers asynchronously and affords the
    * default 60 s; an interactive press (the thread door) cannot hold a
    * person that long and passes ~20 s — past it the manual parser answers.
@@ -90,9 +100,11 @@ export async function analyzeIntake(input: {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   const material = input.text.trim();
   const images = input.images ?? [];
-  // A collection of nothing but photographs is still a collection: before
-  // this round the empty-text guard refused it outright.
-  if (!material && images.length === 0) return null;
+  const pdf = input.pdf ?? null;
+  // A collection of nothing but photographs — or nothing but an invoice — is
+  // still a collection: before this round the empty-text guard refused it
+  // outright.
+  if (!material && images.length === 0 && !pdf) return null;
 
   try {
     // A deadline of its own, for the same reason round 101 gave the
@@ -153,12 +165,27 @@ export async function analyzeIntake(input: {
                 },
               }),
             ),
+            // …and the invoice after them, before the text: it is the most
+            // exact thing in the message and the caption usually refers to it.
+            ...(pdf
+              ? [
+                  {
+                    type: 'document',
+                    source: {
+                      type: 'base64',
+                      media_type: 'application/pdf',
+                      data: pdf.data.toString('base64'),
+                    },
+                  } as Anthropic.ContentBlockParam,
+                ]
+              : []),
             {
               type: 'text',
               text:
                 `Раздел: ${input.section}\n` +
                 (input.fileCount ? `Прикреплено файлов: ${input.fileCount}\n` : '') +
                 (images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
+                (pdf ? `Приложен инвойс PDF: ${pdf.name}\n` : '') +
                 (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото.'),
             },
           ],
