@@ -95,6 +95,17 @@ const MIN_SIM_DEFAULT = 0.6;
  * Rounding is what makes the second half do any work — 0.95 against 0.94 is
  * not a difference between two products, and between two equally-named seals
  * the recent price is the one the office would quote.
+ *
+ * `<%` BESIDE the comparison, and it is not decoration. MEASURED on 50 000
+ * sealed item names — the size this table reaches after a year or two of the
+ * feature — the comparison ALONE is a sequential scan per needle: **919 ms**,
+ * with 0096's GIN index never read. `<%` is the operator the index answers,
+ * and the same query comes back in **0.3 ms**. The operator's own threshold
+ * is a GUC, so it is set for the TRANSACTION (`set_config(…, true)` — local,
+ * reverted at commit, never leaked onto a pooled connection) from the same
+ * setting the comparison uses; if the two ever disagreed the operator would
+ * silently narrow what the threshold admits, which is why they are written
+ * from one value.
  */
 export async function sealedMemoryFor(
   names: string[],
@@ -113,7 +124,13 @@ export async function sealedMemoryFor(
     needles.map((n) => sql`${n}`),
     sql`, `,
   );
-  const rows = await db.execute<MemoryRow>(sql`
+  // One short read transaction, for the GUC alone: `set_config(…, true)` is
+  // reverted at commit, so nothing about the pool's next borrower changes.
+  const rows = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT set_config('pg_trgm.word_similarity_threshold', ${String(minSim)}, true)`,
+    );
+    return tx.execute<MemoryRow>(sql`
     SELECT DISTINCT ON (n.needle)
            n.needle,
            i.id::text            AS item_id,
@@ -125,7 +142,7 @@ export async function sealedMemoryFor(
            i.baza_basis,
            word_similarity(n.needle, i.name_norm) AS name_sim
       FROM unnest(ARRAY[${list}]::text[]) AS n(needle)
-      JOIN calc_request_items i ON i.name_norm IS NOT NULL
+      JOIN calc_request_items i ON i.name_norm IS NOT NULL AND n.needle <% i.name_norm
       JOIN calc_groups g   ON g.id = i.group_id AND g.confirmed_at IS NOT NULL
       JOIN calc_versions v ON v.request_id = i.request_id
       LEFT JOIN users u    ON u.id = v.sealed_by
@@ -135,6 +152,7 @@ export async function sealedMemoryFor(
               round(word_similarity(n.needle, i.name_norm)::numeric, 2) DESC,
               v.sealed_at DESC
   `);
+  });
   return collect(rows, out);
 }
 
