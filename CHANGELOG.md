@@ -36,6 +36,15 @@ jadval yaratilmadi: xotira — muhrning O'ZI, chunki nusxa asl bilan
 kelishmay qolishi mumkin va qaysi biri to'g'ri ekanini hech narsa ayta
 olmaydi.
 
+**3b. Xotira qanchalik «o'xshash» nomga javob berishi.** O'lchandi:
+«ayollar kurtkasi» ↔ «ayollar kurtka» 0.78 (bir xil tovar — oladi),
+«ayollar kurtkasi» ↔ «erkaklar kurtkasi» 0.46 (boshqa tovar — olmaydi),
+«sumka teri» ↔ «sumka charm» 0.35 (olmaydi). Chegara **0.6**, u
+`Boshqaruv → Sozlamalar` da. Diqqat qilib turadigan yagona holat:
+«monitor 24» ↔ «monitor 27» 0.69 — ya'ni bitta tovarning ikki o'lchami bir
+xil deb qaralishi mumkin; VED qatorda 🧠 belgisini ko'radi va narxni o'zi
+qayta yozishi mumkin, kerak bo'lsa chegarani ko'taramiz.
+
 **4. Javob kartaga ham yoziladi** (sizning 2a javobingiz): sotuvchi telefonda
 o'qiydi va unutadi, VED esa ertaga kartani ochib mashina nima deganini
 ko'rishi kerak.
