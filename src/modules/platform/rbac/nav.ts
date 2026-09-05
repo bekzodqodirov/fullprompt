@@ -193,6 +193,21 @@ export const NAV: NavGroupSpec[] = [
   {
     titleKey: 'sectionInfo',
     items: [
+      {
+        // The library the staff bot re-sends from: the warehouse address
+        // sheet, the price list, the bank details. No permission — every
+        // staff member keeps their own, exactly as everyone keeps their own
+        // canned replies; publishing to the COMPANY is checked in the
+        // service. It is deliberately NOT on the warehouse menus: a packer
+        // READS notes in the bot and has no reason to build a library on a
+        // web page (nav.ts's own sentence about their job, and the owner has
+        // ordered a door off a menu three times). They reach it from
+        // /profile, and the route gates itself, so a link always works.
+        href: '/zametkalar',
+        labelKey: 'title',
+        namespace: 'notes',
+        icon: 'clipboard',
+      },
       { href: '/stock', labelKey: 'title', namespace: 'stock', icon: 'boxes', primary: 3, shortKey: 'stock' },
       { href: '/receipts', labelKey: 'title', namespace: 'receipts', icon: 'doc' },
       { href: '/unclaimed', labelKey: 'unclaimedTitle', namespace: 'receipts', icon: 'alert' },
@@ -503,7 +518,7 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
     '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
-    '/suhbatlar', '/approvals', '/ai',
+    '/suhbatlar', '/approvals', '/ai', '/zametkalar',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
   // is here because recalculating a job the client was mis-quoted for is a VED
@@ -515,7 +530,7 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     '/stock', '/receipts', '/reports',
     // Kontragentlar joined in round 39, his instruction: the VED manager
     // arranges the customs firms and knows what each one is owed.
-    '/finance', '/kontragentlar', '/suhbatlar', '/ai',
+    '/finance', '/kontragentlar', '/suhbatlar', '/ai', '/zametkalar',
   ],
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.
@@ -530,6 +545,8 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     '/upsale',
     // And what they brought in — their own volume and revenue, never a cost.
     '/reports/sotuvchilar',
+    // The things they send customers all day, kept once.
+    '/zametkalar',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/kontragentlar', '/reports',
@@ -541,6 +558,7 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     // the registry is their first door into the calc module (menus are an
     // EXACT-match list, so the nav entry alone would have shown nobody).
     '/hisoblash/tarix',
+    '/zametkalar',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at

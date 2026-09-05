@@ -2791,5 +2791,37 @@
       "server_behind": "服务器尚未更新——更新后再试"
     },
     "lastBeat": "更新于 {time}"
+  },
+  "notes": {
+    "title": "备忘",
+    "hint": "经常发给客户的内容：仓库地址、价目表、账户信息。保存一次，机器人一键发送。",
+    "noTelegram": "您的 Telegram 尚未连接机器人，暂时无法发送备忘。请在个人资料中连接。",
+    "add": "新建备忘",
+    "none": "暂无备忘。",
+    "shared": "公共备忘 — 所有员工可见",
+    "sharedHint": "公共：每位员工都能看到，并可一键转发给客户。",
+    "confirmDelete": "连同文件一起删除该备忘？",
+    "confirmDeletePart": "从备忘中删除该文件？",
+    "asFile": "按文件发送",
+    "asPhoto": "按图片发送",
+    "fieldTitle": "名称",
+    "fieldBody": "文本",
+    "fieldLocation": "坐标或地图链接",
+    "fieldPlaceTitle": "地点名称",
+    "fieldPlaceAddress": "地址",
+    "fieldOrder": "排序",
+    "fieldFiles": "文件与图片",
+    "filesHint": "最多 {max} 个文件。地址表建议按文件发送 — 图片会被 Telegram 压缩。",
+    "uploading": "上传中…",
+    "errors": {
+      "forbidden": "权限不足。",
+      "validation": "请检查字段。",
+      "notFound": "未找到备忘。",
+      "empty": "备忘为空 — 请添加文本、文件或坐标。",
+      "titleTaken": "同名备忘已存在。",
+      "tooManyParts": "文件过多。",
+      "badLocation": "无法识别坐标。",
+      "upload": "文件上传失败，请重试。"
+    }
   }
 }

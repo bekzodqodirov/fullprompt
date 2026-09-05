@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -20,6 +21,7 @@ export default async function ProfilePage() {
   const t = await getTranslations('profile');
   const tc = await getTranslations('common');
   const tNav = await getTranslations('nav');
+  const tn = await getTranslations('notes');
   const format = await getFormatter();
   // Everything below the name is a PANEL, and this page is now the only way
   // out of the app. A panel that throws used to cost a screen; it would now
@@ -127,6 +129,17 @@ export default async function ProfilePage() {
         }}
         apkVersion={callsApk?.version ?? null}
       />
+
+      {/* The door for everyone whose curated menu does not carry it — a
+          warehouse hand READS zametkalar in the bot, and this is where they
+          come to link that bot in the first place. */}
+      <section className="space-y-2">
+        <h2 className="text-lg font-bold">📌 {tn('title')}</h2>
+        <p className="text-sm text-ink-500">{tn('hint')}</p>
+        <Link href="/zametkalar" className="btn-secondary" data-testid="profile-notes">
+          {tn('title')}
+        </Link>
+      </section>
 
       <section>
         <h2 className="mb-2 text-lg font-bold">{t('telegram')}</h2>
