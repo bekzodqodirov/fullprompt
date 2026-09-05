@@ -253,6 +253,41 @@ describe('what the company sealed is what the machine reads first', () => {
     expect(ws!.groups[0]!.warnings).not.toContain('baza_from_memory');
   });
 
+  it('answers about the SAME product and refuses a near neighbour', async () => {
+    /**
+     * The operator choice, measured rather than argued.
+     *
+     * `word_similarity` is asymmetric — it scores the NEEDLE's words against
+     * the best-matching part of the target — which is right for #891's case
+     * (a short product name against a long declaration paragraph) and wrong
+     * here, where both sides are our own item names: it answers 1.000 for
+     * «sumka» against «sumka teri» and 0.611 for «erkaklar kurtkasi» against
+     * «ayollar kurtkasi», i.e. men's jackets inheriting women's price.
+     *
+     * `similarity` answers 0.545 and 0.458 for the same two — refused — while
+     * a colour added to the same jacket still scores 0.783 and is taken. This
+     * test is that sentence, against the real query.
+     */
+    // A SHORT run token, and that is part of the measurement: trigram
+    // similarity is over the whole string, so a long shared suffix swamps the
+    // one word that differs — «erkaklar kurtkasi <6 chars>» against
+    // «ayollar kurtkasi <same 6>» scores exactly 0.600 and squeaks over the
+    // threshold, while at three characters it is 0.556 and the rule shows.
+    // Production names carry no run token at all; the fixture is what has to
+    // stay out of the way.
+    const token = Math.random().toString(36).slice(2, 5);
+    const jacket = `erkaklar kurtkasi ${token}`;
+    await sealOne(jacket, 8);
+    madeNames.push(`${jacket} qora`, jacket.replace('erkaklar', 'ayollar'));
+
+    const found = await sealedMemoryFor([`${jacket} qora`], { excludeRequestId: NO_REQUEST });
+    expect(found.size, 'the same jacket with a colour is the same product').toBe(1);
+
+    const other = jacket.replace('erkaklar', 'ayollar');
+    const refused = await sealedMemoryFor([other], { excludeRequestId: NO_REQUEST });
+    expect(refused.size, 'women’s jackets must not inherit men’s price').toBe(0);
+  });
+
   it('the seal teaches the exact-key code book', async () => {
     const name = `Sovun   ${tag()}`;
     await sealOne(name, 12);

@@ -19,9 +19,19 @@ import { expect, test } from '@playwright/test';
 const ADMIN = '+998900000001';
 const PASSWORD = 'demo1234';
 const CODE = '8528520000';
-/** Run-scoped, with a counter beside the clock (#598). */
-let nth = 0;
-const RUN = `${Date.now()}${(nth += 1)}`;
+/**
+ * A run token that is random-looking and comes FIRST.
+ *
+ * Since 0096 a SEAL is the AI-VED's memory, matched on the product NAME, so
+ * two runs of this spec — or two specs about «monitor» — hand each other
+ * their bazas and the save button stays disabled on a value that is already
+ * there. MEASURED: «monitor <ts>» against «monitor <ts+58>» scores 0.739 and
+ * collides; a random token in front scores 0.364 and does not.
+ */
+function runToken(): string {
+  return Math.random().toString(36).slice(2, 8);
+}
+const RUN = runToken();
 
 async function login(page: import('@playwright/test').Page, phone: string) {
   await page.context().clearCookies();
@@ -66,7 +76,7 @@ test('a sealed price appears on the card without a fold', async ({ page }) => {
   // that leaves the save button disabled for ever. MEASURED: this spec timed
   // out on exactly that. A seal is CONFIGURATION for every later spec about
   // the same product (#183 in a new costume).
-  await page.getByTestId('calc-goods').fill(`monitor ${RUN}, 100`);
+  await page.getByTestId('calc-goods').fill(`${RUN} monitor, 100`);
   await page.getByTestId('calc-send').click();
 
   await expect(page.getByTestId('calc-open')).toBeVisible({ timeout: 15_000 });

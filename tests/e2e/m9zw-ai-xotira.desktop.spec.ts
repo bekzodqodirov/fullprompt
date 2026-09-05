@@ -16,12 +16,18 @@ import { expect, test } from '@playwright/test';
 
 const ADMIN = '+998900000001';
 const PASSWORD = 'demo1234';
-// A per-run counter beside the clock (#598): two fixtures minted in the same
-// millisecond would share a name and the memory would answer about the wrong
-// one — which is exactly the confusion this feature must never create.
-let seq = 0;
-const stamp = `${Date.now()}${(seq += 1)}`;
-const PRODUCT = `xotira sinov mahsuloti ${stamp}`;
+/**
+ * A random token FIRST, and it is the fixture's whole safety.
+ *
+ * The memory matches on the product NAME, so a name that differs only in a
+ * numeric tail is the SAME product as far as this feature is concerned —
+ * MEASURED, «xotira sinov mahsuloti <ts>» against the previous run's scores
+ * 0.838, well over the 0.6 threshold, and the second run inherits the first
+ * run's price with the save button disabled on a value already there. That is
+ * the feature working; the fixture is what has to be distinct.
+ */
+const stamp = Math.random().toString(36).slice(2, 8);
+const PRODUCT = `${stamp} sinovmol`;
 
 async function login(page: import('@playwright/test').Page) {
   await page.context().clearCookies();

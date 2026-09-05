@@ -85,10 +85,19 @@ const MIN_SIM_DEFAULT = 0.6;
 /**
  * The newest confirmed seal per name, in ONE query (#432).
  *
- * `word_similarity` and not `similarity`: the needle is a short product name
- * and the stored name can be a long line off an invoice, and plain similarity
- * divides by the union of both — it scores a true match near zero, which is
- * the defect #891 found in a browser after every integration test passed.
+ * `similarity` and NOT `word_similarity`, which is the opposite of the choice
+ * #891 records — and the difference between the two cases is the whole
+ * reason. There the needle is a short product name and the target is a long
+ * DECLARATION paragraph somebody filed, so a symmetric measure divides by a
+ * union the needle never had a chance of filling. Here BOTH sides are our own
+ * item names, of comparable length, and `word_similarity` is asymmetric:
+ * MEASURED, «sumka» against «sumka teri» scores **1.000**, «monitor» against
+ * «monitor 24"» scores **1.000**, and «erkaklar kurtkasi» against «ayollar
+ * kurtkasi» scores **0.611** — men's jackets inheriting women's price.
+ * `similarity` answers 0.545, 0.400 and 0.458 for the same three: each
+ * refused, while «erkaklar kurtkasi» against «erkaklar kurtkasi qora» still
+ * scores 0.783 and is taken. A memory that answers about a DIFFERENT product
+ * is worse than one that answers about nothing.
  *
  * The ordering is «the name decides WHICH product, the date only breaks a
  * tie»: similarity rounded to two decimals descending, then the newest seal.
@@ -96,16 +105,16 @@ const MIN_SIM_DEFAULT = 0.6;
  * not a difference between two products, and between two equally-named seals
  * the recent price is the one the office would quote.
  *
- * `<%` BESIDE the comparison, and it is not decoration. MEASURED on 50 000
+ * `%` BESIDE the comparison, and it is not decoration. MEASURED on 50 000
  * sealed item names — the size this table reaches after a year or two of the
  * feature — the comparison ALONE is a sequential scan per needle: **919 ms**,
- * with 0096's GIN index never read. `<%` is the operator the index answers,
- * and the same query comes back in **0.3 ms**. The operator's own threshold
- * is a GUC, so it is set for the TRANSACTION (`set_config(…, true)` — local,
- * reverted at commit, never leaked onto a pooled connection) from the same
- * setting the comparison uses; if the two ever disagreed the operator would
- * silently narrow what the threshold admits, which is why they are written
- * from one value.
+ * with 0096's GIN index never read. `%` is the operator the index answers,
+ * and the same query comes back in a millisecond. The operator's own
+ * threshold is a GUC, so it is set for the TRANSACTION (`set_config(…, true)`
+ * — local, reverted at commit, never leaked onto a pooled connection) from
+ * the same setting the comparison uses; if the two ever disagreed the
+ * operator would silently narrow what the threshold admits, which is why they
+ * are written from one value.
  */
 export async function sealedMemoryFor(
   names: string[],
@@ -128,7 +137,7 @@ export async function sealedMemoryFor(
   // reverted at commit, so nothing about the pool's next borrower changes.
   const rows = await db.transaction(async (tx) => {
     await tx.execute(
-      sql`SELECT set_config('pg_trgm.word_similarity_threshold', ${String(minSim)}, true)`,
+      sql`SELECT set_config('pg_trgm.similarity_threshold', ${String(minSim)}, true)`,
     );
     return tx.execute<MemoryRow>(sql`
     SELECT DISTINCT ON (n.needle)
@@ -140,16 +149,16 @@ export async function sealedMemoryFor(
            i.tnved_code,
            i.baza_usd,
            i.baza_basis,
-           word_similarity(n.needle, i.name_norm) AS name_sim
+           similarity(n.needle, i.name_norm) AS name_sim
       FROM unnest(ARRAY[${list}]::text[]) AS n(needle)
-      JOIN calc_request_items i ON i.name_norm IS NOT NULL AND n.needle <% i.name_norm
+      JOIN calc_request_items i ON i.name_norm IS NOT NULL AND n.needle % i.name_norm
       JOIN calc_groups g   ON g.id = i.group_id AND g.confirmed_at IS NOT NULL
       JOIN calc_versions v ON v.request_id = i.request_id
       LEFT JOIN users u    ON u.id = v.sealed_by
      WHERE i.request_id <> ${opts.excludeRequestId}::uuid
-       AND word_similarity(n.needle, i.name_norm) >= ${minSim}
+       AND similarity(n.needle, i.name_norm) >= ${minSim}
      ORDER BY n.needle,
-              round(word_similarity(n.needle, i.name_norm)::numeric, 2) DESC,
+              round(similarity(n.needle, i.name_norm)::numeric, 2) DESC,
               v.sealed_at DESC
   `);
   });
