@@ -2806,10 +2806,6 @@
     "asPhoto": "Rasm bo‘lib ketsin",
     "fieldTitle": "Nomi",
     "fieldBody": "Matn",
-    "fieldLocation": "Koordinata yoki xarita havolasi",
-    "fieldPlaceTitle": "Joy nomi",
-    "fieldPlaceAddress": "Manzil",
-    "fieldOrder": "Tartib",
     "fieldFiles": "Fayl va rasmlar",
     "filesHint": "Eng ko‘pi {max} ta fayl. Manzil varaqasini fayl qilib yuborgan ma’qul — rasmni Telegram siqadi.",
     "uploading": "Yuklanmoqda…",
@@ -2820,7 +2816,6 @@
       "empty": "Zametka bo‘sh — matn, fayl yoki koordinata qo‘shing.",
       "titleTaken": "Bu nomdagi zametka bor.",
       "tooManyParts": "Fayllar soni ko‘p.",
-      "badLocation": "Koordinatani o‘qib bo‘lmadi.",
       "upload": "Fayl yuklanmadi. Qaytadan urinib ko‘ring."
     },
     "makeShared": "🏢 Hammaga",

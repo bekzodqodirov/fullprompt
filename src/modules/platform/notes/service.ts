@@ -5,7 +5,6 @@ import { attachments, staffNoteParts, staffNotes } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { purgeAttachment } from '../files/service';
 import { MAX_TELEGRAM_PHOTO_BYTES } from '../telegram/limits';
-import { parseLatLon } from './coords';
 import type { NoteFile, NoteHead } from './plan';
 
 /**
@@ -36,8 +35,7 @@ export type NoteErrorCode =
   | 'not_found'
   | 'note_empty'
   | 'title_taken'
-  | 'too_many_parts'
-  | 'bad_location';
+  | 'too_many_parts';
 
 /** Publishing to the company. No new permission code (#170). */
 export const SHARE_NOTES_PERMISSION = 'admin.settings.manage';
@@ -60,14 +58,10 @@ export const noteSchema = z.object({
   // the whole message — so a company note of spaces would break the 📌 list
   // for every colleague at once.
   title: z.string().trim().min(1).max(64),
+  /** What the thing IS — his own words, «nima narsaligini yozish». */
   body: z.string().trim().max(3000).optional().or(z.literal('')),
-  /** One box, whatever the map app put on the clipboard. */
-  location: z.string().trim().max(300).optional().or(z.literal('')),
-  placeTitle: z.string().trim().max(80).optional().or(z.literal('')),
-  placeAddress: z.string().trim().max(300).optional().or(z.literal('')),
   /** True asks for the company's list; refused without the permission. */
   shared: z.boolean().default(false),
-  sortOrder: z.number().int().min(0).max(10_000).default(100),
 });
 export type NoteInput = z.infer<typeof noteSchema>;
 
@@ -102,7 +96,9 @@ export async function listNotes(actorId: string): Promise<NoteRow[]> {
     .from(staffNotes)
     .where(visibleNotes(actorId))
     // Across BOTH scopes, so a company library cannot evict a person's own
-    // notes off the end of the bot's list.
+    // notes off the end of the bot's list. `sort_order` is a column with a
+    // default and no input: he asked for three things on the form and this is
+    // not one of them, so the library is alphabetical until he asks otherwise.
     .orderBy(asc(staffNotes.sortOrder), asc(staffNotes.title));
   if (rows.length === 0) return [];
   const counts = await db
@@ -193,13 +189,6 @@ function refuseUnlessOwn(row: { userId: string | null }, ctx: NoteCtx): void {
   if (!mine) throw new NoteError('forbidden');
 }
 
-function coordsFrom(input: NoteInput): { lat: string | null; lon: string | null } {
-  const parsed = parseLatLon(input.location ?? '');
-  if (parsed === false) throw new NoteError('bad_location');
-  if (parsed === null) return { lat: null, lon: null };
-  return { lat: String(parsed.lat), lon: String(parsed.lon) };
-}
-
 /**
  * Create or correct a note.
  *
@@ -217,13 +206,6 @@ export async function saveNote(
   if (!parsed.success) throw new NoteError('validation');
   const data = parsed.data;
   if (data.shared && !ctx.canShare) throw new NoteError('forbidden');
-  // sendVenue takes both or neither; the column pair is CHECKed, so the
-  // refusal has to be a sentence rather than a 23514 white page.
-  const placeTitle = data.placeTitle?.trim() || null;
-  const placeAddress = data.placeAddress?.trim() || null;
-  if ((placeTitle === null) !== (placeAddress === null)) throw new NoteError('validation');
-  const { lat, lon } = coordsFrom(data);
-  if (lat === null && placeTitle !== null) throw new NoteError('validation');
 
   const existing = await db.query.staffNotes.findFirst({ where: eq(staffNotes.id, input.id) });
   if (existing) refuseUnlessOwn(existing, ctx);
@@ -242,11 +224,6 @@ export async function saveNote(
   const values = {
     title: data.title,
     body: data.body?.trim() || null,
-    lat,
-    lon,
-    placeTitle,
-    placeAddress,
-    sortOrder: data.sortOrder,
     userId,
   };
 
@@ -265,11 +242,13 @@ export async function saveNote(
   }
 
   const parts = await claimUploads(input.id, ctx.actorId);
-  const emptied = !values.body && !values.lat && parts === 0;
+  const emptied = !values.body && parts === 0;
   if (emptied) {
     // A note that says nothing sends nothing, and a tap that sends nothing is
     // the silence rounds 89 and 97 were spent removing. Refused at the door —
     // and the row is taken back out when it was this save that minted it.
+    // Three things make a note (his own correction): a name, the text saying
+    // what it is, and files; the name alone is a label for nothing.
     if (!existing) await db.delete(staffNotes).where(eq(staffNotes.id, input.id));
     throw new NoteError('note_empty');
   }
@@ -345,7 +324,6 @@ export async function removeNotePart(partId: string, ctx: NoteCtx): Promise<void
       attachmentId: staffNoteParts.attachmentId,
       userId: staffNotes.userId,
       body: staffNotes.body,
-      lat: staffNotes.lat,
     })
     .from(staffNoteParts)
     .innerJoin(staffNotes, eq(staffNotes.id, staffNoteParts.noteId))
@@ -357,7 +335,7 @@ export async function removeNotePart(partId: string, ctx: NoteCtx): Promise<void
     .select({ n: sql<number>`count(*)::int` })
     .from(staffNoteParts)
     .where(eq(staffNoteParts.noteId, part.noteId));
-  if ((counted?.n ?? 0) <= 1 && !part.body && !part.lat) throw new NoteError('note_empty');
+  if ((counted?.n ?? 0) <= 1 && !part.body) throw new NoteError('note_empty');
 
   // The part row goes with the attachment (ON DELETE cascade), and the bytes
   // go with it. Never in a transaction: two of these calls are network I/O to

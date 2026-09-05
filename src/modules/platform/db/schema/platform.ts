@@ -828,8 +828,13 @@ export const replyTemplates = pgTable(
 /**
  * Zametkalar — the things the office sends the same customers over and over,
  * kept once and re-sent from the staff bot with one tap (owner, 2026-09-05:
- * «har doim ishlatadgan rasim file text locationlarni tanlaganda bot qayta
- * jonatb berishi kerak … misol uchun skladlarimizni adreslarini»).
+ * «har doim ishlatadgan rasim file text … tanlaganda bot qayta jonatb berishi
+ * kerak»).
+ *
+ * THREE things and no more, his own correction the same evening: a name, the
+ * text saying what it is, and files. The coordinate and the address fields
+ * that shipped in 0097 made the screen read as a warehouse form, which is the
+ * opposite of a library everybody keeps their own things in.
  *
  * `user_id` NULL = the COMPANY's, offered to everybody; otherwise it is that
  * person's alone — `reply_templates`' column, and the same one-line read.
@@ -840,12 +845,8 @@ export const staffNotes = pgTable(
     id: id(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
     title: text('title').notNull(),
-    /** Optional: a note that is only a photograph and a pin is a real note. */
+    /** What the thing IS. Optional: a note that is only a file is a real note. */
     body: text('body'),
-    lat: numeric('lat', { precision: 9, scale: 6 }),
-    lon: numeric('lon', { precision: 9, scale: 6 }),
-    placeTitle: text('place_title'),
-    placeAddress: text('place_address'),
     sortOrder: integer('sort_order').notNull().default(100),
     createdBy: uuid('created_by')
       .notNull()
@@ -853,18 +854,7 @@ export const staffNotes = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [
-    check('staff_notes_geo_check', sql`(${t.lat} IS NULL) = (${t.lon} IS NULL)`),
-    // sendVenue takes title AND address, both required, and the pin is sent
-    // LAST — a half-filled venue would fail after every other part had
-    // already landed in the chat.
-    check(
-      'staff_notes_place_pair_check',
-      sql`(${t.placeTitle} IS NULL) = (${t.placeAddress} IS NULL)`,
-    ),
-    check('staff_notes_place_geo_check', sql`${t.lat} IS NOT NULL OR ${t.placeTitle} IS NULL`),
-    index('staff_notes_owner_idx').on(t.userId, t.sortOrder),
-  ],
+  (t) => [index('staff_notes_owner_idx').on(t.userId, t.sortOrder)],
 );
 
 /**

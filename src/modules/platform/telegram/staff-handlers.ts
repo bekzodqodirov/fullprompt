@@ -358,22 +358,6 @@ export function registerStaffBot(bot: Bot): void {
     await showIntakePrompt(ctx, chatId, updated ?? state);
   });
 
-  /**
-   * A pin. The one input for a coordinate that this owner will actually use —
-   * a phone's «share location» is two taps, where the screen asks for two
-   * decimal-degree numbers. Only ever consumed by a live capture; every other
-   * chat, staff or customer, falls through untouched.
-   */
-  bot.on('message:location', async (ctx, next) => {
-    const chatId = BigInt(ctx.chat.id);
-    const capture = activeCapture(chatId);
-    if (!capture) return next();
-    if (!(await staffForChat(chatId))) return next();
-    const { latitude, longitude } = ctx.message.location;
-    const updated = updateCapture(chatId, { lat: latitude, lon: longitude, stage: 'parts' });
-    await ctx.reply('📍 Lokatsiya olindi.', { reply_markup: captureKeyboard(updated ?? capture) });
-  });
-
   bot.on('message:text', async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
 
@@ -1351,7 +1335,7 @@ async function captureText(
     }
     const updated = updateCapture(chatId, { title, stage: 'parts' });
     await ctx.reply(
-      `«${title}».\nEndi yuboring: matn, rasm, fayl yoki lokatsiya.\n` +
+      `«${title}».\nEndi yuboring: matn, rasm yoki fayl.\n` +
         'Manzil varaqasini FAYL (📎) qilib yuborsangiz yozuvlari aniq qoladi — rasm qilib yuborilsa Telegram siqadi.\n' +
         'Tugagach «✅ Saqlash» ni bosing.',
       { reply_markup: captureKeyboard(updated ?? state) },
@@ -1411,7 +1395,7 @@ async function saveCapturedNote(
     return;
   }
   if (captureIsEmpty(state)) {
-    await ctx.reply('Zametka bo‘sh. Matn, rasm, fayl yoki lokatsiya yuboring.');
+    await ctx.reply('Zametka bo‘sh. Matn, rasm yoki fayl yuboring.');
     return;
   }
   const { NoteError, saveNote } = await import('../notes/service');
@@ -1422,11 +1406,7 @@ async function saveCapturedNote(
         id: state.noteId,
         title: state.title,
         body: state.body.join('\n\n'),
-        location: state.lat !== null && state.lon !== null ? `${state.lat}, ${state.lon}` : '',
-        placeTitle: '',
-        placeAddress: '',
         shared: state.shared,
-        sortOrder: 100,
       },
       {
         actorId: staffId,
@@ -1452,10 +1432,9 @@ const noteRefusals: Record<string, string> = {
   validation: 'Ma’lumot to‘g‘ri emas.',
   forbidden: 'Bunga huquqingiz yo‘q.',
   not_found: 'Zametka topilmadi.',
-  note_empty: 'Zametka bo‘sh — matn, rasm, fayl yoki lokatsiya kerak.',
+  note_empty: 'Zametka bo‘sh — matn yoki fayl kerak.',
   title_taken: 'Bu nom band.',
   too_many_parts: 'Fayllar soni chegaradan oshdi.',
-  bad_location: 'Lokatsiyani o‘qib bo‘lmadi.',
 };
 
 function canShareFromBot(permissions: Set<string>): boolean {

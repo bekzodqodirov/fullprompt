@@ -25,8 +25,6 @@ export interface CaptureState {
   /** Every text message that arrived after the title, joined on save. */
   body: string[];
   fileCount: number;
-  lat: number | null;
-  lon: number | null;
   /** Asked only of somebody who may publish (his answer 1b). */
   shared: boolean;
   expires: number;
@@ -42,8 +40,6 @@ export function startCapture(chatId: bigint, noteId: string): CaptureState {
     title: '',
     body: [],
     fileCount: 0,
-    lat: null,
-    lon: null,
     shared: false,
     expires: Date.now() + TTL_MS,
   };
@@ -79,5 +75,5 @@ export function endCapture(chatId: bigint): void {
 
 /** What the capture has to show for itself — the save gate, in one place. */
 export function captureIsEmpty(state: CaptureState): boolean {
-  return state.body.join('').trim() === '' && state.fileCount === 0 && state.lat === null;
+  return state.body.join('').trim() === '' && state.fileCount === 0;
 }
