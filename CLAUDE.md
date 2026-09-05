@@ -128,6 +128,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | The VED module | `docs/VED.md` — agreed 2026-08-22; **phase A SHIPPED**, B-E open |
 | Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **sub-rounds A AND B SHIPPED** (import + baza suggestion; the bot's AI VED hodimi) |
+| **AI-VED rastamojka in the staff bot** — the HANDOFF spec for another model | `docs/AI-VED-RASTAMOJKA.md` (spec + build plan, his answers 2026-09-05) and `docs/AI-VED-RASTAMOJKA-MAP.md` (the generated code map) |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
