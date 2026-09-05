@@ -499,7 +499,9 @@
     "callRecCount": "个通话",
     "callRecRemove": "断开",
     "callRecNotSeen": "暂无数据",
-    "callRecApp": "下载应用（安卓）"
+    "callRecApp": "下载应用（安卓）",
+    "telegramReconnect": "重新连接",
+    "telegramReconnectHint": "更换了手机或 Telegram 账号？用新账号打开机器人，通知将发送到那里。在新账号连接之前，旧会话仍然有效。"
   },
   "receive": {
     "title": "收货",

@@ -8,6 +8,7 @@ import {
   permissions,
   rolePermissions,
   tasks,
+  telegramLinks,
   userRoles,
   users,
   warehouses,
@@ -18,6 +19,7 @@ import {
   completeTaskFromBot,
   decideApprovalFromBot,
   linkStaffChat,
+  mintTelegramLinkCode,
   noteStaffEntry,
   parseCallback,
   staffByPhone,
@@ -97,22 +99,71 @@ describe('who is behind a chat', () => {
     const b = await mintStaff();
     const chat = BigInt(Date.now()) * 100n + 1n;
 
-    expect(await linkStaffChat(a.id, chat)).toBe('linked');
+    expect(await linkStaffChat(a.id, chat)).toEqual({ outcome: 'linked', previousChatId: null });
     expect((await staffForChat(chat))?.id).toBe(a.id);
 
     // Two people cannot share one Telegram.
-    expect(await linkStaffChat(b.id, chat)).toBe('chat_taken');
+    expect((await linkStaffChat(b.id, chat)).outcome).toBe('chat_taken');
 
-    // Re-linking your OWN account to a new phone just moves the row.
+    // Re-linking your OWN account to a new phone just moves the row — and the
+    // move NAMES the chat it left, because that phone still shows a staff
+    // keyboard whose buttons now answer nothing and somebody has to say so.
     const newChat = chat + 1n;
-    expect(await linkStaffChat(a.id, newChat)).toBe('linked');
+    expect(await linkStaffChat(a.id, newChat)).toEqual({
+      outcome: 'linked',
+      previousChatId: chat,
+    });
     expect((await staffForChat(newChat))?.id).toBe(a.id);
 
     // Re-opening your own link from the chat that already holds it is a
     // re-link, never a refusal — the deep-link door now goes through this
     // function (round 100, 13A), and a naive «if (holder)» would have turned
-    // every second tap on one's own code into «chat_taken».
-    expect(await linkStaffChat(a.id, newChat)).toBe('linked');
+    // every second tap on one's own code into «chat_taken». And it names NO
+    // previous chat, or the person would be told their own phone had lost it.
+    expect(await linkStaffChat(a.id, newChat)).toEqual({
+      outcome: 'linked',
+      previousChatId: null,
+    });
+  });
+
+  it('a re-connect keeps the person reachable until the NEW chat takes over', async () => {
+    // The blocker this round exists for: minting a code used to flip the row
+    // to 'pending', and every reader demands 'linked' — so from the press
+    // until the person opened Telegram they were not a staff chat at all,
+    // their queued notifications were settled terminally `muted`, and nothing
+    // on any screen would have said so. Abandon the press and you were off
+    // Telegram for ever.
+    const a = await mintStaff();
+    const chat = BigInt(Date.now()) * 100n + 21n;
+    await linkStaffChat(a.id, chat);
+
+    const code = await mintTelegramLinkCode(a.id);
+    expect(code).toBeTruthy();
+    // Still reachable, on the OLD chat, with the code outstanding.
+    expect((await staffForChat(chat))?.id).toBe(a.id);
+
+    // And the code redeems: /start looks it up by link_code and refuses only
+    // a revoked row, so a code on a LIVE link is what moves the chat.
+    const row = await db.query.telegramLinks.findFirst({
+      where: eq(telegramLinks.userId, a.id),
+    });
+    expect(row?.linkCode).toBe(code);
+    expect(row?.status).toBe('linked');
+
+    const newChat = chat + 1n;
+    const moved = await linkStaffChat(a.id, newChat, 'link_code');
+    expect(moved).toEqual({ outcome: 'linked', previousChatId: chat });
+    expect((await staffForChat(newChat))?.id).toBe(a.id);
+    expect(await staffForChat(chat)).toBeNull();
+  });
+
+  it('a FIRST connect still mints a pending row', async () => {
+    const a = await mintStaff();
+    await mintTelegramLinkCode(a.id);
+    const row = await db.query.telegramLinks.findFirst({
+      where: eq(telegramLinks.userId, a.id),
+    });
+    expect(row?.status).toBe('pending');
   });
 
   it('the «Hodim» intent is one-shot — a customer contact never staff-links', async () => {

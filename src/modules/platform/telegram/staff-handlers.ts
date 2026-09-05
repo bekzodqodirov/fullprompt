@@ -199,10 +199,7 @@ export function registerStaffBot(bot: Bot): void {
       // Staff door: ask for the Telegram-verified own number, and remember
       // WHY we asked — the contact handler must not staff-link a customer
       // who simply shared a phone.
-      noteStaffEntry(chatId);
-      await ctx.reply('Hodim sifatida ulanish uchun telefon raqamingizni yuboring 👇', {
-        reply_markup: phoneKeyboard('uz'),
-      });
+      await askStaffPhone(ctx, chatId);
       return;
     }
 
@@ -258,21 +255,37 @@ export function registerStaffBot(bot: Bot): void {
     if (!takeStaffEntry(chatId)) return next();
     const contact = ctx.message.contact;
     // The cabinet's spoof-proof rule: only the sender's OWN number counts.
+    // Every refusal below RESTORES the keyboard. The contact request is a
+    // one-time reply keyboard, so asking for a phone has already wiped
+    // whatever the person had — and a customer who tries «/hodim» out of
+    // curiosity would otherwise be left with no buttons at all and two
+    // sentences telling them why.
+    const restore = async (text: string) => {
+      await ctx.reply(text, { reply_markup: await replyKeyboardFor(chatId) });
+    };
     if (contact.user_id !== ctx.from?.id) {
-      await ctx.reply('Faqat o‘zingizning raqamingizni yuboring.');
+      await restore('Faqat o‘zingizning raqamingizni yuboring.');
       return;
     }
     const staff = await staffByPhone(contact.phone_number);
     if (!staff) {
-      await ctx.reply(
+      await restore(
         'Bu raqam xodimlar ro‘yxatida topilmadi. Sistemaga kirib Profil → Telegram ulash orqali urinib ko‘ring, yoki adminga ayting.',
       );
       return;
     }
-    const outcome = await linkStaffChat(staff.id, chatId);
-    if (outcome === 'chat_taken') {
-      await ctx.reply('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
+    const result = await linkStaffChat(staff.id, chatId);
+    if (result.outcome === 'chat_taken') {
+      await restore('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
       return;
+    }
+    if (result.previousChatId !== null) {
+      await ctx.api
+        .sendMessage(
+          Number(result.previousChatId),
+          'ℹ️ Sizning hodim akkountingiz boshqa Telegramga ko‘chirildi. Xabarnomalar endi bu yerga kelmaydi.',
+        )
+        .catch(() => {});
     }
     await ctx.reply(`✅ Ulandi: ${staff.fullName}. Xabarnomalar shu yerga keladi.`, {
       // A client who just became staff keeps their cabinet rows (13A).
@@ -1054,6 +1067,26 @@ function queueRefusal(code: string | null | undefined): string {
 }
 
 /** The two doors an unknown chat is offered (owner: «hodim yoki mijoz alohida kirish»). */
+/**
+ * «Hodim sifatida ulanish» — ONE door, asked by the inline «👨‍💼 Hodim» button
+ * and by the /hodim command.
+ *
+ * Extracted so the two cannot drift: the intent that the contact handler reads
+ * (`noteStaffEntry`, one-shot, ten minutes) and the sentence the person sees
+ * are one thing in one place (#513). The keyboard it sends is a ONE-TIME
+ * contact request, which replaces whatever was on the phone — every refusal in
+ * the contact handler restores it.
+ */
+export async function askStaffPhone(
+  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
+  chatId: bigint,
+): Promise<void> {
+  noteStaffEntry(chatId);
+  await ctx.reply('Hodim sifatida ulanish uchun telefon raqamingizni yuboring 👇', {
+    reply_markup: phoneKeyboard('uz'),
+  });
+}
+
 export function entryKeyboard() {
   return {
     inline_keyboard: [

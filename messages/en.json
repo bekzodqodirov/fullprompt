@@ -499,7 +499,9 @@
     "callRecCount": "calls",
     "callRecRemove": "Disconnect",
     "callRecNotSeen": "no data yet",
-    "callRecApp": "Download the app (Android)"
+    "callRecApp": "Download the app (Android)",
+    "telegramReconnect": "Reconnect",
+    "telegramReconnectHint": "Changed phone or Telegram account? Open the bot from the new one — notifications go there. The old chat keeps working until the new one takes over."
   },
   "receive": {
     "title": "Receiving",
