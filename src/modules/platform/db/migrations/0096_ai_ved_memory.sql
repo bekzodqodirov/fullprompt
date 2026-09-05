@@ -62,6 +62,12 @@ CREATE INDEX "calc_items_name_norm_trgm_idx"
 --    Guarded, because a UNIQUE index that cannot be built would stop the
 --    whole deploy with a cryptic message. If a duplicate pair already exists,
 --    the deploy stops with a SENTENCE naming the parent instead.
+--
+--    BOTH BRANCHES MEASURED on scratch databases, not reasoned about: on a
+--    clean one the index is created and the ledger reaches 97; with a planted
+--    duplicate the deploy stops with the Uzbek sentence above, the parent's
+--    id in it, and the ledger left at 96 — nothing half-applied. Removing the
+--    offending row and re-running then reaches 97.
 DO $$
 DECLARE dup uuid;
 BEGIN
