@@ -2,6 +2,12 @@ import type { Bot } from 'grammy';
 import { composeMyDayText } from '../tasks/digest';
 import { logger } from '../logger';
 import {
+  AI_RASTAMOJKA,
+  BUGUN,
+  CALC_ENTRY_LABELS,
+  botActorFor,
+  HISOBLATISH,
+  ZAMETKALAR,
   assistantFromBot,
   completeTaskFromBot,
   decideApprovalFromBot,
@@ -12,11 +18,13 @@ import {
   noteStaffEntry,
   noteTaskPending,
   parseCallback,
+  escapesIntake,
   staffByPhone,
   staffForChat,
   takeStaffEntry,
   takeTaskPending,
   type CalcStep,
+  type NoteStep,
 } from './staff-bot';
 import { aiConfigured } from '../ai/model';
 import { codeCandidates } from '../ai/route-text';
@@ -34,6 +42,16 @@ import {
 } from './calc-intake';
 import { phoneKeyboard } from './client-cabinet';
 import { replyKeyboardFor } from './keyboards';
+import {
+  activeCapture,
+  captureIsEmpty,
+  endCapture,
+  startCapture,
+  updateCapture,
+  type CaptureState,
+} from './note-capture';
+import { sendNote } from './note-send';
+import { buttonLabel } from './limits';
 
 /**
  * The grammy shell of the staff bot — thin on purpose: every decision lives
@@ -49,26 +67,21 @@ import { replyKeyboardFor } from './keyboards';
 /** The single thing the calc conversation needs from grammy's context. */
 type CalcReplyCtx = { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> };
 
-const BUGUN = '📋 Bugun';
-const HISOBLATISH = '🧮 Hisoblatish';
 /**
- * The owner's own words, 2026-09-05: «telegramda AI ning o'zi tahminiy
- * hisoblab bersin rastamojka qancha bo'lishini».
- *
- * A SECOND door onto the same collector, not a second collector. It fixes
- * the section to rastamojka (the AI never prices freight — his decision),
- * asks the follow-up questions that make a declaration priceable, and
- * promises a figure in this chat. Everything after the confirm is the path
- * «🧮 Hisoblatish» already walks.
+ * The labels and the escape predicate live in staff-bot.ts, where a test can
+ * reach them: «🤖 AI rastamojka» is a SECOND door onto the same collector (it
+ * fixes the section to rastamojka, asks the follow-up questions a declaration
+ * needs and promises a figure in this chat), and «📌 Zametkalar» opens the
+ * library the office re-sends from.
  */
-const AI_RASTAMOJKA = '🤖 AI rastamojka';
-
-/** The two labels that open a collection — one list, so every reader agrees. */
-export const CALC_ENTRY_LABELS = [HISOBLATISH, AI_RASTAMOJKA];
+export { CALC_ENTRY_LABELS };
 
 export function staffKeyboard() {
   return {
-    keyboard: [[{ text: BUGUN }, { text: HISOBLATISH }], [{ text: AI_RASTAMOJKA }]],
+    keyboard: [
+      [{ text: BUGUN }, { text: HISOBLATISH }],
+      [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
+    ],
     resize_keyboard: true,
     is_persistent: true,
   };
@@ -87,7 +100,7 @@ export function bothKeyboard(locale?: string | null) {
   return {
     keyboard: [
       [{ text: BUGUN }, { text: HISOBLATISH }],
-      [{ text: AI_RASTAMOJKA }],
+      [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
       [{ text: t.btnCargo }, { text: t.btnBalance }],
       [{ text: t.btnHistory }, { text: t.btnLanguage }],
     ],
@@ -211,7 +224,15 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
-    // approval
+    if (parsed.kind === 'note') {
+      await handleNoteCallback(ctx, chatId, parsed.step, parsed.noteId, parsed.page);
+      return;
+    }
+
+    // approval. Guarded now rather than reached by falling through: the union
+    // grew a fifth member and an unguarded tail would have read `approvalId`
+    // off a notes callback.
+    if (parsed.kind !== 'approval') return;
     const outcome = await decideApprovalFromBot(chatId, parsed.approvalId, parsed.verdict);
     const answers: Record<string, string> = {
       decided: parsed.verdict === 'approved' ? '✅ Ruxsat berildi' : '⛔ Rad etildi',
@@ -265,7 +286,17 @@ export function registerStaffBot(bot: Bot): void {
   bot.on(['message:photo', 'message:document'], async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
     const state = activeIntake(chatId);
-    if (!state) return next();
+    if (!state) {
+      // A zametka being written from the phone takes its parts here. The calc
+      // intake is asked FIRST and wins — one collector at a time, and that one
+      // is minutes of a seller's forwarding.
+      const capture = activeCapture(chatId);
+      if (!capture) return next();
+      const owner = await staffForChat(chatId);
+      if (!owner) return next();
+      await capturePart(ctx, chatId, capture, owner.id);
+      return;
+    }
     const staff = await staffForChat(chatId);
     if (!staff) return next();
     // A photo sent BEFORE the customer is named used to fall through to the
@@ -327,21 +358,37 @@ export function registerStaffBot(bot: Bot): void {
     await showIntakePrompt(ctx, chatId, updated ?? state);
   });
 
+  /**
+   * A pin. The one input for a coordinate that this owner will actually use —
+   * a phone's «share location» is two taps, where the screen asks for two
+   * decimal-degree numbers. Only ever consumed by a live capture; every other
+   * chat, staff or customer, falls through untouched.
+   */
+  bot.on('message:location', async (ctx, next) => {
+    const chatId = BigInt(ctx.chat.id);
+    const capture = activeCapture(chatId);
+    if (!capture) return next();
+    if (!(await staffForChat(chatId))) return next();
+    const { latitude, longitude } = ctx.message.location;
+    const updated = updateCapture(chatId, { lat: latitude, lon: longitude, stage: 'parts' });
+    await ctx.reply('📍 Lokatsiya olindi.', { reply_markup: captureKeyboard(updated ?? capture) });
+  });
+
   bot.on('message:text', async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
 
     // A live collection swallows text: this is the customer's name, or the
     // material itself.
     //
-    // TWO exemptions, both found by the audit. The entry labels, so pressing
-    // «🧮 Hisoblatish» or «🤖 AI rastamojka» mid-collection reaches the
-    // restart question below instead of being filed as material; and the day
-    // screen, because «📋 Bugun» is on the same keyboard the seller is
-    // looking at and answering it with silence reads as a broken bot.
+    // The exemptions are `escapesIntake`, a NAMED predicate rather than two
+    // inline conditions: the entry labels, so pressing «🧮 Hisoblatish» or
+    // «🤖 AI rastamojka» mid-collection reaches the restart question instead
+    // of being filed as material, plus every other button on the keyboard the
+    // seller is looking at — answering one of those with silence reads as a
+    // broken bot. A new button joins the predicate, in one edit, or it is
+    // eaten by this branch.
     const intake = activeIntake(chatId);
-    const isEntryLabel = CALC_ENTRY_LABELS.includes(ctx.message.text);
-    const isDayScreen = ctx.message.text === BUGUN || ctx.message.text === '/bugun';
-    if (intake && !isEntryLabel && !isDayScreen) {
+    if (intake && !escapesIntake(ctx.message.text)) {
       if (intake.stage === 'question') {
         await applyLineAnswer(ctx, chatId, intake, ctx.message.text);
         return;
@@ -365,6 +412,7 @@ export function registerStaffBot(bot: Bot): void {
 
     if (ctx.message.text === HISOBLATISH || ctx.message.text === '/hisoblatish') {
       if (!(await mayCollect(chatId))) return next();
+      if (await refuseWhileCapturing(ctx, chatId)) return;
       await ctx.reply('Nimani hisoblatamiz?', { reply_markup: sectionKeyboard() });
       return;
     }
@@ -372,6 +420,7 @@ export function registerStaffBot(bot: Bot): void {
     // The owner's own door: rastamojka, and the machine answers in this chat.
     if (ctx.message.text === AI_RASTAMOJKA || ctx.message.text === '/ai') {
       if (!(await mayCollect(chatId))) return next();
+      if (await refuseWhileCapturing(ctx, chatId)) return;
       await handleCalcCallback(ctx as unknown as CalcReplyCtx, chatId, 'ai');
       return;
     }
@@ -383,6 +432,32 @@ export function registerStaffBot(bot: Bot): void {
     // a «Bajarildi» answer is awaited serves the cabinet and leaves the
     // capture armed instead of eating the button as the result.
     if (isCabinetText(ctx.message.text)) return next();
+
+    // Zametkalar, in the ONE slot that works.
+    //
+    // Not earlier: a cabinet label must still reach the cabinet, which is the
+    // regression round 100's 13A exists for. Not later: `takeTaskPending`
+    // below DELETES ON READ, so a note press while a «Bajarildi» answer is
+    // awaited would both be swallowed as the task's result and destroy the
+    // capture — and further down still, an unrecognised label reaches the paid
+    // model and costs a question out of the daily cap.
+    if (ctx.message.text === ZAMETKALAR || ctx.message.text === '/zametka') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await showNotesList(ctx, chatId, staff.id, 1);
+      return;
+    }
+
+    // A note being written from the phone swallows what follows — its name
+    // first, then everything else — and it sits in the same slot for the same
+    // reasons.
+    const capture = activeCapture(chatId);
+    if (capture) {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await captureText(ctx, chatId, capture, ctx.message.text);
+      return;
+    }
 
     // Step 2 of «Bajarildi»: this text IS the result.
     const pendingTask = takeTaskPending(chatId);
@@ -438,6 +513,11 @@ export function registerStaffBot(bot: Bot): void {
       await ctx.reply(answer);
       return;
     }
+    // «ushani soraganda berishi kerak» — his own word. Somebody typing the
+    // note's name gets the note, for one indexed query, instead of falling
+    // into the paid model, which cannot see this table and would answer
+    // «topilmadi» having spent one of the day's forty questions.
+    if (await answerFromNotes(ctx, chatId, staff.id, text)) return;
     if (!aiConfigured()) {
       // No key = exactly the day before the AI shipped.
       await ctx.reply(
@@ -693,14 +773,23 @@ async function readInvoice(
   };
 }
 
-async function saveIntakeFile(
-  ctx: {
-    message: { photo?: { file_id: string }[]; document?: { file_name?: string; mime_type?: string } };
-    getFile: () => Promise<{ file_path?: string }>;
-  },
-  noteId: string,
-  uploadedBy: string,
-): Promise<{ isPhoto: boolean; body: Buffer } | null> {
+type BotFileCtx = {
+  message: { photo?: { file_id: string }[]; document?: { file_name?: string; mime_type?: string } };
+  getFile: () => Promise<{ file_path?: string }>;
+};
+
+/**
+ * A file the bot was sent, stored.
+ *
+ * One home for the whole crossing (#513): the deadline, the empty-body
+ * refusal, the photo-vs-document naming and the inline thumbnail. Two callers
+ * now — a «Hisoblatish» collection and a zametka being written from the phone
+ * — and they differ only in which entity the bytes are pre-bound to.
+ */
+async function saveBotFile(
+  ctx: BotFileCtx,
+  target: { entityType: string; entityId: string; uploadedBy: string; namePrefix: string },
+): Promise<{ isPhoto: boolean; body: Buffer; attachmentId: string } | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return null;
   const file = await ctx.getFile();
@@ -721,19 +810,32 @@ async function saveIntakeFile(
   const { generateThumbnails } = await import('../jobs/thumbnails');
   const { id } = await saveAttachment(
     {
-      entityType: 'crm_activity',
-      entityId: noteId,
+      entityType: target.entityType,
+      entityId: target.entityId,
       fileName: isPhoto
-        ? `hisoblatish_${Date.now()}.jpg`
+        ? `${target.namePrefix}_${Date.now()}.jpg`
         : (ctx.message.document?.file_name ?? `fayl_${Date.now()}`),
       contentType: isPhoto ? 'image/jpeg' : (ctx.message.document?.mime_type ?? 'application/octet-stream'),
       body,
-      uploadedBy,
+      uploadedBy: target.uploadedBy,
     },
     { thumbnails: 'skip' },
   );
   await generateThumbnails(id).catch(() => {});
-  return { isPhoto, body };
+  return { isPhoto, body, attachmentId: id };
+}
+
+async function saveIntakeFile(
+  ctx: BotFileCtx,
+  noteId: string,
+  uploadedBy: string,
+): Promise<{ isPhoto: boolean; body: Buffer } | null> {
+  return saveBotFile(ctx, {
+    entityType: 'crm_activity',
+    entityId: noteId,
+    uploadedBy,
+    namePrefix: 'hisoblatish',
+  });
 }
 
 /**
@@ -977,4 +1079,421 @@ export function entryKeyboard() {
       ],
     ],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Zametkalar — the library the office re-sends from (owner, 2026-09-05:
+// «har doim ishlatadgan rasim file text locationlarni tanlaganda bot qayta
+// jonatb berishi kerak»).
+//
+// Everything DECIDED lives elsewhere: what a note is visible to whom is
+// `notes/service.ts`, what one tap sends is the pure `notes/plan.ts`, and the
+// delivery is `note-send.ts`. What is here is the conversation.
+// ---------------------------------------------------------------------------
+
+/** How many notes fit on one page of buttons before the message is a scroll. */
+const NOTES_PER_PAGE = 12;
+
+type NoteReplyCtx = {
+  reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
+};
+
+/**
+ * One collector at a time. The calc intake wins because it is minutes of a
+ * seller's forwarding; a note capture is refused IN WORDS rather than
+ * discarded, which is the rule the section buttons already learned.
+ */
+async function refuseWhileCapturing(ctx: NoteReplyCtx, chatId: bigint): Promise<boolean> {
+  if (!activeCapture(chatId)) return false;
+  await ctx.reply(
+    'Hozir yangi zametka yozilyapti. Avval uni saqlang yoki bekor qiling.',
+    { reply_markup: captureKeyboard(activeCapture(chatId)!) },
+  );
+  return true;
+}
+
+function notesKeyboard(
+  rows: { id: string; title: string; shared: boolean }[],
+  page: number,
+  pages: number,
+) {
+  const keyboard = rows.map((row) => [
+    {
+      // 🏢 in front of the company's, because a seller may have written their
+      // own note with the same name — the two scopes are policed separately
+      // on purpose, and this is what tells them apart at a glance.
+      text: buttonLabel(`${row.shared ? '🏢 ' : ''}${row.title}`, 'Zametka'),
+      callback_data: `n:${row.id}`,
+    },
+  ]);
+  const nav: { text: string; callback_data: string }[] = [];
+  if (page > 1) nav.push({ text: '⬅️', callback_data: `n:p${page - 1}` });
+  if (page < pages) nav.push({ text: '➡️', callback_data: `n:p${page + 1}` });
+  if (nav.length) keyboard.push(nav);
+  keyboard.push([{ text: '➕ Yangi zametka', callback_data: 'n:new' }]);
+  return { inline_keyboard: keyboard };
+}
+
+async function notesPage(staffId: string, page: number) {
+  const { listNotes } = await import('../notes/service');
+  const all = await listNotes(staffId);
+  const pages = Math.max(1, Math.ceil(all.length / NOTES_PER_PAGE));
+  const safe = Math.min(Math.max(1, page), pages);
+  return {
+    all,
+    pages,
+    page: safe,
+    rows: all.slice((safe - 1) * NOTES_PER_PAGE, safe * NOTES_PER_PAGE),
+  };
+}
+
+async function showNotesList(
+  ctx: NoteReplyCtx,
+  chatId: bigint,
+  staffId: string,
+  page: number,
+): Promise<void> {
+  void chatId;
+  const { all, rows, pages, page: safe } = await notesPage(staffId, page);
+  if (all.length === 0) {
+    await ctx.reply(
+      '📌 Hozircha zametka yo‘q.\n«➕ Yangi zametka» ni bosing yoki saytdagi «Zametkalar» bo‘limida qo‘shing.',
+      { reply_markup: { inline_keyboard: [[{ text: '➕ Yangi zametka', callback_data: 'n:new' }]] } },
+    );
+    return;
+  }
+  const header =
+    pages > 1
+      ? `📌 Zametkalar (${safe}/${pages}) — bosing, bot qayta yuboradi:`
+      : '📌 Zametkalar — bosing, bot qayta yuboradi:';
+  await ctx.reply(header, { reply_markup: notesKeyboard(rows, safe, pages) });
+}
+
+/**
+ * Every `n:` press answers, on every path.
+ *
+ * An inline keyboard is permanent chat history: a button tapped a week later
+ * can name a note that has been deleted or has moved out of this person's
+ * sight, and «nothing happens» is the silence rounds 89 and 97 were spent
+ * removing.
+ */
+async function handleNoteCallback(
+  ctx: {
+    answerCallbackQuery: (arg?: { text?: string }) => Promise<unknown>;
+    reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
+    api: import('grammy').Api;
+  },
+  chatId: bigint,
+  step: NoteStep,
+  noteId?: string,
+  page?: number,
+): Promise<void> {
+  const staff = await staffForChat(chatId);
+  if (!staff) {
+    await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+    return;
+  }
+
+  if (step === 'page') {
+    await ctx.answerCallbackQuery();
+    await showNotesList(ctx, chatId, staff.id, page ?? 1);
+    return;
+  }
+
+  if (step === 'new') {
+    await ctx.answerCallbackQuery();
+    if (activeIntake(chatId)) {
+      await ctx.reply(
+        'Hozir hisoblatish davom etyapti. Avval uni tugating yoki bekor qiling.',
+      );
+      return;
+    }
+    if (activeCapture(chatId)) {
+      await ctx.reply('Yangi zametka allaqachon yozilyapti — nomini yuboring.');
+      return;
+    }
+    const { v4: uuidv4 } = await import('uuid');
+    startCapture(chatId, uuidv4());
+    await ctx.reply('Zametkaga nom bering (masalan: «Xitoy sklad manzili»):');
+    return;
+  }
+
+  if (step === 'cancel') {
+    await ctx.answerCallbackQuery();
+    endCapture(chatId);
+    await ctx.reply('Bekor qilindi.');
+    return;
+  }
+
+  if (step === 'share') {
+    await ctx.answerCallbackQuery();
+    const capture = activeCapture(chatId);
+    if (!capture) {
+      await ctx.reply('Yozilayotgan zametka yo‘q.');
+      return;
+    }
+    const actor = await botActorFor(chatId);
+    if (!actor || !canShareFromBot(actor.permissions)) {
+      await ctx.reply('Umumiy zametka qo‘shish huquqi sizda yo‘q.');
+      return;
+    }
+    const updated = updateCapture(chatId, { shared: !capture.shared });
+    await ctx.reply(
+      updated?.shared ? '🏢 Hammaga ko‘rinadi.' : '👤 Faqat sizda ko‘rinadi.',
+      { reply_markup: captureKeyboard(updated ?? capture) },
+    );
+    return;
+  }
+
+  if (step === 'save') {
+    await ctx.answerCallbackQuery();
+    await saveCapturedNote(ctx, chatId, staff.id);
+    return;
+  }
+
+  // send
+  if (!noteId) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+  // Answered BEFORE anything slow: the callback's own progress bar is what the
+  // person is looking at, and it costs no message in the chat — so it leaves
+  // no second artefact beside the note they are about to forward.
+  await ctx.answerCallbackQuery({ text: '📤 Yuborilmoqda…' });
+  void deliverNote(ctx, chatId, noteId, staff.id);
+}
+
+async function deliverNote(
+  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown>; api: import('grammy').Api },
+  chatId: bigint,
+  noteId: string,
+  staffId: string,
+): Promise<void> {
+  // NOT awaited by the caller, and that is the whole point: grammy's poller is
+  // sequential, so several megabytes of upload inside the handler would hold
+  // every customer's cabinet tap with it (#706).
+  try {
+    const outcome = await sendNote(ctx.api, chatId, noteId, staffId);
+    if (outcome.status === 'not_found') {
+      await ctx.reply('Bu zametka o‘chirilgan yoki sizga ochiq emas.').catch(() => {});
+      return;
+    }
+    if (outcome.status === 'empty') {
+      await ctx.reply('Bu zametkada yuboriladigan narsa yo‘q.').catch(() => {});
+      return;
+    }
+    if (outcome.status === 'busy') {
+      await ctx.reply('Yuborilmoqda — biroz kuting.').catch(() => {});
+      return;
+    }
+    if (outcome.status === 'partial') {
+      // Telegram has no transaction: what already arrived stays in the chat.
+      // So the sentence NAMES the split, or a person forwards half a note
+      // believing the apology meant nothing was sent.
+      await ctx
+        .reply(
+          `⚠️ ${outcome.sent} ta qism yuborildi, ${outcome.failed} tasi yuborilmadi. Zametkani qaytadan bosing.`,
+        )
+        .catch(() => {});
+      return;
+    }
+    if (outcome.messages > 1) {
+      await ctx
+        .reply(`⬆️ ${outcome.messages} ta xabar — hammasini belgilab, mijozga yuboring.`)
+        .catch(() => {});
+    }
+  } catch (err) {
+    logger.error({ err, noteId }, 'note send failed');
+    await ctx.reply('Yuborib bo‘lmadi. Qaytadan urinib ko‘ring.').catch(() => {});
+  }
+}
+
+function captureKeyboard(state: CaptureState) {
+  const rows: { text: string; callback_data: string }[][] = [];
+  if (state.stage === 'parts') {
+    rows.push([{ text: '✅ Saqlash', callback_data: 'n:save' }]);
+    rows.push([
+      {
+        text: state.shared ? '🏢 Hammaga: ha' : '🏢 Hammaga: yo‘q',
+        callback_data: 'n:share',
+      },
+    ]);
+  }
+  rows.push([{ text: '✖️ Bekor qilish', callback_data: 'n:cancel' }]);
+  return { inline_keyboard: rows };
+}
+
+async function captureText(
+  ctx: NoteReplyCtx,
+  chatId: bigint,
+  state: CaptureState,
+  text: string,
+): Promise<void> {
+  if (state.stage === 'title') {
+    const title = text.trim().slice(0, 64);
+    if (title === '') {
+      await ctx.reply('Nom bo‘sh bo‘lmasin. Zametkaga nom bering:');
+      return;
+    }
+    // Checked NOW, not after the photos are already in the object store: the
+    // name is asked first and the row is written last, so a taken name would
+    // otherwise surface as a refusal on «Saqlash» with the bytes already up.
+    const { listNotes } = await import('../notes/service');
+    const staff = await staffForChat(chatId);
+    if (staff) {
+      const taken = (await listNotes(staff.id)).some(
+        (row) => row.title.trim().toLowerCase() === title.toLowerCase(),
+      );
+      if (taken) {
+        await ctx.reply('Bu nom band. Boshqa nom bering:');
+        return;
+      }
+    }
+    const updated = updateCapture(chatId, { title, stage: 'parts' });
+    await ctx.reply(
+      `«${title}».\nEndi yuboring: matn, rasm, fayl yoki lokatsiya.\n` +
+        'Manzil varaqasini FAYL (📎) qilib yuborsangiz yozuvlari aniq qoladi — rasm qilib yuborilsa Telegram siqadi.\n' +
+        'Tugagach «✅ Saqlash» ni bosing.',
+      { reply_markup: captureKeyboard(updated ?? state) },
+    );
+    return;
+  }
+  const updated = updateCapture(chatId, { body: [...state.body, text.trim()], stage: 'parts' });
+  await ctx.reply('Qabul qilindi.', { reply_markup: captureKeyboard(updated ?? state) });
+}
+
+async function capturePart(
+  ctx: BotFileCtx & NoteReplyCtx,
+  chatId: bigint,
+  state: CaptureState,
+  uploadedBy: string,
+): Promise<void> {
+  if (state.stage === 'title') {
+    await ctx.reply('Avval nom bering.');
+    return;
+  }
+  const { MAX_NOTE_PARTS, NOTE_ENTITY_TYPE } = await import('../notes/service');
+  if (state.fileCount >= MAX_NOTE_PARTS) {
+    await ctx.reply(`Bitta zametkaga eng ko‘pi ${MAX_NOTE_PARTS} ta fayl sig‘adi.`);
+    return;
+  }
+  const saved = await saveBotFile(ctx, {
+    entityType: NOTE_ENTITY_TYPE,
+    entityId: state.noteId,
+    uploadedBy,
+    namePrefix: 'zametka',
+  }).catch((err: unknown) => {
+    logger.warn({ err }, 'note capture file save failed');
+    return null;
+  });
+  if (!saved) {
+    await ctx.reply('Faylni saqlab bo‘lmadi. Qaytadan yuboring.');
+    return;
+  }
+  const updated = updateCapture(chatId, { fileCount: state.fileCount + 1 });
+  await ctx.reply(`Qabul qilindi (${updated?.fileCount ?? state.fileCount + 1} ta fayl).`, {
+    reply_markup: captureKeyboard(updated ?? state),
+  });
+}
+
+async function saveCapturedNote(
+  ctx: NoteReplyCtx,
+  chatId: bigint,
+  staffId: string,
+): Promise<void> {
+  const state = activeCapture(chatId);
+  if (!state) {
+    await ctx.reply('Yozilayotgan zametka yo‘q.');
+    return;
+  }
+  if (state.stage === 'title') {
+    await ctx.reply('Avval nom bering.');
+    return;
+  }
+  if (captureIsEmpty(state)) {
+    await ctx.reply('Zametka bo‘sh. Matn, rasm, fayl yoki lokatsiya yuboring.');
+    return;
+  }
+  const { NoteError, saveNote } = await import('../notes/service');
+  const actor = await botActorFor(chatId);
+  try {
+    await saveNote(
+      {
+        id: state.noteId,
+        title: state.title,
+        body: state.body.join('\n\n'),
+        location: state.lat !== null && state.lon !== null ? `${state.lat}, ${state.lon}` : '',
+        placeTitle: '',
+        placeAddress: '',
+        shared: state.shared,
+        sortOrder: 100,
+      },
+      {
+        actorId: staffId,
+        canShare: Boolean(actor && canShareFromBot(actor.permissions)),
+      },
+    );
+  } catch (err) {
+    const word = err instanceof NoteError ? noteRefusals[err.code] : null;
+    await ctx.reply(word ?? 'Saqlab bo‘lmadi. Qaytadan urinib ko‘ring.');
+    if (!(err instanceof NoteError)) logger.error({ err }, 'note save from bot failed');
+    return;
+  }
+  endCapture(chatId);
+  await ctx.reply(
+    `✅ «${state.title}» saqlandi.${state.shared ? ' Hamma xodim ko‘radi.' : ''}\n` +
+      '📌 Zametkalar ro‘yxatidan bosib yuborishingiz mumkin.',
+  );
+}
+
+/** Literal map: a refusal must be a sentence, never a code (#163's discipline). */
+const noteRefusals: Record<string, string> = {
+  unauthenticated: 'Ulanmagan.',
+  validation: 'Ma’lumot to‘g‘ri emas.',
+  forbidden: 'Bunga huquqingiz yo‘q.',
+  not_found: 'Zametka topilmadi.',
+  note_empty: 'Zametka bo‘sh — matn, rasm, fayl yoki lokatsiya kerak.',
+  title_taken: 'Bu nom band.',
+  too_many_parts: 'Fayllar soni chegaradan oshdi.',
+  bad_location: 'Lokatsiyani o‘qib bo‘lmadi.',
+};
+
+function canShareFromBot(permissions: Set<string>): boolean {
+  // The same code the screen asks, reached without importing the whole
+  // service into the union of every bot type.
+  return permissions.has('admin.settings.manage');
+}
+
+/**
+ * A typed note name, answered for free.
+ *
+ * One hit sends it — the exact path the button takes. Several offer buttons.
+ * None leaves the caller's own behaviour untouched, so the model still gets
+ * everything this cannot answer.
+ */
+async function answerFromNotes(
+  ctx: {
+    reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
+    api: import('grammy').Api;
+  },
+  chatId: bigint,
+  staffId: string,
+  text: string,
+): Promise<boolean> {
+  const { notesByTitle } = await import('../notes/service');
+  const hits = await notesByTitle(staffId, text).catch(() => []);
+  if (hits.length === 0) return false;
+  if (hits.length === 1) {
+    await ctx.reply(`📌 ${hits[0]!.title}`);
+    void deliverNote(ctx, chatId, hits[0]!.id, staffId);
+    return true;
+  }
+  await ctx.reply('📌 Shu nomdagi zametkalar:', {
+    reply_markup: notesKeyboard(
+      hits.map((h) => ({ id: h.id, title: h.title, shared: h.shared })),
+      1,
+      1,
+    ),
+  });
+  return true;
 }

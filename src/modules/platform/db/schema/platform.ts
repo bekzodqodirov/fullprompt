@@ -826,6 +826,95 @@ export const replyTemplates = pgTable(
 );
 
 /**
+ * Zametkalar — the things the office sends the same customers over and over,
+ * kept once and re-sent from the staff bot with one tap (owner, 2026-09-05:
+ * «har doim ishlatadgan rasim file text locationlarni tanlaganda bot qayta
+ * jonatb berishi kerak … misol uchun skladlarimizni adreslarini»).
+ *
+ * `user_id` NULL = the COMPANY's, offered to everybody; otherwise it is that
+ * person's alone — `reply_templates`' column, and the same one-line read.
+ */
+export const staffNotes = pgTable(
+  'staff_notes',
+  {
+    id: id(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    /** Optional: a note that is only a photograph and a pin is a real note. */
+    body: text('body'),
+    lat: numeric('lat', { precision: 9, scale: 6 }),
+    lon: numeric('lon', { precision: 9, scale: 6 }),
+    placeTitle: text('place_title'),
+    placeAddress: text('place_address'),
+    sortOrder: integer('sort_order').notNull().default(100),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('staff_notes_geo_check', sql`(${t.lat} IS NULL) = (${t.lon} IS NULL)`),
+    // sendVenue takes title AND address, both required, and the pin is sent
+    // LAST — a half-filled venue would fail after every other part had
+    // already landed in the chat.
+    check(
+      'staff_notes_place_pair_check',
+      sql`(${t.placeTitle} IS NULL) = (${t.placeAddress} IS NULL)`,
+    ),
+    check('staff_notes_place_geo_check', sql`${t.lat} IS NOT NULL OR ${t.placeTitle} IS NULL`),
+    index('staff_notes_owner_idx').on(t.userId, t.sortOrder),
+  ],
+);
+
+/**
+ * One file used by one note.
+ *
+ * The bytes stay ordinary `attachments`, so the off-site object copy, the
+ * thumbnails and the delete path need no new machinery — but that table is
+ * shared by nine entity types and carries neither an order nor anything
+ * Telegram-shaped, so a note's own facts about its file live here.
+ */
+export const staffNoteParts = pgTable(
+  'staff_note_parts',
+  {
+    id: id(),
+    noteId: uuid('note_id')
+      .notNull()
+      .references(() => staffNotes.id, { onDelete: 'cascade' }),
+    attachmentId: uuid('attachment_id')
+      .notNull()
+      .references(() => attachments.id, { onDelete: 'cascade' }),
+    sortOrder: integer('sort_order').notNull().default(100),
+    /**
+     * Which Telegram method carries this file. A photograph shows in the
+     * chat; a document keeps every pixel. Never derived from `size_bytes` at
+     * send time — sendPhoto refuses on bytes, on width+height summed AND on
+     * the ratio, and `attachments` stores no dimensions.
+     */
+    sendAs: text('send_as').notNull().default('photo'),
+    /** Telegram's id for these exact bytes; a cache with a verified fallback. */
+    telegramFileId: text('telegram_file_id'),
+    /** Which method minted it — a file_id is typed by the method that made it. */
+    telegramSentAs: text('telegram_sent_as'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('staff_note_parts_send_as_check', sql`${t.sendAs} IN ('photo', 'document')`),
+    check(
+      'staff_note_parts_sent_as_check',
+      sql`${t.telegramSentAs} IS NULL OR ${t.telegramSentAs} IN ('photo', 'document')`,
+    ),
+    check(
+      'staff_note_parts_cache_pair_check',
+      sql`(${t.telegramFileId} IS NULL) = (${t.telegramSentAs} IS NULL)`,
+    ),
+    index('staff_note_parts_note_idx').on(t.noteId, t.sortOrder),
+    uniqueIndex('staff_note_parts_attachment_uniq').on(t.attachmentId),
+  ],
+);
+
+/**
  * One customer message per thing that happened, claimed before it is sent
  * (migration 0076, round 98).
  *

@@ -11,6 +11,7 @@ import {
   handovers,
   receiptLots,
   receipts,
+  staffNotes,
   tgMessages,
   tgOutbox,
 } from '../../platform/db/schema';
@@ -326,6 +327,27 @@ async function decide(
       return actor.permissions.has('finance.expenses')
         ? { allow: true, rule: 'expense-request-finance' }
         : { allow: false, rule: 'expense-request-no-permission' };
+    }
+    // A part of a zametka. The rule is the note's own visibility, restated
+    // here because a photo URL must widen exactly as far as the screen does
+    // and no further: the COMPANY's notes are offered to every staff member
+    // and forwarded to customers all day, a PERSONAL one is its author's
+    // alone. A not-yet-saved note has no row and only its uploader sees the
+    // file, which is the pre-binding window and the global rule above.
+    //
+    // Without this branch the type falls to `unmapped` — the ONE deny the
+    // wrapper does not stamp `enforce` (#369) — so the route would log
+    // «WOULD DENY» and SERVE the bytes to anyone with a login. Measured
+    // behaviour, not a worry.
+    case 'staff_note': {
+      const note = await db.query.staffNotes.findFirst({
+        where: eq(staffNotes.id, attachment.entityId),
+      });
+      if (!note) return { allow: false, rule: 'staff-note-unsaved' };
+      if (note.userId === null) return { allow: true, rule: 'staff-note-company' };
+      return note.userId === actor.id
+        ? { allow: true, rule: 'staff-note-own' }
+        : { allow: false, rule: 'staff-note-not-yours' };
     }
     // entityType was free-form before the upload allowlist, so production may
     // hold strings no code writes today — in log-only mode this branch IS the

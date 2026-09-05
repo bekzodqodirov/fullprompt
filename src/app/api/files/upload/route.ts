@@ -1,6 +1,10 @@
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireActor, AuthError } from '@/modules/platform/rbac/authorize';
+import { db } from '@/modules/platform/db/client';
+import { staffNotes } from '@/modules/platform/db/schema';
 import { FileValidationError, saveAttachment } from '@/modules/platform/files/service';
+import { NOTE_ENTITY_TYPE, canShareNotes } from '@/modules/platform/notes/service';
 
 /**
  * The only things anything in this app attaches a file to.
@@ -43,6 +47,11 @@ const ATTACHABLE = [
   // 'expense_request': the chek behind a rasxod xabari (round 107), pre-bound
   // to the id the fold mints before the request is saved.
   'expense_request',
+  // 'staff_note': a part of a zametka — the photo, the address sheet, the
+  // price list the office re-sends from the bot. Pre-bound to the id the form
+  // mints, like every other entry here, and the ONE type on this list that
+  // also gets a per-record check below.
+  'staff_note',
 ] as const;
 
 const metaSchema = z.object({
@@ -67,6 +76,28 @@ export async function POST(request: Request) {
   });
   if (!meta.success || !(file instanceof File)) {
     return Response.json({ error: 'validation' }, { status: 400 });
+  }
+
+  // The per-record half this route's own comment says it does not do.
+  //
+  // It is not done for the other ten types and that is not changed here; it is
+  // done for THIS one because a company note is a one-tap broadcast that
+  // colleagues forward to CUSTOMERS, and a note's id is not a secret — it
+  // rides in the bot's callback payload and in every href on the screen. So a
+  // colleague could otherwise push bytes into the note everybody sends out,
+  // read them back through `decide()`'s uploader short-circuit, and leave the
+  // note's owner unable to remove them.
+  if (meta.data.entityType === NOTE_ENTITY_TYPE) {
+    const note = await db.query.staffNotes.findFirst({
+      where: eq(staffNotes.id, meta.data.entityId),
+    });
+    // No note yet = the form is pre-binding its first upload against an id it
+    // has just minted. That is the house pattern (#180) and must keep working.
+    if (note) {
+      const mine =
+        note.userId === null ? canShareNotes(actor.permissions) : note.userId === actor.id;
+      if (!mine) return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
   }
 
   try {

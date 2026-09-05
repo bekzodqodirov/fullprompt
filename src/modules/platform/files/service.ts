@@ -189,6 +189,35 @@ export async function saveAttachment(
   return { id: row!.id };
 }
 
+/**
+ * Remove an attachment whose owner has ALREADY decided it may go.
+ *
+ * `deleteAttachment` below answers a different question — «may this person
+ * delete this file» — with a rule minted for receipt photographs (the uploader
+ * or `receipts.edit`). A note's parts are governed by the NOTE's ownership, so
+ * the notes service asks its own question and then calls this, which knows the
+ * one thing worth having in a single place: a row and three storage keys go
+ * together. No permission check, no audit: both belong to the caller that
+ * decided.
+ *
+ * Never inside a transaction — every call here is on the pool and two of them
+ * are network I/O to the object store (#714).
+ */
+export async function purgeAttachment(id: string): Promise<void> {
+  const attachment = await db.query.attachments.findFirst({ where: eq(attachments.id, id) });
+  if (!attachment) return;
+  await db.delete(attachments).where(eq(attachments.id, id));
+  const storage = getStorage();
+  for (const key of [attachment.storageKey, attachment.thumb200Key, attachment.thumb800Key]) {
+    if (!key) continue;
+    try {
+      await storage.delete(key);
+    } catch {
+      /* bytes may already be gone — the row removal is what matters */
+    }
+  }
+}
+
 export class AttachmentDeleteError extends Error {
   constructor(public readonly code: 'not_found' | 'forbidden' | 'in_use') {
     super(code);
