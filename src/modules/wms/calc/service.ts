@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
+  calcGroups,
   calcOffers,
   calcRequestItems,
   calcRequests,
@@ -636,6 +637,40 @@ export async function completeCalcForDeal(dealId: string, actorId: string): Prom
     orderBy: asc(calcRequests.requestedAt),
   });
   if (!open) return;
+  /**
+   * A WORKSPACE IS NOT CLOSED BY SOMEBODY ELSE'S SAVE (audit A14).
+   *
+   * Phase A's «the calculation was SAVED» ending is from the world where a
+   * calculation WAS the deal's goods table: the VED typed the lines, and
+   * saving them was the answer. VED 2.0 moved the work into a workspace of
+   * groups, rates, bazas and ✅s — and this hook still fired, so a SELLER
+   * saving «Позиции» on the card silently closed the VED's half-finished job
+   * with no price, no seal and no notification, and every later save by the
+   * VED was refused `already_closed` with no way back.
+   *
+   * A request the VED has touched has groups, or a moved rev clock, or both.
+   * Untouched ones keep the old ending, which is still right for the request
+   * that has no workspace at all.
+   */
+  if (open.rev > 0) {
+    logger.info(
+      { requestId: open.id, dealId },
+      '[calc] lines saved on a deal whose calculation is being worked — left open',
+    );
+    return;
+  }
+  const [group] = await db
+    .select({ id: calcGroups.id })
+    .from(calcGroups)
+    .where(eq(calcGroups.requestId, open.id))
+    .limit(1);
+  if (group) {
+    logger.info(
+      { requestId: open.id, dealId },
+      '[calc] lines saved on a deal whose calculation has groups — left open',
+    );
+    return;
+  }
   await endRequest(open.id, { via: 'lines', actorId });
 }
 

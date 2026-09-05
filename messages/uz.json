@@ -2158,7 +2158,12 @@
       "seal_instead": "Hisobni muhrlash mumkin — «Готово» bilan narx emas, «Muhrlash»ni bosing",
       "not_sealed": "Bu hisobda muhrlangan narx yo‘q — qayta hisoblaydigan narsa yo‘q",
       "recalc_open": "Qayta hisob allaqachon ochiq — avval uni tugating",
-      "recalc_superseded": "Bu versiya allaqachon almashtirilgan — eng yangisidan qayta hisoblang"
+      "recalc_superseded": "Bu versiya allaqachon almashtirilgan — eng yangisidan qayta hisoblang",
+      "superseded": "Bu hisob qayta hisoblangan — eng yangi versiyadan narx bering",
+      "quote_expired": "Narxning muddati o‘tgan — qayta hisoblatish kerak",
+      "fx_missing": "Shu kunga valyuta kursi yo‘q — avval kursni kiriting",
+      "category_not_found": "Xarajat turkumi tanlanmagan yoki o‘chirilgan — /upsale da tanlang",
+      "account_currency_mismatch": "Kassa valyutasi to‘lov valyutasiga mos emas"
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",

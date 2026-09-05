@@ -2158,7 +2158,12 @@
       "seal_instead": "该核算可以封存 — 请点“封存报价”，而不是带价格的“完成”",
       "not_sealed": "此计算没有已封存的价格——无可重算",
       "recalc_open": "重算已在进行中——请先完成",
-      "recalc_superseded": "此版本已被替换——请从最新版本重算"
+      "recalc_superseded": "此版本已被替换——请从最新版本重算",
+      "superseded": "该计算已被重新计算——请按最新版本报价",
+      "quote_expired": "报价已过期——需要重新计算",
+      "fx_missing": "当天没有汇率——请先录入汇率",
+      "category_not_found": "未选择或已停用支出类别——请在 /upsale 中选择",
+      "account_currency_mismatch": "钱箱币种与支付币种不一致"
     },
     "openCard": "卡片",
     "freight": "运费",

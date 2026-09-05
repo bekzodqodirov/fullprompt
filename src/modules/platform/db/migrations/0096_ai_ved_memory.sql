@@ -79,6 +79,16 @@ BEGIN
     WHERE supersedes_request_id IS NOT NULL;
 END $$;
 --> statement-breakpoint
+-- 5b. A ✅ pressed on the PHONE is its own fact (audit A18). The phone card
+--     shows no duty, no VAT and no ✨ chip, so «confirmed» there and
+--     «confirmed» beside the numbers are different degrees of looking, and
+--     phase E1 measures exactly that. The card now prints the rates too; the
+--     door still says which one it was.
+ALTER TABLE "calc_groups" DROP CONSTRAINT "calc_groups_confirm_via_check";
+--> statement-breakpoint
+ALTER TABLE "calc_groups" ADD CONSTRAINT "calc_groups_confirm_via_check"
+  CHECK ("confirm_via" IS NULL OR "confirm_via" IN ('single', 'bulk', 'phone'));
+--> statement-breakpoint
 -- 6. What the AI pass cost, per calculation. Deliberately NOT `ai_questions`:
 --    that table is the assistant's audit AND its atomic per-person daily cap
 --    (`user_id` NOT NULL), and this pass runs as NOBODY — a background job on

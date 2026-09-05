@@ -1147,7 +1147,20 @@ export async function pullBazasFromDictionary(
   return { filled: fills.length, skipped };
 }
 
-export async function confirmGroup(groupId: string, ctx: AuditContext) {
+export async function confirmGroup(
+  groupId: string,
+  ctx: AuditContext,
+  /**
+   * WHICH DOOR pressed it (audit A18).
+   *
+   * The phone card and the desktop row call the same function, and the record
+   * used to say 'single' for both — so a ✅ that was pressed beside the duty,
+   * the VAT and the ✨ chips and a ✅ pressed on a card that shows none of
+   * them read identically to phase E1. They are different facts about how
+   * carefully a rate was blessed, and E1 exists to measure exactly that.
+   */
+  via: 'single' | 'phone' = 'single',
+) {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
   // What stood on the screen at this moment, recorded now because it cannot
@@ -1164,7 +1177,7 @@ export async function confirmGroup(groupId: string, ctx: AuditContext) {
       .set({
         confirmedBy: ctx.actorId ?? null,
         confirmedAt: new Date(),
-        confirmVia: 'single',
+        confirmVia: via,
         confirmedWarnings: warnings.byGroup.get(groupId) ?? [],
       })
       // A re-press is a no-op, never a re-stamp: the first press's who/when/

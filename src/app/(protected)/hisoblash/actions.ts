@@ -400,8 +400,13 @@ export async function pullBazasAction(
   return state.ok ? { ...state, ...counts } : state;
 }
 
-export async function confirmGroupAction(id: string, groupId: string): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => confirmGroup(groupId, ctx), ws(id));
+export async function confirmGroupAction(
+  id: string,
+  groupId: string,
+  /** Which card the ✅ was pressed on — the phone's is its own record (A18). */
+  via: 'single' | 'phone' = 'single',
+): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => confirmGroup(groupId, ctx, via), ws(id));
 }
 
 export async function confirmAllAction(id: string): Promise<CalcFormState> {

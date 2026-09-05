@@ -31,6 +31,7 @@ import {
   type CalcFormState,
 } from '../actions';
 import { dutyText } from './duty-text';
+import { refusalWord } from './words';
 import { ImportBazaDialog, type PickerTarget } from './import-baza-dialog';
 
 /**
@@ -941,10 +942,25 @@ export function ItemsTable({
       {/* ---- phone: read-only, but a decision is still a decision ---- */}
       <div className="md:hidden space-y-2">
         <p className="text-2xs text-ink-500">{t('table.editOnDesktop')}</p>
+        {/* NAMED, not counted (audit A32). «⚠ Без группы: 1» told the VED a
+            number and left the product in a table the phone does not render,
+            so they could not tell the seller which line had no code without
+            walking to a computer. */}
         {workspace.ungrouped.length > 0 ? (
-          <p className="text-sm text-warn">
-            ⚠ {t('ungrouped')}: {workspace.ungrouped.length}
-          </p>
+          <div className="text-sm text-warn" data-testid="calc-phone-ungrouped">
+            <p>
+              ⚠ {t('ungrouped')}: {workspace.ungrouped.length}
+            </p>
+            <ul className="mt-0.5 space-y-0.5 text-2xs">
+              {workspace.ungrouped.map((item) => (
+                <li key={item.id}>
+                  {item.seq}. {item.label}
+                  {item.quantity != null ? ` · ${item.quantity} ${item.unit ?? ''}` : ''}
+                  {item.quantity == null && item.weightKg != null ? ` · ${item.weightKg} kg` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
         {workspace.groups.map((group) => (
           <div key={group.id} className="card !p-2 text-sm">
@@ -964,18 +980,47 @@ export function ItemsTable({
               ) : (
                 <button
                   type="button"
-                  className="chip chip-brand"
+                  // ≥44 px, like every other control a thumb has to hit — the
+                  // chip was 20 px tall (audit A9/A30).
+                  className="btn-secondary !min-h-11"
                   disabled={busy}
                   data-testid="calc-phone-confirm"
-                  onClick={() => act(() => confirmGroupAction(id, group.id))}
+                  onClick={() => act(() => confirmGroupAction(id, group.id, 'phone'))}
                 >
                   {t('confirm')}
                 </button>
               )}
               <span className="ml-auto font-mono tabular-nums">
-                {group.customs.ok ? `$${group.customs.customsUsd.toFixed(2)}` : `⚠`}
+                {group.customs.ok ? `$${group.customs.customsUsd.toFixed(2)}` : '⚠'}
               </span>
             </div>
+            {/* WHAT THE ✅ IS ABOUT (audit A18). The confirm records
+                `confirmed_warnings` — the duty, the VAT, the model's
+                confidence, «differs from the dictionary» — and the phone card
+                showed none of it, so a tick pressed here recorded «I saw the
+                rates» about a screen with no rates on it. Same words as the
+                desktop's BlockFooter, one muted line. */}
+            <p
+              className={`mt-1 text-2xs ${group.rateSource === 'typed' ? 'text-ink-700' : 'text-ink-500'}`}
+              data-testid="calc-phone-rates"
+            >
+              {group.dutyFree ? t('dutyFree') : dutyText(group)} ·{' '}
+              {group.vatFree ? t('vatFree') : `${t('vat')} ${group.vatPct ?? '—'}%`}
+              {group.aiProposed && group.confirmedAt === null
+                ? ` · ✨ ${group.aiConfidence ?? '—'}`
+                : ''}
+              {group.rateSource === 'dictionary' && group.dictionaryRates?.note
+                ? ` · ⚠ ${t('table.rateNoted')}`
+                : ''}
+            </p>
+            {/* And WHY it could not be priced, in the office's words rather
+                than a bare ⚠ (audit A31): «нет базы» is something the VED can
+                act on; a triangle is not. */}
+            {!group.customs.ok ? (
+              <p className="mt-0.5 text-2xs text-warn" data-testid="calc-phone-refusal">
+                ⚠ {refusalWord(t, group.customs.reason)}
+              </p>
+            ) : null}
             <ul className="mt-1 space-y-0.5 text-2xs text-ink-600">
               {group.items.map((item) => (
                 <li key={item.id}>

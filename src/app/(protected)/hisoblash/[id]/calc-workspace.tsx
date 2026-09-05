@@ -7,6 +7,7 @@ import { sectionParts } from '@/modules/wms/calc/pricing';
 import type { Workspace } from '@/modules/wms/calc/workspace';
 import type { ChainVersion } from '@/modules/wms/calc/chain';
 import { ChainStateChip } from '@/components/calc-chain-chip';
+import { refusalWord, type CalcT } from './words';
 import {
   deleteExtraAction,
   saveExtraAction,
@@ -713,11 +714,10 @@ async function recalcActionClient(id: string) {
 
 /* ---------------------------------------------------------------- words */
 
-type T = ReturnType<typeof useTranslations<'calc'>>;
+type T = CalcT;
 
-function refusal(t: T, reason: string): string {
-  return t.has(`refusals.${reason}`) ? t(`refusals.${reason}` as 'refusals.band_missing') : reason;
-}
+/** The words live in `words.ts` — the phone card needs the same ones (#513). */
+const refusal = refusalWord;
 
 function blockerText(t: T, b: Workspace['blockers'][number]): string {
   switch (b.kind) {

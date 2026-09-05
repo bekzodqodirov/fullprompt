@@ -2158,7 +2158,12 @@
       "seal_instead": "This calculation can be sealed — press “Seal”, not “Done” with a price",
       "not_sealed": "This calculation has no sealed price — nothing to recalculate",
       "recalc_open": "A recalculation is already open — finish it first",
-      "recalc_superseded": "This version was already replaced — recalculate from the newest one"
+      "recalc_superseded": "This version was already replaced — recalculate from the newest one",
+      "superseded": "This calculation was corrected — quote from the newest version",
+      "quote_expired": "The quote has expired — a recalculation is needed",
+      "fx_missing": "No FX rate for that day — enter the rate first",
+      "category_not_found": "The expense category is unset or inactive — pick it on /upsale",
+      "account_currency_mismatch": "The till’s currency does not match the payout currency"
     },
     "openCard": "Card",
     "freight": "Freight",

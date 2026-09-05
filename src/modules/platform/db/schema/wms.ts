@@ -2330,7 +2330,7 @@ export const calcGroups = pgTable(
   (t) => [
     check(
       'calc_groups_confirm_via_check',
-      sql`${t.confirmVia} IS NULL OR ${t.confirmVia} IN ('single', 'bulk')`,
+      sql`${t.confirmVia} IS NULL OR ${t.confirmVia} IN ('single', 'bulk', 'phone')`,
     ),
     // A ✅ must not outlive the numbers it was about. TWO writers clear it —
     // `unconfirm()` and the clear `setGroupRates` inlines — and this CHECK is
