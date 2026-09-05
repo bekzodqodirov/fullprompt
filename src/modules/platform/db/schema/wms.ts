@@ -2897,7 +2897,7 @@ export const customsImportRows = pgTable(
 export const aiCalcPasses = pgTable(
   'ai_calc_passes',
   {
-    id: uuid('id').primaryKey().$defaultFn(uuidv7),
+    id: id(),
     requestId: uuid('request_id')
       .notNull()
       .references(() => calcRequests.id, { onDelete: 'cascade' }),
