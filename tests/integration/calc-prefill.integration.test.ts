@@ -220,7 +220,11 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(item!.bazaSource).toBe('import');
     expect(Number(item!.bazaUsd)).toBe(Number(row.pricePerUnitUsd));
     expect(out.aiUsed).toBe(true);
-    expect(out.text).toContain('Tahminiy');
+    // The reply is the AI-VED's per-line breakdown now (sub-round C): the
+    // heading, the line's own figure and the caveat that travels with it.
+    expect(out.text).toContain('🤖 AI-VED · tahminiy rastamojka');
+    expect(out.text).toContain('📥');
+    expect(out.text).toContain('Rastamojka jami');
     expect(out.text).toContain('Rasmiy emas');
   });
 
@@ -477,7 +481,10 @@ describe('the machine carries a job as far as it honestly can', () => {
 
     expect(out.customsUsd, 'the pass must read it as «nothing priced»').toBeNull();
     expect(out.text).not.toContain('$0');
-    expect(out.text).toContain('Hozircha hisoblab bo‘lmadi');
+    expect(out.text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    // …and the row is NAMED rather than counted, so the seller can supply
+    // what is missing without opening the card.
+    expect(out.text).toContain('Kod topilmadi');
   });
 
   it('a model that fails costs a sentence, never the job', async () => {
@@ -494,6 +501,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     // answered its baza.
     const ws = await loadWorkspace(id);
     expect(ws!.groups).toHaveLength(1);
-    expect(out.text).toContain('Tahminiy');
+    expect(out.text).toContain('🤖 AI-VED · tahminiy rastamojka');
+    expect(out.text).toContain('Rastamojka jami');
   });
 });

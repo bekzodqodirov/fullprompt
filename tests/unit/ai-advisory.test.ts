@@ -128,9 +128,20 @@ describe('the AI VED hodimi picks a row, never a price', () => {
     // `baza_source` is `saveTable`'s to decide, and it decides 'import'
     // BECAUSE an `importRowId` was posted. A prefill that named the source
     // itself would be a second writer, and the only value it could invent
-    // is the one 0094 refuses.
-    expect(source).not.toContain('bazaSource');
-    expect(source).not.toContain('rateSource');
+    // is the one 0094 and 0096 refuse.
+    //
+    // The forbidden shape is the WRITE — a `bazaSource:` key in a posted
+    // object. Sub-round C reads `item.bazaSource` to choose the 🧠/📥 chip
+    // in the seller's reply, which states a provenance somebody else
+    // decided; the fence is narrowed to the assignment rather than widened
+    // to allow the file, so a real second writer still turns it red.
+    expect(source).not.toMatch(/\bbazaSource\s*:/);
+    expect(source).not.toMatch(/\brateSource\s*:/);
+    // …and it may not name a source VALUE at all: the only way to write one
+    // without the key above is a string that travels to a writer.
+    for (const invented of ["'import'", "'dictionary'", "'typed'", "'memory'", "'ai'"]) {
+      expect(source, `the prefill must not name the source ${invented}`).not.toContain(invented);
+    }
     // The row id is what makes the price the FILE's. Without it the number
     // posted here is stored as somebody's typing — measured, red-proven.
     // Anchored INSIDE the pick: 0096 added a second push in the memory pass,

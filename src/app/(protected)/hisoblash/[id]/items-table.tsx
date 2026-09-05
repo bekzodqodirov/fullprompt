@@ -30,7 +30,7 @@ import {
   setRatesAction,
   type CalcFormState,
 } from '../actions';
-import { dutyText } from './duty-text';
+import { dutyText } from '@/modules/wms/calc/duty-text';
 import { refusalWord } from './words';
 import { ImportBazaDialog, type PickerTarget } from './import-baza-dialog';
 

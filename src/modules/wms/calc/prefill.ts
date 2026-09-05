@@ -1,6 +1,14 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { calcGroups, calcRequestItems, calcRequests } from '../../platform/db/schema';
+import {
+  calcGroups,
+  calcRequestItems,
+  calcRequests,
+  clients,
+  deals,
+  leads,
+} from '../../platform/db/schema';
+import { cardLink } from '../../platform/notifications/links';
 import { aiConfigured } from '../../platform/ai/model';
 import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
@@ -9,9 +17,18 @@ import {
 } from '../customs/import-service';
 import { suggestImportBaza, unitsForRow, BASIS_FOR_UNIT } from '../customs/import-baza';
 import { sectionParts, type CalcSectionName } from './pricing';
-import { loadWorkspace, proposeGroups, saveTable, type TableItemEdit } from './workspace';
+import {
+  loadWorkspace,
+  proposeGroups,
+  saveTable,
+  type SealBlocker,
+  type TableItemEdit,
+  type Workspace,
+} from './workspace';
 import { itemNameNorm, sealedMemoryFor } from './memory';
-import { prefillReplyText } from './prefill-reply';
+import { aiVedReplyText, type AiVedLine } from './ai-reply';
+import { dutyText } from './duty-text';
+import { blockerText, prefillReplyText } from './prefill-reply';
 import { pickImportRows, type PickAnswer, type PickRequest } from './prefill-ai';
 
 /**
@@ -254,22 +271,52 @@ export async function aiPrefill(
   // not given yet (phase D's line).
   const freightUsd = freight && freight.ok ? freight.listUsd : null;
 
+  /**
+   * TWO shapes, one pass, and which one the seller reads is decided by the
+   * SECTION and nothing else.
+   *
+   * A customs job gets the per-line breakdown the owner asked for — that is
+   * the whole round. A yolkira job has no customs half at all, so the
+   * breakdown would be a heading over an empty list; it keeps the summary
+   * this pass has always sent, which says honestly that the road is the
+   * VED's to price.
+   */
+  // Who the answer is ABOUT — the card's own code, and the customer's, so a
+  // seller with three open jobs can tell which one this is. One query, and
+  // only on the shape that prints them.
+  const about = ws && ws.parts.customs ? await requestAbout(requestId) : null;
+  const text =
+    ws && ws.parts.customs
+      ? aiVedReplyText({
+          clientLabel: about?.clientCode ?? null,
+          cardLabel: about?.cardLabel ?? null,
+          lines: replyLines(ws),
+          ungrouped: ws.ungrouped.map((i) => i.label),
+          fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
+          totalUsd: customsUsd,
+          hasCertificate: ws.hasCertificate,
+          hasFreight: ws.parts.freight,
+          link: about?.link ?? null,
+          aiConfigured: configured,
+        })
+      : prefillReplyText({
+          customsUsd,
+          freightUsd,
+          hasFreight: ws?.parts.freight ?? false,
+          hasCustoms: ws?.parts.customs ?? parts.customs,
+          blockers: ws?.blockers ?? [],
+          codesStamped,
+          ratesPulled,
+          importFilled: importFilled + picked,
+          link: null,
+          aiConfigured: configured,
+          pickCapped,
+          pickRefused,
+          pickOvertaken,
+        });
+
   return {
-    text: prefillReplyText({
-      customsUsd,
-      freightUsd,
-      hasFreight: ws?.parts.freight ?? false,
-      hasCustoms: ws?.parts.customs ?? parts.customs,
-      blockers: ws?.blockers ?? [],
-      codesStamped,
-      ratesPulled,
-      importFilled: importFilled + picked,
-      link: null,
-      aiConfigured: configured,
-      pickCapped,
-      pickRefused,
-      pickOvertaken,
-    }),
+    text,
     customsUsd,
     freightUsd,
     codesStamped,
@@ -281,6 +328,100 @@ export async function aiPrefill(
     aiUsed,
   };
 }
+
+/**
+ * The card this calculation belongs to, for the reply's own heading.
+ *
+ * A deal is named by its CODE and a lead by its name — the same rule
+ * `requestLabel` follows one file over — and the client code beside it is
+ * what the office actually addresses cargo by (#581).
+ */
+async function requestAbout(
+  requestId: string,
+): Promise<{ clientCode: string | null; cardLabel: string | null; link: string | null } | null> {
+  const [row] = await db
+    .select({ entityType: calcRequests.entityType, entityId: calcRequests.entityId })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  if (!row) return null;
+  const link = cardLink(row.entityType === 'lead' ? 'lead' : 'deal', row.entityId) || null;
+  if (row.entityType === 'deal') {
+    const [deal] = await db
+      .select({ code: deals.code, clientCode: clients.clientCode })
+      .from(deals)
+      .leftJoin(clients, eq(clients.id, deals.clientId))
+      .where(eq(deals.id, row.entityId));
+    return { clientCode: deal?.clientCode ?? null, cardLabel: deal?.code ?? null, link };
+  }
+  const [lead] = await db
+    .select({ name: leads.name })
+    .from(leads)
+    .where(eq(leads.id, row.entityId));
+  return { clientCode: null, cardLabel: lead?.name ?? null, link };
+}
+
+/**
+ * The workspace's groups as the reply's lines.
+ *
+ * ONE LINE PER GROUP, never per item, and that is a property of the ENGINE
+ * rather than a layout choice: `customsFor` prices a GROUP, and splitting its
+ * figure across the members would be inventing an allocation — the same
+ * refusal `groupPerUnit` makes on the price history (#780). The group names
+ * its items instead, which is what the seller wrote anyway.
+ *
+ * The baza mark is the group's own answer only when its members AGREE about
+ * where the price came from: a group carrying one remembered baza and one the
+ * VED typed wears no mark at all, because a 🧠 over a mixed row would claim
+ * a provenance for a number that is half somebody's typing.
+ */
+function replyLines(ws: Workspace): AiVedLine[] {
+  return ws.groups.map((g) => {
+    const sources = [...new Set(g.items.map((i) => i.bazaSource))];
+    const bazaSource = sources.length === 1 ? sources[0]! : null;
+    const bazas = [...new Set(g.items.map((i) => `${i.bazaUsd}|${i.bazaBasis}`))];
+    const first = g.items[0];
+    // The shorthand «100 dona × $20/dona» is printed only where it is TRUE
+    // of the whole group; the figure beside it is exact either way.
+    const measureText =
+      bazas.length === 1 && first && first.bazaUsd !== null && first.bazaBasis !== null
+        ? `${measureOf(g)} × $${first.bazaUsd}/${first.bazaBasis === 'unit' ? 'dona' : first.bazaBasis}`
+        : null;
+    return {
+      label: g.items.map((i) => i.label).join(', ') || g.label,
+      code: g.tnvedCode,
+      measureText,
+      bazaSource,
+      dutyText: g.dutyFree ? 'yo‘q (lgota)' : dutyText(g),
+      addDutyPct: g.customs.ok ? g.customs.addDutyPct : 0,
+      excisePct: g.excisePct,
+      vatPct: g.vatFree ? 0 : g.vatPct,
+      customsUsd: g.customs.ok ? g.customs.customsUsd : null,
+      // Already words — `blockerText` owns the engine's whole vocabulary and
+      // a second map here would drift from it (#513).
+      refusal: g.customs.ok
+        ? null
+        : blockerText({
+            kind: 'customs',
+            groupLabel: g.label,
+            reason: g.customs.reason,
+            itemLabel: g.customs.itemLabel,
+          } as SealBlocker),
+    };
+  });
+}
+
+/** What the group is measured in, as the seller stated it. */
+function measureOf(g: Workspace['groups'][number]): string {
+  const qty = g.items.reduce((sum, i) => sum + (i.quantity ?? 0), 0);
+  if (qty > 0) return `${round3(qty)} dona`;
+  const kg = g.items.reduce((sum, i) => sum + (i.weightKg ?? 0), 0);
+  if (kg > 0) return `${round3(kg)} kg`;
+  const measure = g.items.reduce((sum, i) => sum + (i.measureQty ?? 0), 0);
+  const unit = g.items.find((i) => i.measureUnit)?.measureUnit;
+  return measure > 0 && unit ? `${round3(measure)} ${unit}` : '—';
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
 /**
  * Step 0: stamp the codes the company's own seals already know.
