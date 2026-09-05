@@ -65,7 +65,7 @@ qolardi; fayl yuklab olishning muddati yo'q edi (bitta osilgan ulanish butun
 botni ushlab turardi); invoys fayllari saqlanardi-yu, hech kim o'qimasdi.
 
 **Bazaga o'zgarish:** migratsiya **0096** — hisob-kitoblar sanog'i **97** ga
-yetishi kerak.
+yetishi kerak. Testlar: **2509 + 196** — yangi bazada, CI tartibida, yashil.
 
 **Siz qilishingiz kerak:** deploy qilgach, botda «🤖 AI rastamojka» tugmasi
 paydo bo'ladi. Xotira BO'SH boshlanadi — u faqat muhrlangan hisoblardan

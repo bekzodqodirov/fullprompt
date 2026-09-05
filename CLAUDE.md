@@ -1500,7 +1500,14 @@ the request and is the expensive one. `aiCalcBudgetLeft()` is a SOFT budget,
 stated as such (one worker, 200/day; an atomic claim would need a lock on the
 path that must never hold one). ONE `aiConfigured()` and one model id;
 `duty-text.ts` moved into the module (three readers, and the bot cannot
-import from `src/app`). 5 red proofs by string edit.
+import from `src/app`). 5 red proofs by string edit. **2509 unit/integration
++ 196 e2e** green on a fresh gsr_ci in CI's order, ledger 97. TWO findings
+came from MEASURING and neither from a test: the memory's GIN index was never
+read (919 ms per needle at 50 000 rows → 0.3 ms with the `%` operator), and
+`word_similarity` is asymmetric — «erkaklar kurtkasi» against «ayollar
+kurtkasi» scores 0.611 and men's jackets would have inherited women's price
+(#934, #936). A third came from the e2e suite: a SEAL is now configuration
+for any later spec about the same product (#935).
 
 **Latest migration: 0096** (`ai_ved_memory` — the sealed memory's provenance
 and name index, one correction per parent, the AI cost ledger; ledger must
