@@ -306,6 +306,7 @@ function NoteForm({
     <div className="space-y-2 rounded-lg bg-surface-sunken p-3" data-testid="note-form">
       <input
         className="input"
+        data-testid="note-title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder={t('fieldTitle')}
@@ -316,6 +317,7 @@ function NoteForm({
           source order, so the taller box is asked for with a HEIGHT (#419). */}
       <textarea
         className="input h-28 py-2"
+        data-testid="note-body"
         value={body}
         onChange={(e) => setBody(e.target.value)}
         placeholder={t('fieldBody')}
@@ -327,6 +329,7 @@ function NoteForm({
           refuse both. */}
       <input
         className="input"
+        data-testid="note-location"
         value={location}
         onChange={(e) => setLocation(e.target.value)}
         placeholder={t('fieldLocation')}
@@ -335,6 +338,7 @@ function NoteForm({
       />
       <input
         className="input"
+        data-testid="note-place-title"
         value={placeTitle}
         onChange={(e) => setPlaceTitle(e.target.value)}
         placeholder={t('fieldPlaceTitle')}
@@ -343,6 +347,7 @@ function NoteForm({
       />
       <input
         className="input"
+        data-testid="note-place-address"
         value={placeAddress}
         onChange={(e) => setPlaceAddress(e.target.value)}
         placeholder={t('fieldPlaceAddress')}

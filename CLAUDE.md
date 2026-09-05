@@ -1509,7 +1509,69 @@ kurtkasi» scores 0.611 and men's jackets would have inherited women's price
 (#934, #936). A third came from the e2e suite: a SEAL is now configuration
 for any later spec about the same product (#935).
 
-**Latest migration: 0096** (`ai_ved_memory` — the sealed memory's provenance
+**Round — zametkalar: the staff bot's note library (2026-09-05; DECISIONS
+#937-944; migration 0097 `staff_notes` — ledger must reach 98):** his own
+words, «telegram botga zametkalarni qoyamiz u yerdan har doim ishlatadgan
+rasim file text locationlarni tanlaganda bot qayta jonatb berishi kerak misol
+uchun skladlarimizni adreslarini kirgazb qoyamiz ushani soraganda berishi
+kerak», answers **1b / 2c / 3a / 4 / 5**. Eight parallel readers scouted every
+layer, then six adversarial lenses + three refuters judged the design BEFORE
+code — **76 findings, 71 survived, 5 blockers**, all absorbed. Ownership is
+`reply_templates`' column verbatim (`user_id` NULL = the company's) and
+`visibleNotes` is the ONE read both doors call; the parts are ordinary
+`attachments` rows so the off-site copy and the delete path need no new
+machinery, and `staff_note_parts` carries only what a note's USE of a file
+needs — the order, the send shape, and Telegram's id for those bytes. **The
+five blockers, each of them a silent failure:** a new attachment type with no
+`case` in `decide()` falls to `unmapped`, the one deny the wrapper does not
+enforce, so `/api/attachments/[id]` logs «WOULD DENY» and SERVES the bytes —
+now a DERIVED fence requires every allowlisted type to have a branch; a note's
+part routed through the shared delete route would let a packer destroy the
+company's warehouse image (`receipts.edit`, a receipt-era rule) while the
+person who may publish often could not — the notes service asks its own
+question and calls a new `purgeAttachment`, files first, note row LAST, no
+transaction anywhere near it (#714); the upload route's bare-login gate would
+let a colleague inject bytes into the note everybody forwards to CUSTOMERS —
+per-record for this one type, the other ten stated and left alone; three of
+the design's own inline buttons could not be parsed by its own regex, and an
+unparsed callback is answered by NOBODY (~15 s of spinning, no error anywhere)
+— a DERIVED fence now reads every `callback_data` the keyboards build and
+demands the parser accept it, and the fifth union member made TypeScript
+refuse the approval branch's unguarded fallthrough; and the send took no actor,
+so a week-old button could serve a note its presser may no longer see — it
+re-resolves from the chat and re-loads through the visibility predicate, and
+every path answers in words. **The integration test caught me writing the
+precedent's own bug**: `saveTemplate` recomputes the owner from the checkbox,
+so one absent-minded edit of the company address sheet would turn it into a
+personal note and twenty colleagues would lose it — a save now never changes
+the scope at all and moving a note is its own button with its own permission
+both ways. Also: `escapesIntake` is a NAMED predicate (a fence matching the old
+expression would have tested its own rewrite), the branch sits in the one slot
+that works (after the cabinet pass-through, before `takeTaskPending`, which
+DELETES ON READ), a typed note NAME is answered free from an indexed read
+before `aiConfigured()` is ever asked (his «soraganda»), the file-id cache is
+typed by the METHOD that minted it and a media group's ids are mapped back by
+the PLAN's index (the one path that could hand a customer the WRONG
+warehouse's address), a 429 is a wait and never a cache clear, and the whole
+send is `void`-dispatched off the sequential poller (#706). The screen is
+`/zametkalar` — NOT under `/admin/*`, which bounces the very people who need
+the address — on office menus with a `/profile` door for everyone else, so
+`nav-relevance`'s 8/11 warehouse counts are untouched. **8 red proofs, all by
+string edit. 2573 unit/integration + 200 e2e** green on a fresh gsr_ci in CI's
+order, ledger 98; measured at 360×800 and 1280×900, document width equal to the
+viewport at both, save button 65 px clear of the tab bar, and opened as
+skladchi / sotuvchi / buxgalter / VED — all four see the screen and none is
+offered the «🏢 Hammaga» box. STATED, not built: no categories, no sending
+straight to a customer, no supervision view of personal notes, nothing derived
+from the `warehouses` table (measured: all nine rows have `address`, `lat` and
+`lon` NULL, and that screen is admin-only), and the bot half is unprovable here
+— the first real tap is watched in the container's logs. **The library ships
+EMPTY**: on deploy morning 📌 answers «hozircha zametka yo'q» until he types the
+nine warehouse addresses.
+
+**Latest migration: 0097** (`staff_notes` — the note, its parts, their order,
+the send shape and Telegram's file-id cache; ledger must reach **98**).
+Before it: **0096** (`ai_ved_memory` — the sealed memory's provenance
 and name index, one correction per parent, the AI cost ledger; ledger must
 reach **97**). Before it: **0095** (`customs_import_heartbeat` — the parse's wall-clock
 beat and the sweep's partial index; ledger must reach **96**). Before it:

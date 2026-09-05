@@ -2806,7 +2806,7 @@
     "asPhoto": "Слать фото",
     "fieldTitle": "Название",
     "fieldBody": "Текст",
-    "fieldLocation": "Координаты или ссылка на карту",
+    "fieldLocation": "Координаты или ссылка",
     "fieldPlaceTitle": "Название места",
     "fieldPlaceAddress": "Адрес",
     "fieldOrder": "Порядок",

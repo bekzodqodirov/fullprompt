@@ -47,13 +47,16 @@ test('a note carries text, a pin and a file, and is written as one', async ({ pa
 
   await page.getByTestId('add-note').click();
   const form = page.getByTestId('note-form');
-  await form.getByLabel('Nomi').fill(TITLE);
-  await form.getByLabel('Matn').fill('Marking: GSR-777. Telefon: +86 000 000.');
+  // By testid, never by label: the screen renders in the READER's locale and
+  // ru is the default, so a locator naming an Uzbek word tests the bundle
+  // rather than the screen.
+  await form.getByTestId('note-title').fill(TITLE);
+  await form.getByTestId('note-body').fill('Marking: GSR-777. Telefon: +86 000 000.');
   // The pair a map app puts on the clipboard, in ONE box — two decimal-degree
   // inputs refuse exactly this.
-  await form.getByLabel('Koordinata yoki xarita havolasi').fill('29.306, 120.077');
-  await form.getByLabel('Joy nomi').fill('Yiwu ombori');
-  await form.getByLabel('Manzil').fill('Yiwu, Zhejiang');
+  await form.getByTestId('note-location').fill('29.306, 120.077');
+  await form.getByTestId('note-place-title').fill('Yiwu ombori');
+  await form.getByTestId('note-place-address').fill('Yiwu, Zhejiang');
   await form.getByTestId('note-file').setInputFiles({
     name: 'sklad.jpg',
     mimeType: 'image/jpeg',
@@ -85,7 +88,7 @@ test('an empty note is refused in words', async ({ page }) => {
   await page.goto('/zametkalar');
   await page.getByTestId('add-note').click();
   const form = page.getByTestId('note-form');
-  await form.getByLabel('Nomi').fill(`Bo'sh ${STAMP}`);
+  await form.getByTestId('note-title').fill(`Bo'sh ${STAMP}`);
   await page.getByTestId('save-note').click();
   await expect(page.getByTestId('note-error')).toBeVisible();
 });
