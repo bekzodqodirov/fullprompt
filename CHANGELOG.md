@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## Zametkalar — botdagi tayyor javoblar kutubxonasi — 2026-09-05
+
+**So'ralgan.** «Telegram botga zametkalarni qo'yamiz, u yerdan har doim
+ishlatadigan rasm, fayl, matn, locationlarni tanlaganda bot qayta jo'natib
+berishi kerak. Misol uchun skladlarimizning adreslarini kiritib qo'yamiz,
+o'shani so'raganda berishi kerak.» Javoblari: **1b** — admin umumiy zametka
+qo'yadi, har bir xodim yana o'ziniki qo'sha oladi; **2c** — saytdan ham,
+botning o'zidan ham; **3a** — bot faqat so'ragan xodimning chatiga yuboradi,
+mijozga xodim o'zi forward qiladi; **4** — bitta zametkada rasm, matn va
+lokatsiya birga turadi, bosganda hammasi ketadi; **5** — oddiy ro'yxat
+yetarli, bo'lim kerak emas.
+
+**Nima bo'ldi.**
+
+- **Botda «📌 Zametkalar» tugmasi.** Bosasiz — ro'yxat chiqadi. Zametkani
+  bosasiz — bot uni shu chatga qayta yuboradi: matn rasmning tagida
+  (izoh bo'lib), so'ng qolgan fayllar, oxirida lokatsiya. Bitta xabar bo'lsa
+  bitta bo'lib boradi — mijozga forward qilish shuning uchun oson.
+- **Nomini yozsangiz ham topadi.** «Xitoy sklad» deb yozsangiz bot o'sha
+  zametkani yuboradi; bir nechta bo'lsa tugma qilib chiqaradi. Bu bepul —
+  AI ga umuman bormaydi.
+- **Telefondan ham yozib qo'ysa bo'ladi**: «➕ Yangi zametka» → nom → rasm,
+  fayl, matn yoki lokatsiya tashlaysiz → «✅ Saqlash». Hisoblatish davom
+  etayotgan bo'lsa bot avval shuni aytadi va hech narsani yo'qotmaydi.
+- **Saytda «Zametkalar» bo'limi** (Ma'lumot bo'limida, skladchilar uchun
+  Profil orqali). Nom, matn, koordinata (xarita ilovasidan nusxa olgan
+  «41.31, 69.24» yoki havolani to'g'ridan-to'g'ri qo'ysangiz bo'ladi), joy
+  nomi va manzili, tartib, fayllar.
+- **Manzil o'zgarsa zametkani buzish shart emas**: har bir rasm/faylni
+  alohida o'chirib, yangisini qo'shasiz. Har biri uchun «rasm bo'lib ketsin /
+  fayl bo'lib ketsin» ham bor — manzil varaqasini fayl qilib yuborgan
+  ma'qul, chunki rasmni Telegram siqadi va yozuvlari o'qilmay qoladi.
+- **Umumiy va shaxsiy.** Umumiy zametkani faqat admin qo'yadi (huquq:
+  «Sozlamalar»); uni har bir xodim ko'radi va bir bosishda mijozga yubora
+  oladi — shu gap katakning yonida yozib qo'yilgan. Shaxsiy zametkani esa
+  hech kim ko'rmaydi, admin ham.
+- Umumiydan shaxsiyga ko'chirish **alohida tugma**: oddiy tahrir hech qachon
+  ro'yxatni o'zgartirmaydi, aks holda bitta tahrirdan keyin butun kompaniya
+  sklad manzilini yo'qotardi.
+
+**Nima qilinmadi va nega.** Bo'limlar (kategoriya) — o'zingiz «ro'yxat
+yetarli» dedingiz. Botdan mijozga to'g'ridan-to'g'ri yuborish — 3a bo'yicha
+yo'q. Skladlar jadvalidan avtomatik manzil olish — yo'q: jadvaldagi manzil
+bitta qator va uni faqat admin ko'radi, sizda esa manzil rasm ko'rinishida,
+xitoycha yozuv, telefon va marking bilan — bularning hammasi bitta zametkada
+turishi kerak.
+
+**Sizdan.** Deploydan keyin kutubxona **bo'sh** bo'ladi — bot «hozircha
+zametka yo'q» deydi. To'qqizta sklad manzilini bir marta kiritib qo'ysangiz
+bo'ldi. Migratsiya **0097**, deploydan keyin son **98** bo'lishi kerak.
+
 ## AI-VED — Telegramda tahminiy rastamojka — 2026-09-05
 
 **So'ralgan.** «Telegramda AI ning o'zi tahminiy hisoblab bersin rastamojka

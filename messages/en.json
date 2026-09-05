@@ -2791,5 +2791,40 @@
       "server_behind": "The server has not been updated yet — try after the deploy"
     },
     "lastBeat": "updated {time}"
+  },
+  "notes": {
+    "title": "Notes",
+    "hint": "The things you send customers over and over: the warehouse address, a price list, bank details. Save it once and the bot sends it with one tap.",
+    "noTelegram": "Your Telegram is not linked to the bot, so notes cannot be sent yet. Link it in your Profile.",
+    "add": "New note",
+    "none": "No notes yet.",
+    "shared": "Company note — every staff member sees it",
+    "sharedHint": "Company: every staff member sees this and can forward it to a customer with one tap.",
+    "confirmDelete": "Delete the note and its files?",
+    "confirmDeletePart": "Remove this file from the note?",
+    "asFile": "Send as file",
+    "asPhoto": "Send as photo",
+    "fieldTitle": "Name",
+    "fieldBody": "Text",
+    "fieldLocation": "Coordinates or a map link",
+    "fieldPlaceTitle": "Place name",
+    "fieldPlaceAddress": "Address",
+    "fieldOrder": "Order",
+    "fieldFiles": "Files and photos",
+    "filesHint": "Up to {max} files. An address sheet is better sent as a file — Telegram compresses a photo.",
+    "uploading": "Uploading…",
+    "errors": {
+      "forbidden": "Not allowed.",
+      "validation": "Check the fields.",
+      "notFound": "Note not found.",
+      "empty": "The note is empty — add text, a file or coordinates.",
+      "titleTaken": "A note with that name already exists.",
+      "tooManyParts": "Too many files.",
+      "badLocation": "Could not read the coordinates.",
+      "upload": "The file did not upload. Try again."
+    },
+    "makeShared": "🏢 Make it the company's",
+    "makePrivate": "👤 Make it mine only",
+    "confirmUnshare": "Take the note out of the company list? Everyone else will stop seeing it."
   }
 }

@@ -2791,5 +2791,40 @@
       "server_behind": "Server hali yangilanmagan — yangilangach urinib ko'ring"
     },
     "lastBeat": "yangilandi {time}"
+  },
+  "notes": {
+    "title": "Zametkalar",
+    "hint": "Mijozlarga doim yuboradigan narsalar: sklad manzili, narxlar, rekvizitlar. Bir marta saqlang — bot bir bosishda yuboradi.",
+    "noTelegram": "Telegramingiz botga ulanmagan, shuning uchun hozircha zametka yubora olmaysiz. Profil bo‘limidan ulang.",
+    "add": "Yangi zametka",
+    "none": "Hozircha zametka yo‘q.",
+    "shared": "Umumiy zametka — uni barcha xodimlar ko‘radi",
+    "sharedHint": "Hammaga: buni har bir xodim ko‘radi va bir bosishda mijozga yubora oladi.",
+    "confirmDelete": "Zametka fayllari bilan o‘chirilsinmi?",
+    "confirmDeletePart": "Bu fayl zametkadan o‘chirilsinmi?",
+    "asFile": "Fayl bo‘lib ketsin",
+    "asPhoto": "Rasm bo‘lib ketsin",
+    "fieldTitle": "Nomi",
+    "fieldBody": "Matn",
+    "fieldLocation": "Koordinata yoki xarita havolasi",
+    "fieldPlaceTitle": "Joy nomi",
+    "fieldPlaceAddress": "Manzil",
+    "fieldOrder": "Tartib",
+    "fieldFiles": "Fayl va rasmlar",
+    "filesHint": "Eng ko‘pi {max} ta fayl. Manzil varaqasini fayl qilib yuborgan ma’qul — rasmni Telegram siqadi.",
+    "uploading": "Yuklanmoqda…",
+    "errors": {
+      "forbidden": "Huquqingiz yetmaydi.",
+      "validation": "Maydonlarni tekshiring.",
+      "notFound": "Zametka topilmadi.",
+      "empty": "Zametka bo‘sh — matn, fayl yoki koordinata qo‘shing.",
+      "titleTaken": "Bu nomdagi zametka bor.",
+      "tooManyParts": "Fayllar soni ko‘p.",
+      "badLocation": "Koordinatani o‘qib bo‘lmadi.",
+      "upload": "Fayl yuklanmadi. Qaytadan urinib ko‘ring."
+    },
+    "makeShared": "🏢 Hammaga",
+    "makePrivate": "👤 Faqat menda",
+    "confirmUnshare": "Zametka umumiy ro‘yxatdan olinsinmi? Boshqalar uni ko‘rmay qoladi."
   }
 }

@@ -110,6 +110,49 @@ export async function linkStaffChat(
 }
 
 // ---------------------------------------------------------------------------
+// The staff keyboard's labels, and the one predicate that says which of them
+// must ESCAPE a live «Hisoblatish» collection.
+// ---------------------------------------------------------------------------
+
+export const BUGUN = '📋 Bugun';
+export const HISOBLATISH = '🧮 Hisoblatish';
+/**
+ * The owner's own words, 2026-09-05: «telegramda AI ning o'zi tahminiy
+ * hisoblab bersin rastamojka qancha bo'lishini».
+ */
+export const AI_RASTAMOJKA = '🤖 AI rastamojka';
+/**
+ * «zametkalarni qoyamiz … tanlaganda bot qayta jonatb berishi kerak» — the
+ * library of things the office sends the same customers over and over.
+ */
+export const ZAMETKALAR = '📌 Zametkalar';
+
+/** The two labels that open a collection — one list, so every reader agrees. */
+export const CALC_ENTRY_LABELS = [HISOBLATISH, AI_RASTAMOJKA];
+
+/**
+ * Text that must NOT be filed as collection material.
+ *
+ * A live collection swallows every message, which is what makes forwarding a
+ * packing list work — and it swallowed the buttons on the keyboard the seller
+ * is looking at, so pressing one mid-collection answered with silence. The
+ * exemption used to be two inline conditions in the handler; it is a NAMED
+ * predicate here so the next button joins it in one edit instead of being
+ * forgotten, and so a test can assert each escape by BEHAVIOUR rather than by
+ * matching an expression that has to be rewritten every time.
+ */
+export function escapesIntake(text: string): boolean {
+  const t = text.trim();
+  return (
+    CALC_ENTRY_LABELS.includes(t) ||
+    t === BUGUN ||
+    t === '/bugun' ||
+    t === ZAMETKALAR ||
+    t === '/zametka'
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Callback data — kept tiny (Telegram caps callback_data at 64 bytes).
 // ---------------------------------------------------------------------------
 
@@ -149,7 +192,18 @@ export type BotCallback =
   | { kind: 'task_done'; taskId: string }
   | { kind: 'approval'; approvalId: string; verdict: 'approved' | 'refused' }
   | { kind: 'entry'; who: 'staff' | 'client' }
-  | { kind: 'calc'; step: CalcStep };
+  | { kind: 'calc'; step: CalcStep }
+  | { kind: 'note'; step: NoteStep; noteId?: string; page?: number };
+
+/**
+ * The zametka buttons. `send` is a note id; the rest are the capture's own
+ * controls and the list's paging. Every one of them has to be parseable HERE:
+ * `parseCallback` is the one door, an unrecognised value falls through to the
+ * cabinet's two regexes, matches neither, and then NOBODY calls
+ * `answerCallbackQuery` — the button simply spins on the phone for fifteen
+ * seconds with no error anywhere.
+ */
+export type NoteStep = 'send' | 'new' | 'save' | 'cancel' | 'share' | 'page';
 
 /**
  * `go_*` are the RESTART confirmations: a section pressed while a collection
@@ -183,6 +237,12 @@ export function parseCallback(data: string): BotCallback | null {
   if (calc && (CALC_STEPS as readonly string[]).includes(calc[1]!)) {
     return { kind: 'calc', step: calc[1] as (typeof CALC_STEPS)[number] };
   }
+  const note = /^n:(new|save|cancel|share)$/.exec(data);
+  if (note) return { kind: 'note', step: note[1] as NoteStep };
+  const notePage = /^n:p(\d{1,3})$/.exec(data);
+  if (notePage) return { kind: 'note', step: 'page', page: Number(notePage[1]) };
+  const noteSend = /^n:([0-9a-f-]{36})$/.exec(data);
+  if (noteSend) return { kind: 'note', step: 'send', noteId: noteSend[1]! };
   const task = /^t:([0-9a-f-]{36})$/.exec(data);
   if (task) return { kind: 'task_done', taskId: task[1]! };
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);

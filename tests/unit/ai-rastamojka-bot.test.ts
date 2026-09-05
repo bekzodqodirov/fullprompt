@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { escapesIntake, parseCallback } from '@/modules/platform/telegram/staff-bot';
 
 /**
  * The «🤖 AI rastamojka» door (the owner's own words, 2026-09-05).
@@ -55,8 +55,16 @@ describe('the rules a shell cannot exercise', () => {
   it('the entry labels and the day screen escape the material capture', () => {
     // Both were swallowed: pressing the button again filed its own label as
     // material, and «📋 Bugun» answered with silence mid-collection.
-    expect(handlers).toContain('CALC_ENTRY_LABELS.includes(ctx.message.text)');
-    expect(handlers).toContain('if (intake && !isEntryLabel && !isDayScreen)');
+    //
+    // Anchored on the PREDICATE's name, not on the expression: the zametkalar
+    // round added a third escape, and a fence matching an expression that has
+    // to be rewritten every time a button is added tells you nothing about
+    // whether the escapes survived. The escapes themselves are asserted
+    // behaviourally in tests/unit/zametka-bot.test.ts.
+    expect(handlers).toContain('if (intake && !escapesIntake(ctx.message.text))');
+    expect(escapesIntake('🧮 Hisoblatish')).toBe(true);
+    expect(escapesIntake('🤖 AI rastamojka')).toBe(true);
+    expect(escapesIntake('📋 Bugun')).toBe(true);
   });
 
   it('the certificate answer reaches the request, through the landing', () => {
