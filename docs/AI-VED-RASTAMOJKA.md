@@ -79,6 +79,12 @@ From 2026-09-05 (this handoff):
     FIRST source for the next similar name. Priority: **sealed memory →
     dictionaries (`calc_bazas`, `calc_rates`) → quarterly import → model**.
 11. **Reply goes to the chat AND the card lenta** (answer 2a).
+12. **Auto-assign pool excludes admins** (his «1.1»): `nextVedAssignee` skips
+    `super_admin`/`admin` ROLE holders; they keep the manual «Olaman» door.
+13. **The seller sees the floor** (his «2.1»): the deal card keeps printing the
+    sealed floor to the seller, and /upsale's 'own' rows show it again — one
+    rule on both screens (supersedes #830's removal). The VED must still never
+    see the CLIENT price (law 4's other direction is unchanged — A19's fix).
 
 Laws that bind every line of this work (from `docs/VED.md` and the code):
 
@@ -607,7 +613,7 @@ round** — they make the AI's number wrong or the bot's word false:
 | A2 | Group ⚙ «Сбор $» is ADDED on top of the automatic BHM fee — the fee twice | `customsFor` + `requestCustomsFor` | remove the per-group fee box from the ⚙ form and the lugatlar rates form (column stays, never written by a screen); the request-level `fee_override_usd` is the ONE fee door (give it its input, A29) |
 | A25 (3/3) | No API key → ✨ says «ИИ не ответил» | `proposeGroups` | rethrow `ai_not_configured`; hide the button when `!aiConfigured()` |
 | A38 | Bot's «navbatga tushmadi» names no cause | `landIntake` swallows the `CalcError` | return the code; the bot prints the sentence |
-| A13 | The owner and every admin are in the auto-assign pool — a fresh bot request lands on the OWNER first | `nextVedAssignee` (`usersWithPermission('ved.docs')` includes admins) | exclude `super_admin`/`admin` ROLES from the auto-assign pool (they keep «Olaman»); **owner decision** — ask: 1) shunday; 2) per-person «hisoblash navbatida» flag on /admin/taqsimot |
+| A13 | The owner and every admin are in the auto-assign pool — a fresh bot request lands on the OWNER first | `nextVedAssignee` (`usersWithPermission('ved.docs')` includes admins) | **OWNER ANSWERED 2026-09-05: option 1.** Exclude `super_admin`/`admin` ROLES from the auto-assign pool; they keep «Olaman». |
 | A20 | The seal never closes the VED's task — it stays red on /bugun | `sealCalc` | close the task inside the seal path («Muhrlandi»); one-off script for existing rows |
 | A14 | Saving the deal's «Позиции» silently CLOSES the VED's open workspace (`completed_via='lines'`) | `deals/service.ts saveLines → completeCalcForDeal` | retire the 'lines' ending for requests that have a workspace (groups/items/rev moved); keep it readable |
 | A3 | Готово «1 000» → closed with NO amount, «💵 NaN USD» in Telegram | `finishCalcRequest` | `mustBeNumber` before `endRequest`; never write `answer_currency` without an amount; parse spaces/NBSP |
@@ -626,9 +632,11 @@ irreversible seal), A34 (a VED can seal a colleague's taken job), A27
 («✅ Bajarildi» on the task closes a SEALABLE job with no price), A28 (expired
 seal: nobody but an admin can start the correction), A36 (the fee's UZS rate
 and BHM value are not in the snapshot), A9 (band override offered on a
-rastamojka-only seal), A44/A19 (who reads the floor and the client price on the
-card — **owner decision**, ask: 1) sotuvchi tannarxni ko‘rsin (hozirgidek);
-2) ko‘rmasin), A33 (the VED's deal board is always empty — **owner decision**,
+rastamojka-only seal), A44/A19 — **OWNER ANSWERED 2026-09-05: option 1, sotuvchi tannarxni ko‘radi.**
+Keep the floor visible to the seller on the card AND restore it on /upsale's
+'own' rows (one rule, two screens; update #830's record accordingly). A19's
+other half stands: the VED still must not read the CLIENT price — fix that
+direction only, A33 (the VED's deal board is always empty — **owner decision**,
 three options in the map), A26 («База из справочника» shows no counts), A39
 (the sealed breakdown is shown nowhere — the AI reply's per-line block is the
 same shape; render it under `SealedPanel` from the snapshot).
@@ -777,8 +785,8 @@ Qonunlar §1 da; ularni buzma. Har bir tuzatish uchun avval qizil test, keyin
 tuzatish; to'liq pipeline (§7) yashil bo'lmaguncha push qilma. Migratsiya
 0096 — avval `git fetch origin main` va jurnalning oxirini o'qi. Egaga
 faqat o'zbekcha, biznes tilida yoz; qaror kerak bo'lsa raqamlangan variantlar
-ber. §5 dagi ikkita savolni (A13, A44/A19) egadan so'ra, javobigacha
-§4 ni qurishda davom et.
+ber. §5 dagi ikkita savolga ega javob bergan (1-band ro'yxatidagi 12-13
+qarorlar) — qayta so'rama, shularga mos qur.
 ```
 
 > **English (for the model):** Read `CLAUDE.md`, then this file in full, then
