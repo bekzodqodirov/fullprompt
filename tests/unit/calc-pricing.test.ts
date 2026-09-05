@@ -5,6 +5,7 @@ import {
   customsFor,
   densityOf,
   freightFor,
+  requestCustomsFor,
   sectionParts,
   totalsFor,
   type FreightBand,
@@ -47,7 +48,7 @@ const group = (over: Partial<PricedGroup> = {}): PricedGroup => ({
   tnvedCode: '8528520000',
   dutyPct: 10,
   vatPct: 12,
-  feeUsd: 0,
+  feeUsd: null,
   dutyMode: 'advalor',
   dutySpecific: null,
   dutyUnit: null,
@@ -384,5 +385,55 @@ describe('law 8: no minimum charge — very small cargo gets only a warning', ()
       expect(r.band.perKg).toBe(true);
       expect(r.small).toBe(true);
     }
+  });
+});
+
+/**
+ * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO» (audit A17).
+ *
+ * `[].every(ok)` is vacuously true, so a request whose customs half carries
+ * no groups yet came back `customsUsd: 0` — and `loadWorkspace` then called
+ * `totalsFor` with it, so the screen printed «Растаможка $0.00» and a bold
+ * «Итоговая цена» equal to the freight alone. Law 6's own $0, on the section
+ * the whole AI-VED round is about: a bot-landed rastamojka job carries no
+ * groups until somebody (or the machine) codes it.
+ *
+ * The caller only asks this function when the SECTION has a customs half, so
+ * an empty list here means «not priced yet», never «free».
+ */
+describe('a customs half with no groups is not priced', () => {
+  it('answers null — not zero — and names no fee', () => {
+    const empty = requestCustomsFor({
+      customs: [],
+      bhmUzs: 412_000,
+      fxUzsPerUsd: 12_500,
+      feeOverrideUsd: null,
+    });
+    expect(empty.customsUsd).toBeNull();
+    expect(empty.valueUsd).toBeNull();
+    expect(empty.fee).toBeNull();
+  });
+
+  it('still prices the moment one group answers', () => {
+    const one = requestCustomsFor({
+      customs: [
+        {
+          ok: true,
+          valueUsd: 1000,
+          dutyUsd: 100,
+          addDutyUsd: 0,
+          addDutyPct: 0,
+          exciseUsd: 0,
+          vatUsd: 132,
+          feeUsd: 0,
+          customsUsd: 232,
+        },
+      ],
+      bhmUzs: 412_000,
+      fxUzsPerUsd: 12_500,
+      feeOverrideUsd: null,
+    });
+    expect(one.customsUsd).not.toBeNull();
+    expect(one.valueUsd).toBe(1000);
   });
 });

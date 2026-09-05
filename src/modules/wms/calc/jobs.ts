@@ -122,6 +122,15 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
           type: 'CalcPrefilled',
           text: out.text,
         });
+        // His answer 2a: the SAME text onto the card's lenta. Two audiences
+        // for one answer — the seller reads it on a phone and forgets it, the
+        // VED opens the card tomorrow and needs to see what the machine told
+        // the customer's seller. Behind a setting because it is a matter of
+        // taste how noisy a lenta should be, and best-effort because a note
+        // that failed to write must not cost the message that was delivered.
+        await writeReplyToLenta(requestId, out.text).catch((err) =>
+          logger.warn({ err, requestId }, '[calc-prefill] lenta note not written'),
+        );
         logger.info(
           { requestId, codesStamped: out.codesStamped, picked: out.picked, aiUsed: out.aiUsed },
           '[calc-prefill] pass finished',
@@ -131,4 +140,36 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
       }
     }
   });
+}
+
+/**
+ * The AI-VED's own answer, on the card where the job lives (his answer 2a).
+ *
+ * Written as a SYSTEM note — `crm_activities.created_by` has been nullable
+ * since 0066 and the lenta renders a null-author note — because nobody typed
+ * it. Under the machine's own idiom (`actorId: null`, `system: true`), the
+ * same one the stale-lead sweep and the advert intake use.
+ */
+async function writeReplyToLenta(requestId: string, text: string): Promise<void> {
+  const { getSetting } = await import('@/modules/platform/settings/service');
+  if (!(await getSetting('ai_calc_reply_lenta'))) return;
+  const { db } = await import('@/modules/platform/db/client');
+  const { calcRequests } = await import('@/modules/platform/db/schema');
+  const { eq } = await import('drizzle-orm');
+  const [row] = await db
+    .select({ entityType: calcRequests.entityType, entityId: calcRequests.entityId })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  if (!row) return;
+  const { addActivity } = await import('@/modules/wms/crm/service');
+  await addActivity(
+    {
+      entityType: row.entityType as 'deal' | 'lead',
+      entityId: row.entityId,
+      kind: 'note',
+      note: text,
+    },
+    { actorId: null },
+    { system: true },
+  );
 }

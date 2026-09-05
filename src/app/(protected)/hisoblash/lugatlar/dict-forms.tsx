@@ -139,7 +139,6 @@ export function RatesForm() {
   const [code, setCode] = useState('');
   const [duty, setDuty] = useState('');
   const [vat, setVat] = useState('12');
-  const [fee, setFee] = useState('0');
   const [date, setDate] = useState(today());
 
   return (
@@ -172,15 +171,10 @@ export function RatesForm() {
             onChange={(e) => setVat(e.target.value)}
           />
         </label>
-        <label className="text-2xs">
-          <span className="label">{t('fee')} $</span>
-          <input
-            className="input input-sm !w-24 font-mono tabular-nums"
-            value={fee}
-            onChange={(e) => setFee(e.target.value)}
-          />
-        </label>
-        <label className="text-2xs">
+        {/* The «Сбор $» box is GONE (audit A2): the declaration fee is one per
+              DECLARATION, computed from the BHM scale, and a per-code number
+              here was charged a second time inside every group. */}
+                  <label className="text-2xs">
           <span className="label">{t('effectiveDate')}</span>
           <input
             type="date"
@@ -201,7 +195,6 @@ export function RatesForm() {
                 tnvedCode: code,
                 dutyPct: Number(duty.replace(',', '.')),
                 vatPct: Number(vat.replace(',', '.')),
-                feeUsd: Number(fee.replace(',', '.')),
                 effectiveDate: date,
               });
               setError(result.error ?? null);

@@ -1,5 +1,76 @@
 # CHANGELOG
 
+## AI-VED — Telegramda tahminiy rastamojka — 2026-09-05
+
+**So'ralgan.** «Telegramda AI ning o'zi tahminiy hisoblab bersin rastamojka
+qancha bo'lishini. AI-VED faqat rastamojka hisoblaydi. Sotuv menejerlar
+ma'lumotni yuboradi, AI-VED rastamojka to'lovini hisoblab beradi.» Javoblari:
+**(1)** ha — AI darhol chatga yozadi VA so'rov VED navbatiga tushadi;
+«shu muhrlangan datani AI xotirasiga qo'yish kerak»; **(2a)** javob
+sotuvchining chatiga HAM, karta lentasiga HAM.
+
+**Nima bo'ldi.**
+
+**1. Botda yangi tugma — «🤖 AI rastamojka».** Sotuvchi tovarlarni yuboradi
+(matn, rasm, invoys PDF/Excel), bot yetishmagan qatorlar haqida savol beradi
+(«3-qator «Sumka» — nechta dona yoki necha kg?», eng ko'pi 3 ta savol),
+sertifikat bor-yo'qligini bir bosishda o'zgartirsa bo'ladi, va tasdiqlangach
+bir daqiqa ichida hisobni CHATGA yozadi. So'rov shu bilan birga VED navbatiga
+ham tushadi — **rasmiy narx faqat VED muhridan keyin**.
+
+**2. Javob qator-qator.** Har bir qator uchun: nomi · TNVED kodi · soni yoki
+kg × bazasi · boj (qonun shakli bilan: «20% / min 3 $/juft») · sertifikat
+yo'q bo'lsa qo'shimcha boj · QQS → shu qatorning summasi. Pastda deklaratsiya
+yig'imi (BHM), keyin jami — nechta qator hisoblangani va nechtasi
+hisoblanmagani bilan. **Hech qachon «$0» yozmaydi**: hisoblab bo'lmagan qator
+SABABINI yozadi. **Yo'lkira YO'Q** — uni VED hodimi beradi, javobda shunday
+deyiladi. Oxirida «⚠️ Rasmiy emas — VED xodimi tasdiqlaydi».
+
+**3. Muhrlangan hisob — AI xotirasi (sizning so'rovingiz).** VED hodimi bir
+marta tasdiqlab MUHRLAGAN kod va baza — keyingi safar shu nomdagi tovar
+kelganda birinchi bo'lib shu javob olinadi. Tartib: **muhrlangan xotira →
+lug'atlar → choraklik bojxona fayli → model**. Har bir qator qayerdan
+kelganini ko'rsatadi: 🧠 muhrdan · 📥 bojxona faylidan · 🤖 model tanlagani
+(nega tanlagani ham yoziladi — bu ilgari hech qayerda ko'rinmasdi). Alohida
+jadval yaratilmadi: xotira — muhrning O'ZI, chunki nusxa asl bilan
+kelishmay qolishi mumkin va qaysi biri to'g'ri ekanini hech narsa ayta
+olmaydi.
+
+**3b. Xotira qanchalik «o'xshash» nomga javob berishi.** O'lchandi:
+«ayollar kurtkasi» ↔ «ayollar kurtka» 0.78 (bir xil tovar — oladi),
+«ayollar kurtkasi» ↔ «erkaklar kurtkasi» 0.46 (boshqa tovar — olmaydi),
+«sumka teri» ↔ «sumka charm» 0.35 (olmaydi). Chegara **0.6**, u
+`Boshqaruv → Sozlamalar` da. Diqqat qilib turadigan yagona holat:
+«monitor 24» ↔ «monitor 27» 0.69 — ya'ni bitta tovarning ikki o'lchami bir
+xil deb qaralishi mumkin; VED qatorda 🧠 belgisini ko'radi va narxni o'zi
+qayta yozishi mumkin, kerak bo'lsa chegarani ko'taramiz.
+
+**4. Javob kartaga ham yoziladi** (sizning 2a javobingiz): sotuvchi telefonda
+o'qiydi va unutadi, VED esa ertaga kartani ochib mashina nima deganini
+ko'rishi kerak.
+
+**5. Uch eshikning uchalasi ham AI ga beradi.** Ilgari faqat bot berardi —
+sotuvchi kartadagi shakldan yoki suhbatdan yuborsa, mashina o'sha yukni
+umuman ko'rmasdi. Endi qaysi tugmani bosishingiz farq qilmaydi.
+
+**6. Kunlik xarajat chegarasi.** Har bir model chaqiruvi yozib boriladi
+(kuniga 200 ta, `Boshqaruv → Sozlamalar` da o'zgartiriladi). Limit tugasa
+mashina to'xtamaydi: muhrlangan xotira va bojxona faylidan hisoblaydi va
+shuni ochiq yozadi.
+
+**Yo'l-yo'lakay tuzatilgani:** yig'ish paytida bo'lim tugmasi bosilsa
+yuborilgan hamma narsa jimgina o'chib ketardi (endi so'raydi); «📋 Bugun»
+yig'ish paytida ishlamasdi; mijoz yozilmasdan oldin yuborilgan rasm javobsiz
+qolardi; fayl yuklab olishning muddati yo'q edi (bitta osilgan ulanish butun
+botni ushlab turardi); invoys fayllari saqlanardi-yu, hech kim o'qimasdi.
+
+**Bazaga o'zgarish:** migratsiya **0096** — hisob-kitoblar sanog'i **97** ga
+yetishi kerak. Testlar: **2509 + 196** — yangi bazada, CI tartibida, yashil.
+
+**Siz qilishingiz kerak:** deploy qilgach, botda «🤖 AI rastamojka» tugmasi
+paydo bo'ladi. Xotira BO'SH boshlanadi — u faqat muhrlangan hisoblardan
+to'ladi, ya'ni VED hodimi har muhr bosganda AI biroz aqlliroq bo'lib boradi.
+
 ## Muhrlangan hisob-kitoblar tarixi va V2 — 2026-09-04
 
 **So'ralgan.** «Hisoblangan narsalarning tarixini hohlayabman — VED hodimi

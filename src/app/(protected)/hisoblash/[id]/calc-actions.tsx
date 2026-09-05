@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import {
   finishCalcAction,
   releaseCalcAction,
@@ -199,7 +200,9 @@ export function CalcActions({
                   await finishCalcAction(
                     id,
                     {
-                      amount: !canSeal && amount.trim() ? Number(amount.replace(',', '.')) : null,
+                      // «1 000» and «1,000» are both a thousand here — and
+                      // anything unreadable is null, never NaN (audit A3).
+                      amount: !canSeal ? parseTypedMoney(amount) : null,
                       currency,
                       note,
                     },

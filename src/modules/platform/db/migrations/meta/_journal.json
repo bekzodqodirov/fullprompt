@@ -673,6 +673,13 @@
       "when": 1785190000074,
       "tag": "0095_customs_import_heartbeat",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1785190000075,
+      "tag": "0096_ai_ved_memory",
+      "breakpoints": true
     }
   ]
 }

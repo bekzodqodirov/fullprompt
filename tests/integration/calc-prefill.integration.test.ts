@@ -220,7 +220,11 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(item!.bazaSource).toBe('import');
     expect(Number(item!.bazaUsd)).toBe(Number(row.pricePerUnitUsd));
     expect(out.aiUsed).toBe(true);
-    expect(out.text).toContain('Tahminiy');
+    // The reply is the AI-VED's per-line breakdown now (sub-round C): the
+    // heading, the line's own figure and the caveat that travels with it.
+    expect(out.text).toContain('🤖 AI-VED · tahminiy rastamojka');
+    expect(out.text).toContain('📥');
+    expect(out.text).toContain('Rastamojka jami');
     expect(out.text).toContain('Rasmiy emas');
   });
 
@@ -453,27 +457,34 @@ describe('the machine carries a job as far as it honestly can', () => {
   });
 
   it('a customs job with NOTHING classified refuses in words, never «~$0.00»', async () => {
-    // The section gate is not enough. `requestCustomsFor([])` runs
-    // `[].every(ok)` — vacuously TRUE — and answers `customsUsd: 0`, so a
-    // rastamojka job that produced no groups read as «priced, at zero».
-    // That is the ORDINARY way this ships: no key, or a model that refused,
-    // and nothing the TNVED memory already knew.
+    // The section gate is not enough on its own: a rastamojka job that
+    // produced no groups must not read as «priced, at zero». That is the
+    // ORDINARY way this ships — no key, or a model that refused, and nothing
+    // the TNVED memory already knew.
     //
     // The round's two existing `$0` assertions do NOT cover it: their
     // fixtures have a group that EXISTS and REFUSES, so `allOk` is false and
     // `customsUsd` is already null. The uncovered branch is the EMPTY list —
     // a test passing on the neighbouring case is not evidence about this one
     // (#166).
+    //
+    // The engine used to answer 0 here, because `[].every(ok)` is vacuously
+    // TRUE; audit A17 moved the refusal INTO `requestCustomsFor`, so the
+    // screen, the seal gate and this reply now refuse in one place. This
+    // assertion follows the engine — the premise it states is the point.
     const id = await open([{ name: `nomsiz mol ${Date.now()}` }]);
     const out = await aiPrefill(id, ctx(), { configured: false });
 
     const ws = await loadWorkspace(id);
     expect(ws!.groups, 'the premise: nothing is classified').toHaveLength(0);
-    expect(ws!.customsUsd, 'and the engine still spells that as 0').toBe(0);
+    expect(ws!.customsUsd, 'and the engine refuses rather than printing 0').toBeNull();
 
     expect(out.customsUsd, 'the pass must read it as «nothing priced»').toBeNull();
     expect(out.text).not.toContain('$0');
-    expect(out.text).toContain('Hozircha hisoblab bo‘lmadi');
+    expect(out.text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    // …and the row is NAMED rather than counted, so the seller can supply
+    // what is missing without opening the card.
+    expect(out.text).toContain('Kod topilmadi');
   });
 
   it('a model that fails costs a sentence, never the job', async () => {
@@ -490,6 +501,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     // answered its baza.
     const ws = await loadWorkspace(id);
     expect(ws!.groups).toHaveLength(1);
-    expect(out.text).toContain('Tahminiy');
+    expect(out.text).toContain('🤖 AI-VED · tahminiy rastamojka');
+    expect(out.text).toContain('Rastamojka jami');
   });
 });

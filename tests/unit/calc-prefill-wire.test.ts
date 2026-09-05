@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
@@ -22,12 +23,55 @@ const read = (path: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
+describe('every door hands the job to the machine', () => {
+  // DERIVED, not a list of today's three (#789's idiom): every file that
+  // opens a calculation outside the service itself must also queue the pass,
+  // so a FOURTH door turns this red the day it is added. Until this round
+  // only the bot queued, and the seller's card form and the thread door
+  // landed identical requests and got nothing — which of three buttons a
+  // seller happened to press decided whether the machine looked at their
+  // cargo at all.
+  const doors = execSync(
+    "grep -rl 'openCalcRequest(' src --include=*.ts --include=*.tsx || true",
+    { encoding: 'utf8' },
+  )
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((f) => !f.endsWith('calc/service.ts'));
+
+  it('finds the doors at all', () => {
+    // A grep that matches nothing passes every assertion below it (#494).
+    expect(doors.length).toBeGreaterThanOrEqual(3);
+  });
+
+  for (const door of doors) {
+    it(`${door} queues the prefill`, () => {
+      const text = read(door);
+      expect(text).toMatch(/queueCalcPrefill\(|queuePrefill\(/);
+    });
+  }
+
+  it('the sender refuses a freight-only job rather than paying for one', () => {
+    // The owner's decision 8: the AI prices rastamojka and nothing else, so a
+    // yolkira request would spend a model call to answer «I do not price
+    // this».
+    const sender = read('src/modules/wms/calc/prefill-queue.ts');
+    expect(sender).toContain('if (!parts.customs) return false;');
+  });
+});
+
 describe('the prefill survives a deploy', () => {
-  it('the bot SENDS and never runs it in its own process', () => {
+  it('the doors SEND and never run it in their own process', () => {
+    // The send moved into `prefill-queue.ts` when the card form and the
+    // thread door joined the bot (one sender, three doors) — so the
+    // assertions follow it there. The bot's own file must still not run the
+    // pass: an `aiPrefill` call inside a grammy handler is the unowned
+    // promise in the container the owner restarts on every deploy.
+    const sender = read('src/modules/wms/calc/prefill-queue.ts');
+    expect(sender).toContain('JOB_CALC_PREFILL');
+    expect(sender).toContain('enqueue(JOB_CALC_PREFILL');
     const bot = read('src/modules/platform/telegram/staff-handlers.ts');
-    expect(bot).toContain('JOB_CALC_PREFILL');
-    expect(bot).toContain('enqueue(JOB_CALC_PREFILL');
-    // The unowned promise, by every spelling it had.
     expect(bot).not.toContain('void prefillAndReply');
     expect(bot).not.toContain('aiPrefill');
   });
@@ -60,9 +104,9 @@ describe('the prefill survives a deploy', () => {
     // …and the revision it compares against travels ON the job, stamped by
     // the sender: read at drain time it would always agree with itself.
     expect(jobs).toContain('job.data.rev');
-    const bot = read('src/modules/platform/telegram/staff-handlers.ts');
-    expect(bot).toContain('prefillTicket(');
-    expect(bot).toMatch(/enqueue\(JOB_CALC_PREFILL, \{[^}]*rev[^}]*\}\)/);
+    const sender = read('src/modules/wms/calc/prefill-queue.ts');
+    expect(sender).toContain('prefillTicket(');
+    expect(sender).toMatch(/enqueue\(JOB_CALC_PREFILL, \{[^}]*rev[^}]*\}\)/);
   });
 
   it('the machine writes as NOBODY, and the seller is only told', () => {

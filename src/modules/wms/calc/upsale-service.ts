@@ -44,6 +44,10 @@ export interface UpsaleRow {
   clientPriceUsd: number;
   floorUsd: number;
   upsaleUsd: number;
+  /** What a payout would MOVE today: the promise's difference less whatever
+   * this job has already paid (audit A1). Equal to `upsaleUsd` on the
+   * ordinary once-offered job; smaller after a re-offer on a paid one. */
+  payableUsd: number;
   paidAt: Date | null;
   paidUsd: number | null;
   state: UpsaleState;
@@ -60,6 +64,7 @@ interface RawRow extends Record<string, unknown> {
   client_price_usd: string;
   total_usd: string;
   upsale_usd: string;
+  payable_usd: string;
   payout_at: Date | null;
   payout_usd: string | null;
   seller_name: string | null;
@@ -162,6 +167,7 @@ export async function upsaleRows(
       clientPriceUsd,
       floorUsd: money(r.total_usd),
       upsaleUsd: money(r.upsale_usd),
+      payableUsd: money(r.payable_usd),
       paidAt: r.payout_at ? new Date(r.payout_at) : null,
       paidUsd: r.payout_usd === null ? null : money(r.payout_usd),
       state,
@@ -204,8 +210,11 @@ export async function upsaleLiability(): Promise<{ payableUsd: number; accruedUs
   let payableUsd = 0;
   let accruedUsd = 0;
   for (const r of rows) {
-    if (r.state === 'payable') payableUsd = money(payableUsd + r.upsaleUsd);
-    else if (r.state !== 'paid') accruedUsd = money(accruedUsd + r.upsaleUsd);
+    // The LIABILITY is what is still owed, so it reads the remaining figure —
+    // a job that already paid a commission owes only what a later, higher
+    // re-offer added (audit A1).
+    if (r.state === 'payable') payableUsd = money(payableUsd + r.payableUsd);
+    else if (r.state !== 'paid') accruedUsd = money(accruedUsd + r.payableUsd);
   }
   return { payableUsd, accruedUsd };
 }
@@ -259,8 +268,8 @@ export async function payUpsale(
     ids.map((offerId) => sql`${offerId}::uuid`),
     sql`, `,
   );
-  const quoted = await db.execute<{ id: string; upsale_usd: string; offered_by: string }>(sql`
-    SELECT p.id, p.upsale_usd, p.offered_by
+  const quoted = await db.execute<{ id: string; payable_usd: string; offered_by: string }>(sql`
+    SELECT p.id, p.payable_usd, p.offered_by
       FROM (${payableOffersSql()}) p
      WHERE p.id IN (${idList}) AND p.payout_expense_id IS NULL
   `);
@@ -272,7 +281,9 @@ export async function payUpsale(
   if (sellers.size !== 1) throw new CalcError('one_seller_at_a_time');
   const employeeId = [...sellers][0]!;
 
-  const paidUsd = money(quoted.reduce((sum, q) => sum + Number(q.upsale_usd), 0));
+  // The REMAINING amount, not the promise's whole difference: a job that has
+  // already paid a commission pays only what a higher re-offer added (A1).
+  const paidUsd = money(quoted.reduce((sum, q) => sum + Number(q.payable_usd), 0));
   if (!(paidUsd > 0)) throw new CalcError('nothing_to_pay');
   const amount = Math.round((paidUsd / rate) * 100) / 100;
 
@@ -307,7 +318,7 @@ export async function payUpsale(
          SET payout_expense_id = ${expense.id}::uuid,
              payout_at = now(),
              payout_by = ${ctx.actorId}::uuid,
-             payout_usd = p.upsale_usd
+             payout_usd = p.payable_usd
         FROM (${payableOffersSql()}) p
        WHERE o.id = p.id
          AND o.id IN (${idList})

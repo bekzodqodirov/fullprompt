@@ -1,7 +1,16 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { calcGroups, calcRequestItems, calcRequests } from '../../platform/db/schema';
+import {
+  calcGroups,
+  calcRequestItems,
+  calcRequests,
+  clients,
+  deals,
+  leads,
+} from '../../platform/db/schema';
+import { cardLink } from '../../platform/notifications/links';
 import { aiConfigured } from '../../platform/ai/model';
+import { aiCalcBudgetLeft, recordAiPass } from './ai-cost';
 import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
 import {
@@ -9,9 +18,19 @@ import {
 } from '../customs/import-service';
 import { suggestImportBaza, unitsForRow, BASIS_FOR_UNIT } from '../customs/import-baza';
 import { sectionParts, type CalcSectionName } from './pricing';
-import { loadWorkspace, proposeGroups, saveTable, type TableItemEdit } from './workspace';
-import { prefillReplyText } from './prefill-reply';
-import { pickImportRows, type PickAnswer, type PickRequest } from './prefill-ai';
+import {
+  loadWorkspace,
+  proposeGroups,
+  saveTable,
+  type SealBlocker,
+  type TableItemEdit,
+  type Workspace,
+} from './workspace';
+import { itemNameNorm, sealedMemoryFor } from './memory';
+import { aiVedReplyText, type AiVedLine } from './ai-reply';
+import { dutyText } from './duty-text';
+import { blockerText, prefillReplyText } from './prefill-reply';
+import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } from './prefill-ai';
 
 /**
  * The AI VED hodimi (docs/VED-IMPORT-AI.md §3).
@@ -89,8 +108,13 @@ export async function prefillTicket(requestId: string): Promise<number | null> {
 export interface PrefillDeps {
   /** The grouping pass. Default: `proposeGroups` (the ✨ button's own door). */
   propose?: typeof proposeGroups;
-  /** The baza pick. Default: `pickImportRows`. Null answer = not available. */
-  pick?: (rows: PickRequest[]) => Promise<PickAnswer[] | null>;
+  /** The baza pick. Default: `pickImportRows`. Null answer = not available.
+   * The second argument carries the usage callback; an injected stand-in may
+   * ignore it. */
+  pick?: (
+    rows: PickRequest[],
+    opts?: { onUsage?: (usage: PickUsage) => void },
+  ) => Promise<PickAnswer[] | null>;
   /** Overridable so a test can run without a customs import in the database. */
   configured?: boolean;
 }
@@ -105,6 +129,10 @@ export interface PrefillOutcome {
   importFilled: number;
   /** How many bazas the model chose a declaration for. */
   picked: number;
+  /** Codes the SEALED memory supplied before the model was asked anything. */
+  memoryCoded: number;
+  /** Bazas a sealed calculation of ours answered (0096). */
+  memoryFilled: number;
   aiUsed: boolean;
 }
 
@@ -118,11 +146,25 @@ export async function aiPrefill(
 ): Promise<PrefillOutcome> {
   const propose = deps.propose ?? proposeGroups;
   const pick = deps.pick ?? pickImportRows;
-  const configured = deps.configured ?? aiConfigured();
+  /**
+   * Configured AND within the day's budget — one flag, because to everything
+   * downstream they mean the same thing: no model on this pass.
+   *
+   * The memory, the sweep and the import fill all still run; they are the
+   * model-free half and they are what a server with no key has always had.
+   * The reply says which it was, in words: «AI sozlanmagan» is a fact about
+   * the server and «AI kunlik limiti tugadi» is a fact about today, and a
+   * seller reading the second must not be told the first.
+   */
+  const hasKey = deps.configured ?? aiConfigured();
+  const budgetLeft = hasKey ? await aiCalcBudgetLeft() : 0;
+  const configured = hasKey && budgetLeft > 0;
 
   let codesStamped = 0;
   let ratesPulled = 0;
   let importFilled = 0;
+  let memoryCoded = 0;
+  let memoryFilled = 0;
   let aiUsed = false;
 
   /**
@@ -147,6 +189,30 @@ export async function aiPrefill(
   const parts = row?.section
     ? sectionParts(row.section as CalcSectionName)
     : { customs: true, freight: true, extras: true };
+
+  /**
+   * 0. THE SEALED MEMORY GOES FIRST (0096), before a token is spent.
+   *
+   * The owner's own order: «shu muhrlangan datani AI xotirasiga qo'yish
+   * kerak». What a VED person confirmed and sealed for this product is this
+   * company's answer about it — so the machine reads it before the model,
+   * before the quarterly file, and before anything is billed. A product we
+   * have priced before comes back coded and with its baza in one save, and
+   * the model is then asked only about the names nobody here has ever seen.
+   *
+   * It writes through `saveTable` like every other door: the same rev clock,
+   * the same regroup, the same rate pull at group mint, and the same memory
+   * fill that gives those rows their bazas (there is no second writer).
+   */
+  if (parts.customs) {
+    try {
+      const out = await applyMemory(requestId, ctx);
+      memoryCoded = out.coded;
+      memoryFilled = out.filled;
+    } catch (err) {
+      logger.warn({ err, requestId }, '[calc-prefill] memory pass failed');
+    }
+  }
 
   // 1. The model groups the goods and names their codes; `proposeGroups`
   //    then prices what it proposed (the book's rates, the code onto the
@@ -202,20 +268,18 @@ export async function aiPrefill(
   // 4. Read what the engine now says, and say it in words.
   const ws = await loadWorkspace(requestId);
   /**
-   * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO», and the engine spells both 0.
+   * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO».
    *
-   * Two independent sources, and the section gate above only closes the
-   * first. (1) A section with no customs half is hard-coded 0 by
-   * `loadWorkspace`. (2) A section that HAS one but carries no groups yet:
-   * `requestCustomsFor([])` runs `[].every(ok)` — vacuously TRUE — and
-   * returns `customsUsd: 0`. That second one is the ordinary way this ships:
-   * no ANTHROPIC key, or a model that refused, and nothing the TNVED memory
-   * already knew. MEASURED: the seller read «Tahminiy: rastamojka ~$0.00».
+   * Two sources spelled both as 0 and the section gate above closes only the
+   * first: (1) a section with no customs half is hard-coded 0 by
+   * `loadWorkspace`; (2) a section that HAS one but carries no groups yet used
+   * to come back 0 from `requestCustomsFor([])` — `[].every(ok)` is vacuously
+   * TRUE. MEASURED then: the seller read «Tahminiy: rastamojka ~$0.00».
    *
-   * `null` here, so the reply refuses in words. Deliberately NOT fixed in
-   * `requestCustomsFor`: that function is consumed verbatim by the live
-   * browser recompute and by the seal, and making its empty case null would
-   * move the footer bar and the seal gate in a round that ships no migration.
+   * The second half is now the ENGINE's answer (audit A17, 0096's round): an
+   * empty customs list is `null`, so the screen, the seal gate and this reply
+   * all refuse in the same place. The `groups.length` clause stays as the
+   * belt — a workspace read by an older server would still spell it 0.
    */
   const customsUsd =
     ws && ws.parts.customs && ws.groups.length > 0 ? ws.customsUsd : null;
@@ -225,30 +289,205 @@ export async function aiPrefill(
   // not given yet (phase D's line).
   const freightUsd = freight && freight.ok ? freight.listUsd : null;
 
+  /**
+   * TWO shapes, one pass, and which one the seller reads is decided by the
+   * SECTION and nothing else.
+   *
+   * A customs job gets the per-line breakdown the owner asked for — that is
+   * the whole round. A yolkira job has no customs half at all, so the
+   * breakdown would be a heading over an empty list; it keeps the summary
+   * this pass has always sent, which says honestly that the road is the
+   * VED's to price.
+   */
+  // Who the answer is ABOUT — the card's own code, and the customer's, so a
+  // seller with three open jobs can tell which one this is. One query, and
+  // only on the shape that prints them.
+  const about = ws && ws.parts.customs ? await requestAbout(requestId) : null;
+  const text =
+    ws && ws.parts.customs
+      ? aiVedReplyText({
+          clientLabel: about?.clientCode ?? null,
+          cardLabel: about?.cardLabel ?? null,
+          lines: replyLines(ws),
+          ungrouped: ws.ungrouped.map((i) => i.label),
+          fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
+          totalUsd: customsUsd,
+          hasCertificate: ws.hasCertificate,
+          hasFreight: ws.parts.freight,
+          link: about?.link ?? null,
+          aiConfigured: hasKey,
+          budgetSpent: hasKey && budgetLeft <= 0,
+        })
+      : prefillReplyText({
+          customsUsd,
+          freightUsd,
+          hasFreight: ws?.parts.freight ?? false,
+          hasCustoms: ws?.parts.customs ?? parts.customs,
+          blockers: ws?.blockers ?? [],
+          codesStamped,
+          ratesPulled,
+          importFilled: importFilled + picked,
+          link: null,
+          aiConfigured: hasKey,
+          pickCapped,
+          pickRefused,
+          pickOvertaken,
+        });
+
   return {
-    text: prefillReplyText({
-      customsUsd,
-      freightUsd,
-      hasFreight: ws?.parts.freight ?? false,
-      hasCustoms: ws?.parts.customs ?? parts.customs,
-      blockers: ws?.blockers ?? [],
-      codesStamped,
-      ratesPulled,
-      importFilled: importFilled + picked,
-      link: null,
-      aiConfigured: configured,
-      pickCapped,
-      pickRefused,
-      pickOvertaken,
-    }),
+    text,
     customsUsd,
     freightUsd,
     codesStamped,
     ratesPulled,
     importFilled,
     picked,
+    memoryCoded,
+    memoryFilled,
     aiUsed,
   };
+}
+
+/**
+ * The card this calculation belongs to, for the reply's own heading.
+ *
+ * A deal is named by its CODE and a lead by its name — the same rule
+ * `requestLabel` follows one file over — and the client code beside it is
+ * what the office actually addresses cargo by (#581).
+ */
+async function requestAbout(
+  requestId: string,
+): Promise<{ clientCode: string | null; cardLabel: string | null; link: string | null } | null> {
+  const [row] = await db
+    .select({ entityType: calcRequests.entityType, entityId: calcRequests.entityId })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId));
+  if (!row) return null;
+  const link = cardLink(row.entityType === 'lead' ? 'lead' : 'deal', row.entityId) || null;
+  if (row.entityType === 'deal') {
+    const [deal] = await db
+      .select({ code: deals.code, clientCode: clients.clientCode })
+      .from(deals)
+      .leftJoin(clients, eq(clients.id, deals.clientId))
+      .where(eq(deals.id, row.entityId));
+    return { clientCode: deal?.clientCode ?? null, cardLabel: deal?.code ?? null, link };
+  }
+  const [lead] = await db
+    .select({ name: leads.name })
+    .from(leads)
+    .where(eq(leads.id, row.entityId));
+  return { clientCode: null, cardLabel: lead?.name ?? null, link };
+}
+
+/**
+ * The workspace's groups as the reply's lines.
+ *
+ * ONE LINE PER GROUP, never per item, and that is a property of the ENGINE
+ * rather than a layout choice: `customsFor` prices a GROUP, and splitting its
+ * figure across the members would be inventing an allocation — the same
+ * refusal `groupPerUnit` makes on the price history (#780). The group names
+ * its items instead, which is what the seller wrote anyway.
+ *
+ * The baza mark is the group's own answer only when its members AGREE about
+ * where the price came from: a group carrying one remembered baza and one the
+ * VED typed wears no mark at all, because a 🧠 over a mixed row would claim
+ * a provenance for a number that is half somebody's typing.
+ */
+function replyLines(ws: Workspace): AiVedLine[] {
+  return ws.groups.map((g) => {
+    const sources = [...new Set(g.items.map((i) => i.bazaSource))];
+    const bazaSource = sources.length === 1 ? sources[0]! : null;
+    const bazas = [...new Set(g.items.map((i) => `${i.bazaUsd}|${i.bazaBasis}`))];
+    const first = g.items[0];
+    // The shorthand «100 dona × $20/dona» is printed only where it is TRUE
+    // of the whole group; the figure beside it is exact either way.
+    const measureText =
+      bazas.length === 1 && first && first.bazaUsd !== null && first.bazaBasis !== null
+        ? `${measureOf(g)} × $${first.bazaUsd}/${first.bazaBasis === 'unit' ? 'dona' : first.bazaBasis}`
+        : null;
+    return {
+      label: g.items.map((i) => i.label).join(', ') || g.label,
+      code: g.tnvedCode,
+      measureText,
+      bazaSource,
+      dutyText: g.dutyFree ? 'yo‘q (lgota)' : dutyText(g),
+      addDutyPct: g.customs.ok ? g.customs.addDutyPct : 0,
+      excisePct: g.excisePct,
+      vatPct: g.vatFree ? 0 : g.vatPct,
+      customsUsd: g.customs.ok ? g.customs.customsUsd : null,
+      // Already words — `blockerText` owns the engine's whole vocabulary and
+      // a second map here would drift from it (#513).
+      refusal: g.customs.ok
+        ? null
+        : blockerText({
+            kind: 'customs',
+            groupLabel: g.label,
+            reason: g.customs.reason,
+            itemLabel: g.customs.itemLabel,
+          } as SealBlocker),
+    };
+  });
+}
+
+/** What the group is measured in, as the seller stated it. */
+function measureOf(g: Workspace['groups'][number]): string {
+  const qty = g.items.reduce((sum, i) => sum + (i.quantity ?? 0), 0);
+  if (qty > 0) return `${round3(qty)} dona`;
+  const kg = g.items.reduce((sum, i) => sum + (i.weightKg ?? 0), 0);
+  if (kg > 0) return `${round3(kg)} kg`;
+  const measure = g.items.reduce((sum, i) => sum + (i.measureQty ?? 0), 0);
+  const unit = g.items.find((i) => i.measureUnit)?.measureUnit;
+  return measure > 0 && unit ? `${round3(measure)} ${unit}` : '—';
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * Step 0: stamp the codes the company's own seals already know.
+ *
+ * Only UNCODED rows are asked about — a code the intake or a person has
+ * already put on the row is never second-guessed — and only the CODE is
+ * posted here. The baza arrives by itself: `saveTable`'s own memory fill
+ * (0096) answers every row this save leaves coded and baza-less, from the
+ * same sealed record, under the same three re-checks.
+ */
+async function applyMemory(
+  requestId: string,
+  ctx: AuditContext,
+): Promise<{ coded: number; filled: number }> {
+  const rows = await db
+    .select({
+      id: calcRequestItems.id,
+      seq: calcRequestItems.seq,
+      name: calcRequestItems.name,
+      tnvedCode: calcRequestItems.tnvedCode,
+    })
+    .from(calcRequestItems)
+    .where(eq(calcRequestItems.requestId, requestId));
+  const uncoded = rows.filter((r) => !(r.tnvedCode ?? '').trim());
+  // A fully coded request still gets its save — that is what fills the bazas
+  // and mints the groups — but there is nothing to look up.
+  if (uncoded.length === 0) return { coded: 0, filled: 0 };
+
+  const hits = await sealedMemoryFor(
+    uncoded.map((r) => r.name),
+    { excludeRequestId: requestId },
+  );
+  if (hits.size === 0) return { coded: 0, filled: 0 };
+
+  // Named apart from the pick's `edits` on purpose: these carry a CODE and
+  // nothing else, and `ai-advisory.test.ts` anchors its «the prefill writes
+  // no provenance of its own» fence on the pick's own push.
+  const codeEdits: TableItemEdit[] = [];
+  for (const r of uncoded) {
+    const hit = hits.get(itemNameNorm(r.name));
+    if (!hit?.tnvedCode) continue;
+    codeEdits.push({ id: r.id, seq: r.seq, tnvedCode: hit.tnvedCode });
+  }
+  if (codeEdits.length === 0) return { coded: 0, filled: 0 };
+
+  const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx);
+  return { coded: codeEdits.length, filled: out.memoryFilled.length };
 }
 
 /**
@@ -324,7 +563,18 @@ async function pickBazas(
   if (asking.length === 0) return none;
 
   const capped = Math.max(0, empty.length - MAX_PICK_ROWS);
-  const answers = await pick(asking);
+  const answers = await pick(asking, {
+    onUsage: (usage) => {
+      void recordAiPass({
+        requestId,
+        staffId: ctx.actorId ?? null,
+        kind: 'pick',
+        model: usage.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      });
+    },
+  });
   if (!answers) return { ...none, capped };
 
   const bySeq = new Map(rows.map((r) => [r.seq, r]));
@@ -354,13 +604,13 @@ async function pickBazas(
       bazaUsd: chosen.pricePerUnitUsd,
       bazaBasis: chosen.basis,
       importRowId: chosen.id,
+      // WHY this declaration and not the one beside it — owed since #909,
+      // where a model's pick and the deterministic ≥0.45 auto-fill landed
+      // identically and the VED reviewing the number could not tell which
+      // had put it there. WORDS only: the price still comes from the file.
+      bazaReason: a.reason,
     });
   }
-  // The model's REASONS, which nothing on a screen can show yet: there is no
-  // column for them and this round mints no migration. Logged structurally so
-  // the first real week is reviewable at all — and STATED to the owner as
-  // owed, because a pick a person cannot see the reason for is exactly as
-  // reviewable as no reason at all.
   logger.info(
     {
       requestId,

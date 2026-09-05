@@ -134,6 +134,29 @@ export function payableOffersSql(): SQL {
              COALESCE(v.section, r.section) AS section,
              r.entity_type,
              r.entity_id,
+             /**
+              * WHAT THIS JOB HAS ALREADY PAID (audit A1).
+              *
+              * «One payable per job» was enforced by the rank alone, which
+              * holds until the accountant PAYS: re-offering is the designed
+              * workflow (pick a language, press again), so the next offer
+              * became rn = 1 with a NULL payout and the whole difference
+              * became payable a SECOND time — one sale, two commissions.
+              *
+              * The remaining amount is the honest figure: what this promise
+              * is worth minus what this job has already paid out. A re-offer
+              * at a HIGHER price pays the difference; a re-offer at a lower
+              * one pays nothing (and nothing is clawed back — a payment made
+              * is a payment made).
+              */
+             COALESCE((
+               SELECT sum(p2.payout_usd)
+                 FROM calc_offers p2
+                 LEFT JOIN calc_versions pv ON pv.id = p2.version_id
+                WHERE COALESCE(pv.request_id, p2.request_id)
+                      = COALESCE(v.request_id, o.request_id)
+                  AND p2.payout_expense_id IS NOT NULL
+             ), 0) AS paid_on_request,
              row_number() OVER (
                PARTITION BY COALESCE(v.request_id, o.request_id)
                ORDER BY o.offered_at DESC, o.id DESC
@@ -145,7 +168,11 @@ export function payableOffersSql(): SQL {
           OR (o.version_id IS NULL AND ${answerFloorStandsSql()})
     )
     SELECT ranked.*,
-           round(ranked.client_price_usd - ranked.total_usd, 2) AS upsale_usd
+           round(ranked.client_price_usd - ranked.total_usd, 2) AS upsale_usd,
+           -- What a payout would actually move: the promise's own difference
+           -- less whatever this job has already paid (audit A1).
+           round(ranked.client_price_usd - ranked.total_usd - ranked.paid_on_request, 2)
+             AS payable_usd
       FROM ranked
      WHERE ranked.rn = 1
        AND (NOT ranked.below_floor OR ranked.approved_at IS NOT NULL)
@@ -155,5 +182,13 @@ export function payableOffersSql(): SQL {
              AND (ranked.density IS NULL OR ranked.band_override_min < ranked.density - 0.0001)
            ))
        AND ranked.client_price_usd - ranked.total_usd > ${MONEY_EPSILON}
+       -- A row that has been PAID stays listed, because the owner's screen is
+       -- also the record of what was paid; an unpaid row survives only while
+       -- something is still owed on the job.
+       AND (
+         ranked.payout_expense_id IS NOT NULL
+         OR ranked.client_price_usd - ranked.total_usd - ranked.paid_on_request
+            > ${MONEY_EPSILON}
+       )
   `;
 }

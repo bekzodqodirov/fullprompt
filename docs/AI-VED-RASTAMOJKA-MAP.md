@@ -2,6 +2,16 @@
 
 Machine-rendered from six code readers + one completeness critic + the audit's findings on this path (2026-09-05). Companion to `docs/AI-VED-RASTAMOJKA.md`, which is the spec and the build plan. Paths are repo-relative unless absolute. Where a reader and the code disagree, the code wins — re-read before relying on a line number.
 
+> **STALE AS OF 2026-09-05 EVENING.** This map describes the tree BEFORE the
+> round it was written for. What it says is still true of everything the round
+> did not touch, but the AI-VED work has since moved: `IntakeStage` gained
+> `'question'` and `IntakeState` seven fields (ai, hasCertificate, askingIndex,
+> round, reasked, invoiceGoods, pdf, usage, budgetSpent); the bot has a second
+> entry «🤖 AI rastamojka» with its own callback steps; `wms/calc/memory.ts`,
+> `ai-reply.ts`, `ai-cost.ts`, `prefill-queue.ts`, `duty-text.ts` and
+> `deals/goods-file.ts` are new; and all three doors now queue the pass. Read
+> `docs/AI-VED-RASTAMOJKA.md`'s SHIPPED header and DECISIONS #926-933 first.
+
 
 
 ## bot-intake

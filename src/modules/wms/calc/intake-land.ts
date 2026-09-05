@@ -5,6 +5,9 @@ import { addActivity, createLead } from '../crm/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { logger } from '../../platform/logger';
 import { intakeNoteText, itemFacts, type CalcFacts, type CalcSection } from './intake';
+import { recordAiPass } from './ai-cost';
+import { queueCalcPrefill } from './prefill-queue';
+import { CalcError } from './service';
 
 /**
  * Where a confirmed «Hisoblatish» lands (owner: «hammasi lead yoki ochilgan
@@ -34,6 +37,15 @@ export interface IntakeTarget {
   queued?: boolean;
   /** The queued request, when there is one — what the AI prefill works on. */
   requestId?: string | null;
+  /**
+   * WHY it did not reach the queue (audit A38).
+   *
+   * The refusal used to be logged and answered with one constant sentence —
+   * «kartadan qo'lda yuboring» — which sends the collector to a door that
+   * refuses for the SAME reason on the commonest cause there is (twenty open
+   * requests). The code travels so the bot can say the sentence.
+   */
+  queueError?: string | null;
 }
 
 /** The client a typed code or phone names — exactly one, or nobody. */
@@ -151,6 +163,10 @@ export async function landIntake(input: {
   /** What staff typed as the customer's name when there is no code yet. */
   leadName: string;
   leadPhone: string | null;
+  /** The seller's certificate answer (the AI-rastamojka door's one toggle). */
+  hasCertificate?: boolean;
+  /** What the intake's model call cost — recorded once the request exists. */
+  usage?: { model: string; inputTokens: number; outputTokens: number } | null;
 }): Promise<IntakeTarget> {
   const target = input.client
     ? await dealFor(input.client, input.section, input.collectedBy)
@@ -195,6 +211,7 @@ export async function landIntake(input: {
   // insert the note and its files still stand on the card, and the caller is
   // told which half failed rather than «nothing saved» about work that was.
   let queued = false;
+  let queueError: string | null = null;
   let requestId: string | null = null;
   try {
     const { openCalcRequest } = await import('./service');
@@ -220,15 +237,35 @@ export async function landIntake(input: {
         noteId: input.noteId,
         source: 'bot',
         hasMaterials: input.fileCount > 0,
+        hasCertificate: input.hasCertificate ?? true,
       },
       { actorId: input.collectedBy },
     );
     queued = true;
-    // Handed back so the bot can hand the job to the AI VED hodimi — the
-    // prefill runs OFF the poller, against this id (docs/VED-IMPORT-AI §3).
     requestId = opened.id;
+    if (input.usage) {
+      await recordAiPass({
+        requestId: opened.id,
+        staffId: input.collectedBy,
+        kind: 'intake',
+        model: input.usage.model,
+        inputTokens: input.usage.inputTokens,
+        outputTokens: input.usage.outputTokens,
+      });
+    }
+    // …and the AI VED hodimi is handed the job HERE rather than by the
+    // caller. The bot did it from its own handler, so any second caller of
+    // this landing would silently get no pass at all — the same asymmetry
+    // that left the card form and the thread door unserved until this round.
+    // Off the poller and out of this process, through pg-boss.
+    await queueCalcPrefill({
+      requestId: opened.id,
+      staffId: input.collectedBy,
+      section: input.section,
+    });
   } catch (err) {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] queue open failed');
+    queueError = err instanceof CalcError ? err.code : 'server_behind';
   }
 
   // …and the card moves to the hisoblatish stage, through the SAME move the
@@ -242,7 +279,7 @@ export async function landIntake(input: {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
   }
 
-  return { ...target, queued, requestId };
+  return { ...target, queued, requestId, queueError };
 }
 
 async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<void> {

@@ -57,11 +57,12 @@ Batch 1 starts on his go, on branch `claude/frappe-crm-full-prompt-vempoq`.
    The server round trip is now answered for (round 45) and a navigation
    indicator exists, but everything was timed on localhost — that is server
    time, not what a warehouse phone in Yiwu feels.
-6. **Nothing in the browser can open a hisoblash request any more** (round 46,
-   his items 5 and 12): both doors were removed at his request and the queue,
-   the clock and the overdue sweep are all still running behind them. Either
-   the staff bot's «Hisoblatish» flow starts the clock, or a door goes back
-   somewhere he wants one.
+6. ~~**Nothing in the browser can open a hisoblash request any more**~~
+   (round 46, his items 5 and 12). **CLOSED.** VED phase A gave the queue its
+   own screen and its doors back: the seller's card form, the CRM thread door
+   and the staff bot all open a request, and since the AI-VED round all three
+   also hand it to the machine. The clock and the overdue sweep are read by
+   the screen they were written for.
 7. **His Telegram session is REVOKED** (`401: SESSION_REVOKED`, 2026-08-03).
    The DNS outage is over; this is what was underneath it. Round 49 makes the
    system SAY so instead of accepting messages that cannot leave, but the

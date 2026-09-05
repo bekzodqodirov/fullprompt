@@ -128,12 +128,28 @@ describe('the AI VED hodimi picks a row, never a price', () => {
     // `baza_source` is `saveTable`'s to decide, and it decides 'import'
     // BECAUSE an `importRowId` was posted. A prefill that named the source
     // itself would be a second writer, and the only value it could invent
-    // is the one 0094 refuses.
-    expect(source).not.toContain('bazaSource');
-    expect(source).not.toContain('rateSource');
+    // is the one 0094 and 0096 refuse.
+    //
+    // The forbidden shape is the WRITE — a `bazaSource:` key in a posted
+    // object. Sub-round C reads `item.bazaSource` to choose the 🧠/📥 chip
+    // in the seller's reply, which states a provenance somebody else
+    // decided; the fence is narrowed to the assignment rather than widened
+    // to allow the file, so a real second writer still turns it red.
+    expect(source).not.toMatch(/\bbazaSource\s*:/);
+    expect(source).not.toMatch(/\brateSource\s*:/);
+    // …and it may not name a source VALUE at all: the only way to write one
+    // without the key above is a string that travels to a writer.
+    for (const invented of ["'import'", "'dictionary'", "'typed'", "'memory'", "'ai'"]) {
+      expect(source, `the prefill must not name the source ${invented}`).not.toContain(invented);
+    }
     // The row id is what makes the price the FILE's. Without it the number
     // posted here is stored as somebody's typing — measured, red-proven.
-    const edit = block(source, 'edits.push(');
+    // Anchored INSIDE the pick: 0096 added a second push in the memory pass,
+    // which posts a code and no price at all, and a file-wide `indexOf` would
+    // have silently started asserting about that one instead.
+    const picker = source.slice(source.indexOf('async function pickBazas'));
+    expect(picker.length, 'pickBazas has been renamed — re-anchor this fence').toBeGreaterThan(0);
+    const edit = block(picker, 'edits.push(');
     expect(edit).toContain('importRowId: chosen.id');
     expect(edit).toContain('bazaUsd: chosen.pricePerUnitUsd');
   });
@@ -173,6 +189,37 @@ describe('the database refuses too', () => {
     expect(clause).toContain("'import'");
     expect(clause).not.toContain("'ai'");
     expect(clause.match(/'[a-z_]+'/g)).toEqual(["'dictionary'", "'typed'", "'import'"]);
+  });
+
+  // 0096 replaces it once more, for 'memory' — a price a VED person
+  // CONFIRMED and SEALED on an earlier job of ours. That is the strongest of
+  // the machine's three sources and still not the model's opinion; the list
+  // is asserted WHOLE for the same reason, and the fence must follow the
+  // constraint actually in force.
+  it("0096 widens the baza source to the sealed memory and still refuses 'ai'", () => {
+    const latest = readFileSync(
+      'src/modules/platform/db/migrations/0096_ai_ved_memory.sql',
+      'utf8',
+    );
+    const at = latest.lastIndexOf('calc_items_baza_source_check');
+    expect(at).toBeGreaterThan(-1);
+    const clause = latest.slice(at, latest.indexOf(';', at));
+    expect(clause).not.toContain("'ai'");
+    expect(clause.match(/'[a-z_]+'/g)).toEqual([
+      "'dictionary'",
+      "'typed'",
+      "'import'",
+      "'memory'",
+    ]);
+  });
+
+  // The memory reads the sealed record and writes a code and a baza. It is
+  // the newest path a number can travel and law 1 applies to it unchanged:
+  // it may not name the model anywhere.
+  it('the sealed memory mentions no ai identifier', () => {
+    const source = read('src/modules/wms/calc/memory.ts');
+    expect(source).not.toMatch(/\bai[A-Z]\w*/);
+    expect(source).not.toMatch(/ai_\w+/);
   });
 
   // And the ROW the import writes is a price out of the file — never a

@@ -1,3 +1,35 @@
+# AI-VED — Telegramda tahminiy RASTAMOJKA hisobi — **SHIPPED 2026-09-05**
+
+> **HOLAT: qurildi.** Migration **0096**, DECISIONS **#926-933**, ledger 97.
+> Nima boshqacha qilinganini va nega — quyidagi «What differed» bo'limida.
+>
+> **What differed from this plan, and why:**
+> - `ai_calc_passes.kind` is `intake|grouping|pick|invoice` — the plan's
+>   `memory` kind was dropped: the memory costs no model call, so a row for it
+>   would be a bill for nothing. `invoice` is reserved for the PDF path.
+> - `itemNameNorm` lives in `calc/memory.ts`, not `calc/intake.ts`: it belongs
+>   beside the query that searches on it.
+> - The memory does NOT stamp `memory_item_id` at intake. That column names
+>   the seal a BAZA was copied from and no baza is filled there — one column,
+>   one fact.
+> - `MemoryHit` carries code + baza + who sealed it and NOT the group's rate
+>   snapshot: the engine re-reads PP-3818 by code, and a second rate source is
+>   what law 1 forbids.
+> - The reply prints one line per GROUP, not per item (`customsFor` prices a
+>   group; splitting invents an allocation — #780's own refusal).
+> - The chip's title prints the DATE and the person, not «V2»: the V number on
+>   /hisoblash/tarix is a chain rank and `calc_versions.version_no` is not, so
+>   two screens would print different V's for one seal.
+> - The AI reply's shape is used for a customs section only; a yolkira job
+>   keeps the older summary and is never queued for a pass at all.
+>
+> **Owed, stated:** the seal's `breakdown.items[]` snapshot does not yet carry
+> `bazaReason`/`memoryItemId`; §5.2's list is untouched.
+
+---
+
+<details><summary>The original handoff spec, kept as the record of what was agreed</summary>
+
 # AI-VED — Telegramda tahminiy RASTAMOJKA hisobi (handoff spec)
 
 > **Kimga.** Bu hujjat BOSHQA model / boshqa sessiya uchun yozilgan: u shu
@@ -794,3 +826,6 @@ qarorlar) — qayta so'rama, shularga mos qur.
 > pipeline (§7) green before any push; migration 0096 after `git fetch origin
 > main`; reply to the owner in Uzbek, business terms, numbered options for
 > decisions; ask the two §5 questions and keep building §4 meanwhile.
+
+
+</details>

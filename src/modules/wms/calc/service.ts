@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
+  calcGroups,
   calcOffers,
   calcRequestItems,
   calcRequests,
@@ -18,6 +19,7 @@ import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { addActivity } from '../crm/service';
 import { productKey, tnvedFor } from '../tnved/service';
+import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
 import { isComplete, missingFields, type CalcFacts, type CalcSection } from './intake';
 
 /**
@@ -100,7 +102,22 @@ export const openRequests = isNull(calcRequests.completedAt);
  * this», and a shared query would have to take a table name as an argument.
  */
 export async function nextVedAssignee(): Promise<string | null> {
-  const pool = await usersWithPermission('ved.docs');
+  /**
+   * THE OWNER AND THE ADMINS ARE NOT IN THE ROTA (his «1.1», audit A13).
+   *
+   * `ved.docs` is held by every admin role as well as by the VED, and the
+   * ordering below puts «never had one» FIRST — so every fresh bot or card
+   * request was auto-assigned to the OWNER, minting a timed priority-1 task
+   * on him and making the queue screen read «Взял: Bekzod» on work he was
+   * never going to do. Measured on his own data.
+   *
+   * They keep the manual «Olaman» door. When the subtraction empties the
+   * pool — a company whose only `ved.docs` holders are admins — the request
+   * is stored UNASSIGNED, which is an honest state the queue already draws
+   * and the overdue sweep already announces to the whole pool.
+   */
+  const adminIds = new Set(await usersWithRoles(['super_admin', 'admin']));
+  const pool = (await usersWithPermission('ved.docs')).filter((id) => !adminIds.has(id));
   if (pool.length === 0) return null;
   const rows = await db
     .select({
@@ -147,6 +164,15 @@ export interface CalcRequestInput {
   source: 'card' | 'bot';
   /** Set by the bot, which acts for the staff member who collected. */
   hasMaterials?: boolean;
+  /**
+   * Has the customer a certificate of origin (0091's column)?
+   *
+   * The one answer that changes the duty without changing the cargo — the
+   * additional duty applies only when there is none — and the seller is who
+   * knows. Absent means TRUE, which is the column's own default and the
+   * ordinary case; assuming the worse case would quote every job high.
+   */
+  hasCertificate?: boolean;
 }
 
 const num = (value: number | null | undefined): string | null =>
@@ -226,19 +252,41 @@ export async function openCalcRequest(
     }
   }
 
-  // The TNVED memory before any model is asked (#1.5's rule): a product this
-  // company has classified before arrives already carrying its code.
-  const known = await tnvedFor(input.items.map((item) => item.name));
+  /**
+   * THE TWO MEMORIES, in the owner's own order (his 2026-09-05 answer).
+   *
+   * 1. What a VED SEALED, matched by NAME similarity — the company's own
+   *    confirmed answer about this product, and the first place to look.
+   * 2. The exact-key TNVED memory (#1.5's rule), for a name written the same
+   *    way as last time.
+   *
+   * Only the CODE is taken here. The baza is the workspace's sweep to fill
+   * (`saveTable`), where the group's law says which unit may price the row —
+   * a price without that check is a number in the wrong unit.
+   */
+  const [known, sealedMemory] = await Promise.all([
+    tnvedFor(input.items.map((item) => item.name)),
+    sealedMemoryFor(input.items.map((item) => item.name), { excludeRequestId: NO_REQUEST }),
+  ]);
   const items = input.items.map((item, i) => ({
     seq: i + 1,
     name: item.name.slice(0, 300),
+    nameNorm: itemNameNorm(item.name.slice(0, 300)),
     quantity: num(item.quantity),
     unit: item.unit?.slice(0, 20) || null,
     weightKg: num(item.weightKg),
     volumeM3: num(item.volumeM3),
     amount: num(item.amount),
     currency: item.currency?.slice(0, 8) || null,
-    tnvedCode: item.tnvedCode || known.get(productKey(item.name))?.tnvedCode || null,
+    tnvedCode:
+      item.tnvedCode ||
+      sealedMemory.get(itemNameNorm(item.name))?.tnvedCode ||
+      known.get(productKey(item.name))?.tnvedCode ||
+      null,
+    // `memory_item_id` is deliberately NOT written here. It names the seal a
+    // BAZA was copied from, and no baza is filled at intake — the workspace's
+    // first save does that, under the group's own law, and writes the
+    // provenance in the same statement. One column, one fact.
     note: item.note?.slice(0, 500) || null,
   }));
 
@@ -261,6 +309,7 @@ export async function openCalcRequest(
         weightKg: num(input.weightKg),
         volumeM3: num(input.volumeM3),
         source: input.source,
+        hasCertificate: input.hasCertificate ?? true,
         noteId,
         takenAt: assigneeId ? new Date() : null,
         dueAt,
@@ -562,6 +611,19 @@ export async function finishCalcRequest(
   const { loadWorkspace, canSeal } = await import('./workspace');
   const workspace = await loadWorkspace(id);
   if (workspace && canSeal(workspace)) throw new CalcError('seal_instead');
+  /**
+   * «1 000» IS NOT A NUMBER (audit A3).
+   *
+   * `Number('1 000')` is NaN, and NaN passes every guard made of
+   * comparisons: `answer.amount != null` was TRUE, so the request closed
+   * with `answer_currency = 'USD'` and `answer_amount` NULL — a currency with
+   * no amount — and the seller's Telegram read «💵 NaN USD». The form parses
+   * spaces now, and this is the fence behind it (#531: a screen guard alone
+   * leaves the action accepting it).
+   */
+  if (answer.amount !== undefined && answer.amount !== null && !Number.isFinite(answer.amount)) {
+    throw new CalcError('bad_number');
+  }
   const row = await endRequest(id, {
     via: 'task',
     actorId: ctx.actorId,
@@ -608,6 +670,40 @@ export async function completeCalcForDeal(dealId: string, actorId: string): Prom
     orderBy: asc(calcRequests.requestedAt),
   });
   if (!open) return;
+  /**
+   * A WORKSPACE IS NOT CLOSED BY SOMEBODY ELSE'S SAVE (audit A14).
+   *
+   * Phase A's «the calculation was SAVED» ending is from the world where a
+   * calculation WAS the deal's goods table: the VED typed the lines, and
+   * saving them was the answer. VED 2.0 moved the work into a workspace of
+   * groups, rates, bazas and ✅s — and this hook still fired, so a SELLER
+   * saving «Позиции» on the card silently closed the VED's half-finished job
+   * with no price, no seal and no notification, and every later save by the
+   * VED was refused `already_closed` with no way back.
+   *
+   * A request the VED has touched has groups, or a moved rev clock, or both.
+   * Untouched ones keep the old ending, which is still right for the request
+   * that has no workspace at all.
+   */
+  if (open.rev > 0) {
+    logger.info(
+      { requestId: open.id, dealId },
+      '[calc] lines saved on a deal whose calculation is being worked — left open',
+    );
+    return;
+  }
+  const [group] = await db
+    .select({ id: calcGroups.id })
+    .from(calcGroups)
+    .where(eq(calcGroups.requestId, open.id))
+    .limit(1);
+  if (group) {
+    logger.info(
+      { requestId: open.id, dealId },
+      '[calc] lines saved on a deal whose calculation has groups — left open',
+    );
+    return;
+  }
   await endRequest(open.id, { via: 'lines', actorId });
 }
 

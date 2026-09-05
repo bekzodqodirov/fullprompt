@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import ExcelJS from 'exceljs';
 import { eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { canWriteDeal } from '@/modules/wms/deals/service';
-import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
+import { parseGoods } from '@/modules/wms/deals/goods-import';
+import { workbookRows } from '@/modules/wms/deals/goods-file';
 import {
   TnvedError,
   productKey,
@@ -23,18 +23,6 @@ import {
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 /** ExcelJS cell values arrive as strings, numbers, dates, formulas, rich text… */
-function cellValue(value: ExcelJS.CellValue): Cell {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'string' || typeof value === 'number') return value;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  if (typeof value === 'object') {
-    if ('richText' in value) return value.richText.map((r) => r.text).join('');
-    if ('result' in value) return cellValue(value.result as ExcelJS.CellValue);
-    if ('text' in value) return String(value.text);
-  }
-  return String(value);
-}
-
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
   if (!actor || !canWriteDeal(actor.permissions)) {
@@ -51,23 +39,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'too_large' }, { status: 413 });
   }
 
-  const workbook = new ExcelJS.Workbook();
-  try {
-    await workbook.xlsx.load(await file.arrayBuffer());
-  } catch {
-    // Content decides, not the file name (the driver-APK lesson, #284).
+  // Content decides, not the file name (the driver-APK lesson, #284). The
+  // reader lives beside the parser now, because the staff bot's invoice path
+  // needs the same two steps (#513).
+  const rows = await workbookRows(await file.arrayBuffer());
+  if (!rows || rows.length === 0) {
     return NextResponse.json({ error: 'not_xlsx' }, { status: 400 });
   }
-  const sheet = workbook.worksheets[0];
-  if (!sheet) return NextResponse.json({ error: 'no_goods' }, { status: 400 });
-
-  const rows: Cell[][] = [];
-  sheet.eachRow({ includeEmpty: true }, (row) => {
-    const values: Cell[] = [];
-    // row.values is 1-based with a hole at 0.
-    for (let c = 1; c <= row.cellCount; c++) values.push(cellValue(row.getCell(c).value));
-    rows.push(values);
-  });
 
   const { goods } = parseGoods(rows);
   if (goods.length === 0) return NextResponse.json({ error: 'no_goods' }, { status: 400 });

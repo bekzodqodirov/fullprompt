@@ -67,6 +67,32 @@ export const SETTING_DEFAULTS = {
    */
   import_baza_min_sim: 0.45,
   /**
+   * How close a product NAME must be to a sealed one before the AI-VED takes
+   * that seal's baza (0096).
+   *
+   * Higher than the import's 0.45 on purpose: a memory hit outranks the
+   * customs file, and what it copies is a price a person put their ✅ on for
+   * a different consignment. A near-miss there is worse than none — the file
+   * is still behind it, and the VED types the rest.
+   */
+  calc_memory_min_sim: 0.6,
+  /**
+   * How many AI calls the calculation half may make in a day (0096).
+   *
+   * A soft budget, not a claim: one worker drains this queue, so two passes
+   * cannot race past it the way ten people asking the assistant can (that one
+   * reserves its slot atomically in `ai_questions`). Over the budget the pass
+   * still runs on the sealed memory, the dictionaries and the customs file —
+   * and the reply says the model was not asked.
+   */
+  ai_calc_daily_limit: 200,
+  /**
+   * Write the AI-VED's estimate onto the card's lenta as well as into the
+   * seller's chat (his answer 2a). A switch because it is the only thing on
+   * this path that writes where OTHER people read.
+   */
+  ai_calc_reply_lenta: true,
+  /**
    * The month the dictionary review was last announced, as `YYYY-MM`.
    *
    * A CLAIM and not a preference — it is written by the sweep, never by a

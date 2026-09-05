@@ -380,7 +380,10 @@
       "calc_customs_deviation_pct": "Rastamojka hisobdan necha foizga farq qilishi mumkin",
       "calc_customs_cost_type_codes": "Qaysi xarajat turlari rastamojka hisoblanadi (kodlar ro'yxati)",
       "client_code_next": "Keyingi mijoz kodi raqami (bo‘sh = eski qoida; faqat avtomatik berish suradi)",
-      "import_baza_min_sim": "Import bazasidan nom o'xshashligi shu darajadan yuqori bo'lsa — baza avtomatik qo'yiladi (0..1)"
+      "import_baza_min_sim": "Import bazasidan nom o'xshashligi shu darajadan yuqori bo'lsa — baza avtomatik qo'yiladi (0..1)",
+      "calc_memory_min_sim": "AI avvalgi MUHRLANGAN hisobdan bazani olishi uchun nom o'xshashligi darajasi (0..1)",
+      "ai_calc_daily_limit": "Hisoblash uchun kuniga nechta AI so'rovi (limitdan keyin faqat xotira, lug'at va bojxona fayli ishlaydi)",
+      "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -2155,7 +2158,12 @@
       "seal_instead": "Hisobni muhrlash mumkin — «Готово» bilan narx emas, «Muhrlash»ni bosing",
       "not_sealed": "Bu hisobda muhrlangan narx yo‘q — qayta hisoblaydigan narsa yo‘q",
       "recalc_open": "Qayta hisob allaqachon ochiq — avval uni tugating",
-      "recalc_superseded": "Bu versiya allaqachon almashtirilgan — eng yangisidan qayta hisoblang"
+      "recalc_superseded": "Bu versiya allaqachon almashtirilgan — eng yangisidan qayta hisoblang",
+      "superseded": "Bu hisob qayta hisoblangan — eng yangi versiyadan narx bering",
+      "quote_expired": "Narxning muddati o‘tgan — qayta hisoblatish kerak",
+      "fx_missing": "Shu kunga valyuta kursi yo‘q — avval kursni kiriting",
+      "category_not_found": "Xarajat turkumi tanlanmagan yoki o‘chirilgan — /upsale da tanlang",
+      "account_currency_mismatch": "Kassa valyutasi to‘lov valyutasiga mos emas"
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -2306,7 +2314,8 @@
       "aiLowConfidence": "AI ishonchsiz edi",
       "aiRateTaken": "AI stavkasi narxga ketdi",
       "rateNoted": "lug'at stavkasi izoh bilan",
-      "bazaFromImport": "Baza importdan (taxmin)"
+      "bazaFromImport": "Baza importdan (taxmin)",
+      "bazaFromMemory": "Baza muhrlangan hisobdan"
     },
     "refusal": {
       "customsByClient": "Mijoz o'zi rastamojka qildi",
@@ -2383,11 +2392,14 @@
       "rateNoted": "qonunda izoh bor",
       "savedFigures": "saqlangan raqamlar",
       "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator",
-      "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator"
+      "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator",
+      "memoryFilled": "muhrlangan hisobdan to‘ldirilgan baza: {count} ta, qator"
     },
     "editCargoFacts": "Yuk ma’lumotlarini o‘zgartirish",
     "importGuess": "importdan (taxmin)",
     "importGuessTitle": "Baza bojxona import faylidan tanlandi — tekshiring, kerak bo‘lsa o‘zingiz yozing",
+    "memoryGuess": "muhrlangan hisobdan",
+    "memoryGuessTitle": "Baza ilgari muhrlangan hisob-kitobdan olindi ({who}, {date}) — tekshiring",
     "importPick": "Importdan tanlash",
     "importNone": "Bu kod uchun importda mos qator yo‘q",
     "answerNotUsd": "Narx USD emas — taklif eshigi faqat dollardagi javobga ochiladi.",
@@ -2426,7 +2438,9 @@
     "registryLead": "Lid",
     "regClear": "Tozalash",
     "regAll": "Hammasi",
-    "registryNav": "Hisoblar tarixi"
+    "registryNav": "Hisoblar tarixi",
+    "feeOverride": "Deklaratsiya yig'imi (qo'lda)",
+    "feeAuto": "avto"
   },
   "partners": {
     "title": "Kontragentlar",

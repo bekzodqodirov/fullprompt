@@ -171,7 +171,6 @@ async function readyRequest(overrides: Partial<Parameters<typeof openCalcRequest
       tnvedCode: '8528520000',
       dutyPct: 10,
       vatPct: 12,
-      feeUsd: 0,
       dutyFree: false,
       vatFree: false,
       source: 'typed',
@@ -191,7 +190,7 @@ describe('the workspace refuses rather than inventing a number', () => {
     await moveItemToGroup(request.id, before!.ungrouped[0]!.seq, groupId, ctx());
     await setGroupRates(
       groupId,
-      { tnvedCode: '9401', dutyPct: 5, vatPct: 12, feeUsd: 0, dutyFree: false, vatFree: false, source: 'typed' },
+      { tnvedCode: '9401', dutyPct: 5, vatPct: 12, dutyFree: false, vatFree: false, source: 'typed' },
       ctx(),
     );
 
@@ -216,7 +215,7 @@ describe('the workspace refuses rather than inventing a number', () => {
     await setItemBaza(request.id, before!.ungrouped[0]!.seq, { bazaUsd: 20, basis: 'unit', source: 'typed' }, ctx());
     await setGroupRates(
       groupId,
-      { tnvedCode: '8528', dutyPct: 10, vatPct: 12, feeUsd: 0, dutyFree: false, vatFree: false, source: 'typed' },
+      { tnvedCode: '8528', dutyPct: 10, vatPct: 12, dutyFree: false, vatFree: false, source: 'typed' },
       ctx(),
     );
     await setFreightZone(request.id, 'cn', ctx());
@@ -233,7 +232,7 @@ describe('the workspace refuses rather than inventing a number', () => {
     expect((await loadWorkspace(requestId))!.groups[0]!.confirmedAt).not.toBeNull();
     await setGroupRates(
       groupId,
-      { tnvedCode: '8528520000', dutyPct: 20, vatPct: 12, feeUsd: 0, dutyFree: false, vatFree: false, source: 'typed' },
+      { tnvedCode: '8528520000', dutyPct: 20, vatPct: 12, dutyFree: false, vatFree: false, source: 'typed' },
       ctx(),
     );
     expect((await loadWorkspace(requestId))!.groups[0]!.confirmedAt).toBeNull();
@@ -480,7 +479,7 @@ describe('what the shipped-code audit found', () => {
   it('«take the rates from the dictionary» reads the dictionary, not the caller', async () => {
     const code = `991${String((seq += 1)).padStart(4, '0')}`;
     madeRates.push(
-      await saveRates({ tnvedCode: code, dutyPct: 3, vatPct: 12, feeUsd: 7, effectiveDate: TODAY }, ctx()),
+      await saveRates({ tnvedCode: code, dutyPct: 3, vatPct: 12, effectiveDate: TODAY }, ctx()),
     );
     const request = await open();
     const groupId = await createGroup(request.id, { label: 'X', tnvedCode: code }, ctx());
@@ -509,7 +508,7 @@ describe('what the shipped-code audit found', () => {
     await expect(
       setGroupRates(
         groupId,
-        { tnvedCode: '8528', dutyPct: NaN, vatPct: 12, feeUsd: 0, dutyFree: false, vatFree: false, source: 'typed' },
+        { tnvedCode: '8528', dutyPct: NaN, vatPct: 12, dutyFree: false, vatFree: false, source: 'typed' },
         ctx(),
       ),
     ).rejects.toMatchObject({ code: 'bad_number' });
@@ -595,11 +594,11 @@ describe('the dictionaries', () => {
   it('the same rate corrected twice in one day is ONE row', async () => {
     const code = `990${String(seq += 1).padStart(4, '0')}`;
     const first = await saveRates(
-      { tnvedCode: code, dutyPct: 5, vatPct: 12, feeUsd: 0, effectiveDate: TODAY },
+      { tnvedCode: code, dutyPct: 5, vatPct: 12, effectiveDate: TODAY },
       ctx(),
     );
     const second = await saveRates(
-      { tnvedCode: code, dutyPct: 7, vatPct: 12, feeUsd: 0, effectiveDate: TODAY, source: 'correction' },
+      { tnvedCode: code, dutyPct: 7, vatPct: 12, effectiveDate: TODAY, source: 'correction' },
       ctx(),
     );
     madeRates.push(first, second);
@@ -664,7 +663,7 @@ describe('the lgota is offered from the last sealed decision', () => {
     const first = await readyRequest({ items: [{ name: `lgota tovar ${tag()}`, quantity: 5 }] });
     await setGroupRates(
       first.groupId,
-      { tnvedCode: code, dutyPct: 0, vatPct: 12, feeUsd: 0, dutyFree: true, vatFree: false, source: 'typed' },
+      { tnvedCode: code, dutyPct: 0, vatPct: 12, dutyFree: true, vatFree: false, source: 'typed' },
       ctx(),
     );
     await confirmAllGroups(first.requestId, ctx());
@@ -733,7 +732,6 @@ describe('VED 2.0 — the law engine wired through the workspace', () => {
           tnvedCode: code,
           dutyPct: 20,
           vatPct: 12,
-          feeUsd: 0,
           effectiveDate: yesterday,
           dutyMode: 'max',
           dutySpecific: 2,
@@ -747,7 +745,7 @@ describe('VED 2.0 — the law engine wired through the workspace', () => {
     // code into the plain advalor it was created to beat.
     madeRates.push(
       await saveRates(
-        { tnvedCode: code, dutyPct: 25, vatPct: 12, feeUsd: 0, effectiveDate: TODAY },
+        { tnvedCode: code, dutyPct: 25, vatPct: 12, effectiveDate: TODAY },
         ctx(),
       ),
     );
@@ -765,7 +763,6 @@ describe('VED 2.0 — the law engine wired through the workspace', () => {
           tnvedCode: code,
           dutyPct: 25,
           vatPct: 12,
-          feeUsd: 0,
           effectiveDate: TODAY,
           dutyMode: 'advalor',
         },
@@ -794,7 +791,6 @@ describe('VED 2.0 — the law engine wired through the workspace', () => {
         tnvedCode: '6102',
         dutyPct: 20,
         vatPct: 12,
-        feeUsd: null,
         dutyMode: 'max',
         dutySpecific: 3,
         dutyUnit: 'dona',
@@ -841,7 +837,6 @@ describe('VED 2.0 — the law engine wired through the workspace', () => {
       tnvedCode: '8528520000',
       dutyPct: 10,
       vatPct: 12,
-      feeUsd: null,
       dutyFree: false,
       vatFree: false,
       source: 'typed' as const,
@@ -882,7 +877,7 @@ describe('VED 2.0 — the law engine wired through the workspace', () => {
     };
     expect(breakdown.hasCertificate).toBe(true);
     // BQ $2 000 → tier 1 BHM = 412 000 so'm at the demo book's 12 500 UZS/USD.
-    expect(breakdown.fee).toMatchObject({ feeUsd: 32.96, bhmCoefficient: 1 });
+    expect(breakdown.fee).toMatchObject({ bhmCoefficient: 1 });
     expect(breakdown.groups[0]).toMatchObject({ dutyMode: 'advalor' });
   });
 });

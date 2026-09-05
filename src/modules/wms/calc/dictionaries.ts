@@ -279,7 +279,6 @@ export async function saveRates(
     tnvedCode: string;
     dutyPct: number;
     vatPct: number;
-    feeUsd: number;
     effectiveDate: string;
     source?: 'manual' | 'correction';
     note?: string | null;
@@ -295,11 +294,10 @@ export async function saveRates(
 ): Promise<string> {
   const code = input.tnvedCode.trim();
   if (!code) throw new CalcError('code_required');
-  mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd, input.dutySpecific);
+  mustBeNumber(input.dutyPct, input.vatPct, input.dutySpecific);
   if (input.dutyPct < 0 || input.dutyPct > 100 || input.vatPct < 0 || input.vatPct > 100) {
     throw new CalcError('rate_range');
   }
-  if (input.feeUsd < 0) throw new CalcError('rate_range');
 
   let dutyMode = input.dutyMode ?? null;
   let dutySpecific = input.dutySpecific ?? null;
@@ -329,7 +327,12 @@ export async function saveRates(
       tnvedCode: code,
       dutyPct: input.dutyPct.toFixed(3),
       vatPct: input.vatPct.toFixed(3),
-      feeUsd: input.feeUsd.toFixed(2),
+      // THE DICTIONARY CARRIES NO FEE (audit A2). VED 2.0 made the
+      // declaration fee automatic and per REQUEST (#858); a per-code number
+      // here was pulled onto a group and then added a second time inside the
+      // group's own customs. The column stays for the rows that already
+      // carry a zero, and no screen can write one.
+      feeUsd: '0',
       dutyMode,
       dutySpecific: dutySpecific === null ? null : dutySpecific.toFixed(4),
       dutyUnit,

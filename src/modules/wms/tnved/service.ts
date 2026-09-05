@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import { tnvedAssignments } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
 
 /**
  * ТНВЭД assistant (Phase 1.5, owner's spec): the AI suggests a customs code
@@ -101,7 +102,7 @@ export async function suggestTnved(input: {
   nameRu: string | null;
   photo?: { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null;
 }): Promise<TnvedSuggestion> {
-  if (!process.env.ANTHROPIC_API_KEY) throw new TnvedError('ai_not_configured');
+  if (!aiConfigured()) throw new TnvedError('ai_not_configured');
   // The same deadline `proposeGoodsGrouping` twenty lines below already
   // carries, and for the same reason: the SDK's default is no timeout and two
   // retries, so a hung call held a slot in the one Node process for half an
@@ -126,7 +127,7 @@ export async function suggestTnved(input: {
 
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-5',
+      model: ANALYST_MODEL,
       max_tokens: 2048,
       system: SYSTEM,
       output_config: {
@@ -189,10 +190,17 @@ const GROUPING_SYSTEM = `Ты — эксперт по классификации
  * it, a human decides. Degrades cleanly: no key (or a refusal) surfaces as a
  * TnvedError and the file simply stays ungrouped for hand work.
  */
+/** What one grouping call cost — carried out so the caller can bill it. */
+export interface AiUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export async function proposeGoodsGrouping(
   goods: { name: string; quantity: number | null; unit: string | null }[],
-): Promise<TnvedGrouping> {
-  if (!process.env.ANTHROPIC_API_KEY) throw new TnvedError('ai_not_configured');
+): Promise<TnvedGrouping & { usage?: AiUsage }> {
+  if (!aiConfigured()) throw new TnvedError('ai_not_configured');
   if (goods.length === 0 || goods.length > 200) throw new TnvedError('ai_failed');
   // Round 97's lesson, which never reached this file: an un-deadlined network
   // call is the failure that looks like a hang rather than an error, and a
@@ -205,7 +213,7 @@ export async function proposeGoodsGrouping(
 
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-5',
+      model: ANALYST_MODEL,
       max_tokens: 8192,
       system: GROUPING_SYSTEM,
       output_config: {
@@ -260,7 +268,14 @@ export async function proposeGoodsGrouping(
       }))
       .filter((g) => g.item_indexes.length > 0);
     if (groups.length === 0) throw new TnvedError('ai_failed');
-    return { groups };
+    return {
+      groups,
+      usage: {
+        model: ANALYST_MODEL,
+        inputTokens: response.usage?.input_tokens ?? 0,
+        outputTokens: response.usage?.output_tokens ?? 0,
+      },
+    };
   } catch (err) {
     if (err instanceof TnvedError) throw err;
     throw new TnvedError('ai_failed');

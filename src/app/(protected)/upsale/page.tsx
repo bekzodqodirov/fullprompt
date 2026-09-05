@@ -190,7 +190,7 @@ export default async function UpsalePage({
             {t('payTitle')}
             <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-xs font-semibold text-brand-700">
               {payable.length} · $
-              {(Math.round(payable.reduce((s, r) => s + r.upsaleUsd, 0) * 100) / 100).toFixed(2)}
+              {(Math.round(payable.reduce((s, r) => s + r.payableUsd, 0) * 100) / 100).toFixed(2)}
             </span>
           </summary>
           <div className="px-3 pb-3">
@@ -201,7 +201,9 @@ export default async function UpsalePage({
             sellerName: r.sellerName,
             clientCode: r.clientCode,
             clientName: r.clientName,
-            upsaleUsd: r.upsaleUsd,
+            // What the press will pay: the remaining amount, so the form's
+            // own total is the figure the server derives (audit A1).
+            upsaleUsd: r.payableUsd,
             offeredAt: r.offeredAt.toISOString(),
           }))}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}

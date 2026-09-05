@@ -302,6 +302,56 @@ export function intakeNoteText(input: {
 }
 
 /**
+ * Which line the bot should ask about next, and what to ask (sub-round C).
+ *
+ * The rule is `missingFields`' own `itemMeasure` clause, one row at a time: a
+ * row stating neither a count, nor a weight, nor the law's own unit cannot be
+ * valued at all, and everything else about the shipment can be left to the
+ * VED. So the question is only ever asked about rows the engine would refuse
+ * — never «are you sure», never a form.
+ *
+ * Freight-only sections ask NOTHING: a truck is priced on the totals, and the
+ * `REQUIRED_FIELDS` table already says so. Reading it here rather than
+ * restating it keeps the two from drifting (#513).
+ *
+ * Returns the INDEX into `facts.goods` so the answer can be written back onto
+ * exactly the row that was asked about — a name is not an address, two lines
+ * of a packing list are routinely called the same thing.
+ */
+export function nextLineToAsk(
+  section: CalcSection,
+  facts: CalcFacts,
+  opts: { after?: number | null } = {},
+): { index: number; name: string; bareMeans: 'quantity' | 'weight' } | null {
+  if (!REQUIRED_FIELDS[section].includes('itemMeasure')) return null;
+  const items = itemFacts(facts);
+  const from = opts.after === null || opts.after === undefined ? 0 : opts.after + 1;
+  for (let i = from; i < items.length; i += 1) {
+    const item = items[i]!;
+    if (item.quantity !== null || item.weightKg !== null || item.measureQty !== null) continue;
+    return {
+      index: i,
+      name: item.name,
+      // What a BARE «50» means. A line the model already saw a count-ish
+      // unit on is a dona line; everything else is likelier to be weighed,
+      // because that is what a Chinese packing list states. The question
+      // itself spells both out, so this only decides the shorthand.
+      bareMeans: (facts.goods?.[i]?.quantity ?? null) === null ? 'weight' : 'quantity',
+    };
+  }
+  return null;
+}
+
+/** The question, in the seller's own language. */
+export function lineQuestionText(line: { index: number; name: string }): string {
+  return (
+    `❓ ${line.index + 1}-qator «${line.name}» — nechta dona yoki necha kg?
+` +
+    'Masalan: «50 dona» yoki «300 kg».'
+  );
+}
+
+/**
  * A phone or a client code typed into the collection — the two ways staff
  * name a customer. Neither is validated here beyond shape: WHICH client it
  * is gets resolved against the book, where the honest answer lives.

@@ -1463,7 +1463,55 @@ timestamps are TEXT (history.ts knew; I did not copy it) — seven
 `FORMATTING_ERROR`s per registry page with every test green; pinned. 5 red
 proofs. **2447 unit/integration + 193 e2e** green on a fresh gsr_ci in CI's order, ledger 96.
 
-**Latest migration: 0095** (`customs_import_heartbeat` — the parse's wall-clock
+**Round — AI-VED: telegramda tahminiy rastamojka (2026-09-05; DECISIONS
+#926-933; migration 0096 `ai_ved_memory` — ledger must reach 97):** his own
+words, «telegramda AI ning o'zi tahminiy hisoblab bersin rastamojka qancha
+bo'lishini … AI-VED faqat rastamojka hisoblaydi», answers 1 (chat AND queue;
+«shu muhrlangan datani AI xotirasiga qo'yish kerak») and 2a (chat AND lenta).
+Spec + code map: `docs/AI-VED-RASTAMOJKA.md`, `docs/AI-VED-RASTAMOJKA-MAP.md`.
+**The memory is the SEALED RECORD and there is no memory table** (#767's
+shape restated): `calc/memory.ts` is the one query — `word_similarity` over
+`name_norm`, confirmed groups of sealed requests only, similarity ROUNDED
+then newest seal, code + baza and never a rate. It goes FIRST everywhere —
+`openCalcRequest`'s codes, `saveTable`'s fill (before the import fill, and
+announced «🧠 N qator»), `aiPrefill` step 0 — and `sealCalc` teaches the
+exact-key book through `saveTnved` after the tx (#714). The derived
+provenance fence found the round's real defect on its first run:
+`setItemBaza` and `pullBazasFromDictionary` moved the price and left the
+memory column, #896 in two older writers. **Bot: «🤖 AI rastamojka»** — a
+second DOOR, never a second collector; section fixed to rastamojka, at most
+three per-line questions (`nextLineToAsk` restates `missingFields`' own
+clause one row at a time; `parseLineAnswer` REFUSES two figures in one
+message), a certificate toggle landing on `has_certificate`, and invoices
+finally READ (xlsx/csv through the deal import's parser via the new shared
+`goods-file.ts`, PDF as a document block, DOCX refused in words — it is a zip
+like an xlsx). **The reply** (`ai-reply.ts`, pure) is one line per GROUP
+(never per item — `customsFor` prices a group and splitting invents an
+allocation, #780), never a $0, never freight (a podklyuch job names who
+prices the road), caveat on its own line; delivered to the chat AND the
+lenta. Found by LOOKING at the round's own output: a real customs description
+is 300 chars with its own newlines, so the numbering came apart and the list
+stopped being a list — names collapsed and cut at 60. **All three doors** now
+queue the pass through one sender (`prefill-queue.ts`, queueing moved INTO
+`landIntake`; derived fence over every `openCalcRequest` caller), a yolkira
+job is refused rather than paid for, and `ai_calc_passes` bills every model
+call — the intake's usage travels to the LANDING because that call precedes
+the request and is the expensive one. `aiCalcBudgetLeft()` is a SOFT budget,
+stated as such (one worker, 200/day; an atomic claim would need a lock on the
+path that must never hold one). ONE `aiConfigured()` and one model id;
+`duty-text.ts` moved into the module (three readers, and the bot cannot
+import from `src/app`). 5 red proofs by string edit. **2509 unit/integration
++ 196 e2e** green on a fresh gsr_ci in CI's order, ledger 97. TWO findings
+came from MEASURING and neither from a test: the memory's GIN index was never
+read (919 ms per needle at 50 000 rows → 0.3 ms with the `%` operator), and
+`word_similarity` is asymmetric — «erkaklar kurtkasi» against «ayollar
+kurtkasi» scores 0.611 and men's jackets would have inherited women's price
+(#934, #936). A third came from the e2e suite: a SEAL is now configuration
+for any later spec about the same product (#935).
+
+**Latest migration: 0096** (`ai_ved_memory` — the sealed memory's provenance
+and name index, one correction per parent, the AI cost ledger; ledger must
+reach **97**). Before it: **0095** (`customs_import_heartbeat` — the parse's wall-clock
 beat and the sweep's partial index; ledger must reach **96**). Before it:
 0094 (`customs_import` — the quarterly declarations
 dump, its rows under a GIN trigram index, and `calc_request_items.

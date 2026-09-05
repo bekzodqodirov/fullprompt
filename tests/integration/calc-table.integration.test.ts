@@ -171,7 +171,6 @@ describe('auto-grouping by typed code', () => {
       tnvedCode: '8528520000',
       dutyPct: '10.000',
       vatPct: '12.000',
-      feeUsd: null,
       rateSource: 'dictionary',
       dutyMode: null,
     });

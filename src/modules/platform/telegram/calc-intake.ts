@@ -19,7 +19,7 @@ import { staffForChat } from './staff-bot';
  * persisted the moment it matters.
  */
 
-export type IntakeStage = 'section' | 'client' | 'material' | 'review';
+export type IntakeStage = 'section' | 'client' | 'material' | 'review' | 'question';
 
 export interface IntakeState {
   section: import('../../wms/calc/intake').CalcSection;
@@ -57,8 +57,59 @@ export interface IntakeState {
    * is EDITED in place instead, and its id is how.
    */
   promptMessageId: number | null;
+  /**
+   * The «🤖 AI rastamojka» door (sub-round C), as opposed to the plain
+   * «🧮 Hisoblatish» one.
+   *
+   * It changes what the bot DOES after the confirm, never what it collects:
+   * the same collector, the same landing, the same queue. What the flag buys
+   * the seller is the follow-up questions and the promise of a figure in the
+   * chat — so an ordinary collection is not made slower by questions nobody
+   * asked for.
+   */
+  ai: boolean;
+  /**
+   * Has the customer a certificate of origin? TRUE by default, which is the
+   * request column's own default since 0091 — the additional duty only bites
+   * when there is none, and assuming the worse case would quote every job
+   * high.
+   */
+  hasCertificate: boolean;
+  /** The line the bot is waiting for an answer about, by its index in
+   * `facts.goods`. Null outside the question stage. */
+  askingIndex: number | null;
+  /** How many questions have been asked. Capped — a bot that keeps asking is
+   * a bot people stop answering. */
+  round: number;
+  /** Was the LAST answer unreadable? One re-ask per line, then move on. */
+  reasked: boolean;
+  /**
+   * Goods read out of an invoice the seller attached (XLSX/CSV).
+   *
+   * Held beside the material rather than merged into it: what the SELLER
+   * typed wins, always, and the invoice answers only when the reading of the
+   * text produced no lines at all. A supplier's spreadsheet is exact about
+   * fifty rows and says nothing about which of them this quote is for.
+   */
+  invoiceGoods: import('../../wms/calc/intake').CalcFacts['goods'];
+  /**
+   * A PDF invoice, small enough to show the model as a document block.
+   *
+   * Same cap as the images and the same reason: a request body nobody
+   * budgeted for is a request that fails slowly. One document — the first
+   * that fits — because a seller forwarding a folder is forwarding context,
+   * not a second invoice.
+   */
+  pdf: { data: Buffer; name: string } | null;
+  /** What the analysis cost, carried to the landing — see `AiIntakeResult`. */
+  usage: { model: string; inputTokens: number; outputTokens: number } | null;
+  /** The day's AI budget was spent before this collection was read. */
+  budgetSpent: boolean;
   expires: number;
 }
+
+/** After this many questions the bot stops asking and offers the confirm. */
+export const MAX_QUESTION_ROUNDS = 3;
 
 /** At most this many photographs reach the model. */
 export const MAX_INTAKE_IMAGES = 6;
@@ -71,6 +122,7 @@ const key = (chatId: bigint) => String(chatId);
 export function startIntake(
   chatId: bigint,
   section: import('../../wms/calc/intake').CalcSection,
+  opts: { ai?: boolean } = {},
 ): IntakeState {
   const state: IntakeState = {
     section,
@@ -85,6 +137,15 @@ export function startIntake(
     images: [],
     imagesSkipped: 0,
     promptMessageId: null,
+    ai: opts.ai ?? false,
+    hasCertificate: true,
+    askingIndex: null,
+    round: 0,
+    reasked: false,
+    invoiceGoods: [],
+    pdf: null,
+    usage: null,
+    budgetSpent: false,
     expires: Date.now() + TTL_MS,
   };
   collections.set(key(chatId), state);
@@ -128,11 +189,18 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   const text = state.material.join('\n');
   const manual = parseManualFacts(text);
 
-  const ai = await analyzeIntake({
+  // The day's budget gates the READING too — it is the most expensive call
+  // on this path (Opus, with photographs). Over the cap the manual parser
+  // answers, which is exactly what a keyless server has always had, and the
+  // summary says so rather than looking like a model that found nothing.
+  const { aiCalcBudgetLeft } = await import('../../wms/calc/ai-cost');
+  const budgetLeft = await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY);
+  const ai = budgetLeft <= 0 ? null : await analyzeIntake({
     section: state.section,
     text,
     fileCount: state.fileCount,
     images: state.images,
+    pdf: state.pdf,
   }).catch((err: unknown) => {
     logger.warn({ err }, 'intake analyze failed');
     return null;
@@ -144,13 +212,29 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     toCity: manual.toCity ?? ai?.facts.toCity ?? null,
     weightKg: manual.weightKg ?? ai?.facts.weightKg ?? null,
     volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null,
-    goods: ai?.facts.goods?.length ? ai.facts.goods : manual.goods,
+    /**
+     * Three sources, in the order of who is answering about THIS shipment.
+     *
+     * What the seller wrote (read by the model) is first: they are looking at
+     * the job. An attached invoice is second — exact about its fifty rows and
+     * silent about which of them this quote covers, so it answers only when
+     * the reading produced no lines at all. `manual.goods` is deliberately
+     * always empty (splitting a typed list is the model's job, not a regex's)
+     * and stays last so the shape never changes.
+     */
+    goods: ai?.facts.goods?.length
+      ? ai.facts.goods
+      : state.invoiceGoods?.length
+        ? state.invoiceGoods
+        : manual.goods,
   };
   return {
     ...state,
     facts,
     steps: ai?.steps ?? [],
     aiUsed: Boolean(ai),
+    budgetSpent: budgetLeft <= 0,
+    usage: ai?.usage ?? null,
     stage: 'review',
   };
 }

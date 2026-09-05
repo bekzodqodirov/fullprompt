@@ -17,6 +17,7 @@ import {
 import { parseManualFacts } from './intake-manual';
 import { analyzeIntake } from './intake-ai';
 import { dealFor } from './intake-land';
+import { queueCalcPrefill } from './prefill-queue';
 
 /**
  * «Hisoblatishga yuborish» from a CRM Telegram thread (docs/VED.md, the
@@ -260,7 +261,7 @@ export async function threadCalcSend(
     via: 'suhbatdan',
   });
 
-  await openCalcRequest(
+  const opened = await openCalcRequest(
     {
       entityType: target.kind,
       entityId: target.id,
@@ -285,5 +286,11 @@ export async function threadCalcSend(
     },
     ctx,
   );
+  // …and the machine looks at it, exactly as it does for the bot's door.
+  await queueCalcPrefill({
+    requestId: opened.id,
+    staffId: actor.id,
+    section: input.section,
+  });
   return { ...target, queued: true };
 }
