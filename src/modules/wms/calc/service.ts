@@ -100,7 +100,22 @@ export const openRequests = isNull(calcRequests.completedAt);
  * this», and a shared query would have to take a table name as an argument.
  */
 export async function nextVedAssignee(): Promise<string | null> {
-  const pool = await usersWithPermission('ved.docs');
+  /**
+   * THE OWNER AND THE ADMINS ARE NOT IN THE ROTA (his «1.1», audit A13).
+   *
+   * `ved.docs` is held by every admin role as well as by the VED, and the
+   * ordering below puts «never had one» FIRST — so every fresh bot or card
+   * request was auto-assigned to the OWNER, minting a timed priority-1 task
+   * on him and making the queue screen read «Взял: Bekzod» on work he was
+   * never going to do. Measured on his own data.
+   *
+   * They keep the manual «Olaman» door. When the subtraction empties the
+   * pool — a company whose only `ved.docs` holders are admins — the request
+   * is stored UNASSIGNED, which is an honest state the queue already draws
+   * and the overdue sweep already announces to the whole pool.
+   */
+  const adminIds = new Set(await usersWithRoles(['super_admin', 'admin']));
+  const pool = (await usersWithPermission('ved.docs')).filter((id) => !adminIds.has(id));
   if (pool.length === 0) return null;
   const rows = await db
     .select({
@@ -562,6 +577,19 @@ export async function finishCalcRequest(
   const { loadWorkspace, canSeal } = await import('./workspace');
   const workspace = await loadWorkspace(id);
   if (workspace && canSeal(workspace)) throw new CalcError('seal_instead');
+  /**
+   * «1 000» IS NOT A NUMBER (audit A3).
+   *
+   * `Number('1 000')` is NaN, and NaN passes every guard made of
+   * comparisons: `answer.amount != null` was TRUE, so the request closed
+   * with `answer_currency = 'USD'` and `answer_amount` NULL — a currency with
+   * no amount — and the seller's Telegram read «💵 NaN USD». The form parses
+   * spaces now, and this is the fence behind it (#531: a screen guard alone
+   * leaves the action accepting it).
+   */
+  if (answer.amount !== undefined && answer.amount !== null && !Number.isFinite(answer.amount)) {
+    throw new CalcError('bad_number');
+  }
   const row = await endRequest(id, {
     via: 'task',
     actorId: ctx.actorId,

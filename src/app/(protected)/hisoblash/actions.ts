@@ -28,9 +28,10 @@ import {
   saveTable,
   sealCalc,
   setCargoFacts,
+  setFeeOverride,
   setFreightZone,
-  setRequestCertificate,
   setGroupRates,
+  setRequestCertificate,
   type TableItemEdit,
   type TableNewItem,
   type TableSaveResult,
@@ -321,6 +322,21 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
   }, ws(id));
 }
 
+/**
+ * The declaration fee for THIS request, when the automatic tier is wrong.
+ *
+ * `setFeeOverride` has existed since 0091 with no door on any screen (audit
+ * A29), while the per-GROUP fee box that did exist charged the same fee again
+ * inside every group (A2). This is the one fee door: null = the VMQ-55 scale
+ * decides.
+ */
+export async function setFeeOverrideAction(
+  id: string,
+  feeOverrideUsd: number | null,
+): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => setFeeOverride(id, feeOverrideUsd, ctx), ws(id));
+}
+
 export async function setRatesAction(
   id: string,
   groupId: string,
@@ -329,7 +345,6 @@ export async function setRatesAction(
     tnvedCode: string;
     dutyPct: number | null;
     vatPct: number | null;
-    feeUsd: number | null;
     dutyFree: boolean;
     vatFree: boolean;
   },
@@ -344,7 +359,6 @@ export async function setRatesAction(
           tnvedCode: input.tnvedCode,
           dutyPct: input.dutyPct,
           vatPct: input.vatPct,
-          feeUsd: input.feeUsd,
           dutyFree: input.dutyFree,
           vatFree: input.vatFree,
           // A person typed these. The column's CHECK knows only 'dictionary'
@@ -506,7 +520,6 @@ export async function saveRatesAction(input: {
   tnvedCode: string;
   dutyPct: number;
   vatPct: number;
-  feeUsd: number;
   effectiveDate: string;
   /** 'correction' when the workspace's «lug'atga yozish» taught it (law 6). */
   source?: 'manual' | 'correction';

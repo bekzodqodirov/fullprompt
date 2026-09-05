@@ -159,7 +159,7 @@ async function sealed(overrides: Partial<Parameters<typeof openCalcRequest>[0]> 
   }
   await setGroupRates(
     groupId,
-    { tnvedCode: '8528520000', dutyPct: 10, vatPct: 12, feeUsd: 0, dutyFree: false, vatFree: false, source: 'typed' },
+    { tnvedCode: '8528520000', dutyPct: 10, vatPct: 12, dutyFree: false, vatFree: false, source: 'typed' },
     ctx(),
   );
   await setFreightZone(request.id, 'cn', ctx());

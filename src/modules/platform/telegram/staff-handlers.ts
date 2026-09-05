@@ -657,11 +657,34 @@ async function handleCalcCallback(
       // way, but only a queued request will be calculated by anybody.
       (target.queued
         ? '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
-        : '⚠️ Hisoblash navbatiga tushmadi — kartadan qo‘lda yuboring.'),
+        : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError)}`),
     // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
     // took the cabinet buttons off a both-chat's phone.
     { reply_markup: await replyKeyboardFor(chatId) },
   );
+}
+
+/**
+ * WHY the job did not reach the VED's queue (audit A38).
+ *
+ * One constant sentence used to answer every cause, and it sent the person to
+ * a door that refuses for the same reason: with twenty open requests the card
+ * form says «Ochiq so'rovlar juda ko'p» too. A `Record<string, string>` and
+ * not a runtime key: these are the BOT's words, Uzbek, in this file with the
+ * rest of them, and an unknown code prints the honest fallback.
+ */
+const QUEUE_REFUSAL: Record<string, string> = {
+  too_many_open: 'sizda 20 ta ochiq so‘rov bor — VED javob bergach qayta yuboring.',
+  too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq).',
+  not_found: 'karta topilmadi.',
+  note_taken: 'bu material allaqachon yozilgan.',
+  note_foreign: 'material boshqa kartaga tegishli.',
+  unauthenticated: 'siz tizimda emassiz.',
+  server_behind: 'server yangilanmoqda — biroz keyinroq urinib ko‘ring.',
+};
+
+function queueRefusal(code: string | null | undefined): string {
+  return (code && QUEUE_REFUSAL[code]) ?? 'kartadan qo‘lda yuboring.';
 }
 
 /** The two doors an unknown chat is offered (owner: «hodim yoki mijoz alohida kirish»). */

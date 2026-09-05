@@ -202,20 +202,18 @@ export async function aiPrefill(
   // 4. Read what the engine now says, and say it in words.
   const ws = await loadWorkspace(requestId);
   /**
-   * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO», and the engine spells both 0.
+   * «NOTHING TO PRICE» IS NOT «PRICED AT ZERO».
    *
-   * Two independent sources, and the section gate above only closes the
-   * first. (1) A section with no customs half is hard-coded 0 by
-   * `loadWorkspace`. (2) A section that HAS one but carries no groups yet:
-   * `requestCustomsFor([])` runs `[].every(ok)` — vacuously TRUE — and
-   * returns `customsUsd: 0`. That second one is the ordinary way this ships:
-   * no ANTHROPIC key, or a model that refused, and nothing the TNVED memory
-   * already knew. MEASURED: the seller read «Tahminiy: rastamojka ~$0.00».
+   * Two sources spelled both as 0 and the section gate above closes only the
+   * first: (1) a section with no customs half is hard-coded 0 by
+   * `loadWorkspace`; (2) a section that HAS one but carries no groups yet used
+   * to come back 0 from `requestCustomsFor([])` — `[].every(ok)` is vacuously
+   * TRUE. MEASURED then: the seller read «Tahminiy: rastamojka ~$0.00».
    *
-   * `null` here, so the reply refuses in words. Deliberately NOT fixed in
-   * `requestCustomsFor`: that function is consumed verbatim by the live
-   * browser recompute and by the seal, and making its empty case null would
-   * move the footer bar and the seal gate in a round that ships no migration.
+   * The second half is now the ENGINE's answer (audit A17, 0096's round): an
+   * empty customs list is `null`, so the screen, the seal gate and this reply
+   * all refuse in the same place. The `groups.length` clause stays as the
+   * belt — a workspace read by an older server would still spell it 0.
    */
   const customsUsd =
     ws && ws.parts.customs && ws.groups.length > 0 ? ws.customsUsd : null;

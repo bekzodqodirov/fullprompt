@@ -380,7 +380,10 @@
       "calc_customs_deviation_pct": "Rastamojka hisobdan necha foizga farq qilishi mumkin",
       "calc_customs_cost_type_codes": "Qaysi xarajat turlari rastamojka hisoblanadi (kodlar ro'yxati)",
       "client_code_next": "Keyingi mijoz kodi raqami (bo‘sh = eski qoida; faqat avtomatik berish suradi)",
-      "import_baza_min_sim": "Import bazasidan nom o'xshashligi shu darajadan yuqori bo'lsa — baza avtomatik qo'yiladi (0..1)"
+      "import_baza_min_sim": "Import bazasidan nom o'xshashligi shu darajadan yuqori bo'lsa — baza avtomatik qo'yiladi (0..1)",
+      "calc_memory_min_sim": "AI avvalgi MUHRLANGAN hisobdan bazani olishi uchun nom o'xshashligi darajasi (0..1)",
+      "ai_calc_daily_limit": "Hisoblash uchun kuniga nechta AI so'rovi (limitdan keyin faqat xotira, lug'at va bojxona fayli ishlaydi)",
+      "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -2426,7 +2429,9 @@
     "registryLead": "Lid",
     "regClear": "Tozalash",
     "regAll": "Hammasi",
-    "registryNav": "Hisoblar tarixi"
+    "registryNav": "Hisoblar tarixi",
+    "feeOverride": "Deklaratsiya yig'imi (qo'lda)",
+    "feeAuto": "avto"
   },
   "partners": {
     "title": "Kontragentlar",

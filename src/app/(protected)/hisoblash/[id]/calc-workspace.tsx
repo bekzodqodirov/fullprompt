@@ -11,6 +11,7 @@ import {
   deleteExtraAction,
   saveExtraAction,
   sealAction,
+  setFeeOverrideAction,
   setZoneAction,
   type CalcFormState,
 } from '../actions';
@@ -79,7 +80,7 @@ export function CalcWorkspace({
 
           <FreightPanel workspace={workspace} pending={pending} act={act} />
           <ExtrasPanel workspace={workspace} pending={pending} act={act} />
-          <TotalsPanel workspace={workspace} dirty={dirty} />
+          <TotalsPanel workspace={workspace} dirty={dirty} pending={pending} act={act} />
           <SealPanel workspace={workspace} pending={pending} act={act} dirty={dirty} />
         </>
       ) : null}
@@ -287,7 +288,17 @@ function ExtrasPanel({
 
 /* --------------------------------------------------------------- totals */
 
-function TotalsPanel({ workspace, dirty }: { workspace: Workspace; dirty: number }) {
+function TotalsPanel({
+  workspace,
+  dirty,
+  pending,
+  act,
+}: {
+  workspace: Workspace;
+  dirty: number;
+  pending: boolean;
+  act: (work: () => Promise<CalcFormState>) => void;
+}) {
   const t = useTranslations('calc');
   const totals = workspace.totals;
 
@@ -326,6 +337,17 @@ function TotalsPanel({ workspace, dirty }: { workspace: Workspace; dirty: number
                   </dd>
                 </>
               ) : null}
+              {/* THE ONE FEE DOOR (audit A2/A29). `fee_override_usd` has
+                  existed since 0091 — for the −20 % preliminary declaration
+                  and for a shipment cleared on two declarations — and had no
+                  input on any screen, while the per-GROUP «Сбор $» box that
+                  did exist charged the same fee a second time inside every
+                  group. The group box is gone; this is where a differing
+                  declaration fee is typed, once, for the whole request. */}
+              <dt />
+              <dd>
+                <FeeOverride workspace={workspace} pending={pending} act={act} />
+              </dd>
             </>
           ) : null}
           {workspace.parts.freight ? (
@@ -628,6 +650,58 @@ function SealedPanel({
         </>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The declaration fee, when THIS shipment's is not the automatic tier.
+ *
+ * Empty = the VMQ-55 scale decides (the ordinary case, and what the line
+ * above prints). A number = this declaration's own fee, whole, for the whole
+ * request: the −20 % preliminary declaration, or a job cleared on two
+ * declarations. Never per group — that was the double charge (audit A2).
+ */
+function FeeOverride({
+  workspace,
+  pending,
+  act,
+}: {
+  workspace: Workspace;
+  pending: boolean;
+  act: (work: () => Promise<CalcFormState>) => void;
+}) {
+  const t = useTranslations('calc');
+  const tc = useTranslations('common');
+  const [value, setValue] = useState(
+    workspace.feeOverrideUsd === null ? '' : String(workspace.feeOverrideUsd),
+  );
+  const typed = value.trim() === '' ? null : Number(value.replace(',', '.'));
+  const changed = typed !== workspace.feeOverrideUsd;
+
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      <input
+        className="input input-sm !w-24"
+        inputMode="decimal"
+        placeholder={t('feeAuto')}
+        aria-label={t('feeOverride')}
+        data-testid="calc-fee-override"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      {/* #422's rule: the save appears only when the answer has changed. */}
+      {changed ? (
+        <button
+          type="button"
+          className="btn-secondary !min-h-8"
+          disabled={pending}
+          data-testid="calc-fee-override-save"
+          onClick={() => act(() => setFeeOverrideAction(workspace.requestId, typed))}
+        >
+          {tc('save')}
+        </button>
+      ) : null}
+    </span>
   );
 }
 

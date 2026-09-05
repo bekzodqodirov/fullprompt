@@ -380,7 +380,10 @@
       "calc_customs_deviation_pct": "清关费用与核算的允许偏差百分比",
       "calc_customs_cost_type_codes": "哪些费用类型算作清关（代码列表）",
       "client_code_next": "下一个客户代码编号（留空 = 旧规则；仅自动生成会推进）",
-      "import_baza_min_sim": "导入名称需达到的相似度阈值，超过后自动填入基价（0..1）"
+      "import_baza_min_sim": "导入名称需达到的相似度阈值，超过后自动填入基价（0..1）",
+      "calc_memory_min_sim": "商品名称与已封存计算的相似度达到多少时，AI 才采用其基价（0..1）",
+      "ai_calc_daily_limit": "每日用于计算的 AI 调用次数（超出后仅用记忆、字典与海关文件）",
+      "ai_calc_reply_lenta": "将 AI 的估算同时写入卡片动态"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"
@@ -2426,7 +2429,9 @@
     "registryLead": "线索",
     "regClear": "清除",
     "regAll": "全部",
-    "registryNav": "计算历史"
+    "registryNav": "计算历史",
+    "feeOverride": "报关费（手动）",
+    "feeAuto": "自动"
   },
   "partners": {
     "title": "合作方",

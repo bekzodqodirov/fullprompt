@@ -317,6 +317,8 @@ export async function landCollectedIntake(
   label: string;
   queued?: boolean;
   requestId?: string | null;
+  /** Why not, when it did not (audit A38) — the bot turns it into a sentence. */
+  queueError?: string | null;
 } | null> {
   const { activeIntake } = await import('./calc-intake');
   const state = activeIntake(chatId);

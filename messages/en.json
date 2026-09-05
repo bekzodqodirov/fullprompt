@@ -380,7 +380,10 @@
       "calc_customs_deviation_pct": "How far the customs cost may differ from the quote, in percent",
       "calc_customs_cost_type_codes": "Which cost types count as customs (a list of codes)",
       "client_code_next": "Next client code number (empty = old rule; only auto-generation advances it)",
-      "import_baza_min_sim": "How close an imported name must be before its price fills the baza automatically (0..1)"
+      "import_baza_min_sim": "How close an imported name must be before its price fills the baza automatically (0..1)",
+      "calc_memory_min_sim": "How close a product name must be to a SEALED calculation before the AI takes its baza (0..1)",
+      "ai_calc_daily_limit": "AI calls per day for calculations (past the limit: memory, dictionaries and the customs file only)",
+      "ai_calc_reply_lenta": "Also write the AI's estimate onto the card's lenta"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"
@@ -2426,7 +2429,9 @@
     "registryLead": "Lead",
     "regClear": "Clear",
     "regAll": "All",
-    "registryNav": "Calc history"
+    "registryNav": "Calc history",
+    "feeOverride": "Declaration fee (manual)",
+    "feeAuto": "auto"
   },
   "partners": {
     "title": "Counterparties",

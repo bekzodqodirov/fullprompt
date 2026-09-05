@@ -160,7 +160,6 @@ export default async function CalcDictionariesPage(props: {
                   <th className="p-2">TNVED</th>
                   <th className="p-2 text-right">{t('duty')}</th>
                   <th className="p-2 text-right">{t('vat')} %</th>
-                  <th className="p-2 text-right">{t('fee')} $</th>
                   <th className="p-2">{t('effectiveDate')}</th>
                 </tr>
               </thead>
@@ -186,7 +185,6 @@ export default async function CalcDictionariesPage(props: {
                             : `${row.dutyPct}% + ${row.dutySpecific} $/${row.dutyUnit}`}
                     </td>
                     <td className="p-2 text-right font-mono tabular-nums">{row.vatPct}</td>
-                    <td className="p-2 text-right font-mono tabular-nums">{row.feeUsd}</td>
                     <td className="p-2 font-mono tabular-nums">{row.effectiveDate}</td>
                   </tr>
                 ))}

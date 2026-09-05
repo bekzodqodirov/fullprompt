@@ -2045,11 +2045,13 @@ export const calcRequestItems = pgTable(
     bazaUsd: numeric('baza_usd', { precision: 14, scale: 4 }),
     bazaBasis: text('baza_basis'),
     /**
-     * 'dictionary' | 'typed' | 'import' — never 'ai'.
+     * 'dictionary' | 'typed' | 'import' | 'memory' — never 'ai'.
      *
      * 'import' is the customs service's OWN recorded price for this code,
-     * chosen by name similarity and still confirmed by a person (0094). A
-     * model may propose a ROW; a model's own number has nowhere to land.
+     * chosen by name similarity and still confirmed by a person (0094);
+     * 'memory' is a price a VED person already SEALED on an earlier job
+     * (0096). A model may propose a ROW; a model's own number has nowhere
+     * to land.
      */
     bazaSource: text('baza_source'),
     /**
@@ -2073,6 +2075,29 @@ export const calcRequestItems = pgTable(
       (): AnyPgColumn => customsImportRows.id,
       { onDelete: 'set null' },
     ),
+    /**
+     * WHICH SEALED item a baza was copied from (0096) — the 🧠 chip's title.
+     *
+     * The AI-VED memory is the sealed record itself and not a second copy of
+     * it (`lgotaLastByCode`'s rule): a stored copy of a price can disagree
+     * with the seal it came from and nothing could say which is true. This
+     * column is the pointer BACK, so the VED reading a filled baza can see
+     * whose confirmation put it there. Self-FK, ON DELETE SET NULL, and — like
+     * `import_row_id` — no CHECK may mention it (#809).
+     */
+    memoryItemId: uuid('memory_item_id').references((): AnyPgColumn => calcRequestItems.id, {
+      onDelete: 'set null',
+    }),
+    /**
+     * The model's one-line reason for choosing THIS declaration (0096, owed
+     * since #909). Words, never a number: a pick and the deterministic
+     * auto-fill used to land identically and the VED could not tell them
+     * apart.
+     */
+    bazaReason: text('baza_reason'),
+    /** The name the sealed memory searches on — lower-cased, whitespace
+     * collapsed. Written by `itemNameNorm` at every writer, never a trigger. */
+    nameNorm: text('name_norm'),
   },
   (t) => [
     uniqueIndex('calc_request_items_seq_idx').on(t.requestId, t.seq),
@@ -2083,7 +2108,7 @@ export const calcRequestItems = pgTable(
     ),
     check(
       'calc_items_baza_source_check',
-      sql`${t.bazaSource} IS NULL OR ${t.bazaSource} IN ('dictionary', 'typed', 'import')`,
+      sql`${t.bazaSource} IS NULL OR ${t.bazaSource} IN ('dictionary', 'typed', 'import', 'memory')`,
     ),
     check(
       'calc_items_measure_unit_check',
@@ -2854,5 +2879,42 @@ export const customsImportRows = pgTable(
     ),
     // The trigram index is created in SQL (0094): drizzle has no gin_trgm_ops
     // expression, and the suggestion query is the only reader.
+  ],
+);
+
+/**
+ * What an AI-VED pass cost, per model call (0096).
+ *
+ * Deliberately NOT `ai_questions`: that table is the assistant's audit AND
+ * its atomic per-person daily cap, keyed on a `user_id` that is NOT NULL —
+ * and this pass runs as NOBODY, a background job on a request. Here the row
+ * is a BILL LINE: which request, which staff member asked for it (nullable —
+ * a card-form landing has one, a sweep may not), which half of the pass, and
+ * the tokens. The daily budget reads `count(*)` over the day, which is a
+ * soft budget and not a claim: one worker drains this queue, so two passes
+ * cannot race past the cap the way ten people asking the assistant can.
+ */
+export const aiCalcPasses = pgTable(
+  'ai_calc_passes',
+  {
+    id: uuid('id').primaryKey().$defaultFn(uuidv7),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    staffId: uuid('staff_id').references(() => users.id),
+    /** 'intake' | 'grouping' | 'pick' | 'invoice'. */
+    kind: text('kind').notNull(),
+    model: text('model').notNull(),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('ai_calc_passes_day_idx').on(t.createdAt),
+    check('ai_calc_passes_kind_check', sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice')`),
+    check(
+      'ai_calc_passes_tokens_check',
+      sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0`,
+    ),
   ],
 );

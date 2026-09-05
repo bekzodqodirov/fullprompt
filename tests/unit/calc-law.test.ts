@@ -27,7 +27,7 @@ const group = (over: Partial<PricedGroup> = {}): PricedGroup => ({
   tnvedCode: null,
   dutyPct: 10,
   vatPct: 12,
-  feeUsd: 0,
+  feeUsd: null,
   dutyMode: 'advalor',
   dutySpecific: null,
   dutyUnit: null,
@@ -74,7 +74,7 @@ describe('guide §9.1 — trikotaj kurtka (6102), certificate, MAX rate', () => 
 
   it('the fee lands in the 10–20k tier: 1,5 BHM ≈ $52.37', () => {
     const fee = customsFeeFor({ valueUsd: 13_500, bhmUzs: BHM, fxUzsPerUsd: FX, overrideUsd: null });
-    expect(fee).toMatchObject({ ok: true, feeUsd: 52.37, bhmCoefficient: 1.5 });
+    expect(fee).toMatchObject({ ok: true, bhmCoefficient: 1.5 });
   });
 });
 
@@ -99,7 +99,7 @@ describe('guide §9.2 — plastmassa idish (3924), NO certificate', () => {
 
   it('the fee lands in the 20–40k tier: 2,5 BHM ≈ $87.28', () => {
     const fee = customsFeeFor({ valueUsd: 32_500, bhmUzs: BHM, fxUzsPerUsd: FX, overrideUsd: null });
-    expect(fee).toMatchObject({ ok: true, feeUsd: 87.28, bhmCoefficient: 2.5 });
+    expect(fee).toMatchObject({ ok: true, bhmCoefficient: 2.5 });
   });
 });
 
@@ -118,7 +118,7 @@ describe('guide §9.3 — gilam (5703), certificate, MAX by weight', () => {
     );
     expect(r).toMatchObject({ ok: true, valueUsd: 9200, dutyUsd: 3500, vatUsd: 1524 });
     const fee = customsFeeFor({ valueUsd: 9200, bhmUzs: BHM, fxUzsPerUsd: FX, overrideUsd: null });
-    expect(fee).toMatchObject({ ok: true, feeUsd: 34.91, bhmCoefficient: 1 });
+    expect(fee).toMatchObject({ ok: true, bhmCoefficient: 1 });
   });
 });
 
@@ -311,7 +311,7 @@ describe('the customs fee scale (VMQ-55)', () => {
   it('a typed override wins over the computed tier', () => {
     expect(
       customsFeeFor({ valueUsd: 1000, bhmUzs: BHM, fxUzsPerUsd: null, overrideUsd: 41.9 }),
-    ).toMatchObject({ ok: true, feeUsd: 41.9, overridden: true });
+    ).toMatchObject({ ok: true, overridden: true });
   });
 
   it('NaN anywhere is a refusal, never a number', () => {

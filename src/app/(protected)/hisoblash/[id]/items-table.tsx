@@ -685,15 +685,20 @@ export function ItemsTable({
                 the hide — `.btn` is defined AFTER the utilities and its
                 display beats a bare `hidden` (#419's cascade family). */}
             <span className="hidden md:contents">
-              <button
-                type="button"
-                className="btn-secondary !min-h-8"
-                disabled={busy}
-                data-testid="calc-propose"
-                onClick={() => act(() => proposeAction(id))}
-              >
-                ✨ {t('propose')}
-              </button>
+              {/* Not drawn at all on a server with no ANTHROPIC key (audit
+                  A25): the press used to answer «ИИ не ответил», which reads
+                  as «try again» and never becomes true. */}
+              {workspace.aiConfigured ? (
+                <button
+                  type="button"
+                  className="btn-secondary !min-h-8"
+                  disabled={busy}
+                  data-testid="calc-propose"
+                  onClick={() => act(() => proposeAction(id))}
+                >
+                  ✨ {t('propose')}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn-secondary !min-h-8"
@@ -1358,7 +1363,6 @@ function BlockFooter({
                     tnvedCode: group.tnvedCode!,
                     dutyPct: group.dutyPct!,
                     vatPct: group.vatPct!,
-                    feeUsd: group.feeUsd ?? 0,
                     effectiveDate: new Date().toISOString().slice(0, 10),
                     source: 'correction',
                   }),
@@ -1384,7 +1388,6 @@ function BlockFooter({
                     tnvedCode: group.tnvedCode ?? '',
                     dutyPct: group.dutyPct,
                     vatPct: group.vatPct,
-                    feeUsd: group.feeUsd,
                     dutyFree: group.lgotaLast!.dutyFree,
                     vatFree: group.lgotaLast!.vatFree,
                   }),
@@ -1459,7 +1462,6 @@ function GroupFold({
   const tc = useTranslations('common');
   const [duty, setDuty] = useState(group.dutyPct === null ? '' : String(group.dutyPct));
   const [vat, setVat] = useState(group.vatPct === null ? '' : String(group.vatPct));
-  const [fee, setFee] = useState(group.feeUsd === null ? '' : String(group.feeUsd));
   const [dutyFree, setDutyFree] = useState(group.dutyFree);
   const [vatFree, setVatFree] = useState(group.vatFree);
   const num = (v: string) => (v.trim() === '' ? null : Number(v.replace(',', '.')));
@@ -1476,10 +1478,12 @@ function GroupFold({
             <span className="label">{t('vat')} %</span>
             <input className="input input-sm !w-20" data-testid="calc-vat" value={vat} onChange={(e) => setVat(e.target.value)} />
           </label>
-          <label className="text-2xs">
-            <span className="label">{t('fee')} $</span>
-            <input className="input input-sm !w-24" value={fee} onChange={(e) => setFee(e.target.value)} />
-          </label>
+          {/* The per-group «Сбор $» box is GONE (audit A2). The declaration
+              fee is one per DECLARATION and the engine adds it once (#858) —
+              a number typed here was added AGAIN inside every group's own
+              customs, so a $50 «fee» on three groups charged the client $150
+              on top of the automatic BHM figure. The one fee door is the
+              request-level override under the totals. */}
           <label className="flex items-center gap-1 text-2xs">
             <input type="checkbox" checked={dutyFree} onChange={(e) => setDutyFree(e.target.checked)} />
             {t('dutyFree')}
@@ -1500,7 +1504,6 @@ function GroupFold({
                   tnvedCode: group.tnvedCode ?? '',
                   dutyPct: num(duty),
                   vatPct: num(vat),
-                  feeUsd: num(fee),
                   dutyFree,
                   vatFree,
                 });

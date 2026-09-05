@@ -16,6 +16,7 @@ export interface PayableRow {
   sellerName: string | null;
   clientCode: string | null;
   clientName: string | null;
+  /** What this press will actually pay — the remaining amount (audit A1). */
   upsaleUsd: number;
   offeredAt: string;
 }

@@ -8,17 +8,19 @@ import {
   calcRequests,
   calcVersions,
   costTypes,
-  fxRates,
-  receipts,
-  telegramLinks,
   deals,
+  fxRates,
   leads,
+  receipts,
+  tasks,
+  telegramLinks,
   users,
 } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { isUniqueViolation } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
+import { aiConfigured } from '@/modules/platform/ai/model';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
 import { usersWithRoles } from '@/modules/platform/notifications/service';
 import { cardLink } from '@/modules/platform/notifications/links';
@@ -208,6 +210,10 @@ export interface Workspace {
    * capture taken any later would pass on a torn snapshot.
    */
   rev: number;
+  /** Is there an ANTHROPIC key on this server at all? The ✨ button is not
+   * drawn without one: «ИИ не ответил» on a keyless server is an invitation
+   * to press again, and the honest word belongs before the press (audit A25). */
+  aiConfigured: boolean;
   /** The fee's raw inputs, shipped so the browser can run the SAME pure
    * assembly the server does (live sums). null = unset / no rate in the book. */
   bhmUzs: number | null;
@@ -587,6 +593,7 @@ export async function loadWorkspace(
         (covered((i) => i.volumeM3) && disagrees(groupM3, volumeM3)),
     },
     sealedVersion: sealed,
+    aiConfigured: aiConfigured(),
     completedAt: request.completedAt,
   };
 }
@@ -839,7 +846,6 @@ export async function setGroupRates(
     tnvedCode: string | null;
     dutyPct: number | null;
     vatPct: number | null;
-    feeUsd: number | null;
     dutyFree: boolean;
     vatFree: boolean;
     source: 'dictionary' | 'typed';
@@ -862,13 +868,12 @@ export async function setGroupRates(
     columns: { requestId: true },
   });
   if (!found) throw new CalcError('not_found');
-  mustBeNumber(input.dutyPct, input.vatPct, input.feeUsd, input.dutySpecific, input.excisePct);
+  mustBeNumber(input.dutyPct, input.vatPct, input.dutySpecific, input.excisePct);
   for (const pct of [input.dutyPct, input.vatPct, input.excisePct]) {
     if (pct !== null && pct !== undefined && (pct < 0 || pct > 100)) {
       throw new CalcError('rate_range');
     }
   }
-  if (input.feeUsd !== null && input.feeUsd < 0) throw new CalcError('rate_range');
 
   await mutateRequest(found.requestId, async (tx) => {
   // Re-read under the lock — the pool row above only located the request.
@@ -895,7 +900,12 @@ export async function setGroupRates(
       tnvedCode: input.tnvedCode?.trim() || null,
       dutyPct: input.dutyPct === null ? null : input.dutyPct.toFixed(3),
       vatPct: input.vatPct === null ? null : input.vatPct.toFixed(3),
-      feeUsd: input.feeUsd === null ? null : input.feeUsd.toFixed(2),
+      // THE GROUP CARRIES NO FEE (audit A2). The declaration's BHM scale
+      // pays it once per REQUEST (#858) and `customsFor` was adding this
+      // column INSIDE every group on top of it — the same fee twice, or N
+      // times on an N-group truck. No screen posts one any more, and saving a
+      // group's rates is what clears a legacy number.
+      feeUsd: null,
       dutyMode: dutyMode === 'advalor' ? null : dutyMode,
       dutySpecific: dutySpecific === null ? null : dutySpecific.toFixed(4),
       dutyUnit,
@@ -994,10 +1004,6 @@ export async function pullRatesFromDictionary(groupId: string, ctx: AuditContext
       tnvedCode: code,
       dutyPct: hit.dutyPct,
       vatPct: hit.vatPct,
-      // The fee stopped being a per-code fact in VED 2.0: the declaration's
-      // BHM scale (`customsFeeFor`) already pays it once per request, so
-      // copying a dictionary fee here would pay it once per GROUP on top.
-      feeUsd: null,
       dutyMode: hit.dutyMode,
       dutySpecific: hit.dutySpecific,
       dutyUnit: hit.dutyUnit,
@@ -1555,9 +1561,33 @@ export async function sealCalc(
         entityType: calcRequests.entityType,
         entityId: calcRequests.entityId,
         requestedBy: calcRequests.requestedBy,
+        taskId: calcRequests.taskId,
       });
     const row = closed[0];
     if (!row) throw new CalcError('already_closed');
+
+    /**
+     * THE SEAL CLOSES THE VED'S TASK (audit A20).
+     *
+     * `endRequest` closes it on the other three endings — Готово, qaytarish,
+     * pozitsiyalar — and the seal never did, because it closes the request
+     * with its own UPDATE. So every sealed job left a red priority-1 task on
+     * the VED's /bugun and in the owner's task counts until somebody pressed
+     * «✅ Bajarildi» by hand, which then found no open request to end.
+     * MEASURED: five such tasks on a database with five sealed requests.
+     */
+    if (row.taskId) {
+      await tx
+        .update(tasks)
+        .set({
+          status: 'done',
+          doneAt: new Date(),
+          doneBy: ctx.actorId ?? null,
+          result: 'Muhrlandi',
+          updatedAt: new Date(),
+        })
+        .where(and(eq(tasks.id, row.taskId), eq(tasks.status, 'open')));
+    }
 
     await tx.insert(calcVersions).values({
       requestId,
@@ -1824,130 +1854,157 @@ export async function recalcFromSealed(
   // and the cargo link (`stampCalcLink`, «exactly one sealed request») can
   // no longer choose. An open child says «finish that one»; a sealed child
   // says «recalc from it».
-  const child = await db
-    .select({ id: calcRequests.id, completedAt: calcRequests.completedAt })
-    .from(calcRequests)
-    .where(eq(calcRequests.supersedesRequestId, requestId))
-    .limit(1);
-  if (child[0]) throw new CalcError(child[0].completedAt ? 'recalc_superseded' : 'recalc_open');
+  let newId: string;
+  try {
+    newId = await db.transaction(async (tx) => {
+      /**
+       * ONE CORRECTION PER PARENT, decided under the PARENT'S LOCK (audit A11).
+       *
+       * The check used to run on the pool before the insert, so two people
+       * pressing «Qayta hisoblash» in the same second both passed it and both
+       * inserted — and both children then STOOD: `notSupersededSql` sees no
+       * child on either, so `payableOffersSql` pays the seller's commission
+       * twice for one sale and `stampCalcLink`'s «exactly one sealed request»
+       * can no longer choose which price the cargo was quoted at.
+       *
+       * `FOR UPDATE` on the parent serialises the two callers; the loser's
+       * re-read (a new statement, so a new snapshot in READ COMMITTED) then
+       * sees the committed child and gets the sentence. 0096's partial UNIQUE
+       * index is the database saying the same thing — and `isUniqueViolation`
+       * below maps it to the same word, because a fence nobody translates is a
+       * white page.
+       */
+      await tx.execute(sql`SELECT id FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`);
+      const child = await tx
+        .select({ id: calcRequests.id, completedAt: calcRequests.completedAt })
+        .from(calcRequests)
+        .where(eq(calcRequests.supersedesRequestId, requestId))
+        .limit(1);
+      if (child[0]) throw new CalcError(child[0].completedAt ? 'recalc_superseded' : 'recalc_open');
 
-  const newId = await db.transaction(async (tx) => {
-    const [fresh] = await tx
-      .insert(calcRequests)
-      .values({
-        entityType: old.entityType,
-        entityId: old.entityId,
-        requestedBy: ctx.actorId ?? old.requestedBy,
-        assigneeId: old.assigneeId,
-        itemCount: old.itemCount,
-        section: old.section,
-        fromCity: old.fromCity,
-        toCity: old.toCity,
-        weightKg: old.weightKg,
-        volumeM3: old.volumeM3,
-        source: old.source,
-        noteId: old.noteId,
-        freightZone: old.freightZone,
-        // VED 2.0 (J19's rule): a correction inherits the certificate answer
-        // and the fee override — the sender did not change, only the numbers.
-        hasCertificate: old.hasCertificate,
-        feeOverrideUsd: old.feeOverrideUsd,
-        supersedesRequestId: old.id,
-        dueAt: new Date(Date.now() + 2 * 3_600_000),
-      })
-      .returning({ id: calcRequests.id });
-
-    const items = await tx
-      .select()
-      .from(calcRequestItems)
-      .where(eq(calcRequestItems.requestId, requestId))
-      .orderBy(asc(calcRequestItems.seq));
-    const groups = await tx
-      .select()
-      .from(calcGroups)
-      .where(eq(calcGroups.requestId, requestId))
-      .orderBy(asc(calcGroups.seq));
-
-    const groupMap = new Map<string, string>();
-    for (const g of groups) {
-      const [copy] = await tx
-        .insert(calcGroups)
+      const [fresh] = await tx
+        .insert(calcRequests)
         .values({
-          requestId: fresh!.id,
-          seq: g.seq,
-          label: g.label,
-          tnvedCode: g.tnvedCode,
-          dutyPct: g.dutyPct,
-          vatPct: g.vatPct,
-          feeUsd: g.feeUsd,
-          // VED 2.0: the law's shape travels with the rates it shapes — a
-          // correction that dropped the MAX floor would re-price the job.
-          dutyMode: g.dutyMode,
-          dutySpecific: g.dutySpecific,
-          dutyUnit: g.dutyUnit,
-          excisePct: g.excisePct,
-          hasCertificate: g.hasCertificate,
-          rateSource: g.rateSource,
-          dutyFree: g.dutyFree,
-          vatFree: g.vatFree,
-          aiProposed: g.aiProposed,
-          // The model's own words go across too. Without them
-          // `unchangedFromProposal` answers false for every group of a
-          // correction, so `ai_blind_groups` was permanently 0 on exactly
-          // the calculations somebody had already had to redo.
-          aiProposal: g.aiProposal,
-          aiConfidence: g.aiConfidence,
-          aiDutyPct: g.aiDutyPct,
-          note: g.note,
-          // Deliberately NOT copied: a confirmation is a person saying «I
-          // have looked at these numbers», and they have not looked at these.
+          entityType: old.entityType,
+          entityId: old.entityId,
+          requestedBy: ctx.actorId ?? old.requestedBy,
+          assigneeId: old.assigneeId,
+          itemCount: old.itemCount,
+          section: old.section,
+          fromCity: old.fromCity,
+          toCity: old.toCity,
+          weightKg: old.weightKg,
+          volumeM3: old.volumeM3,
+          source: old.source,
+          noteId: old.noteId,
+          freightZone: old.freightZone,
+          // VED 2.0 (J19's rule): a correction inherits the certificate answer
+          // and the fee override — the sender did not change, only the numbers.
+          hasCertificate: old.hasCertificate,
+          feeOverrideUsd: old.feeOverrideUsd,
+          supersedesRequestId: old.id,
+          dueAt: new Date(Date.now() + 2 * 3_600_000),
         })
-        .returning({ id: calcGroups.id });
-      groupMap.set(g.id, copy!.id);
-    }
+        .returning({ id: calcRequests.id });
 
-    for (const item of items) {
-      await tx.insert(calcRequestItems).values({
-        requestId: fresh!.id,
-        seq: item.seq,
-        name: item.name,
-        quantity: item.quantity,
-        unit: item.unit,
-        weightKg: item.weightKg,
-        volumeM3: item.volumeM3,
-        amount: item.amount,
-        currency: item.currency,
-        tnvedCode: item.tnvedCode,
-        note: item.note,
-        groupId: item.groupId ? (groupMap.get(item.groupId) ?? null) : null,
-        bazaUsd: item.bazaUsd,
-        bazaBasis: item.bazaBasis,
-        bazaSource: item.bazaSource,
-        // A correction inherits WHERE the price came from, or the chip and
-        // the ✅'s `baza_from_import` would vanish the moment somebody
-        // re-priced the job (0094).
-        importRowId: item.importRowId,
-        // Phase 3: a column absent from this explicit list is NULL on every
-        // correction — exactly the freshest measures missing (0087's rule).
-        measureUnit: item.measureUnit,
-        measureQty: item.measureQty,
-      });
-    }
+      const items = await tx
+        .select()
+        .from(calcRequestItems)
+        .where(eq(calcRequestItems.requestId, requestId))
+        .orderBy(asc(calcRequestItems.seq));
+      const groups = await tx
+        .select()
+        .from(calcGroups)
+        .where(eq(calcGroups.requestId, requestId))
+        .orderBy(asc(calcGroups.seq));
 
-    const extras = await tx.select().from(calcExtras).where(eq(calcExtras.requestId, requestId));
-    for (const extra of extras) {
-      await tx.insert(calcExtras).values({
-        requestId: fresh!.id,
-        seq: extra.seq,
-        costTypeId: extra.costTypeId,
-        label: extra.label,
-        amountUsd: extra.amountUsd,
-        note: extra.note,
-      });
-    }
+      const groupMap = new Map<string, string>();
+      for (const g of groups) {
+        const [copy] = await tx
+          .insert(calcGroups)
+          .values({
+            requestId: fresh!.id,
+            seq: g.seq,
+            label: g.label,
+            tnvedCode: g.tnvedCode,
+            dutyPct: g.dutyPct,
+            vatPct: g.vatPct,
+            feeUsd: g.feeUsd,
+            // VED 2.0: the law's shape travels with the rates it shapes — a
+            // correction that dropped the MAX floor would re-price the job.
+            dutyMode: g.dutyMode,
+            dutySpecific: g.dutySpecific,
+            dutyUnit: g.dutyUnit,
+            excisePct: g.excisePct,
+            hasCertificate: g.hasCertificate,
+            rateSource: g.rateSource,
+            dutyFree: g.dutyFree,
+            vatFree: g.vatFree,
+            aiProposed: g.aiProposed,
+            // The model's own words go across too. Without them
+            // `unchangedFromProposal` answers false for every group of a
+            // correction, so `ai_blind_groups` was permanently 0 on exactly
+            // the calculations somebody had already had to redo.
+            aiProposal: g.aiProposal,
+            aiConfidence: g.aiConfidence,
+            aiDutyPct: g.aiDutyPct,
+            note: g.note,
+            // Deliberately NOT copied: a confirmation is a person saying «I
+            // have looked at these numbers», and they have not looked at these.
+          })
+          .returning({ id: calcGroups.id });
+        groupMap.set(g.id, copy!.id);
+      }
 
-    return fresh!.id;
-  });
+      for (const item of items) {
+        await tx.insert(calcRequestItems).values({
+          requestId: fresh!.id,
+          seq: item.seq,
+          name: item.name,
+          quantity: item.quantity,
+          unit: item.unit,
+          weightKg: item.weightKg,
+          volumeM3: item.volumeM3,
+          amount: item.amount,
+          currency: item.currency,
+          tnvedCode: item.tnvedCode,
+          note: item.note,
+          groupId: item.groupId ? (groupMap.get(item.groupId) ?? null) : null,
+          bazaUsd: item.bazaUsd,
+          bazaBasis: item.bazaBasis,
+          bazaSource: item.bazaSource,
+          // A correction inherits WHERE the price came from, or the chip and
+          // the ✅'s `baza_from_import` would vanish the moment somebody
+          // re-priced the job (0094).
+          importRowId: item.importRowId,
+          // Phase 3: a column absent from this explicit list is NULL on every
+          // correction — exactly the freshest measures missing (0087's rule).
+          measureUnit: item.measureUnit,
+          measureQty: item.measureQty,
+        });
+      }
+
+      const extras = await tx.select().from(calcExtras).where(eq(calcExtras.requestId, requestId));
+      for (const extra of extras) {
+        await tx.insert(calcExtras).values({
+          requestId: fresh!.id,
+          seq: extra.seq,
+          costTypeId: extra.costTypeId,
+          label: extra.label,
+          amountUsd: extra.amountUsd,
+          note: extra.note,
+        });
+      }
+
+      return fresh!.id;
+    });
+  } catch (err) {
+    // 0096's partial UNIQUE index, said in the office's words. The lock above
+    // decides it first; this is the answer when two callers reach the INSERT
+    // from different processes in the same instant.
+    if (isUniqueViolation(err)) throw new CalcError('recalc_open');
+    throw err;
+  }
 
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
@@ -2108,7 +2165,7 @@ export async function proposeGroups(
       .orderBy(asc(calcRequestItems.seq));
     if (items.length === 0) throw new CalcError('no_items');
 
-    const { proposeGoodsGrouping } = await import('../tnved/service');
+    const { proposeGoodsGrouping, TnvedError } = await import('../tnved/service');
     const batches = planBatches(items.length);
     const results: { offset: number; groups: ProposedGroup[] | null }[] = [];
     let failed = 0;
@@ -2120,6 +2177,16 @@ export async function proposeGroups(
         );
         results.push({ offset: batch.offset, groups: answer.groups });
       } catch (err) {
+        // NO KEY IS NOT «THE MODEL DID NOT ANSWER» (audit A25). Every other
+        // failure here is per-batch and survivable; a missing key is a fact
+        // about the SERVER that no later batch can improve, and swallowing it
+        // sent the VED «ИИ не ответил» — a sentence that invites pressing
+        // again — while the honest word existed two lines away in every
+        // bundle. Rethrown unchanged, and the button is not even drawn when
+        // `workspace.aiConfigured` is false.
+        if (err instanceof TnvedError && err.code === 'ai_not_configured') {
+          throw new CalcError('ai_not_configured');
+        }
         // A batch that failed costs its own goods, not the whole file: eight
         // hundred classified beats a thousand left for the manager.
         failed += 1;
@@ -3360,6 +3427,37 @@ export async function recordOffer(
     const v = row.version;
     request = row.request;
     floorUsd = Number(v.totalUsd);
+    /**
+     * THE VERSION MUST STILL STAND (audit A5).
+     *
+     * The branch checked only that the version exists and belongs to this
+     * card — never the two clauses every other money surface carries
+     * (`currentVersionSql`, `notSupersededSql`) and never the quote's own
+     * clock. So a stale panel, a bookmarked card or a second tab could
+     * promise a customer a price off a SUPERSEDED or EXPIRED seal, and
+     * `applyOfferToCard` then wrote that stale figure onto the card as the
+     * client price. Measured on gsr_ci: both were accepted.
+     *
+     * The screen already refuses (the panel prints `sealExpiredHint` instead
+     * of the form) — this is the server half, because a screen gate alone
+     * leaves the action accepting it (#531). Two reads on the pool, both
+     * bounded by an index.
+     */
+    if (v.validUntil.getTime() < Date.now()) throw new CalcError('quote_expired');
+    const [newer] = await db
+      .select({ id: calcVersions.id })
+      .from(calcVersions)
+      .where(
+        and(eq(calcVersions.requestId, v.requestId), sql`${calcVersions.versionNo} > ${v.versionNo}`),
+      )
+      .limit(1);
+    if (newer) throw new CalcError('superseded');
+    const [child] = await db
+      .select({ id: calcRequests.id })
+      .from(calcRequests)
+      .where(eq(calcRequests.supersedesRequestId, v.requestId))
+      .limit(1);
+    if (child) throw new CalcError('superseded');
     // A concession is the CUSTOMER's (round 112, his «VED xodimi skidka bersa
     // sotuvchi upsale qilish huquqi bo'lmasin»): once the VED has lowered the
     // floor, the seller may not quote ABOVE it and keep the difference. Phase

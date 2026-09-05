@@ -194,7 +194,6 @@ async function sealed(
       tnvedCode: code,
       dutyPct: 10,
       vatPct: 12,
-      feeUsd: 0,
       dutyFree: false,
       vatFree: false,
       source: 'typed',
