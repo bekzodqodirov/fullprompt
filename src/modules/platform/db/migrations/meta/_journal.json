@@ -687,6 +687,13 @@
       "when": 1785190000076,
       "tag": "0097_staff_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1785190000077,
+      "tag": "0098_staff_notes_simplify",
+      "breakpoints": true
     }
   ]
 }

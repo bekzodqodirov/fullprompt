@@ -22,10 +22,6 @@ const head = (over: Partial<NoteHead> = {}): NoteHead => ({
   id: 'n1',
   title: 'Xitoy sklad',
   body: null,
-  lat: null,
-  lon: null,
-  placeTitle: null,
-  placeAddress: null,
   ...over,
 });
 
@@ -50,20 +46,12 @@ describe('the caption', () => {
     expect(noteCaption(head())).toBe('Xitoy sklad');
   });
 
-  it('carries the address and a map link that survives a forward', () => {
-    const caption = noteCaption(
-      head({
-        body: 'Marking: GSR',
-        lat: '41.311081',
-        lon: '69.240562',
-        placeTitle: 'Ombor',
-        placeAddress: 'Yiwu, …',
-      }),
-    );
-    expect(caption).toContain('Xitoy sklad');
-    expect(caption).toContain('Marking: GSR');
-    expect(caption).toContain('📍 Yiwu, …');
-    expect(caption).toContain('https://yandex.uz/maps/?pt=69.240562,41.311081');
+  it('is the name and then the words saying what the thing is — and nothing else', () => {
+    // His own correction the evening 0097 shipped: «zametkani nomi, tekst
+    // (nima narsaligini yozish) va filelar bolishi kerak, kordinat boshqa
+    // narsalar kerak emas».
+    const caption = noteCaption(head({ body: 'Marking: GSR\nTelefon: +86 000' }));
+    expect(caption).toBe('Xitoy sklad\n\nMarking: GSR\nTelefon: +86 000');
   });
 });
 
@@ -132,28 +120,9 @@ describe('notePlan', () => {
     ]);
   });
 
-  it('the pin goes LAST, and a named place becomes a venue', () => {
-    const plan = notePlan(
-      head({ lat: '41.31', lon: '69.24', placeTitle: 'Ombor', placeAddress: 'Yiwu' }),
-      [file()],
-    );
-    expect(plan[plan.length - 1]).toEqual({
-      kind: 'venue',
-      lat: 41.31,
-      lon: 69.24,
-      title: 'Ombor',
-      address: 'Yiwu',
-    });
-  });
-
-  it('a point with no name is a plain location — sendVenue REQUIRES both words', () => {
-    const plan = notePlan(head({ lat: '41.31', lon: '69.24' }), []);
-    expect(plan[plan.length - 1]).toEqual({ kind: 'location', lat: 41.31, lon: 69.24 });
-  });
-
-  it('half a coordinate is no coordinate', () => {
-    const plan = notePlan(head({ lat: '41.31', lon: null, body: 'x' }), []);
-    expect(plan.some((p) => p.kind === 'location' || p.kind === 'venue')).toBe(false);
+  it('sends nothing but words and files — a note has no other kind of part', () => {
+    const plan = notePlan(head({ body: 'Manzil…' }), [file(), file({ sendAs: 'document' })]);
+    expect(plan.map((p) => p.kind)).toEqual(['media', 'media']);
   });
 
   it('a note with nothing in it plans nothing rather than sending an empty message', () => {

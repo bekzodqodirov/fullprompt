@@ -24,10 +24,6 @@ export interface NoteRowView {
   id: string;
   title: string;
   body: string;
-  location: string;
-  placeTitle: string;
-  placeAddress: string;
-  sortOrder: number;
   shared: boolean;
   parts: NotePart[];
 }
@@ -136,10 +132,6 @@ export function NoteList({
               {note.body}
             </p>
           )}
-          {note.placeAddress && (
-            <p className="text-sm text-ink-500 [overflow-wrap:anywhere]">📍 {note.placeAddress}</p>
-          )}
-
           {note.parts.length > 0 && (
             <ul className="space-y-1" data-testid="note-parts">
               {note.parts.map((part) => (
@@ -228,10 +220,6 @@ function NoteForm({
   // resets an uncontrolled form after a form Action (#377/#419/#463).
   const [title, setTitle] = useState(note?.title ?? '');
   const [body, setBody] = useState(note?.body ?? '');
-  const [location, setLocation] = useState(note?.location ?? '');
-  const [placeTitle, setPlaceTitle] = useState(note?.placeTitle ?? '');
-  const [placeAddress, setPlaceAddress] = useState(note?.placeAddress ?? '');
-  const [sortOrder, setSortOrder] = useState(String(note?.sortOrder ?? 100));
   const [shared, setShared] = useState(note?.shared ?? false);
 
   const partsNow = (note?.parts.length ?? 0) + uploaded.length;
@@ -248,7 +236,6 @@ function NoteForm({
     note_empty: t('errors.empty'),
     title_taken: t('errors.titleTaken'),
     too_many_parts: t('errors.tooManyParts'),
-    bad_location: t('errors.badLocation'),
     unauthenticated: t('errors.forbidden'),
   };
 
@@ -291,10 +278,6 @@ function NoteForm({
     data.set('id', noteId);
     data.set('title', title);
     data.set('body', body);
-    data.set('location', location);
-    data.set('placeTitle', placeTitle);
-    data.set('placeAddress', placeAddress);
-    data.set('sortOrder', sortOrder);
     if (shared) data.set('shared', 'on');
     const result = await saveNoteAction({}, data);
     setBusy(false);
@@ -324,50 +307,6 @@ function NoteForm({
         aria-label={t('fieldBody')}
         maxLength={3000}
       />
-      {/* ONE box for the point: what a map app puts on the clipboard is
-          «41.311081, 69.240562» or a link, and two decimal-degree inputs
-          refuse both. */}
-      <input
-        className="input"
-        data-testid="note-location"
-        value={location}
-        onChange={(e) => setLocation(e.target.value)}
-        placeholder={t('fieldLocation')}
-        aria-label={t('fieldLocation')}
-        maxLength={300}
-      />
-      <input
-        className="input"
-        data-testid="note-place-title"
-        value={placeTitle}
-        onChange={(e) => setPlaceTitle(e.target.value)}
-        placeholder={t('fieldPlaceTitle')}
-        aria-label={t('fieldPlaceTitle')}
-        maxLength={80}
-      />
-      <input
-        className="input"
-        data-testid="note-place-address"
-        value={placeAddress}
-        onChange={(e) => setPlaceAddress(e.target.value)}
-        placeholder={t('fieldPlaceAddress')}
-        aria-label={t('fieldPlaceAddress')}
-        maxLength={300}
-      />
-
-      <label className="flex items-center gap-2 text-sm">
-        <span className="shrink-0">{t('fieldOrder')}</span>
-        <input
-          type="number"
-          min={0}
-          max={10000}
-          className="input"
-          value={sortOrder}
-          onChange={(e) => setSortOrder(e.target.value)}
-          aria-label={t('fieldOrder')}
-        />
-      </label>
-
       <div className="space-y-1">
         <input
           ref={fileRef}

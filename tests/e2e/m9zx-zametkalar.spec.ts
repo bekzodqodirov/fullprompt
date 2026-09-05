@@ -4,10 +4,10 @@ import { expect, test } from '@playwright/test';
  * Zametkalar in the browser.
  *
  * What the rules do is proven in the unit and integration suites. What only a
- * browser can show is that the door exists, that a note stores its text, its
- * point and a real uploaded FILE, that a part can be swapped without
- * destroying the note — his own maintenance case, «the warehouse moved» — and
- * that it can be taken back off.
+ * browser can show is that the door exists, that a note stores its name, its
+ * text and a real uploaded FILE, that a part can be swapped without destroying
+ * the note — his own maintenance case, «the warehouse moved» — and that it can
+ * be taken back off.
  *
  * The note it creates is PERSONAL and it is deleted in a final TEST: a company
  * note is on every colleague's screen and in every colleague's bot list for
@@ -40,7 +40,7 @@ async function login(page: import('@playwright/test').Page) {
 const row = (page: import('@playwright/test').Page, title: string) =>
   page.locator('[data-testid="note-row"]').filter({ hasText: title });
 
-test('a note carries text, a pin and a file, and is written as one', async ({ page }) => {
+test('a note carries its name, the text and a file, and is written as one', async ({ page }) => {
   await login(page);
   await page.goto('/zametkalar');
   await expect(page.getByTestId('notes-hint')).toBeVisible();
@@ -52,11 +52,6 @@ test('a note carries text, a pin and a file, and is written as one', async ({ pa
   // rather than the screen.
   await form.getByTestId('note-title').fill(TITLE);
   await form.getByTestId('note-body').fill('Marking: GSR-777. Telefon: +86 000 000.');
-  // The pair a map app puts on the clipboard, in ONE box — two decimal-degree
-  // inputs refuse exactly this.
-  await form.getByTestId('note-location').fill('29.306, 120.077');
-  await form.getByTestId('note-place-title').fill('Yiwu ombori');
-  await form.getByTestId('note-place-address').fill('Yiwu, Zhejiang');
   await form.getByTestId('note-file').setInputFiles({
     name: 'sklad.jpg',
     mimeType: 'image/jpeg',
@@ -68,7 +63,6 @@ test('a note carries text, a pin and a file, and is written as one', async ({ pa
   const card = row(page, TITLE);
   await expect(card).toBeVisible();
   await expect(card).toContainText('Marking: GSR-777');
-  await expect(card).toContainText('Yiwu, Zhejiang');
   await expect(card.getByTestId('note-parts')).toContainText('sklad.jpg');
 });
 

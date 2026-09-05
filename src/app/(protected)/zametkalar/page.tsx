@@ -10,7 +10,6 @@ import {
   filesForNote,
   listNotes,
 } from '@/modules/platform/notes/service';
-import { formatLatLon } from '@/modules/platform/notes/coords';
 import { PageHeader } from '@/components/ui/page';
 import { NoteList } from './note-list';
 
@@ -61,10 +60,6 @@ export default async function NotesPage() {
           id: row.id,
           title: row.title,
           body: row.body ?? '',
-          location: formatLatLon(row.lat, row.lon),
-          placeTitle: row.placeTitle ?? '',
-          placeAddress: row.placeAddress ?? '',
-          sortOrder: row.sortOrder,
           shared: row.shared,
           parts: (parts[index] ?? []).map((file) => ({
             id: file.partId,

@@ -110,14 +110,6 @@ async function attemptStep(api: Api, chatId: bigint, step: NoteSend): Promise<bo
     await api.sendMessage(chat, step.text, undefined, signal);
     return true;
   }
-  if (step.kind === 'location') {
-    await api.sendLocation(chat, step.lat, step.lon, undefined, signal);
-    return true;
-  }
-  if (step.kind === 'venue') {
-    await api.sendVenue(chat, step.lat, step.lon, step.title, step.address, undefined, signal);
-    return true;
-  }
   return sendMedia(api, chat, step, signal);
 }
 

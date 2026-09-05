@@ -1569,8 +1569,32 @@ from the `warehouses` table (measured: all nine rows have `address`, `lat` and
 EMPTY**: on deploy morning 📌 answers «hozircha zametka yo'q» until he types the
 nine warehouse addresses.
 
-**Latest migration: 0097** (`staff_notes` — the note, its parts, their order,
-the send shape and Telegram's file-id cache; ledger must reach **98**).
+**Follow-up the same evening, HIS OWN CORRECTION (2026-09-05; DECISIONS
+#945-946; migration 0098 `staff_notes_simplify` — ledger must reach 99):**
+«nmaga zametkani faqat sklad uchun qb qoygansan — zametkani nomi, tekst (nima
+narsaligini yozish) va filelar bolishi kerak, kordinat boshqa narsalar kerak
+emas». The word «location» was in his FIRST message and the coordinate went in
+on it, but a note carrying a coordinate, a place name and an address reads as a
+form for entering WAREHOUSES — the opposite of a library twenty people keep
+their own things in. **The count of fields is itself a claim about what the
+noun is**, and he saw it in one look. Dropped: the four columns and their three
+CHECKs (dropped rather than left unused — no data, one deploy old), the
+coordinate reader and its test file, the plan's location/venue sends and the
+map link in the caption, the bot's `message:location` handler, and
+`bad_location`. The «Tartib» input went too: it was the adversarial judge's
+idea and not his, so the column keeps its default and the list is alphabetical
+until he asks. Six inputs became three. Also fixed, a flake from the previous
+round: `m9zw`'s save-bar assertion was asserted after two 15-second waits and
+`lastSave` is CLIENT state a revalidation remounts away — asserted where it is
+produced, it is deterministic (#946: when the test is intermittent and the code
+is not, the assertion is what is wrong). **2562 unit/integration + 200 e2e**
+green on a fresh gsr_ci in CI's order, ledger 99; measured at 360×800 and
+1280×900, document width equal to the viewport at both.
+
+**Latest migration: 0098** (`staff_notes_simplify` — the note is a name, its
+text and its files; ledger must reach **99**). Before it: **0097**
+(`staff_notes` — the note, its parts, their order,
+the send shape and Telegram's file-id cache; ledger 98).
 Before it: **0096** (`ai_ved_memory` — the sealed memory's provenance
 and name index, one correction per parent, the AI cost ledger; ledger must
 reach **97**). Before it: **0095** (`customs_import_heartbeat` — the parse's wall-clock

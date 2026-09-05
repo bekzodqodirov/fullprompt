@@ -2806,10 +2806,6 @@
     "asPhoto": "按图片发送",
     "fieldTitle": "名称",
     "fieldBody": "文本",
-    "fieldLocation": "坐标或地图链接",
-    "fieldPlaceTitle": "地点名称",
-    "fieldPlaceAddress": "地址",
-    "fieldOrder": "排序",
     "fieldFiles": "文件与图片",
     "filesHint": "最多 {max} 个文件。地址表建议按文件发送 — 图片会被 Telegram 压缩。",
     "uploading": "上传中…",
@@ -2820,7 +2816,6 @@
       "empty": "备忘为空 — 请添加文本、文件或坐标。",
       "titleTaken": "同名备忘已存在。",
       "tooManyParts": "文件过多。",
-      "badLocation": "无法识别坐标。",
       "upload": "文件上传失败，请重试。"
     },
     "makeShared": "🏢 设为公共",

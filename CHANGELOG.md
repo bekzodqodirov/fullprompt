@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## Zametka soddalashtirildi: nom + matn + fayllar — 2026-09-05
+
+**So'ralgan.** «Nmaga zametkani faqat sklad uchun qilib qo'ygansan? Zametkaning
+nomi, teksti (nima narsaligini yozish) va fayllari bo'lishi kerak, koordinat va
+boshqa narsalar kerak emas.»
+
+**Nima bo'ldi.** Formada endi **uchta** narsa bor: **nomi**, **matni** va
+**fayllar**. Koordinata, joy nomi va manzil kataklari olib tashlandi —
+ular birga turganda ekran «sklad kiritish» formasiga o'xshab qolgan ekan,
+holbuki bu har kim o'zining narsalarini saqlaydigan kutubxona. «Tartib»
+katagi ham olib tashlandi (uni siz so'ramagan edingiz) — ro'yxat alifbo
+bo'yicha chiqadi.
+
+«🏢 Hammaga» belgisi qoldi — u maydon emas, sizning o'z javobingiz: umumiy
+zametkani admin qo'yadi, uni hamma ko'radi.
+
+Botda ham lokatsiya qabuli olib tashlandi: telefondan zametka yozganda matn,
+rasm va fayl yuborasiz, tamom.
+
+**Sizdan.** Migratsiya **0098**, deploydan keyin son **99** bo'lishi kerak.
+Agar 0097 ni allaqachon deploy qilgan bo'lsangiz ham xavotir yo'q — ustunlar
+bo'sh, hech narsa yo'qolmaydi.
+
 ## Zametkalar — botdagi tayyor javoblar kutubxonasi — 2026-09-05
 
 **So'ralgan.** «Telegram botga zametkalarni qo'yamiz, u yerdan har doim

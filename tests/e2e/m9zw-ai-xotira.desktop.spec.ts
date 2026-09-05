@@ -101,6 +101,12 @@ test('the NEXT job about the same product fills itself, and says where from', as
   // row is already coded — the SWEEP places it and the memory answers its
   // baza, both inside one ordinary save.
   await page.getByTestId('calc-save-table').click();
+  // The save bar's announcement FIRST, because it is the one transient fact
+  // here: `lastSave` is client state and a later revalidation remounts the
+  // table and takes it with it. Asserted after the two waits below, this line
+  // failed on a full run and passed alone — the fact was true and the test was
+  // late (#166's shape: the assertion, not the code).
+  await expect(page.getByTestId('calc-save-note')).toContainText('🧠', { timeout: 15_000 });
   await expect(page.getByTestId('calc-group-row').first()).toContainText('8528520000', {
     timeout: 15_000,
   });
@@ -108,8 +114,6 @@ test('the NEXT job about the same product fills itself, and says where from', as
   // $20 that nobody typed on this screen — and the chip that says so.
   await expect(page.getByTestId('calc-group-baza')).toContainText('20', { timeout: 15_000 });
   await expect(page.getByTestId('calc-baza-memory')).toBeVisible();
-  // The save bar announced it too, by row.
-  await expect(page.getByTestId('calc-save-note')).toContainText('🧠');
 });
 
 test('both leads are closed (cleanup as a test)', async ({ page }) => {

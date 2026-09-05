@@ -49,11 +49,7 @@ const input = (title: string, over: Record<string, unknown> = {}) => ({
   id: randomUUID(),
   title,
   body: 'Manzil: Yiwu',
-  location: '',
-  placeTitle: '',
-  placeAddress: '',
   shared: false,
-  sortOrder: 100,
   ...over,
 });
 
@@ -208,19 +204,11 @@ describe('what a note must carry', () => {
     expect(id).toBeTruthy();
   });
 
-  it('a location that is not a location is a sentence, not a 23514', async () => {
-    await expect(
-      saveNote(input(`Yomon nuqta ${stamp()}`, { location: 'sklad yonida' }), ctx(otherId, false)),
-    ).rejects.toMatchObject({ code: 'bad_location' });
-  });
-
-  it('a place NAME with no address is refused — sendVenue needs both', async () => {
-    await expect(
-      saveNote(
-        input(`Yarim joy ${stamp()}`, { location: '41.31, 69.24', placeTitle: 'Ombor' }),
-        ctx(otherId, false),
-      ),
-    ).rejects.toMatchObject({ code: 'validation' });
+  it('a name alone is a label for nothing — text or a file is required', async () => {
+    // His own correction: a note is a name, the text saying what it is, and
+    // files. The name by itself sends nothing, so it is refused at the door.
+    const one = input(`Faqat nom ${stamp()}`, { body: '   ' });
+    await expect(saveNote(one, ctx(otherId, false))).rejects.toMatchObject({ code: 'note_empty' });
   });
 });
 

@@ -2806,10 +2806,6 @@
     "asPhoto": "Send as photo",
     "fieldTitle": "Name",
     "fieldBody": "Text",
-    "fieldLocation": "Coordinates or a map link",
-    "fieldPlaceTitle": "Place name",
-    "fieldPlaceAddress": "Address",
-    "fieldOrder": "Order",
     "fieldFiles": "Files and photos",
     "filesHint": "Up to {max} files. An address sheet is better sent as a file — Telegram compresses a photo.",
     "uploading": "Uploading…",
@@ -2820,7 +2816,6 @@
       "empty": "The note is empty — add text, a file or coordinates.",
       "titleTaken": "A note with that name already exists.",
       "tooManyParts": "Too many files.",
-      "badLocation": "Could not read the coordinates.",
       "upload": "The file did not upload. Try again."
     },
     "makeShared": "🏢 Make it the company's",
