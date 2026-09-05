@@ -17,6 +17,9 @@ import { expect, test } from '@playwright/test';
 
 const ADMIN = '+998900000001';
 const PASSWORD = 'demo1234';
+/** Run-scoped, with a counter beside the clock (#598). */
+let nth = 0;
+const RUN = `${Date.now()}${(nth += 1)}`;
 
 async function login(page: import('@playwright/test').Page, phone: string) {
   await page.context().clearCookies();
@@ -54,7 +57,13 @@ test('a request opens with a workspace that refuses to price it', async ({ page 
   // 1500 kg over 30 m³ is 50 kg/m³ — the first row of his own tariff.
   await page.getByTestId('calc-weight').fill('1500');
   await page.getByTestId('calc-volume').fill('30');
-  await page.getByTestId('calc-goods').fill('monitor, 100');
+  // A run-unique product name. Since 0096 a SEAL is the AI-VED's memory, so
+  // a name shared with another spec arrives with that spec's baza already
+  // filled — and typing the same number is a no-op that leaves the save
+  // button disabled for ever. A seal is CONFIGURATION for every later spec
+  // about the same product (#183 in a new costume), and the fixture is where
+  // that is answered.
+  await page.getByTestId('calc-goods').fill(`monitor ${RUN}, 100`);
   await page.getByTestId('calc-send').click();
 
   await expect(page.getByTestId('calc-open')).toBeVisible({ timeout: 15_000 });
