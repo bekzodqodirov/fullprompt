@@ -10,6 +10,7 @@ import {
 import { suggestImportBaza, unitsForRow, BASIS_FOR_UNIT } from '../customs/import-baza';
 import { sectionParts, type CalcSectionName } from './pricing';
 import { loadWorkspace, proposeGroups, saveTable, type TableItemEdit } from './workspace';
+import { itemNameNorm, sealedMemoryFor } from './memory';
 import { prefillReplyText } from './prefill-reply';
 import { pickImportRows, type PickAnswer, type PickRequest } from './prefill-ai';
 
@@ -105,6 +106,10 @@ export interface PrefillOutcome {
   importFilled: number;
   /** How many bazas the model chose a declaration for. */
   picked: number;
+  /** Codes the SEALED memory supplied before the model was asked anything. */
+  memoryCoded: number;
+  /** Bazas a sealed calculation of ours answered (0096). */
+  memoryFilled: number;
   aiUsed: boolean;
 }
 
@@ -123,6 +128,8 @@ export async function aiPrefill(
   let codesStamped = 0;
   let ratesPulled = 0;
   let importFilled = 0;
+  let memoryCoded = 0;
+  let memoryFilled = 0;
   let aiUsed = false;
 
   /**
@@ -147,6 +154,30 @@ export async function aiPrefill(
   const parts = row?.section
     ? sectionParts(row.section as CalcSectionName)
     : { customs: true, freight: true, extras: true };
+
+  /**
+   * 0. THE SEALED MEMORY GOES FIRST (0096), before a token is spent.
+   *
+   * The owner's own order: «shu muhrlangan datani AI xotirasiga qo'yish
+   * kerak». What a VED person confirmed and sealed for this product is this
+   * company's answer about it — so the machine reads it before the model,
+   * before the quarterly file, and before anything is billed. A product we
+   * have priced before comes back coded and with its baza in one save, and
+   * the model is then asked only about the names nobody here has ever seen.
+   *
+   * It writes through `saveTable` like every other door: the same rev clock,
+   * the same regroup, the same rate pull at group mint, and the same memory
+   * fill that gives those rows their bazas (there is no second writer).
+   */
+  if (parts.customs) {
+    try {
+      const out = await applyMemory(requestId, ctx);
+      memoryCoded = out.coded;
+      memoryFilled = out.filled;
+    } catch (err) {
+      logger.warn({ err, requestId }, '[calc-prefill] memory pass failed');
+    }
+  }
 
   // 1. The model groups the goods and names their codes; `proposeGroups`
   //    then prices what it proposed (the book's rates, the code onto the
@@ -245,8 +276,58 @@ export async function aiPrefill(
     ratesPulled,
     importFilled,
     picked,
+    memoryCoded,
+    memoryFilled,
     aiUsed,
   };
+}
+
+/**
+ * Step 0: stamp the codes the company's own seals already know.
+ *
+ * Only UNCODED rows are asked about — a code the intake or a person has
+ * already put on the row is never second-guessed — and only the CODE is
+ * posted here. The baza arrives by itself: `saveTable`'s own memory fill
+ * (0096) answers every row this save leaves coded and baza-less, from the
+ * same sealed record, under the same three re-checks.
+ */
+async function applyMemory(
+  requestId: string,
+  ctx: AuditContext,
+): Promise<{ coded: number; filled: number }> {
+  const rows = await db
+    .select({
+      id: calcRequestItems.id,
+      seq: calcRequestItems.seq,
+      name: calcRequestItems.name,
+      tnvedCode: calcRequestItems.tnvedCode,
+    })
+    .from(calcRequestItems)
+    .where(eq(calcRequestItems.requestId, requestId));
+  const uncoded = rows.filter((r) => !(r.tnvedCode ?? '').trim());
+  // A fully coded request still gets its save — that is what fills the bazas
+  // and mints the groups — but there is nothing to look up.
+  if (uncoded.length === 0) return { coded: 0, filled: 0 };
+
+  const hits = await sealedMemoryFor(
+    uncoded.map((r) => r.name),
+    { excludeRequestId: requestId },
+  );
+  if (hits.size === 0) return { coded: 0, filled: 0 };
+
+  // Named apart from the pick's `edits` on purpose: these carry a CODE and
+  // nothing else, and `ai-advisory.test.ts` anchors its «the prefill writes
+  // no provenance of its own» fence on the pick's own push.
+  const codeEdits: TableItemEdit[] = [];
+  for (const r of uncoded) {
+    const hit = hits.get(itemNameNorm(r.name));
+    if (!hit?.tnvedCode) continue;
+    codeEdits.push({ id: r.id, seq: r.seq, tnvedCode: hit.tnvedCode });
+  }
+  if (codeEdits.length === 0) return { coded: 0, filled: 0 };
+
+  const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx);
+  return { coded: codeEdits.length, filled: out.memoryFilled.length };
 }
 
 /**

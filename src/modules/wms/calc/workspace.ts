@@ -20,6 +20,7 @@ import { writeAudit, type AuditContext } from '@/modules/platform/audit/service'
 import { getSetting } from '@/modules/platform/settings/service';
 import { isUniqueViolation } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
+import { itemNameNorm, memoryProvenanceFor, sealedMemoryFor } from './memory';
 import { aiConfigured } from '@/modules/platform/ai/model';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
 import { usersWithRoles } from '@/modules/platform/notifications/service';
@@ -127,6 +128,9 @@ export interface WorkspaceItem extends PricedItem {
   /** The customs-import row this baza was taken from — the provenance behind
    * the «📥 taxmin» chip, and what the picker re-opens on. */
   importRowId: string | null;
+  /** The sealed answer this baza was copied from (0096) — the 🧠 chip's
+   * title. Null on every other source. */
+  memoryFrom: { sealedAt: string; sealedByName: string | null } | null;
   /** The dictionary's current answer, offered even when a value is typed. */
   dictionaryBaza: { bazaUsd: number; basis: BazaBasis; effectiveDate: string; stale: boolean } | null;
 }
@@ -358,6 +362,11 @@ export async function loadWorkspace(
       getSetting('bhm_uzs'),
       uzsPerUsd(date),
     ]);
+  // The 🧠 chip's title, for the memory-filled rows only — one query, and
+  // none at all on a request the memory never answered.
+  const memoryProv = await memoryProvenanceFor(
+    itemRows.map((i) => i.memoryItemId).filter((v): v is string => v !== null),
+  );
   const bhmUzs = bhmSetting == null ? null : Number(bhmSetting);
 
   const bazaStaleCutoff = onDate(new Date(Date.now() - BAZA_STALE_DAYS * 86_400_000));
@@ -378,6 +387,10 @@ export async function loadWorkspace(
       bazaBasis: (i.bazaBasis as BazaBasis | null) ?? null,
       bazaSource: (i.bazaSource as BazaSource) ?? null,
       importRowId: i.importRowId === null ? null : String(i.importRowId),
+      memoryFrom: (() => {
+        const p = i.memoryItemId === null ? undefined : memoryProv.get(i.memoryItemId);
+        return p ? { sealedAt: p.sealedAt.toISOString(), sealedByName: p.sealedByName } : null;
+      })(),
       measureUnit: (i.measureUnit as MeasureUnit | null) ?? null,
       measureQty: toNum(i.measureQty),
       dictionaryBaza: dict
@@ -961,9 +974,13 @@ export async function setItemBaza(
         bazaUsd: input.bazaUsd === null ? null : input.bazaUsd.toFixed(4),
         bazaBasis: input.bazaUsd === null ? null : input.basis,
         bazaSource: input.bazaUsd === null ? null : input.source,
-        // The quadruple moves together (0094): whatever this writes, the
-        // number is no longer the import's.
+        // The whole provenance moves together (0094, widened by 0096):
+        // whatever this writes, the number is no longer the import's and no
+        // longer a sealed calculation's — leaving either behind is #896's
+        // defect, a chip naming a source that did not supply the figure.
         importRowId: null,
+        memoryItemId: null,
+        bazaReason: null,
       })
       .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)))
       .returning({ groupId: calcRequestItems.groupId });
@@ -1130,6 +1147,8 @@ export async function pullBazasFromDictionary(
           bazaBasis: f.basis,
           bazaSource: 'dictionary',
           importRowId: null,
+          memoryItemId: null,
+          bazaReason: null,
         })
         .where(and(eq(calcRequestItems.id, f.id), isNull(calcRequestItems.bazaUsd)));
     }
@@ -1693,11 +1712,57 @@ export async function sealCalc(
     },
   });
 
+  // 0096: the seal is the company's answer, so it teaches the code memory
+  // too. `tnved_assignments` is the EXACT-key half (`productKey` = the same
+  // normalisation `itemNameNorm` uses) — the intake reads it before anything
+  // else and lands a repeat product already coded; `sealedMemoryFor` is the
+  // fuzzy half beside it and carries the baza. Source 'manual': a person
+  // sealed this, whatever proposed it, and 'ai' here would tell the next
+  // reader a machine chose the code.
+  //
+  // AFTER the transaction and in its own catch: `saveTnved` runs on the POOL
+  // and writes its own audit row, so calling it inside the seal's tx is
+  // #714's freeze, and a memory that failed to learn must never undo a seal.
+  await rememberSealedCodes(workspace, ctx).catch((err) =>
+    logger.error({ err, requestId }, '[calc] code memory not updated'),
+  );
+
   await announceSeal(result, totals, input, ctx, requestId).catch((err) =>
     logger.error({ err, requestId }, '[calc] seal notify failed'),
   );
 
   return { versionNo: result.versionNo, totalUsd: totals.totalUsd };
+}
+
+/**
+ * What the seal teaches the exact-key code memory.
+ *
+ * One row per DISTINCT product name that carries a code — a request with the
+ * same name twice teaches once, and the last write wins, which is the same
+ * row either way. A name without a code teaches nothing (a yolkira seal has
+ * no codes at all), and an unreadable code is skipped rather than throwing:
+ * `saveTnved` refuses anything that is not 4-10 digits, and one bad row must
+ * not stop the rest of the request from being remembered.
+ */
+async function rememberSealedCodes(workspace: Workspace, ctx: AuditContext): Promise<void> {
+  const { saveTnved } = await import('../tnved/service');
+  const seen = new Set<string>();
+  // Every item of the request: a grouped one AND an ungrouped one — the code
+  // is on the ITEM (phase 2), and a group is only how it is priced.
+  const all = [...workspace.groups.flatMap((g) => g.items), ...workspace.ungrouped];
+  for (const item of all) {
+    const code = (item.tnvedCode ?? '').trim();
+    const name = item.label.trim();
+    if (!code || !name) continue;
+    const key = itemNameNorm(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    try {
+      await saveTnved({ nameZh: name, nameRu: null, code, source: 'manual' }, ctx);
+    } catch (err) {
+      logger.warn({ err, code }, '[calc] one sealed code not remembered');
+    }
+  }
 }
 
 /**
@@ -1988,8 +2053,13 @@ export async function recalcFromSealed(
           bazaSource: item.bazaSource,
           // A correction inherits WHERE the price came from, or the chip and
           // the ✅'s `baza_from_import` would vanish the moment somebody
-          // re-priced the job (0094).
+          // re-priced the job (0094). 0096's two memory columns travel with
+          // it for the same reason — and `name_norm` besides, or the row this
+          // correction seals would be invisible to the next job's memory.
           importRowId: item.importRowId,
+          memoryItemId: item.memoryItemId,
+          bazaReason: item.bazaReason,
+          nameNorm: item.nameNorm ?? itemNameNorm(item.name),
           // Phase 3: a column absent from this explicit list is NULL on every
           // correction — exactly the freshest measures missing (0087's rule).
           measureUnit: item.measureUnit,
@@ -2425,6 +2495,10 @@ export interface TableSaveResult {
    * see is a price nobody stated: «agar to'g'ri bo'lmasa baza yo'q deb VED
    * hodimi o'zi qo'yadi». */
   importFilled: number[];
+  /** …and rows filled from a SEALED calculation (0096): the company's own
+   * confirmed price for this product, which outranks the file. Named the
+   * same way, for the same reason. */
+  memoryFilled: number[];
 }
 
 const CODE_SHAPE = /^\d{4,10}$/;
@@ -2639,6 +2713,19 @@ async function recountItemsInTx(tx: TxHandle, requestId: string): Promise<number
   return n;
 }
 
+/**
+ * One row's answer from a SEALED calculation, ready to be written (0096).
+ *
+ * The memory outranks the customs file: the file is what SOMEBODY ELSE
+ * declared for this code, the memory is what THIS company confirmed and
+ * sealed for this product. Both are still a suggestion the VED can retype.
+ */
+interface MemoryFill {
+  bazaUsd: number;
+  basis: BazaBasis;
+  memoryItemId: string;
+}
+
 /** One row's answer from the customs import, ready to be written. */
 interface ImportFill {
   /** The code the suggestion was made FOR — re-checked inside the tx. */
@@ -2656,6 +2743,75 @@ interface ImportFillPlan {
 }
 
 const EMPTY_FILL_PLAN: ImportFillPlan = { byItemId: new Map(), byAddIndex: new Map() };
+
+/**
+ * The sealed memory's auto-fill, computed on the POOL before the transaction.
+ *
+ * Same shape and same discipline as the import's below it: only rows that
+ * will end this save BAZA-LESS are asked about, the answer is applied inside
+ * the tx only where the state still agrees, and the basis must be one the
+ * row's own law allows. A code is NOT required here — the memory is keyed on
+ * the product NAME, which is what the owner's sentence is about.
+ */
+async function suggestMemoryFills(input: {
+  requestId: string;
+  standing: {
+    id: string;
+    name: string;
+    quantity: string | null;
+    weightKg: string | null;
+    bazaUsd: string | null;
+  }[];
+  itemEdits: {
+    id: string;
+    name?: string;
+    quantity?: number | null;
+    weightKg?: number | null;
+    bazaUsd?: number | null;
+  }[];
+  withCodes: { name: string; quantity: number | null; weightKg: number | null; bazaUsd: number | null }[];
+}): Promise<{ byItemId: Map<string, MemoryFill>; byAddIndex: Map<number, MemoryFill> }> {
+  const empty = { byItemId: new Map<string, MemoryFill>(), byAddIndex: new Map<number, MemoryFill>() };
+  const num = (v: string | null) => (v === null ? null : Number(v));
+  const wants: { key: { kind: 'item'; id: string } | { kind: 'add'; index: number }; name: string }[] = [];
+
+  const editById = new Map(input.itemEdits.map((e) => [e.id, e]));
+  for (const row of input.standing) {
+    const e = editById.get(row.id);
+    const baza = e && e.bazaUsd !== undefined ? e.bazaUsd : num(row.bazaUsd);
+    if (baza !== null) continue;
+    wants.push({
+      key: { kind: 'item', id: row.id },
+      name: e && e.name !== undefined ? e.name : row.name,
+    });
+  }
+  input.withCodes.forEach((r, index) => {
+    if (r.bazaUsd !== null) return;
+    wants.push({ key: { kind: 'add', index }, name: r.name });
+  });
+  if (wants.length === 0) return empty;
+
+  const hits = await sealedMemoryFor(
+    wants.map((w) => w.name),
+    { excludeRequestId: input.requestId },
+  );
+  if (hits.size === 0) return empty;
+
+  const plan = { byItemId: new Map<string, MemoryFill>(), byAddIndex: new Map<number, MemoryFill>() };
+  for (const w of wants) {
+    const hit = hits.get(itemNameNorm(w.name));
+    // A sealed row with no baza remembers a CODE and nothing to price with.
+    if (!hit || hit.bazaUsd === null || hit.bazaBasis === null) continue;
+    const fill: MemoryFill = {
+      bazaUsd: hit.bazaUsd,
+      basis: hit.bazaBasis,
+      memoryItemId: hit.itemId,
+    };
+    if (w.key.kind === 'item') plan.byItemId.set(w.key.id, fill);
+    else plan.byAddIndex.set(w.key.index, fill);
+  }
+  return plan;
+}
 
 /**
  * The import's auto-fill, computed on the POOL before the transaction.
@@ -2894,6 +3050,14 @@ export async function saveTable(
   // it happens HERE and is applied inside the tx only where the state still
   // agrees (#714).
   const importAuto = await suggestImportFills({ standing, itemEdits, withCodes, rates });
+  /**
+   * …and the SEALED memory, computed the same way and applied FIRST (0096).
+   *
+   * The order is the owner's: what this company sealed for this product beats
+   * what somebody else declared for the code. Both are suggestions the VED
+   * can retype, both are marked on the row, and both are recorded by the ✅.
+   */
+  const memoryAuto = await suggestMemoryFills({ requestId, standing, itemEdits, withCodes });
 
   let result: TableSaveResult = {
     minted: [],
@@ -2904,6 +3068,7 @@ export async function saveTable(
     measuresDropped: [],
     basisSuspect: [],
     importFilled: [],
+    memoryFilled: [],
   };
   await db.transaction(async (tx) => {
     await lockRequestInTx(tx, requestId);
@@ -2938,7 +3103,13 @@ export async function saveTable(
         patch[field] = after;
         changedCells.push({ seq: e.seq, field, before, after });
       };
-      if (e.name !== undefined && e.name !== item.name) put('name', item.name, e.name);
+      if (e.name !== undefined && e.name !== item.name) {
+        put('name', item.name, e.name);
+        // The memory searches on `name_norm` (0096), so it is written by the
+        // same statement that writes the name it describes — never by a
+        // trigger, which the audit row and the transaction cannot see.
+        patch.nameNorm = itemNameNorm(e.name);
+      }
       if (e.note !== undefined && e.note !== item.note) put('note', item.note, e.note);
       let measuresMoved = false;
       const num = (v: string | null) => (v === null ? null : Number(v));
@@ -2976,8 +3147,12 @@ export async function saveTable(
             patch.bazaUsd = null;
             patch.bazaBasis = null;
             patch.bazaSource = null;
-            // The provenance goes with the price it explained.
+            // The provenance goes with the price it explained — both of them,
+            // or a cleared row keeps a 🧠 chip pointing at a price that is no
+            // longer on it (the fence in baza-provenance.test.ts).
             patch.importRowId = null;
+            patch.memoryItemId = null;
+            patch.bazaReason = null;
             measuresMoved = true;
           }
         } else if (
@@ -2992,6 +3167,8 @@ export async function saveTable(
           patch.bazaBasis = e.bazaBasis;
           patch.bazaSource = e.importRowId ? 'import' : 'typed';
           patch.importRowId = e.importRowId ? BigInt(e.importRowId) : null;
+          patch.memoryItemId = null;
+          patch.bazaReason = null;
           measuresMoved = true;
         }
       }
@@ -3006,8 +3183,9 @@ export async function saveTable(
     //    the audit measured dies here).
     let nextSeqNo = items.reduce((m, i) => Math.max(m, i.seq), 0) + 1;
     const insertedRows: { id: string; seq: number; tnvedCode: string | null }[] = [];
-    /** The fill plan re-keyed onto item ids — a ghost row gets its id here. */
+    /** The fill plans re-keyed onto item ids — a ghost row gets its id here. */
     const fillByItem = new Map(importAuto.byItemId);
+    const memoryByItem = new Map(memoryAuto.byItemId);
     if (withCodes.length > 0) {
       const minted = withCodes.map((r) => ({ ...r, seq: nextSeqNo++ }));
       const inserted = await tx
@@ -3026,6 +3204,7 @@ export async function saveTable(
             bazaUsd: r.bazaUsd === null ? null : r.bazaUsd.toFixed(4),
             bazaBasis: r.bazaUsd === null ? null : r.bazaBasis,
             bazaSource: r.bazaUsd === null ? null : ('typed' as const),
+            nameNorm: itemNameNorm(r.name),
           })),
         )
         .returning({ id: calcRequestItems.id, seq: calcRequestItems.seq, tnvedCode: calcRequestItems.tnvedCode });
@@ -3037,6 +3216,8 @@ export async function saveTable(
         if (qty !== null) postedMeasure.set(row.id, qty);
         const fill = importAuto.byAddIndex.get(i);
         if (fill) fillByItem.set(row.id, fill);
+        const remembered = memoryAuto.byAddIndex.get(i);
+        if (remembered) memoryByItem.set(row.id, remembered);
       }
     }
 
@@ -3190,11 +3371,50 @@ export async function saveTable(
     //    a legacy group can disagree with today's dictionary). Anything else
     //    is left EMPTY for the VED, which is his own rule.
     const dutyUnitByGroup = new Map(groupsFinal.map((g) => [g.id, g.dutyUnit]));
+    /**
+     * THE SEALED MEMORY GOES FIRST (0096, the owner's own order).
+     *
+     * What this company confirmed and sealed for this product outranks what
+     * somebody else declared for the code — so a row the memory can answer
+     * never reaches the import fill below. Applied under the SAME three
+     * re-checks: the baza is still empty, the row's law still allows the
+     * basis, and the group is the one the suggestion was made against.
+     */
+    const memoryFilled: number[] = [];
+    for (const item of itemsNow) {
+      const fill = memoryByItem.get(item.id);
+      if (!fill) continue;
+      if (item.bazaUsd !== null) continue;
+      const allowed = unitsForRow({
+        dutyUnit: item.groupId ? (dutyUnitByGroup.get(item.groupId) ?? null) : null,
+        hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
+        hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
+      });
+      if (!allowed.some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
+      await tx
+        .update(calcRequestItems)
+        .set({
+          bazaUsd: fill.bazaUsd.toFixed(4),
+          bazaBasis: fill.basis,
+          bazaSource: 'memory',
+          memoryItemId: fill.memoryItemId,
+          // The provenance is one fact in four columns: a memory price is not
+          // the file's and carries no model reason.
+          importRowId: null,
+          bazaReason: null,
+        })
+        .where(eq(calcRequestItems.id, item.id));
+      memoryFilled.push(item.seq);
+      if (item.groupId) touched.add(item.groupId);
+    }
+
     const importFilled: number[] = [];
     for (const item of itemsNow) {
       const fill = fillByItem.get(item.id);
       if (!fill) continue;
       if (item.bazaUsd !== null) continue;
+      // …and not a row the memory has just answered.
+      if (memoryFilled.includes(item.seq)) continue;
       if ((item.tnvedCode ?? null) !== fill.code) continue;
       // The suggestion was made against the dictionary's law; the GROUP is
       // what actually prices, and a legacy group can carry a typed dutyUnit
@@ -3212,6 +3432,8 @@ export async function saveTable(
           bazaBasis: fill.basis,
           bazaSource: 'import',
           importRowId: BigInt(fill.importRowId),
+          memoryItemId: null,
+          bazaReason: null,
         })
         .where(eq(calcRequestItems.id, item.id));
       importFilled.push(item.seq);
@@ -3254,6 +3476,7 @@ export async function saveTable(
         measuresDropped,
         basisSuspect,
         importFilled,
+        memoryFilled,
       },
     });
     result = {
@@ -3265,6 +3488,7 @@ export async function saveTable(
       measuresDropped,
       basisSuspect,
       importFilled,
+      memoryFilled,
     };
   });
   return result;

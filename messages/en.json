@@ -2314,7 +2314,8 @@
       "aiLowConfidence": "The model was unsure",
       "aiRateTaken": "The model's rate reached the price",
       "rateNoted": "dictionary rate carries a note",
-      "bazaFromImport": "baza filled from the customs import"
+      "bazaFromImport": "baza filled from the customs import",
+      "bazaFromMemory": "baza taken from a sealed calculation"
     },
     "refusal": {
       "customsByClient": "The client cleared it themselves",
@@ -2391,11 +2392,14 @@
       "rateNoted": "the law carries a note",
       "savedFigures": "saved figures",
       "basisSuspect": "check the baza unit (the law prices in another) — row",
-      "importFilled": "{count} baza(s) filled from the import (estimate), rows"
+      "importFilled": "{count} baza(s) filled from the import (estimate), rows",
+      "memoryFilled": "baza filled from a sealed calculation: {count}, rows"
     },
     "editCargoFacts": "Edit the cargo facts",
     "importGuess": "from the import (estimate)",
     "importGuessTitle": "The baza was matched in the customs import file — check it, or type your own",
+    "memoryGuess": "from a sealed calculation",
+    "memoryGuessTitle": "Baza taken from an earlier sealed calculation ({who}, {date}) — check it",
     "importPick": "Pick from the import",
     "importNone": "Nothing in the import for this code",
     "answerNotUsd": "The answer is not in USD — the offer door opens only on a dollar figure.",

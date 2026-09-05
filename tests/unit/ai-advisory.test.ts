@@ -133,7 +133,12 @@ describe('the AI VED hodimi picks a row, never a price', () => {
     expect(source).not.toContain('rateSource');
     // The row id is what makes the price the FILE's. Without it the number
     // posted here is stored as somebody's typing — measured, red-proven.
-    const edit = block(source, 'edits.push(');
+    // Anchored INSIDE the pick: 0096 added a second push in the memory pass,
+    // which posts a code and no price at all, and a file-wide `indexOf` would
+    // have silently started asserting about that one instead.
+    const picker = source.slice(source.indexOf('async function pickBazas'));
+    expect(picker.length, 'pickBazas has been renamed — re-anchor this fence').toBeGreaterThan(0);
+    const edit = block(picker, 'edits.push(');
     expect(edit).toContain('importRowId: chosen.id');
     expect(edit).toContain('bazaUsd: chosen.pricePerUnitUsd');
   });
@@ -173,6 +178,37 @@ describe('the database refuses too', () => {
     expect(clause).toContain("'import'");
     expect(clause).not.toContain("'ai'");
     expect(clause.match(/'[a-z_]+'/g)).toEqual(["'dictionary'", "'typed'", "'import'"]);
+  });
+
+  // 0096 replaces it once more, for 'memory' — a price a VED person
+  // CONFIRMED and SEALED on an earlier job of ours. That is the strongest of
+  // the machine's three sources and still not the model's opinion; the list
+  // is asserted WHOLE for the same reason, and the fence must follow the
+  // constraint actually in force.
+  it("0096 widens the baza source to the sealed memory and still refuses 'ai'", () => {
+    const latest = readFileSync(
+      'src/modules/platform/db/migrations/0096_ai_ved_memory.sql',
+      'utf8',
+    );
+    const at = latest.lastIndexOf('calc_items_baza_source_check');
+    expect(at).toBeGreaterThan(-1);
+    const clause = latest.slice(at, latest.indexOf(';', at));
+    expect(clause).not.toContain("'ai'");
+    expect(clause.match(/'[a-z_]+'/g)).toEqual([
+      "'dictionary'",
+      "'typed'",
+      "'import'",
+      "'memory'",
+    ]);
+  });
+
+  // The memory reads the sealed record and writes a code and a baza. It is
+  // the newest path a number can travel and law 1 applies to it unchanged:
+  // it may not name the model anywhere.
+  it('the sealed memory mentions no ai identifier', () => {
+    const source = read('src/modules/wms/calc/memory.ts');
+    expect(source).not.toMatch(/\bai[A-Z]\w*/);
+    expect(source).not.toMatch(/ai_\w+/);
   });
 
   // And the ROW the import writes is a price out of the file — never a

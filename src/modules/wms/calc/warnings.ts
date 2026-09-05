@@ -32,7 +32,13 @@ export type CalcWarningKind =
    * guess, but it was matched to our cargo by a NAME — so the ✅ must record
    * that the person looked at a price the machine chose, exactly as
    * `ai_low_confidence` records a rate it chose. */
-  | 'baza_from_import';
+  | 'baza_from_import'
+  /** At least one baza in this group was answered by a SEALED calculation of
+   * this company's own (0096) and nobody has retyped it. It is the strongest
+   * of the machine's three sources — a VED person confirmed that number and
+   * sealed it — but it is still a NAME match against an older job, so the ✅
+   * records that the person looked at a price they did not state today. */
+  | 'baza_from_memory';
 
 export interface WarningGroupFacts {
   /** What the rates dictionary answers for this group's code today, if anything. */
@@ -50,7 +56,7 @@ export interface WarningGroupFacts {
    * it must match pricing.ts's BazaBasis by hand. */
   items: {
     hasDictionaryBaza: boolean;
-    bazaSource: 'dictionary' | 'typed' | 'import' | null;
+    bazaSource: 'dictionary' | 'typed' | 'import' | 'memory' | null;
     bazaUsd: number | null;
     bazaBasis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' | null;
     dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' } | null;
@@ -108,6 +114,14 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
   // «📥 taxmin» chip.
   if (facts.items.some((i) => i.bazaSource === 'import' && i.bazaUsd !== null)) {
     out.push('baza_from_import');
+  }
+  // The memory's half, on the import's terms and for the import's reason.
+  // Deliberately its OWN kind and not folded into `baza_from_import`: the two
+  // differ in who stands behind the number — our own sealed answer against a
+  // stranger's declaration — and the owner's list is read to decide where to
+  // look first.
+  if (facts.items.some((i) => i.bazaSource === 'memory' && i.bazaUsd !== null)) {
+    out.push('baza_from_memory');
   }
   // A blind confirm is a CONJUNCTION and each clause earns its place: the
   // model actually proposed this group (`mergeProposals` mints orphan groups

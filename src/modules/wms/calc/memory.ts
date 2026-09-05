@@ -71,6 +71,14 @@ type MemoryRow = {
   name_sim: number;
 };
 
+/**
+ * «Exclude nothing» — a request that does not exist yet (the intake's own
+ * case: the items are being written, so there is no id to leave out). A real
+ * uuid rather than a null branch, because the query's `<>` must stay one
+ * shape for the planner and for the reader.
+ */
+export const NO_REQUEST = '00000000-0000-0000-0000-000000000000';
+
 /** Below this a name match is a different product; the setting may raise it. */
 const MIN_SIM_DEFAULT = 0.6;
 
@@ -144,6 +152,52 @@ function collect(rows: MemoryRow[], out: Map<string, MemoryHit>): Map<string, Me
       bazaBasis: (r.baza_basis as BazaBasis | null) ?? null,
       nameSim: Number(r.name_sim),
     });
+  }
+  return out;
+}
+
+/**
+ * Who sealed the answer a row is wearing, for the 🧠 chip's title.
+ *
+ * ONE query for every memory-filled row on the screen (#432), keyed by the
+ * sealed ITEM id that `memory_item_id` names.
+ *
+ * It prints a DATE and a PERSON and deliberately not a «V2»: the V number on
+ * /hisoblash/tarix is the rank within a correction CHAIN (`calc/chain.ts`
+ * walks `supersedes_request_id` for it), while `calc_versions.version_no` is
+ * the seal count of one request — the two disagree the moment a job has been
+ * re-calculated, and two screens printing different V's for one seal is worse
+ * than a chip that does not print one at all.
+ */
+export interface MemoryProvenance {
+  sealedAt: Date;
+  sealedByName: string | null;
+}
+
+type ProvenanceRow = {
+  item_id: string;
+  sealed_at: string;
+  sealed_by_name: string | null;
+};
+
+export async function memoryProvenanceFor(itemIds: string[]): Promise<Map<string, MemoryProvenance>> {
+  const out = new Map<string, MemoryProvenance>();
+  const ids = [...new Set(itemIds)].filter(Boolean);
+  if (ids.length === 0) return out;
+  const rows = await db.execute<ProvenanceRow>(sql`
+    SELECT DISTINCT ON (i.id)
+           i.id::text  AS item_id,
+           v.sealed_at,
+           u.full_name AS sealed_by_name
+      FROM calc_request_items i
+      JOIN calc_versions v ON v.request_id = i.request_id
+      LEFT JOIN users u    ON u.id = v.sealed_by
+     WHERE i.id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+     ORDER BY i.id, v.sealed_at DESC
+  `);
+  for (const r of rows) {
+    // TEXT out of a raw execute (#925).
+    out.set(r.item_id, { sealedAt: new Date(r.sealed_at), sealedByName: r.sealed_by_name });
   }
   return out;
 }

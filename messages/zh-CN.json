@@ -2314,7 +2314,8 @@
       "aiLowConfidence": "AI 不确定",
       "aiRateTaken": "AI 的税率进入了报价",
       "rateNoted": "词典税率附有说明",
-      "bazaFromImport": "基价来自海关导入（估算）"
+      "bazaFromImport": "基价来自海关导入（估算）",
+      "bazaFromMemory": "基价来自已封存的核算"
     },
     "refusal": {
       "customsByClient": "客户自行清关",
@@ -2391,11 +2392,14 @@
       "rateNoted": "法规附有说明",
       "savedFigures": "已保存数字",
       "basisSuspect": "请检查基价单位（法律按其他单位计价）— 行",
-      "importFilled": "已从导入填充 {count} 行基价（估算），行号"
+      "importFilled": "已从导入填充 {count} 行基价（估算），行号",
+      "memoryFilled": "来自已封存核算的基价：{count} 项，行"
     },
     "editCargoFacts": "修改货物信息",
     "importGuess": "来自导入（估算）",
     "importGuessTitle": "基价取自海关导入文件 — 请核对，也可自行填写",
+    "memoryGuess": "来自已封存核算",
+    "memoryGuessTitle": "基价取自此前已封存的核算（{who}，{date}）——请核对",
     "importPick": "从导入中选择",
     "importNone": "该编码在导入中无匹配行",
     "answerNotUsd": "答复价格不是美元——报价窗口仅对美元答复开放。",

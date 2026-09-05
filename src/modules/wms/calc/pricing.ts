@@ -23,11 +23,13 @@ export type BazaBasis = 'unit' | 'kg' | 'juft' | 'litr' | 'm2';
 
 /**
  * Where a baza came from. 'import' joined the pair in 0094 — the quarterly
- * customs dump SUGGESTING a price. There is deliberately no 'ai': the model
- * proposes words and can never reach a number (law 3, phase B), and an
- * import row is not a guess but a declaration somebody filed.
+ * customs dump SUGGESTING a price — and 'memory' in 0096, which is this
+ * company's OWN sealed answer on an earlier job. There is deliberately no
+ * 'ai': the model proposes words and can never reach a number (law 3, phase
+ * B); an import row is a declaration somebody filed, and a memory row is a
+ * price a VED person confirmed and sealed.
  */
-export type BazaSource = 'dictionary' | 'typed' | 'import' | null;
+export type BazaSource = 'dictionary' | 'typed' | 'import' | 'memory' | null;
 
 /** What a section is made of. The seal and the screen both ask this. */
 export function sectionParts(section: CalcSectionName): {

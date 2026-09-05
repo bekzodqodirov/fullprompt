@@ -4,12 +4,13 @@ import { describe, expect, it } from 'vitest';
 /**
  * A baza and where it came from move TOGETHER (0094).
  *
- * `baza_usd`, `baza_basis`, `baza_source` and `import_row_id` are one fact
- * in four columns: the price, what it is per, who supplied it and which
- * declaration it was taken from. A writer that moves the first three and
- * leaves the fourth puts the «📥 taxmin» chip — and the ✅'s own
- * `baza_from_import` record — on a number the import did not supply, which
- * is a lie with a provenance mark on it.
+ * `baza_usd`, `baza_basis`, `baza_source`, `import_row_id` and — since 0096
+ * — `memory_item_id` are ONE fact in five columns: the price, what it is
+ * per, who supplied it, which declaration it was taken from and which sealed
+ * calculation answered it. A writer that moves the first three and leaves
+ * the rest puts the «📥 taxmin» or «🧠 muhrlangan hisobdan» chip — and the
+ * ✅'s own `baza_from_import` / `baza_from_memory` record — on a number
+ * neither source supplied, which is a lie with a provenance mark on it.
  *
  * Nothing about BEHAVIOUR can see that: every screen renders, every figure
  * prices, and the chip is simply wrong. So the fence is SOURCE SHAPE and it
@@ -44,12 +45,18 @@ function setBlocks(text: string): string[] {
 describe('the baza carries its provenance', () => {
   it('every UPDATE that writes a baza source also writes the import row', () => {
     const writing = setBlocks(source).filter((b) => b.includes('bazaSource'));
-    // Today: setItemBaza, pullBazasFromDictionary and the import fill in
-    // saveTable. If this number moves, the new writer belongs below.
-    expect(writing.length).toBeGreaterThanOrEqual(3);
+    // Today: setItemBaza, pullBazasFromDictionary, and saveTable's memory
+    // and import fills. If this number moves, the new writer belongs below.
+    expect(writing.length).toBeGreaterThanOrEqual(4);
     for (const block of writing) {
       expect(block, `a .set() writing bazaSource must write importRowId:\n${block}`).toContain(
         'importRowId',
+      );
+      // 0096's column joins the same rule: a memory-filled row names the
+      // seal it was copied from, and every OTHER writer must null it, or a
+      // retyped price keeps a 🧠 chip pointing at somebody else's answer.
+      expect(block, `a .set() writing bazaSource must write memoryItemId:\n${block}`).toContain(
+        'memoryItemId',
       );
     }
   });
@@ -61,8 +68,10 @@ describe('the baza carries its provenance', () => {
     // importRowId beside each.
     const sources = source.match(/patch\.bazaSource = /g) ?? [];
     const rows = source.match(/patch\.importRowId = /g) ?? [];
+    const memories = source.match(/patch\.memoryItemId = /g) ?? [];
     expect(sources.length).toBeGreaterThan(0);
     expect(rows.length).toBe(sources.length);
+    expect(memories.length).toBe(sources.length);
   });
 
   it('a correction inherits the provenance with the price', () => {
@@ -74,5 +83,9 @@ describe('the baza carries its provenance', () => {
     const body = source.slice(at, source.indexOf('\nexport ', at + 40));
     expect(body).toContain('bazaSource: item.bazaSource');
     expect(body).toContain('importRowId: item.importRowId');
+    expect(body).toContain('memoryItemId: item.memoryItemId');
+    // …and the name the NEXT job's memory searches on, or a correction seals
+    // a row invisible to the very feature this column exists for.
+    expect(body).toContain('nameNorm:');
   });
 });

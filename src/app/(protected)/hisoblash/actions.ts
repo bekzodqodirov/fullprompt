@@ -69,6 +69,11 @@ export interface TableFormState {
   basisSuspect?: number[];
   /** Rows the customs import filled — the bar says «📥 N qator». */
   importFilled?: number[];
+  /** Rows a SEALED calculation answered — the bar says «🧠 N qator». Kept
+   * apart from `importFilled` because the two sources answer with different
+   * authority: a person sealed one, a quarterly file merely contains the
+   * other. */
+  memoryFilled?: number[];
 }
 
 /**
@@ -294,6 +299,7 @@ async function runTable(
     measuresDropped: result.measuresDropped,
     basisSuspect: result.basisSuspect,
     importFilled: result.importFilled,
+    memoryFilled: result.memoryFilled,
   };
 }
 
@@ -318,6 +324,7 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
       measuresDropped: [],
       basisSuspect: [],
       importFilled: [],
+      memoryFilled: [],
     };
   }, ws(id));
 }

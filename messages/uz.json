@@ -2314,7 +2314,8 @@
       "aiLowConfidence": "AI ishonchsiz edi",
       "aiRateTaken": "AI stavkasi narxga ketdi",
       "rateNoted": "lug'at stavkasi izoh bilan",
-      "bazaFromImport": "Baza importdan (taxmin)"
+      "bazaFromImport": "Baza importdan (taxmin)",
+      "bazaFromMemory": "Baza muhrlangan hisobdan"
     },
     "refusal": {
       "customsByClient": "Mijoz o'zi rastamojka qildi",
@@ -2391,11 +2392,14 @@
       "rateNoted": "qonunda izoh bor",
       "savedFigures": "saqlangan raqamlar",
       "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator",
-      "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator"
+      "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator",
+      "memoryFilled": "muhrlangan hisobdan to‘ldirilgan baza: {count} ta, qator"
     },
     "editCargoFacts": "Yuk ma’lumotlarini o‘zgartirish",
     "importGuess": "importdan (taxmin)",
     "importGuessTitle": "Baza bojxona import faylidan tanlandi — tekshiring, kerak bo‘lsa o‘zingiz yozing",
+    "memoryGuess": "muhrlangan hisobdan",
+    "memoryGuessTitle": "Baza ilgari muhrlangan hisob-kitobdan olindi ({who}, {date}) — tekshiring",
     "importPick": "Importdan tanlash",
     "importNone": "Bu kod uchun importda mos qator yo‘q",
     "answerNotUsd": "Narx USD emas — taklif eshigi faqat dollardagi javobga ochiladi.",

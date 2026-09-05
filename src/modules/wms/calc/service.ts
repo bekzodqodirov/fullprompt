@@ -19,6 +19,7 @@ import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { addActivity } from '../crm/service';
 import { productKey, tnvedFor } from '../tnved/service';
+import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
 import { isComplete, missingFields, type CalcFacts, type CalcSection } from './intake';
 
 /**
@@ -242,19 +243,41 @@ export async function openCalcRequest(
     }
   }
 
-  // The TNVED memory before any model is asked (#1.5's rule): a product this
-  // company has classified before arrives already carrying its code.
-  const known = await tnvedFor(input.items.map((item) => item.name));
+  /**
+   * THE TWO MEMORIES, in the owner's own order (his 2026-09-05 answer).
+   *
+   * 1. What a VED SEALED, matched by NAME similarity — the company's own
+   *    confirmed answer about this product, and the first place to look.
+   * 2. The exact-key TNVED memory (#1.5's rule), for a name written the same
+   *    way as last time.
+   *
+   * Only the CODE is taken here. The baza is the workspace's sweep to fill
+   * (`saveTable`), where the group's law says which unit may price the row —
+   * a price without that check is a number in the wrong unit.
+   */
+  const [known, sealedMemory] = await Promise.all([
+    tnvedFor(input.items.map((item) => item.name)),
+    sealedMemoryFor(input.items.map((item) => item.name), { excludeRequestId: NO_REQUEST }),
+  ]);
   const items = input.items.map((item, i) => ({
     seq: i + 1,
     name: item.name.slice(0, 300),
+    nameNorm: itemNameNorm(item.name.slice(0, 300)),
     quantity: num(item.quantity),
     unit: item.unit?.slice(0, 20) || null,
     weightKg: num(item.weightKg),
     volumeM3: num(item.volumeM3),
     amount: num(item.amount),
     currency: item.currency?.slice(0, 8) || null,
-    tnvedCode: item.tnvedCode || known.get(productKey(item.name))?.tnvedCode || null,
+    tnvedCode:
+      item.tnvedCode ||
+      sealedMemory.get(itemNameNorm(item.name))?.tnvedCode ||
+      known.get(productKey(item.name))?.tnvedCode ||
+      null,
+    // `memory_item_id` is deliberately NOT written here. It names the seal a
+    // BAZA was copied from, and no baza is filled at intake — the workspace's
+    // first save does that, under the group's own law, and writes the
+    // provenance in the same statement. One column, one fact.
     note: item.note?.slice(0, 500) || null,
   }));
 

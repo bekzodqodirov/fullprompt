@@ -145,6 +145,7 @@ export function ItemsTable({
     measuresDropped: number[];
     basisSuspect: number[];
     importFilled: number[];
+    memoryFilled: number[];
   } | null>(null);
   /** The rev the save was made against — drafts are held until the refreshed
    * workspace (a moved rev) lands, so the live figures never snap back to
@@ -514,6 +515,7 @@ export function ItemsTable({
         measuresDropped: result.measuresDropped ?? [],
         basisSuspect: result.basisSuspect ?? [],
         importFilled: result.importFilled ?? [],
+        memoryFilled: result.memoryFilled ?? [],
       });
       // Drafts are HELD until the refreshed workspace lands (the rev moves),
       // so the live figures never flash back to pre-save numbers.
@@ -606,6 +608,7 @@ export function ItemsTable({
           measuresDropped: [],
           basisSuspect: [],
           importFilled: result.importFilled ?? [],
+          memoryFilled: result.memoryFilled ?? [],
         });
       }
       return result;
@@ -756,7 +759,8 @@ export function ItemsTable({
         lastSave.measuresCleared.length > 0 ||
         lastSave.measuresDropped.length > 0 ||
         lastSave.basisSuspect.length > 0 ||
-        lastSave.importFilled.length > 0) ? (
+        lastSave.importFilled.length > 0 ||
+        lastSave.memoryFilled.length > 0) ? (
         <p className="text-2xs text-ink-600" data-testid="calc-save-note">
           {[
             lastSave.minted.length > 0
@@ -775,6 +779,9 @@ export function ItemsTable({
               : '',
             lastSave.importFilled.length > 0
               ? `📥 ${t('table.importFilled', { count: lastSave.importFilled.length })}: ${lastSave.importFilled.join(', ')}`
+              : '',
+            lastSave.memoryFilled.length > 0
+              ? `🧠 ${t('table.memoryFilled', { count: lastSave.memoryFilled.length })}: ${lastSave.memoryFilled.join(', ')}`
               : '',
           ]
             .filter(Boolean)
@@ -1207,6 +1214,21 @@ const ItemRowBlock = memo(function ItemRowBlock({
               title={t('importGuessTitle')}
             >
               📥 {t('importGuess')}
+            </span>
+          ) : null}
+          {/* 0096: the price is this company's own sealed answer on an earlier
+              job. Same rule as the 📥 chip — a draft on the amount hides it,
+              because the number on the screen is then the VED's. */}
+          {item.bazaSource === 'memory' && drafts?.bazaValue === undefined ? (
+            <span
+              className="mt-0.5 block truncate text-2xs text-ink-500"
+              data-testid="calc-baza-memory"
+              title={t('memoryGuessTitle', {
+                who: item.memoryFrom?.sealedByName ?? '—',
+                date: item.memoryFrom ? item.memoryFrom.sealedAt.slice(0, 10) : '—',
+              })}
+            >
+              🧠 {t('memoryGuess')}
             </span>
           ) : null}
           {item.dictionaryBaza ? (
