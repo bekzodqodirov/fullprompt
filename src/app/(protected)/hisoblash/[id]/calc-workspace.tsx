@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { sectionParts } from '@/modules/wms/calc/pricing';
 import type { Workspace } from '@/modules/wms/calc/workspace';
+import type { ChainVersion } from '@/modules/wms/calc/chain';
+import { ChainStateChip } from '@/components/calc-chain-chip';
 import {
   deleteExtraAction,
   saveExtraAction,
@@ -33,9 +35,12 @@ import { ItemsTable } from './items-table';
 export function CalcWorkspace({
   workspace,
   canRecalc,
+  chain = [],
 }: {
   workspace: Workspace;
   canRecalc: boolean;
+  /** The sealed version's correction chain (chain.ts), oldest first. */
+  chain?: ChainVersion[];
 }) {
   const t = useTranslations('calc');
   const router = useRouter();
@@ -64,7 +69,7 @@ export function CalcWorkspace({
         </p>
       ) : null}
 
-      {sealed ? <SealedPanel sealed={sealed} id={id} canRecalc={canRecalc} /> : null}
+      {sealed ? <SealedPanel sealed={sealed} id={id} canRecalc={canRecalc} chain={chain} /> : null}
 
       {!locked ? (
         <>
@@ -471,22 +476,35 @@ function SealedPanel({
   sealed,
   id,
   canRecalc,
+  chain,
 }: {
   sealed: NonNullable<Workspace['sealedVersion']>;
   id: string;
   canRecalc: boolean;
+  chain: ChainVersion[];
 }) {
   const t = useTranslations('calc');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   // The sealed version carries its own section, so the panel reads what the
   // quote WAS, never what the request happens to say now.
   const parts = sectionParts(sealed.section);
+  // «V2» is the rank in the correction CHAIN, not `version_no` — that column
+  // counts seals of one request, and a correction is a new request, so it
+  // read «v1» on every correction ever made (chain.ts says why it is derived
+  // and not stored). The stored number stands in only while the chain has
+  // not loaded (server behind).
+  const mine = chain.find((v) => v.versionId === sealed.id);
+  const quoteNo = mine?.quoteNo ?? sealed.versionNo;
 
   return (
     <section className="card !p-3" data-testid="calc-sealed">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="chip chip-neutral">v{sealed.versionNo}</span>
+        <span className="chip chip-neutral" data-testid="calc-sealed-version">
+          V{quoteNo}
+        </span>
+        {mine ? <ChainStateChip version={mine} alone={chain.length < 2} /> : null}
         {/* Expiry is decided when the price is READ, so nothing has to run
             overnight for a quote to go stale. */}
         {sealed.expired ? (
@@ -545,21 +563,69 @@ function SealedPanel({
         <dd>{sealed.validUntil.toLocaleDateString('ru-RU')}</dd>
       </dl>
 
+      {/* The chain — every price this job has ever been given, oldest first,
+          each a document at a URL. The owner: «eski narxlar tarixi bo'lishi
+          kerak emasmidi» — they were never lost (`calc_versions` is never
+          deleted); they had no screen. */}
+      {chain.length > 1 ? (
+        <div className="mt-2 border-t border-line pt-2" data-testid="calc-chain">
+          <p className="text-2xs font-semibold text-ink-600">{t('chainTitle')}</p>
+          <ul className="mt-1 space-y-1">
+            {chain.map((v) => (
+              <li
+                key={v.versionId}
+                className="flex flex-wrap items-center gap-2 text-2xs"
+                data-testid="calc-chain-row"
+                data-current={v.versionId === sealed.id ? '1' : undefined}
+              >
+                {v.versionId === sealed.id ? (
+                  <span className="font-semibold">V{v.quoteNo}</span>
+                ) : (
+                  <a href={`/hisoblash/${v.requestId}`} className="font-semibold text-brand-700">
+                    V{v.quoteNo}
+                  </a>
+                )}
+                {/* The chip sits right behind the version it describes: at
+                    360 the row wraps, and a chip at the END landed on its
+                    own line between V1 and V2, reading as either's. */}
+                <ChainStateChip version={v} />
+                <span className="font-mono tabular-nums">${v.totalUsd.toFixed(2)}</span>
+                <span className="text-ink-500">
+                  {v.sealedAt.toLocaleDateString('ru-RU')} · {v.sealedByName ?? '—'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {canRecalc ? (
-        <button
-          type="button"
-          className="btn-secondary mt-2"
-          disabled={pending}
-          data-testid="calc-recalc"
-          onClick={() =>
-            startTransition(async () => {
-              const result = await recalcActionClient(id);
-              if (result.newId) router.push(`/hisoblash/${result.newId}`);
-            })
-          }
-        >
-          {t('recalc')}
-        </button>
+        <>
+          <button
+            type="button"
+            className="btn-secondary mt-2"
+            disabled={pending}
+            data-testid="calc-recalc"
+            onClick={() =>
+              startTransition(async () => {
+                const result = await recalcActionClient(id);
+                // A refusal is a SENTENCE here, not a button that did
+                // nothing: «the correction is already open» and «recalc
+                // from the newest version» are the two things a person
+                // pressing this on an old link needs to be told.
+                setError(result.error ?? null);
+                if (result.newId) router.push(`/hisoblash/${result.newId}`);
+              })
+            }
+          >
+            {t('recalc')}
+          </button>
+          {error ? (
+            <p className="chip chip-warn mt-2" data-testid="calc-recalc-error">
+              {t.has(`errors.${error}`) ? t(`errors.${error}` as 'errors.not_ready') : error}
+            </p>
+          ) : null}
+        </>
       ) : null}
     </section>
   );

@@ -4,6 +4,9 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { lastCalcAnswerFor, openCalcFor } from '@/modules/wms/calc/service';
 import { currentSealFor, lastAnswerAnchorFor, offersFor } from '@/modules/wms/calc/workspace';
+import { chainOf, type ChainVersion } from '@/modules/wms/calc/chain';
+import { mayReadCalcRegistry } from '@/modules/wms/calc/control-scope';
+import { ChainStateChip } from './calc-chain-chip';
 import { offerLocaleFor } from '@/modules/wms/calc/offer';
 import { mayApproveBelowFloor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
@@ -54,6 +57,7 @@ export async function CalcPanel({
   let seal: Awaited<ReturnType<typeof currentSealFor>> = null;
   let anchor: Awaited<ReturnType<typeof lastAnswerAnchorFor>> = null;
   let offers: Awaited<ReturnType<typeof offersFor>> = [];
+  let chain: ChainVersion[] = [];
   try {
     [open, last, seal, anchor] = await Promise.all([
       openCalcFor(entityType, entityId),
@@ -65,6 +69,9 @@ export async function CalcPanel({
     // read is paid by the cards that use it and by nobody else. Phase 4: a
     // Готово-answered card carries offers too.
     if ((seal || anchor) && scope !== 'none') offers = await offersFor(entityType, entityId);
+    // The seal's own chain: what «V2» counts and what came before it. Paid
+    // only by a card that has a price, like the offers read above.
+    if (seal) chain = await chainOf(seal.requestId);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, entityType, entityId }, '[calc] panel: server behind');
@@ -73,6 +80,21 @@ export async function CalcPanel({
 
   const t = await getTranslations('calc');
   const format = await getFormatter();
+
+  // «V2» is the seal's rank in its correction chain, DERIVED (chain.ts): the
+  // stored `version_no` counts seals of one request and a correction is a
+  // new request, so it read «v1» on every correction ever made — the owner's
+  // «qayta hisoblaganda V1 turibti». The previous link is named beside it,
+  // as a version and a date for everybody who reads the card, and as MONEY
+  // only for the registry's audience (2A: a floor is not a seller's fact) —
+  // the current floor is on this card because the seller quotes above it;
+  // yesterday's floor is history, and history has its own door.
+  const mine = seal ? chain.find((v) => v.versionId === seal.id) : undefined;
+  const quoteNo = mine?.quoteNo ?? seal?.versionNo ?? 0;
+  const previous = seal
+    ? chain.filter((v) => v.versionId !== seal.id && v.sealedAt.getTime() < seal.sealedAt.getTime()).at(-1)
+    : undefined;
+  const readsHistory = mayReadCalcRegistry(actor);
 
   return (
     <Panel
@@ -125,7 +147,10 @@ export async function CalcPanel({
             <span className="font-mono text-lg font-bold tabular-nums" data-testid="calc-seal-total">
               ${seal.totalUsd.toFixed(2)}
             </span>
-            <span className="chip chip-brand">v{seal.versionNo}</span>
+            <span className="chip chip-brand" data-testid="calc-seal-version">
+              V{quoteNo}
+            </span>
+            {mine ? <ChainStateChip version={mine} alone={chain.length < 2} /> : null}
             <span className="chip chip-brand">
               {t(SECTION_LABELS[seal.section] as 'sections.podklyuch')}
             </span>
@@ -144,6 +169,22 @@ export async function CalcPanel({
             {format.dateTime(seal.sealedAt, { dateStyle: 'short' })}
             {seal.discountUsd > 0 ? ` · ${t('discount')} $${seal.discountUsd.toFixed(2)}` : ''}
           </p>
+          {previous ? (
+            <p className="text-2xs text-ink-500" data-testid="calc-seal-prev">
+              {t('chainPrev')}: V{previous.quoteNo}
+              {readsHistory ? ` · $${previous.totalUsd.toFixed(2)}` : ''}
+              {' · '}
+              {format.dateTime(previous.sealedAt, { dateStyle: 'short' })}
+              {actor.permissions.has('ved.docs') ? (
+                <>
+                  {' '}
+                  <Link href={`/hisoblash/${previous.requestId}`} className="font-semibold text-brand-700">
+                    #
+                  </Link>
+                </>
+              ) : null}
+            </p>
+          ) : null}
 
           {/* An expired price is not a price. The seller gets the words and no
               box: re-quoting needs a new calculation, which is the same door a

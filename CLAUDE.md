@@ -128,6 +128,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | What is a deal? | `docs/DEALS.md` — the agreed spec, not yet built |
 | The VED module | `docs/VED.md` — agreed 2026-08-22; **phase A SHIPPED**, B-E open |
 | Bojxona IMPORT bazasi + AI VED hodimi | `docs/VED-IMPORT-AI.md` — agreed 2026-09-04, his 7 answers FIXED; **sub-rounds A AND B SHIPPED** (import + baza suggestion; the bot's AI VED hodimi) |
+| **AI-VED rastamojka in the staff bot** — the HANDOFF spec for another model | `docs/AI-VED-RASTAMOJKA.md` (spec + build plan, his answers 2026-09-05) and `docs/AI-VED-RASTAMOJKA-MAP.md` (the generated code map) |
 | Roadmap / status | `docs/PLAN.md` |
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
@@ -1435,6 +1436,32 @@ new fences must STRIP COMMENTS (#725, met again — a fence matched the sentence
 explaining itself); and a retry test drove from a READY batch, a state
 production never reaches. **2435 unit/integration + 189 e2e** green on a fresh
 gsr_ci in CI's order.
+
+**Round — muhrlangan hisob-kitoblar tarixi + the V2 chain (2026-09-04;
+DECISIONS #923-925; NO migration, 96 stands):** his «hisoblangan
+narsalarning tarixini hohlayabman» (1A sealed only, 2A owner + accountant +
+VED, never sellers) and «qayta hisoblaganda V1 turibti, V2 bo'lib chiqishi
+kerak emasmi». **The number was measuring the wrong noun**: `current_version_no`
+counts seals of ONE request and a correction is a NEW request, so every
+correction read «v1». `calc/chain.ts` DERIVES it — a recursive walk over
+`supersedes_request_id`, rank among the chain's SEALED versions by seal time
+(not depth: a priceless handed-back link must not count), «stands» decided by
+the EDGE like `notSupersededSql`, an open child = «qayta hisoblanmoqda» with the
+old price still standing. Not stored, not backfilled (#528's pair-rule shape;
+measured: the column has two readers, both inside the seal's own UPDATE).
+`/hisoblash/tarix` = one row per sealed version, counts of jobs AND versions
+named (#913), five filters in SQL over the counts' own predicate, cap 200 said
+only when it bites, lead rows listed but unnamed AND unsearchable for a reader
+without `crm.leads` (#514); door `mayReadCalcRegistry` = `finance.reports ||
+ved.docs`, a boolean beside the control scope (its «own» is wrong for a
+history). Workspace prints the chain under the seal; the card prints «V2» +
+«Oldingi: V1 · date» (money for the registry's audience only). `recalcFromSealed`
+refuses `not_sealed` / `recalc_open` / `recalc_superseded` — two children off
+one parent both stand, and `payableOffersSql` pays the commission TWICE — and
+the button finally prints its refusal. FOUND IN THE BROWSER: raw `db.execute`
+timestamps are TEXT (history.ts knew; I did not copy it) — seven
+`FORMATTING_ERROR`s per registry page with every test green; pinned. 5 red
+proofs. **2447 unit/integration + 193 e2e** green on a fresh gsr_ci in CI's order, ledger 96.
 
 **Latest migration: 0095** (`customs_import_heartbeat` — the parse's wall-clock
 beat and the sweep's partial index; ledger must reach **96**). Before it:

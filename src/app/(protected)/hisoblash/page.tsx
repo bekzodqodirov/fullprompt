@@ -60,6 +60,9 @@ export default async function CalcQueuePage() {
             <Link href="/hisoblash/lugatlar" className="btn-secondary" data-testid="calc-dict-link">
               {t('dictTitle')}
             </Link>
+            <Link href="/hisoblash/tarix" className="btn-secondary" data-testid="calc-registry-link">
+              {t('registryTitle')}
+            </Link>
             {/* Phase E1. Also linked from /hisoblash/narxlar, which is the
                 only one of the three the ACCOUNTANT can open — this page
                 redirects them out on `ved.docs`. */}

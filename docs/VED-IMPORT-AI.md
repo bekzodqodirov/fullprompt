@@ -1,6 +1,6 @@
 # VED 2.0 — bojxona IMPORT bazasi + AI VED hodimi
 
-**The agreed spec, NOT yet built.** Agreed 2026-09-04 in chat, immediately
+**The agreed spec — sub-rounds A and B are BUILT and LIVE (see the SHIPPED notes in §2 and §3; the next step is `docs/AI-VED-RASTAMOJKA.md`).** Agreed 2026-09-04 in chat, immediately
 after the phase-4 deploy (his server ledger = 94). The owner's answers are
 FIXED product decisions — do not re-ask them. Build in TWO sub-rounds (A then
 B below). This file is written for the session that builds it: every measured

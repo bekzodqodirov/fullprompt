@@ -116,6 +116,18 @@ export const NAV: NavGroupSpec[] = [
         permissions: ['ved.docs'],
       },
       {
+        // The registry of SEALED calculations (the owner's «hisoblangan
+        // narsalarning tarixi»). `finance.reports` is what lets the
+        // ACCOUNTANT in — one of the two people law 4 names — who until this
+        // entry could reach no calc screen at all: /hisoblash redirects them
+        // out, and /hisoblash/narxlar hung off a card panel they cannot open.
+        href: '/hisoblash/tarix',
+        labelKey: 'registryNav',
+        namespace: 'calc',
+        icon: 'report',
+        permissions: ['finance.reports', 'ved.docs'],
+      },
+      {
         // A client's promise that cargo is coming, plus our own trucks on the
         // road. Sales writes the promises and sales chases them; the WAREHOUSE
         // roles were taken off this menu in round 47 (owner: «sklad ekranidan
@@ -499,8 +511,8 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   // joined in round 33: the calc files and photos arrive in the client's chat
   // with WHICHEVER manager, and the vedchi reads them all (owner's widening).
   ved_manager: [
-    '/', '/bugun', '/kalendar', '/hisoblash', '/bitimlar', '/batches', '/stock', '/receipts',
-    '/reports',
+    '/', '/bugun', '/kalendar', '/hisoblash', '/hisoblash/tarix', '/bitimlar', '/batches',
+    '/stock', '/receipts', '/reports',
     // Kontragentlar joined in round 39, his instruction: the VED manager
     // arranges the customs firms and knows what each one is owed.
     '/finance', '/kontragentlar', '/suhbatlar', '/ai',
@@ -525,6 +537,10 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     // They are the one who pays it (law 4).
     '/upsale',
     '/reports/sotuvchilar',
+    // And the one who types the customs bill the seal is measured against —
+    // the registry is their first door into the calc module (menus are an
+    // EXACT-match list, so the nav entry alone would have shown nobody).
+    '/hisoblash/tarix',
   ],
   viewer: ['/', '/stock', '/receipts', '/dashboard', '/reports'],
   // super_admin and admin are deliberately absent: the owner looks at
