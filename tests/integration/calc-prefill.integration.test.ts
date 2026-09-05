@@ -453,23 +453,27 @@ describe('the machine carries a job as far as it honestly can', () => {
   });
 
   it('a customs job with NOTHING classified refuses in words, never «~$0.00»', async () => {
-    // The section gate is not enough. `requestCustomsFor([])` runs
-    // `[].every(ok)` — vacuously TRUE — and answers `customsUsd: 0`, so a
-    // rastamojka job that produced no groups read as «priced, at zero».
-    // That is the ORDINARY way this ships: no key, or a model that refused,
-    // and nothing the TNVED memory already knew.
+    // The section gate is not enough on its own: a rastamojka job that
+    // produced no groups must not read as «priced, at zero». That is the
+    // ORDINARY way this ships — no key, or a model that refused, and nothing
+    // the TNVED memory already knew.
     //
     // The round's two existing `$0` assertions do NOT cover it: their
     // fixtures have a group that EXISTS and REFUSES, so `allOk` is false and
     // `customsUsd` is already null. The uncovered branch is the EMPTY list —
     // a test passing on the neighbouring case is not evidence about this one
     // (#166).
+    //
+    // The engine used to answer 0 here, because `[].every(ok)` is vacuously
+    // TRUE; audit A17 moved the refusal INTO `requestCustomsFor`, so the
+    // screen, the seal gate and this reply now refuse in one place. This
+    // assertion follows the engine — the premise it states is the point.
     const id = await open([{ name: `nomsiz mol ${Date.now()}` }]);
     const out = await aiPrefill(id, ctx(), { configured: false });
 
     const ws = await loadWorkspace(id);
     expect(ws!.groups, 'the premise: nothing is classified').toHaveLength(0);
-    expect(ws!.customsUsd, 'and the engine still spells that as 0').toBe(0);
+    expect(ws!.customsUsd, 'and the engine refuses rather than printing 0').toBeNull();
 
     expect(out.customsUsd, 'the pass must read it as «nothing priced»').toBeNull();
     expect(out.text).not.toContain('$0');
