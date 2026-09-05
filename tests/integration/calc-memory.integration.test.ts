@@ -179,13 +179,35 @@ describe('what the company sealed is what the machine reads first', () => {
   });
 
   it('an UNSEALED job of the same name is not memory', async () => {
+    // CONFIRMED but not sealed, deliberately. The first version of this test
+    // left the group unconfirmed too, so it passed on the confirm clause and
+    // stayed GREEN when the seal join was stripped — a red proof that will
+    // not go red is evidence about the FIXTURE (#166).
     const name = `konfet ${tag()}`;
     const open1 = await open([{ name, quantity: 10 }]);
     await save(open1, [await editOf(open1, 1, { tnvedCode: '8528520000' })]);
     await save(open1, [await editOf(open1, 1, { bazaUsd: 44, bazaBasis: 'unit' })]);
+    await confirmAllGroups(open1, ctx());
 
     const hits = await sealedMemoryFor([name], { excludeRequestId: NO_REQUEST });
     expect(hits.size, 'a price nobody sealed is nobody’s answer').toBe(0);
+  });
+
+  it('a sealed job whose group carries no ✅ is not memory either', async () => {
+    // The seal is blocked on confirmations today, so this state can only
+    // arrive from before that rule (or from a group emptied and re-made).
+    // Either way an unconfirmed group is not a person's word about numbers.
+    const name = `shirinlik ${tag()}`;
+    const sealedId = await sealOne(name, 55);
+    await db
+      .update(calcGroups)
+      // `confirm_via` goes too: 0089's pair CHECK refuses a «how» with no
+      // «when», which is the same rule the two live unconfirm writers obey.
+      .set({ confirmedAt: null, confirmedBy: null, confirmVia: null, confirmedWarnings: null })
+      .where(eq(calcGroups.requestId, sealedId));
+
+    const hits = await sealedMemoryFor([name], { excludeRequestId: NO_REQUEST });
+    expect(hits.size).toBe(0);
   });
 
   it('the save fills a baza-less row from the seal and wears the 🧠 provenance', async () => {
