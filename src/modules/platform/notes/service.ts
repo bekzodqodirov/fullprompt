@@ -228,20 +228,16 @@ export async function saveNote(
   const existing = await db.query.staffNotes.findFirst({ where: eq(staffNotes.id, input.id) });
   if (existing) refuseUnlessOwn(existing, ctx);
 
-  // NOT recomputed from the checkbox on every save. The precedent does exactly
-  // that, and it means an admin editing a COMPANY note with the box unticked
-  // silently converts it into their own personal note — the whole company then
-  // loses the address sheet, with no refusal and no warning. A note keeps the
-  // scope it has unless somebody who may publish asks for the other one.
-  const userId = existing
-    ? ctx.canShare
-      ? data.shared
-        ? null
-        : (existing.userId ?? ctx.actorId)
-      : existing.userId
-    : data.shared
-      ? null
-      : ctx.actorId;
+  // An ordinary save NEVER moves a note between the two lists.
+  //
+  // The precedent recomputes the owner from the checkbox on every save, and
+  // that means one absent-minded edit of the COMPANY's address sheet turns it
+  // into somebody's private note and the whole company loses it — no refusal,
+  // no warning, and nobody notices until a customer asks for the address.
+  // Moving a note is its own act, with its own button (`setNoteShared`); the
+  // checkbox on the form decides the scope of a note being CREATED and
+  // nothing else.
+  const userId = existing ? existing.userId : data.shared ? null : ctx.actorId;
 
   const values = {
     title: data.title,
@@ -396,6 +392,39 @@ export async function setPartSendAs(
     .update(staffNoteParts)
     .set({ sendAs, telegramFileId: null, telegramSentAs: null })
     .where(eq(staffNoteParts.id, partId));
+}
+
+/**
+ * Move a note between the company's list and its author's own.
+ *
+ * Its own act, deliberately: this is the only thing that can take an address
+ * sheet away from twenty colleagues, and it must never be a side effect of
+ * correcting a typo. Both directions need the publish permission — putting a
+ * note into everybody's list and taking it out again are the same power.
+ */
+export async function setNoteShared(id: string, shared: boolean, ctx: NoteCtx): Promise<void> {
+  if (!ctx.actorId) throw new NoteError('unauthenticated');
+  if (!ctx.canShare) throw new NoteError('forbidden');
+  const existing = await db.query.staffNotes.findFirst({ where: eq(staffNotes.id, id) });
+  if (!existing) throw new NoteError('not_found');
+  refuseUnlessOwn(existing, ctx);
+  if ((existing.userId === null) === shared) return;
+  try {
+    await db
+      .update(staffNotes)
+      .set({ userId: shared ? null : (existing.userId ?? ctx.actorId), updatedAt: new Date() })
+      .where(eq(staffNotes.id, id));
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new NoteError('title_taken');
+    throw err;
+  }
+  await writeAudit(db, ctx, {
+    entityType: 'staff_note',
+    entityId: id,
+    action: 'update',
+    before: { shared: existing.userId === null },
+    after: { shared },
+  });
 }
 
 export async function deleteNote(id: string, ctx: NoteCtx): Promise<void> {

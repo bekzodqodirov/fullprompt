@@ -2822,6 +2822,9 @@
       "tooManyParts": "文件过多。",
       "badLocation": "无法识别坐标。",
       "upload": "文件上传失败，请重试。"
-    }
+    },
+    "makeShared": "🏢 设为公共",
+    "makePrivate": "👤 设为个人",
+    "confirmUnshare": "将备忘移出公共列表？其他人将不再看到它。"
   }
 }

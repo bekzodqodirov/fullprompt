@@ -2822,6 +2822,9 @@
       "tooManyParts": "Fayllar soni ko‘p.",
       "badLocation": "Koordinatani o‘qib bo‘lmadi.",
       "upload": "Fayl yuklanmadi. Qaytadan urinib ko‘ring."
-    }
+    },
+    "makeShared": "🏢 Hammaga",
+    "makePrivate": "👤 Faqat menda",
+    "confirmUnshare": "Zametka umumiy ro‘yxatdan olinsinmi? Boshqalar uni ko‘rmay qoladi."
   }
 }

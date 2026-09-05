@@ -8,6 +8,7 @@ import {
   deleteNoteAction,
   removeNotePartAction,
   saveNoteAction,
+  setNoteSharedAction,
   setPartSendAsAction,
   type NoteFormState,
 } from './actions';
@@ -87,6 +88,23 @@ export function NoteList({
               {note.title}
             </span>
             <span className="ml-auto flex gap-2">
+              {canShare && (
+                <button
+                  type="button"
+                  data-testid="note-scope"
+                  disabled={pending}
+                  className="btn-secondary !min-h-9 px-2 text-sm disabled:opacity-60"
+                  onClick={() => {
+                    if (note.shared && !window.confirm(t('confirmUnshare'))) return;
+                    start(async () => {
+                      await setNoteSharedAction(note.id, !note.shared);
+                      router.refresh();
+                    });
+                  }}
+                >
+                  {note.shared ? t('makePrivate') : t('makeShared')}
+                </button>
+              )}
               <button
                 type="button"
                 data-testid="edit-note"
@@ -371,7 +389,10 @@ function NoteForm({
 
       {/* Publishing to the company is a larger power than keeping a note: it
           is a one-tap broadcast every colleague can forward to a customer. */}
-      {canShare && (
+      {/* Only when CREATING: moving an existing note between the two lists is
+          its own button on the row, so a typo fix can never take the
+          company's address sheet away from everybody. */}
+      {canShare && !note && (
         <label className="flex items-start gap-2 text-sm">
           <input
             type="checkbox"

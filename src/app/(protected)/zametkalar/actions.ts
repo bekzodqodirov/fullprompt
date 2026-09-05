@@ -9,6 +9,7 @@ import {
   deleteNote,
   removeNotePart,
   saveNote,
+  setNoteShared,
   setPartSendAs,
   type NoteCtx,
 } from '@/modules/platform/notes/service';
@@ -69,6 +70,15 @@ export async function saveNoteAction(
 
 export async function deleteNoteAction(id: string): Promise<NoteFormState> {
   return run((ctx) => deleteNote(id, ctx));
+}
+
+/**
+ * Moving a note between the company's list and its author's own is its own
+ * act — never a side effect of correcting a typo on the address sheet twenty
+ * colleagues send out.
+ */
+export async function setNoteSharedAction(id: string, shared: boolean): Promise<NoteFormState> {
+  return run((ctx) => setNoteShared(id, shared, ctx));
 }
 
 export async function removeNotePartAction(partId: string): Promise<NoteFormState> {
