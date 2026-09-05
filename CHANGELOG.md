@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## Botda «/hodim» va profilda Telegramni qayta ulash — 2026-09-05
+
+**So'ralgan.** «Telegram botda hodim /hodim komandini qo'sh — shunday buyruq
+berganda hodim akkauntiga o'tsin, va profilda TG ga qayta ulanish imkoni
+bo'lsin.»
+
+**Nima bo'ldi.**
+
+- **Botda `/hodim`.** Yozasiz — hodim tomoniga o'tasiz. Agar allaqachon
+  ulangan bo'lsangiz, klaviaturangiz qaytariladi; ulanmagan bo'lsangiz bot
+  telefon raqamingizni so'raydi.
+- **Asosiy yangilik shunda:** ilgari **mijoz sifatida ulangan** Telegramdan
+  hodim tomoniga o'tishning yo'li umuman yo'q edi. `/start` bosilsa kabinet
+  menyusi chiqib, «👨‍💼 Hodim» tugmasi umuman ko'rsatilmasdi. Endi `/hodim`
+  shu qulfni ochadi.
+- Buyruq faqat shaxsiy chatda ishlaydi (guruhda bir odamning xabarnomalari
+  butun guruhga bog'lanib qolardi) va shu chatning buyruqlar menyusiga
+  qo'shiladi.
+- Ulanish yangi telefonga ko'chganda **eskisiga xabar boradi** — aks holda u
+  yerda ishlaydigandek ko'rinadigan, lekin hech narsa qilmaydigan klaviatura
+  qolib ketardi.
+
+**Profilda «Qayta ulash».** Telefon yoki Telegram akkaunt o'zgarsa, botni
+yangisidan ochib qayta ulaysiz.
+
+**Bu yerda bitta jiddiy narsani oldini oldik.** Tugmani sodda qilib qo'yganda,
+uni bosgan ondan boshlab odam hodim chati bo'lmay qolardi: bot ishlamas,
+zametkalar yopilar, va eng yomoni — o'sha oraliqda kelgan hamma xabarnoma
+**butunlay yo'qolardi**, buni esa hech bir ekran ko'rsatmasdi. Endi **eski chat
+yangisi ulanmaguncha ishlab turadi**, ya'ni tugmani xato bosish hech narsa
+turmaydi.
+
+**Migratsiya yo'q** — hamma ustun allaqachon bor edi. Deploydan keyin son
+o'zgarmaydi (**99**).
+
 ## Zametka soddalashtirildi: nom + matn + fayllar — 2026-09-05
 
 **So'ralgan.** «Nmaga zametkani faqat sklad uchun qilib qo'ygansan? Zametkaning
