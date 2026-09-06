@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
@@ -78,18 +79,73 @@ export async function staffByPhone(phone: string): Promise<StaffChat | null> {
  * DIFFERENT colleague — two people cannot share one Telegram, and silently
  * re-pointing the row would move every future notification.
  */
+/**
+ * Mint a fresh one-time code for the profile's «ulash» / «qayta ulash» button.
+ *
+ * The rule, and it is the whole reason this is a function rather than three
+ * lines in the action: a row that is ALREADY `linked` keeps its status and its
+ * chat id. Flipping it to `pending` is what the obvious version does, and it
+ * is a notification OUTAGE — every reader demands `status = 'linked'`, so from
+ * the press until the person opens Telegram they are not a staff chat at all:
+ * `staffForChat` answers null, the drain settles every queued notification
+ * terminally `muted / telegram not linked`, and `muted` is excluded from
+ * `notificationProblemCount`, so nothing on any screen ever says it happened.
+ * Abandon the press and you are off Telegram for ever.
+ *
+ * Leaving the row alone costs nothing: `/start <code>` looks a code up by
+ * `link_code` and refuses only a `revoked` row, so a code on a live link
+ * redeems and `linkStaffChat` moves the chat — the old phone keeps working
+ * right up to the moment the new one takes over, and then it is told.
+ */
+export async function mintTelegramLinkCode(userId: string): Promise<string> {
+  const code = randomBytes(12).toString('base64url');
+  const existing = await db.query.telegramLinks.findFirst({
+    where: eq(telegramLinks.userId, userId),
+  });
+  if (existing?.status === 'linked') {
+    await db.update(telegramLinks).set({ linkCode: code }).where(eq(telegramLinks.id, existing.id));
+    return code;
+  }
+  await db
+    .insert(telegramLinks)
+    .values({ userId, linkCode: code, status: 'pending' })
+    .onConflictDoUpdate({
+      target: telegramLinks.userId,
+      set: { linkCode: code, status: 'pending' },
+    });
+  return code;
+}
+
+export interface StaffLinkResult {
+  outcome: 'linked' | 'chat_taken';
+  /**
+   * The chat this person was on BEFORE, when the link MOVED.
+   *
+   * The old phone keeps a staff keyboard whose buttons now fall through to the
+   * cabinet and answer nothing — a working-looking bot that does nothing is
+   * the shape rounds 89 and 97 were spent removing — so the caller, which is
+   * the only layer holding a Telegram connection, tells it once.
+   */
+  previousChatId: bigint | null;
+}
+
 export async function linkStaffChat(
   userId: string,
   chatId: bigint,
-): Promise<'linked' | 'chat_taken'> {
+  via: 'phone' | 'link_code' = 'phone',
+): Promise<StaffLinkResult> {
   const holder = await db.query.telegramLinks.findFirst({
     where: eq(telegramLinks.telegramChatId, chatId),
   });
-  if (holder && holder.userId !== userId) return 'chat_taken';
+  if (holder && holder.userId !== userId) {
+    return { outcome: 'chat_taken', previousChatId: null };
+  }
 
   const own = await db.query.telegramLinks.findFirst({
     where: eq(telegramLinks.userId, userId),
   });
+  const previousChatId =
+    own?.telegramChatId && own.telegramChatId !== chatId ? own.telegramChatId : null;
   if (own) {
     await db
       .update(telegramLinks)
@@ -104,9 +160,11 @@ export async function linkStaffChat(
     entityType: 'user',
     entityId: userId,
     action: 'update',
-    after: { telegram: 'linked_by_phone' },
+    // Which door it came through, because the history screen used to print
+    // «linked_by_phone» for a link that arrived from the web's deep link.
+    after: { telegram: via === 'phone' ? 'linked_by_phone' : 'linked_by_code' },
   });
-  return 'linked';
+  return { outcome: 'linked', previousChatId };
 }
 
 // ---------------------------------------------------------------------------

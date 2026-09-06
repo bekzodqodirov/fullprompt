@@ -11,3 +11,6 @@ coverage/
 tsconfig.tsbuildinfo
 public/sw.js
 public/sw.js.map
+
+# graphify — bilim grafi natijasi (mashina qayta quradi)
+graphify-out/

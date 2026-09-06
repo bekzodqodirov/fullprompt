@@ -499,7 +499,9 @@
     "callRecCount": "звонков",
     "callRecRemove": "Отключить",
     "callRecNotSeen": "данных ещё нет",
-    "callRecApp": "Скачать приложение (Android)"
+    "callRecApp": "Скачать приложение (Android)",
+    "telegramReconnect": "Подключить заново",
+    "telegramReconnectHint": "Сменился телефон или аккаунт Telegram? Откройте бота с нового — уведомления будут приходить туда. Старый чат работает до тех пор, пока новый не подключится."
   },
   "receive": {
     "title": "Приёмка",

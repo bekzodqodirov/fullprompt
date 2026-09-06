@@ -499,7 +499,9 @@
     "callRecCount": "ta qo'ng'iroq",
     "callRecRemove": "Uzish",
     "callRecNotSeen": "hali ma'lumot kelmadi",
-    "callRecApp": "Ilovani yuklab olish (Android)"
+    "callRecApp": "Ilovani yuklab olish (Android)",
+    "telegramReconnect": "Qayta ulash",
+    "telegramReconnectHint": "Telefon yoki Telegram akkaunt o‘zgardimi? Botni yangisidan oching — xabarnomalar o‘sha yerga keladi. Yangisi ulanmaguncha eski chat ishlab turaveradi."
   },
   "receive": {
     "title": "Qabul",

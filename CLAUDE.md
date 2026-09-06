@@ -1591,6 +1591,33 @@ is not, the assertion is what is wrong). **2562 unit/integration + 200 e2e**
 green on a fresh gsr_ci in CI's order, ledger 99; measured at 360×800 and
 1280×900, document width equal to the viewport at both.
 
+**Round — /hodim va profilda qayta ulash (2026-09-05; DECISIONS #947-948; NO
+migration, 99 stands):** «telegram botda hodim /hodim komandini qosh, shunday
+buyruq berganda hodim akkountiga otsin va profilda tgga qayta ulanish imkoni
+bolsin». `/hodim` is a real `bot.command` registered BEFORE `registerStaffBot`,
+because a branch in the text ladder would be eaten by four separate things —
+a live collection, a live zametka capture, `takeTaskPending` (which deletes on
+read, so it would close a colleague's task with the text «/hodim»), and the
+`if (!staff) return next()` fence that hides it from exactly the people it is
+for. **Told to him rather than quietly built**: /start already re-sends the
+staff keyboard to a staff chat; the dead end is the chat that is a linked
+CLIENT, where `startMenuFor` answers 'cabinet' and bot.ts RETURNS, so the
+«👨‍💼 Hodim» door is unreachable and that person has no route into the staff
+side at all. Private chats only; the phone request is ONE door (`askStaffPhone`)
+shared with the inline button; every contact refusal now RESTORES the keyboard
+the one-time contact request took away; a moved link TELLS the chat it left.
+**The profile half's blocker was a silent permanent outage**: minting a code
+set `status:'pending'` on a live row, and every reader demands 'linked' — the
+staff bot, the zametka library and the «Bajarildi» buttons stop, new
+notifications are written straight to `muted / telegram not linked`, queued
+ones are settled the same way, and `muted` is TERMINAL and excluded from
+`notificationProblemCount`, so nothing on any screen would ever have said it.
+An already-linked row now keeps its status and its chat and only takes the new
+code, which redeems because `/start <code>` refuses only a `revoked` row. The
+mint moved out of the action into `mintTelegramLinkCode` so the rule could be
+proven by a test rather than a fence (#531). 5 red proofs; **2573
+unit/integration + 200 e2e** green on a fresh gsr_ci in CI's order.
+
 **Latest migration: 0098** (`staff_notes_simplify` — the note is a name, its
 text and its files; ledger must reach **99**). Before it: **0097**
 (`staff_notes` — the note, its parts, their order,

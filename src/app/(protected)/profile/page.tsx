@@ -141,13 +141,30 @@ export default async function ProfilePage() {
         </Link>
       </section>
 
-      <section>
-        <h2 className="mb-2 text-lg font-bold">{t('telegram')}</h2>
+      <section className="space-y-2" data-testid="profile-telegram">
+        <h2 className="text-lg font-bold">{t('telegram')}</h2>
         {telegramLink?.status === 'linked' ? (
-          <p className="font-semibold text-good">{t('telegramLinked')}</p>
+          <>
+            <p className="font-semibold text-good">{t('telegramLinked')}</p>
+            {/* The door that was missing: a person whose Telegram changed —
+                a new phone, a new account, a chat that is now somebody
+                else's — had no way to move the link from the web at all.
+                The old chat keeps receiving until the new one takes over,
+                so pressing this by accident costs nothing. */}
+            <p className="text-sm text-ink-500">{t('telegramReconnectHint')}</p>
+            <form action={createTelegramLinkAction}>
+              <button
+                type="submit"
+                data-testid="profile-telegram-reconnect"
+                className="btn-secondary"
+              >
+                ✈️ {t('telegramReconnect')}
+              </button>
+            </form>
+          </>
         ) : (
           <form action={createTelegramLinkAction}>
-            <button type="submit" className="btn-primary">
+            <button type="submit" data-testid="profile-telegram-connect" className="btn-primary">
               ✈️ {t('telegramConnect')}
             </button>
             {telegramLink?.status === 'pending' && (
