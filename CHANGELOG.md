@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## Deploy tekshiruvi: migratsiyasiz raundda son yolg'on gapiradi — 2026-09-06
+
+**Nima bo'ldi.** `/hodim` va profildagi «Qayta ulash» deploydan keyin
+ko'rinmadi, migratsiyalar soni esa **99** — to'g'ri raqam. Sabab: o'sha
+raundda **migratsiya yo'q edi**, ya'ni 99 eski kodda ham chiqaverardi.
+Bizning «sonini sanang» qoidamiz faqat raundda migratsiya bo'lganda ishlaydi.
+
+**Endi qanday tekshiriladi.** Kodda o'zgarish bo'lgan, lekin migratsiya
+bo'lmagan deploydan keyin **sonini emas, build vaqtini** o'qing:
+
+```
+curl -s https://gsrwms.uz/api/version
+```
+
+Xuddi shu raqam profil sahifasining pastida ham turadi. U build qilingan
+daqiqani aytadi va keshlanmaydi — sahifaning o'zi esa keshlanadi, ya'ni
+telefoningizda eski ekran turgan bo'lishi mumkin.
+
+**Yo'l-yo'lakay yozib qo'yildi.** Botning butunlay ishlamay qolishining ikkita
+jim sababi bor: `.env` da `TELEGRAM_POLLING=0` yoki token yaroqsiz. Ikkalasida
+ham hech qayerda xato yozilmaydi. «Bot bitta buyruqni tushunmayapti» va «bot
+umuman ishlamayapti» tashqaridan bir xil ko'rinadi — farqini `/start` yozib
+bilasiz.
+
+**Kodda hech narsa o'zgarmadi.** Bu faqat yozuv.
+
+
 ## Botda «/hodim» va profilda Telegramni qayta ulash — 2026-09-05
 
 **So'ralgan.** «Telegram botda hodim /hodim komandini qo'sh — shunday buyruq
