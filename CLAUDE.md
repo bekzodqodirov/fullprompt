@@ -1685,6 +1685,25 @@ session's round 100 (PR #40, migration 0079) and the AI round (PR #41,
 0080), he deployed again and the count landed at **81** — the first deploy
 of this whole week with no trap hit.
 
+**FOURTH trap, 2026-09-06, and it is the one the other three's rule cannot
+see: a round with NO migration.** PR #81 (`/hodim` + the profile re-connect)
+added no migration, so the ledger read **99 before and after it** — he deployed,
+counted 99, and both features were still absent. «Always end a deploy by
+counting the ledger» is only an oracle when the round HAS a migration; on a
+code-only round the count is a green light that measures nothing. The check that
+does work is **`curl -s https://gsrwms.uz/api/version`** (or the `build:` line at
+the foot of `/profile`): `next.config.ts` inlines `NEXT_PUBLIC_BUILD_AT` at
+COMPILE time, so the stamp is frozen at the minute `pnpm build` actually ran and
+a cached build layer keeps the old one; the route is `force-dynamic` +
+`no-store`, which the profile PAGE is not — serwist serves navigations
+NetworkFirst, so a stale shell can hide a shipped button on a perfectly fresh
+server. **So: a code-only deploy ends by reading the build stamp, not the
+count.** Also learned the hard way here: grepping the container for a new
+string is the wrong instrument (it answers nothing without a control string
+from the OLD code), and two silent bot killers sit in `bot.ts:110` —
+`TELEGRAM_POLLING=0` and a token that no longer works make `startTelegramBot`
+return with nothing logged anywhere.
+
 **Three deploy traps, all hit in two days, all the same mistake one step
 apart — the count is the only thing that catches any of them.**
 (1) Rounds 96-97: he pulled while the branch was UNMERGED, and `git pull` on
