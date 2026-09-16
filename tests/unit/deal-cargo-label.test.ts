@@ -108,7 +108,13 @@ describe('every deal picker reads the one composer', () => {
     const src = readFileSync(path, 'utf8');
     // #494: prove the file still HAS a deal picker before judging its label.
     expect(src, `${path} no longer renders a deal <option>`).toMatch(/deal\.id/);
-    expect(src).toContain('dealOptionLabel');
+    // The CALL, not the import. The first version of this fence asserted the
+    // bare name and stayed GREEN with the picker reverted to `{deal.code}` —
+    // the word survived in the import line (#166: a red proof that will not
+    // go red is evidence about the assertion).
+    expect(src, `${path} imports the composer but does not call it`).toMatch(
+      /\{dealOptionLabel\(deal\)\}/,
+    );
   });
 
   it.each(PICKERS)('%s does not hand-write the code beside its title', (path) => {
