@@ -1,6 +1,7 @@
 'use client';
 
 import { compressPhoto, PhotoUnreadable } from '@/components/compress-photo';
+import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import { PHOTO_UPLOAD_CONCURRENCY, runPooled } from '@/components/pooled';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -190,7 +191,14 @@ export function ReceiveWizard({
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
   const [openDeals, setOpenDeals] = useState<
-    { id: string; code: string; title: string | null; quotedAmount: string | null; quotedCurrency: string | null }[]
+    {
+      id: string;
+      code: string;
+      title: string | null;
+      cargo: string;
+      quotedAmount: string | null;
+      quotedCurrency: string | null;
+    }[]
   >([]);
   const [searching, setSearching] = useState(false);
   const [letterPreview, setLetterPreview] = useState<string[]>([]);
@@ -913,8 +921,11 @@ export function ReceiveWizard({
             <option value="">{td('noDeal')}</option>
             {openDeals.map((deal) => (
               <option key={deal.id} value={deal.id}>
-                {deal.code}
-                {deal.title ? ` · ${deal.title}` : ''}
+                {/* The money STAYS here and is not in the shared composer:
+                    this picker is gated on the deal-write list, and the
+                    question it answers — «which job is this cargo for» — is
+                    settled by the agreed price as often as by the goods. */}
+                {dealOptionLabel(deal)}
                 {deal.quotedAmount ? ` · ${deal.quotedAmount} ${deal.quotedCurrency ?? ''}` : ''}
               </option>
             ))}

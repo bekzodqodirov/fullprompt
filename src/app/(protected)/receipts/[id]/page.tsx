@@ -32,7 +32,7 @@ import { calcLinkOptions } from '@/modules/wms/calc/link';
 import { calcControlScopeFor } from '@/modules/wms/calc/control-scope';
 import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
-import { canWriteDeal, openDealsForClient } from '@/modules/wms/deals/service';
+import { canWriteDeal, openDealsForClient, withCargo } from '@/modules/wms/deals/service';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
@@ -174,7 +174,14 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   const calcOptions = mayLinkCalc ? await calcLinkOptions(receipt.dealId) : [];
   const dealChoices =
     linkedDeal && !dealOptions.some((d) => d.id === linkedDeal.id)
-      ? [{ id: linkedDeal.id, code: linkedDeal.code, title: linkedDeal.title }, ...dealOptions]
+      ? [
+          // The deal this prixod is ON, even once it has left the open list —
+          // hiding it would hide the mistake being corrected. It goes through
+          // the same composer as the rest: it is the SELECTED option, so a
+          // blank cargo line beside filled ones would read as a broken row.
+          ...(await withCargo([linkedDeal])),
+          ...dealOptions,
+        ]
       : dealOptions;
 
   return (
