@@ -433,14 +433,28 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                 <tr key={lot.lotId} className="border-b border-line last:border-0">
                   <td className="p-1.5">
                     <div className="flex items-center gap-1">
-                      {lot.photoId ? (
-                        <LightboxImg
-                          attachmentId={lot.photoId}
-                          className="h-20 w-20 rounded-lg object-cover"
-                        />
-                      ) : lot.generalPhotoId ? (
+                      {/*
+                        THE OUTSIDE OF THE CARTON COMES FIRST HERE, and this is
+                        the one table where that is true. The owner, at a truck:
+                        «skladchi yuklash payitida karobkani ichini kormaydiku
+                        shu payitda tovarni tashqa rasimi turishi kerak unga».
+                        This is the list a loader reads to know WHICH cartons to
+                        put on the truck, so the useful picture is the receipt's
+                        general box photo; the per-lot goods photo answers «what
+                        is inside», which is the question /stock and the receipt
+                        card are for — and there the order stays the other way
+                        round. The amber ring therefore marks the UNEXPECTED
+                        one on this screen: a lot with no box photo falls back
+                        to the goods photo rather than to nothing, and says so.
+                      */}
+                      {lot.generalPhotoId ? (
                         <LightboxImg
                           attachmentId={lot.generalPhotoId}
+                          className="h-20 w-20 rounded-lg object-cover"
+                        />
+                      ) : lot.photoId ? (
+                        <LightboxImg
+                          attachmentId={lot.photoId}
                           className="h-20 w-20 rounded-lg border-2 border-warn/40 object-cover"
                         />
                       ) : (
