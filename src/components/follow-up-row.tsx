@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { setFollowUpAction } from '../crm/actions';
+import { setFollowUpAction } from '@/app/(protected)/crm/actions';
 
 /**
  * One «bugun qo'ng'iroq» row, with the two taps that take it off the list.

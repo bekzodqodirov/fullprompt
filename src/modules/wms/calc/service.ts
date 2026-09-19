@@ -592,6 +592,44 @@ export async function returnCalcRequest(
       `📝 ${trimmed.slice(0, 300)}${linkLine(row.entityType, row.entityId)}`,
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, id }, '[calc] returned notify failed'));
+
+  /**
+   * …and the work lands back on the SELLER's day (owner's item 5, question
+   * 5.1 — my recommendation (a), built and stated, because the alternative is
+   * a job that exists on nobody's screen).
+   *
+   * Handing a calculation back closes the VED's task, which is right: it is
+   * not their work any more. But nothing opened in its place, so a request
+   * waiting on «tovar nomi yetarli emas» sat in the queue with the only
+   * record of it a Telegram message somebody scrolls past. The task carries
+   * the reason, points at the same card, and is due TOMORROW — a request
+   * already waiting has no honest deadline left today.
+   *
+   * Never fatal: the hand-back itself is committed and audited above, and a
+   * failure here must not undo the VED's decision (`requestCalc`'s own rule).
+   */
+  try {
+    const due = new Date();
+    due.setUTCDate(due.getUTCDate() + 1);
+    due.setUTCHours(23, 59, 59, 999);
+    await createTask(
+      {
+        title: `↩️ Ma'lumot to'ldiring: ${await requestLabel(row.entityType, row.entityId)}`,
+        note: trimmed.slice(0, 500),
+        typeId: null,
+        assigneeId: row.requestedBy,
+        dueAt: due.toISOString(),
+        priority: 1,
+        entityType: row.entityType,
+        entityId: row.entityId,
+        repeatUnit: null,
+        repeatEvery: 1,
+      },
+      ctx,
+    );
+  } catch (err) {
+    logger.error({ err, id }, '[calc] return task creation failed');
+  }
 }
 
 /** Done — with the figure the seller is waiting for. */

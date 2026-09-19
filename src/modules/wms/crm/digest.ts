@@ -11,7 +11,8 @@ import {
 import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
 import { isTelegramMuted } from '../../platform/notifications/mutes';
-import { dormantClients, followUps } from './service';
+import { dayCalls, othersLine } from './day';
+import { dormantClients } from './service';
 
 export const JOB_CRM_FOLLOWUPS = 'crm.followups';
 export const JOB_CRM_DORMANT = 'crm.dormant';
@@ -21,8 +22,10 @@ export const JOB_CRM_DORMANT = 'crm.dormant';
  *
  * Both are PER RECIPIENT, not one broadcast: a sales manager must get their
  * own list, because a message about someone else's clients is a message they
- * learn to ignore. The owner and the logist, who hold `crm.leads.view_all`,
- * get everything.
+ * learn to ignore. Which turned out to be true of the owner as well — he
+ * holds `crm.leads.view_all` and was therefore sent EVERYBODY's every
+ * morning, and said so (item 4). Since then a supervisor gets their own
+ * list too, with the other sellers as a line of counts.
  */
 
 /** Everyone who works leads, with a flag for "sees all of them". */
@@ -69,19 +72,38 @@ async function deliver(userId: string, type: string, text: string) {
 }
 
 /**
- * "Who am I calling today" — leads and clients whose follow-up date has
- * arrived. Silence when there is nothing due: a daily message that is usually
- * empty trains people to swipe it away.
+ * "Who am I calling today" — MY leads and clients, and how the sellers stand.
+ *
+ * The owner, 2026-09-14: «telegramdan ham har kuni bugun boglanilishi kerak
+ * deb kelib yotibti». What arrived every morning was every seller's list
+ * flattened into one message, because `crm.leads.view_all` was read as «send
+ * them everything». His answer 4.3c: the message carries MY OWN calls, and
+ * then one line of counts — «alisher 4ta Bekzod 5 ta» — which is the part a
+ * supervisor actually acts on. Names and numbers, never a hundred rows: the
+ * screen is one tap away and a phone is the wrong place to read somebody
+ * else's day.
+ *
+ * Silence when there is nothing due, as before — a daily message that is
+ * usually empty trains people to swipe it away. For a supervisor «nothing»
+ * now includes the counts: if no seller owes a call either, nobody hears from
+ * us. And it has its own mute switch (4.3b), so «stop sending me this one»
+ * no longer means muting the warehouse summary with it.
  */
 export async function sendFollowUpDigest(now = new Date()): Promise<number> {
   const asOf = now.toISOString().slice(0, 10);
   let sent = 0;
 
   for (const recipient of await crmRecipients()) {
-    const due = await followUps(asOf, recipient.seesAll ? undefined : recipient.userId);
-    if (due.length === 0) continue;
+    const calls = await dayCalls({
+      actorId: recipient.userId,
+      seesAll: recipient.seesAll,
+      asOf,
+      includeOthers: recipient.seesAll,
+    });
+    const own = [...calls.mine, ...calls.stale];
+    if (own.length === 0 && calls.othersCount === 0) continue;
 
-    const lines = due
+    const lines = own
       .slice(0, 30)
       .map((item) => {
         const late = item.dueOn < asOf ? ` ⚠️ ${item.dueOn}` : '';
@@ -91,12 +113,15 @@ export async function sendFollowUpDigest(now = new Date()): Promise<number> {
         }`.trimEnd();
       })
       .join('\n');
-    const more = due.length > 30 ? `\n… va yana ${due.length - 30} ta` : '';
-    await deliver(
-      recipient.userId,
-      'CrmFollowUps',
-      `📞 Bugun bog‘lanish kerak (${due.length})\n\n${lines}${more}`,
-    );
+    const more = own.length > 30 ? `\n… va yana ${own.length - 30} ta` : '';
+    const others = othersLine(calls.others);
+    const tail = others ? `\n\n👥 Sotuvchilar: ${others}` : '';
+    const head =
+      own.length > 0
+        ? `📞 Bugun bog‘lanish kerak (${own.length})\n\n${lines}${more}`
+        : '📞 Bugun sizda qo‘ng‘iroq yo‘q';
+
+    await deliver(recipient.userId, 'CrmFollowUps', `${head}${tail}`);
     sent += 1;
   }
   return sent;

@@ -22,6 +22,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
+import { dealCargoLabel, type DealCargo } from './cargo-label';
 import { stampCalcLink } from '../calc/link';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
@@ -784,6 +785,67 @@ export async function dealRealitiesFor(dealIds: string[]): Promise<Map<string, D
 
 export async function dealReality(dealId: string): Promise<DealReality> {
   return (await dealRealitiesFor([dealId])).get(dealId) ?? EMPTY_REALITY;
+}
+
+/**
+ * What each deal's code cannot say — for the three pickers, in three queries
+ * for the whole list rather than three per row (#432, #526).
+ *
+ * The goods name has two sources and they answer different questions: the
+ * prixod's lots are what the warehouse actually wrote on the cartons, the
+ * VED's `deal_lines` are what the price was put on. The prixod WINS when one
+ * exists, because a picker that shows cargo must name the cargo that came;
+ * the lines are the fallback for a deal whose goods are still only agreed.
+ * Russian before Chinese, the precedence #583 set for the mirror picker —
+ * `product_name_zh` is the supplier's own label and the office reads this.
+ */
+export async function dealCargoFor(
+  dealIds: string[],
+): Promise<Map<string, Omit<DealCargo, 'quotedVolumeM3' | 'quotedWeightKg'>>> {
+  const map = new Map<string, Omit<DealCargo, 'quotedVolumeM3' | 'quotedWeightKg'>>();
+  if (dealIds.length === 0) return map;
+
+  const name = sql<string>`coalesce(nullif(${receiptLots.productNameRu}, ''), ${receiptLots.productNameZh})`;
+  const [realities, fromReceipts, fromLines] = await Promise.all([
+    dealRealitiesFor(dealIds),
+    db
+      .select({
+        dealId: receipts.dealId,
+        first: sql<string>`(array_agg(DISTINCT ${name}))[1]`,
+        n: sql<number>`count(DISTINCT ${name})`,
+      })
+      .from(receipts)
+      .innerJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
+      .where(and(inArray(receipts.dealId, dealIds), isNull(receipts.voidedAt)))
+      .groupBy(receipts.dealId),
+    db
+      .select({
+        dealId: dealLines.dealId,
+        first: sql<string>`(array_agg(${dealLines.description} ORDER BY ${dealLines.seq}))[1]`,
+        n: sql<number>`count(*)`,
+      })
+      .from(dealLines)
+      .where(inArray(dealLines.dealId, dealIds))
+      .groupBy(dealLines.dealId),
+  ]);
+
+  const lines = new Map(fromLines.map((row) => [row.dealId, row]));
+  const received = new Map(
+    fromReceipts.filter((row) => row.dealId).map((row) => [row.dealId as string, row]),
+  );
+
+  for (const id of dealIds) {
+    const reality = realities.get(id);
+    const goods = received.get(id) ?? lines.get(id);
+    map.set(id, {
+      receiptCount: reality?.receiptCount ?? 0,
+      volumeM3: reality?.volumeM3 ?? 0,
+      weightKg: reality?.weightKg ?? 0,
+      goods: goods?.first ?? null,
+      goodsExtra: goods ? Math.max(0, Number(goods.n) - 1) : 0,
+    });
+  }
+  return map;
 }
 
 export async function deviationThreshold(): Promise<number> {
@@ -1563,6 +1625,40 @@ export async function unlinkedReceipts(clientId: string) {
   });
 }
 
+/**
+ * Hangs the cargo line on a list of deals — the one door both pickers' lists
+ * go through, so the two cannot drift apart again (the drift IS what he
+ * reported: the mirror picker has carried its cargo since #583 and these two
+ * never learned).
+ *
+ * Deliberately NOT folded into each query: the figures come from three
+ * grouped queries over other tables, and a join would multiply the deal rows
+ * by their lots before the aggregate ever ran.
+ */
+export async function withCargo<
+  T extends {
+    id: string;
+    quotedVolumeM3: string | null;
+    quotedWeightKg: string | null;
+  },
+>(rows: T[]): Promise<(T & { cargo: string })[]> {
+  const cargo = await dealCargoFor(rows.map((row) => row.id));
+  return rows.map((row) => ({
+    ...row,
+    cargo: dealCargoLabel({
+      ...(cargo.get(row.id) ?? {
+        receiptCount: 0,
+        volumeM3: 0,
+        weightKg: 0,
+        goods: null,
+        goodsExtra: 0,
+      }),
+      quotedVolumeM3: row.quotedVolumeM3 === null ? null : Number(row.quotedVolumeM3),
+      quotedWeightKg: row.quotedWeightKg === null ? null : Number(row.quotedWeightKg),
+    }),
+  }));
+}
+
 /** Open deals of a client, for the receiving screen's picker. */
 export async function openDealsForClient(clientId: string) {
   const openStages = await db
@@ -1570,13 +1666,15 @@ export async function openDealsForClient(clientId: string) {
     .from(dealStages)
     .where(eq(dealStages.kind, 'open'));
   if (openStages.length === 0) return [];
-  return db
+  const rows = await db
     .select({
       id: deals.id,
       code: deals.code,
       title: deals.title,
       quotedAmount: deals.quotedAmount,
       quotedCurrency: deals.quotedCurrency,
+      quotedVolumeM3: deals.quotedVolumeM3,
+      quotedWeightKg: deals.quotedWeightKg,
     })
     .from(deals)
     .where(
@@ -1587,6 +1685,7 @@ export async function openDealsForClient(clientId: string) {
     )
     .orderBy(desc(deals.createdAt))
     .limit(20);
+  return withCargo(rows);
 }
 
 /**
@@ -1602,13 +1701,15 @@ export async function openDealsForClient(clientId: string) {
  */
 export async function ledgerDealsForClient(clientId: string) {
   const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000);
-  return db
+  const rows = await db
     .select({
       id: deals.id,
       code: deals.code,
       title: deals.title,
       quotedAmount: deals.quotedAmount,
       quotedCurrency: deals.quotedCurrency,
+      quotedVolumeM3: deals.quotedVolumeM3,
+      quotedWeightKg: deals.quotedWeightKg,
     })
     .from(deals)
     .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
@@ -1624,6 +1725,7 @@ export async function ledgerDealsForClient(clientId: string) {
     )
     .orderBy(desc(deals.createdAt))
     .limit(40);
+  return withCargo(rows);
 }
 
 /**

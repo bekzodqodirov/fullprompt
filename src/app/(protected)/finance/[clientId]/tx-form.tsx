@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
+import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import { useTranslations } from 'next-intl';
 import { addTransactionAction, type TxFormState } from '../actions';
 
@@ -20,7 +21,7 @@ export function TxForm({
   currencies: string[];
   accounts: { id: string; name: string; currency: string }[];
   /** The client's open deals — offered so a payment can name its job. */
-  deals: { id: string; code: string; title: string | null }[];
+  deals: { id: string; code: string; title: string | null; cargo: string }[];
   today: string;
 }) {
   const t = useTranslations('finance');
@@ -99,8 +100,7 @@ export function TxForm({
           <option value="">— {t('forDeal')}</option>
           {deals.map((deal) => (
             <option key={deal.id} value={deal.id}>
-              {deal.code}
-              {deal.title ? ` — ${deal.title}` : ''}
+              {dealOptionLabel(deal)}
             </option>
           ))}
         </select>

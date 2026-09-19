@@ -519,8 +519,17 @@ export async function setCalcStageAction(
 
 // --- People -----------------------------------------------------------------
 
-export async function groupClientsAction(clientIds: string[], name: string): Promise<CrmFormState> {
-  return run('crm.manage', (ctx) => groupClients(clientIds, { name }, ctx));
+export async function groupClientsAction(
+  clientIds: string[],
+  name: string,
+  /**
+   * The person to add these codes to, when one already exists. Re-derived by
+   * `groupClients`, which refuses an id that is not a person — a browser
+   * cannot post its way onto a stranger's card.
+   */
+  personId?: string,
+): Promise<CrmFormState> {
+  return run('crm.manage', (ctx) => groupClients(clientIds, { name, personId }, ctx));
 }
 
 export async function personFromClientAction(clientId: string): Promise<CrmFormState> {

@@ -5,10 +5,16 @@
  */
 
 export const MUTE_GROUPS = {
-  // The CRM digests belong here rather than in `operations`: they are the
-  // same kind of "once a day, nothing is on fire" message as the warehouse
-  // digest, and someone who mutes that means these too.
-  digest: ['DailyDigest', 'CrmFollowUps', 'CrmDormant'],
+  // The warehouse svodka and the monthly «these clients have gone quiet»:
+  // once a day, nothing is on fire, and someone who mutes one means both.
+  digest: ['DailyDigest', 'CrmDormant'],
+  // The morning call list has its OWN switch (owner's 4.3b, «alohida
+  // o'chirish katagi bolsin»). It used to sit in `digest`, which meant
+  // silencing it also silenced the warehouse summary — two different jobs'
+  // messages behind one checkbox. It is also the one CRM message that
+  // arrives every single working day, so it is the one somebody will want to
+  // turn off on its own.
+  calls: ['CrmFollowUps'],
   // A group of its own rather than folded into `digest`: someone silencing the
   // warehouse summary is not saying "stop telling me about the work I was
   // personally given", and that is the one message nobody should lose by

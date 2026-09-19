@@ -501,7 +501,8 @@
     "callRecNotSeen": "hali ma'lumot kelmadi",
     "callRecApp": "Ilovani yuklab olish (Android)",
     "telegramReconnect": "Qayta ulash",
-    "telegramReconnectHint": "Telefon yoki Telegram akkaunt o‘zgardimi? Botni yangisidan oching — xabarnomalar o‘sha yerga keladi. Yangisi ulanmaguncha eski chat ishlab turaveradi."
+    "telegramReconnectHint": "Telefon yoki Telegram akkaunt o‘zgardimi? Botni yangisidan oching — xabarnomalar o‘sha yerga keladi. Yangisi ulanmaguncha eski chat ishlab turaveradi.",
+    "notifMuteCalls": "Ertalabki qo‘ng‘iroqlar ro‘yxati"
   },
   "receive": {
     "title": "Qabul",
@@ -962,7 +963,13 @@
     "approvalsTitle": "Berishga ruxsatlar",
     "approvalNote": "Izoh (ixtiyoriy)",
     "approve": "Ruxsat berish",
-    "refuse": "Rad etish"
+    "refuse": "Rad etish",
+    "waitingHere": "Shu skladda kutayotganlar",
+    "unclaimedHere": "Egasi aniqlanmagan yuk",
+    "boxesN": "{n} karobka",
+    "partiesMore": "Yana {n} ta — kod yozib qidiring",
+    "partiesEmpty": "Bu skladda topshirishga tayyor yuk yo‘q",
+    "openReceipt": "Prixodni ochish"
   },
   "pipeline": {
     "title": "Mening klientlarim",
@@ -1528,7 +1535,13 @@
     },
     "errors": {
       "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)"
-    }
+    },
+    "dayMine": "Mening qo‘ng‘iroqlarim",
+    "dayAll": "Hammasi",
+    "dayStale": "{n} ta kechikkan — ko‘rish",
+    "dayStaleOpen": "Kechikkanlar",
+    "dayOthers": "Sotuvchilar bo‘yicha",
+    "dayBack": "Faqat meniki"
   },
   "navShort": {
     "home": "Bosh",

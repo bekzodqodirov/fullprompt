@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -30,7 +31,7 @@ export function DealLink({
 }: {
   receiptId: string;
   current: { id: string; code: string } | null;
-  options: { id: string; code: string; title: string | null }[];
+  options: { id: string; code: string; title: string | null; cargo: string }[];
 }) {
   const t = useTranslations('receipts');
   const td = useTranslations('deals');
@@ -66,8 +67,7 @@ export function DealLink({
           <option value="">— {td('unlink')}</option>
           {options.map((deal) => (
             <option key={deal.id} value={deal.id}>
-              {deal.code}
-              {deal.title ? ` · ${deal.title}` : ''}
+              {dealOptionLabel(deal)}
             </option>
           ))}
         </select>

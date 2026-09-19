@@ -16,6 +16,23 @@ interface ClientHit {
   clientCode: string;
   name: string;
 }
+/**
+ * Who is waiting at this warehouse — his own shape: «yolchi GS555 700boxes
+ * gs777 400 boxes». A party is one human being when the codes have been
+ * grouped under a person, and one code when they have not.
+ */
+interface IssueParty {
+  personId: string | null;
+  name: string;
+  phones: string[];
+  codes: { clientId: string; code: string; name: string; boxes: number }[];
+  boxes: number;
+}
+interface UnclaimedParty {
+  receiptId: string;
+  marking: string;
+  boxes: number;
+}
 interface IssuableBox {
   boxId: string;
   shortCode: string;
@@ -38,6 +55,9 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
   const [client, setClient] = useState<ClientHit | null>(null);
+  const [parties, setParties] = useState<IssueParty[] | null>(null);
+  const [unclaimed, setUnclaimed] = useState<UnclaimedParty[]>([]);
+  const [partiesMore, setPartiesMore] = useState(0);
   const [list, setList] = useState<IssuableBox[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [personName, setPersonName] = useState('');
@@ -77,6 +97,36 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
     }, 250);
     return () => clearTimeout(timer);
   }, [clientQuery, client]);
+
+  /**
+   * The waiting list. Re-read when the warehouse changes and after a
+   * handover, because the counts are what the operator checks against the
+   * pile in front of them — a stale «700 karobka» beside 300 boxes is worse
+   * than no number. Aborted on switch for the same reason the box list is.
+   */
+  useEffect(() => {
+    if (!warehouseId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`/api/issue/parties?warehouseId=${warehouseId}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          parties: IssueParty[];
+          more: number;
+          unclaimed: UnclaimedParty[];
+        };
+        setParties(data.parties);
+        setPartiesMore(data.more);
+        setUnclaimed(data.unclaimed);
+      } catch {
+        /* aborted */
+      }
+    })();
+    return () => controller.abort();
+  }, [warehouseId, doneHandover]);
 
   useEffect(() => {
     if (!client || !warehouseId) {
@@ -243,6 +293,102 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
           </div>
         </div>
       </div>
+
+      {/**
+        * The waiting list — the owner's item 3. Only while no client is
+        * chosen: once one is, the boxes below are what the operator is
+        * working through and a list of other customers is noise on a
+        * scanning screen.
+        *
+        * A CODE is the tap target, never the person, because everything after
+        * this point is per code — the boxes, the debt, the manager's
+        * permission and the act that gets signed. The person is the heading
+        * that puts «yolchi's» two codes next to each other.
+        */}
+      {!client && (
+        <section className="space-y-2" data-testid="issue-parties">
+          <h2 className="text-xs font-bold uppercase text-ink-500">👥 {t('waitingHere')}</h2>
+          {parties?.length === 0 && unclaimed.length === 0 && (
+            <p className="card text-sm text-ink-500">{t('partiesEmpty')}</p>
+          )}
+          {(parties ?? []).map((party) => (
+            <div
+              key={party.personId ?? party.codes[0]!.clientId}
+              className="card space-y-1.5 !p-3"
+              data-testid="issue-party"
+            >
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="font-semibold">{party.name}</span>
+                {/* His 3.3a. The number is read by the person about to hand
+                    the cargo over, and the list is built from what stands on
+                    THIS shelf, so no other customer's phone is on screen. */}
+                {party.phones.map((phone) => (
+                  <a
+                    key={phone}
+                    href={`tel:${phone}`}
+                    className="font-mono text-xs text-ink-700 underline decoration-dotted"
+                  >
+                    {phone}
+                  </a>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {party.codes.map((code) => (
+                  <button
+                    key={code.clientId}
+                    type="button"
+                    data-testid="issue-party-code"
+                    className="flex items-baseline gap-1.5 rounded-lg border border-line bg-surface-sunken px-2 py-1.5 text-left"
+                    onClick={() => {
+                      setClient({ id: code.clientId, clientCode: code.code, name: code.name });
+                      setClientQuery('');
+                      setDoneHandover(null);
+                    }}
+                  >
+                    <span className="font-mono font-extrabold text-brand-700">{code.code}</span>
+                    <span className="text-xs text-ink-600">{t('boxesN', { n: code.boxes })}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          {partiesMore > 0 && (
+            <p className="text-xs text-ink-500">{t('partiesMore', { n: partiesMore })}</p>
+          )}
+
+          {/**
+            * Cargo whose owner is not known yet (his 3.2a). It is a LINK and
+            * not a choice: there is no client to sign for it or to bill, so
+            * the prixod is where somebody names one first.
+            */}
+          {unclaimed.length > 0 && (
+            <>
+              <h2 className="pt-1 text-xs font-bold uppercase text-ink-500">
+                ❓ {t('unclaimedHere')}
+              </h2>
+              {unclaimed.map((row) => (
+                <a
+                  key={row.receiptId}
+                  href={`/receipts/${row.receiptId}`}
+                  className="card block space-y-1 !p-3"
+                  data-testid="issue-unclaimed"
+                >
+                  {/* The marking WRAPS and is never truncated. It is the only
+                      thing identifying this cargo, it is hand-written on the
+                      carton, and his markings differ in the TAIL
+                      («GS500MANIKEN-AL») — «GS500MA…» names nothing. Seen in
+                      the round's own 360 px screenshot, not by a test. */}
+                  <span className="block break-all font-mono font-bold">{row.marking}</span>
+                  <span className="flex items-baseline gap-2 text-xs">
+                    <span className="text-ink-600">{t('boxesN', { n: row.boxes })}</span>
+                    <span className="text-brand-700 underline">{t('openReceipt')}</span>
+                  </span>
+                </a>
+              ))}
+            </>
+          )}
+        </section>
+      )}
 
       {doneHandover && (
         <div className="space-y-2 rounded-lg border border-good/30 bg-good/10 p-3">

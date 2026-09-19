@@ -67,6 +67,34 @@ const DICT = {
   warehouse: { ru: 'Склад', uz: 'Sklad', 'zh-CN': '仓库', en: 'Warehouse' },
   when: { ru: 'Когда', uz: 'Qachon', 'zh-CN': '时间', en: 'When' },
   who: { ru: 'Кто', uz: 'Kim', 'zh-CN': '操作人', en: 'Who' },
+  /**
+   * One box's measurements as the warehouse writes them: 40×30×25. Not three
+   * columns — «XYZ» is one fact and the owner asked for it in the singular
+   * («xyz qatori bosh qolsin»), and a lot either carries all three or none,
+   * because the wizard derives the volume FROM them.
+   */
+  xyzCm: { ru: 'XYZ (см)', uz: 'XYZ (sm)', 'zh-CN': 'XYZ (厘米)', en: 'XYZ (cm)' },
+  /**
+   * The note on a capped 📷 header. Said only when the cap bites, so it
+   * carries the count and not a standing warning. It counts PHOTOGRAPHS now
+   * and not rows — a row can carry several and lose only its later ones.
+   */
+  /**
+   * Said on the 📷 header of every photo sheet, because it is a property of
+   * Excel and not of a particular download.
+   */
+  photoSortNote: {
+    ru: 'При сортировке фото остаются на месте',
+    uz: 'Saralashda rasmlar joyida qoladi',
+    'zh-CN': '排序后照片不随行移动',
+    en: 'Sorting does not move the pictures',
+  },
+  photosCapped: {
+    ru: 'фото не поместилось',
+    uz: 'ta rasm sig‘madi',
+    'zh-CN': '张照片未放入',
+    en: 'photos did not fit',
+  },
 
   // Sheet titles
   tLandedCostByLot: {

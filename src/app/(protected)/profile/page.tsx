@@ -192,6 +192,10 @@ export default async function ProfilePage() {
               ✅ {t('notifMuteTasks')}
             </label>
             <label className="flex min-h-10 items-center gap-3">
+              <input type="checkbox" name="mute_calls" defaultChecked={mutes.groups.calls} className="h-5 w-5" />
+              📞 {t('notifMuteCalls')}
+            </label>
+            <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_alerts" defaultChecked={mutes.groups.alerts} className="h-5 w-5" />
               🚨 {t('notifMuteAlerts')}
             </label>

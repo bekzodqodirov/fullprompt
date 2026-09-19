@@ -1,5 +1,236 @@
 # CHANGELOG
 
+## Ostatka Excelida prixodning HAMMA rasmi — 2026-09-19
+
+Sizning javobingiz: «usha prixotdagi hamma rasim kerak boladi».
+
+**Endi har qatorda o'sha qatorning hamma rasmi turadi** — avval tovarning
+o'z rasmlari, keyin prixodning umumiy (karobkalar) rasmlari. Umumiy rasm
+o'sha prixodning har bir qatorida ko'rinadi, chunki u butun prixodga
+tegishli.
+
+- **📷 ustunlari jadvalning OXIRIDA.** Oldin qo'ysak, sakkizta rasm ustuni
+  mijoz kodini ekranning o'ng tomoniga surib yuborardi. Birinchi ikki ustun
+  (sklad va kod) **muzlatildi** — rasmlarga qarab o'ngga surilganda ham kod
+  ko'rinib turadi.
+- **Chop etilganda sarlavha qatori har betda takrorlanadi.**
+- **Rasm yo'q bo'lsa ham bitta bo'sh 📷 ustuni qoladi** — ustun jimgina
+  yo'qolib qolmasin.
+- **Chegara — himoya, cheklov emas.** Sizning javobingizdan keyin bir
+  qatordagi rasm ustunlari soni **8 dan 50 ga** ko'tarildi (prixodga
+  qo'yish mumkin bo'lgan rasm soniga chek yo'q, shuning uchun 8 haqiqiy
+  to'siq edi), varaqdagi umumiy rasm chegarasi esa 3 000 dan **6 000** ga.
+  O'lchandi: 3 000 rasm = 150 MB, 5 000 = 195 MB, 30 000 = 577 MB —
+  sizning Ostatkangiz ~450 qator, ya'ni har qatorda 13 tagacha rasm
+  bemalol sig'adi. Chegara ishga tushsa ham avval har qatorning BIRINCHI
+  rasmi qo'yiladi va sarlavha nechtasi sig'maganini aytadi.
+
+**Ikkita narsani bilib qo'ying:**
+
+1. **Excelda saralasangiz (sort), rasmlar joyida qoladi** — bu Excelning
+   o'zining xususiyati, rasm katakning ichida emas, ustida «suzib» turadi.
+   Shuning uchun 📷 sarlavhasiga shu haqda eslatma qo'yildi.
+2. **📎 bo'limiga rasm sifatida qo'yilgan hujjat** (masalan, telefonda
+   suratga olingan invoys) ham shu ustunlarda chiqadi — bazada u ham
+   «rasm» deb yoziladi. Siz «ha, hammasi kerak» dedingiz — shunday
+   qoldirildi.
+
+**Yo'l-yo'lakay tuzatildi:** rasm Excelga qo'yilishidan oldin kichraytirilmas
+ekan — sifati tushirilgan nusxasi bo'lmagan rasmlar to'liq o'lchamda
+kirardi (78×72 nuqtada chiziladigan rasm uchun 3-4 MB). Endi 200 nuqtaga
+kichraytiriladi.
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi.
+
+
+## Sizning ro'yxatingiz: hisoblash vazifalari — 2026-09-19
+
+**5-band bajarildi. Olti bandning hammasi tayyor.**
+
+**1. Avtomatik yopish allaqachon ishlayapti.** Tekshirdim: 5-sentabrdan beri
+hisoblash tugaganda (javob berilganda, muhrlanganda yoki qaytarilganda)
+vazifa o'zi yopiladi. Ya'ni yangi ishlarda qo'lda yopish shart emas.
+
+**2. Eski to'p — bitta buyruq bilan tozalanadi.** 25-avgust (VED moduli
+chiqqan kun) bilan 5-sentabr orasidagi ishlarning vazifalari ochiq qolgan
+va ularni hech qanday kod yopmaydi. Serverda:
+
+```
+docker compose run --rm migrate pnpm close-stale-calc-tasks
+```
+
+— nechta borligini aytadi, **hech narsani o'zgartirmaydi**. Ro'yxatni
+ko'rib, rozi bo'lsangiz:
+
+```
+docker compose run --rm migrate pnpm close-stale-calc-tasks --apply
+```
+
+Yopilgan vazifaga **ishning tugagan sanasi** yoziladi (bugungi emas), va
+ikkinchi marta ishga tushirsangiz hech narsa qilmaydi.
+
+**3. VED «ma'lumot yetmadi» deb qaytarsa — endi sotuvchiga vazifa
+ochiladi** («↩️ Ma'lumot to'ldiring: …»), sababi bilan, ertaga muddat bilan.
+Ilgari VED ning vazifasi yopilardi va ish **hech kimning ekranida**
+qolmasdi. *Bu 5.1 savolimga javob kutmasdan qilindi — tavsiyam shu edi.*
+
+**4. Yo'l-yo'lakay: «Mening kunim»dagi vazifalar ro'yxati.** Ilgari uchala
+bo'lim (kechikkan / bugun / muddatsiz) bitta 300 qatorlik chegarani
+bo'lishardi va qatorlar eng eskisidan boshlanardi — ya'ni 300 ta eski
+vazifasi bor odam BUGUNGI ishini umuman ko'rmasdi. Endi har bo'lim o'z
+ro'yxatini oladi, sarlavhada **haqiqiy soni** turadi, ro'yxat qisqartirilgan
+bo'lsa «+137» deb aytadi. Kechikkanlar **eng yangisidan** boshlanadi.
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi.
+
+
+## Sizning ro'yxatingiz: «Mening kunim» va ertalabki xabar — 2026-09-19
+
+**4-band bajarildi.** Qolgani bitta: 5-band (hisoblash vazifalari).
+
+**1. Endi ro'yxat — SIZNIKI.** Ilgari «Mening kunim»da hamma sotuvchining
+qo'ng'irog'i bir uyumda turardi (chunki siz hamma leadni ko'rish huquqiga
+egasiz). Endi:
+
+- Yuqorida **faqat sizniki** — «📞 Mening qo'ng'iroqlarim · 4». Egasi
+  belgilanmagan so'rovlar avvalgidek hammada ko'rinadi (ular hali
+  hech kimniki emas).
+- Yon tomonda **«Hammasi · 15»** tugmasi. Bosasiz — sotuvchilar bo'yicha
+  **yig'ma bo'limlar** ochiladi: «Alisher · 4», «Bekzod · 5» — eng ko'pi
+  tepada, har biri yopiq turadi, bosganingizda ochiladi.
+- **Bir haftadan oshib ketgan** qo'ng'iroqlar bitta qatorga yig'iladi:
+  «⚠️ 5 ta kechikkan — ko'rish». Yo'qolmaydi, o'chmaydi — faqat bugungi
+  ishning tepasini band qilmaydi.
+
+**Muhim:** bu **ikkala ekranda** ham shunday — `/bugun` da ham, CRM
+menyusidagi «Bugun qo'ng'iroq» da ham. Ular bir xil nom bilan ikki xil
+ekran edi, va sotuvchining bosh sahifasi aynan ikkinchisiga olib borardi.
+
+**2. Kartadagi ✏️ formada bosqichni o'zgartirsa ham ro'yxatdan tushadi.**
+Doskada surganda tushardi, formada tushmasdi — sizning birinchi
+gapingiz shu edi. **Istisno:** agar sotuvchi o'sha saqlashda **yangi sana**
+yozgan bo'lsa, yozgani qoladi (odam o'z kuni haqida o'zi qaror qiladi).
+*Bu 4.4 savolimga javobingizni kutmasdan shunday qilindi — javob boshqacha
+bo'lsa, bir qatorda o'zgartiraman.*
+
+**3. Ertalabki Telegram xabari.** Endi u **sizning** qo'ng'iroqlaringizni
+yuboradi, oxirida esa bitta qator:
+
+```
+👥 Sotuvchilar: Alisher 4 ta · Bekzod 5 ta
+```
+
+Sotuvchiga faqat o'ziniki boradi. Hech kimda ish bo'lmasa — xabar
+umuman kelmaydi. Va profilda unga **alohida o'chirish katagi** paydo
+bo'ldi («📞 Ertalabki qo'ng'iroqlar ro'yxati») — ilgari uni o'chirish
+sklad svodkasini ham o'chirib qo'yardi.
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi.
+
+
+## Sizning ro'yxatingiz: topshirishda mijozlar ro'yxati — 2026-09-19
+
+**3-band bajarildi.** Qolgan ikkitasi (4 — «Mening kunim», 5 — hisoblash
+vazifalari) ustida ish davom etadi.
+
+**Topshirishda endi kod yozish shart emas.** Skladni tanlaysiz — pastda
+**shu skladda yuki turganlar ro'yxati** chiqadi:
+
+```
+👥 SHU SKLADDA KUTAYOTGANLAR
+Yolchi   +998 90 111-22-33  +998 91 777-00-00
+   [ GS555  700 karobka ]  [ GS777  400 karobka ]
+
+Bekzod Qodirov   +998 93 555-44-33
+   [ GS5564  5 karobka ]
+
+❓ EGASI ANIQLANMAGAN YUK
+GS500MANIKEN-AL
+3 karobka · Prixodni ochish
+```
+
+- **Bitta odam — bitta qator.** Agar ikki kod bir odamga biriktirilgan
+  bo'lsa, ular yonma-yon turadi. Kodni bosasiz — o'sha kodning karobkalari
+  ochiladi (qarz, ruxsat, akt — hammasi avvalgidek kod bo'yicha).
+- **Raqamlar shu skladdagi yukdan sanaladi.** Boshqa skladda turgan yuk bu
+  ro'yxatda yo'q, berib bo'lingan yuk ham yo'q.
+- **Telefon ko'rinadi** — faqat shu ekranda va faqat shu skladda yuki
+  turganlarniki. Mijozlar kitobi avvalgidek yopiq.
+- **Egasi aniqlanmagan yuk** markasi bilan alohida turadi va prixodga olib
+  boradi — u yerda mijozni biriktirasiz. Ilgari bu prixodni Andijon yoki
+  Toshkent skladchisi **ocholmasdi** (chunki yuk Qashqarda qabul qilingan
+  edi) — endi ochadi: yuk qayerda tursa, o'sha sklad ko'radi.
+- **Kod yozib qidirish qoldi** — ro'yxat tepada, qidiruv o'z joyida.
+
+**Yo'l-yo'lakay tuzatildi:** «bu ikki kod bitta odam» taklifi ilgari
+guruhlangan kodni **qaytarib qo'sha olmasdi** — bir marta guruhdan
+chiqarsangiz, uni qaytarish yo'li yo'q edi. Endi taklif «Yolchi guruhiga
+qo'shish» deb chiqadi. Bitta telefon ikki xil odamga tegishli bo'lsa,
+sistema **hech narsa demaydi** — noto'g'ri odamga biriktirgandan ko'ra
+jim turgani yaxshi. Va o'sha taklif ekrani 1 700 mijozda ~1 soniya
+qotardi (2,9 mln taqqoslash) — endi 2 millisekund.
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi.
+
+## Sizning ro'yxatingiz: bitim yonida yuk, yuklashda tashqi rasm, Excelda XYZ — 2026-09-19
+
+Uchta band tayyor (1, 2 va 6). Qolgan uchtasi (4 — «Mening kunim», 5 —
+hisoblash vazifalari) ustida ish davom etadi.
+
+**1. Kassada bitimni tanlaganda endi yuk ham ko'rinadi.** Ilgari faqat
+`B-00123` turardi. Endi:
+
+```
+B-00123 (5.00 m³ · 200.0 kg · oyinchoq)
+```
+
+Uch joyda bir xil: mijoz kassasida to'lov/hisob belgilaganda, prixod
+kartochkasida bitimga biriktirganda va qabul ustasida. **Raqam qayerdan
+olinadi:** agar bitimga prixod biriktirilgan bo'lsa — kelgan yukning
+haqiqiy kubi va kilosi; hali hech narsa kelmagan bo'lsa — kelishuvdagi
+raqam, va uning oldida **`≈`** turadi. Ya'ni «≈» degani «bu hali taxmin,
+yuk kelmagan». Yuk kelgandan keyin «≈» o'zi yo'qoladi. Mijoz kassasining
+tarixida ham endi har bir pul qatori qaysi bitimga tegishli ekanini aytadi.
+
+**2. Yuklash ro'yxatida karobkaning TASHQI rasmi birinchi turadi.** Sizning
+gapingiz: «skladchi karobkani ichini kormaydiku». Prixodda ikki xil rasm
+olinadi — tovarning o'zi va karobkalarning umumiy (tashqi) rasmi. Partiya
+kartochkasida yuklash ro'yxati ilgari tovarning ichki rasmini birinchi
+ko'rsatardi; endi **umumiy rasm** birinchi. Agar o'sha prixodda umumiy rasm
+olinmagan bo'lsa, tovar rasmi sariq ramka bilan ko'rsatiladi — ramka
+«bu karobkaning rasmi emas, ichidagi narsaning rasmi» degani.
+Ostatka (sklad) ekranida tartib ataylab **teskari** qoldirildi: u yerda
+savol «omborda nima turibdi», yuklashda esa «qo'limdagi karobka
+ro'yxatdagimi».
+
+**3 (6-band). Ostatka Excelida XYZ ustuni va rasmlar.** Sklad → Ostatka →
+Excel:
+
+- **XYZ (sm)** ustuni umumiy hajmning yonida. Agar prixodda uch tomon
+  kirgizilgan bo'lsa — `40×30×25`. Agar faqat umumiy kub va kg
+  kirgizilgan bo'lsa — **katak bo'sh qoladi** (siz aytganingizdek). Yarim
+  kirgizilgan bo'lsa ham bo'sh: `40×30×` degan narsa yozilmaydi, chunki u
+  hech kim o'lchamagan raqamni da'vo qilardi.
+- **📷 ustuni** — har qatorda yukning rasmi, faylning ichida. Rasm bo'lgan
+  qator balandroq bo'ladi, rasmi yo'q qator o'z balandligida qoladi.
+- **Rasmni o'chirib olish mumkin:** Ostatka ekranida ustunlar ro'yxatidan
+  📷 ni olib tashlang — shunda Excel faqat matn bo'ladi va tez yuklanadi.
+  XYZ esa har doim faylda bo'ladi (ekranda emas — ekranda telefon uchun
+  joy yo'q).
+- Bir faylga ko'pi bilan **600 rasm** joylashtiriladi (undan ortig'i fayl
+  hajmini yuzlab megabaytga olib chiqadi). Chegara ishga tushsa, ustun
+  sarlavhasi shuni o'zi aytadi.
+
+**Savol (6-band uchun):** hozir Excelda har qatorga **bitta** rasm
+qo'yildi — ekrandagi birinchi rasm, ya'ni tovarning o'zi (u bo'lmasa —
+umumiy rasm). Sizga ikkinchi, tashqi rasm ham kerak bo'lsa aytdiring,
+ikkitasini yonma-yon qo'yamiz (fayl ikki barobar kattaroq bo'ladi).
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi. Ya'ni bu
+deploydan keyin sonini sanash hech narsani tekshirmaydi: build vaqtini
+o'qing (`curl -s https://gsrwms.uz/api/version`).
+
+
 ## Deploy tekshiruvi: migratsiyasiz raundda son yolg'on gapiradi — 2026-09-06
 
 **Nima bo'ldi.** `/hodim` va profildagi «Qayta ulash» deploydan keyin

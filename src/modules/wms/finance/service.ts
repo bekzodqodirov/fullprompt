@@ -276,10 +276,19 @@ export async function clientLedger(clientId: string) {
       tx: clientTransactions,
       createdByName: users.fullName,
       batchCode: batches.code,
+      /**
+       * WHICH JOB this money answers. `deal_id` has been written by the
+       * payment form since #531 and read by nobody but the deferral netting —
+       * so the owner would pick a deal, save, and watch it become invisible
+       * («bitim belgilanadgan joyda birga berish kerak», 2026-09-14). A LEFT
+       * join: most money names no job, and that is not a defect.
+       */
+      dealCode: deals.code,
     })
     .from(clientTransactions)
     .innerJoin(users, eq(clientTransactions.createdBy, users.id))
     .leftJoin(batches, eq(clientTransactions.batchId, batches.id))
+    .leftJoin(deals, eq(clientTransactions.dealId, deals.id))
     .where(eq(clientTransactions.clientId, clientId))
     .orderBy(desc(clientTransactions.createdAt))
     .limit(500);

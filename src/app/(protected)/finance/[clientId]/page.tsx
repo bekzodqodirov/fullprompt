@@ -105,7 +105,7 @@ export default async function ClientLedgerPage({
           clientId={clientId}
           currencies={currencyRows.map((c) => c.code)}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
-          deals={openDeals.map((d) => ({ id: d.id, code: d.code, title: d.title }))}
+          deals={openDeals.map((d) => ({ id: d.id, code: d.code, title: d.title, cargo: d.cargo }))}
           today={new Date().toISOString().slice(0, 10)}
         />
       )}
@@ -123,7 +123,7 @@ export default async function ClientLedgerPage({
       <div className="card space-y-1 !p-3">
         <h2 className="text-sm font-bold uppercase text-ink-500">{t('history')}</h2>
         {ledger.length === 0 && <p className="text-sm text-ink-500">{t('empty')}</p>}
-        {ledger.map(({ tx, createdByName, batchCode }) => (
+        {ledger.map(({ tx, createdByName, batchCode, dealCode }) => (
           <div
             key={tx.id}
             className={`border-b border-line py-2 text-sm last:border-0 ${tx.voidedAt ? 'opacity-50' : ''}`}
@@ -149,6 +149,11 @@ export default async function ClientLedgerPage({
             </div>
             <div className="mt-0.5 flex items-baseline gap-2 text-xs text-ink-500">
               {batchCode && <span className="font-mono font-semibold">{batchCode}</span>}
+              {dealCode && (
+                <span className="font-mono font-semibold text-brand-700" data-testid="tx-deal-code">
+                  {dealCode}
+                </span>
+              )}
               {tx.note && <span className="truncate">{tx.note}</span>}
               <span>{createdByName}</span>
               {tx.voidedAt ? (

@@ -308,6 +308,33 @@ describe('the endings', () => {
     expect(again.id).not.toBe(id);
   });
 
+  it('a bounce-back lands back on the SELLER’s day, with the reason', async () => {
+    /**
+     * Owner's item 5, question 5.1. Handing a calculation back closes the
+     * VED's task — correctly, it is not their work any more — and nothing
+     * opened in its place, so the job existed on nobody's screen and the only
+     * record was a Telegram message somebody scrolls past.
+     */
+    const { id } = await open();
+    const requestedBy = actorId;
+    const before = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.assigneeId, requestedBy), eq(tasks.status, 'open')));
+    await returnCalcRequest(id, 'tovar nomi yetarli emas', ctx());
+    const after = await db
+      .select({ id: tasks.id, title: tasks.title, note: tasks.note, dueAt: tasks.dueAt })
+      .from(tasks)
+      .where(and(eq(tasks.assigneeId, requestedBy), eq(tasks.status, 'open')));
+    const fresh = after.filter((row) => !before.some((old) => old.id === row.id));
+    expect(fresh, 'the seller was given nothing to do').toHaveLength(1);
+    expect(fresh[0]!.title).toContain('Ma');
+    expect(fresh[0]!.note, 'the reason must travel with it').toContain('tovar nomi');
+    expect(fresh[0]!.dueAt!.getTime(), 'due tomorrow, not in the past').toBeGreaterThan(
+      Date.now(),
+    );
+  });
+
   it('finishing records the ANSWER, not just the fact that it ended', async () => {
     const { id } = await open();
     await finishCalcRequest(id, { amount: 480, currency: 'USD', note: '3 guruh' }, ctx());
