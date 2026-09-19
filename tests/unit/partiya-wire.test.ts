@@ -15,18 +15,34 @@ const read = (path: string) => strip(readFileSync(path, 'utf8'));
 
 describe('the partiya surfaces read the ONE arrivals home', () => {
   it('the stock screen and its XLSX use arrivalCodesForPairs, keyed on (lot, warehouse)', () => {
+    /**
+     * The export's HALVES moved apart in the round that gave the sheet
+     * photographs and XYZ: the route still asks the arrivals module, and the
+     * spreadsheet that consumes the answer is now `reports/stock-xlsx`. So
+     * each half is read where it lives — and the fence still closes, because
+     * the builder's only source for that map is the argument the route hands
+     * it (asserted below).
+     */
     for (const path of [
       'src/app/(protected)/stock/page.tsx',
       'src/app/api/reports/stock/route.ts',
     ]) {
       const src = read(path);
       expect(src, path).toContain('arrivalCodesForPairs(');
-      // The pair key: a lot standing in two warehouses arrived on two
-      // different answers, and keying on the lot alone prints one of them
-      // on both shelves.
-      expect(src, path).toMatch(/\|\$\{line\.whId\}/);
+      // The pair: a lot standing in two warehouses arrived on two different
+      // answers, and keying on the lot alone prints one of them on both
+      // shelves.
+      expect(src, path).toMatch(/warehouseId: line\.whId|\|\$\{line\.whId\}/);
       expect(src, path).not.toMatch(/landedHereSql|ARRIVED_ON_A_TRUCK/);
     }
+    // The sheet READS that map, and by the same pair key.
+    const builder = read('src/modules/wms/reports/stock-xlsx.ts');
+    expect(builder).toMatch(/arrivalCodes\.get\(`\$\{line\.lot\.id\}\|\$\{line\.whId\}`\)/);
+    expect(builder).not.toMatch(/landedHereSql|ARRIVED_ON_A_TRUCK/);
+    // …and the route's own answer reaches it rather than being recomputed.
+    expect(read('src/app/api/reports/stock/route.ts')).toMatch(
+      /buildStockXlsx\(\{[\s\S]{0,200}arrivalCodes,/,
+    );
   });
 
   it('the plan editor API and the plan view read arrivalsForLots at the plan ORIGIN', () => {
@@ -49,7 +65,8 @@ describe('the partiya surfaces read the ONE arrivals home', () => {
   it('the column exists, its label resolves, and the XLSX carries it', () => {
     expect(STOCK_COLUMNS.some((column) => column.key === 'partiya')).toBe(true);
     expect((ru as unknown as { stock: Record<string, string> }).stock.colBatch).toBeTruthy();
-    const xlsx = read('src/app/api/reports/stock/route.ts');
+    // The column lives with the sheet it draws (see the note above).
+    const xlsx = read('src/modules/wms/reports/stock-xlsx.ts');
     expect(xlsx).toMatch(/key: 'partiya', column: \{ header: L\.batch/);
   });
 });

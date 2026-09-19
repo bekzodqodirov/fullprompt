@@ -67,6 +67,23 @@ const DICT = {
   warehouse: { ru: 'Склад', uz: 'Sklad', 'zh-CN': '仓库', en: 'Warehouse' },
   when: { ru: 'Когда', uz: 'Qachon', 'zh-CN': '时间', en: 'When' },
   who: { ru: 'Кто', uz: 'Kim', 'zh-CN': '操作人', en: 'Who' },
+  /**
+   * One box's measurements as the warehouse writes them: 40×30×25. Not three
+   * columns — «XYZ» is one fact and the owner asked for it in the singular
+   * («xyz qatori bosh qolsin»), and a lot either carries all three or none,
+   * because the wizard derives the volume FROM them.
+   */
+  xyzCm: { ru: 'XYZ (см)', uz: 'XYZ (sm)', 'zh-CN': 'XYZ (厘米)', en: 'XYZ (cm)' },
+  /**
+   * The note on a capped 📷 header. Said only when the cap bites, so it
+   * carries the count and not a standing warning.
+   */
+  photosCapped: {
+    ru: 'строк без фото',
+    uz: 'qator rasmsiz',
+    'zh-CN': '行无照片',
+    en: 'rows without a photo',
+  },
 
   // Sheet titles
   tLandedCostByLot: {

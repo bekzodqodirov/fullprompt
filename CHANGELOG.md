@@ -1,5 +1,65 @@
 # CHANGELOG
 
+## Sizning ro'yxatingiz: bitim yonida yuk, yuklashda tashqi rasm, Excelda XYZ — 2026-09-19
+
+Uchta band tayyor (1, 2 va 6). Qolgan uchtasi (3 — topshirishda mijozlar
+ro'yxati, 4 — «Mening kunim», 5 — hisoblash vazifalari) ustida ish davom
+etadi.
+
+**1. Kassada bitimni tanlaganda endi yuk ham ko'rinadi.** Ilgari faqat
+`B-00123` turardi. Endi:
+
+```
+B-00123 (5.00 m³ · 200.0 kg · oyinchoq)
+```
+
+Uch joyda bir xil: mijoz kassasida to'lov/hisob belgilaganda, prixod
+kartochkasida bitimga biriktirganda va qabul ustasida. **Raqam qayerdan
+olinadi:** agar bitimga prixod biriktirilgan bo'lsa — kelgan yukning
+haqiqiy kubi va kilosi; hali hech narsa kelmagan bo'lsa — kelishuvdagi
+raqam, va uning oldida **`≈`** turadi. Ya'ni «≈» degani «bu hali taxmin,
+yuk kelmagan». Yuk kelgandan keyin «≈» o'zi yo'qoladi. Mijoz kassasining
+tarixida ham endi har bir pul qatori qaysi bitimga tegishli ekanini aytadi.
+
+**2. Yuklash ro'yxatida karobkaning TASHQI rasmi birinchi turadi.** Sizning
+gapingiz: «skladchi karobkani ichini kormaydiku». Prixodda ikki xil rasm
+olinadi — tovarning o'zi va karobkalarning umumiy (tashqi) rasmi. Partiya
+kartochkasida yuklash ro'yxati ilgari tovarning ichki rasmini birinchi
+ko'rsatardi; endi **umumiy rasm** birinchi. Agar o'sha prixodda umumiy rasm
+olinmagan bo'lsa, tovar rasmi sariq ramka bilan ko'rsatiladi — ramka
+«bu karobkaning rasmi emas, ichidagi narsaning rasmi» degani.
+Ostatka (sklad) ekranida tartib ataylab **teskari** qoldirildi: u yerda
+savol «omborda nima turibdi», yuklashda esa «qo'limdagi karobka
+ro'yxatdagimi».
+
+**3 (6-band). Ostatka Excelida XYZ ustuni va rasmlar.** Sklad → Ostatka →
+Excel:
+
+- **XYZ (sm)** ustuni umumiy hajmning yonida. Agar prixodda uch tomon
+  kirgizilgan bo'lsa — `40×30×25`. Agar faqat umumiy kub va kg
+  kirgizilgan bo'lsa — **katak bo'sh qoladi** (siz aytganingizdek). Yarim
+  kirgizilgan bo'lsa ham bo'sh: `40×30×` degan narsa yozilmaydi, chunki u
+  hech kim o'lchamagan raqamni da'vo qilardi.
+- **📷 ustuni** — har qatorda yukning rasmi, faylning ichida. Rasm bo'lgan
+  qator balandroq bo'ladi, rasmi yo'q qator o'z balandligida qoladi.
+- **Rasmni o'chirib olish mumkin:** Ostatka ekranida ustunlar ro'yxatidan
+  📷 ni olib tashlang — shunda Excel faqat matn bo'ladi va tez yuklanadi.
+  XYZ esa har doim faylda bo'ladi (ekranda emas — ekranda telefon uchun
+  joy yo'q).
+- Bir faylga ko'pi bilan **600 rasm** joylashtiriladi (undan ortig'i fayl
+  hajmini yuzlab megabaytga olib chiqadi). Chegara ishga tushsa, ustun
+  sarlavhasi shuni o'zi aytadi.
+
+**Savol (6-band uchun):** hozir Excelda har qatorga **bitta** rasm
+qo'yildi — ekrandagi birinchi rasm, ya'ni tovarning o'zi (u bo'lmasa —
+umumiy rasm). Sizga ikkinchi, tashqi rasm ham kerak bo'lsa aytdiring,
+ikkitasini yonma-yon qo'yamiz (fayl ikki barobar kattaroq bo'ladi).
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi. Ya'ni bu
+deploydan keyin sonini sanash hech narsani tekshirmaydi: build vaqtini
+o'qing (`curl -s https://gsrwms.uz/api/version`).
+
+
 ## Deploy tekshiruvi: migratsiyasiz raundda son yolg'on gapiradi — 2026-09-06
 
 **Nima bo'ldi.** `/hodim` va profildagi «Qayta ulash» deploydan keyin
