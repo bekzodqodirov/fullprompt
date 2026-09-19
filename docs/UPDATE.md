@@ -45,9 +45,30 @@ uzilishi mumkin.
 ## 4. Tekshirish
 
 ```bash
-docker compose ps                    # hammasi Up bo'lsin, migrate = Exited (0)
+# 1) MIGRATSIYALAR QO'LLANDIMI — buni birinchi sanang. Yarim qo'llangan
+#    deployda ilova ko'tariladi, lekin mijoz kitobi, ostatka va /o/<kod>
+#    xato sahifasini ko'rsatadi (52-raund).
+docker compose exec -T postgres psql -U gsr -d gsr \
+  -tAc "select count(*) from drizzle.__drizzle_migrations"
+#    ==> repodagi migratsiya fayllari soniga TENG bo'lishi shart:
+#        ls src/modules/platform/db/migrations/*.sql | wc -l
+#    Kam chiqsa: docker compose run --rm migrate  (va CHIQISHINI o'qing)
+
+# 2) `ps` emas, `ps -a` — `migrate` ishini tugatib chiqib ketgan, shuning
+#    uchun oddiy `ps` da ko'rinmaydi va xatosi ham ko'rinmaydi.
+docker compose ps -a                 # hammasi Up, migrate = Exited (0)
 docker compose logs --tail=40 app    # xatolik yo'qligiga ishonch
+
+# 3) Yangi kod chindan ketdimi. Migratsiyasiz raundda sanash hech nimani
+#    tekshirmaydi (to'rtinchi deploy tuzog'i) — build vaqtini o'qing.
+curl -s https://gsrwms.uz/api/version; echo
 ```
+
+> `tg-listen` (Telegram ko'prigi) `telegram` profilida, shuning uchun
+> `--profile https up -d --build` unga TEGMAYDI — u eski image bilan ishlab
+> turadi. Kod o'zgargan raundda uni ham yangilang:
+> `docker compose --profile telegram up -d --build tg-listen`, keyin bir
+> daqiqa `docker compose --profile telegram logs -f tg-listen`.
 
 Brauzerda: saytni **Ctrl+F5** bilan oching → **Profil** sahifasi pastida
 `build: ...` sanasi bugungi bo'lsin. Keyin bitta prixod va bitta partiyani

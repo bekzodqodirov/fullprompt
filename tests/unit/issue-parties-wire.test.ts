@@ -59,6 +59,46 @@ describe('the handover list', () => {
     );
   });
 
+  it('clears the waiting list when the warehouse changes, and names a failure', () => {
+    /**
+     * The shipped effect only called `controller.abort()`, which cancels the
+     * REQUEST and leaves the rendered state alone — while its own comment
+     * claimed the list was «aborted on switch». So a refresh that failed
+     * (`!res.ok` returned bare; a thrown fetch was swallowed as «aborted»)
+     * left the PREVIOUS warehouse's customers, their phone numbers and their
+     * box counts under the NEW warehouse's heading, and the operator reads a
+     * name off that list before handing cargo over.
+     *
+     * Source-shape because the subject is a client effect: a behavioural
+     * oracle needs a browser with a failing network mid-switch, which is a
+     * fixture, not a test (#531's trade). What it pins is mechanical — the
+     * three clears, and that neither failure path is silent.
+     */
+    const screen = read('src/app/(protected)/issue/issue-screen.tsx');
+    const start = screen.indexOf("fetch(`/api/issue/parties");
+    expect(start, 'the waiting-list fetch moved').toBeGreaterThan(0);
+    // The effect body, from its own `useEffect(` back-searched to the fetch.
+    const body = screen.slice(screen.lastIndexOf('useEffect(', start), start);
+    for (const clear of ['setParties(null)', 'setPartiesMore(0)', 'setUnclaimed([])']) {
+      expect(body, `${clear} must run BEFORE the fetch, not after it`).toContain(clear);
+    }
+    // …and both ways it can fail must reach the screen.
+    const tail = screen.slice(start, screen.indexOf('}, [warehouseId', start));
+    expect(tail, 'a refused response returned in silence').toMatch(
+      /if \(!res\.ok\)\s*\{[\s\S]*?setPartiesFailed/,
+    );
+    expect(tail, 'a thrown fetch was swallowed as an abort').toContain("setPartiesFailed('offline')");
+    expect(tail, 'a real abort must stay silent').toContain("AbortError");
+    // The sentence exists in every bundle or the screen throws at render.
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as {
+        issue: Record<string, string>;
+      };
+      expect(bundle.issue.partiesOffline, `${locale} has no partiesOffline`).toBeTruthy();
+      expect(bundle.issue.partiesFailed, `${locale} has no partiesFailed`).toContain('{code}');
+    }
+  });
+
   it('draws the waiting list only while no client is chosen', () => {
     const screen = read('src/app/(protected)/issue/issue-screen.tsx');
     expect(screen).toMatch(/\{!client && \(\s*<section[^>]*data-testid="issue-parties"/);

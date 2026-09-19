@@ -58,6 +58,11 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const [parties, setParties] = useState<IssueParty[] | null>(null);
   const [unclaimed, setUnclaimed] = useState<UnclaimedParty[]>([]);
   const [partiesMore, setPartiesMore] = useState(0);
+  /**
+   * Why the waiting list is not on screen: an HTTP status the server answered
+   * with, or 'offline' when the request never got there. `null` = no failure.
+   */
+  const [partiesFailed, setPartiesFailed] = useState<string | null>(null);
   const [list, setList] = useState<IssuableBox[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [personName, setPersonName] = useState('');
@@ -105,6 +110,24 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
    * than no number. Aborted on switch for the same reason the box list is.
    */
   useEffect(() => {
+    /**
+     * CLEARED FIRST, and that is the fix for what shipped: the comment above
+     * claimed the list was «aborted on switch for the same reason the box list
+     * is», and `abort()` cancels the REQUEST while leaving the previous
+     * warehouse's people rendered. So a failed refresh — `!res.ok` returned
+     * silently, and a thrown fetch was swallowed as «aborted» — kept the OLD
+     * warehouse's customers, their phone numbers and their box counts under
+     * the NEW warehouse's heading. On this screen that is the worst shape a
+     * bug can take: the operator reads a name off it and hands cargo over.
+     *
+     * `null` is «not loaded yet» and renders neither the list nor
+     * «no cargo here» — the distinction the empty state needs.
+     */
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setParties(null);
+    setPartiesMore(0);
+    setUnclaimed([]);
+    setPartiesFailed(null);
     if (!warehouseId) return;
     const controller = new AbortController();
     void (async () => {
@@ -112,7 +135,13 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
         const res = await fetch(`/api/issue/parties?warehouseId=${warehouseId}`, {
           signal: controller.signal,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          // The Kashgar round's rule (#846): «the server answered and refused»
+          // is a different problem from «there is no network», and a warehouse
+          // phone needs to be told which one it has.
+          setPartiesFailed(`${res.status}`);
+          return;
+        }
         const data = (await res.json()) as {
           parties: IssueParty[];
           more: number;
@@ -121,8 +150,10 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
         setParties(data.parties);
         setPartiesMore(data.more);
         setUnclaimed(data.unclaimed);
-      } catch {
-        /* aborted */
+      } catch (err) {
+        // An abort is this effect's own cleanup and says nothing to anybody.
+        if ((err as Error)?.name === 'AbortError') return;
+        setPartiesFailed('offline');
       }
     })();
     return () => controller.abort();
@@ -308,7 +339,15 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       {!client && (
         <section className="space-y-2" data-testid="issue-parties">
           <h2 className="text-xs font-bold uppercase text-ink-500">👥 {t('waitingHere')}</h2>
-          {parties?.length === 0 && unclaimed.length === 0 && (
+          {partiesFailed !== null && (
+            <p className="card text-sm text-warn" data-testid="issue-parties-failed">
+              ⚠️{' '}
+              {partiesFailed === 'offline'
+                ? t('partiesOffline')
+                : t('partiesFailed', { code: partiesFailed })}
+            </p>
+          )}
+          {partiesFailed === null && parties?.length === 0 && unclaimed.length === 0 && (
             <p className="card text-sm text-ink-500">{t('partiesEmpty')}</p>
           )}
           {(parties ?? []).map((party) => (

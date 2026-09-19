@@ -1,5 +1,68 @@
 # CHANGELOG
 
+## Excelda rasm ko'rinmagani — topildi va tuzatildi — 2026-09-19
+
+Sizning xabaringiz: «Rasim togri tushmadi excel fileda hech qanday rasim
+korinmadi».
+
+**Sabab topildi va o'lchandi. Bu mening xatom edi.** Rasm faylga
+`/stock` ekranidagi **📷 ustuni yoniq bo'lsa** tushardi. Uchta holatni
+o'lchadim:
+
+| Qanday yuklab olindi | Faylda rasm |
+|---|---|
+| Oddiy ⬇️ XLSX bosish | **4 ta** ✅ |
+| 📷 o'chiq ko'rinish bilan | **0 ta**, 📷 ustuni ham yo'q, xato ham yo'q ❌ |
+| 📷 yoniq ko'rinish bilan | 4 ta ✅ |
+
+Va `/stock` ekrani oddiy kirishda **saqlangan ko'rinishga avtomatik
+o'tadi**. Ya'ni bir marta 📷 siz ko'rinish saqlagan bo'lsangiz — fayl
+**har doim, abadiy** rasmsiz chiqadi va buni hech narsa aytmaydi.
+
+**Endi rasm ekrandagi galochkaga bog'liq emas.** XYZ va «skladda necha
+kun» ustunlari qanday bo'lsa — rasm ham shunday: **faylda har doim bor**.
+Ekrandagi 📷 galochkasi o'z ishida qoladi, u telefon uchun (450 ta rasm
+jadvalni sekinlashtiradi).
+
+**Narxi o'lchandi va yashirilmayapti:** 450 qator, har birida o'zining
+katta rasmi bo'lsa — 6 000 rasm, **2.3 sekund**, +100 MB. Umumiy rasmlar
+bilan bo'lsa **0.4 sekund**. Agar keyinchalik sekin bo'lsa — o'lchab
+tuzatamiz, lekin rasmni yana yashirmaymiz.
+
+---
+
+**Yo'l-yo'lakay yana bitta xato topildi — topshirish ekranida, va u
+xavflirogi edi.**
+
+«Shu skladda kutayotganlar» ro'yxati **skladni almashtirganda
+tozalanmasdi**. Internet uzilib qolsa yoki server javob bermasa, **yangi
+skladning sarlavhasi ostida oldingi skladning odamlari, telefonlari va
+karobka sonlari turib qolardi** — ekran esa jimgina. Topshirish ekranida
+bu eng xavfli xato: skladchi ro'yxatdan ism o'qib, yukni topshiradi.
+
+Endi: sklad almashganda ro'yxat darhol tozalanadi, va olinmasa **sababini
+aytadi** — «internet yo'q» bilan «server javobi 404» ikki xil narsa, va
+skladchi qaysi biri ekanini bilishi kerak. Kod bilan qidirish esa
+ishlashda davom etadi.
+
+---
+
+**Deploy hujjatlari ham tuzatildi** (bu sizga to'g'ridan-to'g'ri tegadi):
+
+- Zaxira nusxa uchun bergan qo'lbola komandam **xato edi** — u
+  tiklanmaydigan fayl yozardi. To'g'risi `UPDATE.md` da allaqachon bor:
+  `docker compose exec -T backup /backup.sh`. Shuni ishlatasiz.
+- `UPDATE.md` ning «Tekshirish» bo'limi **migratsiyalar sonini umuman
+  sanamasdi** — endi u birinchi tekshiruv. Bu son «migratsiyalar
+  qo'llandimi» degan savolga javob beradigan yakkayu yagona narsa, va
+  qo'llanmasa mijoz kitobi, ostatka va `/o/<kod>` xato sahifasini
+  ko'rsatadi.
+- `docker compose ps` emas, **`ps -a`** — `migrate` ishini tugatib chiqib
+  ketgan, oddiy `ps` da u ko'rinmaydi, xatosi ham ko'rinmaydi.
+- `DEPLOY.md` da son **84** deb yozilgan edi (15 migratsiya orqada),
+  `CLAUDE.md` da bir joyda **95**, boshqa joyda **99**. Endi uchalasi ham
+  «sonni repodan o'qi» deydi.
+
 ## Ostatka Excelida prixodning HAMMA rasmi — 2026-09-19
 
 Sizning javobingiz: «usha prixotdagi hamma rasim kerak boladi».

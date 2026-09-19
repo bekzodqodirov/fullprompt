@@ -14,11 +14,16 @@ import { buildStockXlsx } from '@/modules/wms/reports/stock-xlsx';
  * reports arrive with M6.
  *
  * Round 57: it also takes the screen's `cols`, so a saved view downloads as
- * itself. Two columns are export-only and do NOT follow the screen: «days in
- * stock» and XYZ, both because a sheet is read at a desk where those
- * questions get asked. The photo used to be a third — «it has no spreadsheet
- * equivalent» — and the owner answered that (2026-09-19): it does, so it
- * follows the screen's own tick like every ordinary column.
+ * itself. THREE columns are export-only and do NOT follow the screen: «days
+ * in stock», XYZ and the PHOTOGRAPHS, all three because a sheet is read at a
+ * desk where those questions get asked.
+ *
+ * The photograph followed the screen's tick for one commit and that was
+ * wrong: the tick exists to keep a phone-width table readable (round 68), and
+ * `/stock` redirects a bare visit to a saved default view — so one view saved
+ * without 📷 made every Ostatka download photoless, silently, for ever. The
+ * owner reported it the same day («excel fileda hech qanday rasim
+ * korinmadi»). The gate now lives nowhere; `stock-xlsx` says why.
  *
  * This handler stays the DOOR: permission, filter, query, audit, filename.
  * The sheet itself is built by `wms/reports/stock-xlsx`, because a builder

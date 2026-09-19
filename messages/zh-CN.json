@@ -969,6 +969,8 @@
     "boxesN": "{n} 箱",
     "partiesMore": "还有 {n} 个 — 请按代码搜索",
     "partiesEmpty": "此仓库没有可提取的货物",
+    "partiesOffline": "未能加载名单 — 无网络连接。仍可按客户代码搜索。",
+    "partiesFailed": "未能加载名单（服务器返回 {code}）。仍可按客户代码搜索。",
     "openReceipt": "打开入库单"
   },
   "pipeline": {

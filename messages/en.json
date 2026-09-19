@@ -969,6 +969,8 @@
     "boxesN": "{n} boxes",
     "partiesMore": "{n} more — search by code",
     "partiesEmpty": "Nothing ready to hand over at this warehouse",
+    "partiesOffline": "List not loaded — no connection. Search by code still works.",
+    "partiesFailed": "List not loaded (server answered {code}). Search by code still works.",
     "openReceipt": "Open the receipt"
   },
   "pipeline": {
