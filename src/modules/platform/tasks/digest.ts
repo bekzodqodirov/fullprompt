@@ -63,14 +63,17 @@ export async function composeMyDayText(userId: string, now = new Date()): Promis
 
   const parts: string[] = [];
   if (late.length) {
+    // The COUNT is the real total, the lines are a slice of it (`myDay` caps
+    // each group). Printing the slice's length would tell somebody carrying
+    // 187 late tasks that they have 40.
     parts.push(
-      `🔴 Kechikkan (${late.length})\n` +
+      `🔴 Kechikkan (${day.counts.overdue})\n` +
         late.slice(0, 15).map((task) => line(task, true) + about(task)).join('\n'),
     );
   }
   if (today.length) {
     parts.push(
-      `🟡 Bugunga (${today.length})\n` +
+      `🟡 Bugunga (${day.counts.today})\n` +
         today.slice(0, 15).map((task) => line(task, false) + about(task)).join('\n'),
     );
   }

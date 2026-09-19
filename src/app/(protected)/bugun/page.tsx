@@ -70,6 +70,12 @@ export default async function TodayPage({
 
   const myCalls = (calls?.mine.length ?? 0) + (calls?.stale.length ?? 0);
   const nothing = overdue.length + today.length + undated.length + myCalls === 0;
+  /**
+   * The heading counts the REAL total and the list may be a slice of it — say
+   * so when it is. A screen that shows forty of a hundred and eighty and
+   * prints «40» is a screen somebody plans their day against.
+   */
+  const more = (shown: number, total: number) => (total > shown ? ` · +${total - shown}` : '');
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
@@ -84,14 +90,20 @@ export default async function TodayPage({
 
       {overdue.length > 0 && (
         <section className="space-y-2" data-testid="day-overdue">
-          <h2 className="section-title text-bad">🔴 {t('overdue')} · {overdue.length}</h2>
+          <h2 className="section-title text-bad">
+            🔴 {t('overdue')} · {day.counts.overdue}
+            {more(overdue.length, day.counts.overdue)}
+          </h2>
           <TaskList tasks={overdue} people={people} revalidate="/bugun" />
         </section>
       )}
 
       {today.length > 0 && (
         <section className="space-y-2" data-testid="day-today">
-          <h2 className="section-title text-warn">🟡 {t('dueToday')} · {today.length}</h2>
+          <h2 className="section-title text-warn">
+            🟡 {t('dueToday')} · {day.counts.today}
+            {more(today.length, day.counts.today)}
+          </h2>
           <TaskList tasks={today} people={people} revalidate="/bugun" />
         </section>
       )}
@@ -102,7 +114,10 @@ export default async function TodayPage({
 
       {undated.length > 0 && (
         <section className="space-y-2" data-testid="day-undated">
-          <h2 className="section-title">⚪ {t('noDeadline')} · {undated.length}</h2>
+          <h2 className="section-title">
+            ⚪ {t('noDeadline')} · {day.counts.undated}
+            {more(undated.length, day.counts.undated)}
+          </h2>
           <TaskList tasks={undated} people={people} revalidate="/bugun" />
         </section>
       )}

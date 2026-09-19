@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { v7 as uuidv7 } from 'uuid';
 import { db, type Db, type Tx } from '../db/client';
@@ -574,29 +574,61 @@ export async function listTasks(filter: DayFilter): Promise<TaskRow[]> {
  *
  * "Today" is compared against the END of the day, so an all-day task set for
  * today is not reported as late from one minute past midnight.
+ *
+ * **Each group is capped and counted on its own**, and that is not a detail.
+ * One `LIMIT 300` over the three of them is a cap that DECIDES what the
+ * screen is about: the rows come back oldest-first, so a person carrying 300
+ * old tasks — which is exactly what the owner's calc backlog produced — gets
+ * a screen made entirely of last winter, with today's work below the cut and
+ * invisible. Round 74 answered the same shape on the funnel with a per-stage
+ * rank; here three small queries do it, and each one reports how many there
+ * really are so the screen can say when it is showing a slice.
  */
-export async function myDay(
-  assigneeId: string,
-  endOfToday: Date,
-): Promise<{ overdue: TaskRow[]; today: TaskRow[]; undated: TaskRow[] }> {
-  const rows = await base()
-    .where(
-      and(
-        eq(tasks.assigneeId, assigneeId),
-        eq(tasks.status, 'open'),
-        or(lte(tasks.dueAt, endOfToday), isNull(tasks.dueAt)),
-      ),
-    )
-    .orderBy(sql`${tasks.dueAt} NULLS LAST`, asc(tasks.priority))
-    .limit(300);
+const DAY_CAP = 40;
 
+export interface MyDay {
+  overdue: TaskRow[];
+  today: TaskRow[];
+  undated: TaskRow[];
+  /** Real totals, whether or not the cap bit. */
+  counts: { overdue: number; today: number; undated: number };
+}
+
+export async function myDay(assigneeId: string, endOfToday: Date): Promise<MyDay> {
   const startOfToday = new Date(endOfToday);
   startOfToday.setUTCHours(0, 0, 0, 0);
 
+  const mine = eq(tasks.assigneeId, assigneeId);
+  const open = eq(tasks.status, 'open');
+  const buckets = {
+    // The LATEST overdue first: a task three days late is still live work,
+    // while the top of a year-old pile is archaeology.
+    overdue: and(mine, open, lt(tasks.dueAt, startOfToday)),
+    today: and(mine, open, gte(tasks.dueAt, startOfToday), lte(tasks.dueAt, endOfToday)),
+    undated: and(mine, open, isNull(tasks.dueAt)),
+  } as const;
+
+  const rowsOf = async (where: SQL | undefined, order: SQL) =>
+    base().where(where).orderBy(order, asc(tasks.priority)).limit(DAY_CAP);
+  const countOf = async (where: SQL | undefined) =>
+    Number(
+      (await db.select({ n: sql<number>`count(*)` }).from(tasks).where(where))[0]?.n ?? 0,
+    );
+
+  const [overdue, today, undated, nOverdue, nToday, nUndated] = await Promise.all([
+    rowsOf(buckets.overdue, sql`${tasks.dueAt} DESC`),
+    rowsOf(buckets.today, sql`${tasks.dueAt} ASC`),
+    rowsOf(buckets.undated, sql`${tasks.createdAt} DESC`),
+    countOf(buckets.overdue),
+    countOf(buckets.today),
+    countOf(buckets.undated),
+  ]);
+
   return {
-    overdue: rows.filter((row) => row.dueAt !== null && row.dueAt < startOfToday),
-    today: rows.filter((row) => row.dueAt !== null && row.dueAt >= startOfToday),
-    undated: rows.filter((row) => row.dueAt === null),
+    overdue,
+    today,
+    undated,
+    counts: { overdue: nOverdue, today: nToday, undated: nUndated },
   };
 }
 

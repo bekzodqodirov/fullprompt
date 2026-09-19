@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## Sizning ro'yxatingiz: hisoblash vazifalari — 2026-09-19
+
+**5-band bajarildi. Olti bandning hammasi tayyor.**
+
+**1. Avtomatik yopish allaqachon ishlayapti.** Tekshirdim: 5-sentabrdan beri
+hisoblash tugaganda (javob berilganda, muhrlanganda yoki qaytarilganda)
+vazifa o'zi yopiladi. Ya'ni yangi ishlarda qo'lda yopish shart emas.
+
+**2. Eski to'p — bitta buyruq bilan tozalanadi.** 25-avgust (VED moduli
+chiqqan kun) bilan 5-sentabr orasidagi ishlarning vazifalari ochiq qolgan
+va ularni hech qanday kod yopmaydi. Serverda:
+
+```
+docker compose run --rm migrate pnpm close-stale-calc-tasks
+```
+
+— nechta borligini aytadi, **hech narsani o'zgartirmaydi**. Ro'yxatni
+ko'rib, rozi bo'lsangiz:
+
+```
+docker compose run --rm migrate pnpm close-stale-calc-tasks --apply
+```
+
+Yopilgan vazifaga **ishning tugagan sanasi** yoziladi (bugungi emas), va
+ikkinchi marta ishga tushirsangiz hech narsa qilmaydi.
+
+**3. VED «ma'lumot yetmadi» deb qaytarsa — endi sotuvchiga vazifa
+ochiladi** («↩️ Ma'lumot to'ldiring: …»), sababi bilan, ertaga muddat bilan.
+Ilgari VED ning vazifasi yopilardi va ish **hech kimning ekranida**
+qolmasdi. *Bu 5.1 savolimga javob kutmasdan qilindi — tavsiyam shu edi.*
+
+**4. Yo'l-yo'lakay: «Mening kunim»dagi vazifalar ro'yxati.** Ilgari uchala
+bo'lim (kechikkan / bugun / muddatsiz) bitta 300 qatorlik chegarani
+bo'lishardi va qatorlar eng eskisidan boshlanardi — ya'ni 300 ta eski
+vazifasi bor odam BUGUNGI ishini umuman ko'rmasdi. Endi har bo'lim o'z
+ro'yxatini oladi, sarlavhada **haqiqiy soni** turadi, ro'yxat qisqartirilgan
+bo'lsa «+137» deb aytadi. Kechikkanlar **eng yangisidan** boshlanadi.
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi.
+
+
 ## Sizning ro'yxatingiz: «Mening kunim» va ertalabki xabar — 2026-09-19
 
 **4-band bajarildi.** Qolgani bitta: 5-band (hisoblash vazifalari).
