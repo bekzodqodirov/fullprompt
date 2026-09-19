@@ -1653,6 +1653,29 @@ oracle was stale in three files at once plus my `pg_dump` line lacked `-Fc`
 (#976) — `UPDATE.md §4` now counts the ledger FIRST and uses `ps -a`, and all
 three files say to read the number off the repo instead of carrying it over.
 
+**Then I audited my own merged work and found four more** (#977-978; PR #84's
+follow-up, merged as `b31d2e0`… and the audit's own four as a second commit).
+Five lenses over `main`, 46 candidates, 41 confirmed — and all five REFUTED ones
+were things I had already fixed while the audit ran, which is the hazard of
+auditing a moving tree. The four real ones: **half of his Ostatka's photographs
+were being dropped** — `PHOTO_DOWNLOAD_CAP` was 600 DISTINCT images and every
+row's lot photo is unique to that row, so ~450 rows spend ~450 of the bound
+before one carton shot is admitted; MEASURED at his shape, 600 drew 900 and
+skipped 900, 3,000 drew all 1,800 for +240 ms and +10 MB, and #970's comment had
+defended the 6,000 PLACEMENT cap with a sentence about thirteen photos a row
+that the download bound made unreachable (the three bounds now live in one
+exported `STOCK_PHOTO_BOUNDS` that a test asserts, and the shortfall moved from
+a hover note into the header's own value, `📷 ⚠️ −900`). **The home banner and
+the dock badge understated a person's workload** — `myDay`'s per-bucket cap of
+40 made `overdue.length + today.length` top out at 80 while `/bugun` printed the
+true total, so two screens one tap apart disagreed about the calc backlog this
+round exists for; the fence is derived and names the offending file by path.
+**A handed-back calculation's task showed the wrong day** — a full ISO string
+fell past `parseDue`'s all-day branch, so a deadline meant as «tomorrow» was
+stored timed at 23:59:59.999Z and rendered «21-sentabr 04:59» in Tashkent while
+the digest printed the 20th; the existing test asserted `dueAt > now`, which the
+defect satisfies (#494). 4 red proofs, two of them naming the file.
+
 **Latest migration: 0098** (`staff_notes_simplify` — the note is a name, its
 text and its files; ledger must reach **99**). Before it: **0097**
 (`staff_notes` — the note, its parts, their order,

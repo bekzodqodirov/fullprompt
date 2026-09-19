@@ -95,6 +95,7 @@ export function Dock({ canChat }: { canChat: boolean }) {
     overdue: DockTask[];
     today: DockTask[];
     undated: DockTask[];
+    counts: { overdue: number; today: number; undated: number };
   } | null>(null);
   const [conversations, setConversations] = useState<DockConversation[] | null>(null);
   const [thread, setThread] = useState<DockThread | null>(null);
@@ -248,7 +249,9 @@ export function Dock({ canChat }: { canChat: boolean }) {
     flood_wait: t('replyRateLimited'),
   };
 
-  const due = (tasks?.overdue.length ?? 0) + (tasks?.today.length ?? 0);
+  // The COUNT, not the listed rows: `myDay` caps each bucket at 40, so the
+  // badge used to stop climbing at 80 while /bugun printed the real total.
+  const due = (tasks?.counts.overdue ?? 0) + (tasks?.counts.today ?? 0);
 
   return (
     <>

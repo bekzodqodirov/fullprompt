@@ -618,7 +618,15 @@ export async function returnCalcRequest(
         note: trimmed.slice(0, 500),
         typeId: null,
         assigneeId: row.requestedBy,
-        dueAt: due.toISOString(),
+        // A DATE and not an instant: `parseDue` treats only a bare
+        // `YYYY-MM-DD` as all-day, so a full ISO string became a TIMED
+        // deadline at 23:59:59.999Z — which the task list renders on the
+        // reader's own calendar, i.e. «21-sentabr 04:59» in Tashkent for a
+        // task due tomorrow. The digest slices the date and printed the right
+        // day, so the screen and the Telegram message disagreed about one
+        // task. The calc clock's own `toISOString()` calls (30-120 minutes)
+        // are correctly timed and stay as they are.
+        dueAt: due.toISOString().slice(0, 10),
         priority: 1,
         entityType: row.entityType,
         entityId: row.entityId,

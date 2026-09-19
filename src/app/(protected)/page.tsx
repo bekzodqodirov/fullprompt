@@ -75,7 +75,14 @@ export default async function HomePage() {
   // never be seen. Hiding a screen must never be able to hide the work.
   const tt = await getTranslations('tasks');
   const day = await myDay(actor.id, endOfToday());
-  const due = day.overdue.length + day.today.length;
+  /**
+   * The COUNTS and not the rows' length. `myDay` caps each bucket at 40, so
+   * `.length` topped out at 80 — and this banner is the screen everybody
+   * opens, one tap from `/bugun`, which prints the true total with «+N». Two
+   * screens disagreeing about the same person's workload is exactly what the
+   * round that added the cap set out to stop.
+   */
+  const due = day.counts.overdue + day.counts.today;
 
   return (
     <div className="space-y-6">
@@ -98,9 +105,9 @@ export default async function HomePage() {
               : 'border-warn/30 bg-warn/10 text-warn'
           }`}
         >
-          <span className="text-xl">{day.overdue.length > 0 ? '🔴' : '🟡'}</span>
+          <span className="text-xl">{day.counts.overdue > 0 ? '🔴' : '🟡'}</span>
           <span className="min-w-0 flex-1 font-bold">
-            {day.overdue.length > 0 ? tt('overdue') : tt('dueToday')} · {due}
+            {day.counts.overdue > 0 ? tt('overdue') : tt('dueToday')} · {due}
           </span>
           <Icon name="chevronRight" className="h-5 w-5 opacity-70" />
         </Link>

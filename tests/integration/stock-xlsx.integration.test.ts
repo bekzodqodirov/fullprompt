@@ -4,7 +4,11 @@ import ExcelJS from 'exceljs';
 import { db } from '@/modules/platform/db/client';
 import { attachments } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
-import { buildStockXlsx, type StockSheetLine } from '@/modules/wms/reports/stock-xlsx';
+import {
+  STOCK_PHOTO_BOUNDS,
+  buildStockXlsx,
+  type StockSheetLine,
+} from '@/modules/wms/reports/stock-xlsx';
 
 /**
  * The Ostatka sheet says what the warehouse measured — and shows it.
@@ -406,8 +410,11 @@ describe('the stock XLSX carries the photographs', () => {
     expect(placements[0]!.shape, 'the lot’s OWN photo is the one kept').toBe('40x40');
     expect(photos).toBe(4);
     expect(photosSkipped, 'the two general photos of prixod 1 did not fit').toBe(2);
-    const first = (sheet.getRow(1).values as (string | undefined)[]).indexOf('📷 (1)');
-    expect(first, 'the header must say the cap bit').toBeGreaterThan(0);
+    // The shortfall is in the cell's VALUE, not only its note — a note needs
+    // a hover, and «how many are missing» is the question a person opening
+    // this sheet is actually asking.
+    const first = (sheet.getRow(1).values as (string | undefined)[]).indexOf('📷 ⚠️ −2');
+    expect(first, 'the header must say how many did not fit, in its value').toBeGreaterThan(0);
     expect(JSON.stringify(sheet.getRow(1).getCell(first).note)).toContain('sig');
   });
 
@@ -427,6 +434,56 @@ describe('the stock XLSX carries the photographs', () => {
    * Its red proof went red for the gate and said nothing about whether the
    * gate belonged there.
    */
+  it('admits a whole warehouse of per-row photographs, not half of it', async () => {
+    /**
+     * The bound that BINDS is the distinct-download one, not the placements.
+     * Every row's own lot photograph is unique to that row, so a 450-row
+     * Ostatka spends ~450 of it before one carton shot is admitted — and the
+     * carton shots are what the owner asked to see. MEASURED at his real
+     * shape (450 rows, 150 prixods, 1 lot photo + 3 general each): at 600 the
+     * sheet drew 900 of 1,800 and SKIPPED 900; at 3,000 it drew all 1,800 for
+     * ~240 ms and ~10 MB more.
+     *
+     * The fixture cannot be 450 rows in a test, so it drives the bound from
+     * the other end: FOUR rows carrying six distinct photographs, with the cap
+     * set to 3 — the shipped default must leave nothing behind on a fixture
+     * this size, and a cap below the distinct count must be counted honestly.
+     */
+    expect(built, 'the photo fixture did not insert').toBe(true);
+    const shipped = await buildStockXlsx({
+      lines: FOUR(),
+      arrivalCodes: new Map(),
+      cols: undefined,
+      locale: 'uz',
+      can: () => true,
+    });
+    expect(shipped.photosSkipped, 'the shipped download cap dropped a photograph').toBe(0);
+    /**
+     * The 3,000 itself cannot be proven by a fixture — nothing a test may
+     * build reaches it — so it is asserted as the MEASURED number it is
+     * (#166: a red proof that cannot go red is not the instrument here).
+     * A 450-row Ostatka with three carton shots a prixod needs 900 distinct
+     * downloads; 600 drew half of them.
+     */
+    expect(STOCK_PHOTO_BOUNDS.download, 'a 450-row sheet needs far more than 600').toBeGreaterThanOrEqual(
+      3000,
+    );
+    expect(STOCK_PHOTO_BOUNDS.placements, 'the memory fence was measured at 6,000').toBe(6000);
+    expect(STOCK_PHOTO_BOUNDS.columns, 'his answer was «hammasi kerak»').toBe(50);
+    expect(shipped.photos).toBe(6);
+
+    const starved = await buildStockXlsx({
+      lines: FOUR(),
+      arrivalCodes: new Map(),
+      cols: undefined,
+      locale: 'uz',
+      can: () => true,
+      photoCap: 2,
+    });
+    expect(starved.photos, 'a starved cap must still draw what it fetched').toBeGreaterThan(0);
+    expect(starved.photos + starved.photosSkipped, 'the shortfall must be counted, not lost').toBe(6);
+  });
+
   it('keeps XYZ, «days in stock» and the photographs whatever the view hides', async () => {
     expect(built, 'the photo fixture did not insert').toBe(true);
     const { buffer } = await buildStockXlsx({

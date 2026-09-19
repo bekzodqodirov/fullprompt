@@ -1,5 +1,63 @@
 # CHANGELOG
 
+## O'z ishimni audit qildim — yana 4 xato topildi — 2026-09-19
+
+PR #83 merge bo'lgandan keyin `main` ni beshta linzada tekshirdim (46 topilma,
+41 tasdiqlandi). To'rttasi **shu raundning o'zidan** chiqqan haqiqiy xato edi.
+
+### 1. Ostatkadagi rasmlarning YARMI tushib qolardi
+
+Eng muhimi, chunki bu sizning «hamma rasim kerak» so'zingizga qarshi.
+
+Faylga yuklanadigan rasm soniga **600** chegara qo'yilgan edi. Har qatorning
+o'z tovar rasmi boshqa qatorda takrorlanmaydi, ya'ni ~450 qator o'sha 600 ning
+~450 tasini birinchi navbatda «yeb qo'yadi» — va **siz so'ragan karobka
+rasmlari** aynan shundan keyin keladi, demak ular tushib qolardi.
+
+O'lchadim, sizning haqiqiy shaklingizda (450 qator, 150 prixod, har qatorda
+1 tovar rasmi + har prixodda 3 karobka rasmi):
+
+| Chegara | Qo'yildi | **Sig'madi** | Vaqt |
+|---|---|---|---|
+| 600 (eski) | 900 | **900** | 776 ms |
+| 3000 (yangi) | 1800 | **0** | 1012 ms |
+
+Ya'ni rasmlarning **roppa-rosa yarmi** yo'q edi. Tuzatish 240 ms va 10 MB
+turadi — arzimagan narxga hammasi sig'adi.
+
+Va sig'masa — **endi sarlavhada ko'rinadi**: `📷 ⚠️ −900`. Oldin bu son faqat
+sichqonchani ustiga olib borsangiz chiqadigan izohda edi, ya'ni amalda
+ko'rinmasdi.
+
+### 2. Bosh ekran vazifa sonini KAM ko'rsatardi
+
+«Mening kunim» har bo'limga 40 chegara qo'ygan edi (to'g'ri qaror), lekin bosh
+ekrandagi qizil banner va yondagi 💬 belgisi **ko'rsatilgan qatorlarni**
+sanardi — ya'ni 80 dan oshmasdi. Natijada bosh ekranda «🔴 40», bitta bosishdan
+keyin `/bugun` da «🔴 187 · +147». Ikkita ekran bitta odamning ishi haqida
+qarama-qarshi gapirardi.
+
+Endi ikkalasi ham haqiqiy sonni oladi. Va bu shakl butun kod bo'ylab taqiqlandi
+— kelasi oyda uchinchi joy yozilsa, test uni **fayl nomi bilan** aytadi.
+
+### 3. Qaytarilgan hisoblashning muddati boshqa kunni ko'rsatardi
+
+Hisoblash qaytarilganda sotuvchiga «ertaga» muddatli vazifa ochiladi. Lekin
+muddat «kun» emas, «soat» sifatida saqlanardi — natijada ekranda
+**«21-sentabr 04:59»**, Telegramda esa to'g'ri **«20-sentabr»**. Bitta vazifa,
+ikki xil kun.
+
+### 4. Deploy hujjatlaridagi xatolar
+
+Bular oldingi PR da tuzatildi, bu yerda faqat qayd: zaxira nusxa komandasi,
+migratsiya soni (`DEPLOY.md` 84 deb yozgan), `UPDATE.md` da sanash yo'qligi.
+
+---
+
+**Eslatma:** auditda «rad etilgan» 5 topilma bor — ular men ishlab turgan
+paytda tekshirilgani uchun, ya'ni allaqachon tuzatilgan narsalar. Ular haqiqiy
+xato emas.
+
 ## Excelda rasm ko'rinmagani — topildi va tuzatildi — 2026-09-19
 
 Sizning xabaringiz: «Rasim togri tushmadi excel fileda hech qanday rasim

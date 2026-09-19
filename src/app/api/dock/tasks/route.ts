@@ -26,5 +26,8 @@ export async function GET() {
     overdue: day.overdue.map(slim),
     today: day.today.map(slim),
     undated: day.undated.map(slim),
+    // The rows are capped per bucket; the BADGE is a count and must not be
+    // the slice's length — `/bugun` and the home banner both read these.
+    counts: day.counts,
   });
 }
