@@ -323,7 +323,13 @@ describe('the endings', () => {
       .where(and(eq(tasks.assigneeId, requestedBy), eq(tasks.status, 'open')));
     await returnCalcRequest(id, 'tovar nomi yetarli emas', ctx());
     const after = await db
-      .select({ id: tasks.id, title: tasks.title, note: tasks.note, dueAt: tasks.dueAt })
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        note: tasks.note,
+        dueAt: tasks.dueAt,
+        allDay: tasks.allDay,
+      })
       .from(tasks)
       .where(and(eq(tasks.assigneeId, requestedBy), eq(tasks.status, 'open')));
     const fresh = after.filter((row) => !before.some((old) => old.id === row.id));
@@ -332,6 +338,23 @@ describe('the endings', () => {
     expect(fresh[0]!.note, 'the reason must travel with it').toContain('tovar nomi');
     expect(fresh[0]!.dueAt!.getTime(), 'due tomorrow, not in the past').toBeGreaterThan(
       Date.now(),
+    );
+    /**
+     * ALL-DAY, and «tomorrow» on the calendar. The first version of this
+     * assertion was `dueAt > now`, which the defect satisfied: the service
+     * passed a full ISO instant, `parseDue` takes only a bare `YYYY-MM-DD` as
+     * all-day, so the task was stored TIMED at 23:59:59.999Z — and
+     * `task-list.tsx` renders a timed deadline on the reader's own calendar,
+     * i.e. «21-sentabr 04:59» in Tashkent for a task due the 20th, while the
+     * Telegram digest sliced the date and printed the 20th. Two surfaces
+     * disagreeing about one task (#494: an assertion a bug satisfies is not a
+     * test of it).
+     */
+    expect(fresh[0]!.allDay, 'a day-level deadline stored as a timed one').toBe(true);
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    expect(fresh[0]!.dueAt!.toISOString().slice(0, 10)).toBe(
+      tomorrow.toISOString().slice(0, 10),
     );
   });
 

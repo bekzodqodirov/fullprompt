@@ -20,6 +20,28 @@ import { reportLabels } from './labels';
  * and the audit row; this file decides what the spreadsheet says.
  */
 
+/**
+ * The sheet's three photograph bounds, exported because they are MEASURED
+ * numbers rather than taste — a test asserts them so lowering one is a
+ * deliberate act with the measurement in front of you, not a tidy-up.
+ *
+ *  · `download` — DISTINCT images fetched and re-encoded. THE ONE THAT BINDS:
+ *    every row's lot photograph is unique to that row, so ~450 rows spend
+ *    ~450 of it before a single carton shot is admitted. At 600 his own
+ *    Ostatka drew 900 of 1,800 and SKIPPED 900 — half the photographs, on the
+ *    thing he asked to see. Measured: 600 -> 900 drawn / 900 skipped / 776 ms
+ *    / RSS 161->238 MB; 3,000 -> 1,800 drawn / 0 skipped / 1,012 ms / RSS
+ *    237->248 MB. The whole cost of not dropping them is ~240 ms and ~10 MB.
+ *  · `placements` — anchors on the sheet, and the real MEMORY fence: exceljs
+ *    builds `xl/drawings/drawing1.xml` as ONE string before zipping. Measured:
+ *    3,000 = 150 MB RSS, 5,000 = 195 MB, 30,000 = 577 MB, on the single Node
+ *    process that serves every screen.
+ *  · `columns` — a fence against a pathological row, not a budget: the owner
+ *    said «hamma rasimi kerak, 1 2 rasim emas hammasi kerak», and Excel's own
+ *    limit is 16,384 columns.
+ */
+export const STOCK_PHOTO_BOUNDS = { download: 3000, placements: 6000, columns: 50 } as const;
+
 export interface StockSheetLine {
   lot: {
     id: string;
@@ -113,6 +135,9 @@ export async function buildStockXlsx(input: {
    *    anchor) before zipping, so the placements are what turns a download
    *    into a container's worth of heap — and the old single cap bounded
    *    downloads only, which a shared receipt photo makes nearly free.
+   *    (The 6,000 figure is about ANCHORS. Reaching thirteen photographs on
+   *    every one of 450 rows also needs the DOWNLOAD bound to admit them,
+   *    which is why that one moved to 3,000 — see it below.)
    *    MEASURED here: 3,000 placements = 150 MB RSS, 5,000 = 195 MB,
    *    30,000 = 577 MB. Six thousand covers his own Ostatka (~450 rows) at
    *    thirteen photographs a row and still leaves the one Node process
@@ -128,9 +153,29 @@ export async function buildStockXlsx(input: {
    * row's second, so a warehouse over the cap still shows one picture per line
    * rather than four pictures on the first quarter of it.
    */
-  const PHOTO_DOWNLOAD_CAP = input.photoCap ?? 600;
-  const PLACEMENT_CAP = input.placementCap ?? 6000;
-  const PHOTO_COLS_CAP = input.photoColsCap ?? 50;
+  /**
+   * THREE THOUSAND, and the old 600 was cutting his sheet in half.
+   *
+   * Every row's own lot photograph is unique to that row, so ~450 rows spend
+   * ~450 of the bound before a single carton shot is admitted — and the carton
+   * shots are the ones he asked for («usha prixotdagi hamma rasim kerak
+   * boladi»). MEASURED on his real shape (450 rows, 150 prixods, one lot photo
+   * each plus three general photos a prixod = 900 distinct, 1,800 placements):
+   *
+   *   cap 600  -> 900 drawn, 900 SKIPPED, 776 ms, RSS 161->238 MB
+   *   cap 3000 -> 1,800 drawn, 0 skipped, 1,012 ms, RSS 237->248 MB
+   *
+   * So exactly half the photographs were being dropped, and the whole cost of
+   * not dropping them is ~240 ms and ~10 MB. Production thumbnails are the
+   * common case by a mile (round 102: 401 of 406 photographs have one) and a
+   * 200 px thumbnail is a few hundred bytes to a few KB.
+   *
+   * `PLACEMENT_CAP` stays the real memory fence — it is the anchors, not the
+   * downloads, that build `drawing1.xml` as one string.
+   */
+  const PHOTO_DOWNLOAD_CAP = input.photoCap ?? STOCK_PHOTO_BOUNDS.download;
+  const PLACEMENT_CAP = input.placementCap ?? STOCK_PHOTO_BOUNDS.placements;
+  const PHOTO_COLS_CAP = input.photoColsCap ?? STOCK_PHOTO_BOUNDS.columns;
   /**
    * The photographs are EXPORT-ALWAYS — the THIRD column that does not follow
    * the screen's tick, beside XYZ and «days in stock».
@@ -350,7 +395,12 @@ export async function buildStockXlsx(input: {
     if (photosSkipped > 0) {
       // Said only when it bites (#74's idiom): a header that always carried a
       // number would read as an error on every ordinary download.
-      cell.value = `📷 (${photoCols})`;
+      /**
+       * In the cell's VALUE and not only its note: a note needs a hover, and
+       * the person reading this sheet is checking whether every photograph is
+       * there. `📷 (2)` told him the column count, which is not the question.
+       */
+      cell.value = `📷 ⚠️ −${photosSkipped}`;
       cell.note = `${photosSkipped} ${L.photosCapped}\n${L.photoSortNote}`;
     }
   }
