@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, type SQL } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   callLogs,
@@ -17,6 +17,7 @@ import {
 } from '../../platform/db/schema';
 import { resolveEntity } from '../../platform/entities/service';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
+import { cargoNearActor } from '../inventory/near';
 import { seesAllTg } from '../crm/conversations';
 import { seesAllMoney } from '../finance/scope';
 
@@ -61,48 +62,6 @@ type ReadActor = ScopedActor & {
 const seesAllTgChats = (actor: ReadActor) => seesAllTg(actor);
 
 type AttachmentRow = { id: string; entityType: string; entityId: string; uploadedBy: string };
-
-/**
- * Is this cargo anywhere near the actor RIGHT NOW?
- *
- * A receipt's `warehouse_id` is where the goods were RECEIVED, and in this
- * business that is almost never where they are — the whole system exists to
- * move a box from Yiwu to Kashgar to Tashkent. Judging a photograph by the
- * receiving warehouse therefore hid the picture from exactly the person
- * holding the carton, which is who takes photographs seriously. Measured on
- * the owner's own data the day he reported it: of 4,403 goods photos, 737
- * belonged to cargo that had moved to another warehouse and 625 to cargo in
- * transit or already issued — **1,362, thirty-one per cent, unopenable by the
- * operator standing next to the box.** «Bazi tovarlarning rasimlar
- * ochmayabti»: some, and these are the some.
- *
- * The rule is the one `wms/search` and the bot's lookup already use for a
- * box, restated here rather than invented: the warehouse it is standing in,
- * or — while it is in transit and standing in none — the TWO ends of the
- * truck it is riding. Filtered in SQL rather than over a fetched page,
- * because a receipt can carry hundreds of boxes and a `limit` here would
- * answer "not yours" about the one box that is.
- */
-async function cargoNearActor(actor: ReadActor, lotFilter: SQL): Promise<boolean> {
-  const ids = actor.warehouseIds;
-  if (ids.length === 0) return false;
-  const [row] = await db
-    .select({ boxId: boxes.id })
-    .from(boxes)
-    .leftJoin(batches, eq(boxes.currentBatchId, batches.id))
-    .where(
-      and(
-        lotFilter,
-        or(
-          inArray(boxes.currentWarehouseId, ids),
-          inArray(batches.originWarehouseId, ids),
-          inArray(batches.destWarehouseId, ids),
-        ),
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
-}
 
 export async function decideAttachmentRead(
   actor: ReadActor,

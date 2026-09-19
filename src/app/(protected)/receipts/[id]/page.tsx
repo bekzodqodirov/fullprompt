@@ -37,7 +37,7 @@ import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
-import { inScope } from '@/modules/platform/rbac/scope';
+import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { listPartners } from '@/modules/wms/partners/service';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -47,9 +47,21 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, id) });
   if (!receipt) notFound();
-  // The LIST is warehouse-filtered and this was not, so a uuid from a
-  // colleague's link opened another warehouse's cargo.
-  if (!inScope(actor, receipt.warehouseId)) notFound();
+  /**
+   * The LIST is warehouse-filtered and this was not, so a uuid from a
+   * colleague's link opened another warehouse's cargo.
+   *
+   * …OR the cargo is standing where the reader is (round 90's rule, now in
+   * one home). `warehouse_id` is where the goods were RECEIVED and it never
+   * moves, so without this half a Kashgar prixod whose cartons are now in
+   * Andijan is unopenable by the Andijan operator — who can already see its
+   * PHOTOGRAPHS, because the attachment gate learned exactly this rule in
+   * round 90 and the page it hangs on did not. It is what makes the handover
+   * screen's «egasi aniqlanmagan yuk» row a door rather than a dead end
+   * (owner's 3.2a): naming the client is the one thing that must happen
+   * there, and the person standing over the cargo is who knows.
+   */
+  if (!(await mayReadReceipt(actor, { id, warehouseId: receipt.warehouseId }))) notFound();
 
   const t = await getTranslations('receipts');
   const tc = await getTranslations('common');

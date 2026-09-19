@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { listPeople, personCodes, suggestGroups } from '@/modules/wms/crm/people';
+import { peopleWithCodes, suggestGroups } from '@/modules/wms/crm/people';
 import { GroupButton } from './group-button';
 import { PageHeader } from '@/components/ui/page';
 
@@ -20,8 +20,8 @@ export default async function PeoplePage() {
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
 
-  const [people, suggestions] = await Promise.all([listPeople(), suggestGroups(25)]);
-  const codesByPerson = await Promise.all(people.map((person) => personCodes(person.id)));
+  // One query for the codes, not one per person (#432) — `peopleWithCodes`.
+  const [people, suggestions] = await Promise.all([peopleWithCodes(), suggestGroups(25)]);
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
@@ -32,9 +32,20 @@ export default async function PeoplePage() {
         <section className="space-y-2">
           <h2 className="text-sm font-bold uppercase text-ink-500">🔍 {t('suggestions')}</h2>
           {suggestions.map((group) => (
-            <div key={group.phone} className="card flex flex-wrap items-center gap-2">
+            <div
+              key={`${group.kind}:${group.phone}:${group.members[0]!.id}`}
+              className="card flex flex-wrap items-center gap-2"
+            >
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-sm">{group.phone}</div>
+                {/* A JOIN says whose group it is, because pressing it adds a
+                    code to a person who already exists — which is also the
+                    only way a code taken OUT of a group can be put back. */}
+                {group.kind === 'join' && (
+                  <div className="text-xs font-semibold text-ink-700">
+                    → 👤 {group.personName}
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-1.5 text-sm">
                   {group.members.map((member) => (
                     <span key={member.id} className="rounded bg-surface-sunken px-1.5 py-0.5">
@@ -47,6 +58,8 @@ export default async function PeoplePage() {
               <GroupButton
                 clientIds={group.members.map((member) => member.id)}
                 defaultName={group.members[0]!.name}
+                personId={group.kind === 'join' ? group.personId : undefined}
+                personName={group.kind === 'join' ? group.personName : undefined}
               />
             </div>
           ))}
@@ -55,7 +68,7 @@ export default async function PeoplePage() {
 
       <section className="space-y-2">
         <h2 className="text-sm font-bold uppercase text-ink-500">👤 {t('people')}</h2>
-        {people.map((person, index) => (
+        {people.map((person) => (
           <div key={person.id} className="card">
             <div className="flex items-baseline gap-2">
               <span className="font-semibold">{person.name}</span>
@@ -69,7 +82,7 @@ export default async function PeoplePage() {
               </div>
             )}
             <div className="mt-1 flex flex-wrap gap-1.5 text-sm">
-              {codesByPerson[index]!.map((code) => (
+              {person.codeList.map((code) => (
                 <Link
                   key={code.id}
                   href={`/admin/clients/${code.id}`}

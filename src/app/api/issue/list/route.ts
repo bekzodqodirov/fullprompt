@@ -5,6 +5,7 @@ import { boxes, receiptLots, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { clientBalanceUsd, deferredBalanceUsd } from '@/modules/wms/finance/service';
 import { approvalStateFor } from '@/modules/wms/issue/approvals';
+import { ISSUABLE_STATUSES } from '@/modules/wms/issue/parties';
 
 const querySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -46,7 +47,9 @@ export async function GET(request: Request) {
       and(
         eq(receipts.clientId, query.data.clientId),
         eq(boxes.currentWarehouseId, query.data.warehouseId),
-        inArray(boxes.status, ['ready_for_pickup', 'in_stock']),
+        // The same definition of «issuable» the party list is built from, or
+        // a row on that list can open onto an empty box screen.
+        inArray(boxes.status, [...ISSUABLE_STATUSES]),
       ),
     )
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));

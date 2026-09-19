@@ -1,10 +1,53 @@
 # CHANGELOG
 
+## Sizning ro'yxatingiz: topshirishda mijozlar ro'yxati — 2026-09-19
+
+**3-band bajarildi.** Qolgan ikkitasi (4 — «Mening kunim», 5 — hisoblash
+vazifalari) ustida ish davom etadi.
+
+**Topshirishda endi kod yozish shart emas.** Skladni tanlaysiz — pastda
+**shu skladda yuki turganlar ro'yxati** chiqadi:
+
+```
+👥 SHU SKLADDA KUTAYOTGANLAR
+Yolchi   +998 90 111-22-33  +998 91 777-00-00
+   [ GS555  700 karobka ]  [ GS777  400 karobka ]
+
+Bekzod Qodirov   +998 93 555-44-33
+   [ GS5564  5 karobka ]
+
+❓ EGASI ANIQLANMAGAN YUK
+GS500MANIKEN-AL
+3 karobka · Prixodni ochish
+```
+
+- **Bitta odam — bitta qator.** Agar ikki kod bir odamga biriktirilgan
+  bo'lsa, ular yonma-yon turadi. Kodni bosasiz — o'sha kodning karobkalari
+  ochiladi (qarz, ruxsat, akt — hammasi avvalgidek kod bo'yicha).
+- **Raqamlar shu skladdagi yukdan sanaladi.** Boshqa skladda turgan yuk bu
+  ro'yxatda yo'q, berib bo'lingan yuk ham yo'q.
+- **Telefon ko'rinadi** — faqat shu ekranda va faqat shu skladda yuki
+  turganlarniki. Mijozlar kitobi avvalgidek yopiq.
+- **Egasi aniqlanmagan yuk** markasi bilan alohida turadi va prixodga olib
+  boradi — u yerda mijozni biriktirasiz. Ilgari bu prixodni Andijon yoki
+  Toshkent skladchisi **ocholmasdi** (chunki yuk Qashqarda qabul qilingan
+  edi) — endi ochadi: yuk qayerda tursa, o'sha sklad ko'radi.
+- **Kod yozib qidirish qoldi** — ro'yxat tepada, qidiruv o'z joyida.
+
+**Yo'l-yo'lakay tuzatildi:** «bu ikki kod bitta odam» taklifi ilgari
+guruhlangan kodni **qaytarib qo'sha olmasdi** — bir marta guruhdan
+chiqarsangiz, uni qaytarish yo'li yo'q edi. Endi taklif «Yolchi guruhiga
+qo'shish» deb chiqadi. Bitta telefon ikki xil odamga tegishli bo'lsa,
+sistema **hech narsa demaydi** — noto'g'ri odamga biriktirgandan ko'ra
+jim turgani yaxshi. Va o'sha taklif ekrani 1 700 mijozda ~1 soniya
+qotardi (2,9 mln taqqoslash) — endi 2 millisekund.
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi.
+
 ## Sizning ro'yxatingiz: bitim yonida yuk, yuklashda tashqi rasm, Excelda XYZ — 2026-09-19
 
-Uchta band tayyor (1, 2 va 6). Qolgan uchtasi (3 — topshirishda mijozlar
-ro'yxati, 4 — «Mening kunim», 5 — hisoblash vazifalari) ustida ish davom
-etadi.
+Uchta band tayyor (1, 2 va 6). Qolgan uchtasi (4 — «Mening kunim», 5 —
+hisoblash vazifalari) ustida ish davom etadi.
 
 **1. Kassada bitimni tanlaganda endi yuk ham ko'rinadi.** Ilgari faqat
 `B-00123` turardi. Endi:

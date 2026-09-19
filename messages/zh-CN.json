@@ -962,7 +962,13 @@
     "approvalsTitle": "放货批准",
     "approvalNote": "备注(可选)",
     "approve": "批准",
-    "refuse": "拒绝"
+    "refuse": "拒绝",
+    "waitingHere": "在此仓库等待提货",
+    "unclaimedHere": "无主货物",
+    "boxesN": "{n} 箱",
+    "partiesMore": "还有 {n} 个 — 请按代码搜索",
+    "partiesEmpty": "此仓库没有可提取的货物",
+    "openReceipt": "打开入库单"
   },
   "pipeline": {
     "title": "我的客户",

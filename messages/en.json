@@ -962,7 +962,13 @@
     "approvalsTitle": "Issue approvals",
     "approvalNote": "Comment (optional)",
     "approve": "Approve",
-    "refuse": "Refuse"
+    "refuse": "Refuse",
+    "waitingHere": "Waiting at this warehouse",
+    "unclaimedHere": "Cargo with no owner yet",
+    "boxesN": "{n} boxes",
+    "partiesMore": "{n} more — search by code",
+    "partiesEmpty": "Nothing ready to hand over at this warehouse",
+    "openReceipt": "Open the receipt"
   },
   "pipeline": {
     "title": "My clients",
