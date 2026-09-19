@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## Ostatka Excelida prixodning HAMMA rasmi — 2026-09-19
+
+Sizning javobingiz: «usha prixotdagi hamma rasim kerak boladi».
+
+**Endi har qatorda o'sha qatorning hamma rasmi turadi** — avval tovarning
+o'z rasmlari, keyin prixodning umumiy (karobkalar) rasmlari. Umumiy rasm
+o'sha prixodning har bir qatorida ko'rinadi, chunki u butun prixodga
+tegishli.
+
+- **📷 ustunlari jadvalning OXIRIDA.** Oldin qo'ysak, sakkizta rasm ustuni
+  mijoz kodini ekranning o'ng tomoniga surib yuborardi. Birinchi ikki ustun
+  (sklad va kod) **muzlatildi** — rasmlarga qarab o'ngga surilganda ham kod
+  ko'rinib turadi.
+- **Chop etilganda sarlavha qatori har betda takrorlanadi.**
+- **Rasm yo'q bo'lsa ham bitta bo'sh 📷 ustuni qoladi** — ustun jimgina
+  yo'qolib qolmasin.
+- **Uchta chegara** (yuklanadigan rasm soni, varaqdagi rasm soni, ustunlar
+  soni). Chegara ishga tushsa, avval har qatorning BIRINCHI rasmi qo'yiladi
+  — ya'ni katta skladda ham har qatorda kamida bitta rasm bo'ladi — va
+  sarlavha nechta rasm sig'maganini aytadi.
+
+**Ikkita narsani bilib qo'ying:**
+
+1. **Excelda saralasangiz (sort), rasmlar joyida qoladi** — bu Excelning
+   o'zining xususiyati, rasm katakning ichida emas, ustida «suzib» turadi.
+   Shuning uchun 📷 sarlavhasiga shu haqda eslatma qo'yildi.
+2. **📎 bo'limiga rasm sifatida qo'yilgan hujjat** (masalan, telefonda
+   suratga olingan invoys) ham shu ustunlarda chiqadi — bazada u ham
+   «rasm» deb yoziladi va uni karobka rasmidan ajratadigan belgi yo'q.
+   Siz «hamma rasim» dedingiz, shuning uchun qoldirildi. Kerak bo'lmasa
+   ayting — faqat tovar rasmlarini qoldiramiz.
+
+**Yo'l-yo'lakay tuzatildi:** rasm Excelga qo'yilishidan oldin kichraytirilmas
+ekan — sifati tushirilgan nusxasi bo'lmagan rasmlar to'liq o'lchamda
+kirardi (78×72 nuqtada chiziladigan rasm uchun 3-4 MB). Endi 200 nuqtaga
+kichraytiriladi.
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi.
+
+
 ## Sizning ro'yxatingiz: hisoblash vazifalari — 2026-09-19
 
 **5-band bajarildi. Olti bandning hammasi tayyor.**

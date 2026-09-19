@@ -49,7 +49,17 @@ export async function buildStockXlsx(input: {
   cols: string | undefined;
   locale: string | null | undefined;
   can: (permission: string) => boolean;
-}): Promise<{ buffer: Buffer; visible: Set<string> }> {
+  /**
+   * The three photo bounds, injectable ONLY so a test can reach them: the
+   * owner's own data holds at most one photograph per lot today, so nothing
+   * a fixture can seed would ever push a real sheet past the shipped
+   * defaults. Appended after `arrivalCodes` in the route's call on purpose —
+   * `partiya-wire` reads a 200-character window from the call to it.
+   */
+  photoCap?: number;
+  placementCap?: number;
+  photoColsCap?: number;
+}): Promise<{ buffer: Buffer; visible: Set<string>; photos: number; photosSkipped: number }> {
   const { lines, arrivalCodes } = input;
   const L = reportLabels(input.locale);
   const chosen = parseCols(input.cols);
@@ -60,17 +70,6 @@ export async function buildStockXlsx(input: {
     ),
   );
   const SHEET_COLUMNS: { key: string; column: Partial<ExcelJS.Column>; always?: true }[] = [
-    /**
-     * The photograph, which this file used to skip with the note «the photo
-     * has no spreadsheet equivalent». It has one — `buildPackingPhotosXlsx`
-     * has embedded lot photos since feedback round 8 — and the owner asked
-     * for it here (2026-09-19): «rasimlari bn qoyilgan bolsin excelda».
-     *
-     * It follows the SCREEN's own 📷 column rather than being unconditional,
-     * which is what makes a small file reachable: untick 📷 on /stock and the
-     * download is text again.
-     */
-    { key: 'photo', column: { header: '📷', key: 'photo', width: 12 } },
     { key: 'whCode', column: { header: L.warehouse, key: 'wh', width: 8 } },
     { key: 'code', column: { header: L.code, key: 'code', width: 14 } },
     { key: 'product', column: { header: L.product, key: 'product', width: 40 } },
@@ -97,29 +96,51 @@ export async function buildStockXlsx(input: {
   ];
 
   /**
-   * The photographs, if the screen's 📷 column is on.
+   * EVERY photograph of that prixod line, not one (owner, 2026-09-19: «usha
+   * prixotdagi hamma rasim kerak boladi»).
    *
-   * Which picture: the LOT's own, falling back to the receipt's general box
-   * photo — the order /stock itself leads with, because this sheet answers
-   * «what is standing in the warehouse», not «which carton do I load» (the
-   * truck card asks that one and takes the outside first).
+   * Order is the row's own story: the LOT's own photographs first — what the
+   * goods are — then the receipt's general shots of the cartons as they
+   * stood. A receipt's general photo belongs to every lot of that receipt, so
+   * it appears on each of their rows; that is the point of it.
    *
-   * BOUNDED, and the bound is the point. The row query caps at 10 000 lots;
-   * at roughly 10 KB a thumbnail that is a 100 MB download and a container
-   * holding all of it in memory at once. Past the cap the rows still export
-   * and the header says the pictures stopped, rather than the file quietly
-   * being a different thing from the one before it.
+   * Three separate bounds, because they cost different things:
+   *
+   *  · `PHOTO_DOWNLOAD_CAP` — DISTINCT images fetched from the object store
+   *    and re-encoded. This is the network and the CPU.
+   *  · `PLACEMENT_CAP` — anchors drawn on the sheet. This is the memory:
+   *    exceljs builds `xl/drawings/drawing1.xml` as ONE string (~900 bytes an
+   *    anchor) before zipping, so the placements are what turns a download
+   *    into a container's worth of heap — and the old single cap bounded
+   *    downloads only, which a shared receipt photo makes nearly free.
+   *  · `PHOTO_COLS_CAP` — columns. A sheet is read left to right by a person.
+   *
+   * The bound is spent BREADTH-FIRST: every row's first photograph before any
+   * row's second, so a warehouse over the cap still shows one picture per line
+   * rather than four pictures on the first quarter of it.
    */
-  const PHOTO_CAP = 600;
+  const PHOTO_DOWNLOAD_CAP = input.photoCap ?? 600;
+  const PLACEMENT_CAP = input.placementCap ?? 3000;
+  const PHOTO_COLS_CAP = input.photoColsCap ?? 8;
   const wantPhotos = visible.has('photo');
   const thumbs = new Map<string, Buffer>();
-  const photoByLot = new Map<string, string>();
+  /** Admitted photographs per row index, in the order they must be drawn. */
+  const photosByRow = new Map<number, string[]>();
   let photosSkipped = 0;
 
   if (wantPhotos && lines.length > 0) {
     const lotIds = lines.map((line) => line.lot.id);
     const receiptIds = [...new Set(lines.map((line) => line.lot.receiptId))];
-    const pick = async (entityType: 'receipt_lot' | 'receipt', ids: string[]) =>
+    type PhotoRow = {
+      entityId: string;
+      id: string;
+      thumbKey: string | null;
+      storageKey: string;
+    };
+    const pick = async (
+      entityType: 'receipt_lot' | 'receipt',
+      ids: string[],
+    ): Promise<PhotoRow[]> =>
       ids.length === 0
         ? []
         : db
@@ -137,40 +158,85 @@ export async function buildStockXlsx(input: {
                 eq(attachments.kind, 'photo'),
               ),
             )
-            .orderBy(asc(attachments.createdAt));
+            // `attachments` has no order column and the wizard uploads four at
+            // a time, so `created_at` alone can tie — and a tie here is the
+            // photographs changing places between two downloads of the same
+            // warehouse. `id` is uuidv7, so it is a deterministic tiebreak
+            // that needs no migration.
+            .orderBy(asc(attachments.createdAt), asc(attachments.id));
     const [lotAtt, receiptAtt] = await Promise.all([
       pick('receipt_lot', lotIds),
       pick('receipt', receiptIds),
     ]);
 
-    const firstOf = (rows: typeof lotAtt) => {
-      const map = new Map<string, (typeof rows)[number]>();
-      for (const row of rows) if (!map.has(row.entityId)) map.set(row.entityId, row);
+    const groupBy = (rows: PhotoRow[]) => {
+      const map = new Map<string, PhotoRow[]>();
+      for (const row of rows) {
+        const list = map.get(row.entityId);
+        if (list) list.push(row);
+        else map.set(row.entityId, [row]);
+      }
       return map;
     };
-    const byLot = firstOf(lotAtt);
-    const byReceipt = firstOf(receiptAtt);
+    const byLot = groupBy(lotAtt);
+    const byReceipt = groupBy(receiptAtt);
+    const keysById = new Map<string, { thumbKey: string | null; storageKey: string }>();
+    for (const att of [...lotAtt, ...receiptAtt]) {
+      keysById.set(att.id, { thumbKey: att.thumbKey, storageKey: att.storageKey });
+    }
 
-    const needed = new Map<string, { thumbKey: string | null; storageKey: string }>();
-    for (const line of lines) {
-      const att = byLot.get(line.lot.id) ?? byReceipt.get(line.lot.receiptId);
-      if (!att) continue;
-      if (needed.size >= PHOTO_CAP && !needed.has(att.id)) {
+    /** One flat list of (row, photo, rank), so the bound can be spent by rank. */
+    const candidates: { rowIndex: number; attId: string; rank: number }[] = [];
+    lines.forEach((line, rowIndex) => {
+      const own = byLot.get(line.lot.id) ?? [];
+      const general = byReceipt.get(line.lot.receiptId) ?? [];
+      [...own, ...general].forEach((att, rank) => {
+        if (rank < PHOTO_COLS_CAP) candidates.push({ rowIndex, attId: att.id, rank });
+        else photosSkipped += 1;
+      });
+    });
+    // By RANK first: every row's first photograph is admitted before any
+    // row's second. Ties by row keep the sheet's own order, and because the
+    // list is already (rank, row) sorted each row's admitted photographs come
+    // out in lot-photos-first order with no second pass.
+    candidates.sort((a, b) => a.rank - b.rank || a.rowIndex - b.rowIndex);
+
+    const needed = new Set<string>();
+    let placements = 0;
+    for (const candidate of candidates) {
+      const fresh = !needed.has(candidate.attId);
+      if (placements >= PLACEMENT_CAP || (fresh && needed.size >= PHOTO_DOWNLOAD_CAP)) {
         photosSkipped += 1;
         continue;
       }
-      photoByLot.set(line.lot.id, att.id);
-      needed.set(att.id, { thumbKey: att.thumbKey, storageKey: att.storageKey });
+      needed.add(candidate.attId);
+      placements += 1;
+      const list = photosByRow.get(candidate.rowIndex);
+      if (list) list.push(candidate.attId);
+      else photosByRow.set(candidate.rowIndex, [candidate.attId]);
     }
-
-    // exceljs embeds png/jpeg only; thumbs are webp — convert, and fetch a
-    // few at a time rather than one after another (#102's own lesson, from
-    // the other end of the same pipe).
+    /**
+     * exceljs embeds png/jpeg only and thumbs are webp — convert, four at a
+     * time (#102's own lesson from the other end of the same pipe).
+     *
+     * RESIZED first, and that is not decoration: `thumb200Key` is NULL
+     * whenever the thumbnail job has not run (and for every photo this
+     * container has), and the fallback is the ORIGINAL — a 3-4 MB phone
+     * photograph re-encoded at full resolution to be drawn at 78×72 px.
+     */
     const sharp = (await import('sharp')).default;
-    await runPooled([...needed.entries()], 8, async ([id, keys]) => {
+    await runPooled([...needed], 8, async (id) => {
+      const keys = keysById.get(id);
+      if (!keys) return;
       try {
         const bytes = await getStorage().get(keys.thumbKey ?? keys.storageKey);
-        thumbs.set(id, await sharp(bytes).jpeg({ quality: 70 }).toBuffer());
+        thumbs.set(
+          id,
+          await sharp(bytes)
+            .resize(200, 200, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 70 })
+            .toBuffer(),
+        );
       } catch {
         /* photo unavailable — the cell simply stays empty */
       }
@@ -179,25 +245,94 @@ export async function buildStockXlsx(input: {
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Stock');
-  sheet.columns = [
+
+  /**
+   * How many photo columns this sheet needs — counted over the photographs
+   * that were ADMITTED, never over the query, or one eight-photo prixod at
+   * row 9,000 grows eight columns on a sheet where nothing past the bound has
+   * a picture at all.
+   *
+   * At least one whenever the screen's 📷 is ticked: a warehouse where nobody
+   * has photographed anything must still download the column they asked for,
+   * empty, rather than a file with a column silently missing (the packing
+   * list's own `Math.max(1, …)`).
+   */
+  const photoCols = wantPhotos
+    ? Math.min(PHOTO_COLS_CAP, Math.max(1, ...[...photosByRow.values()].map((ids) => ids.length)))
+    : 0;
+  /**
+   * The photo block sits at the END, after every column a person reads, and
+   * both existing photo sheets in this codebase do the same (`agent-xlsx`,
+   * `packing-photos-xlsx`). With eight of them in FRONT the client code lands
+   * around column I — six hundred pixels of photographs before the first fact
+   * about the cargo. The first two columns are frozen instead, so the code
+   * stays on screen while the reader scrolls right into the pictures.
+   *
+   * ONE key — `'photo'` — survives in `STOCK_COLUMNS` and in `visible`, so
+   * the screen's tick, the `?cols=` vocabulary and the audit row all keep
+   * saying the same word; the block is expanded here, after the filter.
+   */
+  const dataColumns = [
     ...SHEET_COLUMNS.filter((entry) => entry.always || visible.has(entry.key)).map(
       (entry) => entry.column,
     ),
     { header: L.days, key: 'aging', width: 8 },
   ];
+  sheet.columns = [
+    ...dataColumns,
+    ...Array.from({ length: photoCols }, (_, i) => ({
+      header: i === 0 ? '📷' : '',
+      key: `photo${i}`,
+      width: 12,
+    })),
+  ];
   sheet.getRow(1).font = { bold: true };
-  /** Zero-based index of the 📷 column, or -1 when the screen has it hidden. */
-  const photoCol = (sheet.columns ?? []).findIndex((column) => column.key === 'photo');
-  if (photosSkipped > 0) {
-    // Said only when it bites (#74's idiom): a header that always carried a
-    // number would read as an error on every ordinary download.
-    const cell = sheet.getRow(1).getCell('photo');
-    cell.value = `📷 (${PHOTO_CAP})`;
-    cell.note = `${photosSkipped} ${L.photosCapped}`;
+  sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 1 }];
+  // The header row repeats on every printed page. A fifteen-column sheet is
+  // three pages wide on A4 and page two otherwise carries numbers with no
+  // names over them.
+  sheet.pageSetup = { ...sheet.pageSetup, printTitlesRow: '1:1' };
+  /** Zero-based index of the FIRST photo column, or -1 when there is none. */
+  const photoCol = photoCols > 0 ? dataColumns.length : -1;
+  if (photoCol >= 0) {
+    const cell = sheet.getRow(1).getCell(photoCol + 1);
+    /**
+     * A pinned note, and it is worth its one line: the pictures are FLOATING
+     * drawings anchored to a cell, not cell contents, so Excel's own Sort
+     * rewrites the values underneath them and leaves every photograph where
+     * it was. Sorting an Ostatka by Σ kg is the first thing a desk reader
+     * does, and nothing in the file would otherwise say that the pictures
+     * stopped belonging to their rows.
+     */
+    cell.note = L.photoSortNote;
+    if (photosSkipped > 0) {
+      // Said only when it bites (#74's idiom): a header that always carried a
+      // number would read as an error on every ordinary download.
+      cell.value = `📷 (${photoCols})`;
+      cell.note = `${photosSkipped} ${L.photosCapped}\n${L.photoSortNote}`;
+    }
   }
 
+  /**
+   * Placements are collected and emitted AFTER the rows, grouped by image.
+   *
+   * This is not tidiness — it is the one shape that is correct. exceljs 4.4.0
+   * keeps `drawingRelsHash` in TWO key spaces inside one array
+   * (`worksheet-xform.js:226-231`): it WRITES at `drawing.rels.length` and
+   * READS at `medium.imageId` only when the PREVIOUS placement carried the
+   * same image. Emit the same image twice with another in between and the
+   * second one takes the most recently created relationship — i.e. **the
+   * sheet draws a different photograph**, silently, with no error anywhere.
+   * Today's code never met it because it called `addImage` fresh for every
+   * single placement; sharing a receipt's general photo across its lots is
+   * exactly what arms it. So: one `addImage` per distinct photograph, minted
+   * in the order the images are first drawn, and every placement of that
+   * image emitted contiguously.
+   */
+  const placements: { attId: string; col: number; row: number }[] = [];
+
   const now = Date.now();
-  for (const line of lines) {
+  lines.forEach((line, rowIndex) => {
     const perBoxKg = Number(line.lot.totalWeightKg) / line.lot.boxCount;
     const stockKg = perBoxKg * Number(line.inStock);
     const stockM3 = (Number(line.lot.totalVolumeM3) / line.lot.boxCount) * Number(line.inStock);
@@ -228,19 +363,46 @@ export async function buildStockXlsx(input: {
       date: line.receivedAt.toISOString().slice(0, 10),
     });
 
-    const photoId = photoByLot.get(line.lot.id);
-    const thumb = photoId ? thumbs.get(photoId) : undefined;
-    if (thumb && photoCol >= 0) {
+    const ids = (photosByRow.get(rowIndex) ?? []).filter((id) => thumbs.has(id));
+    if (ids.length > 0 && photoCol >= 0) {
       // Only a row that HAS a picture grows: a 450-row sheet where every row
       // is 60pt tall is four screens of white space on the rows that do not.
       row.height = 60;
-      sheet.addImage(
-        workbook.addImage({ buffer: thumb as unknown as ExcelJS.Buffer, extension: 'jpeg' }),
-        { tl: { col: photoCol + 0.1, row: row.number - 1 + 0.1 }, ext: { width: 78, height: 72 } },
-      );
+      ids.forEach((attId, i) => {
+        if (i >= photoCols) return;
+        placements.push({ attId, col: photoCol + i, row: row.number - 1 });
+      });
     }
+  });
+
+  const imageIdOf = new Map<string, number>();
+  for (const placement of placements) {
+    if (imageIdOf.has(placement.attId)) continue;
+    imageIdOf.set(
+      placement.attId,
+      workbook.addImage({
+        buffer: thumbs.get(placement.attId) as unknown as ExcelJS.Buffer,
+        extension: 'jpeg',
+      }),
+    );
+  }
+  const byImage = [...placements].sort(
+    (a, b) =>
+      (imageIdOf.get(a.attId) ?? 0) - (imageIdOf.get(b.attId) ?? 0) || a.row - b.row || a.col - b.col,
+  );
+  for (const placement of byImage) {
+    sheet.addImage(imageIdOf.get(placement.attId)!, {
+      tl: { col: placement.col + 0.1, row: placement.row + 0.1 },
+      ext: { width: 78, height: 72 },
+    });
   }
 
-
-  return { buffer: Buffer.from(await workbook.xlsx.writeBuffer()), visible };
+  return {
+    buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
+    visible,
+    /** What the file actually carries — the audit row could not tell a
+     *  twelve-photograph export from a three-thousand-photograph one. */
+    photos: placements.length,
+    photosSkipped,
+  };
 }

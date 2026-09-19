@@ -76,13 +76,24 @@ const DICT = {
   xyzCm: { ru: 'XYZ (см)', uz: 'XYZ (sm)', 'zh-CN': 'XYZ (厘米)', en: 'XYZ (cm)' },
   /**
    * The note on a capped 📷 header. Said only when the cap bites, so it
-   * carries the count and not a standing warning.
+   * carries the count and not a standing warning. It counts PHOTOGRAPHS now
+   * and not rows — a row can carry several and lose only its later ones.
    */
+  /**
+   * Said on the 📷 header of every photo sheet, because it is a property of
+   * Excel and not of a particular download.
+   */
+  photoSortNote: {
+    ru: 'При сортировке фото остаются на месте',
+    uz: 'Saralashda rasmlar joyida qoladi',
+    'zh-CN': '排序后照片不随行移动',
+    en: 'Sorting does not move the pictures',
+  },
   photosCapped: {
-    ru: 'строк без фото',
-    uz: 'qator rasmsiz',
-    'zh-CN': '行无照片',
-    en: 'rows without a photo',
+    ru: 'фото не поместилось',
+    uz: 'ta rasm sig‘madi',
+    'zh-CN': '张照片未放入',
+    en: 'photos did not fit',
   },
 
   // Sheet titles

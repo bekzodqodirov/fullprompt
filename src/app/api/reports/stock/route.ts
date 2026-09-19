@@ -88,7 +88,7 @@ export async function GET(request: Request) {
   // The screen's own column set, resolved by the shared helper. `whCode` is
   // written first here whatever the screen's order: a stock sheet is read
   // warehouse by warehouse and always has been.
-  const { buffer, visible } = await buildStockXlsx({
+  const { buffer, visible, photos, photosSkipped } = await buildStockXlsx({
     lines,
     arrivalCodes,
     cols: url.searchParams.get('cols') ?? undefined,
@@ -107,6 +107,11 @@ export async function GET(request: Request) {
       q: q || null,
       rows: lines.length,
       cols: [...visible].join(','),
+      // How big the file actually was. `cols` says «photo» whether the sheet
+      // carried one picture or three thousand, and the pictures are the whole
+      // cost of this download.
+      photos,
+      photosSkipped,
     },
   });
 
