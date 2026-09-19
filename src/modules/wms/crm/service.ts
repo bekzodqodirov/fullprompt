@@ -15,7 +15,7 @@ import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/
 import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
 import { likeNeedle, parseQuery } from '../search/query';
-import { closedAtFor, reasonAllowed, stageWrite } from './stage-law';
+import { clearsFollowUp, closedAtFor, reasonAllowed, stageWrite } from './stage-law';
 import { orderForMove, topOfColumn, type BoardTable } from './board-place';
 import { isUniqueViolation } from '../../platform/db/errors';
 import { logger } from '../../platform/logger';
@@ -530,6 +530,17 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
   if (!before) throw new CrmError('not_found');
   // The business columns, WITHOUT `updatedAt`: a fresh Date never equals the
   // stored one, so diffing a value set that carries it always reports a change.
+  const movedStage = (input.stageId || before.stageId) !== before.stageId;
+  /**
+   * The form's own stage change takes the lead off the day screen, exactly as
+   * the board's does — unless the seller typed a NEW date in the same save
+   * (`clearsFollowUp`, one home for both doors). His item 4's first sentence.
+   */
+  const dropFollowUp = clearsFollowUp({
+    moved: movedStage,
+    typedAt: input.nextActionAt || null,
+    storedAt: before.nextActionAt,
+  });
   const values = {
     name: input.name,
     phone: input.phone || null,
@@ -539,8 +550,8 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     ownerId: input.ownerId || null,
     note: input.note || null,
     ...quoteValues(input),
-    nextActionAt: input.nextActionAt || null,
-    nextActionNote: input.nextActionNote || null,
+    nextActionAt: dropFollowUp ? null : input.nextActionAt || null,
+    nextActionNote: dropFollowUp ? null : input.nextActionNote || null,
   };
 
   const sealedTotal = await quoteLockedFor('lead', id);
@@ -696,8 +707,12 @@ export async function moveLead(
       ...(stageId !== lead.stageId
         ? {
             closedAt: closedAtFor(stage.kind, new Date()),
-            nextActionAt: null,
-            nextActionNote: null,
+            // `clearsFollowUp` with no typed date always answers true here —
+            // the board posts none. Asked rather than restated so the rule
+            // has one home with the form door (#513).
+            ...(clearsFollowUp({ moved: true, storedAt: lead.nextActionAt })
+              ? { nextActionAt: null, nextActionNote: null }
+              : {}),
             // Moving the card IS the work (owner's answer, go-live day):
             // «bosqichni o'zgartirgan zahoti avtomatik tushsin — bugun
             // qo'ng'iroq qildim deb hisoblansin». So a real move clears the

@@ -27,19 +27,43 @@ describe('notification mutes (spec §11 per-user mute)', () => {
   });
 
   it('round-trips group selections through the stored list', () => {
-    const list = listFromGroups(false, { digest: true, tasks: false, alerts: false, operations: true });
+    const list = listFromGroups(false, {
+      digest: true,
+      calls: false,
+      tasks: false,
+      alerts: false,
+      operations: true,
+    });
     expect(list).toEqual([...MUTE_GROUPS.digest, ...MUTE_GROUPS.operations]);
     const back = groupsFromList(list);
     expect(back.all).toBe(false);
-    expect(back.groups).toEqual({ digest: true, tasks: false, alerts: false, operations: true });
+    expect(back.groups).toEqual({
+      digest: true,
+      calls: false,
+      tasks: false,
+      alerts: false,
+      operations: true,
+    });
   });
 
   it("'all' wins over group detail and reads back as everything checked", () => {
-    const list = listFromGroups(true, { digest: false, tasks: false, alerts: false, operations: false });
+    const list = listFromGroups(true, {
+      digest: false,
+      calls: false,
+      tasks: false,
+      alerts: false,
+      operations: false,
+    });
     expect(list).toEqual(['all']);
     const back = groupsFromList(list);
     expect(back.all).toBe(true);
-    expect(back.groups).toEqual({ digest: true, tasks: true, alerts: true, operations: true });
+    expect(back.groups).toEqual({
+      digest: true,
+      calls: true,
+      tasks: true,
+      alerts: true,
+      operations: true,
+    });
   });
 
   it('every fan-out event type belongs to a group (nothing unmutable)', () => {

@@ -11,8 +11,8 @@ import {
   taskTypeOptions,
   toTaskViews,
 } from '@/modules/platform/tasks/view';
-import { followUps } from '@/modules/wms/crm/service';
-import { FollowUpRow } from './follow-up-row';
+import { dayCalls } from '@/modules/wms/crm/day';
+import { DayCallsView } from '@/components/day-calls-view';
 import { NewTaskForm, TaskList } from '@/components/task-list';
 
 /**
@@ -23,17 +23,23 @@ import { NewTaskForm, TaskList } from '@/components/task-list';
  * manager sets for themselves on a lead. The follow-up has worked since the CRM
  * shipped and the sales side lives on it; rewriting it into a task to make one
  * tidy list would have traded a working screen for a new one. So both appear,
- * labelled, and `/crm/today` keeps answering exactly as before.
+ * labelled — and since the owner's item 4, `/crm/today` draws the call half
+ * from the SAME module and the same component, because two screens with one
+ * title that behave differently is what produced the complaint.
  *
  * The order is the order of urgency: late, then today, then the follow-ups,
  * then work with no deadline at all — which is last because it is the only
  * group that is never wrong to ignore.
  */
-export default async function TodayPage() {
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ hammasi?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
+  const showOthers = (await searchParams).hammasi === '1';
   const t = await getTranslations('tasks');
-  const tcrm = await getTranslations('crm');
 
   const [day, people, types] = await Promise.all([
     myDay(actor.id, endOfToday()),
@@ -41,13 +47,20 @@ export default async function TodayPage() {
     taskTypeOptions(),
   ]);
 
-  // Only a sales manager has follow-ups; everyone else simply has none.
-  const follows = actor.permissions.has('crm.leads')
-    ? await followUps(
-        new Date().toISOString().slice(0, 10),
-        actor.permissions.has('crm.leads.view_all') ? undefined : actor.id,
-      )
-    : [];
+  /**
+   * Only a sales manager has follow-ups; everyone else simply has none. The
+   * list is MINE by default whatever the permission says — `crm.leads.view_all`
+   * is the right to LOOK at everybody's, not an instruction to pile them onto
+   * one person's morning (owner's 4.1a).
+   */
+  const calls = actor.permissions.has('crm.leads')
+    ? await dayCalls({
+        actorId: actor.id,
+        seesAll: actor.permissions.has('crm.leads.view_all'),
+        asOf: new Date().toISOString().slice(0, 10),
+        includeOthers: showOthers,
+      })
+    : null;
 
   const [overdue, today, undated] = await Promise.all([
     toTaskViews(day.overdue),
@@ -55,8 +68,8 @@ export default async function TodayPage() {
     toTaskViews(day.undated),
   ]);
 
-  const nothing =
-    overdue.length + today.length + undated.length + follows.length === 0;
+  const myCalls = (calls?.mine.length ?? 0) + (calls?.stale.length ?? 0);
+  const nothing = overdue.length + today.length + undated.length + myCalls === 0;
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
@@ -83,21 +96,8 @@ export default async function TodayPage() {
         </section>
       )}
 
-      {follows.length > 0 && (
-        <section className="space-y-2" data-testid="day-followups">
-          <h2 className="section-title">📞 {tcrm('today')} · {follows.length}</h2>
-          {follows.map((row) => (
-            <FollowUpRow
-              key={`${row.kind}-${row.id}`}
-              kind={row.kind}
-              id={row.id}
-              href={row.kind === 'lead' ? `/crm/leads/${row.id}` : `/admin/clients/${row.id}`}
-              title={row.title}
-              dueOn={row.dueOn}
-              note={row.note}
-            />
-          ))}
-        </section>
+      {calls && (myCalls > 0 || calls.othersCount > 0) && (
+        <DayCallsView calls={calls} basePath="/bugun" showOthers={showOthers} />
       )}
 
       {undated.length > 0 && (

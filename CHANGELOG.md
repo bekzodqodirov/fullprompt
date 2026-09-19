@@ -1,5 +1,49 @@
 # CHANGELOG
 
+## Sizning ro'yxatingiz: «Mening kunim» va ertalabki xabar — 2026-09-19
+
+**4-band bajarildi.** Qolgani bitta: 5-band (hisoblash vazifalari).
+
+**1. Endi ro'yxat — SIZNIKI.** Ilgari «Mening kunim»da hamma sotuvchining
+qo'ng'irog'i bir uyumda turardi (chunki siz hamma leadni ko'rish huquqiga
+egasiz). Endi:
+
+- Yuqorida **faqat sizniki** — «📞 Mening qo'ng'iroqlarim · 4». Egasi
+  belgilanmagan so'rovlar avvalgidek hammada ko'rinadi (ular hali
+  hech kimniki emas).
+- Yon tomonda **«Hammasi · 15»** tugmasi. Bosasiz — sotuvchilar bo'yicha
+  **yig'ma bo'limlar** ochiladi: «Alisher · 4», «Bekzod · 5» — eng ko'pi
+  tepada, har biri yopiq turadi, bosganingizda ochiladi.
+- **Bir haftadan oshib ketgan** qo'ng'iroqlar bitta qatorga yig'iladi:
+  «⚠️ 5 ta kechikkan — ko'rish». Yo'qolmaydi, o'chmaydi — faqat bugungi
+  ishning tepasini band qilmaydi.
+
+**Muhim:** bu **ikkala ekranda** ham shunday — `/bugun` da ham, CRM
+menyusidagi «Bugun qo'ng'iroq» da ham. Ular bir xil nom bilan ikki xil
+ekran edi, va sotuvchining bosh sahifasi aynan ikkinchisiga olib borardi.
+
+**2. Kartadagi ✏️ formada bosqichni o'zgartirsa ham ro'yxatdan tushadi.**
+Doskada surganda tushardi, formada tushmasdi — sizning birinchi
+gapingiz shu edi. **Istisno:** agar sotuvchi o'sha saqlashda **yangi sana**
+yozgan bo'lsa, yozgani qoladi (odam o'z kuni haqida o'zi qaror qiladi).
+*Bu 4.4 savolimga javobingizni kutmasdan shunday qilindi — javob boshqacha
+bo'lsa, bir qatorda o'zgartiraman.*
+
+**3. Ertalabki Telegram xabari.** Endi u **sizning** qo'ng'iroqlaringizni
+yuboradi, oxirida esa bitta qator:
+
+```
+👥 Sotuvchilar: Alisher 4 ta · Bekzod 5 ta
+```
+
+Sotuvchiga faqat o'ziniki boradi. Hech kimda ish bo'lmasa — xabar
+umuman kelmaydi. Va profilda unga **alohida o'chirish katagi** paydo
+bo'ldi («📞 Ertalabki qo'ng'iroqlar ro'yxati») — ilgari uni o'chirish
+sklad svodkasini ham o'chirib qo'yardi.
+
+**Bazada o'zgarish yo'q** — migratsiya yo'q, son **99** da qoladi.
+
+
 ## Sizning ro'yxatingiz: topshirishda mijozlar ro'yxati — 2026-09-19
 
 **3-band bajarildi.** Qolgan ikkitasi (4 — «Mening kunim», 5 — hisoblash

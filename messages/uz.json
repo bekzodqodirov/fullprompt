@@ -501,7 +501,8 @@
     "callRecNotSeen": "hali ma'lumot kelmadi",
     "callRecApp": "Ilovani yuklab olish (Android)",
     "telegramReconnect": "Qayta ulash",
-    "telegramReconnectHint": "Telefon yoki Telegram akkaunt o‘zgardimi? Botni yangisidan oching — xabarnomalar o‘sha yerga keladi. Yangisi ulanmaguncha eski chat ishlab turaveradi."
+    "telegramReconnectHint": "Telefon yoki Telegram akkaunt o‘zgardimi? Botni yangisidan oching — xabarnomalar o‘sha yerga keladi. Yangisi ulanmaguncha eski chat ishlab turaveradi.",
+    "notifMuteCalls": "Ertalabki qo‘ng‘iroqlar ro‘yxati"
   },
   "receive": {
     "title": "Qabul",
@@ -1534,7 +1535,13 @@
     },
     "errors": {
       "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)"
-    }
+    },
+    "dayMine": "Mening qo‘ng‘iroqlarim",
+    "dayAll": "Hammasi",
+    "dayStale": "{n} ta kechikkan — ko‘rish",
+    "dayStaleOpen": "Kechikkanlar",
+    "dayOthers": "Sotuvchilar bo‘yicha",
+    "dayBack": "Faqat meniki"
   },
   "navShort": {
     "home": "Bosh",

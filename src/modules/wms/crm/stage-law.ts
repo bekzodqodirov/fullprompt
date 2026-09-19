@@ -98,3 +98,35 @@ export function leadFormStages<T extends { id: string; kind: string }>(
 ): T[] {
   return stages.filter((stage) => stage.kind === 'open' || stage.id === currentId);
 }
+
+/**
+ * Does a stage change clear the follow-up date?
+ *
+ * The owner, on go-live day: «bosqichni o'zgartirgan zahoti avtomatik
+ * tushsin — bugun qo'ng'iroq qildim deb hisoblansin». `moveLead` has done
+ * that since round 102 — but the ✏️ FORM writes `stage_id` too, and it wrote
+ * the date straight back, so a seller who moved a lead to «bog'lanildi» from
+ * the card still found it on their day screen tomorrow. His item 4, first
+ * sentence: «agar sotuvchi uni boglanildi etapiga otgazsa moy dendan chiqib
+ * ketishi kerak». Same pair-rule shape as the lost reason above (#528) and
+ * the same answer: one function, both doors.
+ *
+ * The EXCEPTION is what makes it safe to apply to a form. A board move posts
+ * no date at all (`typedAt` undefined) and always clears. A form posts one,
+ * and if the person typed a NEW date while changing the stage, that date is
+ * their decision and outranks the rule — «ertaga ertalab qayta qo'ng'iroq»
+ * is exactly the case, and silently deleting it would be the system
+ * overruling a human being about their own day.
+ */
+export function clearsFollowUp(input: {
+  /** Did the stage actually change? An ordinary save decides nothing. */
+  moved: boolean;
+  /** What the form posted, or `undefined` where there is no form. */
+  typedAt?: string | null;
+  /** What the record carries right now. */
+  storedAt: string | null;
+}): boolean {
+  if (!input.moved) return false;
+  if (input.typedAt === undefined) return true;
+  return (input.typedAt || null) === (input.storedAt || null);
+}
