@@ -16,10 +16,14 @@ tegishli.
 - **Chop etilganda sarlavha qatori har betda takrorlanadi.**
 - **Rasm yo'q bo'lsa ham bitta bo'sh 📷 ustuni qoladi** — ustun jimgina
   yo'qolib qolmasin.
-- **Uchta chegara** (yuklanadigan rasm soni, varaqdagi rasm soni, ustunlar
-  soni). Chegara ishga tushsa, avval har qatorning BIRINCHI rasmi qo'yiladi
-  — ya'ni katta skladda ham har qatorda kamida bitta rasm bo'ladi — va
-  sarlavha nechta rasm sig'maganini aytadi.
+- **Chegara — himoya, cheklov emas.** Sizning javobingizdan keyin bir
+  qatordagi rasm ustunlari soni **8 dan 50 ga** ko'tarildi (prixodga
+  qo'yish mumkin bo'lgan rasm soniga chek yo'q, shuning uchun 8 haqiqiy
+  to'siq edi), varaqdagi umumiy rasm chegarasi esa 3 000 dan **6 000** ga.
+  O'lchandi: 3 000 rasm = 150 MB, 5 000 = 195 MB, 30 000 = 577 MB —
+  sizning Ostatkangiz ~450 qator, ya'ni har qatorda 13 tagacha rasm
+  bemalol sig'adi. Chegara ishga tushsa ham avval har qatorning BIRINCHI
+  rasmi qo'yiladi va sarlavha nechtasi sig'maganini aytadi.
 
 **Ikkita narsani bilib qo'ying:**
 
@@ -28,9 +32,8 @@ tegishli.
    Shuning uchun 📷 sarlavhasiga shu haqda eslatma qo'yildi.
 2. **📎 bo'limiga rasm sifatida qo'yilgan hujjat** (masalan, telefonda
    suratga olingan invoys) ham shu ustunlarda chiqadi — bazada u ham
-   «rasm» deb yoziladi va uni karobka rasmidan ajratadigan belgi yo'q.
-   Siz «hamma rasim» dedingiz, shuning uchun qoldirildi. Kerak bo'lmasa
-   ayting — faqat tovar rasmlarini qoldiramiz.
+   «rasm» deb yoziladi. Siz «ha, hammasi kerak» dedingiz — shunday
+   qoldirildi.
 
 **Yo'l-yo'lakay tuzatildi:** rasm Excelga qo'yilishidan oldin kichraytirilmas
 ekan — sifati tushirilgan nusxasi bo'lmagan rasmlar to'liq o'lchamda

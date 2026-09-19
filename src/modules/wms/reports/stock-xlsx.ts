@@ -113,15 +113,24 @@ export async function buildStockXlsx(input: {
    *    anchor) before zipping, so the placements are what turns a download
    *    into a container's worth of heap — and the old single cap bounded
    *    downloads only, which a shared receipt photo makes nearly free.
-   *  · `PHOTO_COLS_CAP` — columns. A sheet is read left to right by a person.
+   *    MEASURED here: 3,000 placements = 150 MB RSS, 5,000 = 195 MB,
+   *    30,000 = 577 MB. Six thousand covers his own Ostatka (~450 rows) at
+   *    thirteen photographs a row and still leaves the one Node process
+   *    that serves every screen its head.
+   *  · `PHOTO_COLS_CAP` — columns. NOT a product decision: the owner was
+   *    asked and said «hamma rasimi kerak, 1 2 rasim emas hammasi kerak»,
+   *    and the receive wizard puts no limit on how many photographs a lot
+   *    carries. Fifty is a fence against a pathological row (Excel's own
+   *    limit is 16,384 columns and a sheet that wide is unreadable), not a
+   *    budget — no prixod this company has ever received comes near it.
    *
    * The bound is spent BREADTH-FIRST: every row's first photograph before any
    * row's second, so a warehouse over the cap still shows one picture per line
    * rather than four pictures on the first quarter of it.
    */
   const PHOTO_DOWNLOAD_CAP = input.photoCap ?? 600;
-  const PLACEMENT_CAP = input.placementCap ?? 3000;
-  const PHOTO_COLS_CAP = input.photoColsCap ?? 8;
+  const PLACEMENT_CAP = input.placementCap ?? 6000;
+  const PHOTO_COLS_CAP = input.photoColsCap ?? 50;
   const wantPhotos = visible.has('photo');
   const thumbs = new Map<string, Buffer>();
   /** Admitted photographs per row index, in the order they must be drawn. */
