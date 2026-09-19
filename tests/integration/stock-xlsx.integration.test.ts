@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '@/modules/platform/db/client';
@@ -308,7 +308,47 @@ describe('the stock XLSX carries the photographs', () => {
     expect(sheet.views[0]).toMatchObject({ state: 'frozen', xSplit: 2, ySplit: 1 });
   });
 
-  it('keeps ONE empty 📷 column when the screen asked for photos and nothing is photographed', async () => {
+  /**
+   * The owner's own report, the day it shipped: «excel fileda hech qanday
+   * rasim korinmadi».
+   *
+   * The pictures were gated on `visible.has('photo')` — the screen's own
+   * column tick — and every test in this file passed `cols: undefined`, which
+   * is the ONE case where that gate is open. So the defect shipped green.
+   *
+   * `/stock` redirects a bare visit to a personal default view
+   * (`stock/page.tsx:69-74`) and the ⬇️ XLSX link carries that view's `cols`,
+   * so a single view saved without 📷 — which is exactly what a person saves,
+   * because 450 thumbnails are what made that table slow on a phone (round
+   * 68) — produced a sheet with no pictures, no 📷 column and no error, for
+   * ever.
+   *
+   * The photographs are export-always now, like XYZ and «days in stock». This
+   * test is the red proof: restore the gate and it fails.
+   */
+  it('carries the photographs even when the screen’s 📷 column is unticked', async () => {
+    expect(built, 'the photo fixture did not insert').toBe(true);
+    const { buffer, photos, visible } = await buildStockXlsx({
+      lines: FOUR(),
+      arrivalCodes: new Map(),
+      // A saved view that names every column a person reads and not the 📷.
+      cols: 'code,product,boxes,perBoxKg,stockKg,stockM3,whCode',
+      locale: 'uz',
+      can: () => true,
+    });
+    expect(photos, 'the screen’s tick silently emptied the sheet').toBe(6);
+    const { sheet, base, placements } = await drawn(buffer);
+    expect(base, 'no 📷 column at all').toBeGreaterThan(0);
+    expect(placements.length, 'the pictures are not in the file').toBe(6);
+    // The columns the view DID name still decide the rest of the sheet — this
+    // is not a licence to ignore `?cols=`, only the photographs are exempt.
+    const head = sheet.getRow(1).values as (string | undefined)[];
+    expect(head.includes('kg/m³'), 'an unticked ordinary column came back').toBe(false);
+    // …and the audit row must not claim the file has no photo column.
+    expect(visible.has('photo'), 'the audit row would disagree with the file').toBe(true);
+  });
+
+  it('keeps ONE empty 📷 column when nothing on the sheet is photographed', async () => {
     const { buffer, photos } = await buildStockXlsx({
       // A lot of a prixod nobody photographed.
       lines: [line({ id: UNMEASURED, receiptId: '00000000-0000-0000-0000-0000000000dd' })],
@@ -321,7 +361,7 @@ describe('the stock XLSX carries the photographs', () => {
     await book.xlsx.load(buffer as unknown as ArrayBuffer);
     const sheet = book.getWorksheet('Stock')!;
     expect(photos).toBe(0);
-    // The column the person ticked is there, empty — not silently missing.
+    // The column is there, empty — not silently missing.
     expect((sheet.getRow(1).values as (string | undefined)[]).includes('📷')).toBe(true);
     expect(sheet.getImages()).toHaveLength(0);
   });
@@ -371,36 +411,41 @@ describe('the stock XLSX carries the photographs', () => {
     expect(JSON.stringify(sheet.getRow(1).getCell(first).note)).toContain('sig');
   });
 
-  it('a screen with 📷 unticked fetches no bytes at all', async () => {
+  /**
+   * The EXPORT-ONLY family, as one rule.
+   *
+   * Three columns do not follow the screen's tick — XYZ, «days in stock» and
+   * the photographs — because `columns.ts` says why in its own words: a tick
+   * keeps a phone-width table readable, and a sheet is read at a desk. The
+   * photograph was the one that got this wrong (the gate that emptied the
+   * owner's file), so the fence is the FAMILY and not the one member: a fourth
+   * column added to it tomorrow is covered, and moving any of the three back
+   * behind the tick turns this red.
+   *
+   * REPLACES a test that asserted the opposite — «a screen with 📷 unticked
+   * fetches no bytes at all» — which pinned the defect as intended behaviour.
+   * Its red proof went red for the gate and said nothing about whether the
+   * gate belonged there.
+   */
+  it('keeps XYZ, «days in stock» and the photographs whatever the view hides', async () => {
     expect(built, 'the photo fixture did not insert').toBe(true);
-    /**
-     * The picture count is the WRONG oracle here and the first version of this
-     * test used it: `photoCol >= 0` already refuses to place an image in a
-     * column that is not on the sheet, so stripping the download gate left the
-     * proof GREEN (#166). What the gate is FOR is the traffic — 450 rows is
-     * 450 reads out of MinIO for a column nobody asked for — so the assertion
-     * is the read count, which is the thing that costs.
-     */
-    const reads = vi.spyOn(getStorage(), 'get');
-    try {
-      const { buffer } = await buildStockXlsx({
-        lines: FOUR(),
-        arrivalCodes: new Map(),
-        // Every column the screen offers EXCEPT the photo.
-        cols: 'code,product,boxes,perBoxKg,stockKg,stockM3,density,note,whCode,partiya,receivedAt',
-        locale: 'uz',
-        can: () => true,
-      });
-      expect(reads, 'the photo bytes were downloaded for a hidden column').not.toHaveBeenCalled();
-      const book = new ExcelJS.Workbook();
-      await book.xlsx.load(buffer as unknown as ArrayBuffer);
-      const sheet = book.getWorksheet('Stock')!;
-      expect(sheet.getImages()).toHaveLength(0);
-      expect((sheet.getRow(1).values as (string | undefined)[]).includes('📷')).toBe(false);
-      // The XYZ column is export-only and stays whatever the screen hides.
-      expect([...headers(sheet).keys()]).toContain('XYZ (sm)');
-    } finally {
-      reads.mockRestore();
-    }
+    const { buffer } = await buildStockXlsx({
+      lines: FOUR(),
+      arrivalCodes: new Map(),
+      // A view naming NONE of the three.
+      cols: 'code,product,boxes,stockKg,stockM3,whCode',
+      locale: 'uz',
+      can: () => true,
+    });
+    const { sheet, placements } = await drawn(buffer);
+    const head = [...headers(sheet).keys()];
+    expect(head, 'XYZ is export-only').toContain('XYZ (sm)');
+    expect(
+      head.some((name) => name === '📷' || name.startsWith('📷 (')),
+      'the photographs are export-only',
+    ).toBe(true);
+    expect(placements.length, 'a hidden tick emptied the pictures again').toBe(6);
+    // …while an ordinary column the view left out stays out.
+    expect(head, 'an ordinary hidden column came back').not.toContain('kg/m³');
   });
 });

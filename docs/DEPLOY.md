@@ -246,8 +246,9 @@ docker compose up -d
 docker compose run --rm migrate
 docker compose exec -T postgres psql -U gsr -d gsr \
   -tAc "select count(*) from drizzle.__drizzle_migrations"
-# ==> jurnal uzunligi chiqishi SHART (2026-08-19 dan: 84; har raundda
-#     o'sadi — CLAUDE.md dagi joriy sonni oling). Kam bo'lsa yana
+# ==> jurnal uzunligi chiqishi SHART (2026-09-19 dan: 99; har raundda
+#     o'sadi). Sonni TAXMIN qilmang — repodan o'qing:
+#     `ls src/modules/platform/db/migrations/*.sql | wc -l`. Kam bo'lsa yana
 #     `docker compose run --rm migrate`.
 docker compose up -d app
 ```
@@ -295,7 +296,8 @@ Brauzerda quyidagilarni ko'ring:
 3. **Prixod fotosi ochilsinmi** — bu MinIO ko'chganini isbotlaydi.
 4. **Migratsiyalar soni**: `docker compose exec -T postgres psql -U gsr -d gsr
    -tAc "select count(*) from drizzle.__drizzle_migrations"` — jurnal
-   uzunligi bo'lsin (2026-08-19 dan: **84**; har raundda o'sadi).
+   uzunligi bo'lsin (2026-09-19 dan: **99**; har raundda o'sadi — sonni
+   repodan o'qing: `ls src/modules/platform/db/migrations/*.sql | wc -l`).
    Eski serverniki bilan teng BO'LMAYDI va bo'lmasligi kerak: eski server
    ancha orqada, yangisi esa `main` dagi kodni ishlatadi. Kam chiqsa —
    `docker compose run --rm migrate`, keyin qaytadan sanang.

@@ -1618,6 +1618,41 @@ mint moved out of the action into `mintTelegramLinkCode` so the rule could be
 proven by a test rather than a fence (#531). 5 red proofs; **2573
 unit/integration + 200 e2e** green on a fresh gsr_ci in CI's order.
 
+**Round — the owner's six items (2026-09-19; DECISIONS #950-972; NO migration,
+ledger 99; merged as PR #83, `e9158e5`):** deal pickers carry the cargo
+(`B-00123 (5 kub 200kg oyinchoq)`, three grouped queries); the loading screen
+draws the carton's OUTSIDE photo with the goods photo as a framed fallback; the
+handover screen LISTS who is waiting, built from the cargo, phones only for the
+person collecting, unclaimed cargo as a LINK (which widened the receipt read
+door — `receipts/read-door.ts` `mayReadReceipt`); «Mening kunim» is MINE by
+default with per-seller folds and a 7-day overdue fold, ONE module behind
+`/bugun` AND `/crm/today`, the ✏️ form finally clears the follow-up
+(`clearsFollowUp`), and the morning Telegram carries own calls + «👥
+Sotuvchilar: …» under its own `calls` mute group; calc tasks close themselves
+(the backlog needs `pnpm close-stale-calc-tasks --apply` once) and a hand-back
+opens a seller task; the Ostatka Excel gained XYZ and EVERY photograph of the
+prixod, which needed the exceljs 4.4.0 wrong-image defect traced and the
+placements emitted grouped by image (#969).
+
+**Then his own report the same day, and it was mine** (#973-976): «excel fileda
+hech qanday rasim korinmadi». The pictures were gated on the screen's 📷 tick
+and `/stock` redirects a bare visit to a saved default view, so ONE view saved
+without 📷 made every download photoless for ever — round 57's defect one
+screen over, with `columns.ts`'s own sentence about exports already written
+down. MEASURED: `cols` absent → 4 pictures, 4 anchors; `cols` without `photo` →
+zero pictures, zero anchors, no 📷 column, no error. Photographs are
+export-always now, the third such column beside XYZ and «days in stock»; cost
+measured at 450 rows (6,000 placements = 2.3 s / +100 MB worst case). **#974 is
+the process lesson**: the test I wrote pinned the defect as intended behaviour
+— a red proof proves a gate WORKS and can never say the gate should not exist,
+and every test in that file passed `cols: undefined`, the one case where the
+gate is open. Found alongside: the handover waiting list never cleared on a
+warehouse switch and swallowed both failures, so a flaky phone showed the
+PREVIOUS warehouse's people under the new heading (#975). And the deploy's own
+oracle was stale in three files at once plus my `pg_dump` line lacked `-Fc`
+(#976) — `UPDATE.md §4` now counts the ledger FIRST and uses `ps -a`, and all
+three files say to read the number off the repo instead of carrying it over.
+
 **Latest migration: 0098** (`staff_notes_simplify` — the note is a name, its
 text and its files; ledger must reach **99**). Before it: **0097**
 (`staff_notes` — the note, its parts, their order,
@@ -1722,7 +1757,13 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length (**95** since 0094, and his server reads 95 as of 2026-09-04) —
+length — **99** since 0098, and his server last CONFIRMED 95 (2026-09-04),
+which means 0095-0098 are all pending and one deploy applies FOUR of them.
+Never carry this number over from a previous session: read it
+(`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
+owner a step list, because the count is the only check that separates «the
+migrations applied» from «the new code is running against the old schema», and
+telling him a half-applied deploy is finished is not cosmetic —
 the client book, the stock table and `/o/<code>` read
 `list_views` at RENDER with no catch, so a half-applied deploy shows those
 three the error page (round 52's failure, wider). Check

@@ -131,7 +131,40 @@ export async function buildStockXlsx(input: {
   const PHOTO_DOWNLOAD_CAP = input.photoCap ?? 600;
   const PLACEMENT_CAP = input.placementCap ?? 6000;
   const PHOTO_COLS_CAP = input.photoColsCap ?? 50;
-  const wantPhotos = visible.has('photo');
+  /**
+   * The photographs are EXPORT-ALWAYS — the THIRD column that does not follow
+   * the screen's tick, beside XYZ and «days in stock».
+   *
+   * It shipped as `visible.has('photo')` and that made the feature invisible
+   * to the person who asked for it (owner, 2026-09-19: «excel fileda hech
+   * qanday rasim korinmadi»). MEASURED on his own data: with a `?cols=` that
+   * does not name the photo the sheet comes out with zero pictures, zero
+   * anchors and no 📷 column at all — no error, nothing on screen to say why.
+   * And `/stock` redirects a bare visit to a personal default view
+   * (`stock/page.tsx:69-74`), so ONE view saved without 📷 makes every
+   * download photoless for ever.
+   *
+   * This is round 57's own defect one screen over, and `columns.ts` already
+   * wrote the rule down in its own words: «`optional` exists to keep a
+   * phone-width table readable, not to keep anything out of a spreadsheet: a
+   * sheet is read at a desk.» Back then it was the client book's spreadsheet
+   * quietly losing its phone-numbers column.
+   *
+   * Both photo sheets already in production carry their pictures
+   * unconditionally (`packing-photos-xlsx.ts:137`, `agent-xlsx.ts:183`) and
+   * the owner's instruction is «hamma rasimi kerak». The screen's 📷 tick
+   * keeps its real job, which is the PHONE: ~450 thumbnails are the reason
+   * round 68 paged that table at all.
+   *
+   * Cost stated rather than hidden: every Ostatka download now pays for the
+   * pictures. The three bounds below are what keeps the one Node process
+   * standing; if a warehouse-wide download becomes slow, that is a measured
+   * follow-up and not a reason to hide the feature again.
+   */
+  const wantPhotos = true;
+  // …and the audit row must not say «no photo column» about a file that has
+  // one. `visible` is what the route records as `cols`.
+  visible.add('photo');
   const thumbs = new Map<string, Buffer>();
   /** Admitted photographs per row index, in the order they must be drawn. */
   const photosByRow = new Map<number, string[]>();
