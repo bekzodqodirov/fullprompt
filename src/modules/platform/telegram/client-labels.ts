@@ -222,6 +222,7 @@ const DICT = {
   recentMoves: { uz: 'So‘nggi amallar', ru: 'Последние операции', en: 'Recent entries' },
   charged: { uz: '🧾 hisoblandi', ru: '🧾 начислено', en: '🧾 charged' },
   paid: { uz: '➕ to‘lov', ru: '➕ оплата', en: '➕ payment' },
+  refunded: { uz: '↩️ qaytarildi', ru: '↩️ возврат', en: '↩️ refunded' },
   noPhotos: { uz: 'Bu yuk uchun rasm topilmadi.', ru: 'Фото для этого груза нет.', en: 'No photos for this cargo.' },
   photoError: {
     uz: 'Rasm yuborishda xatolik. Birozdan so‘ng qayta urinib ko‘ring.',

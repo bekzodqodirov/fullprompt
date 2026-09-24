@@ -104,7 +104,9 @@ export async function buildCashFlowXlsx(from: string, to: string, locale?: strin
           ? L.partnerIn
           : label === 'partnerOut'
             ? L.partnerOut
-            : label;
+            : label === 'clientRefunds'
+              ? L.clientRefunds
+              : label;
   for (const row of flow.rows) {
     sheet.addRow([name(row.label), row.kind === 'in' ? row.amountUsd : -row.amountUsd]);
   }

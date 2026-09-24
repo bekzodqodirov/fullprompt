@@ -16,7 +16,7 @@ import { uzsRate } from './period';
 // Every cash box converts through the generic rate lookup, not a per-currency
 // branch — the branch is how a CNY till came to be worth nothing.
 import { rateFor } from '../costing/service';
-import { unplacedPaymentSql } from '../finance/service';
+import { clientBalances, unplacedPaymentSql } from '../finance/service';
 
 /**
  * Management reports (Phase 2.4).
@@ -324,6 +324,20 @@ export async function cashFlow(from: string, to: string) {
       ),
     );
 
+  // Money handed BACK to clients (R6a). Always out of a kassa of ours — the
+  // refund CHECK demands one — so it is cash that left, never a price.
+  const [refunded] = await db
+    .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+    .from(clientTransactions)
+    .where(
+      and(
+        eq(clientTransactions.type, 'refund'),
+        isNull(clientTransactions.voidedAt),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
+      ),
+    );
+
   // Money a counterparty put INTO one of our accounts — the cash buyers' first
   // leg. It is real cash in, and we owe it, but the debt is not this report's
   // business; this report answers only "what moved".
@@ -397,10 +411,12 @@ export async function cashFlow(from: string, to: string) {
 
   const partnerInflow = money(partnerIn?.sum);
   const partnerOutflow = money(partnerOut?.sum);
+  const refundOutflow = money(refunded?.sum);
   const inflow = money(received?.sum) + partnerInflow;
   const outflow =
     money(cargoCosts?.sum) +
     partnerOutflow +
+    refundOutflow +
     outRows.reduce((acc, row) => acc + money(row.sum), 0);
   return {
     inflow: money(inflow),
@@ -416,6 +432,9 @@ export async function cashFlow(from: string, to: string) {
       { label: 'cargoCosts', kind: 'out' as const, amountUsd: money(cargoCosts?.sum) },
       ...(partnerOutflow
         ? [{ label: 'partnerOut', kind: 'out' as const, amountUsd: partnerOutflow }]
+        : []),
+      ...(refundOutflow
+        ? [{ label: 'clientRefunds', kind: 'out' as const, amountUsd: refundOutflow }]
         : []),
       ...outRows.map((row) => ({
         label: row.label,
@@ -458,7 +477,9 @@ export async function arAging(asOf: string) {
         balance: 0,
         buckets: [0, 0, 0, 0],
       };
-    if (row.type === 'charge') {
+    // A refund (R6a) RAISES what the client owes, like a charge: money handed
+    // back is owed again from that day — it ages from its own date.
+    if (row.type !== 'payment') {
       entry.balance += money(row.amountUsd);
       charges.set(row.clientId, [
         ...(charges.get(row.clientId) ?? []),
@@ -806,13 +827,20 @@ export async function companyBalance() {
       };
     });
 
-  // What clients owe us: the same sum the finance screen shows, in one query.
-  const [owedToUs] = await db
-    .select({
-      sum: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END), 0)`,
-    })
-    .from(clientTransactions)
-    .where(isNull(clientTransactions.voidedAt));
+  // What clients owe us — split the way the partner side below always was
+  // (R7a). One netted sum let a prepaid client's advance shrink «qarz», so
+  // the Balans line read LESS than the /finance total it links to (audit
+  // A3/A16/A28), while the advance — money we owe back in service — appeared
+  // nowhere as a liability. `clientBalances` is the /finance screen's own
+  // function, so the two cannot drift: debtors are its positive balances,
+  // advances its negative ones. The net is unchanged; its parts become true.
+  const clientRows = await clientBalances();
+  let receivable = 0;
+  let clientAdvances = 0;
+  for (const row of clientRows) {
+    if (row.balanceUsd > 0) receivable += row.balanceUsd;
+    else clientAdvances += -row.balanceUsd;
+  }
 
   // What we owe counterparties. Negative balances (a firm that owes US) are
   // reported separately rather than netted off: one is a bill to pay and the
@@ -856,22 +884,25 @@ export async function companyBalance() {
     );
   const unplacedUsd = money(unplaced?.sum);
 
-  const receivable = money(owedToUs?.sum);
-  const net = cashUsd + unplacedUsd + receivable + owedToUsByPartners - owedByUs;
+  const net = cashUsd + unplacedUsd + receivable + owedToUsByPartners - owedByUs - clientAdvances;
 
+  // The totals FIRST: the AI's company_balance tool cuts the JSON at 6,000
+  // characters, and with ~86 tills the rows used to push every total past it.
   return {
-    cashRows,
     cashUsd: money(cashUsd),
     /** Payments received and placed in no till yet (A2). */
     unplacedUsd,
     unplacedCount: Number(unplaced?.n ?? 0),
-    /** Clients' outstanding balance — what is still to come in. */
-    receivableUsd: receivable,
+    /** Clients' outstanding balance — Σ positive balances, the /finance total. */
+    receivableUsd: money(receivable),
+    /** Clients who paid ahead — money we owe them back in service (R7a). */
+    clientAdvancesUsd: money(clientAdvances),
     /** Counterparties we still have to pay. */
     payableUsd: money(owedByUs),
     /** Counterparties who are in front on their account. */
     partnerReceivableUsd: money(owedToUsByPartners),
     netUsd: money(net),
     uzsRate: rate,
+    cashRows,
   };
 }

@@ -1,5 +1,5 @@
 import { cache } from 'react';
-import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, sql, type AnyColumn } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
@@ -643,26 +643,61 @@ export async function voidTransfer(id: string, reason: string, ctx: AuditContext
  * them should pay for it twice.
  */
 export const accountBalances = cache(async function accountBalances() {
-  const [accounts, paidRows, spentRows, inRows, outRows, partnerRows] = await Promise.all([
+  // The box's opening count is a fact AS OF its opening date (R4 — the date
+  // was collected since 0020 and read by nothing, audit A26): a row dated
+  // before it is already inside the counted figure, so adding it again
+  // doubled it. Such rows stay on the client ledger, the P&L and the cash
+  // flow — they happened — and are only kept out of THIS sum; `early`
+  // counts them so the accounts screen can say so. No opening date = every
+  // row counts, exactly as before.
+  const counted = (dateCol: AnyColumn) =>
+    sql`${dateCol} >= coalesce(${moneyAccounts.openingDate}, '-infinity'::date)`;
+  const sumCounted = (amount: AnyColumn, dateCol: AnyColumn) =>
+    sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${counted(dateCol)}), 0)`;
+  const early = (dateCol: AnyColumn) =>
+    sql<number>`count(*) FILTER (WHERE NOT ${counted(dateCol)})`;
+  const [accounts, clientRows, spentRows, inRows, outRows, partnerRows] = await Promise.all([
     listAccounts(true),
+    // Payments IN and refunds OUT (R6a) in one pass, split by type.
     db
-      .select({ id: clientTransactions.accountId, sum: sql<string>`sum(${clientTransactions.amount})` })
+      .select({
+        id: clientTransactions.accountId,
+        type: clientTransactions.type,
+        sum: sumCounted(clientTransactions.amount, clientTransactions.txDate),
+        early: early(clientTransactions.txDate),
+      })
       .from(clientTransactions)
-      .where(and(eq(clientTransactions.type, 'payment'), isNull(clientTransactions.voidedAt)))
-      .groupBy(clientTransactions.accountId),
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, clientTransactions.accountId))
+      .where(isNull(clientTransactions.voidedAt))
+      .groupBy(clientTransactions.accountId, clientTransactions.type),
     db
-      .select({ id: expenses.accountId, sum: sql<string>`sum(${expenses.amount})` })
+      .select({
+        id: expenses.accountId,
+        sum: sumCounted(expenses.amount, expenses.expenseDate),
+        early: early(expenses.expenseDate),
+      })
       .from(expenses)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, expenses.accountId))
       .where(isNull(expenses.voidedAt))
       .groupBy(expenses.accountId),
     db
-      .select({ id: accountTransfers.toAccountId, sum: sql<string>`sum(${accountTransfers.amountTo})` })
+      .select({
+        id: accountTransfers.toAccountId,
+        sum: sumCounted(accountTransfers.amountTo, accountTransfers.transferDate),
+        early: early(accountTransfers.transferDate),
+      })
       .from(accountTransfers)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.toAccountId))
       .where(isNull(accountTransfers.voidedAt))
       .groupBy(accountTransfers.toAccountId),
     db
-      .select({ id: accountTransfers.fromAccountId, sum: sql<string>`sum(${accountTransfers.amountFrom})` })
+      .select({
+        id: accountTransfers.fromAccountId,
+        sum: sumCounted(accountTransfers.amountFrom, accountTransfers.transferDate),
+        early: early(accountTransfers.transferDate),
+      })
       .from(accountTransfers)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.fromAccountId))
       .where(isNull(accountTransfers.voidedAt))
       .groupBy(accountTransfers.fromAccountId),
     // Round 39: counterparty money moves the same boxes. A cash buyer wiring
@@ -672,24 +707,32 @@ export const accountBalances = cache(async function accountBalances() {
       .select({
         id: partnerTransactions.accountId,
         type: partnerTransactions.type,
-        sum: sql<string>`sum(${partnerTransactions.amount})`,
+        sum: sumCounted(partnerTransactions.amount, partnerTransactions.txDate),
+        early: early(partnerTransactions.txDate),
       })
       .from(partnerTransactions)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, partnerTransactions.accountId))
       .where(isNull(partnerTransactions.voidedAt))
       .groupBy(partnerTransactions.accountId, partnerTransactions.type),
   ]);
 
   const total = (rows: { id: string | null; sum: string }[]) =>
     new Map(rows.filter((row) => row.id !== null).map((row) => [row.id!, Number(row.sum)]));
-  const paid = total(paidRows);
+  const paid = total(clientRows.filter((row) => row.type === 'payment'));
+  const refunded = total(clientRows.filter((row) => row.type === 'refund'));
   const spent = total(spentRows);
   const inbound = total(inRows);
   const outbound = total(outRows);
   const partnerIn = total(partnerRows.filter((row) => row.type === 'receipt'));
   const partnerOut = total(partnerRows.filter((row) => row.type === 'payment'));
+  const earlyRows = new Map<string, number>();
+  for (const row of [...clientRows, ...spentRows, ...inRows, ...outRows, ...partnerRows]) {
+    if (row.id) earlyRows.set(row.id, (earlyRows.get(row.id) ?? 0) + Number(row.early));
+  }
 
   return accounts.map((account) => {
     const paidIn = paid.get(account.id) ?? 0;
+    const refundedOut = refunded.get(account.id) ?? 0;
     const spentOut = spent.get(account.id) ?? 0;
     const transferredIn = inbound.get(account.id) ?? 0;
     const transferredOut = outbound.get(account.id) ?? 0;
@@ -698,6 +741,7 @@ export const accountBalances = cache(async function accountBalances() {
     const balance =
       Number(account.openingBalance) +
       paidIn -
+      refundedOut -
       spentOut +
       transferredIn -
       transferredOut +
@@ -719,6 +763,11 @@ export const accountBalances = cache(async function accountBalances() {
       // only a cash buyer used read 0 | +0 | −0 | 100,000,000.
       partnerIn: fromPartners,
       partnerOut: toPartners,
+      /** Money handed back to clients out of this box (R6a). */
+      refundedOut,
+      openingDate: account.openingDate,
+      /** Rows dated before the opening count — inside it, so not added (R4). */
+      beforeOpening: earlyRows.get(account.id) ?? 0,
       balance: Math.round(balance * 100) / 100,
     };
   });

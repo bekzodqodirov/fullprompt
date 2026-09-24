@@ -885,7 +885,13 @@ export const clientTransactions = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment')`),
+    // 'refund' (0101, owner R6a): money handed BACK to a client from a kassa.
+    // It raises the balance like a charge and lowers a till like an expense.
+    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment', 'refund')`),
+    check(
+      'client_transactions_refund_check',
+      sql`${t.type} <> 'refund' OR (${t.accountId} IS NOT NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL)`,
+    ),
     check('client_transactions_amount_check', sql`${t.amount} > 0`),
     check(
       'client_transactions_method_check',

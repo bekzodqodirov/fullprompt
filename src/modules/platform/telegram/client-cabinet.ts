@@ -551,7 +551,7 @@ export function registerClientCabinet(bot: Bot): void {
         .filter((r) => !r.voided)
         .map(
           (r) =>
-            `${r.txDate} — ${r.type === 'charge' ? t.charged : t.paid}: ${r.amount} ${r.currency}` +
+            `${r.txDate} — ${r.type === 'charge' ? t.charged : r.type === 'refund' ? t.refunded : t.paid}: ${r.amount} ${r.currency}` +
             (r.currency !== 'USD' ? ` (≈ $${r.amountUsd.toFixed(2)})` : ''),
         )
         .join('\n');

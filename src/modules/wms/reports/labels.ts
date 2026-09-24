@@ -173,6 +173,7 @@ const DICT = {
   cargoCosts: { ru: 'Расходы по грузам', uz: 'Yuk xarajatlari', 'zh-CN': '货物费用', en: 'Cargo costs' },
   category: { ru: 'Статья', uz: 'Turi', 'zh-CN': '类别', en: 'Category' },
   clientPayments: { ru: 'Оплаты клиентов', uz: 'Mijoz to‘lovlari', 'zh-CN': '客户付款', en: 'Client payments' },
+  clientRefunds: { ru: 'Возвраты клиентам', uz: 'Mijozlarga qaytarilgan', 'zh-CN': '退还客户', en: 'Refunds to clients' },
   partnerIn: { ru: 'От контрагентов', uz: 'Kontragentlardan', 'zh-CN': '往来单位收款', en: 'From counterparties' },
   partnerOut: { ru: 'Контрагентам', uz: 'Kontragentlarga', 'zh-CN': '付往来单位', en: 'To counterparties' },
   cost: { ru: 'Расход', uz: 'Xarajat', 'zh-CN': '成本', en: 'Cost' },

@@ -186,9 +186,13 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     .filter((row) => row.type === 'charge')
     .map((row) => ({ batchId: row.batchId, owed: Number(row.amountUsd) }));
   const chargedUsd = charges.reduce((a, c) => a + c.owed, 0);
-  const paidUsd = ledger
-    .filter((row) => row.type === 'payment')
-    .reduce((a, row) => a + Number(row.amountUsd), 0);
+  // Net of what was handed back (R6a): a refund puts money the client paid
+  // back into their hands, so it no longer settles anything.
+  const paidUsd = ledger.reduce(
+    (a, row) =>
+      a + (row.type === 'payment' ? Number(row.amountUsd) : row.type === 'refund' ? -Number(row.amountUsd) : 0),
+    0,
+  );
 
   let unapplied = paidUsd;
   for (const charge of charges) {
@@ -321,7 +325,7 @@ export async function managedClients(managerId?: string): Promise<ManagedClient[
           AND b.status IN ('in_stock','planned','loading','in_transit','ready_for_pickup')
       ), 0)`,
       balanceUsd: sql<string>`coalesce((
-        SELECT sum(CASE WHEN ct.type = 'charge' THEN ct.amount_usd ELSE -ct.amount_usd END)
+        SELECT sum(CASE WHEN ct.type = 'payment' THEN -ct.amount_usd ELSE ct.amount_usd END)
         FROM client_transactions ct
         WHERE ct.client_id = ${clients}.id AND ct.voided_at IS NULL
       ), 0)`,

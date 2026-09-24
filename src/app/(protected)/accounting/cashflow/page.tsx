@@ -28,7 +28,7 @@ export default async function CashFlowPage({
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   // Known keys are translated; an expense CATEGORY name comes through as its
   // own text, because the owner named it and it needs no second name.
-  const KNOWN = ['clientPayments', 'cargoCosts', 'partnerIn', 'partnerOut'];
+  const KNOWN = ['clientPayments', 'cargoCosts', 'partnerIn', 'partnerOut', 'clientRefunds'];
   const label = (key: string) => (KNOWN.includes(key) ? t(key as 'clientPayments') : key);
 
   return (

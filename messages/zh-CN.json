@@ -1111,7 +1111,10 @@
     "futureDate": "日期不能晚于今天。",
     "placePayment": "归入",
     "registerAll": "按期间",
-    "registerUnplaced": "未归入账户"
+    "registerUnplaced": "未归入账户",
+    "refund": "退款给客户",
+    "refundAccount": "从哪个账户退款",
+    "refundOnBatch": "退款不能记在批次上——它不是价格。"
   },
   "map": {
     "title": "地图",
@@ -1260,7 +1263,10 @@
     "transferAmountMismatch": "同一货币的账户之间，转出与转入金额必须相同。",
     "recurringEdit": "金额、日期或停用",
     "recurringActive": "启用——每月入账",
-    "unbatchedNote": "未计入本表（按期间日期）：未关联车辆的收入 {revenue} 和费用 {cost}——在客户账上定的价格，以及入库单、收货和木箱费用。因此本表合计与损益表不同。"
+    "unbatchedNote": "未计入本表（按期间日期）：未关联车辆的收入 {revenue} 和费用 {cost}——在客户账上定的价格，以及入库单、收货和木箱费用。因此本表合计与损益表不同。",
+    "clientRefunds": "退还客户",
+    "balClientAdvances": "客户预付款（我们欠）",
+    "beforeOpening": "{count} 条记录早于期初日期——已包含在期初余额中，不再重复计算"
   },
   "crm": {
     "title": "CRM",
@@ -1603,7 +1609,8 @@
     "dayStaleOpen": "逾期",
     "dayOthers": "按销售",
     "dayBack": "仅我的",
-    "wonOtherCurrency": "另有 {count} 笔为其他货币"
+    "wonOtherCurrency": "另有 {count} 笔为其他货币",
+    "feedRefund": "退款给客户"
   },
   "navShort": {
     "home": "首页",

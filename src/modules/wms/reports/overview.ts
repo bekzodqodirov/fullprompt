@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { netPaidUsdSql, signedUsdSql } from '../finance/service';
 import {
   batches,
   clientTransactions,
@@ -121,7 +122,7 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
   const [monthRow] = await db
     .select({
       revenue: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} = 'charge'), 0)`,
-      paid: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} = 'payment'), 0)`,
+      paid: sql<string>`coalesce(sum(${netPaidUsdSql()}), 0)`,
     })
     .from(clientTransactions)
     .where(
@@ -137,9 +138,9 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
   const balances = await db
     .select({
       clientId: clientTransactions.clientId,
-      balance: sql<string>`sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END)`,
+      balance: sql<string>`sum(${signedUsdSql()})`,
       oldCharges: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} = 'charge' AND ${clientTransactions.txDate} < ${oldCutoff}), 0)`,
-      paid: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} = 'payment'), 0)`,
+      paid: sql<string>`coalesce(sum(${netPaidUsdSql()}), 0)`,
     })
     .from(clientTransactions)
     .where(isNull(clientTransactions.voidedAt))
@@ -163,16 +164,16 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
       clientId: clientTransactions.clientId,
       clientCode: sql<string>`(SELECT c.client_code FROM clients c WHERE c.id = ${clientTransactions.clientId})`,
       name: sql<string>`(SELECT c.name FROM clients c WHERE c.id = ${clientTransactions.clientId})`,
-      balance: sql<string>`sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END)`,
+      balance: sql<string>`sum(${signedUsdSql()})`,
     })
     .from(clientTransactions)
     .where(isNull(clientTransactions.voidedAt))
     .groupBy(clientTransactions.clientId)
     .having(
-      sql`sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END) > 0.004`,
+      sql`sum(${signedUsdSql()}) > 0.004`,
     )
     .orderBy(
-      sql`sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END) DESC`,
+      sql`sum(${signedUsdSql()}) DESC`,
     )
     .limit(5);
 

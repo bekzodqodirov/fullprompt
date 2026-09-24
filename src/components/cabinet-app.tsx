@@ -602,12 +602,12 @@ function Balance({
         <div className="cab-lot">
           <div className="cab-code">{t.recentMoves}</div>
           {client.recent.map((r, i) => (
-            <div className="cab-row" key={i} data-kind={r.type === 'charge' ? 'charge' : 'payment'}>
+            <div className="cab-row" key={i} data-kind={r.type}>
               <span>
-                {r.txDate} · {r.type === 'charge' ? t.charged : t.paid}
+                {r.txDate} · {r.type === 'charge' ? t.charged : r.type === 'refund' ? t.refunded : t.paid}
               </span>
               <span>
-                {r.type === 'charge' ? '' : '+'}
+                {r.type === 'payment' ? '+' : ''}
                 {r.amount} {r.currency}
               </span>
             </div>

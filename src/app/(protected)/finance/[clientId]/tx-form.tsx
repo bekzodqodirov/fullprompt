@@ -9,7 +9,9 @@ import { addTransactionAction, type TxFormState } from '../actions';
 /**
  * Add a charge or a payment to a client's ledger (Phase 2.1). No tariffs —
  * the amount is whatever was negotiated; payments carry a method
- * (cash/card/transfer, owner accepts all three).
+ * (cash/card/transfer, owner accepts all three). A REFUND (owner R6a) is
+ * money handed back out of a kassa: it asks for the box like a payment does
+ * and raises the balance like a charge.
  */
 export function TxForm({
   clientId,
@@ -17,6 +19,7 @@ export function TxForm({
   accounts,
   deals,
   today,
+  canRefund,
 }: {
   clientId: string;
   currencies: string[];
@@ -24,10 +27,12 @@ export function TxForm({
   /** The client's open deals — offered so a payment can name its job. */
   deals: { id: string; code: string; title: string | null; cargo: string }[];
   today: string;
+  /** Handing cash back is the kassa-holders' door (finance.expenses). */
+  canRefund: boolean;
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
-  const [type, setType] = useState<'payment' | 'charge'>('payment');
+  const [type, setType] = useState<'payment' | 'charge' | 'refund'>('payment');
   const [state, formAction, pending] = useActionState<TxFormState, FormData>(
     addTransactionAction,
     {},
@@ -52,6 +57,16 @@ export function TxForm({
         >
           🧾 {t('charge')}
         </button>
+        {canRefund && (
+          <button
+            type="button"
+            data-testid="tx-type-refund"
+            className={`col-span-2 min-h-11 rounded-lg border-2 text-sm font-bold ${type === 'refund' ? 'border-amber-600 bg-warn/10 text-warn' : 'border-line text-ink-500'}`}
+            onClick={() => setType('refund')}
+          >
+            ↩️ {t('refund')}
+          </button>
+        )}
       </div>
       <div className="flex gap-2">
         <input
@@ -69,7 +84,7 @@ export function TxForm({
         </select>
       </div>
       <div className="flex gap-2">
-        {type === 'payment' && (
+        {type !== 'charge' && (
           <select name="method" aria-label={t('method')} className="input flex-1">
             <option value="cash">💵 {t('methodCash')}</option>
             <option value="card">💳 {t('methodCard')}</option>
@@ -89,9 +104,15 @@ export function TxForm({
       {/* Required for a NEW payment (audit A2): one saved with no kassa left
           the Balans short by its amount for good. Rows from before cash boxes
           existed keep their empty column — the action refuses, history stays. */}
-      {type === 'payment' && (
-        <select name="accountId" aria-label={t('account')} className="input" defaultValue="" required>
-          <option value="">— {t('account')}</option>
+      {type !== 'charge' && (
+        <select
+          name="accountId"
+          aria-label={t('account')}
+          className="input"
+          defaultValue=""
+          required
+        >
+          <option value="">— {type === 'refund' ? t('refundAccount') : t('account')}</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name} ({a.currency})
@@ -105,7 +126,13 @@ export function TxForm({
           payments that name it, and a payment that names nothing pays the
           deferral off on paper while the gate goes on excusing other debt. */}
       {deals.length > 0 && (
-        <select name="dealId" aria-label={t('forDeal')} className="input" defaultValue="" data-testid="tx-deal">
+        <select
+          name="dealId"
+          aria-label={t('forDeal')}
+          className="input"
+          defaultValue=""
+          data-testid="tx-deal"
+        >
           <option value="">— {t('forDeal')}</option>
           {deals.map((deal) => (
             <option key={deal.id} value={deal.id}>
@@ -123,9 +150,11 @@ export function TxForm({
               ? t('accountCurrencyMismatch')
               : state.error === 'account_required'
                 ? t('accountRequired')
-                : state.error === 'future_date'
-                  ? t('futureDate')
-                  : tc('error')}
+                : state.error === 'refund_on_batch'
+                  ? t('refundOnBatch')
+                  : state.error === 'future_date'
+                    ? t('futureDate')
+                    : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

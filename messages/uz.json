@@ -1111,7 +1111,10 @@
     "futureDate": "Sana bugundan keyin bo‘lishi mumkin emas.",
     "placePayment": "Joylash",
     "registerAll": "Davr bo‘yicha",
-    "registerUnplaced": "Kassaga joylanmagan"
+    "registerUnplaced": "Kassaga joylanmagan",
+    "refund": "Pul qaytarildi",
+    "refundAccount": "Qaysi kassadan qaytarildi",
+    "refundOnBatch": "Qaytarish partiyaga yozilmaydi — u narx emas."
   },
   "map": {
     "title": "Xarita",
@@ -1260,7 +1263,10 @@
     "transferAmountMismatch": "Bir valyutadagi kassalar orasida chiqqan va tushgan summa bir xil bo‘lishi kerak.",
     "recurringEdit": "Summa, kun yoki to‘xtatish",
     "recurringActive": "Faol — har oy yoziladi",
-    "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} va xarajat {cost} — mijoz hisobida qo‘yilgan narxlar, prixod, qabul va yashik xarajatlari. Shuning uchun jadval jami P&L dan farq qiladi."
+    "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} va xarajat {cost} — mijoz hisobida qo‘yilgan narxlar, prixod, qabul va yashik xarajatlari. Shuning uchun jadval jami P&L dan farq qiladi.",
+    "clientRefunds": "Mijozlarga qaytarilgan",
+    "balClientAdvances": "Mijozlar avansi (biz qarzmiz)",
+    "beforeOpening": "{count} ta yozuv boshlang‘ich qoldiq sanasidan oldin — ular shu qoldiq ichida, qayta qo‘shilmaydi"
   },
   "crm": {
     "title": "CRM",
@@ -1603,7 +1609,8 @@
     "dayStaleOpen": "Kechikkanlar",
     "dayOthers": "Sotuvchilar bo‘yicha",
     "dayBack": "Faqat meniki",
-    "wonOtherCurrency": "+{count} boshqa valyutada"
+    "wonOtherCurrency": "+{count} boshqa valyutada",
+    "feedRefund": "Pul qaytarildi"
   },
   "navShort": {
     "home": "Bosh",

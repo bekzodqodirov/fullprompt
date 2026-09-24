@@ -1111,7 +1111,10 @@
     "futureDate": "The date cannot be later than today.",
     "placePayment": "Place",
     "registerAll": "By period",
-    "registerUnplaced": "Not in a cash box"
+    "registerUnplaced": "Not in a cash box",
+    "refund": "Refund to client",
+    "refundAccount": "Paid back from which cash box",
+    "refundOnBatch": "A refund is not written to a batch — it is not a price."
   },
   "map": {
     "title": "Map",
@@ -1260,7 +1263,10 @@
     "transferAmountMismatch": "Between two cash boxes of one currency, the amount out must equal the amount in.",
     "recurringEdit": "Amount, day or stop",
     "recurringActive": "Active — posted every month",
-    "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} and costs {cost} tied to no truck — prices set on a client's ledger, receipt, receiving and crate costs. That is why the table's total differs from the P&L."
+    "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} and costs {cost} tied to no truck — prices set on a client's ledger, receipt, receiving and crate costs. That is why the table's total differs from the P&L.",
+    "clientRefunds": "Refunds to clients",
+    "balClientAdvances": "Client advances (we owe)",
+    "beforeOpening": "{count} entries dated before the opening count — already inside it, not added again"
   },
   "crm": {
     "title": "CRM",
@@ -1603,7 +1609,8 @@
     "dayStaleOpen": "Overdue",
     "dayOthers": "By seller",
     "dayBack": "Only mine",
-    "wonOtherCurrency": "+{count} in another currency"
+    "wonOtherCurrency": "+{count} in another currency",
+    "feedRefund": "Refund to client"
   },
   "navShort": {
     "home": "Home",

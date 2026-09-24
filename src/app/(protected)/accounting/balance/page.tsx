@@ -45,6 +45,11 @@ export default async function BalancePage() {
       href: '/kontragentlar',
     },
     { key: 'balPayable', value: -balance.payableUsd, tone: 'text-bad', href: '/kontragentlar' },
+    // Clients who paid ahead (R7a): a liability, on its own line — netting it
+    // into «qarz» made the receivable disagree with the /finance total.
+    ...(balance.clientAdvancesUsd > 0
+      ? [{ key: 'balClientAdvances', value: -balance.clientAdvancesUsd, tone: 'text-bad', href: '/finance' } as const]
+      : []),
   ] as const;
 
   return (

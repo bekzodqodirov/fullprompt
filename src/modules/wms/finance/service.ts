@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { latestTxDate } from './dates';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
@@ -30,10 +30,39 @@ export class FinanceError extends Error {
   }
 }
 
+/**
+ * The one sign rule of the client ledger (0101): a charge and a refund RAISE
+ * what the client owes us, a payment lowers it. Every balance restates this
+ * through `signedUsdSql` — `CASE WHEN type = 'charge' … ELSE -…` read a refund
+ * as a payment, i.e. money we handed back as money we received, and
+ * `tests/unit/client-ledger-sign.test.ts` keeps that shape out of `src/`.
+ */
+export const LEDGER_TYPES = ['charge', 'payment', 'refund'] as const;
+export type LedgerType = (typeof LEDGER_TYPES)[number];
+
+/** +amount_usd for a charge or a refund, −amount_usd for a payment. */
+export function signedUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
+  return sql`(CASE WHEN ${table.type} = 'payment' THEN -${table.amountUsd} ELSE ${table.amountUsd} END)`;
+}
+
+/**
+ * Money RECEIVED net of money handed back: +payment, −refund, 0 for a charge.
+ * «To'landi» on a screen that also shows a balance must be this, or the two
+ * columns stop adding up to it.
+ */
+export function netPaidUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
+  return sql`(CASE WHEN ${table.type} = 'payment' THEN ${table.amountUsd} WHEN ${table.type} = 'refund' THEN -${table.amountUsd} ELSE 0 END)`;
+}
+
+/** The same rule for a row already in hand (screens, the cabinet, the bot). */
+export function signedUsd(row: { type: string; amountUsd: number }): number {
+  return row.type === 'payment' ? -row.amountUsd : row.amountUsd;
+}
+
 export const transactionSchema = z
   .object({
     clientId: z.string().uuid(),
-    type: z.enum(['charge', 'payment']),
+    type: z.enum(LEDGER_TYPES),
     amount: z.number().positive().max(1_000_000_000),
     currency: z.string().length(3).toUpperCase(),
     method: z.enum(['cash', 'card', 'transfer']).optional(),
@@ -49,7 +78,7 @@ export const transactionSchema = z
     accountId: z.string().uuid().optional().or(z.literal('')),
     note: z.string().trim().max(2000).optional().or(z.literal('')),
   })
-  .refine((v) => v.type === 'payment' || !v.method, { message: 'method_on_charge' });
+  .refine((v) => v.type !== 'charge' || !v.method, { message: 'method_on_charge' });
 export type TransactionInput = z.infer<typeof transactionSchema>;
 
 export async function addTransaction(input: TransactionInput, ctx: AuditContext) {
@@ -72,6 +101,14 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
     const route = await batchRoute(input.batchId);
     if (!route) throw new FinanceError('batch_not_found');
     if (route.internal) throw new FinanceError('internal_batch');
+  }
+  // A refund is money that LEFT a kassa for the client (R6a): it names the
+  // box, never a truck (it is not a price) and never a partner (a partner-
+  // routed payment is the settlement screen's). The database says the same
+  // (client_transactions_refund_check); refused here in words first.
+  if (input.type === 'refund') {
+    if (!input.accountId) throw new FinanceError('account_required');
+    if (input.batchId) throw new FinanceError('refund_on_batch');
   }
   // A named cash box must speak the row's currency. The till balances sum
   // NATIVE amounts per box, so 500 USD dropped into a som till reads as 500
@@ -101,7 +138,7 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
       currency: input.currency,
       rateToUsd: String(rate),
       amountUsd: String(amountUsd),
-      method: input.type === 'payment' ? (input.method ?? 'cash') : null,
+      method: input.type === 'charge' ? null : (input.method ?? 'cash'),
       txDate: input.txDate,
       batchId: input.batchId ?? null,
       dealId: input.dealId || null,
@@ -222,7 +259,7 @@ export async function futureDatedEntries(): Promise<{ count: number; usd: number
   const [row] = await db
     .select({
       count: sql<number>`count(*)::int`,
-      usd: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END), 0)`,
+      usd: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
     })
     .from(clientTransactions)
     .where(and(isNull(clientTransactions.voidedAt), sql`${clientTransactions.txDate} > CURRENT_DATE`));
@@ -232,7 +269,7 @@ export async function futureDatedEntries(): Promise<{ count: number; usd: number
 export async function clientBalanceUsd(clientId: string): Promise<number> {
   const [row] = await db
     .select({
-      balance: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END), 0)`,
+      balance: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
     })
     .from(clientTransactions)
     .where(and(eq(clientTransactions.clientId, clientId), isNull(clientTransactions.voidedAt)));
@@ -284,9 +321,7 @@ export async function deferredBalanceUsd(clientId: string): Promise<number> {
   const owedPerDeal = db
     .select({
       owed: sql<string>`greatest(
-        coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
-                          THEN ${clientTransactions.amountUsd}
-                          ELSE -${clientTransactions.amountUsd} END), 0), 0)`.as('owed'),
+        coalesce(sum(${signedUsdSql()}), 0), 0)`.as('owed'),
     })
     .from(clientTransactions)
     .innerJoin(deals, eq(clientTransactions.dealId, deals.id))
@@ -315,6 +350,7 @@ export async function clientBalances(ownerId?: string) {
       clientName: clients.name,
       chargesUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
       paymentsUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment'), 0)`,
+      refundsUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'refund'), 0)`,
       lastAt: sql<string>`max(${clientTransactions.createdAt})`,
     })
     .from(clientTransactions)
@@ -335,8 +371,12 @@ export async function clientBalances(ownerId?: string) {
       clientCode: r.clientCode,
       clientName: r.clientName,
       chargesUsd: Math.round(Number(r.chargesUsd) * 100) / 100,
-      paymentsUsd: Math.round(Number(r.paymentsUsd) * 100) / 100,
-      balanceUsd: Math.round((Number(r.chargesUsd) - Number(r.paymentsUsd)) * 100) / 100,
+      // NET of what was handed back (R6a), so the screen's two columns still
+      // add up to the balance beside them.
+      paymentsUsd: Math.round((Number(r.paymentsUsd) - Number(r.refundsUsd)) * 100) / 100,
+      refundsUsd: Math.round(Number(r.refundsUsd) * 100) / 100,
+      balanceUsd:
+        Math.round((Number(r.chargesUsd) - Number(r.paymentsUsd) + Number(r.refundsUsd)) * 100) / 100,
       lastAt: r.lastAt,
     }))
     .sort((a, b) => b.balanceUsd - a.balanceUsd);
@@ -523,9 +563,7 @@ export async function balancesForClients(
   const balances = await db
     .select({
       clientId: clientTransactions.clientId,
-      balance: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
-                                             THEN ${clientTransactions.amountUsd}
-                                             ELSE -${clientTransactions.amountUsd} END), 0)`,
+      balance: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
     })
     .from(clientTransactions)
     .where(and(inArray(clientTransactions.clientId, ids), isNull(clientTransactions.voidedAt)))
@@ -536,9 +574,7 @@ export async function balancesForClients(
       clientId: clientTransactions.clientId,
       dealId: clientTransactions.dealId,
       owed: sql<string>`greatest(
-        coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
-                          THEN ${clientTransactions.amountUsd}
-                          ELSE -${clientTransactions.amountUsd} END), 0), 0)`.as('owed'),
+        coalesce(sum(${signedUsdSql()}), 0), 0)`.as('owed'),
     })
     .from(clientTransactions)
     .innerJoin(deals, eq(clientTransactions.dealId, deals.id))

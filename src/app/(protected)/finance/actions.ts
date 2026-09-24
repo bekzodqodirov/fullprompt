@@ -50,6 +50,9 @@ export async function addTransactionAction(
   // one that takes a typed payment: rows entered before cash boxes existed
   // have none, and the service still reads them (#171's history rule).
   if (parsed.data.type === 'payment' && !parsed.data.accountId) return { error: 'account_required' };
+  // A refund is money LEAVING a kassa (R6a) — the same door as every other
+  // kassa outflow, and never a row without the box it left.
+  if (parsed.data.type === 'refund' && !parsed.data.accountId) return { error: 'account_required' };
 
   let actor;
   try {
@@ -57,6 +60,12 @@ export async function addTransactionAction(
   } catch (err) {
     if (err instanceof AuthError) return { error: 'forbidden' };
     throw err;
+  }
+  // Handing cash back opens a till, and tills are the accountant's and the
+  // admin's (`finance.expenses`, the kassa screens' own door) — the VED holds
+  // finance.manage and prices jobs, but does not pay money out of a drawer.
+  if (parsed.data.type === 'refund' && !actor.permissions.has('finance.expenses')) {
+    return { error: 'forbidden' };
   }
   const meta = await requestMeta();
   try {
