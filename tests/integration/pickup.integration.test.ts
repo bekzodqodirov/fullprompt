@@ -352,6 +352,16 @@ describe('zavod reysi', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('a clean trip cancels, keeps its note, and leaves the receive list', async () => {
+    const { id } = await tripWithTwoFactories();
+    await cancelPickup(id, 'haydovchi kelmadi', ctx());
+    const row = (await db.query.pickups.findFirst({ where: eq(pickups.id, id) }))!;
+    expect(row.status).toBe('cancelled');
+    expect(row.note).toContain('haydovchi kelmadi');
+    expect((await incomingForWarehouses([whId])).map((t) => t.pickupId)).not.toContain(id);
+    await expect(collectStop((await loadPickup(id))!.stops[0]!.id, {}, ctx())).rejects.toMatchObject({ code: 'cancelled' });
+  });
+
   it('a pasted Chinese-map point is converted, placing it confirms it, and the road is stored per leg', async () => {
     await setFactoryPoint(factory1, { text: '29.3060, 120.0750', datum: 'gcj02' }, ctx());
     const f = (await db.query.factories.findFirst({ where: eq(factories.id, factory1) }))!;

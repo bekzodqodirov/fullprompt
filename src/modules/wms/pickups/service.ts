@@ -609,7 +609,10 @@ export async function cancelPickup(pickupId: string, reason: string, ctx: AuditC
     if ((await liveLinkedReceipts(tx, { pickupId })).length) throw new PickupError('pickup_has_receipts');
     await tx
       .update(pickups)
-      .set({ status: 'cancelled', cancelledAt: new Date(), note: sql`concat_ws(E'\n', ${pickups.note}, ${`✖ ${reason.trim()}`})`, updatedAt: new Date() })
+      // `::text` on the bound reason: postgres cannot infer a parameter's
+      // type inside concat_ws's variadic list, and without it the cancel was
+      // a 500 — found by the e2e, the one test that pressed it for real.
+      .set({ status: 'cancelled', cancelledAt: new Date(), note: sql`concat_ws(E'\n', ${pickups.note}, ${`✖ ${reason.trim()}`}::text)`, updatedAt: new Date() })
       .where(eq(pickups.id, pickupId));
     await writeAudit(tx, ctx, { entityType: 'pickup', entityId: pickupId, action: 'void', after: { reason } });
   });

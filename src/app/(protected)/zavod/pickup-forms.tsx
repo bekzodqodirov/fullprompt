@@ -418,7 +418,9 @@ export function PickupButtons({
   const [error, setError] = useState<string | null>(null);
   async function act(fn: () => Promise<PickupActionResult>) {
     setError(null);
-    const res = await fn();
+    // A thrown action (a 500) must say so — it used to be an unhandled
+    // rejection, and the button simply did nothing.
+    const res = await fn().catch(() => ({ ok: false, error: 'generic' }) as PickupActionResult);
     if (res.ok) router.refresh();
     else setError(errorText(res.error));
   }
