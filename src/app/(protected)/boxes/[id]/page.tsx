@@ -115,7 +115,7 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
               <li key={i} className="flex flex-wrap gap-2 py-1">
                 <span>{share.typeName}</span>
                 <span className="text-ink-500">
-                  {share.batchCode ?? share.crateCode ?? tCost('scopeReceipt')}
+                  {share.batchCode ?? share.crateCode ?? (share.pickupCode ? `🏭 ${share.pickupCode}` : tCost('scopeReceipt'))}
                 </span>
                 <span className="ml-auto font-mono font-semibold">
                   ${Math.round(Number(share.amountUsd) * 100) / 100}

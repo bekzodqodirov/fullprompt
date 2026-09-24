@@ -68,7 +68,11 @@ describe('audit 2026-09-24 — the doors', () => {
     const wizard = read('src/app/(protected)/receive/receive-wizard.tsx');
     expect(wizard).toContain('}, [prefillKey, warehouseKey]);');
     expect(wizard).not.toContain('}, [warehouses, prefill]);');
-    expect(wizard).toMatch(/saved\?\.expectedArrivalId === prefill\.arrivalId/);
+    // The saved draft is recognised by the prefill's own KEY since the factory
+    // truck became a second prefill (0100); the promise id stays as the
+    // fallback for a draft saved before the key existed.
+    expect(wizard).toMatch(/saved\?\.prefillKey === prefill\?\.key/);
+    expect(wizard).toMatch(/saved\?\.expectedArrivalId === prefill\?\.arrivalId/);
   });
 
   it('A31: the partner card offers no hand-typed charge', () => {

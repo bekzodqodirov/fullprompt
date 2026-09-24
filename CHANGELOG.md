@@ -1,5 +1,81 @@
 # CHANGELOG
 
+## Zavod reysi: zavoddan yuk olib kelish, zavodlar bazasi, xaritada yo'l — 2026-09-24
+
+Sizning B1–B6 va D1 javoblaringiz. **Migratsiya 0100 — deploydan keyin ledger
+101 bo'lishi kerak.** Menyuda yangi bo'lim: **«Zavod reysi»** (logist, buxgalter
+va VED ko'radi).
+
+### Zavodlar bazasi (B6)
+
+- **Zavod reysi → 🏭 Zavodlar**: nomi, xitoycha manzili, telefoni, WeChat, u
+  yerdan nima olamiz. Keyin tovarda muammo chiqsa — kimga qo'ng'iroq qilish
+  yozilgan turadi.
+- Manzil saqlanganda tizim o'zi xaritadan nuqtani qidiradi. Topilgan nuqta
+  **taxminiy**, siz «✓ to'g'ri» bosmaguncha shunday turadi. Topilmasa — telefon
+  xaritasidan koordinatani (yoki havolani) nusxalab qo'yasiz; Xitoy xaritasi
+  (Amap/Gaode) bo'lsa, «Xitoy xaritasi» ni tanlang — ular qonun bo'yicha nuqtani
+  bir necha yuz metr siljitadi, tizim buni to'g'rilaydi.
+- Xitoy manzillarini yaxshi topish uchun serverga Amap kaliti kerak (Z1
+  savoli). Kalitsiz ham ishlaydi, lekin ko'chagacha aniq topmasligi mumkin.
+
+### Reys (B1–B3)
+
+- Logist reys yozadi: qaysi skladga, mashina raqami, haydovchi, telefon, va
+  **1–3 ta zavod** (6 tagacha mumkin). Har bir zavodda: kimning yuki (mijoz
+  kodi yoki karobkadagi markirovka), tovar nomi, **zavod aytgan karobka soni**,
+  kub, kg.
+- Haydovchi yukni olganda logist **«Olindi»** bosadi — haydovchi sanab bergan
+  sonni ham yozish mumkin (zavod: 50 · haydovchi: 48). Bir marta bosiladi.
+- Haydovchi 2-zavoddan boshlasa ham (B3) — xarita oxirgi «olindi» dan hisoblaydi,
+  mashinani orqaga qaytarmaydi.
+
+### Mijozga xabar (B4a)
+
+- «Olindi» bosilganda mijozga Telegramda: **«🚚 Yukingiz zavoddan olindi»**,
+  tovar va karobka soni bilan. Sana va mashina raqami yozilmaydi (taxminiy sana
+  — hech kim bermagan va'da bo'ladi). Omborda qabul qilinganda odatdagi
+  «yukingiz keldi» boradi. Markirovkali (egasi noma'lum) yukka xabar ketmaydi.
+
+### Omborda qabul (B2)
+
+- Qabul ekranida yangi bo'lim: **«Zavoddan kelayotgan yuk»** — shu skladga
+  kelayotgan mashinalar, zavod bo'yicha, kimning yuki. «Qabul qilish» bossa,
+  prixod oynasi tovar nomi, kub va kg bilan to'ldirilib ochiladi. **Karobka soni
+  bo'sh qoladi** — skladchi o'zi sanaydi, yonida «zavod: 50 · haydovchi: 48»
+  turadi.
+- Shu yo'l bilan qilingan prixod qaysi zavoddan kelganini biladi: prixod
+  kartasida zavod nomi va telefoni ko'rinadi.
+- Oddiy yo'l bilan qilingan prixod reysga **o'zi bog'lanmaydi**. Reys kartasida
+  «Biriktirilmagan prixodlar» ro'yxati chiqadi — qaysi zavoddan kelganini
+  tanlab biriktirasiz (pul shunga qarab bo'linadi, taxmin bilan bo'lmaydi).
+
+### Mashina xarajati (B5a)
+
+- Reys kartasida mashina xarajati yoziladi va **kub bo'yicha** kelgan yukka
+  bo'linadi. Yuk kelgan sari qayta bo'linadi; prixod bekor qilinsa, uning ulushi
+  qolgan yukka o'tadi. Kim to'lagani (kassa yoki firma) odatdagidek.
+- Mashina yetib kelgan, lekin xarajati yozilmagan bo'lsa — kartada va logist
+  bosh sahifasida **«⚠ xarajat yozilmagan»** (C2).
+- Xarajati yoki prixodi bor reysni bekor qilib bo'lmaydi — avval ularni
+  bekor qilish kerak.
+
+### Xarita (D1)
+
+- Xaritada zavodlar binafsha romb bilan, yo'l chizig'i (o'tilgani — to'liq,
+  qolgani — punktir) va **taxminiy** harakatlanayotgan mashina. Reys kartasida
+  «Xaritada ko'rish» — xarita shu reysga yaqinlashib ochiladi.
+- Kartada taxminiy yetib kelish vaqti **oraliq** bilan (masalan 24.09 18:00 –
+  25.09 02:00). Bu hisob — birinchi haqiqiy reyslardan keyin to'g'rilanadi.
+- Mashinada telefon yo'q, shuning uchun bu joylashuv haqiqiy emas, jadval
+  bo'yicha.
+
+### Qilinmagan (aytib qo'yaman)
+
+- Haydovchi telefoni orqali haqiqiy joylashuv; bir necha zavod yukini bitta
+  prixodga qo'shish; mijoz kabinetida reys; mashina xarajatini «o'zim to'ladim»
+  — bu kassa paketida (M1–M4 javoblaringizni kutyapti).
+
 ## Hisobotlar auditi: sizga bog'liq bo'lmagan tuzatishlar — 2026-09-24
 
 4-band («hisobotlar to'g'rimi») bo'yicha auditning 39 ta tasdiqlangan

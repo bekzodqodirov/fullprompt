@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
@@ -27,6 +28,8 @@ import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
+import { receiptPickupInfo, stopOptionsForWarehouse } from '@/modules/wms/pickups/service';
+import { ReceiptPickupControl } from '@/app/(protected)/zavod/pickup-forms';
 import { CalcLink } from './calc-link';
 import { calcLinkOptions } from '@/modules/wms/calc/link';
 import { calcControlScopeFor } from '@/modules/wms/calc/control-scope';
@@ -173,6 +176,21 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   // itself. Only to somebody who may write deals: to everybody else a deal
   // code is a link into a screen they cannot open.
   const canLinkDeal = canWriteDeal(actor.permissions) && Boolean(receipt.clientId);
+  // The factory truck it came off (0100): shown to everyone who opens the
+  // card — the factory's phone is what a goods problem next month needs — and
+  // correctable by whoever enters a truck's cost, because linking moves that
+  // truck's money. Caught: the tables are minted this release (#472).
+  const tp = await getTranslations('pickups');
+  const pickupInfo = await receiptPickupInfo(receipt.pickupStopId).catch(() => null);
+  const canLinkPickup =
+    receipt.status === 'confirmed' &&
+    !receipt.voidedAt &&
+    // The warehouse fence is the ACTION's (authorize at the receipt's
+    // warehouse): this page states no scope rule of its own.
+    actor.permissions.has('costs.enter_batch');
+  const pickupOptions = canLinkPickup
+    ? await stopOptionsForWarehouse(receipt.warehouseId).catch(() => [])
+    : [];
   const linkedDeal = receipt.dealId
     ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
     : null;
@@ -251,6 +269,44 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           </p>
         )}
       </div>
+
+      {(pickupInfo || canLinkPickup) && (
+        <div className="card space-y-1 text-sm" data-testid="receipt-pickup">
+          <p className="font-semibold">🏭 {tp('title')}</p>
+          {pickupInfo ? (
+            <p>
+              <Link href={`/zavod/${pickupInfo.pickupId}`} className="font-mono text-brand-700 underline">
+                {pickupInfo.code}
+              </Link>{' '}
+              · {pickupInfo.seq}. {pickupInfo.factoryName}
+              {pickupInfo.factoryPhone && (
+                <>
+                  {' '}
+                  ·{' '}
+                  <a className="text-brand-700 underline" href={`tel:${pickupInfo.factoryPhone}`}>
+                    {pickupInfo.factoryPhone}
+                  </a>
+                </>
+              )}
+              {pickupInfo.factoryWechat && ` · WeChat: ${pickupInfo.factoryWechat}`}
+            </p>
+          ) : (
+            <p className="text-xs text-ink-500">{tp('noPickup')}</p>
+          )}
+          {canLinkPickup && (
+            <ReceiptPickupControl
+              receiptId={id}
+              currentStopId={receipt.pickupStopId}
+              options={[
+                ...(pickupInfo && !pickupOptions.some((o) => o.stopId === pickupInfo.stopId)
+                  ? [{ stopId: pickupInfo.stopId, seq: pickupInfo.seq, code: pickupInfo.code, factoryName: pickupInfo.factoryName }]
+                  : []),
+                ...pickupOptions,
+              ].map((o) => ({ stopId: o.stopId, label: `${o.code} · ${o.seq}. ${o.factoryName}` }))}
+            />
+          )}
+        </div>
+      )}
 
       {canLinkDeal && (
         <DealLink

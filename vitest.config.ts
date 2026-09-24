@@ -12,6 +12,10 @@ export default defineConfig({
     // and a timeout that fires on a healthy test teaches people to re-run
     // instead of to look.
     testTimeout: 20_000,
+    // The factory map's geocoder and router are public services this
+    // container cannot reach and the CI runner can (#278): the suite must
+    // resolve the same in both, so it never calls out (pickups/geo-fetch.ts).
+    env: { GEO_NETWORK: 'off' },
   },
   resolve: {
     alias: {

@@ -15,16 +15,19 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { ReceiveWizard, type ArrivalPrefill } from './receive-wizard';
 import { ExpenseRequestFold } from './expense-request-fold';
 import { myExpenseRequests } from '@/modules/wms/accounting/expense-requests';
+import { incomingForWarehouses, receivePrefillFor } from '@/modules/wms/pickups/service';
+import { IncomingPickups } from './incoming-pickups';
 
 export default async function ReceivePage({
   searchParams,
 }: {
-  searchParams: Promise<{ arrival?: string }>;
+  searchParams: Promise<{ arrival?: string; pickup?: string; c?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('receipts.create')) redirect('/');
   const t = await getTranslations('receive');
+  const tp = await getTranslations('pickups');
 
   // A warehouse-scoped operator may ONLY receive into their assigned
   // warehouses — never fall back to "all" (submitting to an unassigned one
@@ -77,6 +80,7 @@ export default async function ReceivePage({
         ? await db.query.clients.findFirst({ where: eq(clients.id, row.clientId) })
         : null;
       prefill = {
+        key: `arrival:${row.id}`,
         arrivalId: row.id,
         warehouseId: row.warehouseId,
         clientId: row.clientId,
@@ -88,6 +92,43 @@ export default async function ReceivePage({
       };
     }
   }
+
+  // Tapped «Qabul qilish» on a factory truck's line (0100): one lot per line
+  // the factory loaded for this owner, with the counts as a HINT and the box
+  // count left empty — the recount at our door is the point (B2).
+  if (!prefill && params.pickup && /^[0-9a-f-]{36}$/i.test(params.pickup) && params.c) {
+    const found = await receivePrefillFor(params.pickup, params.c).catch(() => null);
+    if (found && whs.some((wh) => wh.id === found.warehouseId)) {
+      prefill = {
+        key: `pickup:${found.stopId}:${params.c}`,
+        arrivalId: null,
+        warehouseId: found.warehouseId,
+        clientId: found.clientId,
+        clientLabel: found.clientCode ? `${found.clientCode} — ${found.clientName ?? ''}` : '',
+        marking: found.marking ?? '',
+        boxCount: null,
+        weightKg: null,
+        volumeM3: null,
+        pickup: {
+          stopId: found.stopId,
+          label: `🏭 ${found.pickupCode} · ${found.factoryName}`,
+          lines: found.lines.map((line) => ({
+            goods: line.goods,
+            hint: tp('countHint', {
+              factory: line.factoryBoxes,
+              driver: line.driverBoxes ?? '—',
+            }),
+            weightKg: line.weightKg,
+            volumeM3: line.volumeM3,
+          })),
+        },
+      };
+    }
+  }
+  // Trucks from the factories heading to the warehouses this operator
+  // receives into — caught for the same reason as the fold below: the tables
+  // are minted this release, and receiving must not depend on them.
+  const incoming = await incomingForWarehouses(whs.map((wh) => wh.id)).catch(() => []);
 
   // The operator's own recent rasxod reports, for the fold's status list.
   // Caught, deliberately: the table is minted THIS release, and a
@@ -112,6 +153,7 @@ export default async function ReceivePage({
           }))}
         />
       )}
+      {incoming.length > 0 && <IncomingPickups trucks={incoming} />}
       <ReceiveWizard
         warehouses={whs}
         costTypes={types}

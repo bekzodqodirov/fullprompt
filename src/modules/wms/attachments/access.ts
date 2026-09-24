@@ -9,6 +9,8 @@ import {
   crmActivities,
   customFieldValues,
   handovers,
+  pickups,
+  pickupStops,
   receiptLots,
   receipts,
   staffNotes,
@@ -20,6 +22,7 @@ import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { cargoNearActor } from '../inventory/near';
 import { seesAllTg } from '../crm/conversations';
 import { seesAllMoney } from '../finance/scope';
+import { mayReadPickup } from '../pickups/service';
 
 /**
  * Per-record read authorization for GET /api/attachments/[id].
@@ -307,6 +310,20 @@ async function decide(
       return note.userId === actor.id
         ? { allow: true, rule: 'staff-note-own' }
         : { allow: false, rule: 'staff-note-not-yours' };
+    }
+    // The stamp at a factory (0100) — the driver's photo of the signed
+    // loading paper. It asks the TRIP's own door: whoever may open the
+    // pickup card, and a receiver standing at the truck's destination.
+    case 'pickup_stop': {
+      const [row] = await db
+        .select({ dest: pickups.destWarehouseId })
+        .from(pickupStops)
+        .innerJoin(pickups, eq(pickupStops.pickupId, pickups.id))
+        .where(eq(pickupStops.id, attachment.entityId));
+      if (!row) return { allow: false, rule: 'orphan' };
+      return mayReadPickup(actor, row.dest)
+        ? { allow: true, rule: 'pickup-door' }
+        : { allow: false, rule: 'pickup-no-door' };
     }
     // entityType was free-form before the upload allowlist, so production may
     // hold strings no code writes today — in log-only mode this branch IS the

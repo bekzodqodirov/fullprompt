@@ -13,6 +13,7 @@ import {
   crates,
   fxRates,
   partnerTransactions,
+  pickups,
   receiptLots,
   receipts,
 } from '../../platform/db/schema';
@@ -92,10 +93,13 @@ export async function rateFor(currency: string, costDate: string): Promise<numbe
 export const costEntrySchema = z.object({
   // 'crate' joined in round 31: the yashik fee could only ever be typed at
   // crate creation — a wrong amount had no void and no second entry.
-  scope: z.enum(['receipt', 'batch', 'crate']),
+  // 'pickup' joined with the factory truck (0100, owner's B5a): the truck we
+  // hire to collect from the factories, split over the cargo it brought.
+  scope: z.enum(['receipt', 'batch', 'crate', 'pickup']),
   receiptId: z.string().uuid().optional(),
   batchId: z.string().uuid().optional(),
   crateId: z.string().uuid().optional(),
+  pickupId: z.string().uuid().optional(),
   costTypeId: z.string().uuid(),
   amount: z.number().positive().max(1_000_000_000),
   currency: z.string().length(3).toUpperCase(),
@@ -117,6 +121,7 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
   if (input.scope === 'receipt' && !input.receiptId) throw new CostError('validation');
   if (input.scope === 'batch' && !input.batchId) throw new CostError('validation');
   if (input.scope === 'crate' && !input.crateId) throw new CostError('validation');
+  if (input.scope === 'pickup' && !input.pickupId) throw new CostError('validation');
   if (input.allocationBasis === 'direct_to_client' && !input.clientId) {
     throw new CostError('client_required');
   }
@@ -136,6 +141,7 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
       receiptId: input.receiptId ?? null,
       batchId: input.batchId ?? null,
       crateId: input.crateId ?? null,
+      pickupId: input.scope === 'pickup' ? (input.pickupId ?? null) : null,
       costTypeId: input.costTypeId,
       amount: String(input.amount),
       currency: input.currency,
@@ -291,6 +297,28 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
     const live = await db.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, entry.crateId));
     return live.map((r) => r.id);
   }
+  if (entry.scope === 'pickup' && entry.pickupId) {
+    // What the factory truck brought: the real boxes of every prixod a
+    // person linked to one of its stops (the receive door, or attach on the
+    // receipt card — never a guess, #809's rule). A partly received truck
+    // splits over what has been received so far and re-splits as the rest
+    // lands; nothing is voided for an empty base (the annul sweep is NOT
+    // taught this scope — it would void the truck's freight and the firm's
+    // debt on a truck that is merely half-unloaded).
+    const rows = await db
+      .select({ id: boxes.id })
+      .from(boxes)
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+      .where(
+        and(
+          sql`${receipts.pickupStopId} IN (SELECT ps.id FROM pickup_stops ps WHERE ps.pickup_id = ${entry.pickupId})`,
+          isNull(receipts.voidedAt),
+          ne(boxes.status, 'void'),
+        ),
+      );
+    return rows.map((r) => r.id);
+  }
   if (entry.scope === 'batch' && entry.batchId) {
     // Departed boxes are the ground truth; before departure fall back to the
     // currently loaded/reserved members so early-entered costs still show.
@@ -393,6 +421,14 @@ export async function recomputeAll(filter?: {
   receiptId?: string;
   /** Only rows with no dollar figure yet — the nightly repair sweep. */
   unconverted?: boolean;
+  /**
+   * The nightly sweep also re-splits every live factory-truck cost: its base
+   * grows as prixods are linked, and a post-commit recompute that a crash
+   * skipped would otherwise leave the truck's money on the first client for
+   * ever. OR-ed with `unconverted`, not AND-ed.
+   */
+  pickups?: boolean;
+  pickupId?: string;
 }) {
   const rows = await db
     .select({ id: costEntries.id })
@@ -403,7 +439,14 @@ export async function recomputeAll(filter?: {
         filter?.currency ? eq(costEntries.currency, filter.currency) : undefined,
         filter?.batchId ? eq(costEntries.batchId, filter.batchId) : undefined,
         filter?.receiptId ? eq(costEntries.receiptId, filter.receiptId) : undefined,
-        filter?.unconverted ? isNull(costEntries.amountUsd) : undefined,
+        filter?.pickupId ? eq(costEntries.pickupId, filter.pickupId) : undefined,
+        filter?.unconverted && filter.pickups
+          ? sql`(${costEntries.amountUsd} IS NULL OR ${costEntries.scope} = 'pickup')`
+          : filter?.unconverted
+            ? isNull(costEntries.amountUsd)
+            : filter?.pickups
+              ? eq(costEntries.scope, 'pickup')
+              : undefined,
       ),
     );
   for (const row of rows) await recomputeEntry(row.id);
@@ -453,6 +496,13 @@ export async function recomputeForLot(lotId: string): Promise<number> {
              JOIN boxes b ON b.id = bm.box_id
             WHERE b.lot_id = ${lotId} AND bm.cause = 'crate_packed' AND bm.ref_type = 'crate'
          ))
+         OR (ce.scope = 'pickup' AND ce.pickup_id IN (
+           SELECT ps.pickup_id
+             FROM receipt_lots rl
+             JOIN receipts r ON r.id = rl.receipt_id
+             JOIN pickup_stops ps ON ps.id = r.pickup_stop_id
+            WHERE rl.id = ${lotId}
+         ))
        )
   `);
   for (const row of rows) await recomputeEntry(row.id);
@@ -474,12 +524,14 @@ export async function boxLandedCost(boxId: string) {
       amount: costEntries.amount,
       batchCode: batches.code,
       crateCode: crates.code,
+      pickupCode: pickups.code,
     })
     .from(costAllocations)
     .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(batches, eq(costEntries.batchId, batches.id))
     .leftJoin(crates, eq(costEntries.crateId, crates.id))
+    .leftJoin(pickups, eq(costEntries.pickupId, pickups.id))
     .where(eq(costAllocations.boxId, boxId))
     .orderBy(asc(costAllocations.id));
   const totalUsd = rows.reduce((a, r) => a + Number(r.amountUsd), 0);

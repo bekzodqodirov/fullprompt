@@ -224,6 +224,17 @@ export const NAV: NavGroupSpec[] = [
         permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close'],
       },
       {
+        // «Zavod reysi» (0100): the trucks WE hire to collect from factories.
+        // The door is `mayReadPickups` in wms/pickups/service.ts, spelled out
+        // here because platform must not import wms; a unit fence pins the
+        // two lists. The warehouse meets these trucks on /receive instead.
+        href: '/zavod',
+        labelKey: 'title',
+        namespace: 'pickups',
+        icon: 'truck',
+        permissions: ['plans.manage', 'costs.enter_batch', 'finance.reports'],
+      },
+      {
         href: '/map',
         labelKey: 'title',
         namespace: 'map',
@@ -517,7 +528,7 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   // a curation mistake, caught by the e2e that opens the page as him.
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
-    '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
+    '/zavod', '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
     '/suhbatlar', '/approvals', '/ai', '/zametkalar',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
@@ -531,6 +542,8 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     // Kontragentlar joined in round 39, his instruction: the VED manager
     // arranges the customs firms and knows what each one is owed.
     '/finance', '/kontragentlar', '/suhbatlar', '/ai', '/zametkalar',
+    // The factory truck's cost is entered on its card (0100).
+    '/zavod',
   ],
   // Clients, their jobs, the funnel, and what they owe — never the company's
   // margin.
@@ -551,6 +564,8 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/finance', '/kontragentlar', '/reports',
     '/dashboard', '/admin', '/receipts', '/stock', '/approvals', '/ai',
+    // They pay the factory truck, on its card (0100).
+    '/zavod',
     // They are the one who pays it (law 4).
     '/upsale',
     '/reports/sotuvchilar',

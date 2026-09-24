@@ -1719,8 +1719,34 @@ warehouse's spend day (`spendDateOf`); FX asks before a >20 % jump.
 `recurring_expenses.partner_id`; the backfill test runs the migration's own
 statement in a rolled-back tx.
 
-**Latest migration: 0099** (`recurring_link` — a posting names its template,
-a template names its payer; ledger must reach **100**). Before it: **0098**
+**Round — zavod reysi, the factory pickup (2026-09-24; DECISIONS #1002-1007;
+migration 0100 `factory_pickup` — ledger must reach 101):** his B1-B6 + D1.
+`factories` (the directory, a geocoded pin that is a SUGGESTION until
+confirmed; a pasted Chinese-map point is GCJ-02 and converted) → `pickups` →
+`pickup_stops` (one per factory, the stored leg ON from it keyed by its two
+endpoints) → `pickup_lines` (client or marking, factory count + driver
+recount). **The lines ARE the promise — `expected_arrivals` is not touched**
+(six of its readers would have acted on a truck's cargo as a seller's
+promise). `receipts.pickup_stop_id` has three writers and no guess: the
+/receive door (checked IN confirmReceipt's tx), attach/detach on the receipt
+card, the card's candidate buttons. The truck's cost is scope 'pickup' in the
+ordinary engine, split by m³ over the linked prixods, re-split post-commit on
+every door that moves the base and nightly; the annul's empty-scope sweep is
+deliberately NOT taught it. «Olindi» is one press (`collected_at IS NULL`)
+and claims one `client_notices` row per client, sent by the arrival drain
+(`pickups/notice.ts`) — no date, no truck, no cabinet button. The map is an
+estimate anchored on the LATEST press (B3), drawn for the pickup door's
+readers, one lorry marker moved every 5 s; `/map?zr=` fits the trip.
+`GEO_NETWORK=off` in vitest AND the Playwright server — no geocoder/router
+call from any test. Pinned: `tests/integration/pickup.integration.test.ts`
+(5 red proofs by string edit) + `tests/unit/pickup-wire.test.ts` + e2e
+`m9zy-zavod-reysi`. The server needs `AMAP_WEB_KEY` in `.env` for good Chinese
+street geocoding (his Z1); without it Nominatim answers or nothing does.
+
+**Latest migration: 0100** (`factory_pickup` — factories, trips, stops, lines,
+the prixod's stop and the truck-cost scope; ledger must reach **101**). Before
+it: **0099** (`recurring_link` — a posting names its template,
+a template names its payer; ledger 100). Before it: **0098**
 (`staff_notes_simplify` — the note is a name, its
 text and its files; ledger 99). Before it: **0097**
 (`staff_notes` — the note, its parts, their order,
@@ -1825,8 +1851,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **100** since 0099, and his server last CONFIRMED 95 (2026-09-04),
-which means 0095-0099 are all pending and one deploy applies FIVE of them.
+length — **101** since 0100, and his server last CONFIRMED 95 (2026-09-04),
+which means 0095-0100 are all pending and one deploy applies SIX of them.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

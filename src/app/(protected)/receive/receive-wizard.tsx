@@ -52,6 +52,12 @@ interface LotDraft {
   totalWeightKg: string;
   totalVolumeM3: string;
   photoIds: string[];
+  /**
+   * What the factory truck said about this line — «zavod: 50 · haydovchi: 48»
+   * — printed beside the count box, which stays EMPTY: B2 is a recount at
+   * our door, not an acceptance of the factory's number.
+   */
+  hint?: string;
 }
 
 interface CostDraft {
@@ -81,11 +87,25 @@ interface Draft {
   generalPhotoIds: string[];
   /** The promise this receipt answers, when it was opened from one. */
   expectedArrivalId: string | null;
+  /** The factory stop this cargo came off, when opened from the truck (0100). */
+  pickupStopId: string | null;
+  /** «🏭 ZR-00012 · <factory>» — what the operator is receiving. */
+  pickupLabel?: string;
+  /** Which prefill made this draft — a refresh must restore it, not re-mint it. */
+  prefillKey?: string;
 }
 
 /** Everything a tapped promise already knows — the operator types the rest. */
 export interface ArrivalPrefill {
-  arrivalId: string;
+  /** Identity of the prefill: `arrival:<id>` or `pickup:<stop>:<owner>`. */
+  key: string;
+  arrivalId: string | null;
+  /** Opened from a factory truck's «Qabul qilish» (0100): one lot per line. */
+  pickup?: {
+    stopId: string;
+    label: string;
+    lines: { goods: string; hint: string; weightKg: number | null; volumeM3: number | null }[];
+  };
   warehouseId: string;
   clientId: string | null;
   clientLabel: string;
@@ -138,6 +158,7 @@ function newDraft(warehouseId: string): Draft {
     files: [],
     generalPhotoIds: [],
     expectedArrivalId: null,
+    pickupStopId: null,
   };
 }
 
@@ -229,7 +250,7 @@ export function ReceiveWizard({
   // page calls router.refresh() after a send — so the effect re-ran, the
   // prefill branch minted a fresh receipt and fresh lot ids, and every photo
   // and recount typed against the promise was gone. Latent since round 107.
-  const prefillKey = prefill?.arrivalId ?? '';
+  const prefillKey = prefill?.key ?? '';
   const warehouseKey = warehouses.map((wh) => wh.id).join(',');
   useEffect(() => {
     const saved = (() => {
@@ -245,13 +266,33 @@ export function ReceiveWizard({
     // that draft IS this promise's, half-done. Client, count and measures
     // arrive filled; the totals land as a 'mixed' lot the operator corrects
     // against the real boxes.
-    if (prefill && !(saved?.expectedArrivalId === prefill.arrivalId && saved.receiptId && Array.isArray(saved.lots))) {
-      const lot = newLot();
-      if (prefill.boxCount) lot.boxCount = String(prefill.boxCount);
-      if (prefill.weightKg !== null || prefill.volumeM3 !== null) {
-        lot.dimsMode = 'mixed';
-        lot.totalWeightKg = prefill.weightKg !== null ? String(prefill.weightKg) : '';
-        lot.totalVolumeM3 = prefill.volumeM3 !== null ? String(prefill.volumeM3) : '';
+    const savedIsThis =
+      Boolean(saved?.receiptId && Array.isArray(saved.lots)) &&
+      (saved?.prefillKey === prefill?.key ||
+        (Boolean(prefill?.arrivalId) && saved?.expectedArrivalId === prefill?.arrivalId));
+    if (prefill && !savedIsThis) {
+      let lots: LotDraft[];
+      if (prefill.pickup) {
+        lots = prefill.pickup.lines.map((line) => {
+          const lot = newLot();
+          lot.zh = line.goods;
+          lot.hint = line.hint;
+          if (line.weightKg !== null || line.volumeM3 !== null) {
+            lot.dimsMode = 'mixed';
+            lot.totalWeightKg = line.weightKg !== null ? String(line.weightKg) : '';
+            lot.totalVolumeM3 = line.volumeM3 !== null ? String(line.volumeM3) : '';
+          }
+          return lot;
+        });
+      } else {
+        const lot = newLot();
+        if (prefill.boxCount) lot.boxCount = String(prefill.boxCount);
+        if (prefill.weightKg !== null || prefill.volumeM3 !== null) {
+          lot.dimsMode = 'mixed';
+          lot.totalWeightKg = prefill.weightKg !== null ? String(prefill.weightKg) : '';
+          lot.totalVolumeM3 = prefill.volumeM3 !== null ? String(prefill.volumeM3) : '';
+        }
+        lots = [lot];
       }
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDraft({
@@ -260,8 +301,11 @@ export function ReceiveWizard({
         clientLabel: prefill.clientLabel,
         unclaimed: !prefill.clientId,
         unclaimedMarking: prefill.clientId ? '' : prefill.marking,
-        lots: [lot],
+        lots,
         expectedArrivalId: prefill.arrivalId,
+        pickupStopId: prefill.pickup?.stopId ?? null,
+        pickupLabel: prefill.pickup?.label,
+        prefillKey: prefill.key,
       });
       return;
     }
@@ -284,6 +328,7 @@ export function ReceiveWizard({
             files: parsed.files ?? [],
             generalPhotoIds: parsed.generalPhotoIds ?? [],
             expectedArrivalId: parsed.expectedArrivalId ?? null,
+            pickupStopId: parsed.pickupStopId ?? null,
             lots: parsed.lots.map((lot) => ({ ...newLot(), ...lot })),
           } as Draft;
           setDraft(backfilled);
@@ -609,6 +654,7 @@ export function ReceiveWizard({
         sourceNote: draft!.sourceNote,
         unclaimedMarking: draft!.unclaimedMarking,
         expectedArrivalId: draft!.expectedArrivalId ?? null,
+        pickupStopId: draft!.pickupStopId ?? null,
         lots: draft!.lots.map((lot) => ({
           id: lot.id,
           productNameZh: lot.zh.trim(),
@@ -829,6 +875,24 @@ export function ReceiveWizard({
 
   const clientBlock = (
     <div className="space-y-2">
+      {draft.pickupStopId && (
+        <div
+          data-testid="receive-pickup"
+          className="flex items-center gap-2 rounded-lg bg-brand-50 px-2 py-1.5 text-sm"
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {draft.pickupLabel ?? '🏭'} — {t('pickupReceiving')}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 px-1 text-ink-500"
+            aria-label={t('pickupDetach')}
+            onClick={() => update({ pickupStopId: null, pickupLabel: undefined })}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div className="flex gap-2">
         <select
           aria-label={t('warehouse')}
@@ -1231,6 +1295,9 @@ export function ReceiveWizard({
                         value={lot.boxCount}
                         onChange={(e) => updateLot(lot.id, { boxCount: e.target.value.replace(/\D/g, '') })}
                       />
+                      {lot.hint && (
+                        <p className="mt-0.5 whitespace-nowrap px-1 text-[11px] text-ink-500">{lot.hint}</p>
+                      )}
                     </td>
                     <td className="p-1.5 text-center">{modeToggle(lot, true)}</td>
                     {lot.dimsMode === 'uniform' ? (
@@ -1318,7 +1385,14 @@ export function ReceiveWizard({
             {lot.ru && <p className="px-10 text-sm text-ink-500">({lot.ru})</p>}
             <div className="flex items-center gap-2">
               <div className="flex-1">
-                <p className="mb-0.5 text-[11px] font-semibold text-ink-500">{t('boxCount')}</p>
+                <p className="mb-0.5 text-[11px] font-semibold text-ink-500">
+                  {t('boxCount')}
+                  {lot.hint && (
+                    <span data-testid="lot-count-hint" className="ml-1 font-normal">
+                      · {lot.hint}
+                    </span>
+                  )}
+                </p>
                 <input
                   data-testid="lot-count"
                   aria-label={t('boxCount')}
@@ -1381,7 +1455,7 @@ export function ReceiveWizard({
 
       {error && (
         <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
-          {error === 'photo_required' ? t('photoRequired') : tc('error')} ({error})
+          {error === 'photo_required' ? t('photoRequired') : error === 'pickup_invalid' ? t('pickupInvalid') : tc('error')} ({error})
         </p>
       )}
 

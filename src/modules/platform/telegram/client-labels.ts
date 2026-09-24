@@ -260,6 +260,25 @@ const DICT = {
     ru: 'Согласуем выдачу после оформления.',
     en: 'We will agree a pickup time once the paperwork is done.',
   },
+  // --- a factory truck collected the cargo (0100, owner's B4a) ---
+  //
+  // No date and no truck: a single date from an uncalibrated estimate is a
+  // promise nobody made, and the truck carries other customers' cargo.
+  pickedUpTitle: {
+    uz: '🚚 Yukingiz zavoddan olindi',
+    ru: '🚚 Ваш груз забран с фабрики',
+    en: '🚚 Your cargo has been collected from the factory',
+  },
+  pickedUpOnWay: {
+    uz: 'Omborimizga yo\'lda',
+    ru: 'В пути на наш склад',
+    en: 'On its way to our warehouse',
+  },
+  pickedUpNote: {
+    uz: 'Omborga kelib qabul qilinganda yana xabar beramiz.',
+    ru: 'Сообщим ещё раз, когда груз примут на складе.',
+    en: 'We will write again once the warehouse has received it.',
+  },
   issuedTitle: {
     uz: '🤝 Yukingiz berildi',
     ru: '🤝 Груз выдан',

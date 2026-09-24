@@ -224,6 +224,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
   const tp = await getTranslations('plans');
   const tb = await getTranslations('batches');
   const td = await getTranslations('dashboard');
+  const tz = await getTranslations('pickups');
 
   const wh = flow.warehouse;
   const incoming = wh.trucksIncoming + wh.expectedWaiting;
@@ -280,6 +281,24 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
           label={tb('transitReport')}
           count={wh.trucksIncoming}
           sub={null}
+        />
+        <FlowRow
+          href="/zavod?holat=arrived"
+          icon="truck"
+          testid="logist-flow-pickups"
+          label={tz('title')}
+          count={flow.pickups.noCost + flow.pickups.unlinked}
+          warn={flow.pickups.noCost > 0}
+          sub={
+            flow.pickups.noCost || flow.pickups.unlinked
+              ? [
+                  flow.pickups.noCost ? `⚠ ${tz('homeNoCost', { n: flow.pickups.noCost })}` : '',
+                  flow.pickups.unlinked ? tz('homeUnlinked', { n: flow.pickups.unlinked }) : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+              : null
+          }
         />
         <FlowRow
           href="/dashboard"

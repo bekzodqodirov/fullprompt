@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
-import { batches, costEntries, crates, receipts } from '@/modules/platform/db/schema';
+import { batches, costEntries, crates, pickups, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
@@ -37,6 +37,17 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
       if (!batch) return { ok: false, error: 'not_found' };
       actor = await authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
       path = `/batches/${batch.id}`;
+    } else if (parsed.data.scope === 'pickup') {
+      // The factory truck (0100): hired by the logist, paid by whoever pays
+      // trucks — the same grant as a batch's freight, at the warehouse the
+      // truck is bringing the cargo to.
+      const pickup = await db.query.pickups.findFirst({
+        where: eq(pickups.id, parsed.data.pickupId!),
+      });
+      if (!pickup) return { ok: false, error: 'not_found' };
+      if (pickup.status === 'cancelled') return { ok: false, error: 'cancelled' };
+      actor = await authorize('costs.enter_batch', { warehouseId: pickup.destWarehouseId });
+      path = `/zavod/${pickup.id}`;
     } else if (parsed.data.scope === 'crate') {
       // Same gate as the receipt-side local handling — packing money is
       // origin-warehouse money.
@@ -128,6 +139,12 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
     } else if (entry.scope === 'crate' && entry.crateId) {
       const crate = await db.query.crates.findFirst({ where: eq(crates.id, entry.crateId) });
       actor = await authorize('costs.enter_receipt', { warehouseId: crate?.warehouseId });
+    } else if (entry.scope === 'pickup' && entry.pickupId) {
+      // Without this branch a truck's cost fell into the receipt one below,
+      // found no receipt and answered `not_found` — uncancellable money.
+      const pickup = await db.query.pickups.findFirst({ where: eq(pickups.id, entry.pickupId) });
+      if (!pickup) return { ok: false, error: 'not_found' };
+      actor = await authorize('costs.enter_batch', { warehouseId: pickup.destWarehouseId });
     } else {
       const receipt = entry.receiptId
         ? await db.query.receipts.findFirst({ where: eq(receipts.id, entry.receiptId) })
@@ -150,6 +167,7 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   if (entry.batchId) revalidatePath(`/batches/${entry.batchId}`);
   if (entry.receiptId) revalidatePath(`/receipts/${entry.receiptId}`);
   if (entry.crateId) revalidatePath(`/crates/${entry.crateId}`);
+  if (entry.pickupId) revalidatePath(`/zavod/${entry.pickupId}`);
   return { ok: true };
 }
 

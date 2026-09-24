@@ -88,13 +88,18 @@ export interface LogistFlowCounts {
   warehouse: WarehouseFlowCounts;
   /** Departed >3 days with not a single cost entry. */
   costMissing: number;
+  /**
+   * Factory trucks (0100): arrived with no cost written — his C2, «rasxodini
+   * yozmading» — and trips with received prixods nobody has linked yet.
+   */
+  pickups: { noCost: number; unlinked: number };
 }
 
 export async function logistFlowCounts(
   actor: ScopedActor,
   today: string,
 ): Promise<LogistFlowCounts> {
-  const [plans, warehouse, costMissing] = await Promise.all([
+  const [plans, warehouse, costMissing, pickups] = await Promise.all([
     db
       .select({ n: sql<number>`count(*)` })
       .from(loadPlans)
@@ -102,11 +107,17 @@ export async function logistFlowCounts(
     // Unscoped actor → company-wide counts, exactly what a logist watches.
     warehouseFlowCounts(actor, today),
     costMissingCount(3),
+    // Caught: the pickup tables are minted this release, and a home screen
+    // must not go down with them on a half-applied deploy (#472).
+    import('../pickups/service')
+      .then((m) => m.pickupAttentionCounts())
+      .catch(() => ({ noCost: 0, unlinked: 0 })),
   ]);
   return {
     plansPending: Number(plans[0]?.n ?? 0),
     warehouse,
     costMissing,
+    pickups,
   };
 }
 

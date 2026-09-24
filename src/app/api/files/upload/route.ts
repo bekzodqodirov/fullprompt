@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireActor, AuthError } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
-import { staffNotes } from '@/modules/platform/db/schema';
+import { pickupStops, staffNotes } from '@/modules/platform/db/schema';
+import { PICKUP_WRITE } from '@/modules/wms/pickups/service';
 import { FileValidationError, saveAttachment } from '@/modules/platform/files/service';
 import { NOTE_ENTITY_TYPE, canShareNotes } from '@/modules/platform/notes/service';
 
@@ -52,6 +53,10 @@ const ATTACHABLE = [
   // mints, like every other entry here, and the ONE type on this list that
   // also gets a per-record check below.
   'staff_note',
+  // 'pickup_stop': the stamp at a factory (0100) — the signed loading paper,
+  // photographed. Per-record below: the stop must exist and the uploader
+  // must be the one who writes trips.
+  'pickup_stop',
 ] as const;
 
 const metaSchema = z.object({
@@ -97,6 +102,15 @@ export async function POST(request: Request) {
       const mine =
         note.userId === null ? canShareNotes(actor.permissions) : note.userId === actor.id;
       if (!mine) return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
+  }
+
+  if (meta.data.entityType === 'pickup_stop') {
+    const stop = await db.query.pickupStops.findFirst({
+      where: eq(pickupStops.id, meta.data.entityId),
+    });
+    if (!stop || !actor.permissions.has(PICKUP_WRITE)) {
+      return Response.json({ error: 'forbidden' }, { status: 403 });
     }
   }
 

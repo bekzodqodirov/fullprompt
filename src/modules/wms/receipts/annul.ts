@@ -364,6 +364,19 @@ export async function annulAftermath(receiptId: string, ctx: AuditContext): Prom
         .where(and(inArray(costEntries.crateId, crateIds), isNull(costEntries.voidedAt)))
     : [];
   for (const entry of crateEntries) await recomputeEntry(entry.id);
+  // The factory truck it came off re-splits over what is left. Deliberately
+  // NOT in the empty-scope sweep below: a truck's base is the prixods linked
+  // SO FAR, and «nothing linked yet» on a half-received truck is not «this
+  // money had no cargo» — voiding it would destroy the freight and the
+  // firm's debt (the pickup design's judge, pul:3).
+  const annulled = await db.query.receipts.findFirst({
+    where: (r, { eq: is }) => is(r.id, receiptId),
+    columns: { pickupStopId: true },
+  });
+  if (annulled?.pickupStopId) {
+    const { pickupIdOfStop, recomputePickupCosts } = await import('../pickups/service');
+    await recomputePickupCosts(await pickupIdOfStop(annulled.pickupStopId));
+  }
 
   // Empty-scope sweep. Judged on the SCOPE, not the allocation count: an
   // unconverted entry (no FX rate) also has zero allocations, and voiding it

@@ -49,7 +49,7 @@ export function CostPanel({
   canEdit,
   partnerOptions = [],
 }: {
-  scope: 'batch' | 'receipt' | 'crate';
+  scope: 'batch' | 'receipt' | 'crate' | 'pickup';
   targetId: string;
   entries: CostEntryView[];
   costTypes: CostTypeOption[];
@@ -75,7 +75,8 @@ export function CostPanel({
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
   const [costDate, setCostDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [basis, setBasis] = useState<(typeof BASES)[number]>('weight');
+  // The factory truck is split by m³ (owner's B5a) — the default, not a lock.
+  const [basis, setBasis] = useState<(typeof BASES)[number]>(scope === 'pickup' ? 'volume' : 'weight');
   const [clientId, setClientId] = useState('');
   const [partnerId, setPartnerId] = useState('');
   const [note, setNote] = useState('');
@@ -89,6 +90,7 @@ export function CostPanel({
         batchId: scope === 'batch' ? targetId : undefined,
         receiptId: scope === 'receipt' ? targetId : undefined,
         crateId: scope === 'crate' ? targetId : undefined,
+        pickupId: scope === 'pickup' ? targetId : undefined,
         costTypeId: typeId,
         amount: parseTypedMoney(amount) ?? Number.NaN,
         currency,
