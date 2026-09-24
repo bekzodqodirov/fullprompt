@@ -787,7 +787,23 @@
     "gridEntered": "已录入 (USD)",
     "gridNow": "本次录入",
     "paidBy": "由谁支付",
-    "paidByUs": "我们自己付"
+    "paidByUs": "我们自己付",
+    "gridSearch": "搜索：客户编号、唛头、货物、入库单、交易",
+    "gridEmptyCol": "空列",
+    "gridEmptyColAll": "全部入库单",
+    "gridEmptyColOf": "本车次未录入「{type}」",
+    "gridShown": "显示 {shown} / {total} 张入库单",
+    "gridHiddenTyped": "另有 {count} 个单元格（{amount} {currency}）被筛选隐藏——也会一起保存",
+    "gridBatchScope": "整车：${amount}",
+    "gridNoMatch": "没有符合筛选的入库单",
+    "gridSplitLot": "该货物共 {total} 箱，本车装 {onBatch} 箱",
+    "gridElsewhere": "+ ${amount} 录在别处",
+    "gridElsewhereHint": "从其他车次、入库单页面或收货界面录入到此入库单——可能是同一笔账单",
+    "gridTotalsAll": "按整车",
+    "gridBadCells": "{count} 个单元格无法识别为数字——请写成「1200」「1 200」或「1200.50」。",
+    "gridBadHidden": "其中 {count} 个被筛选隐藏。",
+    "gridShowAll": "全部显示",
+    "gridPartial": "已保存 {saved} 个单元格，其余未保存（{reason}）。未保存的仍在表格中——请再次点击。"
   },
   "batches": {
     "title": "车次",
@@ -871,7 +887,9 @@
     "customsFirmAccount": "打开该公司账户",
     "documents": "单据",
     "customsPerReceipt": "按入库单清关",
-    "customsFromBatch": "随整车"
+    "customsFromBatch": "随整车",
+    "internalCosts": "车次费用（内部）",
+    "noCostsWarn": "该车次尚未录入费用"
   },
   "loading": {
     "title": "装车",
@@ -1045,7 +1063,7 @@
     "voidReason": "作废原因？",
     "voided": "已作废",
     "pricingTitle": "车次财务",
-    "pricingHint": "本车次每位客户的成本、价格、利润与余额。价格将作为应收记入客户余额。",
+    "pricingHint": "本车每位客户的货物：每项货物的成本、客户价格、利润和余额。每位客户一个价格，记入其余额。",
     "setPrice": "定价",
     "alreadyCharged": "已计费",
     "costLabel": "成本",
@@ -1070,7 +1088,18 @@
     "registerTruncated": "显示最新 {shown} 条（共 {total} 条）；合计为整个期间。",
     "bothFigures": "成本价与客户价",
     "floorShort": "成本",
-    "clientPriceShort": "客户:"
+    "clientPriceShort": "客户:",
+    "unclaimedGroup": "未认领的货物",
+    "unclaimedPriceLater": "找到货主后在该客户行定价。其成本已计入上方合计。",
+    "orphanCharges": "本车已无其货物的客户的收费",
+    "orphanChargesHint": "货物可能已转给其他客户，或价格录错。已计入上方「价格」合计——请在客户账上核对。",
+    "unconvertedCosts": "{count} 笔费用没有汇率，未计入成本。请在「汇率」中录入该日期的汇率。",
+    "amountUnreadable": "无法识别金额——请写成「1200」「1 200」或「1200.50」",
+    "internalBatch": "内部车次——不向客户定价。本车费用计入货物成本，在跨境车次上显示为「本车次之前」。",
+    "internalNoCosts": "该内部车次尚未录入费用——请在车次页面录入运费等费用。",
+    "internalPricedBefore": "此前在该内部车次上记录的价格",
+    "internalPricedBeforeHint": "内部车次不再定价。这些记录保留在客户账上——如有需要，会计可作废并改记到跨境车次。",
+    "internalBatchRefused": "内部车次不定价——请在跨境车次上定价"
   },
   "map": {
     "title": "地图",
@@ -1590,7 +1619,9 @@
     "withCargo": "有货",
     "withDebt": "有欠款",
     "lastReceipt": "最近收货",
-    "callToday": "今天致电"
+    "callToday": "今天致电",
+    "internalTrip": "内部车次——在下一车次定价",
+    "internalNoCost": "内部车次，未录入费用"
   },
   "arrivals": {
     "title": "待收货物",

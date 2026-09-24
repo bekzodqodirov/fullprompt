@@ -208,7 +208,11 @@ describe("the accountant's grid writes ordinary cost entries", () => {
       },
       ctx(),
     );
-    expect(saved).toBe(3);
+    // Every cell named in the answer: the screen clears exactly these.
+    expect(saved).toEqual({
+      saved: [`${receipt1}:${type1}`, `${receipt1}:${type2}`, `${receipt2}:${type1}`],
+      error: null,
+    });
 
     // The engine cannot tell a grid entry from a form entry: each cell is a
     // receipt-scope row, FX-frozen and allocated to the receipt's boxes.
@@ -217,10 +221,11 @@ describe("the accountant's grid writes ordinary cost entries", () => {
     expect(box1.totalUsd).toBe(150);
     expect(box2.totalUsd).toBe(200);
 
-    const matrix = await receiptCostMatrix([receipt1, receipt2]);
-    expect(matrix.get(`${receipt1}:${type1}`)).toEqual({ usd: 100, unconverted: false });
-    expect(matrix.get(`${receipt1}:${type2}`)).toEqual({ usd: 50, unconverted: false });
-    expect(matrix.get(`${receipt2}:${type1}`)).toEqual({ usd: 200, unconverted: false });
+    // Typed on this truck's grid, so all of it is this truck's part.
+    const matrix = await receiptCostMatrix([receipt1, receipt2], fakeBatchId);
+    expect(matrix.get(`${receipt1}:${type1}`)).toEqual({ usd: 100, unconverted: false, hereUsd: 100 });
+    expect(matrix.get(`${receipt1}:${type2}`)).toEqual({ usd: 50, unconverted: false, hereUsd: 50 });
+    expect(matrix.get(`${receipt2}:${type1}`)).toEqual({ usd: 200, unconverted: false, hereUsd: 200 });
 
     // The grid types THIS truck's customs, and the money screen must say so:
     // the entries stay receipt-scope for allocation, but carry the batch as

@@ -23,9 +23,15 @@ import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
 import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
-import { crateStock, transitTrucks } from '@/modules/wms/inventory/service';
+import {
+  SHELF_STATUSES,
+  crateStock,
+  stockWarehouseOptions,
+  transitTrucks,
+} from '@/modules/wms/inventory/service';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { CrateRows } from '@/components/crate-rows';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -78,9 +84,10 @@ export default async function StockPage({
   // reserved for a plan, mid-loading, or unloaded at a customs/distribution
   // warehouse as ready_for_pickup (owner's report: "13 boxes at TAS1 but the
   // stock page shows nothing"). Each box row still shows its exact status.
-  const scopeFilter: SQL[] = [
-    inArray(boxes.status, ['in_stock', 'planned', 'loading', 'ready_for_pickup']),
-  ];
+  // A `?wh=` that is not an id is dropped, not bound: postgres refuses to
+  // compare a uuid column with «YW», and that refusal is a white page (#514).
+  if (params.wh && !isUuidShaped(params.wh)) params.wh = undefined;
+  const scopeFilter: SQL[] = [inArray(boxes.status, [...SHELF_STATUSES])];
   const boxScope = warehouseScope(actor, boxes.currentWarehouseId);
   if (boxScope) scopeFilter.push(boxScope);
   if (params.wh) scopeFilter.push(eq(boxes.currentWarehouseId, params.wh));
@@ -273,10 +280,7 @@ export default async function StockPage({
         .as('g'),
     );
 
-  const allWhs = await db
-    .select({ id: warehouses.id, code: warehouses.code })
-    .from(warehouses)
-    .orderBy(asc(warehouses.code));
+  const allWhs = await stockWarehouseOptions(params.wh);
   const densityThresholds = await getSetting('density_thresholds');
 
   // Flatten first: the numbers the owner sorts by (Σ kg, m³, density) are
@@ -370,7 +374,7 @@ export default async function StockPage({
             <option value="">{t('allWh')}</option>
             {allWhs.map((wh) => (
               <option key={wh.id} value={wh.id}>
-                {wh.code}
+                {wh.active ? wh.code : `${wh.code} (${tAny('common.inactive')})`}
               </option>
             ))}
           </select>

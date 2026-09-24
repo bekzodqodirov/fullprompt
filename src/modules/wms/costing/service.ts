@@ -503,6 +503,97 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
   return out;
 }
 
+/** One lot's share of what the cargo cost us, as it stands on one truck. */
+export interface LotLandedCost {
+  lotId: string;
+  /** End to end: this trip plus everything the cargo brought with it. */
+  totalUsd: number;
+  /** What THIS trip added. `totalUsd − batchUsd` is «shu reysgacha». */
+  batchUsd: number;
+}
+
+/**
+ * The tannarx per LOT (owner, 2026-09-24: «partiya ichidagi tovarlar
+ * bo'yicha ko'rsatsin»). Exact, not apportioned: the engine already split
+ * every entry down to the box, so grouping the same allocations by the box's
+ * lot is a re-sum — `batchLandedCostByClient`'s question with a finer
+ * GROUP BY and the same «shu reysgacha» fence.
+ *
+ * Membership is written as a CTE of the two indexed lookups rather than
+ * `batchMemberFilter`'s OR: joined to `cost_allocations`, the OR leaves the
+ * planner guessing that half of all boxes ride every truck and it scans the
+ * allocations table whole (CLAUDE.md: batch membership is a JOIN through
+ * box_movements). An annulled box is not cargo (the annul round).
+ */
+export async function batchLandedCostByLot(batchId: string): Promise<Map<string, LotLandedCost>> {
+  const rows = (await db.execute(sql`
+    WITH members AS (
+      SELECT b.id FROM boxes b
+       WHERE b.current_batch_id = ${batchId} AND b.status <> 'void'
+      UNION
+      SELECT bm.box_id FROM box_movements bm
+        JOIN boxes b ON b.id = bm.box_id
+       WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batchId}
+         AND bm.cause = 'batch_departed' AND b.status <> 'void'
+    )
+    SELECT bx.lot_id,
+           coalesce(sum(ca.amount_usd), 0) AS total_usd,
+           coalesce(sum(ca.amount_usd) FILTER (WHERE ${costEntries}.batch_id = ${batchId}), 0) AS batch_usd
+      FROM members m
+      JOIN boxes bx ON bx.id = m.id
+      JOIN cost_allocations ca ON ca.box_id = m.id
+      JOIN ${costEntries} ON ${costEntries}.id = ca.cost_entry_id
+     WHERE ${costEntries}.voided_at IS NULL
+       AND ${notLaterLeg(batchId)}
+     GROUP BY bx.lot_id
+  `)) as unknown as { lot_id: string; total_usd: string; batch_usd: string }[];
+  return new Map(
+    rows.map((row) => [
+      row.lot_id,
+      {
+        lotId: row.lot_id,
+        totalUsd: Math.round(Number(row.total_usd) * 100) / 100,
+        batchUsd: Math.round(Number(row.batch_usd) * 100) / 100,
+      },
+    ]),
+  );
+}
+
+/**
+ * Cost entries touching this truck that have NO dollar figure yet — no FX
+ * rate for their currency and date. The engine allocates nothing for them
+ * (an allocation carries a USD amount or does not exist), so every tannarx
+ * on the truck reads lower than it is, silently. The screen names the count.
+ */
+export async function unconvertedCostCount(batchId: string, receiptIds: string[]): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(costEntries)
+    .where(
+      and(
+        isNull(costEntries.voidedAt),
+        isNull(costEntries.amountUsd),
+        receiptIds.length
+          ? sql`(${costEntries.batchId} = ${batchId} OR ${inArray(costEntries.receiptId, receiptIds)})`
+          : eq(costEntries.batchId, batchId),
+      ),
+    );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Live cost entries attributed to this truck — its own batch-scope bills and
+ * the grid's stamped prixod cells. The «rasxodini yozmading» warning (owner,
+ * 2026-09-24) reads zero here; `costMissingBatches` asks the same question.
+ */
+export async function batchCostEntryCount(batchId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(costEntries)
+    .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)));
+  return Number(row?.n ?? 0);
+}
+
 /** Batch cost sheet: entries + totals + unit costs per kg / m³. */
 export async function batchCostSheet(batchId: string) {
   const entries = await db
@@ -593,7 +684,10 @@ export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(batchMemberFilter(batchId))
+    // An annulled box keeps its `batch_departed` row for ever: without the
+    // status clause its prixod stayed on the grid and took a customs cell
+    // whose allocation pool is empty.
+    .where(and(batchMemberFilter(batchId), ne(boxes.status, 'void')))
     .groupBy(receipts.id, receipts.number, clients.clientCode, clients.name)
     .orderBy(asc(clients.clientCode), asc(receipts.number));
   return rows.map((row) => ({
@@ -607,6 +701,20 @@ export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow
   }));
 }
 
+/** One grid cell's hint: everything on the prixod, and this truck's part of it. */
+export interface GridCellWritten {
+  usd: number;
+  unconverted: boolean;
+  /**
+   * The part typed on THIS truck's grid (the entry's batch stamp, round 69).
+   * A prixod split over two trucks carries both trucks' bills, and the
+   * second truck must not read «already paid» off the first one's customs;
+   * whatever is not stamped here — the other truck, the receipt card, the
+   * wizard — is still printed beside it, because it may be the same bill.
+   */
+  hereUsd: number;
+}
+
 /**
  * What is ALREADY written per receipt per type (USD, non-void) — shown under
  * the grid's inputs so a second session never double-enters blind. Keyed
@@ -614,13 +722,15 @@ export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow
  */
 export async function receiptCostMatrix(
   receiptIds: string[],
-): Promise<Map<string, { usd: number; unconverted: boolean }>> {
+  batchId: string,
+): Promise<Map<string, GridCellWritten>> {
   if (receiptIds.length === 0) return new Map();
   const rows = await db
     .select({
       receiptId: costEntries.receiptId,
       costTypeId: costEntries.costTypeId,
       usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+      hereUsd: sql<string>`coalesce(sum(${costEntries.amountUsd}) FILTER (WHERE ${costEntries.batchId} = ${batchId}), 0)`,
       // A cell whose entry has no FX rate yet summed to «$0» — exactly the
       // face an EMPTY cell wears, on the hint whose whole job is stopping a
       // second session from double-entering blind (#86: unconverted money is
@@ -639,9 +749,37 @@ export async function receiptCostMatrix(
   return new Map(
     rows.map((row) => [
       `${row.receiptId}:${row.costTypeId}`,
-      { usd: Math.round(Number(row.usd) * 100) / 100, unconverted: Number(row.unconverted) > 0 },
+      {
+        usd: Math.round(Number(row.usd) * 100) / 100,
+        unconverted: Number(row.unconverted) > 0,
+        hereUsd: Math.round(Number(row.hereUsd) * 100) / 100,
+      },
     ]),
   );
+}
+
+/**
+ * The truck's own BATCH-scope costs per type (non-void, USD). They cover
+ * every prixod aboard and so appear in no grid cell: a truck whose customs
+ * was entered once on the batch card showed an empty «Rastamojka» column,
+ * which is an invitation to type the same bill a second time per prixod.
+ */
+export async function batchScopeCostByType(batchId: string): Promise<Map<string, number>> {
+  const rows = await db
+    .select({
+      costTypeId: costEntries.costTypeId,
+      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+    })
+    .from(costEntries)
+    .where(
+      and(
+        eq(costEntries.scope, 'batch'),
+        eq(costEntries.batchId, batchId),
+        isNull(costEntries.voidedAt),
+      ),
+    )
+    .groupBy(costEntries.costTypeId);
+  return new Map(rows.map((row) => [row.costTypeId, Math.round(Number(row.usd) * 100) / 100]));
 }
 
 export const receiptCostGridSchema = z.object({
@@ -676,40 +814,67 @@ export type ReceiptCostGridInput = z.infer<typeof receiptCostGridSchema>;
  * request must not be able to hang somebody else's prixod with our customs
  * bill, so the membership is re-proved here, not trusted from the form.
  */
+export interface GridSaveResult {
+  /** `receiptId:costTypeId` of every cell that became a cost entry. */
+  saved: string[];
+  /** Why the save stopped part-way; null when every cell landed. */
+  error: string | null;
+}
+
 export async function addReceiptCostsBulk(
   input: ReceiptCostGridInput,
   ctx: AuditContext,
-): Promise<number> {
+): Promise<GridSaveResult> {
   const allowed = new Set((await batchReceiptRows(input.batchId)).map((row) => row.receiptId));
   for (const cell of input.cells) {
     if (!allowed.has(cell.receiptId)) throw new CostError('receipt_not_on_batch');
   }
+  // Each cell is its own `addCostEntry` — the engine cannot tell grid from
+  // form (#398) and that is worth keeping — so a failure part-way leaves the
+  // earlier cells saved. The answer NAMES them: the screen clears exactly
+  // those and keeps the rest typed, where the old answer was a bare error and
+  // the next press saved the landed cells a second time.
+  const saved: string[] = [];
   for (const cell of input.cells) {
-    await addCostEntry(
-      {
-        scope: 'receipt',
-        receiptId: cell.receiptId,
-        costTypeId: cell.costTypeId,
-        amount: cell.amount,
-        currency: input.currency,
-        costDate: input.costDate,
-        // Within one receipt the split lands on one client either way;
-        // weight is the house default the rest of the engine uses.
-        allocationBasis: 'weight',
-        // The engine cannot tell grid from form (#398), so the payer rides
-        // the same field and derives the same partner charge per entry.
-        partnerId: input.partnerId,
-        // ATTRIBUTION, not scope: allocation still spreads over the RECEIPT's
-        // boxes, but the entry names the truck whose grid it was typed on —
-        // this is the truck's own customs bill, and without the stamp it
-        // landed in NO batch's profit row: /accounting/profit showed the
-        // truck's margin without the very customs typed on its own page.
-        batchId: input.batchId,
-      },
-      ctx,
-    );
+    try {
+      await addGridCell(input, cell, ctx);
+    } catch (err) {
+      console.error('[cost-grid] cell failed after', saved.length, 'saved', err);
+      return { saved, error: err instanceof CostError ? err.code : 'error' };
+    }
+    saved.push(`${cell.receiptId}:${cell.costTypeId}`);
   }
-  return input.cells.length;
+  return { saved, error: null };
+}
+
+async function addGridCell(
+  input: ReceiptCostGridInput,
+  cell: ReceiptCostGridInput['cells'][number],
+  ctx: AuditContext,
+) {
+  await addCostEntry(
+    {
+      scope: 'receipt',
+      receiptId: cell.receiptId,
+      costTypeId: cell.costTypeId,
+      amount: cell.amount,
+      currency: input.currency,
+      costDate: input.costDate,
+      // Within one receipt the split lands on one client either way;
+      // weight is the house default the rest of the engine uses.
+      allocationBasis: 'weight',
+      // The engine cannot tell grid from form (#398), so the payer rides
+      // the same field and derives the same partner charge per entry.
+      partnerId: input.partnerId,
+      // ATTRIBUTION, not scope: allocation still spreads over the RECEIPT's
+      // boxes, but the entry names the truck whose grid it was typed on —
+      // this is the truck's own customs bill, and without the stamp it
+      // landed in NO batch's profit row: /accounting/profit showed the
+      // truck's margin without the very customs typed on its own page.
+      batchId: input.batchId,
+    },
+    ctx,
+  );
 }
 
 export interface ClientCostPart {

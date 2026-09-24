@@ -10,6 +10,7 @@ import {
   transactionSchema,
   voidTransaction,
 } from '@/modules/wms/finance/service';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
 export interface TxFormState {
   ok?: boolean;
@@ -23,7 +24,10 @@ export async function addTransactionAction(
   const parsed = transactionSchema.safeParse({
     clientId: formData.get('clientId'),
     type: formData.get('type'),
-    amount: Number(String(formData.get('amount') ?? '').replace(',', '.')),
+    // «1,200» is a thousand two hundred, not $1.20, and «1 200» is not NaN —
+    // the calc screen's reader, now at every price and payment door (the
+    // truck pricing form posts here).
+    amount: parseTypedMoney(String(formData.get('amount') ?? '')) ?? Number.NaN,
     currency: formData.get('currency'),
     method: formData.get('method') || undefined,
     txDate: formData.get('txDate'),

@@ -69,15 +69,25 @@ async function makeLot(ownerId: string, warehouseId: string) {
 }
 
 beforeAll(async () => {
-  async function ensureWarehouse(code: string): Promise<string> {
+  // The trip crosses a border (CN → UZ): it is PRICED below, and since
+  // 2026-09-24 a truck that stays in one country refuses a price (the
+  // owner's C1a). A long-lived database still holds this file's old CN
+  // destination, so the country is put right, not just minted right — the
+  // warehouse is this file's own fixture.
+  async function ensureWarehouse(code: string, country: string): Promise<string> {
     const existing = await db.query.warehouses.findFirst({ where: eq(warehouses.code, code) });
-    if (existing) return existing.id;
+    if (existing) {
+      if (existing.country !== country) {
+        await db.update(warehouses).set({ country }).where(eq(warehouses.id, existing.id));
+      }
+      return existing.id;
+    }
     const [wh] = await db
       .insert(warehouses)
       .values({
         code,
         name: `CC ${code}`,
-        country: 'CN',
+        country,
         type: 'origin',
         timezone: 'Asia/Shanghai',
         batchPrefix: code,
@@ -85,8 +95,8 @@ beforeAll(async () => {
       .returning();
     return wh!.id;
   }
-  whFrom = await ensureWarehouse(WH_FROM);
-  whTo = await ensureWarehouse(WH_TO);
+  whFrom = await ensureWarehouse(WH_FROM, 'CN');
+  whTo = await ensureWarehouse(WH_TO, 'UZ');
   actorId = (await db.select().from(users).limit(1))[0]!.id;
   costTypeId = (await db.select().from(costTypes).limit(1))[0]!.id;
 

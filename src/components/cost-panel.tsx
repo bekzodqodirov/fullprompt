@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs/actions';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
 export interface CostEntryView {
   id: string;
@@ -89,7 +90,7 @@ export function CostPanel({
         receiptId: scope === 'receipt' ? targetId : undefined,
         crateId: scope === 'crate' ? targetId : undefined,
         costTypeId: typeId,
-        amount: Number(amount.replace(',', '.')),
+        amount: parseTypedMoney(amount) ?? Number.NaN,
         currency,
         costDate,
         allocationBasis: basis,
@@ -278,7 +279,7 @@ export function CostPanel({
               type="button"
               data-testid="save-cost"
               className="btn-primary flex-1 disabled:opacity-50"
-              disabled={busy || !typeId || !(Number(amount.replace(',', '.')) > 0)}
+              disabled={busy || !typeId || !((parseTypedMoney(amount) ?? 0) > 0)}
               onClick={submit}
             >
               {busy ? tc('loading') : tc('save')}

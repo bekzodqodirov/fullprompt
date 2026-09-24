@@ -13,6 +13,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
+import { batchRoute } from '../batches/internal';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -59,6 +60,16 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   if (input.dealId) {
     const deal = await db.query.deals.findFirst({ where: eq(deals.id, input.dealId) });
     if (!deal || deal.clientId !== input.clientId) throw new FinanceError('deal_mismatch');
+  }
+  // A price on an INTERNAL truck is refused here, not merely left off the
+  // screen (#531): the pricing form posts a batch id, and a hand-built post
+  // would otherwise bill a client for a leg the owner never bills (C1a,
+  // 2026-09-24). A payment may still name any truck — money received is not
+  // a price.
+  if (input.type === 'charge' && input.batchId) {
+    const route = await batchRoute(input.batchId);
+    if (!route) throw new FinanceError('batch_not_found');
+    if (route.internal) throw new FinanceError('internal_batch');
   }
   // A named cash box must speak the row's currency. The till balances sum
   // NATIVE amounts per box, so 500 USD dropped into a som till reads as 500

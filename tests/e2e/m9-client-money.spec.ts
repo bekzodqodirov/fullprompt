@@ -72,19 +72,46 @@ test('cost → price → margin, and the client card knows which trip', async ({
   await page.getByTestId('save-cost').click();
   await expect(page.getByText('≈ $90')).toBeVisible({ timeout: 15_000 });
 
+  // The prixod cost grid names the GOODS now (owner, 2026-09-24: «tovar
+  // nomi, karobka soni va rasmi … klient kod, tovar nomi bo'yicha
+  // filterlash»), and filters in the browser without dropping typed cells.
+  await page.goto(`${batchUrl}/xarajatlar`);
+  const gridRows = page.getByTestId('grid-row');
+  await expect(gridRows.filter({ hasText: clientCode }).first()).toBeVisible();
+  await expect(gridRows.first()).toContainText('📦');
+  await page.getByTestId('grid-search').fill(`nomatch-${runId}`);
+  await expect(gridRows).toHaveCount(0);
+  await page.getByTestId('grid-search').fill(clientCode.toLowerCase());
+  await expect(gridRows.filter({ hasText: clientCode }).first()).toBeVisible();
+  // A number the reader cannot read is RED and stops the save — it used to
+  // be dropped silently and then wiped by the success.
+  const firstCell = gridRows.first().locator('input').first();
+  await firstCell.fill('12abc');
+  await expect(page.getByTestId('grid-bad')).toBeVisible();
+  await expect(page.getByTestId('save-cost-grid')).toBeDisabled();
+  await firstCell.fill('');
+  await expect(page.getByTestId('grid-bad')).toHaveCount(0);
+
   // --- The VED manager prices it and sees cost, price and margin ---
   await login(page, VED);
   await page.goto(`${batchUrl}/pricing`);
-  const card = page.locator('.card').filter({ hasText: clientCode });
+  const card = page.getByTestId('pricing-client').filter({ hasText: clientCode });
   // The truck's customs reached this client as their own share.
   await expect(card.getByTestId('client-cost')).not.toHaveText('$0.00');
+  // …and the client opens into the goods that rode, each with its own
+  // tannarx and a door into its prixod (the owner's answer 1c: the price
+  // stays one per client).
+  const goods = card.getByTestId('pricing-lot').first();
+  await expect(goods).toBeVisible();
+  await expect(goods.getByTestId('lot-cost')).not.toHaveText('$0.00');
+  await expect(goods.locator('a[href^="/receipts/"]')).toBeVisible();
   await card.locator('input[name="amount"]').fill('150');
   await card.locator('select[name="currency"]').selectOption('USD');
   await card.getByRole('button', { name: /🧾|✅|…/ }).click();
   await expect(card.getByText('✅')).toBeVisible({ timeout: 15_000 });
 
   await page.goto(`${batchUrl}/pricing`);
-  const priced = page.locator('.card').filter({ hasText: clientCode });
+  const priced = page.getByTestId('pricing-client').filter({ hasText: clientCode });
   await expect(priced.getByText('$150.00').first()).toBeVisible();
 
   // --- The accountant mints the cash box the payment will land in ---

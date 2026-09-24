@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { aliasedTable, and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { calcQueueCounts } from '../calc/service';
 import {
@@ -7,13 +7,15 @@ import {
   dealStages,
   deals,
   loadPlans,
+  warehouses,
 } from '../../platform/db/schema';
 import type { ScopedActor } from '../../platform/rbac/scope';
 import { chatBadges } from '../crm/conversations';
 import { followUps, openLeadCount } from '../crm/service';
 import { managedClients } from '../finance/client-cargo';
 import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
-import { costMissingBatches } from '../reports/queries';
+import { costMissingCount } from '../reports/queries';
+import { internalLegSql } from '../batches/internal';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 
 /**
@@ -98,12 +100,12 @@ export async function logistFlowCounts(
       .where(inArray(loadPlans.status, ['pending_agent', 'changes_requested'])),
     // Unscoped actor → company-wide counts, exactly what a logist watches.
     warehouseFlowCounts(actor, today),
-    costMissingBatches(3),
+    costMissingCount(3),
   ]);
   return {
     plansPending: Number(plans[0]?.n ?? 0),
     warehouse,
-    costMissing: costMissing.length,
+    costMissing,
   };
 }
 
@@ -155,13 +157,13 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
             AND ((r.warehouse_id IS NULL AND e.warehouse_id IS NULL) OR e.warehouse_id = r.warehouse_id)
         )
     `),
-    costMissingBatches(3),
+    costMissingCount(3),
   ]);
   return {
     snapshot,
     unassignedPayments: Number(unassigned[0]?.n ?? 0),
     recurringDue: Number(recurring[0]?.n ?? 0),
-    costMissing: costMissing.length,
+    costMissing,
   };
 }
 
@@ -177,17 +179,27 @@ export interface VedFlowCounts {
 }
 
 export async function vedFlowCounts(): Promise<VedFlowCounts> {
+  const originWh = aliasedTable(warehouses, 'origin_wh');
+  const destWh = aliasedTable(warehouses, 'dest_wh');
   const [calc, docs, tnved] = await Promise.all([
     // The same fragment the queue screen filters by, so the number here and
     // the rows there cannot disagree (#513).
     calcQueueCounts(),
     // A truck that left without its papers reaching the agent is the thing
     // this person gets phoned about; unloaded means customs is behind it.
+    // An internal leg (Yiwu → Kashgar, Andijan → Tashkent) carries no export
+    // papers to send, so it is not this person's phone call either.
     db
       .select({ n: sql<number>`count(*)` })
       .from(batches)
+      .innerJoin(originWh, eq(batches.originWarehouseId, originWh.id))
+      .innerJoin(destWh, eq(batches.destWarehouseId, destWh.id))
       .where(
-        and(inArray(batches.status, ['in_transit', 'arrived']), isNull(batches.sentToAgentAt)),
+        and(
+          inArray(batches.status, ['in_transit', 'arrived']),
+          isNull(batches.sentToAgentAt),
+          not(internalLegSql(sql`${originWh}`, sql`${destWh}`)),
+        ),
       ),
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n

@@ -787,7 +787,23 @@
     "gridEntered": "Yozilgan (USD)",
     "gridNow": "Hozir kiritilmoqda",
     "paidBy": "Kim to‘ladi",
-    "paidByUs": "O‘zimiz to‘ladik"
+    "paidByUs": "O‘zimiz to‘ladik",
+    "gridSearch": "Qidirish: mijoz kodi, markirovka, tovar, prixod, bitim",
+    "gridEmptyCol": "Bo‘sh ustun",
+    "gridEmptyColAll": "Barcha prixodlar",
+    "gridEmptyColOf": "«{type}» shu reysda yozilmagan",
+    "gridShown": "Ko‘rsatilgan: {shown} / {total} prixod",
+    "gridHiddenTyped": "filtr ostida yana {count} ta katakka {amount} {currency} yozilgan — ular ham saqlanadi",
+    "gridBatchScope": "butun partiyaga: ${amount}",
+    "gridNoMatch": "Filtrga mos prixod yo‘q",
+    "gridSplitLot": "Bu tovarning {total} karobkasidan {onBatch} tasi shu mashinada",
+    "gridElsewhere": "+ ${amount} boshqa yozuvda",
+    "gridElsewhereHint": "Shu prixodga boshqa reys, prixod kartasi yoki qabul ekranidan yozilgan — balki xuddi shu hisobdir",
+    "gridTotalsAll": "butun partiya bo‘yicha",
+    "gridBadCells": "{count} ta katakdagi son o‘qilmadi — «1200», «1 200» yoki «1200,50» deb yozing.",
+    "gridBadHidden": "Ulardan {count} tasi filtr ostida.",
+    "gridShowAll": "Hammasini ko‘rsatish",
+    "gridPartial": "{saved} ta katak saqlandi, qolgani saqlanmadi ({reason}). Saqlanmaganlari jadvalda qoldi — qayta bosing."
   },
   "batches": {
     "title": "Partiyalar",
@@ -871,7 +887,9 @@
     "customsFirmAccount": "Firma hisobini ochish",
     "documents": "Hujjatlar",
     "customsPerReceipt": "Prixodlar bo‘yicha rastamojka",
-    "customsFromBatch": "Partiya bo‘yicha"
+    "customsFromBatch": "Partiya bo‘yicha",
+    "internalCosts": "Partiya xarajati (ichki reys)",
+    "noCostsWarn": "Bu partiyaga hali xarajat yozilmagan"
   },
   "loading": {
     "title": "Pogruzka",
@@ -1045,7 +1063,7 @@
     "voidReason": "Bekor qilish sababi?",
     "voided": "Bekor qilingan",
     "pricingTitle": "Partiya moliyasi",
-    "pricingHint": "Shu partiyadagi har bir mijoz bo'yicha tannarx, narx, foyda va balans. Narx mijoz balansiga hisob bo'lib yoziladi.",
+    "pricingHint": "Shu partiyadagi har bir mijozning tovarlari: har bir tovarning tannarxi, mijozning narxi, foydasi va balansi. Narx mijozga bitta qo‘yiladi va uning balansiga hisob bo‘lib yoziladi.",
     "setPrice": "Narx belgilash",
     "alreadyCharged": "Hisoblangan",
     "costLabel": "Tannarx",
@@ -1070,7 +1088,18 @@
     "registerTruncated": "Eng yangi {shown} tasi ko'rsatildi (jami {total}); «jami» summa to'liq davr bo'yicha.",
     "bothFigures": "Tannarx va mijoz narxi",
     "floorShort": "tannarx",
-    "clientPriceShort": "mijoz:"
+    "clientPriceShort": "mijoz:",
+    "unclaimedGroup": "Egasi aniqlanmagan yuk",
+    "unclaimedPriceLater": "Narx egasi topilgach, o‘sha mijozning kartasida qo‘yiladi. Tannarxi yuqoridagi jamiga kirgan.",
+    "orphanCharges": "Shu mashinada yuki qolmagan mijozlarga yozilgan narxlar",
+    "orphanChargesHint": "Yuk boshqa mijozga o‘tkazilgan yoki narx xato yozilgan bo‘lishi mumkin. Yuqoridagi «Narx» jamiga kirgan — mijoz kassasida tekshiring.",
+    "unconvertedCosts": "{count} ta xarajatning kursi yo‘q — tannarxga kirmagan. «Kurslar» bo‘limida shu sanaga kurs kiriting.",
+    "amountUnreadable": "Summani o‘qib bo‘lmadi — «1200», «1 200» yoki «1200,50» deb yozing",
+    "internalBatch": "Ichki reys — mijozlarga narx qo‘yilmaydi. Bu mashinaning xarajati yukning tannarxiga qo‘shiladi va chegaradan o‘tadigan partiyada «shu reysgacha» bo‘lib ko‘rinadi.",
+    "internalNoCosts": "Bu ichki reysga hali xarajat yozilmagan — yo‘lkira va boshqa xarajatlarni partiya kartasida kiriting.",
+    "internalPricedBefore": "Bu ichki reysga oldin yozilgan narxlar",
+    "internalPricedBeforeHint": "Endi ichki reysga narx yozilmaydi. Bu yozuvlar mijoz kassasida turibdi — kerak bo‘lsa buxgalter bekor qilib, chegaradan o‘tadigan partiyaga qayta yozadi.",
+    "internalBatchRefused": "Ichki reysga mijoz narxi yozilmaydi — narxni chegaradan o‘tadigan partiyada qo‘ying"
   },
   "map": {
     "title": "Xarita",
@@ -1590,7 +1619,9 @@
     "withCargo": "Yuki bor",
     "withDebt": "Qarzdor",
     "lastReceipt": "oxirgi qabul",
-    "callToday": "bugun qo‘ng‘iroq"
+    "callToday": "bugun qo‘ng‘iroq",
+    "internalTrip": "ichki reys — narx keyingi partiyada",
+    "internalNoCost": "ichki reys, xarajat yozilmagan"
   },
   "arrivals": {
     "title": "Kelayotgan yuklar",

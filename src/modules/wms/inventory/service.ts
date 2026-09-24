@@ -19,6 +19,7 @@ import { usersWithPermission } from '../../platform/notifications/service';
 import { batchMemberFilter } from '../scanning/unload';
 import { landedStatusFor } from '../warehouses/landed';
 import { claimArrivalNotice } from '../notices/arrival';
+import { isUuidShaped } from '../../platform/audit/fields';
 
 export class InventoryError extends Error {
   constructor(public readonly code: string) {
@@ -28,6 +29,53 @@ export class InventoryError extends Error {
 
 /** Boxes the system EXPECTS to be physically present at the warehouse. */
 const PRESENT_STATUSES = ['in_stock', 'planned', 'ready_for_pickup'] as const;
+
+/**
+ * What the stock screen and its export call «on the shelf»: everything
+ * physically in a warehouse, reservations and mid-loading boxes included
+ * (owner's report: "13 boxes at TAS1 but the stock page shows nothing").
+ */
+export const SHELF_STATUSES = ['in_stock', 'planned', 'loading', 'ready_for_pickup'] as const;
+
+export interface StockWarehouseOption {
+  id: string;
+  code: string;
+  active: boolean;
+}
+
+/**
+ * The stock screen's warehouse picker (owner: «skladni ostatkka ko'radigan
+ * payit inactive bo'lib turgan skladlar ham skladlar spiskasida turib
+ * qolyabti»).
+ *
+ * A deactivated warehouse leaves the list — EXCEPT while boxes still stand in
+ * it. Deactivating is a switch on /admin/warehouses and moves no cargo, so a
+ * warehouse closed with stock inside would otherwise make that stock
+ * unreachable by the one filter that finds it; it stays, marked, until it is
+ * empty. The warehouse the address bar names stays too, or a saved view that
+ * points at it would filter the table while the picker claimed «all».
+ */
+export async function stockWarehouseOptions(selected?: string): Promise<StockWarehouseOption[]> {
+  const keepSelected = selected && isUuidShaped(selected) ? selected : null;
+  return db
+    .select({ id: warehouses.id, code: warehouses.code, active: warehouses.active })
+    .from(warehouses)
+    .where(
+      or(
+        eq(warehouses.active, true),
+        // `${warehouses}.id` is #128's spelling: qualified in every place
+        // drizzle can render it, so it can never bind to the box's own id.
+        sql`EXISTS (SELECT 1 FROM ${boxes} b
+                     WHERE b.current_warehouse_id = ${warehouses}.id
+                       AND b.status IN (${sql.join(
+                         SHELF_STATUSES.map((status) => sql`${status}`),
+                         sql`, `,
+                       )}))`,
+        keepSelected ? eq(warehouses.id, keepSelected) : undefined,
+      ),
+    )
+    .orderBy(asc(warehouses.code));
+}
 
 /**
  * Expected-stock snapshot for the inventory screen: every box that should be
@@ -546,7 +594,7 @@ export async function crateStock(
       boxes,
       and(
         eq(boxes.crateId, crates.id),
-        inArray(boxes.status, ['in_stock', 'planned', 'loading', 'ready_for_pickup']),
+        inArray(boxes.status, [...SHELF_STATUSES]),
         eq(boxes.currentWarehouseId, crates.warehouseId),
       ),
     )

@@ -669,6 +669,22 @@ export async function labelPrintLog(days: number) {
   }));
 }
 
+/**
+ * «Departed > N days ago with not one cost entry on it» (spec 6.9 warning;
+ * the owner's «rasxodini yozmading», 2026-09-24). ONE predicate for the list
+ * and its count (#513): the homes used to print `.length` of the 20-row
+ * list, so the counter stopped at 20 however many trucks were bare (#977).
+ * `${batches}.id` is #128's spelling — qualified whatever the select.
+ */
+function costMissingWhere(warnDays: number, warehouseIds?: string[]) {
+  return and(
+    inArray(batches.status, ['in_transit', 'arrived', 'unloaded', 'closed']),
+    sql`${batches.departedAt} < now() - make_interval(days => ${warnDays})`,
+    sql`NOT EXISTS (SELECT 1 FROM ${costEntries} ce WHERE ce.batch_id = ${batches}.id AND ce.voided_at IS NULL)`,
+    warehouseIds?.length ? inArray(batches.originWarehouseId, warehouseIds) : undefined,
+  );
+}
+
 /** Batches departed > N days ago with zero cost entries (spec 6.9 warning). */
 export async function costMissingBatches(warnDays: number, warehouseIds?: string[]) {
   const dest = aliasedTable(warehouses, 'dest');
@@ -683,15 +699,17 @@ export async function costMissingBatches(warnDays: number, warehouseIds?: string
     .from(batches)
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
-    .where(
-      and(
-        inArray(batches.status, ['in_transit', 'arrived', 'unloaded', 'closed']),
-        sql`${batches.departedAt} < now() - make_interval(days => ${warnDays})`,
-        sql`NOT EXISTS (SELECT 1 FROM ${costEntries} ce WHERE ce.batch_id = ${batches.id} AND ce.voided_at IS NULL)`,
-        warehouseIds?.length ? inArray(batches.originWarehouseId, warehouseIds) : undefined,
-      ),
-    )
+    .where(costMissingWhere(warnDays, warehouseIds))
     .orderBy(asc(batches.departedAt))
     .limit(20);
   return rows;
+}
+
+/** How many such batches there are — the true number, not the list's length. */
+export async function costMissingCount(warnDays: number): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(batches)
+    .where(costMissingWhere(warnDays));
+  return Number(row?.n ?? 0);
 }

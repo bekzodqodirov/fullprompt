@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -6,11 +6,13 @@ import { batches, costTypes, currencies, warehouses } from '@/modules/platform/d
 import { aliasedTable } from 'drizzle-orm';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { inScope } from '@/modules/platform/rbac/scope';
-import { batchReceiptRows, receiptCostMatrix } from '@/modules/wms/costing/service';
+import { batchScopeCostByType, receiptCostMatrix } from '@/modules/wms/costing/service';
+import { batchLots } from '@/modules/wms/batches/lots';
+import { canWriteDeal } from '@/modules/wms/deals/service';
 import { listPartners } from '@/modules/wms/partners/service';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
-import { ReceiptCostGrid } from '../receipt-cost-grid';
+import { ReceiptCostGrid, type GridReceiptRow } from '../receipt-cost-grid';
 
 /**
  * «Расходы по приходам» on a screen of its own (round 47, owner's item 8:
@@ -49,12 +51,27 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
     notFound();
   }
 
-  const gridRows = await batchReceiptRows(id);
-  const existing = Object.fromEntries(await receiptCostMatrix(gridRows.map((row) => row.receiptId)));
+  // The goods, not only the prixod number (owner, 2026-09-24: «jadval rasxod
+  // kiritadigan joyda tovar nomi, karobka soni va rasmi kerak»). The ROW
+  // stays the prixod — a cost entry is receipt-scope, and the receipt card,
+  // voidReceipt's money guard and the annul all key on it — the lots ride
+  // inside it as lines.
+  const gridRows = groupLotsByReceipt(await batchLots(id));
+  const [matrix, batchScope] = await Promise.all([
+    receiptCostMatrix(
+      gridRows.map((row) => row.receiptId),
+      id,
+    ),
+    batchScopeCostByType(id),
+  ]);
+  const existing = Object.fromEntries(matrix);
   const types = await db
     .select({ id: costTypes.id, name: costTypes.name })
     .from(costTypes)
-    .where(eq(costTypes.active, true));
+    .where(eq(costTypes.active, true))
+    // A column order the database happens to return is a column order that
+    // can move between two sessions typing the same sheet (#524).
+    .orderBy(asc(costTypes.createdAt), asc(costTypes.code));
   const currencyCodes = (
     await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true))
   ).map((row) => row.code);
@@ -73,15 +90,11 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
       ) : (
         <ReceiptCostGrid
           batchId={id}
-          rows={gridRows.map((row) => ({
-            receiptId: row.receiptId,
-            number: row.number,
-            clientCode: row.clientCode,
-            kg: row.kg,
-            m3: row.m3,
-          }))}
+          rows={gridRows}
           types={types}
           existing={existing}
+          batchScope={Object.fromEntries(batchScope)}
+          dealLinks={canWriteDeal(actor.permissions)}
           currencies={currencyCodes}
           defaultCurrency="USD"
           today={new Date().toISOString().slice(0, 10)}
@@ -91,4 +104,44 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
       )}
     </div>
   );
+}
+
+/**
+ * The truck's lots folded into one row per prixod, in the lots' own order
+ * (client code, unclaimed last, then prixod number). The row's photo is its
+ * first lot's goods, else the carton — this screen asks «what is it», which
+ * is /stock's question and not the loader's.
+ */
+function groupLotsByReceipt(lots: Awaited<ReturnType<typeof batchLots>>): GridReceiptRow[] {
+  const rows = new Map<string, GridReceiptRow>();
+  for (const lot of lots) {
+    let row = rows.get(lot.receiptId);
+    if (!row) {
+      row = {
+        receiptId: lot.receiptId,
+        number: lot.receiptNumber,
+        clientCode: lot.clientCode,
+        marking: lot.marking,
+        dealId: lot.dealId,
+        dealCode: lot.dealCode,
+        photoId: null,
+        boxes: 0,
+        kg: 0,
+        m3: 0,
+        lots: [],
+      };
+      rows.set(lot.receiptId, row);
+    }
+    row.photoId ??= lot.goodsPhotoId ?? lot.boxPhotoId;
+    row.boxes += lot.onBatch;
+    row.kg = Math.round((row.kg + lot.kg) * 10) / 10;
+    row.m3 = Math.round((row.m3 + lot.m3) * 1000) / 1000;
+    row.lots.push({
+      letter: lot.letter,
+      name: lot.productNameRu ? `${lot.productNameZh} · ${lot.productNameRu}` : lot.productNameZh,
+      onBatch: lot.onBatch,
+      lotBoxCount: lot.lotBoxCount,
+    });
+  }
+  return [...rows.values()];
 }

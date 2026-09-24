@@ -19,6 +19,8 @@ import {
 export interface CostActionResult {
   ok: boolean;
   error?: string;
+  /** The grid only: cells that DID become entries before a failure. */
+  saved?: string[];
 }
 
 export async function addCostEntryAction(input: unknown): Promise<CostActionResult> {
@@ -88,14 +90,20 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
   }
 
   const meta = await requestMeta();
+  let result;
   try {
-    await addReceiptCostsBulk(parsed.data, { actorId: actor.id, ...meta });
+    result = await addReceiptCostsBulk(parsed.data, { actorId: actor.id, ...meta });
   } catch (err) {
     if (err instanceof CostError) return { ok: false, error: err.code };
     throw err;
   }
+  // The grid has its own page now (round 47); revalidating the card alone
+  // left the grid's «≈ written» hints a save behind.
   revalidatePath(`/batches/${batch.id}`);
-  return { ok: true };
+  revalidatePath(`/batches/${batch.id}/xarajatlar`);
+  return result.error
+    ? { ok: false, error: result.error, saved: result.saved }
+    : { ok: true, saved: result.saved };
 }
 
 const voidSchema = z.object({

@@ -787,7 +787,23 @@
     "gridEntered": "Already entered (USD)",
     "gridNow": "Being entered now",
     "paidBy": "Settled by",
-    "paidByUs": "We paid it"
+    "paidByUs": "We paid it",
+    "gridSearch": "Search: client code, marking, goods, receipt, deal",
+    "gridEmptyCol": "Empty column",
+    "gridEmptyColAll": "All receipts",
+    "gridEmptyColOf": "«{type}» not entered on this truck",
+    "gridShown": "Showing {shown} / {total} receipts",
+    "gridHiddenTyped": "{count} more cells ({amount} {currency}) are hidden by the filter — they will be saved too",
+    "gridBatchScope": "whole truck: ${amount}",
+    "gridNoMatch": "No receipts match the filter",
+    "gridSplitLot": "{onBatch} of this lot’s {total} boxes are on this truck",
+    "gridElsewhere": "+ ${amount} entered elsewhere",
+    "gridElsewhereHint": "Entered on this receipt from another truck, the receipt card or the receiving screen — it may be the same bill",
+    "gridTotalsAll": "for the whole truck",
+    "gridBadCells": "{count} cells could not be read as a number — write «1200», «1 200» or «1200.50».",
+    "gridBadHidden": "{count} of them are hidden by the filter.",
+    "gridShowAll": "Show all",
+    "gridPartial": "{saved} cells saved, the rest were not ({reason}). The unsaved ones are still in the grid — press again."
   },
   "batches": {
     "title": "Batches",
@@ -871,7 +887,9 @@
     "customsFirmAccount": "Open the firm's account",
     "documents": "Documents",
     "customsPerReceipt": "Customs per receipt",
-    "customsFromBatch": "As the truck says"
+    "customsFromBatch": "As the truck says",
+    "internalCosts": "Batch costs (internal leg)",
+    "noCostsWarn": "No costs are entered on this batch yet"
   },
   "loading": {
     "title": "Loading",
@@ -1045,7 +1063,7 @@
     "voidReason": "Reason for voiding?",
     "voided": "Voided",
     "pricingTitle": "Batch money",
-    "pricingHint": "Cost, price, margin and balance per client of this batch. A price posts to the client's balance as a charge.",
+    "pricingHint": "Each client’s goods on this truck: the cost of every item, the client’s price, margin and balance. The price is one per client and is written to their balance as a charge.",
     "setPrice": "Set the price",
     "alreadyCharged": "Charged",
     "costLabel": "Cost",
@@ -1070,7 +1088,18 @@
     "registerTruncated": "Showing the newest {shown} of {total}; the total covers the whole period.",
     "bothFigures": "Floor and client price",
     "floorShort": "floor",
-    "clientPriceShort": "client:"
+    "clientPriceShort": "client:",
+    "unclaimedGroup": "Cargo with no owner yet",
+    "unclaimedPriceLater": "The price is set once the owner is found, on that client’s row. Its cost is already in the total above.",
+    "orphanCharges": "Prices charged to clients with no cargo left on this truck",
+    "orphanChargesHint": "The cargo may have moved to another client, or the price was typed by mistake. It is in the «Price» total above — check the client’s ledger.",
+    "unconvertedCosts": "{count} costs have no FX rate and are missing from the cost. Enter the rate for that date under «Rates».",
+    "amountUnreadable": "The amount could not be read — write «1200», «1 200» or «1200.50»",
+    "internalBatch": "Internal leg — clients are not priced on it. This truck’s costs go into the cargo’s cost and show on the cross-border truck as «before this trip».",
+    "internalNoCosts": "No costs are entered on this internal leg yet — enter the freight and the rest on the batch card.",
+    "internalPricedBefore": "Prices written on this internal leg earlier",
+    "internalPricedBeforeHint": "Internal legs are no longer priced. These rows stay on the client’s ledger — the accountant can void them and re-post them on the cross-border truck if needed.",
+    "internalBatchRefused": "Internal legs are not priced — put the price on the cross-border truck"
   },
   "map": {
     "title": "Map",
@@ -1590,7 +1619,9 @@
     "withCargo": "With cargo",
     "withDebt": "In debt",
     "lastReceipt": "last intake",
-    "callToday": "call today"
+    "callToday": "call today",
+    "internalTrip": "internal leg — priced on the next truck",
+    "internalNoCost": "internal leg, no costs entered"
   },
   "arrivals": {
     "title": "Incoming cargo",
