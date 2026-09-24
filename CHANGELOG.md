@@ -1,5 +1,72 @@
 # CHANGELOG
 
+## Hisobotlar auditi: sizga bog'liq bo'lmagan tuzatishlar — 2026-09-24
+
+4-band («hisobotlar to'g'rimi») bo'yicha auditning 39 ta tasdiqlangan
+topilmasidan sizning qaroringizni kutmaydiganlari. Qolganlari (R1–R7) sizning
+javobingizni kutyapti. **Migratsiya 0099 — deploydan keyin ledger 100 bo'lishi
+kerak.**
+
+### Pul ikki marta ketmasin
+
+- **Upsale komissiyasi ikki marta to'lanardi**: to'langan ish qayta
+  hisoblansa (V2) yoki «Готово» javobidan keyin muhrlansa, sotuvchiga butun
+  farq yana to'lanardi. Endi to'langan summa butun sotuv bo'yicha ayiriladi;
+  to'langan qator ro'yxatdan yo'qolmaydi.
+- **Kontragent kartasida qo'lda «hisob qo'ydi»** endi yo'q: bunday qarz
+  foyda hisobotiga umuman tushmasdi. Mashina, rastamojka, ijara, oylik —
+  xarajat formasida «Kim to'ladi» bilan yoziladi, qarz o'zi tushadi. Eski
+  qo'lda yozilganlar kartada ⚠ bilan va P&L sahifasida summasi bilan ko'rinadi.
+
+### Ekranlar bir-biriga mos
+
+- **Xarajatlar «Jami»** faqat oxirgi 500 qatorni qo'shardi — endi butun davr.
+  Excel fayl kategoriya filtrini oladi, firma to'lagan qatorni «→ firma» deb
+  yozadi.
+- **CRM «yutilgan $»**: so'm va yuandagi narxlar dollar deb qo'shilardi
+  (45 000 000 so'm = $45 000 000). Endi faqat dollar, qolganlari «+N boshqa
+  valyutada»; bitimda chegirma ayiriladi.
+- **Tannarx hisoboti** bekor qilingan xarajatni hali sanardi; kursi yo'q
+  xarajatlar endi ⚠ bilan aytiladi (P&L va foyda sahifalarida ham).
+- **Kontragentlar** sahifasida «bizga qarzdor» jami ham bor — Balans bilan
+  bir xil.
+- **Kassalar**: qatorda boshlang'ich + kirim − chiqim = balans (kontragent
+  pullari ham); bir valyutali kassalar orasida o'tkazma summasi teng bo'lishi
+  shart (1000 → 100 deb yozilsa $900 yo'qolib ketardi).
+- **Partiya/Yo'nalish foydasi** ostida mashinaga bog'lanmagan tushum va
+  xarajat alohida aytiladi.
+
+### To'lov va sana
+
+- **To'lov kassasiz saqlanmaydi.** Eskilari: Balansda «Kassaga joylanmagan
+  to'lovlar» qatori, reestrda alohida ko'rinish va **«Joylash»** tugmasi;
+  bosh sahifa hisoblagichi endi faqat shu oyni emas, hammasini sanaydi.
+- **Kelajak sanasi** (masalan 2308-yil) bilan narx/to'lov yozilmaydi; eski
+  shundaylar qarzdorlik hisobotida ⚠.
+- **Rasxod xabari** endi pul sarflangan kun (skladning o'z vaqti) bilan
+  kiritiladi, buxgalter kiritgan kun bilan emas.
+- **Valyuta kursi**: valyuta tanlanishi shart, hozirgi kurs ko'rinadi, 20%
+  dan ortiq sakrash «ha, to'g'ri» belgisisiz saqlanmaydi.
+- Upsale sahifasi davr «taklif sanasi» bo'yicha ekanini yozadi.
+
+### Takroriy xarajatlar (migratsiya 0099)
+
+- Har bir oylik/ijara yozuvi o'z shablonini biladi: bir kunda qo'lda
+  kiritilgan bonus endi oylikning o'rniga o'tib ketmaydi.
+- Bekor qilingan oylik yozuvi «bu oy yo'q» degani — keyingi bosishda qayta
+  yozilmaydi.
+- Har bir shablonda **summa, kun va to'xtatish** tugmasi.
+- Shablon «Kim to'ladi»ni saqlaydi: transport firmasi orqali to'lanadigan
+  ijara har oy firmaning qarziga tushadi.
+- Deploydan oldin yozilgan shu oygi ijara migratsiyada shablonga bog'lanadi —
+  birinchi bosishda ikki marta yozilmaydi.
+
+### Tannarx
+
+- Prixod kg/kub tuzatilganda endi **mashina va yashik xarajati ham** qayta
+  bo'linadi (oldin faqat prixodning o'z xarajati) — pul to'g'ri mijozga
+  o'tadi.
+
 ## Partiya xarajatlari va moliyasi tovar bo'yicha, ichki reys, nofaol sklad — 2026-09-24
 
 Sizning 4 ta bandingiz va keyingi javoblaringizning birinchi qismi. Kassa,

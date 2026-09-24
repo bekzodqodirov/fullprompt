@@ -1698,8 +1698,31 @@ converted (USD rates are never saved, so no FX trigger ever fired) — now
 recomputed after the commit plus a nightly `{unconverted:true}` sweep.
 2702 unit/integration on a fresh db.
 
-**Latest migration: 0098** (`staff_notes_simplify` — the note is a name, its
-text and its files; ledger must reach **99**). Before it: **0097**
+**Round — the reports audit, his-decision-free half (2026-09-24; DECISIONS
+#989-1001; migration 0099 `recurring_link` — ledger must reach 100):** 39
+confirmed findings; everything not waiting on R1-R7 is fixed, each red-proven.
+Upsale commission is subtracted per SALE — the correction chain plus any
+Готово answer on the card (`payableOffersSql`'s `job`/`paid` CTEs; `stands` is
+a column so paid rows stay listed). The partner card cannot type a service
+debt (`charge_via_cost`); legacy ones are NAMED on the P&L, never added (some
+were also typed as costs). `pnlGaps` / `unconvertedCosts` / `unbatchedMoney`
+say what a report cannot count instead of a silent $0. Expense «Jami» is an
+uncapped aggregate (`expenseTotals`). Won money is dollars only, deals net of
+discount (`crm/won-money.ts`; NULL lead currency = USD). A payment needs a
+till at the DOOR (the service keeps history), `unplacedPaymentSql` feeds the
+Balans line, the counter and the register's «Joylash» (`placePayment`). The
+ledger refuses dates after tomorrow (`finance/dates.ts`) — the accounting
+suite's private year moved from 2100+ to 1700+. Rasxod xabari files on the
+warehouse's spend day (`spendDateOf`); FX asks before a >20 % jump.
+`recomputeForLot` re-splits the truck's freight after a lot fix. 0099:
+`expenses.recurring_id` (posted = THIS template's row, voided or not) and
+`recurring_expenses.partner_id`; the backfill test runs the migration's own
+statement in a rolled-back tx.
+
+**Latest migration: 0099** (`recurring_link` — a posting names its template,
+a template names its payer; ledger must reach **100**). Before it: **0098**
+(`staff_notes_simplify` — the note is a name, its
+text and its files; ledger 99). Before it: **0097**
 (`staff_notes` — the note, its parts, their order,
 the send shape and Telegram's file-id cache; ledger 98).
 Before it: **0096** (`ai_ved_memory` — the sealed memory's provenance
@@ -1802,8 +1825,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **99** since 0098, and his server last CONFIRMED 95 (2026-09-04),
-which means 0095-0098 are all pending and one deploy applies FOUR of them.
+length — **100** since 0099, and his server last CONFIRMED 95 (2026-09-04),
+which means 0095-0099 are all pending and one deploy applies FIVE of them.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
