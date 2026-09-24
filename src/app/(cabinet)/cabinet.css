@@ -406,6 +406,19 @@
 .cab-row > :last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cab-row[data-kind='payment'] > :last-child { color: var(--ok); }
 
+/* The history: one card per handover, its date and place on one line that may
+   wrap, and the lot's «received on» as a quieter second row under it. */
+.cab-lot-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding-bottom: 4px;
+}
+.cab-lot-head small { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+.cab-row-muted { font-size: 0.78rem; padding-top: 0; }
+
 /* ------------------------------------------------- empty, loading, errors */
 
 .cab-empty {

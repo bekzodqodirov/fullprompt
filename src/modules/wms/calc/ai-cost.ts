@@ -53,8 +53,8 @@ export async function recordAiPass(input: {
 /**
  * How many model calls are left today.
  *
- * The day is UTC — the same convention `/bugun` and the task deadlines use
- * (#457's note), and moving it would have to move those too. Infinity when
+ * The day is Tashkent's (R5) — the AI assistant's daily cap cuts at the same
+ * midnight, so the two budgets a person meets reset together. Infinity when
  * the setting is not a positive number: an unreadable cap must not stop the
  * feature, it must stop being a cap.
  */
@@ -64,7 +64,7 @@ export async function aiCalcBudgetLeft(): Promise<number> {
   const [row] = await db.execute<{ used: string }>(sql`
     SELECT count(*)::text AS used
       FROM ai_calc_passes
-     WHERE created_at >= date_trunc('day', now())
+     WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
   `);
   return Math.max(0, configured - Number(row?.used ?? 0));
 }

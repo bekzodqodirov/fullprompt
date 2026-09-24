@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { aliasedTable, and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { calcQueueCounts } from '../calc/service';
 import {
@@ -7,14 +7,18 @@ import {
   dealStages,
   deals,
   loadPlans,
+  warehouses,
 } from '../../platform/db/schema';
 import type { ScopedActor } from '../../platform/rbac/scope';
 import { chatBadges } from '../crm/conversations';
 import { followUps, openLeadCount } from '../crm/service';
 import { managedClients } from '../finance/client-cargo';
+import { unplacedPaymentSql } from '../finance/service';
 import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
-import { costMissingBatches } from '../reports/queries';
+import { costMissingCount } from '../reports/queries';
+import { sameCountryLegSql } from '../batches/internal';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
+import { unplacedCostTotals } from '../costing/service';
 
 /**
  * The other three workflow homes (owner: "har bir hodim qiladigan ishiga
@@ -85,42 +89,55 @@ export interface LogistFlowCounts {
   warehouse: WarehouseFlowCounts;
   /** Departed >3 days with not a single cost entry. */
   costMissing: number;
+  /**
+   * Factory trucks (0100): arrived with no cost written — his C2, «rasxodini
+   * yozmading» — and trips with received prixods nobody has linked yet.
+   */
+  pickups: { noCost: number; unlinked: number };
 }
 
 export async function logistFlowCounts(
   actor: ScopedActor,
   today: string,
 ): Promise<LogistFlowCounts> {
-  const [plans, warehouse, costMissing] = await Promise.all([
+  const [plans, warehouse, costMissing, pickups] = await Promise.all([
     db
       .select({ n: sql<number>`count(*)` })
       .from(loadPlans)
       .where(inArray(loadPlans.status, ['pending_agent', 'changes_requested'])),
     // Unscoped actor → company-wide counts, exactly what a logist watches.
     warehouseFlowCounts(actor, today),
-    costMissingBatches(3),
+    costMissingCount(3),
+    // Caught: the pickup tables are minted this release, and a home screen
+    // must not go down with them on a half-applied deploy (#472).
+    import('../pickups/service')
+      .then((m) => m.pickupAttentionCounts())
+      .catch(() => ({ noCost: 0, unlinked: 0 })),
   ]);
   return {
     plansPending: Number(plans[0]?.n ?? 0),
     warehouse,
-    costMissing: costMissing.length,
+    costMissing,
+    pickups,
   };
 }
 
 export interface MoneyFlowCounts {
   snapshot: MoneySnapshot;
-  /** THIS month's payments with no cash box AND no counterparty behind them —
-   *  bounded so the years of pre-accounts history don't drown the actionable
-   *  few, and partner-settled so the queue only holds work somebody can do. */
+  /** Payments with no cash box AND no counterparty behind them since cash
+   *  boxes exist (`unplacedPaymentSql`) — history from before any box is in
+   *  some box's opening balance, and a settlement is placed with its firm. */
   unassignedPayments: number;
   /** Active recurring templates not yet posted this month. */
   recurringDue: number;
   costMissing: number;
+  /** Cargo costs waiting for their kassa (0101) — the accountant's queue. */
+  unplacedCosts: number;
 }
 
 export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
   const month = today.slice(0, 7);
-  const [snapshot, unassigned, recurring, costMissing] = await Promise.all([
+  const [snapshot, unassigned, recurring, costMissing, unplacedCosts] = await Promise.all([
     moneySnapshot(),
     db
       .select({ n: sql<number>`count(*)` })
@@ -128,40 +145,39 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
       .where(
         and(
           eq(clientTransactions.type, 'payment'),
-          isNull(clientTransactions.accountId),
-          // A three-cornered settlement's client half has no cash box BY
-          // CONSTRUCTION — the money went into the supplier's account, not a
-          // till of ours (#415) — and no screen can ever name one for it. It
-          // was posting a chore the accountant could not finish, one per
-          // settlement, until the month rolled over. Same clause, same
-          // reason as `cashFlow`.
-          isNull(clientTransactions.partnerId),
           isNull(clientTransactions.voidedAt),
-          sql`${clientTransactions.txDate} >= ${`${month}-01`}`,
+          // Every unplaced payment since cash boxes exist, not this month's
+          // (audit A2): at month-end the rest fell off the queue while the
+          // Balans stayed short by them, and nothing could place them. The
+          // register's unplaced view has the «kassaga joylash» door now, and
+          // the Balans line reads the same predicate. A three-cornered
+          // settlement's client half has no cash box BY CONSTRUCTION — the
+          // money went into the supplier's account (#415) — which the shared
+          // predicate's partner clause keeps off the queue, as before.
+          unplacedPaymentSql(),
         ),
       ),
-    // Mirrors generateRecurring's own idempotence check: a template counts
-    // as due only while no live expense sits on its (category, date,
-    // employee) slot for the current month.
+    // Mirrors generateRecurring's own idempotence check (0099): a template
+    // is due until a posting of IT exists on this month's day — voided or
+    // not, because a voided posting means «not this month» (audit A32/A33).
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM recurring_expenses r
       WHERE r.active = true
         AND NOT EXISTS (
           SELECT 1 FROM expenses e
-          WHERE e.category_id = r.category_id
+          WHERE e.recurring_id = r.id
             AND e.expense_date = (${month} || '-' || lpad(r.day_of_month::text, 2, '0'))::date
-            AND e.voided_at IS NULL
-            AND ((r.employee_id IS NULL AND e.employee_id IS NULL) OR e.employee_id = r.employee_id)
-            AND ((r.warehouse_id IS NULL AND e.warehouse_id IS NULL) OR e.warehouse_id = r.warehouse_id)
         )
     `),
-    costMissingBatches(3),
+    costMissingCount(3),
+    unplacedCostTotals(),
   ]);
   return {
     snapshot,
     unassignedPayments: Number(unassigned[0]?.n ?? 0),
     recurringDue: Number(recurring[0]?.n ?? 0),
-    costMissing: costMissing.length,
+    costMissing,
+    unplacedCosts: unplacedCosts.count,
   };
 }
 
@@ -177,17 +193,27 @@ export interface VedFlowCounts {
 }
 
 export async function vedFlowCounts(): Promise<VedFlowCounts> {
+  const originWh = aliasedTable(warehouses, 'origin_wh');
+  const destWh = aliasedTable(warehouses, 'dest_wh');
   const [calc, docs, tnved] = await Promise.all([
     // The same fragment the queue screen filters by, so the number here and
     // the rows there cannot disagree (#513).
     calcQueueCounts(),
     // A truck that left without its papers reaching the agent is the thing
     // this person gets phoned about; unloaded means customs is behind it.
+    // An internal leg (Yiwu → Kashgar, Andijan → Tashkent) carries no export
+    // papers to send, so it is not this person's phone call either.
     db
       .select({ n: sql<number>`count(*)` })
       .from(batches)
+      .innerJoin(originWh, eq(batches.originWarehouseId, originWh.id))
+      .innerJoin(destWh, eq(batches.destWarehouseId, destWh.id))
       .where(
-        and(inArray(batches.status, ['in_transit', 'arrived']), isNull(batches.sentToAgentAt)),
+        and(
+          inArray(batches.status, ['in_transit', 'arrived']),
+          isNull(batches.sentToAgentAt),
+          not(sameCountryLegSql(sql`${originWh}`, sql`${destWh}`)),
+        ),
       ),
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n

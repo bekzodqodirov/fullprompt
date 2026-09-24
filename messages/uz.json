@@ -94,12 +94,13 @@
     "flowLoading": "yuklanmoqda: {n}",
     "flowReady": "topshirishga tayyor: {n} quti",
     "flowPlansPending": "qaror kutyapti: {n}",
-    "flowUnassignedPayments": "Kassaga joylashtirilmagan to‘lovlar (shu oy)",
+    "flowUnassignedPayments": "Kassaga joylanmagan to‘lovlar",
     "flowRecurringDue": "Doimiy xarajatlar kiritilmagan",
     "flowDocsPending": "Agentga hujjati ketmagan partiyalar",
     "flowTnvedMissing": "TNVED kodsiz tovarlar",
     "flowCalcOpen": "Navbatdagi hisoblashlar",
-    "flowCalcLate": "kechikkan"
+    "flowCalcLate": "kechikkan",
+    "flowUnplacedCosts": "Kassasi ko‘rsatilmagan xarajatlar"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -136,7 +137,8 @@
     "noDebtors": "Qarzdor yo‘q",
     "salesTitle": "Sotuv",
     "wonThisMonth": "shu oyda sotildi",
-    "logisticsTitle": "Logistika"
+    "logisticsTitle": "Logistika",
+    "oldestOf": "eng eskisi {shown} / {total}"
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -255,7 +257,8 @@
     "taskHours": "soat",
     "taskUndated": "Muddatsiz: {n} ta — ular hech kimning «Mening kunim»iga tushmaydi.",
     "taskStalest": "Eng ko'p kechikkanlari",
-    "taskLateDays": "{n} kun"
+    "taskLateDays": "{n} kun",
+    "landedUnconverted": "Kursi kiritilmagan {count} ta xarajat bu hisobotga kirmagan: {sums}. Valyuta kursini kiriting — ular o‘zi qo‘shiladi."
   },
   "warehouses": {
     "title": "Skladlar",
@@ -383,7 +386,8 @@
       "import_baza_min_sim": "Import bazasidan nom o'xshashligi shu darajadan yuqori bo'lsa — baza avtomatik qo'yiladi (0..1)",
       "calc_memory_min_sim": "AI avvalgi MUHRLANGAN hisobdan bazani olishi uchun nom o'xshashligi darajasi (0..1)",
       "ai_calc_daily_limit": "Hisoblash uchun kuniga nechta AI so'rovi (limitdan keyin faqat xotira, lug'at va bojxona fayli ishlaydi)",
-      "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi"
+      "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi",
+      "cost_kassa_since": "Shu kundan boshlab kiritilgan, kassasi ko‘rsatilmagan xarajatlar buxgalter navbatiga tushadi (YYYY-MM-DD; bo‘sh = hammasi)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi"
@@ -502,7 +506,19 @@
     "callRecApp": "Ilovani yuklab olish (Android)",
     "telegramReconnect": "Qayta ulash",
     "telegramReconnectHint": "Telefon yoki Telegram akkaunt o‘zgardimi? Botni yangisidan oching — xabarnomalar o‘sha yerga keladi. Yangisi ulanmaguncha eski chat ishlab turaveradi.",
-    "notifMuteCalls": "Ertalabki qo‘ng‘iroqlar ro‘yxati"
+    "notifMuteCalls": "Ertalabki qo‘ng‘iroqlar ro‘yxati",
+    "rasxodHint": "Ish uchun pul sarfladingizmi — moliyaga xabar bering, chekni rasmga olib qo‘shing.",
+    "staffAccountTitle": "Kompaniya bilan hisob-kitobim",
+    "staffOwes": "Kompaniya sizga qarz: {amount}",
+    "staffAdvance": "Sizda avans qoldig‘i: {amount}",
+    "staffSettled": "Hisob-kitob yopilgan",
+    "staffKindCharge": "Siz to‘lagan xarajat",
+    "staffKindPayment": "Avans berildi",
+    "staffKindReceipt": "Qaytardingiz",
+    "staffKindAdjust": "Tuzatish",
+    "staffKindOffset": "Hisob-kitob",
+    "staffPendingTitle": "Hali tasdiqlanmagan",
+    "staffPendingHint": "Bu hali kompaniyaning qarzi emas — moliya kiritgach hisobga tushadi."
   },
   "receive": {
     "title": "Qabul",
@@ -544,7 +560,10 @@
       "photo": "kamida 1 ta rasm qo‘shing"
     },
     "acceptUnclaimedAs": "{code} — notanish yuk sifatida qabul qilish",
-    "noteAndCost": "Izoh va rasxod (kerak bo‘lsa)"
+    "noteAndCost": "Izoh va rasxod (kerak bo‘lsa)",
+    "pickupReceiving": "zavod reysidan qabul",
+    "pickupDetach": "Reysdan ajratish",
+    "pickupInvalid": "Bu zavod reysi boshqa skladga ketyapti yoki bekor qilingan."
   },
   "receipts": {
     "title": "Qabullar",
@@ -787,7 +806,38 @@
     "gridEntered": "Yozilgan (USD)",
     "gridNow": "Hozir kiritilmoqda",
     "paidBy": "Kim to‘ladi",
-    "paidByUs": "O‘zimiz to‘ladik"
+    "paidByUs": "O‘zimiz to‘ladik",
+    "gridSearch": "Qidirish: mijoz kodi, markirovka, tovar, prixod, bitim",
+    "gridEmptyCol": "Bo‘sh ustun",
+    "gridEmptyColAll": "Barcha prixodlar",
+    "gridEmptyColOf": "«{type}» shu reysda yozilmagan",
+    "gridShown": "Ko‘rsatilgan: {shown} / {total} prixod",
+    "gridHiddenTyped": "filtr ostida yana {count} ta katakka {amount} {currency} yozilgan — ular ham saqlanadi",
+    "gridBatchScope": "butun partiyaga: ${amount}",
+    "gridNoMatch": "Filtrga mos prixod yo‘q",
+    "gridSplitLot": "Bu tovarning {total} karobkasidan {onBatch} tasi shu mashinada",
+    "gridElsewhere": "+ ${amount} boshqa yozuvda",
+    "gridElsewhereHint": "Shu prixodga boshqa reys, prixod kartasi yoki qabul ekranidan yozilgan — balki xuddi shu hisobdir",
+    "gridTotalsAll": "butun partiya bo‘yicha",
+    "gridBadCells": "{count} ta katakdagi son o‘qilmadi — «1200», «1 200» yoki «1200,50» deb yozing.",
+    "gridBadHidden": "Ulardan {count} tasi filtr ostida.",
+    "gridShowAll": "Hammasini ko‘rsatish",
+    "gridPartial": "{saved} ta katak saqlandi, qolgani saqlanmadi ({reason}). Saqlanmaganlari jadvalda qoldi — qayta bosing.",
+    "rateStanding": "Hozirgi kurs: 1 USD = {rate} {currency}",
+    "rateJump": "Oxirgi kurs 1 USD = {previous} {currency} edi — yangisi 20% dan ko‘proq farq qiladi. To‘g‘ri bo‘lsa, belgilab yana saqlang.",
+    "paidByUsNoTill": "Biz to‘ladik — kassani buxgalter ko‘rsatadi",
+    "tillGroup": "Kassadan",
+    "partnerGroup": "Kontragent to‘lagan",
+    "tillAmount": "Kassadan chiqqan summa ({currency})",
+    "paidFromTill": "kassadan",
+    "errTillForbidden": "Kassani faqat buxgalter yoki admin ko‘rsatadi.",
+    "errStaffPayer": "Hodim o‘z pulidan to‘laganini «Rasxod xabari» orqali yuboring — buxgalter tasdiqlaydi.",
+    "errKassaVoid": "Kassadan to‘langan xarajatni faqat buxgalter yoki admin bekor qiladi — pul kassaga qaytadi.",
+    "errTillAmountRequired": "Kassa boshqa valyutada — kassadan qancha chiqqanini yozing.",
+    "errTillAmountMismatch": "Kassa shu valyutada — summa xarajat summasiga teng bo‘lishi kerak.",
+    "errTillNotFound": "Bu kassa topilmadi yoki yopilgan.",
+    "errTillCurrency": "Jadvalda bitta valyuta: kassa ham shu valyutada bo‘lishi kerak.",
+    "errPayerConflict": "Bu xarajatning to‘lovchisi allaqachon ko‘rsatilgan."
   },
   "batches": {
     "title": "Partiyalar",
@@ -871,7 +921,9 @@
     "customsFirmAccount": "Firma hisobini ochish",
     "documents": "Hujjatlar",
     "customsPerReceipt": "Prixodlar bo‘yicha rastamojka",
-    "customsFromBatch": "Partiya bo‘yicha"
+    "customsFromBatch": "Partiya bo‘yicha",
+    "internalCosts": "Partiya xarajati (ichki reys)",
+    "noCostsWarn": "Bu partiyaga hali xarajat yozilmagan"
   },
   "loading": {
     "title": "Pogruzka",
@@ -1045,7 +1097,7 @@
     "voidReason": "Bekor qilish sababi?",
     "voided": "Bekor qilingan",
     "pricingTitle": "Partiya moliyasi",
-    "pricingHint": "Shu partiyadagi har bir mijoz bo'yicha tannarx, narx, foyda va balans. Narx mijoz balansiga hisob bo'lib yoziladi.",
+    "pricingHint": "Shu partiyadagi har bir mijozning tovarlari: har bir tovarning tannarxi, mijozning narxi, foydasi va balansi. Narx mijozga bitta qo‘yiladi va uning balansiga hisob bo‘lib yoziladi.",
     "setPrice": "Narx belgilash",
     "alreadyCharged": "Hisoblangan",
     "costLabel": "Tannarx",
@@ -1070,7 +1122,27 @@
     "registerTruncated": "Eng yangi {shown} tasi ko'rsatildi (jami {total}); «jami» summa to'liq davr bo'yicha.",
     "bothFigures": "Tannarx va mijoz narxi",
     "floorShort": "tannarx",
-    "clientPriceShort": "mijoz:"
+    "clientPriceShort": "mijoz:",
+    "unclaimedGroup": "Egasi aniqlanmagan yuk",
+    "unclaimedPriceLater": "Narx egasi topilgach, o‘sha mijozning kartasida qo‘yiladi. Tannarxi yuqoridagi jamiga kirgan.",
+    "orphanCharges": "Shu mashinada yuki qolmagan mijozlarga yozilgan narxlar",
+    "orphanChargesHint": "Yuk boshqa mijozga o‘tkazilgan yoki narx xato yozilgan bo‘lishi mumkin. Yuqoridagi «Narx» jamiga kirgan — mijoz kassasida tekshiring.",
+    "unconvertedCosts": "{count} ta xarajatning kursi yo‘q — tannarxga kirmagan. «Kurslar» bo‘limida shu sanaga kurs kiriting.",
+    "amountUnreadable": "Summani o‘qib bo‘lmadi — «1200», «1 200» yoki «1200,50» deb yozing",
+    "internalBatch": "Ichki reys — mijozlarga narx qo‘yilmaydi. Bu mashinaning xarajati yukning tannarxiga qo‘shiladi va chegaradan o‘tadigan partiyada «shu reysgacha» bo‘lib ko‘rinadi.",
+    "internalNoCosts": "Bu ichki reysga hali xarajat yozilmagan — yo‘lkira va boshqa xarajatlarni partiya kartasida kiriting.",
+    "internalPricedBefore": "Bu ichki reysga oldin yozilgan narxlar",
+    "internalPricedBeforeHint": "Endi ichki reysga narx yozilmaydi. Bu yozuvlar mijoz kassasida turibdi — kerak bo‘lsa buxgalter bekor qilib, chegaradan o‘tadigan partiyaga qayta yozadi.",
+    "internalBatchRefused": "Ichki reysga mijoz narxi yozilmaydi — narxni chegaradan o‘tadigan partiyada qo‘ying",
+    "priceAlsoToDeal": "Narx {code} bitimiga ham yoziladi",
+    "accountRequired": "To‘lov qaysi kassaga tushganini tanlang.",
+    "futureDate": "Sana bugundan keyin bo‘lishi mumkin emas.",
+    "placePayment": "Joylash",
+    "registerAll": "Davr bo‘yicha",
+    "registerUnplaced": "Kassaga joylanmagan",
+    "refund": "Pul qaytarildi",
+    "refundAccount": "Qaysi kassadan qaytarildi",
+    "refundOnBatch": "Qaytarish partiyaga yozilmaydi — u narx emas."
   },
   "map": {
     "title": "Xarita",
@@ -1097,7 +1169,13 @@
     "goFull": "To‘liq ekran",
     "exitFull": "Chiqish",
     "legendWarehouse": "Ombor",
-    "legendTruck": "Mashina"
+    "legendTruck": "Mashina",
+    "legendPickup": "Zavod reysi",
+    "openPickup": "Reysni ochish",
+    "pickupPhase_waiting": "zavodda kutmoqda",
+    "pickupPhase_driving": "yo‘lda",
+    "pickupPhase_loading": "zavodda yuklanmoqda",
+    "pickupPhase_arrived": "omborga yetgan bo‘lishi kerak"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",
@@ -1166,7 +1244,7 @@
     "days90": "90+ kun",
     "debt": "Qarz",
     "asOf": "Sana holatiga",
-    "pnlNote": "Oylik jadvalda tushum va tannarx o‘z sanasi bo‘yicha tushadi. Reysning haqiqiy foydasi uchun «Partiya foydasi» hisobotiga qarang.",
+    "pnlNote": "Oylik jadvalda tushum va tannarx o‘z sanasi bo‘yicha tushadi. «Partiya foydasi» faqat mashinaga yozilgan narx va xarajatni ko‘radi — prixod va yashik xarajatlari u yerda alohida qatorda aytiladi.",
     "transfersExcluded": "Hisoblar orasidagi {n} ta ko‘chirish hisobga olinmadi (bu daromad ham, xarajat ham emas).",
     "uzsNote": "So‘mdagi qiymat bugungi kurs bo‘yicha ({rate})",
     "fxMissing": "Bu valyuta uchun kurs yo‘q — avval Kurslar bo‘limiga kiriting",
@@ -1201,7 +1279,62 @@
     "reject": "Rad etish",
     "rejectReason": "Nega rad etyapsiz? Skladchi javobni ko'radi.",
     "fromRequest": "Sklad xabaridan to'ldirildi — tekshirib, kategoriya va kassani tanlang.",
-    "requestTaken": "Bu xabarni boshqa birov kiritib bo'ldi"
+    "requestTaken": "Bu xabarni boshqa birov kiritib bo'ldi",
+    "gapManualCharges": "Kontragentlarga qo‘lda yozilgan {count} ta qarz ({usd}) bu hisobotga kirmagan — ular xarajat sifatida yozilmagan.",
+    "gapManualChargesHint": "Agar shu xizmat alohida xarajat sifatida ham yozilgan bo‘lsa, hammasi joyida. Yozilmagan bo‘lsa: kontragent kartasida qarzni bekor qiling va xarajat formasida «Kim to‘ladi»ni tanlab qayta kiriting.",
+    "gapOpenPartners": "Kontragentlar →",
+    "gapUnconverted": "Kursi kiritilmagan {count} ta xarajat $0 deb hisoblangan: {sums}.",
+    "gapUnconvertedHint": "Shu valyutaning kursini kiriting — xarajatlar o‘zi qayta hisoblanadi.",
+    "expensesTruncated": "Eng yangi {shown} tasi ko‘rsatildi (jami {total}); «Jami» summa butun davr bo‘yicha.",
+    "balUnplaced": "Kassaga joylanmagan to‘lovlar",
+    "futureDated": "{count} ta yozuv bugundan keyingi sana bilan ({usd}). Boshqa ekranlar ularni bugungi qarzga qo‘shadi, bu hisobot esa yo‘q — sanasini tuzating.",
+    "transferAmountMismatch": "Bir valyutadagi kassalar orasida chiqqan va tushgan summa bir xil bo‘lishi kerak.",
+    "recurringEdit": "Summa, kun yoki to‘xtatish",
+    "recurringActive": "Faol — har oy yoziladi",
+    "internalRowsNote": "Ichki reyslar (Xitoy ichida) faqat xarajat sifatida ko‘rsatiladi: ularga narx qo‘yilmaydi, xarajati esa chegaradan o‘tadigan mashinaning tannarxida «shu reysgacha» bo‘lib turibdi — shuning uchun jami qatoriga qo‘shilmagan.",
+    "unallocatedNote": "Mashinalarga yozilgan {usd} xarajat hech bir qutiga taqsimlanmagan — u hech bir tannarxda yo‘q (mashinalar: {count} ta). Xarajatni partiya kartasida tekshiring.",
+    "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} — mijoz hisobida partiyasiz qo‘yilgan narxlar. Prixod, qabul, yashik va zavod reysi xarajatlari esa yuk qaysi mashinada ketgan bo‘lsa, o‘sha mashinaning tannarxida turibdi.",
+    "clientRefunds": "Mijozlarga qaytarilgan",
+    "balClientAdvances": "Mijozlar avansi (biz qarzmiz)",
+    "beforeOpening": "{count} ta yozuv boshlang‘ich qoldiq sanasidan oldin — ular shu qoldiq ichida, qayta qo‘shilmaydi",
+    "cargoUnplaced": "shundan kassasi ko‘rsatilmagan: {usd}",
+    "balUnplacedCosts": "{count} ta yuk xarajatining kassasi ko‘rsatilmagan (${usd}) — kassalar qoldig‘i shuncha ko‘p ko‘rinishi mumkin",
+    "costKassa": "Xarajat kassasi",
+    "costKassaHint": "Sklad, logist yoki VED kiritgan yuk xarajatlari. Har biri uchun ayting: qaysi kassadan to‘landi, hodim o‘z pulidan to‘ladimi, yoki bu «Xarajatlar»ga ikkinchi marta kiritilganmi (unda birlashtiring — pul ikki marta hisoblanmaydi).",
+    "queueCount": "Navbatda: {count} ta",
+    "queueSince": "{day} dan beri kiritilganlar",
+    "queuePrev": "Oldingi",
+    "queueNext": "Keyingi",
+    "mergedTitle": "Birlashtirilganlar",
+    "mergedCosts": "{count} ta xarajat bilan",
+    "queueDone": "Saqlandi.",
+    "queueEmpty": "Kassasi ko‘rsatilmagan xarajat yo‘q.",
+    "mergeTitle": "Belgilanganlar: {count} ta — «Xarajatlar»dagi takror bilan birlashtirish",
+    "mergeExpense": "Takroriy xarajatni tanlang",
+    "mergeButton": "Birlashtirish",
+    "mergeHint": "Bir xil valyutada summa tiyinigacha teng bo‘lishi kerak; har xil valyutada farq 2% yoki $5 gacha. Xarajat o‘chadi, kassasi yuk xarajatiga o‘tadi — kassa qoldig‘i o‘zgarmaydi.",
+    "mergePick": "Birlashtirish uchun belgilash",
+    "mergeSuggest": "«Xarajatlar»da takror bo‘lishi mumkin: {expense}",
+    "mergeOne": "Birlashtirish",
+    "queueTill": "Qaysi kassadan",
+    "queueTillAmount": "Kassadan ({currency})",
+    "queueSave": "Saqlash",
+    "queueStaff": "Hodim o‘z pulidan to‘lagan",
+    "queueErrTillAmount": "Kassa boshqa valyutada — kassadan qancha chiqqanini to‘g‘ri yozing.",
+    "queueErrTill": "Kassa topilmadi yoki yopilgan.",
+    "queueErrTaken": "Bu xarajat allaqachon joylangan yoki bekor qilingan — sahifani yangilang.",
+    "queueErrNotCandidate": "Bu xarajatni birlashtirib bo‘lmaydi (kontragent to‘lagan, takroriy oylik yoki upsale to‘lovi, yoki bekor qilingan).",
+    "queueErrAmount": "Summalar mos kelmadi: bir xil valyutada tiyinigacha, har xilda 2% yoki $5 gacha farq bo‘lishi kerak.",
+    "queueErrDays": "Sanalar orasida 14 kundan ko‘p farq bor.",
+    "queueErrRate": "Xarajat valyutasining kursi kiritilmagan.",
+    "queueErrNotStaff": "Tanlangan kontragent hodim emas.",
+    "queueErrForbidden": "Bu amal buxgalter yoki adminniki.",
+    "requestOwnPocket": "o‘z pulidan",
+    "fromRequestSelf": "Hodim o‘z pulidan to‘lagan — to‘lovchi uning hodim hisobi: kiritilgach kompaniya unga qarz bo‘ladi. Kassaga almashtirish mumkin.",
+    "staffPartnerMissing": "Hodimning hali hisobi yo‘q — unga qarzni yozish uchun oching.",
+    "staffPartnerOpen": "Hodim kontragentini ochish",
+    "staffPartnerLinkedElsewhere": "Bu login boshqa kontragentga bog‘langan — «Kontragentlar»da tekshiring.",
+    "staffPartnerInactive": "«{name}» hodim hisobi o‘chirilgan — yoqing yoki kassani tanlang."
   },
   "crm": {
     "title": "CRM",
@@ -1543,7 +1676,9 @@
     "dayStale": "{n} ta kechikkan — ko‘rish",
     "dayStaleOpen": "Kechikkanlar",
     "dayOthers": "Sotuvchilar bo‘yicha",
-    "dayBack": "Faqat meniki"
+    "dayBack": "Faqat meniki",
+    "wonOtherCurrency": "+{count} boshqa valyutada",
+    "feedRefund": "Pul qaytarildi"
   },
   "navShort": {
     "home": "Bosh",
@@ -1590,7 +1725,9 @@
     "withCargo": "Yuki bor",
     "withDebt": "Qarzdor",
     "lastReceipt": "oxirgi qabul",
-    "callToday": "bugun qo‘ng‘iroq"
+    "callToday": "bugun qo‘ng‘iroq",
+    "internalTrip": "ichki reys — narx keyingi partiyada",
+    "internalNoCost": "ichki reys, xarajat yozilmagan"
   },
   "arrivals": {
     "title": "Kelayotgan yuklar",
@@ -2499,7 +2636,6 @@
       "adjust": "Tuzatish / kurs farqi"
     },
     "kindHints": {
-      "charge": "Mashina, rastamojka, arenda, oylik — biz olgan xizmat. Kassadan pul chiqmaydi.",
       "receipt": "U bizning hisobimizga pul tushirdi. Kassa ko‘payadi, unga qarzimiz oshadi.",
       "payment": "Biz unga kassadan to‘ladik. Kassa kamayadi, qarzimiz kamayadi.",
       "adjust": "Kurs farqi yoki qo‘lda tuzatish. Manfiy ham yozish mumkin."
@@ -2513,7 +2649,23 @@
     "rateGapHint": "Firma hisoblagan summa bilan mijoz yuborgan summa orasidagi farq (dollarda).",
     "proof": "Kvitansiya / skrinshot",
     "proofNote": "Izoh (fayl bo‘lmasa — majburiy)",
-    "proofRequired": "Fayl yoki izoh bo‘lishi shart"
+    "proofRequired": "Fayl yoki izoh bo‘lishi shart",
+    "chargeMoved": "Xizmat uchun qarz (mashina, rastamojka, ijara, oylik) endi xarajat formasida «Kim to‘ladi»ni tanlab yoziladi. Qarz shu yerga o‘zi tushadi va foyda hisobotiga ham kiradi.",
+    "manualCharge": "Xarajatga bog‘lanmagan — foyda hisobotida yo‘q",
+    "owedToUs": "Bizga qarzdor",
+    "login": "Hodim (login)",
+    "noLogin": "Hodim emas",
+    "loginHint": "Login bog‘lansa, bu hodimning hisobi bo‘ladi: qoldig‘ini faqat buxgalter, admin va hodimning o‘zi ko‘radi.",
+    "userTaken": "Bu hodimning hisobi allaqachon ochilgan — bitta hodimga bitta hisob.",
+    "staffForbidden": "Hodimlar hisobini faqat buxgalter va admin yuritadi.",
+    "staffKinds": {
+      "payment": "Avans berildi",
+      "receipt": "Qoldiqni qaytardi"
+    },
+    "staffKindHints": {
+      "payment": "Hodimga kassadan avans berdik. Kassa kamayadi, hodim bizga qarzdor bo‘ladi.",
+      "receipt": "Hodim ishlatmagan qoldiqni kassaga qaytardi. Kassa ko‘payadi, uning qarzi kamayadi."
+    }
   },
   "lists": {
     "allRecords": "Hammasi",
@@ -2655,7 +2807,9 @@
       "forbidden": "Bu skladga huquq yo'q",
       "validation": "Summa va izohni tekshiring",
       "failed": "Yuborib bo'lmadi"
-    }
+    },
+    "noWarehouse": "skladsiz",
+    "paidBySelf": "O‘z pulimdan to‘ladim"
   },
   "adminHome": {
     "money": "Pul",
@@ -2720,7 +2874,9 @@
     "categoryTitle": "Sotuvchi ulushi uchun xarajat turi",
     "categoryUnset": "Xarajat turi tanlanmagan — to‘lab bo‘lmaydi",
     "categoryHint": "Ulush oddiy xarajat bo‘lib yoziladi. Alohida tur majburiy: «Oyliklar» ichidan to‘lansa, o‘sha sotuvchining o‘sha oygi maoshi jimgina to‘langan deb hisoblanadi.",
-    "categoryAsk": "Faqat administrator tanlay oladi."
+    "categoryAsk": "Faqat administrator tanlay oladi.",
+    "periodByOffer": "Taklif sanasi",
+    "periodHint": "Davr taklif berilgan kun bo‘yicha. Xarajatlar va P&L esa to‘lovni pul berilgan kun bo‘yicha ko‘rsatadi."
   },
   "sellerReport": {
     "title": "Sotuvchilar: natija",
@@ -2778,7 +2934,8 @@
     "colClient": "Mijoz",
     "colCargo": "Yuk",
     "colWho": "Kim",
-    "colMoney": "Jonli pullar"
+    "colMoney": "Jonli pullar",
+    "paidFromTill": "Bu prixodning kassadan to‘langan xarajati bor. Avval buxgalter uni bekor qilsin — pul kassaga qaytadi."
   },
   "customsImport": {
     "title": "Bojxona bazasi (import)",
@@ -2838,5 +2995,118 @@
     "makeShared": "🏢 Hammaga",
     "makePrivate": "👤 Faqat menda",
     "confirmUnshare": "Zametka umumiy ro‘yxatdan olinsinmi? Boshqalar uni ko‘rmay qoladi."
+  },
+  "pickups": {
+    "title": "Zavod reysi",
+    "new": "Yangi reys",
+    "factories": "Zavodlar",
+    "newFactory": "Yangi zavod",
+    "empty": "Hozircha reys yo‘q.",
+    "rowSummary": "{collected}/{stops} zavoddan olindi · {boxes} karobka",
+    "noCost": "xarajat yozilmagan",
+    "noCostLong": "Mashina yetib keldi, lekin xarajati yozilmagan.",
+    "noFactories": "Avval zavod qo‘shing.",
+    "ownerHint": "Egasi: mijoz kodi (masalan GS777) yoki karobkadagi markirovka.",
+    "destination": "Qaysi skladga",
+    "plannedOn": "Reja sanasi",
+    "plate": "Mashina raqami",
+    "driver": "Haydovchi",
+    "driverPhone": "Haydovchi telefoni",
+    "note": "Izoh",
+    "factory": "Zavod",
+    "addStop": "Zavod qo‘shish",
+    "removeStop": "Zavodni olib tashlash",
+    "removeStopConfirm": "Bu zavodni reysdan olib tashlaysizmi?",
+    "addLine": "Qator qo‘shish",
+    "removeLine": "Qatorni o‘chirish",
+    "owner": "Egasi",
+    "ownerPlaceholder": "GS777",
+    "goods": "Tovar nomi",
+    "factoryBoxes": "Zavod soni (karobka)",
+    "factoryShort": "zavod",
+    "driverShort": "haydovchi",
+    "driverBoxes": "Haydovchi sanog‘i",
+    "lineProblem": "{stop}-zavod, {line}-qator: egasi, tovar va karobka soni kerak (kub/kg — raqam).",
+    "factoryRequired": "Zavodni tanlang.",
+    "create": "Reysni yaratish",
+    "save": "Saqlash",
+    "saved": "Saqlandi",
+    "editLines": "Qatorlarni tahrirlash",
+    "collect": "Olindi",
+    "collectedAt": "olindi {at}",
+    "notCollected": "hali olinmagan",
+    "stampNote": "Shtamp / hujjat izohi",
+    "markArrived": "Yetib keldi",
+    "cancel": "Reysni bekor qilish",
+    "cancelReason": "Bekor qilish sababi",
+    "costs": "Mashina xarajati",
+    "costHint": "Kub bo‘yicha qabul qilingan yukka bo‘linadi. Hozir {n} ta prixod biriktirilgan.",
+    "candidatesTitle": "Biriktirilmagan prixodlar",
+    "candidatesHint": "Shu mijozlarning shu skladdagi prixodlari. O‘zi biriktirilmaydi — qaysi zavoddan kelganini tanlang.",
+    "linkTo": "{seq}-zavodga",
+    "noPickup": "Zavod reysiga biriktirilmagan",
+    "etaLine": "Taxminan {from} – {to} orasida yetib keladi",
+    "estimate": "taxminiy, jadval bo‘yicha",
+    "unplaced": "Xaritada joyi yo‘q: {names}",
+    "onMap": "Xaritada ko‘rish",
+    "incomingTitle": "Zavoddan kelayotgan yuk",
+    "receiveThis": "Qabul qilish",
+    "countHint": "zavod: {factory} · haydovchi: {driver}",
+    "homeNoCost": "{n} tasi xarajatsiz",
+    "homeUnlinked": "{n} tasida biriktirilmagan prixod",
+    "factoryName": "Zavod nomi",
+    "phone": "Telefon",
+    "addressZh": "Manzil (xitoycha)",
+    "goodsNote": "Nima olamiz (tovar)",
+    "geoFound": "Saqlandi. Xaritada nuqta topildi — tekshirib «✓ to‘g‘ri» bosing.",
+    "geoNotFound": "Saqlandi, lekin manzil xaritada topilmadi — nuqtani qo‘lda qo‘ying.",
+    "pointNone": "nuqta yo‘q",
+    "pointConfirmed": "tekshirilgan",
+    "pointSuggested": "taxminiy",
+    "pointCorrect": "to‘g‘ri",
+    "pointPaste": "Koordinata yoki xarita havolasi: 29.31, 120.07",
+    "pointDatum": "Qaysi xaritadan",
+    "datumChina": "Xitoy xaritasi (Amap, Tencent)",
+    "datumWorld": "Google / OSM / GPS",
+    "pointSet": "Nuqtani qo‘yish",
+    "edit": "Tahrirlash",
+    "inactive": "faol emas",
+    "deactivate": "Faolsizlantirish",
+    "activate": "Faollashtirish",
+    "status": {
+      "planned": "rejada",
+      "on_road": "yo‘lda",
+      "arrived": "yetib keldi",
+      "cancelled": "bekor qilingan"
+    },
+    "tabs": {
+      "live": "Faol",
+      "arrived": "Yetib kelgan",
+      "cancelled": "Bekor qilingan",
+      "all": "Hammasi"
+    },
+    "errors": {
+      "generic": "Saqlab bo‘lmadi. Qayta urinib ko‘ring.",
+      "forbidden": "Bunga ruxsatingiz yo‘q.",
+      "validation": "Ma’lumot to‘liq emas yoki noto‘g‘ri.",
+      "bad_number": "Son noto‘g‘ri yozilgan.",
+      "cancelled": "Reys bekor qilingan.",
+      "already_collected": "Bu zavoddan allaqachon «olindi» deb yozilgan.",
+      "stop_collected": "Olingan zavodni olib tashlab bo‘lmaydi.",
+      "stop_linked": "Bu zavoddan prixod qilingan — qatorlarni o‘zgartirib bo‘lmaydi.",
+      "last_stop": "Reysda kamida bitta zavod qolishi kerak.",
+      "too_many_stops": "Bir reysda 6 tadan ko‘p zavod bo‘lmaydi.",
+      "dest_locked": "Prixod qilingan — skladni o‘zgartirib bo‘lmaydi.",
+      "pickup_has_costs": "Avval mashina xarajatini bekor qiling.",
+      "pickup_has_receipts": "Bu reysga prixod biriktirilgan — avval ularni ajrating.",
+      "reason_required": "Sababini yozing.",
+      "wrong_warehouse": "Bu reys boshqa skladga ketyapti.",
+      "receipt_not_live": "Prixod bekor qilingan yoki tasdiqlanmagan.",
+      "factory_not_found": "Zavod topilmadi.",
+      "client_not_found": "Mijoz topilmadi.",
+      "warehouse_not_found": "Sklad topilmadi yoki faol emas.",
+      "bad_point": "Koordinata o‘qilmadi. Masalan: 29.31, 120.07",
+      "no_point": "Avval xaritada nuqta bo‘lishi kerak."
+    }
   }
 }

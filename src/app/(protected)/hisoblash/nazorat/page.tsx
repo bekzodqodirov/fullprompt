@@ -21,6 +21,7 @@ import {
 } from '@/modules/wms/calc/labels';
 import { PageHeader } from '@/components/ui/page';
 import { CalcLinkRow } from '@/components/calc-link-row';
+import { tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * «Hisob va haqiqat» — the owner's phase E question, on one screen.
@@ -53,8 +54,8 @@ export default async function CalcControlPage() {
   const t = await getTranslations('calc');
   const format = await getFormatter();
 
-  const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  // This month's first instant in Tashkent (R5), not UTC's 05:00.
+  const monthStart = tashkentDayStart(tashkentMonthStart());
   const who = { scope, actorId: actor.id } as const;
 
   let coverage = { sealed: 0, linked: 0, suggested: 0 };

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, type Tx } from '../../platform/db/client';
 import {
@@ -12,12 +12,15 @@ import {
   costTypes,
   crates,
   fxRates,
+  moneyAccounts,
   partnerTransactions,
+  pickups,
   receiptLots,
   receipts,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
+import { tashkentDayStart } from '../../platform/time/tashkent';
 import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
 import { batchMemberFilter } from '../scanning/unload';
 
@@ -63,6 +66,7 @@ export async function upsertFxRate(input: z.infer<typeof fxRateSchema>, ctx: Aud
 
 /**
  * Rate in force on a date: the latest rate with effective_date ≤ costDate;
+ * read ONCE per cost entry — its first conversion is frozen (R1);
  * falls back to the earliest known rate (better than nothing for entries
  * dated before the first rate). USD is always 1. Null = currency has no
  * rates at all — the entry stays unconverted and reports flag it.
@@ -92,10 +96,13 @@ export async function rateFor(currency: string, costDate: string): Promise<numbe
 export const costEntrySchema = z.object({
   // 'crate' joined in round 31: the yashik fee could only ever be typed at
   // crate creation — a wrong amount had no void and no second entry.
-  scope: z.enum(['receipt', 'batch', 'crate']),
+  // 'pickup' joined with the factory truck (0100, owner's B5a): the truck we
+  // hire to collect from the factories, split over the cargo it brought.
+  scope: z.enum(['receipt', 'batch', 'crate', 'pickup']),
   receiptId: z.string().uuid().optional(),
   batchId: z.string().uuid().optional(),
   crateId: z.string().uuid().optional(),
+  pickupId: z.string().uuid().optional(),
   costTypeId: z.string().uuid(),
   amount: z.number().positive().max(1_000_000_000),
   currency: z.string().length(3).toUpperCase(),
@@ -109,14 +116,61 @@ export const costEntrySchema = z.object({
    * and the amount lands on that partner's ledger as a debt instead.
    */
   partnerId: z.string().uuid().optional().or(z.literal('')),
+  /**
+   * The kassa the money LEFT from (0101, owner 3b). Exclusive with the payer.
+   * `accountAmount` is what left it in the KASSA's currency — required when
+   * the kassa speaks another currency than the cost (customs typed in USD,
+   * paid out of the firm's som account), the amount itself otherwise.
+   */
+  accountId: z.string().uuid().optional().or(z.literal('')),
+  accountAmount: z.number().positive().max(1_000_000_000_000).optional(),
   note: z.string().trim().max(2000).optional().or(z.literal('')),
 });
+
+/**
+ * A kassa a cost may name: it exists and is open. Read on the POOL before any
+ * transaction (#714). The currency is returned so the caller can decide the
+ * kassa-side amount.
+ */
+export async function assertTill(accountId: string): Promise<{ currency: string }> {
+  const [till] = await db
+    .select({ currency: moneyAccounts.currency, active: moneyAccounts.active })
+    .from(moneyAccounts)
+    .where(eq(moneyAccounts.id, accountId))
+    .limit(1);
+  if (!till || !till.active) throw new CostError('account_not_found');
+  return { currency: till.currency };
+}
+
+/**
+ * What left the kassa, in the kassa's own currency. The same currency: the
+ * cost's amount (a typed figure that differs is a typo — refused, not
+ * silently preferred). Another currency: the person must say it, because
+ * only the bank statement knows the rate the bank used.
+ */
+export function tillAmountFor(
+  cost: { amount: number; currency: string },
+  tillCurrency: string,
+  typed: number | undefined,
+): number {
+  if (tillCurrency === cost.currency) {
+    if (typed !== undefined && Math.abs(typed - cost.amount) > 0.004) {
+      throw new CostError('account_amount_mismatch');
+    }
+    return cost.amount;
+  }
+  if (typed === undefined || !Number.isFinite(typed) || typed <= 0) {
+    throw new CostError('account_amount_required');
+  }
+  return typed;
+}
 
 export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: AuditContext) {
   if (!ctx.actorId) throw new CostError('unauthenticated');
   if (input.scope === 'receipt' && !input.receiptId) throw new CostError('validation');
   if (input.scope === 'batch' && !input.batchId) throw new CostError('validation');
   if (input.scope === 'crate' && !input.crateId) throw new CostError('validation');
+  if (input.scope === 'pickup' && !input.pickupId) throw new CostError('validation');
   if (input.allocationBasis === 'direct_to_client' && !input.clientId) {
     throw new CostError('client_required');
   }
@@ -128,6 +182,15 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
   if (input.partnerId && (await rateFor(input.currency, input.costDate)) === null) {
     throw new CostError('fx_missing');
   }
+  // Who paid is ONE of: a counterparty (a debt) or a kassa (cash out) — or
+  // nobody has said yet, which is the accountant's queue (the DB's
+  // cost_entries_payer_check says the same).
+  if (input.partnerId && input.accountId) throw new CostError('payer_conflict');
+  let accountAmount: number | null = null;
+  if (input.accountId) {
+    const till = await assertTill(input.accountId);
+    accountAmount = tillAmountFor(input, till.currency, input.accountAmount);
+  }
 
   const [entry] = await db
     .insert(costEntries)
@@ -136,6 +199,7 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
       receiptId: input.receiptId ?? null,
       batchId: input.batchId ?? null,
       crateId: input.crateId ?? null,
+      pickupId: input.scope === 'pickup' ? (input.pickupId ?? null) : null,
       costTypeId: input.costTypeId,
       amount: String(input.amount),
       currency: input.currency,
@@ -143,6 +207,8 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
       allocationBasis: input.allocationBasis,
       clientId: input.clientId ?? null,
       partnerId: input.partnerId || null,
+      accountId: input.accountId || null,
+      accountAmount: accountAmount === null ? null : String(accountAmount),
       note: input.note || null,
       enteredBy: ctx.actorId,
     })
@@ -151,7 +217,12 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
     entityType: 'cost_entry',
     entityId: entry!.id,
     action: 'create',
-    after: { scope: input.scope, amount: input.amount, currency: input.currency },
+    after: {
+      scope: input.scope,
+      amount: input.amount,
+      currency: input.currency,
+      ...(input.accountId ? { accountId: input.accountId, accountAmount } : {}),
+    },
   });
   await recomputeEntry(entry!.id);
   // The debt side. Written AFTER the allocation so a partner never carries a
@@ -162,6 +233,135 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
     await chargeForCost(entry!.id, ctx);
   }
   return entry!;
+}
+
+/**
+ * A cost nobody has said the kassa of (0101): live, no counterparty, no
+ * kassa, not merged into an expense — and entered on or after
+ * `cost_kassa_since`. ONE predicate for the queue screen, the accountant's
+ * home counter and the Balans line (#513). The bound is the deploy day the
+ * migration wrote: every older cost has no kassa BY CONSTRUCTION and is
+ * inside some till's counted opening, so placing it would debit the drawer a
+ * second time (the design judge's blocker).
+ */
+export function unplacedCostSql(since: string): SQL {
+  return and(
+    isNull(costEntries.voidedAt),
+    isNull(costEntries.partnerId),
+    isNull(costEntries.accountId),
+    isNull(costEntries.mergedExpenseId),
+    /^\d{4}-\d{2}-\d{2}$/.test(since)
+      ? sql`${costEntries.createdAt} >= ${tashkentDayStart(since).toISOString()}::timestamptz`
+      : undefined,
+  )!;
+}
+
+/** The queue's start day, as the setting holds it ('' = no bound). */
+export async function unplacedCostSince(): Promise<string> {
+  const value = String((await getSetting('cost_kassa_since')) ?? '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+}
+
+/** How many costs wait for a kassa, and their dollars — the counter and the Balans. */
+export async function unplacedCostTotals() {
+  const since = await unplacedCostSince();
+  const [row] = await db
+    .select({
+      n: sql<number>`count(*)::int`,
+      usd: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)`,
+    })
+    .from(costEntries)
+    .where(unplacedCostSql(since));
+  return { count: Number(row?.n ?? 0), usd: Math.round(Number(row?.usd ?? 0) * 100) / 100 };
+}
+
+/**
+ * Say, afterwards, which kassa a cost's money left from — or that it left
+ * none (`accountId` null clears it). The accountant's place-later door
+ * (0101): the warehouse and the logist type costs and hold no kassa grant,
+ * so their costs arrive with no kassa and wait in the queue.
+ *
+ * A CLAIM, like `placePayment`: the UPDATE demands the cost is live and has
+ * no counterparty, so a stale screen cannot put a partner-settled cost into
+ * a kassa as well (that would be the double debit #528 was about).
+ */
+export async function setCostAccount(
+  costId: string,
+  accountId: string | null,
+  typedAmount: number | undefined,
+  ctx: AuditContext,
+) {
+  if (!ctx.actorId) throw new CostError('unauthenticated');
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costId) });
+  if (!entry) throw new CostError('not_found');
+  if (entry.voidedAt) throw new CostError('already_voided');
+  if (entry.partnerId) throw new CostError('payer_conflict');
+  let accountAmount: number | null = null;
+  if (accountId) {
+    const till = await assertTill(accountId);
+    accountAmount = tillAmountFor(
+      { amount: Number(entry.amount), currency: entry.currency },
+      till.currency,
+      typedAmount,
+    );
+  }
+  const [row] = await db
+    .update(costEntries)
+    .set({
+      accountId,
+      accountAmount: accountAmount === null ? null : String(accountAmount),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(costEntries.id, costId), isNull(costEntries.voidedAt), isNull(costEntries.partnerId)))
+    .returning({ id: costEntries.id });
+  if (!row) throw new CostError('payer_conflict');
+  await writeAudit(db, ctx, {
+    entityType: 'cost_entry',
+    entityId: costId,
+    action: 'update',
+    before: { accountId: entry.accountId, accountAmount: entry.accountAmount },
+    after: { accountId, accountAmount },
+  });
+}
+
+/**
+ * «A colleague paid this out of pocket» — said by the ACCOUNTANT on the
+ * queue (0101, owner M1a: the staff member says it through the rasxod
+ * xabari, the accountant confirms). The cost gets the colleague's staff
+ * account as its payer, which posts the debt through the ordinary
+ * `chargeForCost` — one writer of that charge, whichever door asked.
+ */
+export async function setCostStaffPayer(costId: string, partnerId: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new CostError('unauthenticated');
+  const { isStaffPartner } = await import('../partners/staff');
+  if (!(await isStaffPartner(partnerId))) throw new CostError('not_staff');
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costId) });
+  if (!entry) throw new CostError('not_found');
+  // A debt needs a dollar figure (the entry-time rule, #427).
+  if (entry.amountUsd === null) throw new CostError('fx_missing');
+  const [row] = await db
+    .update(costEntries)
+    .set({ partnerId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(costEntries.id, costId),
+        isNull(costEntries.voidedAt),
+        isNull(costEntries.partnerId),
+        isNull(costEntries.accountId),
+        isNull(costEntries.mergedExpenseId),
+      ),
+    )
+    .returning({ id: costEntries.id });
+  if (!row) throw new CostError('payer_conflict');
+  await writeAudit(db, ctx, {
+    entityType: 'cost_entry',
+    entityId: costId,
+    action: 'update',
+    before: { partnerId: null },
+    after: { partnerId, from: 'staff_own_pocket' },
+  });
+  const { chargeForCost } = await import('../partners/link');
+  await chargeForCost(costId, ctx);
 }
 
 export async function voidCostEntry(id: string, reason: string, ctx: AuditContext) {
@@ -291,6 +491,28 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
     const live = await db.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, entry.crateId));
     return live.map((r) => r.id);
   }
+  if (entry.scope === 'pickup' && entry.pickupId) {
+    // What the factory truck brought: the real boxes of every prixod a
+    // person linked to one of its stops (the receive door, or attach on the
+    // receipt card — never a guess, #809's rule). A partly received truck
+    // splits over what has been received so far and re-splits as the rest
+    // lands; nothing is voided for an empty base (the annul sweep is NOT
+    // taught this scope — it would void the truck's freight and the firm's
+    // debt on a truck that is merely half-unloaded).
+    const rows = await db
+      .select({ id: boxes.id })
+      .from(boxes)
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+      .where(
+        and(
+          sql`${receipts.pickupStopId} IN (SELECT ps.id FROM pickup_stops ps WHERE ps.pickup_id = ${entry.pickupId})`,
+          isNull(receipts.voidedAt),
+          ne(boxes.status, 'void'),
+        ),
+      );
+    return rows.map((r) => r.id);
+  }
   if (entry.scope === 'batch' && entry.batchId) {
     // Departed boxes are the ground truth; before departure fall back to the
     // currently loaded/reserved members so early-entered costs still show.
@@ -330,12 +552,31 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
     return;
   }
 
-  const rate = await rateFor(entry.currency, entry.costDate);
-  const amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
-  await db
-    .update(costEntries)
-    .set({ amountUsd: amountUsd !== null ? String(amountUsd) : null, fxRateUsed: rate !== null ? String(rate) : null })
-    .where(eq(costEntries.id, costEntryId));
+  // The dollar figure is FROZEN at the first conversion (owner, R1: «to'langan
+  // paytdagi kurs bo'yicha hisoblansin»). A cost is money that left at the
+  // rate of its day; a rate typed or corrected on /admin/fx later must not
+  // move a past month's P&L, and must not move the firm's derived charge
+  // while the payment that settled it stays where it was (audit A0 — a fully
+  // paid firm read −$111 after one FX save). Only a row with no dollars yet
+  // is converted; every later recompute re-SPLITS the frozen figure over its
+  // boxes (a base change still moves the shares, never their sum).
+  //
+  // Stated, not solved: an entry dated before the currency's FIRST rate was
+  // converted at the earliest rate on file (`rateFor`'s fallback) and is
+  // frozen at that guess too; correcting it is void and re-enter, like every
+  // other ledger row.
+  const frozen = entry.amountUsd !== null && entry.fxRateUsed !== null;
+  let amountUsd: number | null;
+  if (frozen) {
+    amountUsd = Number(entry.amountUsd);
+  } else {
+    const rate = await rateFor(entry.currency, entry.costDate);
+    amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
+    await db
+      .update(costEntries)
+      .set({ amountUsd: amountUsd !== null ? String(amountUsd) : null, fxRateUsed: rate !== null ? String(rate) : null })
+      .where(eq(costEntries.id, costEntryId));
+  }
 
   await db.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
   if (amountUsd === null) return; // unconverted — reports flag it
@@ -369,7 +610,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
   // The debt this cost owes its payer, posted the moment a dollar figure
   // exists. Rows entered before the entry-time refusal above shipped — and
   // any row whose rate arrived later — are repaired by the /admin/fx
-  // recompute, which is the only thing that ever revisits them.
+  // recompute and the nightly unconverted sweep, which convert them once.
   // `chargeForCost` is idempotent per cost, so a re-run costs nothing.
   if (entry.partnerId) {
     try {
@@ -387,7 +628,21 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
  * Sweep recompute: everything (FX table edited), one currency, or one
  * batch/receipt. Idempotent — safe to run repeatedly.
  */
-export async function recomputeAll(filter?: { currency?: string; batchId?: string; receiptId?: string }) {
+export async function recomputeAll(filter?: {
+  currency?: string;
+  batchId?: string;
+  receiptId?: string;
+  /** Only rows with no dollar figure yet — the nightly repair sweep. */
+  unconverted?: boolean;
+  /**
+   * The nightly sweep also re-splits every live factory-truck cost: its base
+   * grows as prixods are linked, and a post-commit recompute that a crash
+   * skipped would otherwise leave the truck's money on the first client for
+   * ever. OR-ed with `unconverted`, not AND-ed.
+   */
+  pickups?: boolean;
+  pickupId?: string;
+}) {
   const rows = await db
     .select({ id: costEntries.id })
     .from(costEntries)
@@ -397,8 +652,72 @@ export async function recomputeAll(filter?: { currency?: string; batchId?: strin
         filter?.currency ? eq(costEntries.currency, filter.currency) : undefined,
         filter?.batchId ? eq(costEntries.batchId, filter.batchId) : undefined,
         filter?.receiptId ? eq(costEntries.receiptId, filter.receiptId) : undefined,
+        filter?.pickupId ? eq(costEntries.pickupId, filter.pickupId) : undefined,
+        filter?.unconverted && filter.pickups
+          ? sql`(${costEntries.amountUsd} IS NULL OR ${costEntries.scope} = 'pickup')`
+          : filter?.unconverted
+            ? isNull(costEntries.amountUsd)
+            : filter?.pickups
+              ? eq(costEntries.scope, 'pickup')
+              : undefined,
       ),
     );
+  for (const row of rows) await recomputeEntry(row.id);
+  return rows.length;
+}
+
+/**
+ * Re-split every live cost that shares money over one lot's boxes (audit
+ * A22) — after its kg, m³ or box count was corrected.
+ *
+ * `recomputeAll({ receiptId })` reached only the receipt's OWN costs. The
+ * truck's freight (batch scope, no receipt id) and a crate's fee were split
+ * over the old measures and nothing ever split them again: the depart job
+ * runs once, and a USD entry is never touched by an FX save. So a 10 → 20 m³
+ * fix on a departed lot left hundreds of dollars of freight on the wrong
+ * client in every report that reads allocations — while the lot's row showed
+ * the corrected kg beside the stale dollars.
+ *
+ * Membership is read from the ledger that defines it (#440): an entry with a
+ * share on any of the lot's boxes, the lot's receipt's own costs, and the
+ * batch and crate entries of every truck and crate the lot's boxes were ever
+ * loaded into — a box that got no share because its old weight was zero is
+ * still on that truck.
+ */
+export async function recomputeForLot(lotId: string): Promise<number> {
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT DISTINCT ce.id
+      FROM cost_entries ce
+     WHERE ce.voided_at IS NULL
+       AND (
+         ce.receipt_id = (SELECT rl.receipt_id FROM receipt_lots rl WHERE rl.id = ${lotId})
+         OR ce.id IN (
+           SELECT ca.cost_entry_id
+             FROM cost_allocations ca
+             JOIN boxes b ON b.id = ca.box_id
+            WHERE b.lot_id = ${lotId}
+         )
+         OR (ce.scope = 'batch' AND ce.batch_id IN (
+           SELECT bm.ref_id
+             FROM box_movements bm
+             JOIN boxes b ON b.id = bm.box_id
+            WHERE b.lot_id = ${lotId} AND bm.cause = 'batch_departed' AND bm.ref_type = 'batch'
+         ))
+         OR (ce.scope = 'crate' AND ce.crate_id IN (
+           SELECT bm.ref_id
+             FROM box_movements bm
+             JOIN boxes b ON b.id = bm.box_id
+            WHERE b.lot_id = ${lotId} AND bm.cause = 'crate_packed' AND bm.ref_type = 'crate'
+         ))
+         OR (ce.scope = 'pickup' AND ce.pickup_id IN (
+           SELECT ps.pickup_id
+             FROM receipt_lots rl
+             JOIN receipts r ON r.id = rl.receipt_id
+             JOIN pickup_stops ps ON ps.id = r.pickup_stop_id
+            WHERE rl.id = ${lotId}
+         ))
+       )
+  `);
   for (const row of rows) await recomputeEntry(row.id);
   return rows.length;
 }
@@ -418,12 +737,14 @@ export async function boxLandedCost(boxId: string) {
       amount: costEntries.amount,
       batchCode: batches.code,
       crateCode: crates.code,
+      pickupCode: pickups.code,
     })
     .from(costAllocations)
     .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(batches, eq(costEntries.batchId, batches.id))
     .leftJoin(crates, eq(costEntries.crateId, crates.id))
+    .leftJoin(pickups, eq(costEntries.pickupId, pickups.id))
     .where(eq(costAllocations.boxId, boxId))
     .orderBy(asc(costAllocations.id));
   const totalUsd = rows.reduce((a, r) => a + Number(r.amountUsd), 0);
@@ -459,7 +780,7 @@ export interface ClientLandedCost {
  * before now, while this one is still forming); an entry with no batch at all
  * is cargo money and rides everywhere it always did.
  */
-function notLaterLeg(batchId: string) {
+function notLaterLeg(batchId: string | SQL) {
   return sql`(
     ${costEntries.batchId} IS NULL
     OR ${costEntries.batchId} = ${batchId}
@@ -503,6 +824,121 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
   return out;
 }
 
+/** One lot's share of what the cargo cost us, as it stands on one truck. */
+export interface LotLandedCost {
+  lotId: string;
+  /** End to end: this trip plus everything the cargo brought with it. */
+  totalUsd: number;
+  /** What THIS trip added. `totalUsd − batchUsd` is «shu reysgacha». */
+  batchUsd: number;
+}
+
+/**
+ * The tannarx per LOT (owner, 2026-09-24: «partiya ichidagi tovarlar
+ * bo'yicha ko'rsatsin»). Exact, not apportioned: the engine already split
+ * every entry down to the box, so grouping the same allocations by the box's
+ * lot is a re-sum — `batchLandedCostByClient`'s question with a finer
+ * GROUP BY and the same «shu reysgacha» fence.
+ *
+ * One truck's slice of `batchLandedCostTotals`, so «Partiya moliyasi» and
+ * «Partiya foydasi» are one query and cannot drift apart (owner's R2a,
+ * 2026-09-24: «bitta mashina bitta foyda»).
+ */
+export async function batchLandedCostByLot(batchId: string): Promise<Map<string, LotLandedCost>> {
+  return (await batchLandedCostTotals([batchId])).get(batchId) ?? new Map();
+}
+
+/**
+ * `batchLandedCostByLot` for MANY trucks at once — per truck, per lot — so
+ * the profit report reads every truck of a period in ONE grouped query and
+ * not one per row (#432: a list's length is the business growing).
+ *
+ * Membership is written as a CTE of the two indexed lookups rather than
+ * `batchMemberFilter`'s OR: joined to `cost_allocations`, the OR leaves the
+ * planner guessing that half of all boxes ride every truck and it scans the
+ * allocations table whole (CLAUDE.md: batch membership is a JOIN through
+ * box_movements). An annulled box is not cargo (the annul round). The
+ * «shu reysgacha» fence is asked per MEMBER truck — a box that rode two of
+ * the listed trucks is counted on each, each time with that truck's own clock.
+ */
+export async function batchLandedCostTotals(
+  batchIds: string[],
+): Promise<Map<string, Map<string, LotLandedCost>>> {
+  const out = new Map<string, Map<string, LotLandedCost>>();
+  const ids = [...new Set(batchIds)];
+  if (ids.length === 0) return out;
+  const list = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rows = (await db.execute(sql`
+    WITH members AS (
+      SELECT b.current_batch_id AS batch_id, b.id AS box_id FROM boxes b
+       WHERE b.current_batch_id IN (${list}) AND b.status <> 'void'
+      UNION
+      SELECT bm.ref_id, bm.box_id FROM box_movements bm
+        JOIN boxes b ON b.id = bm.box_id
+       WHERE bm.ref_type = 'batch' AND bm.ref_id IN (${list})
+         AND bm.cause = 'batch_departed' AND b.status <> 'void'
+    )
+    SELECT m.batch_id, bx.lot_id,
+           coalesce(sum(ca.amount_usd), 0) AS total_usd,
+           coalesce(sum(ca.amount_usd) FILTER (WHERE ${costEntries}.batch_id = m.batch_id), 0) AS batch_usd
+      FROM members m
+      JOIN boxes bx ON bx.id = m.box_id
+      JOIN cost_allocations ca ON ca.box_id = m.box_id
+      JOIN ${costEntries} ON ${costEntries}.id = ca.cost_entry_id
+     WHERE ${costEntries}.voided_at IS NULL
+       AND ${notLaterLeg(sql`m.batch_id`)}
+     GROUP BY m.batch_id, bx.lot_id
+  `)) as unknown as { batch_id: string; lot_id: string; total_usd: string; batch_usd: string }[];
+  for (const row of rows) {
+    const byLot = out.get(row.batch_id) ?? new Map<string, LotLandedCost>();
+    byLot.set(row.lot_id, {
+      lotId: row.lot_id,
+      totalUsd: Math.round(Number(row.total_usd) * 100) / 100,
+      batchUsd: Math.round(Number(row.batch_usd) * 100) / 100,
+    });
+    out.set(row.batch_id, byLot);
+  }
+  return out;
+}
+
+/**
+ * Cost entries touching this truck that have NO dollar figure yet — no FX
+ * rate for their currency and date. The engine allocates nothing for them
+ * (an allocation carries a USD amount or does not exist), so every tannarx
+ * on the truck reads lower than it is, silently. The screen names the count.
+ */
+export async function unconvertedCostCount(batchId: string, receiptIds: string[]): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(costEntries)
+    .where(
+      and(
+        isNull(costEntries.voidedAt),
+        isNull(costEntries.amountUsd),
+        receiptIds.length
+          ? sql`(${costEntries.batchId} = ${batchId} OR ${inArray(costEntries.receiptId, receiptIds)})`
+          : eq(costEntries.batchId, batchId),
+      ),
+    );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Live cost entries attributed to this truck — its own batch-scope bills and
+ * the grid's stamped prixod cells. The «rasxodini yozmading» warning (owner,
+ * 2026-09-24) reads zero here; `costMissingBatches` asks the same question.
+ */
+export async function batchCostEntryCount(batchId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(costEntries)
+    .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)));
+  return Number(row?.n ?? 0);
+}
+
 /** Batch cost sheet: entries + totals + unit costs per kg / m³. */
 export async function batchCostSheet(batchId: string) {
   const entries = await db
@@ -511,11 +947,13 @@ export async function batchCostSheet(batchId: string) {
       typeName: costTypes.name,
       clientCode: clients.clientCode,
       partnerName: partners.name,
+      accountName: moneyAccounts.name,
     })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(clients, eq(costEntries.clientId, clients.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
+    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
     .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)))
     .orderBy(asc(costEntries.createdAt));
 
@@ -593,7 +1031,10 @@ export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(batchMemberFilter(batchId))
+    // An annulled box keeps its `batch_departed` row for ever: without the
+    // status clause its prixod stayed on the grid and took a customs cell
+    // whose allocation pool is empty.
+    .where(and(batchMemberFilter(batchId), ne(boxes.status, 'void')))
     .groupBy(receipts.id, receipts.number, clients.clientCode, clients.name)
     .orderBy(asc(clients.clientCode), asc(receipts.number));
   return rows.map((row) => ({
@@ -607,6 +1048,20 @@ export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow
   }));
 }
 
+/** One grid cell's hint: everything on the prixod, and this truck's part of it. */
+export interface GridCellWritten {
+  usd: number;
+  unconverted: boolean;
+  /**
+   * The part typed on THIS truck's grid (the entry's batch stamp, round 69).
+   * A prixod split over two trucks carries both trucks' bills, and the
+   * second truck must not read «already paid» off the first one's customs;
+   * whatever is not stamped here — the other truck, the receipt card, the
+   * wizard — is still printed beside it, because it may be the same bill.
+   */
+  hereUsd: number;
+}
+
 /**
  * What is ALREADY written per receipt per type (USD, non-void) — shown under
  * the grid's inputs so a second session never double-enters blind. Keyed
@@ -614,13 +1069,15 @@ export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow
  */
 export async function receiptCostMatrix(
   receiptIds: string[],
-): Promise<Map<string, { usd: number; unconverted: boolean }>> {
+  batchId: string,
+): Promise<Map<string, GridCellWritten>> {
   if (receiptIds.length === 0) return new Map();
   const rows = await db
     .select({
       receiptId: costEntries.receiptId,
       costTypeId: costEntries.costTypeId,
       usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+      hereUsd: sql<string>`coalesce(sum(${costEntries.amountUsd}) FILTER (WHERE ${costEntries.batchId} = ${batchId}), 0)`,
       // A cell whose entry has no FX rate yet summed to «$0» — exactly the
       // face an EMPTY cell wears, on the hint whose whole job is stopping a
       // second session from double-entering blind (#86: unconverted money is
@@ -639,9 +1096,37 @@ export async function receiptCostMatrix(
   return new Map(
     rows.map((row) => [
       `${row.receiptId}:${row.costTypeId}`,
-      { usd: Math.round(Number(row.usd) * 100) / 100, unconverted: Number(row.unconverted) > 0 },
+      {
+        usd: Math.round(Number(row.usd) * 100) / 100,
+        unconverted: Number(row.unconverted) > 0,
+        hereUsd: Math.round(Number(row.hereUsd) * 100) / 100,
+      },
     ]),
   );
+}
+
+/**
+ * The truck's own BATCH-scope costs per type (non-void, USD). They cover
+ * every prixod aboard and so appear in no grid cell: a truck whose customs
+ * was entered once on the batch card showed an empty «Rastamojka» column,
+ * which is an invitation to type the same bill a second time per prixod.
+ */
+export async function batchScopeCostByType(batchId: string): Promise<Map<string, number>> {
+  const rows = await db
+    .select({
+      costTypeId: costEntries.costTypeId,
+      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+    })
+    .from(costEntries)
+    .where(
+      and(
+        eq(costEntries.scope, 'batch'),
+        eq(costEntries.batchId, batchId),
+        isNull(costEntries.voidedAt),
+      ),
+    )
+    .groupBy(costEntries.costTypeId);
+  return new Map(rows.map((row) => [row.costTypeId, Math.round(Number(row.usd) * 100) / 100]));
 }
 
 export const receiptCostGridSchema = z.object({
@@ -657,6 +1142,12 @@ export const receiptCostGridSchema = z.object({
    * and the firm's ledger never heard of it.
    */
   partnerId: z.string().uuid().optional().or(z.literal('')),
+  /**
+   * Or the kassa the whole sheet was paid from (0101) — one per save, like
+   * the payer. The grid has ONE currency select, so the kassa must speak it:
+   * a per-cell amount in another currency is twenty more boxes on a phone.
+   */
+  accountId: z.string().uuid().optional().or(z.literal('')),
   cells: z
     .array(
       z.object({
@@ -676,40 +1167,74 @@ export type ReceiptCostGridInput = z.infer<typeof receiptCostGridSchema>;
  * request must not be able to hang somebody else's prixod with our customs
  * bill, so the membership is re-proved here, not trusted from the form.
  */
+export interface GridSaveResult {
+  /** `receiptId:costTypeId` of every cell that became a cost entry. */
+  saved: string[];
+  /** Why the save stopped part-way; null when every cell landed. */
+  error: string | null;
+}
+
 export async function addReceiptCostsBulk(
   input: ReceiptCostGridInput,
   ctx: AuditContext,
-): Promise<number> {
+): Promise<GridSaveResult> {
   const allowed = new Set((await batchReceiptRows(input.batchId)).map((row) => row.receiptId));
   for (const cell of input.cells) {
     if (!allowed.has(cell.receiptId)) throw new CostError('receipt_not_on_batch');
   }
-  for (const cell of input.cells) {
-    await addCostEntry(
-      {
-        scope: 'receipt',
-        receiptId: cell.receiptId,
-        costTypeId: cell.costTypeId,
-        amount: cell.amount,
-        currency: input.currency,
-        costDate: input.costDate,
-        // Within one receipt the split lands on one client either way;
-        // weight is the house default the rest of the engine uses.
-        allocationBasis: 'weight',
-        // The engine cannot tell grid from form (#398), so the payer rides
-        // the same field and derives the same partner charge per entry.
-        partnerId: input.partnerId,
-        // ATTRIBUTION, not scope: allocation still spreads over the RECEIPT's
-        // boxes, but the entry names the truck whose grid it was typed on —
-        // this is the truck's own customs bill, and without the stamp it
-        // landed in NO batch's profit row: /accounting/profit showed the
-        // truck's margin without the very customs typed on its own page.
-        batchId: input.batchId,
-      },
-      ctx,
-    );
+  // Refused BEFORE the first cell, or a mismatched kassa would stop the save
+  // part-way with half the sheet written.
+  if (input.partnerId && input.accountId) throw new CostError('payer_conflict');
+  if (input.accountId && (await assertTill(input.accountId)).currency !== input.currency) {
+    throw new CostError('account_currency_mismatch');
   }
-  return input.cells.length;
+  // Each cell is its own `addCostEntry` — the engine cannot tell grid from
+  // form (#398) and that is worth keeping — so a failure part-way leaves the
+  // earlier cells saved. The answer NAMES them: the screen clears exactly
+  // those and keeps the rest typed, where the old answer was a bare error and
+  // the next press saved the landed cells a second time.
+  const saved: string[] = [];
+  for (const cell of input.cells) {
+    try {
+      await addGridCell(input, cell, ctx);
+    } catch (err) {
+      console.error('[cost-grid] cell failed after', saved.length, 'saved', err);
+      return { saved, error: err instanceof CostError ? err.code : 'error' };
+    }
+    saved.push(`${cell.receiptId}:${cell.costTypeId}`);
+  }
+  return { saved, error: null };
+}
+
+async function addGridCell(
+  input: ReceiptCostGridInput,
+  cell: ReceiptCostGridInput['cells'][number],
+  ctx: AuditContext,
+) {
+  await addCostEntry(
+    {
+      scope: 'receipt',
+      receiptId: cell.receiptId,
+      costTypeId: cell.costTypeId,
+      amount: cell.amount,
+      currency: input.currency,
+      costDate: input.costDate,
+      // Within one receipt the split lands on one client either way;
+      // weight is the house default the rest of the engine uses.
+      allocationBasis: 'weight',
+      // The engine cannot tell grid from form (#398), so the payer rides
+      // the same field and derives the same partner charge per entry.
+      partnerId: input.partnerId,
+      accountId: input.accountId,
+      // ATTRIBUTION, not scope: allocation still spreads over the RECEIPT's
+      // boxes, but the entry names the truck whose grid it was typed on —
+      // this is the truck's own customs bill, and without the stamp it
+      // landed in NO batch's profit row: /accounting/profit showed the
+      // truck's margin without the very customs typed on its own page.
+      batchId: input.batchId,
+    },
+    ctx,
+  );
 }
 
 export interface ClientCostPart {

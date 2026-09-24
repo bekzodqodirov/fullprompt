@@ -10,6 +10,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { mayApproveBelowFloor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import {
   bySeller,
+  earnedOf,
   pendingBelowFloor,
   upsaleRows,
   UPSALE_CAP,
@@ -19,6 +20,7 @@ import {
 import { PageHeader } from '@/components/ui/page';
 import { hrefWith } from '@/components/list/board-filter';
 import { CategoryForm, PayForm, ReleaseButton } from './pay-form';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * «Sotuvchi ulushi» — what a seller earns, and the accountant's Friday.
@@ -104,10 +106,10 @@ export default async function UpsalePage({
 
   const money = (n: number) => `$${n.toFixed(2)}`;
   const totals = {
-    earned: Math.round(rows.reduce((s, r) => s + r.upsaleUsd, 0) * 100) / 100,
+    earned: Math.round(rows.reduce((s, r) => s + earnedOf(r), 0) * 100) / 100,
     paid: Math.round(rows.filter((r) => r.state === 'paid').reduce((s, r) => s + (r.paidUsd ?? 0), 0) * 100) / 100,
     waiting:
-      Math.round(rows.filter((r) => r.state !== 'paid').reduce((s, r) => s + r.upsaleUsd, 0) * 100) / 100,
+      Math.round(rows.filter((r) => r.state !== 'paid').reduce((s, r) => s + r.payableUsd, 0) * 100) / 100,
   };
   const payable = rows.filter((r) => r.state === 'payable');
   const current = { dan: period.dan, gacha: period.gacha, hodim: params.hodim ?? '' };
@@ -126,7 +128,7 @@ export default async function UpsalePage({
           is a link (#514: every value validated on the way back in). */}
       <form className="card flex flex-wrap items-end gap-2 !p-3" data-testid="upsale-period">
         <label className="text-2xs">
-          <span className="label">{t('when')}</span>
+          <span className="label">{t('periodByOffer')}</span>
           <input type="date" name="dan" className="input input-sm !w-36" defaultValue={period.dan} />
         </label>
         <label className="text-2xs">
@@ -137,6 +139,10 @@ export default async function UpsalePage({
         <button type="submit" className="btn-secondary">
           {t('title')}
         </button>
+        {/* Which clock (audit A30): an offer made in September and paid in
+            October is «To'langan» on September here and in October's P&L —
+            both right, and unexplained they read as a contradiction. */}
+        <p className="w-full text-2xs text-ink-500">{t('periodHint')}</p>
       </form>
 
       <div className="grid grid-cols-3 gap-2" data-testid="upsale-scoreboard">
@@ -207,6 +213,7 @@ export default async function UpsalePage({
             offeredAt: r.offeredAt.toISOString(),
           }))}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
+          today={tashkentDay()}
         />
           </div>
         </details>

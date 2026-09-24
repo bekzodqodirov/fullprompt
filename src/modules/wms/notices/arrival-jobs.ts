@@ -65,6 +65,17 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
     await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
   }
 
+  // «Yukingiz zavoddan olindi» rides the same sweep and the same rules (0100),
+  // in its own module and its own try: one kind's failure must not silence
+  // the other.
+  try {
+    const { sendDuePickupNotices } = await import('../pickups/notice');
+    const pickedUp = await sendDuePickupNotices(now);
+    if (pickedUp > 0) logger.info({ sent: pickedUp }, 'client pickup notices sent');
+  } catch (err) {
+    logger.warn({ err }, 'client pickup notice sweep failed');
+  }
+
   // Claimed, not merely selected: two overlapping sweeps must split the work.
   const due = await claimNoticesForSending(50, now);
   if (due.length === 0) return 0;

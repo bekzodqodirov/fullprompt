@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { leadWonUsdSql } from './won-money';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -990,9 +991,15 @@ export function leadBoardWhere(filters: LeadBoardFilters) {
   const text = leadTextWhere(filters.q);
   if (text) where.push(text);
   if (filters.sourceId) where.push(eq(leads.sourceId, filters.sourceId));
-  if (filters.createdFrom) where.push(sql`${leads.createdAt} >= ${filters.createdFrom}::date`);
+  // Tashkent's days (R5): `::date` against a timestamptz is a UTC midnight,
+  // so a lead that arrived at 02:00 on the 16th fell outside «dan 16th».
+  if (filters.createdFrom) {
+    where.push(sql`${leads.createdAt} >= ((${filters.createdFrom}::date)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  }
   // Inclusive: «to 15th» means through the 15th's midnight, not up to it.
-  if (filters.createdTo) where.push(sql`${leads.createdAt} < ${filters.createdTo}::date + 1`);
+  if (filters.createdTo) {
+    where.push(sql`${leads.createdAt} < ((${filters.createdTo}::date + 1)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  }
   if (filters.amountMin !== undefined) where.push(sql`${leads.quotedAmount} >= ${filters.amountMin}`);
   if (filters.amountMax !== undefined) where.push(sql`${leads.quotedAmount} <= ${filters.amountMax}`);
   if (filters.volMin !== undefined) where.push(sql`${leads.quotedVolumeM3} >= ${filters.volMin}`);
@@ -1405,7 +1412,7 @@ export async function dormantClients(days: number, ownerId?: string) {
         WHERE r.client_id = ${clients}.id AND r.status = 'confirmed'
       )`,
       balanceUsd: sql<string>`coalesce((
-        SELECT sum(CASE WHEN ct.type = 'charge' THEN ct.amount_usd ELSE -ct.amount_usd END)
+        SELECT sum(CASE WHEN ct.type = 'payment' THEN -ct.amount_usd ELSE ct.amount_usd END)
         FROM client_transactions ct
         WHERE ct.client_id = ${clients}.id AND ct.voided_at IS NULL
       ), 0)`,
@@ -1465,7 +1472,7 @@ export async function funnelReport(ownerId?: string) {
        * it. WON only: a quote on an open lead is a hope, and on a lost one it
        * is a price somebody refused.
        */
-      wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+      wonUsd: leadWonUsdSql(),
     })
     .from(leads)
     .innerJoin(leadStages, eq(leads.stageId, leadStages.id))

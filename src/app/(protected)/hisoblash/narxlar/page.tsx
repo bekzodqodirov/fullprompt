@@ -10,6 +10,7 @@ import { SECTION_LABELS } from '@/modules/wms/calc/labels';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { PageHeader } from '@/components/ui/page';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * «Narx tarixi» — his law 10, «sotuvchi va vedga narxlar tarixi ko'rinsa».
@@ -55,7 +56,7 @@ export default async function PriceHistoryPage({
     try {
       [rows, book] = await Promise.all([
         quoteHistoryFor(code, { scope, limit: 10 }),
-        priceBookAt(code, new Date().toISOString().slice(0, 10)),
+        priceBookAt(code, tashkentDay()),
       ]);
     } catch (err) {
       if (!isServerBehind(err)) throw err;

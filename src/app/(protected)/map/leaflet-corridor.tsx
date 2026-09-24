@@ -5,7 +5,8 @@ import L from 'leaflet';
 import { leafletLayer } from 'protomaps-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MAP_BOUNDS } from '@/modules/wms/tracking/map-data';
-import type { MapTruck, MapWarehouse } from './tracking-map';
+import type { MapPickup, MapTruck, MapWarehouse } from './tracking-map';
+import type { PickupPosition } from '@/modules/wms/tracking/pickup-route';
 
 /**
  * Real zoomable map (owner's ask). The basemap is a self-hosted OSM extract
@@ -51,21 +52,39 @@ const truckSvg = (color: string) => `
   <circle cx="29" cy="22" r="3.6" fill="#1f2937" stroke="#fff" stroke-width="1.6"/>
 </svg>`;
 
+/** A factory, in the pickup's violet: a DIAMOND, the third shape (#137). */
+const factorySvg = (filled: boolean) => `
+<svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+  <rect x="4" y="4" width="10" height="10" transform="rotate(45 9 9)" fill="${filled ? '#7c3aed' : '#fff'}" stroke="#7c3aed" stroke-width="2.5"/>
+</svg>`;
+
 export function LeafletCorridor({
   warehouses,
   trucks,
+  pickups = [],
+  positions = new Map(),
+  focusPickupId = null,
   onSelect,
   full,
 }: {
   warehouses: MapWarehouse[];
   trucks: MapTruck[];
-  onSelect: (sel: { kind: 'wh'; code: string } | { kind: 'truck'; batchId: string }) => void;
+  pickups?: MapPickup[];
+  positions?: Map<string, PickupPosition>;
+  focusPickupId?: string | null;
+  onSelect: (
+    sel: { kind: 'wh'; code: string } | { kind: 'truck'; batchId: string } | { kind: 'pickup'; id: string },
+  ) => void;
   /** Fullscreen changes the container size behind Leaflet's back. */
   full?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
+  // One marker per factory truck, MOVED every five seconds — never rebuilt:
+  // redrawing the layers on every tick would flash every mark on the map.
+  const lorryRefs = useRef(new Map<string, L.Marker>());
+  const focusedRef = useRef(false);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -115,6 +134,53 @@ export function LeafletCorridor({
         tr.routePoints.map((p) => [p.y, p.x] as [number, number]),
         { color: '#3b82f6', weight: 3, dashArray: '7 6', opacity: 0.7 },
       ).addTo(overlay);
+    }
+
+    // Factory trucks (0100): the road behind them solid, ahead dashed.
+    const violet = '#7c3aed';
+    lorryRefs.current = new Map();
+    const focusPoints: [number, number][] = [];
+    for (const p of pickups) {
+      for (const pts of p.timeline?.done ?? []) {
+        L.polyline(pts.map(([x, y]) => [y, x] as [number, number]), { color: violet, weight: 4, opacity: 0.85 }).addTo(overlay);
+      }
+      for (const hop of p.timeline?.hops ?? []) {
+        L.polyline(hop.points.map(([x, y]) => [y, x] as [number, number]), {
+          color: violet,
+          weight: 3,
+          dashArray: '6 6',
+          opacity: 0.75,
+        }).addTo(overlay);
+        if (p.id === focusPickupId) focusPoints.push(...hop.points.map(([x, y]) => [y, x] as [number, number]));
+      }
+      for (const f of p.factories) {
+        if (p.id === focusPickupId) focusPoints.push([f.y, f.x]);
+        L.marker([f.y, f.x], {
+          icon: L.divIcon({ className: '', html: factorySvg(f.collected), iconSize: [18, 18], iconAnchor: [9, 9] }),
+          title: f.name,
+        })
+          .addTo(overlay)
+          .on('click', () => onSelect({ kind: 'pickup', id: p.id }));
+      }
+      const at = positions.get(p.id);
+      if (at) {
+        const icon = L.divIcon({
+          className: '',
+          html: `<div data-testid="map-pickup" style="position:relative;width:38px;height:28px;line-height:0"><div style="position:absolute;bottom:100%;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:monospace;font-weight:800;font-size:12px;line-height:14px;color:#6d28d9;-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(p.code)}</div>${truckSvg(violet)}</div>`,
+          iconSize: [38, 28],
+          iconAnchor: [19, 14],
+        });
+        const marker = L.marker([at.point[1], at.point[0]], { icon, zIndexOffset: 900 })
+          .addTo(overlay)
+          .on('click', () => onSelect({ kind: 'pickup', id: p.id }));
+        lorryRefs.current.set(p.id, marker);
+      }
+    }
+    // From a pickup card's «Xaritada ko'rish»: at the corridor's zoom a
+    // city-sized trip is a few pixels long, so the view FITS it, once.
+    if (!focusedRef.current && focusPoints.length) {
+      focusedRef.current = true;
+      map.fitBounds(L.latLngBounds(focusPoints), { padding: [40, 40], maxZoom: 11 });
     }
 
     for (const w of warehouses) {
@@ -167,7 +233,17 @@ export function LeafletCorridor({
         .addTo(overlay)
         .on('click', () => onSelect({ kind: 'truck', batchId: tr.batchId }));
     }
-  }, [warehouses, trucks, onSelect]);
+    // `positions` is read for the FIRST placement only; the effect below
+    // moves the markers, so a tick does not rebuild the layers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouses, trucks, pickups, focusPickupId, onSelect]);
+
+  useEffect(() => {
+    for (const [id, marker] of lorryRefs.current) {
+      const at = positions.get(id);
+      if (at) marker.setLatLng([at.point[1], at.point[0]]);
+    }
+  }, [positions]);
 
   // Leaflet caches the container size and draws tiles for it; growing the
   // element without telling it leaves grey gaps where the old edge was.
@@ -176,7 +252,8 @@ export function LeafletCorridor({
     if (!map) return;
     const timer = setTimeout(() => {
       map.invalidateSize();
-      map.fitBounds(MAP_BOUNDS, { padding: [8, 8] });
+      // A trip the page was opened FOR keeps its fitted view on mount.
+      if (!(focusedRef.current && !full)) map.fitBounds(MAP_BOUNDS, { padding: [8, 8] });
     }, 60);
     return () => clearTimeout(timer);
   }, [full]);

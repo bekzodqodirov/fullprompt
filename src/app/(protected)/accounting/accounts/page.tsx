@@ -9,6 +9,7 @@ import { accountBalances, listAccounts, listTransfers } from '@/modules/wms/acco
 import { AccountForm } from './account-form';
 import { TransferForm, VoidTransferButton } from './transfer-form';
 import { PageHeader } from '@/components/ui/page';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Cash boxes and accounts: what is in each one, and how it got there.
@@ -31,7 +32,7 @@ export default async function AccountsPage() {
     listTransfers(),
   ]);
   const codes = currencyRows.map((row) => row.code);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
   const money = (value: number) => value.toLocaleString('en-US');
 
   return (
@@ -59,15 +60,27 @@ export default async function AccountsPage() {
                       {row.currency} · {t(row.kind)}
                     </span>
                   </td>
-                  <td className="p-2 text-right font-mono text-ink-700">{money(row.opening)}</td>
+                  <td className="p-2 text-right font-mono text-ink-700">
+                    {money(row.opening)}
+                    {/* The count is a fact AS OF this day (R4): what came
+                        before it is inside the figure, and is not added again. */}
+                    {row.openingDate && (
+                      <span className="block text-[11px] font-sans text-ink-500">{row.openingDate}</span>
+                    )}
+                  </td>
                   <td className="p-2 text-right font-mono text-good">
-                    +{money(Math.round((row.paidIn + row.transferredIn) * 100) / 100)}
+                    +{money(Math.round((row.paidIn + row.transferredIn + row.partnerIn) * 100) / 100)}
                   </td>
                   <td className="p-2 text-right font-mono text-bad">
-                    −{money(Math.round((row.spent + row.transferredOut) * 100) / 100)}
+                    −{money(Math.round((row.spent + row.costsOut + row.transferredOut + row.partnerOut + row.refundedOut) * 100) / 100)}
                   </td>
                   <td className="p-2 text-right font-mono font-bold">
                     {money(row.balance)} {row.currency}
+                    {row.beforeOpening > 0 && (
+                      <span className="block text-[11px] font-sans font-normal text-warn" data-testid="before-opening">
+                        ⚠ {t('beforeOpening', { count: row.beforeOpening })}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

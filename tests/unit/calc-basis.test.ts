@@ -71,7 +71,10 @@ describe('the payable predicate carries BOTH anchor guards (source shape)', () =
     expect(upsale).toContain('o.version_id IS NOT NULL AND');
     expect(upsale).toContain('o.version_id IS NULL AND');
     expect(upsale).toContain('COALESCE(v.total_usd, r.answer_amount)');
-    expect(upsale).toContain('PARTITION BY COALESCE(v.request_id, o.request_id)');
+    // One payable per JOB across both anchors: the rank partitions on the
+    // COALESCEd request (named once in `base`, audit A18's restructure).
+    expect(upsale).toContain('COALESCE(v.request_id, o.request_id) AS request_id');
+    expect(upsale).toContain('PARTITION BY base.request_id, base.stands');
     // The two outer version-only clauses stay guarded too.
     expect(upsale).toContain('ranked.version_id IS NULL OR ranked.discount_usd');
     expect(upsale).toContain('ranked.version_id IS NULL OR NOT (');

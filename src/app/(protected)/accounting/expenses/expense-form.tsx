@@ -43,7 +43,24 @@ export function ExpenseForm({
    * on the request id, so the defaults actually land (the round-61 keyed-
    * inputs trap).
    */
-  prefill?: { requestId: string; amount: string; currency: string; note: string; warehouseId: string };
+  prefill?: {
+    requestId: string;
+    amount: string;
+    currency: string;
+    note: string;
+    /** Null when the request was filed from /profile, off any warehouse. */
+    warehouseId: string | null;
+    /** «O'z pulimdan to'ladim»: the reporter paid, so they are the payer. */
+    paidBySelf?: boolean;
+    /**
+     * The reporter's staff account, found by the page from the request row's
+     * author (owner M1a) — pre-selected as the payer so the expense books a
+     * debt to them. Absent when they have none yet (the page offers the mint).
+     */
+    partnerId?: string;
+    /** The day the warehouse spent it, not today (audit A29). */
+    expenseDate: string;
+  };
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
@@ -53,7 +70,7 @@ export function ExpenseForm({
   // hand reconciliation of the till would ever show it. The picker now
   // disappears with the choice, the way the counterparty form already hides
   // its cash box for the kinds that move no money.
-  const [partnerId, setPartnerId] = useState('');
+  const [partnerId, setPartnerId] = useState(prefill?.partnerId ?? '');
   const [state, formAction, pending] = useActionState<AccountingFormState, FormData>(
     addExpenseAction,
     {},
@@ -66,7 +83,7 @@ export function ExpenseForm({
         <>
           <input type="hidden" name="requestId" value={prefill.requestId} />
           <p className="rounded-lg bg-warn/10 p-2 text-xs font-semibold" data-testid="expense-request-hint">
-            💸 {t('fromRequest')}
+            💸 {prefill.paidBySelf ? t('fromRequestSelf') : t('fromRequest')}
           </p>
         </>
       )}
@@ -102,7 +119,7 @@ export function ExpenseForm({
           type="date"
           name="expenseDate"
           aria-label={t('date')}
-          defaultValue={today}
+          defaultValue={prefill?.expenseDate ?? today}
           className="input !w-40"
           required
         />
@@ -123,7 +140,7 @@ export function ExpenseForm({
         <select
           name="warehouseId"
           aria-label={t('warehouse')}
-          defaultValue={prefill?.warehouseId}
+          defaultValue={prefill?.warehouseId ?? ''}
           className="input !w-32"
         >
           <option value="">— {t('warehouse')} —</option>

@@ -7,10 +7,12 @@ import {
   boxMovements,
   clientTransactions,
   clients,
+  costEntries,
   receiptLots,
   receipts,
   warehouses,
 } from '../../platform/db/schema';
+import { isInternalLeg } from '../batches/internal';
 
 /**
  * Where a client's cargo is, what it weighs, and which money belongs to it.
@@ -47,6 +49,14 @@ export interface CargoTrip {
   chargedUsd: number;
   /** Of that, still unpaid after settling payments oldest-first. */
   owedUsd: number;
+  /**
+   * A truck that crossed no border (`isInternalLeg`). It is never priced —
+   * the owner's C1a — so «narx qo'yilmagan» is not true of it and is not
+   * printed; what CAN be missing on it is its own cost.
+   */
+  internal: boolean;
+  /** Internal and departed with no live cost entry on it: the warning it gets. */
+  costMissing: boolean;
 }
 
 export interface ClientCargo {
@@ -119,6 +129,8 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
         batchCode: batches.code,
         originCode: warehouses.code,
         destCode: dest.code,
+        originCountry: warehouses.country,
+        destCountry: dest.country,
         status: batches.status,
         departedAt: batches.departedAt,
         boxCount: sql<number>`count(distinct ${boxes.id})`,
@@ -141,7 +153,16 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
           ne(boxes.status, 'void'),
         ),
       )
-      .groupBy(batches.id, batches.code, warehouses.code, dest.code, batches.status, batches.departedAt)
+      .groupBy(
+        batches.id,
+        batches.code,
+        warehouses.code,
+        dest.code,
+        warehouses.country,
+        dest.country,
+        batches.status,
+        batches.departedAt,
+      )
       .orderBy(desc(batches.departedAt)),
 
     db
@@ -165,9 +186,13 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     .filter((row) => row.type === 'charge')
     .map((row) => ({ batchId: row.batchId, owed: Number(row.amountUsd) }));
   const chargedUsd = charges.reduce((a, c) => a + c.owed, 0);
-  const paidUsd = ledger
-    .filter((row) => row.type === 'payment')
-    .reduce((a, row) => a + Number(row.amountUsd), 0);
+  // Net of what was handed back (R6a): a refund puts money the client paid
+  // back into their hands, so it no longer settles anything.
+  const paidUsd = ledger.reduce(
+    (a, row) =>
+      a + (row.type === 'payment' ? Number(row.amountUsd) : row.type === 'refund' ? -Number(row.amountUsd) : 0),
+    0,
+  );
 
   let unapplied = paidUsd;
   for (const charge of charges) {
@@ -203,6 +228,22 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     }))
     .sort((a, b) => (a.warehouseCode ?? '').localeCompare(b.warehouseCode ?? ''));
 
+  // Which internal trips carry no cost at all — ONE grouped read over the
+  // client's trips, never a query per trip (#432).
+  const internalIds = tripRows
+    .filter((row) => isInternalLeg(row.originCountry, row.destCountry))
+    .map((row) => row.batchId);
+  const costed = new Set(
+    internalIds.length
+      ? (
+          await db
+            .selectDistinct({ batchId: costEntries.batchId })
+            .from(costEntries)
+            .where(and(inArray(costEntries.batchId, internalIds), isNull(costEntries.voidedAt)))
+        ).map((row) => row.batchId)
+      : [],
+  );
+
   const trips = tripRows.map((row) => ({
     batchId: row.batchId,
     batchCode: row.batchCode,
@@ -215,6 +256,11 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     m3: round3(Number(row.m3)),
     chargedUsd: cents(chargedByBatch.get(row.batchId) ?? 0),
     owedUsd: cents(owedByBatch.get(row.batchId) ?? 0),
+    internal: isInternalLeg(row.originCountry, row.destCountry),
+    costMissing:
+      isInternalLeg(row.originCountry, row.destCountry) &&
+      row.departedAt !== null &&
+      !costed.has(row.batchId),
   }));
 
   return {
@@ -279,7 +325,7 @@ export async function managedClients(managerId?: string): Promise<ManagedClient[
           AND b.status IN ('in_stock','planned','loading','in_transit','ready_for_pickup')
       ), 0)`,
       balanceUsd: sql<string>`coalesce((
-        SELECT sum(CASE WHEN ct.type = 'charge' THEN ct.amount_usd ELSE -ct.amount_usd END)
+        SELECT sum(CASE WHEN ct.type = 'payment' THEN -ct.amount_usd ELSE ct.amount_usd END)
         FROM client_transactions ct
         WHERE ct.client_id = ${clients}.id AND ct.voided_at IS NULL
       ), 0)`,

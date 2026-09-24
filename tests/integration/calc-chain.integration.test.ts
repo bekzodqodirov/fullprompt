@@ -30,6 +30,7 @@ import {
   setGroupRates,
   setItemBaza,
 } from '@/modules/wms/calc/workspace';
+import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The correction CHAIN — what «V2» counts, and the registry that lists it.
@@ -313,9 +314,9 @@ describe('the registry', () => {
     const first = await sealed();
     expect((await mine({ section: 'yolkira' })).some((r) => r.requestId === first)).toBe(false);
     expect((await mine({ section: 'podklyuch' })).some((r) => r.requestId === first)).toBe(true);
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    const tomorrow = addDays(tashkentDay(), 1);
     expect((await mine({ from: tomorrow })).some((r) => r.requestId === first)).toBe(false);
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const yesterday = addDays(tashkentDay(), -1);
     expect((await mine({ to: yesterday })).some((r) => r.requestId === first)).toBe(false);
     expect((await mine({ from: yesterday, to: tomorrow })).some((r) => r.requestId === first)).toBe(true);
   });

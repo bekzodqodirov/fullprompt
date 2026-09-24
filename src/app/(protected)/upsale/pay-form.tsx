@@ -21,8 +21,6 @@ export interface PayableRow {
   offeredAt: string;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-
 /**
  * The accountant's Friday.
  *
@@ -42,9 +40,12 @@ const today = () => new Date().toISOString().slice(0, 10);
 export function PayForm({
   rows,
   accounts,
+  today,
 }: {
   rows: PayableRow[];
   accounts: { id: string; name: string; currency: string }[];
+  /** Tashkent's day from the server — the browser's clock is not the office's (R5). */
+  today: string;
 }) {
   const t = useTranslations('upsale');
   const tc = useTranslations('common');
@@ -53,7 +54,7 @@ export function PayForm({
   const [pending, startTransition] = useTransition();
   const [picked, setPicked] = useState<string[]>([]);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(today);
   const [note, setNote] = useState('');
   const [result, setResult] = useState<UpsaleFormState>({});
 

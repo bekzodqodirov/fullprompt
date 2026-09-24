@@ -15,6 +15,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
+import { staffPartnerSql } from './staff';
 
 /**
  * Kontragentlar — the other side of the money (round 39, the owner's three
@@ -43,6 +44,18 @@ const RAISING = ['charge', 'receipt'] as const;
 
 export const PARTNER_TX_TYPES = ['charge', 'receipt', 'payment', 'offset', 'adjust'] as const;
 export type PartnerTxType = (typeof PARTNER_TX_TYPES)[number];
+
+/**
+ * The kinds a person may write by hand on a partner's card (audit A31,
+ * 2026-09-24). A `charge` is a debt for a SERVICE we took — a truck, customs,
+ * rent, a salary — and a service is a cost: typed on the card it raised the
+ * debt and reached no P&L, no tannarx and no profit screen, which is exactly
+ * what DECISIONS #415 forbade («a cost and a debt are different facts — the
+ * cost form's payer writes the charge»). It is written by the cost and expense
+ * forms' «kim to'ladi» (`partners/link.ts`) and nowhere else. An `offset` is
+ * a debt closed through a CLIENT, and has its own screen that names one.
+ */
+export const MANUAL_TX_TYPES: PartnerTxType[] = ['payment', 'receipt', 'adjust'];
 
 /** Types that moved real money, and so must name the cash box that moved. */
 export const CASH_TYPES: PartnerTxType[] = ['receipt', 'payment'];
@@ -88,7 +101,36 @@ export const partnerSchema = z.object({
   clientId: z.string().uuid().optional().or(z.literal('')),
   phone: z.string().trim().max(40).optional().or(z.literal('')),
   note: z.string().trim().max(2000).optional().or(z.literal('')),
+  /**
+   * The login this account belongs to (0101). THREE states, on purpose:
+   * `undefined` = the form did not carry the field (it is drawn only for the
+   * accountant and the admin), and that must read «unchanged» — a replace-all
+   * save that took absence for «nobody» would unlink every staff account the
+   * first time a VED fixed a typo on it (#171's shape); `''` = unlinked; a
+   * uuid = linked.
+   */
+  userId: z.string().uuid().optional().or(z.literal('')),
 });
+
+/**
+ * The check above and the write below are two statements, so two accountants
+ * linking the same login at once both pass the check and the unique index
+ * answers the second — as the same sentence, not as the error page (#472).
+ */
+async function write<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    type PgError = { code?: string; constraint_name?: string };
+    const pg = err as PgError & { cause?: PgError };
+    const code = pg?.code ?? pg?.cause?.code;
+    const constraint = pg?.constraint_name ?? pg?.cause?.constraint_name;
+    if (code === '23505' && constraint === 'partners_user_uniq') {
+      throw new PartnerError('user_taken');
+    }
+    throw err;
+  }
+}
 
 export async function savePartner(
   id: string | null,
@@ -107,32 +149,64 @@ export async function savePartner(
       .limit(1);
     if (taken && taken.id !== id) throw new PartnerError('client_taken');
   }
+  const before = id ? await db.query.partners.findFirst({ where: eq(partners.id, id) }) : null;
+  if (id && !before) throw new PartnerError('not_found');
+
+  // Absent = unchanged (see the schema). Present: one account per login,
+  // checked here so the screen can say WHY rather than the unique index
+  // answering with a crash — and a login newly linked must be a live one (the
+  // form offers active people only; the one ALREADY linked stays linkable, or
+  // an unrelated edit on a leaver's account would be refused for ever).
+  const userId = input.userId === undefined ? undefined : input.userId || null;
+  if (userId) {
+    const [person] = await db
+      .select({ active: users.active })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!person || (!person.active && before?.userId !== userId)) {
+      throw new PartnerError('user_not_found');
+    }
+    const [taken] = await db
+      .select({ id: partners.id })
+      .from(partners)
+      .where(eq(partners.userId, userId))
+      .limit(1);
+    if (taken && taken.id !== id) throw new PartnerError('user_taken');
+  }
   const values = {
     name: input.name,
     typeId: input.typeId,
     clientId,
     phone: input.phone || null,
     note: input.note || null,
+    ...(userId === undefined ? {} : { userId }),
   };
 
-  if (id) {
-    const before = await db.query.partners.findFirst({ where: eq(partners.id, id) });
-    if (!before) throw new PartnerError('not_found');
-    await db.update(partners).set(values).where(eq(partners.id, id));
+  if (id && before) {
+    await write(() => db.update(partners).set(values).where(eq(partners.id, id)));
     await writeAudit(db, ctx, {
       entityType: 'partner',
       entityId: id,
       action: 'update',
-      before: { name: before.name, typeId: before.typeId, clientId: before.clientId },
+      before: {
+        name: before.name,
+        typeId: before.typeId,
+        clientId: before.clientId,
+        userId: before.userId,
+      },
       after: values,
     });
     return id;
   }
 
-  const [row] = await db
-    .insert(partners)
-    .values({ ...values, createdBy: ctx.actorId })
-    .returning();
+  const createdBy = ctx.actorId;
+  const [row] = await write(() =>
+    db
+      .insert(partners)
+      .values({ ...values, createdBy })
+      .returning(),
+  );
   await writeAudit(db, ctx, {
     entityType: 'partner',
     entityId: row!.id,
@@ -181,6 +255,9 @@ export type PartnerTxInput = z.infer<typeof partnerTxSchema>;
  */
 export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new PartnerError('unauthenticated');
+  if (!MANUAL_TX_TYPES.includes(input.type)) {
+    throw new PartnerError(input.type === 'charge' ? 'charge_via_cost' : 'offset_via_settlement');
+  }
   // A named cash box must speak the row's currency (the ledger rule).
   if (input.accountId) {
     const [account] = await db
@@ -224,6 +301,20 @@ export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
     },
   });
   return row!;
+}
+
+/**
+ * Which account a ledger row sits on — read from the ROW, so a door that
+ * voids by transaction id judges the account the row really belongs to and
+ * never the `partnerId` the form carried beside it. Null when there is none.
+ */
+export async function partnerIdOfTx(txId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ partnerId: partnerTransactions.partnerId })
+    .from(partnerTransactions)
+    .where(eq(partnerTransactions.id, txId))
+    .limit(1);
+  return row?.partnerId ?? null;
 }
 
 export async function voidPartnerTx(id: string, reason: string, ctx: AuditContext) {
@@ -305,12 +396,40 @@ export interface PartnerRow {
   typeCode: string;
   clientId: string | null;
   clientCode: string | null;
+  /** The login this account belongs to — set on a staff account (0101). */
+  userId: string | null;
+  staff: boolean;
   active: boolean;
   balanceUsd: number;
 }
 
 /** Everybody, with what we owe each — the «kimga qarzdormiz» screen. */
-export async function listPartners(opts: { includeInactive?: boolean } = {}): Promise<PartnerRow[]> {
+/**
+ * The register's two totals, rounded per account the way `companyBalance`
+ * rounds them, so both Balans lines can be checked on the page they link to
+ * (audit A6). The page used to print only what we owe; «what firms owe US»
+ * sat on the Balans and nowhere here.
+ */
+export function partnerTotals(rows: { balanceUsd: number }[]): { owedByUs: number; owedToUs: number } {
+  let owedByUs = 0;
+  let owedToUs = 0;
+  for (const row of rows) {
+    const value = Math.round(row.balanceUsd * 100) / 100;
+    if (value > 0) owedByUs += value;
+    else owedToUs += -value;
+  }
+  return { owedByUs: Math.round(owedByUs * 100) / 100, owedToUs: Math.round(owedToUs * 100) / 100 };
+}
+
+/**
+ * `includeStaff` is REQUIRED (owner M3a): a staff account is shown only to
+ * the accountant and the admin, and an optional flag fails OPEN — making it
+ * required turned every caller into a compile error that had to decide.
+ */
+export async function listPartners(opts: {
+  includeInactive?: boolean;
+  includeStaff: boolean;
+}): Promise<PartnerRow[]> {
   const rows = await db
     .select({
       id: partners.id,
@@ -319,6 +438,8 @@ export async function listPartners(opts: { includeInactive?: boolean } = {}): Pr
       typeCode: partnerTypes.code,
       clientId: partners.clientId,
       clientCode: clients.clientCode,
+      userId: partners.userId,
+      staff: sql<boolean>`${staffPartnerSql()}`,
       active: partners.active,
       balance: sql<string>`coalesce((
         SELECT sum(CASE
@@ -330,7 +451,12 @@ export async function listPartners(opts: { includeInactive?: boolean } = {}): Pr
     .from(partners)
     .innerJoin(partnerTypes, eq(partners.typeId, partnerTypes.id))
     .leftJoin(clients, eq(partners.clientId, clients.id))
-    .where(opts.includeInactive ? undefined : eq(partners.active, true))
+    .where(
+      and(
+        opts.includeInactive ? undefined : eq(partners.active, true),
+        opts.includeStaff ? undefined : sql`NOT ${staffPartnerSql()}`,
+      ),
+    )
     .orderBy(asc(partnerTypes.sortOrder), asc(partners.name));
 
   return rows.map((r) => ({
@@ -340,6 +466,8 @@ export async function listPartners(opts: { includeInactive?: boolean } = {}): Pr
     typeCode: r.typeCode,
     clientId: r.clientId,
     clientCode: r.clientCode,
+    userId: r.userId,
+    staff: r.staff === true,
     active: r.active,
     balanceUsd: Math.round(Number(r.balance) * 100) / 100,
   }));
@@ -371,6 +499,7 @@ export async function partnerById(id: string) {
       typeCode: partnerTypes.code,
       clientCode: clients.clientCode,
       clientName: clients.name,
+      staff: sql<boolean>`${staffPartnerSql()}`,
     })
     .from(partners)
     .innerJoin(partnerTypes, eq(partners.typeId, partnerTypes.id))

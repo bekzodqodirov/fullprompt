@@ -31,6 +31,8 @@ import {
 import { priceControlOnReceipt } from '../deals/service';
 import { stampCalcLink } from '../calc/link';
 import { computeLotTotals } from './math';
+import { recomputeAll } from '../costing/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 export const lotInputSchema = z
   .object({
@@ -86,6 +88,13 @@ export const confirmReceiptSchema = z.object({
    * author is told when the numbers differ.
    */
   expectedArrivalId: z.string().uuid().nullable().optional(),
+  /**
+   * The factory stop this cargo came off (0100, «zavod reysi»), when the
+   * operator opened the screen from the truck's «Qabul qilish». Checked IN
+   * the transaction against the stop's own truck — live, heading here — and
+   * written on the receipt's INSERT, so the truck's cost reaches these boxes.
+   */
+  pickupStopId: z.string().uuid().nullable().optional(),
 });
 
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
@@ -96,7 +105,8 @@ export class ReceiptError extends Error {
       | 'warehouse_not_found'
       | 'client_not_found'
       | 'photo_required'
-      | 'already_confirmed',
+      | 'already_confirmed'
+      | 'pickup_invalid',
     message?: string,
   ) {
     super(message ?? code);
@@ -167,7 +177,17 @@ export async function confirmReceipt(
   // roll back a warehouse's receipt, nor exist for one that rolled back.
   let closedArrival: Awaited<ReturnType<typeof closeExpectedById>> = null;
 
+  let pickupId: string | null = null;
   const result = await db.transaction(async (tx) => {
+    if (input.pickupStopId) {
+      const { assertStopReceivable, PickupError } = await import('../pickups/service');
+      try {
+        pickupId = await assertStopReceivable(tx, input.pickupStopId, warehouse.id);
+      } catch (err) {
+        if (err instanceof PickupError) throw new ReceiptError('pickup_invalid', err.code);
+        throw err;
+      }
+    }
     const number = await nextReceiptNumber(tx, warehouse);
     const [receipt] = await tx
       .insert(receipts)
@@ -186,8 +206,13 @@ export async function confirmReceipt(
         // Only when the cargo actually belongs to this client's job; a deal
         // filed against the wrong client would make two clients' money wrong.
         dealId: input.clientId ? input.dealId ?? null : null,
+        pickupStopId: input.pickupStopId ?? null,
       })
       .returning();
+    if (pickupId) {
+      const { arriveOnReceipt } = await import('../pickups/service');
+      await arriveOnReceipt(tx, pickupId);
+    }
 
     const letters = await assignLetters(tx, warehouse.id, input.lots.length);
 
@@ -295,7 +320,8 @@ export async function confirmReceipt(
         costTypeId: cost.costTypeId,
         amount: cost.amount.toString(),
         currency: cost.currency,
-        costDate: new Date().toISOString().slice(0, 10),
+        // The office's day (R5): in UTC a receipt before 05:00 was yesterday's cost.
+        costDate: tashkentDay(),
         note: cost.note || null,
         enteredBy: ctx.actorId!,
       });
@@ -418,6 +444,24 @@ export async function confirmReceipt(
     return { receiptId: receipt!.id, number: number, lots: summaries };
   });
 
+  // The wizard's extra costs were inserted inside the transaction with no
+  // dollar figure and no allocation — and nothing afterwards ever converted
+  // them: «kurs yo'q» on the receipt and $0 in every tannarx for ever. The
+  // recompute runs HERE, after the commit (it reads settings and rates on
+  // the pool, #714), and a failure is a late conversion — the nightly sweep
+  // finds it — never a failed receipt.
+  if (input.extraCosts.length > 0) {
+    await recomputeAll({ receiptId: result.receiptId }).catch((err) =>
+      console.error('[receipt] extra-cost recompute failed', result.receiptId, err),
+    );
+  }
+  // The factory truck's cost re-splits over the cargo it has brought so far —
+  // after the commit, for the same reason; the nightly sweep is the repair.
+  if (pickupId) {
+    const { recomputePickupCosts } = await import('../pickups/service');
+    await recomputePickupCosts(pickupId);
+  }
+
   if (closedArrival) {
     // The promise's author learns the numbers differ; a failure here is a
     // missing message, never a failed receipt.
@@ -475,6 +519,9 @@ export async function voidReceipt(
   reason: string,
   ctx: AuditContext,
 ): Promise<void> {
+  const stopId = (
+    await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId), columns: { pickupStopId: true } })
+  )?.pickupStopId;
   await db.transaction(async (tx) => {
     const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
     if (!receipt || receipt.voidedAt) return;
@@ -533,6 +580,12 @@ export async function voidReceipt(
       after: { reason },
     });
   });
+  // A voided prixod leaves its factory truck's base; its share of the truck
+  // moves onto the cargo that really came (the link stays, as history).
+  if (stopId) {
+    const { pickupIdOfStop, recomputePickupCosts } = await import('../pickups/service');
+    await recomputePickupCosts(await pickupIdOfStop(stopId));
+  }
 }
 
 /**

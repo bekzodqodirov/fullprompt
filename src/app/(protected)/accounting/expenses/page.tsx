@@ -8,6 +8,7 @@ import { Panel } from '@/components/panel';
 import {
   listAccounts,
   listCategories,
+  expenseTotals,
   listExpenses,
   listRecurring,
 } from '@/modules/wms/accounting/service';
@@ -15,12 +16,16 @@ import { resolvePeriod } from '@/modules/wms/accounting/period';
 import { listPartners } from '@/modules/wms/partners/service';
 import { PeriodForm } from '../period-form';
 import { ExpenseForm } from './expense-form';
-import { GenerateRecurringButton, RecurringForm } from './recurring-form';
+import { GenerateRecurringButton, RecurringForm, RecurringRowEdit } from './recurring-form';
 import { VoidExpenseButton } from './void-expense-button';
 import { RejectRequestButton } from './reject-request-button';
 import { PageHeader } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
 import { openExpenseRequests } from '@/modules/wms/accounting/expense-requests';
+import { spendDateOf } from '@/modules/wms/accounting/spend-date';
+import { maySeeStaffMoney, staffPartnerOfUser } from '@/modules/wms/partners/staff';
+import { OpenStaffPartnerButton } from './open-staff-partner-button';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The expense book: what the company spent that is not cargo cost.
@@ -43,7 +48,7 @@ export default async function ExpensesPage({
   const { from, to } = resolvePeriod(params);
   const categoryId = /^[0-9a-f-]{36}$/i.test(params.categoryId ?? '') ? params.categoryId : undefined;
 
-  const [categories, accounts, warehouseRows, employeeRows, currencyRows, rows, recurring] =
+  const [categories, accounts, warehouseRows, employeeRows, currencyRows, rows, recurring, totals] =
     await Promise.all([
       listCategories(),
       listAccounts(),
@@ -60,9 +65,14 @@ export default async function ExpensesPage({
       db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
       listExpenses({ from, to, categoryId }),
       listRecurring(),
+      expenseTotals({ from, to, categoryId }),
     ]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Tashkent's day and month (R5), the same `tashkentDay()` the accountant's
+  // home counter (`moneyFlowCounts`) is fed: the button must post the month
+  // the counter calls «due», or at every month's turn one of them is a month
+  // off for five hours.
+  const today = tashkentDay();
   const options = {
     categories: categories.map((row) => ({ id: row.id, label: row.name })),
     accounts: accounts.map((row) => ({ id: row.id, label: `${row.name} (${row.currency})` })),
@@ -71,10 +81,11 @@ export default async function ExpensesPage({
     currencies: currencyRows.map((row) => row.code),
     // Round 39: rent and Chinese salaries are settled through the transport
     // company, so the expense book has to be able to say who paid.
-    partners: (await listPartners()).map((row) => ({ id: row.id, label: row.name })),
+    partners: (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, label: row.name })),
   };
-  const totalUsd =
-    Math.round(rows.reduce((acc, row) => acc + Number(row.expense.amountUsd), 0) * 100) / 100;
+  // The whole period's total, never the sum of the rows drawn: the list stops
+  // at its newest 500 (audit A14).
+  const totalUsd = totals.totalUsd;
 
   // The rasxod xabari queue (round 107). Caught: the table is minted this
   // release, and a half-applied deploy must not white-page the expense book
@@ -87,6 +98,16 @@ export default async function ExpensesPage({
   const prefillRow = requestParam
     ? requests.find((row) => row.id === requestParam && row.status === 'open')
     : undefined;
+  // «O'z pulimdan to'ladim» (owner M1a): the payer is the REPORTER's staff
+  // account, looked up by the request row's own author — so «Kiritish» books a
+  // debt to them, and no kassa moves. The accountant may still switch the
+  // payer to a kassa; this is a default, not a lock. A retired account is not
+  // offered (the list is active-only) and is said so rather than silently
+  // dropped back to «we paid».
+  const reporterStaff = prefillRow?.paidBySelf
+    ? await staffPartnerOfUser(prefillRow.createdBy).catch(() => null)
+    : null;
+  const prefillPartnerId = reporterStaff?.active ? reporterStaff.id : undefined;
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-4xl">
@@ -103,8 +124,25 @@ export default async function ExpensesPage({
               className="flex flex-wrap items-center gap-2 border-b border-line py-1.5 text-sm last:border-0"
               data-testid="expense-request-row"
             >
-              <span className="font-mono text-xs text-ink-500">{request.warehouseCode}</span>
+              {/* A report from /profile names no warehouse (0101) — nothing
+                  printed rather than a dash that reads like a code. */}
+              {request.warehouseCode && (
+                <span className="font-mono text-xs text-ink-500">{request.warehouseCode}</span>
+              )}
+              {/* When the money was spent, in the warehouse's clock — the
+                  date «Kiritish» will file it under (audit A29). */}
+              <span className="font-mono text-xs text-ink-500" data-testid="expense-request-date">
+                {spendDateOf(new Date(request.createdAt), request.warehouseTimezone)}
+              </span>
               <span className="text-ink-700">{request.requesterName}</span>
+              {request.paidBySelf && (
+                <span
+                  className="rounded bg-warn/10 px-1.5 py-0.5 text-xs font-semibold"
+                  data-testid="expense-request-self"
+                >
+                  👤 {t('requestOwnPocket')}
+                </span>
+              )}
               <span className="font-mono font-bold">
                 {Number(request.amount).toLocaleString('ru-RU')} {request.currency}
               </span>
@@ -135,11 +173,22 @@ export default async function ExpensesPage({
         </div>
       )}
 
+      {prefillRow?.paidBySelf && !reporterStaff && (
+        <OpenStaffPartnerButton requestId={prefillRow.id} />
+      )}
+      {prefillRow?.paidBySelf && reporterStaff && !reporterStaff.active && (
+        <p className="rounded-lg bg-warn/10 p-2 text-xs font-semibold" data-testid="staff-partner-inactive">
+          ⚠ {t('staffPartnerInactive', { name: reporterStaff.name })}
+        </p>
+      )}
+
       {categories.length === 0 ? (
         <p className="card text-sm text-ink-700">{t('noCategories')}</p>
       ) : (
         <ExpenseForm
-          key={prefillRow?.id ?? 'plain'}
+          // The payer joins the key: minting the reporter's account re-renders
+          // the SAME request, and `useState` would keep the old «we paid».
+          key={prefillRow ? `${prefillRow.id}:${prefillPartnerId ?? ''}` : 'plain'}
           {...options}
           today={today}
           prefill={
@@ -150,6 +199,9 @@ export default async function ExpensesPage({
                   currency: prefillRow.currency,
                   note: prefillRow.note,
                   warehouseId: prefillRow.warehouseId,
+                  paidBySelf: prefillRow.paidBySelf,
+                  partnerId: prefillPartnerId,
+                  expenseDate: spendDateOf(new Date(prefillRow.createdAt), prefillRow.warehouseTimezone),
                 }
               : undefined
           }
@@ -159,7 +211,7 @@ export default async function ExpensesPage({
       <Panel title={`🔁 ${t('recurring')}`} badge={recurring.length || undefined}>
         <GenerateRecurringButton month={today.slice(0, 7)} />
         <div className="space-y-1">
-          {recurring.map(({ recurring: template, categoryName, employeeName }) => (
+          {recurring.map(({ recurring: template, categoryName, employeeName, partnerName }) => (
             <div
               key={template.id}
               className={`flex flex-wrap items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0 ${
@@ -174,6 +226,17 @@ export default async function ExpensesPage({
               <span className="text-xs text-ink-500">
                 {t('dayOfMonth')}: {template.dayOfMonth}
               </span>
+              {partnerName && (
+                <span className="w-full text-xs text-ink-700">
+                  {t('paidBy')}: {partnerName}
+                </span>
+              )}
+              <RecurringRowEdit
+                id={template.id}
+                amount={template.amount}
+                dayOfMonth={template.dayOfMonth}
+                active={template.active}
+              />
             </div>
           ))}
           {recurring.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
@@ -184,7 +247,11 @@ export default async function ExpensesPage({
       <PeriodForm
         from={from}
         to={to}
-        exportHref="/api/accounting/expenses"
+        // The file carries the screen's category too: without it a filtered
+        // screen downloaded every category under the same title (audit A15).
+        exportHref={
+          categoryId ? `/api/accounting/expenses?categoryId=${categoryId}` : '/api/accounting/expenses'
+        }
         extra={
           <label className="text-sm">
             <span className="block text-xs text-ink-500">{t('category')}</span>
@@ -203,6 +270,11 @@ export default async function ExpensesPage({
       <p className="text-sm font-semibold" data-testid="expenses-total">
         {t('total')}: {totalUsd.toLocaleString('en-US')} $
       </p>
+      {totals.count > rows.length && (
+        <p className="text-xs font-semibold text-warn" data-testid="expenses-truncated">
+          ⚠ {t('expensesTruncated', { shown: rows.length, total: totals.count })}
+        </p>
+      )}
 
       <div className="card !p-0">
         <div className="overflow-x-auto">

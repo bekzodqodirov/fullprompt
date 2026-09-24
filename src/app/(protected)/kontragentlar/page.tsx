@@ -7,12 +7,14 @@ import {
   groupPartnersByType,
   listPartnerTypes,
   listPartners,
+  partnerTotals,
 } from '@/modules/wms/partners/service';
 import { PageHeader } from '@/components/ui/page';
 import { PartnerForm } from './partner-form';
 import { db } from '@/modules/platform/db/client';
-import { clients } from '@/modules/platform/db/schema';
+import { clients, users } from '@/modules/platform/db/schema';
 import { asc, eq } from 'drizzle-orm';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /**
  * Kimga qarzdormiz — the mirror of the client ledger.
@@ -48,14 +50,18 @@ export default async function PartnersPage() {
   // A retired account with a live balance therefore keeps its row (dimmed, and
   // saying so); a retired account that is settled disappears, which is the
   // tidying the button was for.
-  const allRows = await listPartners({ includeInactive: true });
+  const seesStaff = maySeeStaffMoney(actor.permissions);
+  const allRows = await listPartners({ includeInactive: true, includeStaff: seesStaff });
   const rows = allRows.filter((r) => r.active || Math.abs(r.balanceUsd) > 0.009);
   // Group over EVERY type, offer only the live ones on the form: hiding a type
   // on /admin/partner-types must not delete the accounts under it from the
   // screen while their debt stays in the total.
   const allTypes = await listPartnerTypes(true);
-  const types = allTypes.filter((type) => type.active);
-  const owed = rows.filter((r) => r.balanceUsd > 0).reduce((a, r) => a + r.balanceUsd, 0);
+  // The «Hodim» type is offered only to whoever may see staff accounts (M3a):
+  // for anybody else it would open an account the list then hides from them —
+  // and the action refuses it anyway.
+  const types = allTypes.filter((type) => type.active && (seesStaff || type.code !== 'staff'));
+  const { owedByUs: owed, owedToUs } = partnerTotals(rows);
 
   // For the "this counterparty is also one of our clients" picker. Active
   // clients only, and the list is long, so the form searches inside it.
@@ -66,6 +72,18 @@ export default async function PartnersPage() {
         .where(eq(clients.active, true))
         .orderBy(asc(clients.clientCode))
     : [];
+
+  // The login picker, for the accountant and the admin alone — null draws no
+  // select at all, and a form with no select posts no login, which the
+  // service reads as «unchanged» (#171).
+  const staffUsers =
+    canManage && seesStaff
+      ? await db
+          .select({ id: users.id, name: users.fullName })
+          .from(users)
+          .where(eq(users.active, true))
+          .orderBy(asc(users.fullName))
+      : null;
 
   const byType = groupPartnersByType(rows, allTypes);
 
@@ -88,9 +106,17 @@ export default async function PartnersPage() {
         <span className="font-mono text-lg font-extrabold text-bad" data-testid="partners-total">
           ${owed.toFixed(2)}
         </span>
+        {owedToUs > 0 && (
+          <span className="ml-auto text-sm text-ink-700">
+            {t('owedToUs')}:{' '}
+            <b className="font-mono text-good" data-testid="partners-receivable">
+              ${owedToUs.toFixed(2)}
+            </b>
+          </span>
+        )}
       </div>
 
-      {canManage && <PartnerForm types={types} clients={clientOptions} />}
+      {canManage && <PartnerForm types={types} clients={clientOptions} staffUsers={staffUsers} />}
 
       {byType.length === 0 && <p className="card text-center text-ink-500">{t('empty')}</p>}
 

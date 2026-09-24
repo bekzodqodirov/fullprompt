@@ -28,6 +28,7 @@ import { LEAD_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-
 import { ViewsMenu } from '@/components/list/views-menu';
 import { canPublishViews, normalizeQuery } from '@/modules/platform/lists/query';
 import { defaultViewFor, listViewsFor } from '@/modules/platform/lists/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The funnel board — and nothing else.
@@ -332,10 +333,10 @@ export default async function LeadsPage({
       <KanbanBoard
         fields={cardFields}
         lostReasons={lostReasonList}
-        // The follow-up date is coloured against the SERVER's today, so the
-        // first HTML and the browser's first render agree (UTC days — the
-        // convention `/bugun` already measures against, round 47).
-        today={new Date().toISOString().slice(0, 10)}
+        // The follow-up date is coloured against a today computed on the
+        // SERVER, so the first HTML and the browser's first render agree —
+        // Tashkent's day, the one `next_action_at` is written in (R5).
+        today={tashkentDay()}
         owners={
           managers.length
             ? managers.map((row) => ({ id: row.id, name: row.fullName }))

@@ -5,6 +5,7 @@ import { priceBookForCodes } from '@/modules/wms/calc/dictionaries';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * «Oxirgi narxlar» — what these codes were quoted at before, beside the
@@ -30,7 +31,7 @@ export async function LastQuotes({
   const list = [...new Set(codes.map((c) => c.trim()))].filter(Boolean);
   if (list.length === 0) return null;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
   let quotes = new Map<string, LastQuote[]>();
   let book: Awaited<ReturnType<typeof priceBookForCodes>> = new Map();
   try {

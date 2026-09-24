@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { managedClients } from '@/modules/wms/finance/client-cargo';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * "My clients" (owner: "mening mijozlarim — har birining yuki qayerda, m³,
@@ -28,7 +29,7 @@ export default async function MyClientsPage({
   const seesAll = actor.permissions.has('crm.leads.view_all') || actor.permissions.has('clients.manage');
   const all = seesAll && params.scope === 'all';
   const rows = await managedClients(all ? undefined : actor.id);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
 
   const withCargo = rows.filter((row) => row.boxCount > 0);
   const withDebt = rows.filter((row) => row.balanceUsd > 0.009);

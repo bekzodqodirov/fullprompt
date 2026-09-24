@@ -12,6 +12,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { mayAnnul } from '@/modules/wms/receipts/annul';
+import { signedUsdSql } from '@/modules/wms/finance/service';
 import { BulkAnnulForm, type BulkRow } from './bulk-form';
 
 export const dynamic = 'force-dynamic';
@@ -119,7 +120,7 @@ export default async function AnnulRegistryPage({
         .select({
           clientId: clientTransactions.clientId,
           n: sql<number>`count(*)`,
-          balance: sql<string>`coalesce(sum(case when ${clientTransactions.type} = 'charge' then ${clientTransactions.amountUsd} else -${clientTransactions.amountUsd} end), 0)`,
+          balance: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
         })
         .from(clientTransactions)
         .where(
@@ -170,6 +171,7 @@ export default async function AnnulRegistryPage({
                       errors: {
                         annul_forbidden: t('forbidden'),
                         box_on_active_plan: t('onActivePlan'),
+                        cost_paid_from_till: t('paidFromTill'),
                         reason_required: t('reasonRequired'),
                         not_found: t('notFound'),
                         validation: t('reasonRequired'),

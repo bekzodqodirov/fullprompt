@@ -9,6 +9,7 @@ import {
   leadStages,
   leads,
   partners,
+  partnerTypes,
   receiptLots,
   receipts,
 } from '../../platform/db/schema';
@@ -16,6 +17,7 @@ import { inScope, warehouseScope, warehouseScopeEither } from '../../platform/rb
 import { canWriteDeal } from '../deals/service';
 import { likeNeedle, parseQuery } from './query';
 import { mayReadBatches } from '../batches/read-door';
+import { maySeeStaffMoney, staffPartnerSql } from '../partners/staff';
 
 /**
  * One search box for the whole system.
@@ -272,10 +274,17 @@ async function searchPartners(
   const match = phone
     ? sql`(${partners.name} ILIKE ${like} OR right(regexp_replace(coalesce(${partners.phone}, ''), '[^0-9]', '', 'g'), 9) = ${phone})`
     : sql`${partners.name} ILIKE ${like}`;
+  // A colleague's own account (0101) is payroll, and the list and the card
+  // hide it from everybody but the accountant and the admin (owner M3a) — a
+  // search that still found it would be the back door this file exists not
+  // to be.
   const rows = await db
     .select({ id: partners.id, name: partners.name, active: partners.active })
     .from(partners)
-    .where(match)
+    .innerJoin(partnerTypes, eq(partners.typeId, partnerTypes.id))
+    .where(
+      maySeeStaffMoney(actor.permissions) ? match : and(match, sql`NOT ${staffPartnerSql()}`),
+    )
     .orderBy(desc(partners.active), asc(partners.name))
     .limit(PER_GROUP);
   return rows.map((row) => ({

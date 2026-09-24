@@ -234,6 +234,13 @@ async function seedAccounting() {
     ]);
     console.log('partner types seeded (editable)');
   }
+  // The staff type (0101, owner A1c) — once, by its code, on every existing
+  // installation too; `code` is unique, so a re-run and an owner who renamed
+  // it are both left alone.
+  await db
+    .insert(partnerTypes)
+    .values({ code: 'staff', name: 'Hodim', sortOrder: 150 })
+    .onConflictDoNothing({ target: partnerTypes.code });
 }
 
 /**

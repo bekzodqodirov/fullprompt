@@ -287,6 +287,11 @@ export async function landedCostByClient() {
       totalUsd: sql<string>`sum(${costAllocations.amountUsd})`,
     })
     .from(costAllocations)
+    // A voided entry's shares are not a cost (audit A24). A void is one
+    // transaction now (#529), but shares left by a crash before that — or by
+    // a recompute racing a void — are never revisited, and profitByClient
+    // has always dropped them: the two screens disagreed by exactly those.
+    .innerJoin(costEntries, and(eq(costAllocations.costEntryId, costEntries.id), isNull(costEntries.voidedAt)))
     .innerJoin(clients, eq(costAllocations.clientId, clients.id))
     .groupBy(clients.id, clients.clientCode, clients.name)
     .orderBy(desc(sql`sum(${costAllocations.amountUsd})`));
@@ -294,6 +299,30 @@ export async function landedCostByClient() {
     ...r,
     boxCount: Number(r.boxCount),
     totalUsd: Math.round(Number(r.totalUsd) * 100) / 100,
+  }));
+}
+
+/**
+ * Live costs that have no dollar figure because their currency had no rate
+ * (audit A25). They carry no allocation, so every landed-cost figure is short
+ * by exactly them — said on the report, per currency in its own money,
+ * instead of the silence `recomputeEntry`'s comment promised was a flag.
+ */
+export async function unconvertedCosts(): Promise<{ currency: string; count: number; amount: number }[]> {
+  const rows = await db
+    .select({
+      currency: costEntries.currency,
+      count: sql<number>`count(*)::int`,
+      amount: sql<string>`sum(${costEntries.amount})`,
+    })
+    .from(costEntries)
+    .where(and(isNull(costEntries.amountUsd), isNull(costEntries.voidedAt)))
+    .groupBy(costEntries.currency)
+    .orderBy(costEntries.currency);
+  return rows.map((row) => ({
+    currency: row.currency,
+    count: Number(row.count),
+    amount: Math.round(Number(row.amount) * 100) / 100,
   }));
 }
 
@@ -311,6 +340,7 @@ export async function landedCostByLot(clientId: string) {
       totalUsd: sql<string>`sum(${costAllocations.amountUsd})`,
     })
     .from(costAllocations)
+    .innerJoin(costEntries, and(eq(costAllocations.costEntryId, costEntries.id), isNull(costEntries.voidedAt)))
     .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .where(eq(costAllocations.clientId, clientId))
@@ -588,12 +618,18 @@ export async function clientHistory(clientId: string) {
   }));
 }
 
-/** Staff activity per user per day (§13.8): receipts, edits, prints, scans. */
+/**
+ * Staff activity per user per day (§13.8): receipts, edits, prints, scans.
+ * The day is Tashkent's (R5) — a `date_trunc` on a timestamptz cuts at the
+ * SESSION's midnight, which on this server is UTC, so work done before 05:00
+ * in the office — a Chinese warehouse's 07:00 start — was booked to the
+ * previous day.
+ */
 export async function staffActivity(days: number) {
   const rows = await db.execute(sql`
     WITH audit AS (
       SELECT a.actor_id,
-             date_trunc('day', a.created_at)::date AS day,
+             (a.created_at AT TIME ZONE 'Asia/Tashkent')::date AS day,
              count(*) FILTER (WHERE a.entity_type = 'receipt' AND a.action = 'create') AS receipts,
              count(*) FILTER (WHERE a.action = 'update') AS edits,
              count(*) FILTER (WHERE a.action = 'label_print') AS prints,
@@ -603,7 +639,7 @@ export async function staffActivity(days: number) {
       GROUP BY a.actor_id, day
     ), scans AS (
       SELECT s.scanned_by AS actor_id,
-             date_trunc('day', s.created_at)::date AS day,
+             (s.created_at AT TIME ZONE 'Asia/Tashkent')::date AS day,
              count(*) AS scans
       FROM scan_events s
       WHERE s.created_at > now() - make_interval(days => ${days})
@@ -669,6 +705,22 @@ export async function labelPrintLog(days: number) {
   }));
 }
 
+/**
+ * «Departed > N days ago with not one cost entry on it» (spec 6.9 warning;
+ * the owner's «rasxodini yozmading», 2026-09-24). ONE predicate for the list
+ * and its count (#513): the homes used to print `.length` of the 20-row
+ * list, so the counter stopped at 20 however many trucks were bare (#977).
+ * `${batches}.id` is #128's spelling — qualified whatever the select.
+ */
+function costMissingWhere(warnDays: number, warehouseIds?: string[]) {
+  return and(
+    inArray(batches.status, ['in_transit', 'arrived', 'unloaded', 'closed']),
+    sql`${batches.departedAt} < now() - make_interval(days => ${warnDays})`,
+    sql`NOT EXISTS (SELECT 1 FROM ${costEntries} ce WHERE ce.batch_id = ${batches}.id AND ce.voided_at IS NULL)`,
+    warehouseIds?.length ? inArray(batches.originWarehouseId, warehouseIds) : undefined,
+  );
+}
+
 /** Batches departed > N days ago with zero cost entries (spec 6.9 warning). */
 export async function costMissingBatches(warnDays: number, warehouseIds?: string[]) {
   const dest = aliasedTable(warehouses, 'dest');
@@ -683,15 +735,17 @@ export async function costMissingBatches(warnDays: number, warehouseIds?: string
     .from(batches)
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
-    .where(
-      and(
-        inArray(batches.status, ['in_transit', 'arrived', 'unloaded', 'closed']),
-        sql`${batches.departedAt} < now() - make_interval(days => ${warnDays})`,
-        sql`NOT EXISTS (SELECT 1 FROM ${costEntries} ce WHERE ce.batch_id = ${batches.id} AND ce.voided_at IS NULL)`,
-        warehouseIds?.length ? inArray(batches.originWarehouseId, warehouseIds) : undefined,
-      ),
-    )
+    .where(costMissingWhere(warnDays, warehouseIds))
     .orderBy(asc(batches.departedAt))
     .limit(20);
   return rows;
+}
+
+/** How many such batches there are — the true number, not the list's length. */
+export async function costMissingCount(warnDays: number): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(batches)
+    .where(costMissingWhere(warnDays));
+  return Number(row?.n ?? 0);
 }

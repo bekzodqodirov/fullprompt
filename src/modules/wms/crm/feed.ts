@@ -57,7 +57,8 @@ export type FeedKind =
   | 'lost'
   | 'handover'
   | 'charge'
-  | 'payment';
+  | 'payment'
+  | 'refund';
 
 export interface FeedItem {
   /** Source-prefixed, so two tables can never collide on a React key. */
@@ -191,7 +192,7 @@ export async function clientFeed(
       -- and then somebody undid it, and both are part of the story.
       SELECT
         'tx-' || t.id::text,
-        CASE WHEN t.type = 'payment' THEN 'payment' ELSE 'charge' END,
+        CASE WHEN t.type IN ('payment', 'refund') THEN t.type ELSE 'charge' END,
         t.created_at, u.full_name, t.note,
         jsonb_build_object(
           'amount', t.amount, 'currency', t.currency, 'amountUsd', t.amount_usd,

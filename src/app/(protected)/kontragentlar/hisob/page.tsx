@@ -7,6 +7,8 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { listPartners } from '@/modules/wms/partners/service';
 import { BackLink } from '@/components/back-link';
 import { SettlementForm } from './settlement-form';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The three-cornered settlement screen (owner's case: a client pays their
@@ -28,7 +30,7 @@ export default async function SettlementPage() {
       .from(clients)
       .where(eq(clients.active, true))
       .orderBy(asc(clients.clientCode)),
-    listPartners(),
+    listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) }),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
   ]);
 
@@ -41,6 +43,7 @@ export default async function SettlementPage() {
         clients={clientRows}
         partners={partnerRows.map((p) => ({ id: p.id, name: p.name, typeName: p.typeName }))}
         currencies={currencyRows.map((c) => c.code)}
+        today={tashkentDay()}
       />
     </div>
   );

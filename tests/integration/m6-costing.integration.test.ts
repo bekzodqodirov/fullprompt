@@ -215,18 +215,20 @@ describe('landed cost across a two-leg journey (acceptance test 16)', () => {
     expect(sheet.totalUsd).toBeCloseTo(3000 * 0.135, 2);
     expect(sheet.usdPerKg).toBeCloseTo((3000 * 0.135) / 1500, 3);
 
-    // Rate correction (edge case 18): update the July-15 rate → recompute moves P.
+    // Rate correction (edge case 18 — superseded by the owner's R1, «to'langan
+    // paytdagi kurs»): a rate typed later prices only the costs that were
+    // WAITING for it. Even a full sweep of the currency leaves P where it was.
     await upsertFxRate({ currency: 'CNY', rateToUsd: 0.15, effectiveDate: '2026-07-15' }, ctx());
     await recomputeAll({ currency: 'CNY' });
     const landedP2 = await boxLandedCost(lotP.boxIds[0]!);
-    expect(landedP2.totalUsd).toBeCloseTo(30 * 0.14 + 60 * 0.15, 2);
+    expect(landedP2.totalUsd).toBeCloseTo(30 * 0.14 + 60 * 0.135, 2);
 
     // Void the leg-1 entry → its share disappears.
     const sheet1 = await batchCostSheet(leg1.id);
     await voidCostEntry(sheet1.entries[0]!.entry.id, 'entered twice', ctx());
     const landedP3 = await boxLandedCost(lotP.boxIds[0]!);
     expect(landedP3.shares).toHaveLength(1);
-    expect(landedP3.totalUsd).toBeCloseTo(60 * 0.15, 2);
+    expect(landedP3.totalUsd).toBeCloseTo(60 * 0.135, 2);
   });
 
   it('currency without any rate stays unconverted and is flagged', async () => {

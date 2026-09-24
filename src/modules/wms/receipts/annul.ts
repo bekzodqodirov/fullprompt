@@ -43,7 +43,8 @@ export class AnnulError extends Error {
       | 'annul_forbidden'
       | 'reason_required'
       | 'not_found'
-      | 'box_on_active_plan',
+      | 'box_on_active_plan'
+      | 'cost_paid_from_till',
   ) {
     super(code);
   }
@@ -210,9 +211,16 @@ export async function annulReceipt(
     // with its allocations and its partner charge (voidCostEntryInTx keeps
     // the #529 pairing). A refusal above or a crash rolls it all back.
     const liveEntries = await tx
-      .select({ id: costEntries.id })
+      .select({ id: costEntries.id, accountId: costEntries.accountId })
       .from(costEntries)
       .where(and(eq(costEntries.receiptId, receiptId), isNull(costEntries.voidedAt)));
+    // A cost paid out of a KASSA is refused, not voided (0101): voiding it
+    // puts the money back into the till, i.e. the test-data cleanup would
+    // quietly credit a real drawer — #852 refused exactly this for client
+    // money. The accountant takes the kassa off first, on purpose.
+    if (liveEntries.some((entry) => entry.accountId !== null)) {
+      throw new AnnulError('cost_paid_from_till');
+    }
     for (const entry of liveEntries) {
       await voidCostEntryInTx(tx, entry.id, `annul: ${why}`, ctx);
     }
@@ -364,6 +372,19 @@ export async function annulAftermath(receiptId: string, ctx: AuditContext): Prom
         .where(and(inArray(costEntries.crateId, crateIds), isNull(costEntries.voidedAt)))
     : [];
   for (const entry of crateEntries) await recomputeEntry(entry.id);
+  // The factory truck it came off re-splits over what is left. Deliberately
+  // NOT in the empty-scope sweep below: a truck's base is the prixods linked
+  // SO FAR, and «nothing linked yet» on a half-received truck is not «this
+  // money had no cargo» — voiding it would destroy the freight and the
+  // firm's debt (the pickup design's judge, pul:3).
+  const annulled = await db.query.receipts.findFirst({
+    where: (r, { eq: is }) => is(r.id, receiptId),
+    columns: { pickupStopId: true },
+  });
+  if (annulled?.pickupStopId) {
+    const { pickupIdOfStop, recomputePickupCosts } = await import('../pickups/service');
+    await recomputePickupCosts(await pickupIdOfStop(annulled.pickupStopId));
+  }
 
   // Empty-scope sweep. Judged on the SCOPE, not the allocation count: an
   // unconverted entry (no FX rate) also has zero allocations, and voiding it
@@ -384,6 +405,9 @@ export async function annulAftermath(receiptId: string, ctx: AuditContext): Prom
     : [];
   let emptyScopeVoided = 0;
   for (const entry of candidates) {
+    // A kassa-paid truck cost is left alone even with nothing aboard (0101):
+    // its void would credit the till — a person's decision, never a sweep's.
+    if (entry.accountId) continue;
     const scope = await scopeBoxIds(entry);
     if (scope.length > 0) continue;
     await db.transaction(async (tx) =>
@@ -413,6 +437,8 @@ export interface AnnulPreview {
   boxesByStatus: Record<string, number>;
   liveCostEntries: number;
   liveCostUsd: number;
+  /** Costs paid out of a kassa — the annul refuses while any is live (0101). */
+  tillCostCount: number;
   unconvertedCostCount: number;
   affectedBatches: { code: string; status: string; willRetire: boolean }[];
   crateCount: number;
@@ -435,7 +461,7 @@ export async function annulPreview(receiptId: string): Promise<AnnulPreview | nu
   const boxesByStatus = Object.fromEntries(statusRows.map((r) => [r.status, Number(r.n)]));
 
   const entries = await db
-    .select({ amountUsd: costEntries.amountUsd })
+    .select({ amountUsd: costEntries.amountUsd, accountId: costEntries.accountId })
     .from(costEntries)
     .where(and(eq(costEntries.receiptId, receiptId), isNull(costEntries.voidedAt)));
   const liveCostUsd = entries.reduce((sum, e) => sum + (e.amountUsd ? Number(e.amountUsd) : 0), 0);
@@ -505,6 +531,7 @@ export async function annulPreview(receiptId: string): Promise<AnnulPreview | nu
     boxesByStatus,
     liveCostEntries: entries.length,
     liveCostUsd,
+    tillCostCount: entries.filter((e) => e.accountId !== null).length,
     unconvertedCostCount,
     affectedBatches,
     crateCount,

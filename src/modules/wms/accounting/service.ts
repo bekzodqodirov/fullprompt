@@ -1,11 +1,12 @@
 import { cache } from 'react';
-import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, sql, type AnyColumn } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   accountTransfers,
   clientTransactions,
+  costEntries,
   expenseCategories,
   expenses,
   moneyAccounts,
@@ -178,6 +179,8 @@ export async function addExpenseTx(
   input: ExpenseInput,
   rate: number,
   ctx: AuditContext,
+  /** Set by `generateRecurring` only — never read from a form (audit A33). */
+  opts: { recurringId?: string } = {},
 ) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
@@ -198,6 +201,7 @@ export async function addExpenseTx(
       accountId: input.partnerId ? null : input.accountId || null,
       partnerId: input.partnerId || null,
       note: input.note || null,
+      recurringId: opts.recurringId ?? null,
       createdBy: ctx.actorId,
     })
     .returning();
@@ -210,7 +214,11 @@ export async function addExpenseTx(
   return row!;
 }
 
-export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
+export async function addExpense(
+  input: ExpenseInput,
+  ctx: AuditContext,
+  opts: { recurringId?: string } = {},
+) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   // The same rule as the client ledger: a named cash box must speak the
   // row's currency, or the till balances stop meaning anything.
@@ -227,7 +235,7 @@ export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
   const rate = await rateFor(input.currency, input.expenseDate);
   if (rate === null) throw new AccountingError('fx_missing');
 
-  const row = await addExpenseTx(db, input, rate, ctx);
+  const row = await addExpenseTx(db, input, rate, ctx, opts);
   if (input.partnerId) {
     const { chargeForExpense } = await import('../partners/link');
     await chargeForExpense(row.id, ctx);
@@ -268,18 +276,43 @@ export async function voidExpense(id: string, reason: string, ctx: AuditContext)
   });
 }
 
-export async function listExpenses(filters: {
+export interface ExpenseFilters {
   from?: string;
   to?: string;
   categoryId?: string;
   warehouseId?: string;
-  limit?: number;
-}) {
+}
+
+/** One predicate for the rows AND their total (#513). */
+function expenseWhere(filters: ExpenseFilters) {
   const where = [isNull(expenses.voidedAt)];
   if (filters.from) where.push(gte(expenses.expenseDate, filters.from));
   if (filters.to) where.push(lte(expenses.expenseDate, filters.to));
   if (filters.categoryId) where.push(eq(expenses.categoryId, filters.categoryId));
   if (filters.warehouseId) where.push(eq(expenses.warehouseId, filters.warehouseId));
+  return and(...where);
+}
+
+/**
+ * The period's count and dollar total, over the same predicate as the rows
+ * and with NO cap (audit A14). The list stops at its newest 500 and the book
+ * holds ~20 salaries a month plus rent and every rasxod xabari, so a total
+ * summed from the rows on screen silently lost January by August — while the
+ * P&L's opex for the same dates, an uncapped sum, did not. The payments
+ * register got this shape in round 69 (#533); the expense book had not.
+ */
+export async function expenseTotals(filters: ExpenseFilters): Promise<{ count: number; totalUsd: number }> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      total: sql<string>`coalesce(sum(${expenses.amountUsd}), 0)`,
+    })
+    .from(expenses)
+    .where(expenseWhere(filters));
+  return { count: Number(row?.count ?? 0), totalUsd: Math.round(Number(row?.total ?? 0) * 100) / 100 };
+}
+
+export async function listExpenses(filters: ExpenseFilters & { limit?: number }) {
   return db
     .select({
       expense: expenses,
@@ -298,7 +331,7 @@ export async function listExpenses(filters: {
     .leftJoin(users, eq(expenses.employeeId, users.id))
     .leftJoin(moneyAccounts, eq(expenses.accountId, moneyAccounts.id))
     .leftJoin(partners, eq(expenses.partnerId, partners.id))
-    .where(and(...where))
+    .where(expenseWhere(filters))
     .orderBy(sql`${expenses.expenseDate} DESC`, sql`${expenses.createdAt} DESC`)
     .limit(filters.limit ?? 500);
 }
@@ -315,10 +348,12 @@ export async function listRecurring() {
       recurring: recurringExpenses,
       categoryName: expenseCategories.name,
       employeeName: users.fullName,
+      partnerName: partners.name,
     })
     .from(recurringExpenses)
     .innerJoin(expenseCategories, eq(recurringExpenses.categoryId, expenseCategories.id))
     .leftJoin(users, eq(recurringExpenses.employeeId, users.id))
+    .leftJoin(partners, eq(recurringExpenses.partnerId, partners.id))
     .orderBy(asc(expenseCategories.sortOrder));
 }
 
@@ -332,7 +367,7 @@ export async function saveRecurring(
   // are unrelated controls over 86 cash boxes, so choosing a USD till for a
   // som rent is an ordinary slip; it used to be stored without a word and
   // only refused on the 1st, from inside the monthly run.
-  if (input.accountId) {
+  if (input.accountId && !input.partnerId) {
     const [account] = await db
       .select({ currency: moneyAccounts.currency })
       .from(moneyAccounts)
@@ -348,7 +383,10 @@ export async function saveRecurring(
     dayOfMonth: input.dayOfMonth,
     warehouseId: input.warehouseId || null,
     employeeId: input.employeeId || null,
-    accountId: input.accountId || null,
+    // Paid through a firm, so no till of ours — the expense form's own rule,
+    // or every posting would count the money twice in the cash flow (A36).
+    accountId: input.partnerId ? null : input.accountId || null,
+    partnerId: input.partnerId || null,
     note: input.note || null,
     active: input.active,
     createdBy: ctx.actorId,
@@ -368,6 +406,50 @@ export async function saveRecurring(
     after: { amount: input.amount, currency: input.currency, dayOfMonth: input.dayOfMonth },
   });
   return row;
+}
+
+/**
+ * Correct a template in place: its amount, its day, or stop it (audit A32).
+ *
+ * The screen listed templates read-only and the only form could CREATE, so a
+ * rent that changed or a person who left went on posting every month — and
+ * voiding that posting re-armed it. Deliberately narrow: WHAT the cost is
+ * (category, person, warehouse, payer) is a different template, made new
+ * while this one is stopped, so a month's history never reads as a different
+ * cost than the one that was posted.
+ */
+export const recurringPatchSchema = z.object({
+  amount: z.number().positive().max(1_000_000_000),
+  dayOfMonth: z.number().int().min(1).max(28),
+  active: z.boolean(),
+});
+
+export async function updateRecurring(
+  id: string,
+  patch: z.infer<typeof recurringPatchSchema>,
+  ctx: AuditContext,
+) {
+  if (!ctx.actorId) throw new AccountingError('unauthenticated');
+  const before = await db.query.recurringExpenses.findFirst({ where: eq(recurringExpenses.id, id) });
+  if (!before) throw new AccountingError('not_found');
+  const [row] = await db
+    .update(recurringExpenses)
+    .set({
+      amount: String(patch.amount),
+      dayOfMonth: patch.dayOfMonth,
+      active: patch.active,
+      updatedAt: new Date(),
+    })
+    .where(eq(recurringExpenses.id, id))
+    .returning();
+  await writeAudit(db, ctx, {
+    entityType: 'recurring_expense',
+    entityId: id,
+    action: 'update',
+    before: { amount: before.amount, dayOfMonth: before.dayOfMonth, active: before.active },
+    after: { amount: row!.amount, dayOfMonth: row!.dayOfMonth, active: row!.active },
+  });
+  return row!;
 }
 
 /**
@@ -403,28 +485,18 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
   const failed: string[] = [];
   for (const template of templates) {
     const date = `${month}-${String(template.dayOfMonth).padStart(2, '0')}`;
-    // The slot is (category, date, employee, WAREHOUSE) — the warehouse is
-    // what tells two rents in one category apart. Without it, «Ijara YW» and
-    // «Ijara GZ» on the same day collided: the first posted, the second read
-    // as already-posted every month for ever, the P&L short its amount and
-    // the home counter — which mirrors this predicate — saying nothing was
-    // due.
+    // «Already posted» is a row of THIS template on that date (0099, audit
+    // A33) — VOIDED OR NOT. It used to be a SLOT, (category, date, employee,
+    // warehouse), which any one-off on the same day filled: a bonus typed on
+    // payday posted instead of the salary, and the P&L lost the salary. And a
+    // voided posting re-armed the template, so correcting a stale amount by
+    // voiding it posted the same stale amount on the next press (A32). A
+    // voided posting now means «not this month»; a wrong amount is fixed on
+    // the template (`updateRecurring`) and typed by hand for the month.
     const existing = await db
       .select({ id: expenses.id })
       .from(expenses)
-      .where(
-        and(
-          eq(expenses.categoryId, template.categoryId),
-          eq(expenses.expenseDate, date),
-          isNull(expenses.voidedAt),
-          template.employeeId
-            ? eq(expenses.employeeId, template.employeeId)
-            : isNull(expenses.employeeId),
-          template.warehouseId
-            ? eq(expenses.warehouseId, template.warehouseId)
-            : isNull(expenses.warehouseId),
-        ),
-      )
+      .where(and(eq(expenses.recurringId, template.id), eq(expenses.expenseDate, date)))
       .limit(1);
     if (existing.length > 0) {
       skipped.push(template.id);
@@ -440,9 +512,13 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
           warehouseId: template.warehouseId ?? '',
           employeeId: template.employeeId ?? '',
           accountId: template.accountId ?? '',
+          // Who pays it (A36): a template paid through the transport company
+          // raises that firm's debt on every posting, as the form's would.
+          partnerId: template.partnerId ?? '',
           note: template.note ?? '',
         },
         ctx,
+        { recurringId: template.id },
       );
       created += 1;
     } catch (err) {
@@ -475,10 +551,19 @@ export const transferSchema = z.object({
 export async function addTransfer(input: z.infer<typeof transferSchema>, ctx: AuditContext) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   if (input.fromAccountId === input.toAccountId) throw new AccountingError('same_account');
-  const from = await db.query.moneyAccounts.findFirst({
-    where: eq(moneyAccounts.id, input.fromAccountId),
-  });
-  if (!from) throw new AccountingError('not_found');
+  const [from, to] = await Promise.all([
+    db.query.moneyAccounts.findFirst({ where: eq(moneyAccounts.id, input.fromAccountId) }),
+    db.query.moneyAccounts.findFirst({ where: eq(moneyAccounts.id, input.toAccountId) }),
+  ]);
+  if (!from || !to) throw new AccountingError('not_found');
+  // Between two tills of ONE currency the money out is the money in (audit
+  // A35). The two boxes took independent figures, so USD 1,000 → USD 100
+  // quietly removed $900 from the kassa totals and the Balans — and cash flow
+  // and the P&L both skip transfers, so the loss showed nowhere at all. Across
+  // currencies the two figures ARE two facts (the exchange rate), and stay.
+  if (from.currency === to.currency && Math.abs(input.amountFrom - input.amountTo) > 0.004) {
+    throw new AccountingError('amount_mismatch');
+  }
   const rate = await rateFor(from.currency, input.transferDate);
   if (rate === null) throw new AccountingError('fx_missing');
 
@@ -559,26 +644,61 @@ export async function voidTransfer(id: string, reason: string, ctx: AuditContext
  * them should pay for it twice.
  */
 export const accountBalances = cache(async function accountBalances() {
-  const [accounts, paidRows, spentRows, inRows, outRows, partnerRows] = await Promise.all([
+  // The box's opening count is a fact AS OF its opening date (R4 — the date
+  // was collected since 0020 and read by nothing, audit A26): a row dated
+  // before it is already inside the counted figure, so adding it again
+  // doubled it. Such rows stay on the client ledger, the P&L and the cash
+  // flow — they happened — and are only kept out of THIS sum; `early`
+  // counts them so the accounts screen can say so. No opening date = every
+  // row counts, exactly as before.
+  const counted = (dateCol: AnyColumn) =>
+    sql`${dateCol} >= coalesce(${moneyAccounts.openingDate}, '-infinity'::date)`;
+  const sumCounted = (amount: AnyColumn, dateCol: AnyColumn) =>
+    sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${counted(dateCol)}), 0)`;
+  const early = (dateCol: AnyColumn) =>
+    sql<number>`count(*) FILTER (WHERE NOT ${counted(dateCol)})`;
+  const [accounts, clientRows, spentRows, inRows, outRows, partnerRows, costRows] = await Promise.all([
     listAccounts(true),
+    // Payments IN and refunds OUT (R6a) in one pass, split by type.
     db
-      .select({ id: clientTransactions.accountId, sum: sql<string>`sum(${clientTransactions.amount})` })
+      .select({
+        id: clientTransactions.accountId,
+        type: clientTransactions.type,
+        sum: sumCounted(clientTransactions.amount, clientTransactions.txDate),
+        early: early(clientTransactions.txDate),
+      })
       .from(clientTransactions)
-      .where(and(eq(clientTransactions.type, 'payment'), isNull(clientTransactions.voidedAt)))
-      .groupBy(clientTransactions.accountId),
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, clientTransactions.accountId))
+      .where(isNull(clientTransactions.voidedAt))
+      .groupBy(clientTransactions.accountId, clientTransactions.type),
     db
-      .select({ id: expenses.accountId, sum: sql<string>`sum(${expenses.amount})` })
+      .select({
+        id: expenses.accountId,
+        sum: sumCounted(expenses.amount, expenses.expenseDate),
+        early: early(expenses.expenseDate),
+      })
       .from(expenses)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, expenses.accountId))
       .where(isNull(expenses.voidedAt))
       .groupBy(expenses.accountId),
     db
-      .select({ id: accountTransfers.toAccountId, sum: sql<string>`sum(${accountTransfers.amountTo})` })
+      .select({
+        id: accountTransfers.toAccountId,
+        sum: sumCounted(accountTransfers.amountTo, accountTransfers.transferDate),
+        early: early(accountTransfers.transferDate),
+      })
       .from(accountTransfers)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.toAccountId))
       .where(isNull(accountTransfers.voidedAt))
       .groupBy(accountTransfers.toAccountId),
     db
-      .select({ id: accountTransfers.fromAccountId, sum: sql<string>`sum(${accountTransfers.amountFrom})` })
+      .select({
+        id: accountTransfers.fromAccountId,
+        sum: sumCounted(accountTransfers.amountFrom, accountTransfers.transferDate),
+        early: early(accountTransfers.transferDate),
+      })
       .from(accountTransfers)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.fromAccountId))
       .where(isNull(accountTransfers.voidedAt))
       .groupBy(accountTransfers.fromAccountId),
     // Round 39: counterparty money moves the same boxes. A cash buyer wiring
@@ -588,35 +708,64 @@ export const accountBalances = cache(async function accountBalances() {
       .select({
         id: partnerTransactions.accountId,
         type: partnerTransactions.type,
-        sum: sql<string>`sum(${partnerTransactions.amount})`,
+        sum: sumCounted(partnerTransactions.amount, partnerTransactions.txDate),
+        early: early(partnerTransactions.txDate),
       })
       .from(partnerTransactions)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, partnerTransactions.accountId))
       .where(isNull(partnerTransactions.voidedAt))
       .groupBy(partnerTransactions.accountId, partnerTransactions.type),
+    // Cargo costs paid out of a kassa (0101, owner 3b), in the KASSA's
+    // currency — `account_amount`, not the cost's own amount, because customs
+    // typed in dollars left a som account. A seventh statement would be one
+    // more pooled connection per render of a page that already runs six
+    // (the pool is ten); the cost side is the cheapest to add as its own.
+    db
+      .select({
+        id: costEntries.accountId,
+        sum: sumCounted(costEntries.accountAmount, costEntries.costDate),
+        early: early(costEntries.costDate),
+      })
+      .from(costEntries)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, costEntries.accountId))
+      .where(isNull(costEntries.voidedAt))
+      .groupBy(costEntries.accountId),
   ]);
 
   const total = (rows: { id: string | null; sum: string }[]) =>
     new Map(rows.filter((row) => row.id !== null).map((row) => [row.id!, Number(row.sum)]));
-  const paid = total(paidRows);
+  const paid = total(clientRows.filter((row) => row.type === 'payment'));
+  const refunded = total(clientRows.filter((row) => row.type === 'refund'));
   const spent = total(spentRows);
+  const costsPaid = total(costRows);
   const inbound = total(inRows);
   const outbound = total(outRows);
   const partnerIn = total(partnerRows.filter((row) => row.type === 'receipt'));
   const partnerOut = total(partnerRows.filter((row) => row.type === 'payment'));
+  const earlyRows = new Map<string, number>();
+  for (const row of [...clientRows, ...spentRows, ...inRows, ...outRows, ...partnerRows, ...costRows]) {
+    if (row.id) earlyRows.set(row.id, (earlyRows.get(row.id) ?? 0) + Number(row.early));
+  }
 
   return accounts.map((account) => {
     const paidIn = paid.get(account.id) ?? 0;
+    const refundedOut = refunded.get(account.id) ?? 0;
     const spentOut = spent.get(account.id) ?? 0;
+    const costsOut = costsPaid.get(account.id) ?? 0;
     const transferredIn = inbound.get(account.id) ?? 0;
     const transferredOut = outbound.get(account.id) ?? 0;
+    const fromPartners = partnerIn.get(account.id) ?? 0;
+    const toPartners = partnerOut.get(account.id) ?? 0;
     const balance =
       Number(account.openingBalance) +
       paidIn -
-      spentOut +
+      refundedOut -
+      spentOut -
+      costsOut +
       transferredIn -
       transferredOut +
-      (partnerIn.get(account.id) ?? 0) -
-      (partnerOut.get(account.id) ?? 0);
+      fromPartners -
+      toPartners;
     return {
       id: account.id,
       name: account.name,
@@ -628,6 +777,18 @@ export const accountBalances = cache(async function accountBalances() {
       spent: spentOut,
       transferredIn,
       transferredOut,
+      // Returned so a row can add up (audit A34): the page printed Kirim and
+      // Chiqim without them beside a balance that included them, so a till
+      // only a cash buyer used read 0 | +0 | −0 | 100,000,000.
+      partnerIn: fromPartners,
+      partnerOut: toPartners,
+      /** Money handed back to clients out of this box (R6a). */
+      refundedOut,
+      /** Cargo costs paid out of this box, in its currency (0101). */
+      costsOut,
+      openingDate: account.openingDate,
+      /** Rows dated before the opening count — inside it, so not added (R4). */
+      beforeOpening: earlyRows.get(account.id) ?? 0,
       balance: Math.round(balance * 100) / 100,
     };
   });

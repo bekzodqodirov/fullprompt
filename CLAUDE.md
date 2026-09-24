@@ -1676,8 +1676,112 @@ stored timed at 23:59:59.999Z and rendered «21-sentabr 04:59» in Tashkent whil
 the digest printed the 20th; the existing test asserted `dueAt > now`, which the
 defect satisfies (#494). 4 red proofs, two of them naming the file.
 
-**Latest migration: 0098** (`staff_notes_simplify` — the note is a name, its
-text and its files; ledger must reach **99**). Before it: **0097**
+**Round — his four items + C/E (2026-09-24; DECISIONS #979-988; NO migration,
+99 stands; the kassa/staff/duplicate package and the factory pickup are the
+next two parts, each judged before code):** the cost grid carries the GOODS
+per prixod (`batches/lots.ts` `batchLots`, the one per-lot read both money
+screens use — the batch card keeps its own query for its loader photo order)
+and filters in the BROWSER (a URL filter would drop typed cells); the grid,
+CostPanel and the price action share `parseTypedMoney` («1,200» was 1.2 and
+«1 200» was wiped by the success). «Partiya moliyasi» opens each client into
+its lots with the EXACT per-lot tannarx (`batchLandedCostByLot` = the client
+figure's allocations re-summed by lot, a CTE of the two indexed membership
+lookups) while the price stays per client (his 1c); the arithmetic is pure in
+`finance/pricing-view.ts`. **An internal leg = same country at both ends**
+(`batches/internal.ts`; `batches.type` has two writers that disagree and no
+reader — never key on it); the SERVICE refuses a charge on one, the client
+card and batch card warn «xarajat yozilmagan» instead of «narx qo'yilmagan»,
+and the homes' cost-missing counter is a true count, not `.length` of a
+20-row list. The stock picker drops deactivated warehouses unless boxes still
+stand in them. Found on the way: the receive wizard's extra cost was NEVER
+converted (USD rates are never saved, so no FX trigger ever fired) — now
+recomputed after the commit plus a nightly `{unconverted:true}` sweep.
+2702 unit/integration on a fresh db.
+
+**Round — the reports audit, his-decision-free half (2026-09-24; DECISIONS
+#989-1001; migration 0099 `recurring_link` — ledger must reach 100):** 39
+confirmed findings; everything not waiting on R1-R7 is fixed, each red-proven.
+Upsale commission is subtracted per SALE — the correction chain plus any
+Готово answer on the card (`payableOffersSql`'s `job`/`paid` CTEs; `stands` is
+a column so paid rows stay listed). The partner card cannot type a service
+debt (`charge_via_cost`); legacy ones are NAMED on the P&L, never added (some
+were also typed as costs). `pnlGaps` / `unconvertedCosts` / `unbatchedMoney`
+say what a report cannot count instead of a silent $0. Expense «Jami» is an
+uncapped aggregate (`expenseTotals`). Won money is dollars only, deals net of
+discount (`crm/won-money.ts`; NULL lead currency = USD). A payment needs a
+till at the DOOR (the service keeps history), `unplacedPaymentSql` feeds the
+Balans line, the counter and the register's «Joylash» (`placePayment`). The
+ledger refuses dates after tomorrow (`finance/dates.ts`) — the accounting
+suite's private year moved from 2100+ to 1700+. Rasxod xabari files on the
+warehouse's spend day (`spendDateOf`); FX asks before a >20 % jump.
+`recomputeForLot` re-splits the truck's freight after a lot fix. 0099:
+`expenses.recurring_id` (posted = THIS template's row, voided or not) and
+`recurring_expenses.partner_id`; the backfill test runs the migration's own
+statement in a rolled-back tx.
+
+**Round — zavod reysi, the factory pickup (2026-09-24; DECISIONS #1002-1007;
+migration 0100 `factory_pickup` — ledger must reach 101):** his B1-B6 + D1.
+`factories` (the directory, a geocoded pin that is a SUGGESTION until
+confirmed; a pasted Chinese-map point is GCJ-02 and converted) → `pickups` →
+`pickup_stops` (one per factory, the stored leg ON from it keyed by its two
+endpoints) → `pickup_lines` (client or marking, factory count + driver
+recount). **The lines ARE the promise — `expected_arrivals` is not touched**
+(six of its readers would have acted on a truck's cargo as a seller's
+promise). `receipts.pickup_stop_id` has three writers and no guess: the
+/receive door (checked IN confirmReceipt's tx), attach/detach on the receipt
+card, the card's candidate buttons. The truck's cost is scope 'pickup' in the
+ordinary engine, split by m³ over the linked prixods, re-split post-commit on
+every door that moves the base and nightly; the annul's empty-scope sweep is
+deliberately NOT taught it. «Olindi» is one press (`collected_at IS NULL`)
+and claims one `client_notices` row per client, sent by the arrival drain
+(`pickups/notice.ts`) — no date, no truck, no cabinet button. The map is an
+estimate anchored on the LATEST press (B3), drawn for the pickup door's
+readers, one lorry marker moved every 5 s; `/map?zr=` fits the trip.
+`GEO_NETWORK=off` in vitest AND the Playwright server — no geocoder/router
+call from any test. Pinned: `tests/integration/pickup.integration.test.ts`
+(5 red proofs by string edit) + `tests/unit/pickup-wire.test.ts` + e2e
+`m9zy-zavod-reysi`. The server needs `AMAP_WEB_KEY` in `.env` for good Chinese
+street geocoding (his Z1); without it Nominatim answers or nothing does.
+
+**Round — his evening answers R1-R7, U1, Z1, F, M1-M4 (2026-09-25; DECISIONS
+#1009-; migration 0101 `kassa_refund` — ledger must reach 102):** built by me
+plus four delegated agents in worktrees, each merged here by cherry-pick. R1: a
+cost's dollars are FROZEN at its first conversion; an FX save converts only
+what waited for a rate; a partner charge never follows a re-price (A0). R2:
+«Partiya foydasi» reads the pricing screen's landed cost
+(`batchLandedCostTotals`), a Chinese internal leg is cost-only and out of the
+totals. R3: a truck price names the ONE deal of the client's cargo aboard
+(`soleDealAboard`, never from the form). R4 (his «o'zing»): `accountBalances`
+counts box rows from `opening_date` on — a READER rule, not a door refusal.
+R5: «today» is `tashkentDay()` everywhere (`platform/time/tashkent.ts`), the
+failure window is 19:00-24:00 UTC — and four TEST files computed UTC today and
+failed only then; a test's clock must be the app's. R6: client ledger kind
+'refund' (kassa required, finance.expenses), the sign rule has ONE home
+(`signedUsdSql`) with a fence over `src/`. R7: the Balans splits debtors from
+«Mijozlar avansi», via `clientBalances()`. U1b: internal = both ends CN;
+`sameCountryLegSql` keeps the VED's paperwork rule. F: the cabinet's history is
+`issuedHandovers` (per handover, trucks from the issued boxes' own movements,
+batch code shown by his explicit ask) + `paidHistory` (payments only). Kassa
+package: `cost_entries.account_id/account_amount`, one «kim to'ladi» select,
+`mayPickTill` on every kassa write and on the void of a kassa-paid cost, the
+accountant's queue /accounting/xarajat-kassa from `cost_kassa_since` (the
+migration writes the deploy day), the M4a merge (`cost-merge.ts`, drawer
+unmoved), staff counterparties (`partners.user_id`, `partners/staff.ts`,
+`listPartners({includeStaff})` REQUIRED), «o'z pulimdan» only through the
+rasxod xabari. The 'staff' partner TYPE is the seed's — a migration row made
+the seed skip the four starter types (it fills only an EMPTY table).
+PROCESS: `git add -A` swept the agents' worktrees in as gitlinks (now in
+`.git/info/exclude`); an agent rewrote a shared scratchpad helper for its own
+worktree — helpers carry the owner's tag in their name now.
+
+**Latest migration: 0101** (`kassa_refund` — the refund kind, the cost's kassa
+and its merge provenance, the staff login link, the own-pocket request; ledger
+must reach **102**). Before it: **0100** (`factory_pickup` — factories, trips,
+stops, lines, the prixod's stop and the truck-cost scope; ledger 101). Before
+it: **0099** (`recurring_link` — a posting names its template,
+a template names its payer; ledger 100). Before it: **0098**
+(`staff_notes_simplify` — the note is a name, its
+text and its files; ledger 99). Before it: **0097**
 (`staff_notes` — the note, its parts, their order,
 the send shape and Telegram's file-id cache; ledger 98).
 Before it: **0096** (`ai_ved_memory` — the sealed memory's provenance
@@ -1780,8 +1884,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **99** since 0098, and his server last CONFIRMED 95 (2026-09-04),
-which means 0095-0098 are all pending and one deploy applies FOUR of them.
+length — **102** since 0101, and his server last CONFIRMED 95 (2026-09-04),
+which means 0095-0101 are all pending and one deploy applies SEVEN of them.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

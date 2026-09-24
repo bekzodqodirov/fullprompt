@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   clientLabels,
+  formatDay,
   formatEtaRange,
   journeyLabel,
   stageLabel,
@@ -255,26 +256,9 @@ export function CabinetApp() {
 
             {tab === 'balance' && <Balance client={client} t={t} />}
 
-            {tab === 'history' &&
-              (client.history.length === 0 ? (
-                <p className="cab-empty">
-                  <span className="cab-empty-icon">🗄</span>
-                  {t.noHistory}
-                </p>
-              ) : (
-                <div className="cab-lot">
-                  {client.history.map((row, i) => (
-                    <div className="cab-row" key={i}>
-                      <span>
-                        {row.letter ?? '·'} — {row.productNameRu?.trim() || row.productNameZh}
-                      </span>
-                      <span>
-                        {row.n} {t.pieces} · {new Date(row.lastAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ))}
+            {tab === 'history' && (
+              <History client={client} t={t} initData={blob} onZoom={setZoom} />
+            )}
           </section>
         ))}
       </div>
@@ -501,6 +485,105 @@ function Photos({
   );
 }
 
+/**
+ * What was handed over in the last three months, one card per handover — the
+ * owner's «alohida topshirilgan yuklar ko'rinib tursin … qaysi partiyada
+ * kelgan, ichki tashqi sanalari, rasmlari, kim bergan». Then the money the
+ * client PAID in the same window, and only that (no charge, no cost).
+ */
+function History({
+  client,
+  t,
+  initData,
+  onZoom,
+}: {
+  client: CabinetPayload['clients'][number];
+  t: ClientLabels;
+  initData: string;
+  onZoom: (url: string) => void;
+}) {
+  return (
+    <>
+      {client.history.length === 0 ? (
+        <p className="cab-empty">
+          <span className="cab-empty-icon">🗄</span>
+          {t.noHistory}
+        </p>
+      ) : (
+        <>
+          <div className="cab-code">{t.historyWindow}</div>
+          {client.history.map((h) => (
+            <article className="cab-lot" key={h.id} data-testid="cab-handover">
+              <div className="cab-lot-head">
+                <b>🤝 {formatDay(h.issuedAt)}</b>
+                <small>
+                  {t.issuedAtPlace}: {h.place}
+                </small>
+              </div>
+              <div className="cab-row">
+                <span>{t.issuedTo}</span>
+                <span>{h.receiver}</span>
+              </div>
+              <div className="cab-row">
+                <span>{t.issuedBy}</span>
+                <span>{h.issuedBy}</span>
+              </div>
+              {h.lots.map((lot) => (
+                <div key={lot.lotId} data-testid="cab-handover-lot">
+                  <div className="cab-row">
+                    <span>
+                      {lot.letter ?? '·'} — {lot.productNameRu?.trim() || lot.productNameZh}
+                    </span>
+                    <span>
+                      {lot.n} {t.pieces} · {lot.weightKg} {t.kg} · {lot.volumeM3} {t.m3}
+                    </span>
+                  </div>
+                  <div className="cab-row cab-row-muted">
+                    <span>{t.receivedOn}</span>
+                    <span>{formatDay(lot.receivedAt)}</span>
+                  </div>
+                  {lot.photoCount > 0 && (
+                    <Photos lotId={lot.lotId} count={lot.photoCount} initData={initData} onZoom={onZoom} />
+                  )}
+                </div>
+              ))}
+              {h.legs.map((leg) => (
+                <div className="cab-row" key={leg.batchCode} data-testid="cab-handover-leg">
+                  <span>
+                    {t.batchWord} {leg.batchCode} · {leg.domestic ? t.legDomestic : t.legAbroad}
+                    <br />
+                    <small>
+                      {leg.fromPlace} → {leg.toPlace}
+                    </small>
+                  </span>
+                  <span>
+                    {leg.departedAt && `${t.legDeparted} ${formatDay(leg.departedAt)}`}
+                    {leg.departedAt && leg.arrivedAt && <br />}
+                    {leg.arrivedAt && `${t.legArrived} ${formatDay(leg.arrivedAt)}`}
+                  </span>
+                </div>
+              ))}
+            </article>
+          ))}
+        </>
+      )}
+      {client.payments.length > 0 && (
+        <div className="cab-lot" data-testid="cab-payments">
+          <div className="cab-code">{t.paymentsTitle}</div>
+          {client.payments.map((p, i) => (
+            <div className="cab-row" key={i} data-kind="payment">
+              <span>{formatDay(p.txDate)}</span>
+              <span>
+                +{p.amount} {p.currency}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 function Balance({
   client,
   t,
@@ -519,12 +602,12 @@ function Balance({
         <div className="cab-lot">
           <div className="cab-code">{t.recentMoves}</div>
           {client.recent.map((r, i) => (
-            <div className="cab-row" key={i} data-kind={r.type === 'charge' ? 'charge' : 'payment'}>
+            <div className="cab-row" key={i} data-kind={r.type}>
               <span>
-                {r.txDate} · {r.type === 'charge' ? t.charged : t.paid}
+                {r.txDate} · {r.type === 'charge' ? t.charged : r.type === 'refund' ? t.refunded : t.paid}
               </span>
               <span>
-                {r.type === 'charge' ? '' : '+'}
+                {r.type === 'payment' ? '+' : ''}
                 {r.amount} {r.currency}
               </span>
             </div>

@@ -32,6 +32,11 @@ export default async function BalancePage() {
 
   const lines = [
     { key: 'balCash', value: balance.cashUsd, tone: 'text-ink-900', href: '/accounting/accounts' },
+    // Only while there is something to place (A2): a permanent $0.00 line is
+    // a line nobody reads.
+    ...(balance.unplacedCount > 0
+      ? [{ key: 'balUnplaced', value: balance.unplacedUsd, tone: 'text-warn', href: '/finance/reestr?joylanmagan=1' } as const]
+      : []),
     { key: 'balReceivable', value: balance.receivableUsd, tone: 'text-good', href: '/finance' },
     {
       key: 'balPartnerReceivable',
@@ -40,6 +45,11 @@ export default async function BalancePage() {
       href: '/kontragentlar',
     },
     { key: 'balPayable', value: -balance.payableUsd, tone: 'text-bad', href: '/kontragentlar' },
+    // Clients who paid ahead (R7a): a liability, on its own line — netting it
+    // into «qarz» made the receivable disagree with the /finance total.
+    ...(balance.clientAdvancesUsd > 0
+      ? [{ key: 'balClientAdvances', value: -balance.clientAdvancesUsd, tone: 'text-bad', href: '/finance' } as const]
+      : []),
   ] as const;
 
   return (
@@ -80,6 +90,18 @@ export default async function BalancePage() {
           </tbody>
         </table>
       </div>
+
+      {/* Not a line of the sheet — its kassa is exactly what is unknown — but
+          every such dollar may still sit in a till above on paper (0101). */}
+      {balance.unplacedCostCount > 0 && (
+        <Link
+          href="/accounting/xarajat-kassa"
+          className="card block text-sm text-warn underline"
+          data-testid="balance-unplaced-costs"
+        >
+          ⚠ {t('balUnplacedCosts', { count: balance.unplacedCostCount, usd: usd(balance.unplacedCostUsd) })}
+        </Link>
+      )}
 
       <section className="space-y-2">
         <p className="section-title">{t('accounts')}</p>

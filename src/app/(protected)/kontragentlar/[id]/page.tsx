@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { asc, eq, or } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { clients, currencies, moneyAccounts } from '@/modules/platform/db/schema';
+import { clients, currencies, moneyAccounts, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { seesAllMoney } from '@/modules/wms/finance/scope';
 import {
@@ -19,6 +19,8 @@ import { PartnerForm } from '../partner-form';
 import { PartnerTxForm } from './tx-form';
 import { VoidTx } from './void-tx';
 import { setPartnerActiveAction } from '../actions';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /**
  * One counterparty's account.
@@ -41,6 +43,12 @@ export default async function PartnerCardPage({
   const { id } = await params;
   const row = await partnerById(id);
   if (!row) notFound();
+  // A colleague's advance is payroll, not a supplier's bill (owner M3a): the
+  // VED and the logist pass the gate above and must not read it. notFound,
+  // not a redirect — the list hides these rows, so the card must not confirm
+  // that the id is an account at all.
+  const seesStaff = maySeeStaffMoney(actor.permissions);
+  if (row.staff && !seesStaff) notFound();
 
   const t = await getTranslations('partners');
   const tc = await getTranslations('common');
@@ -73,9 +81,42 @@ export default async function PartnerCardPage({
   // unrelated edit would blank the link without saying so.
   const editTypes = canManage
     ? (await listPartnerTypes(true)).filter(
-        (type) => type.active || type.id === row.partner.typeId,
+        (type) =>
+          type.id === row.partner.typeId ||
+          (type.active && (seesStaff || type.code !== 'staff')),
       )
     : [];
+  // The login picker (accountant and admin only): active people plus whoever
+  // this account is ALREADY linked to, or an unrelated edit on a leaver's
+  // account would silently unlink it — the client picker's rule, restated.
+  const linkedUserId = row.partner.userId;
+  const editUsers =
+    canManage && seesStaff
+      ? await db
+          .select({ id: users.id, name: users.fullName })
+          .from(users)
+          .where(
+            linkedUserId
+              ? or(eq(users.active, true), eq(users.id, linkedUserId))
+              : eq(users.active, true),
+          )
+          .orderBy(asc(users.fullName))
+      : null;
+  const linkedUserName = linkedUserId
+    ? ((
+        await db
+          .select({ name: users.fullName })
+          .from(users)
+          .where(eq(users.id, linkedUserId))
+          .limit(1)
+      )[0]?.name ?? null)
+    : null;
+  // On a staff card the two cash kinds are said in payroll words — the same
+  // rows and the same signs, only what a person calls them (owner A1c).
+  const kindLabel = (type: string) =>
+    row.staff && (type === 'payment' || type === 'receipt')
+      ? t(`staffKinds.${type}` as 'staffKinds.payment')
+      : t(`kinds.${type}` as 'kinds.charge');
   const editClients = canManage
     ? await db
         .select({ id: clients.id, clientCode: clients.clientCode, name: clients.name })
@@ -118,6 +159,12 @@ export default async function PartnerCardPage({
             </Link>
           </p>
         )}
+        {linkedUserName && (
+          <p className="text-sm" data-testid="partner-login">
+            <span className="text-ink-500">{t('login')}: </span>
+            <b>{linkedUserName}</b>
+          </p>
+        )}
         {row.partner.phone && <p className="text-sm text-ink-700">{row.partner.phone}</p>}
         {canManage && (
           <form action={setPartnerActiveAction}>
@@ -151,6 +198,7 @@ export default async function PartnerCardPage({
         <PartnerForm
           types={editTypes}
           clients={editClients}
+          staffUsers={editUsers}
           partner={{
             id,
             name: row.partner.name,
@@ -158,12 +206,19 @@ export default async function PartnerCardPage({
             clientId: row.partner.clientId,
             phone: row.partner.phone,
             note: row.partner.note,
+            userId: row.partner.userId,
           }}
         />
       )}
 
       {canManage && (
-        <PartnerTxForm partnerId={id} accounts={accounts} currencies={currencyCodes} />
+        <PartnerTxForm
+          partnerId={id}
+          staff={row.staff}
+          accounts={accounts}
+          currencies={currencyCodes}
+          today={tashkentDay()}
+        />
       )}
 
       {/* The scroll container the other 18 wide tables in the app already use.
@@ -192,7 +247,7 @@ export default async function PartnerCardPage({
                   </td>
                   <td className="p-2">
                     <span className={tx.voidedAt ? 'text-ink-500 line-through' : ''}>
-                      {t(`kinds.${tx.type}` as 'kinds.charge')}
+                      {kindLabel(tx.type)}
                     </span>
                     {batchCode && (
                       <Link
@@ -204,6 +259,13 @@ export default async function PartnerCardPage({
                     )}
                     {accountName && (
                       <span className="ml-1 text-xs text-ink-500">· {accountName}</span>
+                    )}
+                    {tx.type === 'charge' && !tx.costEntryId && !tx.expenseId && !tx.voidedAt && (
+                      // Typed on this card before the kind left it (audit A31):
+                      // a debt with no cost behind it, so no P&L saw it.
+                      <p className="text-xs font-semibold text-warn" data-testid="partner-manual-charge">
+                        ⚠ {t('manualCharge')}
+                      </p>
                     )}
                     {tx.note && <p className="text-xs text-ink-500">{tx.note}</p>}
                     {tx.voidedAt && (

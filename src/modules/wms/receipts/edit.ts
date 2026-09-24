@@ -133,8 +133,9 @@ export async function editLot(
    * frozen for ever feeds the tannarx allocation, the truck's capacity
    * numbers and the client's bill with a number everybody knows is false,
    * which is worse than letting a manager correct it on the record: the
-   * audit diff below names the change, the costs re-allocate immediately,
-   * and the receipt's author is told.
+   * audit diff below names the change, every cost shared over the lot —
+   * the truck's freight included (`recomputeForLot`) — re-allocates
+   * immediately, and the receipt's author is told.
    */
   if (countChange && boxesLeft) throw new EditError('structural_locked');
   if (measureChange && boxesLeft && !actor.permissions.has('receipts.void')) {
@@ -283,8 +284,10 @@ export async function editLot(
       totals.totalWeightKg !== Number(lot.totalWeightKg) ||
       totals.totalVolumeM3 !== Number(lot.totalVolumeM3);
     if (result.labelsToPrint > 0 || result.labelsToDestroy.length > 0 || totalsChanged) {
-      const { recomputeAll } = await import('../costing/service');
-      await recomputeAll({ receiptId: lot.receiptId });
+      // Every cost shared over this lot — the truck's freight and a crate's
+      // fee too, not only the receipt's own (audit A22).
+      const { recomputeForLot } = await import('../costing/service');
+      await recomputeForLot(lot.id);
     }
     // A correction made over the author's head is told to the author — the
     // arrival-diff rule: the person whose record changed hears it first,

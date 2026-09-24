@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import { users } from '@/modules/platform/db/schema';
+import { currencies, users } from '@/modules/platform/db/schema';
 import { getSessionUser, listSessions } from '@/modules/platform/auth/session';
 import { logoutAction, logoutOtherDevicesAction } from '@/modules/platform/auth/actions';
 import { createTelegramLinkAction, telegramLinkStatus } from '@/modules/platform/telegram/actions';
@@ -13,6 +13,10 @@ import { callDevicesFor } from '@/modules/wms/calls/service';
 import { setNotificationMutesAction } from './actions';
 import { CallRecorderSection } from './call-recorder';
 import { LocaleSwitcher } from '@/components/locale-switcher';
+import { ExpenseRequestFold } from '../receive/expense-request-fold';
+import { myExpenseRequests, reporterWarehouses } from '@/modules/wms/accounting/expense-requests';
+import { staffAccountView } from '@/modules/wms/partners/staff-account';
+import { StaffAccountPanel } from './staff-account-panel';
 import { Icon } from '@/components/ui/icon';
 
 export default async function ProfilePage() {
@@ -49,6 +53,21 @@ export default async function ProfilePage() {
     undefined,
   );
   const mutes = groupsFromList(userRow?.mutedNotificationTypes);
+  // The rasxod xabari for people who belong to no warehouse (owner M1a) and
+  // the person's own account with the company (A2a). Both keyed on the
+  // SESSION's user and nothing from the URL (#514); both panels, so a
+  // schema-behind morning costs the panel and never the page. `null` from the
+  // recent list hides the fold the way /receive hides it.
+  const recentRequests = await panel(myExpenseRequests(user.id), null);
+  const requestWarehouses = await panel(reporterWarehouses(user.id), []);
+  const currencyRows = await panel(
+    db
+      .select({ code: currencies.code })
+      .from(currencies)
+      .where(eq(currencies.active, true)),
+    [],
+  );
+  const staffAccount = await panel(staffAccountView(user.id), null);
 
   return (
     <div className="space-y-6">
@@ -129,6 +148,28 @@ export default async function ProfilePage() {
         }}
         apkVersion={callsApk?.version ?? null}
       />
+
+      {staffAccount && <StaffAccountPanel view={staffAccount} />}
+
+      {recentRequests !== null && currencyRows.length > 0 && (
+        <section className="space-y-2" data-testid="profile-rasxod">
+          <p className="text-sm text-ink-500">{t('rasxodHint')}</p>
+          <ExpenseRequestFold
+            door="profile"
+            warehouses={requestWarehouses}
+            currencies={currencyRows.map((row) => row.code)}
+            recent={recentRequests.map((row) => ({
+              id: row.id,
+              amount: row.amount,
+              currency: row.currency,
+              note: row.note,
+              status: row.status,
+              rejectReason: row.rejectReason,
+              paidBySelf: row.paidBySelf,
+            }))}
+          />
+        </section>
+      )}
 
       {/* The door for everyone whose curated menu does not carry it — a
           warehouse hand READS zametkalar in the bot, and this is where they

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
@@ -14,6 +15,7 @@ import {
   receiptLots,
   receipts,
   warehouses,
+  moneyAccounts,
 } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -27,6 +29,8 @@ import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
+import { receiptPickupInfo, stopOptionsForWarehouse } from '@/modules/wms/pickups/service';
+import { ReceiptPickupControl } from '@/app/(protected)/zavod/pickup-forms';
 import { CalcLink } from './calc-link';
 import { calcLinkOptions } from '@/modules/wms/calc/link';
 import { calcControlScopeFor } from '@/modules/wms/calc/control-scope';
@@ -39,6 +43,9 @@ import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { listPartners } from '@/modules/wms/partners/service';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -98,10 +105,16 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   }
 
   const costs = await db
-    .select({ entry: costEntries, typeName: costTypes.name, partnerName: partners.name })
+    .select({
+      entry: costEntries,
+      typeName: costTypes.name,
+      partnerName: partners.name,
+      accountName: moneyAccounts.name,
+    })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
+    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
     .where(and(eq(costEntries.receiptId, id), isNull(costEntries.voidedAt)));
   const canEnterCosts = actor.permissions.has('costs.enter_receipt');
   const costMeta = canEnterCosts
@@ -130,7 +143,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   // kiritganda kim tomondan berilgani yozilmayabti»). The warehouse enters
   // most of the money on a prixod, so the choice has to be where they are.
   const partnerOptions = canEnterCosts
-    ? (await listPartners()).map((row) => ({ id: row.id, name: row.name }))
+    ? (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, name: row.name }))
     : [];
 
   const canVoid = actor.permissions.has('receipts.void') && receipt.status === 'confirmed';
@@ -173,6 +186,21 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   // itself. Only to somebody who may write deals: to everybody else a deal
   // code is a link into a screen they cannot open.
   const canLinkDeal = canWriteDeal(actor.permissions) && Boolean(receipt.clientId);
+  // The factory truck it came off (0100): shown to everyone who opens the
+  // card — the factory's phone is what a goods problem next month needs — and
+  // correctable by whoever enters a truck's cost, because linking moves that
+  // truck's money. Caught: the tables are minted this release (#472).
+  const tp = await getTranslations('pickups');
+  const pickupInfo = await receiptPickupInfo(receipt.pickupStopId).catch(() => null);
+  const canLinkPickup =
+    receipt.status === 'confirmed' &&
+    !receipt.voidedAt &&
+    // The warehouse fence is the ACTION's (authorize at the receipt's
+    // warehouse): this page states no scope rule of its own.
+    actor.permissions.has('costs.enter_batch');
+  const pickupOptions = canLinkPickup
+    ? await stopOptionsForWarehouse(receipt.warehouseId).catch(() => [])
+    : [];
   const linkedDeal = receipt.dealId
     ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
     : null;
@@ -251,6 +279,44 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           </p>
         )}
       </div>
+
+      {(pickupInfo || canLinkPickup) && (
+        <div className="card space-y-1 text-sm" data-testid="receipt-pickup">
+          <p className="font-semibold">🏭 {tp('title')}</p>
+          {pickupInfo ? (
+            <p>
+              <Link href={`/zavod/${pickupInfo.pickupId}`} className="font-mono text-brand-700 underline">
+                {pickupInfo.code}
+              </Link>{' '}
+              · {pickupInfo.seq}. {pickupInfo.factoryName}
+              {pickupInfo.factoryPhone && (
+                <>
+                  {' '}
+                  ·{' '}
+                  <a className="text-brand-700 underline" href={`tel:${pickupInfo.factoryPhone}`}>
+                    {pickupInfo.factoryPhone}
+                  </a>
+                </>
+              )}
+              {pickupInfo.factoryWechat && ` · WeChat: ${pickupInfo.factoryWechat}`}
+            </p>
+          ) : (
+            <p className="text-xs text-ink-500">{tp('noPickup')}</p>
+          )}
+          {canLinkPickup && (
+            <ReceiptPickupControl
+              receiptId={id}
+              currentStopId={receipt.pickupStopId}
+              options={[
+                ...(pickupInfo && !pickupOptions.some((o) => o.stopId === pickupInfo.stopId)
+                  ? [{ stopId: pickupInfo.stopId, seq: pickupInfo.seq, code: pickupInfo.code, factoryName: pickupInfo.factoryName }]
+                  : []),
+                ...pickupOptions,
+              ].map((o) => ({ stopId: o.stopId, label: `${o.code} · ${o.seq}. ${o.factoryName}` }))}
+            />
+          )}
+        </div>
+      )}
 
       {canLinkDeal && (
         <DealLink
@@ -358,7 +424,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             <CostPanel
               scope="receipt"
               targetId={id}
-              entries={costs.map(({ entry, typeName, partnerName }) => ({
+              entries={costs.map(({ entry, typeName, partnerName, accountName }) => ({
                 id: entry.id,
                 typeName,
                 amount: entry.amount,
@@ -368,12 +434,16 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 allocationBasis: entry.allocationBasis,
                 note: entry.note,
                 partnerName,
+                accountName: maySeeTillNames(actor.permissions) ? accountName : null,
+                paidFromTill: entry.accountId !== null,
               }))}
               costTypes={costMeta.types}
               currencies={costMeta.currencies}
               clientOptions={client ? [{ id: client.id, clientCode: client.clientCode }] : []}
               defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
               canEdit={receipt.status === 'confirmed'}
+              today={tashkentDay()}
+              tillOptions={await tillOptionsFor(actor.permissions)}
               partnerOptions={partnerOptions}
             />
           </div>
@@ -443,6 +513,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             errors: {
               annul_forbidden: ta('forbidden'),
               box_on_active_plan: ta('onActivePlan'),
+              cost_paid_from_till: ta('paidFromTill'),
               reason_required: ta('reasonRequired'),
               not_found: ta('notFound'),
               validation: ta('reasonRequired'),

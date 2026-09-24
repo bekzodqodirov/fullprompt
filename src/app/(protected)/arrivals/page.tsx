@@ -11,6 +11,7 @@ import { Icon } from '@/components/ui/icon';
 import { EmptyState, PageHeader } from '@/components/ui/page';
 import { ArrivalForm } from './arrival-form';
 import { cancelArrivalAction, markArrivedAction } from './actions';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * What is on its way HERE (owner's item 3).
@@ -30,7 +31,9 @@ export default async function ArrivalsPage() {
   const t = await getTranslations('arrivals');
   const tc = await getTranslations('common');
   const format = await getFormatter();
-  const today = new Date().toISOString().slice(0, 10);
+  // Tashkent's day (R5) — the form's default and the «late» mark follow the
+  // office's calendar, not UTC's, which is still yesterday until 05:00.
+  const today = tashkentDay();
 
   // An empty array, not undefined: a scoped person with no warehouse must
   // see nothing rather than everything.

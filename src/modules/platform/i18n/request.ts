@@ -5,6 +5,7 @@ import { getSessionUser } from '../auth/session';
 // this file pulls in `next/headers`, so a client component that imported a
 // locale constant through it would fail the production build.
 import { DEFAULT_LOCALE, LOCALES } from './locales';
+import { OFFICE_TZ } from '../time/tashkent';
 
 /**
  * Locale resolution (no locale URLs — the app lives behind a login):
@@ -29,5 +30,10 @@ export default getRequestConfig(async () => {
   return {
     locale,
     messages: (await import(`../../../../messages/${locale}.json`)).default,
+    // Every `format.dateTime` prints on the office's clock (R5). Without it
+    // next-intl uses the server's zone, which is UTC: every time printed five
+    // hours early, and a receipt confirmed at 02:00 in Tashkent read as
+    // yesterday's on every screen.
+    timeZone: OFFICE_TZ,
   };
 });

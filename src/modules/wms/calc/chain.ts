@@ -218,8 +218,9 @@ export const REGISTRY_CAP = 200;
 /** The one predicate the rows AND the counts share (#513). */
 function registryWhere(f: RegistryFilters): SQL {
   const conds: SQL[] = [sql`TRUE`];
-  if (f.from) conds.push(sql`rk.sealed_at >= ${f.from}::date`);
-  if (f.to) conds.push(sql`rk.sealed_at < (${f.to}::date + interval '1 day')`);
+  // Tashkent's days (R5): a seal at 02:00 on the 1st belongs to the 1st, not the 31st.
+  if (f.from) conds.push(sql`rk.sealed_at >= ((${f.from}::date)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  if (f.to) conds.push(sql`rk.sealed_at < ((${f.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
   if (f.section) conds.push(sql`rk.section = ${f.section}`);
   if (f.sealerId) conds.push(sql`rk.sealed_by = ${f.sealerId}::uuid`);
   const q = (f.q ?? '').trim();

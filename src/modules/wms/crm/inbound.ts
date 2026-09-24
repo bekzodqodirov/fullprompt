@@ -16,6 +16,7 @@ import {
   parseYesNo,
   textVolume,
 } from './field-map';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * A lead that arrived by itself — from an advert, the public form, or the bot.
@@ -343,7 +344,7 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
       // is the only field here a person did not send, and it is what puts the
       // card on the owner's `/bugun` — or on everybody's, when the rotation is
       // empty and the lead has no owner.
-      nextActionAt: new Date().toISOString().slice(0, 10),
+      nextActionAt: tashkentDay(),
     },
     { actorId: null },
     { system: true },

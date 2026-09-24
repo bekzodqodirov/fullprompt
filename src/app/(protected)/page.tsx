@@ -18,6 +18,7 @@ import {
   type SalesFlowCounts,
   type VedFlowCounts,
 } from '@/modules/wms/home/role-flows';
+import { OFFICE_TZ, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Home.
@@ -44,7 +45,7 @@ export default async function HomePage() {
   const label = async (namespace: string, key: string) =>
     (await getTranslations(namespace as 'home'))(key as 'receiving');
 
-  const flow = await buildHomeFlow(actor, new Date().toISOString().slice(0, 10));
+  const flow = await buildHomeFlow(actor, tashkentDay());
 
   const viewer = { permissions: actor.permissions, roles: actor.roles };
   const groups: { title: string; items: { href: string; label: string; icon: IconName }[] }[] = [];
@@ -87,7 +88,7 @@ export default async function HomePage() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-medium text-ink-500">{new Date().toLocaleDateString('en-GB')}</p>
+        <p className="text-xs font-medium text-ink-500">{new Date().toLocaleDateString('en-GB', { timeZone: OFFICE_TZ })}</p>
         {/* Two lines at most: a long full name used to push the first action
             below the fold on a 360 px screen. */}
         <h1 className="line-clamp-2 text-xl leading-tight">
@@ -224,6 +225,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
   const tp = await getTranslations('plans');
   const tb = await getTranslations('batches');
   const td = await getTranslations('dashboard');
+  const tz = await getTranslations('pickups');
 
   const wh = flow.warehouse;
   const incoming = wh.trucksIncoming + wh.expectedWaiting;
@@ -280,6 +282,24 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
           label={tb('transitReport')}
           count={wh.trucksIncoming}
           sub={null}
+        />
+        <FlowRow
+          href="/zavod?holat=arrived"
+          icon="truck"
+          testid="logist-flow-pickups"
+          label={tz('title')}
+          count={flow.pickups.noCost + flow.pickups.unlinked}
+          warn={flow.pickups.noCost > 0}
+          sub={
+            flow.pickups.noCost || flow.pickups.unlinked
+              ? [
+                  flow.pickups.noCost ? `⚠ ${tz('homeNoCost', { n: flow.pickups.noCost })}` : '',
+                  flow.pickups.unlinked ? tz('homeUnlinked', { n: flow.pickups.unlinked }) : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+              : null
+          }
         />
         <FlowRow
           href="/dashboard"
@@ -454,12 +474,24 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           }
         />
         <FlowRow
-          href="/finance"
+          href="/finance/reestr?joylanmagan=1"
           icon="exchange"
           testid="acc-flow-unassigned"
           label={t('flowUnassignedPayments')}
           count={flow.unassignedPayments}
           warn={flow.unassignedPayments > 0}
+          sub={null}
+        />
+        {/* 0101: cargo costs the warehouse or the logist typed, whose kassa
+            only the accountant can name — or mark as a colleague's own money,
+            or merge with the expense it was typed a second time as. */}
+        <FlowRow
+          href="/accounting/xarajat-kassa"
+          icon="wallet"
+          testid="acc-flow-cost-kassa"
+          label={t('flowUnplacedCosts')}
+          count={flow.unplacedCosts}
+          warn={flow.unplacedCosts > 0}
           sub={null}
         />
         {/* Round 29: who paid what, row for row — the read half of «kimdan

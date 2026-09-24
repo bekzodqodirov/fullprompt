@@ -114,6 +114,13 @@ export const receipts = pgTable(
     calcLinkSource: text('calc_link_source'),
     calcLinkConfirmedAt: timestamp('calc_link_confirmed_at', { withTimezone: true }),
     calcLinkConfirmedBy: uuid('calc_link_confirmed_by').references(() => users.id),
+    /**
+     * The factory stop this prixod came from (0100, «zavod reysi»): the STOP,
+     * so «which factory, which phone» is one answer on the receipt card, and
+     * the truck's cost splits over the cargo its stops brought. Written by
+     * the pickup's own receive door and by attach/detach — never guessed.
+     */
+    pickupStopId: uuid('pickup_stop_id').references((): AnyPgColumn => pickupStops.id),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedBy: uuid('voided_by').references(() => users.id),
     voidReason: text('void_reason'),
@@ -438,6 +445,18 @@ export const costEntries = pgTable(
      * lands on that partner's ledger instead (round 39).
      */
     partnerId: uuid('partner_id').references(() => partners.id),
+    /** A factory-pickup truck's cost (0100, B5a) — split over what it brought. */
+    pickupId: uuid('pickup_id').references((): AnyPgColumn => pickups.id),
+    /**
+     * The kassa the money LEFT from (0101, owner 3b): a cost «we paid» used
+     * to say nothing about where from, so the same money was typed again as
+     * an expense with a kassa. Exclusive with `partnerId` (CHECK).
+     */
+    accountId: uuid('account_id').references((): AnyPgColumn => moneyAccounts.id),
+    /** What left the kassa, in the KASSA's currency (set iff accountId). */
+    accountAmount: numeric('account_amount', { precision: 14, scale: 2 }),
+    /** The duplicate expense this cost replaced in a merge (A3/M4a). */
+    mergedExpenseId: uuid('merged_expense_id').references((): AnyPgColumn => expenses.id),
     note: text('note'),
     enteredBy: uuid('entered_by')
       .notNull()
@@ -449,10 +468,10 @@ export const costEntries = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    check('cost_entries_scope_check', sql`${t.scope} IN ('receipt', 'batch', 'crate')`),
+    check('cost_entries_scope_check', sql`${t.scope} IN ('receipt', 'batch', 'crate', 'pickup')`),
     check(
       'cost_entries_scope_target_check',
-      sql`(${t.scope} = 'receipt' AND ${t.receiptId} IS NOT NULL) OR (${t.scope} = 'batch' AND ${t.batchId} IS NOT NULL) OR (${t.scope} = 'crate' AND ${t.crateId} IS NOT NULL)`,
+      sql`(${t.scope} = 'receipt' AND ${t.receiptId} IS NOT NULL) OR (${t.scope} = 'batch' AND ${t.batchId} IS NOT NULL) OR (${t.scope} = 'crate' AND ${t.crateId} IS NOT NULL) OR (${t.scope} = 'pickup' AND ${t.pickupId} IS NOT NULL)`,
     ),
     check('cost_entries_amount_check', sql`${t.amount} > 0`),
     check(
@@ -461,6 +480,20 @@ export const costEntries = pgTable(
     ),
     index('cost_entries_receipt_idx').on(t.receiptId),
     index('cost_entries_batch_idx').on(t.batchId),
+    index('cost_entries_pickup_idx')
+      .on(t.pickupId)
+      .where(sql`${t.pickupId} IS NOT NULL`),
+    check('cost_entries_payer_check', sql`NOT (${t.partnerId} IS NOT NULL AND ${t.accountId} IS NOT NULL)`),
+    check(
+      'cost_entries_account_amount_check',
+      sql`(${t.accountId} IS NULL) = (${t.accountAmount} IS NULL) AND (${t.accountAmount} IS NULL OR (${t.accountAmount} > 0 AND ${t.accountAmount} <> 'NaN'::numeric))`,
+    ),
+    index('cost_entries_account_idx')
+      .on(t.accountId)
+      .where(sql`${t.accountId} IS NOT NULL`),
+    index('cost_entries_unplaced_idx')
+      .on(t.createdAt)
+      .where(sql`${t.voidedAt} IS NULL AND ${t.partnerId} IS NULL AND ${t.accountId} IS NULL`),
   ],
 );
 
@@ -849,9 +882,11 @@ export const clientTransactions = pgTable(
     /** Charges from batch pricing point at the batch they price. */
     batchId: uuid('batch_id').references(() => batches.id),
     /**
-     * The job this charge is for, when it was raised from one. Null for every
-     * charge posted from batch pricing — which is a correct answer, not a gap:
-     * a deferral cannot cover money nobody tied to a job.
+     * The job this charge is for, when it was raised from one. A charge posted
+     * from batch pricing carries it only when the client's cargo on that truck
+     * is one deal's and nothing else (R3a, derived server-side by
+     * `soleDealAboard`); null otherwise — which is a correct answer, not a
+     * gap: a deferral cannot cover money nobody tied to a job.
      */
     dealId: uuid('deal_id').references(() => deals.id),
     /** Which cash box the payment landed in (Phase 2.4 cash flow). */
@@ -873,7 +908,13 @@ export const clientTransactions = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment')`),
+    // 'refund' (0101, owner R6a): money handed BACK to a client from a kassa.
+    // It raises the balance like a charge and lowers a till like an expense.
+    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment', 'refund')`),
+    check(
+      'client_transactions_refund_check',
+      sql`${t.type} <> 'refund' OR (${t.accountId} IS NOT NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL)`,
+    ),
     check('client_transactions_amount_check', sql`${t.amount} > 0`),
     check(
       'client_transactions_method_check',
@@ -962,6 +1003,12 @@ export const expenses = pgTable(
      */
     partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
+    /**
+     * The template that posted it (0099, audit A32/A33). «Posted this month»
+     * is a row of THIS template on that date, voided or not — never a slot any
+     * one-off on the same day could fill.
+     */
+    recurringId: uuid('recurring_id').references((): AnyPgColumn => recurringExpenses.id),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -975,6 +1022,9 @@ export const expenses = pgTable(
     index('expenses_date_idx').on(t.expenseDate),
     index('expenses_category_idx').on(t.categoryId, t.expenseDate),
     index('expenses_account_idx').on(t.accountId, t.expenseDate),
+    index('expenses_recurring_idx')
+      .on(t.recurringId, t.expenseDate)
+      .where(sql`${t.recurringId} IS NOT NULL`),
   ],
 );
 
@@ -992,9 +1042,14 @@ export const expenseRequests = pgTable(
   'expense_requests',
   {
     id: id(),
-    warehouseId: uuid('warehouse_id')
-      .notNull()
-      .references(() => warehouses.id),
+    /** Null when filed from /profile by somebody who belongs to no warehouse (0101). */
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id),
+    /**
+     * «O'z pulimdan to'ladim» (0101, owner M1a): the reporter paid out of
+     * pocket, so the accountant's «Kiritish» books a DEBT to them (their
+     * staff counterparty) instead of cash out of a kassa.
+     */
+    paidBySelf: boolean('paid_by_self').notNull().default(false),
     amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
     currency: varchar('currency', { length: 3 })
       .notNull()
@@ -1052,6 +1107,8 @@ export const recurringExpenses = pgTable(
     warehouseId: uuid('warehouse_id').references(() => warehouses.id),
     employeeId: uuid('employee_id').references(() => users.id),
     accountId: uuid('account_id').references(() => moneyAccounts.id),
+    /** Paid through a firm (0099, audit A36) — the posting raises its debt. */
+    partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     active: boolean('active').notNull().default(true),
     createdBy: uuid('created_by')
@@ -2645,6 +2702,12 @@ export const partners = pgTable(
      * money stays on the client side, service money lands here.
      */
     clientId: uuid('client_id').references(() => clients.id),
+    /**
+     * The staff member this account IS (0101, owner A1c): own-pocket spending
+     * is our debt to them, an advance is theirs to us. Their /profile shows
+     * it (A2a); nobody but the accountant and the admin sees it (M3a).
+     */
+    userId: uuid('user_id').references(() => users.id),
     phone: text('phone'),
     note: text('note'),
     active: boolean('active').notNull().default(true),
@@ -2657,6 +2720,7 @@ export const partners = pgTable(
   (t) => [
     // Two accounts for one person would each show half the truth.
     uniqueIndex('partners_client_uniq').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
+    uniqueIndex('partners_user_uniq').on(t.userId).where(sql`${t.userId} IS NOT NULL`),
     index('partners_type_idx').on(t.typeId).where(sql`${t.active}`),
   ],
 );
@@ -2915,6 +2979,162 @@ export const aiCalcPasses = pgTable(
     check(
       'ai_calc_passes_tokens_check',
       sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// «Zavod reysi» — a truck we hire collects cargo from factories (0100)
+// ---------------------------------------------------------------------------
+
+/**
+ * The factory directory (owner's B6: «zavotlar adresi tel nomeri tovar nomi
+ * keyinchalik tovar kk bo'lganda aloqaga chiqgani»). The map point is a
+ * geocoder's SUGGESTION until a person confirms it — `geo_confirmed_at`.
+ */
+export const factories = pgTable(
+  'factories',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    /** The Chinese address, as the factory writes it. */
+    address: text('address'),
+    phone: text('phone'),
+    wechat: text('wechat'),
+    /** What we buy there — the directory's «tovar nomi». */
+    goodsNote: text('goods_note'),
+    note: text('note'),
+    lat: numeric('lat', { precision: 9, scale: 6 }),
+    lon: numeric('lon', { precision: 9, scale: 6 }),
+    geoSource: text('geo_source'),
+    /** The provider's own precision word (Amap's level, OSM's type). */
+    geoPrecision: text('geo_precision'),
+    /** What the provider understood the address to be. */
+    geoLabel: text('geo_label'),
+    geoConfirmedAt: timestamp('geo_confirmed_at', { withTimezone: true }),
+    geoConfirmedBy: uuid('geo_confirmed_by').references(() => users.id),
+    active: boolean('active').notNull().default(true),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('factories_lat_check', sql`${t.lat} IS NULL OR ${t.lat} BETWEEN -90 AND 90`),
+    check('factories_lon_check', sql`${t.lon} IS NULL OR ${t.lon} BETWEEN -180 AND 180`),
+    check('factories_point_pair_check', sql`(${t.lat} IS NULL) = (${t.lon} IS NULL)`),
+    check(
+      'factories_geo_source_check',
+      sql`${t.geoSource} IS NULL OR ${t.geoSource} IN ('amap', 'osm', 'manual')`,
+    ),
+  ],
+);
+
+/** The truck (B1: the logist who hired it enters it). */
+export const pickups = pgTable(
+  'pickups',
+  {
+    id: id(),
+    code: text('code').notNull().unique(),
+    destWarehouseId: uuid('dest_warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    vehiclePlate: text('vehicle_plate'),
+    driverName: text('driver_name'),
+    driverPhone: text('driver_phone'),
+    plannedOn: date('planned_on'),
+    status: text('status').notNull().default('planned'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    arrivedAt: timestamp('arrived_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    note: text('note'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check(
+      'pickups_status_check',
+      sql`${t.status} IN ('planned', 'on_road', 'arrived', 'cancelled')`,
+    ),
+  ],
+);
+
+/**
+ * A factory on the truck's way (B3: two or three sometimes). The road on from
+ * here is stored once, with `legKey` naming the endpoints it was fetched for.
+ */
+export const pickupStops = pgTable(
+  'pickup_stops',
+  {
+    id: id(),
+    pickupId: uuid('pickup_id')
+      .notNull()
+      .references(() => pickups.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    factoryId: uuid('factory_id')
+      .notNull()
+      .references(() => factories.id),
+    /** The «Olindi» press — when the truck LEFT this factory with the cargo. */
+    collectedAt: timestamp('collected_at', { withTimezone: true }),
+    collectedBy: uuid('collected_by').references(() => users.id),
+    stampNote: text('stamp_note'),
+    /** [lng, lat] pairs, from this stop to the next (or to the warehouse). */
+    legPoints: jsonb('leg_points').$type<[number, number][]>(),
+    legHours: numeric('leg_hours', { precision: 8, scale: 2 }),
+    legSource: text('leg_source'),
+    legKey: text('leg_key'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('pickup_stops_seq_unique').on(t.pickupId, t.seq),
+    check(
+      'pickup_stops_leg_hours_check',
+      sql`${t.legHours} IS NULL OR (${t.legHours} > 0 AND ${t.legHours} <> 'NaN'::numeric)`,
+    ),
+    check(
+      'pickup_stops_leg_source_check',
+      sql`${t.legSource} IS NULL OR ${t.legSource} IN ('osrm', 'line')`,
+    ),
+  ],
+);
+
+/** What the truck collects at a stop, per client or marking (B1/B2). */
+export const pickupLines = pgTable(
+  'pickup_lines',
+  {
+    id: id(),
+    stopId: uuid('stop_id')
+      .notNull()
+      .references(() => pickupStops.id, { onDelete: 'cascade' }),
+    clientId: uuid('client_id').references(() => clients.id),
+    marking: text('marking'),
+    goods: text('goods').notNull(),
+    /** The factory's count — exact, B2. */
+    factoryBoxes: integer('factory_boxes').notNull(),
+    /** The driver's recount at the factory, when he gave one. */
+    driverBoxes: integer('driver_boxes'),
+    volumeM3: numeric('volume_m3', { precision: 12, scale: 4 }),
+    weightKg: numeric('weight_kg', { precision: 12, scale: 3 }),
+    note: text('note'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('pickup_lines_stop_idx').on(t.stopId),
+    check(
+      'pickup_lines_owner_check',
+      sql`${t.clientId} IS NOT NULL OR (${t.marking} IS NOT NULL AND ${t.marking} <> '')`,
+    ),
+    check(
+      'pickup_lines_boxes_check',
+      sql`${t.factoryBoxes} > 0 AND (${t.driverBoxes} IS NULL OR ${t.driverBoxes} > 0)`,
+    ),
+    check(
+      'pickup_lines_measure_check',
+      sql`(${t.volumeM3} IS NULL OR (${t.volumeM3} > 0 AND ${t.volumeM3} <> 'NaN'::numeric)) AND (${t.weightKg} IS NULL OR (${t.weightKg} > 0 AND ${t.weightKg} <> 'NaN'::numeric))`,
     ),
   ],
 );

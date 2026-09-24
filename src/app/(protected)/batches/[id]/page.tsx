@@ -14,7 +14,12 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { batchCostSheet, batchReceiptRows } from '@/modules/wms/costing/service';
+import {
+  batchCostEntryCount,
+  batchCostSheet,
+  batchReceiptRows,
+} from '@/modules/wms/costing/service';
+import { isInternalLeg } from '@/modules/wms/batches/internal';
 import { attachments, costTypes, currencies } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
 import { VehicleForm } from './vehicle-form';
@@ -45,6 +50,9 @@ import { batchCustomsRows } from '@/modules/wms/partners/customs';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { CrateRows } from '@/components/crate-rows';
 import { batchCrates } from '@/modules/wms/inventory/service';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -74,7 +82,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
 
   const dest = aliasedTable(warehouses, 'dest');
   const rows = await db
-    .select({ batch: batches, originCode: warehouses.code, destCode: dest.code })
+    .select({
+      batch: batches,
+      originCode: warehouses.code,
+      destCode: dest.code,
+      originCountry: warehouses.country,
+      destCountry: dest.country,
+    })
     .from(batches)
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
@@ -88,6 +102,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     notFound();
   }
   const { batch, originCode, destCode } = hit;
+  // A truck that crosses no border is never priced (owner's C1a) — its money
+  // page is a cost page, and the warning it earns is a missing cost.
+  const internal = isInternalLeg(hit.originCountry, hit.destCountry);
 
   // The truck's contents, read the way the stock screen reads a shelf (owner:
   // «uni ichidagisni sklad qoldiqlaridek toliq neccha kub necha kg rasimlari
@@ -181,6 +198,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // moment a phone claims it — a burnt code on a header teaches nothing.
   const pairCode = devices.find((device) => device.pairCode)?.pairCode ?? null;
   const costSheet = canSeeCosts ? await batchCostSheet(id) : null;
+  // «Rasxodini yozmading» (owner, 2026-09-24): a truck that has LEFT with
+  // nothing attributed to it — no bill of its own, no stamped grid cell.
+  const ownCostCount = canSeeCosts && batch.departedAt ? await batchCostEntryCount(id) : null;
   // Round 39: a truck's freight and its customs bill are usually settled by
   // somebody else's account, so the cost form has to be able to say whose.
   // The papers that ride with the truck (owner: «1 ta partiyaga yo'lda
@@ -192,7 +212,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // after it cleared this truck dropped out of the picker — and a select whose
   // value matches no option silently shows the FIRST one, which here reads
   // «as the truck says». New rows are offered the live firms only.
-  const allPartners = await listPartners({ includeInactive: true });
+  const allPartners = await listPartners({ includeInactive: true, includeStaff: maySeeStaffMoney(actor.permissions) });
   const partnerOptions = canEnterCosts
     ? allPartners.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }))
     : [];
@@ -534,10 +554,15 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       {costSheet && costMeta && (
         <div className="card space-y-2">
           <h2 className="text-lg font-bold">💰 {t('costs')}</h2>
+          {ownCostCount === 0 && (
+            <p className="text-sm font-semibold text-warn" data-testid="batch-no-costs">
+              ⚠️ {t('noCostsWarn')}
+            </p>
+          )}
           <CostPanel
             scope="batch"
             targetId={batch.id}
-            entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName }) => ({
+            entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, accountName }) => ({
               id: entry.id,
               typeName,
               amount: entry.amount,
@@ -548,12 +573,16 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               note: entry.note,
               clientCode,
               partnerName,
+              accountName: maySeeTillNames(actor.permissions) ? accountName : null,
+              paidFromTill: entry.accountId !== null,
             }))}
             costTypes={costMeta.types}
             currencies={costMeta.currencies}
             clientOptions={costMeta.clients}
             defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
             canEdit={canEnterCosts}
+            today={tashkentDay()}
+            tillOptions={await tillOptionsFor(actor.permissions)}
             partnerOptions={partnerOptions}
           />
           {costSheet.entries.length > 0 && (
@@ -832,9 +861,10 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       {actor.permissions.has('finance.manage') && (
         <Link
           href={`/batches/${batch.id}/pricing`}
-          className="card block text-center font-bold text-warn hover:bg-warn/10"
+          className={`card block text-center font-bold ${internal ? 'text-ink-700 hover:bg-surface-sunken' : 'text-warn hover:bg-warn/10'}`}
+          data-testid="batch-pricing-link"
         >
-          💰 {t('pricing')}
+          💰 {internal ? t('internalCosts') : t('pricing')}
         </Link>
       )}
 

@@ -94,12 +94,13 @@
     "flowLoading": "装车中：{n}",
     "flowReady": "待交付：{n} 箱",
     "flowPlansPending": "待审核：{n}",
-    "flowUnassignedPayments": "未指定账户的收款（本月）",
+    "flowUnassignedPayments": "未指定账户的收款",
     "flowRecurringDue": "固定支出未登记",
     "flowDocsPending": "未发单证给代理的车次",
     "flowTnvedMissing": "无 HS 编码的商品",
     "flowCalcOpen": "待核算",
-    "flowCalcLate": "逾期"
+    "flowCalcLate": "逾期",
+    "flowUnplacedCosts": "未指定账户的费用"
   },
   "dashboard": {
     "title": "仪表盘",
@@ -136,7 +137,8 @@
     "noDebtors": "无欠款客户",
     "salesTitle": "销售",
     "wonThisMonth": "本月成交",
-    "logisticsTitle": "物流"
+    "logisticsTitle": "物流",
+    "oldestOf": "最早的 {shown} / 共 {total}"
   },
   "inventory": {
     "title": "盘点",
@@ -255,7 +257,8 @@
     "taskHours": "小时",
     "taskUndated": "无期限：{n} 项 — 不会出现在任何人的「我的一天」。",
     "taskStalest": "逾期最久",
-    "taskLateDays": "{n} 天"
+    "taskLateDays": "{n} 天",
+    "landedUnconverted": "没有汇率的费用（{count} 笔）未计入本报表：{sums}。录入该货币汇率后会自动计入。"
   },
   "warehouses": {
     "title": "仓库",
@@ -383,7 +386,8 @@
       "import_baza_min_sim": "导入名称需达到的相似度阈值，超过后自动填入基价（0..1）",
       "calc_memory_min_sim": "商品名称与已封存计算的相似度达到多少时，AI 才采用其基价（0..1）",
       "ai_calc_daily_limit": "每日用于计算的 AI 调用次数（超出后仅用记忆、字典与海关文件）",
-      "ai_calc_reply_lenta": "将 AI 的估算同时写入卡片动态"
+      "ai_calc_reply_lenta": "将 AI 的估算同时写入卡片动态",
+      "cost_kassa_since": "自此日起录入且未指定账户的费用进入会计待办（YYYY-MM-DD；留空 = 全部）"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"
@@ -502,7 +506,19 @@
     "callRecApp": "下载应用（安卓）",
     "telegramReconnect": "重新连接",
     "telegramReconnectHint": "更换了手机或 Telegram 账号？用新账号打开机器人，通知将发送到那里。在新账号连接之前，旧会话仍然有效。",
-    "notifMuteCalls": "早间来电清单"
+    "notifMuteCalls": "早间来电清单",
+    "rasxodHint": "为工作花了钱——告知财务，并附上小票照片。",
+    "staffAccountTitle": "我与公司的往来",
+    "staffOwes": "公司欠您：{amount}",
+    "staffAdvance": "您的预支余额：{amount}",
+    "staffSettled": "往来已结清",
+    "staffKindCharge": "您垫付的支出",
+    "staffKindPayment": "已发预支",
+    "staffKindReceipt": "您已退回",
+    "staffKindAdjust": "调整",
+    "staffKindOffset": "抵销",
+    "staffPendingTitle": "尚未入账",
+    "staffPendingHint": "这还不是公司的欠款——财务入账后才会计入。"
   },
   "receive": {
     "title": "收货",
@@ -544,7 +560,10 @@
       "photo": "请至少添加1张照片"
     },
     "acceptUnclaimedAs": "{code} — 按无主货物接收",
-    "noteAndCost": "备注与费用（如需要）"
+    "noteAndCost": "备注与费用（如需要）",
+    "pickupReceiving": "从工厂提货收货",
+    "pickupDetach": "解除与提货的关联",
+    "pickupInvalid": "该工厂提货前往其他仓库或已取消。"
   },
   "receipts": {
     "title": "收货单",
@@ -787,7 +806,38 @@
     "gridEntered": "已录入 (USD)",
     "gridNow": "本次录入",
     "paidBy": "由谁支付",
-    "paidByUs": "我们自己付"
+    "paidByUs": "我们自己付",
+    "gridSearch": "搜索：客户编号、唛头、货物、入库单、交易",
+    "gridEmptyCol": "空列",
+    "gridEmptyColAll": "全部入库单",
+    "gridEmptyColOf": "本车次未录入「{type}」",
+    "gridShown": "显示 {shown} / {total} 张入库单",
+    "gridHiddenTyped": "另有 {count} 个单元格（{amount} {currency}）被筛选隐藏——也会一起保存",
+    "gridBatchScope": "整车：${amount}",
+    "gridNoMatch": "没有符合筛选的入库单",
+    "gridSplitLot": "该货物共 {total} 箱，本车装 {onBatch} 箱",
+    "gridElsewhere": "+ ${amount} 录在别处",
+    "gridElsewhereHint": "从其他车次、入库单页面或收货界面录入到此入库单——可能是同一笔账单",
+    "gridTotalsAll": "按整车",
+    "gridBadCells": "{count} 个单元格无法识别为数字——请写成「1200」「1 200」或「1200.50」。",
+    "gridBadHidden": "其中 {count} 个被筛选隐藏。",
+    "gridShowAll": "全部显示",
+    "gridPartial": "已保存 {saved} 个单元格，其余未保存（{reason}）。未保存的仍在表格中——请再次点击。",
+    "rateStanding": "当前汇率：1 USD = {rate} {currency}",
+    "rateJump": "上一个汇率是 1 USD = {previous} {currency}，新汇率相差超过 20%。如确认无误，请勾选后再次保存。",
+    "paidByUsNoTill": "我方支付——由会计指定账户",
+    "tillGroup": "从账户",
+    "partnerGroup": "由往来单位支付",
+    "tillAmount": "账户支出金额（{currency}）",
+    "paidFromTill": "从账户",
+    "errTillForbidden": "只有会计或管理员可以指定账户。",
+    "errStaffPayer": "员工自付请通过“费用报告”提交，由会计确认。",
+    "errKassaVoid": "从账户支付的费用只能由会计或管理员作废——款项会退回账户。",
+    "errTillAmountRequired": "账户币种不同——请填写账户实际支出金额。",
+    "errTillAmountMismatch": "币种相同——金额必须等于费用金额。",
+    "errTillNotFound": "该账户不存在或已停用。",
+    "errTillCurrency": "表格只有一种币种：账户也必须是该币种。",
+    "errPayerConflict": "该费用已指定付款方。"
   },
   "batches": {
     "title": "车次",
@@ -871,7 +921,9 @@
     "customsFirmAccount": "打开该公司账户",
     "documents": "单据",
     "customsPerReceipt": "按入库单清关",
-    "customsFromBatch": "随整车"
+    "customsFromBatch": "随整车",
+    "internalCosts": "车次费用（内部）",
+    "noCostsWarn": "该车次尚未录入费用"
   },
   "loading": {
     "title": "装车",
@@ -1045,7 +1097,7 @@
     "voidReason": "作废原因？",
     "voided": "已作废",
     "pricingTitle": "车次财务",
-    "pricingHint": "本车次每位客户的成本、价格、利润与余额。价格将作为应收记入客户余额。",
+    "pricingHint": "本车每位客户的货物：每项货物的成本、客户价格、利润和余额。每位客户一个价格，记入其余额。",
     "setPrice": "定价",
     "alreadyCharged": "已计费",
     "costLabel": "成本",
@@ -1070,7 +1122,27 @@
     "registerTruncated": "显示最新 {shown} 条（共 {total} 条）；合计为整个期间。",
     "bothFigures": "成本价与客户价",
     "floorShort": "成本",
-    "clientPriceShort": "客户:"
+    "clientPriceShort": "客户:",
+    "unclaimedGroup": "未认领的货物",
+    "unclaimedPriceLater": "找到货主后在该客户行定价。其成本已计入上方合计。",
+    "orphanCharges": "本车已无其货物的客户的收费",
+    "orphanChargesHint": "货物可能已转给其他客户，或价格录错。已计入上方「价格」合计——请在客户账上核对。",
+    "unconvertedCosts": "{count} 笔费用没有汇率，未计入成本。请在「汇率」中录入该日期的汇率。",
+    "amountUnreadable": "无法识别金额——请写成「1200」「1 200」或「1200.50」",
+    "internalBatch": "内部车次——不向客户定价。本车费用计入货物成本，在跨境车次上显示为「本车次之前」。",
+    "internalNoCosts": "该内部车次尚未录入费用——请在车次页面录入运费等费用。",
+    "internalPricedBefore": "此前在该内部车次上记录的价格",
+    "internalPricedBeforeHint": "内部车次不再定价。这些记录保留在客户账上——如有需要，会计可作废并改记到跨境车次。",
+    "internalBatchRefused": "内部车次不定价——请在跨境车次上定价",
+    "priceAlsoToDeal": "价格也会记入交易 {code}",
+    "accountRequired": "请选择这笔收款进入的账户。",
+    "futureDate": "日期不能晚于今天。",
+    "placePayment": "归入",
+    "registerAll": "按期间",
+    "registerUnplaced": "未归入账户",
+    "refund": "退款给客户",
+    "refundAccount": "从哪个账户退款",
+    "refundOnBatch": "退款不能记在批次上——它不是价格。"
   },
   "map": {
     "title": "地图",
@@ -1097,7 +1169,13 @@
     "goFull": "全屏",
     "exitFull": "退出",
     "legendWarehouse": "仓库",
-    "legendTruck": "车辆"
+    "legendTruck": "车辆",
+    "legendPickup": "工厂提货",
+    "openPickup": "打开提货",
+    "pickupPhase_waiting": "在工厂等待",
+    "pickupPhase_driving": "在途",
+    "pickupPhase_loading": "在工厂装货",
+    "pickupPhase_arrived": "应已到仓库"
   },
   "accounting": {
     "title": "管理会计",
@@ -1166,7 +1244,7 @@
     "days90": "90+ 天",
     "debt": "欠款",
     "asOf": "截至",
-    "pnlNote": "月度表中收入与成本各按自身日期归属。批次的真实利润请看「批次利润」报表。",
+    "pnlNote": "月度表中收入与成本各按自身日期归属。「批次利润」只统计记在车辆上的价格和费用——入库单和木箱费用在那里单独一行列出。",
     "transfersExcluded": "账户间转账 {n} 笔已排除（既非收入也非支出）。",
     "uzsNote": "按今日汇率折算的苏姆金额（{rate}）",
     "fxMissing": "该币种没有汇率 — 请先在汇率页面录入",
@@ -1201,7 +1279,62 @@
     "reject": "拒绝",
     "rejectReason": "为什么拒绝？仓管员会看到回复。",
     "fromRequest": "已从仓库报告填充——请核对并选择类别和账户。",
-    "requestTaken": "该报告已被他人入账"
+    "requestTaken": "该报告已被他人入账",
+    "gapManualCharges": "手工录入的对供应商欠款（{count} 笔，{usd}）未计入本报表——它们没有登记为费用。",
+    "gapManualChargesHint": "如果这项服务也已单独登记为费用，则没有遗漏。否则：在供应商卡片上作废该欠款，并在费用表单中选择「由谁支付」重新录入。",
+    "gapOpenPartners": "供应商 →",
+    "gapUnconverted": "没有汇率的费用（{count} 笔）按 $0 计算：{sums}。",
+    "gapUnconvertedHint": "请录入该货币的汇率——费用会自动重新计算。",
+    "expensesTruncated": "显示最新的 {shown} 条（共 {total} 条）；「合计」为整个期间。",
+    "balUnplaced": "未归入账户的收款",
+    "futureDated": "有 {count} 条记录的日期晚于今天（{usd}）。其他页面已把它们算作当前欠款，本报表没有——请更正日期。",
+    "transferAmountMismatch": "同一货币的账户之间，转出与转入金额必须相同。",
+    "recurringEdit": "金额、日期或停用",
+    "recurringActive": "启用——每月入账",
+    "internalRowsNote": "国内车次（中国境内）只显示费用：不对其定价，其费用已作为「本车次之前」计入跨境车辆的成本——因此不计入合计。",
+    "unallocatedNote": "记在车辆上的 {usd} 费用未分摊到任何箱子——不在任何成本中（车辆：{count}）。请在车次卡片上检查费用。",
+    "unbatchedNote": "未计入本表（按期间日期）：未关联车辆的收入 {revenue}——在客户账上定的价格。入库单、收货、木箱和工厂提货的费用已计入货物所乘车辆的成本。",
+    "clientRefunds": "退还客户",
+    "balClientAdvances": "客户预付款（我们欠）",
+    "beforeOpening": "{count} 条记录早于期初日期——已包含在期初余额中，不再重复计算",
+    "cargoUnplaced": "其中未指定账户：{usd}",
+    "balUnplacedCosts": "{count} 笔货物费用未指定账户（${usd}）——账户余额可能多显示了这部分",
+    "costKassa": "费用账户",
+    "costKassaHint": "仓库、物流或报关录入的货物费用。请逐条说明：从哪个账户支付、是否员工自付，或是否在“费用”中重复录入（请合并——避免重复计算）。",
+    "queueCount": "待处理：{count} 条",
+    "queueSince": "自 {day} 起录入",
+    "queuePrev": "上一页",
+    "queueNext": "下一页",
+    "mergedTitle": "已合并",
+    "mergedCosts": "合并 {count} 笔费用",
+    "queueDone": "已保存。",
+    "queueEmpty": "没有待指定账户的费用。",
+    "mergeTitle": "已选：{count} 条——与“费用”中的重复项合并",
+    "mergeExpense": "选择重复的费用",
+    "mergeButton": "合并",
+    "mergeHint": "同币种金额须精确一致；不同币种差额不超过 2% 或 $5。该费用作废，其账户转到货物费用上——账户余额不变。",
+    "mergePick": "勾选以合并",
+    "mergeSuggest": "可能在“费用”中重复：{expense}",
+    "mergeOne": "合并",
+    "queueTill": "哪个账户",
+    "queueTillAmount": "账户支出（{currency}）",
+    "queueSave": "保存",
+    "queueStaff": "员工自付",
+    "queueErrTillAmount": "账户币种不同——请填写正确的支出金额。",
+    "queueErrTill": "账户不存在或已停用。",
+    "queueErrTaken": "该费用已被处理或作废——请刷新页面。",
+    "queueErrNotCandidate": "该费用不可合并（由往来单位支付、固定费用、upsale 支付或已作废）。",
+    "queueErrAmount": "金额不符：同币种须精确一致，不同币种差额不超过 2% 或 $5。",
+    "queueErrDays": "日期相差超过 14 天。",
+    "queueErrRate": "该费用币种未录入汇率。",
+    "queueErrNotStaff": "所选往来单位不是员工账户。",
+    "queueErrForbidden": "此操作仅限会计或管理员。",
+    "requestOwnPocket": "自己垫付",
+    "fromRequestSelf": "员工自己垫付——付款方为其员工账户：入账后公司欠该员工。可改为现金账户。",
+    "staffPartnerMissing": "该员工还没有账户——开立后才能记录欠他的款项。",
+    "staffPartnerOpen": "开立员工账户",
+    "staffPartnerLinkedElsewhere": "该登录已关联到其他合作方——请在“合作方”中检查。",
+    "staffPartnerInactive": "员工账户“{name}”已停用——请启用或选择现金账户。"
   },
   "crm": {
     "title": "CRM",
@@ -1543,7 +1676,9 @@
     "dayStale": "{n} 条逾期 — 查看",
     "dayStaleOpen": "逾期",
     "dayOthers": "按销售",
-    "dayBack": "仅我的"
+    "dayBack": "仅我的",
+    "wonOtherCurrency": "另有 {count} 笔为其他货币",
+    "feedRefund": "退款给客户"
   },
   "navShort": {
     "home": "首页",
@@ -1590,7 +1725,9 @@
     "withCargo": "有货",
     "withDebt": "有欠款",
     "lastReceipt": "最近收货",
-    "callToday": "今天致电"
+    "callToday": "今天致电",
+    "internalTrip": "内部车次——在下一车次定价",
+    "internalNoCost": "内部车次，未录入费用"
   },
   "arrivals": {
     "title": "待收货物",
@@ -2499,7 +2636,6 @@
       "adjust": "调整 / 汇差"
     },
     "kindHints": {
-      "charge": "车辆、清关、租金、工资等已获服务。现金账不动。",
       "receipt": "对方把钱打入我们账户。现金增加，我们欠对方增加。",
       "payment": "我们从现金账付给对方。现金减少，欠款减少。",
       "adjust": "汇差或手工更正，可为负数。"
@@ -2513,7 +2649,23 @@
     "rateGapHint": "对方冲抵金额与客户汇出金额之差（美元）。",
     "proof": "收据 / 截图",
     "proofNote": "备注（无附件时必填）",
-    "proofRequired": "必须有附件或备注"
+    "proofRequired": "必须有附件或备注",
+    "chargeMoved": "服务欠款（车辆、清关、租金、工资）现在在费用表单中选择「由谁支付」录入。欠款会自动记到这里，也会计入利润报表。",
+    "manualCharge": "未关联费用——利润报表中没有",
+    "owedToUs": "欠我们",
+    "login": "员工（登录账号）",
+    "noLogin": "非员工",
+    "loginHint": "绑定登录账号后即为员工账户：余额仅会计、管理员及员工本人可见。",
+    "userTaken": "该员工已有账户——每位员工一个账户。",
+    "staffForbidden": "员工账户仅由会计和管理员管理。",
+    "staffKinds": {
+      "payment": "已发预支款",
+      "receipt": "退回余款"
+    },
+    "staffKindHints": {
+      "payment": "从现金账给员工发了预支款。现金减少，员工欠我们。",
+      "receipt": "员工把未用完的余款退回现金账。现金增加，其欠款减少。"
+    }
   },
   "lists": {
     "allRecords": "全部",
@@ -2655,7 +2807,9 @@
       "forbidden": "没有该仓库的权限",
       "validation": "请检查金额和说明",
       "failed": "发送失败"
-    }
+    },
+    "noWarehouse": "不属于仓库",
+    "paidBySelf": "我自己垫付的"
   },
   "adminHome": {
     "money": "资金",
@@ -2720,7 +2874,9 @@
     "categoryTitle": "销售分成的费用类别",
     "categoryUnset": "未选择费用类别 — 无法支付",
     "categoryHint": "分成按普通费用记账。必须使用专用类别：若从「工资」中支付，该销售当月的工资会被悄悄视为已发放。",
-    "categoryAsk": "只有管理员可以选择。"
+    "categoryAsk": "只有管理员可以选择。",
+    "periodByOffer": "报价日期",
+    "periodHint": "期间按报价日期计算。费用和损益表按实际发放日期显示佣金。"
   },
   "sellerReport": {
     "title": "销售业绩",
@@ -2778,7 +2934,8 @@
     "colClient": "客户",
     "colCargo": "货物",
     "colWho": "操作人",
-    "colMoney": "在册资金"
+    "colMoney": "在册资金",
+    "paidFromTill": "该入库单有从账户支付的费用。请先由会计作废——款项会退回账户。"
   },
   "customsImport": {
     "title": "海关基价库（导入）",
@@ -2838,5 +2995,118 @@
     "makeShared": "🏢 设为公共",
     "makePrivate": "👤 设为个人",
     "confirmUnshare": "将备忘移出公共列表？其他人将不再看到它。"
+  },
+  "pickups": {
+    "title": "工厂提货",
+    "new": "新提货",
+    "factories": "工厂",
+    "newFactory": "新工厂",
+    "empty": "暂无提货",
+    "rowSummary": "已提 {collected}/{stops} · {boxes} 箱",
+    "noCost": "未录入费用",
+    "noCostLong": "车已到，但未录入费用。",
+    "noFactories": "请先添加工厂。",
+    "ownerHint": "货主：客户代码（如 GS777）或箱上唛头。",
+    "destination": "目的仓库",
+    "plannedOn": "计划日期",
+    "plate": "车牌",
+    "driver": "司机",
+    "driverPhone": "司机电话",
+    "note": "备注",
+    "factory": "工厂",
+    "addStop": "添加工厂",
+    "removeStop": "移除工厂",
+    "removeStopConfirm": "从本次提货中移除该工厂？",
+    "addLine": "添加一行",
+    "removeLine": "删除此行",
+    "owner": "货主",
+    "ownerPlaceholder": "GS777",
+    "goods": "货物名称",
+    "factoryBoxes": "工厂数量（箱）",
+    "factoryShort": "工厂",
+    "driverShort": "司机",
+    "driverBoxes": "司机点数",
+    "lineProblem": "第{stop}个工厂第{line}行：需要货主、货物和箱数（方/公斤须为数字）。",
+    "factoryRequired": "请选择工厂。",
+    "create": "创建提货",
+    "save": "保存",
+    "saved": "已保存",
+    "editLines": "编辑明细",
+    "collect": "已提货",
+    "collectedAt": "已提 {at}",
+    "notCollected": "尚未提货",
+    "stampNote": "盖章/单据备注",
+    "markArrived": "已到达",
+    "cancel": "取消提货",
+    "cancelReason": "取消原因",
+    "costs": "车辆费用",
+    "costHint": "按体积分摊到已入库货物。目前已关联 {n} 个入库单。",
+    "candidatesTitle": "未关联的入库单",
+    "candidatesHint": "这些客户在该仓库的入库单。不会自动关联——请选择来自哪个工厂。",
+    "linkTo": "关联到工厂{seq}",
+    "noPickup": "未关联工厂提货",
+    "etaLine": "预计到达 {from} – {to}",
+    "estimate": "估算，按行程",
+    "unplaced": "地图上无位置：{names}",
+    "onMap": "在地图上查看",
+    "incomingTitle": "工厂来货",
+    "receiveThis": "收货",
+    "countHint": "工厂：{factory} · 司机：{driver}",
+    "homeNoCost": "{n} 个未录费用",
+    "homeUnlinked": "{n} 个有未关联入库单",
+    "factoryName": "工厂名称",
+    "phone": "电话",
+    "addressZh": "地址（中文）",
+    "goodsNote": "采购的货物",
+    "geoFound": "已保存。已找到地图位置——请核对后点击「✓ 正确」。",
+    "geoNotFound": "已保存，但未在地图上找到该地址——请手动设置位置。",
+    "pointNone": "无位置",
+    "pointConfirmed": "已确认",
+    "pointSuggested": "待确认",
+    "pointCorrect": "正确",
+    "pointPaste": "坐标或地图链接：29.31, 120.07",
+    "pointDatum": "来自哪个地图",
+    "datumChina": "中国地图（高德、腾讯）",
+    "datumWorld": "Google / OSM / GPS",
+    "pointSet": "设置位置",
+    "edit": "编辑",
+    "inactive": "已停用",
+    "deactivate": "停用",
+    "activate": "启用",
+    "status": {
+      "planned": "计划中",
+      "on_road": "在途",
+      "arrived": "已到达",
+      "cancelled": "已取消"
+    },
+    "tabs": {
+      "live": "进行中",
+      "arrived": "已到达",
+      "cancelled": "已取消",
+      "all": "全部"
+    },
+    "errors": {
+      "generic": "保存失败，请重试。",
+      "forbidden": "无权限。",
+      "validation": "数据不完整或有误。",
+      "bad_number": "数字格式错误。",
+      "cancelled": "提货已取消。",
+      "already_collected": "该工厂已标记为已提货。",
+      "stop_collected": "已提货的工厂不能移除。",
+      "stop_linked": "该工厂已有入库单——明细不可修改。",
+      "last_stop": "提货至少需要一个工厂。",
+      "too_many_stops": "每次提货最多 6 个工厂。",
+      "dest_locked": "已有入库单——不可更改仓库。",
+      "pickup_has_costs": "请先作废车辆费用。",
+      "pickup_has_receipts": "已关联入库单——请先解除关联。",
+      "reason_required": "请填写原因。",
+      "wrong_warehouse": "该提货前往其他仓库。",
+      "receipt_not_live": "入库单已作废或未确认。",
+      "factory_not_found": "未找到工厂。",
+      "client_not_found": "未找到客户。",
+      "warehouse_not_found": "仓库不存在或已停用。",
+      "bad_point": "无法识别坐标。例如：29.31, 120.07",
+      "no_point": "尚无地图位置。"
+    }
   }
 }

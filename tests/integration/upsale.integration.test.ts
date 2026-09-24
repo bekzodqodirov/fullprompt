@@ -23,13 +23,13 @@ import {
   tasks,
   users,
 } from '@/modules/platform/db/schema';
-import { openCalcRequest } from '@/modules/wms/calc/service';
+import { finishCalcRequest, openCalcRequest, takeCalcRequest } from '@/modules/wms/calc/service';
 import {
   recordOffer,
   sealCalc,
   setFreightZone,
 } from '@/modules/wms/calc/workspace';
-import { payUpsale, upsaleRows } from '@/modules/wms/calc/upsale-service';
+import { bySeller, payUpsale, upsaleRows } from '@/modules/wms/calc/upsale-service';
 import { voidExpense } from '@/modules/wms/accounting/service';
 
 /**
@@ -59,6 +59,7 @@ let accountId = '';
 let categoryId = '';
 const madeRequests: string[] = [];
 const madeExpenses: string[] = [];
+const madeDeals: string[] = [];
 let categoryBefore: unknown;
 let categoryExisted = false;
 let fxId = '';
@@ -156,6 +157,8 @@ afterAll(async () => {
     if (vs.length > 0) {
       await db.delete(calcOffers).where(inArray(calcOffers.versionId, vs.map((v) => v.id)));
     }
+    // A Готово-anchored offer names its request, not a version.
+    await db.delete(calcOffers).where(inArray(calcOffers.requestId, madeRequests));
     await db.delete(calcVersions).where(inArray(calcVersions.requestId, madeRequests));
     await db.delete(calcExtras).where(inArray(calcExtras.requestId, madeRequests));
     await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, madeRequests));
@@ -188,6 +191,10 @@ afterAll(async () => {
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
   await db.delete(leads).where(eq(leads.id, leadId));
   await db.delete(deals).where(eq(deals.id, dealId));
+  for (const extra of madeDeals) {
+    await db.delete(crmActivities).where(eq(crmActivities.entityId, extra));
+    await db.delete(deals).where(eq(deals.id, extra));
+  }
   // Configuration must not survive the run (#183): an extra live till and an
   // extra category change what every money screen renders next.
   await db.update(moneyAccounts).set({ active: false }).where(eq(moneyAccounts.id, accountId));
@@ -208,12 +215,13 @@ async function sealedJob(
     bandOverrideMin?: number | null;
     weightKg?: number;
     volumeM3?: number;
+    dealId?: string;
   } = {},
 ) {
   const request = await openCalcRequest(
     {
       entityType: opts.onLead ? 'lead' : 'deal',
-      entityId: opts.onLead ? leadId : dealId,
+      entityId: opts.onLead ? leadId : (opts.dealId ?? dealId),
       section: 'yolkira',
       fromCity: 'Yiwu',
       toCity: 'Toshkent',
@@ -255,11 +263,17 @@ async function payableJob(extra = 600) {
   const job = await sealedJob();
   const price = job.floor + extra;
   const offer = await recordOffer({ versionId: job.versionId }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
+  await invoiceAndCollect(dealId, price);
+  return { offerId: offer.id, upsaleUsd: extra, requestId: job.requestId, floor: job.floor, price };
+}
+
+/** The client is charged the price on the deal and pays it in full. */
+async function invoiceAndCollect(onDeal: string, price: number) {
   const day = new Date().toISOString().slice(0, 10);
   for (const type of ['charge', 'payment'] as const) {
     await db.insert(clientTransactions).values({
       clientId,
-      dealId,
+      dealId: onDeal,
       type,
       amount: String(price),
       currency: 'USD',
@@ -270,8 +284,9 @@ async function payableJob(extra = 600) {
       createdBy: actorId,
     });
   }
-  return { offerId: offer.id, upsaleUsd: extra };
 }
+
+const today = () => new Date().toISOString().slice(0, 10);
 
 const mine = async (offerId: string) =>
   (await upsaleRows('all', actorId, {})).rows.find((r) => r.offerId === offerId) ?? null;
@@ -386,6 +401,95 @@ describe('one sale, one commission', () => {
     const newId = await recalcFromSealed(job.requestId, ctx());
     madeRequests.push(newId);
     expect(await mine(offer.id)).toBeNull();
+  });
+
+  it('a PAID job that is corrected and re-quoted is not paid again (audit A18)', async () => {
+    const job = await payableJob(300);
+    const paid = await payUpsale([job.offerId], { accountId, currency: 'USD', expenseDate: today() }, ctx());
+    madeExpenses.push(paid.expenseId);
+    expect(paid.paidUsd).toBe(300);
+
+    // The VED corrects the job and seals it again at the SAME figure; the
+    // seller quotes the customer the same price again.
+    const { recalcFromSealed } = await import('@/modules/wms/calc/workspace');
+    const fixId = await recalcFromSealed(job.requestId, ctx());
+    madeRequests.push(fixId);
+    await setFreightZone(fixId, 'cn', ctx());
+    await sealCalc(fixId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    const v2 = await db.query.calcVersions.findFirst({ where: eq(calcVersions.requestId, fixId) });
+    // The premise: the correction's floor is the original's, so the new
+    // promise is worth exactly what was already paid.
+    expect(Number(v2!.totalUsd)).toBe(job.floor);
+
+    const same = await recordOffer({ versionId: v2!.id }, { clientPriceUsd: job.price, locale: 'uz' }, sellerCtx());
+    // One sale, one commission: nothing is owed on the re-quote…
+    expect(await mine(same.id)).toBeNull();
+    // …and the payment made stays on the owner's screen as the record of it,
+    // although its promise was corrected away.
+    const record = await mine(job.offerId);
+    expect(record!.state).toBe('paid');
+    expect(record!.paidUsd).toBe(300);
+
+    // A HIGHER re-quote on the corrected job pays only what it added.
+    const higher = await recordOffer(
+      { versionId: v2!.id },
+      { clientPriceUsd: job.price + 100, locale: 'uz' },
+      sellerCtx(),
+    );
+    expect((await mine(higher.id))!.payableUsd).toBe(100);
+
+    // The scoreboard counts the sale once: 300 handed over + 100 still owed,
+    // not both promises' whole differences (300 + 400).
+    const sale = (await upsaleRows('all', actorId, {})).rows.filter((r) =>
+      [job.offerId, higher.id].includes(r.offerId),
+    );
+    expect(bySeller(sale)[0]).toMatchObject({ earnedUsd: 400, paidUsd: 300, waitingUsd: 100 });
+  });
+
+  it('a PAID Готово commission is not paid again when the card is later sealed (audit A18)', async () => {
+    // Its own deal: a paid answer counts against every later floor on its
+    // card, and the shared deal carries every other test in this file.
+    const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+    const [d] = await db
+      .insert(deals)
+      .values({ code: `UPA-${SUFFIX}`, clientId, stageId: stage!.id, title: 'Upsale answer fixture', createdBy: actorId })
+      .returning();
+    madeDeals.push(d!.id);
+
+    const opened = await openCalcRequest(
+      {
+        entityType: 'deal',
+        entityId: d!.id,
+        section: 'rastamojka',
+        fromCity: 'Yiwu',
+        toCity: 'Toshkent',
+        weightKg: 500,
+        volumeM3: 10,
+        items: [{ name: `monitor ${tag()}`, quantity: 100 }],
+        source: 'card',
+      },
+      ctx(),
+    );
+    madeRequests.push(opened.id);
+    await takeCalcRequest(opened.id, ctx());
+    await finishCalcRequest(opened.id, { amount: 1000, currency: 'USD', note: 'gotovo' }, ctx());
+    const onAnswer = await recordOffer({ requestId: opened.id }, { clientPriceUsd: 1300, locale: 'uz' }, sellerCtx());
+    await invoiceAndCollect(d!.id, 1300);
+    const paid = await payUpsale([onAnswer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());
+    madeExpenses.push(paid.expenseId);
+    expect(paid.paidUsd).toBe(300);
+
+    // The VED then does the job properly and seals it on the same card, and
+    // the seller re-quotes 300 above the sealed floor.
+    const sealed = await sealedJob({ dealId: d!.id });
+    const reQuote = await recordOffer(
+      { versionId: sealed.versionId },
+      { clientPriceUsd: sealed.floor + 300, locale: 'uz' },
+      sellerCtx(),
+    );
+    // Before the fix: payable 300 again — the same sale's commission twice.
+    expect(await mine(reQuote.id)).toBeNull();
+    expect((await mine(onAnswer.id))!.state).toBe('paid');
   });
 });
 

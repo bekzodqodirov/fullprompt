@@ -30,3 +30,19 @@ export function toRateToUsd(unitsPerUsd: number): number | null {
   if (!Number.isFinite(unitsPerUsd) || unitsPerUsd <= 0) return null;
   return Math.round((1 / unitsPerUsd) * 1e12) / 1e12;
 }
+
+/**
+ * A new rate that moves more than a fifth from the one standing is asked
+ * about before it is saved (audit A1). The form opened on CNY with the so'm's
+ * «12500» as its placeholder, so typing the so'm figure without touching the
+ * select stored CNY at 1/12500 — every CNY cost in the window re-priced about
+ * 1750× lower, and every payment entered meanwhile frozen at it. No cap would
+ * be right for every currency; a jump from the currency's OWN last rate is.
+ */
+export const RATE_JUMP = 0.2;
+
+export function isRateJump(previousUnits: number | null, nextUnits: number): boolean {
+  if (previousUnits === null || !Number.isFinite(previousUnits) || previousUnits <= 0) return false;
+  if (!Number.isFinite(nextUnits) || nextUnits <= 0) return false;
+  return Math.abs(nextUnits - previousUnits) / previousUnits > RATE_JUMP;
+}

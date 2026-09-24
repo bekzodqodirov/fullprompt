@@ -1,6 +1,14 @@
 import { and, asc, eq, gte, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
+import {
+  dealWonOtherCurrencySql,
+  dealWonUsdSql,
+  leadCurrencySql,
+  leadWonOtherCurrencySql,
+  leadWonUsdSql,
+} from './won-money';
 import { db } from '../../platform/db/client';
 import { deals, dealStages, leads, leadSources, leadStages, users } from '../../platform/db/schema';
+import { addDays, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The sales analytics page's one fetch (round 98, owner: «dunyo standartlarida
@@ -16,9 +24,11 @@ import { deals, dealStages, leads, leadSources, leadStages, users } from '../../
  * of leads is the business growing and must never become the number of
  * round trips.
  *
- * Days are UTC days — the house convention (round 47): `/bugun`, `parseDue`
- * and the trend here must all cut midnight in the same place or the same
- * lead lands on two different days on two screens.
+ * Days are Tashkent days (R5, the owner's answer a): the period's bounds,
+ * the page's presets and the trend bars must all cut midnight in the same
+ * place or the same lead lands on two different days on two screens. (The
+ * tasks' all-day convention, round 47, is the one clock left on UTC — it is
+ * not read here.)
  */
 
 export type Period = { from: Date; to: Date };
@@ -121,8 +131,10 @@ function leadFilterConds(f: AnalyticsFilters): SQL[] {
   else if (f.owner) conds.push(eq(leads.ownerId, f.owner));
   if (f.source === 'none') conds.push(isNull(leads.sourceId));
   else if (f.source) conds.push(eq(leads.sourceId, f.source));
-  if (f.amountMin !== undefined) conds.push(sql`${leads.quotedAmount} >= ${f.amountMin}`);
-  if (f.amountMax !== undefined) conds.push(sql`${leads.quotedAmount} <= ${f.amountMax}`);
+  // A price filter is typed in dollars, so it compares dollar quotes only
+  // (audit A19) — «narx ≥ 1000» would otherwise match every so'm quote.
+  if (f.amountMin !== undefined) conds.push(sql`(${leadCurrencySql()} = 'USD' AND ${leads.quotedAmount} >= ${f.amountMin})`);
+  if (f.amountMax !== undefined) conds.push(sql`(${leadCurrencySql()} = 'USD' AND ${leads.quotedAmount} <= ${f.amountMax})`);
   if (f.volMin !== undefined) conds.push(sql`${leads.quotedVolumeM3} >= ${f.volMin}`);
   if (f.volMax !== undefined) conds.push(sql`${leads.quotedVolumeM3} <= ${f.volMax}`);
   if (f.kgMin !== undefined) conds.push(sql`${leads.quotedWeightKg} >= ${f.kgMin}`);
@@ -135,8 +147,8 @@ function dealFilterConds(f: AnalyticsFilters): SQL[] {
   const conds: SQL[] = [];
   if (f.owner === 'none') conds.push(isNull(deals.ownerId));
   else if (f.owner) conds.push(eq(deals.ownerId, f.owner));
-  if (f.amountMin !== undefined) conds.push(sql`${deals.quotedAmount} >= ${f.amountMin}`);
-  if (f.amountMax !== undefined) conds.push(sql`${deals.quotedAmount} <= ${f.amountMax}`);
+  if (f.amountMin !== undefined) conds.push(sql`(${deals.quotedCurrency} = 'USD' AND ${deals.quotedAmount} >= ${f.amountMin})`);
+  if (f.amountMax !== undefined) conds.push(sql`(${deals.quotedCurrency} = 'USD' AND ${deals.quotedAmount} <= ${f.amountMax})`);
   if (f.volMin !== undefined) conds.push(sql`${deals.quotedVolumeM3} >= ${f.volMin}`);
   if (f.volMax !== undefined) conds.push(sql`${deals.quotedVolumeM3} <= ${f.volMax}`);
   if (f.kgMin !== undefined) conds.push(sql`${deals.quotedWeightKg} >= ${f.kgMin}`);
@@ -161,15 +173,17 @@ export type SalesAnalytics = Awaited<ReturnType<typeof salesAnalytics>>;
  * never `updated_at` (round 98's two clocks). One lean query, because the
  * home page is the most-opened screen and `salesAnalytics` is ~14.
  *
- * `wonUsd` is safe unfiltered here: a LEAD's quote currency is USD-only when
- * priced (round 71) — unlike deals, where the sum must filter.
+ * `wonUsd` is dollars only (`won-money.ts`): this comment used to call the
+ * sum safe unfiltered because «a lead's quote is USD-only», and the lead form
+ * offers UZS and CNY — audit A19.
  */
 export async function decidedLeadCounts(from: Date, to: Date) {
   const [row] = await db
     .select({
       won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
       lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-      wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+      wonUsd: leadWonUsdSql(),
+      wonOther: leadWonOtherCurrencySql(),
     })
     .from(leads)
     .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
@@ -178,6 +192,7 @@ export async function decidedLeadCounts(from: Date, to: Date) {
     won: Number(row?.won ?? 0),
     lost: Number(row?.lost ?? 0),
     wonUsd: money(row?.wonUsd),
+    wonOtherCurrency: Number(row?.wonOther ?? 0),
   };
 }
 
@@ -211,7 +226,8 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
         .select({
           won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
           lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-          wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+          wonUsd: leadWonUsdSql(),
+          wonOther: leadWonOtherCurrencySql(),
           cycleDays: sql<string>`coalesce(avg(extract(epoch from ${leads.closedAt} - ${leads.createdAt})) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
         })
         .from(leads)
@@ -224,10 +240,10 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
         .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
         .where(openWhere),
 
-      // The trend: arrivals and wins per UTC day, drawn as bars.
+      // The trend: arrivals and wins per Tashkent day, drawn as bars.
       db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${leads.createdAt} AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
+          day: sql<string>`to_char(date_trunc('day', ${leads.createdAt} AT TIME ZONE 'Asia/Tashkent'), 'YYYY-MM-DD')`,
           n: sql<number>`count(*)`,
         })
         .from(leads)
@@ -237,7 +253,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
 
       db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${leads.closedAt} AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
+          day: sql<string>`to_char(date_trunc('day', ${leads.closedAt} AT TIME ZONE 'Asia/Tashkent'), 'YYYY-MM-DD')`,
           n: sql<number>`count(*)`,
         })
         .from(leads)
@@ -266,7 +282,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
           name: sql<string>`coalesce(${leadSources.name}, '—')`,
           won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
           lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-          wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+          wonUsd: leadWonUsdSql(),
         })
         .from(leads)
         .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
@@ -288,7 +304,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
           ownerId: leads.ownerId,
           won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
           lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-          wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+          wonUsd: leadWonUsdSql(),
           cycleDays: sql<string>`coalesce(avg(extract(epoch from ${leads.closedAt} - ${leads.createdAt})) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
         })
         .from(leads)
@@ -348,7 +364,8 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
             .select({
               won: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} = 'won')`,
               lost: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} = 'lost')`,
-              wonUsd: sql<string>`coalesce(sum(${deals.quotedAmount}) FILTER (WHERE ${dealStages.kind} = 'won'), 0)`,
+              wonUsd: dealWonUsdSql(),
+              wonOther: dealWonOtherCurrencySql(),
               open: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} NOT IN ('won','lost'))`,
             })
             .from(deals)
@@ -433,6 +450,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
       lost,
       winRate: pct(won, won + lost),
       wonUsd: money(decided[0]?.wonUsd),
+      wonOtherCurrency: Number(decided[0]?.wonOther ?? 0),
       cycleDays: Math.round((Number(decided[0]?.cycleDays ?? 0) / 86400) * 10) / 10,
       open: Number(openNow[0]?.n ?? 0),
     },
@@ -471,6 +489,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
           won: Number(d?.won ?? 0),
           lost: Number(d?.lost ?? 0),
           wonUsd: money(d?.wonUsd),
+          wonOtherCurrency: Number(d?.wonOther ?? 0),
           open: Number(d?.open ?? 0),
           winRate: pct(Number(d?.won ?? 0), Number(d?.won ?? 0) + Number(d?.lost ?? 0)),
         }
@@ -483,30 +502,32 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
  * filters' way (#514: everything out of a URL is checked or dropped). The
  * screen's `gacha` is INCLUSIVE — a person asking «up to the 12th» means the
  * 12th's evening — so the query bound is the next midnight, exclusive.
- * Default: the current UTC month. An impossible calendar day ('2026-02-30')
- * is DROPPED, not parsed: V8 quietly rolls it over to March 2nd, so without
- * the round-trip check a typo'd date read as a silently shifted period.
+ * Default: the current month, in Tashkent — and every bound is a TASHKENT
+ * midnight (R5): a lead won at 02:00 on the 1st belongs to the new month,
+ * not the old one. An impossible calendar day ('2026-02-30') is DROPPED, not parsed:
+ * V8 quietly rolls it over to March 2nd, so without the round-trip check a
+ * typo'd date read as a silently shifted period.
  */
-export function readPeriod(params: { dan?: string; gacha?: string }): Period & { dan: string; gacha: string } {
+export function readPeriod(
+  params: { dan?: string; gacha?: string },
+  now: Date = new Date(),
+): Period & { dan: string; gacha: string } {
   const dayOf = (value: string | undefined) => {
     if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
     const parsed = new Date(`${value}T00:00:00Z`);
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
-      ? parsed
+      ? value
       : undefined;
   };
-  const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-  const fromDay = dayOf(params.dan) ?? monthStart;
-  let toDay = dayOf(params.gacha) ?? today;
-  if (toDay < fromDay) toDay = fromDay;
+  const dan = dayOf(params.dan) ?? tashkentMonthStart(now);
+  let gacha = dayOf(params.gacha) ?? tashkentDay(now);
+  if (gacha < dan) gacha = dan;
 
   return {
-    from: fromDay,
-    to: new Date(toDay.getTime() + 86_400_000),
-    dan: fromDay.toISOString().slice(0, 10),
-    gacha: toDay.toISOString().slice(0, 10),
+    from: tashkentDayStart(dan),
+    to: tashkentDayStart(addDays(gacha, 1)),
+    dan,
+    gacha,
   };
 }

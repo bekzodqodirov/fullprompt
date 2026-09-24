@@ -1,4 +1,5 @@
-import { and, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+import { latestTxDate } from './dates';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -13,6 +14,9 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
+import { batchRoute } from '../batches/internal';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { soleDealAboard } from '../batches/lots';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -28,10 +32,39 @@ export class FinanceError extends Error {
   }
 }
 
+/**
+ * The one sign rule of the client ledger (0101): a charge and a refund RAISE
+ * what the client owes us, a payment lowers it. Every balance restates this
+ * through `signedUsdSql` — `CASE WHEN type = 'charge' … ELSE -…` read a refund
+ * as a payment, i.e. money we handed back as money we received, and
+ * `tests/unit/client-ledger-sign.test.ts` keeps that shape out of `src/`.
+ */
+export const LEDGER_TYPES = ['charge', 'payment', 'refund'] as const;
+export type LedgerType = (typeof LEDGER_TYPES)[number];
+
+/** +amount_usd for a charge or a refund, −amount_usd for a payment. */
+export function signedUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
+  return sql`(CASE WHEN ${table.type} = 'payment' THEN -${table.amountUsd} ELSE ${table.amountUsd} END)`;
+}
+
+/**
+ * Money RECEIVED net of money handed back: +payment, −refund, 0 for a charge.
+ * «To'landi» on a screen that also shows a balance must be this, or the two
+ * columns stop adding up to it.
+ */
+export function netPaidUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
+  return sql`(CASE WHEN ${table.type} = 'payment' THEN ${table.amountUsd} WHEN ${table.type} = 'refund' THEN -${table.amountUsd} ELSE 0 END)`;
+}
+
+/** The same rule for a row already in hand (screens, the cabinet, the bot). */
+export function signedUsd(row: { type: string; amountUsd: number }): number {
+  return row.type === 'payment' ? -row.amountUsd : row.amountUsd;
+}
+
 export const transactionSchema = z
   .object({
     clientId: z.string().uuid(),
-    type: z.enum(['charge', 'payment']),
+    type: z.enum(LEDGER_TYPES),
     amount: z.number().positive().max(1_000_000_000),
     currency: z.string().length(3).toUpperCase(),
     method: z.enum(['cash', 'card', 'transfer']).optional(),
@@ -47,11 +80,12 @@ export const transactionSchema = z
     accountId: z.string().uuid().optional().or(z.literal('')),
     note: z.string().trim().max(2000).optional().or(z.literal('')),
   })
-  .refine((v) => v.type === 'payment' || !v.method, { message: 'method_on_charge' });
+  .refine((v) => v.type !== 'charge' || !v.method, { message: 'method_on_charge' });
 export type TransactionInput = z.infer<typeof transactionSchema>;
 
 export async function addTransaction(input: TransactionInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  if (input.txDate > latestTxDate()) throw new FinanceError('future_date');
   // A named deal must be THIS client's. The deal id steers the deferral
   // netting (#251) — a payment parked on another client's deal would quietly
   // re-open their handover gate — and a select's value is a forged post until
@@ -59,6 +93,31 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   if (input.dealId) {
     const deal = await db.query.deals.findFirst({ where: eq(deals.id, input.dealId) });
     if (!deal || deal.clientId !== input.clientId) throw new FinanceError('deal_mismatch');
+  }
+  // A price on an INTERNAL truck is refused here, not merely left off the
+  // screen (#531): the pricing form posts a batch id, and a hand-built post
+  // would otherwise bill a client for a leg the owner never bills (C1a,
+  // 2026-09-24). A payment may still name any truck — money received is not
+  // a price.
+  let dealId = input.dealId || null;
+  if (input.type === 'charge' && input.batchId) {
+    const route = await batchRoute(input.batchId);
+    if (!route) throw new FinanceError('batch_not_found');
+    if (route.internal) throw new FinanceError('internal_batch');
+    // A price set on the truck is also the JOB's money when the client's
+    // cargo aboard is one deal's and nothing else (owner's R3a, 2026-09-24:
+    // «mashinada qo'yilgan narx bitimga ham yozilsin»). Derived here from the
+    // cargo, never taken from the form: the pricing screen only ANNOUNCES it,
+    // and a posted deal id would be a forged post until checked (#507).
+    if (!dealId) dealId = await soleDealAboard(input.batchId, input.clientId);
+  }
+  // A refund is money that LEFT a kassa for the client (R6a): it names the
+  // box, never a truck (it is not a price) and never a partner (a partner-
+  // routed payment is the settlement screen's). The database says the same
+  // (client_transactions_refund_check); refused here in words first.
+  if (input.type === 'refund') {
+    if (!input.accountId) throw new FinanceError('account_required');
+    if (input.batchId) throw new FinanceError('refund_on_batch');
   }
   // A named cash box must speak the row's currency. The till balances sum
   // NATIVE amounts per box, so 500 USD dropped into a som till reads as 500
@@ -88,10 +147,10 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
       currency: input.currency,
       rateToUsd: String(rate),
       amountUsd: String(amountUsd),
-      method: input.type === 'payment' ? (input.method ?? 'cash') : null,
+      method: input.type === 'charge' ? null : (input.method ?? 'cash'),
       txDate: input.txDate,
       batchId: input.batchId ?? null,
-      dealId: input.dealId || null,
+      dealId,
       accountId: input.accountId || null,
       note: input.note || null,
       createdBy: ctx.actorId,
@@ -107,9 +166,56 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
       amount: input.amount,
       currency: input.currency,
       amountUsd,
+      // Named when set: a truck price can land on a deal nobody typed (R3a),
+      // and the history is where somebody will ask why.
+      ...(dealId ? { dealId } : {}),
     },
   });
   return row!;
+}
+
+/**
+ * Put an unplaced payment into the cash box it actually landed in (audit A2).
+ *
+ * A payment saved before the kassa became required took its amount off the
+ * Balans receivable and put it in no till, and nothing on any screen could
+ * say where it went — the only UPDATE this table had was the void. The claim
+ * is the WHERE: only a live payment with no box and no partner (a settlement's
+ * money is placed in the firm's account, never a till) can be placed, once,
+ * and only into a box speaking its currency — the ledger rule every door
+ * already asks.
+ */
+export async function placePayment(id: string, accountId: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  const row = await db.query.clientTransactions.findFirst({ where: eq(clientTransactions.id, id) });
+  if (!row || row.type !== 'payment' || row.voidedAt) throw new FinanceError('not_found');
+  if (row.partnerId) throw new FinanceError('settlement_placed');
+  const [account] = await db
+    .select({ currency: moneyAccounts.currency, active: moneyAccounts.active })
+    .from(moneyAccounts)
+    .where(eq(moneyAccounts.id, accountId));
+  if (!account || !account.active) throw new FinanceError('not_found');
+  if (account.currency !== row.currency) throw new FinanceError('account_currency_mismatch');
+  const placed = await db
+    .update(clientTransactions)
+    .set({ accountId })
+    .where(
+      and(
+        eq(clientTransactions.id, id),
+        isNull(clientTransactions.accountId),
+        isNull(clientTransactions.partnerId),
+        isNull(clientTransactions.voidedAt),
+      ),
+    )
+    .returning({ id: clientTransactions.id });
+  if (placed.length === 0) throw new FinanceError('already_placed');
+  await writeAudit(db, ctx, {
+    entityType: 'client_transaction',
+    entityId: id,
+    action: 'update',
+    before: { accountId: null },
+    after: { accountId },
+  });
 }
 
 export async function voidTransaction(id: string, reason: string, ctx: AuditContext) {
@@ -156,10 +262,34 @@ export async function voidTransaction(id: string, reason: string, ctx: AuditCont
 }
 
 /** USD balance of one client: Σ charges − Σ payments (active rows only). */
+/**
+ * Live ledger rows dated after today — typed before `future_date` existed.
+ * The balance screens count them and the ageing report (as of today) does
+ * not, so the report says how many there are instead of silently differing.
+ *
+ * «Today» is Tashkent's and bound from here, NOT the database's
+ * `CURRENT_DATE`: the server runs in UTC, so from midnight to 05:00 in the
+ * office the report's own default `asOf` (Tashkent) and this count (UTC)
+ * would be a day apart and a row dated today called «future» by the very
+ * page that ages it (R5).
+ */
+export async function futureDatedEntries(
+  today: string = tashkentDay(),
+): Promise<{ count: number; usd: number }> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      usd: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
+    })
+    .from(clientTransactions)
+    .where(and(isNull(clientTransactions.voidedAt), sql`${clientTransactions.txDate} > ${today}::date`));
+  return { count: Number(row?.count ?? 0), usd: Math.round(Number(row?.usd ?? 0) * 100) / 100 };
+}
+
 export async function clientBalanceUsd(clientId: string): Promise<number> {
   const [row] = await db
     .select({
-      balance: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END), 0)`,
+      balance: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
     })
     .from(clientTransactions)
     .where(and(eq(clientTransactions.clientId, clientId), isNull(clientTransactions.voidedAt)));
@@ -175,9 +305,11 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
  * still presses the override, and the reason goes back to being a Telegram
  * message nobody can find later.
  *
- * Only movements ON a deferred deal count. A charge posted from batch pricing
- * carries no deal, so an old unrelated debt keeps blocking exactly as it
- * should: the deferral was granted for one job, not for the client.
+ * Only movements ON a deferred deal count, so an old unrelated debt keeps
+ * blocking exactly as it should: the deferral was granted for one job, not for
+ * the client. A charge posted from batch pricing carries a deal only when the
+ * client's cargo on that truck is one deal's and nothing else (R3a) — then it
+ * IS that job's price and the deferral covers it; otherwise it carries none.
  *
  * What is deferred is what is still OWED on that job — charges MINUS payments
  * against it. Summing the charges alone was a hole in the direction that
@@ -198,12 +330,17 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
  * stricter than the gate that already released the cargo. A deferral whose
  * date has passed is no longer a deferral and the hourly sweep may not have
  * run yet, so neither caller may honour it in the meantime (#251).
+ *
+ * «Today» is Tashkent's, bound from JS — the same day `activeDeferrals` and
+ * `resolveExpiredDeferrals` compare against (R5). The three move together: a
+ * deferral read as live here and as expired there would open the handover
+ * gate on one screen and name the debtor on the next.
  */
-export function liveDeferralWhere() {
+export function liveDeferralWhere(today: string = tashkentDay()) {
   return and(
     sql`${deals.deferredAt} IS NOT NULL`,
     isNull(deals.deferralEndedAt),
-    sql`(${deals.deferUntilAllArrived} OR ${deals.deferUntilDate} >= CURRENT_DATE)`,
+    sql`(${deals.deferUntilAllArrived} OR ${deals.deferUntilDate} >= ${today}::date)`,
   );
 }
 
@@ -211,9 +348,7 @@ export async function deferredBalanceUsd(clientId: string): Promise<number> {
   const owedPerDeal = db
     .select({
       owed: sql<string>`greatest(
-        coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
-                          THEN ${clientTransactions.amountUsd}
-                          ELSE -${clientTransactions.amountUsd} END), 0), 0)`.as('owed'),
+        coalesce(sum(${signedUsdSql()}), 0), 0)`.as('owed'),
     })
     .from(clientTransactions)
     .innerJoin(deals, eq(clientTransactions.dealId, deals.id))
@@ -242,6 +377,7 @@ export async function clientBalances(ownerId?: string) {
       clientName: clients.name,
       chargesUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
       paymentsUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment'), 0)`,
+      refundsUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'refund'), 0)`,
       lastAt: sql<string>`max(${clientTransactions.createdAt})`,
     })
     .from(clientTransactions)
@@ -262,8 +398,12 @@ export async function clientBalances(ownerId?: string) {
       clientCode: r.clientCode,
       clientName: r.clientName,
       chargesUsd: Math.round(Number(r.chargesUsd) * 100) / 100,
-      paymentsUsd: Math.round(Number(r.paymentsUsd) * 100) / 100,
-      balanceUsd: Math.round((Number(r.chargesUsd) - Number(r.paymentsUsd)) * 100) / 100,
+      // NET of what was handed back (R6a), so the screen's two columns still
+      // add up to the balance beside them.
+      paymentsUsd: Math.round((Number(r.paymentsUsd) - Number(r.refundsUsd)) * 100) / 100,
+      refundsUsd: Math.round(Number(r.refundsUsd) * 100) / 100,
+      balanceUsd:
+        Math.round((Number(r.chargesUsd) - Number(r.paymentsUsd) + Number(r.refundsUsd)) * 100) / 100,
       lastAt: r.lastAt,
     }))
     .sort((a, b) => b.balanceUsd - a.balanceUsd);
@@ -338,11 +478,31 @@ export interface PaymentRegisterRow {
   enteredBy: string | null;
 }
 
+/**
+ * «Payments with no till», whenever they were made (audit A2): the accountant's
+ * home counter, the Balans line and the register's unplaced view read this one
+ * predicate. Since cash boxes exist only — a payment older than the first box
+ * is inside some box's counted opening balance and has nowhere to be placed.
+ */
+export function unplacedPaymentSql() {
+  return and(
+    isNull(clientTransactions.accountId),
+    isNull(clientTransactions.partnerId),
+    sql`${clientTransactions.txDate} >= (SELECT min(created_at)::date FROM money_accounts)`,
+  );
+}
+
 export async function paymentsRegister(
   from: string,
   to: string,
   ownerId?: string,
+  opts: { unplaced?: boolean } = {},
 ): Promise<{ rows: PaymentRegisterRow[]; totalUsd: number; count: number; truncated: boolean }> {
+  // The unplaced view ignores the period: a payment left unplaced in March is
+  // still work in September.
+  const when = opts.unplaced
+    ? unplacedPaymentSql()
+    : and(gte(clientTransactions.txDate, from), lte(clientTransactions.txDate, to));
   const rows = await db
     .select({
       id: clientTransactions.id,
@@ -368,8 +528,7 @@ export async function paymentsRegister(
       and(
         eq(clientTransactions.type, 'payment'),
         isNull(clientTransactions.voidedAt),
-        gte(clientTransactions.txDate, from),
-        lte(clientTransactions.txDate, to),
+        when,
         ownerId ? eq(clients.salesManagerId, ownerId) : undefined,
       ),
     )
@@ -391,8 +550,7 @@ export async function paymentsRegister(
       and(
         eq(clientTransactions.type, 'payment'),
         isNull(clientTransactions.voidedAt),
-        gte(clientTransactions.txDate, from),
-        lte(clientTransactions.txDate, to),
+        when,
         // The total has to be scoped with the rows or the screen contradicts
         // itself — «jami» over the company above a list of one seller's
         // payments. A subquery rather than a join, so the unscoped path stays
@@ -432,9 +590,7 @@ export async function balancesForClients(
   const balances = await db
     .select({
       clientId: clientTransactions.clientId,
-      balance: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
-                                             THEN ${clientTransactions.amountUsd}
-                                             ELSE -${clientTransactions.amountUsd} END), 0)`,
+      balance: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
     })
     .from(clientTransactions)
     .where(and(inArray(clientTransactions.clientId, ids), isNull(clientTransactions.voidedAt)))
@@ -445,9 +601,7 @@ export async function balancesForClients(
       clientId: clientTransactions.clientId,
       dealId: clientTransactions.dealId,
       owed: sql<string>`greatest(
-        coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge'
-                          THEN ${clientTransactions.amountUsd}
-                          ELSE -${clientTransactions.amountUsd} END), 0), 0)`.as('owed'),
+        coalesce(sum(${signedUsdSql()}), 0), 0)`.as('owed'),
     })
     .from(clientTransactions)
     .innerJoin(deals, eq(clientTransactions.dealId, deals.id))

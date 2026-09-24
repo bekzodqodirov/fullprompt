@@ -104,7 +104,9 @@ describe('«a void box is not cargo» — the closed set', () => {
       'src/modules/wms/reports/queries.ts',
       'src/modules/wms/accounting/reports.ts',
       'src/modules/wms/costing/service.ts',
-      'src/app/(protected)/batches/[id]/pricing/page.tsx',
+      // The pricing screen and the prixod cost grid read the truck through
+      // ONE helper since 2026-09-24; the rule lives there, not in the page.
+      'src/modules/wms/batches/lots.ts',
       'src/app/(protected)/batches/page.tsx',
       'src/app/(protected)/trucks/page.tsx',
       'src/modules/wms/finance/client-cargo.ts',

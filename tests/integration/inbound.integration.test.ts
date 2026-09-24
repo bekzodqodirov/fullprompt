@@ -15,6 +15,7 @@ import { nextInboundOwner } from '@/modules/wms/crm/routing';
 import { followUps } from '@/modules/wms/crm/service';
 import { clientFeed } from '@/modules/wms/crm/feed';
 import { createClient } from '@/modules/platform/clients/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * A lead that arrives by itself — from an advert, the public form, the bot.
@@ -28,7 +29,7 @@ import { createClient } from '@/modules/platform/clients/service';
 
 const STAMP = String(Date.now()).slice(-7);
 const NAME = `Reklama lid ${STAMP}`;
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = tashkentDay();
 
 // Real Uzbek-shaped numbers, distinct in their last NINE digits — which is
 // what every phone comparison in this app actually matches on.

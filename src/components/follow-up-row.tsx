@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { setFollowUpAction } from '@/app/(protected)/crm/actions';
+import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * One «bugun qo'ng'iroq» row, with the two taps that take it off the list.
@@ -51,13 +52,13 @@ export function FollowUpRow({
   };
 
   const tomorrow = () => {
-    const date = new Date(`${dueOn}T00:00:00Z`);
-    const today = new Date();
     // From TOMORROW, not from the row's own (possibly weeks-old) date — «put
-    // it off a day» means a day from now, whatever the backlog says.
-    const base = date.getTime() > today.getTime() ? date : today;
-    base.setUTCDate(base.getUTCDate() + 1);
-    return base.toISOString().slice(0, 10);
+    // it off a day» means a day from now, whatever the backlog says. «Now»
+    // is Tashkent's day, read at the PRESS (R5): in UTC, «Ertaga» pressed
+    // before 05:00 in the office booked the call for TODAY, and a date baked
+    // in at render would go stale in a tab left open overnight.
+    const today = tashkentDay();
+    return addDays(dueOn > today ? dueOn : today, 1);
   };
 
   if (gone) return null;

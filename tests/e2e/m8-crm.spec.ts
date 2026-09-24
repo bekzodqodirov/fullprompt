@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Phase 2.3 CRM end to end: the owner configures the funnel and adds a field
@@ -104,7 +105,7 @@ test('a lead walks the funnel and becomes a client', async ({ page }) => {
   await page.getByTestId('feed-note-save').click();
   await expect(page.getByText('narx aytdim')).toBeVisible();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
   await page.getByTestId('lead-edit-panel').click();
   const edit = page.locator('form').filter({ has: page.getByTestId('save-lead') });
   await edit.locator('input[name="nextActionAt"]').fill(today);

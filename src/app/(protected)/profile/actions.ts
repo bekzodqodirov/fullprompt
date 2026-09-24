@@ -8,6 +8,13 @@ import { getSessionUser, requestMeta } from '@/modules/platform/auth/session';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { listFromGroups, MUTE_GROUPS, type MuteGroup } from '@/modules/platform/notifications/mutes';
 import { CallsError, createCallDevice, revokeCallDevice } from '@/modules/wms/calls/service';
+import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
+import {
+  ExpenseRequestError,
+  expenseRequestSchema,
+  reporterWarehouses,
+  requestExpense,
+} from '@/modules/wms/accounting/expense-requests';
 
 /** Self-service Telegram mute settings (spec §11) — no special permission. */
 export async function setNotificationMutesAction(formData: FormData): Promise<void> {
@@ -73,6 +80,41 @@ export async function revokeCallDeviceAction(deviceId: string): Promise<CallDevi
   } catch (err) {
     if (err instanceof CallsError) return { error: err.code };
     console.error('[call-device]', err);
+    return { error: 'failed' };
+  }
+  revalidatePath('/profile');
+  return { ok: true };
+}
+
+/**
+ * The rasxod xabari from /profile (owner M1a): the seller, the logist and the
+ * VED spend money too and belong to no warehouse, so this door asks for a
+ * signed-in, ACTIVE person and nothing more (`getSessionUser` answers null
+ * for a deactivated account) — no `receipts.create`, which none of them hold.
+ * The reporter is the SESSION's user, never an id from the post; a warehouse,
+ * when one is named, must be one of their own assignments (#514).
+ */
+export async function requestOwnExpenseAction(
+  input: unknown,
+): Promise<{ ok?: boolean; error?: string }> {
+  const user = await getSessionUser();
+  if (!user) return { error: 'unauthenticated' };
+  const parsed = expenseRequestSchema.safeParse(input);
+  if (!parsed.success) return { error: 'validation' };
+  try {
+    const warehouseId = parsed.data.warehouseId;
+    if (warehouseId) {
+      const own = await reporterWarehouses(user.id);
+      if (!own.some((wh) => wh.id === warehouseId)) return { error: 'forbidden' };
+    }
+    const meta = await requestMeta();
+    await requestExpense(parsed.data, { actorId: user.id, ...meta });
+    await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
+  } catch (err) {
+    if (err instanceof ExpenseRequestError) return { error: err.code };
+    // #472's morning: 0101 made the warehouse nullable, and the one machine
+    // where it may still be NOT NULL is production mid-deploy.
+    console.error('[rasxod]', err);
     return { error: 'failed' };
   }
   revalidatePath('/profile');

@@ -75,9 +75,14 @@ export async function requestExpenseAction(
 ): Promise<{ ok?: boolean; error?: string }> {
   const parsed = expenseRequestSchema.safeParse(input);
   if (!parsed.success) return { error: 'validation' };
+  // This door authorises AT a warehouse, so it still demands one: the schema
+  // made it optional for the /profile door (0101), and `authorize` with no
+  // warehouse would be the bare check #514 exists to refuse.
+  const warehouseId = parsed.data.warehouseId;
+  if (!warehouseId) return { error: 'validation' };
   let actor: Actor;
   try {
-    actor = await authorize('receipts.create', { warehouseId: parsed.data.warehouseId });
+    actor = await authorize('receipts.create', { warehouseId });
   } catch (err) {
     if (err instanceof AuthError) return { error: 'forbidden' };
     throw err;

@@ -5,7 +5,7 @@ import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf
 import { getSetting } from '../../platform/settings/service';
 import { cjkSubsetFor, pdfTextCleaner } from '../labels/cjk-font';
 import { clientLabels, type ClientLocale } from '../../platform/telegram/client-labels';
-import { offerLines, type OfferInput } from './offer';
+import { offerDate, offerLines, type OfferInput } from './offer';
 
 /**
  * The offer as an A4 sheet the seller can send a customer — the round-112
@@ -80,12 +80,6 @@ function num(value: number | null, digits: number): string {
   return value.toFixed(digits).replace(/\.?0+$/, (m) => (m.startsWith('.') ? '' : m));
 }
 
-function fmtDate(d: Date): string {
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  return `${dd}.${mm}.${d.getUTCFullYear()}`;
-}
-
 /** Cut a string to a width, with an ellipsis, by MEASURING it — pdf-lib wraps nothing. */
 function fit(text: string, font: PDFFont, size: number, maxW: number): string {
   if (font.widthOfTextAtSize(text, size) <= maxW) return text;
@@ -118,7 +112,10 @@ export async function buildOfferPdf(
   const clientCode = input.clientCode ? clean(input.clientCode) : null;
   const clientPhone = input.clientPhone ? clean(input.clientPhone) : null;
   const docNo = input.docNo ? clean(input.docNo) : null;
-  const date = fmtDate(input.offeredAt);
+  // The offer's date in the office's zone, like the validity line
+  // `offerLines` prints under it: in UTC an offer made before 05:00 was dated
+  // yesterday while its «valid until» was printed in Tashkent (R5).
+  const date = offerDate(input.offeredAt);
   const managerName = input.managerName ? clean(input.managerName) : null;
   const managerPhone = input.managerPhone ? clean(input.managerPhone) : null;
   const items = input.items.map((i) => ({

@@ -94,7 +94,9 @@ export function TransferForm({ accounts, today }: { accounts: Option[]; today: s
             ? t('fxMissing')
             : state.error === 'same_account'
               ? t('sameAccount')
-              : tc('error')}
+              : state.error === 'amount_mismatch'
+                ? t('transferAmountMismatch')
+                : tc('error')}
         </p>
       )}
     </form>

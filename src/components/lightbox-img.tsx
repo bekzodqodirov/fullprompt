@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Attachment thumbnail that opens a full-screen overlay on tap instead of
@@ -73,32 +74,38 @@ export function LightboxImg({
           ✕
         </button>
       )}
-      {open && (
-        <button
-          type="button"
-          aria-label="Close"
-          className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-4"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setOpen(false);
-          }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/api/attachments/${attachmentId}?variant=thumb800`}
-            alt={alt}
-            className="max-h-full max-w-full rounded-lg"
-            onError={(e) => {
-              const img = e.currentTarget;
-              if (!img.dataset.retried) {
-                img.dataset.retried = '1';
-                img.src = `/api/attachments/${attachmentId}?variant=original`;
-              }
+      {/* Portalled to body: a `fixed` overlay is only full-screen inside
+          the nearest stacking context, and a thumbnail in a sticky table
+          column (the cost grid) sits in one — the rows painted after it
+          covered the opened photo. */}
+      {open &&
+        createPortal(
+          <button
+            type="button"
+            aria-label="Close"
+            className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-4"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setOpen(false);
             }}
-          />
-        </button>
-      )}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/api/attachments/${attachmentId}?variant=thumb800`}
+              alt={alt}
+              className="max-h-full max-w-full rounded-lg"
+              onError={(e) => {
+                const img = e.currentTarget;
+                if (!img.dataset.retried) {
+                  img.dataset.retried = '1';
+                  img.src = `/api/attachments/${attachmentId}?variant=original`;
+                }
+              }}
+            />
+          </button>,
+          document.body,
+        )}
     </span>
   );
 }

@@ -14,9 +14,11 @@ import {
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { basemapAvailable } from '@/modules/wms/tracking/basemap';
 import { latestPositions } from '@/modules/wms/tracking/devices';
-import { WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
+import { warehousePoint } from '@/modules/wms/tracking/warehouse-point';
 import { truckFor } from '@/modules/wms/tracking/truck';
-import { TrackingMap, type MapTruck, type MapWarehouse } from './tracking-map';
+import { TrackingMap, type MapPickup, type MapTruck, type MapWarehouse } from './tracking-map';
+import { mayReadPickups, pickupsForMap } from '@/modules/wms/pickups/service';
+import { pickupTimeline } from '@/modules/wms/tracking/pickup-route';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { PageHeader } from '@/components/ui/page';
 import { inScope, warehouseScopeEither } from '@/modules/platform/rbac/scope';
@@ -32,7 +34,7 @@ const STOCK_STATUSES = ['in_stock', 'planned', 'loading', 'ready_for_pickup'];
  * server-side per load — approximate by design, corrected by the manual
  * checkpoint pins on the batch card.
  */
-export default async function MapPage() {
+export default async function MapPage({ searchParams }: { searchParams: Promise<{ zr?: string }> }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   // The trucks door, because this page IS the trucks plus every warehouse's
@@ -52,10 +54,7 @@ export default async function MapPage() {
   // not a secret) but the per-client stock is exactly what the stock screen
   // would refuse him, so it follows the stock screen's fence.
   const whRows = allWh.filter((w) => inScope(actor, w.id));
-  const pointFor = (w: (typeof whRows)[number]) =>
-    w.lat !== null && w.lon !== null
-      ? { x: Number(w.lon), y: Number(w.lat) }
-      : (WAREHOUSE_POINTS[w.code.toUpperCase()] ?? null);
+  const pointFor = (w: (typeof whRows)[number]) => warehousePoint(w);
   const mapped = whRows.filter((w) => pointFor(w) !== null);
   const stockRows = mapped.length
     ? await db
@@ -128,6 +127,44 @@ export default async function MapPage() {
     if (truck) trucks.push(truck);
   }
 
+  // Factory trucks (0100) for whoever may open a pickup card — an estimate
+  // like every other truck here, built from the same timeline the card uses.
+  // Caught: the tables are minted this release (#472).
+  const mapPickups: MapPickup[] = mayReadPickups(actor.permissions)
+    ? await pickupsForMap()
+        .then((rows) =>
+          rows.map(({ pickup, destCode, stops }) => {
+            const timeline = pickupTimeline(
+              stops.map((s) => ({
+                point: [Number(s.factory.lon ?? 0), Number(s.factory.lat ?? 0)] as [number, number],
+                collectedAt: s.collectedAt,
+                leg: s.legPoints && s.legHours ? { points: s.legPoints, hours: s.legHours } : null,
+              })),
+            );
+            return {
+              id: pickup.id,
+              code: pickup.code,
+              destCode,
+              factories: stops
+                .filter((s) => s.factory.lat !== null && s.factory.lon !== null)
+                .map((s) => ({
+                  name: s.factory.name,
+                  x: Number(s.factory.lon),
+                  y: Number(s.factory.lat),
+                  collected: Boolean(s.collectedAt),
+                })),
+              timeline,
+              boxes: stops.flatMap((s) => s.lines).reduce((a, l) => a + (l.driverBoxes ?? l.factoryBoxes), 0),
+            };
+          }),
+        )
+        // A trip whose first factory has no point has nowhere to be drawn.
+        .then((list) => list.filter((p) => p.factories.length > 0))
+        .catch(() => [])
+    : [];
+  const { zr } = await searchParams;
+  const focusPickupId = zr && mapPickups.some((p) => p.id === zr) ? zr : null;
+
   return (
     <div className="mx-auto max-w-5xl space-y-3">
       <PageHeader icon="map" title={t('title')} />
@@ -137,7 +174,17 @@ export default async function MapPage() {
           and the Leaflet layer redraws its markers from the new props while
           the basemap and the user's zoom stay put. */}
       <AutoRefresh ms={60_000} />
-      <TrackingMap warehouses={mapWarehouses} trucks={trucks} basemap={basemapAvailable()} />
+      <TrackingMap
+        // A retired warehouse is drawn only while cargo still stands in it
+        // (the stock picker's rule, #987).
+        warehouses={mapWarehouses.filter(
+          (w) => allWh.find((row) => row.id === w.id)?.active !== false || w.totalBoxes > 0,
+        )}
+        trucks={trucks}
+        pickups={mapPickups}
+        focusPickupId={focusPickupId}
+        basemap={basemapAvailable()}
+      />
     </div>
   );
 }

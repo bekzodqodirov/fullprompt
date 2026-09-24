@@ -94,12 +94,13 @@
     "flowLoading": "loading: {n}",
     "flowReady": "ready to issue: {n}",
     "flowPlansPending": "awaiting a verdict: {n}",
-    "flowUnassignedPayments": "Payments without a cash box (this month)",
+    "flowUnassignedPayments": "Payments without a cash box",
     "flowRecurringDue": "Recurring costs not posted",
     "flowDocsPending": "Batches without agent docs",
     "flowTnvedMissing": "Goods without TNVED code",
     "flowCalcOpen": "Calculations waiting",
-    "flowCalcLate": "late"
+    "flowCalcLate": "late",
+    "flowUnplacedCosts": "Costs with no cash box"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -136,7 +137,8 @@
     "noDebtors": "Nobody owes us",
     "salesTitle": "Sales",
     "wonThisMonth": "won this month",
-    "logisticsTitle": "Logistics"
+    "logisticsTitle": "Logistics",
+    "oldestOf": "oldest {shown} of {total}"
   },
   "inventory": {
     "title": "Stocktake",
@@ -255,7 +257,8 @@
     "taskHours": "h",
     "taskUndated": "No deadline: {n} — these reach nobody’s «my day».",
     "taskStalest": "Longest overdue",
-    "taskLateDays": "{n} d"
+    "taskLateDays": "{n} d",
+    "landedUnconverted": "Costs with no exchange rate ({count}) are not in this report: {sums}. Enter the currency's rate and they are added by themselves."
   },
   "warehouses": {
     "title": "Warehouses",
@@ -383,7 +386,8 @@
       "import_baza_min_sim": "How close an imported name must be before its price fills the baza automatically (0..1)",
       "calc_memory_min_sim": "How close a product name must be to a SEALED calculation before the AI takes its baza (0..1)",
       "ai_calc_daily_limit": "AI calls per day for calculations (past the limit: memory, dictionaries and the customs file only)",
-      "ai_calc_reply_lenta": "Also write the AI's estimate onto the card's lenta"
+      "ai_calc_reply_lenta": "Also write the AI's estimate onto the card's lenta",
+      "cost_kassa_since": "Costs with no cash box entered from this day on go to the accountant's queue (YYYY-MM-DD; empty = all)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"
@@ -502,7 +506,19 @@
     "callRecApp": "Download the app (Android)",
     "telegramReconnect": "Reconnect",
     "telegramReconnectHint": "Changed phone or Telegram account? Open the bot from the new one — notifications go there. The old chat keeps working until the new one takes over.",
-    "notifMuteCalls": "Morning call list"
+    "notifMuteCalls": "Morning call list",
+    "rasxodHint": "Spent money for work? Tell finance, and attach a photo of the receipt.",
+    "staffAccountTitle": "My account with the company",
+    "staffOwes": "The company owes you: {amount}",
+    "staffAdvance": "Advance still with you: {amount}",
+    "staffSettled": "All settled",
+    "staffKindCharge": "Expense you paid",
+    "staffKindPayment": "Advance given",
+    "staffKindReceipt": "You returned",
+    "staffKindAdjust": "Correction",
+    "staffKindOffset": "Offset",
+    "staffPendingTitle": "Not confirmed yet",
+    "staffPendingHint": "Not yet a debt of the company — it counts once finance enters it."
   },
   "receive": {
     "title": "Receiving",
@@ -544,7 +560,10 @@
       "photo": "add at least 1 photo"
     },
     "acceptUnclaimedAs": "{code} — accept as unidentified cargo",
-    "noteAndCost": "Note and cost (if needed)"
+    "noteAndCost": "Note and cost (if needed)",
+    "pickupReceiving": "receiving from a factory pickup",
+    "pickupDetach": "Detach from the pickup",
+    "pickupInvalid": "This factory pickup goes to another warehouse or was cancelled."
   },
   "receipts": {
     "title": "Receipts",
@@ -787,7 +806,38 @@
     "gridEntered": "Already entered (USD)",
     "gridNow": "Being entered now",
     "paidBy": "Settled by",
-    "paidByUs": "We paid it"
+    "paidByUs": "We paid it",
+    "gridSearch": "Search: client code, marking, goods, receipt, deal",
+    "gridEmptyCol": "Empty column",
+    "gridEmptyColAll": "All receipts",
+    "gridEmptyColOf": "«{type}» not entered on this truck",
+    "gridShown": "Showing {shown} / {total} receipts",
+    "gridHiddenTyped": "{count} more cells ({amount} {currency}) are hidden by the filter — they will be saved too",
+    "gridBatchScope": "whole truck: ${amount}",
+    "gridNoMatch": "No receipts match the filter",
+    "gridSplitLot": "{onBatch} of this lot’s {total} boxes are on this truck",
+    "gridElsewhere": "+ ${amount} entered elsewhere",
+    "gridElsewhereHint": "Entered on this receipt from another truck, the receipt card or the receiving screen — it may be the same bill",
+    "gridTotalsAll": "for the whole truck",
+    "gridBadCells": "{count} cells could not be read as a number — write «1200», «1 200» or «1200.50».",
+    "gridBadHidden": "{count} of them are hidden by the filter.",
+    "gridShowAll": "Show all",
+    "gridPartial": "{saved} cells saved, the rest were not ({reason}). The unsaved ones are still in the grid — press again.",
+    "rateStanding": "Current rate: 1 USD = {rate} {currency}",
+    "rateJump": "The last rate was 1 USD = {previous} {currency} — the new one differs by more than 20%. If it is right, tick this and save again.",
+    "paidByUsNoTill": "We paid — the accountant names the cash box",
+    "tillGroup": "From a cash box",
+    "partnerGroup": "Paid by a counterparty",
+    "tillAmount": "Left the cash box ({currency})",
+    "paidFromTill": "from a cash box",
+    "errTillForbidden": "Only the accountant or an admin names the cash box.",
+    "errStaffPayer": "A colleague's own money is reported through the expense request — the accountant confirms it.",
+    "errKassaVoid": "A cost paid from a cash box is voided only by the accountant or an admin — the money goes back to the box.",
+    "errTillAmountRequired": "The cash box is in another currency — type what left it.",
+    "errTillAmountMismatch": "Same currency — the amount must equal the cost.",
+    "errTillNotFound": "That cash box does not exist or is closed.",
+    "errTillCurrency": "The grid has one currency: the cash box must be in it.",
+    "errPayerConflict": "This cost already names who paid it."
   },
   "batches": {
     "title": "Batches",
@@ -871,7 +921,9 @@
     "customsFirmAccount": "Open the firm's account",
     "documents": "Documents",
     "customsPerReceipt": "Customs per receipt",
-    "customsFromBatch": "As the truck says"
+    "customsFromBatch": "As the truck says",
+    "internalCosts": "Batch costs (internal leg)",
+    "noCostsWarn": "No costs are entered on this batch yet"
   },
   "loading": {
     "title": "Loading",
@@ -1045,7 +1097,7 @@
     "voidReason": "Reason for voiding?",
     "voided": "Voided",
     "pricingTitle": "Batch money",
-    "pricingHint": "Cost, price, margin and balance per client of this batch. A price posts to the client's balance as a charge.",
+    "pricingHint": "Each client’s goods on this truck: the cost of every item, the client’s price, margin and balance. The price is one per client and is written to their balance as a charge.",
     "setPrice": "Set the price",
     "alreadyCharged": "Charged",
     "costLabel": "Cost",
@@ -1070,7 +1122,27 @@
     "registerTruncated": "Showing the newest {shown} of {total}; the total covers the whole period.",
     "bothFigures": "Floor and client price",
     "floorShort": "floor",
-    "clientPriceShort": "client:"
+    "clientPriceShort": "client:",
+    "unclaimedGroup": "Cargo with no owner yet",
+    "unclaimedPriceLater": "The price is set once the owner is found, on that client’s row. Its cost is already in the total above.",
+    "orphanCharges": "Prices charged to clients with no cargo left on this truck",
+    "orphanChargesHint": "The cargo may have moved to another client, or the price was typed by mistake. It is in the «Price» total above — check the client’s ledger.",
+    "unconvertedCosts": "{count} costs have no FX rate and are missing from the cost. Enter the rate for that date under «Rates».",
+    "amountUnreadable": "The amount could not be read — write «1200», «1 200» or «1200.50»",
+    "internalBatch": "Internal leg — clients are not priced on it. This truck’s costs go into the cargo’s cost and show on the cross-border truck as «before this trip».",
+    "internalNoCosts": "No costs are entered on this internal leg yet — enter the freight and the rest on the batch card.",
+    "internalPricedBefore": "Prices written on this internal leg earlier",
+    "internalPricedBeforeHint": "Internal legs are no longer priced. These rows stay on the client’s ledger — the accountant can void them and re-post them on the cross-border truck if needed.",
+    "internalBatchRefused": "Internal legs are not priced — put the price on the cross-border truck",
+    "priceAlsoToDeal": "The price is also written to deal {code}",
+    "accountRequired": "Pick the cash box the payment landed in.",
+    "futureDate": "The date cannot be later than today.",
+    "placePayment": "Place",
+    "registerAll": "By period",
+    "registerUnplaced": "Not in a cash box",
+    "refund": "Refund to client",
+    "refundAccount": "Paid back from which cash box",
+    "refundOnBatch": "A refund is not written to a batch — it is not a price."
   },
   "map": {
     "title": "Map",
@@ -1097,7 +1169,13 @@
     "goFull": "Fullscreen",
     "exitFull": "Exit",
     "legendWarehouse": "Warehouse",
-    "legendTruck": "Truck"
+    "legendTruck": "Truck",
+    "legendPickup": "Factory pickup",
+    "openPickup": "Open pickup",
+    "pickupPhase_waiting": "waiting at the factory",
+    "pickupPhase_driving": "on the road",
+    "pickupPhase_loading": "loading at a factory",
+    "pickupPhase_arrived": "should be at the warehouse"
   },
   "accounting": {
     "title": "Management accounting",
@@ -1166,7 +1244,7 @@
     "days90": "90+ days",
     "debt": "Debt",
     "asOf": "As of",
-    "pnlNote": "In the monthly table revenue and costs each land on their own date. For what a trip actually earned, see the Profit by batch report.",
+    "pnlNote": "In the monthly table revenue and costs each land on their own date. Profit by batch sees only the price and costs written on the truck — receipt and crate costs are named there on a separate line.",
     "transfersExcluded": "{n} transfers between our own accounts were excluded (they are neither income nor spending).",
     "uzsNote": "Amount in UZS at today's rate ({rate})",
     "fxMissing": "No rate for this currency — enter one under Exchange rates first",
@@ -1201,7 +1279,62 @@
     "reject": "Reject",
     "rejectReason": "Why reject? The operator sees the answer.",
     "fromRequest": "Filled from the warehouse report — check it and pick a category and till.",
-    "requestTaken": "Someone else already entered this one"
+    "requestTaken": "Someone else already entered this one",
+    "gapManualCharges": "Debts to counterparties typed by hand ({count}, {usd}) are not in this report — they were never entered as costs.",
+    "gapManualChargesHint": "If the same service was also entered as a cost, nothing is missing. If not: void the debt on the counterparty's card and enter it again in the cost or expense form, picking «Settled by».",
+    "gapOpenPartners": "Counterparties →",
+    "gapUnconverted": "Costs with no exchange rate ({count}) are counted as $0: {sums}.",
+    "gapUnconvertedHint": "Enter that currency's rate — the costs recompute by themselves.",
+    "expensesTruncated": "Showing the newest {shown} of {total}; the total covers the whole period.",
+    "balUnplaced": "Payments not in a cash box",
+    "futureDated": "{count} entries are dated after today ({usd}). Other screens count them as debt now, this report does not — correct their date.",
+    "transferAmountMismatch": "Between two cash boxes of one currency, the amount out must equal the amount in.",
+    "recurringEdit": "Amount, day or stop",
+    "recurringActive": "Active — posted every month",
+    "internalRowsNote": "Internal legs (inside China) are shown as cost only: they are never priced, and their cost is already inside the cross-border truck's cost as «before this trip» — so they are left out of the total.",
+    "unallocatedNote": "{usd} of costs typed on trucks reached no box — it is in no cost figure (trucks: {count}). Check the costs on the batch card.",
+    "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} tied to no truck — prices set on a client's ledger. Receipt, receiving, crate and factory-pickup costs are already in the cost of the truck the cargo rode.",
+    "clientRefunds": "Refunds to clients",
+    "balClientAdvances": "Client advances (we owe)",
+    "beforeOpening": "{count} entries dated before the opening count — already inside it, not added again",
+    "cargoUnplaced": "of which with no cash box: {usd}",
+    "balUnplacedCosts": "{count} cargo costs name no cash box (${usd}) — the boxes may read that much too high",
+    "costKassa": "Cost cash boxes",
+    "costKassaHint": "Cargo costs typed by the warehouse, the logist or the VED. For each, say which cash box paid it, whether a colleague paid out of pocket, or that it was typed into Expenses a second time (merge it — the money is then not counted twice).",
+    "queueCount": "In the queue: {count}",
+    "queueSince": "entered since {day}",
+    "queuePrev": "Previous",
+    "queueNext": "Next",
+    "mergedTitle": "Merged",
+    "mergedCosts": "with {count} costs",
+    "queueDone": "Saved.",
+    "queueEmpty": "No costs are waiting for a cash box.",
+    "mergeTitle": "Ticked: {count} — merge with the duplicate in Expenses",
+    "mergeExpense": "Choose the duplicate expense",
+    "mergeButton": "Merge",
+    "mergeHint": "Same currency: the amounts match to the cent; different currencies: within 2% or $5. The expense is voided and its cash box moves onto the cargo cost — the box's balance does not change.",
+    "mergePick": "Tick to merge",
+    "mergeSuggest": "Possibly typed again in Expenses: {expense}",
+    "mergeOne": "Merge",
+    "queueTill": "Which cash box",
+    "queueTillAmount": "From the box ({currency})",
+    "queueSave": "Save",
+    "queueStaff": "A colleague paid out of pocket",
+    "queueErrTillAmount": "The cash box is in another currency — type what actually left it.",
+    "queueErrTill": "The cash box does not exist or is closed.",
+    "queueErrTaken": "This cost was already placed or voided — refresh the page.",
+    "queueErrNotCandidate": "That expense cannot be merged (paid by a counterparty, a recurring posting, an upsale payout, or voided).",
+    "queueErrAmount": "The amounts do not match: to the cent in one currency, within 2% or $5 across currencies.",
+    "queueErrDays": "More than 14 days between the dates.",
+    "queueErrRate": "The cost's currency has no exchange rate.",
+    "queueErrNotStaff": "The chosen counterparty is not a staff account.",
+    "queueErrForbidden": "This is the accountant's or an admin's action.",
+    "requestOwnPocket": "own pocket",
+    "fromRequestSelf": "The employee paid out of pocket — the payer is their staff account: once entered, the company owes them. You can switch it to a till.",
+    "staffPartnerMissing": "This employee has no account yet — open one to record what we owe them.",
+    "staffPartnerOpen": "Open staff account",
+    "staffPartnerLinkedElsewhere": "This login is already linked to another counterparty — check it under Counterparties.",
+    "staffPartnerInactive": "Staff account “{name}” is retired — reactivate it or pick a till."
   },
   "crm": {
     "title": "CRM",
@@ -1543,7 +1676,9 @@
     "dayStale": "{n} overdue — show",
     "dayStaleOpen": "Overdue",
     "dayOthers": "By seller",
-    "dayBack": "Only mine"
+    "dayBack": "Only mine",
+    "wonOtherCurrency": "+{count} in another currency",
+    "feedRefund": "Refund to client"
   },
   "navShort": {
     "home": "Home",
@@ -1590,7 +1725,9 @@
     "withCargo": "With cargo",
     "withDebt": "In debt",
     "lastReceipt": "last intake",
-    "callToday": "call today"
+    "callToday": "call today",
+    "internalTrip": "internal leg — priced on the next truck",
+    "internalNoCost": "internal leg, no costs entered"
   },
   "arrivals": {
     "title": "Incoming cargo",
@@ -2499,7 +2636,6 @@
       "adjust": "Correction / rate difference"
     },
     "kindHints": {
-      "charge": "A truck, customs, rent, salaries — a service we took. No cash box moves.",
       "receipt": "They put money into our account. Cash up, our debt to them up.",
       "payment": "We paid them from a cash box. Cash down, debt down.",
       "adjust": "Rate difference or a manual correction. May be negative."
@@ -2513,7 +2649,23 @@
     "rateGapHint": "The gap between what the firm credited and what the client sent, in dollars.",
     "proof": "Receipt / screenshot",
     "proofNote": "Note (required when there is no file)",
-    "proofRequired": "A file or a note is required"
+    "proofRequired": "A file or a note is required",
+    "chargeMoved": "A debt for a service (a truck, customs, rent, a salary) is now entered in the cost or expense form with «Settled by» picked. The debt lands here by itself and reaches the profit report too.",
+    "manualCharge": "Not linked to a cost — missing from the profit report",
+    "owedToUs": "Owe us",
+    "login": "Staff member (login)",
+    "noLogin": "Not a staff member",
+    "loginHint": "Linking a login makes this a staff account: its balance is seen only by the accountant, the admin and the person themselves.",
+    "userTaken": "This staff member already has an account — one account per person.",
+    "staffForbidden": "Staff accounts are kept by the accountant and the admin only.",
+    "staffKinds": {
+      "payment": "Advance given",
+      "receipt": "Returned the rest"
+    },
+    "staffKindHints": {
+      "payment": "We gave the staff member a cash advance. Cash down, they owe us.",
+      "receipt": "The staff member returned the unspent rest to the cash box. Cash up, their debt down."
+    }
   },
   "lists": {
     "allRecords": "All",
@@ -2655,7 +2807,9 @@
       "forbidden": "No rights for this warehouse",
       "validation": "Check the amount and the note",
       "failed": "Could not send"
-    }
+    },
+    "noWarehouse": "no warehouse",
+    "paidBySelf": "I paid out of my own pocket"
   },
   "adminHome": {
     "money": "Money",
@@ -2720,7 +2874,9 @@
     "categoryTitle": "Expense category for the seller share",
     "categoryUnset": "No expense category chosen — payout is refused",
     "categoryHint": "A payout is written as an ordinary expense. A dedicated category is mandatory: paid out of «Salaries» it would occupy that seller’s salary slot for the month and the salary would be silently counted as posted.",
-    "categoryAsk": "Only an administrator can choose it."
+    "categoryAsk": "Only an administrator can choose it.",
+    "periodByOffer": "Offer date",
+    "periodHint": "The period is by the day of the offer. Expenses and the P&L show a payout on the day the money was handed over."
   },
   "sellerReport": {
     "title": "Sellers: results",
@@ -2778,7 +2934,8 @@
     "colClient": "Client",
     "colCargo": "Cargo",
     "colWho": "Who",
-    "colMoney": "Live money"
+    "colMoney": "Live money",
+    "paidFromTill": "This receipt has a cost paid from a cash box. The accountant voids it first — the money returns to the box."
   },
   "customsImport": {
     "title": "Customs base (import)",
@@ -2838,5 +2995,118 @@
     "makeShared": "🏢 Make it the company's",
     "makePrivate": "👤 Make it mine only",
     "confirmUnshare": "Take the note out of the company list? Everyone else will stop seeing it."
+  },
+  "pickups": {
+    "title": "Factory pickup",
+    "new": "New pickup",
+    "factories": "Factories",
+    "newFactory": "New factory",
+    "empty": "No pickups yet.",
+    "rowSummary": "Collected {collected}/{stops} · {boxes} boxes",
+    "noCost": "no cost entered",
+    "noCostLong": "The truck has arrived but its cost is not entered.",
+    "noFactories": "Add a factory first.",
+    "ownerHint": "Owner: a client code (e.g. GS777) or the marking on the box.",
+    "destination": "Destination warehouse",
+    "plannedOn": "Planned date",
+    "plate": "Plate",
+    "driver": "Driver",
+    "driverPhone": "Driver phone",
+    "note": "Note",
+    "factory": "Factory",
+    "addStop": "Add a factory",
+    "removeStop": "Remove factory",
+    "removeStopConfirm": "Remove this factory from the trip?",
+    "addLine": "Add a line",
+    "removeLine": "Remove line",
+    "owner": "Owner",
+    "ownerPlaceholder": "GS777",
+    "goods": "Goods",
+    "factoryBoxes": "Factory count (boxes)",
+    "factoryShort": "factory",
+    "driverShort": "driver",
+    "driverBoxes": "Driver recount",
+    "lineProblem": "Factory {stop}, line {line}: owner, goods and box count are required (m³/kg as numbers).",
+    "factoryRequired": "Choose a factory.",
+    "create": "Create pickup",
+    "save": "Save",
+    "saved": "Saved",
+    "editLines": "Edit lines",
+    "collect": "Collected",
+    "collectedAt": "collected {at}",
+    "notCollected": "not collected yet",
+    "stampNote": "Stamp / paper note",
+    "markArrived": "Arrived",
+    "cancel": "Cancel pickup",
+    "cancelReason": "Reason for cancelling",
+    "costs": "Truck cost",
+    "costHint": "Split by m³ over the received cargo. {n} prixods linked so far.",
+    "candidatesTitle": "Unlinked prixods",
+    "candidatesHint": "Prixods of these clients at this warehouse. Nothing links itself — choose which factory it came from.",
+    "linkTo": "to factory {seq}",
+    "noPickup": "Not linked to a factory pickup",
+    "etaLine": "Estimated arrival {from} – {to}",
+    "estimate": "estimate, by schedule",
+    "unplaced": "No map point: {names}",
+    "onMap": "Show on map",
+    "incomingTitle": "Cargo coming from factories",
+    "receiveThis": "Receive",
+    "countHint": "factory: {factory} · driver: {driver}",
+    "homeNoCost": "{n} without cost",
+    "homeUnlinked": "{n} with unlinked prixods",
+    "factoryName": "Factory name",
+    "phone": "Phone",
+    "addressZh": "Address (in Chinese)",
+    "goodsNote": "What we buy there",
+    "geoFound": "Saved. A map point was found — check it and press «✓ correct».",
+    "geoNotFound": "Saved, but the address was not found on the map — place the point by hand.",
+    "pointNone": "no point",
+    "pointConfirmed": "confirmed",
+    "pointSuggested": "suggested",
+    "pointCorrect": "correct",
+    "pointPaste": "Coordinates or a map link: 29.31, 120.07",
+    "pointDatum": "Which map",
+    "datumChina": "Chinese map (Amap, Tencent)",
+    "datumWorld": "Google / OSM / GPS",
+    "pointSet": "Set point",
+    "edit": "Edit",
+    "inactive": "inactive",
+    "deactivate": "Deactivate",
+    "activate": "Activate",
+    "status": {
+      "planned": "planned",
+      "on_road": "on the road",
+      "arrived": "arrived",
+      "cancelled": "cancelled"
+    },
+    "tabs": {
+      "live": "Active",
+      "arrived": "Arrived",
+      "cancelled": "Cancelled",
+      "all": "All"
+    },
+    "errors": {
+      "generic": "Could not save. Please try again.",
+      "forbidden": "You are not allowed to do this.",
+      "validation": "The data is incomplete or wrong.",
+      "bad_number": "A number is written wrong.",
+      "cancelled": "The pickup is cancelled.",
+      "already_collected": "This factory is already marked collected.",
+      "stop_collected": "A collected factory cannot be removed.",
+      "stop_linked": "A prixod came from this factory — its lines cannot change.",
+      "last_stop": "A pickup needs at least one factory.",
+      "too_many_stops": "At most 6 factories per pickup.",
+      "dest_locked": "Prixods exist — the warehouse cannot change.",
+      "pickup_has_costs": "Void the truck cost first.",
+      "pickup_has_receipts": "Prixods are linked — detach them first.",
+      "reason_required": "Write a reason.",
+      "wrong_warehouse": "This pickup is going to another warehouse.",
+      "receipt_not_live": "The prixod is voided or not confirmed.",
+      "factory_not_found": "Factory not found.",
+      "client_not_found": "Client not found.",
+      "warehouse_not_found": "Warehouse not found or inactive.",
+      "bad_point": "Could not read the coordinates. Example: 29.31, 120.07",
+      "no_point": "There is no map point yet."
+    }
   }
 }

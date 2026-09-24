@@ -7,6 +7,7 @@ import { dayCalls } from '@/modules/wms/crm/day';
 import { DayCallsView } from '@/components/day-calls-view';
 import { Icon } from '@/components/ui/icon';
 import { Stat } from '@/components/ui/page';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The CRM home screen is the call list, not a dashboard.
@@ -27,7 +28,7 @@ export default async function CrmPage({
   const scope = seesAll ? undefined : actor.id;
   const showOthers = (await searchParams).hammasi === '1';
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
   const [calls, openLeads, funnel] = await Promise.all([
     // The SAME call list `/bugun` draws — mine by default, everybody's behind
     // a door, per seller (owner's 4.1a). This screen is where the seller's

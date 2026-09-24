@@ -6,6 +6,11 @@ import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 import { graticule, LANDMARKS, toSvg, VIEWBOX } from '@/modules/wms/tracking/map-data';
 import { Icon } from '@/components/ui/icon';
+import {
+  pickupPosition,
+  type PickupPosition,
+  type PickupTimeline,
+} from '@/modules/wms/tracking/pickup-route';
 
 export interface MapWarehouse {
   /** The warehouses row id — what /stock's `wh` filter actually reads. */
@@ -44,7 +49,38 @@ export interface MapTruck {
   contents: { clientCode: string; n: number }[];
 }
 
-type Selected = { kind: 'wh'; code: string } | { kind: 'truck'; batchId: string } | null;
+/**
+ * A factory truck (0100). Where it is, is an ESTIMATE recomputed in the
+ * browser from the same timeline the pickup card uses, so the lorry glides
+ * instead of jumping once a minute; nothing on the truck reports a position.
+ */
+export interface MapPickup {
+  id: string;
+  code: string;
+  destCode: string;
+  factories: { name: string; x: number; y: number; collected: boolean }[];
+  timeline: PickupTimeline | null;
+  boxes: number;
+}
+
+type Selected =
+  | { kind: 'wh'; code: string }
+  | { kind: 'truck'; batchId: string }
+  | { kind: 'pickup'; id: string }
+  | null;
+
+/** Every pickup's estimated position, recomputed every five seconds. */
+function usePickupPositions(pickups: MapPickup[]) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!pickups.length) return;
+    const timer = setInterval(() => setNow(Date.now()), 5_000);
+    return () => clearInterval(timer);
+  }, [pickups.length]);
+  const out = new Map<string, PickupPosition>();
+  for (const p of pickups) if (p.timeline) out.set(p.id, pickupPosition(p.timeline, now));
+  return out;
+}
 
 // Leaflet touches `window` at import time — client-only chunk.
 const LeafletCorridor = dynamic(
@@ -66,14 +102,22 @@ const LeafletCorridor = dynamic(
 export function TrackingMap({
   warehouses,
   trucks,
+  pickups = [],
+  focusPickupId = null,
   basemap,
 }: {
   warehouses: MapWarehouse[];
   trucks: MapTruck[];
+  pickups?: MapPickup[];
+  /** `/map?zr=<id>` from a pickup card: fit the view to that trip. */
+  focusPickupId?: string | null;
   basemap: boolean;
 }) {
   const t = useTranslations('map');
-  const [selected, setSelected] = useState<Selected>(null);
+  const [selected, setSelected] = useState<Selected>(
+    focusPickupId ? { kind: 'pickup', id: focusPickupId } : null,
+  );
+  const positions = usePickupPositions(pickups);
   const [full, setFull] = useState(false);
 
   // Escape leaves fullscreen — the button is under the map's own controls
@@ -101,6 +145,8 @@ export function TrackingMap({
   const selWh = selected?.kind === 'wh' ? warehouses.find((w) => w.code === selected.code) : null;
   const selTruck =
     selected?.kind === 'truck' ? trucks.find((tr) => tr.batchId === selected.batchId) : null;
+  const selPickup = selected?.kind === 'pickup' ? pickups.find((p) => p.id === selected.id) : null;
+  const selPickupAt = selPickup ? positions.get(selPickup.id) : undefined;
 
   const canvas = (
     <div className="relative h-full w-full">
@@ -108,6 +154,9 @@ export function TrackingMap({
         <LeafletCorridor
           warehouses={warehouses}
           trucks={trucks}
+          pickups={pickups}
+          positions={positions}
+          focusPickupId={focusPickupId}
           onSelect={setSelected}
           full={full}
         />
@@ -116,6 +165,8 @@ export function TrackingMap({
           <SvgCorridor
             warehouses={warehouses}
             trucks={trucks}
+            pickups={pickups}
+            positions={positions}
             onSelect={setSelected}
             label={t('title')}
             full={full}
@@ -241,6 +292,43 @@ export function TrackingMap({
         </div>
       )}
 
+      {selPickup && (
+        <div
+          data-testid="map-popup"
+          className="absolute left-2 top-2 z-[600] max-h-[75%] w-72 max-w-[85%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
+        >
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-base font-bold">
+              <span className="mr-1.5 inline-block h-3 w-3 rotate-45 bg-violet-600 align-middle" />
+              <span className="font-mono">{selPickup.code}</span>
+            </h2>
+            <span className="font-mono text-xs font-semibold">→ {selPickup.destCode}</span>
+            <span className="text-xs">{selPickup.boxes} 📦</span>
+            <button
+              type="button"
+              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center"
+              aria-label="close"
+              onClick={() => setSelected(null)}
+            >
+              ✕
+            </button>
+          </div>
+          <p className="text-xs font-semibold">
+            🟡 {t('estimated')} · {t(`pickupPhase_${selPickupAt?.phase ?? 'waiting'}`)}
+          </p>
+          <ul className="text-xs">
+            {selPickup.factories.map((f, i) => (
+              <li key={i}>
+                {f.collected ? '✓' : '·'} {f.name}
+              </li>
+            ))}
+          </ul>
+          <Link href={`/zavod/${selPickup.id}`} className="text-sm font-semibold text-brand-700 underline">
+            {t('openPickup')} →
+          </Link>
+        </div>
+      )}
+
       {/* Which mark is which — the owner could not tell a warehouse from a
           truck at a glance, so the key says it in the same shapes. */}
       <div
@@ -254,6 +342,12 @@ export function TrackingMap({
           <span className="inline-block h-3 w-3 rounded-full bg-warn" />
           {t('legendTruck')}
         </span>
+        {pickups.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rotate-45 bg-violet-600" />
+            {t('legendPickup')}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -283,12 +377,16 @@ export function TrackingMap({
 function SvgCorridor({
   warehouses,
   trucks,
+  pickups,
+  positions,
   onSelect,
   label,
   full,
 }: {
   warehouses: MapWarehouse[];
   trucks: MapTruck[];
+  pickups: MapPickup[];
+  positions: Map<string, PickupPosition>;
   onSelect: (sel: Exclude<Selected, null>) => void;
   label: string;
   full: boolean;
@@ -342,6 +440,45 @@ function SvgCorridor({
           strokeLinecap="round"
         />
       ))}
+
+      {/* Factory trucks (0100): the road behind them solid, the road ahead
+          dashed, the factories as violet diamonds — a third shape, so none
+          of the three marks can be mistaken for another (#137). */}
+      {pickups.map((p) => {
+        const line = (pts: [number, number][]) =>
+          pts
+            .map(([x, y]) => {
+              const s = toSvg({ x, y });
+              return `${s.x},${s.y}`;
+            })
+            .join(' ');
+        return (
+          <g key={`pickup-route-${p.id}`}>
+            {(p.timeline?.done ?? []).map((pts, i) => (
+              <polyline key={`d${i}`} points={line(pts)} fill="none" stroke="#7c3aed" strokeWidth={3} strokeLinecap="round" />
+            ))}
+            {(p.timeline?.hops ?? []).map((hop, i) => (
+              <polyline key={`h${i}`} points={line(hop.points)} fill="none" stroke="#7c3aed" strokeWidth={2.5} strokeDasharray="6 5" opacity={0.8} />
+            ))}
+            {p.factories.map((f, i) => {
+              const s = toSvg({ x: f.x, y: f.y });
+              return (
+                <rect
+                  key={i}
+                  x={s.x - 6}
+                  y={s.y - 6}
+                  width={12}
+                  height={12}
+                  transform={`rotate(45 ${s.x} ${s.y})`}
+                  fill={f.collected ? '#7c3aed' : '#fff'}
+                  stroke="#7c3aed"
+                  strokeWidth={2.5}
+                />
+              );
+            })}
+          </g>
+        );
+      })}
 
       {LANDMARKS.map((lm) => {
         const s = toSvg(lm.p);
@@ -460,7 +597,31 @@ function SvgCorridor({
           </g>
         );
       })}
+
+      {pickups.map((p) => {
+        const at = positions.get(p.id);
+        return at ? (
+          <SvgPickupLorry key={`lorry-${p.id}`} p={p} at={at} onSelect={() => onSelect({ kind: 'pickup', id: p.id })} />
+        ) : null;
+      })}
     </svg>
+  );
+}
+
+/** The pickup lorry — the corridor truck's silhouette in the pickup's violet. */
+function SvgPickupLorry({ p, at, onSelect }: { p: MapPickup; at: PickupPosition; onSelect: () => void }) {
+  const s = toSvg({ x: at.point[0], y: at.point[1] });
+  return (
+    <g className="cursor-pointer" data-testid="map-pickup" onClick={onSelect}>
+      <g transform={`translate(${s.x - 19} ${s.y - 14})`}>
+        <path d="M35 5 H17 V11 H12 L6 17 V22 H35 Z" fill="#7c3aed" stroke="#fff" strokeWidth={3} paintOrder="stroke" strokeLinejoin="round" />
+        <circle cx={13} cy={22} r={3.6} fill="#1f2937" stroke="#fff" strokeWidth={1.6} />
+        <circle cx={29} cy={22} r={3.6} fill="#1f2937" stroke="#fff" strokeWidth={1.6} />
+      </g>
+      <text x={s.x} y={s.y - 17} fontSize={12} fontWeight={800} textAnchor="middle" fill="#6d28d9" stroke="#fff" strokeWidth={3} paintOrder="stroke">
+        {p.code}
+      </text>
+    </g>
   );
 }
 

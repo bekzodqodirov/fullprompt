@@ -59,6 +59,8 @@ export default defineConfig({
       // process may hold a real token's getUpdates lock.
       TELEGRAM_BOT_TOKEN: E2E_BOT_TOKEN,
       TELEGRAM_POLLING: '0',
+      // No geocoder or router calls from a test server — same reason (#278).
+      GEO_NETWORK: 'off',
     },
     url: 'http://localhost:3000/api/health',
     reuseExistingServer: !process.env.CI,

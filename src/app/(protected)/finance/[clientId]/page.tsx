@@ -14,6 +14,7 @@ import { BackLink } from '@/components/back-link';
 import { CargoSummary } from '@/components/cargo-summary';
 import { TxForm } from './tx-form';
 import { VoidButton } from './void-button';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /** One client's money ledger: balance, add charge/payment, full history. */
 export default async function ClientLedgerPage({
@@ -102,11 +103,12 @@ export default async function ClientLedgerPage({
 
       {canManage && (
         <TxForm
+          canRefund={actor.permissions.has('finance.expenses')}
           clientId={clientId}
           currencies={currencyRows.map((c) => c.code)}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
           deals={openDeals.map((d) => ({ id: d.id, code: d.code, title: d.title, cargo: d.cargo }))}
-          today={new Date().toISOString().slice(0, 10)}
+          today={tashkentDay()}
         />
       )}
 
@@ -129,8 +131,10 @@ export default async function ClientLedgerPage({
             className={`border-b border-line py-2 text-sm last:border-0 ${tx.voidedAt ? 'opacity-50' : ''}`}
           >
             <div className="flex items-baseline gap-2">
-              <span className={`font-bold ${tx.type === 'charge' ? 'text-bad' : 'text-good'}`}>
-                {tx.type === 'charge' ? '🧾' : '➕'} {tx.type === 'charge' ? t('charge') : t('payment')}
+              <span
+                className={`font-bold ${tx.type === 'charge' ? 'text-bad' : tx.type === 'refund' ? 'text-warn' : 'text-good'}`}
+              >
+                {tx.type === 'charge' ? `🧾 ${t('charge')}` : tx.type === 'refund' ? `↩️ ${t('refund')}` : `➕ ${t('payment')}`}
               </span>
               <span className={`font-mono font-extrabold ${tx.voidedAt ? 'line-through' : ''}`}>
                 {Number(tx.amount)} {tx.currency}

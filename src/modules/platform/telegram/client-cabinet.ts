@@ -9,7 +9,9 @@ import {
   cargoOverview,
   clientsForChat,
   debtSummary,
-  issuedHistory,
+  issuedHandovers,
+  paidHistory,
+  type IssuedHandover,
   lotPhotoKeys,
   phoneBelongsToClient,
   phonesOverlap,
@@ -21,6 +23,7 @@ import {
   clientLabels,
   isClientLocale,
   localeFromTelegram,
+  formatDay,
   formatEtaRange,
   stageLabel,
   type ClientLabels,
@@ -69,6 +72,51 @@ const LANGUAGE_NAMES: Record<(typeof CLIENT_LOCALES)[number], string> = {
 
 function chatLocale(linked: { locale: string | null }[]): string | null {
   return linked.find((c) => c.locale)?.locale ?? null;
+}
+
+/** One handover as text — the Mini App card's facts, in the same order. */
+function historyBlock(h: IssuedHandover, t: ClientLabels): string {
+  const lots = h.lots
+    .map(
+      (l) =>
+        `${l.letter ?? '·'} — ${l.productNameRu?.trim() || l.productNameZh}: ${l.n} ${t.pieces} · ${l.weightKg} ${t.kg} · ${l.volumeM3} ${t.m3}` +
+        ` (${t.receivedOn.toLowerCase()} ${formatDay(l.receivedAt)})`,
+    )
+    .join('\n');
+  const legs = h.legs
+    .map((g) => {
+      const dates = [
+        g.departedAt && `${t.legDeparted} ${formatDay(g.departedAt)}`,
+        g.arrivedAt && `${t.legArrived} ${formatDay(g.arrivedAt)}`,
+      ]
+        .filter(Boolean)
+        .join(', ');
+      return `🚚 ${t.batchWord} ${g.batchCode} (${g.domestic ? t.legDomestic : t.legAbroad}) ${g.fromPlace} → ${g.toPlace}${dates ? `: ${dates}` : ''}`;
+    })
+    .join('\n');
+  return (
+    `🤝 ${formatDay(h.issuedAt)} · ${h.place}\n` +
+    `${t.issuedTo}: ${h.receiver} · ${t.issuedBy}: ${h.issuedBy}\n` +
+    lots +
+    (legs ? `\n${legs}` : '')
+  );
+}
+
+/** Blocks joined into messages under Telegram's limit, never split inside one. */
+export function chunkBlocks(blocks: string[], limit: number): string[] {
+  const out: string[] = [];
+  let cur = '';
+  for (const raw of blocks) {
+    const b = raw.slice(0, limit);
+    if (cur && cur.length + 2 + b.length > limit) {
+      out.push(cur);
+      cur = b;
+    } else {
+      cur = cur ? `${cur}\n\n${b}` : b;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
 function lotLine(lot: CabinetLot, t: ClientLabels, locale: string | null): string {
@@ -503,7 +551,7 @@ export function registerClientCabinet(bot: Bot): void {
         .filter((r) => !r.voided)
         .map(
           (r) =>
-            `${r.txDate} — ${r.type === 'charge' ? t.charged : t.paid}: ${r.amount} ${r.currency}` +
+            `${r.txDate} — ${r.type === 'charge' ? t.charged : r.type === 'refund' ? t.refunded : t.paid}: ${r.amount} ${r.currency}` +
             (r.currency !== 'USD' ? ` (≈ $${r.amountUsd.toFixed(2)})` : ''),
         )
         .join('\n');
@@ -522,22 +570,26 @@ export function registerClientCabinet(bot: Bot): void {
     const linked = await clientsForChat(BigInt(ctx.chat.id));
     if (!linked.length) return;
     const t = clientLabels(chatLocale(linked));
-    const dateLocale = chatLocale(linked) === 'en' ? 'en-GB' : chatLocale(linked) === 'ru' ? 'ru-RU' : 'uz-UZ';
     for (const client of linked) {
-      const rows = await issuedHistory(client.id);
-      if (!rows.length) {
+      const [handed, paid] = await Promise.all([issuedHandovers(client.id), paidHistory(client.id)]);
+      if (!handed.length && !paid.length) {
         await ctx.reply(`${client.clientCode} — ${t.noHistory}`);
         continue;
       }
-      const text =
-        `🗄 ${client.clientCode} — ${t.issued}:\n\n` +
-        rows
-          .map(
-            (r) =>
-              `${r.letter ?? '·'} — ${r.productNameRu?.trim() || r.productNameZh}: ${r.n} ${t.pieces} · ${new Date(r.lastAt).toLocaleDateString(dateLocale)}`,
-          )
-          .join('\n');
-      await ctx.reply(text.slice(0, 4000));
+      // One block per handover and the payments last, sent as several
+      // messages when the three months do not fit in one: cutting at 4000
+      // characters used to drop the OLDEST handovers without a word.
+      const blocks = [
+        `🗄 ${client.clientCode} — ${t.historyWindow}`,
+        ...handed.map((h) => historyBlock(h, t)),
+        ...(paid.length
+          ? [
+              `💵 ${t.paymentsTitle}:\n` +
+                paid.map((p) => `${formatDay(p.txDate)} · +${p.amount} ${p.currency}`).join('\n'),
+            ]
+          : []),
+      ];
+      for (const chunk of chunkBlocks(blocks, 3800)) await ctx.reply(chunk);
     }
   });
 

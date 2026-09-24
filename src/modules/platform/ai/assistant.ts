@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { logger } from '../logger';
 import { getSetting } from '../settings/service';
+import { tashkentDay } from '../time/tashkent';
 import {
   aiConfigured,
   ANALYST_MODEL,
@@ -73,10 +74,7 @@ function systemPrompt(actor: AssistantActor, surface: 'bot' | 'web'): string {
   // The bot is Uzbek like every staff string it already sends; the web screen
   // answers in the language the person chose for the app itself.
   const language = surface === 'bot' ? 'узбекском' : (LOCALE_NAMES[actor.locale ?? 'ru'] ?? 'русском');
-  const today = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tashkent',
-    dateStyle: 'short',
-  }).format(new Date());
+  const today = tashkentDay();
   const base = `Ты — рабочий ассистент карго-компании GSR LOGISTICS (Китай → Узбекистан): склады, приходы, партии (машины), клиенты, CRM, деньги.
 Сегодня ${today} (Asia/Tashkent). С тобой говорит сотрудник: ${actor.fullName}.
 Отвечай на ${language} языке, коротко и по делу, словами бизнеса (mijoz, prixod, partiya, kub, kg), не таблицами и функциями.

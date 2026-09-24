@@ -5,8 +5,11 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 import { paymentsRegister } from '@/modules/wms/finance/service';
+import { listAccounts } from '@/modules/wms/accounting/service';
+import { placePaymentAction } from '../actions';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from '../client-search';
+import { tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The payments register (round 29) — the accountant's «kimdan qancha pul
@@ -18,7 +21,7 @@ import { FinanceClientSearch } from '../client-search';
 export default async function PaymentsRegisterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; joylanmagan?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -28,17 +31,20 @@ export default async function PaymentsRegisterPage({
   const t = await getTranslations('finance');
   const params = await searchParams;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const monthStart = `${today.slice(0, 8)}01`;
+  const today = tashkentDay();
+  const monthStart = tashkentMonthStart();
   const valid = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
   const from = valid(params.from) ?? monthStart;
   const to = valid(params.to) ?? today;
 
-  const { rows, totalUsd, count, truncated } = await paymentsRegister(
-    from,
-    to,
-    moneyOwnerFilter(actor),
-  );
+  const canPlace = actor.permissions.has('finance.manage');
+  // Every payment still in no till, whatever its date (audit A2) — the home
+  // counter and the Balans line both open this view.
+  const unplaced = params.joylanmagan === '1';
+  const [{ rows, totalUsd, count, truncated }, accounts] = await Promise.all([
+    paymentsRegister(from, to, moneyOwnerFilter(actor), { unplaced }),
+    canPlace ? listAccounts() : Promise.resolve([]),
+  ]);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -61,6 +67,22 @@ export default async function PaymentsRegisterPage({
           <FinanceClientSearch />
         </div>
       )}
+
+      <div className="flex flex-wrap gap-1 text-sm">
+        <Link
+          href={`/finance/reestr?from=${from}&to=${to}`}
+          className={`rounded-lg px-3 py-1.5 font-semibold ${unplaced ? 'bg-surface-sunken' : 'bg-brand-600 text-white'}`}
+        >
+          {t('registerAll')}
+        </Link>
+        <Link
+          href="/finance/reestr?joylanmagan=1"
+          className={`rounded-lg px-3 py-1.5 font-semibold ${unplaced ? 'bg-brand-600 text-white' : 'bg-surface-sunken'}`}
+          data-testid="register-unplaced"
+        >
+          {t('registerUnplaced')}
+        </Link>
+      </div>
 
       <form className="card flex flex-wrap items-end gap-2" method="get">
         <label className="text-sm">
@@ -120,6 +142,26 @@ export default async function PaymentsRegisterPage({
                     {row.accountName ??
                       (row.partnerName ? (
                         <span className="text-ink-700">→ {row.partnerName}</span>
+                      ) : canPlace ? (
+                        // An unplaced payment is money that came in and sits
+                        // in no till — the Balans is short by it until a person
+                        // says which box (audit A2). Only boxes of its currency.
+                        <form action={placePaymentAction} className="flex gap-1" data-testid="place-payment">
+                          <input type="hidden" name="id" value={row.id} />
+                          <select name="accountId" className="input input-sm !w-32" aria-label={t('account')} required>
+                            <option value="">{t('noAccount')}</option>
+                            {accounts
+                              .filter((account) => account.currency === row.currency)
+                              .map((account) => (
+                                <option key={account.id} value={account.id}>
+                                  {account.name}
+                                </option>
+                              ))}
+                          </select>
+                          <button type="submit" className="btn-secondary !min-h-8 px-2 text-xs">
+                            {t('placePayment')}
+                          </button>
+                        </form>
                       ) : (
                         <span className="text-warn">{t('noAccount')}</span>
                       ))}

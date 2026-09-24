@@ -4,7 +4,13 @@ import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { addPartnerTxAction, type PartnerFormState } from '../actions';
 
-const TYPES = ['charge', 'receipt', 'payment', 'adjust'] as const;
+/**
+ * No `charge` here (audit A31): a debt for a service is written by the cost or
+ * expense form with its payer picked, so the same fact reaches the P&L too.
+ * The service refuses it as well — a kind removed from a form while the door
+ * still takes it is hidden, not removed.
+ */
+const TYPES = ['payment', 'receipt', 'adjust'] as const;
 /** Types that moved real money and so must name the cash box that moved. */
 const CASH = new Set<string>(['receipt', 'payment']);
 
@@ -22,17 +28,35 @@ const CASH = new Set<string>(['receipt', 'payment']);
  */
 export function PartnerTxForm({
   partnerId,
+  staff,
   accounts,
   currencies,
+  today,
 }: {
   partnerId: string;
+  /**
+   * A colleague's account (0101): `payment` is a cash advance handed to them
+   * and `receipt` is the rest of it handed back — the ledger's own kinds and
+   * signs, said the way the accountant says them at the till (owner A1c).
+   */
+  staff: boolean;
   accounts: { id: string; name: string }[];
   currencies: string[];
+  /** Tashkent's day from the server — the browser's clock is not the office's (R5). */
+  today: string;
 }) {
   const t = useTranslations('partners');
   const tc = useTranslations('common');
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState<string>('charge');
+  const label = (code: string) =>
+    staff && (code === 'payment' || code === 'receipt')
+      ? t(`staffKinds.${code}` as 'staffKinds.payment')
+      : t(`kinds.${code}` as 'kinds.payment');
+  const hint = (code: string) =>
+    staff && (code === 'payment' || code === 'receipt')
+      ? t(`staffKindHints.${code}` as 'staffKindHints.payment')
+      : t(`kindHints.${code}` as 'kindHints.payment');
+  const [type, setType] = useState<string>('payment');
   const [state, formAction, pending] = useActionState<PartnerFormState, FormData>(
     addPartnerTxAction,
     {},
@@ -66,6 +90,9 @@ export function PartnerTxForm({
       <input type="hidden" name="partnerId" value={partnerId} />
       <p className="section-title">{t('newRow')}</p>
 
+      <p className="rounded-lg bg-surface-sunken p-2 text-xs text-ink-700" data-testid="partner-charge-moved">
+        ℹ️ {t('chargeMoved')}
+      </p>
       <select
         name="type"
         className="input"
@@ -76,11 +103,11 @@ export function PartnerTxForm({
       >
         {TYPES.map((code) => (
           <option key={code} value={code}>
-            {t(`kinds.${code}` as 'kinds.charge')}
+            {label(code)}
           </option>
         ))}
       </select>
-      <p className="text-xs text-ink-500">{t(`kindHints.${type}` as 'kindHints.charge')}</p>
+      <p className="text-xs text-ink-500">{hint(type)}</p>
 
       {/* The sum is the point of the form, so it gets the room: its own line,
           typed big enough to read back at a glance. Sharing a row with the
@@ -140,7 +167,7 @@ export function PartnerTxForm({
         className="input"
         aria-label={t('date')}
         data-testid="partner-tx-date"
-        defaultValue={new Date().toISOString().slice(0, 10)}
+        defaultValue={today}
         required
       />
       <textarea
@@ -166,7 +193,13 @@ export function PartnerTxForm({
       </div>
       {state.error && (
         <p className="text-sm font-semibold text-bad">
-          {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
+          {state.error === 'fx_missing'
+            ? t('fxMissing')
+            : state.error === 'charge_via_cost'
+              ? t('chargeMoved')
+              : state.error === 'forbidden'
+                ? t('staffForbidden')
+                : tc('error')}
         </p>
       )}
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('save')}</p>}

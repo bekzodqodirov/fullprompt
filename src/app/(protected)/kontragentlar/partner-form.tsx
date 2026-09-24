@@ -16,10 +16,18 @@ import { savePartnerAction, type PartnerFormState } from './actions';
 export function PartnerForm({
   types,
   clients,
+  staffUsers,
   partner,
 }: {
   types: { id: string; name: string }[];
   clients: { id: string; clientCode: string; name: string }[];
+  /**
+   * The «Hodim» login picker (0101) — present ONLY for whoever may see staff
+   * money (owner M3a, `maySeeStaffMoney`); null draws no select, and a form
+   * with no select posts no `userId`, which the service reads as «unchanged»
+   * rather than «nobody» (#171). Required, so no page can forget to decide.
+   */
+  staffUsers: { id: string; name: string }[] | null;
   /**
    * Present on the card, absent on the register. `savePartner` has had a full
    * update branch with before/after audit since the day it shipped — nothing
@@ -34,11 +42,20 @@ export function PartnerForm({
     clientId: string | null;
     phone: string | null;
     note: string | null;
+    userId: string | null;
   };
 }) {
   const t = useTranslations('partners');
   const tc = useTranslations('common');
   const [open, setOpen] = useState(false);
+  // Controlled, every one: a refusal (a login or a client already taken)
+  // must hand back what was typed, not the defaults (#463).
+  const [name, setName] = useState(partner?.name ?? '');
+  const [typeId, setTypeId] = useState(partner?.typeId ?? types[0]?.id ?? '');
+  const [clientId, setClientId] = useState(partner?.clientId ?? '');
+  const [userId, setUserId] = useState(partner?.userId ?? '');
+  const [phone, setPhone] = useState(partner?.phone ?? '');
+  const [note, setNote] = useState(partner?.note ?? '');
   const [state, formAction, pending] = useActionState<PartnerFormState, FormData>(
     savePartnerAction,
     {},
@@ -51,7 +68,19 @@ export function PartnerForm({
   const [seen, setSeen] = useState(state);
   if (state !== seen) {
     setSeen(state);
-    if (state.ok) setOpen(false);
+    if (state.ok) {
+      setOpen(false);
+      // A NEW account that landed must not reopen pre-filled with itself —
+      // that is the second, identical entry again. The card's edit form keeps
+      // its values: they are what the account now says.
+      if (!partner) {
+        setName('');
+        setClientId('');
+        setUserId('');
+        setPhone('');
+        setNote('');
+      }
+    }
   }
 
   if (!open) {
@@ -77,7 +106,8 @@ export function PartnerForm({
         placeholder={t('name')}
         aria-label={t('name')}
         data-testid="partner-name"
-        defaultValue={partner?.name ?? ''}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
         required
         minLength={2}
       />
@@ -86,7 +116,8 @@ export function PartnerForm({
         className="input"
         aria-label={t('type')}
         data-testid="partner-type"
-        defaultValue={partner?.typeId}
+        value={typeId}
+        onChange={(event) => setTypeId(event.target.value)}
         required
       >
         {types.map((type) => (
@@ -105,7 +136,8 @@ export function PartnerForm({
         name="clientId"
         className="input"
         data-testid="partner-client"
-        defaultValue={partner?.clientId ?? ''}
+        value={clientId}
+        onChange={(event) => setClientId(event.target.value)}
       >
         <option value="">— {t('notAClient')}</option>
         {clients.map((client) => (
@@ -114,12 +146,39 @@ export function PartnerForm({
           </option>
         ))}
       </select>
+      {staffUsers && (
+        <>
+          <label className="label" htmlFor="partner-user">
+            {t('login')}
+          </label>
+          {/* Linking a login is what makes this a staff account: its balance
+              then shows on that person's own /profile and leaves every
+              screen the VED and the logist can open. */}
+          <select
+            id="partner-user"
+            name="userId"
+            className="input"
+            data-testid="partner-user"
+            value={userId}
+            onChange={(event) => setUserId(event.target.value)}
+          >
+            <option value="">— {t('noLogin')}</option>
+            {staffUsers.map((person) => (
+              <option key={person.id} value={person.id}>
+                {person.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-ink-500">{t('loginHint')}</p>
+        </>
+      )}
       <input
         name="phone"
         className="input"
         placeholder={t('phone')}
         aria-label={t('phone')}
-        defaultValue={partner?.phone ?? ''}
+        value={phone}
+        onChange={(event) => setPhone(event.target.value)}
       />
       <textarea
         name="note"
@@ -127,7 +186,8 @@ export function PartnerForm({
         rows={2}
         placeholder={t('note')}
         aria-label={t('note')}
-        defaultValue={partner?.note ?? ''}
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
       />
       <div className="flex gap-2">
         <button
@@ -144,7 +204,13 @@ export function PartnerForm({
       </div>
       {state.error && (
         <p className="text-sm font-semibold text-bad">
-          {state.error === 'client_taken' ? t('clientTaken') : tc('error')}
+          {state.error === 'client_taken'
+            ? t('clientTaken')
+            : state.error === 'user_taken'
+              ? t('userTaken')
+              : state.error === 'forbidden'
+                ? t('staffForbidden')
+                : tc('error')}
         </p>
       )}
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('save')}</p>}

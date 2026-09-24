@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { profitAndLoss, type PnlRow } from '@/modules/wms/accounting/reports';
+import { pnlGaps, profitAndLoss, type PnlRow } from '@/modules/wms/accounting/reports';
 import { resolvePeriod, toUzs, uzsRate } from '@/modules/wms/accounting/period';
 import { PeriodForm } from '../period-form';
+import { PnlGapsNote } from '../pnl-gaps';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -24,7 +25,7 @@ export default async function PnlPage({
   if (!actor.permissions.has('finance.reports')) redirect('/accounting');
   const t = await getTranslations('accounting');
   const { from, to } = resolvePeriod(await searchParams);
-  const [pnl, rate] = await Promise.all([profitAndLoss(from, to), uzsRate()]);
+  const [pnl, rate, gaps] = await Promise.all([profitAndLoss(from, to), uzsRate(), pnlGaps(from, to)]);
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -50,6 +51,7 @@ export default async function PnlPage({
     <div className="mx-auto max-w-lg space-y-3 md:max-w-5xl">
       <PageHeader icon="chart" title={t('pnl')} />
       <PeriodForm from={from} to={to} exportHref="/api/accounting/pnl" />
+      <PnlGapsNote gaps={gaps} />
 
       <div className="card !p-0">
         <div className="overflow-x-auto">

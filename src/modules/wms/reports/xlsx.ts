@@ -4,8 +4,10 @@ import {
   landedCostByClient,
   landedCostByLot,
   stockAging,
+  unconvertedCosts,
 } from './queries';
 import { reportLabels } from './labels';
+import { dayIn, OFFICE_TZ, tashkentDay, tashkentMinute } from '@/modules/platform/time/tashkent';
 
 /**
  * §13 report XLSX builders — same queries as the report pages.
@@ -26,7 +28,12 @@ function sheetSetup(workbook: ExcelJS.Workbook, name: string, title: string) {
 export async function buildLandedCostXlsx(clientId?: string, locale?: string): Promise<Buffer> {
   const L = reportLabels(locale);
   const workbook = new ExcelJS.Workbook();
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = tashkentDay();
+  // The screen's ⚠, in the file too: costs with no rate are in no row here.
+  const unconverted = await unconvertedCosts();
+  const gap = unconverted.length
+    ? `⚠ ${L.unconvertedCosts}: ${unconverted.map((row) => `${row.amount} ${row.currency}`).join(', ')}`
+    : null;
 
   if (clientId) {
     const lots = await landedCostByLot(clientId);
@@ -54,6 +61,7 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
       '',
     ]);
     total.font = { bold: true };
+    if (gap) sheet.addRow([gap]).font = { bold: true };
   } else {
     const rows = await landedCostByClient();
     const sheet = sheetSetup(workbook, 'Landed cost', `${L.tLandedCostByClient} · ${stamp}`);
@@ -69,6 +77,7 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
       Math.round(rows.reduce((a, r) => a + r.totalUsd, 0) * 100) / 100,
     ]);
     total.font = { bold: true };
+    if (gap) sheet.addRow([gap]).font = { bold: true };
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
@@ -80,7 +89,7 @@ export async function buildStockAgingXlsx(warehouseIds?: string[], locale?: stri
   const sheet = sheetSetup(
     workbook,
     'Stock',
-    `${L.tStockAging} · ${new Date().toISOString().slice(0, 10)}`,
+    `${L.tStockAging} · ${tashkentDay()}`,
   );
   const head = sheet.addRow([L.warehouse, L.code, L.product, L.boxes, L.kg, L.m3, L.density, L.daysInStock]);
   head.font = { bold: true };
@@ -109,7 +118,7 @@ export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: s
   const sheet = sheetSetup(
     workbook,
     'Batches',
-    `${L.tBatchRegister} · ${new Date().toISOString().slice(0, 10)}`,
+    `${L.tBatchRegister} · ${tashkentDay()}`,
   );
   const head = sheet.addRow([
     L.batch, L.route, L.status, L.created, L.departed,
@@ -126,8 +135,8 @@ export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: s
       row.code,
       row.route,
       row.status,
-      row.createdAt.toISOString().slice(0, 10),
-      row.departedAt ? row.departedAt.toISOString().slice(0, 10) : '',
+      dayIn(row.createdAt, OFFICE_TZ),
+      row.departedAt ? dayIn(row.departedAt, OFFICE_TZ) : '',
       row.loaded,
       row.short,
       row.added,
@@ -146,7 +155,7 @@ export async function buildReceiptsJournalXlsx(days: number, warehouseIds?: stri
   const { receiptsJournal } = await import('./queries');
   const rows = await receiptsJournal(days, warehouseIds);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'Receipts', `${L.tReceiptsJournal} (${days} ${L.daysSuffix}) · ${new Date().toISOString().slice(0, 10)}`);
+  const sheet = sheetSetup(workbook, 'Receipts', `${L.tReceiptsJournal} (${days} ${L.daysSuffix}) · ${tashkentDay()}`);
   const head = sheet.addRow([L.number, L.date, L.warehouse, L.client, L.operator, L.lots, L.boxes, L.kg, L.m3, L.status]);
   head.font = { bold: true };
   sheet.columns = [
@@ -155,7 +164,7 @@ export async function buildReceiptsJournalXlsx(days: number, warehouseIds?: stri
   ];
   for (const row of rows) {
     sheet.addRow([
-      row.number, row.receivedAt.toISOString().slice(0, 10), row.whCode,
+      row.number, dayIn(row.receivedAt, OFFICE_TZ), row.whCode,
       row.clientCode ?? row.marking ?? '?', row.operator ?? '', row.lots,
       row.boxCount, row.kg, row.m3, row.status,
     ]);
@@ -168,7 +177,7 @@ export async function buildUnclaimedXlsx(warehouseIds?: string[], locale?: strin
   const { unclaimedReport } = await import('./queries');
   const rows = await unclaimedReport(warehouseIds);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'Unclaimed', `${L.tUnclaimed} · ${new Date().toISOString().slice(0, 10)}`);
+  const sheet = sheetSetup(workbook, 'Unclaimed', `${L.tUnclaimed} · ${tashkentDay()}`);
   const head = sheet.addRow([L.number, L.marking, L.warehouse, L.date, L.days, L.boxes, L.kg]);
   head.font = { bold: true };
   sheet.columns = [
@@ -176,7 +185,7 @@ export async function buildUnclaimedXlsx(warehouseIds?: string[], locale?: strin
   ];
   for (const row of rows) {
     sheet.addRow([
-      row.number, row.marking ?? '', row.whCode, row.receivedAt.toISOString().slice(0, 10),
+      row.number, row.marking ?? '', row.whCode, dayIn(row.receivedAt, OFFICE_TZ),
       row.days, row.boxesInStock, row.kg,
     ]);
   }
@@ -188,7 +197,7 @@ export async function buildClientHistoryXlsx(clientId: string, locale?: string):
   const { clientHistory } = await import('./queries');
   const rows = await clientHistory(clientId);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'History', `${L.tClientHistory} · ${new Date().toISOString().slice(0, 10)}`);
+  const sheet = sheetSetup(workbook, 'History', `${L.tClientHistory} · ${tashkentDay()}`);
   const head = sheet.addRow([L.lot, L.product, L.receivedAt, L.warehouse, L.batches, L.boxesShort, L.inStock, L.inTransit, L.ready, L.issued, L.lostVoid]);
   head.font = { bold: true };
   sheet.columns = [
@@ -198,7 +207,7 @@ export async function buildClientHistoryXlsx(clientId: string, locale?: string):
   for (const row of rows) {
     sheet.addRow([
       row.letter ?? '', `${row.productNameZh}${row.productNameRu ? ` (${row.productNameRu})` : ''}`,
-      row.receivedAt.toISOString().slice(0, 10), row.whCode, row.batchCodes ?? '',
+      dayIn(row.receivedAt, OFFICE_TZ), row.whCode, row.batchCodes ?? '',
       row.boxCount, row.inStock, row.inTransit, row.ready, row.issued, row.lostVoid,
     ]);
   }
@@ -210,7 +219,7 @@ export async function buildStaffActivityXlsx(days: number, locale?: string): Pro
   const { staffActivity } = await import('./queries');
   const rows = await staffActivity(days);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'Staff', `${L.tStaffActivity} (${days} ${L.daysSuffix}) · ${new Date().toISOString().slice(0, 10)}`);
+  const sheet = sheetSetup(workbook, 'Staff', `${L.tStaffActivity} (${days} ${L.daysSuffix}) · ${tashkentDay()}`);
   const head = sheet.addRow([L.date, L.employee, L.receipts, L.edits, L.labelPrints, L.scans, L.exports]);
   head.font = { bold: true };
   sheet.columns = [
@@ -227,13 +236,13 @@ export async function buildLabelPrintLogXlsx(days: number, locale?: string): Pro
   const { labelPrintLog } = await import('./queries');
   const rows = await labelPrintLog(days);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'Labels', `${L.tLabelPrintLog} (${days} ${L.daysSuffix}) · ${new Date().toISOString().slice(0, 10)}`);
+  const sheet = sheetSetup(workbook, 'Labels', `${L.tLabelPrintLog} (${days} ${L.daysSuffix}) · ${tashkentDay()}`);
   const head = sheet.addRow([L.when, L.who, L.receipt, L.labelsCount]);
   head.font = { bold: true };
   sheet.columns = [{ width: 18 }, { width: 24 }, { width: 20 }, { width: 10 }];
   for (const row of rows) {
     sheet.addRow([
-      row.at.toISOString().slice(0, 16).replace('T', ' '),
+      tashkentMinute(row.at),
       row.name, row.receiptNumber ?? row.receiptId, row.count ?? '',
     ]);
   }
@@ -245,14 +254,14 @@ export async function buildInTransitXlsx(warehouseIds?: string[], locale?: strin
   const { inTransitBatches } = await import('./queries');
   const rows = await inTransitBatches(warehouseIds);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'In transit', `${L.tInTransit} · ${new Date().toISOString().slice(0, 10)}`);
+  const sheet = sheetSetup(workbook, 'In transit', `${L.tInTransit} · ${tashkentDay()}`);
   const head = sheet.addRow([L.batch, L.route, L.departed, L.boxes]);
   head.font = { bold: true };
   sheet.columns = [{ width: 12 }, { width: 14 }, { width: 12 }, { width: 10 }];
   for (const row of rows) {
     sheet.addRow([
       row.code, `${row.originCode} → ${row.destCode}`,
-      row.departedAt ? row.departedAt.toISOString().slice(0, 10) : '', row.boxCount,
+      row.departedAt ? dayIn(row.departedAt, OFFICE_TZ) : '', row.boxCount,
     ]);
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());

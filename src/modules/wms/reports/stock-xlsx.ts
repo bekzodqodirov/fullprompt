@@ -7,6 +7,7 @@ import { runPooled } from '../../../components/pooled';
 import { parseCols, visibleColumns } from '../../platform/lists/columns';
 import { STOCK_COLUMNS } from '../inventory/columns';
 import { reportLabels } from './labels';
+import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /**
  * The stock (Ostatka) sheet.
@@ -452,7 +453,7 @@ export async function buildStockXlsx(input: {
       aging: Math.floor((now - line.receivedAt.getTime()) / 86_400_000),
       note: line.lot.note ?? '',
       batch: (arrivalCodes.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
-      date: line.receivedAt.toISOString().slice(0, 10),
+      date: dayIn(line.receivedAt, OFFICE_TZ),
     });
 
     const ids = (photosByRow.get(rowIndex) ?? []).filter((id) => thumbs.has(id));

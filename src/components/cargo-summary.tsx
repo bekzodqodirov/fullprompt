@@ -92,9 +92,21 @@ export async function CargoSummary({ clientId, money = true }: { clientId: strin
                     )}
                   </span>
                 )}
-                {money && trip.chargedUsd === 0 && (
+                {/* An internal truck is never priced (owner's C1a) — «narx
+                    qo'yilmagan» is false of it. What CAN be missing there is
+                    its own cost, and that is the warning it carries. A charge
+                    already posted on one (before the rule) still prints above. */}
+                {money && trip.chargedUsd === 0 && !trip.internal && (
                   <span className="ml-auto whitespace-nowrap text-xs text-warn">
                     {t('notPriced')}
+                  </span>
+                )}
+                {money && trip.chargedUsd === 0 && trip.internal && (
+                  <span
+                    className={`ml-auto whitespace-nowrap text-xs ${trip.costMissing ? 'text-warn' : 'text-ink-500'}`}
+                    data-testid="trip-internal"
+                  >
+                    {trip.costMissing ? `⚠️ ${t('internalNoCost')}` : t('internalTrip')}
                   </span>
                 )}
               </div>

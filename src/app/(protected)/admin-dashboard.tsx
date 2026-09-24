@@ -13,6 +13,7 @@ import { openDealsSummary } from '@/modules/wms/deals/service';
 import { taskPulse } from '@/modules/platform/tasks/analytics';
 import { notificationProblemCount } from '@/modules/platform/notifications/service';
 import { backupStatus, type BackupStatus } from '@/modules/platform/backup/objects';
+import { addDays, tashkentDay, tashkentDayStart, tashkentMonth, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The owner's own morning screen (round 107, item 4: «admin uchun glavnida
@@ -60,7 +61,11 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
   const money = perms.has('finance.reports') && seesAllMoney(actor);
   const cargo = mayReadBatches(perms);
   const sales = perms.has('crm.manage');
-  const today = new Date().toISOString().slice(0, 10);
+  // Tashkent's day and month (R5) — the same ones `salesSnapshot` and the
+  // money snapshot count by, so this home and /dashboard name the same month.
+  const today = tashkentDay();
+  const monthStart = tashkentMonthStart();
+  const nextMonthStart = `${addDays(`${tashkentMonth()}-28`, 4).slice(0, 7)}-01`;
 
   // «Qaysi sklad qanchalik to'lgan va yuk necha kun qolib ketgan» (owner,
   // 2026-08-25). Behind the CARGO permission the block links through, and
@@ -80,10 +85,7 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
       cargo ? warehouseFill(whScope, staleDays) : null,
       sales ? openDealsSummary() : null,
       sales
-        ? decidedLeadCounts(
-            new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-            new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1),
-          )
+        ? decidedLeadCounts(tashkentDayStart(monthStart), tashkentDayStart(nextMonthStart))
         : null,
       perms.has('reports.all_warehouses') ? taskPulse(new Date()) : null,
       perms.has('admin.audit.browse') ? notificationProblemCount(7) : null,
@@ -210,6 +212,12 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
             <Row href="/crm/tahlil" label={t('monthDecided')}>
               <span className="text-good">{decided.won} ✓</span> ·{' '}
               <span className="text-bad">{decided.lost} ✗</span> · {usd(decided.wonUsd)}
+              {decided.wonOtherCurrency > 0 && (
+                <span className="text-ink-500">
+                  {' '}
+                  +{decided.wonOtherCurrency} {t('otherCurrency')}
+                </span>
+              )}
             </Row>
           </div>
         </section>

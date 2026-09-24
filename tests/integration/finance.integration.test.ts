@@ -198,11 +198,15 @@ describe('client ledger', () => {
   });
 
   it('links charges to a batch for the pricing screen', async () => {
+    // A truck that CROSSES a border: since 2026-09-24 an internal leg (this
+    // file's two UZ warehouses) refuses a price — the owner's C1a — so the
+    // priced truck starts in China, as every priced truck does.
+    const china = await db.query.warehouses.findFirst({ where: eq(warehouses.country, 'CN') });
     const [batch] = await db
       .insert(batches)
       .values({
         code: `F21-${String(Date.now()).slice(-6)}`,
-        originWarehouseId: warehouseId,
+        originWarehouseId: china!.id,
         destWarehouseId,
         type: 'distribution',
         status: 'closed',
