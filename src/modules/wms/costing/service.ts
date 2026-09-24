@@ -387,7 +387,13 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
  * Sweep recompute: everything (FX table edited), one currency, or one
  * batch/receipt. Idempotent — safe to run repeatedly.
  */
-export async function recomputeAll(filter?: { currency?: string; batchId?: string; receiptId?: string }) {
+export async function recomputeAll(filter?: {
+  currency?: string;
+  batchId?: string;
+  receiptId?: string;
+  /** Only rows with no dollar figure yet — the nightly repair sweep. */
+  unconverted?: boolean;
+}) {
   const rows = await db
     .select({ id: costEntries.id })
     .from(costEntries)
@@ -397,6 +403,7 @@ export async function recomputeAll(filter?: { currency?: string; batchId?: strin
         filter?.currency ? eq(costEntries.currency, filter.currency) : undefined,
         filter?.batchId ? eq(costEntries.batchId, filter.batchId) : undefined,
         filter?.receiptId ? eq(costEntries.receiptId, filter.receiptId) : undefined,
+        filter?.unconverted ? isNull(costEntries.amountUsd) : undefined,
       ),
     );
   for (const row of rows) await recomputeEntry(row.id);

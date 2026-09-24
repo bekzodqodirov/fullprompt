@@ -136,7 +136,8 @@
     "noDebtors": "Nobody owes us",
     "salesTitle": "Sales",
     "wonThisMonth": "won this month",
-    "logisticsTitle": "Logistics"
+    "logisticsTitle": "Logistics",
+    "oldestOf": "oldest {shown} of {total}"
   },
   "inventory": {
     "title": "Stocktake",

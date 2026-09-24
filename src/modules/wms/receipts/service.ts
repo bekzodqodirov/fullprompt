@@ -31,6 +31,7 @@ import {
 import { priceControlOnReceipt } from '../deals/service';
 import { stampCalcLink } from '../calc/link';
 import { computeLotTotals } from './math';
+import { recomputeAll } from '../costing/service';
 
 export const lotInputSchema = z
   .object({
@@ -417,6 +418,18 @@ export async function confirmReceipt(
 
     return { receiptId: receipt!.id, number: number, lots: summaries };
   });
+
+  // The wizard's extra costs were inserted inside the transaction with no
+  // dollar figure and no allocation — and nothing afterwards ever converted
+  // them: «kurs yo'q» on the receipt and $0 in every tannarx for ever. The
+  // recompute runs HERE, after the commit (it reads settings and rates on
+  // the pool, #714), and a failure is a late conversion — the nightly sweep
+  // finds it — never a failed receipt.
+  if (input.extraCosts.length > 0) {
+    await recomputeAll({ receiptId: result.receiptId }).catch((err) =>
+      console.error('[receipt] extra-cost recompute failed', result.receiptId, err),
+    );
+  }
 
   if (closedArrival) {
     // The promise's author learns the numbers differ; a failure here is a

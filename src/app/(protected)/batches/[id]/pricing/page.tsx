@@ -220,7 +220,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               </span>
             )}
           </p>
-          {internal && ownCosts === 0 && (
+          {internal && batch.departedAt && ownCosts === 0 && (
             <p className="col-span-3 text-xs font-semibold text-warn" data-testid="pricing-internal-no-costs">
               ⚠️ {t('internalNoCosts')}
             </p>

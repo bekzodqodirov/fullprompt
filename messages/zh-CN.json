@@ -136,7 +136,8 @@
     "noDebtors": "无欠款客户",
     "salesTitle": "销售",
     "wonThisMonth": "本月成交",
-    "logisticsTitle": "物流"
+    "logisticsTitle": "物流",
+    "oldestOf": "最早的 {shown} / 共 {total}"
   },
   "inventory": {
     "title": "盘点",

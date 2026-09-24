@@ -6,6 +6,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import {
   agingSummary,
   costMissingBatches,
+  costMissingCount,
   discrepancySummary,
   inTransitBatches,
   stockByWarehouse,
@@ -48,7 +49,7 @@ export default async function DashboardPage() {
   const staleDays = Number(await getSetting('stale_stock_days')) || 30;
   const canEditWarehouses = actor.permissions.has('admin.warehouses.manage');
 
-  const [fills, stock, transit, unclaimed, aging, flags, costMissing, today, cash, sales] =
+  const [fills, stock, transit, unclaimed, aging, flags, costMissing, costMissingTotal, today, cash, sales] =
     await Promise.all([
       warehouseFill(scope, staleDays),
       stockByWarehouse(scope),
@@ -58,6 +59,7 @@ export default async function DashboardPage() {
       discrepancySummary(scope),
       // Costing hygiene (spec 6.9): departed > 3 days with zero cost entries.
       allWh ? costMissingBatches(3) : Promise.resolve([]),
+      allWh ? costMissingCount(3) : Promise.resolve(0),
       todaySnapshot(scope),
       seesMoney ? moneySnapshot() : Promise.resolve(null),
       seesFunnel ? salesSnapshot(seesAllLeads ? undefined : actor.id) : Promise.resolve(null),
@@ -322,7 +324,16 @@ export default async function DashboardPage() {
           </div>
           {costMissing.length > 0 && (
             <div className="space-y-1 border-t border-line pt-2 text-sm">
-              <p className="font-semibold text-warn">💸 {t('costMissing')}</p>
+              <p className="font-semibold text-warn">
+                💸 {t('costMissing')}
+                {/* The home rows print the TRUE count; a list of the oldest
+                    twenty must say it is twenty of how many (#977's shape). */}
+                {costMissingTotal > costMissing.length && (
+                  <span className="num ml-1 font-normal text-ink-500">
+                    ({t('oldestOf', { shown: costMissing.length, total: costMissingTotal })})
+                  </span>
+                )}
+              </p>
               {costMissing.map((batch) => (
                 <Link key={batch.id} href={`/batches/${batch.id}`} className="flex gap-2 text-xs">
                   <span className="font-mono font-bold text-brand-700">{batch.code}</span>

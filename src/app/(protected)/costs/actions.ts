@@ -132,7 +132,8 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
       const receipt = entry.receiptId
         ? await db.query.receipts.findFirst({ where: eq(receipts.id, entry.receiptId) })
         : null;
-      actor = await authorize('costs.enter_receipt', { warehouseId: receipt?.warehouseId });
+      if (!receipt) return { ok: false, error: 'not_found' };
+      actor = await voidReceiptCostDoor(receipt.warehouseId, entry.batchId);
     }
   } catch (err) {
     if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
@@ -150,4 +151,25 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   if (entry.receiptId) revalidatePath(`/receipts/${entry.receiptId}`);
   if (entry.crateId) revalidatePath(`/crates/${entry.crateId}`);
   return { ok: true };
+}
+
+/**
+ * Who may void a PRIXOD cost. The receipt card's door — costs.enter_receipt
+ * at the receipt's warehouse — and, for a cell typed on a truck's grid (the
+ * entry carries that truck as attribution), ALSO the grid's own door:
+ * costs.enter_batch at the truck's origin. Before, the logist or VED who
+ * typed a customs cell on the grid could not take it back, while a
+ * warehouse operator at the prixod's warehouse could. A missing receipt is
+ * refused above rather than authorised with no warehouse, which
+ * `authorize()` reads as «any warehouse» (it failed OPEN).
+ */
+async function voidReceiptCostDoor(receiptWarehouseId: string, stampedBatchId: string | null) {
+  try {
+    return await authorize('costs.enter_receipt', { warehouseId: receiptWarehouseId });
+  } catch (err) {
+    if (!(err instanceof AuthError) || !stampedBatchId) throw err;
+    const batch = await db.query.batches.findFirst({ where: eq(batches.id, stampedBatchId) });
+    if (!batch) throw err;
+    return authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
+  }
 }

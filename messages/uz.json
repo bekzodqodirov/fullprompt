@@ -136,7 +136,8 @@
     "noDebtors": "Qarzdor yo‘q",
     "salesTitle": "Sotuv",
     "wonThisMonth": "shu oyda sotildi",
-    "logisticsTitle": "Logistika"
+    "logisticsTitle": "Logistika",
+    "oldestOf": "eng eskisi {shown} / {total}"
   },
   "inventory": {
     "title": "Inventarizatsiya",

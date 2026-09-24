@@ -14,8 +14,14 @@ import { batches, warehouses } from '../../platform/db/schema';
  * column has two writers that disagree (plan approval types Kashgar →
  * Tashkent as 'transfer', the quick batch types a direct Yiwu → Andijan
  * export as 'distribution') and no reader at all, so keying on it would have
- * hidden the price on real export trucks. The client cabinet's journey
- * already classifies a leg by country; this is the same fact, stated once.
+ * hidden the price on real export trucks.
+ *
+ * This is a MONEY rule and deliberately not the client cabinet's journey
+ * rule: the cabinet calls any departure into Uzbekistan «export» (the ladder
+ * a customer reads), while here a truck that starts in Uzbekistan too is
+ * internal — the client was priced on the truck that brought the cargo
+ * across, and a second price on Andijan → Tashkent is the same false «narx
+ * qo'yilmagan» the owner reported for Yiwu → Kashgar.
  *
  * `warehouses.country` is free text, so both sides are normalised, and an
  * empty country is NOT internal: an unknown border is treated as crossed,

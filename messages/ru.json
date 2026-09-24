@@ -136,7 +136,8 @@
     "noDebtors": "Должников нет",
     "salesTitle": "Продажи",
     "wonThisMonth": "продано за месяц",
-    "logisticsTitle": "Логистика"
+    "logisticsTitle": "Логистика",
+    "oldestOf": "самые старые {shown} из {total}"
   },
   "inventory": {
     "title": "Инвентаризация",
