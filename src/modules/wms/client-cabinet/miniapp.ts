@@ -1,5 +1,11 @@
 import { verifyInitData, type InitDataResult } from '@/modules/platform/telegram/init-data';
-import { clientsForChat, cargoOverview, debtSummary, issuedHistory } from './service';
+import {
+  clientsForChat,
+  cargoOverview,
+  debtSummary,
+  issuedHandovers,
+  paidHistory,
+} from './service';
 import { localeFromTelegram } from '@/modules/platform/telegram/client-labels';
 
 /**
@@ -59,7 +65,9 @@ export interface CabinetPayload {
     cargo: Awaited<ReturnType<typeof cargoOverview>>;
     balanceUsd: number;
     recent: Awaited<ReturnType<typeof debtSummary>>['recent'];
-    history: Awaited<ReturnType<typeof issuedHistory>>;
+    history: Awaited<ReturnType<typeof issuedHandovers>>;
+    /** Money the client handed us in the same window — payments only. */
+    payments: Awaited<ReturnType<typeof paidHistory>>;
   }[];
   locale: string | null;
   totals: { boxes: number; weightKg: number; volumeM3: number; balanceUsd: number };
@@ -80,10 +88,11 @@ export interface CabinetPayload {
 export async function cabinetPayload(auth: CabinetAuth & { ok: true }): Promise<CabinetPayload> {
   const clients = await Promise.all(
     auth.clients.map(async (client) => {
-      const [cargo, debt, history] = await Promise.all([
+      const [cargo, debt, history, payments] = await Promise.all([
         cargoOverview(client.id),
         debtSummary(client.id),
-        issuedHistory(client.id),
+        issuedHandovers(client.id),
+        paidHistory(client.id),
       ]);
       return {
         ...client,
@@ -91,6 +100,7 @@ export async function cabinetPayload(auth: CabinetAuth & { ok: true }): Promise<
         balanceUsd: debt.balanceUsd,
         recent: debt.recent.filter((r) => !r.voided),
         history,
+        payments,
       };
     }),
   );

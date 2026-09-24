@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import {
@@ -8,10 +8,14 @@ import {
   boxMovements,
   clients,
   clientTelegramLinks,
+  clientTransactions,
+  handovers,
   receiptLots,
   receipts,
+  users,
   warehouses,
 } from '../../platform/db/schema';
+import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, scheduleEstimate } from '../tracking/eta';
 import { journeyFromEvents, type JourneyStep } from './journey';
@@ -547,21 +551,250 @@ export async function debtSummary(clientId: string): Promise<DebtSummary> {
   };
 }
 
-/** Recently issued cargo (history view). */
-export async function issuedHistory(clientId: string, limit = 10) {
-  return db
+/** How far back the history reaches — the owner's «3 oy». */
+export const HISTORY_DAYS = 90;
+/** A bound, said on nothing because nobody hands over 60 times a quarter. */
+const HISTORY_CAP = 60;
+
+export interface IssuedLeg {
+  /** The truck's code — the owner's explicit ask («qaysi partiyada kelgan»). */
+  batchCode: string;
+  fromPlace: string;
+  toPlace: string;
+  /** Both ends in one country: Yiwu → Kashgar, Andijan → Tashkent. */
+  domestic: boolean;
+  departedAt: string | null;
+  arrivedAt: string | null;
+  /** Boxes of THIS handover that rode it. */
+  n: number;
+}
+
+export interface IssuedLotView {
+  lotId: string;
+  letter: string | null;
+  productNameZh: string;
+  productNameRu: string | null;
+  receivedAt: string;
+  n: number;
+  weightKg: number;
+  volumeM3: number;
+  photoCount: number;
+}
+
+export interface IssuedHandover {
+  id: string;
+  issuedAt: string;
+  place: string;
+  receiver: string;
+  issuedBy: string;
+  lots: IssuedLotView[];
+  legs: IssuedLeg[];
+}
+
+/**
+ * The cargo handed over in the last three months, ONE entry per handover —
+ * the owner's «alohida topshirilgan yuklar ko'rinib tursin … qaysi partiyada
+ * kelgan, ichki tashqi sanalari, rasmlari, kim bergan».
+ *
+ * Grouped by HANDOVER and not by lot, which is what the old list did: a lot
+ * collected in two visits is two facts with two dates and two receivers, and
+ * `max(boxes.updated_at)` stood in for «when» while any later edit of a box
+ * moved it. The handover row IS the moment, and `box_movements` (cause
+ * `issued`, ref = the handover) is the one link from it to its boxes.
+ *
+ * The legs are read from THOSE boxes' `batch_departed` and landing movements,
+ * never from the lot: half of a lot can still be on the road while the other
+ * half is handed over, and a lot-scoped read would print the travelling half's
+ * truck under a handover it had no part in. `current_batch_id` is useless
+ * here — landing nulls it (#440).
+ *
+ * What is deliberately NOT here: the handover's note, `debt_ok`, the truck's
+ * plate or driver, and anything priced. The receiver's PHONE is left out too:
+ * the customer knows who they sent, and the number belongs to a person who may
+ * not be them. Four queries for the whole history, never one per row (#432).
+ */
+export async function issuedHandovers(
+  clientId: string,
+  days = HISTORY_DAYS,
+): Promise<IssuedHandover[]> {
+  const since = new Date(Date.now() - days * 86_400_000);
+  const head = await db
     .select({
-      letter: receiptLots.letter,
-      productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
-      n: sql<number>`count(*)`,
-      lastAt: sql<string>`max(${boxes.updatedAt})`,
+      id: handovers.id,
+      createdAt: handovers.createdAt,
+      receiver: handovers.personName,
+      issuedBy: users.fullName,
+      place: warehouses.name,
     })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(and(eq(receipts.clientId, clientId), eq(boxes.status, 'issued')))
-    .groupBy(receiptLots.id, receiptLots.letter, receiptLots.productNameZh, receiptLots.productNameRu)
-    .orderBy(desc(sql`max(${boxes.updatedAt})`))
-    .limit(limit);
+    .from(handovers)
+    .innerJoin(users, eq(handovers.createdBy, users.id))
+    .innerJoin(warehouses, eq(handovers.warehouseId, warehouses.id))
+    .where(
+      and(
+        eq(handovers.clientId, clientId),
+        eq(handovers.kind, 'issued_to_client'),
+        gte(handovers.createdAt, since),
+      ),
+    )
+    .orderBy(desc(handovers.createdAt))
+    .limit(HISTORY_CAP);
+  if (head.length === 0) return [];
+  const ids = head.map((h) => h.id);
+
+  const [lotRows, legRows] = await Promise.all([
+    db
+      .select({
+        handoverId: boxMovements.refId,
+        lotId: receiptLots.id,
+        letter: receiptLots.letter,
+        productNameZh: receiptLots.productNameZh,
+        productNameRu: receiptLots.productNameRu,
+        boxCount: receiptLots.boxCount,
+        lotKg: receiptLots.totalWeightKg,
+        lotM3: receiptLots.totalVolumeM3,
+        receivedAt: receipts.receivedAt,
+        n: sql<number>`count(DISTINCT ${boxMovements.boxId})`,
+      })
+      .from(boxMovements)
+      .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+      .where(
+        and(
+          eq(boxMovements.refType, 'handover'),
+          eq(boxMovements.cause, 'issued'),
+          inArray(boxMovements.refId, ids),
+        ),
+      )
+      .groupBy(boxMovements.refId, receiptLots.id, receipts.receivedAt),
+    // The issued boxes' own trucks. Raw SQL for the CTE; its timestamps come
+    // back as TEXT (a raw `execute` is not typed by the schema), so they are
+    // converted below before anybody formats them.
+    db.execute<{
+      handover_id: string;
+      batch_code: string;
+      from_place: string;
+      from_country: string;
+      to_place: string;
+      to_country: string;
+      departed_at: string | null;
+      arrived_at: string | null;
+      n: number | string;
+    }>(sql`
+      WITH issued AS (
+        SELECT ref_id AS handover_id, box_id
+        FROM box_movements
+        WHERE ref_type = 'handover' AND cause = 'issued'
+          AND ref_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+      )
+      SELECT i.handover_id,
+             b.code AS batch_code,
+             o.name AS from_place, o.country AS from_country,
+             d.name AS to_place, d.country AS to_country,
+             min(m.created_at) FILTER (WHERE m.cause = 'batch_departed') AS departed_at,
+             min(m.created_at) FILTER (
+               WHERE m.cause IN (${sql.join(ARRIVED_ON_A_TRUCK.map((c) => sql`${c}`), sql`, `)})
+             ) AS arrived_at,
+             count(DISTINCT m.box_id) FILTER (WHERE m.cause = 'batch_departed') AS n
+      FROM issued i
+      JOIN box_movements m ON m.box_id = i.box_id AND m.ref_type = 'batch'
+        AND m.cause IN ('batch_departed', ${sql.join(ARRIVED_ON_A_TRUCK.map((c) => sql`${c}`), sql`, `)})
+      JOIN batches b ON b.id = m.ref_id
+      JOIN warehouses o ON o.id = b.origin_warehouse_id
+      JOIN warehouses d ON d.id = b.dest_warehouse_id
+      GROUP BY i.handover_id, b.id, b.code, o.name, o.country, d.name, d.country
+    `),
+  ]);
+
+  const lotIds = [...new Set(lotRows.map((r) => r.lotId))];
+  const photoRows = lotIds.length
+    ? await db
+        .select({ entityId: attachments.entityId, n: sql<number>`count(*)` })
+        .from(attachments)
+        .where(
+          and(
+            eq(attachments.entityType, 'receipt_lot'),
+            inArray(attachments.entityId, lotIds),
+            eq(attachments.kind, 'photo'),
+          ),
+        )
+        .groupBy(attachments.entityId)
+    : [];
+  const photos = new Map(photoRows.map((r) => [r.entityId, Number(r.n)]));
+
+  const iso = (v: string | Date | null) => (v === null ? null : new Date(v).toISOString());
+  return head.map((h) => {
+    const lots = lotRows
+      .filter((r) => r.handoverId === h.id)
+      .map((r) => {
+        const n = Number(r.n);
+        // A box's weight is its lot's share, as on every other screen: the
+        // lot is weighed once, never box by box.
+        const share = r.boxCount > 0 ? n / r.boxCount : 0;
+        return {
+          lotId: r.lotId,
+          letter: r.letter,
+          productNameZh: r.productNameZh,
+          productNameRu: r.productNameRu,
+          receivedAt: new Date(r.receivedAt).toISOString(),
+          n,
+          weightKg: Math.round(Number(r.lotKg ?? 0) * share * 100) / 100,
+          volumeM3: Math.round(Number(r.lotM3 ?? 0) * share * 1000) / 1000,
+          photoCount: photos.get(r.lotId) ?? 0,
+        };
+      })
+      .sort((a, b) => (a.letter ?? '').localeCompare(b.letter ?? ''));
+    const legs = [...legRows]
+      .filter((r) => r.handover_id === h.id)
+      .map((r) => ({
+        batchCode: r.batch_code,
+        fromPlace: r.from_place,
+        toPlace: r.to_place,
+        domestic: r.from_country === r.to_country,
+        departedAt: iso(r.departed_at),
+        arrivedAt: iso(r.arrived_at),
+        n: Number(r.n),
+      }))
+      // The road in the order it was driven; a leg with no departure (a box
+      // found at the destination, never scanned onto the truck) goes last.
+      .sort((a, b) => (a.departedAt ?? '9').localeCompare(b.departedAt ?? '9'));
+    return {
+      id: h.id,
+      issuedAt: new Date(h.createdAt).toISOString(),
+      place: h.place,
+      receiver: h.receiver,
+      issuedBy: h.issuedBy,
+      lots,
+      legs,
+    };
+  });
+}
+
+/**
+ * What the client PAID in the same three months — and nothing else.
+ *
+ * The owner's words: «klientga tan narx ko'rinmasin, faqat pul to'langandan
+ * keyin bergan puli ko'rinsin». So payments only: not a charge, not a cost,
+ * not a note (a note is written for colleagues). Dated by the Tashkent day,
+ * because `tx_date` is a calendar day in Tashkent.
+ */
+export async function paidHistory(clientId: string, days = HISTORY_DAYS) {
+  const rows = await db
+    .select({
+      txDate: clientTransactions.txDate,
+      amount: clientTransactions.amount,
+      currency: clientTransactions.currency,
+    })
+    .from(clientTransactions)
+    .where(
+      and(
+        eq(clientTransactions.clientId, clientId),
+        eq(clientTransactions.type, 'payment'),
+        isNull(clientTransactions.voidedAt),
+        sql`${clientTransactions.txDate} >= (now() AT TIME ZONE 'Asia/Tashkent')::date - ${days}::int`,
+      ),
+    )
+    .orderBy(desc(clientTransactions.txDate), desc(clientTransactions.createdAt))
+    .limit(HISTORY_CAP);
+  return rows.map((r) => ({ txDate: r.txDate, amount: Number(r.amount), currency: r.currency }));
 }

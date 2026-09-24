@@ -287,6 +287,28 @@ const DICT = {
   issuedTo: { uz: 'Oluvchi', ru: 'Получатель', en: 'Received by' },
   issuedLeft: { uz: 'Omborda qoldi', ru: 'Осталось на складе', en: 'Left in stock' },
 
+  // --- the history of handed-over cargo (owner, 2026-09-24: «alohida
+  // topshirilgan yuklar ko'rinib tursin … qaysi partiyada kelgan, ichki
+  // tashqi sanalari, rasmlari, kim bergan») ---
+  historyWindow: {
+    uz: 'So‘nggi 3 oyda berilgan yuklar',
+    ru: 'Выдано за последние 3 месяца',
+    en: 'Handed over in the last 3 months',
+  },
+  issuedBy: { uz: 'Bergan hodim', ru: 'Выдал', en: 'Handed over by' },
+  issuedAtPlace: { uz: 'Berilgan joy', ru: 'Место выдачи', en: 'Handed over at' },
+  receivedOn: { uz: 'Qabul qilingan', ru: 'Принят', en: 'Received' },
+  batchWord: { uz: 'Partiya', ru: 'Партия', en: 'Batch' },
+  legDomestic: { uz: 'ichki yo‘l', ru: 'внутренний рейс', en: 'domestic leg' },
+  legAbroad: { uz: 'xalqaro yo‘l', ru: 'международный рейс', en: 'international leg' },
+  legDeparted: { uz: 'jo‘nadi', ru: 'отправлен', en: 'departed' },
+  legArrived: { uz: 'keldi', ru: 'прибыл', en: 'arrived' },
+  paymentsTitle: {
+    uz: 'To‘lovlaringiz (so‘nggi 3 oy)',
+    ru: 'Ваши оплаты (последние 3 месяца)',
+    en: 'Your payments (last 3 months)',
+  },
+
   // --- the Mini App ---
   appTitle: { uz: 'Mening yuklarim', ru: 'Мои грузы', en: 'My cargo' },
   /**
@@ -448,6 +470,25 @@ export function journeyLabel(key: string, labels: ClientLabels): string {
 export function stageLabel(stage: string, labels: ClientLabels): string {
   const key = `stg${stage.charAt(0).toUpperCase()}${stage.slice(1)}` as keyof ClientLabels;
   return (labels[key] as string | undefined) ?? stage;
+}
+
+/**
+ * «24.09.2026» — one day, in Tashkent, WITH the year.
+ *
+ * `formatEtaRange` drops the year because an estimate is always days away; a
+ * history reaching three months back crosses New Year, and «03.01» under
+ * «28.12» reads as a list out of order. Numeric for the same reason as below:
+ * Chromium has no Uzbek month names.
+ */
+export function formatDay(iso: string | Date): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'Asia/Tashkent',
+  }).formatToParts(new Date(iso));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('day')}.${get('month')}.${get('year')}`;
 }
 
 /**
