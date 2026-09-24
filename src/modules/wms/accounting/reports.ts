@@ -579,6 +579,44 @@ export async function profitByBatch(from: string, to: string) {
  * boxes by the M6 engine, so shared truck costs are split fairly by weight or
  * volume rather than guessed.
  */
+/**
+ * The money the batch and route tables cannot see, by the period's dates
+ * (audit A8/A27, the part that needs no decision). Both tables read only rows
+ * stamped with a truck — so a price typed on a client's ledger and every
+ * receipt-card, receive-wizard or crate cost belong to no truck row in ANY
+ * period, and the tables' totals never tie to the P&L. Named under them
+ * instead of left to be discovered; which truck such money SHOULD count
+ * against is the owner's question (R2), not this function's.
+ */
+export async function unbatchedMoney(from: string, to: string): Promise<{ revenueUsd: number; costUsd: number }> {
+  const [revenue, cost] = await Promise.all([
+    db
+      .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+      .from(clientTransactions)
+      .where(
+        and(
+          eq(clientTransactions.type, 'charge'),
+          isNull(clientTransactions.batchId),
+          isNull(clientTransactions.voidedAt),
+          gte(clientTransactions.txDate, from),
+          lte(clientTransactions.txDate, to),
+        ),
+      ),
+    db
+      .select({ sum: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)` })
+      .from(costEntries)
+      .where(
+        and(
+          isNull(costEntries.batchId),
+          isNull(costEntries.voidedAt),
+          gte(costEntries.costDate, from),
+          lte(costEntries.costDate, to),
+        ),
+      ),
+  ]);
+  return { revenueUsd: money(revenue[0]?.sum), costUsd: money(cost[0]?.sum) };
+}
+
 export async function profitByClient(from: string, to: string) {
   const revenueRows = await db
     .select({

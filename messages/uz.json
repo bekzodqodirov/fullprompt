@@ -1204,7 +1204,7 @@
     "days90": "90+ kun",
     "debt": "Qarz",
     "asOf": "Sana holatiga",
-    "pnlNote": "Oylik jadvalda tushum va tannarx o‘z sanasi bo‘yicha tushadi. Reysning haqiqiy foydasi uchun «Partiya foydasi» hisobotiga qarang.",
+    "pnlNote": "Oylik jadvalda tushum va tannarx o‘z sanasi bo‘yicha tushadi. «Partiya foydasi» faqat mashinaga yozilgan narx va xarajatni ko‘radi — prixod va yashik xarajatlari u yerda alohida qatorda aytiladi.",
     "transfersExcluded": "Hisoblar orasidagi {n} ta ko‘chirish hisobga olinmadi (bu daromad ham, xarajat ham emas).",
     "uzsNote": "So‘mdagi qiymat bugungi kurs bo‘yicha ({rate})",
     "fxMissing": "Bu valyuta uchun kurs yo‘q — avval Kurslar bo‘limiga kiriting",
@@ -1250,7 +1250,8 @@
     "futureDated": "{count} ta yozuv bugundan keyingi sana bilan ({usd}). Boshqa ekranlar ularni bugungi qarzga qo‘shadi, bu hisobot esa yo‘q — sanasini tuzating.",
     "transferAmountMismatch": "Bir valyutadagi kassalar orasida chiqqan va tushgan summa bir xil bo‘lishi kerak.",
     "recurringEdit": "Summa, kun yoki to‘xtatish",
-    "recurringActive": "Faol — har oy yoziladi"
+    "recurringActive": "Faol — har oy yoziladi",
+    "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} va xarajat {cost} — mijoz hisobida qo‘yilgan narxlar, prixod, qabul va yashik xarajatlari. Shuning uchun jadval jami P&L dan farq qiladi."
   },
   "crm": {
     "title": "CRM",

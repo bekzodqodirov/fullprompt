@@ -7,6 +7,7 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   accountTransfers,
   attachments,
+  batches,
   boxMovements,
   boxes,
   clients,
@@ -42,7 +43,7 @@ import {
   listExpenses,
 } from '@/modules/wms/accounting/service';
 import { addPartnerTx } from '@/modules/wms/partners/service';
-import { companyBalance, pnlGaps, profitAndLoss } from '@/modules/wms/accounting/reports';
+import { companyBalance, pnlGaps, profitAndLoss, unbatchedMoney } from '@/modules/wms/accounting/reports';
 import { addTransaction, placePayment } from '@/modules/wms/finance/service';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { moneyFlowCounts } from '@/modules/wms/home/role-flows';
@@ -68,6 +69,7 @@ const madeCosts: string[] = [];
 const madeLeads: string[] = [];
 const madeDeals: string[] = [];
 const madeAccounts: string[] = [];
+const madeBatches: string[] = [];
 let clientId = '';
 const ctx = () => ({ actorId });
 
@@ -96,6 +98,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(clientTransactions).where(eq(clientTransactions.clientId, clientId));
+  if (madeBatches.length) await db.delete(batches).where(inArray(batches.id, madeBatches));
   if (madeAccounts.length) {
     await db.delete(accountTransfers).where(inArray(accountTransfers.fromAccountId, madeAccounts));
     await db.delete(partnerTransactions).where(inArray(partnerTransactions.accountId, madeAccounts));
@@ -438,5 +441,55 @@ describe('a till adds up and keeps its money (A34, A35)', () => {
     expect(shownIn).toBe(700);
     expect(shownOut).toBe(200);
     expect(row.opening + shownIn - shownOut).toBe(row.balance);
+  });
+});
+
+describe('the truck tables name what they cannot see (A8/A27)', () => {
+  it('a ledger price and a receipt cost are reported beside the table, a truck price is not', async () => {
+    // One end in each country: a truck inside one country is an internal leg
+    // and refuses a price (C1a) — «the first two warehouses» may be both Chinese.
+    const [cn] = await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.country, 'CN')).limit(1);
+    const [uz] = await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.country, 'UZ')).limit(1);
+    const [batch] = await db
+      .insert(batches)
+      .values({
+        code: `MA-${STAMP}`,
+        originWarehouseId: cn!.id,
+        destWarehouseId: uz!.id,
+        status: 'forming',
+        createdBy: actorId,
+      })
+      .returning();
+    madeBatches.push(batch!.id);
+    const before = await unbatchedMoney(FROM, TO);
+
+    // A price on the client's ledger (no truck) and one on the truck.
+    await addTransaction({ clientId, type: 'charge', amount: 70, currency: 'USD', txDate: '2018-05-12' }, ctx());
+    await addTransaction(
+      { clientId, type: 'charge', amount: 400, currency: 'USD', txDate: '2018-05-12', batchId: batch!.id },
+      ctx(),
+    );
+    // A receipt-card cost, which carries no truck.
+    const [type] = await db.select({ id: costTypes.id }).from(costTypes).limit(1);
+    const [cost] = await db
+      .insert(costEntries)
+      .values({
+        scope: 'receipt',
+        receiptId: madeReceipts[0]!,
+        costTypeId: type!.id,
+        amount: '9',
+        currency: 'USD',
+        amountUsd: '9',
+        fxRateUsed: '1',
+        costDate: '2018-05-13',
+        allocationBasis: 'weight',
+        enteredBy: actorId,
+      })
+      .returning();
+    madeCosts.push(cost!.id);
+
+    const after = await unbatchedMoney(FROM, TO);
+    expect(Math.round((after.revenueUsd - before.revenueUsd) * 100) / 100).toBe(70);
+    expect(Math.round((after.costUsd - before.costUsd) * 100) / 100).toBe(9);
   });
 });

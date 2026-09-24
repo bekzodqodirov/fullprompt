@@ -1204,7 +1204,7 @@
     "days90": "90+ days",
     "debt": "Debt",
     "asOf": "As of",
-    "pnlNote": "In the monthly table revenue and costs each land on their own date. For what a trip actually earned, see the Profit by batch report.",
+    "pnlNote": "In the monthly table revenue and costs each land on their own date. Profit by batch sees only the price and costs written on the truck — receipt and crate costs are named there on a separate line.",
     "transfersExcluded": "{n} transfers between our own accounts were excluded (they are neither income nor spending).",
     "uzsNote": "Amount in UZS at today's rate ({rate})",
     "fxMissing": "No rate for this currency — enter one under Exchange rates first",
@@ -1250,7 +1250,8 @@
     "futureDated": "{count} entries are dated after today ({usd}). Other screens count them as debt now, this report does not — correct their date.",
     "transferAmountMismatch": "Between two cash boxes of one currency, the amount out must equal the amount in.",
     "recurringEdit": "Amount, day or stop",
-    "recurringActive": "Active — posted every month"
+    "recurringActive": "Active — posted every month",
+    "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} and costs {cost} tied to no truck — prices set on a client's ledger, receipt, receiving and crate costs. That is why the table's total differs from the P&L."
   },
   "crm": {
     "title": "CRM",

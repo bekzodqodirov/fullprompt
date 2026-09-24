@@ -2,7 +2,13 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { pnlGaps, profitByBatch, profitByClient, profitByRoute } from '@/modules/wms/accounting/reports';
+import {
+  pnlGaps,
+  profitByBatch,
+  profitByClient,
+  profitByRoute,
+  unbatchedMoney,
+} from '@/modules/wms/accounting/reports';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
 import { PeriodForm } from '../period-form';
 import { PnlGapsNote } from '../pnl-gaps';
@@ -47,7 +53,10 @@ export default async function ProfitPage({
         ? await profitByClient(from, to)
         : await profitByRoute(from, to);
 
-  const gaps = await pnlGaps(from, to);
+  const [gaps, unbatched] = await Promise.all([
+    pnlGaps(from, to),
+    view === 'client' ? Promise.resolve(null) : unbatchedMoney(from, to),
+  ]);
 
   const totals = rows.reduce(
     (acc, row) => ({
@@ -162,6 +171,15 @@ export default async function ProfitPage({
           </table>
         </div>
       </div>
+      {unbatched && (unbatched.revenueUsd > 0 || unbatched.costUsd > 0) && (
+        <p className="card !p-3 text-sm text-ink-700" data-testid="profit-unbatched">
+          ℹ️{' '}
+          {t('unbatchedNote', {
+            revenue: `$${usd(unbatched.revenueUsd)}`,
+            cost: `$${usd(unbatched.costUsd)}`,
+          })}
+        </p>
+      )}
     </div>
   );
 }
