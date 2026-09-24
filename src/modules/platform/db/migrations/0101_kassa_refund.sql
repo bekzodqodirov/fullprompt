@@ -52,7 +52,9 @@ CREATE INDEX cost_entries_unplaced_idx ON cost_entries (created_at)
 -- staff accounts from everybody but the accountant and the admin (M3a).
 ALTER TABLE partners ADD COLUMN user_id uuid REFERENCES users(id);
 CREATE UNIQUE INDEX partners_user_uniq ON partners (user_id) WHERE user_id IS NOT NULL;
-INSERT INTO partner_types (code, name) VALUES ('staff', 'Hodim') ON CONFLICT (code) DO NOTHING;
+-- The «Hodim» TYPE is written by the seed and not here: the seed fills the
+-- starter types only into an EMPTY table, so a row this migration wrote
+-- first would have cost a fresh install transport, customs and the rest.
 
 -- M1a: «o'z pulimdan to'ladim» is said ONLY through the rasxod xabari, and
 -- the accountant's «Kiritish» turns it into the debt. Filed from /profile by
