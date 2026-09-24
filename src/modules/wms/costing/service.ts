@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, type Tx } from '../../platform/db/client';
 import {
@@ -699,7 +699,7 @@ export interface ClientLandedCost {
  * before now, while this one is still forming); an entry with no batch at all
  * is cargo money and rides everywhere it always did.
  */
-function notLaterLeg(batchId: string) {
+function notLaterLeg(batchId: string | SQL) {
   return sql`(
     ${costEntries.batchId} IS NULL
     OR ${costEntries.batchId} = ${batchId}
@@ -759,44 +759,68 @@ export interface LotLandedCost {
  * lot is a re-sum — `batchLandedCostByClient`'s question with a finer
  * GROUP BY and the same «shu reysgacha» fence.
  *
+ * One truck's slice of `batchLandedCostTotals`, so «Partiya moliyasi» and
+ * «Partiya foydasi» are one query and cannot drift apart (owner's R2a,
+ * 2026-09-24: «bitta mashina bitta foyda»).
+ */
+export async function batchLandedCostByLot(batchId: string): Promise<Map<string, LotLandedCost>> {
+  return (await batchLandedCostTotals([batchId])).get(batchId) ?? new Map();
+}
+
+/**
+ * `batchLandedCostByLot` for MANY trucks at once — per truck, per lot — so
+ * the profit report reads every truck of a period in ONE grouped query and
+ * not one per row (#432: a list's length is the business growing).
+ *
  * Membership is written as a CTE of the two indexed lookups rather than
  * `batchMemberFilter`'s OR: joined to `cost_allocations`, the OR leaves the
  * planner guessing that half of all boxes ride every truck and it scans the
  * allocations table whole (CLAUDE.md: batch membership is a JOIN through
- * box_movements). An annulled box is not cargo (the annul round).
+ * box_movements). An annulled box is not cargo (the annul round). The
+ * «shu reysgacha» fence is asked per MEMBER truck — a box that rode two of
+ * the listed trucks is counted on each, each time with that truck's own clock.
  */
-export async function batchLandedCostByLot(batchId: string): Promise<Map<string, LotLandedCost>> {
+export async function batchLandedCostTotals(
+  batchIds: string[],
+): Promise<Map<string, Map<string, LotLandedCost>>> {
+  const out = new Map<string, Map<string, LotLandedCost>>();
+  const ids = [...new Set(batchIds)];
+  if (ids.length === 0) return out;
+  const list = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
   const rows = (await db.execute(sql`
     WITH members AS (
-      SELECT b.id FROM boxes b
-       WHERE b.current_batch_id = ${batchId} AND b.status <> 'void'
+      SELECT b.current_batch_id AS batch_id, b.id AS box_id FROM boxes b
+       WHERE b.current_batch_id IN (${list}) AND b.status <> 'void'
       UNION
-      SELECT bm.box_id FROM box_movements bm
+      SELECT bm.ref_id, bm.box_id FROM box_movements bm
         JOIN boxes b ON b.id = bm.box_id
-       WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batchId}
+       WHERE bm.ref_type = 'batch' AND bm.ref_id IN (${list})
          AND bm.cause = 'batch_departed' AND b.status <> 'void'
     )
-    SELECT bx.lot_id,
+    SELECT m.batch_id, bx.lot_id,
            coalesce(sum(ca.amount_usd), 0) AS total_usd,
-           coalesce(sum(ca.amount_usd) FILTER (WHERE ${costEntries}.batch_id = ${batchId}), 0) AS batch_usd
+           coalesce(sum(ca.amount_usd) FILTER (WHERE ${costEntries}.batch_id = m.batch_id), 0) AS batch_usd
       FROM members m
-      JOIN boxes bx ON bx.id = m.id
-      JOIN cost_allocations ca ON ca.box_id = m.id
+      JOIN boxes bx ON bx.id = m.box_id
+      JOIN cost_allocations ca ON ca.box_id = m.box_id
       JOIN ${costEntries} ON ${costEntries}.id = ca.cost_entry_id
      WHERE ${costEntries}.voided_at IS NULL
-       AND ${notLaterLeg(batchId)}
-     GROUP BY bx.lot_id
-  `)) as unknown as { lot_id: string; total_usd: string; batch_usd: string }[];
-  return new Map(
-    rows.map((row) => [
-      row.lot_id,
-      {
-        lotId: row.lot_id,
-        totalUsd: Math.round(Number(row.total_usd) * 100) / 100,
-        batchUsd: Math.round(Number(row.batch_usd) * 100) / 100,
-      },
-    ]),
-  );
+       AND ${notLaterLeg(sql`m.batch_id`)}
+     GROUP BY m.batch_id, bx.lot_id
+  `)) as unknown as { batch_id: string; lot_id: string; total_usd: string; batch_usd: string }[];
+  for (const row of rows) {
+    const byLot = out.get(row.batch_id) ?? new Map<string, LotLandedCost>();
+    byLot.set(row.lot_id, {
+      lotId: row.lot_id,
+      totalUsd: Math.round(Number(row.total_usd) * 100) / 100,
+      batchUsd: Math.round(Number(row.batch_usd) * 100) / 100,
+    });
+    out.set(row.batch_id, byLot);
+  }
+  return out;
 }
 
 /**

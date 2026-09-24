@@ -16,6 +16,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
 import { batchRoute } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { soleDealAboard } from '../batches/lots';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -98,10 +99,17 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   // would otherwise bill a client for a leg the owner never bills (C1a,
   // 2026-09-24). A payment may still name any truck — money received is not
   // a price.
+  let dealId = input.dealId || null;
   if (input.type === 'charge' && input.batchId) {
     const route = await batchRoute(input.batchId);
     if (!route) throw new FinanceError('batch_not_found');
     if (route.internal) throw new FinanceError('internal_batch');
+    // A price set on the truck is also the JOB's money when the client's
+    // cargo aboard is one deal's and nothing else (owner's R3a, 2026-09-24:
+    // «mashinada qo'yilgan narx bitimga ham yozilsin»). Derived here from the
+    // cargo, never taken from the form: the pricing screen only ANNOUNCES it,
+    // and a posted deal id would be a forged post until checked (#507).
+    if (!dealId) dealId = await soleDealAboard(input.batchId, input.clientId);
   }
   // A refund is money that LEFT a kassa for the client (R6a): it names the
   // box, never a truck (it is not a price) and never a partner (a partner-
@@ -142,7 +150,7 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
       method: input.type === 'charge' ? null : (input.method ?? 'cash'),
       txDate: input.txDate,
       batchId: input.batchId ?? null,
-      dealId: input.dealId || null,
+      dealId,
       accountId: input.accountId || null,
       note: input.note || null,
       createdBy: ctx.actorId,
@@ -158,6 +166,9 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
       amount: input.amount,
       currency: input.currency,
       amountUsd,
+      // Named when set: a truck price can land on a deal nobody typed (R3a),
+      // and the history is where somebody will ask why.
+      ...(dealId ? { dealId } : {}),
     },
   });
   return row!;
@@ -294,9 +305,11 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
  * still presses the override, and the reason goes back to being a Telegram
  * message nobody can find later.
  *
- * Only movements ON a deferred deal count. A charge posted from batch pricing
- * carries no deal, so an old unrelated debt keeps blocking exactly as it
- * should: the deferral was granted for one job, not for the client.
+ * Only movements ON a deferred deal count, so an old unrelated debt keeps
+ * blocking exactly as it should: the deferral was granted for one job, not for
+ * the client. A charge posted from batch pricing carries a deal only when the
+ * client's cargo on that truck is one deal's and nothing else (R3a) — then it
+ * IS that job's price and the deferral covers it; otherwise it carries none.
  *
  * What is deferred is what is still OWED on that job — charges MINUS payments
  * against it. Summing the charges alone was a hole in the direction that

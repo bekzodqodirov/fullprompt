@@ -2,6 +2,7 @@ import { asc, eq, ne, sql, and } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { boxes, clients, deals, receiptLots, receipts } from '../../platform/db/schema';
 import { batchMemberFilter } from '../scanning/unload';
+import { soleDealOf } from '../finance/pricing-view';
 
 /**
  * What rode this truck, one row per LOT — the goods, not the client (owner,
@@ -125,4 +126,25 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
       boxPhotoId: row.boxPhotoId,
     };
   });
+}
+
+/**
+ * The deal a price set on this truck for this client is ALSO written to
+ * (owner's R3a) — `soleDealOf` over the deals of the client's cargo aboard,
+ * read by the same membership rule as `batchLots` (the screen that announces
+ * it), so the page and the ledger cannot answer differently. A deal whose
+ * client is not this one is never written: the receipt's link is somebody
+ * else's data and no price may reach another client's job through it.
+ */
+export async function soleDealAboard(batchId: string, clientId: string): Promise<string | null> {
+  const rows = await db
+    .selectDistinct({ dealId: receipts.dealId, dealClientId: deals.clientId })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(deals, eq(receipts.dealId, deals.id))
+    .where(and(batchMemberFilter(batchId), ne(boxes.status, 'void'), eq(receipts.clientId, clientId)));
+  const dealId = soleDealOf(rows);
+  if (!dealId) return null;
+  return rows.find((row) => row.dealId === dealId)?.dealClientId === clientId ? dealId : null;
 }

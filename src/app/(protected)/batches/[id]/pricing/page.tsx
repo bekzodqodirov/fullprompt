@@ -341,6 +341,13 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               </p>
             )}
 
+            {/* Said BEFORE the press (R3a): the price also becomes this
+                job's money — its profit, its deferral, the seller's upsale. */}
+            {!internal && group.dealCode && (
+              <p className="text-xs text-ink-500" data-testid="pricing-to-deal">
+                → {t('priceAlsoToDeal', { code: group.dealCode })}
+              </p>
+            )}
             {!internal && (
               <PricingForm
                 clientId={group.clientId}

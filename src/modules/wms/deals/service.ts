@@ -1896,7 +1896,10 @@ export interface DealProfit {
   marginPct: number | null;
   /**
    * Money the client paid through BATCH pricing on trucks that carried this
-   * deal's boxes — posted without a deal, so it is not in revenueUsd. Shown,
+   * deal's boxes — posted without a deal, so it is not in revenueUsd. Since
+   * R3a a truck price carries the deal by itself when the client's cargo
+   * aboard is this deal's alone; what stays here is a truck shared with
+   * another deal or with deal-less goods (and prices from before R3a). Shown,
    * not guessed at: pro-rating somebody's batch invoice across deals would
    * put invented numbers in front of an accountant.
    */

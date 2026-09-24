@@ -32,6 +32,7 @@ export default async function ProfitPage({
   if (!actor) redirect('/login');
   if (!actor.permissions.has('finance.reports')) redirect('/accounting');
   const t = await getTranslations('accounting');
+  const tf = await getTranslations('finance');
   const params = await searchParams;
   const { from, to } = resolvePeriod(params);
   const view: View = params.view === 'client' || params.view === 'route' ? params.view : 'batch';
@@ -58,13 +59,25 @@ export default async function ProfitPage({
     view === 'client' ? Promise.resolve(null) : unbatchedMoney(from, to),
   ]);
 
-  const totals = rows.reduce(
-    (acc, row) => ({
-      revenue: acc.revenue + row.revenueUsd,
-      cost: acc.cost + row.costUsd,
-      profit: acc.profit + row.profitUsd,
-    }),
-    { revenue: 0, cost: 0, profit: 0 },
+  // An internal leg is a cost row with no profit (R2a), and its cost is
+  // already inside the cross-border truck's figure as «shu reysgacha» — so it
+  // stays out of the totals, or that money would be counted twice.
+  const isInternal = (row: (typeof rows)[number]) => 'internal' in row && row.internal;
+  const totals = rows
+    .filter((row) => !isInternal(row))
+    .reduce(
+      (acc, row) => ({
+        revenue: acc.revenue + row.revenueUsd,
+        cost: acc.cost + row.costUsd,
+        profit: acc.profit + (row.profitUsd ?? 0),
+      }),
+      { revenue: 0, cost: 0, profit: 0 },
+    );
+  const anyInternal = rows.some(isInternal);
+  const unallocated = rows.filter((row) => 'unallocatedUsd' in row && row.unallocatedUsd > 0.009);
+  const unallocatedUsd = unallocated.reduce(
+    (sum, row) => sum + ('unallocatedUsd' in row ? row.unallocatedUsd : 0),
+    0,
   );
 
   return (
@@ -141,13 +154,31 @@ export default async function ProfitPage({
                     <td className="p-2 text-right">{row.boxCount}</td>
                   )}
                   <td className="p-2 text-right font-mono">{usd(row.revenueUsd)}</td>
-                  <td className="p-2 text-right font-mono">{usd(row.costUsd)}</td>
-                  <td className={`p-2 text-right font-mono font-bold ${profitClass(row.profitUsd)}`}>
-                    {usd(row.profitUsd)}
+                  <td className="p-2 text-right font-mono" data-testid="profit-cost">
+                    {usd(row.costUsd)}
+                    {'prevUsd' in row && row.prevUsd > 0.009 && (
+                      <span className="block text-xs text-ink-500" title={tf('prevLegs')}>
+                        ↩ {usd(row.prevUsd)}
+                      </span>
+                    )}
+                    {'unallocatedUsd' in row && row.unallocatedUsd > 0.009 && (
+                      <span className="block text-xs font-semibold text-warn">
+                        ⚠ {usd(row.unallocatedUsd)}
+                      </span>
+                    )}
                   </td>
-                  <td className="p-2 text-right">{row.marginPct}%</td>
+                  {row.profitUsd === null ? (
+                    <td className="p-2 text-right text-ink-500" data-testid="profit-internal">
+                      —
+                    </td>
+                  ) : (
+                    <td className={`p-2 text-right font-mono font-bold ${profitClass(row.profitUsd)}`}>
+                      {usd(row.profitUsd)}
+                    </td>
+                  )}
+                  <td className="p-2 text-right">{row.marginPct === null ? '—' : `${row.marginPct}%`}</td>
                   {view !== 'client' && 'profitPerKg' in row && (
-                    <td className="p-2 text-right font-mono">{row.profitPerKg}</td>
+                    <td className="p-2 text-right font-mono">{row.profitPerKg ?? '—'}</td>
                   )}
                 </tr>
               ))}
@@ -171,13 +202,20 @@ export default async function ProfitPage({
           </table>
         </div>
       </div>
-      {unbatched && (unbatched.revenueUsd > 0 || unbatched.costUsd > 0) && (
+      {anyInternal && (
+        <p className="text-xs text-ink-500" data-testid="profit-internal-note">
+          {t('internalRowsNote')}
+        </p>
+      )}
+      {unallocated.length > 0 && (
+        <p className="card !p-3 text-sm font-semibold text-warn" data-testid="profit-unallocated">
+          ⚠{' '}
+          {t('unallocatedNote', { usd: `$${usd(unallocatedUsd)}`, count: unallocated.length })}
+        </p>
+      )}
+      {unbatched && unbatched.revenueUsd > 0 && (
         <p className="card !p-3 text-sm text-ink-700" data-testid="profit-unbatched">
-          ℹ️{' '}
-          {t('unbatchedNote', {
-            revenue: `$${usd(unbatched.revenueUsd)}`,
-            cost: `$${usd(unbatched.costUsd)}`,
-          })}
+          ℹ️ {t('unbatchedNote', { revenue: `$${usd(unbatched.revenueUsd)}` })}
         </p>
       )}
     </div>

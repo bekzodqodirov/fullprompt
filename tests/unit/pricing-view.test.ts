@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BatchLot } from '@/modules/wms/batches/lots';
-import { pricingView } from '@/modules/wms/finance/pricing-view';
+import { pricingView, soleDealOf } from '@/modules/wms/finance/pricing-view';
 
 /**
  * «Partiya moliyasi» by goods (owner, 2026-09-24, answer 1c: the price stays
@@ -76,5 +76,52 @@ describe('pricingView', () => {
   it('counts every charge on the truck and names the ones with no cargo under them', () => {
     expect(view.orphans).toEqual([{ clientId: 'C9', code: 'GS9', name: 'Toqqiz', chargedUsd: 40 }]);
     expect(view.totals).toMatchObject({ chargedUsd: 240, marginUsd: 53, prevUsd: 20, priced: 1 });
+  });
+});
+
+/**
+ * R3a (owner, 2026-09-24: «mashinada qo'yilgan narx bitimga ham yozilsin»):
+ * a truck price is also the deal's money only when the client's cargo aboard
+ * is ONE deal's and nothing else. The server writes it through the same
+ * function, so the screen's announcement and the ledger cannot disagree.
+ */
+describe('soleDealOf', () => {
+  it('names the deal when every lot aboard is that one deal', () => {
+    expect(soleDealOf([{ dealId: 'D1' }, { dealId: 'D1' }])).toBe('D1');
+  });
+
+  it('names nothing for two deals — one price split between them is an allocation nobody made', () => {
+    expect(soleDealOf([{ dealId: 'D1' }, { dealId: 'D2' }])).toBeNull();
+  });
+
+  it('names nothing for deal cargo beside deal-less cargo — that price would ride onto the deal', () => {
+    expect(soleDealOf([{ dealId: 'D1' }, { dealId: null }])).toBeNull();
+    expect(soleDealOf([{ dealId: null }, { dealId: 'D1' }])).toBeNull();
+  });
+
+  it('names nothing with no cargo, or no deal at all', () => {
+    expect(soleDealOf([])).toBeNull();
+    expect(soleDealOf([{ dealId: null }])).toBeNull();
+  });
+
+  it('puts the deal on the client group, so the screen says where the price goes', () => {
+    const view = pricingView(
+      [
+        lot({ lotId: 'd1', clientId: 'C1', dealId: 'D1', dealCode: 'B-00001' }),
+        lot({ lotId: 'd2', clientId: 'C1', letter: 'B', dealId: 'D1', dealCode: 'B-00001' }),
+        lot({ lotId: 'e1', clientId: 'C2', clientCode: 'GS2', dealId: 'D2', dealCode: 'B-00002' }),
+        lot({ lotId: 'e2', clientId: 'C2', clientCode: 'GS2', letter: 'B', dealId: null }),
+      ],
+      new Map(),
+      [],
+    );
+    expect(view.clients.find((group) => group.clientId === 'C1')).toMatchObject({
+      dealId: 'D1',
+      dealCode: 'B-00001',
+    });
+    expect(view.clients.find((group) => group.clientId === 'C2')).toMatchObject({
+      dealId: null,
+      dealCode: null,
+    });
   });
 });

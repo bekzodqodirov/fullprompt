@@ -1108,6 +1108,7 @@
     "internalPricedBefore": "此前在该内部车次上记录的价格",
     "internalPricedBeforeHint": "内部车次不再定价。这些记录保留在客户账上——如有需要，会计可作废并改记到跨境车次。",
     "internalBatchRefused": "内部车次不定价——请在跨境车次上定价",
+    "priceAlsoToDeal": "价格也会记入交易 {code}",
     "accountRequired": "请选择这笔收款进入的账户。",
     "futureDate": "日期不能晚于今天。",
     "placePayment": "归入",
@@ -1264,7 +1265,9 @@
     "transferAmountMismatch": "同一货币的账户之间，转出与转入金额必须相同。",
     "recurringEdit": "金额、日期或停用",
     "recurringActive": "启用——每月入账",
-    "unbatchedNote": "未计入本表（按期间日期）：未关联车辆的收入 {revenue} 和费用 {cost}——在客户账上定的价格，以及入库单、收货和木箱费用。因此本表合计与损益表不同。",
+    "internalRowsNote": "国内车次（中国境内）只显示费用：不对其定价，其费用已作为「本车次之前」计入跨境车辆的成本——因此不计入合计。",
+    "unallocatedNote": "记在车辆上的 {usd} 费用未分摊到任何箱子——不在任何成本中（车辆：{count}）。请在车次卡片上检查费用。",
+    "unbatchedNote": "未计入本表（按期间日期）：未关联车辆的收入 {revenue}——在客户账上定的价格。入库单、收货、木箱和工厂提货的费用已计入货物所乘车辆的成本。",
     "clientRefunds": "退还客户",
     "balClientAdvances": "客户预付款（我们欠）",
     "beforeOpening": "{count} 条记录早于期初日期——已包含在期初余额中，不再重复计算"

@@ -882,9 +882,11 @@ export const clientTransactions = pgTable(
     /** Charges from batch pricing point at the batch they price. */
     batchId: uuid('batch_id').references(() => batches.id),
     /**
-     * The job this charge is for, when it was raised from one. Null for every
-     * charge posted from batch pricing — which is a correct answer, not a gap:
-     * a deferral cannot cover money nobody tied to a job.
+     * The job this charge is for, when it was raised from one. A charge posted
+     * from batch pricing carries it only when the client's cargo on that truck
+     * is one deal's and nothing else (R3a, derived server-side by
+     * `soleDealAboard`); null otherwise — which is a correct answer, not a
+     * gap: a deferral cannot cover money nobody tied to a job.
      */
     dealId: uuid('deal_id').references(() => deals.id),
     /** Which cash box the payment landed in (Phase 2.4 cash flow). */

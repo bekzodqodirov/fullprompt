@@ -1108,6 +1108,7 @@
     "internalPricedBefore": "Prices written on this internal leg earlier",
     "internalPricedBeforeHint": "Internal legs are no longer priced. These rows stay on the client’s ledger — the accountant can void them and re-post them on the cross-border truck if needed.",
     "internalBatchRefused": "Internal legs are not priced — put the price on the cross-border truck",
+    "priceAlsoToDeal": "The price is also written to deal {code}",
     "accountRequired": "Pick the cash box the payment landed in.",
     "futureDate": "The date cannot be later than today.",
     "placePayment": "Place",
@@ -1264,7 +1265,9 @@
     "transferAmountMismatch": "Between two cash boxes of one currency, the amount out must equal the amount in.",
     "recurringEdit": "Amount, day or stop",
     "recurringActive": "Active — posted every month",
-    "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} and costs {cost} tied to no truck — prices set on a client's ledger, receipt, receiving and crate costs. That is why the table's total differs from the P&L.",
+    "internalRowsNote": "Internal legs (inside China) are shown as cost only: they are never priced, and their cost is already inside the cross-border truck's cost as «before this trip» — so they are left out of the total.",
+    "unallocatedNote": "{usd} of costs typed on trucks reached no box — it is in no cost figure (trucks: {count}). Check the costs on the batch card.",
+    "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} tied to no truck — prices set on a client's ledger. Receipt, receiving, crate and factory-pickup costs are already in the cost of the truck the cargo rode.",
     "clientRefunds": "Refunds to clients",
     "balClientAdvances": "Client advances (we owe)",
     "beforeOpening": "{count} entries dated before the opening count — already inside it, not added again"

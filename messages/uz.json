@@ -1108,6 +1108,7 @@
     "internalPricedBefore": "Bu ichki reysga oldin yozilgan narxlar",
     "internalPricedBeforeHint": "Endi ichki reysga narx yozilmaydi. Bu yozuvlar mijoz kassasida turibdi — kerak bo‘lsa buxgalter bekor qilib, chegaradan o‘tadigan partiyaga qayta yozadi.",
     "internalBatchRefused": "Ichki reysga mijoz narxi yozilmaydi — narxni chegaradan o‘tadigan partiyada qo‘ying",
+    "priceAlsoToDeal": "Narx {code} bitimiga ham yoziladi",
     "accountRequired": "To‘lov qaysi kassaga tushganini tanlang.",
     "futureDate": "Sana bugundan keyin bo‘lishi mumkin emas.",
     "placePayment": "Joylash",
@@ -1264,7 +1265,9 @@
     "transferAmountMismatch": "Bir valyutadagi kassalar orasida chiqqan va tushgan summa bir xil bo‘lishi kerak.",
     "recurringEdit": "Summa, kun yoki to‘xtatish",
     "recurringActive": "Faol — har oy yoziladi",
-    "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} va xarajat {cost} — mijoz hisobida qo‘yilgan narxlar, prixod, qabul va yashik xarajatlari. Shuning uchun jadval jami P&L dan farq qiladi.",
+    "internalRowsNote": "Ichki reyslar (Xitoy ichida) faqat xarajat sifatida ko‘rsatiladi: ularga narx qo‘yilmaydi, xarajati esa chegaradan o‘tadigan mashinaning tannarxida «shu reysgacha» bo‘lib turibdi — shuning uchun jami qatoriga qo‘shilmagan.",
+    "unallocatedNote": "Mashinalarga yozilgan {usd} xarajat hech bir qutiga taqsimlanmagan — u hech bir tannarxda yo‘q (mashinalar: {count} ta). Xarajatni partiya kartasida tekshiring.",
+    "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} — mijoz hisobida partiyasiz qo‘yilgan narxlar. Prixod, qabul, yashik va zavod reysi xarajatlari esa yuk qaysi mashinada ketgan bo‘lsa, o‘sha mashinaning tannarxida turibdi.",
     "clientRefunds": "Mijozlarga qaytarilgan",
     "balClientAdvances": "Mijozlar avansi (biz qarzmiz)",
     "beforeOpening": "{count} ta yozuv boshlang‘ich qoldiq sanasidan oldin — ular shu qoldiq ichida, qayta qo‘shilmaydi"

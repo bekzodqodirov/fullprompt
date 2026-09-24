@@ -15,8 +15,9 @@ import {
 import { uzsRate } from './period';
 // Every cash box converts through the generic rate lookup, not a per-currency
 // branch — the branch is how a CNY till came to be worth nothing.
-import { rateFor } from '../costing/service';
+import { batchLandedCostTotals, rateFor } from '../costing/service';
 import { clientBalances, unplacedPaymentSql } from '../finance/service';
+import { internalLegSql } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -30,8 +31,8 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
  * lands on its own date, so a batch whose costs fell in July and whose price
  * was agreed in August splits across two months. That is normal for a
  * period P&L — the question "did this trip earn?" is answered by
- * `profitByBatch`, which matches a batch's revenue against its own costs and
- * is therefore free of any period effect.
+ * `profitByBatch`, which matches a batch's revenue against the landed cost of
+ * the cargo it carried and is therefore free of any period effect.
  */
 
 export interface PnlRow {
@@ -515,11 +516,27 @@ export async function arAging(asOf: string) {
 }
 
 /**
- * Profit per batch — revenue charged for it against the costs booked to it.
+ * Profit per batch — revenue charged for it against what its cargo cost us.
  *
  * Period-free by construction: both sides belong to the same batch whatever
  * month they were entered, which is why this and not the monthly P&L answers
  * "did this trip earn money?".
+ *
+ * ONE truck, ONE profit (owner's R2a, 2026-09-24): the cost is the landed
+ * cost «Partiya moliyasi» prints in its header — the same per-lot allocations
+ * (`batchLandedCostTotals`), summed per lot in cents the way `pricingView`
+ * sums them, unclaimed cargo included — so the two screens agree to the cent.
+ * The report used to sum the cost ENTRIES stamped with the truck instead,
+ * which missed every receipt, crate and pickup cost and every earlier leg
+ * riding in the cargo, counted a stamped entry nobody could allocate, and
+ * made each internal leg a pure red row while the export truck it fed read
+ * that money as profit.
+ *
+ * An INTERNAL leg (`internalLegSql` — both ends in China) is never priced, so
+ * it is a cost row and never a margin: its profit, margin and per-kg are
+ * null. Its cost is already inside the export truck's figure as «shu
+ * reysgacha» (`prevUsd`), which is why the screens leave internal rows out of
+ * their totals — summing both counts that money twice.
  */
 export async function profitByBatch(from: string, to: string) {
   const rows = await db
@@ -535,13 +552,22 @@ export async function profitByBatch(from: string, to: string) {
       // and the box count died on `uuid = bigint`.
       originCode: sql<string>`(SELECT code FROM warehouses w WHERE w.id = ${batches}.origin_warehouse_id)`,
       destCode: sql<string>`(SELECT code FROM warehouses w WHERE w.id = ${batches}.dest_warehouse_id)`,
+      internal: sql<boolean>`coalesce((
+        SELECT ${internalLegSql('o', 'd')} FROM warehouses o, warehouses d
+        WHERE o.id = ${batches}.origin_warehouse_id AND d.id = ${batches}.dest_warehouse_id
+      ), false)`,
       revenueUsd: sql<string>`coalesce((
         SELECT sum(ct.amount_usd) FROM client_transactions ct
         WHERE ct.batch_id = ${batches}.id AND ct.type = 'charge' AND ct.voided_at IS NULL
       ), 0)`,
-      costUsd: sql<string>`coalesce((
-        SELECT sum(coalesce(ce.amount_usd, 0)) FROM cost_entries ce
-        WHERE ce.batch_id = ${batches}.id AND ce.voided_at IS NULL
+      // Money typed against this truck that reached NO box — the engine had
+      // nothing to split it over — so no landed cost carries it. Named beside
+      // the row rather than silently read as $0 («say what you cannot count»,
+      // like `pnlGaps`).
+      unallocatedUsd: sql<string>`coalesce((
+        SELECT sum(ce.amount_usd) FROM cost_entries ce
+        WHERE ce.batch_id = ${batches}.id AND ce.voided_at IS NULL AND ce.amount_usd IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ce.id)
       ), 0)`,
       boxCount: sql<number>`coalesce((
         SELECT count(*) FROM box_movements bm
@@ -575,10 +601,17 @@ export async function profitByBatch(from: string, to: string) {
     )
     .orderBy(sql`${batches.departedAt} DESC`);
 
+  const landed = await batchLandedCostTotals(rows.map((row) => row.batchId));
+
   return rows.map((row) => {
     const revenue = money(row.revenueUsd);
-    const cost = money(row.costUsd);
-    const profit = money(revenue - cost);
+    // Per lot in cents first, then the sum — `pricingView`'s own order, or
+    // the two screens could part by a cent on a truck of many lots.
+    const lots = [...(landed.get(row.batchId)?.values() ?? [])];
+    const cost = money(lots.reduce((sum, lot) => sum + lot.totalUsd, 0));
+    const prev = money(lots.reduce((sum, lot) => sum + (lot.totalUsd - lot.batchUsd), 0));
+    const internal = Boolean(row.internal);
+    const profit = internal ? null : money(revenue - cost);
     const kg = Math.round(Number(row.kg) * 10) / 10;
     const m3 = Math.round(Number(row.m3) * 1000) / 1000;
     return {
@@ -587,15 +620,19 @@ export async function profitByBatch(from: string, to: string) {
       route: `${row.originCode} → ${row.destCode}`,
       status: row.status,
       departedAt: row.departedAt,
+      internal,
       boxCount: Number(row.boxCount),
       kg,
       m3,
       revenueUsd: revenue,
       costUsd: cost,
+      /** The part of `costUsd` the cargo brought with it — «shu reysgacha». */
+      prevUsd: prev,
+      unallocatedUsd: money(row.unallocatedUsd),
       profitUsd: profit,
-      marginPct: revenue ? Math.round((profit / revenue) * 1000) / 10 : 0,
-      profitPerKg: kg ? Math.round((profit / kg) * 100) / 100 : 0,
-      profitPerM3: m3 ? Math.round((profit / m3) * 100) / 100 : 0,
+      marginPct: profit === null ? null : revenue ? Math.round((profit / revenue) * 1000) / 10 : 0,
+      profitPerKg: profit === null ? null : kg ? Math.round((profit / kg) * 100) / 100 : 0,
+      profitPerM3: profit === null ? null : m3 ? Math.round((profit / m3) * 100) / 100 : 0,
     };
   });
 }
@@ -607,40 +644,30 @@ export async function profitByBatch(from: string, to: string) {
  */
 /**
  * The money the batch and route tables cannot see, by the period's dates
- * (audit A8/A27, the part that needs no decision). Both tables read only rows
- * stamped with a truck — so a price typed on a client's ledger and every
- * receipt-card, receive-wizard or crate cost belong to no truck row in ANY
- * period, and the tables' totals never tie to the P&L. Named under them
- * instead of left to be discovered; which truck such money SHOULD count
- * against is the owner's question (R2), not this function's.
+ * (audit A8/A27). A price typed on a client's ledger names no truck, so it
+ * belongs to no truck row in ANY period — named under the tables instead of
+ * left to be discovered.
+ *
+ * Revenue only since R2a (2026-09-24): the COST half used to name every
+ * receipt, receive-wizard, crate and pickup cost here, because the table
+ * summed only entries stamped with a truck. It reads landed cost now, and
+ * that money reaches the truck its cargo rode through the allocations — so
+ * naming it here as well would describe the same dollars twice.
  */
-export async function unbatchedMoney(from: string, to: string): Promise<{ revenueUsd: number; costUsd: number }> {
-  const [revenue, cost] = await Promise.all([
-    db
-      .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
-      .from(clientTransactions)
-      .where(
-        and(
-          eq(clientTransactions.type, 'charge'),
-          isNull(clientTransactions.batchId),
-          isNull(clientTransactions.voidedAt),
-          gte(clientTransactions.txDate, from),
-          lte(clientTransactions.txDate, to),
-        ),
+export async function unbatchedMoney(from: string, to: string): Promise<{ revenueUsd: number }> {
+  const [revenue] = await db
+    .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+    .from(clientTransactions)
+    .where(
+      and(
+        eq(clientTransactions.type, 'charge'),
+        isNull(clientTransactions.batchId),
+        isNull(clientTransactions.voidedAt),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
       ),
-    db
-      .select({ sum: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)` })
-      .from(costEntries)
-      .where(
-        and(
-          isNull(costEntries.batchId),
-          isNull(costEntries.voidedAt),
-          gte(costEntries.costDate, from),
-          lte(costEntries.costDate, to),
-        ),
-      ),
-  ]);
-  return { revenueUsd: money(revenue[0]?.sum), costUsd: money(cost[0]?.sum) };
+    );
+  return { revenueUsd: money(revenue?.sum) };
 }
 
 export async function profitByClient(from: string, to: string) {
@@ -732,17 +759,30 @@ export async function profitByClient(from: string, to: string) {
     .sort((a, b) => b.profitUsd - a.profitUsd);
 }
 
-/** The same numbers rolled up per corridor (YW → TAS and so on). */
+/**
+ * The same numbers rolled up per corridor (YW → TAS and so on). A corridor
+ * inside China is an internal leg on every truck it carries — the route is
+ * its two warehouses — so it is a cost row too, never a margin.
+ */
 export async function profitByRoute(from: string, to: string) {
   const batchRows = await profitByBatch(from, to);
   const byRoute = new Map<
     string,
-    { route: string; batches: number; boxCount: number; kg: number; revenueUsd: number; costUsd: number }
+    {
+      route: string;
+      internal: boolean;
+      batches: number;
+      boxCount: number;
+      kg: number;
+      revenueUsd: number;
+      costUsd: number;
+    }
   >();
   for (const row of batchRows) {
     const entry =
       byRoute.get(row.route) ?? {
         route: row.route,
+        internal: row.internal,
         batches: 0,
         boxCount: 0,
         kg: 0,
@@ -758,15 +798,21 @@ export async function profitByRoute(from: string, to: string) {
   }
   return [...byRoute.values()]
     .map((entry) => {
-      const profit = money(entry.revenueUsd - entry.costUsd);
+      const profit = entry.internal ? null : money(entry.revenueUsd - entry.costUsd);
       return {
         ...entry,
         profitUsd: profit,
-        marginPct: entry.revenueUsd ? Math.round((profit / entry.revenueUsd) * 1000) / 10 : 0,
-        profitPerKg: entry.kg ? Math.round((profit / entry.kg) * 100) / 100 : 0,
+        marginPct:
+          profit === null ? null : entry.revenueUsd ? Math.round((profit / entry.revenueUsd) * 1000) / 10 : 0,
+        profitPerKg: profit === null ? null : entry.kg ? Math.round((profit / entry.kg) * 100) / 100 : 0,
       };
     })
-    .sort((a, b) => b.profitUsd - a.profitUsd);
+    // Cost-only corridors after the priced ones, the costliest first.
+    .sort((a, b) =>
+      a.profitUsd === null || b.profitUsd === null
+        ? Number(a.profitUsd === null) - Number(b.profitUsd === null) || b.costUsd - a.costUsd
+        : b.profitUsd - a.profitUsd,
+    );
 }
 
 /**

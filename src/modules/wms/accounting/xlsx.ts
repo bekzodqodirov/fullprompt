@@ -166,13 +166,16 @@ export async function buildProfitXlsx(
       { width: 14 }, { width: 14 }, { width: 12 }, { width: 10 }, { width: 10 }, { width: 10 },
       { width: 14 }, { width: 14 }, { width: 14 }, { width: 10 }, { width: 10 },
     ];
+    // An internal leg is a cost row (R2a): «—» where a profit would stand,
+    // never a $0 that a SUM over the column would read as a real figure.
     for (const row of rows) {
       sheet.addRow([
         row.code,
         row.route,
         row.departedAt ? dayIn(row.departedAt, OFFICE_TZ) : '',
         row.boxCount, row.kg, row.m3,
-        row.revenueUsd, row.costUsd, row.profitUsd, row.marginPct, row.profitPerKg,
+        row.revenueUsd, row.costUsd,
+        row.profitUsd ?? '—', row.marginPct ?? '—', row.profitPerKg ?? '—',
       ]);
     }
   } else if (view === 'client') {
@@ -203,7 +206,8 @@ export async function buildProfitXlsx(
     for (const row of rows) {
       sheet.addRow([
         row.route, row.batches, row.boxCount, row.kg,
-        row.revenueUsd, row.costUsd, row.profitUsd, row.marginPct, row.profitPerKg,
+        row.revenueUsd, row.costUsd,
+        row.profitUsd ?? '—', row.marginPct ?? '—', row.profitPerKg ?? '—',
       ]);
     }
   }

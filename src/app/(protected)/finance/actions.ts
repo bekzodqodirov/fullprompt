@@ -68,8 +68,9 @@ export async function addTransactionAction(
     return { error: 'forbidden' };
   }
   const meta = await requestMeta();
+  let row;
   try {
-    await addTransaction(parsed.data, { actorId: actor.id, ...meta });
+    row = await addTransaction(parsed.data, { actorId: actor.id, ...meta });
   } catch (err) {
     if (err instanceof FinanceError) return { error: err.code };
     throw err;
@@ -77,6 +78,9 @@ export async function addTransactionAction(
   revalidatePath('/finance');
   revalidatePath(`/finance/${parsed.data.clientId}`);
   if (parsed.data.batchId) revalidatePath(`/batches/${parsed.data.batchId}/pricing`);
+  // A truck price can land on a deal the form never named (R3a) — the deal
+  // card's money is what it now says.
+  if (row.dealId) revalidatePath(`/bitimlar/${row.dealId}`);
   return { ok: true };
 }
 

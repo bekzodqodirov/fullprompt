@@ -445,7 +445,7 @@ describe('a till adds up and keeps its money (A34, A35)', () => {
 });
 
 describe('the truck tables name what they cannot see (A8/A27)', () => {
-  it('a ledger price and a receipt cost are reported beside the table, a truck price is not', async () => {
+  it('a ledger price is reported beside the table, a truck price is not', async () => {
     // One end in each country: a truck inside one country is an internal leg
     // and refuses a price (C1a) — «the first two warehouses» may be both Chinese.
     const [cn] = await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.country, 'CN')).limit(1);
@@ -469,27 +469,10 @@ describe('the truck tables name what they cannot see (A8/A27)', () => {
       { clientId, type: 'charge', amount: 400, currency: 'USD', txDate: '2018-05-12', batchId: batch!.id },
       ctx(),
     );
-    // A receipt-card cost, which carries no truck.
-    const [type] = await db.select({ id: costTypes.id }).from(costTypes).limit(1);
-    const [cost] = await db
-      .insert(costEntries)
-      .values({
-        scope: 'receipt',
-        receiptId: madeReceipts[0]!,
-        costTypeId: type!.id,
-        amount: '9',
-        currency: 'USD',
-        amountUsd: '9',
-        fxRateUsed: '1',
-        costDate: '2018-05-13',
-        allocationBasis: 'weight',
-        enteredBy: actorId,
-      })
-      .returning();
-    madeCosts.push(cost!.id);
-
+    // No COST half any more (R2a): a receipt-card cost reaches the truck its
+    // cargo rides through the allocations, and the table reads landed cost —
+    // naming it here too would describe the same dollars twice.
     const after = await unbatchedMoney(FROM, TO);
     expect(Math.round((after.revenueUsd - before.revenueUsd) * 100) / 100).toBe(70);
-    expect(Math.round((after.costUsd - before.costUsd) * 100) / 100).toBe(9);
   });
 });

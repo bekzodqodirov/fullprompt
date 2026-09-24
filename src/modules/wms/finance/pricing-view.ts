@@ -31,6 +31,12 @@ export interface PricingClientGroup {
   chargedUsd: number;
   /** Null until a price exists: before that every client reads as a loss. */
   marginUsd: number | null;
+  /**
+   * The deal a price typed here is ALSO written to (`soleDealOf`), so the
+   * screen says so before the press; null when there is none to name.
+   */
+  dealId: string | null;
+  dealCode: string | null;
 }
 
 export interface PricingView {
@@ -43,6 +49,25 @@ export interface PricingView {
 }
 
 const cents = (value: number) => Math.round(value * 100) / 100;
+
+/**
+ * The one deal a client's cargo on a truck belongs to — or null (owner's
+ * R3a, 2026-09-24: «mashinada qo'yilgan narx bitimga ham yozilsin»). A price
+ * set on the truck is then that job's money too, and `addTransaction` writes
+ * it onto the charge.
+ *
+ * Strict on purpose: a mix of deal and deal-less cargo is null, not the deal.
+ * The price covers ALL the client's goods aboard while a deal's profit counts
+ * the cost of its own boxes only — so the deal-less goods' price riding onto
+ * it would print a margin nobody earned. Two deals is null for the same
+ * reason from the other side: splitting one price between them is an
+ * allocation nobody made.
+ */
+export function soleDealOf(lots: { dealId: string | null }[]): string | null {
+  const ids = new Set(lots.map((lot) => lot.dealId));
+  if (ids.size !== 1) return null;
+  return [...ids][0] ?? null;
+}
 
 export function pricingView(
   lots: BatchLot[],
@@ -91,6 +116,7 @@ export function pricingView(
   const clients: PricingClientGroup[] = [...byClient.entries()].map(([clientId, group]) => {
     const costUsd = sumCost(group.lots);
     const chargedUsd = cents(charged.get(clientId)?.usd ?? 0);
+    const dealId = soleDealOf(group.lots);
     return {
       clientId,
       code: group.code,
@@ -103,6 +129,8 @@ export function pricingView(
       prevUsd: sumPrev(group.lots),
       chargedUsd,
       marginUsd: chargedUsd > 0 ? cents(chargedUsd - costUsd) : null,
+      dealId,
+      dealCode: dealId ? (group.lots.find((lot) => lot.dealId === dealId)?.dealCode ?? null) : null,
     };
   });
 
