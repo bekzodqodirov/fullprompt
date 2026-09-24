@@ -15,6 +15,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
+import { staffPartnerSql } from './staff';
 
 /**
  * Kontragentlar — the other side of the money (round 39, the owner's three
@@ -320,6 +321,9 @@ export interface PartnerRow {
   typeCode: string;
   clientId: string | null;
   clientCode: string | null;
+  /** The login this account belongs to — set on a staff account (0101). */
+  userId: string | null;
+  staff: boolean;
   active: boolean;
   balanceUsd: number;
 }
@@ -342,7 +346,15 @@ export function partnerTotals(rows: { balanceUsd: number }[]): { owedByUs: numbe
   return { owedByUs: Math.round(owedByUs * 100) / 100, owedToUs: Math.round(owedToUs * 100) / 100 };
 }
 
-export async function listPartners(opts: { includeInactive?: boolean } = {}): Promise<PartnerRow[]> {
+/**
+ * `includeStaff` is REQUIRED (owner M3a): a staff account is shown only to
+ * the accountant and the admin, and an optional flag fails OPEN — making it
+ * required turned every caller into a compile error that had to decide.
+ */
+export async function listPartners(opts: {
+  includeInactive?: boolean;
+  includeStaff: boolean;
+}): Promise<PartnerRow[]> {
   const rows = await db
     .select({
       id: partners.id,
@@ -351,6 +363,8 @@ export async function listPartners(opts: { includeInactive?: boolean } = {}): Pr
       typeCode: partnerTypes.code,
       clientId: partners.clientId,
       clientCode: clients.clientCode,
+      userId: partners.userId,
+      staff: sql<boolean>`${staffPartnerSql()}`,
       active: partners.active,
       balance: sql<string>`coalesce((
         SELECT sum(CASE
@@ -362,7 +376,12 @@ export async function listPartners(opts: { includeInactive?: boolean } = {}): Pr
     .from(partners)
     .innerJoin(partnerTypes, eq(partners.typeId, partnerTypes.id))
     .leftJoin(clients, eq(partners.clientId, clients.id))
-    .where(opts.includeInactive ? undefined : eq(partners.active, true))
+    .where(
+      and(
+        opts.includeInactive ? undefined : eq(partners.active, true),
+        opts.includeStaff ? undefined : sql`NOT ${staffPartnerSql()}`,
+      ),
+    )
     .orderBy(asc(partnerTypes.sortOrder), asc(partners.name));
 
   return rows.map((r) => ({
@@ -372,6 +391,8 @@ export async function listPartners(opts: { includeInactive?: boolean } = {}): Pr
     typeCode: r.typeCode,
     clientId: r.clientId,
     clientCode: r.clientCode,
+    userId: r.userId,
+    staff: r.staff === true,
     active: r.active,
     balanceUsd: Math.round(Number(r.balance) * 100) / 100,
   }));
@@ -403,6 +424,7 @@ export async function partnerById(id: string) {
       typeCode: partnerTypes.code,
       clientCode: clients.clientCode,
       clientName: clients.name,
+      staff: sql<boolean>`${staffPartnerSql()}`,
     })
     .from(partners)
     .innerJoin(partnerTypes, eq(partners.typeId, partnerTypes.id))

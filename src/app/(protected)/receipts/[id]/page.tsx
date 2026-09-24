@@ -42,6 +42,7 @@ import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { listPartners } from '@/modules/wms/partners/service';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -133,7 +134,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   // kiritganda kim tomondan berilgani yozilmayabti»). The warehouse enters
   // most of the money on a prixod, so the choice has to be where they are.
   const partnerOptions = canEnterCosts
-    ? (await listPartners()).map((row) => ({ id: row.id, name: row.name }))
+    ? (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, name: row.name }))
     : [];
 
   const canVoid = actor.permissions.has('receipts.void') && receipt.status === 'confirmed';

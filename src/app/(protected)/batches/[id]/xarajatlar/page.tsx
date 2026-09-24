@@ -13,6 +13,7 @@ import { listPartners } from '@/modules/wms/partners/service';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 import { ReceiptCostGrid, type GridReceiptRow } from '../receipt-cost-grid';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /**
  * «Расходы по приходам» on a screen of its own (round 47, owner's item 8:
@@ -77,7 +78,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
   ).map((row) => row.code);
   // Same list the CostPanel offers: who settled this, when it was not us.
   const partnerOptions = canEnter
-    ? (await listPartners()).map((row) => ({ id: row.id, name: row.name }))
+    ? (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, name: row.name }))
     : [];
 
   return (

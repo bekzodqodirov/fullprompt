@@ -867,7 +867,7 @@ describe('what the audit found', () => {
     // The register's own expression, read the way the page reads it. Active
     // rows only — which is what shipped — loses the retired firm's $8,000
     // while /accounting/balance goes on counting it.
-    const shown = (await listPartners({ includeInactive: true })).filter(
+    const shown = (await listPartners({ includeInactive: true, includeStaff: true })).filter(
       (row) => row.active || Math.abs(row.balanceUsd) > 0.009,
     );
     // The page's own helper, both directions (audit A6): a firm that owes
@@ -895,7 +895,7 @@ describe('what the audit found', () => {
 
     // Grouping over the ACTIVE types dropped this row from every section
     // while its debt stayed in the total above them.
-    const rows = await listPartners({ includeInactive: true });
+    const rows = await listPartners({ includeInactive: true, includeStaff: true });
     const grouped = groupPartnersByType(rows, await listPartnerTypes(true));
     expect(grouped.flatMap((g) => g.rows).some((row) => row.id === id)).toBe(true);
   });

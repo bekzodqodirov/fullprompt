@@ -385,7 +385,8 @@
       "import_baza_min_sim": "How close an imported name must be before its price fills the baza automatically (0..1)",
       "calc_memory_min_sim": "How close a product name must be to a SEALED calculation before the AI takes its baza (0..1)",
       "ai_calc_daily_limit": "AI calls per day for calculations (past the limit: memory, dictionaries and the customs file only)",
-      "ai_calc_reply_lenta": "Also write the AI's estimate onto the card's lenta"
+      "ai_calc_reply_lenta": "Also write the AI's estimate onto the card's lenta",
+      "cost_kassa_since": "Costs with no cash box entered from this day on go to the accountant's queue (YYYY-MM-DD; empty = all)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app"

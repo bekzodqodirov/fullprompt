@@ -23,6 +23,7 @@ import { PageHeader } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
 import { openExpenseRequests } from '@/modules/wms/accounting/expense-requests';
 import { spendDateOf } from '@/modules/wms/accounting/spend-date';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /**
  * The expense book: what the company spent that is not cargo cost.
@@ -74,7 +75,7 @@ export default async function ExpensesPage({
     currencies: currencyRows.map((row) => row.code),
     // Round 39: rent and Chinese salaries are settled through the transport
     // company, so the expense book has to be able to say who paid.
-    partners: (await listPartners()).map((row) => ({ id: row.id, label: row.name })),
+    partners: (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, label: row.name })),
   };
   // The whole period's total, never the sum of the rows drawn: the list stops
   // at its newest 500 (audit A14).

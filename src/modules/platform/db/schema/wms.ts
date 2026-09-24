@@ -447,6 +447,16 @@ export const costEntries = pgTable(
     partnerId: uuid('partner_id').references(() => partners.id),
     /** A factory-pickup truck's cost (0100, B5a) — split over what it brought. */
     pickupId: uuid('pickup_id').references((): AnyPgColumn => pickups.id),
+    /**
+     * The kassa the money LEFT from (0101, owner 3b): a cost «we paid» used
+     * to say nothing about where from, so the same money was typed again as
+     * an expense with a kassa. Exclusive with `partnerId` (CHECK).
+     */
+    accountId: uuid('account_id').references((): AnyPgColumn => moneyAccounts.id),
+    /** What left the kassa, in the KASSA's currency (set iff accountId). */
+    accountAmount: numeric('account_amount', { precision: 14, scale: 2 }),
+    /** The duplicate expense this cost replaced in a merge (A3/M4a). */
+    mergedExpenseId: uuid('merged_expense_id').references((): AnyPgColumn => expenses.id),
     note: text('note'),
     enteredBy: uuid('entered_by')
       .notNull()
@@ -473,6 +483,17 @@ export const costEntries = pgTable(
     index('cost_entries_pickup_idx')
       .on(t.pickupId)
       .where(sql`${t.pickupId} IS NOT NULL`),
+    check('cost_entries_payer_check', sql`NOT (${t.partnerId} IS NOT NULL AND ${t.accountId} IS NOT NULL)`),
+    check(
+      'cost_entries_account_amount_check',
+      sql`(${t.accountId} IS NULL) = (${t.accountAmount} IS NULL) AND (${t.accountAmount} IS NULL OR (${t.accountAmount} > 0 AND ${t.accountAmount} <> 'NaN'::numeric))`,
+    ),
+    index('cost_entries_account_idx')
+      .on(t.accountId)
+      .where(sql`${t.accountId} IS NOT NULL`),
+    index('cost_entries_unplaced_idx')
+      .on(t.createdAt)
+      .where(sql`${t.voidedAt} IS NULL AND ${t.partnerId} IS NULL AND ${t.accountId} IS NULL`),
   ],
 );
 
@@ -1019,9 +1040,14 @@ export const expenseRequests = pgTable(
   'expense_requests',
   {
     id: id(),
-    warehouseId: uuid('warehouse_id')
-      .notNull()
-      .references(() => warehouses.id),
+    /** Null when filed from /profile by somebody who belongs to no warehouse (0101). */
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id),
+    /**
+     * «O'z pulimdan to'ladim» (0101, owner M1a): the reporter paid out of
+     * pocket, so the accountant's «Kiritish» books a DEBT to them (their
+     * staff counterparty) instead of cash out of a kassa.
+     */
+    paidBySelf: boolean('paid_by_self').notNull().default(false),
     amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
     currency: varchar('currency', { length: 3 })
       .notNull()
@@ -2674,6 +2700,12 @@ export const partners = pgTable(
      * money stays on the client side, service money lands here.
      */
     clientId: uuid('client_id').references(() => clients.id),
+    /**
+     * The staff member this account IS (0101, owner A1c): own-pocket spending
+     * is our debt to them, an advance is theirs to us. Their /profile shows
+     * it (A2a); nobody but the accountant and the admin sees it (M3a).
+     */
+    userId: uuid('user_id').references(() => users.id),
     phone: text('phone'),
     note: text('note'),
     active: boolean('active').notNull().default(true),
@@ -2686,6 +2718,7 @@ export const partners = pgTable(
   (t) => [
     // Two accounts for one person would each show half the truth.
     uniqueIndex('partners_client_uniq').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
+    uniqueIndex('partners_user_uniq').on(t.userId).where(sql`${t.userId} IS NOT NULL`),
     index('partners_type_idx').on(t.typeId).where(sql`${t.active}`),
   ],
 );

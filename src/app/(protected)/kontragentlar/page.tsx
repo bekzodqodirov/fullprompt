@@ -14,6 +14,7 @@ import { PartnerForm } from './partner-form';
 import { db } from '@/modules/platform/db/client';
 import { clients } from '@/modules/platform/db/schema';
 import { asc, eq } from 'drizzle-orm';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /**
  * Kimga qarzdormiz — the mirror of the client ledger.
@@ -49,7 +50,7 @@ export default async function PartnersPage() {
   // A retired account with a live balance therefore keeps its row (dimmed, and
   // saying so); a retired account that is settled disappears, which is the
   // tidying the button was for.
-  const allRows = await listPartners({ includeInactive: true });
+  const allRows = await listPartners({ includeInactive: true, includeStaff: maySeeStaffMoney(actor.permissions) });
   const rows = allRows.filter((r) => r.active || Math.abs(r.balanceUsd) > 0.009);
   // Group over EVERY type, offer only the live ones on the form: hiding a type
   // on /admin/partner-types must not delete the accounts under it from the

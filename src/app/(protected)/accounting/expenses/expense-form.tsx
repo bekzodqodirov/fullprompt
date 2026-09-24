@@ -48,7 +48,8 @@ export function ExpenseForm({
     amount: string;
     currency: string;
     note: string;
-    warehouseId: string;
+    /** Null when the request was filed from /profile, off any warehouse. */
+    warehouseId: string | null;
     /** The day the warehouse spent it, not today (audit A29). */
     expenseDate: string;
   };
@@ -131,7 +132,7 @@ export function ExpenseForm({
         <select
           name="warehouseId"
           aria-label={t('warehouse')}
-          defaultValue={prefill?.warehouseId}
+          defaultValue={prefill?.warehouseId ?? ''}
           className="input !w-32"
         >
           <option value="">— {t('warehouse')} —</option>

@@ -24,6 +24,7 @@ import { PrintLabels } from '@/components/print-labels';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -97,7 +98,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
   // Crating money is warehouse money and is often settled by the transport
   // firm too, so the same «who paid» choice belongs here (owner).
   const partnerOptions = canEditCosts
-    ? (await listPartners()).map((row) => ({ id: row.id, name: row.name }))
+    ? (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, name: row.name }))
     : [];
 
   const active = crate.status === 'active';

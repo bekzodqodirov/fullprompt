@@ -50,6 +50,7 @@ import { batchCustomsRows } from '@/modules/wms/partners/customs';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { CrateRows } from '@/components/crate-rows';
 import { batchCrates } from '@/modules/wms/inventory/service';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -209,7 +210,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // after it cleared this truck dropped out of the picker — and a select whose
   // value matches no option silently shows the FIRST one, which here reads
   // «as the truck says». New rows are offered the live firms only.
-  const allPartners = await listPartners({ includeInactive: true });
+  const allPartners = await listPartners({ includeInactive: true, includeStaff: maySeeStaffMoney(actor.permissions) });
   const partnerOptions = canEnterCosts
     ? allPartners.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }))
     : [];

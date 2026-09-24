@@ -385,7 +385,8 @@
       "import_baza_min_sim": "导入名称需达到的相似度阈值，超过后自动填入基价（0..1）",
       "calc_memory_min_sim": "商品名称与已封存计算的相似度达到多少时，AI 才采用其基价（0..1）",
       "ai_calc_daily_limit": "每日用于计算的 AI 调用次数（超出后仅用记忆、字典与海关文件）",
-      "ai_calc_reply_lenta": "将 AI 的估算同时写入卡片动态"
+      "ai_calc_reply_lenta": "将 AI 的估算同时写入卡片动态",
+      "cost_kassa_since": "自此日起录入且未指定账户的费用进入会计待办（YYYY-MM-DD；留空 = 全部）"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用"

@@ -33,6 +33,7 @@ import {
   RemoveStopButton,
   StopLinesForm,
 } from '../pickup-forms';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,7 +69,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
         currencies: (
           await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true))
         ).map((c) => c.code),
-        partners: (await listPartners()).map((row) => ({ id: row.id, name: row.name })),
+        partners: (await listPartners({ includeStaff: maySeeStaffMoney(actor.permissions) })).map((row) => ({ id: row.id, name: row.name })),
       }
     : null;
   const candidates = live && canCost ? await pickupCandidates(id) : [];

@@ -162,6 +162,14 @@ export const SETTING_DEFAULTS = {
    * Only the generator advances it; a typed or imported code never does.
    */
   client_code_next: '',
+  /**
+   * From which day a cost with no payer is the accountant's to place (0101):
+   * the «kassasi ko'rsatilmagan» queue and the home counter start here.
+   * Written by the migration on deploy day — every earlier cost has no kassa
+   * by construction and is inside some till's counted opening balance.
+   * Empty = no bound.
+   */
+  cost_kassa_since: '',
   label_size: '100x100',
   translation_provider: 'libretranslate',
   default_locale: 'ru' as 'ru' | 'uz' | 'zh-CN' | 'en',
