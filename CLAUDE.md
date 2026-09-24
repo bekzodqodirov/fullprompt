@@ -1676,6 +1676,28 @@ stored timed at 23:59:59.999Z and rendered «21-sentabr 04:59» in Tashkent whil
 the digest printed the 20th; the existing test asserted `dueAt > now`, which the
 defect satisfies (#494). 4 red proofs, two of them naming the file.
 
+**Round — his four items + C/E (2026-09-24; DECISIONS #979-988; NO migration,
+99 stands; the kassa/staff/duplicate package and the factory pickup are the
+next two parts, each judged before code):** the cost grid carries the GOODS
+per prixod (`batches/lots.ts` `batchLots`, the one per-lot read both money
+screens use — the batch card keeps its own query for its loader photo order)
+and filters in the BROWSER (a URL filter would drop typed cells); the grid,
+CostPanel and the price action share `parseTypedMoney` («1,200» was 1.2 and
+«1 200» was wiped by the success). «Partiya moliyasi» opens each client into
+its lots with the EXACT per-lot tannarx (`batchLandedCostByLot` = the client
+figure's allocations re-summed by lot, a CTE of the two indexed membership
+lookups) while the price stays per client (his 1c); the arithmetic is pure in
+`finance/pricing-view.ts`. **An internal leg = same country at both ends**
+(`batches/internal.ts`; `batches.type` has two writers that disagree and no
+reader — never key on it); the SERVICE refuses a charge on one, the client
+card and batch card warn «xarajat yozilmagan» instead of «narx qo'yilmagan»,
+and the homes' cost-missing counter is a true count, not `.length` of a
+20-row list. The stock picker drops deactivated warehouses unless boxes still
+stand in them. Found on the way: the receive wizard's extra cost was NEVER
+converted (USD rates are never saved, so no FX trigger ever fired) — now
+recomputed after the commit plus a nightly `{unconverted:true}` sweep.
+2702 unit/integration on a fresh db.
+
 **Latest migration: 0098** (`staff_notes_simplify` — the note is a name, its
 text and its files; ledger must reach **99**). Before it: **0097**
 (`staff_notes` — the note, its parts, their order,

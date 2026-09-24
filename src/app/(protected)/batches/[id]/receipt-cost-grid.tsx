@@ -312,7 +312,7 @@ export function ReceiptCostGrid({
                         )}{' '}
                         <Link
                           href={`/receipts/${row.receiptId}`}
-                          className="num text-xs text-brand-700 underline-offset-2 hover:underline"
+                          className="num whitespace-nowrap text-xs text-brand-700 underline-offset-2 hover:underline"
                         >
                           {row.number ?? '—'}
                         </Link>
@@ -327,7 +327,9 @@ export function ReceiptCostGrid({
                           ) : (
                             <span className="num ml-1 text-xs text-ink-500">{row.dealCode}</span>
                           ))}
-                        <p className="num text-xs text-ink-500">
+                        {/* Not `.num`: that class right-aligns, and a line
+                            of facts under a name reads left to right. */}
+                        <p className="font-mono text-xs tabular-nums text-ink-500">
                           📦 {row.boxes} · {row.kg} kg · {row.m3} m³
                         </p>
                       </div>

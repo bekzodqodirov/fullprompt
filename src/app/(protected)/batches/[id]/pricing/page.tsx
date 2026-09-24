@@ -122,7 +122,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               <p className="text-xs text-ink-500">
                 <Link
                   href={`/receipts/${lot.receiptId}`}
-                  className="num text-brand-700 underline-offset-2 hover:underline"
+                  className="num whitespace-nowrap text-brand-700 underline-offset-2 hover:underline"
                 >
                   {lot.receiptNumber ?? '—'}
                 </Link>
@@ -146,7 +146,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   </>
                 )}
               </p>
-              <p className="num text-xs text-ink-500">
+              <p className="font-mono text-xs tabular-nums text-ink-500">
                 📦 {lot.onBatch}
                 {lot.onBatch < lot.lotBoxCount && `/${lot.lotBoxCount}`} · {lot.kg} kg · {lot.m3} m³
               </p>
@@ -155,11 +155,13 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               <p className="num text-sm font-bold" data-testid="lot-cost">
                 {money(cost?.totalUsd ?? 0)}
               </p>
+              {/* Two short lines, not one long one: on a phone the goods
+                  name beside it is what needs the width. */}
               {cost && cost.totalUsd > 0 && lot.kg > 0 && (
-                <p className="num text-xs text-ink-500">
-                  {(cost.totalUsd / lot.kg).toFixed(2)}/kg
-                  {lot.m3 > 0 && ` · ${(cost.totalUsd / lot.m3).toFixed(0)}/m³`}
-                </p>
+                <p className="num text-xs text-ink-500">{(cost.totalUsd / lot.kg).toFixed(2)}/kg</p>
+              )}
+              {cost && cost.totalUsd > 0 && lot.m3 > 0 && (
+                <p className="num text-xs text-ink-500">{(cost.totalUsd / lot.m3).toFixed(0)}/m³</p>
               )}
               {prev > 0.009 && (
                 <p className="num text-xs text-ink-500" title={t('prevLegs')}>

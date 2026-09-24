@@ -1,5 +1,76 @@
 # CHANGELOG
 
+## Partiya xarajatlari va moliyasi tovar bo'yicha, ichki reys, nofaol sklad — 2026-09-24
+
+Sizning 4 ta bandingiz va keyingi javoblaringizning birinchi qismi. Kassa,
+hodim-kontragent va takroriy xarajatlar keyingi qismda, zavod reysi va xarita
+undan keyin — har biri koddan oldin mustaqil tekshiruvdan o'tkaziladi.
+
+### 1. Partiya xarajat jadvali (xarajatlar)
+
+- Har bir prixod qatorida endi **rasm**, **tovar nomlari** (xitoycha · ruscha)
+  va **karobka soni** bor. Tovar ikki mashinaga bo'lingan bo'lsa «📦 40/60»
+  ko'rinadi.
+- Prixod raqamiga bosilsa — prixod ochiladi; bitim bo'lsa uning kodi ham
+  chiqadi.
+- **Filtr**: mijoz kodi, markirovka, tovar nomi, prixod raqami yoki bitim
+  bo'yicha qidirish. Va «bo'sh ustun» — masalan, «Rastamojka» hali
+  yozilmagan prixodlarni ko'rsatadi. Filtr ostida qolib ketgan yozilgan
+  kataklar ham saqlanadi — ekran buni aytib turadi.
+- Topilgan va tuzatilgan xatolar:
+  - «1,200» 1,2 deb o'qilardi, «1 200» esa umuman o'qilmay, saqlashdan keyin
+    **o'chib ketardi**. Endi 1200 deb o'qiladi, o'qib bo'lmaydigan son esa
+    qizil bo'lib saqlashni to'xtatadi.
+  - Saqlash yarmida uzilsa, keyingi bosishda saqlangan kataklar **ikki marta**
+    yozilardi. Endi ekran qaysilari saqlanganini biladi.
+  - Bekor qilingan prixod jadvalda qolib ketardi.
+  - Ikki mashinaga bo'lingan prixodda ikkinchi mashina «allaqachon to'langan»
+    ko'rinardi. Endi «shu reys» va «boshqa yozuvlar» alohida.
+  - Butun partiyaga yozilgan rastamojka hech bir katakda ko'rinmasdi — ustun
+    bo'sh ko'rinib, ikkinchi marta yozishga undardi. Endi ustun sarlavhasida.
+  - Grid orqali yozilgan xarajatni uni yozgan logist/VED bekor qila olmasdi —
+    endi oladi.
+
+### 2. Partiya moliyasi — tovar bo'yicha
+
+Sizning javobingiz (1c): **narx mijozga bitta qoladi**, ekran esa yukni tovar
+bo'yicha ochib ko'rsatadi.
+
+- Har bir mijoz ichida uning tovarlari: rasm, nomi, prixod havolasi, bitim,
+  karobka/kg/kub va **har bir tovarning aniq tannarxi**.
+- Egasi aniqlanmagan yuk alohida ko'rinadi va tannarxi jamiga qo'shiladi
+  (oldin yo'qolib qolardi).
+- Mashinada yuki qolmagan mijozga yozilgan narx ham jamida va alohida qatorda.
+- Kursi kiritilmagan xarajat bo'lsa — nechtaligi aytiladi.
+- Narx formasi endi **USD** dan boshlanadi (oldin CNY edi — «150» ¥150 ≈ $20
+  bo'lib ketardi) va rad etilsa yozilgan summa o'chmaydi.
+
+### 3. Ichki reyslar (C)
+
+Jo'nash va borish skladi **bir davlatda** bo'lsa — ichki reys (masalan YW →
+Qashqar, Andijon → Toshkent).
+
+- Ichki reysga mijoz narxi **yozilmaydi** (server rad etadi).
+- Mijoz kartasida «narx qo'yilmagan» o'rniga «ichki reys — narx keyingi
+  partiyada», xarajati yo'q bo'lsa «⚠ xarajat yozilmagan».
+- Partiya kartasida jo'nagan, lekin xarajati yozilmagan har bir mashinaga
+  ogohlantirish.
+- Bosh ekrandagi «xarajati kiritilmagan partiyalar» soni 20 da to'xtab
+  qolardi — endi haqiqiy son.
+
+### 4. Ostatka: nofaol skladlar
+
+Nofaol skladlar ro'yxatdan chiqdi. Ichida hali yuk qolgan bo'lsa, «faol emas»
+belgisi bilan qoladi — aks holda o'sha yukni hech kim topa olmasdi.
+
+### 5. Eski pul xatosi: qabul qilishdagi «qo'shimcha xarajat»
+
+Qabul qilishda yozilgan qo'shimcha xarajat **hech qachon dollarga
+aylantirilmasdi** — tannarxda $0, kartada «kurs yo'q». Endi darhol
+aylantiriladi, eskilari esa har kecha avtomatik tuzatiladi.
+
+---
+
 ## O'z ishimni audit qildim — yana 4 xato topildi — 2026-09-19
 
 PR #83 merge bo'lgandan keyin `main` ni beshta linzada tekshirdim (46 topilma,
