@@ -454,7 +454,7 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           }
         />
         <FlowRow
-          href="/finance"
+          href="/finance/reestr?joylanmagan=1"
           icon="exchange"
           testid="acc-flow-unassigned"
           label={t('flowUnassignedPayments')}

@@ -94,7 +94,7 @@
     "flowLoading": "loading: {n}",
     "flowReady": "ready to issue: {n}",
     "flowPlansPending": "awaiting a verdict: {n}",
-    "flowUnassignedPayments": "Payments without a cash box (this month)",
+    "flowUnassignedPayments": "Payments without a cash box",
     "flowRecurringDue": "Recurring costs not posted",
     "flowDocsPending": "Batches without agent docs",
     "flowTnvedMissing": "Goods without TNVED code",
@@ -805,7 +805,9 @@
     "gridBadCells": "{count} cells could not be read as a number — write «1200», «1 200» or «1200.50».",
     "gridBadHidden": "{count} of them are hidden by the filter.",
     "gridShowAll": "Show all",
-    "gridPartial": "{saved} cells saved, the rest were not ({reason}). The unsaved ones are still in the grid — press again."
+    "gridPartial": "{saved} cells saved, the rest were not ({reason}). The unsaved ones are still in the grid — press again.",
+    "rateStanding": "Current rate: 1 USD = {rate} {currency}",
+    "rateJump": "The last rate was 1 USD = {previous} {currency} — the new one differs by more than 20%. If it is right, tick this and save again."
   },
   "batches": {
     "title": "Batches",
@@ -1101,7 +1103,12 @@
     "internalNoCosts": "No costs are entered on this internal leg yet — enter the freight and the rest on the batch card.",
     "internalPricedBefore": "Prices written on this internal leg earlier",
     "internalPricedBeforeHint": "Internal legs are no longer priced. These rows stay on the client’s ledger — the accountant can void them and re-post them on the cross-border truck if needed.",
-    "internalBatchRefused": "Internal legs are not priced — put the price on the cross-border truck"
+    "internalBatchRefused": "Internal legs are not priced — put the price on the cross-border truck",
+    "accountRequired": "Pick the cash box the payment landed in.",
+    "futureDate": "The date cannot be later than today.",
+    "placePayment": "Place",
+    "registerAll": "By period",
+    "registerUnplaced": "Not in a cash box"
   },
   "map": {
     "title": "Map",
@@ -1238,7 +1245,10 @@
     "gapOpenPartners": "Counterparties →",
     "gapUnconverted": "Costs with no exchange rate ({count}) are counted as $0: {sums}.",
     "gapUnconvertedHint": "Enter that currency's rate — the costs recompute by themselves.",
-    "expensesTruncated": "Showing the newest {shown} of {total}; the total covers the whole period."
+    "expensesTruncated": "Showing the newest {shown} of {total}; the total covers the whole period.",
+    "balUnplaced": "Payments not in a cash box",
+    "futureDated": "{count} entries are dated after today ({usd}). Other screens count them as debt now, this report does not — correct their date.",
+    "transferAmountMismatch": "Between two cash boxes of one currency, the amount out must equal the amount in."
   },
   "crm": {
     "title": "CRM",
@@ -1580,7 +1590,8 @@
     "dayStale": "{n} overdue — show",
     "dayStaleOpen": "Overdue",
     "dayOthers": "By seller",
-    "dayBack": "Only mine"
+    "dayBack": "Only mine",
+    "wonOtherCurrency": "+{count} in another currency"
   },
   "navShort": {
     "home": "Home",
@@ -2553,7 +2564,8 @@
     "proofNote": "Note (required when there is no file)",
     "proofRequired": "A file or a note is required",
     "chargeMoved": "A debt for a service (a truck, customs, rent, a salary) is now entered in the cost or expense form with «Settled by» picked. The debt lands here by itself and reaches the profit report too.",
-    "manualCharge": "Not linked to a cost — missing from the profit report"
+    "manualCharge": "Not linked to a cost — missing from the profit report",
+    "owedToUs": "Owe us"
   },
   "lists": {
     "allRecords": "All",
@@ -2760,7 +2772,9 @@
     "categoryTitle": "Expense category for the seller share",
     "categoryUnset": "No expense category chosen — payout is refused",
     "categoryHint": "A payout is written as an ordinary expense. A dedicated category is mandatory: paid out of «Salaries» it would occupy that seller’s salary slot for the month and the salary would be silently counted as posted.",
-    "categoryAsk": "Only an administrator can choose it."
+    "categoryAsk": "Only an administrator can choose it.",
+    "periodByOffer": "Offer date",
+    "periodHint": "The period is by the day of the offer. Expenses and the P&L show a payout on the day the money was handed over."
   },
   "sellerReport": {
     "title": "Sellers: results",

@@ -7,6 +7,7 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import {
   FinanceError,
   addTransaction,
+  placePayment,
   transactionSchema,
   voidTransaction,
 } from '@/modules/wms/finance/service';
@@ -42,6 +43,13 @@ export async function addTransactionAction(
     note: String(formData.get('note') ?? ''),
   });
   if (!parsed.success) return { error: 'validation' };
+  // A payment names the cash box it landed in (audit A2). One saved with none
+  // took its amount off the Balans receivable and put it in no kassa, so the
+  // net fell by the payment while the cash flow said it came in — and no
+  // screen could place it afterwards. The rule lives at this door, the only
+  // one that takes a typed payment: rows entered before cash boxes existed
+  // have none, and the service still reads them (#171's history rule).
+  if (parsed.data.type === 'payment' && !parsed.data.accountId) return { error: 'account_required' };
 
   let actor;
   try {
@@ -86,4 +94,22 @@ export async function voidTransactionAction(formData: FormData): Promise<void> {
   }
   revalidatePath('/finance');
   revalidatePath(`/finance/${parsed.data.clientId}`);
+}
+
+/** The register's «kassaga joylash» — see `placePayment` (audit A2). */
+export async function placePaymentAction(formData: FormData): Promise<void> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  const accountId = z.string().uuid().safeParse(formData.get('accountId'));
+  if (!id.success || !accountId.success) return;
+  const actor = await authorize('finance.manage');
+  const meta = await requestMeta();
+  try {
+    await placePayment(id.data, accountId.data, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof FinanceError) return;
+    throw err;
+  }
+  revalidatePath('/finance/reestr');
+  revalidatePath('/accounting/balance');
+  revalidatePath('/accounting');
 }

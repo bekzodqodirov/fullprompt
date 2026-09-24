@@ -22,6 +22,7 @@ import { RejectRequestButton } from './reject-request-button';
 import { PageHeader } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
 import { openExpenseRequests } from '@/modules/wms/accounting/expense-requests';
+import { spendDateOf } from '@/modules/wms/accounting/spend-date';
 
 /**
  * The expense book: what the company spent that is not cargo cost.
@@ -107,6 +108,11 @@ export default async function ExpensesPage({
               data-testid="expense-request-row"
             >
               <span className="font-mono text-xs text-ink-500">{request.warehouseCode}</span>
+              {/* When the money was spent, in the warehouse's clock — the
+                  date «Kiritish» will file it under (audit A29). */}
+              <span className="font-mono text-xs text-ink-500" data-testid="expense-request-date">
+                {spendDateOf(new Date(request.createdAt), request.warehouseTimezone)}
+              </span>
               <span className="text-ink-700">{request.requesterName}</span>
               <span className="font-mono font-bold">
                 {Number(request.amount).toLocaleString('ru-RU')} {request.currency}
@@ -153,6 +159,7 @@ export default async function ExpensesPage({
                   currency: prefillRow.currency,
                   note: prefillRow.note,
                   warehouseId: prefillRow.warehouseId,
+                  expenseDate: spendDateOf(new Date(prefillRow.createdAt), prefillRow.warehouseTimezone),
                 }
               : undefined
           }

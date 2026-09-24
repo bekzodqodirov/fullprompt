@@ -127,7 +127,7 @@ export default async function UpsalePage({
           is a link (#514: every value validated on the way back in). */}
       <form className="card flex flex-wrap items-end gap-2 !p-3" data-testid="upsale-period">
         <label className="text-2xs">
-          <span className="label">{t('when')}</span>
+          <span className="label">{t('periodByOffer')}</span>
           <input type="date" name="dan" className="input input-sm !w-36" defaultValue={period.dan} />
         </label>
         <label className="text-2xs">
@@ -138,6 +138,10 @@ export default async function UpsalePage({
         <button type="submit" className="btn-secondary">
           {t('title')}
         </button>
+        {/* Which clock (audit A30): an offer made in September and paid in
+            October is «To'langan» on September here and in October's P&L —
+            both right, and unexplained they read as a contradiction. */}
+        <p className="w-full text-2xs text-ink-500">{t('periodHint')}</p>
       </form>
 
       <div className="grid grid-cols-3 gap-2" data-testid="upsale-scoreboard">

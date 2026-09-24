@@ -210,6 +210,12 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
             <Row href="/crm/tahlil" label={t('monthDecided')}>
               <span className="text-good">{decided.won} ✓</span> ·{' '}
               <span className="text-bad">{decided.lost} ✗</span> · {usd(decided.wonUsd)}
+              {decided.wonOtherCurrency > 0 && (
+                <span className="text-ink-500">
+                  {' '}
+                  +{decided.wonOtherCurrency} {t('otherCurrency')}
+                </span>
+              )}
             </Row>
           </div>
         </section>

@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  accountTransfers,
   attachments,
   boxMovements,
   boxes,
@@ -12,9 +13,15 @@ import {
   costAllocations,
   costEntries,
   costTypes,
+  dealStages,
+  deals,
   events,
   expenseCategories,
   expenses,
+  clientTransactions,
+  leadStages,
+  leads,
+  moneyAccounts,
   partnerTransactions,
   partnerTypes,
   partners,
@@ -25,8 +32,20 @@ import {
 } from '@/modules/platform/db/schema';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { landedCostByClient, landedCostByLot, unconvertedCosts } from '@/modules/wms/reports/queries';
-import { addExpense, expenseTotals, listExpenses } from '@/modules/wms/accounting/service';
-import { pnlGaps, profitAndLoss } from '@/modules/wms/accounting/reports';
+import { decidedLeadCounts, salesAnalytics } from '@/modules/wms/crm/analytics';
+import { openDealsSummary } from '@/modules/wms/deals/service';
+import {
+  accountBalances,
+  addExpense,
+  addTransfer,
+  expenseTotals,
+  listExpenses,
+} from '@/modules/wms/accounting/service';
+import { addPartnerTx } from '@/modules/wms/partners/service';
+import { companyBalance, pnlGaps, profitAndLoss } from '@/modules/wms/accounting/reports';
+import { addTransaction, placePayment } from '@/modules/wms/finance/service';
+import { latestTxDate } from '@/modules/wms/finance/dates';
+import { moneyFlowCounts } from '@/modules/wms/home/role-flows';
 import { buildExpensesXlsx } from '@/modules/wms/accounting/xlsx';
 import { savePartner } from '@/modules/wms/partners/service';
 
@@ -46,6 +65,9 @@ let partnerId = '';
 const madeExpenses: string[] = [];
 const madeReceipts: string[] = [];
 const madeCosts: string[] = [];
+const madeLeads: string[] = [];
+const madeDeals: string[] = [];
+const madeAccounts: string[] = [];
 let clientId = '';
 const ctx = () => ({ actorId });
 
@@ -73,6 +95,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.delete(clientTransactions).where(eq(clientTransactions.clientId, clientId));
+  if (madeAccounts.length) {
+    await db.delete(accountTransfers).where(inArray(accountTransfers.fromAccountId, madeAccounts));
+    await db.delete(partnerTransactions).where(inArray(partnerTransactions.accountId, madeAccounts));
+    await db.delete(moneyAccounts).where(inArray(moneyAccounts.id, madeAccounts));
+  }
+  if (madeLeads.length) await db.delete(leads).where(inArray(leads.id, madeLeads));
+  if (madeDeals.length) await db.delete(deals).where(inArray(deals.id, madeDeals));
   if (madeCosts.length) await db.delete(costEntries).where(inArray(costEntries.id, madeCosts));
   if (madeReceipts.length) {
     await db.delete(costEntries).where(inArray(costEntries.receiptId, madeReceipts));
@@ -254,5 +284,159 @@ describe('the landed-cost report counts only live, converted money (A24, A25)', 
     // The P&L for its month reads it as $0 — and now says so (A11).
     const pnlAfter = await pnlGaps(FROM, TO);
     expect(pnlAfter.unconverted.count - pnlBefore.unconverted.count).toBe(1);
+  });
+});
+
+describe('won money is dollars, net of the discount (A19, A21)', () => {
+  // A month nothing else writes decisions into.
+  const from = new Date('2031-01-01T00:00:00Z');
+  const to = new Date('2031-02-01T00:00:00Z');
+  const closedAt = new Date('2031-01-10T09:00:00Z');
+
+  it('a so\'m quote is counted beside the dollars, never added to them', async () => {
+    const [won] = await db.select().from(leadStages).where(eq(leadStages.kind, 'won')).limit(1);
+    const before = await decidedLeadCounts(from, to);
+    const made = await db
+      .insert(leads)
+      .values([
+        { name: `A19 usd ${STAMP}`, stageId: won!.id, createdBy: actorId, quotedAmount: '1200', quotedCurrency: 'USD', closedAt },
+        { name: `A19 uzs ${STAMP}`, stageId: won!.id, createdBy: actorId, quotedAmount: '12000000', quotedCurrency: 'UZS', closedAt },
+      ])
+      .returning({ id: leads.id });
+    madeLeads.push(...made.map((row) => row.id));
+
+    const after = await decidedLeadCounts(from, to);
+    expect(after.won - before.won).toBe(2);
+    // Before the fix: 12,001,200 «dollars».
+    expect(Math.round((after.wonUsd - before.wonUsd) * 100) / 100).toBe(1200);
+    expect(after.wonOtherCurrency - before.wonOtherCurrency).toBe(1);
+
+    const scoreboard = await salesAnalytics({ from, to });
+    expect(scoreboard.totals.wonUsd).toBe(after.wonUsd);
+  });
+
+  it("a deal's won and open money is what the card prints — the discount taken off", async () => {
+    const [won] = await db.select().from(dealStages).where(eq(dealStages.kind, 'won')).limit(1);
+    const [open] = await db.select().from(dealStages).where(eq(dealStages.kind, 'open')).limit(1);
+    const blockBefore = (await salesAnalytics({ from, to })).deals!;
+    const openBefore = await openDealsSummary();
+    const made = await db
+      .insert(deals)
+      .values([
+        {
+          code: `A21-${STAMP}-1`, clientId, stageId: won!.id, title: 'A21 won', createdBy: actorId,
+          quotedAmount: '1000', quotedCurrency: 'USD', discountAmount: '150', discountReason: 'shikast', closedAt,
+        },
+        {
+          code: `A21-${STAMP}-2`, clientId, stageId: won!.id, title: 'A21 won uzs', createdBy: actorId,
+          quotedAmount: '9000000', quotedCurrency: 'UZS', closedAt,
+        },
+        {
+          code: `A21-${STAMP}-3`, clientId, stageId: open!.id, title: 'A21 open', createdBy: actorId,
+          quotedAmount: '500', quotedCurrency: 'USD', discountAmount: '50', discountReason: 'shikast',
+        },
+      ])
+      .returning({ id: deals.id });
+    madeDeals.push(...made.map((row) => row.id));
+
+    const block = (await salesAnalytics({ from, to })).deals!;
+    expect(Math.round((block.wonUsd - blockBefore.wonUsd) * 100) / 100).toBe(850);
+    expect(block.wonOtherCurrency - blockBefore.wonOtherCurrency).toBe(1);
+    const openAfter = await openDealsSummary();
+    expect(Math.round((openAfter.usdSum - openBefore.usdSum) * 100) / 100).toBe(450);
+  });
+});
+
+describe('a payment lands in a till, on a real day (A2, A23)', () => {
+  const today = new Date().toISOString().slice(0, 10);
+
+  it('a charge dated years ahead is refused; tomorrow (Tashkent after midnight) is not', async () => {
+    const row = { clientId, type: 'charge' as const, amount: 10, currency: 'USD' };
+    await expect(addTransaction({ ...row, txDate: '2308-04-01' }, ctx())).rejects.toMatchObject({
+      code: 'future_date',
+    });
+    await addTransaction({ ...row, txDate: latestTxDate() }, ctx());
+  });
+
+  it('an unplaced payment is on the Balans until it is placed, and the net never moves', async () => {
+    const [account] = await db
+      .insert(moneyAccounts)
+      .values({ name: `Audit kassa ${STAMP}`, currency: 'USD' })
+      .returning();
+    madeAccounts.push(account!.id);
+    const [uzs] = await db
+      .insert(moneyAccounts)
+      .values({ name: `Audit so'm ${STAMP}`, currency: 'UZS' })
+      .returning();
+    madeAccounts.push(uzs!.id);
+
+    await addTransaction({ clientId, type: 'charge', amount: 500, currency: 'USD', txDate: today }, ctx());
+    const before = await companyBalance();
+    const counterBefore = (await moneyFlowCounts(today)).unassignedPayments;
+
+    // Saved with no kassa — every payment before this round could be.
+    const payment = await addTransaction(
+      { clientId, type: 'payment', amount: 500, currency: 'USD', txDate: today },
+      ctx(),
+    );
+    const unplaced = await companyBalance();
+    expect(Math.round((unplaced.receivableUsd - before.receivableUsd) * 100) / 100).toBe(-500);
+    expect(Math.round((unplaced.unplacedUsd - before.unplacedUsd) * 100) / 100).toBe(500);
+    // Before the fix the net fell by $500 here: money received, in no line.
+    expect(unplaced.netUsd).toBe(before.netUsd);
+    expect((await moneyFlowCounts(today)).unassignedPayments).toBe(counterBefore + 1);
+
+    // Only into a box speaking its currency…
+    await expect(placePayment(payment.id, uzs!.id, ctx())).rejects.toMatchObject({
+      code: 'account_currency_mismatch',
+    });
+    await placePayment(payment.id, account!.id, ctx());
+    const placed = await companyBalance();
+    expect(Math.round((placed.unplacedUsd - before.unplacedUsd) * 100) / 100).toBe(0);
+    expect(Math.round((placed.cashUsd - before.cashUsd) * 100) / 100).toBe(500);
+    expect(placed.netUsd).toBe(before.netUsd);
+    expect((await moneyFlowCounts(today)).unassignedPayments).toBe(counterBefore);
+    // …and once.
+    await expect(placePayment(payment.id, account!.id, ctx())).rejects.toMatchObject({
+      code: 'already_placed',
+    });
+  });
+});
+
+describe('a till adds up and keeps its money (A34, A35)', () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const till = async (name: string) => {
+    const [row] = await db.insert(moneyAccounts).values({ name: `${name} ${STAMP}`, currency: 'USD' }).returning();
+    madeAccounts.push(row!.id);
+    return row!.id;
+  };
+
+  it('between two tills of one currency, the money out is the money in', async () => {
+    const a = await till('A35 a');
+    const b = await till('A35 b');
+    const row = { fromAccountId: a, toAccountId: b, transferDate: today, note: '' };
+    // Before the fix $900 left the kassa totals and no report ever saw it.
+    await expect(addTransfer({ ...row, amountFrom: 1000, amountTo: 100 }, ctx())).rejects.toMatchObject({
+      code: 'amount_mismatch',
+    });
+    await addTransfer({ ...row, amountFrom: 100, amountTo: 100 }, ctx());
+  });
+
+  it("a row's opening + in − out is its balance, a firm's money included", async () => {
+    const id = await till('A34');
+    await addPartnerTx(
+      { partnerId, type: 'receipt', amount: 700, currency: 'USD', txDate: today, accountId: id, batchId: '', note: '' },
+      ctx(),
+    );
+    await addPartnerTx(
+      { partnerId, type: 'payment', amount: 200, currency: 'USD', txDate: today, accountId: id, batchId: '', note: '' },
+      ctx(),
+    );
+    const row = (await accountBalances()).find((r) => r.id === id)!;
+    const shownIn = row.paidIn + row.transferredIn + row.partnerIn;
+    const shownOut = row.spent + row.transferredOut + row.partnerOut;
+    expect(shownIn).toBe(700);
+    expect(shownOut).toBe(200);
+    expect(row.opening + shownIn - shownOut).toBe(row.balance);
   });
 });

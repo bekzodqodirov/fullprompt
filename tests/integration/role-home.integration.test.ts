@@ -244,7 +244,7 @@ describe('the logist home', () => {
 });
 
 describe('the accountant home', () => {
-  it('an unplaced payment counts only while live, unplaced and this month', async () => {
+  it('an unplaced payment counts only while live and unplaced', async () => {
     const before = await moneyFlowCounts(TODAY);
 
     const [tx] = await db

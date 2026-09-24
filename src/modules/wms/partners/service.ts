@@ -325,6 +325,23 @@ export interface PartnerRow {
 }
 
 /** Everybody, with what we owe each — the «kimga qarzdormiz» screen. */
+/**
+ * The register's two totals, rounded per account the way `companyBalance`
+ * rounds them, so both Balans lines can be checked on the page they link to
+ * (audit A6). The page used to print only what we owe; «what firms owe US»
+ * sat on the Balans and nowhere here.
+ */
+export function partnerTotals(rows: { balanceUsd: number }[]): { owedByUs: number; owedToUs: number } {
+  let owedByUs = 0;
+  let owedToUs = 0;
+  for (const row of rows) {
+    const value = Math.round(row.balanceUsd * 100) / 100;
+    if (value > 0) owedByUs += value;
+    else owedToUs += -value;
+  }
+  return { owedByUs: Math.round(owedByUs * 100) / 100, owedToUs: Math.round(owedToUs * 100) / 100 };
+}
+
 export async function listPartners(opts: { includeInactive?: boolean } = {}): Promise<PartnerRow[]> {
   const rows = await db
     .select({

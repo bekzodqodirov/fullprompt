@@ -61,10 +61,10 @@ export default async function AccountsPage() {
                   </td>
                   <td className="p-2 text-right font-mono text-ink-700">{money(row.opening)}</td>
                   <td className="p-2 text-right font-mono text-good">
-                    +{money(Math.round((row.paidIn + row.transferredIn) * 100) / 100)}
+                    +{money(Math.round((row.paidIn + row.transferredIn + row.partnerIn) * 100) / 100)}
                   </td>
                   <td className="p-2 text-right font-mono text-bad">
-                    −{money(Math.round((row.spent + row.transferredOut) * 100) / 100)}
+                    −{money(Math.round((row.spent + row.transferredOut + row.partnerOut) * 100) / 100)}
                   </td>
                   <td className="p-2 text-right font-mono font-bold">
                     {money(row.balance)} {row.currency}

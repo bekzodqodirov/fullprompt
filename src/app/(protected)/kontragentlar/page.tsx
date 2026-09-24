@@ -7,6 +7,7 @@ import {
   groupPartnersByType,
   listPartnerTypes,
   listPartners,
+  partnerTotals,
 } from '@/modules/wms/partners/service';
 import { PageHeader } from '@/components/ui/page';
 import { PartnerForm } from './partner-form';
@@ -55,7 +56,7 @@ export default async function PartnersPage() {
   // screen while their debt stays in the total.
   const allTypes = await listPartnerTypes(true);
   const types = allTypes.filter((type) => type.active);
-  const owed = rows.filter((r) => r.balanceUsd > 0).reduce((a, r) => a + r.balanceUsd, 0);
+  const { owedByUs: owed, owedToUs } = partnerTotals(rows);
 
   // For the "this counterparty is also one of our clients" picker. Active
   // clients only, and the list is long, so the form searches inside it.
@@ -88,6 +89,14 @@ export default async function PartnersPage() {
         <span className="font-mono text-lg font-extrabold text-bad" data-testid="partners-total">
           ${owed.toFixed(2)}
         </span>
+        {owedToUs > 0 && (
+          <span className="ml-auto text-sm text-ink-700">
+            {t('owedToUs')}:{' '}
+            <b className="font-mono text-good" data-testid="partners-receivable">
+              ${owedToUs.toFixed(2)}
+            </b>
+          </span>
+        )}
       </div>
 
       {canManage && <PartnerForm types={types} clients={clientOptions} />}

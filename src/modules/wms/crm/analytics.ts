@@ -1,4 +1,11 @@
 import { and, asc, eq, gte, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
+import {
+  dealWonOtherCurrencySql,
+  dealWonUsdSql,
+  leadCurrencySql,
+  leadWonOtherCurrencySql,
+  leadWonUsdSql,
+} from './won-money';
 import { db } from '../../platform/db/client';
 import { deals, dealStages, leads, leadSources, leadStages, users } from '../../platform/db/schema';
 
@@ -121,8 +128,10 @@ function leadFilterConds(f: AnalyticsFilters): SQL[] {
   else if (f.owner) conds.push(eq(leads.ownerId, f.owner));
   if (f.source === 'none') conds.push(isNull(leads.sourceId));
   else if (f.source) conds.push(eq(leads.sourceId, f.source));
-  if (f.amountMin !== undefined) conds.push(sql`${leads.quotedAmount} >= ${f.amountMin}`);
-  if (f.amountMax !== undefined) conds.push(sql`${leads.quotedAmount} <= ${f.amountMax}`);
+  // A price filter is typed in dollars, so it compares dollar quotes only
+  // (audit A19) — «narx ≥ 1000» would otherwise match every so'm quote.
+  if (f.amountMin !== undefined) conds.push(sql`(${leadCurrencySql()} = 'USD' AND ${leads.quotedAmount} >= ${f.amountMin})`);
+  if (f.amountMax !== undefined) conds.push(sql`(${leadCurrencySql()} = 'USD' AND ${leads.quotedAmount} <= ${f.amountMax})`);
   if (f.volMin !== undefined) conds.push(sql`${leads.quotedVolumeM3} >= ${f.volMin}`);
   if (f.volMax !== undefined) conds.push(sql`${leads.quotedVolumeM3} <= ${f.volMax}`);
   if (f.kgMin !== undefined) conds.push(sql`${leads.quotedWeightKg} >= ${f.kgMin}`);
@@ -135,8 +144,8 @@ function dealFilterConds(f: AnalyticsFilters): SQL[] {
   const conds: SQL[] = [];
   if (f.owner === 'none') conds.push(isNull(deals.ownerId));
   else if (f.owner) conds.push(eq(deals.ownerId, f.owner));
-  if (f.amountMin !== undefined) conds.push(sql`${deals.quotedAmount} >= ${f.amountMin}`);
-  if (f.amountMax !== undefined) conds.push(sql`${deals.quotedAmount} <= ${f.amountMax}`);
+  if (f.amountMin !== undefined) conds.push(sql`(${deals.quotedCurrency} = 'USD' AND ${deals.quotedAmount} >= ${f.amountMin})`);
+  if (f.amountMax !== undefined) conds.push(sql`(${deals.quotedCurrency} = 'USD' AND ${deals.quotedAmount} <= ${f.amountMax})`);
   if (f.volMin !== undefined) conds.push(sql`${deals.quotedVolumeM3} >= ${f.volMin}`);
   if (f.volMax !== undefined) conds.push(sql`${deals.quotedVolumeM3} <= ${f.volMax}`);
   if (f.kgMin !== undefined) conds.push(sql`${deals.quotedWeightKg} >= ${f.kgMin}`);
@@ -161,15 +170,17 @@ export type SalesAnalytics = Awaited<ReturnType<typeof salesAnalytics>>;
  * never `updated_at` (round 98's two clocks). One lean query, because the
  * home page is the most-opened screen and `salesAnalytics` is ~14.
  *
- * `wonUsd` is safe unfiltered here: a LEAD's quote currency is USD-only when
- * priced (round 71) — unlike deals, where the sum must filter.
+ * `wonUsd` is dollars only (`won-money.ts`): this comment used to call the
+ * sum safe unfiltered because «a lead's quote is USD-only», and the lead form
+ * offers UZS and CNY — audit A19.
  */
 export async function decidedLeadCounts(from: Date, to: Date) {
   const [row] = await db
     .select({
       won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
       lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-      wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+      wonUsd: leadWonUsdSql(),
+      wonOther: leadWonOtherCurrencySql(),
     })
     .from(leads)
     .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
@@ -178,6 +189,7 @@ export async function decidedLeadCounts(from: Date, to: Date) {
     won: Number(row?.won ?? 0),
     lost: Number(row?.lost ?? 0),
     wonUsd: money(row?.wonUsd),
+    wonOtherCurrency: Number(row?.wonOther ?? 0),
   };
 }
 
@@ -211,7 +223,8 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
         .select({
           won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
           lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-          wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+          wonUsd: leadWonUsdSql(),
+          wonOther: leadWonOtherCurrencySql(),
           cycleDays: sql<string>`coalesce(avg(extract(epoch from ${leads.closedAt} - ${leads.createdAt})) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
         })
         .from(leads)
@@ -266,7 +279,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
           name: sql<string>`coalesce(${leadSources.name}, '—')`,
           won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
           lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-          wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+          wonUsd: leadWonUsdSql(),
         })
         .from(leads)
         .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
@@ -288,7 +301,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
           ownerId: leads.ownerId,
           won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
           lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-          wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+          wonUsd: leadWonUsdSql(),
           cycleDays: sql<string>`coalesce(avg(extract(epoch from ${leads.closedAt} - ${leads.createdAt})) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
         })
         .from(leads)
@@ -348,7 +361,8 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
             .select({
               won: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} = 'won')`,
               lost: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} = 'lost')`,
-              wonUsd: sql<string>`coalesce(sum(${deals.quotedAmount}) FILTER (WHERE ${dealStages.kind} = 'won'), 0)`,
+              wonUsd: dealWonUsdSql(),
+              wonOther: dealWonOtherCurrencySql(),
               open: sql<number>`count(*) FILTER (WHERE ${dealStages.kind} NOT IN ('won','lost'))`,
             })
             .from(deals)
@@ -433,6 +447,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
       lost,
       winRate: pct(won, won + lost),
       wonUsd: money(decided[0]?.wonUsd),
+      wonOtherCurrency: Number(decided[0]?.wonOther ?? 0),
       cycleDays: Math.round((Number(decided[0]?.cycleDays ?? 0) / 86400) * 10) / 10,
       open: Number(openNow[0]?.n ?? 0),
     },
@@ -471,6 +486,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
           won: Number(d?.won ?? 0),
           lost: Number(d?.lost ?? 0),
           wonUsd: money(d?.wonUsd),
+          wonOtherCurrency: Number(d?.wonOther ?? 0),
           open: Number(d?.open ?? 0),
           winRate: pct(Number(d?.won ?? 0), Number(d?.won ?? 0) + Number(d?.lost ?? 0)),
         }

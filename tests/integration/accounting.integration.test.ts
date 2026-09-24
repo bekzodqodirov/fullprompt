@@ -70,16 +70,17 @@ const ctx = () => ({ actorId });
  * across local runs and the totals would drift upward each time.
  */
 const RUN = Number(SUFFIX) % 300;
-const YEAR = String(2100 + RUN);
+const YEAR = String(1700 + RUN);
 const M1 = `${YEAR}-03`;
 const M2 = `${YEAR}-04`;
 
 beforeAll(async () => {
   actorId = (await db.select().from(users).limit(1))[0]!.id;
   // The P&L is a period query with no client filter, so anything an earlier
-  // run left in this year would add to the totals. The year is far in the
-  // future and belongs to nobody, so clearing it is safe and makes the run
-  // idempotent even when two runs land on the same year.
+  // run left in this year would add to the totals. The year is centuries in
+  // the PAST and belongs to nobody, so clearing it is safe and makes the run
+  // idempotent even when two runs land on the same year. (It was the future
+  // until the ledger started refusing future-dated rows — audit A23.)
   await db.execute(sql`DELETE FROM client_transactions WHERE tx_date BETWEEN ${`${YEAR}-01-01`} AND ${`${YEAR}-12-31`}`);
   await db.execute(sql`DELETE FROM expenses WHERE expense_date BETWEEN ${`${YEAR}-01-01`} AND ${`${YEAR}-12-31`}`);
   await db.execute(sql`DELETE FROM account_transfers WHERE transfer_date BETWEEN ${`${YEAR}-01-01`} AND ${`${YEAR}-12-31`}`);

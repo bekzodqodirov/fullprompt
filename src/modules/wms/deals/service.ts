@@ -1741,7 +1741,8 @@ export async function openDealsSummary() {
   const [row] = await db
     .select({
       n: sql<number>`count(*)`,
-      usd: sql<string>`coalesce(sum(${deals.quotedAmount}) FILTER (WHERE ${deals.quotedCurrency} = 'USD'), 0)`,
+      // Net of the recorded damage discount, the figure the card prints (A21).
+      usd: sql<string>`coalesce(sum(${deals.quotedAmount} - ${deals.discountAmount}) FILTER (WHERE ${deals.quotedCurrency} = 'USD'), 0)`,
       otherCurrency: sql<number>`count(*) FILTER (WHERE ${deals.quotedAmount} IS NOT NULL AND ${deals.quotedCurrency} <> 'USD')`,
     })
     .from(deals)

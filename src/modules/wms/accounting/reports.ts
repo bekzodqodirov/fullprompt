@@ -16,6 +16,7 @@ import { uzsRate } from './period';
 // Every cash box converts through the generic rate lookup, not a per-currency
 // branch — the branch is how a CNY till came to be worth nothing.
 import { rateFor } from '../costing/service';
+import { unplacedPaymentSql } from '../finance/service';
 
 /**
  * Management reports (Phase 2.4).
@@ -797,12 +798,35 @@ export async function companyBalance() {
     else owedToUsByPartners += -value;
   }
 
+  // Payments that came in and sit in no till (audit A2): each took its amount
+  // off the receivable above and added it to no kassa, so the net fell by the
+  // payment although the cash flow counts it received. Placed ones leave this
+  // line for their kassa (`placePayment`). Only since cash boxes exist — a
+  // payment from before then is inside some box's counted opening balance.
+  const [unplaced] = await db
+    .select({
+      sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(clientTransactions)
+    .where(
+      and(
+        eq(clientTransactions.type, 'payment'),
+        isNull(clientTransactions.voidedAt),
+        unplacedPaymentSql(),
+      ),
+    );
+  const unplacedUsd = money(unplaced?.sum);
+
   const receivable = money(owedToUs?.sum);
-  const net = cashUsd + receivable + owedToUsByPartners - owedByUs;
+  const net = cashUsd + unplacedUsd + receivable + owedToUsByPartners - owedByUs;
 
   return {
     cashRows,
     cashUsd: money(cashUsd),
+    /** Payments received and placed in no till yet (A2). */
+    unplacedUsd,
+    unplacedCount: Number(unplaced?.n ?? 0),
     /** Clients' outstanding balance — what is still to come in. */
     receivableUsd: receivable,
     /** Counterparties we still have to pay. */

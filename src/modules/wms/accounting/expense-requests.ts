@@ -103,6 +103,7 @@ export async function openExpenseRequests() {
     .select({
       id: expenseRequests.id,
       warehouseCode: warehouses.code,
+      warehouseTimezone: warehouses.timezone,
       amount: expenseRequests.amount,
       currency: expenseRequests.currency,
       note: expenseRequests.note,

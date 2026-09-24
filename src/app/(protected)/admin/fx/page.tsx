@@ -26,12 +26,22 @@ export default async function FxPage() {
     .orderBy(desc(fxRates.effectiveDate), desc(fxRates.createdAt))
     .limit(100);
 
+  // The newest rate per currency, from the list already fetched (newest
+  // first), as the form's «standing» figure (audit A1).
+  const standing: Record<string, number> = {};
+  for (const { rate } of rates) {
+    if (standing[rate.currency] !== undefined) continue;
+    const value = perUsd(Number(rate.rateToUsd));
+    if (value !== null) standing[rate.currency] = value;
+  }
+
   return (
     <div className="mx-auto max-w-lg space-y-4">
       <PageHeader icon="exchange" title={t('fxTitle')} />
       <FxForm
         currencies={currencyRows.map((c) => c.code)}
         today={new Date().toISOString().slice(0, 10)}
+        standing={standing}
       />
       <div className="card space-y-1">
         {rates.map(({ rate, enteredBy }) => (

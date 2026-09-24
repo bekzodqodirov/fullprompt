@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { latestTxDate } from './dates';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -53,6 +54,7 @@ export type TransactionInput = z.infer<typeof transactionSchema>;
 
 export async function addTransaction(input: TransactionInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  if (input.txDate > latestTxDate()) throw new FinanceError('future_date');
   // A named deal must be THIS client's. The deal id steers the deferral
   // netting (#251) — a payment parked on another client's deal would quietly
   // re-open their handover gate — and a select's value is a forged post until
@@ -123,6 +125,50 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   return row!;
 }
 
+/**
+ * Put an unplaced payment into the cash box it actually landed in (audit A2).
+ *
+ * A payment saved before the kassa became required took its amount off the
+ * Balans receivable and put it in no till, and nothing on any screen could
+ * say where it went — the only UPDATE this table had was the void. The claim
+ * is the WHERE: only a live payment with no box and no partner (a settlement's
+ * money is placed in the firm's account, never a till) can be placed, once,
+ * and only into a box speaking its currency — the ledger rule every door
+ * already asks.
+ */
+export async function placePayment(id: string, accountId: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  const row = await db.query.clientTransactions.findFirst({ where: eq(clientTransactions.id, id) });
+  if (!row || row.type !== 'payment' || row.voidedAt) throw new FinanceError('not_found');
+  if (row.partnerId) throw new FinanceError('settlement_placed');
+  const [account] = await db
+    .select({ currency: moneyAccounts.currency, active: moneyAccounts.active })
+    .from(moneyAccounts)
+    .where(eq(moneyAccounts.id, accountId));
+  if (!account || !account.active) throw new FinanceError('not_found');
+  if (account.currency !== row.currency) throw new FinanceError('account_currency_mismatch');
+  const placed = await db
+    .update(clientTransactions)
+    .set({ accountId })
+    .where(
+      and(
+        eq(clientTransactions.id, id),
+        isNull(clientTransactions.accountId),
+        isNull(clientTransactions.partnerId),
+        isNull(clientTransactions.voidedAt),
+      ),
+    )
+    .returning({ id: clientTransactions.id });
+  if (placed.length === 0) throw new FinanceError('already_placed');
+  await writeAudit(db, ctx, {
+    entityType: 'client_transaction',
+    entityId: id,
+    action: 'update',
+    before: { accountId: null },
+    after: { accountId },
+  });
+}
+
 export async function voidTransaction(id: string, reason: string, ctx: AuditContext) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
   const row = await db.query.clientTransactions.findFirst({
@@ -167,6 +213,22 @@ export async function voidTransaction(id: string, reason: string, ctx: AuditCont
 }
 
 /** USD balance of one client: Σ charges − Σ payments (active rows only). */
+/**
+ * Live ledger rows dated after today — typed before `future_date` existed.
+ * The balance screens count them and the ageing report (as of today) does
+ * not, so the report says how many there are instead of silently differing.
+ */
+export async function futureDatedEntries(): Promise<{ count: number; usd: number }> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      usd: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'charge' THEN ${clientTransactions.amountUsd} ELSE -${clientTransactions.amountUsd} END), 0)`,
+    })
+    .from(clientTransactions)
+    .where(and(isNull(clientTransactions.voidedAt), sql`${clientTransactions.txDate} > CURRENT_DATE`));
+  return { count: Number(row?.count ?? 0), usd: Math.round(Number(row?.usd ?? 0) * 100) / 100 };
+}
+
 export async function clientBalanceUsd(clientId: string): Promise<number> {
   const [row] = await db
     .select({
@@ -349,11 +411,31 @@ export interface PaymentRegisterRow {
   enteredBy: string | null;
 }
 
+/**
+ * «Payments with no till», whenever they were made (audit A2): the accountant's
+ * home counter, the Balans line and the register's unplaced view read this one
+ * predicate. Since cash boxes exist only — a payment older than the first box
+ * is inside some box's counted opening balance and has nowhere to be placed.
+ */
+export function unplacedPaymentSql() {
+  return and(
+    isNull(clientTransactions.accountId),
+    isNull(clientTransactions.partnerId),
+    sql`${clientTransactions.txDate} >= (SELECT min(created_at)::date FROM money_accounts)`,
+  );
+}
+
 export async function paymentsRegister(
   from: string,
   to: string,
   ownerId?: string,
+  opts: { unplaced?: boolean } = {},
 ): Promise<{ rows: PaymentRegisterRow[]; totalUsd: number; count: number; truncated: boolean }> {
+  // The unplaced view ignores the period: a payment left unplaced in March is
+  // still work in September.
+  const when = opts.unplaced
+    ? unplacedPaymentSql()
+    : and(gte(clientTransactions.txDate, from), lte(clientTransactions.txDate, to));
   const rows = await db
     .select({
       id: clientTransactions.id,
@@ -379,8 +461,7 @@ export async function paymentsRegister(
       and(
         eq(clientTransactions.type, 'payment'),
         isNull(clientTransactions.voidedAt),
-        gte(clientTransactions.txDate, from),
-        lte(clientTransactions.txDate, to),
+        when,
         ownerId ? eq(clients.salesManagerId, ownerId) : undefined,
       ),
     )
@@ -402,8 +483,7 @@ export async function paymentsRegister(
       and(
         eq(clientTransactions.type, 'payment'),
         isNull(clientTransactions.voidedAt),
-        gte(clientTransactions.txDate, from),
-        lte(clientTransactions.txDate, to),
+        when,
         // The total has to be scoped with the rows or the screen contradicts
         // itself — «jami» over the company above a list of one seller's
         // payments. A subquery rather than a join, so the unscoped path stays

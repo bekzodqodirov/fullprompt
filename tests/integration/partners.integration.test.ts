@@ -32,6 +32,7 @@ import {
   listPartnerTypes,
   listPartners,
   partnerBalanceUsd,
+  partnerTotals,
   savePartner,
   setPartnerActive,
   voidPartnerTx,
@@ -847,6 +848,21 @@ describe('what the audit found', () => {
     const partnerId = await newPartner('Yashiriladigan');
     await legacyCharge(partnerId, 8000);
     await setPartnerActive(partnerId, false, ctx());
+    // And a firm that is in front on its account — it owes US.
+    const aheadId = await newPartner('Oldinda');
+    await addPartnerTx(
+      {
+        partnerId: aheadId,
+        type: 'adjust',
+        amount: -300,
+        currency: 'USD',
+        txDate: new Date().toISOString().slice(0, 10),
+        accountId: '',
+        batchId: '',
+        note: '',
+      },
+      ctx(),
+    );
 
     // The register's own expression, read the way the page reads it. Active
     // rows only — which is what shipped — loses the retired firm's $8,000
@@ -854,9 +870,13 @@ describe('what the audit found', () => {
     const shown = (await listPartners({ includeInactive: true })).filter(
       (row) => row.active || Math.abs(row.balanceUsd) > 0.009,
     );
-    const owed = shown.filter((r) => r.balanceUsd > 0).reduce((a, r) => a + r.balanceUsd, 0);
+    // The page's own helper, both directions (audit A6): a firm that owes
+    // US is on the Balans too, and was on no line of the page it links to.
+    const totals = partnerTotals(shown);
     expect(shown.some((row) => row.id === partnerId)).toBe(true);
-    expect(Math.round(owed * 100) / 100).toBe((await companyBalance()).payableUsd);
+    const sheet = await companyBalance();
+    expect(totals.owedByUs).toBe(sheet.payableUsd);
+    expect(totals.owedToUs).toBe(sheet.partnerReceivableUsd);
   });
 
   it('keeps an account whose TYPE was hidden inside the register', async () => {

@@ -500,10 +500,19 @@ export const transferSchema = z.object({
 export async function addTransfer(input: z.infer<typeof transferSchema>, ctx: AuditContext) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   if (input.fromAccountId === input.toAccountId) throw new AccountingError('same_account');
-  const from = await db.query.moneyAccounts.findFirst({
-    where: eq(moneyAccounts.id, input.fromAccountId),
-  });
-  if (!from) throw new AccountingError('not_found');
+  const [from, to] = await Promise.all([
+    db.query.moneyAccounts.findFirst({ where: eq(moneyAccounts.id, input.fromAccountId) }),
+    db.query.moneyAccounts.findFirst({ where: eq(moneyAccounts.id, input.toAccountId) }),
+  ]);
+  if (!from || !to) throw new AccountingError('not_found');
+  // Between two tills of ONE currency the money out is the money in (audit
+  // A35). The two boxes took independent figures, so USD 1,000 → USD 100
+  // quietly removed $900 from the kassa totals and the Balans — and cash flow
+  // and the P&L both skip transfers, so the loss showed nowhere at all. Across
+  // currencies the two figures ARE two facts (the exchange rate), and stay.
+  if (from.currency === to.currency && Math.abs(input.amountFrom - input.amountTo) > 0.004) {
+    throw new AccountingError('amount_mismatch');
+  }
   const rate = await rateFor(from.currency, input.transferDate);
   if (rate === null) throw new AccountingError('fx_missing');
 
@@ -634,14 +643,16 @@ export const accountBalances = cache(async function accountBalances() {
     const spentOut = spent.get(account.id) ?? 0;
     const transferredIn = inbound.get(account.id) ?? 0;
     const transferredOut = outbound.get(account.id) ?? 0;
+    const fromPartners = partnerIn.get(account.id) ?? 0;
+    const toPartners = partnerOut.get(account.id) ?? 0;
     const balance =
       Number(account.openingBalance) +
       paidIn -
       spentOut +
       transferredIn -
       transferredOut +
-      (partnerIn.get(account.id) ?? 0) -
-      (partnerOut.get(account.id) ?? 0);
+      fromPartners -
+      toPartners;
     return {
       id: account.id,
       name: account.name,
@@ -653,6 +664,11 @@ export const accountBalances = cache(async function accountBalances() {
       spent: spentOut,
       transferredIn,
       transferredOut,
+      // Returned so a row can add up (audit A34): the page printed Kirim and
+      // Chiqim without them beside a balance that included them, so a till
+      // only a cash buyer used read 0 | +0 | −0 | 100,000,000.
+      partnerIn: fromPartners,
+      partnerOut: toPartners,
       balance: Math.round(balance * 100) / 100,
     };
   });

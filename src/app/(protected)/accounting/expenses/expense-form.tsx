@@ -43,7 +43,15 @@ export function ExpenseForm({
    * on the request id, so the defaults actually land (the round-61 keyed-
    * inputs trap).
    */
-  prefill?: { requestId: string; amount: string; currency: string; note: string; warehouseId: string };
+  prefill?: {
+    requestId: string;
+    amount: string;
+    currency: string;
+    note: string;
+    warehouseId: string;
+    /** The day the warehouse spent it, not today (audit A29). */
+    expenseDate: string;
+  };
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
@@ -102,7 +110,7 @@ export function ExpenseForm({
           type="date"
           name="expenseDate"
           aria-label={t('date')}
-          defaultValue={today}
+          defaultValue={prefill?.expenseDate ?? today}
           className="input !w-40"
           required
         />

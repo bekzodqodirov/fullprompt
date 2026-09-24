@@ -111,7 +111,17 @@ export default async function SalesAnalyticsPage({
     { key: 'won', value: data.totals.won, label: t('statWon'), good: true },
     { key: 'lost', value: data.totals.lost, label: t('statLost'), bad: data.totals.lost > 0 },
     { key: 'rate', value: `${data.totals.winRate}%`, label: t('statWinRate') },
-    { key: 'usd', value: usd(data.totals.wonUsd), label: t('statWonUsd'), good: true },
+    {
+      key: 'usd',
+      value: usd(data.totals.wonUsd),
+      // Dollar quotes only; a win quoted in so'm or yuan is counted, not added
+      // to the dollars at face value (audit A19).
+      label:
+        data.totals.wonOtherCurrency > 0
+          ? `${t('statWonUsd')} · ${t('wonOtherCurrency', { count: data.totals.wonOtherCurrency })}`
+          : t('statWonUsd'),
+      good: true,
+    },
     { key: 'cycle', value: data.totals.cycleDays, label: t('statCycle') },
     { key: 'open', value: data.totals.open, label: t('statOpen') },
   ];
@@ -436,7 +446,14 @@ export default async function SalesAnalyticsPage({
             <span className="font-semibold text-good">{data.deals.won}</span> {t('statWon')} ·{' '}
             <span className="text-ink-500">{data.deals.lost}</span> {t('statLost')} ·{' '}
             {data.deals.winRate}% ·{' '}
-            <span className="font-mono tabular-nums">{usd(data.deals.wonUsd)}</span> ·{' '}
+            <span className="font-mono tabular-nums">{usd(data.deals.wonUsd)}</span>
+            {data.deals.wonOtherCurrency > 0 && (
+              <span className="text-ink-500">
+                {' '}
+                ({t('wonOtherCurrency', { count: data.deals.wonOtherCurrency })})
+              </span>
+            )}{' '}
+            ·{' '}
             {data.deals.open} {t('statOpen')}
           </p>
         ) : (

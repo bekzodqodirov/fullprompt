@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { seesAllMoney } from '@/modules/wms/finance/scope';
 import { getSetting } from '@/modules/platform/settings/service';
 import {
   agingSummary,
@@ -38,7 +39,12 @@ export default async function DashboardPage() {
     redirect(actor.permissions.has('reports.own_clients') ? '/pipeline' : '/');
   }
   const scope = allWh ? undefined : actor.warehouseIds;
-  const seesMoney = actor.permissions.has('finance.view') || actor.permissions.has('finance.manage');
+  // Round 91's rule, the one the four other money screens ask (audit A5):
+  // this block is the company's receivable and top debtors BY NAME, so
+  // `finance.view` — the seller's grant — must not open it. Today no seeded
+  // role reaches both it and this page, but the matrix is edited with
+  // checkboxes, and one tick of `reports.own_warehouse` on a seller would.
+  const seesMoney = seesAllMoney(actor);
   const seesFunnel = actor.permissions.has('crm.leads');
   const seesAllLeads = actor.permissions.has('crm.leads.view_all');
 

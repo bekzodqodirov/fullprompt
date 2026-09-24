@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 import { useTranslations } from 'next-intl';
 import { addTransactionAction, type TxFormState } from '../actions';
 
@@ -75,13 +76,21 @@ export function TxForm({
             <option value="transfer">🏦 {t('methodTransfer')}</option>
           </select>
         )}
-        <input name="txDate" aria-label={t('date')} type="date" className="input flex-1" defaultValue={today} required />
+        <input
+          name="txDate"
+          aria-label={t('date')}
+          type="date"
+          className="input flex-1"
+          defaultValue={today}
+          max={latestTxDate()}
+          required
+        />
       </div>
-      {/* Optional on purpose: rows entered before accounts existed have none,
-          and cash flow treats an unassigned payment as received but not yet
-          placed — history is not rewritten by a new required field. */}
-      {type === 'payment' && accounts.length > 0 && (
-        <select name="accountId" aria-label={t('account')} className="input" defaultValue="">
+      {/* Required for a NEW payment (audit A2): one saved with no kassa left
+          the Balans short by its amount for good. Rows from before cash boxes
+          existed keep their empty column — the action refuses, history stays. */}
+      {type === 'payment' && (
+        <select name="accountId" aria-label={t('account')} className="input" defaultValue="" required>
           <option value="">— {t('account')}</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
@@ -112,7 +121,11 @@ export function TxForm({
             ? t('fxMissing')
             : state.error === 'account_currency_mismatch'
               ? t('accountCurrencyMismatch')
-              : tc('error')}
+              : state.error === 'account_required'
+                ? t('accountRequired')
+                : state.error === 'future_date'
+                  ? t('futureDate')
+                  : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

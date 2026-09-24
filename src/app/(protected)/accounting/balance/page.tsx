@@ -32,6 +32,11 @@ export default async function BalancePage() {
 
   const lines = [
     { key: 'balCash', value: balance.cashUsd, tone: 'text-ink-900', href: '/accounting/accounts' },
+    // Only while there is something to place (A2): a permanent $0.00 line is
+    // a line nobody reads.
+    ...(balance.unplacedCount > 0
+      ? [{ key: 'balUnplaced', value: balance.unplacedUsd, tone: 'text-warn', href: '/finance/reestr?joylanmagan=1' } as const]
+      : []),
     { key: 'balReceivable', value: balance.receivableUsd, tone: 'text-good', href: '/finance' },
     {
       key: 'balPartnerReceivable',

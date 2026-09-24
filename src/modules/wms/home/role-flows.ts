@@ -13,6 +13,7 @@ import type { ScopedActor } from '../../platform/rbac/scope';
 import { chatBadges } from '../crm/conversations';
 import { followUps, openLeadCount } from '../crm/service';
 import { managedClients } from '../finance/client-cargo';
+import { unplacedPaymentSql } from '../finance/service';
 import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
 import { costMissingCount } from '../reports/queries';
 import { internalLegSql } from '../batches/internal';
@@ -111,9 +112,9 @@ export async function logistFlowCounts(
 
 export interface MoneyFlowCounts {
   snapshot: MoneySnapshot;
-  /** THIS month's payments with no cash box AND no counterparty behind them —
-   *  bounded so the years of pre-accounts history don't drown the actionable
-   *  few, and partner-settled so the queue only holds work somebody can do. */
+  /** Payments with no cash box AND no counterparty behind them since cash
+   *  boxes exist (`unplacedPaymentSql`) — history from before any box is in
+   *  some box's opening balance, and a settlement is placed with its firm. */
   unassignedPayments: number;
   /** Active recurring templates not yet posted this month. */
   recurringDue: number;
@@ -130,16 +131,16 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
       .where(
         and(
           eq(clientTransactions.type, 'payment'),
-          isNull(clientTransactions.accountId),
-          // A three-cornered settlement's client half has no cash box BY
-          // CONSTRUCTION — the money went into the supplier's account, not a
-          // till of ours (#415) — and no screen can ever name one for it. It
-          // was posting a chore the accountant could not finish, one per
-          // settlement, until the month rolled over. Same clause, same
-          // reason as `cashFlow`.
-          isNull(clientTransactions.partnerId),
           isNull(clientTransactions.voidedAt),
-          sql`${clientTransactions.txDate} >= ${`${month}-01`}`,
+          // Every unplaced payment since cash boxes exist, not this month's
+          // (audit A2): at month-end the rest fell off the queue while the
+          // Balans stayed short by them, and nothing could place them. The
+          // register's unplaced view has the «kassaga joylash» door now, and
+          // the Balans line reads the same predicate. A three-cornered
+          // settlement's client half has no cash box BY CONSTRUCTION — the
+          // money went into the supplier's account (#415) — which the shared
+          // predicate's partner clause keeps off the queue, as before.
+          unplacedPaymentSql(),
         ),
       ),
     // Mirrors generateRecurring's own idempotence check: a template counts

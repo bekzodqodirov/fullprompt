@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { leadWonUsdSql } from './won-money';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -1465,7 +1466,7 @@ export async function funnelReport(ownerId?: string) {
        * it. WON only: a quote on an open lead is a hope, and on a lost one it
        * is a price somebody refused.
        */
-      wonUsd: sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
+      wonUsd: leadWonUsdSql(),
     })
     .from(leads)
     .innerJoin(leadStages, eq(leads.stageId, leadStages.id))

@@ -94,7 +94,7 @@
     "flowLoading": "装车中：{n}",
     "flowReady": "待交付：{n} 箱",
     "flowPlansPending": "待审核：{n}",
-    "flowUnassignedPayments": "未指定账户的收款（本月）",
+    "flowUnassignedPayments": "未指定账户的收款",
     "flowRecurringDue": "固定支出未登记",
     "flowDocsPending": "未发单证给代理的车次",
     "flowTnvedMissing": "无 HS 编码的商品",
@@ -805,7 +805,9 @@
     "gridBadCells": "{count} 个单元格无法识别为数字——请写成「1200」「1 200」或「1200.50」。",
     "gridBadHidden": "其中 {count} 个被筛选隐藏。",
     "gridShowAll": "全部显示",
-    "gridPartial": "已保存 {saved} 个单元格，其余未保存（{reason}）。未保存的仍在表格中——请再次点击。"
+    "gridPartial": "已保存 {saved} 个单元格，其余未保存（{reason}）。未保存的仍在表格中——请再次点击。",
+    "rateStanding": "当前汇率：1 USD = {rate} {currency}",
+    "rateJump": "上一个汇率是 1 USD = {previous} {currency}，新汇率相差超过 20%。如确认无误，请勾选后再次保存。"
   },
   "batches": {
     "title": "车次",
@@ -1101,7 +1103,12 @@
     "internalNoCosts": "该内部车次尚未录入费用——请在车次页面录入运费等费用。",
     "internalPricedBefore": "此前在该内部车次上记录的价格",
     "internalPricedBeforeHint": "内部车次不再定价。这些记录保留在客户账上——如有需要，会计可作废并改记到跨境车次。",
-    "internalBatchRefused": "内部车次不定价——请在跨境车次上定价"
+    "internalBatchRefused": "内部车次不定价——请在跨境车次上定价",
+    "accountRequired": "请选择这笔收款进入的账户。",
+    "futureDate": "日期不能晚于今天。",
+    "placePayment": "归入",
+    "registerAll": "按期间",
+    "registerUnplaced": "未归入账户"
   },
   "map": {
     "title": "地图",
@@ -1238,7 +1245,10 @@
     "gapOpenPartners": "供应商 →",
     "gapUnconverted": "没有汇率的费用（{count} 笔）按 $0 计算：{sums}。",
     "gapUnconvertedHint": "请录入该货币的汇率——费用会自动重新计算。",
-    "expensesTruncated": "显示最新的 {shown} 条（共 {total} 条）；「合计」为整个期间。"
+    "expensesTruncated": "显示最新的 {shown} 条（共 {total} 条）；「合计」为整个期间。",
+    "balUnplaced": "未归入账户的收款",
+    "futureDated": "有 {count} 条记录的日期晚于今天（{usd}）。其他页面已把它们算作当前欠款，本报表没有——请更正日期。",
+    "transferAmountMismatch": "同一货币的账户之间，转出与转入金额必须相同。"
   },
   "crm": {
     "title": "CRM",
@@ -1580,7 +1590,8 @@
     "dayStale": "{n} 条逾期 — 查看",
     "dayStaleOpen": "逾期",
     "dayOthers": "按销售",
-    "dayBack": "仅我的"
+    "dayBack": "仅我的",
+    "wonOtherCurrency": "另有 {count} 笔为其他货币"
   },
   "navShort": {
     "home": "首页",
@@ -2553,7 +2564,8 @@
     "proofNote": "备注（无附件时必填）",
     "proofRequired": "必须有附件或备注",
     "chargeMoved": "服务欠款（车辆、清关、租金、工资）现在在费用表单中选择「由谁支付」录入。欠款会自动记到这里，也会计入利润报表。",
-    "manualCharge": "未关联费用——利润报表中没有"
+    "manualCharge": "未关联费用——利润报表中没有",
+    "owedToUs": "欠我们"
   },
   "lists": {
     "allRecords": "全部",
@@ -2760,7 +2772,9 @@
     "categoryTitle": "销售分成的费用类别",
     "categoryUnset": "未选择费用类别 — 无法支付",
     "categoryHint": "分成按普通费用记账。必须使用专用类别：若从「工资」中支付，该销售当月的工资会被悄悄视为已发放。",
-    "categoryAsk": "只有管理员可以选择。"
+    "categoryAsk": "只有管理员可以选择。",
+    "periodByOffer": "报价日期",
+    "periodHint": "期间按报价日期计算。费用和损益表按实际发放日期显示佣金。"
   },
   "sellerReport": {
     "title": "销售业绩",

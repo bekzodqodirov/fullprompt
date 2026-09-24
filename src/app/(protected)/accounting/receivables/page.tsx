@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { futureDatedEntries } from '@/modules/wms/finance/service';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { arAging } from '@/modules/wms/accounting/reports';
 import { toUzs, uzsRate } from '@/modules/wms/accounting/period';
@@ -27,7 +28,7 @@ export default async function ReceivablesPage({
     params.asOf && /^\d{4}-\d{2}-\d{2}$/.test(params.asOf)
       ? params.asOf
       : new Date().toISOString().slice(0, 10);
-  const [rows, rate] = await Promise.all([arAging(asOf), uzsRate()]);
+  const [rows, rate, future] = await Promise.all([arAging(asOf), uzsRate(), futureDatedEntries()]);
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -45,6 +46,14 @@ export default async function ReceivablesPage({
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-4xl">
       <PageHeader icon="clock" title={t('receivables')} />
+      {/* Rows dated after today (typed before the date was bounded, audit
+          A23): the home screen and /finance count them as debt now, this
+          report as of a date does not — said, so the gap has a name. */}
+      {future.count > 0 && (
+        <p className="card !p-3 text-sm font-semibold text-warn" data-testid="future-dated">
+          ⚠ {t('futureDated', { count: future.count, usd: `$${usd(future.usd)}` })}
+        </p>
+      )}
 
       <form method="get" className="flex flex-wrap items-end gap-2">
         <label className="text-sm">
