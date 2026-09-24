@@ -16,6 +16,7 @@ import {
   listColumns,
   readFilters,
 } from '@/modules/platform/fields/filter';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The client book as a spreadsheet, custom columns included.
@@ -143,7 +144,7 @@ export async function GET(request: Request) {
   return new Response(buffer, {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="clients-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      'Content-Disposition': `attachment; filename="clients-${tashkentDay()}.xlsx"`,
     },
   });
 }

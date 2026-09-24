@@ -25,6 +25,7 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -146,6 +147,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           clientOptions={[{ id: crate.clientId, clientCode }]}
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
           canEdit={canEditCosts}
+          today={tashkentDay()}
           partnerOptions={partnerOptions}
         />
         {active && (

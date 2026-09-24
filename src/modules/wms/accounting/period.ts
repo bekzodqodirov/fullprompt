@@ -1,13 +1,16 @@
 import { rateFor } from '../costing/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Period handling shared by every accounting screen and export.
  *
  * Default range is the current year to date: an owner opening the P&L wants
- * "how are we doing this year", not an empty form.
+ * "how are we doing this year", not an empty form. «Today» is Tashkent's (R5):
+ * the UTC date turns five hours after the office's, so from midnight to 05:00
+ * on 1 January the default period was still last year's.
  */
-export function resolvePeriod(params: { from?: string; to?: string }) {
-  const today = new Date().toISOString().slice(0, 10);
+export function resolvePeriod(params: { from?: string; to?: string }, now: Date = new Date()) {
+  const today = tashkentDay(now);
   const valid = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
   const to = valid(params.to) ?? today;
   const from = valid(params.from) ?? `${to.slice(0, 4)}-01-01`;
@@ -22,7 +25,7 @@ export function resolvePeriod(params: { from?: string; to?: string }) {
  * frozen at entry and the ones the reports actually add up.
  */
 export async function uzsRate(): Promise<number | null> {
-  const rate = await rateFor('UZS', new Date().toISOString().slice(0, 10));
+  const rate = await rateFor('UZS', tashkentDay());
   return rate && rate > 0 ? rate : null;
 }
 

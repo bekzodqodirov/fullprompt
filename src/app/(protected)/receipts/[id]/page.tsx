@@ -43,6 +43,7 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -431,6 +432,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               clientOptions={client ? [{ id: client.id, clientCode: client.clientCode }] : []}
               defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
               canEdit={receipt.status === 'confirmed'}
+              today={tashkentDay()}
               partnerOptions={partnerOptions}
             />
           </div>

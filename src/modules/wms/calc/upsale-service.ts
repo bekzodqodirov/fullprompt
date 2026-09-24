@@ -107,9 +107,12 @@ export async function upsaleRows(
   const where = [sql`TRUE`];
   if (scope === 'own') where.push(sql`p.offered_by = ${actorId}::uuid`);
   else if (opts.sellerId) where.push(sql`p.offered_by = ${opts.sellerId}::uuid`);
-  if (opts.from) where.push(sql`p.offered_at >= ${opts.from}::date`);
+  // Tashkent's days (R5) — a bare `::date` against the timestamptz is a UTC
+  // midnight, so an offer made at 02:00 on the 1st counted in the previous
+  // month.
+  if (opts.from) where.push(sql`p.offered_at >= ((${opts.from}::date)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
   // Inclusive to the end of the named day, the way every period filter here is.
-  if (opts.to) where.push(sql`p.offered_at < (${opts.to}::date + 1)`);
+  if (opts.to) where.push(sql`p.offered_at < ((${opts.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
 
   const raw = await db.execute<RawRow>(sql`
     SELECT p.*,

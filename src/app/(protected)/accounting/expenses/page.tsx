@@ -24,6 +24,7 @@ import { LightboxImg } from '@/components/lightbox-img';
 import { openExpenseRequests } from '@/modules/wms/accounting/expense-requests';
 import { spendDateOf } from '@/modules/wms/accounting/spend-date';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The expense book: what the company spent that is not cargo cost.
@@ -66,7 +67,11 @@ export default async function ExpensesPage({
       expenseTotals({ from, to, categoryId }),
     ]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Tashkent's day and month (R5), the same `tashkentDay()` the accountant's
+  // home counter (`moneyFlowCounts`) is fed: the button must post the month
+  // the counter calls «due», or at every month's turn one of them is a month
+  // off for five hours.
+  const today = tashkentDay();
   const options = {
     categories: categories.map((row) => ({ id: row.id, label: row.name })),
     accounts: accounts.map((row) => ({ id: row.id, label: `${row.name} (${row.currency})` })),

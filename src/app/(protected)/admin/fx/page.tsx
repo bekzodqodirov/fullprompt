@@ -7,6 +7,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { perUsd } from '@/modules/wms/costing/fx-display';
 import { FxForm } from './fx-form';
 import { PageHeader } from '@/components/ui/page';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /** Dated manual FX rates (W9) — USD is the costing base. */
 export default async function FxPage() {
@@ -40,7 +41,7 @@ export default async function FxPage() {
       <PageHeader icon="exchange" title={t('fxTitle')} />
       <FxForm
         currencies={currencyRows.map((c) => c.code)}
-        today={new Date().toISOString().slice(0, 10)}
+        today={tashkentDay()}
         standing={standing}
       />
       <div className="card space-y-1">

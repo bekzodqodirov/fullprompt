@@ -13,6 +13,7 @@ import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { seesAllMoney } from '../finance/scope';
 import { clientBalanceUsd } from '../finance/service';
 import { arrivalCodesForPairs } from '../documents/arrivals';
+import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /**
  * "Where is it?" — answered in the bot (owner's item 2).
@@ -195,7 +196,7 @@ async function lookupBatch(actor: BotActor, code: string): Promise<string | null
     `Yuklangan: ${Number(counts?.departed ?? 0)} karobka` +
     (Number(waiting?.n ?? 0) > 0 ? `\nHali qabul qilinmagan: ${Number(waiting!.n)}` : '') +
     (row.batch.departedAt
-      ? `\nJo‘nadi: ${row.batch.departedAt.toISOString().slice(0, 10)}`
+      ? `\nJo‘nadi: ${dayIn(row.batch.departedAt, OFFICE_TZ)}`
       : '') +
     (row.batch.vehiclePlate ? `\nMashina: ${row.batch.vehiclePlate}` : '') +
     (row.batch.driverName ? `\nHaydovchi: ${row.batch.driverName}` : '')
@@ -416,7 +417,7 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
       : '') +
     (lastReceipt?.number
       ? `\nOxirgi prixod: ${lastReceipt.number}${
-          lastReceipt.at ? ` (${lastReceipt.at.toISOString().slice(0, 10)})` : ''
+          lastReceipt.at ? ` (${dayIn(lastReceipt.at, OFFICE_TZ)})` : ''
         }`
       : '')
   );

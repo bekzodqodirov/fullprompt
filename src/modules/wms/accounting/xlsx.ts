@@ -4,6 +4,7 @@ import { db } from '../../platform/db/client';
 import { expenseCategories } from '../../platform/db/schema';
 import { reportLabels } from '../reports/labels';
 import { expenseTotals, listExpenses } from './service';
+import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /** How many expense rows a file carries before it says it is a slice. */
 export const EXPENSES_XLSX_CAP = 5000;
@@ -169,7 +170,7 @@ export async function buildProfitXlsx(
       sheet.addRow([
         row.code,
         row.route,
-        row.departedAt ? row.departedAt.toISOString().slice(0, 10) : '',
+        row.departedAt ? dayIn(row.departedAt, OFFICE_TZ) : '',
         row.boxCount, row.kg, row.m3,
         row.revenueUsd, row.costUsd, row.profitUsd, row.marginPct, row.profitPerKg,
       ]);

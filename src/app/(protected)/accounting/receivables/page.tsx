@@ -6,6 +6,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { arAging } from '@/modules/wms/accounting/reports';
 import { toUzs, uzsRate } from '@/modules/wms/accounting/period';
 import { PageHeader } from '@/components/ui/page';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Who owes, and for how long.
@@ -27,7 +28,7 @@ export default async function ReceivablesPage({
   const asOf =
     params.asOf && /^\d{4}-\d{2}-\d{2}$/.test(params.asOf)
       ? params.asOf
-      : new Date().toISOString().slice(0, 10);
+      : tashkentDay();
   const [rows, rate, future] = await Promise.all([arAging(asOf), uzsRate(), futureDatedEntries()]);
 
   const usd = (value: number) =>

@@ -9,6 +9,7 @@ import {
   leads,
   receipts,
 } from '../../platform/db/schema';
+import { addDays, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The company on one screen (owner: "dashboard — butun tizim holati,
@@ -32,11 +33,16 @@ export interface TodaySnapshot {
   expectedLate: number;
 }
 
-/** What has actually happened since midnight, plus what is still due. */
+/**
+ * What has actually happened since midnight, plus what is still due.
+ * Tashkent's midnight (R5): `setHours(0)` on a UTC server was 05:00 in the
+ * office, so the Chinese warehouses' first receipts of the morning (07:00
+ * there is 04:00 here) were not «today», and until 05:00 the tile still
+ * counted yesterday's.
+ */
 export async function todaySnapshot(warehouseIds?: string[]): Promise<TodaySnapshot> {
-  const midnight = new Date();
-  midnight.setHours(0, 0, 0, 0);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
+  const midnight = tashkentDayStart(today);
   const whFilter = warehouseIds?.length ? warehouseIds : null;
 
   const [receiptRow] = await db
@@ -112,12 +118,11 @@ export interface MoneySnapshot {
  * and links to the P&L for the rest.
  */
 export async function moneySnapshot(): Promise<MoneySnapshot> {
-  const now = new Date();
-  const monthStart = `${now.toISOString().slice(0, 7)}-01`;
-  const today = now.toISOString().slice(0, 10);
-  const sixtyDaysAgo = new Date(now);
-  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-  const oldCutoff = sixtyDaysAgo.toISOString().slice(0, 10);
+  // Tashkent's month and day (R5) — `txDate` is typed as the office's day, and
+  // until 05:00 on the 1st a UTC «this month» was still the previous one.
+  const today = tashkentDay();
+  const monthStart = tashkentMonthStart();
+  const oldCutoff = addDays(today, -60);
 
   const [monthRow] = await db
     .select({
@@ -203,11 +208,12 @@ export interface SalesSnapshot {
 
 /** The funnel, in the shape the board shows it. */
 export async function salesSnapshot(ownerId?: string): Promise<SalesSnapshot> {
-  const now = new Date();
   // Bound as an ISO string with an explicit cast: a Date interpolated
   // into a raw sql fragment reaches the driver untyped and it refuses it.
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const today = now.toISOString().slice(0, 10);
+  // Tashkent's month (R5) — the admin home's `decidedLeadCounts` is given the
+  // same instant, so the two «bu oy yutilgan» cannot drift apart again.
+  const monthStart = tashkentDayStart(tashkentMonthStart()).toISOString();
+  const today = tashkentDay();
   const mine = ownerId ? eq(leads.ownerId, ownerId) : undefined;
 
   const rows = await db

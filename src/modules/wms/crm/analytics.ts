@@ -8,6 +8,7 @@ import {
 } from './won-money';
 import { db } from '../../platform/db/client';
 import { deals, dealStages, leads, leadSources, leadStages, users } from '../../platform/db/schema';
+import { addDays, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The sales analytics page's one fetch (round 98, owner: «dunyo standartlarida
@@ -23,9 +24,11 @@ import { deals, dealStages, leads, leadSources, leadStages, users } from '../../
  * of leads is the business growing and must never become the number of
  * round trips.
  *
- * Days are UTC days — the house convention (round 47): `/bugun`, `parseDue`
- * and the trend here must all cut midnight in the same place or the same
- * lead lands on two different days on two screens.
+ * Days are Tashkent days (R5, the owner's answer a): the period's bounds,
+ * the page's presets and the trend bars must all cut midnight in the same
+ * place or the same lead lands on two different days on two screens. (The
+ * tasks' all-day convention, round 47, is the one clock left on UTC — it is
+ * not read here.)
  */
 
 export type Period = { from: Date; to: Date };
@@ -237,10 +240,10 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
         .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
         .where(openWhere),
 
-      // The trend: arrivals and wins per UTC day, drawn as bars.
+      // The trend: arrivals and wins per Tashkent day, drawn as bars.
       db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${leads.createdAt} AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
+          day: sql<string>`to_char(date_trunc('day', ${leads.createdAt} AT TIME ZONE 'Asia/Tashkent'), 'YYYY-MM-DD')`,
           n: sql<number>`count(*)`,
         })
         .from(leads)
@@ -250,7 +253,7 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
 
       db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${leads.closedAt} AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
+          day: sql<string>`to_char(date_trunc('day', ${leads.closedAt} AT TIME ZONE 'Asia/Tashkent'), 'YYYY-MM-DD')`,
           n: sql<number>`count(*)`,
         })
         .from(leads)
@@ -499,30 +502,32 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
  * filters' way (#514: everything out of a URL is checked or dropped). The
  * screen's `gacha` is INCLUSIVE — a person asking «up to the 12th» means the
  * 12th's evening — so the query bound is the next midnight, exclusive.
- * Default: the current UTC month. An impossible calendar day ('2026-02-30')
- * is DROPPED, not parsed: V8 quietly rolls it over to March 2nd, so without
- * the round-trip check a typo'd date read as a silently shifted period.
+ * Default: the current month, in Tashkent — and every bound is a TASHKENT
+ * midnight (R5): a lead won at 02:00 on the 1st belongs to the new month,
+ * not the old one. An impossible calendar day ('2026-02-30') is DROPPED, not parsed:
+ * V8 quietly rolls it over to March 2nd, so without the round-trip check a
+ * typo'd date read as a silently shifted period.
  */
-export function readPeriod(params: { dan?: string; gacha?: string }): Period & { dan: string; gacha: string } {
+export function readPeriod(
+  params: { dan?: string; gacha?: string },
+  now: Date = new Date(),
+): Period & { dan: string; gacha: string } {
   const dayOf = (value: string | undefined) => {
     if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
     const parsed = new Date(`${value}T00:00:00Z`);
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
-      ? parsed
+      ? value
       : undefined;
   };
-  const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-  const fromDay = dayOf(params.dan) ?? monthStart;
-  let toDay = dayOf(params.gacha) ?? today;
-  if (toDay < fromDay) toDay = fromDay;
+  const dan = dayOf(params.dan) ?? tashkentMonthStart(now);
+  let gacha = dayOf(params.gacha) ?? tashkentDay(now);
+  if (gacha < dan) gacha = dan;
 
   return {
-    from: fromDay,
-    to: new Date(toDay.getTime() + 86_400_000),
-    dan: fromDay.toISOString().slice(0, 10),
-    gacha: toDay.toISOString().slice(0, 10),
+    from: tashkentDayStart(dan),
+    to: tashkentDayStart(addDays(gacha, 1)),
+    dan,
+    gacha,
   };
 }

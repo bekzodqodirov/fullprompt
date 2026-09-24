@@ -9,6 +9,7 @@ import { accountBalances, listAccounts, listTransfers } from '@/modules/wms/acco
 import { AccountForm } from './account-form';
 import { TransferForm, VoidTransferButton } from './transfer-form';
 import { PageHeader } from '@/components/ui/page';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Cash boxes and accounts: what is in each one, and how it got there.
@@ -31,7 +32,7 @@ export default async function AccountsPage() {
     listTransfers(),
   ]);
   const codes = currencyRows.map((row) => row.code);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
   const money = (value: number) => value.toLocaleString('en-US');
 
   return (

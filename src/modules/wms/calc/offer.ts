@@ -1,4 +1,5 @@
 import { clientLabels, type ClientLocale } from '@/modules/platform/telegram/client-labels';
+import { OFFICE_TZ } from '@/modules/platform/time/tashkent';
 import type { CalcSectionName } from './pricing';
 
 /**
@@ -36,8 +37,8 @@ export interface OfferInput {
   clientName?: string | null;
 }
 
-/** dd.MM.yyyy in the office's own zone — see `offerDate`. */
-export const OFFICE_TIME_ZONE = 'Asia/Tashkent';
+/** dd.MM.yyyy in the office's own zone — see `offerDate`. The one zone name (R5). */
+export const OFFICE_TIME_ZONE = OFFICE_TZ;
 
 /**
  * The validity date as the office reads it.

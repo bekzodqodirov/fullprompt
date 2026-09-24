@@ -35,6 +35,7 @@ import {
   worthAlerting,
   type Deviation,
 } from './deviation';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Bitim (deal) — one client's job, from "please price this" to "paid".
@@ -1148,8 +1149,9 @@ export async function activeDeferrals(clientId: string): Promise<
   return out;
 }
 
+/** Tashkent's day — the one `liveDeferralWhere` binds too (R5). */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return tashkentDay();
 }
 
 /**
@@ -1173,7 +1175,7 @@ export async function resolveExpiredDeferrals(now = new Date()): Promise<number>
     .from(deals)
     .where(and(sql`${deals.deferredAt} IS NOT NULL`, isNull(deals.deferralEndedAt)));
 
-  const today = now.toISOString().slice(0, 10);
+  const today = tashkentDay(now);
   let closed = 0;
   for (const row of rows) {
     let expired = false;
@@ -1300,8 +1302,13 @@ export function dealBoardWhere(filters: DealBoardFilters) {
   if (filters.ownerId) conditions.push(eq(deals.ownerId, filters.ownerId));
   if (filters.clientId) conditions.push(eq(deals.clientId, filters.clientId));
   if (filters.stageId) conditions.push(eq(deals.stageId, filters.stageId));
-  if (filters.createdFrom) conditions.push(sql`${deals.createdAt} >= ${filters.createdFrom}::date`);
-  if (filters.createdTo) conditions.push(sql`${deals.createdAt} < ${filters.createdTo}::date + 1`);
+  // Tashkent's days, inclusive of `createdTo` — `leadBoardWhere`'s bounds (R5).
+  if (filters.createdFrom) {
+    conditions.push(sql`${deals.createdAt} >= ((${filters.createdFrom}::date)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  }
+  if (filters.createdTo) {
+    conditions.push(sql`${deals.createdAt} < ((${filters.createdTo}::date + 1)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  }
   if (filters.amountMin !== undefined) conditions.push(sql`${deals.quotedAmount} >= ${filters.amountMin}`);
   if (filters.amountMax !== undefined) conditions.push(sql`${deals.quotedAmount} <= ${filters.amountMax}`);
   if (filters.volMin !== undefined) conditions.push(sql`${deals.quotedVolumeM3} >= ${filters.volMin}`);

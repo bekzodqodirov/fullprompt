@@ -9,6 +9,7 @@ import {
   saveRatesAction,
   type CalcFormState,
 } from '../actions';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Adding a row to either VED dictionary.
@@ -21,9 +22,10 @@ import {
  * The date defaults to TODAY rather than being left empty. A dictionary row
  * with no date cannot be read at all — «the newest row on or before the day
  * being priced» has nothing to compare — and a person adding a baza almost
- * always means «from now».
+ * always means «from now» — in the office's day, whatever the browser's
+ * clock is set to (R5).
  */
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => tashkentDay();
 
 export function BazaForm() {
   const t = useTranslations('calc');

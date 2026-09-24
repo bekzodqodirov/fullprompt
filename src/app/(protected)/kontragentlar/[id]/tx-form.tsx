@@ -30,10 +30,13 @@ export function PartnerTxForm({
   partnerId,
   accounts,
   currencies,
+  today,
 }: {
   partnerId: string;
   accounts: { id: string; name: string }[];
   currencies: string[];
+  /** Tashkent's day from the server — the browser's clock is not the office's (R5). */
+  today: string;
 }) {
   const t = useTranslations('partners');
   const tc = useTranslations('common');
@@ -149,7 +152,7 @@ export function PartnerTxForm({
         className="input"
         aria-label={t('date')}
         data-testid="partner-tx-date"
-        defaultValue={new Date().toISOString().slice(0, 10)}
+        defaultValue={today}
         required
       />
       <textarea

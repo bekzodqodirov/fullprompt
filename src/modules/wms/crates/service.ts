@@ -16,6 +16,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { recomputeEntry } from '../costing/service';
 import { nextCrateCode } from '../codes';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 export class CrateError extends Error {
   constructor(public readonly code: string) {
@@ -115,7 +116,7 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
           costTypeId: cratingType.id,
           amount: input.cratingCost.amount.toString(),
           currency: input.cratingCost.currency,
-          costDate: new Date().toISOString().slice(0, 10),
+          costDate: tashkentDay(),
           enteredBy: actorId,
         })
         .returning({ id: costEntries.id });

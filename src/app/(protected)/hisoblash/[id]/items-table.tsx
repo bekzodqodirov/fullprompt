@@ -33,6 +33,7 @@ import {
 import { dutyText } from '@/modules/wms/calc/duty-text';
 import { refusalWord } from './words';
 import { ImportBazaDialog, type PickerTarget } from './import-baza-dialog';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The Excel-table workspace (VED 2.0 phase 3) — the owner's own columns:
@@ -1450,7 +1451,7 @@ function BlockFooter({
                     tnvedCode: group.tnvedCode!,
                     dutyPct: group.dutyPct!,
                     vatPct: group.vatPct!,
-                    effectiveDate: new Date().toISOString().slice(0, 10),
+                    effectiveDate: tashkentDay(),
                     source: 'correction',
                   }),
                 )

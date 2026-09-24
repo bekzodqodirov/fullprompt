@@ -8,6 +8,7 @@ import { readAnalyticsFilters, readPeriod, salesAnalytics } from '@/modules/wms/
 import { hrefWith } from '@/components/list/board-filter';
 import { PageHeader } from '@/components/ui/page';
 import { stageClass } from '../../stage-color';
+import { addDays, tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The sales month on one screen (round 98, item 8: «dunyo standartlarida
@@ -69,17 +70,17 @@ export default async function SalesAnalyticsPage({
   // VALIDATED values serialized back, so garbage cannot walk URL to URL.
   const base = { dan: period.dan, gacha: period.gacha, ...filters.carried };
 
-  const today = new Date();
-  const day = (d: Date) => d.toISOString().slice(0, 10);
-  const daysAgo = (n: number) => new Date(today.getTime() - n * 86_400_000);
-  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const prevMonthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
-  const prevMonthEnd = new Date(monthStart.getTime() - 86_400_000);
+  // Tashkent's calendar (R5) — the same one `readPeriod` bounds with, so a
+  // preset pressed before 05:00 names the office's today, not UTC's yesterday.
+  const today = tashkentDay();
+  const monthStart = tashkentMonthStart();
+  const prevMonthEnd = addDays(monthStart, -1);
+  const prevMonthStart = `${prevMonthEnd.slice(0, 7)}-01`;
   const presets = [
-    { label: t('period7'), dan: day(daysAgo(6)), gacha: day(today) },
-    { label: t('period30'), dan: day(daysAgo(29)), gacha: day(today) },
-    { label: t('periodMonth'), dan: day(monthStart), gacha: day(today) },
-    { label: t('periodPrevMonth'), dan: day(prevMonthStart), gacha: day(prevMonthEnd) },
+    { label: t('period7'), dan: addDays(today, -6), gacha: today },
+    { label: t('period30'), dan: addDays(today, -29), gacha: today },
+    { label: t('periodMonth'), dan: monthStart, gacha: today },
+    { label: t('periodPrevMonth'), dan: prevMonthStart, gacha: prevMonthEnd },
   ];
 
   // What each active filter is CALLED — the chips row keeps a closed fold

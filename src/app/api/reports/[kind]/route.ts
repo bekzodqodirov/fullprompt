@@ -13,6 +13,7 @@ import {
   buildStockAgingXlsx,
   buildUnclaimedXlsx,
 } from '@/modules/wms/reports/xlsx';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 const kindSchema = z.enum([
   'landed-cost',
@@ -112,7 +113,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   return new Response(new Uint8Array(xlsx), {
     headers: {
       'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'content-disposition': `attachment; filename="${kind.data}-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      'content-disposition': `attachment; filename="${kind.data}-${tashkentDay()}.xlsx"`,
     },
   });
 }

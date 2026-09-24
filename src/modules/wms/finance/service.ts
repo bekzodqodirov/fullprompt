@@ -15,6 +15,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
 import { batchRoute } from '../batches/internal';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -254,15 +255,23 @@ export async function voidTransaction(id: string, reason: string, ctx: AuditCont
  * Live ledger rows dated after today — typed before `future_date` existed.
  * The balance screens count them and the ageing report (as of today) does
  * not, so the report says how many there are instead of silently differing.
+ *
+ * «Today» is Tashkent's and bound from here, NOT the database's
+ * `CURRENT_DATE`: the server runs in UTC, so from midnight to 05:00 in the
+ * office the report's own default `asOf` (Tashkent) and this count (UTC)
+ * would be a day apart and a row dated today called «future» by the very
+ * page that ages it (R5).
  */
-export async function futureDatedEntries(): Promise<{ count: number; usd: number }> {
+export async function futureDatedEntries(
+  today: string = tashkentDay(),
+): Promise<{ count: number; usd: number }> {
   const [row] = await db
     .select({
       count: sql<number>`count(*)::int`,
       usd: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
     })
     .from(clientTransactions)
-    .where(and(isNull(clientTransactions.voidedAt), sql`${clientTransactions.txDate} > CURRENT_DATE`));
+    .where(and(isNull(clientTransactions.voidedAt), sql`${clientTransactions.txDate} > ${today}::date`));
   return { count: Number(row?.count ?? 0), usd: Math.round(Number(row?.usd ?? 0) * 100) / 100 };
 }
 
@@ -308,12 +317,17 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
  * stricter than the gate that already released the cargo. A deferral whose
  * date has passed is no longer a deferral and the hourly sweep may not have
  * run yet, so neither caller may honour it in the meantime (#251).
+ *
+ * «Today» is Tashkent's, bound from JS — the same day `activeDeferrals` and
+ * `resolveExpiredDeferrals` compare against (R5). The three move together: a
+ * deferral read as live here and as expired there would open the handover
+ * gate on one screen and name the debtor on the next.
  */
-export function liveDeferralWhere() {
+export function liveDeferralWhere(today: string = tashkentDay()) {
   return and(
     sql`${deals.deferredAt} IS NOT NULL`,
     isNull(deals.deferralEndedAt),
-    sql`(${deals.deferUntilAllArrived} OR ${deals.deferUntilDate} >= CURRENT_DATE)`,
+    sql`(${deals.deferUntilAllArrived} OR ${deals.deferUntilDate} >= ${today}::date)`,
   );
 }
 

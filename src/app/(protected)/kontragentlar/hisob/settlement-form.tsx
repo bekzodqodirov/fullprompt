@@ -22,10 +22,13 @@ export function SettlementForm({
   clients,
   partners,
   currencies,
+  today,
 }: {
   clients: { id: string; clientCode: string; name: string }[];
   partners: { id: string; name: string; typeName: string }[];
   currencies: string[];
+  /** Tashkent's day from the server — the browser's clock is not the office's (R5). */
+  today: string;
 }) {
   const t = useTranslations('partners');
   const tc = useTranslations('common');
@@ -167,7 +170,7 @@ export function SettlementForm({
         className="input"
         aria-label={t('date')}
         data-testid="settle-date"
-        defaultValue={new Date().toISOString().slice(0, 10)}
+        defaultValue={today}
         required
       />
 

@@ -16,6 +16,7 @@ import {
   resolveMissingSchema,
   unloadRemaining,
 } from '@/modules/wms/scanning/unload';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Accept the whole remaining manifest at the destination without scanning.
@@ -214,7 +215,7 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
   const meta = await requestMeta();
   await db
     .update(batches)
-    .set({ sentToAgentAt: batch.sentToAgentAt ? null : new Date().toISOString().slice(0, 10) })
+    .set({ sentToAgentAt: batch.sentToAgentAt ? null : tashkentDay() })
     .where(eq(batches.id, batchId));
   const { writeAudit } = await import('@/modules/platform/audit/service');
   await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId }, {

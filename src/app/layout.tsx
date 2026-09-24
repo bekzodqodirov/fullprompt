@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { readTheme } from '@/modules/platform/theme/theme';
+import { OFFICE_TZ } from '@/modules/platform/time/tashkent';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -34,7 +35,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={locale} data-theme={theme ?? undefined}>
       <body>
-        <NextIntlClientProvider locale={locale} messages={messages}>
+        {/* The office's zone for every client-side date (R5), the same one
+            `getRequestConfig` gives the server — without it a date rendered on
+            both sides prints the server's zone in the HTML and the browser's
+            after hydration. */}
+        <NextIntlClientProvider locale={locale} messages={messages} timeZone={OFFICE_TZ}>
           {children}
         </NextIntlClientProvider>
       </body>

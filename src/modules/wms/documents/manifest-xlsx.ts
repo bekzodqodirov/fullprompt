@@ -13,6 +13,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { batchMemberFilter } from '../scanning/unload';
+import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /**
  * Actual manifest XLSX (W4/spec 6.4): what really departed — per-box list with
@@ -83,7 +84,7 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
   const header = `Партия ${batch.code} · ${origin?.code} → ${dest?.code}` +
     (batch.vehiclePlate ? ` · ${batch.vehiclePlate}` : '') +
     (batch.driverName ? ` · ${batch.driverName}${batch.driverPhone ? ` (${batch.driverPhone})` : ''}` : '') +
-    (batch.departedAt ? ` · ${batch.departedAt.toISOString().slice(0, 10)}` : '');
+    (batch.departedAt ? ` · ${dayIn(batch.departedAt, OFFICE_TZ)}` : '');
   for (const sheet of [summary, detail]) {
     sheet.insertRow(1, [header]);
     sheet.getRow(1).font = { bold: true, size: 13 };

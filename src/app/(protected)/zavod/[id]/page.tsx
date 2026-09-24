@@ -34,6 +34,7 @@ import {
   StopLinesForm,
 } from '../pickup-forms';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 export const dynamic = 'force-dynamic';
 
@@ -264,6 +265,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
           ]}
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
           canEdit={Boolean(canCost && live)}
+          today={tashkentDay()}
           partnerOptions={costMeta?.partners ?? []}
         />
       </section>

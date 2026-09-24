@@ -14,6 +14,7 @@ import {
 import { dayCalls } from '@/modules/wms/crm/day';
 import { DayCallsView } from '@/components/day-calls-view';
 import { NewTaskForm, TaskList } from '@/components/task-list';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * "My day" — the screen a person opens in the morning.
@@ -57,7 +58,10 @@ export default async function TodayPage({
     ? await dayCalls({
         actorId: actor.id,
         seesAll: actor.permissions.has('crm.leads.view_all'),
-        asOf: new Date().toISOString().slice(0, 10),
+        // Tashkent's day (R5): the call list is a `date` column the seller
+        // wrote in the office's calendar. The TASK half below stays on its
+        // own UTC all-day convention (round 47) until a data migration moves it.
+        asOf: tashkentDay(),
         includeOthers: showOthers,
       })
     : null;

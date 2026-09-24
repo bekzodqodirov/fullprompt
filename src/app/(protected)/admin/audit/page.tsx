@@ -1,9 +1,10 @@
-import { and, desc, eq, gte, lte, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, type SQL } from 'drizzle-orm';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { redirect } from 'next/navigation';
 import { db } from '@/modules/platform/db/client';
 import { auditLog, users, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { tashkentDayStart } from '@/modules/platform/time/tashkent';
 
 /** Admin-only global audit browser with filters (spec 4.3b). */
 export default async function AuditBrowserPage({
@@ -19,19 +20,21 @@ export default async function AuditBrowserPage({
   const params = await searchParams;
 
   // Malformed ?from/?to must not crash the page — ignore invalid dates.
-  const parseDate = (value: string | undefined, suffix = '') => {
-    if (!value) return null;
-    const date = new Date(`${value}${suffix}`);
+  // Both bounds are Tashkent's midnights (R5); `to` is inclusive of its day.
+  const dayStart = (value: string | undefined) => {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const date = tashkentDayStart(value);
     return Number.isNaN(date.getTime()) ? null : date;
   };
-  const from = parseDate(params.from);
-  const to = parseDate(params.to, 'T23:59:59');
+  const from = dayStart(params.from);
+  const toStart = dayStart(params.to);
+  const to = toStart ? new Date(toStart.getTime() + 86_400_000) : null;
 
   const conditions: SQL[] = [];
   if (params.user) conditions.push(eq(auditLog.actorId, params.user));
   if (params.entity) conditions.push(eq(auditLog.entityType, params.entity));
   if (from) conditions.push(gte(auditLog.createdAt, from));
-  if (to) conditions.push(lte(auditLog.createdAt, to));
+  if (to) conditions.push(lt(auditLog.createdAt, to));
 
   const rows = await db
     .select({ entry: auditLog, actorName: users.fullName, warehouseCode: warehouses.code })

@@ -14,6 +14,7 @@ import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 import { ReceiptCostGrid, type GridReceiptRow } from '../receipt-cost-grid';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * «Расходы по приходам» on a screen of its own (round 47, owner's item 8:
@@ -98,7 +99,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
           dealLinks={canWriteDeal(actor.permissions)}
           currencies={currencyCodes}
           defaultCurrency="USD"
-          today={new Date().toISOString().slice(0, 10)}
+          today={tashkentDay()}
           canEdit={canEnter}
           partners={partnerOptions}
         />

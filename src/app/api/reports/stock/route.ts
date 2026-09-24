@@ -7,6 +7,7 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import { warehouseScope } from '@/modules/platform/rbac/scope';
 import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
 import { buildStockXlsx } from '@/modules/wms/reports/stock-xlsx';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Stock report XLSX (spec §9/§13 report 1) with the current stock-browser
@@ -120,7 +121,7 @@ export async function GET(request: Request) {
     },
   });
 
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = tashkentDay();
   // Buffer -> Uint8Array: the builder hands back a node Buffer (what every
   // other xlsx module in this codebase returns) and the web Response type
   // does not accept one directly.

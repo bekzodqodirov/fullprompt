@@ -14,6 +14,7 @@ import {
 import { getSetting } from '../../platform/settings/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { batchMemberFilter } from '../scanning/unload';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 async function batchLines(batchId: string) {
   return db
@@ -51,7 +52,7 @@ async function header(sheet: ExcelJS.Worksheet, batchId: string, title: string) 
   sheet.addRow([
     `${title} · ${batch.code} · ${origin?.code} → ${dest?.code}` +
       (batch.vehiclePlate ? ` · ${batch.vehiclePlate}` : '') +
-      ` · ${new Date().toISOString().slice(0, 10)}`,
+      ` · ${tashkentDay()}`,
   ]);
   sheet.getRow(3).font = { bold: true };
   sheet.addRow([]);
@@ -85,8 +86,10 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
     getSetting('ved_customs_post'),
   ]);
 
-  const today = new Date();
-  const dateCompact = today.toISOString().slice(0, 10).replaceAll('-', '');
+  // The office's day (R5) — the invoice number is built from it, so in UTC
+  // an invoice made before 05:00 carried yesterday's number and date.
+  const today = tashkentDay();
+  const dateCompact = today.replaceAll('-', '');
   const setWrapped = (cell: string, value: string) => {
     sheet.getCell(cell).value = value;
     sheet.getCell(cell).alignment = { wrapText: true, vertical: 'top' };
@@ -100,7 +103,7 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
   sheet.getCell('A3').value = 'Invoice № :';
   sheet.getCell('B3').value = `${dateCompact}${batch.code.replace('-', '').toLowerCase()}`;
   sheet.getCell('A4').value = 'Date :';
-  sheet.getCell('B4').value = today.toISOString().slice(0, 10);
+  sheet.getCell('B4').value = today;
   sheet.getCell('A5').value = '№ Контейнер /Container:';
   sheet.getCell('B5').value = batch.vehiclePlate ?? 'by track';
 

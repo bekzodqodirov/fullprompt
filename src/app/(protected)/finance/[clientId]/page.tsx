@@ -14,6 +14,7 @@ import { BackLink } from '@/components/back-link';
 import { CargoSummary } from '@/components/cargo-summary';
 import { TxForm } from './tx-form';
 import { VoidButton } from './void-button';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /** One client's money ledger: balance, add charge/payment, full history. */
 export default async function ClientLedgerPage({
@@ -107,7 +108,7 @@ export default async function ClientLedgerPage({
           currencies={currencyRows.map((c) => c.code)}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
           deals={openDeals.map((d) => ({ id: d.id, code: d.code, title: d.title, cargo: d.cargo }))}
-          today={new Date().toISOString().slice(0, 10)}
+          today={tashkentDay()}
         />
       )}
 

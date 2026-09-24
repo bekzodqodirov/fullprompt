@@ -13,6 +13,7 @@ import { logger } from '../../platform/logger';
 import { isTelegramMuted } from '../../platform/notifications/mutes';
 import { dayCalls, othersLine } from './day';
 import { dormantClients } from './service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 export const JOB_CRM_FOLLOWUPS = 'crm.followups';
 export const JOB_CRM_DORMANT = 'crm.dormant';
@@ -90,7 +91,7 @@ async function deliver(userId: string, type: string, text: string) {
  * no longer means muting the warehouse summary with it.
  */
 export async function sendFollowUpDigest(now = new Date()): Promise<number> {
-  const asOf = now.toISOString().slice(0, 10);
+  const asOf = tashkentDay(now);
   let sent = 0;
 
   for (const recipient of await crmRecipients()) {

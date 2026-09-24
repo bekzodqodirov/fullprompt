@@ -19,6 +19,7 @@ import { PartnerForm } from '../partner-form';
 import { PartnerTxForm } from './tx-form';
 import { VoidTx } from './void-tx';
 import { setPartnerActiveAction } from '../actions';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * One counterparty's account.
@@ -163,7 +164,7 @@ export default async function PartnerCardPage({
       )}
 
       {canManage && (
-        <PartnerTxForm partnerId={id} accounts={accounts} currencies={currencyCodes} />
+        <PartnerTxForm partnerId={id} accounts={accounts} currencies={currencyCodes} today={tashkentDay()} />
       )}
 
       {/* The scroll container the other 18 wide tables in the app already use.

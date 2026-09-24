@@ -1,4 +1,4 @@
-import { DOC } from './labels';
+import { DOC, docDate } from './labels';
 import { asc, eq, inArray } from 'drizzle-orm';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
@@ -13,6 +13,7 @@ import {
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
 import { cjkSubsetFor, pdfTextCleaner } from '../labels/cjk-font';
+import { OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /** Handover act PDF (spec 6.7, optional per issue): who took what, signatures. */
 export async function buildHandoverAct(handoverId: string): Promise<Uint8Array | null> {
@@ -77,7 +78,10 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
   line(String(await getSetting('company_name')), 16);
   line(DOC.handoverTitle, 12);
   y -= 6;
-  line(`Дата: ${handover.createdAt.toISOString().slice(0, 10)}    Склад: ${wh?.code ?? ''}`);
+  // In the warehouse's own zone (docDate's rule, #644) — every place that
+  // hands cargo to a client is in Uzbekistan, so this is Tashkent's day; in
+  // UTC a handover before 05:00 was signed with yesterday's date (R5).
+  line(`Дата: ${docDate(handover.createdAt, wh?.timezone ?? OFFICE_TZ)}    Склад: ${wh?.code ?? ''}`);
   line(`Клиент: ${client ? `${client.clientCode} — ${client.name}` : '—'}`);
   line(`Получил: ${handover.personName}   тел: ${handover.personPhone}`);
   if (handover.note) line(`Примечание: ${handover.note}`);

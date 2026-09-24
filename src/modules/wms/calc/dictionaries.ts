@@ -6,6 +6,7 @@ import { productKey } from '../tnved/service';
 import { CalcError } from './service';
 import { isNumber } from './pricing';
 import type { BazaBasis, DutyMode, DutyUnit, FreightBand } from './pricing';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * A typo is refused before it is stored, not after it is priced.
@@ -67,8 +68,13 @@ export interface RatesRow {
   note: string | null;
 }
 
-/** ISO `yyyy-mm-dd` — what a `date` column compares against. */
-export const onDate = (at: Date = new Date()) => at.toISOString().slice(0, 10);
+/**
+ * ISO `yyyy-mm-dd` — what a `date` column compares against — in Tashkent's
+ * day (R5), the same day the dictionary forms stamp a new row «from today»
+ * with, so the row is in force the office day it was typed. In UTC both said
+ * yesterday until 05:00.
+ */
+export const onDate = (at: Date = new Date()) => tashkentDay(at);
 
 // ---------------------------------------------------------------------------
 // 1. Product baza

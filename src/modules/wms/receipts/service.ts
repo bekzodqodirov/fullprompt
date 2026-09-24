@@ -32,6 +32,7 @@ import { priceControlOnReceipt } from '../deals/service';
 import { stampCalcLink } from '../calc/link';
 import { computeLotTotals } from './math';
 import { recomputeAll } from '../costing/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 export const lotInputSchema = z
   .object({
@@ -319,7 +320,8 @@ export async function confirmReceipt(
         costTypeId: cost.costTypeId,
         amount: cost.amount.toString(),
         currency: cost.currency,
-        costDate: new Date().toISOString().slice(0, 10),
+        // The office's day (R5): in UTC a receipt before 05:00 was yesterday's cost.
+        costDate: tashkentDay(),
         note: cost.note || null,
         enteredBy: ctx.actorId!,
       });

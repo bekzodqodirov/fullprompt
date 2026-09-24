@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { saveTariffAction } from '../../hisoblash/actions';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * One band: a zone, a floor, a ceiling and a price.
@@ -27,7 +28,8 @@ export function TariffForm({ zones }: { zones: string[] }) {
   const [max, setMax] = useState('');
   const [price, setPrice] = useState('');
   const [perKg, setPerKg] = useState(false);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  // Tashkent's day, whatever the browser's clock says (R5).
+  const [date, setDate] = useState(() => tashkentDay());
 
   return (
     <div className="space-y-2">

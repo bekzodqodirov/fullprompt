@@ -17,6 +17,7 @@ import { uzsRate } from './period';
 // branch — the branch is how a CNY till came to be worth nothing.
 import { rateFor } from '../costing/service';
 import { clientBalances, unplacedPaymentSql } from '../finance/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Management reports (Phase 2.4).
@@ -564,8 +565,12 @@ export async function profitByBatch(from: string, to: string) {
     .where(
       and(
         sql`${batches.departedAt} IS NOT NULL`,
-        sql`${batches.departedAt} >= ${from}::date`,
-        sql`${batches.departedAt} < (${to}::date + interval '1 day')`,
+        // Tashkent's days (R5): a bare `::date` against a timestamptz is a
+        // UTC midnight, so a truck leaving Yiwu at 07:00 on the 1st (04:00 in
+        // Tashkent, 23:00 UTC on the 31st) landed in the previous month's
+        // report.
+        sql`${batches.departedAt} >= ((${from}::date)::timestamp AT TIME ZONE 'Asia/Tashkent')`,
+        sql`${batches.departedAt} < (((${to}::date + 1))::timestamp AT TIME ZONE 'Asia/Tashkent')`,
       ),
     )
     .orderBy(sql`${batches.departedAt} DESC`);
@@ -801,7 +806,7 @@ export async function companyBalance() {
   const counted = accounts.filter(
     (account) => account.active || Math.abs(account.balance) > 0.009,
   );
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
   const rates = new Map(
     await Promise.all(
       [...new Set(counted.map((account) => account.currency))].map(

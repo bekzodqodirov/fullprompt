@@ -618,12 +618,18 @@ export async function clientHistory(clientId: string) {
   }));
 }
 
-/** Staff activity per user per day (§13.8): receipts, edits, prints, scans. */
+/**
+ * Staff activity per user per day (§13.8): receipts, edits, prints, scans.
+ * The day is Tashkent's (R5) — a `date_trunc` on a timestamptz cuts at the
+ * SESSION's midnight, which on this server is UTC, so work done before 05:00
+ * in the office — a Chinese warehouse's 07:00 start — was booked to the
+ * previous day.
+ */
 export async function staffActivity(days: number) {
   const rows = await db.execute(sql`
     WITH audit AS (
       SELECT a.actor_id,
-             date_trunc('day', a.created_at)::date AS day,
+             (a.created_at AT TIME ZONE 'Asia/Tashkent')::date AS day,
              count(*) FILTER (WHERE a.entity_type = 'receipt' AND a.action = 'create') AS receipts,
              count(*) FILTER (WHERE a.action = 'update') AS edits,
              count(*) FILTER (WHERE a.action = 'label_print') AS prints,
@@ -633,7 +639,7 @@ export async function staffActivity(days: number) {
       GROUP BY a.actor_id, day
     ), scans AS (
       SELECT s.scanned_by AS actor_id,
-             date_trunc('day', s.created_at)::date AS day,
+             (s.created_at AT TIME ZONE 'Asia/Tashkent')::date AS day,
              count(*) AS scans
       FROM scan_events s
       WHERE s.created_at > now() - make_interval(days => ${days})

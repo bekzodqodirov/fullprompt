@@ -6,6 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { batches, currencies } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { inScope } from '@/modules/platform/rbac/scope';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { balancesForClients, batchCharges } from '@/modules/wms/finance/service';
 import {
   batchClientCostBreakdown,
@@ -93,7 +94,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const money = (value: number) => `$${value.toFixed(2)}`;
   const { totals } = view;
   const dealLinks = canWriteDeal(actor.permissions);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
   const currencyCodes = currencyRows.map((c) => c.code);
 
   const lotRows = (list: BatchLot[]) => (

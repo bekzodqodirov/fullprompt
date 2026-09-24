@@ -49,11 +49,19 @@ describe('the law and the stamp agree about what a decision is', () => {
 describe('readPeriod', () => {
   it('reads a valid pair and makes the end exclusive of the next day', () => {
     const p = readPeriod({ dan: '2026-08-01', gacha: '2026-08-12' });
-    expect(p.from.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    // Tashkent midnights (R5): the 1st starts at 19:00Z on the 31st.
+    expect(p.from.toISOString()).toBe('2026-07-31T19:00:00.000Z');
     // «gacha 12th» includes the 12th — the bound is the 13th's midnight.
-    expect(p.to.toISOString()).toBe('2026-08-13T00:00:00.000Z');
+    expect(p.to.toISOString()).toBe('2026-08-12T19:00:00.000Z');
     expect(p.dan).toBe('2026-08-01');
     expect(p.gacha).toBe('2026-08-12');
+  });
+
+  it("defaults to Tashkent's month even when UTC is still in the previous one (R5)", () => {
+    const p = readPeriod({}, new Date('2026-09-30T20:00:00Z'));
+    expect(p.dan).toBe('2026-10-01');
+    expect(p.gacha).toBe('2026-10-01');
+    expect(p.from.toISOString()).toBe('2026-09-30T19:00:00.000Z');
   });
 
   it('drops garbage instead of obeying it (#514)', () => {

@@ -18,6 +18,7 @@ import {
   type SalesFlowCounts,
   type VedFlowCounts,
 } from '@/modules/wms/home/role-flows';
+import { OFFICE_TZ, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Home.
@@ -44,7 +45,7 @@ export default async function HomePage() {
   const label = async (namespace: string, key: string) =>
     (await getTranslations(namespace as 'home'))(key as 'receiving');
 
-  const flow = await buildHomeFlow(actor, new Date().toISOString().slice(0, 10));
+  const flow = await buildHomeFlow(actor, tashkentDay());
 
   const viewer = { permissions: actor.permissions, roles: actor.roles };
   const groups: { title: string; items: { href: string; label: string; icon: IconName }[] }[] = [];
@@ -87,7 +88,7 @@ export default async function HomePage() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-medium text-ink-500">{new Date().toLocaleDateString('en-GB')}</p>
+        <p className="text-xs font-medium text-ink-500">{new Date().toLocaleDateString('en-GB', { timeZone: OFFICE_TZ })}</p>
         {/* Two lines at most: a long full name used to push the first action
             below the fold on a 360 px screen. */}
         <h1 className="line-clamp-2 text-xl leading-tight">

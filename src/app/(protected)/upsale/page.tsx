@@ -20,6 +20,7 @@ import {
 import { PageHeader } from '@/components/ui/page';
 import { hrefWith } from '@/components/list/board-filter';
 import { CategoryForm, PayForm, ReleaseButton } from './pay-form';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * «Sotuvchi ulushi» — what a seller earns, and the accountant's Friday.
@@ -212,6 +213,7 @@ export default async function UpsalePage({
             offeredAt: r.offeredAt.toISOString(),
           }))}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
+          today={tashkentDay()}
         />
           </div>
         </details>

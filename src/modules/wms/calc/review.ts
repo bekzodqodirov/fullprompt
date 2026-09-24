@@ -4,17 +4,12 @@ import { settings } from '@/modules/platform/db/schema';
 import { notifyStaffTelegram } from '@/modules/platform/notifications/staff';
 import { usersWithPermission } from '@/modules/platform/notifications/service';
 import { logger } from '@/modules/platform/logger';
+import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 import { BAZA_STALE_DAYS, staleDictionaryCounts } from './dictionaries';
 
 /** `YYYY-MM` in the office's zone — the month a reminder belongs to. */
-export function reviewMonth(now: Date, timeZone = 'Asia/Tashkent'): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(now);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
-  return `${get('year')}-${get('month')}`;
+export function reviewMonth(now: Date, timeZone = OFFICE_TZ): string {
+  return dayIn(now, timeZone).slice(0, 7);
 }
 
 const CLAIM_KEY = 'calc_review_notified_month';

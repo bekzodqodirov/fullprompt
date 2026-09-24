@@ -51,6 +51,7 @@ import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { CrateRows } from '@/components/crate-rows';
 import { batchCrates } from '@/modules/wms/inventory/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -577,6 +578,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             clientOptions={costMeta.clients}
             defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
             canEdit={canEnterCosts}
+            today={tashkentDay()}
             partnerOptions={partnerOptions}
           />
           {costSheet.entries.length > 0 && (

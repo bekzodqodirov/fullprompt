@@ -9,6 +9,7 @@ import { listAccounts } from '@/modules/wms/accounting/service';
 import { placePaymentAction } from '../actions';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from '../client-search';
+import { tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The payments register (round 29) — the accountant's «kimdan qancha pul
@@ -30,8 +31,8 @@ export default async function PaymentsRegisterPage({
   const t = await getTranslations('finance');
   const params = await searchParams;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const monthStart = `${today.slice(0, 8)}01`;
+  const today = tashkentDay();
+  const monthStart = tashkentMonthStart();
   const valid = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
   const from = valid(params.from) ?? monthStart;
   const to = valid(params.to) ?? today;

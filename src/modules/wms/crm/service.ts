@@ -991,9 +991,15 @@ export function leadBoardWhere(filters: LeadBoardFilters) {
   const text = leadTextWhere(filters.q);
   if (text) where.push(text);
   if (filters.sourceId) where.push(eq(leads.sourceId, filters.sourceId));
-  if (filters.createdFrom) where.push(sql`${leads.createdAt} >= ${filters.createdFrom}::date`);
+  // Tashkent's days (R5): `::date` against a timestamptz is a UTC midnight,
+  // so a lead that arrived at 02:00 on the 16th fell outside «dan 16th».
+  if (filters.createdFrom) {
+    where.push(sql`${leads.createdAt} >= ((${filters.createdFrom}::date)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  }
   // Inclusive: «to 15th» means through the 15th's midnight, not up to it.
-  if (filters.createdTo) where.push(sql`${leads.createdAt} < ${filters.createdTo}::date + 1`);
+  if (filters.createdTo) {
+    where.push(sql`${leads.createdAt} < ((${filters.createdTo}::date + 1)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  }
   if (filters.amountMin !== undefined) where.push(sql`${leads.quotedAmount} >= ${filters.amountMin}`);
   if (filters.amountMax !== undefined) where.push(sql`${leads.quotedAmount} <= ${filters.amountMax}`);
   if (filters.volMin !== undefined) where.push(sql`${leads.quotedVolumeM3} >= ${filters.volMin}`);

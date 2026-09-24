@@ -48,6 +48,7 @@ export function CostPanel({
   defaultCurrency,
   canEdit,
   partnerOptions = [],
+  today,
 }: {
   scope: 'batch' | 'receipt' | 'crate' | 'pickup';
   targetId: string;
@@ -64,6 +65,11 @@ export function CostPanel({
    * the field is not drawn at all.
    */
   partnerOptions?: { id: string; name: string }[];
+  /**
+   * The default cost date: Tashkent's day, computed on the SERVER (R5). The
+   * browser's own clock is neither the office's nor reliably set.
+   */
+  today: string;
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
@@ -74,7 +80,7 @@ export function CostPanel({
   const [typeId, setTypeId] = useState(costTypes[0]?.id ?? '');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
-  const [costDate, setCostDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [costDate, setCostDate] = useState(today);
   // The factory truck is split by m³ (owner's B5a) — the default, not a lock.
   const [basis, setBasis] = useState<(typeof BASES)[number]>(scope === 'pickup' ? 'volume' : 'weight');
   const [clientId, setClientId] = useState('');

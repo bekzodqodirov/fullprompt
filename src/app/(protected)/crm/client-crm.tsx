@@ -7,6 +7,7 @@ import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 import { personForClient } from '@/modules/wms/crm/people';
 import { ActivityForm } from './activity-form';
 import { MakePersonButton } from './make-person-button';
+import { dayIn, OFFICE_TZ, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The CRM half of a client card (owner's answer 7): what was said, and the
@@ -35,7 +36,7 @@ export async function ClientCrmSections({
     listActivities('client', clientId, 50),
     personForClient(clientId),
   ]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = tashkentDay();
   const icon: Record<string, string> = { call: '📞', meeting: '🤝', message: '💬', note: '📝' };
 
   return (
@@ -47,7 +48,7 @@ export async function ClientCrmSections({
           <div key={activity.id} className="border-b border-line pb-2 last:border-0 last:pb-0">
             <div className="flex items-baseline gap-2 text-xs text-ink-500">
               <span>{icon[activity.kind] ?? '📝'}</span>
-              <span>{activity.happenedAt.toISOString().slice(0, 10)}</span>
+              <span>{dayIn(activity.happenedAt, OFFICE_TZ)}</span>
               {authorName && <span className="ml-auto">{authorName}</span>}
             </div>
             <p className="text-sm [overflow-wrap:anywhere]">{activity.note}</p>
