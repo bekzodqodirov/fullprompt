@@ -99,7 +99,8 @@
     "flowDocsPending": "Agentga hujjati ketmagan partiyalar",
     "flowTnvedMissing": "TNVED kodsiz tovarlar",
     "flowCalcOpen": "Navbatdagi hisoblashlar",
-    "flowCalcLate": "kechikkan"
+    "flowCalcLate": "kechikkan",
+    "flowUnplacedCosts": "Kassasi ko‘rsatilmagan xarajatlar"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -811,7 +812,20 @@
     "gridShowAll": "Hammasini ko‘rsatish",
     "gridPartial": "{saved} ta katak saqlandi, qolgani saqlanmadi ({reason}). Saqlanmaganlari jadvalda qoldi — qayta bosing.",
     "rateStanding": "Hozirgi kurs: 1 USD = {rate} {currency}",
-    "rateJump": "Oxirgi kurs 1 USD = {previous} {currency} edi — yangisi 20% dan ko‘proq farq qiladi. To‘g‘ri bo‘lsa, belgilab yana saqlang."
+    "rateJump": "Oxirgi kurs 1 USD = {previous} {currency} edi — yangisi 20% dan ko‘proq farq qiladi. To‘g‘ri bo‘lsa, belgilab yana saqlang.",
+    "paidByUsNoTill": "Biz to‘ladik — kassani buxgalter ko‘rsatadi",
+    "tillGroup": "Kassadan",
+    "partnerGroup": "Kontragent to‘lagan",
+    "tillAmount": "Kassadan chiqqan summa ({currency})",
+    "paidFromTill": "kassadan",
+    "errTillForbidden": "Kassani faqat buxgalter yoki admin ko‘rsatadi.",
+    "errStaffPayer": "Hodim o‘z pulidan to‘laganini «Rasxod xabari» orqali yuboring — buxgalter tasdiqlaydi.",
+    "errKassaVoid": "Kassadan to‘langan xarajatni faqat buxgalter yoki admin bekor qiladi — pul kassaga qaytadi.",
+    "errTillAmountRequired": "Kassa boshqa valyutada — kassadan qancha chiqqanini yozing.",
+    "errTillAmountMismatch": "Kassa shu valyutada — summa xarajat summasiga teng bo‘lishi kerak.",
+    "errTillNotFound": "Bu kassa topilmadi yoki yopilgan.",
+    "errTillCurrency": "Jadvalda bitta valyuta: kassa ham shu valyutada bo‘lishi kerak.",
+    "errPayerConflict": "Bu xarajatning to‘lovchisi allaqachon ko‘rsatilgan."
   },
   "batches": {
     "title": "Partiyalar",
@@ -1270,7 +1284,39 @@
     "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} — mijoz hisobida partiyasiz qo‘yilgan narxlar. Prixod, qabul, yashik va zavod reysi xarajatlari esa yuk qaysi mashinada ketgan bo‘lsa, o‘sha mashinaning tannarxida turibdi.",
     "clientRefunds": "Mijozlarga qaytarilgan",
     "balClientAdvances": "Mijozlar avansi (biz qarzmiz)",
-    "beforeOpening": "{count} ta yozuv boshlang‘ich qoldiq sanasidan oldin — ular shu qoldiq ichida, qayta qo‘shilmaydi"
+    "beforeOpening": "{count} ta yozuv boshlang‘ich qoldiq sanasidan oldin — ular shu qoldiq ichida, qayta qo‘shilmaydi",
+    "cargoUnplaced": "shundan kassasi ko‘rsatilmagan: {usd}",
+    "balUnplacedCosts": "{count} ta yuk xarajatining kassasi ko‘rsatilmagan (${usd}) — kassalar qoldig‘i shuncha ko‘p ko‘rinishi mumkin",
+    "costKassa": "Xarajat kassasi",
+    "costKassaHint": "Sklad, logist yoki VED kiritgan yuk xarajatlari. Har biri uchun ayting: qaysi kassadan to‘landi, hodim o‘z pulidan to‘ladimi, yoki bu «Xarajatlar»ga ikkinchi marta kiritilganmi (unda birlashtiring — pul ikki marta hisoblanmaydi).",
+    "queueCount": "Navbatda: {count} ta",
+    "queueSince": "{day} dan beri kiritilganlar",
+    "queuePrev": "Oldingi",
+    "queueNext": "Keyingi",
+    "mergedTitle": "Birlashtirilganlar",
+    "mergedCosts": "{count} ta xarajat bilan",
+    "queueDone": "Saqlandi.",
+    "queueEmpty": "Kassasi ko‘rsatilmagan xarajat yo‘q.",
+    "mergeTitle": "Belgilanganlar: {count} ta — «Xarajatlar»dagi takror bilan birlashtirish",
+    "mergeExpense": "Takroriy xarajatni tanlang",
+    "mergeButton": "Birlashtirish",
+    "mergeHint": "Bir xil valyutada summa tiyinigacha teng bo‘lishi kerak; har xil valyutada farq 2% yoki $5 gacha. Xarajat o‘chadi, kassasi yuk xarajatiga o‘tadi — kassa qoldig‘i o‘zgarmaydi.",
+    "mergePick": "Birlashtirish uchun belgilash",
+    "mergeSuggest": "«Xarajatlar»da takror bo‘lishi mumkin: {expense}",
+    "mergeOne": "Birlashtirish",
+    "queueTill": "Qaysi kassadan",
+    "queueTillAmount": "Kassadan ({currency})",
+    "queueSave": "Saqlash",
+    "queueStaff": "Hodim o‘z pulidan to‘lagan",
+    "queueErrTillAmount": "Kassa boshqa valyutada — kassadan qancha chiqqanini to‘g‘ri yozing.",
+    "queueErrTill": "Kassa topilmadi yoki yopilgan.",
+    "queueErrTaken": "Bu xarajat allaqachon joylangan yoki bekor qilingan — sahifani yangilang.",
+    "queueErrNotCandidate": "Bu xarajatni birlashtirib bo‘lmaydi (kontragent to‘lagan, takroriy oylik yoki upsale to‘lovi, yoki bekor qilingan).",
+    "queueErrAmount": "Summalar mos kelmadi: bir xil valyutada tiyinigacha, har xilda 2% yoki $5 gacha farq bo‘lishi kerak.",
+    "queueErrDays": "Sanalar orasida 14 kundan ko‘p farq bor.",
+    "queueErrRate": "Xarajat valyutasining kursi kiritilmagan.",
+    "queueErrNotStaff": "Tanlangan kontragent hodim emas.",
+    "queueErrForbidden": "Bu amal buxgalter yoki adminniki."
   },
   "crm": {
     "title": "CRM",
@@ -2855,7 +2901,8 @@
     "colClient": "Mijoz",
     "colCargo": "Yuk",
     "colWho": "Kim",
-    "colMoney": "Jonli pullar"
+    "colMoney": "Jonli pullar",
+    "paidFromTill": "Bu prixodning kassadan to‘langan xarajati bor. Avval buxgalter uni bekor qilsin — pul kassaga qaytadi."
   },
   "customsImport": {
     "title": "Bojxona bazasi (import)",

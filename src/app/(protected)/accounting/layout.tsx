@@ -32,6 +32,8 @@ export default async function AccountingLayout({ children }: { children: React.R
       ? ([
           { href: '/accounting/expenses', label: t('expenses'), icon: 'doc' },
           { href: '/accounting/accounts', label: t('accounts'), icon: 'wallet' },
+          // 0101: the cargo costs whose kassa only the accountant can name.
+          { href: '/accounting/xarajat-kassa', label: t('costKassa'), icon: 'exchange' },
           { href: '/accounting/categories', label: t('categories'), icon: 'clipboard' },
         ] as SubNavItem[])
       : []),

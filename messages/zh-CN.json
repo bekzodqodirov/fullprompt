@@ -99,7 +99,8 @@
     "flowDocsPending": "未发单证给代理的车次",
     "flowTnvedMissing": "无 HS 编码的商品",
     "flowCalcOpen": "待核算",
-    "flowCalcLate": "逾期"
+    "flowCalcLate": "逾期",
+    "flowUnplacedCosts": "未指定账户的费用"
   },
   "dashboard": {
     "title": "仪表盘",
@@ -811,7 +812,20 @@
     "gridShowAll": "全部显示",
     "gridPartial": "已保存 {saved} 个单元格，其余未保存（{reason}）。未保存的仍在表格中——请再次点击。",
     "rateStanding": "当前汇率：1 USD = {rate} {currency}",
-    "rateJump": "上一个汇率是 1 USD = {previous} {currency}，新汇率相差超过 20%。如确认无误，请勾选后再次保存。"
+    "rateJump": "上一个汇率是 1 USD = {previous} {currency}，新汇率相差超过 20%。如确认无误，请勾选后再次保存。",
+    "paidByUsNoTill": "我方支付——由会计指定账户",
+    "tillGroup": "从账户",
+    "partnerGroup": "由往来单位支付",
+    "tillAmount": "账户支出金额（{currency}）",
+    "paidFromTill": "从账户",
+    "errTillForbidden": "只有会计或管理员可以指定账户。",
+    "errStaffPayer": "员工自付请通过“费用报告”提交，由会计确认。",
+    "errKassaVoid": "从账户支付的费用只能由会计或管理员作废——款项会退回账户。",
+    "errTillAmountRequired": "账户币种不同——请填写账户实际支出金额。",
+    "errTillAmountMismatch": "币种相同——金额必须等于费用金额。",
+    "errTillNotFound": "该账户不存在或已停用。",
+    "errTillCurrency": "表格只有一种币种：账户也必须是该币种。",
+    "errPayerConflict": "该费用已指定付款方。"
   },
   "batches": {
     "title": "车次",
@@ -1270,7 +1284,39 @@
     "unbatchedNote": "未计入本表（按期间日期）：未关联车辆的收入 {revenue}——在客户账上定的价格。入库单、收货、木箱和工厂提货的费用已计入货物所乘车辆的成本。",
     "clientRefunds": "退还客户",
     "balClientAdvances": "客户预付款（我们欠）",
-    "beforeOpening": "{count} 条记录早于期初日期——已包含在期初余额中，不再重复计算"
+    "beforeOpening": "{count} 条记录早于期初日期——已包含在期初余额中，不再重复计算",
+    "cargoUnplaced": "其中未指定账户：{usd}",
+    "balUnplacedCosts": "{count} 笔货物费用未指定账户（${usd}）——账户余额可能多显示了这部分",
+    "costKassa": "费用账户",
+    "costKassaHint": "仓库、物流或报关录入的货物费用。请逐条说明：从哪个账户支付、是否员工自付，或是否在“费用”中重复录入（请合并——避免重复计算）。",
+    "queueCount": "待处理：{count} 条",
+    "queueSince": "自 {day} 起录入",
+    "queuePrev": "上一页",
+    "queueNext": "下一页",
+    "mergedTitle": "已合并",
+    "mergedCosts": "合并 {count} 笔费用",
+    "queueDone": "已保存。",
+    "queueEmpty": "没有待指定账户的费用。",
+    "mergeTitle": "已选：{count} 条——与“费用”中的重复项合并",
+    "mergeExpense": "选择重复的费用",
+    "mergeButton": "合并",
+    "mergeHint": "同币种金额须精确一致；不同币种差额不超过 2% 或 $5。该费用作废，其账户转到货物费用上——账户余额不变。",
+    "mergePick": "勾选以合并",
+    "mergeSuggest": "可能在“费用”中重复：{expense}",
+    "mergeOne": "合并",
+    "queueTill": "哪个账户",
+    "queueTillAmount": "账户支出（{currency}）",
+    "queueSave": "保存",
+    "queueStaff": "员工自付",
+    "queueErrTillAmount": "账户币种不同——请填写正确的支出金额。",
+    "queueErrTill": "账户不存在或已停用。",
+    "queueErrTaken": "该费用已被处理或作废——请刷新页面。",
+    "queueErrNotCandidate": "该费用不可合并（由往来单位支付、固定费用、upsale 支付或已作废）。",
+    "queueErrAmount": "金额不符：同币种须精确一致，不同币种差额不超过 2% 或 $5。",
+    "queueErrDays": "日期相差超过 14 天。",
+    "queueErrRate": "该费用币种未录入汇率。",
+    "queueErrNotStaff": "所选往来单位不是员工账户。",
+    "queueErrForbidden": "此操作仅限会计或管理员。"
   },
   "crm": {
     "title": "CRM",
@@ -2855,7 +2901,8 @@
     "colClient": "客户",
     "colCargo": "货物",
     "colWho": "操作人",
-    "colMoney": "在册资金"
+    "colMoney": "在册资金",
+    "paidFromTill": "该入库单有从账户支付的费用。请先由会计作废——款项会退回账户。"
   },
   "customsImport": {
     "title": "海关基价库（导入）",

@@ -99,7 +99,8 @@
     "flowDocsPending": "Batches without agent docs",
     "flowTnvedMissing": "Goods without TNVED code",
     "flowCalcOpen": "Calculations waiting",
-    "flowCalcLate": "late"
+    "flowCalcLate": "late",
+    "flowUnplacedCosts": "Costs with no cash box"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -811,7 +812,20 @@
     "gridShowAll": "Show all",
     "gridPartial": "{saved} cells saved, the rest were not ({reason}). The unsaved ones are still in the grid — press again.",
     "rateStanding": "Current rate: 1 USD = {rate} {currency}",
-    "rateJump": "The last rate was 1 USD = {previous} {currency} — the new one differs by more than 20%. If it is right, tick this and save again."
+    "rateJump": "The last rate was 1 USD = {previous} {currency} — the new one differs by more than 20%. If it is right, tick this and save again.",
+    "paidByUsNoTill": "We paid — the accountant names the cash box",
+    "tillGroup": "From a cash box",
+    "partnerGroup": "Paid by a counterparty",
+    "tillAmount": "Left the cash box ({currency})",
+    "paidFromTill": "from a cash box",
+    "errTillForbidden": "Only the accountant or an admin names the cash box.",
+    "errStaffPayer": "A colleague's own money is reported through the expense request — the accountant confirms it.",
+    "errKassaVoid": "A cost paid from a cash box is voided only by the accountant or an admin — the money goes back to the box.",
+    "errTillAmountRequired": "The cash box is in another currency — type what left it.",
+    "errTillAmountMismatch": "Same currency — the amount must equal the cost.",
+    "errTillNotFound": "That cash box does not exist or is closed.",
+    "errTillCurrency": "The grid has one currency: the cash box must be in it.",
+    "errPayerConflict": "This cost already names who paid it."
   },
   "batches": {
     "title": "Batches",
@@ -1270,7 +1284,39 @@
     "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} tied to no truck — prices set on a client's ledger. Receipt, receiving, crate and factory-pickup costs are already in the cost of the truck the cargo rode.",
     "clientRefunds": "Refunds to clients",
     "balClientAdvances": "Client advances (we owe)",
-    "beforeOpening": "{count} entries dated before the opening count — already inside it, not added again"
+    "beforeOpening": "{count} entries dated before the opening count — already inside it, not added again",
+    "cargoUnplaced": "of which with no cash box: {usd}",
+    "balUnplacedCosts": "{count} cargo costs name no cash box (${usd}) — the boxes may read that much too high",
+    "costKassa": "Cost cash boxes",
+    "costKassaHint": "Cargo costs typed by the warehouse, the logist or the VED. For each, say which cash box paid it, whether a colleague paid out of pocket, or that it was typed into Expenses a second time (merge it — the money is then not counted twice).",
+    "queueCount": "In the queue: {count}",
+    "queueSince": "entered since {day}",
+    "queuePrev": "Previous",
+    "queueNext": "Next",
+    "mergedTitle": "Merged",
+    "mergedCosts": "with {count} costs",
+    "queueDone": "Saved.",
+    "queueEmpty": "No costs are waiting for a cash box.",
+    "mergeTitle": "Ticked: {count} — merge with the duplicate in Expenses",
+    "mergeExpense": "Choose the duplicate expense",
+    "mergeButton": "Merge",
+    "mergeHint": "Same currency: the amounts match to the cent; different currencies: within 2% or $5. The expense is voided and its cash box moves onto the cargo cost — the box's balance does not change.",
+    "mergePick": "Tick to merge",
+    "mergeSuggest": "Possibly typed again in Expenses: {expense}",
+    "mergeOne": "Merge",
+    "queueTill": "Which cash box",
+    "queueTillAmount": "From the box ({currency})",
+    "queueSave": "Save",
+    "queueStaff": "A colleague paid out of pocket",
+    "queueErrTillAmount": "The cash box is in another currency — type what actually left it.",
+    "queueErrTill": "The cash box does not exist or is closed.",
+    "queueErrTaken": "This cost was already placed or voided — refresh the page.",
+    "queueErrNotCandidate": "That expense cannot be merged (paid by a counterparty, a recurring posting, an upsale payout, or voided).",
+    "queueErrAmount": "The amounts do not match: to the cent in one currency, within 2% or $5 across currencies.",
+    "queueErrDays": "More than 14 days between the dates.",
+    "queueErrRate": "The cost's currency has no exchange rate.",
+    "queueErrNotStaff": "The chosen counterparty is not a staff account.",
+    "queueErrForbidden": "This is the accountant's or an admin's action."
   },
   "crm": {
     "title": "CRM",
@@ -2855,7 +2901,8 @@
     "colClient": "Client",
     "colCargo": "Cargo",
     "colWho": "Who",
-    "colMoney": "Live money"
+    "colMoney": "Live money",
+    "paidFromTill": "This receipt has a cost paid from a cash box. The accountant voids it first — the money returns to the box."
   },
   "customsImport": {
     "title": "Customs base (import)",

@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/ui/page';
 import { ReceiptCostGrid, type GridReceiptRow } from '../receipt-cost-grid';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 
 /**
  * «Расходы по приходам» on a screen of its own (round 47, owner's item 8:
@@ -102,6 +103,7 @@ export default async function BatchCostGridPage({ params }: { params: Promise<{ 
           today={tashkentDay()}
           canEdit={canEnter}
           partners={partnerOptions}
+          tills={await tillOptionsFor(actor.permissions)}
         />
       )}
     </div>

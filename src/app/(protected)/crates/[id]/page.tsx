@@ -13,6 +13,7 @@ import {
   currencies,
   receiptLots,
   warehouses,
+  moneyAccounts,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { AttachmentsPanel } from '@/components/attachments-panel';
@@ -26,6 +27,7 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -76,10 +78,16 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
     .orderBy(asc(attachments.createdAt));
 
   const costs = await db
-    .select({ entry: costEntries, typeName: costTypes.name, partnerName: partners.name })
+    .select({
+      entry: costEntries,
+      typeName: costTypes.name,
+      partnerName: partners.name,
+      accountName: moneyAccounts.name,
+    })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
+    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
     .where(and(eq(costEntries.crateId, id), isNull(costEntries.voidedAt)));
 
   // A wrong yashik fee needs the same correction path as every other cost:
@@ -131,7 +139,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
         <CostPanel
           scope="crate"
           targetId={crate.id}
-          entries={costs.map(({ entry, typeName, partnerName }) => ({
+          entries={costs.map(({ entry, typeName, partnerName, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -141,6 +149,8 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
             allocationBasis: entry.allocationBasis,
             note: entry.note,
             partnerName,
+            accountName: maySeeTillNames(actor.permissions) ? accountName : null,
+            paidFromTill: entry.accountId !== null,
           }))}
           costTypes={costMeta?.types ?? []}
           currencies={costMeta?.currencies ?? []}
@@ -148,6 +158,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
           canEdit={canEditCosts}
           today={tashkentDay()}
+          tillOptions={await tillOptionsFor(actor.permissions)}
           partnerOptions={partnerOptions}
         />
         {active && (

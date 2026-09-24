@@ -15,7 +15,7 @@ import {
 import { uzsRate } from './period';
 // Every cash box converts through the generic rate lookup, not a per-currency
 // branch — the branch is how a CNY till came to be worth nothing.
-import { batchLandedCostTotals, rateFor } from '../costing/service';
+import { batchLandedCostTotals, rateFor, unplacedCostTotals } from '../costing/service';
 import { clientBalances, unplacedPaymentSql } from '../finance/service';
 import { internalLegSql } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -945,6 +945,11 @@ export async function companyBalance() {
     );
   const unplacedUsd = money(unplaced?.sum);
 
+  // Cargo costs nobody has said the kassa of (0101). NOT in the net: where
+  // the money came from is exactly what is unknown — but every such dollar
+  // is one the tills above may be holding on paper and not in the drawer.
+  const unplacedCosts = await unplacedCostTotals();
+
   const net = cashUsd + unplacedUsd + receivable + owedToUsByPartners - owedByUs - clientAdvances;
 
   // The totals FIRST: the AI's company_balance tool cuts the JSON at 6,000
@@ -958,6 +963,9 @@ export async function companyBalance() {
     receivableUsd: money(receivable),
     /** Clients who paid ahead — money we owe them back in service (R7a). */
     clientAdvancesUsd: money(clientAdvances),
+    /** Cargo costs waiting for the accountant to name their kassa (0101). */
+    unplacedCostCount: unplacedCosts.count,
+    unplacedCostUsd: unplacedCosts.usd,
     /** Counterparties we still have to pay. */
     payableUsd: money(owedByUs),
     /** Counterparties who are in front on their account. */

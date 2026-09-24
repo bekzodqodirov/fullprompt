@@ -91,6 +91,18 @@ export default async function BalancePage() {
         </table>
       </div>
 
+      {/* Not a line of the sheet — its kassa is exactly what is unknown — but
+          every such dollar may still sit in a till above on paper (0101). */}
+      {balance.unplacedCostCount > 0 && (
+        <Link
+          href="/accounting/xarajat-kassa"
+          className="card block text-sm text-warn underline"
+          data-testid="balance-unplaced-costs"
+        >
+          ⚠ {t('balUnplacedCosts', { count: balance.unplacedCostCount, usd: usd(balance.unplacedCostUsd) })}
+        </Link>
+      )}
+
       <section className="space-y-2">
         <p className="section-title">{t('accounts')}</p>
         <div className="card !p-0">

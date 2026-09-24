@@ -71,6 +71,7 @@ export function ReceiptCostGrid({
   today,
   canEdit,
   partners,
+  tills = [],
 }: {
   batchId: string;
   rows: GridReceiptRow[];
@@ -87,13 +88,19 @@ export function ReceiptCostGrid({
   canEdit: boolean;
   /** Active counterparties — empty when the viewer may not name a payer. */
   partners: { id: string; name: string }[];
+  /** The kassas the sheet may have been paid from — kassa holders only (0101). */
+  tills?: { id: string; name: string; currency: string }[];
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
   const [cells, setCells] = useState<Record<string, string>>({});
   const [currency, setCurrency] = useState(defaultCurrency);
   const [costDate, setCostDate] = useState(today);
-  const [partnerId, setPartnerId] = useState('');
+  // One «who paid» for the whole sheet: a counterparty, a kassa, or our
+  // money with the kassa left to the accountant (0101) — never two.
+  const [payer, setPayer] = useState('');
+  const partnerId = payer.startsWith('partner:') ? payer.slice(8) : '';
+  const accountId = payer.startsWith('till:') ? payer.slice(5) : '';
   const [query, setQuery] = useState('');
   const [emptyType, setEmptyType] = useState('');
   const [message, setMessage] = useState<
@@ -188,6 +195,7 @@ export function ReceiptCostGrid({
         currency,
         costDate,
         partnerId,
+        accountId,
         cells: payload,
       });
       // Clear exactly what became an entry. A save that stopped part-way
@@ -209,7 +217,16 @@ export function ReceiptCostGrid({
 
   if (rows.length === 0) return <p className="text-sm text-ink-500">{tc('empty')}</p>;
 
-  const errorText = (code: string) => (code === 'fx_missing' ? t('fxMissing') : tc('error'));
+  const errorText = (code: string) =>
+    code === 'fx_missing'
+      ? t('fxMissing')
+      : code === 'account_currency_mismatch'
+        ? t('errTillCurrency')
+        : code === 'till_forbidden'
+          ? t('errTillForbidden')
+          : code === 'staff_payer_forbidden'
+            ? t('errStaffPayer')
+            : tc('error');
 
   return (
     <div className="space-y-2" data-testid="receipt-cost-grid">
@@ -501,20 +518,40 @@ export function ReceiptCostGrid({
           />
           {/* Who settled the sheet. Its own LINE, not a squeezed neighbour —
               a picker narrower than its shortest option is the #421 shape. */}
-          {partners.length > 0 && (
+          {(partners.length > 0 || tills.length > 0) && (
             <select
-              value={partnerId}
-              onChange={(event) => setPartnerId(event.target.value)}
+              value={payer}
+              onChange={(event) => {
+                setPayer(event.target.value);
+                // The grid has ONE currency: a kassa sets it, because a cell
+                // in another currency than the drawer is refused (the
+                // service's account_currency_mismatch).
+                const picked = tills.find((till) => `till:${till.id}` === event.target.value);
+                if (picked && currencies.includes(picked.currency)) setCurrency(picked.currency);
+              }}
               aria-label="grid payer"
               data-testid="grid-payer"
               className="input !w-full"
             >
-              <option value="">{t('paidByUs')}</option>
-              {partners.map((partner) => (
-                <option key={partner.id} value={partner.id}>
-                  {t('paidBy')}: {partner.name}
-                </option>
-              ))}
+              <option value="">{tills.length > 0 ? t('paidByUsNoTill') : t('paidByUs')}</option>
+              {tills.length > 0 && (
+                <optgroup label={t('tillGroup')}>
+                  {tills.map((till) => (
+                    <option key={till.id} value={`till:${till.id}`}>
+                      🏦 {till.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {partners.length > 0 && (
+                <optgroup label={t('partnerGroup')}>
+                  {partners.map((partner) => (
+                    <option key={partner.id} value={`partner:${partner.id}`}>
+                      {t('paidBy')}: {partner.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           )}
           {grand > 0 && (

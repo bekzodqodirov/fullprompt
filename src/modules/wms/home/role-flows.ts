@@ -18,6 +18,7 @@ import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
 import { costMissingCount } from '../reports/queries';
 import { sameCountryLegSql } from '../batches/internal';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
+import { unplacedCostTotals } from '../costing/service';
 
 /**
  * The other three workflow homes (owner: "har bir hodim qiladigan ishiga
@@ -130,11 +131,13 @@ export interface MoneyFlowCounts {
   /** Active recurring templates not yet posted this month. */
   recurringDue: number;
   costMissing: number;
+  /** Cargo costs waiting for their kassa (0101) — the accountant's queue. */
+  unplacedCosts: number;
 }
 
 export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
   const month = today.slice(0, 7);
-  const [snapshot, unassigned, recurring, costMissing] = await Promise.all([
+  const [snapshot, unassigned, recurring, costMissing, unplacedCosts] = await Promise.all([
     moneySnapshot(),
     db
       .select({ n: sql<number>`count(*)` })
@@ -167,12 +170,14 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
         )
     `),
     costMissingCount(3),
+    unplacedCostTotals(),
   ]);
   return {
     snapshot,
     unassignedPayments: Number(unassigned[0]?.n ?? 0),
     recurringDue: Number(recurring[0]?.n ?? 0),
     costMissing,
+    unplacedCosts: unplacedCosts.count,
   };
 }
 

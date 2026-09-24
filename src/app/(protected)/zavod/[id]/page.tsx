@@ -9,6 +9,7 @@ import {
   costTypes,
   currencies,
   partners,
+  moneyAccounts,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { inScope } from '@/modules/platform/rbac/scope';
@@ -35,6 +36,7 @@ import {
 } from '../pickup-forms';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,10 +57,16 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
   const canCost = actor.permissions.has('costs.enter_batch') && inScope(actor, pickup.destWarehouseId);
 
   const costs = await db
-    .select({ entry: costEntries, typeName: costTypes.name, partnerName: partners.name })
+    .select({
+      entry: costEntries,
+      typeName: costTypes.name,
+      partnerName: partners.name,
+      accountName: moneyAccounts.name,
+    })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
+    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
     .where(and(eq(costEntries.pickupId, id), isNull(costEntries.voidedAt)))
     .orderBy(asc(costEntries.createdAt));
   const costMeta = canCost
@@ -242,7 +250,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
         <CostPanel
           scope="pickup"
           targetId={pickup.id}
-          entries={costs.map(({ entry, typeName, partnerName }) => ({
+          entries={costs.map(({ entry, typeName, partnerName, accountName }) => ({
             id: entry.id,
             typeName,
             amount: entry.amount,
@@ -252,6 +260,8 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
             allocationBasis: entry.allocationBasis,
             note: entry.note,
             partnerName,
+            accountName: maySeeTillNames(actor.permissions) ? accountName : null,
+            paidFromTill: entry.accountId !== null,
           }))}
           costTypes={costMeta?.types ?? []}
           currencies={costMeta?.currencies ?? []}
@@ -266,6 +276,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
           canEdit={Boolean(canCost && live)}
           today={tashkentDay()}
+          tillOptions={await tillOptionsFor(actor.permissions)}
           partnerOptions={costMeta?.partners ?? []}
         />
       </section>

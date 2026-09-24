@@ -482,6 +482,18 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           warn={flow.unassignedPayments > 0}
           sub={null}
         />
+        {/* 0101: cargo costs the warehouse or the logist typed, whose kassa
+            only the accountant can name — or mark as a colleague's own money,
+            or merge with the expense it was typed a second time as. */}
+        <FlowRow
+          href="/accounting/xarajat-kassa"
+          icon="wallet"
+          testid="acc-flow-cost-kassa"
+          label={t('flowUnplacedCosts')}
+          count={flow.unplacedCosts}
+          warn={flow.unplacedCosts > 0}
+          sub={null}
+        />
         {/* Round 29: who paid what, row for row — the read half of «kimdan
             qancha pul oldim»; the write half stays on the client's ledger. */}
         <FlowRow

@@ -18,6 +18,10 @@ export interface CostEntryView {
   clientCode?: string | null;
   /** Who settled it, when it was not us (round 39). */
   partnerName?: string | null;
+  /** The kassa it left from — the NAME only for money readers (0101). */
+  accountName?: string | null;
+  /** A kassa answered for it, whether or not this reader may see which. */
+  paidFromTill?: boolean;
 }
 
 export interface CostTypeOption {
@@ -31,6 +35,27 @@ export interface ClientOption {
 }
 
 const BASES = ['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client'] as const;
+
+/**
+ * The payer/kassa refusals in words (0101). A literal list, not a key built
+ * from the code: a key assembled at runtime is invisible to the i18n fence
+ * and throws at render (#163).
+ */
+const PAYER_ERRORS = {
+  till_forbidden: 'errTillForbidden',
+  staff_payer_forbidden: 'errStaffPayer',
+  kassa_cost_needs_finance: 'errKassaVoid',
+  account_amount_required: 'errTillAmountRequired',
+  account_amount_mismatch: 'errTillAmountMismatch',
+  account_not_found: 'errTillNotFound',
+  account_currency_mismatch: 'errTillCurrency',
+  payer_conflict: 'errPayerConflict',
+} as const;
+
+function payerErrorText(code: string | undefined, t: (key: string) => string): string {
+  const key = code ? PAYER_ERRORS[code as keyof typeof PAYER_ERRORS] : undefined;
+  return key ? t(key) : (code ?? 'error');
+}
 
 /**
  * W9 cost capture (spec 6.9) — shared by the batch card (freight, agent fee,
@@ -48,6 +73,7 @@ export function CostPanel({
   defaultCurrency,
   canEdit,
   partnerOptions = [],
+  tillOptions = [],
   today,
 }: {
   scope: 'batch' | 'receipt' | 'crate' | 'pickup';
@@ -65,6 +91,12 @@ export function CostPanel({
    * the field is not drawn at all.
    */
   partnerOptions?: { id: string; name: string }[];
+  /**
+   * The kassas the money may have left from (0101). Offered to the kassa
+   * holders only — the server passes an empty list to everybody else, and the
+   * action refuses a posted kassa from them (`till_forbidden`).
+   */
+  tillOptions?: { id: string; name: string; currency: string }[];
   /**
    * The default cost date: Tashkent's day, computed on the SERVER (R5). The
    * browser's own clock is neither the office's nor reliably set.
@@ -84,8 +116,16 @@ export function CostPanel({
   // The factory truck is split by m³ (owner's B5a) — the default, not a lock.
   const [basis, setBasis] = useState<(typeof BASES)[number]>(scope === 'pickup' ? 'volume' : 'weight');
   const [clientId, setClientId] = useState('');
-  const [partnerId, setPartnerId] = useState('');
+  // ONE «who paid» choice (0101): our money with no kassa said yet (the
+  // accountant's queue), a kassa, or a counterparty — never two, which is
+  // also the database's cost_entries_payer_check.
+  const [payer, setPayer] = useState('');
+  const [tillAmount, setTillAmount] = useState('');
   const [note, setNote] = useState('');
+  const partnerId = payer.startsWith('partner:') ? payer.slice(8) : '';
+  const accountId = payer.startsWith('till:') ? payer.slice(5) : '';
+  const till = tillOptions.find((option) => option.id === accountId);
+  const tillInOtherCurrency = till !== undefined && till.currency !== currency;
 
   async function submit() {
     setBusy(true);
@@ -104,11 +144,14 @@ export function CostPanel({
         allocationBasis: basis,
         clientId: basis === 'direct_to_client' ? clientId || undefined : undefined,
         partnerId: partnerId || undefined,
+        accountId: accountId || undefined,
+        accountAmount: tillInOtherCurrency ? (parseTypedMoney(tillAmount) ?? Number.NaN) : undefined,
         note,
       });
       if (res.ok) {
         setAdding(false);
         setAmount('');
+        setTillAmount('');
         setNote('');
         router.refresh();
       } else {
@@ -120,7 +163,7 @@ export function CostPanel({
               // the firm's name with nothing on that firm's account.
               res.error === 'fx_missing'
               ? t('fxMissing')
-              : (res.error ?? 'error'),
+              : payerErrorText(res.error, t),
         );
       }
     } finally {
@@ -133,7 +176,7 @@ export function CostPanel({
     if (!reason?.trim()) return;
     const res = await voidCostEntryAction({ id, reason });
     if (res.ok) router.refresh();
-    else setError(res.error ?? 'error'); // a silent failed void looked like success
+    else setError(payerErrorText(res.error, t)); // a silent failed void looked like success
   }
 
   return (
@@ -161,6 +204,13 @@ export function CostPanel({
           {entry.partnerName && (
             <span className="rounded bg-warn/15 px-1.5 text-xs font-semibold text-warn">
               {entry.partnerName}
+            </span>
+          )}
+          {/* Which kassa it left from (0101) — the name for money readers,
+              the fact alone for everybody else. */}
+          {entry.paidFromTill && (
+            <span className="rounded bg-surface-sunken px-1.5 text-xs font-semibold text-ink-700" data-testid="cost-till">
+              🏦 {entry.accountName ?? t('paidFromTill')}
             </span>
           )}
           {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
@@ -254,21 +304,56 @@ export function CostPanel({
           {/* Who settled it. Left empty this is our own money, exactly as
               before; named, the cost still lands on the cargo but the amount
               becomes a debt to that firm instead of cash we spent. */}
-          {partnerOptions.length > 0 && (
+          {/* Who paid. Drawn whenever there is a choice to make — v1 hid the
+              whole select behind `partnerOptions.length > 0`, and an install
+              with no counterparty would have had no way to name a kassa. */}
+          {(partnerOptions.length > 0 || tillOptions.length > 0) && (
             <select
               aria-label={t('paidBy')}
               data-testid="cost-partner"
               className="input"
-              value={partnerId}
-              onChange={(e) => setPartnerId(e.target.value)}
+              value={payer}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPayer(next);
+                // A kassa speaks one currency: picking it proposes that one.
+                // The person may still type the cost in another and say
+                // what left the kassa below.
+                const picked = tillOptions.find((option) => `till:${option.id}` === next);
+                if (picked && currencies.includes(picked.currency)) setCurrency(picked.currency);
+              }}
             >
-              <option value="">{t('paidByUs')}</option>
-              {partnerOptions.map((partner) => (
-                <option key={partner.id} value={partner.id}>
-                  {partner.name}
-                </option>
-              ))}
+              <option value="">{tillOptions.length > 0 ? t('paidByUsNoTill') : t('paidByUs')}</option>
+              {tillOptions.length > 0 && (
+                <optgroup label={t('tillGroup')}>
+                  {tillOptions.map((option) => (
+                    <option key={option.id} value={`till:${option.id}`}>
+                      {option.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {partnerOptions.length > 0 && (
+                <optgroup label={t('partnerGroup')}>
+                  {partnerOptions.map((partner) => (
+                    <option key={partner.id} value={`partner:${partner.id}`}>
+                      {partner.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
+          )}
+          {tillInOtherCurrency && (
+            <input
+              aria-label={t('tillAmount', { currency: till.currency })}
+              data-testid="cost-till-amount"
+              className="input"
+              inputMode="decimal"
+              placeholder={t('tillAmount', { currency: till.currency })}
+              value={tillAmount}
+              onChange={(e) => setTillAmount(e.target.value)}
+            />
           )}
           <input
             aria-label={t('note')}

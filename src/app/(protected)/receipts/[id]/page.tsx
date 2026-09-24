@@ -15,6 +15,7 @@ import {
   receiptLots,
   receipts,
   warehouses,
+  moneyAccounts,
 } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -44,6 +45,7 @@ import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -103,10 +105,16 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   }
 
   const costs = await db
-    .select({ entry: costEntries, typeName: costTypes.name, partnerName: partners.name })
+    .select({
+      entry: costEntries,
+      typeName: costTypes.name,
+      partnerName: partners.name,
+      accountName: moneyAccounts.name,
+    })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
+    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
     .where(and(eq(costEntries.receiptId, id), isNull(costEntries.voidedAt)));
   const canEnterCosts = actor.permissions.has('costs.enter_receipt');
   const costMeta = canEnterCosts
@@ -416,7 +424,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             <CostPanel
               scope="receipt"
               targetId={id}
-              entries={costs.map(({ entry, typeName, partnerName }) => ({
+              entries={costs.map(({ entry, typeName, partnerName, accountName }) => ({
                 id: entry.id,
                 typeName,
                 amount: entry.amount,
@@ -426,6 +434,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 allocationBasis: entry.allocationBasis,
                 note: entry.note,
                 partnerName,
+                accountName: maySeeTillNames(actor.permissions) ? accountName : null,
+                paidFromTill: entry.accountId !== null,
               }))}
               costTypes={costMeta.types}
               currencies={costMeta.currencies}
@@ -433,6 +443,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
               canEdit={receipt.status === 'confirmed'}
               today={tashkentDay()}
+              tillOptions={await tillOptionsFor(actor.permissions)}
               partnerOptions={partnerOptions}
             />
           </div>
@@ -502,6 +513,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             errors: {
               annul_forbidden: ta('forbidden'),
               box_on_active_plan: ta('onActivePlan'),
+              cost_paid_from_till: ta('paidFromTill'),
               reason_required: ta('reasonRequired'),
               not_found: ta('notFound'),
               validation: ta('reasonRequired'),

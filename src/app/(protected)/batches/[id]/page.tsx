@@ -52,6 +52,7 @@ import { CrateRows } from '@/components/crate-rows';
 import { batchCrates } from '@/modules/wms/inventory/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -561,7 +562,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <CostPanel
             scope="batch"
             targetId={batch.id}
-            entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName }) => ({
+            entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, accountName }) => ({
               id: entry.id,
               typeName,
               amount: entry.amount,
@@ -572,6 +573,8 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               note: entry.note,
               clientCode,
               partnerName,
+              accountName: maySeeTillNames(actor.permissions) ? accountName : null,
+              paidFromTill: entry.accountId !== null,
             }))}
             costTypes={costMeta.types}
             currencies={costMeta.currencies}
@@ -579,6 +582,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
             canEdit={canEnterCosts}
             today={tashkentDay()}
+            tillOptions={await tillOptionsFor(actor.permissions)}
             partnerOptions={partnerOptions}
           />
           {costSheet.entries.length > 0 && (

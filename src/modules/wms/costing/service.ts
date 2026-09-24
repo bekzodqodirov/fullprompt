@@ -20,6 +20,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
+import { tashkentDayStart } from '../../platform/time/tashkent';
 import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
 import { batchMemberFilter } from '../scanning/unload';
 
@@ -235,6 +236,46 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
 }
 
 /**
+ * A cost nobody has said the kassa of (0101): live, no counterparty, no
+ * kassa, not merged into an expense — and entered on or after
+ * `cost_kassa_since`. ONE predicate for the queue screen, the accountant's
+ * home counter and the Balans line (#513). The bound is the deploy day the
+ * migration wrote: every older cost has no kassa BY CONSTRUCTION and is
+ * inside some till's counted opening, so placing it would debit the drawer a
+ * second time (the design judge's blocker).
+ */
+export function unplacedCostSql(since: string): SQL {
+  return and(
+    isNull(costEntries.voidedAt),
+    isNull(costEntries.partnerId),
+    isNull(costEntries.accountId),
+    isNull(costEntries.mergedExpenseId),
+    /^\d{4}-\d{2}-\d{2}$/.test(since)
+      ? sql`${costEntries.createdAt} >= ${tashkentDayStart(since).toISOString()}::timestamptz`
+      : undefined,
+  )!;
+}
+
+/** The queue's start day, as the setting holds it ('' = no bound). */
+export async function unplacedCostSince(): Promise<string> {
+  const value = String((await getSetting('cost_kassa_since')) ?? '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+}
+
+/** How many costs wait for a kassa, and their dollars — the counter and the Balans. */
+export async function unplacedCostTotals() {
+  const since = await unplacedCostSince();
+  const [row] = await db
+    .select({
+      n: sql<number>`count(*)::int`,
+      usd: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)`,
+    })
+    .from(costEntries)
+    .where(unplacedCostSql(since));
+  return { count: Number(row?.n ?? 0), usd: Math.round(Number(row?.usd ?? 0) * 100) / 100 };
+}
+
+/**
  * Say, afterwards, which kassa a cost's money left from — or that it left
  * none (`accountId` null clears it). The accountant's place-later door
  * (0101): the warehouse and the logist type costs and hold no kassa grant,
@@ -281,6 +322,46 @@ export async function setCostAccount(
     before: { accountId: entry.accountId, accountAmount: entry.accountAmount },
     after: { accountId, accountAmount },
   });
+}
+
+/**
+ * «A colleague paid this out of pocket» — said by the ACCOUNTANT on the
+ * queue (0101, owner M1a: the staff member says it through the rasxod
+ * xabari, the accountant confirms). The cost gets the colleague's staff
+ * account as its payer, which posts the debt through the ordinary
+ * `chargeForCost` — one writer of that charge, whichever door asked.
+ */
+export async function setCostStaffPayer(costId: string, partnerId: string, ctx: AuditContext) {
+  if (!ctx.actorId) throw new CostError('unauthenticated');
+  const { isStaffPartner } = await import('../partners/staff');
+  if (!(await isStaffPartner(partnerId))) throw new CostError('not_staff');
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costId) });
+  if (!entry) throw new CostError('not_found');
+  // A debt needs a dollar figure (the entry-time rule, #427).
+  if (entry.amountUsd === null) throw new CostError('fx_missing');
+  const [row] = await db
+    .update(costEntries)
+    .set({ partnerId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(costEntries.id, costId),
+        isNull(costEntries.voidedAt),
+        isNull(costEntries.partnerId),
+        isNull(costEntries.accountId),
+        isNull(costEntries.mergedExpenseId),
+      ),
+    )
+    .returning({ id: costEntries.id });
+  if (!row) throw new CostError('payer_conflict');
+  await writeAudit(db, ctx, {
+    entityType: 'cost_entry',
+    entityId: costId,
+    action: 'update',
+    before: { partnerId: null },
+    after: { partnerId, from: 'staff_own_pocket' },
+  });
+  const { chargeForCost } = await import('../partners/link');
+  await chargeForCost(costId, ctx);
 }
 
 export async function voidCostEntry(id: string, reason: string, ctx: AuditContext) {
@@ -866,11 +947,13 @@ export async function batchCostSheet(batchId: string) {
       typeName: costTypes.name,
       clientCode: clients.clientCode,
       partnerName: partners.name,
+      accountName: moneyAccounts.name,
     })
     .from(costEntries)
     .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
     .leftJoin(clients, eq(costEntries.clientId, clients.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
+    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
     .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)))
     .orderBy(asc(costEntries.createdAt));
 

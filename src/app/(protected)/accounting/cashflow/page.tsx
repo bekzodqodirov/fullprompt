@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -43,6 +44,18 @@ export default async function CashFlowPage({
               <tr key={`${row.label}-${index}`} className="border-b border-line">
                 <td className="p-2">
                   {row.kind === 'in' ? '⬅️' : '➡️'} {label(row.label)}
+                  {/* The part of the cargo costs no kassa has answered for
+                      yet (0101) — the accountant's queue, named here so the
+                      line never reads as if every dollar had a drawer. */}
+                  {row.label === 'cargoCosts' && flow.cargoUnplacedUsd > 0 && (
+                    <Link
+                      href="/accounting/xarajat-kassa"
+                      className="block text-xs text-warn underline"
+                      data-testid="cashflow-cargo-unplaced"
+                    >
+                      ⚠ {t('cargoUnplaced', { usd: usd(flow.cargoUnplacedUsd) })}
+                    </Link>
+                  )}
                 </td>
                 <td
                   className={`p-2 text-right font-mono ${
